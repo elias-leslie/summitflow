@@ -45,14 +45,14 @@ def run_scheduled_backups() -> dict[str, Any]:
             frequency=frequency,
         )
 
-        retention_count = schedule.get("retention_count")
+        retention_days = schedule.get("retention_days")
 
         # Run backup directly (Hatchet handles async scheduling)
         create_backup(
             project_id=project_id,
             backup_type="scheduled",
             note=f"Scheduled {frequency} backup",
-            retention_count=retention_count,
+            retention_days=retention_days,
         )
 
         # Calculate next run time
@@ -65,6 +65,11 @@ def run_scheduled_backups() -> dict[str, Any]:
                 "next_run": next_run.isoformat() if next_run else None,
             }
         )
+
+    # Clean up expired completed backup records to keep DB in sync
+    expired = backup_store.cleanup_expired_backup_records()
+    if expired:
+        logger.info("cleaned_expired_backup_records", count=expired)
 
     logger.info("run_scheduled_backups_completed", count=len(results))
 

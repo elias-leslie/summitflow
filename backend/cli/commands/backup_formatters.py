@@ -62,9 +62,9 @@ def output_schedule(out: OutputContext, schedule: dict[str, Any] | None) -> None
         if out.is_compact:
             enabled = "enabled" if schedule.get("enabled") else "disabled"
             freq = schedule.get("frequency", "?")
-            ret = schedule.get("retention_count", "?")
+            ret = schedule.get("retention_days", "?")
             next_run = (schedule.get("next_run_at") or "?")[:10]
-            print(f"SCHEDULE {enabled}|{freq}|retention:{ret}|next:{next_run}")
+            print(f"SCHEDULE {enabled}|{freq}|retention_days:{ret}|next:{next_run}")
         else:
             output_json(schedule)
 

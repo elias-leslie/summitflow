@@ -75,7 +75,7 @@ class ScheduleRequest(BaseModel):
 
     enabled: bool
     frequency: str  # 'daily', 'weekly', 'monthly'
-    retention_count: int = 5
+    retention_days: int = 14
 
 
 class ScheduleResponse(BaseModel):
@@ -85,7 +85,7 @@ class ScheduleResponse(BaseModel):
     project_id: str
     enabled: bool
     frequency: str
-    retention_count: int
+    retention_days: int
     last_run_at: datetime | None = None
     next_run_at: datetime | None = None
     created_at: datetime | None = None
@@ -197,7 +197,7 @@ async def get_backup_schedule(project_id: str) -> ScheduleResponse | None:
         project_id=schedule["project_id"],
         enabled=schedule["enabled"],
         frequency=schedule["frequency"],
-        retention_count=schedule["retention_count"],
+        retention_days=schedule["retention_days"],
         last_run_at=datetime.fromisoformat(schedule["last_run_at"])
         if schedule.get("last_run_at")
         else None,
@@ -225,14 +225,14 @@ async def update_backup_schedule(project_id: str, request: ScheduleRequest) -> S
         project_id=project_id,
         enabled=request.enabled,
         frequency=request.frequency,
-        retention_count=request.retention_count,
+        retention_days=request.retention_days,
     )
     return ScheduleResponse(
         id=schedule["id"],
         project_id=schedule["project_id"],
         enabled=schedule["enabled"],
         frequency=schedule["frequency"],
-        retention_count=schedule["retention_count"],
+        retention_days=schedule["retention_days"],
         last_run_at=datetime.fromisoformat(schedule["last_run_at"])
         if schedule.get("last_run_at")
         else None,

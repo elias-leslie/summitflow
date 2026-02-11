@@ -42,7 +42,7 @@ async def backup_create_wf(input: BackupInput, ctx: Context) -> dict[str, Any]:
         input.note,
         input.backup_type,
         input.keep_local,
-        input.retention_count,
+        input.retention_days,
     )
 
 

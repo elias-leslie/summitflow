@@ -30,7 +30,7 @@ export function BackupScheduleConfig({ projectId }: BackupScheduleConfigProps) {
 
   const [enabled, setEnabled] = useState(false)
   const [frequency, setFrequency] = useState('daily')
-  const [retentionCount, setRetentionCount] = useState(5)
+  const [retentionDays, setRetentionDays] = useState(14)
   const [saving, setSaving] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -44,7 +44,7 @@ export function BackupScheduleConfig({ projectId }: BackupScheduleConfigProps) {
     if (schedule) {
       setEnabled(schedule.enabled)
       setFrequency(schedule.frequency)
-      setRetentionCount(schedule.retention_count)
+      setRetentionDays(schedule.retention_days)
     }
   }, [schedule])
 
@@ -57,7 +57,7 @@ export function BackupScheduleConfig({ projectId }: BackupScheduleConfigProps) {
       await updateBackupSchedule(projectId, {
         enabled,
         frequency,
-        retention_count: retentionCount,
+        retention_days: retentionDays,
       })
       queryClient.invalidateQueries({
         queryKey: ['backup-schedule', projectId],
@@ -78,7 +78,7 @@ export function BackupScheduleConfig({ projectId }: BackupScheduleConfigProps) {
     ? enabled
     : enabled !== schedule.enabled ||
       frequency !== schedule.frequency ||
-      retentionCount !== schedule.retention_count
+      retentionDays !== schedule.retention_days
 
   if (isLoading) {
     return (
@@ -165,27 +165,27 @@ export function BackupScheduleConfig({ projectId }: BackupScheduleConfigProps) {
 
         <div className={clsx(!enabled && 'opacity-50 pointer-events-none')}>
           <label
-            htmlFor="retention-count"
+            htmlFor="retention-days"
             className="block text-sm font-medium text-slate-300 mb-2"
           >
-            Backups to Keep
+            Retention Period (Days)
           </label>
           <select
-            id="retention-count"
-            value={retentionCount}
-            onChange={(e) => setRetentionCount(Number(e.target.value))}
+            id="retention-days"
+            value={retentionDays}
+            onChange={(e) => setRetentionDays(Number(e.target.value))}
             disabled={!enabled}
             className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md
                        text-slate-200 focus:outline-none focus:ring-2 focus:ring-phosphor-500"
           >
-            {[3, 5, 7, 10, 14, 30].map((num) => (
+            {[7, 14, 21, 30, 60, 90].map((num) => (
               <option key={num} value={num}>
-                {num} backups
+                {num} days
               </option>
             ))}
           </select>
           <p className="text-xs text-slate-400 mt-1">
-            Older backups will be automatically deleted.
+            Backups older than this will be automatically deleted.
           </p>
         </div>
 

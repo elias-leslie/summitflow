@@ -9,7 +9,7 @@ BACKUP_COLUMNS = """id, project_id, name, backup_type, status, size_bytes, db_si
        files_size_bytes, location, note, created_at, started_at, completed_at, error_message,
        verified, verified_at, checksum, total_files, verification_json"""
 
-BACKUP_SCHEDULE_COLUMNS = """id, project_id, enabled, frequency, retention_count,
+BACKUP_SCHEDULE_COLUMNS = """id, project_id, enabled, frequency, retention_days,
        last_run_at, next_run_at, created_at, updated_at"""
 
 EXPECTED_BACKUP_COLUMNS = 19
@@ -72,7 +72,7 @@ def row_to_schedule(row: tuple[Any, ...]) -> dict[str, Any]:
         "project_id": row[1],
         "enabled": row[2],
         "frequency": row[3],
-        "retention_count": row[4],
+        "retention_days": row[4],
         "last_run_at": row[5].isoformat() if row[5] else None,
         "next_run_at": row[6].isoformat() if row[6] else None,
         "created_at": row[7].isoformat() if row[7] else None,

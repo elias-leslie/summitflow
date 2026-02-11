@@ -23,7 +23,7 @@ class BackupInput(BaseModel):
     note: str | None = None
     backup_type: str = "manual"
     keep_local: bool = False
-    retention_count: int | None = None
+    retention_days: int | None = None
 
 
 class RestoreInput(BaseModel):

@@ -23,7 +23,7 @@ def create_backup(
     note: str | None = None,
     backup_type: str = "manual",
     keep_local: bool = False,
-    retention_count: int | None = None,
+    retention_days: int | None = None,
 ) -> dict[str, Any]:
     """Create a backup for a project.
 
@@ -34,7 +34,7 @@ def create_backup(
         note: Optional user note
         backup_type: 'manual' or 'scheduled'
         keep_local: If True, keep local copy in addition to SMB
-        retention_count: Number of backups to retain (overrides default)
+        retention_days: Days to retain backups (overrides default)
 
     Returns:
         Backup record dict
@@ -61,7 +61,7 @@ def create_backup(
         return {"status": "skipped", "error": f"Backup already running for {project_id}"}
 
     try:
-        return _run_backup(project_id, project_dir, note, backup_type, keep_local, retention_count)
+        return _run_backup(project_id, project_dir, note, backup_type, keep_local, retention_days)
     finally:
         release_backup_lock(project_id)
 
@@ -72,7 +72,7 @@ def _run_backup(
     note: str | None,
     backup_type: str,
     keep_local: bool,
-    retention_count: int | None = None,
+    retention_days: int | None = None,
 ) -> dict[str, Any]:
     """Execute backup with lock already held."""
     # Create pending backup record
@@ -90,8 +90,8 @@ def _run_backup(
     cmd = ["bash", str(BACKUP_SCRIPT)]
     if keep_local:
         cmd.append("--keep-local")
-    if retention_count is not None:
-        cmd.extend(["--retention", str(retention_count)])
+    if retention_days is not None:
+        cmd.extend(["--retention-days", str(retention_days)])
 
     try:
         # Run backup.sh

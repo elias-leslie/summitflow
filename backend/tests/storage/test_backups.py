@@ -162,13 +162,13 @@ class TestScheduleCRUD:
             project_id=cleanup_project,
             enabled=True,
             frequency="daily",
-            retention_count=7,
+            retention_days=7,
         )
 
         assert schedule["project_id"] == cleanup_project
         assert schedule["enabled"] is True
         assert schedule["frequency"] == "daily"
-        assert schedule["retention_count"] == 7
+        assert schedule["retention_days"] == 7
 
     def test_upsert_schedule_update(self, cleanup_project):
         """Upsert updates existing schedule."""
@@ -178,12 +178,12 @@ class TestScheduleCRUD:
             project_id=cleanup_project,
             enabled=False,
             frequency="weekly",
-            retention_count=10,
+            retention_days=10,
         )
 
         assert updated["enabled"] is False
         assert updated["frequency"] == "weekly"
-        assert updated["retention_count"] == 10
+        assert updated["retention_days"] == 10
 
     def test_update_schedule_last_run(self, cleanup_project):
         """Update schedule last run updates timestamps."""
@@ -255,3 +255,78 @@ class TestStorageSummary:
 
         latest = backups.get_latest_backup(cleanup_project)
         assert latest is None
+
+
+class TestCleanupExpiredRecords:
+    """Tests for cleanup_expired_backup_records."""
+
+    def test_cleanup_expired_deletes_old_records(self, conn, cleanup_project):
+        """Cleanup deletes completed records older than retention, keeping min per project."""
+        # Create 5 completed backups, backdate 4 of them to 20 days ago
+        records = []
+        for i in range(5):
+            rec = backups.create_backup_record(cleanup_project, note=f"Backup {i}")
+            backups.update_backup_status(rec["id"], "completed")
+            records.append(rec)
+
+        # Backdate 4 oldest records
+        with conn.cursor() as cur:
+            for rec in records[:4]:
+                cur.execute(
+                    "UPDATE backups SET created_at = NOW() - INTERVAL '20 days' WHERE id = %s",
+                    (rec["id"],),
+                )
+            conn.commit()
+
+        # Cleanup with retention_days=14, min_keep=3
+        deleted = backups.cleanup_expired_backup_records(retention_days=14, min_keep=3)
+
+        # Window keeps 3 newest (1 recent + 2 old), deletes remaining 2 old
+        assert deleted == 2
+
+        # Verify 3 remain (top 3 by created_at DESC)
+        remaining, _total = backups.list_backups(project_id=cleanup_project)
+        completed = [r for r in remaining if r["status"] == "completed"]
+        assert len(completed) == 3
+
+    def test_cleanup_expired_respects_min_keep(self, conn, cleanup_project):
+        """Cleanup never deletes below min_keep per project."""
+        # Create 3 completed backups, all old
+        records = []
+        for i in range(3):
+            rec = backups.create_backup_record(cleanup_project, note=f"Old {i}")
+            backups.update_backup_status(rec["id"], "completed")
+            records.append(rec)
+
+        with conn.cursor() as cur:
+            for rec in records:
+                cur.execute(
+                    "UPDATE backups SET created_at = NOW() - INTERVAL '30 days' WHERE id = %s",
+                    (rec["id"],),
+                )
+            conn.commit()
+
+        # Cleanup with min_keep=3 — should delete nothing
+        deleted = backups.cleanup_expired_backup_records(retention_days=14, min_keep=3)
+        assert deleted == 0
+
+    def test_cleanup_expired_ignores_non_completed(self, conn, cleanup_project):
+        """Cleanup only affects completed records, not pending/failed."""
+        # Create a pending and a failed backup, both old
+        backups.create_backup_record(cleanup_project, note="Pending old")
+        failed = backups.create_backup_record(cleanup_project, note="Failed old")
+        backups.update_backup_status(failed["id"], "failed")
+
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE backups SET created_at = NOW() - INTERVAL '30 days' WHERE project_id = %s",
+                (cleanup_project,),
+            )
+            conn.commit()
+
+        deleted = backups.cleanup_expired_backup_records(retention_days=14, min_keep=3)
+        assert deleted == 0
+
+        # Both records should still exist
+        _remaining, total = backups.list_backups(project_id=cleanup_project)
+        assert total == 2

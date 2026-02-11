@@ -141,14 +141,14 @@ class BackupAPI:
         self,
         enabled: bool | None = None,
         frequency: str | None = None,
-        retention: int | None = None,
+        retention_days: int | None = None,
     ) -> dict[str, Any]:
         """Update backup schedule.
 
         Args:
             enabled: Enable or disable schedule
             frequency: Backup frequency (daily, weekly, monthly)
-            retention: Number of backups to retain
+            retention_days: Days to retain backups
 
         Returns:
             Updated schedule data
@@ -162,7 +162,7 @@ class BackupAPI:
         data = {
             "enabled": enabled if enabled is not None else current.get("enabled", False),
             "frequency": frequency if frequency else current.get("frequency", "daily"),
-            "retention_count": retention if retention is not None else current.get("retention_count", 5),
+            "retention_days": retention_days if retention_days is not None else current.get("retention_days", 14),
         }
 
         url = f"{self.base_url}/projects/{self.project_id}/backups/schedule"

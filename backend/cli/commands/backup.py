@@ -132,18 +132,18 @@ def backup_schedule(
     ctx: typer.Context,
     enable: Annotated[bool | None, typer.Option("--enable/--disable", help="Enable or disable")] = None,
     frequency: Annotated[str | None, typer.Option("--frequency", "-f", help="daily, weekly, monthly")] = None,
-    retention: Annotated[int | None, typer.Option("--retention", "-r", help="Backups to retain")] = None,
+    retention_days: Annotated[int | None, typer.Option("--retention-days", "-r", help="Days to retain backups")] = None,
 ) -> None:
     """View or configure backup schedule."""
     api = _get_api()
     try:
-        if enable is None and frequency is None and retention is None:
+        if enable is None and frequency is None and retention_days is None:
             output_schedule(ctx.obj, api.get_schedule())
         else:
-            result = api.update_schedule(enabled=enable, frequency=frequency, retention=retention)
+            result = api.update_schedule(enabled=enable, frequency=frequency, retention_days=retention_days)
             if ctx.obj.is_compact:
                 enabled = "enabled" if result.get("enabled") else "disabled"
-                print(f"SCHEDULE_UPDATED {enabled}|{result.get('frequency')}|retention:{result.get('retention_count')}")
+                print(f"SCHEDULE_UPDATED {enabled}|{result.get('frequency')}|retention_days:{result.get('retention_days')}")
             else:
                 output_json(result)
     except APIError as e:

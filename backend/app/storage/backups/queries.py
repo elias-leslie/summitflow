@@ -33,6 +33,43 @@ def cleanup_stale_backup_records(max_age_days: int = 30) -> int:
     return len(deleted)
 
 
+def cleanup_expired_backup_records(retention_days: int = 14, min_keep: int = 3) -> int:
+    """Delete completed backup records older than retention_days, keeping min_keep per project.
+
+    Uses a window function to ensure at least min_keep completed records
+    are preserved per project regardless of age.
+
+    Args:
+        retention_days: Delete completed records older than this many days
+        min_keep: Minimum number of completed records to keep per project
+
+    Returns:
+        Number of records deleted
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            DELETE FROM backups
+            WHERE status = 'completed'
+              AND created_at < NOW() - INTERVAL '1 day' * %s
+              AND id NOT IN (
+                SELECT id FROM (
+                  SELECT id, ROW_NUMBER() OVER (
+                    PARTITION BY project_id ORDER BY created_at DESC
+                  ) AS rn
+                  FROM backups WHERE status = 'completed'
+                ) ranked WHERE rn <= %s
+              )
+            RETURNING id
+            """,
+            (retention_days, min_keep),
+        )
+        deleted = cur.fetchall()
+        conn.commit()
+
+    return len(deleted)
+
+
 def get_storage_summary(project_id: str | None = None) -> dict[str, Any]:
     """Get storage usage summary.
 

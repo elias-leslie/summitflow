@@ -16,10 +16,16 @@ from .crud import (
     list_backups,
     update_backup_status,
 )
-from .queries import cleanup_stale_backup_records, get_latest_backup, get_storage_summary
+from .queries import (
+    cleanup_expired_backup_records,
+    cleanup_stale_backup_records,
+    get_latest_backup,
+    get_storage_summary,
+)
 from .schedules import get_schedule, list_due_schedules, update_schedule_last_run, upsert_schedule
 
 __all__ = [
+    "cleanup_expired_backup_records",
     "cleanup_stale_backup_records",
     "create_backup_record",
     "delete_backup_record",

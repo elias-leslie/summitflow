@@ -249,7 +249,7 @@ function ScheduleCard({ projectId, projectName }: ScheduleCardProps) {
               ? formatDate(schedule.next_run_at)
               : 'Not scheduled'}
           </p>
-          <p>Retention: {schedule.retention_count} backups</p>
+          <p>Retention: {schedule.retention_days} days</p>
         </div>
       )}
     </div>

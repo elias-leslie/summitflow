@@ -26,7 +26,8 @@ export SMB_PATH="project-backups/$PROJECT_NAME"
 export SMB_USER="${SMB_USER:-backup-svc}"
 export CREDENTIALS_FILE="$HOME/.smbcredentials"
 export BACKUP_INDEX="$PROJECT_DIR/backup-index.json"
-export MAX_BACKUPS=30
+export RETENTION_DAYS=14
+export MIN_BACKUPS=3
 
 # Database config - load from ~/.env.local if available
 # Derive env var name from project: portfolio-ai -> PORTFOLIO_AI_DB_URL
@@ -355,7 +356,7 @@ update_backup_index() {
         cat > "$BACKUP_INDEX" << EOF
 {
   "version": 2,
-  "retention": $MAX_BACKUPS,
+  "retention_days": $RETENTION_DAYS,
   "destination": "//$SMB_HOST/$SMB_SHARE/$SMB_PATH",
   "backups": [],
   "last_updated": "$timestamp"
@@ -387,27 +388,59 @@ EOF
     log_success "Backup index updated"
 }
 
-# Apply retention policy
+# Apply retention policy (time-based: delete files older than RETENTION_DAYS, keep MIN_BACKUPS)
 apply_retention() {
-    log "Applying retention policy (keep newest $MAX_BACKUPS)..."
+    log "Applying retention policy (delete older than ${RETENTION_DAYS} days, keep min ${MIN_BACKUPS})..."
 
     local backups=($(smb_list_backups))
     local count=${#backups[@]}
 
-    if [ "$count" -le "$MAX_BACKUPS" ]; then
-        log_success "Retention OK: $count/$MAX_BACKUPS backups"
+    if [ "$count" -le "$MIN_BACKUPS" ]; then
+        log_success "Retention OK: $count backups (at or below minimum $MIN_BACKUPS)"
         return 0
     fi
 
-    local to_delete=$((count - MAX_BACKUPS))
-    log "Deleting $to_delete old backup(s)..."
+    local cutoff_epoch
+    cutoff_epoch=$(date -d "-${RETENTION_DAYS} days" +%s 2>/dev/null || date -v-${RETENTION_DAYS}d +%s 2>/dev/null)
+    local deleted=0
 
-    for ((i=0; i<to_delete; i++)); do
-        local old_backup="${backups[$i]}"
-        smb_delete "$old_backup"
+    # Iterate oldest-first (list is sorted ascending); stop when we'd go below MIN_BACKUPS
+    for ((i=0; i<count; i++)); do
+        local remaining=$((count - deleted))
+        if [ "$remaining" -le "$MIN_BACKUPS" ]; then
+            break
+        fi
+
+        local backup="${backups[$i]}"
+        # Parse timestamp from filename: {project}-YYYYMMDD-HHMMSS.tar.gz
+        local ts_part
+        ts_part=$(echo "$backup" | sed -n 's/.*-\([0-9]\{8\}\)-\([0-9]\{6\}\)\.tar\.gz/\1\2/p')
+        if [ -z "$ts_part" ]; then
+            continue
+        fi
+
+        local year=${ts_part:0:4}
+        local month=${ts_part:4:2}
+        local day=${ts_part:6:2}
+        local hour=${ts_part:8:2}
+        local min=${ts_part:10:2}
+        local sec=${ts_part:12:2}
+
+        local file_epoch
+        file_epoch=$(date -d "${year}-${month}-${day} ${hour}:${min}:${sec}" +%s 2>/dev/null || \
+                     date -j -f "%Y-%m-%d %H:%M:%S" "${year}-${month}-${day} ${hour}:${min}:${sec}" +%s 2>/dev/null)
+
+        if [ -n "$file_epoch" ] && [ "$file_epoch" -lt "$cutoff_epoch" ]; then
+            smb_delete "$backup"
+            ((deleted++))
+        fi
     done
 
-    log_success "Retention applied: now $MAX_BACKUPS backups"
+    if [ "$deleted" -gt 0 ]; then
+        log_success "Retention applied: deleted $deleted old backup(s), $((count - deleted)) remain"
+    else
+        log_success "Retention OK: no backups older than $RETENTION_DAYS days"
+    fi
 }
 
 # Verify backup archive
@@ -592,7 +625,7 @@ validate_index() {
     fi
 
     # Validate JSON structure
-    if ! jq -e '.backups and .retention' "$index_file" &>/dev/null; then
+    if ! jq -e '.backups and (.retention or .retention_days)' "$index_file" &>/dev/null; then
         log_error "Index file has invalid JSON structure"
         return 1
     fi
@@ -628,7 +661,7 @@ sync_index_from_smb() {
         cat > "$BACKUP_INDEX" << EOF
 {
   "version": 2,
-  "retention": $MAX_BACKUPS,
+  "retention_days": $RETENTION_DAYS,
   "destination": "//$SMB_HOST/$SMB_SHARE/$SMB_PATH",
   "backups": [],
   "last_updated": "$(date -Iseconds)"

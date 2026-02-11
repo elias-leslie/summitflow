@@ -43,7 +43,7 @@ export interface BackupSchedule {
   project_id: string
   enabled: boolean
   frequency: 'daily' | 'weekly' | 'monthly'
-  retention_count: number
+  retention_days: number
   last_run_at: string | null
   next_run_at: string | null
   created_at: string | null
@@ -201,7 +201,7 @@ export async function fetchBackupSchedule(
  */
 export async function updateBackupSchedule(
   projectId: string,
-  schedule: { enabled: boolean; frequency: string; retention_count?: number },
+  schedule: { enabled: boolean; frequency: string; retention_days?: number },
 ): Promise<BackupSchedule> {
   return fetchWithErrorHandling<BackupSchedule>(
     `/api/projects/${projectId}/backups/schedule`,

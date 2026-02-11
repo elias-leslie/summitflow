@@ -32,7 +32,7 @@ def upsert_schedule(
     project_id: str,
     enabled: bool,
     frequency: str,
-    retention_count: int = 5,
+    retention_days: int = 14,
 ) -> dict[str, Any]:
     """Create or update backup schedule for a project.
 
@@ -40,7 +40,7 @@ def upsert_schedule(
         project_id: Project ID
         enabled: Whether schedule is active
         frequency: 'daily', 'weekly', or 'monthly'
-        retention_count: Number of backups to retain
+        retention_days: Number of days to retain backups
 
     Returns:
         Schedule record
@@ -51,16 +51,16 @@ def upsert_schedule(
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             f"""
-            INSERT INTO backup_schedules (project_id, enabled, frequency, retention_count)
+            INSERT INTO backup_schedules (project_id, enabled, frequency, retention_days)
             VALUES (%s, %s, %s, %s)
             ON CONFLICT (project_id) DO UPDATE SET
                 enabled = EXCLUDED.enabled,
                 frequency = EXCLUDED.frequency,
-                retention_count = EXCLUDED.retention_count,
+                retention_days = EXCLUDED.retention_days,
                 updated_at = NOW()
             RETURNING {BACKUP_SCHEDULE_COLUMNS}
             """,
-            (project_id, enabled, frequency, retention_count),
+            (project_id, enabled, frequency, retention_days),
         )
         row = cur.fetchone()
         conn.commit()

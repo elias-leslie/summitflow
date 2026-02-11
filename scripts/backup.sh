@@ -40,23 +40,23 @@ while [ $# -gt 0 ]; do
         --local) LOCAL_ONLY=true ;;
         --keep-local) KEEP_LOCAL=true ;;
         --status) STATUS_ONLY=true ;;
-        --retention)
+        --retention-days)
             shift
             CUSTOM_RETENTION="$1"
             ;;
         --help|-h)
-            echo "Usage: $0 [--quick] [--local] [--keep-local] [--retention N] [--status]"
+            echo "Usage: $0 [--quick] [--local] [--keep-local] [--retention-days N] [--status]"
             echo ""
             echo "Options:"
-            echo "  --quick        Skip fresh DB dump, use existing backup"
-            echo "  --local        Create archive locally only, skip SMB transfer"
-            echo "  --keep-local   Upload to SMB AND keep local copy (for fast restore)"
-            echo "  --retention N  Override SMB retention count (default: $MAX_BACKUPS)"
-            echo "  --status       Show backup status only"
+            echo "  --quick            Skip fresh DB dump, use existing backup"
+            echo "  --local            Create archive locally only, skip SMB transfer"
+            echo "  --keep-local       Upload to SMB AND keep local copy (for fast restore)"
+            echo "  --retention-days N Override SMB retention days (default: $RETENTION_DAYS)"
+            echo "  --status           Show backup status only"
             echo ""
             echo "Destination: //$SMB_HOST/$SMB_SHARE/$SMB_PATH"
             echo "Local backups: $PROJECT_DIR/backups/"
-            echo "Retention: $MAX_BACKUPS (SMB), $LOCAL_RETENTION (local)"
+            echo "Retention: $RETENTION_DAYS days (SMB), $LOCAL_RETENTION copies (local)"
             exit 0
             ;;
     esac
@@ -65,7 +65,7 @@ done
 
 # Apply custom retention if provided
 if [ -n "$CUSTOM_RETENTION" ]; then
-    export MAX_BACKUPS="$CUSTOM_RETENTION"
+    export RETENTION_DAYS="$CUSTOM_RETENTION"
 fi
 
 # Cleanup function
