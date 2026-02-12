@@ -37,10 +37,20 @@ def run_self_healing_loop(
         Tuple of (all_passed, step_results, self_fix_attempts, supervisor_guided_attempts,
                   extensions_granted, final_agent_session_id)
     """
+    # Get configurable retry limits from project settings
+    max_self_fix = agent_configs.get_max_self_fix_attempts(project_id)
+    max_supervisor = agent_configs.get_max_supervisor_attempts(project_id)
+
+    # Fall back to constants if not configured
+    if max_self_fix == 0:
+        max_self_fix = SELF_HEAL_MAX_ATTEMPTS
+    if max_supervisor == 0:
+        max_supervisor = SUPERVISOR_GUIDED_MAX_ATTEMPTS
+
     supervisor_guidance_text: str | None = None
     self_fix_attempts = 0
     supervisor_guided_attempts = 0
-    total_max_attempts = SELF_HEAL_MAX_ATTEMPTS + SUPERVISOR_GUIDED_MAX_ATTEMPTS
+    total_max_attempts = max_self_fix + max_supervisor
     extensions_granted = 0
     all_passed = False
     step_results: list[dict[str, Any]] = []
@@ -115,13 +125,13 @@ def run_self_healing_loop(
         )
 
         # Update attempt counters
-        if self_fix_attempts < SELF_HEAL_MAX_ATTEMPTS:
+        if self_fix_attempts < max_self_fix:
             self_fix_attempts += 1
         else:
             supervisor_guided_attempts += 1
 
         # Escalate model during supervisor-guided phase
-        model_override = ESCALATION_MODEL if self_fix_attempts >= SELF_HEAL_MAX_ATTEMPTS else None
+        model_override = ESCALATION_MODEL if self_fix_attempts >= max_self_fix else None
 
         # Execute agent fix and auto-commit
         response_content, agent_session_id = execute_fix_attempt(

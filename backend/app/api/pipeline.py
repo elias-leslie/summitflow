@@ -111,7 +111,7 @@ def _compute_pipeline_stats(project_id: str) -> PipelineStatsResponse:
             (project_id,),
         )
         result = cur.fetchone()
-        avg_completion_hours = round(result[0], 2) if result[0] is not None else 0.0
+        avg_completion_hours = round(result[0], 2) if result and result[0] is not None else 0.0
 
         # 3. Self-healing metrics (from verification_result JSONB)
         # Get all completed/failed tasks with verification results
@@ -266,43 +266,43 @@ def _compute_pipeline_stats(project_id: str) -> PipelineStatsResponse:
     max_concurrent = settings.max_concurrent
 
     return PipelineStatsResponse(
-        task_distribution={
-            "pending": status_counts.get("pending", 0),
-            "queue": status_counts.get("queue", 0),
-            "running": status_counts.get("running", 0),
-            "ai_reviewing": status_counts.get("ai_reviewing", 0),
-            "completed": status_counts.get("completed", 0),
-            "blocked": status_counts.get("blocked", 0),
-            "failed": status_counts.get("failed", 0),
-            "cancelled": status_counts.get("cancelled", 0),
-            "abandoned": status_counts.get("abandoned", 0),
-        },
-        throughput={
-            "completed_today": completed_today,
-            "completed_this_week": completed_this_week,
-            "avg_completion_hours": avg_completion_hours,
-        },
-        self_healing={
-            "first_attempt_pass_rate": first_attempt_pass_rate,
-            "avg_self_fix_attempts": avg_self_fix_attempts,
-            "supervisor_escalation_rate": supervisor_escalation_rate,
-            "model_escalation_count": model_escalations,
-        },
-        verification={
-            "step_pass_rate": step_pass_rate,
-            "avg_retries_per_step": avg_retries_per_step,
-        },
-        partial_merge={
-            "full_completion_rate": full_completion_rate,
-            "partial_completion_rate": partial_completion_rate,
-            "total_failure_rate": total_failure_rate,
-        },
-        autonomous={
-            "running_count": running_count,
-            "max_concurrent": max_concurrent,
-            "queue_depth": queue_depth,
-            "next_scheduled": next_scheduled,
-        },
+        task_distribution=TaskDistribution(
+            pending=status_counts.get("pending", 0),
+            queue=status_counts.get("queue", 0),
+            running=status_counts.get("running", 0),
+            ai_reviewing=status_counts.get("ai_reviewing", 0),
+            completed=status_counts.get("completed", 0),
+            blocked=status_counts.get("blocked", 0),
+            failed=status_counts.get("failed", 0),
+            cancelled=status_counts.get("cancelled", 0),
+            abandoned=status_counts.get("abandoned", 0),
+        ),
+        throughput=Throughput(
+            completed_today=completed_today,
+            completed_this_week=completed_this_week,
+            avg_completion_hours=avg_completion_hours,
+        ),
+        self_healing=SelfHealing(
+            first_attempt_pass_rate=first_attempt_pass_rate,
+            avg_self_fix_attempts=avg_self_fix_attempts,
+            supervisor_escalation_rate=supervisor_escalation_rate,
+            model_escalation_count=model_escalations,
+        ),
+        verification=Verification(
+            step_pass_rate=step_pass_rate,
+            avg_retries_per_step=avg_retries_per_step,
+        ),
+        partial_merge=PartialMerge(
+            full_completion_rate=full_completion_rate,
+            partial_completion_rate=partial_completion_rate,
+            total_failure_rate=total_failure_rate,
+        ),
+        autonomous=Autonomous(
+            running_count=running_count,
+            max_concurrent=max_concurrent,
+            queue_depth=queue_depth,
+            next_scheduled=next_scheduled,
+        ),
     )
 
 
