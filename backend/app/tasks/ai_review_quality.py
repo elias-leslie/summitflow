@@ -5,10 +5,11 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from app.logging_config import get_logger
 from app.services.agent_hub_client import get_agent
+from app.services.autonomous.review_types import Task
 from app.services.autonomous.reviewer import opus_review
 
 from .ai_review_constants import CONFIDENCE_THRESHOLD
@@ -30,7 +31,7 @@ def run_code_quality_review(
         Check result dict with verdict and analysis
     """
     try:
-        result = opus_review(task, resolved_path=project_path)
+        result = opus_review(cast(Task, task), resolved_path=project_path)
         confidence = result.get("confidence", 0.0)
         verdict = result.get("verdict")
         issues = result.get("issues", [])
