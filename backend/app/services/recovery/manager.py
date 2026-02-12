@@ -6,7 +6,7 @@ Manages build state, tracks attempts, and determines recovery strategies.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import Any
 
 from ...logging_config import get_logger
 from ...storage import agent_sessions as sessions_storage
@@ -57,7 +57,7 @@ class RecoveryManager:
     @property
     def good_commits(self) -> list[str]:
         """Get list of known good commit SHAs."""
-        return cast(list[str], self._state.get("good_commits", []))
+        return list(self._state.get("good_commits", []))
 
     @property
     def last_good_commit(self) -> str | None:
@@ -175,12 +175,9 @@ class RecoveryManager:
         history = self._state.get("attempt_history", [])
 
         if capability_id:
-            return cast(
-                list[dict[str, Any]],
-                [a for a in history if a.get("capability_id") == capability_id],
-            )
+            return [a for a in history if a.get("capability_id") == capability_id]
 
-        return cast(list[dict[str, Any]], history)
+        return list(history)
 
     def _save_state(self) -> None:
         """Persist state to database."""
@@ -189,137 +186,3 @@ class RecoveryManager:
             self.session_id,
             self._state,
         )
-
-
-async def rollback_to_commit(
-    project_id: str,
-    commit_sha: str,
-) -> dict[str, Any]:
-    """Rollback project to a specific commit.
-
-    Args:
-        project_id: Project ID
-        commit_sha: Git commit SHA to rollback to
-
-    Returns:
-        Dict with 'success', 'message', and optional 'error'.
-    """
-    import asyncio
-
-    from ...storage.connection import get_connection
-
-    # Get project config for root path
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("SELECT root_path FROM projects WHERE id = %s", (project_id,))
-        row = cur.fetchone()
-        project = {"root_path": row[0]} if row else None
-    if not project:
-        return {
-            "success": False,
-            "message": "Project not found",
-            "error": f"No project with ID: {project_id}",
-        }
-
-    project_root = project.get("root_path")
-    if not project_root:
-        return {
-            "success": False,
-            "message": "Project root not configured",
-            "error": "Project has no root_path set",
-        }
-
-    # Verify commit exists
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            "git",
-            "-C",
-            project_root,
-            "cat-file",
-            "-t",
-            commit_sha,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await proc.communicate()
-
-        if proc.returncode != 0:
-            return {
-                "success": False,
-                "message": "Commit not found",
-                "error": f"Commit {commit_sha} does not exist",
-            }
-
-    except Exception as e:
-        return {
-            "success": False,
-            "message": "Git error",
-            "error": str(e),
-        }
-
-    # Check for dirty state
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            "git",
-            "-C",
-            project_root,
-            "status",
-            "--porcelain",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await proc.communicate()
-
-        if stdout.strip():
-            # Dirty state - stash changes first
-            logger.warning("stashing_before_rollback", project_id=project_id)
-            stash_proc = await asyncio.create_subprocess_exec(
-                "git",
-                "-C",
-                project_root,
-                "stash",
-                "push",
-                "-m",
-                f"Auto-stash before rollback to {commit_sha[:8]}",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            await stash_proc.communicate()
-
-    except Exception as e:
-        logger.warning("stash_check_failed", error=str(e))
-
-    # Perform rollback
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            "git",
-            "-C",
-            project_root,
-            "reset",
-            "--hard",
-            commit_sha,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await proc.communicate()
-
-        if proc.returncode != 0:
-            return {
-                "success": False,
-                "message": "Rollback failed",
-                "error": stderr.decode() if stderr else "Unknown error",
-            }
-
-        logger.info("rollback_success", project_id=project_id, commit_sha=commit_sha[:8])
-
-        return {
-            "success": True,
-            "message": f"Rolled back to {commit_sha[:8]}",
-            "commit_sha": commit_sha,
-        }
-
-    except Exception as e:
-        return {
-            "success": False,
-            "message": "Rollback error",
-            "error": str(e),
-        }
