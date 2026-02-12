@@ -1,5 +1,5 @@
 project: summitflow
-generated_at: 2026-02-12 16:58 UTC
+generated_at: 2026-02-12 17:28 UTC
 environment:
   python_version: '>=3.13'
   venv_path: backend/.venv
