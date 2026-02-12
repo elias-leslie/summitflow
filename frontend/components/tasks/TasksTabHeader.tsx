@@ -1,6 +1,6 @@
 'use client'
 
-import { Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { RefreshCw, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { TaskFilters, type TaskFilterValues } from './TaskFilters'
@@ -13,7 +13,6 @@ interface TasksTabHeaderProps {
   isFetching: boolean
   onRefresh: () => void
   onBulkDelete: () => void
-  onNewTask: () => void
 }
 
 export function TasksTabHeader({
@@ -24,7 +23,6 @@ export function TasksTabHeader({
   isFetching,
   onRefresh,
   onBulkDelete,
-  onNewTask,
 }: TasksTabHeaderProps) {
   return (
     <div className="flex items-center justify-between">
@@ -52,10 +50,6 @@ export function TasksTabHeader({
           disabled={isFetching}
         >
           <RefreshCw className={cn('w-4 h-4', isFetching && 'animate-spin')} />
-        </Button>
-        <Button size="sm" onClick={onNewTask} data-testid="new-task-button">
-          <Plus className="w-4 h-4 mr-1" />
-          New Task
         </Button>
       </div>
     </div>

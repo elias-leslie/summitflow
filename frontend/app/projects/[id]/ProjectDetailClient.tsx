@@ -218,11 +218,6 @@ export function ProjectDetailClient() {
                   onTaskUpdate={handleTaskUpdate}
                   initialTask={selectedTask}
                 />
-                <CreateTaskDialog
-                  open={createTaskDialogOpen}
-                  onOpenChange={handleCreateDialogChange}
-                  projectId={projectId}
-                />
                 {escalationTask && (
                   <EscalationPanel
                     task={escalationTask}
@@ -238,6 +233,11 @@ export function ProjectDetailClient() {
                 initialFilters={taskInitialFilters}
               />
             )}
+            <CreateTaskDialog
+              open={createTaskDialogOpen}
+              onOpenChange={handleCreateDialogChange}
+              projectId={projectId}
+            />
           </div>
         )}
         {activeTab === 'explorer' && (

@@ -59,7 +59,6 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
     handleTaskClick,
     handleModalOpenChange,
     handleShowCreateChange,
-    handleNewTask,
     handleTaskUpdate,
     setEnrichingTask,
     setReviewingTask,
@@ -101,7 +100,6 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
         isFetching={isFetching}
         onRefresh={refetch}
         onBulkDelete={() => setBulkDeleteConfirm(true)}
-        onNewTask={handleNewTask}
       />
 
       <TasksTabTable
