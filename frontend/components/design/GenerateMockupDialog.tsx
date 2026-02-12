@@ -1,18 +1,13 @@
 'use client'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import {
-  AlertCircle,
-  CheckCircle2,
-  ChevronDown,
-  Loader2,
-  Scan,
-  Sparkles,
-  X,
-} from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { Sparkles, X } from 'lucide-react'
+import { useState } from 'react'
 import { type ExplorerEntry, fetchExplorerEntries } from '@/lib/api/explorer'
 import { type AnalyzePageResponse, analyzePage } from '@/lib/api/mockups'
+import { AnalysisResult } from './mockup-dialog/AnalysisResult'
+import { PageDropdown } from './mockup-dialog/PageDropdown'
+import { SubmitButtons } from './mockup-dialog/SubmitButtons'
 
 interface GenerateMockupDialogProps {
   projectId: string
@@ -32,7 +27,6 @@ export function GenerateMockupDialog({
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
   const [result, setResult] = useState<AnalyzePageResponse | null>(null)
   const queryClient = useQueryClient()
-  const dropdownRef = useRef<HTMLDivElement>(null)
 
   // Fetch pages from explorer
   const { data: pagesData, isLoading: isPagesLoading } = useQuery({
@@ -61,23 +55,6 @@ export function GenerateMockupDialog({
     setPageUrl(buildPageUrl(page))
     setIsDropdownOpen(false)
   }
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(event.target as Node)
-      ) {
-        setIsDropdownOpen(false)
-      }
-    }
-
-    if (isDropdownOpen) {
-      document.addEventListener('mousedown', handleClickOutside)
-      return () => document.removeEventListener('mousedown', handleClickOutside)
-    }
-  }, [isDropdownOpen])
 
   const analyzeMutation = useMutation({
     mutationFn: () => analyzePage(projectId, pageUrl),
@@ -143,107 +120,16 @@ export function GenerateMockupDialog({
                 Select Page
               </label>
 
-              {/* Custom Dropdown */}
-              <div className="relative" ref={dropdownRef}>
-                <button
-                  type="button"
-                  onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                  disabled={analyzeMutation.isPending || isPagesLoading}
-                  className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-left text-white hover:border-outrun-500/50 focus:outline-none focus:ring-2 focus:ring-outrun-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed group"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1 min-w-0">
-                      {isPagesLoading ? (
-                        <span className="text-slate-400">Loading pages...</span>
-                      ) : selectedPage ? (
-                        <div className="space-y-0.5">
-                          <div className="text-sm font-medium text-outrun-400">
-                            {selectedPage.name}
-                          </div>
-                          <div className="text-xs text-slate-400 font-mono truncate">
-                            {selectedPage.path}
-                          </div>
-                        </div>
-                      ) : (
-                        <span className="text-slate-400">
-                          Choose a page to analyze...
-                        </span>
-                      )}
-                    </div>
-                    <ChevronDown
-                      className={`w-5 h-5 text-slate-400 ml-3 transition-transform duration-200 ${
-                        isDropdownOpen ? 'rotate-180 text-outrun-400' : ''
-                      }`}
-                    />
-                  </div>
-                </button>
-
-                {/* Dropdown Menu */}
-                {isDropdownOpen && !isPagesLoading && (
-                  <div className="absolute z-10 w-full mt-2 bg-slate-850 border border-slate-700 rounded-lg shadow-2xl overflow-hidden">
-                    <div className="max-h-[28rem] overflow-y-auto custom-scrollbar">
-                      {pages.length === 0 ? (
-                        <div className="px-4 py-8 text-center text-slate-400">
-                          <p className="text-sm">No pages found</p>
-                          <p className="text-xs mt-1">
-                            Run an explorer scan to discover pages
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="py-1">
-                          {pages.map((page) => (
-                            <button
-                              key={page.id}
-                              type="button"
-                              onClick={() => handlePageSelect(page)}
-                              className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors duration-150 group border-b border-slate-800/50 last:border-b-0"
-                            >
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="flex-1 min-w-0">
-                                  <div className="text-sm font-medium text-white group-hover:text-outrun-400 transition-colors">
-                                    {page.name}
-                                  </div>
-                                  <div className="text-xs text-slate-400 font-mono truncate">
-                                    {page.path}
-                                  </div>
-                                  {page.metadata.route_params &&
-                                    page.metadata.route_params.length > 0 && (
-                                      <div className="flex flex-wrap gap-1 mt-1">
-                                        {(
-                                          page.metadata.route_params as string[]
-                                        ).map((param) => (
-                                          <span
-                                            key={param}
-                                            className="text-2xs px-1.5 py-0.5 bg-slate-900 text-phosphor-400 rounded border border-slate-700"
-                                          >
-                                            {param}
-                                          </span>
-                                        ))}
-                                      </div>
-                                    )}
-                                </div>
-                                <div
-                                  className={`px-2 py-0.5 rounded text-2xs font-medium shrink-0 ${
-                                    page.healthStatus === 'healthy'
-                                      ? 'bg-emerald-950/50 text-emerald-400'
-                                      : page.healthStatus === 'warning'
-                                        ? 'bg-amber-950/50 text-amber-400'
-                                        : page.healthStatus === 'error'
-                                          ? 'bg-rose-950/50 text-rose-400'
-                                          : 'bg-slate-800 text-slate-500'
-                                  }`}
-                                >
-                                  {page.healthStatus}
-                                </div>
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
+              <PageDropdown
+                selectedPage={selectedPage}
+                pages={pages}
+                isPagesLoading={isPagesLoading}
+                isDropdownOpen={isDropdownOpen}
+                isDisabled={analyzeMutation.isPending || isPagesLoading}
+                onToggle={() => setIsDropdownOpen(!isDropdownOpen)}
+                onSelect={handlePageSelect}
+                onClose={() => setIsDropdownOpen(false)}
+              />
 
               <p className="mt-2 text-xs text-slate-500">
                 {selectedPage ? (
@@ -254,95 +140,17 @@ export function GenerateMockupDialog({
               </p>
             </div>
 
-            {/* Submit button */}
-            <div className="flex justify-end gap-3 pt-4">
-              <button
-                type="button"
-                onClick={handleClose}
-                className="btn-secondary"
-                disabled={analyzeMutation.isPending}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={!pageUrl.trim() || analyzeMutation.isPending}
-                className="btn-primary flex items-center gap-2"
-              >
-                {analyzeMutation.isPending ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Analyzing...
-                  </>
-                ) : (
-                  <>
-                    <Scan className="w-4 h-4" />
-                    Analyze Page
-                  </>
-                )}
-              </button>
-            </div>
+            <SubmitButtons
+              isPending={analyzeMutation.isPending}
+              isDisabled={!pageUrl.trim()}
+              onCancel={handleClose}
+            />
           </form>
 
           {/* Result */}
           {result && (
             <div className="mt-6 border-t border-slate-800 pt-6">
-              {result.success ? (
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2 text-emerald-400">
-                    <CheckCircle2 className="w-5 h-5" />
-                    <span className="font-medium">
-                      Analysis & Mockup Complete
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-3 gap-4 text-sm">
-                    <div className="card p-3">
-                      <div className="text-slate-400 mb-1">Mockup ID</div>
-                      <div className="text-white font-mono text-xs">
-                        {result.mockup_id}
-                      </div>
-                    </div>
-                    <div className="card p-3">
-                      <div className="text-slate-400 mb-1">Issues Found</div>
-                      <div className="text-white">{result.issues_found}</div>
-                    </div>
-                    <div className="card p-3">
-                      <div className="text-slate-400 mb-1">Mockup Image</div>
-                      <div className="text-white text-xs">
-                        {result.mockup_image_path ? '✓ Generated' : '—'}
-                      </div>
-                    </div>
-                  </div>
-                  {result.recommendations && (
-                    <div>
-                      <div className="text-sm font-medium text-slate-300 mb-2">
-                        Recommendations Preview
-                      </div>
-                      <div className="card p-3 max-h-48 overflow-auto">
-                        <pre className="text-xs text-slate-300 whitespace-pre-wrap">
-                          {result.recommendations.slice(0, 1000)}
-                          {result.recommendations.length > 1000 && '...'}
-                        </pre>
-                      </div>
-                    </div>
-                  )}
-                  <p className="text-sm text-slate-400">
-                    View the full analysis in the mockup detail modal.
-                  </p>
-                </div>
-              ) : (
-                <div className="flex items-start gap-3 p-4 bg-rose-950/30 border border-rose-500/30 rounded-lg">
-                  <AlertCircle className="w-5 h-5 text-rose-400 flex-shrink-0" />
-                  <div>
-                    <div className="text-rose-400 font-medium">
-                      Analysis Failed
-                    </div>
-                    <div className="text-slate-400 text-sm mt-1">
-                      {result.error}
-                    </div>
-                  </div>
-                </div>
-              )}
+              <AnalysisResult result={result} />
             </div>
           )}
         </div>
