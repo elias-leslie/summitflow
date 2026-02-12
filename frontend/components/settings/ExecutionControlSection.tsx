@@ -1,0 +1,172 @@
+import { clsx } from 'clsx'
+import { CheckCircle2, Clock, Layers, XCircle } from 'lucide-react'
+import type { AutonomousExecutionSettings } from '@/lib/api'
+import { Slider } from '../ui/slider'
+import { Input } from '../ui/input'
+import { Label } from '../ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../ui/select'
+import { formatHour } from './autonomous-utils'
+
+interface ExecutionControlSectionProps {
+  settings: AutonomousExecutionSettings
+  currentInWindow: boolean
+  isPending: boolean
+  onTimeRangeChange: (values: number[]) => void
+  onConcurrencyChange: (value: string) => void
+  onMaxTasksPerDayChange: (value: string) => void
+  onCooldownChange: (value: string) => void
+}
+
+export function ExecutionControlSection({
+  settings,
+  currentInWindow,
+  isPending,
+  onTimeRangeChange,
+  onConcurrencyChange,
+  onMaxTasksPerDayChange,
+  onCooldownChange,
+}: ExecutionControlSectionProps) {
+  return (
+    <div className="p-6 bg-slate-800/50 rounded-lg border border-slate-700 space-y-6">
+      <h3 className="text-base font-medium text-slate-100">Execution Control</h3>
+
+      {/* Time Range */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <Label className="text-slate-200 flex items-center gap-2">
+            <Clock className="w-4 h-4 text-slate-400" />
+            Execution Window
+          </Label>
+          {settings.enabled && (
+            <span
+              className={clsx(
+                'flex items-center gap-1 text-xs px-2 py-1 rounded-full',
+                currentInWindow
+                  ? 'bg-phosphor-500/20 text-phosphor-400'
+                  : 'bg-amber-500/20 text-amber-400',
+              )}
+            >
+              {currentInWindow ? (
+                <>
+                  <CheckCircle2 className="w-3 h-3" />
+                  Active window
+                </>
+              ) : (
+                <>
+                  <XCircle className="w-3 h-3" />
+                  Outside window
+                </>
+              )}
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-slate-400 mb-4">
+          Set the daily time range when autonomous execution is allowed
+        </p>
+
+        <div className="space-y-4">
+          <div className="flex items-center justify-between text-sm text-slate-300">
+            <span>{formatHour(settings.start_hour)}</span>
+            <span className="text-slate-500">to</span>
+            <span>{formatHour(settings.end_hour)}</span>
+          </div>
+
+          <Slider
+            value={[settings.start_hour, settings.end_hour]}
+            min={0}
+            max={24}
+            step={1}
+            onValueChange={onTimeRangeChange}
+            disabled={isPending}
+            className="w-full"
+          />
+
+          <div className="flex justify-between text-xs text-slate-500">
+            <span>12 AM</span>
+            <span>6 AM</span>
+            <span>12 PM</span>
+            <span>6 PM</span>
+            <span>12 AM</span>
+          </div>
+        </div>
+
+        {settings.start_hour === 0 && settings.end_hour === 24 && (
+          <p className="text-xs text-phosphor-400 mt-3">
+            Execution allowed 24/7
+          </p>
+        )}
+      </div>
+
+      {/* Max Concurrent */}
+      <div>
+        <Label className="text-slate-200 mb-2 flex items-center gap-2">
+          <Layers className="w-4 h-4 text-slate-400" />
+          Max Concurrent Tasks
+        </Label>
+        <p className="text-xs text-slate-400 mb-3">
+          Maximum number of tasks to execute in parallel
+        </p>
+
+        <Select
+          value={settings.max_concurrent.toString()}
+          onValueChange={onConcurrencyChange}
+          disabled={isPending}
+        >
+          <SelectTrigger className="w-full max-w-[200px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="1">1 task (conservative)</SelectItem>
+            <SelectItem value="2">2 tasks (balanced)</SelectItem>
+            <SelectItem value="3">3 tasks (aggressive)</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Max Tasks Per Day */}
+      <div>
+        <Label htmlFor="max-tasks-per-day" className="text-slate-200 mb-2 block">
+          Max Tasks Per Day
+        </Label>
+        <p className="text-xs text-slate-400 mb-3">
+          Maximum tasks to complete per day (leave empty for unlimited)
+        </p>
+        <Input
+          id="max-tasks-per-day"
+          type="number"
+          min={1}
+          placeholder="Unlimited"
+          value={settings.max_tasks_per_day ?? ''}
+          onChange={(e) => onMaxTasksPerDayChange(e.target.value)}
+          disabled={isPending}
+          className="max-w-[200px]"
+        />
+      </div>
+
+      {/* Cooldown */}
+      <div>
+        <Label htmlFor="cooldown" className="text-slate-200 mb-2 block">
+          Cooldown Between Tasks (minutes)
+        </Label>
+        <p className="text-xs text-slate-400 mb-3">
+          Minimum gap between task dispatches (0 = no cooldown)
+        </p>
+        <Input
+          id="cooldown"
+          type="number"
+          min={0}
+          value={settings.cooldown_minutes}
+          onChange={(e) => onCooldownChange(e.target.value)}
+          disabled={isPending}
+          className="max-w-[200px]"
+        />
+      </div>
+    </div>
+  )
+}
