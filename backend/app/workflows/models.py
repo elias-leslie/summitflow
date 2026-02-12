@@ -75,7 +75,3 @@ class SystemdMonitorInput(BaseModel):
 class SelfHealingInput(BaseModel):
     max_errors: int = 20
     enabled: bool = True
-
-
-class CodeHealthInput(BaseModel):
-    project_id: str = "summitflow"

@@ -9,14 +9,12 @@ from ...schemas.project import ProjectServicesResponse
 from ...services import explorer
 from ...storage.connection import get_connection
 from ..projects_services import get_project_services
-from . import agents, automation
+from . import agents
 
 # Re-export get_connection for backwards compatibility with tests
 __all__ = [
-    "DEFAULT_AUTOMATION_SETTINGS",
     "AgentConfigResponse",
     "AgentConfigUpdate",
-    "AutomationSettings",
     "ProjectCreate",
     "ProjectHealthResponse",
     "ProjectResponse",
@@ -34,10 +32,8 @@ from .db_helpers import (
     get_project_from_db,
 )
 from .models import (
-    DEFAULT_AUTOMATION_SETTINGS,
     AgentConfigResponse,
     AgentConfigUpdate,
-    AutomationSettings,
     ProjectCreate,
     ProjectHealthResponse,
     ProjectResponse,
@@ -49,9 +45,8 @@ from .models import (
 
 router = APIRouter()
 
-# Include sub-routers for agent and automation configuration
+# Include sub-routers for agent configuration
 router.include_router(agents.router, tags=["projects"])
-router.include_router(automation.router, tags=["projects"])
 
 
 @router.post("", response_model=ProjectResponse)
@@ -250,10 +245,8 @@ async def delete_project(project_id: str) -> dict[str, str]:
 
 
 __all__ = [
-    "DEFAULT_AUTOMATION_SETTINGS",
     "AgentConfigResponse",
     "AgentConfigUpdate",
-    "AutomationSettings",
     "ProjectCreate",
     "ProjectHealthResponse",
     "ProjectResponse",

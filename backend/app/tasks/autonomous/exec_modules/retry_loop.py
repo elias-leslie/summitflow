@@ -6,6 +6,7 @@ from typing import Any
 
 from ....constants import ESCALATION_MODEL, SELF_HEAL_MAX_ATTEMPTS, SUPERVISOR_GUIDED_MAX_ATTEMPTS
 from ....logging_config import get_logger
+from ....storage import agent_configs
 from ....storage.steps import get_steps_for_subtask
 from .agent_routing import EXTENSION_ATTEMPTS
 from .retry_execution import execute_fix_attempt

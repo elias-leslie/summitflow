@@ -44,5 +44,3 @@ export interface CheckResultsResponse {
   total: number
   unfixed_count: number
 }
-
-export type ActivityFilter = 'all' | 'fixed' | 'escalated'

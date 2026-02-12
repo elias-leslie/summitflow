@@ -5,10 +5,8 @@ The actual implementation is in the projects/ package.
 """
 
 from .projects import (
-    DEFAULT_AUTOMATION_SETTINGS,
     AgentConfigResponse,
     AgentConfigUpdate,
-    AutomationSettings,
     ProjectCreate,
     ProjectHealthResponse,
     ProjectResponse,
@@ -20,10 +18,8 @@ from .projects import (
 )
 
 __all__ = [
-    "DEFAULT_AUTOMATION_SETTINGS",
     "AgentConfigResponse",
     "AgentConfigUpdate",
-    "AutomationSettings",
     "ProjectCreate",
     "ProjectHealthResponse",
     "ProjectResponse",

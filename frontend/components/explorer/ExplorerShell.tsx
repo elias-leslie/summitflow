@@ -14,7 +14,6 @@
 
 import { useMemo } from 'react'
 import { cn } from '@/lib/utils'
-import { CodeHealthPanel } from './CodeHealthPanel'
 import { typeIcons, typeTitles } from './explorerConstants'
 import { ExplorerPlaceholder } from './ExplorerPlaceholder'
 import { useExplorerScan } from './hooks/useExplorerScan'
@@ -142,9 +141,6 @@ export function ExplorerShell({
           onScan={handleScan}
           isScanning={isScanning}
         />
-
-        {/* Code Health Panel - only shown for files view */}
-        {activeType === 'files' && <CodeHealthPanel projectId={projectId} />}
 
         {/* Content area */}
         <div className="flex-1 overflow-hidden">

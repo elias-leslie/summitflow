@@ -1,6 +1,6 @@
 """Scheduled (cron) workflows for SummitFlow.
 
-13 cron workflows on Hatchet schedule.
+11 cron workflows on Hatchet schedule.
 All use ConcurrencyExpression with CANCEL_IN_PROGRESS to prevent overlapping runs.
 """
 
@@ -13,7 +13,6 @@ from hatchet_sdk import ConcurrencyExpression, ConcurrencyLimitStrategy, Context
 
 from ..hatchet_app import hatchet
 from .models import (
-    CodeHealthInput,
     EmptyInput,
     MonitorInput,
     ProjectInput,
@@ -106,44 +105,6 @@ async def scan_projects_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
 
     dispatch = _make_dispatch_callback()
     return await asyncio.to_thread(scan_all_projects, dry_run=False, dispatch=dispatch)
-
-
-@hatchet.task(
-    name="summitflow-code-health",
-    input_validator=CodeHealthInput,
-    execution_timeout="900s",
-    retries=2,
-    backoff_factor=2.0,
-    on_crons=["0 2 * * *"],
-    concurrency=ConcurrencyExpression(
-        expression="'summitflow-code-health'",
-        max_runs=1,
-        limit_strategy=ConcurrencyLimitStrategy.CANCEL_IN_PROGRESS,
-    ),
-)
-async def code_health_wf(input: CodeHealthInput, ctx: Context) -> dict[str, Any]:
-    from ..tasks.code_health import daily_code_health_scan
-
-    return await asyncio.to_thread(daily_code_health_scan, input.project_id)
-
-
-@hatchet.task(
-    name="summitflow-deep-scan",
-    input_validator=CodeHealthInput,
-    execution_timeout="1800s",
-    retries=2,
-    backoff_factor=2.0,
-    on_crons=["0 3 * * 0"],
-    concurrency=ConcurrencyExpression(
-        expression="'summitflow-deep-scan'",
-        max_runs=1,
-        limit_strategy=ConcurrencyLimitStrategy.CANCEL_IN_PROGRESS,
-    ),
-)
-async def deep_scan_wf(input: CodeHealthInput, ctx: Context) -> dict[str, Any]:
-    from ..tasks.code_health import weekly_deep_scan
-
-    return await asyncio.to_thread(weekly_deep_scan, input.project_id)
 
 
 @hatchet.task(

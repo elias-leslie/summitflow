@@ -2,6 +2,9 @@
 
 from pydantic import BaseModel, Field
 
+VALID_TASK_TYPES = ["refactor", "bug", "feature", "chore", "docs"]
+VALID_MODEL_TIERS = ["standard", "advanced", "economy"]
+
 
 class AutonomousSettings(BaseModel):
     """Autonomous execution settings for a project."""
@@ -28,6 +31,43 @@ class AutonomousSettings(BaseModel):
         default=1, ge=1, le=3, description="Max concurrent autonomous tasks (1-3)"
     )
 
+    # Frequency limits
+    max_tasks_per_day: int | None = Field(
+        default=None, description="Maximum tasks to complete per day (null = unlimited)"
+    )
+    cooldown_minutes: int = Field(
+        default=0, ge=0, description="Minimum gap between task dispatches (0 = no cooldown)"
+    )
+
+    # Allowed task types
+    allowed_types: list[str] | None = Field(
+        default=None, description="Task types allowed for autonomous execution (null = all types)"
+    )
+
+    # Model tier preference
+    preferred_model_tier: str = Field(
+        default="standard", description="Model tier for autonomous execution"
+    )
+
+    # Self-healing configuration
+    max_self_fix_attempts: int = Field(
+        default=3, ge=0, le=10, description="Max self-fix attempts before supervisor escalation"
+    )
+    max_supervisor_attempts: int = Field(
+        default=3, ge=0, le=10, description="Max supervisor-guided attempts before blocking"
+    )
+    max_extensions: int = Field(
+        default=3, ge=0, le=10, description="Max extension requests when retry budget exhausted"
+    )
+
+    # Auto-merge control
+    auto_merge_enabled: bool = Field(
+        default=True, description="Enable automatic merging of completed tasks"
+    )
+    require_review: bool = Field(
+        default=True, description="Always run AI review before merge (even if auto_merge_enabled)"
+    )
+
 
 class AutonomousSettingsUpdate(BaseModel):
     """Request model for updating autonomous settings."""
@@ -40,3 +80,22 @@ class AutonomousSettingsUpdate(BaseModel):
     start_hour: int | None = Field(default=None, ge=0, le=23)
     end_hour: int | None = Field(default=None, ge=1, le=24)
     max_concurrent: int | None = Field(default=None, ge=1, le=3)
+
+    # Frequency limits
+    max_tasks_per_day: int | None = None
+    cooldown_minutes: int | None = Field(default=None, ge=0)
+
+    # Allowed task types
+    allowed_types: list[str] | None = None
+
+    # Model tier preference
+    preferred_model_tier: str | None = None
+
+    # Self-healing configuration
+    max_self_fix_attempts: int | None = Field(default=None, ge=0, le=10)
+    max_supervisor_attempts: int | None = Field(default=None, ge=0, le=10)
+    max_extensions: int | None = Field(default=None, ge=0, le=10)
+
+    # Auto-merge control
+    auto_merge_enabled: bool | None = None
+    require_review: bool | None = None

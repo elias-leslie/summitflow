@@ -265,3 +265,27 @@ def get_stale_tasks(max_age_days: int = 30, limit: int = 100) -> list[dict[str, 
         rows = cur.fetchall()
 
     return [_row_to_dict(row) for row in rows]
+
+
+def count_completed_tasks_today(project_id: str) -> int:
+    """Count tasks completed today for a project.
+
+    Args:
+        project_id: Project ID
+
+    Returns:
+        Number of tasks with status 'completed' and updated_at today
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT COUNT(*)
+            FROM tasks
+            WHERE project_id = %s
+              AND status = 'completed'
+              AND DATE(updated_at) = CURRENT_DATE
+            """,
+            (project_id,),
+        )
+        row = cur.fetchone()
+        return int(row[0]) if row else 0

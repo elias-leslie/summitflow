@@ -112,24 +112,3 @@ class AgentConfigUpdate(BaseModel):
 
     # Autonomous execution
     autonomous_enabled: bool | None = None
-
-
-class AutomationSettings(BaseModel):
-    """Automation settings for crowdsourced idea processing."""
-
-    schedule_preset: str = "nightly"  # nightly, weekly, monthly
-    cron_expression: str = "0 3 * * *"
-    daily_budget_usd: float = 5.0
-    primary_agent: str = "gemini"
-    secondary_agent: str = "claude"
-    enabled: bool = False
-
-
-DEFAULT_AUTOMATION_SETTINGS = {
-    "schedule_preset": "nightly",
-    "cron_expression": "0 3 * * *",
-    "daily_budget_usd": 5.0,
-    "primary_agent": "gemini",
-    "secondary_agent": "claude",
-    "enabled": False,
-}

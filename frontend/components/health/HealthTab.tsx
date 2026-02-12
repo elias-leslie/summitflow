@@ -1,10 +1,7 @@
 'use client'
 
-import { ActivityFeed } from './ActivityFeed'
 import { FixPipelineCard } from './FixPipelineCard'
-import { HealthSummaryBar } from './HealthSummaryBar'
 import { NeedsAttentionCard } from './NeedsAttentionCard'
-import { QuickLinksCard } from './QuickLinksCard'
 import { useHealthData } from './useHealthData'
 
 interface HealthTabProps {
@@ -13,9 +10,7 @@ interface HealthTabProps {
 
 export function HealthTab({ projectId }: HealthTabProps) {
   const {
-    health,
     healthLoading,
-    recentResults,
     unfixedResults,
     metrics,
   } = useHealthData(projectId)
@@ -30,40 +25,19 @@ export function HealthTab({ projectId }: HealthTabProps) {
 
   return (
     <div className="space-y-6">
-      {/* Health Summary Bar */}
-      <HealthSummaryBar
-        health={health}
-        fixedToday={metrics.fixedToday}
-        inProgress={metrics.inProgress}
-        escalated={metrics.escalated}
-        autoFixRate={metrics.autoFixRate}
-      />
+      {/* Right Sidebar */}
+      <div className="space-y-4">
+        {/* Needs Attention */}
+        <NeedsAttentionCard items={unfixedResults?.items ?? []} />
 
-      {/* Two Column Layout */}
-      <div className="grid grid-cols-3 gap-6">
-        {/* Activity Feed (2 cols) */}
-        <ActivityFeed
-          projectId={projectId}
-          items={recentResults?.items ?? []}
+        {/* Fix Pipeline */}
+        <FixPipelineCard
+          detected={metrics.detected}
+          flashFixed={metrics.flashFixed}
+          sonnetFixed={metrics.sonnetFixed}
+          escalatedCount={metrics.escalatedCount}
+          autoFixRate={metrics.autoFixRate}
         />
-
-        {/* Right Sidebar */}
-        <div className="space-y-4">
-          {/* Needs Attention */}
-          <NeedsAttentionCard items={unfixedResults?.items ?? []} />
-
-          {/* Fix Pipeline */}
-          <FixPipelineCard
-            detected={metrics.detected}
-            flashFixed={metrics.flashFixed}
-            sonnetFixed={metrics.sonnetFixed}
-            escalatedCount={metrics.escalatedCount}
-            autoFixRate={metrics.autoFixRate}
-          />
-
-          {/* Quick Links */}
-          <QuickLinksCard projectId={projectId} />
-        </div>
       </div>
     </div>
   )

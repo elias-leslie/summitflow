@@ -7,25 +7,10 @@ various criteria (staleness, errors, completeness, etc.).
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
 
-from .health_calculators import (
-    calculate_architecture_health,
-    calculate_dependency_health,
-    calculate_endpoint_health,
-    calculate_file_health,
-    calculate_page_health,
-    calculate_table_health,
-    calculate_task_health,
-)
-from .health_config import HEALTH_CONFIG
-
-# Re-export HEALTH_CONFIG for backward compatibility
 __all__ = [
-    "HEALTH_CONFIG",
     "calculate_bloat_level",
     "calculate_health",
-    "calculate_health_for_entry",
     "calculate_staleness",
     "endpoint_health_from_status",
     "task_health_from_stats",
@@ -60,37 +45,6 @@ def calculate_health(
     )
 
     return "warning" if has_warnings else "healthy"
-
-
-def calculate_health_for_entry(entry_type: str, metadata: dict[str, Any]) -> str:
-    """Calculate health status for an entry using type-specific config.
-
-    Uses HEALTH_CONFIG to apply appropriate thresholds for each entry type.
-
-    Args:
-        entry_type: The type of entry (file, table, task, endpoint, page, dependency)
-        metadata: Entry metadata dictionary
-
-    Returns:
-        Health status: 'healthy', 'warning', 'error', or 'unknown'
-    """
-    config = HEALTH_CONFIG.get(entry_type, {})
-
-    calculators = {
-        "file": calculate_file_health,
-        "table": calculate_table_health,
-        "task": calculate_task_health,
-        "endpoint": calculate_endpoint_health,
-        "page": calculate_page_health,
-        "dependency": calculate_dependency_health,
-        "architecture": calculate_architecture_health,
-    }
-
-    calculator = calculators.get(entry_type)
-    if calculator:
-        return calculator(metadata, config)
-
-    return "unknown"
 
 
 def calculate_staleness(last_modified: datetime | None, threshold_days: int = 30) -> str:

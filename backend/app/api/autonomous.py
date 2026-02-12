@@ -42,6 +42,8 @@ async def get_settings(project_id: str) -> AutonomousSettings:
 @router.patch("/{project_id}/autonomous/settings", response_model=AutonomousSettings)
 async def update_settings(project_id: str, update: AutonomousSettingsUpdate) -> AutonomousSettings:
     """Update autonomous execution settings for a project."""
+    from .autonomous_models import VALID_MODEL_TIERS, VALID_TASK_TYPES
+
     _verify_project_exists(project_id)
 
     # Validate auto_merge_tiers
@@ -52,5 +54,29 @@ async def update_settings(project_id: str, update: AutonomousSettingsUpdate) -> 
                     status_code=400,
                     detail=f"Invalid tier {tier}. Tiers must be 1-4.",
                 )
+
+    # Validate allowed_types
+    if update.allowed_types is not None:
+        for task_type in update.allowed_types:
+            if task_type not in VALID_TASK_TYPES:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid task type '{task_type}'. Must be one of: {', '.join(VALID_TASK_TYPES)}",
+                )
+
+    # Validate preferred_model_tier
+    if update.preferred_model_tier is not None:
+        if update.preferred_model_tier not in VALID_MODEL_TIERS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid model tier '{update.preferred_model_tier}'. Must be one of: {', '.join(VALID_MODEL_TIERS)}",
+            )
+
+    # Validate max_tasks_per_day
+    if update.max_tasks_per_day is not None and update.max_tasks_per_day < 1:
+        raise HTTPException(
+            status_code=400,
+            detail="max_tasks_per_day must be at least 1 (or null for unlimited)",
+        )
 
     return _update_settings(project_id, update)
