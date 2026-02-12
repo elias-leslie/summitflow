@@ -17,8 +17,8 @@ import time
 from pathlib import Path
 from typing import Any
 
-from ..logging_config import get_logger
-from ..storage import mockups as mockups_storage
+from ...logging_config import get_logger
+from ...storage import mockups as mockups_storage
 from .analysis import (
     analyze_screenshot_with_vision,
     capture_page_screenshot,

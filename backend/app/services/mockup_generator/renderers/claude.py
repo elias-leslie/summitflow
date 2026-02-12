@@ -6,8 +6,8 @@ import time
 from typing import Any
 
 from ...agent_hub_client import get_agent
-from ...logging_config import get_logger
-from ...storage import mockups as mockups_storage
+from ....logging_config import get_logger
+from ....storage import mockups as mockups_storage
 from ..models import MockupResult
 from ..prompts import build_mockup_prompt
 from ..storage_helpers import generate_mockup_id, get_mockup_directory

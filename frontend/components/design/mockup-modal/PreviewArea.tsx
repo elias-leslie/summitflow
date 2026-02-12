@@ -13,6 +13,15 @@ import type { Mockup } from '@/lib/api/mockups'
 import { getMockupImageUrl, getScreenshotUrl } from '@/lib/api/mockups'
 import { ComparisonSlider } from '../ComparisonSlider'
 
+function isHtmlContent(content: string): boolean {
+  const trimmed = content.trimStart()
+  return (
+    trimmed.startsWith('<!') ||
+    trimmed.startsWith('<html') ||
+    trimmed.startsWith('<HTML')
+  )
+}
+
 interface PreviewAreaProps {
   mockup: Mockup
   projectId: string
@@ -53,9 +62,18 @@ export function PreviewArea({
             unoptimized
           />
         ) : mockup.content ? (
-          <div className="w-full h-full p-4 overflow-auto text-white text-sm font-mono whitespace-pre-wrap">
-            {mockup.content}
-          </div>
+          isHtmlContent(mockup.content) ? (
+            <iframe
+              srcDoc={mockup.content}
+              title={mockup.name}
+              sandbox="allow-same-origin"
+              className="w-full h-full rounded-lg border-0"
+            />
+          ) : (
+            <div className="w-full h-full p-4 overflow-auto text-white text-sm font-mono whitespace-pre-wrap">
+              {mockup.content}
+            </div>
+          )
         ) : (
           <ImageIcon className="w-16 h-16 text-slate-600" />
         )}

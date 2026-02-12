@@ -9,8 +9,8 @@ from typing import Any
 from agent_hub.models import ImageContent, MessageInput, TextContent
 
 from ...agent_hub_client import get_sync_client
-from ...constants import GEMINI_PRO
-from ...logging_config import get_logger
+from ....constants import GEMINI_PRO
+from ....logging_config import get_logger
 from ..prompts import build_design_analysis_prompt
 
 logger = get_logger(__name__)

@@ -6,7 +6,7 @@ import asyncio
 import shlex
 from pathlib import Path
 
-from ...logging_config import get_logger
+from ....logging_config import get_logger
 
 logger = get_logger(__name__)
 

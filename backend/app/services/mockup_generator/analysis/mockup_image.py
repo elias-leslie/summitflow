@@ -6,8 +6,8 @@ import base64
 from pathlib import Path
 
 from ...agent_hub_client import get_sync_client
-from ...constants import GEMINI_IMAGE
-from ...logging_config import get_logger
+from ....constants import GEMINI_IMAGE
+from ....logging_config import get_logger
 from ..prompts import build_mockup_image_prompt
 
 logger = get_logger(__name__)

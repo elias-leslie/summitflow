@@ -19,14 +19,15 @@ import { useExecutionWebSocket } from '@/hooks/useExecutionWebSocket'
 import type { Task, TaskStatus } from '@/lib/api'
 import { deleteTask, executeTask } from '@/lib/api/tasks'
 import { DragOverlayTaskCard } from './TaskCard'
-import { KanbanColumn } from './KanbanColumn'
+import { KanbanRow } from './KanbanRow'
 import { DeleteConfirmDialog } from './DeleteConfirmDialog'
 import {
-  COLUMNS,
+  ROWS,
   columnToStatus,
   statusToColumn,
   type TaskKanbanColumn,
 } from './columnConfig'
+import { useRowCollapse } from './hooks/useRowCollapse'
 
 // ============================================================================
 // Types
@@ -68,6 +69,7 @@ export function TaskKanbanBoard({
   const [activeId, setActiveId] = useState<string | null>(null)
   const [executingTaskId, setExecutingTaskId] = useState<string | null>(null)
   const [deleteConfirmTask, setDeleteConfirmTask] = useState<Task | null>(null)
+  const { isCollapsed, toggleRow } = useRowCollapse(projectId)
 
   // Find the first running task to connect WebSocket
   const runningTask = useMemo(
@@ -180,11 +182,11 @@ export function TaskKanbanBoard({
     // Find current and target columns
     const fromColumn = findColumn(activeTaskId)
 
-    // Determine target column - could be a column ID or another task ID
+    // Determine target column - could be a row ID or another task ID
     let toColumn: TaskKanbanColumn | null = null
 
-    // Check if dropping on a column
-    if (COLUMNS.some((c) => c.id === overId)) {
+    // Check if dropping on a row (droppable zone)
+    if (ROWS.some((r) => r.id === overId)) {
       toColumn = overId as TaskKanbanColumn
     } else {
       // Dropping on another task - find its column
@@ -234,12 +236,15 @@ export function TaskKanbanBoard({
         onDragEnd={handleDragEnd}
         onDragCancel={() => setActiveId(null)}
       >
-        <div className="flex gap-4 overflow-x-auto pb-4 snap-x snap-mandatory md:snap-none scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
-          {COLUMNS.map((column) => (
-            <KanbanColumn
+        <div className="space-y-3">
+          {ROWS.map((column) => (
+            <KanbanRow
               key={column.id}
               column={column}
               tasks={tasksByColumn[column.id]}
+              isCollapsed={isCollapsed(column.id)}
+              isDragging={!!activeId}
+              onToggle={() => toggleRow(column.id)}
               onTaskClick={onTaskClick}
               onExecuteNow={handleExecuteNow}
               onDelete={handleDeleteClick}

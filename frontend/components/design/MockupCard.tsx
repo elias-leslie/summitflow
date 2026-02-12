@@ -84,6 +84,12 @@ export function MockupCard({
   const TypeIcon =
     typeIcons[mockup.mockup_type as keyof typeof typeIcons] ?? Code2
   const isImprovement = hasScreenshot(mockup)
+  const hasHtmlContent =
+    mockup.content != null &&
+    (() => {
+      const t = mockup.content!.trimStart()
+      return t.startsWith('<!') || t.startsWith('<html') || t.startsWith('<HTML')
+    })()
 
   const formattedDate = mockup.created_at
     ? new Date(mockup.created_at).toLocaleDateString(undefined, {
@@ -192,6 +198,22 @@ export function MockupCard({
             className="object-cover"
             unoptimized
           />
+        ) : hasHtmlContent ? (
+          <div className="absolute inset-0 overflow-hidden pointer-events-none">
+            <iframe
+              srcDoc={mockup.content!}
+              title={mockup.name}
+              sandbox=""
+              className="border-0 origin-top-left"
+              style={{
+                width: '1280px',
+                height: '720px',
+                transform: 'scale(0.25)',
+                transformOrigin: 'top left',
+              }}
+              tabIndex={-1}
+            />
+          </div>
         ) : (
           <TypeIcon className="w-12 h-12 text-slate-600" />
         )}
