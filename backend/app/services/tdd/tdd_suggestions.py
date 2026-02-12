@@ -3,7 +3,7 @@
 Main orchestrator that combines:
 - Component suggestions (from component_grouping)
 - Capability mapping (from capability_mapping)
-- Test discovery (from test_discovery)
+- Test discovery (from discovery)
 - Coverage analysis (from coverage_analysis)
 
 This service enables the /seed_tdd skill to bootstrap TDD structure.
@@ -16,7 +16,7 @@ from typing import Any
 from .capability_mapping import suggest_capabilities
 from .component_grouping import suggest_components
 from .coverage_analysis import generate_recommendation, get_coverage_summary
-from .test_discovery import find_existing_tests
+from .discovery import find_existing_tests
 
 
 def get_tdd_suggestions(project_id: str) -> dict[str, Any]:

@@ -76,7 +76,7 @@ async def enrich_task_endpoint(
                 message="Task enriched successfully. Ready for review.",
             )
         except Exception as e:
-            logger.error("Sync enrichment failed: %s", e)  # type: ignore[call-arg]
+            logger.error("sync_enrichment_failed", error=str(e))
             task_store.update_task(task["id"], enrichment_status="failed")
             raise HTTPException(status_code=500, detail=f"Enrichment failed: {e}") from None
     else:
@@ -93,7 +93,7 @@ async def enrich_task_endpoint(
                 )
             )
         except Exception as e:
-            logger.warning("Failed to queue enrichment task: %s", e)  # type: ignore[call-arg]
+            logger.warning("enrichment_queue_failed", error=str(e))
             # Still return - we can retry later
 
         return EnrichmentResponse(
@@ -163,7 +163,7 @@ async def discuss_task_endpoint(
         updated_task=task_to_response(updated_task) if result.updated_task else None,
         history=[
             DiscussionMessage(
-                role=h["role"],  # type: ignore[arg-type]
+                role=h["role"],  # type: ignore[arg-type]  # str from DB narrowed to Literal
                 content=h["content"],
                 timestamp="",
             )

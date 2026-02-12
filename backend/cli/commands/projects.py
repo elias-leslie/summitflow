@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from typing import Annotated, Any
@@ -11,6 +12,8 @@ import typer
 
 from ..config import get_config
 from ..output import output_error, output_json
+
+logger = logging.getLogger(__name__)
 
 app = typer.Typer(help="Project management commands")
 
@@ -24,8 +27,8 @@ def _get_projects(api_base: str) -> list[dict[str, Any]]:
                 result = response.json()
                 if isinstance(result, list):
                     return result
-    except Exception:
-        pass
+    except (httpx.HTTPError, OSError):
+        logger.debug("Failed to fetch projects from API")
     return []
 
 

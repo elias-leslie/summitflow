@@ -15,33 +15,11 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 import type { AgentEventType, AgentHubEvent } from '@/lib/api/tasks'
+import { formatDuration, formatTimestamp } from '@/lib/format'
 
 interface AgentTimelineEventProps {
   event: AgentHubEvent
   searchTerm?: string
-}
-
-function formatTimestamp(timestamp: string): { time: string; isRecent: boolean } {
-  const date = new Date(timestamp)
-  const now = new Date()
-  const diffMs = now.getTime() - date.getTime()
-  const diffMins = Math.floor(diffMs / 60000)
-
-  if (diffMins < 1) {
-    const diffSecs = Math.floor(diffMs / 1000)
-    return { time: `${diffSecs}s ago`, isRecent: true }
-  }
-  if (diffMins < 60) {
-    return { time: `${diffMins}m ago`, isRecent: true }
-  }
-  return {
-    time: date.toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    }),
-    isRecent: false,
-  }
 }
 
 function highlightText(text: string, searchTerm?: string): React.ReactNode {
@@ -59,11 +37,6 @@ function highlightText(text: string, searchTerm?: string): React.ReactNode {
   )
 }
 
-function formatDuration(ms: number | null): string {
-  if (!ms) return ''
-  if (ms < 1000) return `${ms}ms`
-  return `${(ms / 1000).toFixed(1)}s`
-}
 
 function formatTokens(tokens: number | null): string {
   if (!tokens) return ''

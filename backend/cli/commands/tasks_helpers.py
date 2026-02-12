@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 def fetch_triggered_references(task_type: str) -> list[dict[str, Any]]:
@@ -18,8 +21,8 @@ def fetch_triggered_references(task_type: str) -> list[dict[str, Any]]:
             data: dict[str, Any] = response.json()
             refs: list[dict[str, Any]] = data.get("references", [])
             return refs
-    except Exception:
-        pass
+    except (httpx.HTTPError, OSError):
+        logger.debug("Failed to fetch triggered references for %s", task_type)
     return []
 
 
@@ -36,6 +39,6 @@ def fetch_phase_triggered_references(phase: str) -> list[dict[str, Any]]:
             data: dict[str, Any] = response.json()
             refs: list[dict[str, Any]] = data.get("references", [])
             return refs
-    except Exception:
-        pass
+    except (httpx.HTTPError, OSError):
+        logger.debug("Failed to fetch phase references for %s", phase)
     return []

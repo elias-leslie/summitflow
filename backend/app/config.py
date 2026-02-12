@@ -55,13 +55,13 @@ class Settings(BaseSettings):
     )
     cors_origins: list[str] = Field(
         default=[
+            # Local development
             "http://localhost:3001",
-            "http://192.168.8.233:3001",
-            "https://dev.summitflow.dev",
             "http://localhost:4001",
-            "https://test1.summitflow.dev",
-            # Agent Hub cross-origin requests
             "http://localhost:3003",
+            # Production
+            "https://dev.summitflow.dev",
+            "https://test1.summitflow.dev",
             "https://agent.summitflow.dev",
         ],
         description="Allowed CORS origins for cross-origin requests",

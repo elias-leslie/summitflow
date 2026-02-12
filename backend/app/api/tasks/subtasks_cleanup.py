@@ -72,7 +72,7 @@ Return JSON:
         )
 
     except Exception as e:
-        logger.warning("Cleanup prompt failed: %s", e)  # type: ignore[call-arg]
+        logger.warning("cleanup_prompt_failed", error=str(e))
         return CleanupPromptResponse(
             cleaned_prompt=request.raw_request,
             changes_made=[f"Cleanup failed: {e}"],

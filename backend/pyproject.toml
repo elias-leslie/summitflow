@@ -59,7 +59,7 @@ packages = ["app", "cli"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
@@ -72,7 +72,7 @@ unfixable = ["F401"]
 "**/migrations/**" = ["SIM117"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.13"
 strict = true
 warn_unused_ignores = true
 

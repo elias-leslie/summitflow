@@ -1,6 +1,7 @@
 """SummitFlow FastAPI application."""
 
 import time
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import cast
@@ -22,27 +23,34 @@ from .api import (
     console_errors,
     context,
     design_standards,
+    events,
     explorer,
     git,
+    ideas,
     mockups,
     notifications,
     projects,
     quality_gate,
     refactor_sessions,
     schemas,
+    system,
     tasks,
     tdd,
+    ws_execution,
 )
 from .config import REDIS_URL, settings
+from .logging_config import get_logger
 from .schemas.health import ComponentHealth, DetailedHealthResponse
 from .storage.connection import init_schema
+
+logger = get_logger(__name__)
 
 # Track application start time for uptime calculation
 _app_start_time = time.time()
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
+async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Initialize database, connection pool, and services on startup."""
     import os
 
@@ -97,8 +105,10 @@ app.include_router(mockups.router, prefix="/api", tags=["mockups"])
 app.include_router(context.router, prefix="/api", tags=["context"])
 app.include_router(checkpoints.router, tags=["checkpoints"])
 app.include_router(agent_hub.router, prefix="/api", tags=["agent-hub"])
-
-from .api import events, ideas, system, ws_execution  # noqa: E402
+app.include_router(ideas.router, prefix="/api", tags=["ideas"])
+app.include_router(events.router, prefix="/api", tags=["events"])
+app.include_router(system.router, tags=["system"])
+app.include_router(ws_execution.router, tags=["execution"])
 
 
 # Global exception handlers for consistent error responses
@@ -132,10 +142,7 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
 @app.exception_handler(Exception)
 async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """Handle unexpected exceptions with consistent JSON format."""
-    # Log the exception for debugging (in production, use proper logging)
-    import traceback
-
-    traceback.print_exc()
+    logger.error("unhandled_exception", path=request.url.path, error=str(exc), exc_info=True)
 
     return JSONResponse(
         status_code=500,
@@ -144,12 +151,6 @@ async def generic_exception_handler(request: Request, exc: Exception) -> JSONRes
             "detail": "An unexpected error occurred. Please try again later.",
         },
     )
-
-
-app.include_router(ideas.router, prefix="/api", tags=["ideas"])
-app.include_router(events.router, prefix="/api", tags=["events"])
-app.include_router(system.router, tags=["system"])
-app.include_router(ws_execution.router, tags=["execution"])
 
 
 @app.get("/health")

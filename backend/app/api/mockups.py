@@ -14,7 +14,23 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from ..services.mockup_generator.storage_helpers import MOCKUP_BASE_DIR
 from ..storage import mockups as mockups_storage
+
+
+def _validate_mockup_path(file_path: str) -> Path:
+    """Validate that a mockup file path is within the allowed base directory.
+
+    Resolves symlinks and '..' components to prevent path traversal.
+
+    Raises:
+        HTTPException: If path is outside MOCKUP_BASE_DIR.
+    """
+    resolved = Path(file_path).resolve()
+    base_resolved = MOCKUP_BASE_DIR.resolve()
+    if not resolved.is_relative_to(base_resolved):
+        raise HTTPException(status_code=403, detail="Access denied: path outside mockup storage")
+    return resolved
 
 router = APIRouter(tags=["mockups"])
 
@@ -148,6 +164,10 @@ async def create_mockup(
 
     Creates a mockup record with provenance metadata tracking.
     """
+    # Validate file_path is within allowed directory if provided
+    if request.file_path:
+        _validate_mockup_path(request.file_path)
+
     try:
         mockup = mockups_storage.create_mockup(
             project_id=project_id,
@@ -249,7 +269,7 @@ async def get_mockup_image(
     if not file_path:
         raise HTTPException(status_code=404, detail="Mockup has no image file")
 
-    image_path = Path(file_path)
+    image_path = _validate_mockup_path(file_path)
     if not image_path.exists():
         raise HTTPException(status_code=404, detail="Image file not found")
 
@@ -294,9 +314,9 @@ async def get_mockup_screenshot(
     if not file_path:
         raise HTTPException(status_code=404, detail="Mockup has no file path")
 
-    # Screenshot is in same directory as mockup, named 'screenshot.png'
-    mockup_path = Path(file_path)
-    screenshot_path = mockup_path.parent / "screenshot.png"
+    # Validate the base path, then derive screenshot from its directory
+    validated_path = _validate_mockup_path(file_path)
+    screenshot_path = validated_path.parent / "screenshot.png"
 
     if not screenshot_path.exists():
         raise HTTPException(status_code=404, detail="Screenshot not found")
@@ -333,6 +353,10 @@ async def update_mockup(
     request: MockupUpdate,
 ) -> MockupResponse:
     """Update a mockup's non-provenance fields."""
+    # Validate file_path is within allowed directory if provided
+    if request.file_path:
+        _validate_mockup_path(request.file_path)
+
     mockup = mockups_storage.update_mockup(
         project_id=project_id,
         mockup_id=mockup_id,

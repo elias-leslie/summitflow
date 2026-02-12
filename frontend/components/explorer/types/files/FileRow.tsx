@@ -6,6 +6,7 @@
 
 import { File, Folder } from 'lucide-react'
 import type { ExplorerEntry } from '@/lib/api/explorer'
+import { formatTimeAgo } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { ColumnValue } from '../../DataList'
 import { HealthBadge, type HealthStatus } from '../../HealthBadge'
@@ -23,18 +24,6 @@ const formatBytes = (bytes: number | undefined | null) => {
   return `${(b / (1024 * 1024)).toFixed(1)} MB`
 }
 
-const formatTimeAgo = (dateStr: string | null) => {
-  if (!dateStr) return '-'
-  const date = new Date(dateStr)
-  const now = new Date()
-  const diffMs = now.getTime() - date.getTime()
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-  if (diffDays === 0) return 'Today'
-  if (diffDays === 1) return 'Yesterday'
-  if (diffDays < 7) return `${diffDays}d ago`
-  if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`
-  return `${Math.floor(diffDays / 30)}mo ago`
-}
 
 // Comment density indicator - shows when >15% (excessive commenting)
 function CommentDensityBadge({

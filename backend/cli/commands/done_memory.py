@@ -5,6 +5,10 @@ Handles task outcome reporting to Agent Hub.
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 def _build_outcome_payload(
     task_id: str,
@@ -46,4 +50,4 @@ def report_task_outcome(
             tool_name="st done",
         )
     except Exception:
-        pass
+        logger.debug("Failed to report task outcome for %s", task_id)

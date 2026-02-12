@@ -14,7 +14,7 @@ from .tdd.tdd_suggestions import (
     get_component_suggestions_by_source,
     get_tdd_suggestions,
 )
-from .tdd.test_discovery import find_existing_tests
+from .tdd.discovery import find_existing_tests
 
 __all__ = [
     "find_existing_tests",

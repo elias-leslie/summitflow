@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 import type { EventVisibility } from '@/lib/api/events'
+import { formatTimestamp } from '@/lib/format'
 
 export interface TimelineMessage {
   type:
@@ -29,32 +30,6 @@ export interface TimelineMessage {
   visibility?: EventVisibility
 }
 
-/** Format timestamp - relative for recent, absolute for older */
-function formatTimestamp(timestamp: string): { time: string; isRecent: boolean } {
-  const date = new Date(timestamp)
-  const now = new Date()
-  const diffMs = now.getTime() - date.getTime()
-  const diffMins = Math.floor(diffMs / 60000)
-
-  // Less than 1 minute - show seconds ago
-  if (diffMins < 1) {
-    const diffSecs = Math.floor(diffMs / 1000)
-    return { time: `${diffSecs}s ago`, isRecent: true }
-  }
-  // Less than 60 minutes - show minutes ago
-  if (diffMins < 60) {
-    return { time: `${diffMins}m ago`, isRecent: true }
-  }
-  // Older - show HH:MM:SS
-  return {
-    time: date.toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    }),
-    isRecent: false,
-  }
-}
 
 export function TimelineEvent({ message }: { message: TimelineMessage }) {
   const [expanded, setExpanded] = useState(false)

@@ -9,6 +9,7 @@
 
 import { Clock, Loader2, RefreshCw } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { formatTimeAgo } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { StatusIndicator } from './StatusIndicator'
 import type { ExplorerStats, ExplorerType, HealthStatus } from './types'
@@ -33,20 +34,6 @@ const typeLabels: Record<ExplorerType, { singular: string; plural: string }> = {
   architecture: { singular: 'module', plural: 'modules' },
 }
 
-function formatTimeAgo(dateStr: string | null): string {
-  if (!dateStr) return 'never'
-  const date = new Date(dateStr)
-  const now = new Date()
-  const diffMs = now.getTime() - date.getTime()
-  const diffMins = Math.floor(diffMs / 60000)
-  const diffHours = Math.floor(diffMs / 3600000)
-  const diffDays = Math.floor(diffMs / 86400000)
-
-  if (diffMins < 1) return 'just now'
-  if (diffMins < 60) return `${diffMins}m ago`
-  if (diffHours < 24) return `${diffHours}h ago`
-  return `${diffDays}d ago`
-}
 
 export function SummaryBar({
   type,
@@ -62,7 +49,7 @@ export function SummaryBar({
   // Client-only time ago to avoid hydration mismatch
   const [timeAgo, setTimeAgo] = useState<string>('...')
   useEffect(() => {
-    setTimeAgo(formatTimeAgo(stats.lastScan))
+    setTimeAgo(formatTimeAgo(stats.lastScan, 'never'))
   }, [stats.lastScan])
 
   const metrics: {

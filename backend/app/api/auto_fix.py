@@ -29,7 +29,7 @@ async def trigger_auto_fix(
     validate_project_exists(project_id)
 
     from ..services.quality_gate import fix_unfixed_errors
-    from ..services.quality_gate.test_fix_agent import fix_failing_tests
+    from ..services.quality_gate.fix_tests import fix_failing_tests
 
     with get_connection() as conn:
         results = {"fixed": 0, "failed": 0, "escalated": 0}

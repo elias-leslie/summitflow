@@ -109,18 +109,13 @@ def create_mockup(
 
     mockup_id = generate_mockup_id()
 
-    # Determine version based on parent
+    # Determine version and iteration count from parent (single query)
     version = 1
-    if parent_mockup_id:
-        parent = get_mockup_by_db_id(parent_mockup_id)
-        if parent:
-            version = parent["version"] + 1
-
-    # Determine iteration count
     iteration_count = 1
     if parent_mockup_id:
         parent = get_mockup_by_db_id(parent_mockup_id)
         if parent:
+            version = parent["version"] + 1
             iteration_count = parent["iteration_count"] + 1
 
     with get_connection() as conn, conn.cursor() as cur:

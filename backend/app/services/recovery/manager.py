@@ -5,15 +5,15 @@ Manages build state, tracks attempts, and determines recovery strategies.
 
 from __future__ import annotations
 
-import logging
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
+from ...logging_config import get_logger
 from ...storage import agent_sessions as sessions_storage
 from .circular import is_circular_fix
 from .classifier import FailureType, RecoveryStrategy, get_recovery_strategy
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class RecoveryManager:
@@ -57,8 +57,6 @@ class RecoveryManager:
     @property
     def good_commits(self) -> list[str]:
         """Get list of known good commit SHAs."""
-        from typing import cast
-
         return cast(list[str], self._state.get("good_commits", []))
 
     @property
@@ -98,8 +96,10 @@ class RecoveryManager:
         self._save_state()
 
         logger.info(
-            f"Recorded attempt {attempt['attempt_number']} for {capability_id}: "
-            f"{failure_type.value}"
+            "recorded_attempt",
+            attempt_number=attempt["attempt_number"],
+            capability_id=capability_id,
+            failure_type=failure_type.value,
         )
 
         return attempt
@@ -127,7 +127,7 @@ class RecoveryManager:
         is_circular = is_circular_fix(error_text, previous_errors)
 
         if is_circular:
-            logger.warning(f"Circular fix detected for session {self.session_id}")
+            logger.warning("circular_fix_detected", session_id=self.session_id)
             self._state["current_strategy"] = RecoveryStrategy.ESCALATE.value
             self._save_state()
             return RecoveryStrategy.ESCALATE
@@ -153,7 +153,7 @@ class RecoveryManager:
         if commit_sha and commit_sha not in self.good_commits:
             self._state.setdefault("good_commits", []).append(commit_sha)
             self._save_state()
-            logger.info(f"Marked {commit_sha} as good commit")
+            logger.info("marked_good_commit", commit_sha=commit_sha)
 
     def clear_attempt_history(self) -> None:
         """Clear attempt history (after successful build)."""
@@ -175,14 +175,10 @@ class RecoveryManager:
         history = self._state.get("attempt_history", [])
 
         if capability_id:
-            from typing import cast
-
             return cast(
                 list[dict[str, Any]],
                 [a for a in history if a.get("capability_id") == capability_id],
             )
-
-        from typing import cast
 
         return cast(list[dict[str, Any]], history)
 
@@ -275,7 +271,7 @@ async def rollback_to_commit(
 
         if stdout.strip():
             # Dirty state - stash changes first
-            logger.warning(f"Stashing changes before rollback for {project_id}")
+            logger.warning("stashing_before_rollback", project_id=project_id)
             stash_proc = await asyncio.create_subprocess_exec(
                 "git",
                 "-C",
@@ -290,7 +286,7 @@ async def rollback_to_commit(
             await stash_proc.communicate()
 
     except Exception as e:
-        logger.warning(f"Could not check/stash dirty state: {e}")
+        logger.warning("stash_check_failed", error=str(e))
 
     # Perform rollback
     try:
@@ -313,7 +309,7 @@ async def rollback_to_commit(
                 "error": stderr.decode() if stderr else "Unknown error",
             }
 
-        logger.info(f"Rolled back {project_id} to {commit_sha[:8]}")
+        logger.info("rollback_success", project_id=project_id, commit_sha=commit_sha[:8])
 
         return {
             "success": True,
