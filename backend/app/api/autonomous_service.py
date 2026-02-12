@@ -31,8 +31,8 @@ def get_autonomous_settings(project_id: str) -> AutonomousSettings:
 
     # Frequency limits
     max_tasks_per_day_raw = config.get("autonomous_max_tasks_per_day")
-    max_tasks_per_day = int(max_tasks_per_day_raw) if max_tasks_per_day_raw else None
-    cooldown_minutes = int(config.get("autonomous_cooldown_minutes", 0))
+    max_tasks_per_day = int(str(max_tasks_per_day_raw)) if max_tasks_per_day_raw else None
+    cooldown_minutes = int(str(config.get("autonomous_cooldown_minutes", 0)))
 
     # Allowed task types
     allowed_types_raw = config.get("autonomous_allowed_types")
@@ -42,9 +42,9 @@ def get_autonomous_settings(project_id: str) -> AutonomousSettings:
     preferred_model_tier = str(config.get("autonomous_preferred_model_tier", "standard"))
 
     # Self-healing configuration
-    max_self_fix_attempts = int(config.get("autonomous_max_self_fix_attempts", 3))
-    max_supervisor_attempts = int(config.get("autonomous_max_supervisor_attempts", 3))
-    max_extensions = int(config.get("autonomous_max_extensions", 3))
+    max_self_fix_attempts = int(str(config.get("autonomous_max_self_fix_attempts", 3)))
+    max_supervisor_attempts = int(str(config.get("autonomous_max_supervisor_attempts", 3)))
+    max_extensions = int(str(config.get("autonomous_max_extensions", 3)))
 
     # Auto-merge control
     auto_merge_enabled = bool(config.get("autonomous_auto_merge_enabled", True))

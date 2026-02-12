@@ -88,13 +88,6 @@ async def get_children(
     return explorer.get_children(project_id, type, path)
 
 
-@router.get("/{project_id}/explorer/scan/status")
-async def get_scan_status(project_id: str) -> dict[str, Any]:
-    """Get current scan status for polling."""
-    helpers.validate_project_exists(project_id)
-    return explorer.get_scan_status(project_id)
-
-
 @router.post("/{project_id}/explorer/scan")
 async def trigger_scan(
     project_id: str,

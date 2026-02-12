@@ -65,12 +65,11 @@ async def update_settings(project_id: str, update: AutonomousSettingsUpdate) -> 
                 )
 
     # Validate preferred_model_tier
-    if update.preferred_model_tier is not None:
-        if update.preferred_model_tier not in VALID_MODEL_TIERS:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid model tier '{update.preferred_model_tier}'. Must be one of: {', '.join(VALID_MODEL_TIERS)}",
-            )
+    if update.preferred_model_tier is not None and update.preferred_model_tier not in VALID_MODEL_TIERS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid model tier '{update.preferred_model_tier}'. Must be one of: {', '.join(VALID_MODEL_TIERS)}",
+        )
 
     # Validate max_tasks_per_day
     if update.max_tasks_per_day is not None and update.max_tasks_per_day < 1:

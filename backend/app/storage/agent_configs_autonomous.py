@@ -122,7 +122,7 @@ def get_max_tasks_per_day(project_id: str) -> int | None:
     max_tasks = config.get("autonomous_max_tasks_per_day")
     if max_tasks is None:
         return None
-    return int(max_tasks)
+    return int(str(max_tasks))
 
 
 def get_cooldown_minutes(project_id: str) -> int:
@@ -136,7 +136,7 @@ def get_cooldown_minutes(project_id: str) -> int:
     """
     config = get_agent_config(project_id)
     value = config.get("autonomous_cooldown_minutes", 0)
-    return int(value) if value is not None else 0
+    return int(str(value)) if value is not None else 0
 
 
 def get_allowed_task_types(project_id: str) -> list[str] | None:
@@ -182,7 +182,7 @@ def get_max_self_fix_attempts(project_id: str) -> int:
     """
     config = get_agent_config(project_id)
     value = config.get("autonomous_max_self_fix_attempts", 3)
-    return int(value) if value is not None else 3
+    return int(str(value)) if value is not None else 3
 
 
 def get_max_supervisor_attempts(project_id: str) -> int:
@@ -196,7 +196,7 @@ def get_max_supervisor_attempts(project_id: str) -> int:
     """
     config = get_agent_config(project_id)
     value = config.get("autonomous_max_supervisor_attempts", 3)
-    return int(value) if value is not None else 3
+    return int(str(value)) if value is not None else 3
 
 
 def get_max_extensions(project_id: str) -> int:
@@ -210,7 +210,7 @@ def get_max_extensions(project_id: str) -> int:
     """
     config = get_agent_config(project_id)
     value = config.get("autonomous_max_extensions", 3)
-    return int(value) if value is not None else 3
+    return int(str(value)) if value is not None else 3
 
 
 def get_auto_merge_enabled(project_id: str) -> bool:

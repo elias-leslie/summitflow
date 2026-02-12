@@ -10,28 +10,6 @@ from app.storage.connection import get_connection
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_AUTOMATION_SETTINGS = {
-    "schedule_preset": "nightly",
-    "cron_expression": "0 3 * * *",
-    "daily_budget_usd": 5.0,
-    "primary_agent": "gemini",
-    "secondary_agent": "claude",
-    "enabled": False,
-}
-
-
-def get_project_automation_settings(project_id: str) -> dict[str, Any]:
-    """Get automation settings for a project."""
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            "SELECT automation_settings FROM projects WHERE id = %s",
-            (project_id,),
-        )
-        row = cur.fetchone()
-        if not row or not row[0]:
-            return dict(DEFAULT_AUTOMATION_SETTINGS)
-        return dict(row[0])
-
 
 def get_approved_ideas_by_priority(project_id: str, limit: int = 10) -> list[dict[str, Any]]:
     """Get approved ideas sorted by priority score (ROI)."""
@@ -115,29 +93,22 @@ def update_idea_status(idea_id: str, status: str) -> None:
 def process_crowdsourced_ideas(
     project_id: str,
     dispatch: Callable[[str, str, str], None] | None = None,
+    daily_budget_usd: float = 5.0,
 ) -> dict[str, Any]:
     """Process approved crowdsourced ideas for a project.
 
     Executes ideas sequentially up to the daily budget limit.
-    Uses the project's automation settings for agent selection.
 
     Args:
         project_id: Project to process ideas for
+        daily_budget_usd: Daily budget limit in USD
 
     Returns:
         Dict with execution results
     """
     from app.storage import tasks as task_store
 
-    # Load automation settings
-    settings = get_project_automation_settings(project_id)
-
-    # Check if enabled
-    if not settings.get("enabled", False):
-        logger.debug(f"Crowdsourced idea automation disabled for {project_id}")
-        return {"status": "disabled", "project_id": project_id}
-
-    budget_limit = settings.get("daily_budget_usd", 5.0)
+    budget_limit = daily_budget_usd
     cumulative_cost = 0.0
     processed = []
     skipped = []

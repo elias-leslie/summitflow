@@ -17,16 +17,8 @@ DEFAULT_DAILY_BUDGET_USD = 5.0
 
 
 def get_project_daily_budget(project_id: str) -> float:
-    """Get the daily budget for a project from automation settings."""
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            "SELECT automation_settings FROM projects WHERE id = %s",
-            (project_id,),
-        )
-        row = cur.fetchone()
-        if row and row[0]:
-            return float(row[0].get("daily_budget_usd", DEFAULT_DAILY_BUDGET_USD))
-        return DEFAULT_DAILY_BUDGET_USD
+    """Get the daily budget for a project (uses default)."""
+    return DEFAULT_DAILY_BUDGET_USD
 
 
 def check_rate_limit(project_id: str, user_identifier: str) -> None:

@@ -1,4 +1,4 @@
-"""Agent-related tables: agent_sessions, project_agent_config."""
+"""Agent-related tables: agent_sessions."""
 
 import psycopg
 
@@ -6,7 +6,6 @@ import psycopg
 def create_agent_tables(cur: psycopg.Cursor) -> None:
     """Create agent-related tables and their indexes."""
     _create_agent_sessions_table(cur)
-    _create_project_agent_config_table(cur)
 
 
 def _create_agent_sessions_table(cur: psycopg.Cursor) -> None:
@@ -46,21 +45,4 @@ def _create_agent_sessions_table(cur: psycopg.Cursor) -> None:
     cur.execute("CREATE INDEX IF NOT EXISTS idx_agent_sessions_status ON agent_sessions(status)")
     cur.execute(
         "CREATE INDEX IF NOT EXISTS idx_agent_sessions_created ON agent_sessions(created_at DESC)"
-    )
-
-
-def _create_project_agent_config_table(cur: psycopg.Cursor) -> None:
-    """Create project_agent_config table."""
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS project_agent_config (
-            project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
-            primary_agent VARCHAR(50) DEFAULT 'claude',
-            secondary_agent VARCHAR(50) DEFAULT 'gemini',
-            primary_model VARCHAR(100) DEFAULT 'claude-sonnet-4-5',
-            secondary_model VARCHAR(100) DEFAULT 'gemini-3-flash-preview',
-            created_at TIMESTAMPTZ DEFAULT NOW(),
-            updated_at TIMESTAMPTZ DEFAULT NOW()
-        )
-        """
     )

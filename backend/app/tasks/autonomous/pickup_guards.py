@@ -192,8 +192,7 @@ def validate_autonomous_dispatch(
     if error := check_cooldown_period(project_id):
         return error
 
-    if task_type is not None:
-        if error := check_allowed_task_type(project_id, task_type):
-            return error
+    if task_type is not None and (error := check_allowed_task_type(project_id, task_type)):
+        return error
 
     return None

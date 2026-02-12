@@ -11,7 +11,6 @@ from fastapi import HTTPException
 
 from ..services import explorer
 from ..storage import explorer as explorer_storage
-from ..storage import scan_history
 from ..storage.connection import get_connection
 
 
@@ -166,45 +165,9 @@ def get_total_complexity(project_id: str) -> float:
 async def run_scan_and_record(
     project_id: str,
     entry_type: str | None,
-    scan_id: int,
 ) -> None:
-    """Run scan and record completion in scan_history."""
-    try:
-        # Run the actual scan with tracking
-        explorer.run_scan_with_tracking(project_id, entry_type)
-
-        # Get scan results from scan_states
-        scan_status = explorer.get_scan_status(project_id)
-        results = scan_status.get("results", [])
-
-        # Calculate totals
-        entries_found = sum(r.get("entries_found", 0) for r in results)
-        entries_saved = sum(r.get("entries_saved", 0) for r in results)
-
-        # Calculate total complexity from file entries (snapshot at scan time)
-        total_complexity = get_total_complexity(project_id)
-
-        # Build metrics from results
-        metrics = {
-            "types_scanned": len(results),
-            "by_type": {r["entry_type"]: r for r in results},
-            "complexity": total_complexity,  # Snapshot for sparkline trend
-        }
-
-        scan_history.record_scan_complete(
-            scan_id=scan_id,
-            status="completed" if scan_status.get("status") == "completed" else "failed",
-            error_message=scan_status.get("error"),
-            metrics=metrics,
-            entries_found=entries_found,
-            entries_saved=entries_saved,
-        )
-    except Exception as e:
-        scan_history.record_scan_complete(
-            scan_id=scan_id,
-            status="failed",
-            error_message=str(e),
-        )
+    """Run scan in background."""
+    explorer.run_scan_with_tracking(project_id, entry_type)
 
 
 def add_stale_metadata_warning(result: dict[str, Any], project_id: str) -> None:

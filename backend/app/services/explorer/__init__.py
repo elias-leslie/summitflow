@@ -4,10 +4,9 @@ Public interface for Explorer functionality:
 - scan(): Trigger scan for a project and entry type
 - get_entries(): Get entries with filters
 - get_stats(): Get aggregated statistics
-- get_scan_status(): Get current scan status for polling
 
 Usage:
-    from app.services.explorer import scan, get_entries, get_stats, get_scan_status
+    from app.services.explorer import scan, get_entries, get_stats
 
     # Scan files for a project
     result = scan("portfolio-ai", "file")
@@ -17,15 +16,11 @@ Usage:
 
     # Get statistics
     stats = get_stats("portfolio-ai")
-
-    # Check scan status
-    status = get_scan_status("portfolio-ai")
 """
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Any
 
 from ...storage import explorer as storage
 from .base import BaseScanner, get_project_config, get_project_root
