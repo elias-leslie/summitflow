@@ -1,5 +1,4 @@
 export { ActivityFeed } from './ActivityFeed'
 export { BlockedTasksAlert } from './BlockedTasksAlert'
-export { PipelineFlow } from './PipelineFlow'
 export { ProjectCard } from './ProjectCard'
 export { SystemHealthWidget } from './SystemHealthWidget'

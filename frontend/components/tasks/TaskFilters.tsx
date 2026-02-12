@@ -7,14 +7,11 @@ import { cn } from '@/lib/utils'
 export type PhaseFilter =
   | 'all'
   | 'active'
-  | 'ideation'
+  | 'ideas'
   | 'planning'
   | 'queue'
-  | 'executing'
-  | 'reviewing'
-  | 'integrating'
   | 'blocked'
-  | 'completed'
+  | 'done'
   | 'failed'
 
 export interface TaskFilterValues {
@@ -31,16 +28,13 @@ interface TaskFiltersProps {
 }
 
 const PHASE_OPTIONS = [
-  { value: 'all', label: 'All Phases' },
+  { value: 'all', label: 'All Statuses' },
   { value: 'active', label: 'Active' },
-  { value: 'ideation', label: 'Ideation' },
+  { value: 'ideas', label: 'Ideas' },
   { value: 'planning', label: 'Planning' },
-  { value: 'queue', label: 'Queued' },
-  { value: 'executing', label: 'Executing' },
-  { value: 'reviewing', label: 'QA Review' },
-  { value: 'integrating', label: 'Integrating' },
+  { value: 'queue', label: 'Queue' },
   { value: 'blocked', label: 'Blocked' },
-  { value: 'completed', label: 'Complete' },
+  { value: 'done', label: 'Done' },
   { value: 'failed', label: 'Failed' },
 ]
 

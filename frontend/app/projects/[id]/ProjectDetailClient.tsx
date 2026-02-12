@@ -5,10 +5,7 @@ import { AlertCircle } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import {
-  BlockedTasksAlert,
-  PipelineFlow,
-} from '@/components/dashboard'
+import { BlockedTasksAlert } from '@/components/dashboard'
 import { EscalationPanel } from '@/components/execution/EscalationPanel'
 import { ExplorerTab } from '@/components/explorer/ExplorerTab'
 import type { ExplorerType } from '@/components/explorer/types'
@@ -18,6 +15,8 @@ import { CreateTaskDialog } from '@/components/tasks/CreateTaskDialog'
 import type { TaskFilterValues } from '@/components/tasks/TaskFilters'
 import { TaskModal } from '@/components/tasks/TaskModal'
 import { TasksTab } from '@/components/tasks/TasksTab'
+import { TasksViewToolbar } from '@/components/tasks/TasksViewToolbar'
+import { useViewMode } from '@/components/tasks/hooks/useViewMode'
 import {
   fetchProject,
   fetchTasks,
@@ -75,6 +74,9 @@ export function ProjectDetailClient() {
   // Auto-open task from URL query param
   const urlTaskId = searchParams.get('task')
 
+  // View mode (board | table) for unified tasks tab
+  const { viewMode, setViewMode } = useViewMode(projectId)
+
   // Kanban state
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(urlTaskId)
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
@@ -105,7 +107,7 @@ export function ProjectDetailClient() {
     queryKey: ['tasks-kanban', projectId],
     queryFn: () => fetchTasks(projectId, { include: 'feature', limit: 500 }),
     staleTime: 30000,
-    enabled: activeTab === 'kanban',
+    enabled: activeTab === 'tasks' && viewMode === 'board',
   })
   const kanbanTasks = kanbanTasksData?.tasks ?? []
 
@@ -188,53 +190,54 @@ export function ProjectDetailClient() {
     <div className="h-full flex flex-col">
       {/* Tab Content - Full height, no header redundancy */}
       <section className="flex-1 overflow-hidden">
-        {activeTab === 'kanban' && (
+        {activeTab === 'tasks' && (
           <div className="h-full overflow-auto p-4 space-y-4">
-            <div className="flex flex-col gap-3">
-              <PipelineFlow projectId={projectId} onStageClick={(phase) => {
-                router.push(`/projects/${projectId}?tab=tasks&status=${phase}`)
-              }} />
-              <BlockedTasksAlert projectId={projectId} onTaskClick={(taskId) => {
-                setSelectedTaskId(taskId)
-                setModalOpen(true)
-              }} />
-            </div>
-            <TaskKanbanBoard
-              tasks={kanbanTasks}
-              projectId={projectId}
-              onStatusChange={handleTaskStatusChange}
-              onTaskClick={handleTaskClick}
+            <TasksViewToolbar
+              viewMode={viewMode}
+              onViewModeChange={setViewMode}
               onNewTask={handleNewTask}
             />
-            <TaskModal
-              taskId={selectedTaskId}
-              projectId={projectId}
-              open={modalOpen}
-              onOpenChange={setModalOpen}
-              onTaskUpdate={handleTaskUpdate}
-              initialTask={selectedTask}
-            />
-            <CreateTaskDialog
-              open={createTaskDialogOpen}
-              onOpenChange={handleCreateDialogChange}
-              projectId={projectId}
-            />
-            {escalationTask && (
-              <EscalationPanel
-                task={escalationTask}
-                isOpen={escalationOpen}
-                onClose={() => setEscalationOpen(false)}
-                onApproveAndResume={handleApproveAndResume}
+            {viewMode === 'board' ? (
+              <>
+                <BlockedTasksAlert projectId={projectId} onTaskClick={(taskId) => {
+                  setSelectedTaskId(taskId)
+                  setModalOpen(true)
+                }} />
+                <TaskKanbanBoard
+                  tasks={kanbanTasks}
+                  projectId={projectId}
+                  onStatusChange={handleTaskStatusChange}
+                  onTaskClick={handleTaskClick}
+                  onNewTask={handleNewTask}
+                />
+                <TaskModal
+                  taskId={selectedTaskId}
+                  projectId={projectId}
+                  open={modalOpen}
+                  onOpenChange={setModalOpen}
+                  onTaskUpdate={handleTaskUpdate}
+                  initialTask={selectedTask}
+                />
+                <CreateTaskDialog
+                  open={createTaskDialogOpen}
+                  onOpenChange={handleCreateDialogChange}
+                  projectId={projectId}
+                />
+                {escalationTask && (
+                  <EscalationPanel
+                    task={escalationTask}
+                    isOpen={escalationOpen}
+                    onClose={() => setEscalationOpen(false)}
+                    onApproveAndResume={handleApproveAndResume}
+                  />
+                )}
+              </>
+            ) : (
+              <TasksTab
+                projectId={projectId}
+                initialFilters={taskInitialFilters}
               />
             )}
-          </div>
-        )}
-        {activeTab === 'tasks' && (
-          <div className="h-full overflow-auto p-4">
-            <TasksTab
-              projectId={projectId}
-              initialFilters={taskInitialFilters}
-            />
           </div>
         )}
         {activeTab === 'explorer' && (

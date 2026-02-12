@@ -69,7 +69,7 @@ export function useTasksList(
             )
               return false
             break
-          case 'ideation':
+          case 'ideas':
             if (task.status !== 'pending' || !isCrowdsourced(task))
               return false
             break
@@ -80,17 +80,7 @@ export function useTasksList(
           case 'queue':
             if (task.status !== 'queue') return false
             break
-          case 'executing':
-            if (task.status !== 'running' && task.status !== 'paused')
-              return false
-            break
-          case 'reviewing':
-            if (task.status !== 'ai_reviewing') return false
-            break
-          case 'integrating':
-            if (task.status !== 'pr_created') return false
-            break
-          case 'completed':
+          case 'done':
             if (task.status !== 'completed') return false
             break
           case 'failed':

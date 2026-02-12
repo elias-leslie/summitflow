@@ -21,7 +21,7 @@ export function useProjectNavigation(): UseProjectNavigationReturn {
     if (pathname.includes('/backups')) return 'backups' as NavItemId
     if (pathname.includes('/design')) return 'design'
     const tab = searchParams.get('tab') as NavItemId | null
-    return tab || 'kanban'
+    return tab || 'tasks'
   }
 
   const getProjectNavHref = (projectId: string, item: NavItemConfig) => {

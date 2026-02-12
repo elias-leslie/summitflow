@@ -1,7 +1,6 @@
 import {
   Activity,
   Compass,
-  Kanban,
   ListTodo,
   Palette,
 } from 'lucide-react'
@@ -10,25 +9,14 @@ import type { NavItemConfig } from './types'
 // Project-specific navigation items (shown when project expanded)
 export const projectNavItems: NavItemConfig[] = [
   {
-    id: 'kanban',
-    label: 'Kanban',
-    href: '',
-    icon: Kanban,
-    activeClasses: 'bg-cyan-500/15 text-cyan-400',
-    inactiveClasses: 'text-slate-400 hover:bg-cyan-500/10 hover:text-cyan-400',
-    iconActiveClasses: 'text-cyan-400',
-    iconInactiveClasses: 'text-slate-500 group-hover:text-cyan-400',
-  },
-  {
     id: 'tasks',
     label: 'Tasks',
     href: '',
     icon: ListTodo,
-    activeClasses: 'bg-orange-500/15 text-orange-400',
-    inactiveClasses:
-      'text-slate-400 hover:bg-orange-500/10 hover:text-orange-400',
-    iconActiveClasses: 'text-orange-400',
-    iconInactiveClasses: 'text-slate-500 group-hover:text-orange-400',
+    activeClasses: 'bg-cyan-500/15 text-cyan-400',
+    inactiveClasses: 'text-slate-400 hover:bg-cyan-500/10 hover:text-cyan-400',
+    iconActiveClasses: 'text-cyan-400',
+    iconInactiveClasses: 'text-slate-500 group-hover:text-cyan-400',
   },
   {
     id: 'explorer',

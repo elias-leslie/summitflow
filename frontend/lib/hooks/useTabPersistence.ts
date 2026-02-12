@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
-type TabId = 'kanban' | 'tasks' | 'explorer' | 'health'
+type TabId = 'tasks' | 'explorer' | 'health'
 export type ExplorerType =
   | 'files'
   | 'database'
@@ -10,7 +10,7 @@ export type ExplorerType =
   | 'dependencies'
   | 'architecture'
 
-const VALID_TABS: TabId[] = ['kanban', 'tasks', 'explorer', 'health']
+const VALID_TABS: TabId[] = ['tasks', 'explorer', 'health']
 const VALID_EXPLORER_TYPES: ExplorerType[] = [
   'files',
   'database',
@@ -44,7 +44,7 @@ export function useTabPersistence({
   urlTab,
   urlExplorerType,
 }: UseTabPersistenceOptions): UseTabPersistenceReturn {
-  const [activeTab, setActiveTabInternal] = useState<TabId>(urlTab || 'kanban')
+  const [activeTab, setActiveTabInternal] = useState<TabId>(urlTab || 'tasks')
   const [hasRestoredTab, setHasRestoredTab] = useState(false)
 
   // Initialize explorer type from URL or default

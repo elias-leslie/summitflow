@@ -1,6 +1,6 @@
 import type { LucideIcon } from 'lucide-react'
 
-export type NavItemId = 'kanban' | 'tasks' | 'explorer' | 'health' | 'design'
+export type NavItemId = 'tasks' | 'explorer' | 'health' | 'design'
 
 export interface NavItemConfig {
   id: NavItemId
