@@ -1,6 +1,6 @@
 'use client'
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { clsx } from 'clsx'
 import {
   AlertCircle,
@@ -46,17 +46,51 @@ function CreateBackupModal({
   onClose,
   onCreated,
 }: CreateBackupModalProps) {
-  const [selectedProject, setSelectedProject] = useState<string>('')
+  const [selectedProjects, setSelectedProjects] = useState<Set<string>>(new Set())
   const [note, setNote] = useState<string>('')
+  const [isPending, setIsPending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const createMutation = useMutation({
-    mutationFn: () =>
-      createBackup(selectedProject, { note: note || undefined }),
-    onSuccess: () => {
+  const toggleProject = (id: string) => {
+    setSelectedProjects((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleAll = () => {
+    if (selectedProjects.size === projects.length) {
+      setSelectedProjects(new Set())
+    } else {
+      setSelectedProjects(new Set(projects.map((p) => p.id)))
+    }
+  }
+
+  const handleCreate = async () => {
+    setIsPending(true)
+    setError(null)
+    try {
+      await Promise.all(
+        Array.from(selectedProjects).map((projectId) =>
+          createBackup(projectId, { note: note || undefined }),
+        ),
+      )
       onCreated()
       onClose()
-    },
-  })
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Failed to create backups. Please try again.',
+      )
+    } finally {
+      setIsPending(false)
+    }
+  }
+
+  const count = selectedProjects.size
 
   return (
     <div
@@ -74,27 +108,36 @@ function CreateBackupModal({
 
         <div className="space-y-4">
           <div>
-            <label
-              htmlFor="project-select"
-              className="block text-sm text-slate-300 mb-2"
-            >
-              Select Project
-            </label>
-            <select
-              id="project-select"
-              value={selectedProject}
-              onChange={(e) => setSelectedProject(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md
-                         text-slate-200 focus:outline-none focus:ring-2 focus:ring-phosphor-500"
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm text-slate-300">
+                Select Projects
+              </span>
+              <button
+                onClick={toggleAll}
+                className="text-xs text-phosphor-400 hover:text-phosphor-300 transition-colors"
+              >
+                {selectedProjects.size === projects.length ? 'Deselect all' : 'Select all'}
+              </button>
+            </div>
+            <div
+              className="max-h-48 overflow-y-auto rounded-md border border-slate-600 bg-slate-700 divide-y divide-slate-600/50"
               data-testid="backup-project-select"
             >
-              <option value="">Choose a project...</option>
               {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
+                <label
+                  key={p.id}
+                  className="flex items-center gap-3 px-3 py-2 hover:bg-slate-600/40 cursor-pointer transition-colors"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedProjects.has(p.id)}
+                    onChange={() => toggleProject(p.id)}
+                    className="rounded border-slate-500 bg-slate-600 text-phosphor-500 focus:ring-phosphor-500 focus:ring-offset-0"
+                  />
+                  <span className="text-sm text-slate-200">{p.name}</span>
+                </label>
               ))}
-            </select>
+            </div>
           </div>
 
           <div>
@@ -125,17 +168,17 @@ function CreateBackupModal({
             Cancel
           </button>
           <button
-            onClick={() => createMutation.mutate()}
-            disabled={!selectedProject || createMutation.isPending}
+            onClick={handleCreate}
+            disabled={count === 0 || isPending}
             className={clsx(
               'flex items-center gap-2 px-4 py-2 text-sm rounded-md font-medium transition-colors',
-              selectedProject && !createMutation.isPending
+              count > 0 && !isPending
                 ? 'bg-phosphor-600 text-white hover:bg-phosphor-500'
                 : 'bg-slate-700 text-slate-400 cursor-not-allowed',
             )}
             data-testid="backup-create-confirm"
           >
-            {createMutation.isPending ? (
+            {isPending ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
                 Creating...
@@ -143,18 +186,16 @@ function CreateBackupModal({
             ) : (
               <>
                 <Plus className="w-4 h-4" />
-                Create Backup
+                {count > 1
+                  ? `Create ${count} Backups`
+                  : 'Create Backup'}
               </>
             )}
           </button>
         </div>
 
-        {createMutation.isError && (
-          <p className="mt-3 text-sm text-red-400">
-            {createMutation.error instanceof Error
-              ? createMutation.error.message
-              : 'Failed to create backup. Please try again.'}
-          </p>
+        {error && (
+          <p className="mt-3 text-sm text-red-400">{error}</p>
         )}
       </div>
     </div>
