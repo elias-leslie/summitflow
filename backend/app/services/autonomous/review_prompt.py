@@ -1,0 +1,103 @@
+"""Review prompt builder for Opus code reviews.
+
+Constructs structured prompts that guide the review process with
+task context, diff analysis, and clear output format requirements.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+
+def build_review_prompt(
+    diff: str,
+    diff_stats: dict[str, Any],
+    task: dict[str, Any],
+    rules: list[str],
+) -> str:
+    """Build the review prompt for Opus.
+
+    Args:
+        diff: Git diff output
+        diff_stats: Dict with files_changed, insertions, deletions
+        task: Task dict with title and description
+        rules: List of relevant rule filenames
+
+    Returns:
+        Complete prompt string with review guidelines
+    """
+    lines: list[str] = []
+
+    lines.append("# Code Review Request")
+    lines.append("")
+    lines.append("You are reviewing changes made by an autonomous agent.")
+    lines.append(
+        "Your job is to ensure code quality, correctness, and adherence to project rules."
+    )
+    lines.append("")
+
+    lines.append("## Task")
+    lines.append(f"**Title:** {task.get('title', 'No title')}")
+    if task.get("description"):
+        lines.append(f"**Description:** {task['description']}")
+    lines.append("")
+
+    lines.append("## Change Summary")
+    lines.append(f"- Files changed: {diff_stats.get('files_changed', 0)}")
+    lines.append(f"- Lines added: {diff_stats.get('insertions', 0)}")
+    lines.append(f"- Lines removed: {diff_stats.get('deletions', 0)}")
+    lines.append("")
+
+    if rules:
+        lines.append("## Rules to Verify")
+        lines.append("Check that changes comply with:")
+        for rule in rules:
+            lines.append(f"- {rule}")
+        lines.append("")
+
+    lines.append("## Review Checklist")
+    lines.append("")
+    lines.append("1. **Correctness**: Does the code do what the task requires?")
+    lines.append("2. **Code Quality**: Is the code clean, readable, and maintainable?")
+    lines.append("3. **Architecture**: Does it follow existing patterns? Any DRY violations?")
+    lines.append(
+        "4. **Security**: Any security issues (injection, auth bypass, data exposure)?"
+    )
+    lines.append("5. **Tests**: If tests were affected, do they make sense?")
+    lines.append("6. **Dead Code**: Any commented-out or unused code added?")
+    lines.append("")
+
+    lines.append("## Diff to Review")
+    lines.append("")
+    lines.append("```diff")
+    if len(diff) > 15000:
+        lines.append(diff[:15000])
+        lines.append("\n... (truncated, diff too long)")
+    else:
+        lines.append(diff)
+    lines.append("```")
+    lines.append("")
+
+    lines.append("## Your Response")
+    lines.append("")
+    lines.append("Respond with a JSON object in this exact format:")
+    lines.append("")
+    lines.append("```json")
+    lines.append("{")
+    lines.append('  "verdict": "APPROVE" | "REJECT" | "REQUEST_FIX",')
+    lines.append('  "summary": "One sentence summary of your decision",')
+    lines.append('  "issues": ["Issue 1", "Issue 2"],  // Empty array if APPROVE')
+    lines.append('  "suggestions": ["Suggestion 1"],   // Optional improvements')
+    lines.append('  "confidence": 0.95                 // 0.0-1.0')
+    lines.append("}")
+    lines.append("```")
+    lines.append("")
+    lines.append("**Verdict Guidelines:**")
+    lines.append("- APPROVE: Code is correct, follows rules, no critical issues")
+    lines.append("- REQUEST_FIX: Minor issues that the agent can fix in another iteration")
+    lines.append(
+        "- REJECT: Critical issues (security, data loss risk, fundamentally wrong approach)"
+    )
+    lines.append("")
+
+    return "\n".join(lines)
