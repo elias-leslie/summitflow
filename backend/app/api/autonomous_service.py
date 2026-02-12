@@ -5,12 +5,17 @@ from typing import Any, cast
 
 from ..storage.agent_configs import get_agent_config, update_agent_config
 from ..storage.connection import get_connection
+from .autonomous_metrics import (
+    calculate_graduation_progress,
+    get_approval_metrics,
+    get_iteration_metrics_data,
+    get_recent_completion_counts,
+    get_task_counts,
+)
 from .autonomous_models import (
     AutonomousSettings,
     AutonomousSettingsUpdate,
     AutonomousStatus,
-    GraduationProgress,
-    IterationMetrics,
 )
 
 
@@ -79,134 +84,33 @@ def get_autonomous_status(project_id: str) -> AutonomousStatus:
     last_7d = now - timedelta(days=7)
 
     with get_connection() as conn, conn.cursor() as cur:
-        # Count pending auto-generated tasks
-        cur.execute(
-            """
-            SELECT COUNT(*) FROM tasks
-            WHERE project_id = %s
-              AND status = 'pending'
-              AND labels && %s
-            """,
-            (project_id, settings.task_types),
-        )
-        result = cur.fetchone()
-        pending_tasks = int(result[0]) if result and result[0] else 0
+        # Get task counts
+        task_counts = get_task_counts(cur, project_id, settings.task_types)
 
-        # Count in-progress tasks
-        cur.execute(
-            """
-            SELECT COUNT(*) FROM tasks
-            WHERE project_id = %s
-              AND status = 'running'
-            """,
-            (project_id,),
-        )
-        result = cur.fetchone()
-        in_progress = int(result[0]) if result and result[0] else 0
+        # Get recent completion counts
+        completion_counts = get_recent_completion_counts(cur, project_id, last_24h)
 
-        # Count ai_reviewing tasks (tasks awaiting review)
-        cur.execute(
-            """
-            SELECT COUNT(*) FROM tasks
-            WHERE project_id = %s
-              AND status = 'ai_reviewing'
-            """,
-            (project_id,),
-        )
-        result = cur.fetchone()
-        pending_review = int(result[0]) if result and result[0] else 0
+        # Get approval metrics
+        approval_metrics = get_approval_metrics(cur, project_id, last_7d)
 
-        # Count completed in last 24h (use completed_at)
-        cur.execute(
-            """
-            SELECT COUNT(*) FROM tasks
-            WHERE project_id = %s
-              AND status = 'completed'
-              AND completed_at >= %s
-            """,
-            (project_id, last_24h),
-        )
-        result = cur.fetchone()
-        completed_24h = int(result[0]) if result and result[0] else 0
+        # Get iteration metrics
+        iteration_metrics = get_iteration_metrics_data(cur, project_id, last_7d)
 
-        # Count failed in last 24h (use created_at as fallback - tasks don't have failed_at)
-        cur.execute(
-            """
-            SELECT COUNT(*) FROM tasks
-            WHERE project_id = %s
-              AND status = 'failed'
-              AND created_at >= %s
-            """,
-            (project_id, last_24h),
-        )
-        result = cur.fetchone()
-        failed_24h = int(result[0]) if result and result[0] else 0
-
-        # Calculate approval rate from review_result (last 7 days)
-        cur.execute(
-            """
-            SELECT
-                COUNT(*) FILTER (WHERE review_result->>'verdict' = 'APPROVE') as approved,
-                COUNT(*) FILTER (WHERE review_result IS NOT NULL) as total
-            FROM tasks
-            WHERE project_id = %s
-              AND (completed_at >= %s OR created_at >= %s)
-            """,
-            (project_id, last_7d, last_7d),
-        )
-        result = cur.fetchone()
-        approved = int(result[0]) if result and result[0] else 0
-        total_reviewed = int(result[1]) if result and result[1] else 0
-        approval_rate = (approved / total_reviewed * 100) if total_reviewed > 0 else 0.0
-
-        # Calculate iteration metrics from review_result (last 7 days)
-        cur.execute(
-            """
-            SELECT
-                AVG((review_result->>'iterations')::int)
-                    FILTER (WHERE status = 'completed' AND review_result->>'iterations' IS NOT NULL),
-                COUNT(*) FILTER (WHERE review_result->>'reason' = 'exhausted'),
-                COUNT(*) FILTER (WHERE review_result->>'consulted' = 'true'),
-                COUNT(*) FILTER (WHERE review_result->>'handoff' = 'true'),
-                COUNT(*) FILTER (WHERE (review_result->>'iterations')::int = 1 AND status = 'completed'),
-                COUNT(*) FILTER (WHERE status = 'completed' AND review_result->>'iterations' IS NOT NULL)
-            FROM tasks
-            WHERE project_id = %s
-              AND (completed_at >= %s OR created_at >= %s)
-            """,
-            (project_id, last_7d, last_7d),
-        )
-        result = cur.fetchone()
-        avg_iterations = float(result[0]) if result and result[0] else 0.0
-        exhausted_count = int(result[1]) if result and result[1] else 0
-        consult_count = int(result[2]) if result and result[2] else 0
-        handoff_count = int(result[3]) if result and result[3] else 0
-        first_try_count = int(result[4]) if result and result[4] else 0
-        total_completed = int(result[5]) if result and result[5] else 0
-        first_try_rate = (first_try_count / total_completed * 100) if total_completed > 0 else 0.0
-
-    # Graduation progress (simple heuristic: need 10 tasks at >80% approval)
-    tasks_until_graduation = max(0, 10 - total_reviewed)
+    # Calculate graduation progress
+    graduation = calculate_graduation_progress(
+        approval_metrics["total_reviewed"], approval_metrics["approval_rate"]
+    )
 
     return AutonomousStatus(
         enabled=settings.enabled,
         last_run=None,  # Could track this in a separate table if needed
-        pending_tasks=pending_tasks,
-        in_progress=in_progress,
-        pending_review=pending_review,
-        completed_24h=completed_24h,
-        failed_24h=failed_24h,
-        approval_rate=round(approval_rate, 1),
+        pending_tasks=task_counts["pending_tasks"],
+        in_progress=task_counts["in_progress"],
+        pending_review=task_counts["pending_review"],
+        completed_24h=completion_counts["completed_24h"],
+        failed_24h=completion_counts["failed_24h"],
+        approval_rate=round(approval_metrics["approval_rate"], 1),
         auto_merge_tiers=settings.auto_merge_tiers,
-        graduation=GraduationProgress(
-            tasks_until_graduation=tasks_until_graduation,
-            current_approval_rate=round(approval_rate, 1),
-        ),
-        iteration_metrics=IterationMetrics(
-            avg_iterations_to_success=round(avg_iterations, 2),
-            exhausted_count=exhausted_count,
-            consult_count=consult_count,
-            handoff_count=handoff_count,
-            first_try_success_rate=round(first_try_rate, 1),
-        ),
+        graduation=graduation,
+        iteration_metrics=iteration_metrics,
     )
