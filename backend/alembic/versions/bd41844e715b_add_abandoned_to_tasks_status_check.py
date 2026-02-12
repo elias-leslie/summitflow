@@ -8,16 +8,16 @@ Revises: c1496ead682c
 Create Date: 2026-02-11 09:10:41.462347
 
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
+from typing import Union
 
 from alembic import op
 
-
 # revision identifiers, used by Alembic.
 revision: str = 'bd41844e715b'
-down_revision: Union[str, Sequence[str], None] = 'c1496ead682c'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = 'c1496ead682c'
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 # All valid task statuses including 'abandoned'
 NEW_STATUSES = (
