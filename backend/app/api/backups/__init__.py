@@ -5,12 +5,12 @@ This module provides REST API endpoints for:
 - Restoring from backups
 - Managing backup schedules
 - Viewing storage usage
-
-Re-exports all functionality from the backups package for backward compatibility.
 """
 
-# Import router from the package
-from .backups import (
+from fastapi import APIRouter
+
+from .global_endpoints import router as global_router
+from .models import (
     BackupCreate,
     BackupListResponse,
     BackupResponse,
@@ -19,17 +19,27 @@ from .backups import (
     ScheduleRequest,
     ScheduleResponse,
     StorageSummaryResponse,
-    router,
 )
+from .project_endpoints import router as project_router
+from .schedule_endpoints import router as schedule_router
 
+# Main router that combines all sub-routers
+router = APIRouter()
+
+# Include routers in order (schedule MUST come before project to avoid path conflicts)
+router.include_router(schedule_router)
+router.include_router(project_router)
+router.include_router(global_router)
+
+# Re-export models for backward compatibility
 __all__ = [
+    "router",
     "BackupCreate",
-    "BackupListResponse",
     "BackupResponse",
+    "BackupListResponse",
     "RestoreRequest",
     "RestoreResponse",
     "ScheduleRequest",
     "ScheduleResponse",
     "StorageSummaryResponse",
-    "router",
 ]
