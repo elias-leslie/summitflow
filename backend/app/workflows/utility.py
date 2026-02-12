@@ -103,9 +103,12 @@ async def pr_review_wf(input: ReviewPRInput, ctx: Context) -> dict[str, Any]:
     backoff_factor=2.0,
 )
 async def worktree_cleanup_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
+    from typing import cast
+
     from ..tasks.autonomous.cleanup import cleanup_task_worktree
 
-    return await asyncio.to_thread(cleanup_task_worktree, input.task_id)
+    result = await asyncio.to_thread(cleanup_task_worktree, input.task_id)
+    return cast(dict[str, Any], result)
 
 
 @hatchet.task(

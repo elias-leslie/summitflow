@@ -79,9 +79,12 @@ async def review_pickup_wf(input: ProjectInput, ctx: Context) -> dict[str, Any]:
     ),
 )
 async def reset_claims_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
+    from typing import cast
+
     from ..tasks.autonomous.cleanup import reset_expired_task_claims
 
-    return await asyncio.to_thread(reset_expired_task_claims)
+    result = await asyncio.to_thread(reset_expired_task_claims)
+    return cast(dict[str, Any], result)
 
 
 @hatchet.task(
