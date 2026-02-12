@@ -248,6 +248,15 @@ export interface AutonomousExecutionSettings {
   start_hour: number
   end_hour: number
   max_concurrent: number
+  max_tasks_per_day: number | null
+  cooldown_minutes: number
+  allowed_types: string[] | null
+  preferred_model_tier: string
+  max_self_fix_attempts: number
+  max_supervisor_attempts: number
+  max_extensions: number
+  auto_merge_enabled: boolean
+  require_review: boolean
 }
 
 export interface AutonomousExecutionSettingsUpdate {
@@ -258,6 +267,15 @@ export interface AutonomousExecutionSettingsUpdate {
   start_hour?: number
   end_hour?: number
   max_concurrent?: number
+  max_tasks_per_day?: number | null
+  cooldown_minutes?: number
+  allowed_types?: string[] | null
+  preferred_model_tier?: string
+  max_self_fix_attempts?: number
+  max_supervisor_attempts?: number
+  max_extensions?: number
+  auto_merge_enabled?: boolean
+  require_review?: boolean
 }
 
 export async function getAutonomousSettings(
