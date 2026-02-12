@@ -132,7 +132,7 @@ def test_db_url() -> str:
 
 
 @pytest.fixture(scope="session")
-def db_schema_initialized(test_db_url: str) -> Generator[None, None, None]:
+def db_schema_initialized(test_db_url: str) -> Generator[None]:
     """Initialize test database schema once per session."""
     from app.storage.connection import close_pool, init_schema
 
@@ -147,7 +147,7 @@ def db_schema_initialized(test_db_url: str) -> Generator[None, None, None]:
 
 
 @pytest.fixture(autouse=True)
-def reset_cli_output_state() -> Generator[None, None, None]:
+def reset_cli_output_state() -> Generator[None]:
     """Reset CLI output module state before each test.
 
     The CLI output module uses global state for output formatting.
@@ -212,7 +212,7 @@ def ensure_test_project(db_schema_initialized: None) -> str:
 
 
 @pytest.fixture
-def cleanup_task(db_schema_initialized: None) -> Generator[Callable[[str], None], None, None]:
+def cleanup_task(db_schema_initialized: None) -> Generator[Callable[[str], None]]:
     """Fixture that returns a cleanup function for tasks."""
     from app.storage.connection import get_connection
 

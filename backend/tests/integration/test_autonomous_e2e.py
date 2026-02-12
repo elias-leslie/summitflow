@@ -76,7 +76,7 @@ def test_project_id() -> str:
 
 
 @pytest.fixture
-def cleanup_tasks() -> Generator[list[str], None, None]:
+def cleanup_tasks() -> Generator[list[str]]:
     """Track and cleanup test tasks after tests."""
     task_ids: list[str] = []
     yield task_ids

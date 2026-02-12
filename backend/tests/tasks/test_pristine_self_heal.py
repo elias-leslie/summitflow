@@ -90,7 +90,7 @@ class TestPristineSelfHeal:
             yield client
 
     @pytest.fixture(autouse=True)
-    def mock_prompt_template(self) -> Generator[MagicMock, None, None]:
+    def mock_prompt_template(self) -> Generator[MagicMock]:
         """Mock _get_prompt_template to avoid hitting real API."""
         with patch("app.tasks.autonomous.execution._get_prompt_template") as mock:
             mock.return_value = "Fix errors:\n```\n{errors_output}\n```"
