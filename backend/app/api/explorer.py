@@ -22,7 +22,6 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 
 from ..services import explorer
 from ..storage import explorer as explorer_storage
-from ..storage import scan_history
 from . import explorer_helpers as helpers
 
 logger = logging.getLogger(__name__)
@@ -101,11 +100,6 @@ async def trigger_scan(
     project_id: str,
     background_tasks: BackgroundTasks,
     type: str | None = Query(None, description="Entry type to scan. Scans all if not specified."),
-    triggered_by: str = Query("manual", description="Source that initiated the scan"),
-    triggered_by_session: str | None = Query(None, description="Claude session ID if applicable"),
-    trigger_context_json: str | None = Query(
-        None, description="JSON-encoded additional context", alias="trigger_context"
-    ),
 ) -> dict[str, Any]:
     """Trigger a scan for explorer entries. Runs in background."""
     helpers.validate_project_exists(project_id)
@@ -113,27 +107,11 @@ async def trigger_scan(
     if type:
         helpers.validate_entry_type(type)
 
-    trigger_context = helpers.parse_trigger_context(trigger_context_json)
-
-    # Record scan in history
-    scan_type = type or "full"
-    scan_id = scan_history.record_scan_start(
-        project_id=project_id,
-        scan_type=scan_type,
-        triggered_by=triggered_by,
-        triggered_by_session=triggered_by_session,
-        trigger_context=trigger_context,
-    )
-
-    # Initialize scan state tracking
-    explorer.start_scan(project_id, type)
-
-    # Run scan with progress tracking in background (pass scan_id for completion recording)
+    # Run scan in background
     background_tasks.add_task(
-        helpers.run_scan_and_record,
+        explorer.run_scan_with_tracking,
         project_id,
         type,
-        scan_id,
     )
 
     return {
@@ -141,37 +119,7 @@ async def trigger_scan(
         "message": f"Scan started for {project_id}"
         + (f" (type: {type})" if type else " (all types)"),
         "type": type,
-        "scan_id": scan_id,
     }
-
-
-@router.get("/{project_id}/explorer/scan-history")
-async def get_scan_history(
-    project_id: str,
-    days: int = Query(30, ge=1, le=365, description="Number of days to look back"),
-    scan_type: str | None = Query(None, description="Filter by scan type"),
-) -> dict[str, Any]:
-    """Get scan history with sparkline data and summary."""
-    helpers.validate_project_exists(project_id)
-    return {
-        "scans": scan_history.get_scan_history(project_id, days=days, scan_type=scan_type),
-        "sparkline_data": scan_history.get_sparkline_data(project_id, days=days),
-        "summary": scan_history.get_summary(project_id, days=days),
-    }
-
-
-@router.get("/{project_id}/explorer/scan-comparison")
-async def get_scan_comparison(
-    project_id: str,
-    before: int = Query(..., description="Scan ID for 'before' snapshot"),
-    after: int = Query(..., description="Scan ID for 'after' snapshot"),
-) -> dict[str, Any]:
-    """Compare two scans with metrics delta."""
-    helpers.validate_project_exists(project_id)
-    comparison = scan_history.get_scan_comparison(before, after)
-    if not comparison:
-        raise HTTPException(status_code=404, detail="One or both scans not found")
-    return comparison
 
 
 @router.get("/{project_id}/explorer/entry/{entry_id}")
