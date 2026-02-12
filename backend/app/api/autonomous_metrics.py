@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any
 
-from psycopg.Connection import cursor as CursorType
+from psycopg import Cursor as CursorType
 
 from .autonomous_models import GraduationProgress, IterationMetrics
 
