@@ -1,21 +1,11 @@
 """Autonomous execution service layer."""
 
-from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 from ..storage.agent_configs import get_agent_config, update_agent_config
-from ..storage.connection import get_connection
-from .autonomous_metrics import (
-    calculate_graduation_progress,
-    get_approval_metrics,
-    get_iteration_metrics_data,
-    get_recent_completion_counts,
-    get_task_counts,
-)
 from .autonomous_models import (
     AutonomousSettings,
     AutonomousSettingsUpdate,
-    AutonomousStatus,
 )
 
 
@@ -74,43 +64,3 @@ def update_autonomous_settings(
         update_agent_config(project_id, updates)  # type: ignore[arg-type]
 
     return get_autonomous_settings(project_id)
-
-
-def get_autonomous_status(project_id: str) -> AutonomousStatus:
-    """Get autonomous execution status and metrics for a project."""
-    settings = get_autonomous_settings(project_id)
-    now = datetime.now(UTC)
-    last_24h = now - timedelta(hours=24)
-    last_7d = now - timedelta(days=7)
-
-    with get_connection() as conn, conn.cursor() as cur:
-        # Get task counts
-        task_counts = get_task_counts(cur, project_id, settings.task_types)
-
-        # Get recent completion counts
-        completion_counts = get_recent_completion_counts(cur, project_id, last_24h)
-
-        # Get approval metrics
-        approval_metrics = get_approval_metrics(cur, project_id, last_7d)
-
-        # Get iteration metrics
-        iteration_metrics = get_iteration_metrics_data(cur, project_id, last_7d)
-
-    # Calculate graduation progress
-    graduation = calculate_graduation_progress(
-        approval_metrics["total_reviewed"], approval_metrics["approval_rate"]
-    )
-
-    return AutonomousStatus(
-        enabled=settings.enabled,
-        last_run=None,  # Could track this in a separate table if needed
-        pending_tasks=task_counts["pending_tasks"],
-        in_progress=task_counts["in_progress"],
-        pending_review=task_counts["pending_review"],
-        completed_24h=completion_counts["completed_24h"],
-        failed_24h=completion_counts["failed_24h"],
-        approval_rate=round(approval_metrics["approval_rate"], 1),
-        auto_merge_tiers=settings.auto_merge_tiers,
-        graduation=graduation,
-        iteration_metrics=iteration_metrics,
-    )

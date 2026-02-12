@@ -24,14 +24,6 @@ def update_autonomous_settings(
     return cast(dict[str, Any], handle_response(response))
 
 
-def get_autonomous_status(
-    client: httpx.Client, url_fn: Any, handle_response: Any
-) -> dict[str, Any]:
-    """Get autonomous execution status and metrics."""
-    response = client.get(url_fn("/autonomous/status"))
-    return cast(dict[str, Any], handle_response(response))
-
-
 def list_sessions(client: httpx.Client, url_fn: Any, handle_response: Any) -> list[dict[str, Any]]:
     """List agent sessions for the project."""
     response = client.get(url_fn("/sessions"))

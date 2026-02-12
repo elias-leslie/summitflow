@@ -44,22 +44,3 @@ def disable() -> None:
         return
 
     output_json(result)
-
-
-@app.command()
-def status() -> None:
-    """Show autonomous execution status and metrics.
-
-    Examples:
-        st autonomous status
-    """
-    client = STClient()
-
-    try:
-        settings = client.get_autonomous_settings()
-        metrics = client.get_autonomous_status()
-    except APIError as e:
-        handle_api_error(e)
-        return
-
-    output_json({"settings": settings, "metrics": metrics})

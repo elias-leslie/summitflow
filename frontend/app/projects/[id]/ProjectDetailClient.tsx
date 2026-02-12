@@ -8,7 +8,6 @@ import { useEffect, useState } from 'react'
 import {
   BlockedTasksAlert,
   PipelineFlow,
-  SuccessMetrics,
 } from '@/components/dashboard'
 import { EscalationPanel } from '@/components/execution/EscalationPanel'
 import { ExplorerTab } from '@/components/explorer/ExplorerTab'
@@ -195,13 +194,10 @@ export function ProjectDetailClient() {
               <PipelineFlow projectId={projectId} onStageClick={(phase) => {
                 router.push(`/projects/${projectId}?tab=tasks&status=${phase}`)
               }} />
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                <SuccessMetrics projectId={projectId} />
-                <BlockedTasksAlert projectId={projectId} onTaskClick={(taskId) => {
-                  setSelectedTaskId(taskId)
-                  setModalOpen(true)
-                }} />
-              </div>
+              <BlockedTasksAlert projectId={projectId} onTaskClick={(taskId) => {
+                setSelectedTaskId(taskId)
+                setModalOpen(true)
+              }} />
             </div>
             <TaskKanbanBoard
               tasks={kanbanTasks}

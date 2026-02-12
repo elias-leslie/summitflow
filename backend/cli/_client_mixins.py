@@ -344,9 +344,6 @@ class ExecutionOperationsMixin:
             self._client, self._url, self._handle_response, **updates
         )
 
-    def get_autonomous_status(self) -> dict[str, Any]:
-        return exec_ops.get_autonomous_status(self._client, self._url, self._handle_response)
-
     def list_sessions(self) -> list[dict[str, Any]]:
         return exec_ops.list_sessions(self._client, self._url, self._handle_response)
 

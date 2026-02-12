@@ -1,4 +1,4 @@
-"""Autonomous execution settings and status API."""
+"""Autonomous execution settings API."""
 
 from fastapi import APIRouter, HTTPException
 
@@ -6,15 +6,9 @@ from ..storage.connection import get_connection
 from .autonomous_models import (
     AutonomousSettings,
     AutonomousSettingsUpdate,
-    AutonomousStatus,
-    GraduationProgress,
-    IterationMetrics,
 )
 from .autonomous_service import (
     get_autonomous_settings as _get_settings,
-)
-from .autonomous_service import (
-    get_autonomous_status as _get_status,
 )
 from .autonomous_service import (
     update_autonomous_settings as _update_settings,
@@ -26,9 +20,6 @@ router = APIRouter()
 __all__ = [
     "AutonomousSettings",
     "AutonomousSettingsUpdate",
-    "AutonomousStatus",
-    "GraduationProgress",
-    "IterationMetrics",
     "router",
 ]
 
@@ -63,10 +54,3 @@ async def update_settings(project_id: str, update: AutonomousSettingsUpdate) -> 
                 )
 
     return _update_settings(project_id, update)
-
-
-@router.get("/{project_id}/autonomous/status", response_model=AutonomousStatus)
-async def get_status(project_id: str) -> AutonomousStatus:
-    """Get autonomous execution status and metrics for a project."""
-    _verify_project_exists(project_id)
-    return _get_status(project_id)
