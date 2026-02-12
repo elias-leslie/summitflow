@@ -69,7 +69,6 @@ export function TaskKanbanBoard({
   const [activeId, setActiveId] = useState<string | null>(null)
   const [executingTaskId, setExecutingTaskId] = useState<string | null>(null)
   const [deleteConfirmTask, setDeleteConfirmTask] = useState<Task | null>(null)
-  const { isCollapsed, toggleRow } = useRowCollapse(projectId)
 
   // Find the first running task to connect WebSocket
   const runningTask = useMemo(
@@ -110,6 +109,17 @@ export function TaskKanbanBoard({
 
     return grouped
   }, [tasks])
+
+  // Task counts per column for smart row expand/collapse
+  const taskCounts = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(tasksByColumn).map(([k, v]) => [k, v.length]),
+      ) as Record<TaskKanbanColumn, number>,
+    [tasksByColumn],
+  )
+
+  const { isCollapsed, toggleRow } = useRowCollapse(projectId, taskCounts)
 
   const activeTask = useMemo(() => {
     if (!activeId) return null

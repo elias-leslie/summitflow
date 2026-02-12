@@ -2,17 +2,34 @@
 
 import { useDroppable } from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable'
-import { ChevronRight } from 'lucide-react'
+import {
+  ChevronRight,
+  CircleCheck,
+  Clock,
+  Lightbulb,
+  PenLine,
+  ShieldAlert,
+  Zap,
+} from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 
 import type { Task } from '@/lib/api'
 import type { useExecutionWebSocket } from '@/hooks/useExecutionWebSocket'
 import { TaskCard } from './TaskCard'
-import { EyeIcon, LightbulbIcon, SparklesIcon } from './ColumnIcons'
+import type { LucideIcon } from 'lucide-react'
 import {
   columnColorClasses,
   type KanbanColumn as KanbanColumnType,
 } from './columnConfig'
+
+const COLUMN_ICONS: Record<string, LucideIcon> = {
+  lightbulb: Lightbulb,
+  'pen-line': PenLine,
+  clock: Clock,
+  zap: Zap,
+  'shield-alert': ShieldAlert,
+  'circle-check': CircleCheck,
+}
 
 interface KanbanRowProps {
   column: KanbanColumnType
@@ -42,6 +59,7 @@ export function KanbanRow({
   executionHook,
 }: KanbanRowProps) {
   const colors = columnColorClasses[column.color] || columnColorClasses.slate
+  const IconComponent = column.icon ? COLUMN_ICONS[column.icon] : null
 
   const { setNodeRef, isOver } = useDroppable({ id: column.id })
 
@@ -72,14 +90,10 @@ export function KanbanRow({
           <ChevronRight className={`h-4 w-4 ${colors.header}`} />
         </motion.span>
 
-        {column.icon === 'lightbulb' && (
-          <LightbulbIcon className={`w-4 h-4 ${colors.header}`} />
-        )}
-        {column.icon === 'sparkles' && (
-          <SparklesIcon className={`w-4 h-4 ${colors.header} animate-pulse`} />
-        )}
-        {column.icon === 'eye' && (
-          <EyeIcon className={`w-4 h-4 ${colors.header}`} />
+        {IconComponent && (
+          <IconComponent
+            className={`w-4 h-4 ${colors.header}${column.icon === 'zap' ? ' animate-pulse' : ''}`}
+          />
         )}
 
         <span className={`text-sm font-medium ${colors.header}`}>

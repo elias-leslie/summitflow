@@ -1,12 +1,29 @@
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import {
+  CircleCheck,
+  Clock,
+  Lightbulb,
+  PenLine,
+  ShieldAlert,
+  Zap,
+} from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import type { Task } from '@/lib/api'
 import type { useExecutionWebSocket } from '@/hooks/useExecutionWebSocket'
 import { TaskCard } from './TaskCard'
-import { EyeIcon, LightbulbIcon, SparklesIcon } from './ColumnIcons'
 import {
   columnColorClasses,
   type KanbanColumn as KanbanColumnType,
 } from './columnConfig'
+
+const COLUMN_ICONS: Record<string, LucideIcon> = {
+  lightbulb: Lightbulb,
+  'pen-line': PenLine,
+  clock: Clock,
+  zap: Zap,
+  'shield-alert': ShieldAlert,
+  'circle-check': CircleCheck,
+}
 
 // ============================================================================
 // Kanban Column Component
@@ -34,6 +51,7 @@ export function KanbanColumn({
   executionHook,
 }: KanbanColumnProps) {
   const colors = columnColorClasses[column.color] || columnColorClasses.slate
+  const IconComponent = column.icon ? COLUMN_ICONS[column.icon] : null
 
   return (
     <div
@@ -44,11 +62,11 @@ export function KanbanColumn({
         <h3
           className={`text-sm font-medium flex items-center gap-1.5 ${colors.header}`}
         >
-          {column.icon === 'lightbulb' && <LightbulbIcon className="w-4 h-4" />}
-          {column.icon === 'sparkles' && (
-            <SparklesIcon className="w-4 h-4 animate-pulse" />
+          {IconComponent && (
+            <IconComponent
+              className={`w-4 h-4${column.icon === 'zap' ? ' animate-pulse' : ''}`}
+            />
           )}
-          {column.icon === 'eye' && <EyeIcon className="w-4 h-4" />}
           {column.title}
         </h3>
         <span className="text-xs mono text-slate-500 bg-slate-800 px-2 py-0.5 rounded">

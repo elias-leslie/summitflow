@@ -17,7 +17,7 @@ export interface KanbanColumn {
   id: TaskKanbanColumn
   title: string
   color: string
-  icon: 'sparkles' | 'eye' | 'lightbulb' | null
+  icon: 'lightbulb' | 'pen-line' | 'clock' | 'zap' | 'shield-alert' | 'circle-check' | null
 }
 
 // ============================================================================
@@ -26,11 +26,11 @@ export interface KanbanColumn {
 
 export const COLUMNS: KanbanColumn[] = [
   { id: 'ideas', title: 'Ideas', color: 'yellow', icon: 'lightbulb' },
-  { id: 'planning', title: 'Planning', color: 'slate', icon: null },
-  { id: 'queue', title: 'Queue', color: 'sky', icon: null },
-  { id: 'active', title: 'Active', color: 'blue', icon: null },
-  { id: 'blocked', title: 'Blocked', color: 'orange', icon: null },
-  { id: 'done', title: 'Done', color: 'phosphor', icon: null },
+  { id: 'planning', title: 'Planning', color: 'slate', icon: 'pen-line' },
+  { id: 'queue', title: 'Queue', color: 'sky', icon: 'clock' },
+  { id: 'active', title: 'Active', color: 'blue', icon: 'zap' },
+  { id: 'blocked', title: 'Blocked', color: 'orange', icon: 'shield-alert' },
+  { id: 'done', title: 'Done', color: 'phosphor', icon: 'circle-check' },
 ]
 
 // ============================================================================
@@ -38,15 +38,16 @@ export const COLUMNS: KanbanColumn[] = [
 // ============================================================================
 
 const ROW_ORDER: Record<TaskKanbanColumn, number> = {
-  active: 0,
-  blocked: 1,
+  ideas: 0,
+  planning: 1,
   queue: 2,
-  planning: 3,
-  ideas: 4,
-  done: 5,
+  active: 3,
+  done: 4,
+  blocked: 5,
 }
 
-export const DEFAULT_EXPANDED_ROWS: TaskKanbanColumn[] = ['active', 'blocked']
+// Rows that always start collapsed and never persist expand state
+export const ALWAYS_COLLAPSED: readonly TaskKanbanColumn[] = ['done']
 
 export const ROWS: KanbanColumn[] = [...COLUMNS].sort(
   (a, b) => ROW_ORDER[a.id] - ROW_ORDER[b.id],
