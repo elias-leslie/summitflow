@@ -7,23 +7,24 @@ with appropriate task state transitions and git operations.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import cast
 
 from ...logging_config import get_logger
 from ...services.git_service import get_current_branch, push_branch, revert_to
 from ...storage import log_task_event
 from ...storage import tasks as task_store
+from .review_types import ReviewResult, Task
 from .review_utils import get_project_path
 
 logger = get_logger(__name__)
 
 
 def handle_approval(
-    task: dict[str, Any],
-    review_result: dict[str, Any],
+    task: Task,
+    review_result: ReviewResult,
     auto_push: bool = False,
     resolved_path: Path | str | None = None,
-) -> dict[str, Any]:
+) -> Task:
     """Handle an approved task.
 
     Marks the task as completed and optionally pushes to remote.
@@ -43,7 +44,7 @@ def handle_approval(
     if not task_id:
         raise ValueError("Task must have an id")
 
-    existing_result = task.get("review_result") or {}
+    existing_result: ReviewResult = cast(ReviewResult, task.get("review_result") or {})
     merged_result = {**existing_result, **review_result}
     task_store.update_task(task_id, review_result=merged_result)
 
@@ -59,14 +60,14 @@ def handle_approval(
         except RuntimeError as e:
             logger.warning("task_push_failed", task_id=task_id, error=str(e))
 
-    return updated or task
+    return cast(Task, updated or task)
 
 
 def handle_rejection(
-    task: dict[str, Any],
-    review_result: dict[str, Any],
+    task: Task,
+    review_result: ReviewResult,
     resolved_path: Path | str | None = None,
-) -> dict[str, Any]:
+) -> Task:
     """Handle a rejected task.
 
     Reverts changes to pre_merge_sha and marks task for human review.
@@ -93,7 +94,7 @@ def handle_rejection(
         except RuntimeError as e:
             logger.error("task_revert_failed", task_id=task_id, error=str(e))
 
-    existing_result = task.get("review_result") or {}
+    existing_result: ReviewResult = cast(ReviewResult, task.get("review_result") or {})
     merged_result = {**existing_result, **review_result}
     task_store.update_task(task_id, review_result=merged_result)
 
@@ -107,13 +108,13 @@ def handle_rejection(
 
     logger.info("task_rejected", task_id=task_id, summary=review_result.get("summary"))
 
-    return updated or task
+    return cast(Task, updated or task)
 
 
 def handle_fix_request(
-    task: dict[str, Any],
-    review_result: dict[str, Any],
-) -> dict[str, Any]:
+    task: Task,
+    review_result: ReviewResult,
+) -> Task:
     """Handle a fix request.
 
     Appends review feedback to task and resets to running for another iteration.
@@ -129,7 +130,7 @@ def handle_fix_request(
     if not task_id:
         raise ValueError("Task must have an id")
 
-    existing_result = task.get("review_result") or {}
+    existing_result: ReviewResult = cast(ReviewResult, task.get("review_result") or {})
     merged_result = {**existing_result, **review_result}
     task_store.update_task(task_id, review_result=merged_result)
 
@@ -149,4 +150,4 @@ def handle_fix_request(
 
     logger.info("task_fix_requested", task_id=task_id, issues=len(issues))
 
-    return updated or task
+    return cast(Task, updated or task)

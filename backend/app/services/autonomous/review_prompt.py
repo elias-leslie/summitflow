@@ -6,13 +6,13 @@ task context, diff analysis, and clear output format requirements.
 
 from __future__ import annotations
 
-from typing import Any
+from .review_types import DiffStats, Task
 
 
 def build_review_prompt(
     diff: str,
-    diff_stats: dict[str, Any],
-    task: dict[str, Any],
+    diff_stats: DiffStats,
+    task: Task,
     rules: list[str],
 ) -> str:
     """Build the review prompt for Opus.

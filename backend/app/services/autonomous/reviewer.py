@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import cast
 
 from ...logging_config import get_logger
 from ...services.agent_hub_client import get_agent
@@ -22,7 +22,8 @@ from ...services.git_service import capture_diff, get_diff_stats
 from .review_handlers import handle_approval, handle_fix_request, handle_rejection
 from .review_parser import parse_review_response
 from .review_prompt import build_review_prompt
-from .review_utils import Verdict, get_project_path
+from .review_types import DiffStats, ReviewResult, Task, Verdict
+from .review_utils import get_project_path
 
 logger = get_logger(__name__)
 
@@ -36,9 +37,9 @@ __all__ = [
 
 
 def opus_review(
-    task: dict[str, Any],
+    task: Task,
     resolved_path: Path | str | None = None,
-) -> dict[str, Any]:
+) -> ReviewResult:
     """Review task changes using Claude Opus.
 
     Gets the diff between pre_merge_sha and HEAD, analyzes with Opus,
@@ -63,40 +64,40 @@ def opus_review(
     pre_merge_sha = task.get("pre_merge_sha")
     if not pre_merge_sha:
         logger.error("review_no_sha", task_id=task.get("id"))
-        return {
-            "verdict": "REQUEST_FIX",
-            "summary": "No pre_merge_sha found - cannot determine what changed",
-            "issues": ["Missing pre_merge_sha in task"],
-            "suggestions": ["Ensure pre_merge_sha is set before execution"],
-            "confidence": 0.0,
-            "reviewed_at": datetime.now(UTC).isoformat(),
-        }
+        return ReviewResult(
+            verdict="REQUEST_FIX",
+            summary="No pre_merge_sha found - cannot determine what changed",
+            issues=["Missing pre_merge_sha in task"],
+            suggestions=["Ensure pre_merge_sha is set before execution"],
+            confidence=0.0,
+            reviewed_at=datetime.now(UTC).isoformat(),
+        )
 
     try:
         diff = capture_diff(resolved_path, pre_merge_sha)
-        diff_stats = get_diff_stats(resolved_path, pre_merge_sha)
+        diff_stats = cast(DiffStats, get_diff_stats(resolved_path, pre_merge_sha))
     except RuntimeError as e:
         logger.error("review_diff_failed", error=str(e))
-        return {
-            "verdict": "REQUEST_FIX",
-            "summary": f"Failed to get diff: {e}",
-            "issues": [str(e)],
-            "suggestions": [],
-            "confidence": 0.0,
-            "reviewed_at": datetime.now(UTC).isoformat(),
-        }
+        return ReviewResult(
+            verdict="REQUEST_FIX",
+            summary=f"Failed to get diff: {e}",
+            issues=[str(e)],
+            suggestions=[],
+            confidence=0.0,
+            reviewed_at=datetime.now(UTC).isoformat(),
+        )
 
     if not diff.strip():
         logger.info("review_no_changes", task_id=task.get("id"))
-        return {
-            "verdict": "APPROVE",
-            "summary": "No changes detected",
-            "issues": [],
-            "suggestions": [],
-            "confidence": 1.0,
-            "diff_stats": diff_stats,
-            "reviewed_at": datetime.now(UTC).isoformat(),
-        }
+        return ReviewResult(
+            verdict="APPROVE",
+            summary="No changes detected",
+            issues=[],
+            suggestions=[],
+            confidence=1.0,
+            diff_stats=diff_stats,
+            reviewed_at=datetime.now(UTC).isoformat(),
+        )
 
     rules: list[str] = []
     prompt = build_review_prompt(diff, diff_stats, task, rules)
@@ -111,14 +112,14 @@ def opus_review(
         response_text = response.content
     except Exception as e:
         logger.error("review_agent_failed", error=str(e))
-        return {
-            "verdict": "REQUEST_FIX",
-            "summary": f"Review agent error: {e}",
-            "issues": [str(e)],
-            "suggestions": [],
-            "confidence": 0.0,
-            "reviewed_at": datetime.now(UTC).isoformat(),
-        }
+        return ReviewResult(
+            verdict="REQUEST_FIX",
+            summary=f"Review agent error: {e}",
+            issues=[str(e)],
+            suggestions=[],
+            confidence=0.0,
+            reviewed_at=datetime.now(UTC).isoformat(),
+        )
 
     result = parse_review_response(response_text)
     result["diff_stats"] = diff_stats

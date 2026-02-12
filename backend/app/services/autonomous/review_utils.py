@@ -6,12 +6,11 @@ Provides common types and helper functions used across review modules.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Literal
 
-Verdict = Literal["APPROVE", "REJECT", "REQUEST_FIX"]
+from .review_types import Task
 
 
-def get_project_path(task: dict[str, Any], resolved_path: Path | str | None) -> Path:
+def get_project_path(task: Task, resolved_path: Path | str | None) -> Path:
     """Get project path from explicit param or task's project_id.
 
     Args:

@@ -8,14 +8,14 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
 
 from ...logging_config import get_logger
+from .review_types import ReviewResult
 
 logger = get_logger(__name__)
 
 
-def parse_review_response(response_text: str) -> dict[str, Any]:
+def parse_review_response(response_text: str) -> ReviewResult:
     """Parse the review response from Opus.
 
     Extracts JSON from response text and validates required fields.
@@ -36,17 +36,17 @@ def parse_review_response(response_text: str) -> dict[str, Any]:
             json_str = json_match.group(0)
         else:
             logger.warning("review_parse_failed", response_preview=response_text[:200])
-            return {
-                "verdict": "REQUEST_FIX",
-                "summary": "Could not parse review response - requesting manual review",
-                "issues": ["Review response was not in expected format"],
-                "suggestions": [],
-                "confidence": 0.0,
-                "raw_response": response_text,
-            }
+            return ReviewResult(
+                verdict="REQUEST_FIX",
+                summary="Could not parse review response - requesting manual review",
+                issues=["Review response was not in expected format"],
+                suggestions=[],
+                confidence=0.0,
+                raw_response=response_text,
+            )
 
     try:
-        parsed: dict[str, Any] = json.loads(json_str)
+        parsed = json.loads(json_str)
         if parsed.get("verdict") not in ("APPROVE", "REJECT", "REQUEST_FIX"):
             parsed["verdict"] = "REQUEST_FIX"
             parsed.setdefault("issues", []).append("Invalid verdict in response")
@@ -56,14 +56,20 @@ def parse_review_response(response_text: str) -> dict[str, Any]:
         parsed.setdefault("suggestions", [])
         parsed.setdefault("confidence", 0.5)
 
-        return parsed
+        return ReviewResult(
+            verdict=parsed["verdict"],
+            summary=parsed["summary"],
+            issues=parsed["issues"],
+            suggestions=parsed["suggestions"],
+            confidence=parsed["confidence"],
+        )
     except json.JSONDecodeError as e:
         logger.warning("review_json_decode_failed", error=str(e))
-        return {
-            "verdict": "REQUEST_FIX",
-            "summary": f"JSON parse error: {e}",
-            "issues": ["Could not parse review JSON"],
-            "suggestions": [],
-            "confidence": 0.0,
-            "raw_response": response_text,
-        }
+        return ReviewResult(
+            verdict="REQUEST_FIX",
+            summary=f"JSON parse error: {e}",
+            issues=["Could not parse review JSON"],
+            suggestions=[],
+            confidence=0.0,
+            raw_response=response_text,
+        )
