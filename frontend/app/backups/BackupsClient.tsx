@@ -38,7 +38,7 @@ import { fetchProjects, type Project } from '@/lib/api/projects'
 interface CreateBackupModalProps {
   projects: Project[]
   onClose: () => void
-  onCreated: () => void
+  onCreated: () => Promise<void>
 }
 
 function CreateBackupModal({
@@ -77,7 +77,7 @@ function CreateBackupModal({
           createBackup(projectId, { note: note || undefined }),
         ),
       )
-      onCreated()
+      await onCreated()
       onClose()
     } catch (err) {
       setError(
@@ -509,9 +509,9 @@ export function BackupsClient() {
 
   const backups = backupsData?.backups ?? []
 
-  const handleBackupCreated = () => {
-    queryClient.invalidateQueries({ queryKey: ['all-backups'] })
-    queryClient.invalidateQueries({ queryKey: ['storage-summary'] })
+  const handleBackupCreated = async () => {
+    await queryClient.invalidateQueries({ queryKey: ['all-backups'] })
+    await queryClient.invalidateQueries({ queryKey: ['storage-summary'] })
   }
 
   return (
