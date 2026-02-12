@@ -9,24 +9,17 @@ With branch naming:
 
 This module wraps the CLI worktree library for use in background tasks.
 Creates checkpoint metadata for unified tracking via `st checkpoints`.
-
-Note: This module has been refactored into a package. This file serves
-as a compatibility layer. Import from backend.app.services.worktree package
-directly for better module organization.
 """
 
 from __future__ import annotations
 
-# Re-export everything from the worktree package
-from .worktree import (
-    TaskWorktreeInfo,
-    WorktreeError,
+from .operations import (
     create_task_worktree,
-    ensure_task_worktree,
-    get_execution_path,
     get_task_worktree,
     remove_task_worktree,
 )
+from .paths import ensure_task_worktree, get_execution_path
+from .types import TaskWorktreeInfo, WorktreeError
 
 __all__ = [
     "TaskWorktreeInfo",
