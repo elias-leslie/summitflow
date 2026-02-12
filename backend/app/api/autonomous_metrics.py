@@ -1,15 +1,18 @@
 """Database queries for autonomous execution metrics."""
 
 from datetime import datetime
-from typing import Any
+# TYPE_CHECKING imported below
 
-from psycopg.Connection import cursor as CursorType
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from psycopg import Cursor
 
 from .autonomous_models import GraduationProgress, IterationMetrics
 
 
 def get_task_counts(
-    cur: CursorType, project_id: str, task_types: list[str]
+    cur: "Cursor[Any]", project_id: str, task_types: list[str]
 ) -> dict[str, int]:
     """Get counts of tasks by status."""
     cur.execute(
@@ -31,7 +34,7 @@ def get_task_counts(
 
 
 def get_recent_completion_counts(
-    cur: CursorType, project_id: str, last_24h: datetime
+    cur: "Cursor[Any]", project_id: str, last_24h: datetime
 ) -> dict[str, int]:
     """Get counts of completed and failed tasks in last 24h."""
     cur.execute(
@@ -51,7 +54,7 @@ def get_recent_completion_counts(
 
 
 def get_approval_metrics(
-    cur: CursorType, project_id: str, last_7d: datetime
+    cur: "Cursor[Any]", project_id: str, last_7d: datetime
 ) -> dict[str, Any]:
     """Calculate approval rate from review_result (last 7 days)."""
     cur.execute(
@@ -77,7 +80,7 @@ def get_approval_metrics(
 
 
 def get_iteration_metrics_data(
-    cur: CursorType, project_id: str, last_7d: datetime
+    cur: "Cursor[Any]", project_id: str, last_7d: datetime
 ) -> IterationMetrics:
     """Calculate iteration metrics from review_result (last 7 days)."""
     cur.execute(
