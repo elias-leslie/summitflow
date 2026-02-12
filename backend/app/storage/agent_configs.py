@@ -130,7 +130,16 @@ from .agent_configs_agents import (  # noqa: E402
 )
 from .agent_configs_autonomous import (  # noqa: E402
     AutonomousScheduleConfig,
+    get_allowed_task_types,
+    get_auto_merge_enabled,
     get_autonomous_schedule,
+    get_cooldown_minutes,
+    get_max_extensions,
+    get_max_self_fix_attempts,
+    get_max_supervisor_attempts,
+    get_max_tasks_per_day,
+    get_preferred_model_tier,
+    get_require_review,
     is_autonomous_enabled,
     is_within_autonomous_hours,
     update_autonomous_schedule,
