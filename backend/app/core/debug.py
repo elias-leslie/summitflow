@@ -319,7 +319,7 @@ def debug_timer(
     task_id: str | None = None,
     project_id: str | None = None,
     **kwargs: Any,
-) -> Generator[None, None, None]:
+) -> Generator[None]:
     """Context manager for timing synchronous operations (level 2).
 
     Example:
@@ -359,7 +359,7 @@ async def debug_async_timer(
     task_id: str | None = None,
     project_id: str | None = None,
     **kwargs: Any,
-) -> AsyncGenerator[None, None]:
+) -> AsyncGenerator[None]:
     """Context manager for timing async operations (level 2).
 
     Example:
