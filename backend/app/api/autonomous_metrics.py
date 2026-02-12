@@ -1,8 +1,8 @@
 """Database queries for autonomous execution metrics."""
 
 from datetime import datetime
-# TYPE_CHECKING imported below
 
+# TYPE_CHECKING imported below
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
