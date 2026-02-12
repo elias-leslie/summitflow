@@ -120,7 +120,9 @@ def get_max_tasks_per_day(project_id: str) -> int | None:
     """
     config = get_agent_config(project_id)
     max_tasks = config.get("autonomous_max_tasks_per_day")
-    return int(max_tasks) if max_tasks is not None else None
+    if max_tasks is None:
+        return None
+    return int(max_tasks)
 
 
 def get_cooldown_minutes(project_id: str) -> int:
@@ -133,7 +135,8 @@ def get_cooldown_minutes(project_id: str) -> int:
         Cooldown in minutes (default: 0)
     """
     config = get_agent_config(project_id)
-    return int(config.get("autonomous_cooldown_minutes", 0))
+    value = config.get("autonomous_cooldown_minutes", 0)
+    return int(value) if value is not None else 0
 
 
 def get_allowed_task_types(project_id: str) -> list[str] | None:
@@ -147,7 +150,12 @@ def get_allowed_task_types(project_id: str) -> list[str] | None:
     """
     config = get_agent_config(project_id)
     allowed_types = config.get("autonomous_allowed_types")
-    return list(allowed_types) if allowed_types else None
+    if not allowed_types:
+        return None
+    # Ensure it's a list of strings
+    if isinstance(allowed_types, list):
+        return [str(t) for t in allowed_types]
+    return None
 
 
 def get_preferred_model_tier(project_id: str) -> str:
@@ -173,7 +181,8 @@ def get_max_self_fix_attempts(project_id: str) -> int:
         Max self-fix attempts (default: 3)
     """
     config = get_agent_config(project_id)
-    return int(config.get("autonomous_max_self_fix_attempts", 3))
+    value = config.get("autonomous_max_self_fix_attempts", 3)
+    return int(value) if value is not None else 3
 
 
 def get_max_supervisor_attempts(project_id: str) -> int:
@@ -186,7 +195,8 @@ def get_max_supervisor_attempts(project_id: str) -> int:
         Max supervisor attempts (default: 3)
     """
     config = get_agent_config(project_id)
-    return int(config.get("autonomous_max_supervisor_attempts", 3))
+    value = config.get("autonomous_max_supervisor_attempts", 3)
+    return int(value) if value is not None else 3
 
 
 def get_max_extensions(project_id: str) -> int:
@@ -199,7 +209,8 @@ def get_max_extensions(project_id: str) -> int:
         Max extensions (default: 3)
     """
     config = get_agent_config(project_id)
-    return int(config.get("autonomous_max_extensions", 3))
+    value = config.get("autonomous_max_extensions", 3)
+    return int(value) if value is not None else 3
 
 
 def get_auto_merge_enabled(project_id: str) -> bool:

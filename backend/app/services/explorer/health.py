@@ -7,10 +7,12 @@ various criteria (staleness, errors, completeness, etc.).
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
 __all__ = [
     "calculate_bloat_level",
     "calculate_health",
+    "calculate_health_for_entry",
     "calculate_staleness",
     "endpoint_health_from_status",
     "task_health_from_stats",
@@ -45,6 +47,49 @@ def calculate_health(
     )
 
     return "warning" if has_warnings else "healthy"
+
+
+def calculate_health_for_entry(entry_type: str, metadata: dict[str, Any]) -> str:
+    """Calculate health status for an entry.
+
+    Simplified implementation after removal of over-engineered health calculators.
+    Uses basic heuristics based on common metadata fields.
+
+    Args:
+        entry_type: The type of entry (file, table, task, endpoint, page, dependency, architecture)
+        metadata: Entry metadata dictionary
+
+    Returns:
+        Health status: 'healthy', 'warning', 'error', or 'unknown'
+    """
+    # Check for explicit error indicators
+    if metadata.get("error_count", 0) > 0 or metadata.get("has_errors"):
+        return "error"
+
+    # Check for warning indicators
+    if metadata.get("warning_count", 0) > 0 or metadata.get("has_warnings"):
+        return "warning"
+
+    # Check HTTP status for endpoints
+    http_status = metadata.get("http_status")
+    if http_status:
+        if http_status >= 500:
+            return "error"
+        if http_status >= 400 or http_status == 404:
+            return "warning"
+        if http_status >= 200 and http_status < 300:
+            return "healthy"
+
+    # Check success rate for tasks
+    success_rate = metadata.get("success_rate_pct")
+    if success_rate is not None:
+        if success_rate < 80:
+            return "error"
+        if success_rate < 95:
+            return "warning"
+
+    # Default to healthy if no negative indicators
+    return "healthy"
 
 
 def calculate_staleness(last_modified: datetime | None, threshold_days: int = 30) -> str:

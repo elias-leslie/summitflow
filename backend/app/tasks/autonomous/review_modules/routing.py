@@ -6,7 +6,7 @@ from typing import Any
 
 from ....logging_config import get_logger
 from ....services.agent_hub_client import get_sync_client
-from ....storage import log_task_event
+from ....storage import agent_configs, log_task_event
 from ....storage import tasks as task_store
 from .actions import auto_merge, create_fix_subtask, handle_plan_defect, run_qa_loop
 
@@ -85,17 +85,36 @@ def route_based_on_verdict(
 
 def _handle_approved(task_id: str, complexity: str) -> None:
     """Handle APPROVED verdict."""
-    auto_merge(task_id)
-    task_store.update_task_status(task_id, "completed")
-    log_task_event(
-        task_id,
-        f"AI Review: APPROVED - Auto-merged ({complexity})",
-    )
-    logger.info(
-        "QA approved, auto-merged",
-        task_id=task_id,
-        complexity=complexity,
-    )
+    # Get project_id from task
+    task = task_store.get_task(task_id)
+    project_id = task.get("project_id", "summitflow") if task else "summitflow"
+
+    # Check if auto-merge is enabled
+    auto_merge_enabled = agent_configs.get_auto_merge_enabled(project_id)
+    if auto_merge_enabled:
+        auto_merge(task_id)
+        task_store.update_task_status(task_id, "completed")
+        log_task_event(
+            task_id,
+            f"AI Review: APPROVED - Auto-merged ({complexity})",
+        )
+        logger.info(
+            "QA approved, auto-merged",
+            task_id=task_id,
+            complexity=complexity,
+        )
+    else:
+        # Manual merge required
+        task_store.update_task_status(task_id, "completed")
+        log_task_event(
+            task_id,
+            f"AI Review: APPROVED - Ready for manual merge ({complexity})",
+        )
+        logger.info(
+            "QA approved, ready for manual merge (auto_merge_enabled=false)",
+            task_id=task_id,
+            complexity=complexity,
+        )
 
 
 def _handle_needs_fix(task_id: str, review_result: dict[str, Any]) -> None:
@@ -108,13 +127,24 @@ def _handle_needs_fix(task_id: str, review_result: dict[str, Any]) -> None:
     verdict = review_result.get("verdict", "NEEDS_FIX")
 
     if not concerns:
+        # Get project_id from task
+        task = task_store.get_task(task_id)
+        project_id = task.get("project_id", "summitflow") if task else "summitflow"
+
         log_task_event(
             task_id,
             f"AI Review: {verdict} with no concerns - treating as APPROVED",
         )
-        auto_merge(task_id)
+
+        # Check if auto-merge is enabled
+        auto_merge_enabled = agent_configs.get_auto_merge_enabled(project_id)
+        if auto_merge_enabled:
+            auto_merge(task_id)
         task_store.update_task_status(task_id, "completed")
-        logger.info("QA no concerns, auto-merged", task_id=task_id)
+        logger.info(
+            f"QA no concerns, {'auto-merged' if auto_merge_enabled else 'ready for manual merge'}",
+            task_id=task_id,
+        )
         return
 
     # Try tight QA loop first
@@ -168,14 +198,18 @@ def _handle_escalation(task_id: str, review_result: dict[str, Any]) -> None:
     decision = supervisor_resolve_escalation(task_id, summary, project_id)
 
     if decision == "approve":
-        auto_merge(task_id)
+        # Check if auto-merge is enabled
+        auto_merge_enabled = agent_configs.get_auto_merge_enabled(project_id)
+        if auto_merge_enabled:
+            auto_merge(task_id)
         task_store.update_task_status(task_id, "completed")
         log_task_event(
             task_id,
-            "AI Review: ESCALATE - Supervisor approved, auto-merged",
+            f"AI Review: ESCALATE - Supervisor approved, {'auto-merged' if auto_merge_enabled else 'ready for manual merge'}",
         )
         logger.info(
-            "Escalation overridden by supervisor, auto-merged", task_id=task_id
+            f"Escalation overridden by supervisor, {'auto-merged' if auto_merge_enabled else 'ready for manual merge'}",
+            task_id=task_id,
         )
     elif decision == "fix":
         fix_review = {
