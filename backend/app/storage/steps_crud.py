@@ -1,76 +1,48 @@
-"""Basic CRUD operations for steps."""
+"""Basic CRUD operations for steps.
+
+This module provides the public API for step CRUD operations by delegating
+to focused submodules for validation, serialization, and query execution.
+"""
 
 from __future__ import annotations
 
-import json
-import logging
-import re
 from collections.abc import Sequence
 from typing import Any
 
-from psycopg.rows import TupleRow
+# Import query execution functions
+from .steps_crud_queries import (
+    execute_append_steps,
+    execute_bulk_insert,
+    execute_create_step,
+    execute_delete_all_steps,
+    execute_get_single_step,
+    execute_get_steps,
+    execute_insert_step,
+)
 
-from .connection import get_connection
+# Re-export for backward compatibility (used by tests and other modules)
+from .steps_crud_serialization import (
+    EXPECTED_STEP_COLUMNS,
+    STEP_COLUMNS,
+)
+from .steps_crud_serialization import (
+    row_to_dict as _row_to_dict,
+)
+from .steps_crud_validation import sanitize_verify_command as _sanitize_verify_command
 
-logger = logging.getLogger(__name__)
-
-_ABSOLUTE_CD_PATTERN = re.compile(r"\bcd\s+/[^\s;|&]+")
-_ABSOLUTE_PATH_PREFIX = re.compile(r"(?:^|\s)/(?:home|root|tmp|var|opt|usr)/\S+")
-
-
-def _sanitize_verify_command(cmd: str | None) -> str | None:
-    """Reject verify_commands containing absolute paths that break worktree isolation.
-
-    Raises ValueError instead of silently returning None, because silent nullification
-    causes steps to auto-pass without actual verification (verify_step treats
-    None verify_command as passed).
-    """
-    if not cmd:
-        return cmd
-    if _ABSOLUTE_CD_PATTERN.search(cmd) or _ABSOLUTE_PATH_PREFIX.search(cmd):
-        msg = (
-            f"verify_command contains absolute path (use relative paths — "
-            f"commands run with cwd=worktree): {cmd[:120]}"
-        )
-        raise ValueError(msg)
-    return cmd
-
-# Column list for all step SELECT/RETURNING queries (12 columns)
-STEP_COLUMNS = """id, subtask_id, step_number, description, spec, passes, passed_at, created_at, verify_command, expected_output, status, fix_step_number"""
-
-# Expected column count for row validation
-EXPECTED_STEP_COLUMNS = 12
-
-
-def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
-    """Convert a database row to a step dict.
-
-    Column order (12 columns):
-        id, subtask_id, step_number, description, spec, passes, passed_at, created_at,
-        verify_command, expected_output, status, fix_step_number
-    """
-    if row is None:
-        raise ValueError("Row cannot be None")
-    if len(row) != EXPECTED_STEP_COLUMNS:
-        raise ValueError(f"Expected {EXPECTED_STEP_COLUMNS} columns, got {len(row)}")
-
-    # Import here to avoid circular dependency
-    from .steps_constants import STEP_STATUS_PENDING
-
-    return {
-        "id": row[0],
-        "subtask_id": row[1],
-        "step_number": row[2],
-        "description": row[3],
-        "spec": row[4],
-        "passes": row[5],
-        "passed_at": row[6].isoformat() if row[6] else None,
-        "created_at": row[7].isoformat() if row[7] else None,
-        "verify_command": row[8],
-        "expected_output": row[9],
-        "status": row[10] or STEP_STATUS_PENDING,
-        "fix_step_number": row[11],
-    }
+__all__ = [
+    "EXPECTED_STEP_COLUMNS",
+    "STEP_COLUMNS",
+    "_row_to_dict",
+    "_sanitize_verify_command",
+    "append_steps",
+    "bulk_create_steps",
+    "create_step",
+    "delete_steps_for_subtask",
+    "get_step",
+    "get_steps_for_subtask",
+    "insert_step",
+]
 
 
 def create_step(
@@ -97,29 +69,9 @@ def create_step(
     Raises:
         Exception: If subtask_id doesn't exist (FK constraint violation)
     """
-
-    verify_command = _sanitize_verify_command(verify_command)
-    spec_json = json.dumps(spec) if spec else None
-
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            f"""
-            INSERT INTO task_subtask_steps (subtask_id, step_number, description, spec, verify_command, expected_output)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            ON CONFLICT (subtask_id, step_number) DO UPDATE SET
-                description = EXCLUDED.description,
-                spec = EXCLUDED.spec,
-                verify_command = EXCLUDED.verify_command,
-                expected_output = EXCLUDED.expected_output
-            RETURNING {STEP_COLUMNS}
-            """,
-            (subtask_id, step_number, description, spec_json, verify_command, expected_output),
-        )
-        row = cur.fetchone()
-        conn.commit()
-
-    logger.debug("Created step %d for subtask %s", step_number, subtask_id)
-    return _row_to_dict(row)
+    return execute_create_step(
+        subtask_id, step_number, description, spec, verify_command, expected_output
+    )
 
 
 def get_steps_for_subtask(subtask_id: str) -> list[dict[str, Any]]:
@@ -131,19 +83,7 @@ def get_steps_for_subtask(subtask_id: str) -> list[dict[str, Any]]:
     Returns:
         List of step dicts, ordered by step_number.
     """
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            f"""
-            SELECT {STEP_COLUMNS}
-            FROM task_subtask_steps
-            WHERE subtask_id = %s
-            ORDER BY step_number
-            """,
-            (subtask_id,),
-        )
-        rows = cur.fetchall()
-
-    return [_row_to_dict(row) for row in rows]
+    return execute_get_steps(subtask_id)
 
 
 def get_step(subtask_id: str, step_number: int) -> dict[str, Any] | None:
@@ -156,21 +96,7 @@ def get_step(subtask_id: str, step_number: int) -> dict[str, Any] | None:
     Returns:
         Step dict or None if not found.
     """
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            f"""
-            SELECT {STEP_COLUMNS}
-            FROM task_subtask_steps
-            WHERE subtask_id = %s AND step_number = %s
-            """,
-            (subtask_id, step_number),
-        )
-        row = cur.fetchone()
-
-    if not row:
-        return None
-
-    return _row_to_dict(row)
+    return execute_get_single_step(subtask_id, step_number)
 
 
 def bulk_create_steps(
@@ -192,44 +118,7 @@ def bulk_create_steps(
     Raises:
         Exception: If subtask_id doesn't exist or on DB error.
     """
-    if not steps:
-        return []
-
-    created = []
-    with get_connection() as conn, conn.cursor() as cur:
-        for idx, step in enumerate(steps, start=1):
-            if isinstance(step, str):
-                description = step
-                spec = None
-                verify_command = None
-                expected_output = None
-            else:
-                description = step.get("description", "")
-                spec = step.get("spec")
-                verify_command = _sanitize_verify_command(step.get("verify_command"))
-                expected_output = step.get("expected_output")
-
-            spec_json = json.dumps(spec) if spec else None
-            cur.execute(
-                f"""
-                INSERT INTO task_subtask_steps (subtask_id, step_number, description, spec, verify_command, expected_output)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                ON CONFLICT (subtask_id, step_number) DO UPDATE SET
-                    description = EXCLUDED.description,
-                    spec = EXCLUDED.spec,
-                    verify_command = EXCLUDED.verify_command,
-                    expected_output = EXCLUDED.expected_output
-                RETURNING {STEP_COLUMNS}
-                """,
-                (subtask_id, idx, description, spec_json, verify_command, expected_output),
-            )
-            row = cur.fetchone()
-            created.append(_row_to_dict(row))
-
-        conn.commit()
-
-    logger.info("Created %d steps for subtask %s", len(created), subtask_id)
-    return created
+    return execute_bulk_insert(subtask_id, steps)
 
 
 def append_steps(
@@ -252,57 +141,7 @@ def append_steps(
     Raises:
         Exception: If subtask_id doesn't exist or on DB error.
     """
-    if not steps:
-        return []
-
-    with get_connection() as conn, conn.cursor() as cur:
-        # Find the current max step number
-        cur.execute(
-            "SELECT COALESCE(MAX(step_number), 0) FROM task_subtask_steps WHERE subtask_id = %s",
-            (subtask_id,),
-        )
-        row = cur.fetchone()
-        max_step: int = row[0] if row else 0
-
-        created = []
-        for idx, step in enumerate(steps, start=max_step + 1):
-            if isinstance(step, str):
-                description = step
-                spec = None
-                verify_command = None
-                expected_output = None
-            else:
-                description = step.get("description", "")
-                spec = step.get("spec")
-                verify_command = _sanitize_verify_command(step.get("verify_command"))
-                expected_output = step.get("expected_output")
-
-            spec_json = json.dumps(spec) if spec else None
-            cur.execute(
-                f"""
-                INSERT INTO task_subtask_steps (subtask_id, step_number, description, spec, verify_command, expected_output)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                ON CONFLICT (subtask_id, step_number) DO UPDATE SET
-                    description = EXCLUDED.description,
-                    spec = EXCLUDED.spec,
-                    verify_command = EXCLUDED.verify_command,
-                    expected_output = EXCLUDED.expected_output
-                RETURNING {STEP_COLUMNS}
-                """,
-                (subtask_id, idx, description, spec_json, verify_command, expected_output),
-            )
-            row = cur.fetchone()
-            created.append(_row_to_dict(row))
-
-        conn.commit()
-
-    logger.info(
-        "Appended %d steps to subtask %s (starting at step %d)",
-        len(created),
-        subtask_id,
-        max_step + 1,
-    )
-    return created
+    return execute_append_steps(subtask_id, steps)
 
 
 def delete_steps_for_subtask(subtask_id: str) -> int:
@@ -314,16 +153,7 @@ def delete_steps_for_subtask(subtask_id: str) -> int:
     Returns:
         Number of steps deleted.
     """
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            "DELETE FROM task_subtask_steps WHERE subtask_id = %s",
-            (subtask_id,),
-        )
-        count: int = cur.rowcount
-        conn.commit()
-
-    logger.debug("Deleted %d steps for subtask %s", count, subtask_id)
-    return count
+    return execute_delete_all_steps(subtask_id)
 
 
 def insert_step(
@@ -355,52 +185,6 @@ def insert_step(
         ValueError: If position < 1
         Exception: If subtask_id doesn't exist (FK constraint violation)
     """
-    if position < 1:
-        raise ValueError("Position must be >= 1")
-
-    verify_command = _sanitize_verify_command(verify_command)
-    spec_json = json.dumps(spec) if spec else None
-
-    with get_connection() as conn, conn.cursor() as cur:
-        # Get steps to shift (in reverse order to avoid unique constraint violations)
-        cur.execute(
-            """
-            SELECT step_number FROM task_subtask_steps
-            WHERE subtask_id = %s AND step_number >= %s
-            ORDER BY step_number DESC
-            """,
-            (subtask_id, position),
-        )
-        steps_to_shift = [row[0] for row in cur.fetchall()]
-
-        # Shift each step individually in reverse order
-        for step_num in steps_to_shift:
-            cur.execute(
-                """
-                UPDATE task_subtask_steps
-                SET step_number = %s
-                WHERE subtask_id = %s AND step_number = %s
-                """,
-                (step_num + 1, subtask_id, step_num),
-            )
-        shifted = len(steps_to_shift)
-
-        # Insert the new step at the position
-        cur.execute(
-            f"""
-            INSERT INTO task_subtask_steps (subtask_id, step_number, description, spec, verify_command, expected_output)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            RETURNING {STEP_COLUMNS}
-            """,
-            (subtask_id, position, description, spec_json, verify_command, expected_output),
-        )
-        row = cur.fetchone()
-        conn.commit()
-
-    logger.info(
-        "Inserted step at position %d for subtask %s (shifted %d existing steps)",
-        position,
-        subtask_id,
-        shifted,
+    return execute_insert_step(
+        subtask_id, position, description, spec, verify_command, expected_output
     )
-    return _row_to_dict(row)

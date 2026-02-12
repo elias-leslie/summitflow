@@ -8,7 +8,8 @@ from typing import Any
 
 from .connection import get_connection
 from .steps_constants import STEP_STATUS_PLAN_DEFECT, VALID_STEP_STATUSES
-from .steps_crud import STEP_COLUMNS, _row_to_dict, get_step
+from .steps_crud import get_step
+from .steps_crud_serialization import STEP_COLUMNS, row_to_dict
 from .steps_exceptions import PlanDefectError, StepVerificationError
 from .steps_verification import _parse_expected, run_verify_command
 
@@ -72,7 +73,7 @@ def update_step_passes(
             return None
 
         logger.debug("Updated step %d passes=False for subtask %s", step_number, subtask_id)
-        return _row_to_dict(row)
+        return row_to_dict(row)
 
     if already_verified:
         passed_at = datetime.now(UTC)
@@ -92,7 +93,7 @@ def update_step_passes(
             logger.warning("Step %d not found for subtask %s", step_number, subtask_id)
             return None
         logger.info("Step %d passed for subtask %s (pre-verified)", step_number, subtask_id)
-        return _row_to_dict(row)
+        return row_to_dict(row)
 
     # passes=True: Get the step to check for verify_command
     with get_connection() as conn, conn.cursor() as cur:
@@ -110,7 +111,7 @@ def update_step_passes(
         logger.warning("Step %d not found for subtask %s", step_number, subtask_id)
         return None
 
-    step = _row_to_dict(row)
+    step = row_to_dict(row)
     verify_command = step.get("verify_command")
     expected_output = step.get("expected_output")
 
@@ -219,7 +220,7 @@ def update_step_passes(
         return None
 
     logger.info("Step %d passed for subtask %s (verified)", step_number, subtask_id)
-    return _row_to_dict(row)
+    return row_to_dict(row)
 
 
 def update_step_fields(
@@ -272,7 +273,7 @@ def update_step_fields(
         return None
 
     logger.info("Updated step %d fields for subtask %s", step_number, subtask_id)
-    return _row_to_dict(row)
+    return row_to_dict(row)
 
 
 def update_step_status(
@@ -370,4 +371,4 @@ def update_step_status(
         return None
 
     logger.info("Updated step %d status to '%s' for subtask %s", step_number, status, subtask_id)
-    return _row_to_dict(row)
+    return row_to_dict(row)
