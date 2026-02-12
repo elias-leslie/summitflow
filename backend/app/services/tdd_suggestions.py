@@ -10,11 +10,11 @@ from __future__ import annotations
 from .tdd.capability_mapping import suggest_capabilities
 from .tdd.component_grouping import suggest_components
 from .tdd.coverage_analysis import get_coverage_summary
+from .tdd.discovery import find_existing_tests
 from .tdd.tdd_suggestions import (
     get_component_suggestions_by_source,
     get_tdd_suggestions,
 )
-from .tdd.discovery import find_existing_tests
 
 __all__ = [
     "find_existing_tests",
