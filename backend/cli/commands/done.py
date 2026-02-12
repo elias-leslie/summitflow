@@ -280,19 +280,33 @@ def _complete_subtask(
     }
 
 
-def _report_task_outcome(task_id: str, *, succeeded: bool) -> None:
+def _report_task_outcome(
+    task_id: str,
+    *,
+    succeeded: bool,
+    project_id: str | None = None,
+    started_at: str | None = None,
+) -> None:
     """Report task outcome to Agent Hub memory system (fire-and-forget).
 
     Credits loaded memories when tasks succeed, enabling utility_score tracking.
+    Passes project_id + started_at for fallback session lookup when external_id
+    not set (common for CC interactive sessions that claim tasks after start).
     Non-blocking — failures are logged but never block task completion.
     """
     try:
         from .memory_api import agent_hub_request
 
+        payload: dict[str, Any] = {"task_id": task_id, "succeeded": succeeded}
+        if project_id:
+            payload["project_id"] = project_id
+        if started_at:
+            payload["started_at"] = started_at
+
         agent_hub_request(
             "POST",
             "/api/memory/task-outcome",
-            json={"task_id": task_id, "succeeded": succeeded},
+            json=payload,
             tool_name="st done",
         )
     except Exception:
@@ -392,7 +406,13 @@ def _complete_task(
             raise typer.Exit(1) from None
 
         # Report task outcome to Agent Hub memory system (fire-and-forget)
-        _report_task_outcome(task_id, succeeded=True)
+        claimed_at = snapshot_info.get("created_at") if snapshot_info else None
+        _report_task_outcome(
+            task_id,
+            succeeded=True,
+            project_id=project_id,
+            started_at=str(claimed_at) if claimed_at else None,
+        )
 
         # Remove snapshot after successful merge + status update
         remove_snapshot(task_id, project_id=project_id)
