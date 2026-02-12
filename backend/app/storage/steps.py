@@ -20,9 +20,6 @@ from .steps_constants import (
     VALID_STEP_STATUSES,
 )
 from .steps_crud import (
-    EXPECTED_STEP_COLUMNS,
-    STEP_COLUMNS,
-    _row_to_dict,
     append_steps,
     bulk_create_steps,
     create_step,
@@ -30,6 +27,13 @@ from .steps_crud import (
     get_step,
     get_steps_for_subtask,
     insert_step,
+)
+from .steps_crud_serialization import (
+    EXPECTED_STEP_COLUMNS,
+    STEP_COLUMNS,
+)
+from .steps_crud_serialization import (
+    row_to_dict as _row_to_dict,
 )
 from .steps_deletion import delete_step
 from .steps_exceptions import (
