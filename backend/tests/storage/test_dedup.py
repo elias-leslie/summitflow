@@ -108,8 +108,8 @@ class TestCalculateKeywordOverlap:
 class TestDuplicateTaskExists:
     """Tests for duplicate_task_exists with mocked DB."""
 
-    def _mock_cursor(self, rows: list[tuple[str, str]]) -> MagicMock:
-        """Create a mock cursor that returns given rows."""
+    def _mock_cursor(self, rows: list[tuple[str, str, str | None]]) -> MagicMock:
+        """Create a mock cursor that returns given rows (id, title, description)."""
         cur = MagicMock()
         cur.fetchall.return_value = rows
         cur.__enter__ = MagicMock(return_value=cur)
@@ -134,7 +134,7 @@ class TestDuplicateTaskExists:
     @patch("app.storage.tasks.dedup.get_connection")
     def test_exact_duplicate_found(self, mock_get_conn: MagicMock) -> None:
         """Identical title should match."""
-        cur = self._mock_cursor([("task-abc", "Fix login bug")])
+        cur = self._mock_cursor([("task-abc", "Fix login bug", None)])
         mock_get_conn.return_value = self._mock_connection(cur)
 
         result = duplicate_task_exists("proj", "Fix login bug")
@@ -144,7 +144,7 @@ class TestDuplicateTaskExists:
     def test_near_duplicate_with_different_id(self, mock_get_conn: MagicMock) -> None:
         """Same title with different IDs matches when 3+ keywords survive filtering."""
         # "Fix backend scheduled execution handler 111" → {fix, backend, scheduled, execution, handler}
-        cur = self._mock_cursor([("task-abc", "Fix backend scheduled execution handler 111")])
+        cur = self._mock_cursor([("task-abc", "Fix backend scheduled execution handler 111", None)])
         mock_get_conn.return_value = self._mock_connection(cur)
 
         result = duplicate_task_exists("proj", "Fix backend scheduled execution handler 222")
@@ -152,7 +152,7 @@ class TestDuplicateTaskExists:
 
     @patch("app.storage.tasks.dedup.get_connection")
     def test_different_title_no_match(self, mock_get_conn: MagicMock) -> None:
-        cur = self._mock_cursor([("task-abc", "Fix login button styling")])
+        cur = self._mock_cursor([("task-abc", "Fix login button styling", None)])
         mock_get_conn.return_value = self._mock_connection(cur)
 
         result = duplicate_task_exists("proj", "Add user authentication endpoint")
@@ -192,47 +192,43 @@ class TestDuplicateTaskExists:
 
     @patch("app.storage.tasks.dedup.get_connection")
     def test_threshold_boundary_below(self, mock_get_conn: MagicMock) -> None:
-        """Just below 0.8 threshold should NOT match."""
+        """Below 0.9 threshold should NOT match."""
         # "fix login bug" has keywords: {fix, login, bug}
         # "fix login styling" has keywords: {fix, login, styling}
         # overlap: {fix, login} / {fix, login, bug, styling} = 2/4 = 0.5
-        cur = self._mock_cursor([("task-abc", "Fix login styling")])
+        cur = self._mock_cursor([("task-abc", "Fix login styling", None)])
         mock_get_conn.return_value = self._mock_connection(cur)
 
         result = duplicate_task_exists("proj", "Fix login bug")
         assert result is None
 
     @patch("app.storage.tasks.dedup.get_connection")
-    def test_threshold_boundary_at(self, mock_get_conn: MagicMock) -> None:
-        """At exactly 0.8 threshold should match."""
-        # {scheduled, execution, hatchet, cron, dispatch} vs
-        # {scheduled, execution, hatchet, cron, verify}
-        # overlap: 4/6 = 0.667 — not enough
-        # Let me make a better example:
-        # "fix login button crash" → {fix, login, button, crash}
-        # "fix login button error" → {fix, login, button}  (error is stop word)
-        # overlap: {fix, login, button} / {fix, login, button, crash} = 3/4 = 0.75 — still below
-        # Need 4/5 = 0.8:
-        # "fix login button crash mobile" → {fix, login, button, crash, mobile}
-        # "fix login button crash tablet" → {fix, login, button, crash, tablet}
-        # overlap: {fix, login, button, crash} / {fix, login, button, crash, mobile, tablet} = 4/6 = 0.667
-        # Hmm. Let me try:
-        # "add user auth endpoint handler" → {add, user, auth, endpoint, handler}  wait, "add" is NOT a stop word here
-        # Actually let me just make it work with 4/5:
-        # kw1 = {alpha, beta, gamma, delta, epsilon}
-        # kw2 = {alpha, beta, gamma, delta, zeta}
-        # overlap = 4/6 = 0.667
-        # For exactly 0.8 I need 4/5: share 4 of 5 total unique keywords
-        # kw1 = {alpha, beta, gamma, delta}
-        # kw2 = {alpha, beta, gamma, zeta}
-        # overlap = 3/5 = 0.6
-        # For 0.8: need intersection/union = 0.8 → 4/(4+1) = 4/5
+    def test_old_threshold_no_longer_matches(self, mock_get_conn: MagicMock) -> None:
+        """0.8 overlap should NOT match with stricter 0.9 threshold."""
         # kw1 = {alpha, beta, gamma, delta} kw2 = {alpha, beta, gamma, delta, zeta}
-        # overlap = 4/5 = 0.8 ✓
-        cur = self._mock_cursor([("task-abc", "alpha beta gamma delta zeta")])
+        # overlap = 4/5 = 0.8 — below new 0.9 threshold
+        cur = self._mock_cursor([("task-abc", "alpha beta gamma delta zeta", None)])
         mock_get_conn.return_value = self._mock_connection(cur)
 
         result = duplicate_task_exists("proj", "alpha beta gamma delta")
+        assert result is None
+
+    @patch("app.storage.tasks.dedup.get_connection")
+    def test_threshold_at_0_9(self, mock_get_conn: MagicMock) -> None:
+        """At 0.9+ threshold should match."""
+        # kw1 = {alpha, beta, gamma, delta, epsilon, zeta, eta, kappa, lambda_}
+        # kw2 = {alpha, beta, gamma, delta, epsilon, zeta, eta, kappa, lambda_, mu}
+        # overlap = 9/10 = 0.9 ✓
+        cur = self._mock_cursor([(
+            "task-abc",
+            "alpha beta gamma delta epsilon zeta eta kappa lambda mu",
+            None,
+        )])
+        mock_get_conn.return_value = self._mock_connection(cur)
+
+        result = duplicate_task_exists(
+            "proj", "alpha beta gamma delta epsilon zeta eta kappa lambda"
+        )
         assert result == "task-abc"
 
     @patch("app.storage.tasks.dedup.get_connection")
@@ -242,7 +238,7 @@ class TestDuplicateTaskExists:
         This prevents false positives from titles like "AutoTest: Scheduled exec 111"
         where noise stripping leaves only 2 keywords.
         """
-        cur = self._mock_cursor([("task-abc", "AutoTest: Scheduled execution 111111")])
+        cur = self._mock_cursor([("task-abc", "AutoTest: Scheduled execution 111111", None)])
         mock_get_conn.return_value = self._mock_connection(cur)
 
         result = duplicate_task_exists("proj", "AutoTest: Scheduled execution 222222")
@@ -254,7 +250,7 @@ class TestDuplicateTaskExists:
     def test_sufficient_keywords_still_dedupes(self, mock_get_conn: MagicMock) -> None:
         """Titles with 3+ keywords after filtering are still deduped normally."""
         # "fix login button crash" → {fix, login, button, crash} = 4 keywords
-        cur = self._mock_cursor([("task-abc", "Fix login button crash")])
+        cur = self._mock_cursor([("task-abc", "Fix login button crash", None)])
         mock_get_conn.return_value = self._mock_connection(cur)
 
         result = duplicate_task_exists("proj", "Fix login button crash")
@@ -264,11 +260,65 @@ class TestDuplicateTaskExists:
     def test_picks_first_duplicate(self, mock_get_conn: MagicMock) -> None:
         """Returns the first matching duplicate's ID."""
         cur = self._mock_cursor([
-            ("task-1", "Completely different title here"),
-            ("task-2", "Fix login button crash"),
-            ("task-3", "Fix login button crash again"),
+            ("task-1", "Completely different title here", None),
+            ("task-2", "Fix login button crash", None),
+            ("task-3", "Fix login button crash again", None),
         ])
         mock_get_conn.return_value = self._mock_connection(cur)
 
         result = duplicate_task_exists("proj", "Fix login button crash")
         assert result == "task-2"
+
+    @patch("app.storage.tasks.dedup.get_connection")
+    def test_same_title_different_description_no_match(
+        self, mock_get_conn: MagicMock
+    ) -> None:
+        """Same title but different descriptions should NOT match when description provided."""
+        # Title overlap = 1.0, but description overlap < 0.5
+        cur = self._mock_cursor([(
+            "task-abc",
+            "Refactor authentication system",
+            "Move from JWT to OAuth provider integration",
+        )])
+        mock_get_conn.return_value = self._mock_connection(cur)
+
+        result = duplicate_task_exists(
+            "proj",
+            "Refactor authentication system",
+            description="Add two-factor authentication with TOTP support",
+        )
+        assert result is None
+
+    @patch("app.storage.tasks.dedup.get_connection")
+    def test_same_title_same_description_matches(
+        self, mock_get_conn: MagicMock
+    ) -> None:
+        """Same title and similar description should match."""
+        cur = self._mock_cursor([(
+            "task-abc",
+            "Refactor authentication system",
+            "Move from JWT tokens to OAuth provider integration",
+        )])
+        mock_get_conn.return_value = self._mock_connection(cur)
+
+        result = duplicate_task_exists(
+            "proj",
+            "Refactor authentication system",
+            description="Move from JWT tokens to OAuth provider",
+        )
+        assert result == "task-abc"
+
+    @patch("app.storage.tasks.dedup.get_connection")
+    def test_no_description_falls_back_to_title_only(
+        self, mock_get_conn: MagicMock
+    ) -> None:
+        """When no description provided, only title matching is used."""
+        cur = self._mock_cursor([(
+            "task-abc",
+            "Fix login button crash",
+            "Some existing description",
+        )])
+        mock_get_conn.return_value = self._mock_connection(cur)
+
+        result = duplicate_task_exists("proj", "Fix login button crash")
+        assert result == "task-abc"

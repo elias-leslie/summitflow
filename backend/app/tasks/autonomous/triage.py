@@ -51,7 +51,9 @@ def triage_idea(task_id: str, project_id: str) -> dict[str, Any]:
     description = task.get("description", "")
 
     # Deterministic duplicate check — cheaper and more accurate than LLM
-    dup_id = duplicate_task_exists(project_id, title, exclude_task_id=task_id)
+    dup_id = duplicate_task_exists(
+        project_id, title, exclude_task_id=task_id, description=description
+    )
     if dup_id:
         task_store.update_task_status(task_id, "cancelled")
         log_task_event(task_id, f"Triage: REJECTED - Duplicate of {dup_id} (deterministic match)")
