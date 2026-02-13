@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from typing import cast
 
 import redis
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -278,6 +278,14 @@ def _check_cache_health() -> ComponentHealth:
             message=f"Cache connection failed: {e!s}",
             response_time_ms=round(response_time_ms, 2),
         )
+
+
+@app.get("/api/teapot", status_code=status.HTTP_418_IM_A_TEAPOT, tags=["system"])
+async def teapot() -> dict[str, str]:
+    """
+    I'm a teapot endpoint (RFC 2324).
+    """
+    return {"message": "I'm a teapot", "detail": "Short and stout"}
 
 
 @app.get("/")
