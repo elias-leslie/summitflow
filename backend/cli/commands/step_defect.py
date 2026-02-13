@@ -145,7 +145,7 @@ def _error_fix_verification_failed(
 
     typer.echo(
         f"Fix step {subtask_id}.{fix_step_num} verification FAILED. "
-        f"Fix your -v/-e and retry.",
+        f"Fix your -v and retry.",
         err=True,
     )
     typer.echo(f"  got: {output}", err=True)

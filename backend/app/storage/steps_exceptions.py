@@ -28,7 +28,7 @@ class StepVerificationError(Exception):
     NEXT_STEPS_GUIDANCE = """
 Next steps:
   1. Fix your implementation to match the expected behavior
-  2. If the plan/verify_command is wrong: st step defect <subtask-id> <step#> -v "correct_cmd" -e "correct_expect"
+  2. If the plan/verify_command is wrong: st step defect <subtask-id> <step#> -v "correct_cmd"
      (creates fix step, verifies, marks defect — all in one command)
 
 Do NOT modify the verify_command directly — use st step defect for plan corrections."""

@@ -82,16 +82,6 @@ def get_targeted_test_command(relative_path: str) -> str:
     return f"python -c 'import {module_path}' 2>/dev/null || echo 'Import check skipped'"
 
 
-def build_quality_steps() -> list[dict[str, str]]:
-    """Shared quality gate steps reusable across task types."""
-    return [
-        {
-            "description": "Quality gate: auto-fix, lint, types",
-            "verify_command": "dt --fix 2>/dev/null; dt --quick",
-        },
-    ]
-
-
 def build_refactor_steps(
     relative_path: str,
     file_path: str,
