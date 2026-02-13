@@ -38,7 +38,8 @@ async def handle_batch_create_tasks(project_id: str, body: BatchTaskRequest) -> 
                 **item.model_dump(
                     include={
                         "title", "description", "capability_id", "priority",
-                        "task_type", "parent_task_id", "complexity", "autonomous"
+                        "task_type", "parent_task_id", "complexity", "autonomous",
+                        "labels",
                     }
                 ),
             )
