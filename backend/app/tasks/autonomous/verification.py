@@ -61,8 +61,7 @@ def _execute_and_check(
         Tuple of (passed, reason, output, returncode)
     """
     result = subprocess.run(
-        command,
-        shell=True,
+        ["bash", "-c", command],
         capture_output=True,
         text=True,
         timeout=timeout,
