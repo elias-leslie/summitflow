@@ -71,7 +71,7 @@ def format_context_task(task: dict[str, Any]) -> str:
     if done_when:
         lines.append(f"DONE_WHEN[{len(done_when)}]:{' | '.join(done_when)}")
     context = task.get("context") or {}
-    if context:
+    if context and isinstance(context, dict):
         parts = []
         if files_mod := context.get("files_to_modify"):
             parts.append(f"modify:{','.join(files_mod)}")

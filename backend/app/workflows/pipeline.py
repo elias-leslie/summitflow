@@ -100,12 +100,11 @@ async def dispatch_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
 async def ideate_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
     from ..tasks.autonomous.ideation import ideate_task
 
-    dispatch = _make_dispatch_callback()
     result = await asyncio.to_thread(ideate_task, input.task_id, input.project_id)
 
     # Auto-advance to triage on success
     if result.get("status") == "ideated":
-        dispatch("triage", input.task_id, input.project_id)
+        await _trigger_workflow("triage", input.task_id, input.project_id)
 
     return result
 
