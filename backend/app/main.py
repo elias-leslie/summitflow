@@ -280,7 +280,7 @@ def _check_cache_health() -> ComponentHealth:
         )
 
 
-@app.get("/api/teapot", status_code=status.HTTP_418_IM_A_TEAPOT)
+@app.get("/api/teapot", status_code=status.HTTP_418_IM_A_TEAPOT, tags=["system"])
 async def teapot() -> dict[str, str]:
     """
     I'm a teapot endpoint (RFC 2324).
