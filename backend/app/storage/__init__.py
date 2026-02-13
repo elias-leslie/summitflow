@@ -1,4 +1,3 @@
-# AUTOTEST_autotest-1770989805
 """SummitFlow database storage."""
 
 from . import agent_configs, events, explorer, explorer_sub_elements
