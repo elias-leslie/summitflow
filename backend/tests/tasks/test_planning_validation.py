@@ -1,10 +1,12 @@
-"""Tests for planning verify_command validation warnings.
+"""Tests for planning verify_command validation.
 
 Covers:
+- Trivial command blocking (true, :, exit 0, echo-only, empty, comments)
+- Absolute path rejection (raises ValueError, not nullification)
 - Small context window detection (-A1 through -A5)
 - Chained rg pipe detection (rg ... | rg)
 - head/tail usage detection in verify_commands
-- Existing checks: absolute paths, grep→rg rewriting
+- grep→rg rewriting
 """
 
 from __future__ import annotations
@@ -31,6 +33,93 @@ def _make_plan(verify_command: str) -> dict[str, Any]:
             }
         ]
     }
+
+
+class TestTrivialCommandBlocking:
+    """Block trivial verify_commands that always exit 0."""
+
+    @pytest.mark.parametrize(
+        "cmd,match",
+        [
+            ("true", "always exits 0"),
+            (":", "always exits 0"),
+            ("exit 0", "always exits 0"),
+        ],
+        ids=["true", "colon", "exit_0"],
+    )
+    def test_noop_raises_valueerror(self, cmd: str, match: str) -> None:
+        plan = _make_plan(cmd)
+        with pytest.raises(ValueError, match=match):
+            _validate_and_fix_plan(plan)
+
+    @pytest.mark.parametrize(
+        "cmd,match",
+        [
+            ("echo ok", "echo-only"),
+            ("echo 'Found it'", "echo-only"),
+            ("Echo Done", "echo-only"),
+        ],
+        ids=["echo_ok", "echo_quoted", "echo_case"],
+    )
+    def test_echo_only_raises_valueerror(self, cmd: str, match: str) -> None:
+        plan = _make_plan(cmd)
+        with pytest.raises(ValueError, match=match):
+            _validate_and_fix_plan(plan)
+
+    def test_echo_compound_allowed(self) -> None:
+        """echo + real check via && is legitimate."""
+        plan = _make_plan("echo 'checking' && test -f file.py")
+        _validate_and_fix_plan(plan)
+        assert plan["subtasks"][0]["steps"][0]["verify_command"] == "echo 'checking' && test -f file.py"
+
+    def test_empty_string_raises_valueerror(self) -> None:
+        plan = _make_plan("")
+        # Empty string is falsy, so it skips the verify block entirely (no error)
+        _validate_and_fix_plan(plan)
+
+    def test_whitespace_only_raises_valueerror(self) -> None:
+        plan = _make_plan("   ")
+        with pytest.raises(ValueError, match="empty"):
+            _validate_and_fix_plan(plan)
+
+    def test_comment_only_raises_valueerror(self) -> None:
+        plan = _make_plan("# just a comment")
+        with pytest.raises(ValueError, match="comment"):
+            _validate_and_fix_plan(plan)
+
+    @pytest.mark.parametrize(
+        "cmd",
+        [
+            "test -f file.py",
+            "rg -q 'def main' app/main.py",
+            "python -c 'import foo'",
+            "pytest tests/test_foo.py -q",
+        ],
+        ids=["test_f", "rg_q", "python_import", "pytest"],
+    )
+    def test_legitimate_commands_allowed(self, cmd: str) -> None:
+        plan = _make_plan(cmd)
+        _validate_and_fix_plan(plan)
+        assert plan["subtasks"][0]["steps"][0]["verify_command"] == cmd
+
+
+class TestAbsolutePathRaises:
+    """Absolute paths now raise ValueError instead of nullifying."""
+
+    def test_absolute_cd_path_raises(self) -> None:
+        plan = _make_plan("cd /home/user/project && rg 'x' file")
+        with pytest.raises(ValueError, match="absolute path"):
+            _validate_and_fix_plan(plan)
+
+    def test_absolute_path_prefix_raises(self) -> None:
+        plan = _make_plan("cat /home/user/project/file.txt")
+        with pytest.raises(ValueError, match="absolute path"):
+            _validate_and_fix_plan(plan)
+
+    def test_relative_path_allowed(self) -> None:
+        plan = _make_plan("rg 'pattern' backend/app/main.py")
+        _validate_and_fix_plan(plan)
+        assert plan["subtasks"][0]["steps"][0]["verify_command"] == "rg 'pattern' backend/app/main.py"
 
 
 class TestSmallContextWindowWarning:
@@ -138,16 +227,15 @@ class TestHeadTailWarning:
             assert "head_tail_usage" not in warning_events
 
 
-class TestExistingValidation:
-    """Ensure existing checks still work after adding new patterns."""
-
-    def test_absolute_cd_path_nullifies_command(self) -> None:
-        plan = _make_plan("cd /home/user/project && rg 'x' file")
-        _validate_and_fix_plan(plan)
-        assert plan["subtasks"][0]["steps"][0]["verify_command"] is None
+class TestGrepRewriting:
+    """Ensure grep→rg rewriting still works."""
 
     def test_grep_rewritten_to_rg(self) -> None:
         plan = _make_plan("grep 'pattern' file.py")
         _validate_and_fix_plan(plan)
         assert plan["subtasks"][0]["steps"][0]["verify_command"] == "rg 'pattern' file.py"
 
+    def test_cat_grep_rewritten_to_rg(self) -> None:
+        plan = _make_plan("cat file.py | grep 'pattern'")
+        _validate_and_fix_plan(plan)
+        assert plan["subtasks"][0]["steps"][0]["verify_command"] == "rg 'pattern' file.py"

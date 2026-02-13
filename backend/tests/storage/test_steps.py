@@ -323,10 +323,10 @@ class TestGetStepSummary:
         """Test summary with partial completion."""
         mock_verify.return_value = ("passed", 0, "ok")
         steps = [
-            {"description": "Step 1", "verify_command": "echo 1"},
-            {"description": "Step 2", "verify_command": "echo 2"},
-            {"description": "Step 3", "verify_command": "echo 3"},
-            {"description": "Step 4", "verify_command": "echo 4"},
+            {"description": "Step 1", "verify_command": "rg -q 'step1' file.py"},
+            {"description": "Step 2", "verify_command": "rg -q 'step2' file.py"},
+            {"description": "Step 3", "verify_command": "rg -q 'step3' file.py"},
+            {"description": "Step 4", "verify_command": "rg -q 'step4' file.py"},
         ]
         step_store.bulk_create_steps(test_subtask["id"], steps)
         step_store.update_step_passes(test_subtask["id"], 1, True)
@@ -343,8 +343,8 @@ class TestGetStepSummary:
         """Test summary with all steps complete."""
         mock_verify.return_value = ("passed", 0, "ok")
         steps = [
-            {"description": "Step 1", "verify_command": "echo 1"},
-            {"description": "Step 2", "verify_command": "echo 2"},
+            {"description": "Step 1", "verify_command": "rg -q 'step1' file.py"},
+            {"description": "Step 2", "verify_command": "rg -q 'step2' file.py"},
         ]
         step_store.bulk_create_steps(test_subtask["id"], steps)
         step_store.update_step_passes(test_subtask["id"], 1, True)
@@ -377,9 +377,9 @@ class TestStepGates:
         """Can mark step 2 as passed even if step 1 is not passed (logs info)."""
         mock_verify.return_value = ("passed", 0, "ok")
         steps = [
-            {"description": "Step 1", "verify_command": "echo 1"},
-            {"description": "Step 2", "verify_command": "echo 2"},
-            {"description": "Step 3", "verify_command": "echo 3"},
+            {"description": "Step 1", "verify_command": "rg -q 'step1' file.py"},
+            {"description": "Step 2", "verify_command": "rg -q 'step2' file.py"},
+            {"description": "Step 3", "verify_command": "rg -q 'step3' file.py"},
         ]
         step_store.bulk_create_steps(test_subtask["id"], steps)
 
@@ -391,9 +391,9 @@ class TestStepGates:
         """Can mark step 2 as passed after step 1 is passed."""
         mock_verify.return_value = ("passed", 0, "ok")
         steps = [
-            {"description": "Step 1", "verify_command": "echo 1"},
-            {"description": "Step 2", "verify_command": "echo 2"},
-            {"description": "Step 3", "verify_command": "echo 3"},
+            {"description": "Step 1", "verify_command": "rg -q 'step1' file.py"},
+            {"description": "Step 2", "verify_command": "rg -q 'step2' file.py"},
+            {"description": "Step 3", "verify_command": "rg -q 'step3' file.py"},
         ]
         step_store.bulk_create_steps(test_subtask["id"], steps)
 
@@ -408,8 +408,8 @@ class TestStepGates:
     def test_step_gate_force_param_removed(self, test_subtask):
         """Force flag has been removed - no bypass available."""
         steps = [
-            {"description": "Step 1", "verify_command": "echo 1"},
-            {"description": "Step 2", "verify_command": "echo 2"},
+            {"description": "Step 1", "verify_command": "rg -q 'step1' file.py"},
+            {"description": "Step 2", "verify_command": "rg -q 'step2' file.py"},
         ]
         step_store.bulk_create_steps(test_subtask["id"], steps)
 
@@ -424,8 +424,8 @@ class TestStepGates:
         """First step has no gate check (no previous steps)."""
         mock_verify.return_value = ("passed", 0, "ok")
         steps = [
-            {"description": "Step 1", "verify_command": "echo 1"},
-            {"description": "Step 2", "verify_command": "echo 2"},
+            {"description": "Step 1", "verify_command": "rg -q 'step1' file.py"},
+            {"description": "Step 2", "verify_command": "rg -q 'step2' file.py"},
         ]
         step_store.bulk_create_steps(test_subtask["id"], steps)
 
@@ -438,9 +438,9 @@ class TestStepGates:
         """Gate logs missing steps but allows completion with valid verify_command."""
         mock_verify.return_value = ("passed", 0, "ok")
         steps = [
-            {"description": "Step 1", "verify_command": "echo 1"},
-            {"description": "Step 2", "verify_command": "echo 2"},
-            {"description": "Step 3", "verify_command": "echo 3"},
+            {"description": "Step 1", "verify_command": "rg -q 'step1' file.py"},
+            {"description": "Step 2", "verify_command": "rg -q 'step2' file.py"},
+            {"description": "Step 3", "verify_command": "rg -q 'step3' file.py"},
         ]
         step_store.bulk_create_steps(test_subtask["id"], steps)
 
@@ -568,17 +568,35 @@ class TestSanitizeVerifyCommand:
     @pytest.mark.parametrize(
         "cmd",
         [
-            "echo hello",
             "rg pattern src/",
             "test -f backend/app/main.py",
             "pytest tests/",
             "dt --quick --changed-only",
+            "echo 'checking' && rg -q 'pattern' file",
         ],
     )
     def test_sanitize_allows_relative_commands(self, cmd):
         from app.storage.steps_crud import _sanitize_verify_command
 
         assert _sanitize_verify_command(cmd) == cmd
+
+    def test_sanitize_rejects_echo_only(self):
+        from app.storage.steps_crud import _sanitize_verify_command
+
+        with pytest.raises(ValueError, match="echo-only"):
+            _sanitize_verify_command("echo hello")
+
+    def test_sanitize_rejects_true(self):
+        from app.storage.steps_crud import _sanitize_verify_command
+
+        with pytest.raises(ValueError, match="always exits 0"):
+            _sanitize_verify_command("true")
+
+    def test_sanitize_rejects_whitespace_only(self):
+        from app.storage.steps_crud import _sanitize_verify_command
+
+        with pytest.raises(ValueError, match="empty"):
+            _sanitize_verify_command("   ")
 
     def test_create_step_raises_on_absolute_path(self, test_subtask):
         """Integration: create_step propagates ValueError from sanitizer."""

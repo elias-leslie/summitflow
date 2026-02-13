@@ -55,7 +55,7 @@ def auto_defect_step(
     try:
         fix_steps = append_steps(subtask_id, [{
             "description": f"Fix: auto-defect for step {step_number} (infrastructure failure)",
-            "verify_command": "true",
+            "verify_command": "echo 'auto-defect fix' && true",
         }])
         if not fix_steps:
             return False

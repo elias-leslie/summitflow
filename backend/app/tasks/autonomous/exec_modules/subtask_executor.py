@@ -64,6 +64,39 @@ def execute_subtask(
                 "reason": "worktree_invalid",
             }
 
+        # Validate steps BEFORE agent execution to avoid wasting agent calls
+        steps = subtask.get("steps_from_table", [])
+        if not steps:
+            emit_log(
+                task_id,
+                "error",
+                f"Subtask {subtask_short_id} has 0 steps — cannot verify",
+                source="orchestrator",
+                project_id=project_id,
+            )
+            return {
+                "subtask_id": subtask_short_id,
+                "status": "failed",
+                "passed": False,
+                "reason": "zero_steps",
+                "step_results": [],
+            }
+
+        # Pre-flight: check if verify_commands pass before implementation
+        from .preflight import check_verify_commands_red
+
+        preflight_warnings = check_verify_commands_red(
+            steps, project_path, project_id=project_id
+        )
+        for warn in preflight_warnings:
+            emit_log(
+                task_id,
+                "warn",
+                warn["warning"],
+                source="preflight",
+                project_id=project_id,
+            )
+
         prompt = build_subtask_prompt(task_id, subtask, project_id, project_path)
 
         # Resolve which agent to use: override > subtask_type > task_type > default
@@ -82,24 +115,6 @@ def execute_subtask(
         response, agent_session_id = execute_agent_initial(
             task_id, subtask_short_id, prompt, agent_slug, project_path, project_id
         )
-
-        # Validate steps before starting retry loop
-        steps = subtask.get("steps_from_table", [])
-        if not steps:
-            emit_log(
-                task_id,
-                "error",
-                f"Subtask {subtask_short_id} has 0 steps — cannot verify",
-                source="orchestrator",
-                project_id=project_id,
-            )
-            return {
-                "subtask_id": subtask_short_id,
-                "status": "failed",
-                "passed": False,
-                "reason": "zero_steps",
-                "step_results": [],
-            }
 
         # Run self-healing retry loop
         (
