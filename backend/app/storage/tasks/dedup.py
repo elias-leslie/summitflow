@@ -119,16 +119,19 @@ def duplicate_task_exists(
     project_id: str,
     title: str,
     exclude_task_id: str | None = None,
+    description: str | None = None,
 ) -> str | None:
-    """Check if a duplicate task exists based on title keyword similarity.
+    """Check if a duplicate task exists based on keyword similarity.
 
-    Uses Jaccard similarity (>= 0.8) on extracted keywords. Strips IDs and
-    timestamps so "Fix login v1" and "Fix login v2" are recognized as duplicates.
+    Uses Jaccard similarity on extracted keywords. When description is provided,
+    requires BOTH title (>= 0.9) AND description (>= 0.5) to match, reducing
+    false positives from generic titles with different scope.
 
     Args:
         project_id: Project to check within
         title: Title of the new/current task
         exclude_task_id: Task ID to exclude from comparison (self)
+        description: Optional description for stricter matching
 
     Returns:
         The ID of the duplicate task if found, None otherwise.
@@ -140,8 +143,10 @@ def duplicate_task_exists(
         # high Jaccard scores even for semantically different tasks.
         return None
 
+    new_desc_keywords = _extract_title_keywords(description) if description else set()
+
     query = """
-        SELECT id, title FROM tasks
+        SELECT id, title, description FROM tasks
         WHERE project_id = %s
         AND status IN ('pending', 'running', 'queue', 'paused', 'blocked', 'pr_created', 'ai_reviewing')
     """
@@ -156,9 +161,23 @@ def duplicate_task_exists(
         for row in cur.fetchall():
             existing_id, existing_title = row[0], row[1] or ""
             existing_keywords = _extract_title_keywords(existing_title)
-            overlap = _calculate_keyword_overlap(new_keywords, existing_keywords)
-            if overlap >= 0.8:
-                return str(existing_id)
+            title_overlap = _calculate_keyword_overlap(new_keywords, existing_keywords)
+
+            if title_overlap < 0.9:
+                continue
+
+            # If description provided, also check description similarity
+            if new_desc_keywords:
+                existing_desc = row[2] or ""
+                existing_desc_keywords = _extract_title_keywords(existing_desc)
+                if existing_desc_keywords and new_desc_keywords:
+                    desc_overlap = _calculate_keyword_overlap(
+                        new_desc_keywords, existing_desc_keywords
+                    )
+                    if desc_overlap < 0.5:
+                        continue
+
+            return str(existing_id)
 
     return None
 

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from typing import Any
+
+from pydantic import BaseModel, model_validator
 
 
 class TaskInput(BaseModel):
@@ -11,7 +13,20 @@ class TaskInput(BaseModel):
 
 
 class ProjectInput(BaseModel):
+    """Project input for workflows, including cron-triggered ones.
+
+    Hatchet cron triggers may pass None instead of {} as input.
+    The model_validator ensures defaults apply in both cases.
+    """
+
     project_id: str = "summitflow"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _handle_none_input(cls, data: Any) -> Any:
+        if data is None:
+            return {}
+        return data
 
 
 class EmptyInput(BaseModel):
