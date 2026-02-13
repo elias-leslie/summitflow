@@ -9,6 +9,7 @@ from typing import Any
 from ....logging_config import get_logger
 from ....storage.steps import get_steps_for_subtask, update_step_passes, update_step_status
 from ....storage.steps_crud import append_steps
+from ..smoke_testing import run_targeted_tests
 from ..verification import run_smoke_tests, verify_step
 from .events import emit_log, emit_progress
 
@@ -258,6 +259,46 @@ def verify_steps_with_smoke_tests(
                     task_id,
                     "info",
                     f"Smoke tests passed ({tested_count} modules)",
+                    source="verify",
+                    project_id=project_id,
+                )
+
+    # Run targeted tests for changed files that have corresponding test files
+    if all_passed:
+        emit_log(
+            task_id,
+            "info",
+            "Running targeted tests for changed files...",
+            source="verify",
+            project_id=project_id,
+        )
+        test_result = run_targeted_tests(project_path, project_id=project_id)
+        if test_result.tests_run:
+            if not test_result.passed:
+                all_passed = False
+                for failure in test_result.failures:
+                    step_results.append(
+                        {
+                            "step_number": 998,
+                            "passed": False,
+                            "output": f"Tests failed: {failure['error'][:500]}",
+                            "reason": f"targeted_test_failed:{failure['test_files'][:100]}",
+                            "returncode": 1,
+                        }
+                    )
+                    emit_log(
+                        task_id,
+                        "error",
+                        f"Targeted tests failed: {failure['test_files'][:80]}",
+                        source="verify",
+                        project_id=project_id,
+                    )
+            else:
+                emit_log(
+                    task_id,
+                    "info",
+                    f"Targeted tests passed ({len(test_result.tests_run)} test files, "
+                    f"{len(test_result.tests_skipped)} skipped)",
                     source="verify",
                     project_id=project_id,
                 )

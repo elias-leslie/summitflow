@@ -27,6 +27,31 @@ def calculate_target_lines(current_lines: int) -> int:
         return 150  # Small files - modest reduction
 
 
+def find_test_file(relative_path: str) -> str | None:
+    """Map a source file to its corresponding test file.
+
+    Args:
+        relative_path: Relative path to the source file
+            (e.g., "backend/app/tasks/ai_review.py")
+
+    Returns:
+        Relative test file path, or None if no mapping exists.
+    """
+    # backend/app/tasks/foo.py -> backend/tests/tasks/test_foo.py
+    path_match = re.match(r"^(backend)/(app|cli)/(.+)/([^/]+)\.py$", relative_path)
+    if path_match:
+        prefix, _app_or_cli, subdir, module = path_match.groups()
+        return f"{prefix}/tests/{subdir}/test_{module}.py"
+
+    # backend/app/foo.py -> backend/tests/test_foo.py
+    path_match = re.match(r"^(backend)/(app|cli)/([^/]+)\.py$", relative_path)
+    if path_match:
+        prefix, _app_or_cli, module = path_match.groups()
+        return f"{prefix}/tests/test_{module}.py"
+
+    return None
+
+
 def get_targeted_test_command(relative_path: str) -> str:
     """Generate a targeted pytest command for the specific file being refactored.
 
@@ -39,22 +64,14 @@ def get_targeted_test_command(relative_path: str) -> str:
     Returns:
         Pytest command targeting specific tests, or import check as fallback
     """
-    # Extract the module name and path components
-    # e.g., "backend/app/tasks/ai_review.py" -> module="ai_review", dir="backend/app/tasks"
-    path_match = re.match(r"^(backend)/(app|cli)/(.+)/([^/]+)\.py$", relative_path)
-    if path_match:
-        prefix, app_or_cli, subdir, module = path_match.groups()
-        # Map to test file: backend/app/tasks/foo.py -> backend/tests/tasks/test_foo.py
-        test_path = f"{prefix}/tests/{subdir}/test_{module}.py"
-        # Use pytest with the specific test file, fallback to import check if file doesn't exist
-        return f"test -f {test_path} && pytest {test_path} -q --tb=short || python -c 'from {app_or_cli}.{subdir.replace('/', '.')}.{module} import *'"
+    test_path = find_test_file(relative_path)
 
-    # Handle direct backend/app/*.py or backend/cli/*.py files
-    path_match = re.match(r"^(backend)/(app|cli)/([^/]+)\.py$", relative_path)
-    if path_match:
-        prefix, app_or_cli, module = path_match.groups()
-        test_path = f"{prefix}/tests/test_{module}.py"
-        return f"test -f {test_path} && pytest {test_path} -q --tb=short || python -c 'from {app_or_cli}.{module} import *'"
+    if test_path:
+        # Extract module info for import fallback
+        path_match = re.match(r"^backend/(app|cli)/(.+?)(?:/([^/]+))?\.py$", relative_path)
+        if path_match:
+            rest = relative_path[len("backend/") : -len(".py")].replace("/", ".")
+            return f"test -f {test_path} && pytest {test_path} -q --tb=short || python -c 'from {rest} import *'"
 
     # Frontend files - just check import/build
     if relative_path.startswith("frontend/"):

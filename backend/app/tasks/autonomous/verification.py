@@ -17,8 +17,8 @@ from ...core.debug import debug_error, debug_success
 from ...logging_config import get_logger
 from ...storage.projects import build_project_env
 
-# Re-export smoke testing for backward compatibility
-from .smoke_testing import SmokeTestResult, run_smoke_tests
+# Re-export smoke/targeted testing for backward compatibility
+from .smoke_testing import SmokeTestResult, TargetedTestResult, run_smoke_tests, run_targeted_tests
 from .verification_helpers import (
     adjust_command_for_cwd,
     expand_command,
@@ -28,7 +28,14 @@ from .verification_helpers import (
 logger = get_logger(__name__)
 
 # Public API exports
-__all__ = ["SmokeTestResult", "VerificationResult", "run_smoke_tests", "verify_step"]
+__all__ = [
+    "SmokeTestResult",
+    "TargetedTestResult",
+    "VerificationResult",
+    "run_smoke_tests",
+    "run_targeted_tests",
+    "verify_step",
+]
 
 
 @dataclass
