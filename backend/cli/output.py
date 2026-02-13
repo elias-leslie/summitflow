@@ -204,6 +204,11 @@ def handle_api_error(e: APIError) -> None:
             for agent in available_agents:
                 print(f"  {agent}", file=sys.stderr)
             raise typer.Exit(1)
+    elif isinstance(detail, list):
+        # Pydantic validation errors: extract msg from each error
+        messages = [err.get("msg", str(err)) for err in detail if isinstance(err, dict)]
+        output_error("; ".join(messages) if messages else str(detail))
+        raise typer.Exit(1)
     output_error(detail)
     raise typer.Exit(1)
 

@@ -119,12 +119,18 @@ async def validation_exception_handler(
     request: Request, exc: RequestValidationError
 ) -> JSONResponse:
     """Handle Pydantic validation errors with consistent JSON format."""
+    # Sanitize errors: ctx may contain non-serializable objects (e.g. ValueError)
+    errors = []
+    for error in exc.errors():
+        sanitized = dict(error)
+        if "ctx" in sanitized:
+            sanitized["ctx"] = {k: str(v) for k, v in sanitized["ctx"].items()}
+        errors.append(sanitized)
     return JSONResponse(
         status_code=422,
         content={
             "error": "Validation Error",
-            "detail": exc.errors(),
-            "body": exc.body if hasattr(exc, "body") else None,
+            "detail": errors,
         },
     )
 

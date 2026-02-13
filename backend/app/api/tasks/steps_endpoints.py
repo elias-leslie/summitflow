@@ -61,6 +61,8 @@ def create_batch_handler(
 
     try:
         created = bulk_create_steps(table_id, steps)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
     except Exception as e:
         handle_foreign_key_error(e, subtask_id, task_id)
 
@@ -93,6 +95,8 @@ def append_steps_handler(
 
     try:
         created = append_steps(table_id, steps)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
     except Exception as e:
         handle_foreign_key_error(e, subtask_id, task_id)
 
@@ -169,6 +173,8 @@ def create_with_verification_handler(
             spec=request.spec,
             verify_command=request.verify_command,
         )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
     except Exception as e:
         handle_foreign_key_error(e, subtask_id, task_id)
 

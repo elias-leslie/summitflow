@@ -131,12 +131,12 @@ class TestUpdateStepPasses:
     We mock run_verify_command to control verification outcomes.
     """
 
-    @patch("app.storage.steps_updates.run_verify_command")
+    @patch("app.storage.steps_updates_passes.run_verify_command")
     def test_update_step_passes_true(self, mock_verify, test_subtask):
         """Test marking a step as passing with successful verification."""
         mock_verify.return_value = ("passed", 0, "ok")
         step_store.create_step(
-            test_subtask["id"], 1, "Test step", verify_command="echo pass"
+            test_subtask["id"], 1, "Test step", verify_command="rg -q 'pass' file.py"
         )
 
         updated = step_store.update_step_passes(test_subtask["id"], 1, True)
@@ -144,14 +144,14 @@ class TestUpdateStepPasses:
         assert updated is not None
         assert updated["passes"] is True
         assert updated["passed_at"] is not None
-        mock_verify.assert_called_once_with("echo pass", cwd=None, project_id=None)
+        mock_verify.assert_called_once_with("rg -q 'pass' file.py", cwd=None, project_id=None)
 
-    @patch("app.storage.steps_updates.run_verify_command")
+    @patch("app.storage.steps_updates_passes.run_verify_command")
     def test_update_step_passes_false(self, mock_verify, test_subtask):
         """Test marking a step as not passing (resetting)."""
         mock_verify.return_value = ("passed", 0, "ok")
         step_store.create_step(
-            test_subtask["id"], 1, "Test step", verify_command="echo pass"
+            test_subtask["id"], 1, "Test step", verify_command="rg -q 'pass' file.py"
         )
         step_store.update_step_passes(test_subtask["id"], 1, True)
 
@@ -162,12 +162,12 @@ class TestUpdateStepPasses:
         assert updated["passes"] is False
         assert updated["passed_at"] is None
 
-    @patch("app.storage.steps_updates.run_verify_command")
+    @patch("app.storage.steps_updates_passes.run_verify_command")
     def test_update_step_passes_toggle(self, mock_verify, test_subtask):
         """Test toggling step pass status multiple times."""
         mock_verify.return_value = ("passed", 0, "ok")
         step_store.create_step(
-            test_subtask["id"], 1, "Test step", verify_command="echo pass"
+            test_subtask["id"], 1, "Test step", verify_command="rg -q 'pass' file.py"
         )
 
         # Toggle on
@@ -195,7 +195,7 @@ class TestUpdateStepPasses:
         with pytest.raises(StepVerificationError, match="no verify_command"):
             step_store.update_step_passes(test_subtask["id"], 1, True)
 
-    @patch("app.storage.steps_updates.run_verify_command")
+    @patch("app.storage.steps_updates_passes.run_verify_command")
     def test_update_step_passes_verification_fails(self, mock_verify, test_subtask):
         """Test that verification failure raises error."""
         mock_verify.return_value = ("failed", 1, "error output")
@@ -206,11 +206,11 @@ class TestUpdateStepPasses:
         with pytest.raises(StepVerificationError, match="verification failed"):
             step_store.update_step_passes(test_subtask["id"], 1, True)
 
-    @patch("app.storage.steps_updates.run_verify_command")
+    @patch("app.storage.steps_updates_passes.run_verify_command")
     def test_already_verified_skips_verify_command(self, mock_verify, test_subtask):
         """Test that already_verified=True skips running verify_command."""
         step_store.create_step(
-            test_subtask["id"], 1, "Test step", verify_command="echo pass"
+            test_subtask["id"], 1, "Test step", verify_command="rg -q 'pass' file.py"
         )
 
         updated = step_store.update_step_passes(
@@ -222,12 +222,12 @@ class TestUpdateStepPasses:
         assert updated["passed_at"] is not None
         mock_verify.assert_not_called()
 
-    @patch("app.storage.steps_updates.run_verify_command")
+    @patch("app.storage.steps_updates_passes.run_verify_command")
     def test_already_verified_false_still_runs_verification(self, mock_verify, test_subtask):
         """Test that already_verified=False (default) still runs verify_command."""
         mock_verify.return_value = ("passed", 0, "ok")
         step_store.create_step(
-            test_subtask["id"], 1, "Test step", verify_command="echo pass"
+            test_subtask["id"], 1, "Test step", verify_command="rg -q 'pass' file.py"
         )
 
         updated = step_store.update_step_passes(
@@ -318,7 +318,7 @@ class TestGetStepSummary:
         assert summary["completed"] == 0
         assert summary["progress_percent"] == 0
 
-    @patch("app.storage.steps_updates.run_verify_command")
+    @patch("app.storage.steps_updates_passes.run_verify_command")
     def test_step_summary_partial(self, mock_verify, test_subtask):
         """Test summary with partial completion."""
         mock_verify.return_value = ("passed", 0, "ok")
@@ -338,7 +338,7 @@ class TestGetStepSummary:
         assert summary["completed"] == 2
         assert summary["progress_percent"] == 50.0
 
-    @patch("app.storage.steps_updates.run_verify_command")
+    @patch("app.storage.steps_updates_passes.run_verify_command")
     def test_step_summary_all_complete(self, mock_verify, test_subtask):
         """Test summary with all steps complete."""
         mock_verify.return_value = ("passed", 0, "ok")
@@ -372,7 +372,7 @@ class TestStepGates:
     Force param has been removed - no bypass allowed.
     """
 
-    @patch("app.storage.steps_updates.run_verify_command")
+    @patch("app.storage.steps_updates_passes.run_verify_command")
     def test_step_gate_allows_out_of_order_completion(self, mock_verify, test_subtask):
         """Can mark step 2 as passed even if step 1 is not passed (logs info)."""
         mock_verify.return_value = ("passed", 0, "ok")
@@ -386,7 +386,7 @@ class TestStepGates:
         result = step_store.update_step_passes(test_subtask["id"], step_number=2, passes=True)
         assert result["passes"] is True
 
-    @patch("app.storage.steps_updates.run_verify_command")
+    @patch("app.storage.steps_updates_passes.run_verify_command")
     def test_step_gate_allows_sequential_completion(self, mock_verify, test_subtask):
         """Can mark step 2 as passed after step 1 is passed."""
         mock_verify.return_value = ("passed", 0, "ok")
@@ -419,7 +419,7 @@ class TestStepGates:
                 test_subtask["id"], step_number=2, passes=True, force=True
             )
 
-    @patch("app.storage.steps_updates.run_verify_command")
+    @patch("app.storage.steps_updates_passes.run_verify_command")
     def test_step_gate_first_step_no_check(self, mock_verify, test_subtask):
         """First step has no gate check (no previous steps)."""
         mock_verify.return_value = ("passed", 0, "ok")
@@ -433,7 +433,7 @@ class TestStepGates:
         result = step_store.update_step_passes(test_subtask["id"], step_number=1, passes=True)
         assert result["passes"] is True
 
-    @patch("app.storage.steps_updates.run_verify_command")
+    @patch("app.storage.steps_updates_passes.run_verify_command")
     def test_step_gate_logs_missing_steps(self, mock_verify, test_subtask):
         """Gate logs missing steps but allows completion with valid verify_command."""
         mock_verify.return_value = ("passed", 0, "ok")

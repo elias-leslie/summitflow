@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 
 from ...schemas.tasks import SubtaskCreate, SubtaskResponse, SubtaskUpdate
 from .helpers import get_task_or_404, verify_task_project
@@ -89,7 +89,10 @@ async def create_subtask_endpoint(
 ) -> SubtaskResponse:
     """Create a single subtask for a task."""
     verify_task_project(task_id, project_id)
-    return create_subtask_logic(task_id, request)
+    try:
+        return create_subtask_logic(task_id, request)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
 
 
 @router.post(
@@ -111,7 +114,10 @@ async def create_subtasks_batch(
     if not items:
         return {"created": []}
 
-    return {"created": bulk_create_subtasks(task_id, items)}
+    try:
+        return {"created": bulk_create_subtasks(task_id, items)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
 
 
 # Global endpoints (no project_id required - task IDs are globally unique)
