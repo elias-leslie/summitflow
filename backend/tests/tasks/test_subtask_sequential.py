@@ -5,6 +5,10 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from app.storage.subtasks import create_subtask, get_subtasks_for_task
+from app.storage.tasks import create_task
 from app.tasks.autonomous.exec_modules.execution_loop import execute_subtask_loop
 from app.tasks.autonomous.exec_modules.orchestrator import start_execution
 
@@ -14,7 +18,7 @@ def test_subtask_execution_order_sequential() -> None:
     task_id = "test-sequential-task"
     project_id = "test-project"
     project_path = "/tmp/test-project"
-    
+
     # Subtasks in a specific order
     subtasks = [
         {"subtask_id": "1.1", "description": "First subtask"},
@@ -22,9 +26,9 @@ def test_subtask_execution_order_sequential() -> None:
         {"subtask_id": "2.1", "description": "Third subtask"},
         {"subtask_id": "2.2", "description": "Fourth subtask"},
     ]
-    
+
     executed_ids = []
-    
+
     def mock_execute(
         task_id: str,
         subtask: dict[str, Any],
@@ -44,7 +48,7 @@ def test_subtask_execution_order_sequential() -> None:
          patch("app.tasks.autonomous.exec_modules.execution_loop.emit_progress"), \
          patch("app.tasks.autonomous.exec_modules.execution_loop.emit_log"), \
          patch("app.tasks.autonomous.exec_modules.execution_loop.has_uncommitted_changes", return_value=False):
-        
+
         results, completed_count = execute_subtask_loop(
             task_id=task_id,
             project_id=project_id,
@@ -68,15 +72,15 @@ def test_subtask_execution_stops_on_failure_when_orchestrator_decides() -> None:
     task_id = "test-failure-task"
     project_id = "test-project"
     project_path = "/tmp/test-project"
-    
+
     subtasks = [
         {"subtask_id": "1.1", "description": "First"},
         {"subtask_id": "1.2", "description": "Second (fails)"},
         {"subtask_id": "1.3", "description": "Third"},
     ]
-    
+
     executed_ids = []
-    
+
     def mock_execute(
         task_id: str,
         subtask: dict[str, Any],
@@ -96,7 +100,7 @@ def test_subtask_execution_stops_on_failure_when_orchestrator_decides() -> None:
          patch("app.tasks.autonomous.exec_modules.execution_loop.emit_log"), \
          patch("app.tasks.autonomous.exec_modules.execution_loop.has_uncommitted_changes", return_value=False), \
          patch("app.tasks.autonomous.exec_modules.execution_loop._handle_subtask_failure", return_value=False):
-        
+
         results, _ = execute_subtask_loop(
             task_id=task_id,
             project_id=project_id,
@@ -133,9 +137,9 @@ def test_start_execution_orchestration_flow(
     """Verify that start_execution correctly orchestrates subtask execution."""
     task_id = "task-123"
     project_id = "proj-123"
-    
+
     mock_task_store.get_task.return_value = {"id": task_id, "task_type": "task"}
-    
+
     # Subtasks from storage (already ordered by display_order)
     subtasks = [
         {"id": "s1", "subtask_id": "1.1", "passes": False},
@@ -143,24 +147,48 @@ def test_start_execution_orchestration_flow(
         {"id": "s3", "subtask_id": "2.1", "passes": True},  # Already passed
     ]
     mock_get_subtasks.return_value = subtasks
-    
+
     mock_loop.return_value = (
         [{"subtask_id": "1.1", "status": "passed"}, {"subtask_id": "1.2", "status": "passed"}],
         2
     )
-    
+
     with patch("app.tasks.autonomous.exec_modules.orchestrator.handle_successful_completion"):
         result = start_execution(task_id, project_id)
-        
+
     assert result["status"] == "executed"
     mock_loop.assert_called_once()
-    
+
     # Verify it passed only INCOMPLETE subtasks to the loop
     args = mock_loop.call_args[0]
     passed_incomplete_subtasks = args[3]
     assert len(passed_incomplete_subtasks) == 2
     assert passed_incomplete_subtasks[0]["subtask_id"] == "1.1"
     assert passed_incomplete_subtasks[1]["subtask_id"] == "1.2"
-    
+
     # Verify task status was updated to running
     mock_task_store.update_task_status.assert_called_with(task_id, "running")
+
+
+@pytest.mark.integration
+def test_db_subtask_ordering(ensure_test_project: str, cleanup_task: Any) -> None:
+    """Verify that subtasks are retrieved from the database in display_order."""
+    task_id = "test-ordering-task"
+    cleanup_task(task_id)
+
+    create_task(
+        task_id=task_id,
+        project_id=ensure_test_project,
+        title="Test Ordering",
+        description="Verify display order"
+    )
+
+    # Create subtasks out of order
+    create_subtask(task_id, "2.1", "Third", display_order=2)
+    create_subtask(task_id, "1.1", "First", display_order=0)
+    create_subtask(task_id, "1.2", "Second", display_order=1)
+
+    subtasks = get_subtasks_for_task(task_id)
+
+    assert [s["subtask_id"] for s in subtasks] == ["1.1", "1.2", "2.1"]
+    assert [s["display_order"] for s in subtasks] == [0, 1, 2]
