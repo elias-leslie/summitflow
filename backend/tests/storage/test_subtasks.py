@@ -210,7 +210,7 @@ class TestUpdateSubtaskPasses:
     def test_update_passes_true(self, mock_verify, test_task):
         """Test marking subtask as passing (with steps)."""
         mock_verify.return_value = ("passed", 0, "ok")
-        steps = [{"description": "Step", "verify_command": "echo ok", "expected_output": "ok"}]
+        steps = [{"description": "Step", "verify_command": "echo ok"}]
         subtask = subtask_store.create_subtask(test_task["id"], "1.1", "Test", 0, steps=steps)
 
         # Complete step first
@@ -229,7 +229,7 @@ class TestUpdateSubtaskPasses:
     def test_update_passes_false(self, mock_verify, test_task):
         """Test marking subtask as not passing."""
         mock_verify.return_value = ("passed", 0, "ok")
-        steps = [{"description": "Step", "verify_command": "echo ok", "expected_output": "ok"}]
+        steps = [{"description": "Step", "verify_command": "echo ok"}]
         subtask = subtask_store.create_subtask(test_task["id"], "1.1", "Test", 0, steps=steps)
 
         # Complete step and subtask
@@ -248,7 +248,7 @@ class TestUpdateSubtaskPasses:
     def test_update_passes_toggle(self, mock_verify, test_task):
         """Test toggling pass status."""
         mock_verify.return_value = ("passed", 0, "ok")
-        steps = [{"description": "Step", "verify_command": "echo ok", "expected_output": "ok"}]
+        steps = [{"description": "Step", "verify_command": "echo ok"}]
         subtask = subtask_store.create_subtask(test_task["id"], "1.1", "Test", 0, steps=steps)
 
         # Complete step
@@ -473,7 +473,7 @@ class TestGetSubtaskSummary:
     def test_summary_partial(self, mock_verify, test_task):
         """Test summary with partial completion."""
         mock_verify.return_value = ("passed", 0, "ok")
-        steps = [{"description": "Step", "verify_command": "echo ok", "expected_output": "ok"}]
+        steps = [{"description": "Step", "verify_command": "echo ok"}]
 
         subtask1 = subtask_store.create_subtask(test_task["id"], "1.1", "First", 0, steps=steps)
         subtask_store.create_subtask(test_task["id"], "1.2", "Second", 1, steps=steps)
@@ -497,7 +497,7 @@ class TestGetSubtaskSummary:
         mock_verify.return_value = ("passed", 0, "ok")
 
         # Create subtasks with steps (required for completion)
-        steps = [{"description": "Step", "verify_command": "echo ok", "expected_output": "ok"}]
+        steps = [{"description": "Step", "verify_command": "echo ok"}]
         subtask1 = subtask_store.create_subtask(test_task["id"], "1.1", "First", 0, steps=steps)
         subtask2 = subtask_store.create_subtask(test_task["id"], "1.2", "Second", 1, steps=steps)
 
@@ -541,8 +541,8 @@ class TestSubtaskGates:
         """Can mark subtask as passed when all steps are complete."""
         mock_verify.return_value = ("passed", 0, "ok")
         steps = [
-            {"description": "Step 1", "verify_command": "echo 1", "expected_output": "ok"},
-            {"description": "Step 2", "verify_command": "echo 2", "expected_output": "ok"},
+            {"description": "Step 1", "verify_command": "echo 1"},
+            {"description": "Step 2", "verify_command": "echo 2"},
         ]
         subtask = subtask_store.create_subtask(
             test_task["id"], "1.1", "Test subtask", 0, steps=steps
@@ -565,8 +565,8 @@ class TestSubtaskGates:
             "Test subtask",
             0,
             steps=[
-                {"description": "Step 1", "verify_command": "echo 1", "expected_output": "ok"},
-                {"description": "Step 2", "verify_command": "echo 2", "expected_output": "ok"},
+                {"description": "Step 1", "verify_command": "echo 1"},
+                {"description": "Step 2", "verify_command": "echo 2"},
             ],
         )
 
@@ -590,9 +590,9 @@ class TestSubtaskGates:
         """Subtask with some steps complete blocks remaining."""
         mock_verify.return_value = ("passed", 0, "ok")
         steps = [
-            {"description": "Step 1", "verify_command": "echo 1", "expected_output": "ok"},
-            {"description": "Step 2", "verify_command": "echo 2", "expected_output": "ok"},
-            {"description": "Step 3", "verify_command": "echo 3", "expected_output": "ok"},
+            {"description": "Step 1", "verify_command": "echo 1"},
+            {"description": "Step 2", "verify_command": "echo 2"},
+            {"description": "Step 3", "verify_command": "echo 3"},
         ]
         subtask = subtask_store.create_subtask(test_task["id"], "1.1", "Test", 0, steps=steps)
 

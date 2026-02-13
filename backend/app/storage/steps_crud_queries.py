@@ -20,7 +20,6 @@ def execute_create_step(
     description: str,
     spec: dict[str, Any] | None,
     verify_command: str | None,
-    expected_output: str | None,
 ) -> dict[str, Any]:
     """Execute INSERT query for a single step."""
     verify_command = sanitize_verify_command(verify_command)
@@ -29,16 +28,15 @@ def execute_create_step(
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             f"""
-            INSERT INTO task_subtask_steps (subtask_id, step_number, description, spec, verify_command, expected_output)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO task_subtask_steps (subtask_id, step_number, description, spec, verify_command)
+            VALUES (%s, %s, %s, %s, %s)
             ON CONFLICT (subtask_id, step_number) DO UPDATE SET
                 description = EXCLUDED.description,
                 spec = EXCLUDED.spec,
-                verify_command = EXCLUDED.verify_command,
-                expected_output = EXCLUDED.expected_output
+                verify_command = EXCLUDED.verify_command
             RETURNING {STEP_COLUMNS}
             """,
-            (subtask_id, step_number, description, spec_json, verify_command, expected_output),
+            (subtask_id, step_number, description, spec_json, verify_command),
         )
         row = cur.fetchone()
         conn.commit()
@@ -94,21 +92,20 @@ def execute_bulk_insert(
     created = []
     with get_connection() as conn, conn.cursor() as cur:
         for idx, step in enumerate(steps, start=1):
-            description, spec, verify_cmd, expected_out = _parse_step_input(step)
+            description, spec, verify_cmd = _parse_step_input(step)
             spec_json = json.dumps(spec) if spec else None
 
             cur.execute(
                 f"""
-                INSERT INTO task_subtask_steps (subtask_id, step_number, description, spec, verify_command, expected_output)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO task_subtask_steps (subtask_id, step_number, description, spec, verify_command)
+                VALUES (%s, %s, %s, %s, %s)
                 ON CONFLICT (subtask_id, step_number) DO UPDATE SET
                     description = EXCLUDED.description,
                     spec = EXCLUDED.spec,
-                    verify_command = EXCLUDED.verify_command,
-                    expected_output = EXCLUDED.expected_output
+                    verify_command = EXCLUDED.verify_command
                 RETURNING {STEP_COLUMNS}
                 """,
-                (subtask_id, idx, description, spec_json, verify_cmd, expected_out),
+                (subtask_id, idx, description, spec_json, verify_cmd),
             )
             row = cur.fetchone()
             created.append(row_to_dict(row))
@@ -138,21 +135,20 @@ def execute_append_steps(
 
         created = []
         for idx, step in enumerate(steps, start=max_step + 1):
-            description, spec, verify_cmd, expected_out = _parse_step_input(step)
+            description, spec, verify_cmd = _parse_step_input(step)
             spec_json = json.dumps(spec) if spec else None
 
             cur.execute(
                 f"""
-                INSERT INTO task_subtask_steps (subtask_id, step_number, description, spec, verify_command, expected_output)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO task_subtask_steps (subtask_id, step_number, description, spec, verify_command)
+                VALUES (%s, %s, %s, %s, %s)
                 ON CONFLICT (subtask_id, step_number) DO UPDATE SET
                     description = EXCLUDED.description,
                     spec = EXCLUDED.spec,
-                    verify_command = EXCLUDED.verify_command,
-                    expected_output = EXCLUDED.expected_output
+                    verify_command = EXCLUDED.verify_command
                 RETURNING {STEP_COLUMNS}
                 """,
-                (subtask_id, idx, description, spec_json, verify_cmd, expected_out),
+                (subtask_id, idx, description, spec_json, verify_cmd),
             )
             row = cur.fetchone()
             created.append(row_to_dict(row))
@@ -188,7 +184,6 @@ def execute_insert_step(
     description: str,
     spec: dict[str, Any] | None,
     verify_command: str | None,
-    expected_output: str | None,
 ) -> dict[str, Any]:
     """Execute INSERT with step renumbering for insertion at a position."""
     if position < 1:
@@ -224,11 +219,11 @@ def execute_insert_step(
         # Insert the new step at the position
         cur.execute(
             f"""
-            INSERT INTO task_subtask_steps (subtask_id, step_number, description, spec, verify_command, expected_output)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO task_subtask_steps (subtask_id, step_number, description, spec, verify_command)
+            VALUES (%s, %s, %s, %s, %s)
             RETURNING {STEP_COLUMNS}
             """,
-            (subtask_id, position, description, spec_json, verify_command, expected_output),
+            (subtask_id, position, description, spec_json, verify_command),
         )
         row = cur.fetchone()
         conn.commit()
@@ -244,13 +239,12 @@ def execute_insert_step(
 
 def _parse_step_input(
     step: str | dict[str, Any],
-) -> tuple[str, dict[str, Any] | None, str | None, str | None]:
+) -> tuple[str, dict[str, Any] | None, str | None]:
     """Parse step input into components."""
     if isinstance(step, str):
-        return step, None, None, None
+        return step, None, None
 
     description = step.get("description", "")
     spec = step.get("spec")
     verify_command = sanitize_verify_command(step.get("verify_command"))
-    expected_output = step.get("expected_output")
-    return description, spec, verify_command, expected_output
+    return description, spec, verify_command

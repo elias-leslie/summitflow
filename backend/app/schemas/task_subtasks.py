@@ -11,10 +11,7 @@ class StepInput(BaseModel):
     description: str = Field(description="Step description")
     spec: dict[str, Any] | None = Field(default=None, description="Step implementation spec")
     verify_command: str | None = Field(
-        default=None, description="Command to verify step completion"
-    )
-    expected_output: str | None = Field(
-        default=None, description="Expected output from verify_command"
+        default=None, description="Command to verify step completion (exit 0 = pass)"
     )
 
 

@@ -125,7 +125,6 @@ def create_step_with_verification(
     subtask_id: str,
     description: str,
     verify_command: str,
-    expected_output: str,
 ) -> dict[str, Any]:
     """Create a single step with required verification."""
     response = client.post(
@@ -133,7 +132,6 @@ def create_step_with_verification(
         json={
             "description": description,
             "verify_command": verify_command,
-            "expected_output": expected_output,
         },
     )
     return cast(dict[str, Any], handle_response(response))

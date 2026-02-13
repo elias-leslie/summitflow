@@ -19,7 +19,7 @@ def pass_step(
 ) -> None:
     """Mark a step as passed.
 
-    Runs the verify_command and checks for expected_output.
+    Runs the verify_command (exit 0 = pass).
     If verification fails, guides you toward fixing the implementation
     or creating a fix subtask if the plan is wrong.
 
@@ -67,7 +67,7 @@ def _handle_verification_failure(
     typer.echo(f"  got: {output}", err=True)
     typer.echo(
         f"FIX: 1) impl 2) st step defect {subtask_id} {step_number} "
-        f"-v 'correct_cmd' -e 'correct_expect'",
+        f"-v 'correct_cmd'",
         err=True,
     )
     raise typer.Exit(1) from None
@@ -77,24 +77,23 @@ def new_step(
     subtask_id: str,
     description: str,
     verify_command: str,
-    expected_output: str,
     task_id: str | None = None,
 ) -> None:
     """Create a single step with required verification.
 
-    Every step must have a verify_command (exit 0 = pass) and expected_output.
+    Every step must have a verify_command (exit 0 = pass).
     If no task_id is provided, uses the active context from 'st work'.
 
     Examples:
-        st step new 1.1 "Add login endpoint" -v "rg 'def login' api.py" -e "Function exists" --task task-abc123
-        st step new 1.1 "Run tests" -v "dt pytest" -e "All tests pass"    # Uses active context
+        st step new 1.1 "Add login endpoint" -v "rg 'def login' api.py" --task task-abc123
+        st step new 1.1 "Run tests" -v "dt pytest"    # Uses active context
     """
     task_id = require_task_id(task_id)
     client = STClient()
 
     try:
         result = client.create_step_with_verification(
-            task_id, subtask_id, description, verify_command, expected_output
+            task_id, subtask_id, description, verify_command
         )
     except APIError as e:
         handle_api_error(e)
@@ -109,12 +108,11 @@ def update_step(
     step_number: int,
     description: str | None = None,
     verify_command: str | None = None,
-    expected_output: str | None = None,
     task_id: str | None = None,
 ) -> None:
     """Update step description only.
 
-    NOTE: verify_command and expected_output are immutable after creation.
+    NOTE: verify_command is immutable after creation.
     If verification is wrong, create a fix subtask instead of modifying the plan.
 
     If no task_id is provided, uses the active context from 'st work'.
@@ -123,7 +121,7 @@ def update_step(
         st step update 1.1 1 -d "Clearer description" --task task-abc123
         st step update 1.1 1 -d "Clearer description"    # Uses active context
     """
-    if verify_command is not None or expected_output is not None:
+    if verify_command is not None:
         _error_immutable_verification()
 
     if not description:
@@ -150,7 +148,7 @@ def update_step(
 def _error_immutable_verification() -> None:
     """Show error message for immutable verification attempts."""
     typer.echo(
-        "Error: verify_command and expected_output are immutable after creation.\n"
+        "Error: verify_command is immutable after creation.\n"
         "\n"
         "Verification gates define the contract. If the step fails:\n"
         "  1. Fix your implementation to match the expected behavior\n"

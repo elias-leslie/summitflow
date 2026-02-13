@@ -71,10 +71,10 @@ class TestStepRereadAfterHealAttempt:
         mock_client.complete.return_value = mock_response
         mock_client_factory.return_value = mock_client
 
-        original_steps = [{"step_number": 1, "description": "test", "verify_command": "echo ok", "expected_output": "ok"}]
+        original_steps = [{"step_number": 1, "description": "test", "verify_command": "echo ok"}]
         updated_steps = [
-            {"step_number": 1, "description": "test", "verify_command": "echo ok", "expected_output": "ok", "status": "plan_defect"},
-            {"step_number": 2, "description": "fix step", "verify_command": "echo OK", "expected_output": "OK"},
+            {"step_number": 1, "description": "test", "verify_command": "echo ok", "status": "plan_defect"},
+            {"step_number": 2, "description": "fix step", "verify_command": "echo OK"},
         ]
         mock_get_steps.return_value = updated_steps
 

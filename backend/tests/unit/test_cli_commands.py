@@ -427,18 +427,16 @@ class TestSubtaskCreate:
         )
 
         with patch("cli.commands.subtask.STClient", return_value=mock_client):
-            # Use --steps-json with proper verify_command and expected_output
+            # Use --steps-json with proper verify_command
             steps_json = json.dumps(
                 [
                     {
                         "description": "First step",
                         "verify_command": "echo ok",
-                        "expected_output": "ok",
                     },
                     {
                         "description": "Second step",
                         "verify_command": "echo done",
-                        "expected_output": "done",
                     },
                 ]
             )
@@ -528,8 +526,6 @@ class TestStepCreate:
                     "Step one",  # description
                     "-v",
                     "echo ok",  # verify_command
-                    "-e",
-                    "ok",  # expected_output
                     "--task",
                     "task-nonexistent",
                 ],
@@ -612,7 +608,7 @@ class TestVerifyPlanGates:
 
     These gates ensure:
     1. Every subtask has non-empty steps array
-    2. Every step has verify_command and expected_output
+    2. Every step has verify_command
     3. Final subtask is a verification subtask
 
     Note: st verify only reads files, doesn't create tasks - no mocking needed.
@@ -681,7 +677,6 @@ class TestVerifyPlanGates:
                     "steps": [
                         {
                             "description": "Step missing verify_command",
-                            "expected_output": "Some output",
                         }
                     ],
                 }
@@ -696,36 +691,6 @@ class TestVerifyPlanGates:
 
             assert result.exit_code == 1
             assert "missing required 'verify_command'" in result.output.lower()
-
-    def test_verify_rejects_steps_without_expected_output(self):
-        """st verify rejects steps missing expected_output."""
-        plan = {
-            "title": "Test plan with steps missing expected_output",
-            "objective": "Test objective that is long enough to pass validation",
-            "task_type": "task",
-            "complexity": "SIMPLE",
-            "subtasks": [
-                {
-                    "id": "1.1",
-                    "description": "Step without expected_output",
-                    "steps": [
-                        {
-                            "description": "Step missing expected_output",
-                            "verify_command": "echo ok",
-                        }
-                    ],
-                }
-            ],
-        }
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(plan, f)
-            f.flush()
-
-            result = runner.invoke(tasks_app, ["verify", f.name])
-
-            assert result.exit_code == 1
-            assert "missing required 'expected_output'" in result.output.lower()
 
     def test_verify_rejects_string_steps(self):
         """st verify rejects legacy string steps (must be objects)."""
@@ -768,7 +733,6 @@ class TestVerifyPlanGates:
                         {
                             "description": "Do the work",
                             "verify_command": "echo ok",
-                            "expected_output": "ok",
                         }
                     ],
                 }
@@ -800,7 +764,6 @@ class TestVerifyPlanGates:
                         {
                             "description": "Do the work",
                             "verify_command": "echo ok",
-                            "expected_output": "ok",
                         }
                     ],
                 },
@@ -812,7 +775,6 @@ class TestVerifyPlanGates:
                         {
                             "description": "Verify all is good",
                             "verify_command": "echo 'All verified'",
-                            "expected_output": "All verified",
                         }
                     ],
                 },
@@ -830,9 +792,9 @@ class TestVerifyPlanGates:
 
 
 class TestStepUpdateImmutableVerification:
-    """Test that verify_command and expected_output are immutable after creation.
+    """Test that verify_command is immutable after creation.
 
-    Once a step is created with verification, the verify_command and expected_output
+    Once a step is created with verification, the verify_command
     cannot be modified. This prevents gaming the verification system by changing
     the verification to match incorrect implementation.
 
@@ -843,11 +805,6 @@ class TestStepUpdateImmutableVerification:
     @pytest.mark.skip(reason="Requires deep storage mocking - use integration tests")
     def test_update_verify_immutable_command_blocked(self):
         """st step update -v should be blocked with immutable error."""
-        pass
-
-    @pytest.mark.skip(reason="Requires deep storage mocking - use integration tests")
-    def test_step_update_expected_output_blocked(self):
-        """st step update -e should be blocked with immutable error."""
         pass
 
     @pytest.mark.skip(reason="Requires deep storage mocking - use integration tests")

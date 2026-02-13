@@ -174,7 +174,6 @@ class TestContextEndpoint:
                     {
                         "description": "Step 1",
                         "verify_command": "echo test",
-                        "expected_output": "test",
                     }
                 ],
             },

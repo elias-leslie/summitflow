@@ -281,7 +281,6 @@ class StepOperationsMixin:
         subtask_id: str,
         description: str,
         verify_command: str,
-        expected_output: str,
     ) -> dict[str, Any]:
         return steps_ops.create_step_with_verification(
             self._client,
@@ -291,7 +290,6 @@ class StepOperationsMixin:
             subtask_id,
             description,
             verify_command,
-            expected_output,
         )
 
     def update_step_fields(

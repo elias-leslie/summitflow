@@ -9,7 +9,7 @@ from typing import Any
 from .connection import get_connection
 from .steps_crud_serialization import STEP_COLUMNS, row_to_dict
 from .steps_exceptions import StepVerificationError
-from .steps_verification import _parse_expected, run_verify_command
+from .steps_verification import run_verify_command
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +111,6 @@ def update_step_passes(
 
     step = row_to_dict(row)
     verify_command = step.get("verify_command")
-    expected_output = step.get("expected_output")
 
     # verify_command is required - fail if missing
     if not verify_command:
@@ -124,21 +123,7 @@ def update_step_passes(
             cwd=project_root,
         )
 
-    # expected_output is required - fail if missing
-    if not expected_output:
-        raise StepVerificationError(
-            message=f"Step {step_number} has no expected_output. Every step must define what success looks like.",
-            step_number=step_number,
-            output="",
-            exit_code=-1,
-            verify_command=verify_command,
-            cwd=project_root,
-        )
-
-    # Parse expected output to determine check type
-    check_type, check_value = _parse_expected(expected_output)
-
-    # Run verification from project root
+    # Run verification from project root — exit code 0 = pass
     status, exit_code, output = run_verify_command(
         verify_command, cwd=project_root, project_id=project_id,
     )
@@ -147,7 +132,6 @@ def update_step_passes(
         message = (
             f"Step {step_number} verification failed (exit code {exit_code}).\n"
             f"Command: {verify_command}\n"
-            f"Expected: {expected_output}\n"
             f"Output: {output[:500]}"
         )
 
@@ -156,25 +140,6 @@ def update_step_passes(
             step_number=step_number,
             output=output,
             exit_code=exit_code,
-            verify_command=verify_command,
-            cwd=project_root,
-        )
-
-    # For "exit_code" check type, exit code 0 is sufficient (already passed above)
-    # For "contains" check type, verify the expected value appears in output
-    if check_type == "contains" and check_value and check_value not in output:
-        message = (
-            f"Step {step_number} verification failed: expected output not found.\n"
-            f"Command: {verify_command}\n"
-            f"Expected: {expected_output}\n"
-            f"Actual output: {output[:500]}"
-        )
-
-        raise StepVerificationError(
-            message=message,
-            step_number=step_number,
-            output=output,
-            exit_code=0,
             verify_command=verify_command,
             cwd=project_root,
         )

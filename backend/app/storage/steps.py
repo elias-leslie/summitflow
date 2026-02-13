@@ -50,7 +50,6 @@ from .steps_updates import (
 )
 from .steps_verification import (
     VERIFY_COMMAND_TIMEOUT,
-    _parse_expected,
     run_verify_command,
 )
 
@@ -70,7 +69,6 @@ __all__ = [
     "StepDeletionResult",
     "StepGateError",
     "StepVerificationError",
-    "_parse_expected",
     "_row_to_dict",
     "append_steps",
     "bulk_create_steps",

@@ -4,7 +4,7 @@ Covers:
 - Small context window detection (-A1 through -A5)
 - Chained rg pipe detection (rg ... | rg)
 - head/tail usage detection in verify_commands
-- Existing checks: absolute paths, grep→rg rewriting, generic expected_output
+- Existing checks: absolute paths, grep→rg rewriting
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import pytest
 from app.tasks.autonomous.planning import _validate_and_fix_plan
 
 
-def _make_plan(verify_command: str, expected_output: str = "some output") -> dict[str, Any]:
+def _make_plan(verify_command: str) -> dict[str, Any]:
     """Build a minimal plan dict with one subtask and one step."""
     return {
         "subtasks": [
@@ -26,7 +26,6 @@ def _make_plan(verify_command: str, expected_output: str = "some output") -> dic
                 "steps": [
                     {
                         "verify_command": verify_command,
-                        "expected_output": expected_output,
                     }
                 ],
             }
@@ -152,12 +151,3 @@ class TestExistingValidation:
         _validate_and_fix_plan(plan)
         assert plan["subtasks"][0]["steps"][0]["verify_command"] == "rg 'pattern' file.py"
 
-    def test_generic_expected_output_logs_warning(self) -> None:
-        plan = _make_plan("rg 'x' file", expected_output="success")
-        with patch("app.tasks.autonomous.planning.logger") as mock_logger:
-            _validate_and_fix_plan(plan)
-            mock_logger.warning.assert_any_call(
-                "generic_expected_output",
-                subtask="1.1",
-                expected="success",
-            )

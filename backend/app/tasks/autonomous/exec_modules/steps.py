@@ -54,8 +54,7 @@ def auto_defect_step(
     try:
         fix_steps = append_steps(subtask_id, [{
             "description": f"Fix: auto-defect for step {step_number} (infrastructure failure)",
-            "verify_command": "echo OK",
-            "expected_output": "OK",
+            "verify_command": "true",
         }])
         if not fix_steps:
             return False
@@ -118,7 +117,7 @@ def verify_steps(
     project_path: str,
     project_id: str,
 ) -> list[dict[str, Any]]:
-    """Run verify_command for each step and check expected_output.
+    """Run verify_command for each step and check exit code.
 
     Short-circuits: once a step fails, remaining steps are skipped.
     Steps already marked plan_defect are also skipped.

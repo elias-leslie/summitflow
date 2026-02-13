@@ -32,12 +32,12 @@ def create_subtask(
 
     If no task_id is provided, uses the active context from 'st work'.
 
-    Steps must be provided with verify_command and expected_output.
+    Steps must be provided with verify_command (exit 0 = pass).
     Use --steps-json for full step objects, or --step for simple descriptions (legacy).
 
     Examples:
         st subtask create 1.1 -d "Add component" --task task-abc123 \\
-          --steps-json '[{"description": "Do X", "verify_command": "echo ok", "expected_output": "ok"}]'
+          --steps-json '[{"description": "Do X", "verify_command": "test -f output.txt"}]'
     """
     from ..context import require_task_id
 

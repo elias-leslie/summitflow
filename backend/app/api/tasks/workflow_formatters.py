@@ -100,11 +100,9 @@ def format_toon_context(
                 step_desc = step.get("description", "")[:60]
                 lines.append(f"  {step_num}. {step_status} {step_desc}")
 
-                # Verify command and expected output
+                # Verify command
                 if step.get("verify_command"):
                     lines.append(f"       verify: {step['verify_command']}")
-                if step.get("expected_output"):
-                    lines.append(f"       expect: {step['expected_output']}")
 
     # Blockers
     if blockers:

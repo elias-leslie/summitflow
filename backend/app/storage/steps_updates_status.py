@@ -33,7 +33,7 @@ def update_step_status(
     2. Have passes=True (correct verification that proves implementation works)
 
     Workflow for plan defects:
-    1. Original step has wrong verify_command/expected_output
+    1. Original step has wrong verify_command
     2. Add new step with correct verification: st step add <subtask> "Fix: correct verification"
     3. Pass the fix step: st step pass <subtask> <fix_step_number>
     4. Mark original as plan_defect: st step defect <subtask> <step> --fix <fix_step_number>

@@ -89,9 +89,6 @@ class CreateTaskCriterionRequest(BaseModel):
         default=None, description="Bash command to verify this criterion"
     )
     verify_by: Literal["test", "opus", "human", "agent"] = "test"
-    expected_output: str | None = Field(
-        default=None, description="Expected output from verify_command"
-    )
 
 
 class VerifyTaskCriterionRequest(BaseModel):
@@ -110,9 +107,6 @@ class UpdateTaskCriterionRequest(BaseModel):
         default=None, description="Bash command to verify this criterion"
     )
     verify_by: Literal["test", "opus", "human", "agent"] | None = None
-    expected_output: str | None = Field(
-        default=None, description="Expected output from verify_command"
-    )
 
 
 class BatchTaskCriterionCreate(BaseModel):
@@ -126,9 +120,6 @@ class BatchTaskCriterionCreate(BaseModel):
         default=None, description="Bash command to verify this criterion"
     )
     verify_by: Literal["test", "opus", "human", "agent"] = "test"
-    expected_output: str | None = Field(
-        default=None, description="Expected output from verify_command"
-    )
 
 
 class BatchTaskCriteriaRequest(BaseModel):

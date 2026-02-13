@@ -286,7 +286,7 @@ phase_19_done_workflow() {
 
     # Add subtask with simple verification
     st subtask create 1.1 -t "$task_id" -d "Make a change" --phase backend \
-        --steps-json '[{"description": "Add marker", "verify_command": "echo PASS", "expected_output": "PASS"}]' 2>&1 || true
+        --steps-json '[{"description": "Add marker", "verify_command": "echo PASS", }]' 2>&1 || true
 
     # Claim task (creates worktree with task/main branch)
     st claim "$task_id" 2>&1 || {
@@ -385,7 +385,7 @@ phase_20_abandon_workflow() {
     fi
 
     st subtask create 1.1 -t "$task_id" -d "Change to abandon" --phase backend \
-        --steps-json '[{"description": "Add marker", "verify_command": "echo PASS", "expected_output": "PASS"}]' 2>&1 || true
+        --steps-json '[{"description": "Add marker", "verify_command": "echo PASS", }]' 2>&1 || true
 
     st claim "$task_id" 2>&1 || {
         log_fail "st claim failed"

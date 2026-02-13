@@ -79,17 +79,14 @@ def create_architecture_subtasks(
             {
                 "description": f"Identify {violation_type.replace('_', ' ')} issue",
                 "verify_command": f"test -f {file}" if file else "",
-                "expected_output": "exit code 0",
             },
             {
                 "description": "Implement fix following project patterns",
                 "verify_command": "dt --quick --changed-only",
-                "expected_output": "CHECK_RESULT:OK",
             },
             {
                 "description": "Verify fix with full quality gates",
                 "verify_command": "dt --check",
-                "expected_output": "CHECK_RESULT:OK",
             },
         ]
         bulk_create_steps(subtask_full_id, steps)

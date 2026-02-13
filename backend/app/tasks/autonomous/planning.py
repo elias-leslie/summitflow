@@ -107,12 +107,9 @@ def _validate_verify_command(cmd: str) -> str | None:
 
 def _validate_and_fix_plan(plan: dict[str, Any]) -> None:
     """Validate and fix common issues in verify_commands."""
-    generic_outputs = {"success", "found", "ok", "done", "pass", "passed", "true", "yes"}
-
     for subtask in plan.get("subtasks", []):
         for step in subtask.get("steps", []):
             verify = step.get("verify_command", "")
-            expected = step.get("expected_output", "")
 
             if verify:
                 error = _validate_verify_command(verify)
@@ -155,12 +152,6 @@ def _validate_and_fix_plan(plan: dict[str, Any]) -> None:
                         verify_command=verify[:80],
                     )
 
-            if expected and expected.lower().strip() in generic_outputs:
-                logger.warning(
-                    "generic_expected_output",
-                    subtask=subtask.get("subtask_id"),
-                    expected=expected,
-                )
 
 
 def _save_plan_to_database(task_id: str, plan_data: dict[str, Any]) -> None:
@@ -188,7 +179,6 @@ def _save_plan_to_database(task_id: str, plan_data: dict[str, Any]) -> None:
                         {
                             "description": step.get("description", ""),
                             "verify_command": step.get("verify_command"),
-                            "expected_output": step.get("expected_output"),
                         }
                     )
                 else:

@@ -128,7 +128,7 @@
             "description": "Specific actions. Each step must have a verify_command for the agent feedback loop.",
             "items": {
               "type": "object",
-              "required": ["description", "verify_command", "expected_output"],
+              "required": ["description", "verify_command"],
               "properties": {
                 "description": { "type": "string" },
                 "spec": {
@@ -138,12 +138,7 @@
                 "verify_command": {
                   "type": "string",
                   "minLength": 1,
-                  "description": "Bash command to verify step completion. Exit code 0 = pass."
-                },
-                "expected_output": {
-                  "type": "string",
-                  "minLength": 1,
-                  "description": "Expected output description. Helps agents understand what success looks like."
+                  "description": "Self-verifying bash command. Exit code 0 = pass, non-zero = fail."
                 }
               },
               "additionalProperties": false

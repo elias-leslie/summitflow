@@ -19,7 +19,7 @@ def update_step_fields(
 ) -> dict[str, Any] | None:
     """Update step description.
 
-    NOTE: verify_command and expected_output are immutable after creation.
+    NOTE: verify_command is immutable after creation.
     Only the description field can be updated.
 
     Args:

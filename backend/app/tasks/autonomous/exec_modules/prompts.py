@@ -71,12 +71,9 @@ def build_steps_block(steps: list[dict[str, Any]]) -> str:
         step_num = step.get("step_number", 0)
         desc = step.get("description", "")
         verify = step.get("verify_command", "")
-        expect = step.get("expected_output", "")
         lines.append(f"{step_num}. {desc}")
         if verify:
             lines.append(f"   Verify: {verify}")
-        if expect:
-            lines.append(f"   Expected: {expect}")
     return "\n".join(lines)
 
 

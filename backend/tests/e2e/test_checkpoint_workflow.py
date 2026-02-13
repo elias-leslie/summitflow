@@ -158,7 +158,6 @@ def create_test_task(project_id: str, title: str) -> dict[str, Any]:
             {
                 "description": "Create test file",
                 "verify_command": "echo 'test passed'",
-                "expected_output": "test passed",
             },
         ],
     )
@@ -172,7 +171,6 @@ def create_test_task(project_id: str, title: str) -> dict[str, Any]:
             {
                 "description": "Verify completion",
                 "verify_command": "echo 'verified'",
-                "expected_output": "verified",
             },
         ],
     )

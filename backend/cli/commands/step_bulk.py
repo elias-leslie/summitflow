@@ -16,32 +16,31 @@ def add_steps(
     subtask_id: str,
     descriptions: list[str] | None = None,
     verify_command: str | None = None,
-    expected_output: str | None = None,
     json_input: str | None = None,
     task_id: str | None = None,
 ) -> None:
     """Add steps to a subtask (verification required).
 
-    Each step must have a verify_command and expected_output.
+    Each step must have a verify_command (exit 0 = pass).
 
     Two modes:
-    1. Positional descriptions with shared -v/-e (all steps get same verification):
-       st step add 1.1 "Step 1" "Step 2" -v "dt pytest" -e "All pass"
+    1. Positional descriptions with shared -v (all steps get same verification):
+       st step add 1.1 "Step 1" "Step 2" -v "dt pytest"
 
     2. JSON for per-step verification:
-       st step add 1.1 --json '[{"description":"...","verify_command":"...","expected_output":"..."}]'
+       st step add 1.1 --json '[{"description":"...","verify_command":"..."}]'
 
     If no task_id is provided, uses the active context from 'st work'.
 
     Examples:
-        st step add 1.1 "Add endpoint" -v "rg 'def foo' api.py" -e "Found" -t task-abc123
-        st step add 1.1 --json '[{"description":"Run tests","verify_command":"dt pytest","expected_output":"passed"}]'
+        st step add 1.1 "Add endpoint" -v "rg 'def foo' api.py" -t task-abc123
+        st step add 1.1 --json '[{"description":"Run tests","verify_command":"dt pytest"}]'
     """
     task_id = require_task_id(task_id)
     client = STClient()
 
     steps_to_create = _parse_step_input(
-        descriptions, verify_command, expected_output, json_input
+        descriptions, verify_command, json_input
     )
 
     created_count = 0
@@ -53,7 +52,6 @@ def add_steps(
                 subtask_id,
                 step["description"],
                 step["verify_command"],
-                step["expected_output"],
             )
             created_count += 1
             if first_step_num is None:
@@ -68,7 +66,6 @@ def add_steps(
 def _parse_step_input(
     descriptions: list[str] | None,
     verify_command: str | None,
-    expected_output: str | None,
     json_input: str | None,
 ) -> list[dict[str, str]]:
     """Parse and validate step input from either JSON or positional args."""
@@ -76,7 +73,7 @@ def _parse_step_input(
         return _parse_json_input(json_input, descriptions)
 
     if descriptions:
-        return _parse_positional_input(descriptions, verify_command, expected_output)
+        return _parse_positional_input(descriptions, verify_command)
 
     typer.echo("Error: provide step descriptions or --json input.", err=True)
     raise typer.Exit(1)
@@ -111,7 +108,6 @@ def _parse_json_input(
         steps.append({
             "description": item["description"],
             "verify_command": item["verify_command"],
-            "expected_output": item["expected_output"],
         })
 
     return steps
@@ -120,7 +116,7 @@ def _parse_json_input(
 def _validate_json_step(item: dict[str, Any]) -> None:
     """Validate a single JSON step has required fields."""
     missing = [
-        k for k in ("description", "verify_command", "expected_output") if k not in item
+        k for k in ("description", "verify_command") if k not in item
     ]
     if missing:
         typer.echo(f"Error: JSON element missing keys: {', '.join(missing)}", err=True)
@@ -130,12 +126,11 @@ def _validate_json_step(item: dict[str, Any]) -> None:
 def _parse_positional_input(
     descriptions: list[str],
     verify_command: str | None,
-    expected_output: str | None,
 ) -> list[dict[str, str]]:
     """Parse positional description input with shared verification."""
-    if verify_command is None or expected_output is None:
+    if verify_command is None:
         typer.echo(
-            "Error: -v (verify) and -e (expected) are required.\n"
+            "Error: -v (verify) is required.\n"
             "  Every step needs verification. Use --json for per-step verify commands.",
             err=True,
         )
@@ -145,7 +140,6 @@ def _parse_positional_input(
         {
             "description": desc,
             "verify_command": verify_command,
-            "expected_output": expected_output,
         }
         for desc in descriptions
     ]

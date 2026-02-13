@@ -37,7 +37,6 @@ export interface TaskAcceptanceCriterion {
   threshold?: string | null
   verify_command?: string | null
   verify_by?: 'test' | 'opus' | 'human' | 'agent'
-  expected_output?: string | null
   test_file?: string | null
   test_name?: string | null
   verified: boolean

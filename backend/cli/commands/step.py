@@ -27,11 +27,10 @@ def new_step(
     subtask_id: str,
     description: str,
     verify_command: Annotated[str, typer.Option("--verify", "-v")],
-    expected_output: Annotated[str, typer.Option("--expected", "-e")],
     task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
 ) -> None:
     """Create single step with verification."""
-    step_operations.new_step(subtask_id, description, verify_command, expected_output, task_id)
+    step_operations.new_step(subtask_id, description, verify_command, task_id)
 
 
 @app.command("update")
@@ -39,13 +38,12 @@ def update_step(
     subtask_id: str,
     step_number: int,
     verify_command: Annotated[str | None, typer.Option("--verify", "-v")] = None,
-    expected_output: Annotated[str | None, typer.Option("--expected", "-e")] = None,
     description: Annotated[str | None, typer.Option("--desc", "-d")] = None,
     task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
 ) -> None:
-    """Update step description (verify/expected are immutable)."""
+    """Update step description (verify is immutable)."""
     step_operations.update_step(
-        subtask_id, step_number, description, verify_command, expected_output, task_id
+        subtask_id, step_number, description, verify_command, task_id
     )
 
 
@@ -54,13 +52,12 @@ def add_steps(
     subtask_id: str,
     descriptions: list[str] | None = None,
     verify_command: Annotated[str | None, typer.Option("--verify", "-v")] = None,
-    expected_output: Annotated[str | None, typer.Option("--expected", "-e")] = None,
     json_input: Annotated[str | None, typer.Option("--json")] = None,
     task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
 ) -> None:
     """Add steps (positional with shared verify or --json for per-step)."""
     step_bulk.add_steps(
-        subtask_id, descriptions, verify_command, expected_output, json_input, task_id
+        subtask_id, descriptions, verify_command, json_input, task_id
     )
 
 
@@ -81,12 +78,11 @@ def mark_plan_defect(
     step_number: int,
     fix_step: Annotated[int | None, typer.Option("--fix", "-f")] = None,
     verify_command: Annotated[str | None, typer.Option("--verify", "-v")] = None,
-    expected_output: Annotated[str | None, typer.Option("--expected", "-e")] = None,
     task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
 ) -> None:
-    """Mark step as plan defect (inline fix with -v/-e or --fix N)."""
+    """Mark step as plan defect (inline fix with -v or --fix N)."""
     step_defect.mark_plan_defect(
-        subtask_id, step_number, fix_step, verify_command, expected_output, task_id
+        subtask_id, step_number, fix_step, verify_command, task_id
     )
 
 
@@ -100,7 +96,7 @@ def list_removed() -> None:
 @app.command("create", hidden=True)
 def create_removed() -> None:
     """Removed: use st step new instead."""
-    typer.echo("Removed. Use: st step new <subtask> <desc> -v <cmd> -e <expect>", err=True)
+    typer.echo("Removed. Use: st step new <subtask> <desc> -v <cmd>", err=True)
     raise typer.Exit(1)
 
 

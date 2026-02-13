@@ -247,7 +247,6 @@ class TestPlanningE2E:
                             {
                                 "description": "Add isLoading prop",
                                 "verify_command": "rg 'isLoading' components/Button.tsx",
-                                "expected_output": "isLoading",
                             }
                         ],
                     },
@@ -259,7 +258,6 @@ class TestPlanningE2E:
                             {
                                 "description": "Update form to track loading",
                                 "verify_command": "rg 'setLoading' pages/Form.tsx",
-                                "expected_output": "setLoading",
                             }
                         ],
                     },
@@ -395,7 +393,6 @@ class TestExecutionE2E:
                 {
                     "description": "Create test.py",
                     "verify_command": "echo 'test passed'",
-                    "expected_output": "test passed",
                 }
             ],
         )
@@ -463,7 +460,6 @@ class TestExecutionE2E:
                 {
                     "description": "Create nonexistent.py",
                     "verify_command": "cat /nonexistent/path/file.py 2>/dev/null",
-                    "expected_output": "def main():",
                 }
             ],
         )
@@ -755,7 +751,6 @@ class TestFullAutonomousPipeline:
                                 {
                                     "description": "Add logging statement",
                                     "verify_command": "echo 'done'",
-                                    "expected_output": "done",
                                 }
                             ],
                         }

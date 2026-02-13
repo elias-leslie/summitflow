@@ -168,7 +168,6 @@ def create_with_verification_handler(
             description=request.description,
             spec=request.spec,
             verify_command=request.verify_command,
-            expected_output=request.expected_output,
         )
     except Exception as e:
         handle_foreign_key_error(e, subtask_id, task_id)

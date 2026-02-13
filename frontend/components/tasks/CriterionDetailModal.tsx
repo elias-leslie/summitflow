@@ -1,7 +1,6 @@
 'use client'
 
 import {
-  AlertCircle,
   CheckCircle2,
   Clock,
   Loader2,
@@ -135,23 +134,6 @@ export function CriterionDetailModal({
                 <code className="block p-3 text-xs text-slate-300 font-mono whitespace-pre-wrap break-all overflow-x-auto">
                   {criterion.verify_command}
                 </code>
-              </div>
-            </div>
-          )}
-
-          {/* Expected Output */}
-          {criterion.expected_output && (
-            <div>
-              <div className="flex items-center gap-2 mb-1.5">
-                <AlertCircle className="h-3.5 w-3.5 text-slate-500" />
-                <span className="text-xs text-slate-500 uppercase tracking-wider">
-                  Expected Output
-                </span>
-              </div>
-              <div className="bg-slate-900/50 rounded px-3 py-2">
-                <span className="text-xs text-slate-400">
-                  {criterion.expected_output}
-                </span>
               </div>
             </div>
           )}

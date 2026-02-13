@@ -110,10 +110,6 @@ def validate_plan_schema(plan: dict[str, Any]) -> list[str]:
                     f"(use relative paths — commands run with cwd=worktree): "
                     f"{step['verify_command'][:80]}"
                 )
-            if not step.get("expected_output"):
-                issues.append(
-                    f"subtask {subtask_id} step {step_num}: missing required 'expected_output'"
-                )
 
     # Validate deploy and browser steps for backend/frontend subtasks
     for subtask in subtasks:

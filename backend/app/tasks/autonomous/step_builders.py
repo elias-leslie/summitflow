@@ -71,7 +71,6 @@ def build_quality_steps() -> list[dict[str, str]]:
         {
             "description": "Quality gate: auto-fix, lint, types",
             "verify_command": "dt --fix 2>/dev/null; dt --quick",
-            "expected_output": "exit code 0",
         },
     ]
 
@@ -94,18 +93,16 @@ def build_refactor_steps(
         is_frontend: Whether this is a frontend file
 
     Returns:
-        List of step dictionaries with description, verify_command, expected_output
+        List of step dictionaries with description, verify_command
     """
     steps = [
         {
             "description": f"Refactor {relative_path} from {lines} to <{target_lines} lines",
             "verify_command": f"test $(wc -l < {relative_path}) -lt {target_lines}",
-            "expected_output": "exit code 0",
         },
         {
             "description": "Quality gate: auto-fix, lint, types, targeted tests",
             "verify_command": f"dt --fix 2>/dev/null; {get_targeted_test_command(relative_path)} && dt --quick",
-            "expected_output": "exit code 0",
         },
     ]
 
@@ -114,7 +111,6 @@ def build_refactor_steps(
             {
                 "description": "Verify no console errors in browser",
                 "verify_command": "agent-browser open http://localhost:3001 && agent-browser wait --load networkidle",
-                "expected_output": "exit code 0",
             }
         )
 

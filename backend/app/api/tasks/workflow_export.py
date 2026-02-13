@@ -55,7 +55,6 @@ def build_export_data(
                         "description": s["description"],
                         "spec": s.get("spec"),
                         "verify_command": s.get("verify_command"),
-                        "expected_output": s.get("expected_output"),
                         "passes": s.get("passes", False),
                         "status": s.get("status"),
                     }

@@ -1,9 +1,7 @@
 """Step verification for autonomous execution.
 
-Handles parsing and executing verification commands with proper output matching.
-Supports multiple verification patterns:
-- Exit code checks (returncode == 0)
-- Output contains checks (expected string in stdout)
+Verifies steps by running verify_command and checking exit code (0 = pass).
+Supports:
 - Command aliases (dt -> actual commands)
 - Project environment resolution (venv from main repo for worktrees)
 - Smoke tests for changed Python files (import + __all__ checks)
@@ -24,7 +22,6 @@ from .smoke_testing import SmokeTestResult, run_smoke_tests
 from .verification_helpers import (
     adjust_command_for_cwd,
     expand_command,
-    parse_expected,
     resolve_working_directory,
 )
 
@@ -50,10 +47,8 @@ def _execute_and_check(
     working_dir: str,
     timeout: int,
     env: dict[str, str],
-    check_type: str,
-    check_value: str | None,
 ) -> tuple[bool, str, str, int]:
-    """Execute command and check result.
+    """Execute command and check exit code.
 
     Returns:
         Tuple of (passed, reason, output, returncode)
@@ -72,16 +67,8 @@ def _execute_and_check(
     stderr = result.stderr.strip()
     full_output = f"{output}\n{stderr}".strip() if stderr else output
 
-    # Check verification result
-    if check_type == "exit_code":
-        passed = result.returncode == 0
-        reason = "exit_code_0" if passed else f"exit_code_{result.returncode}"
-    elif check_type == "contains":
-        passed = check_value in full_output if check_value else True
-        reason = "contains_match" if passed else "contains_not_found"
-    else:
-        passed = result.returncode == 0
-        reason = "default_exit_code"
+    passed = result.returncode == 0
+    reason = "exit_code_0" if passed else f"exit_code_{result.returncode}"
 
     return passed, reason, full_output, result.returncode
 
@@ -92,10 +79,10 @@ def verify_step(
     timeout: int = 60,
     project_id: str | None = None,
 ) -> VerificationResult:
-    """Verify a single step.
+    """Verify a single step by running verify_command and checking exit code.
 
     Args:
-        step: Step dict with verify_command and expected_output
+        step: Step dict with verify_command
         working_dir: Directory to run command in
         timeout: Command timeout in seconds
         project_id: Project ID for resolving venv paths
@@ -105,7 +92,6 @@ def verify_step(
     """
     step_num = step.get("step_number", 0)
     verify_cmd = step.get("verify_command")
-    expected = step.get("expected_output", "")
 
     if not verify_cmd:
         logger.warning(
@@ -121,7 +107,6 @@ def verify_step(
         )
 
     expanded_cmd = expand_command(verify_cmd)
-    check_type, check_value = parse_expected(expected)
     env = build_project_env(project_id)
 
     # Increase timeout for long-running commands
@@ -137,14 +122,12 @@ def verify_step(
         step_num=step_num,
         original_cmd=verify_cmd[:80],
         expanded_cmd=expanded_cmd[:80] if expanded_cmd != verify_cmd else None,
-        check_type=check_type,
-        check_value=check_value[:50] if check_value else None,
         cwd=effective_cwd,
     )
 
     try:
         passed, reason, full_output, returncode = _execute_and_check(
-            expanded_cmd, effective_cwd, timeout, env, check_type, check_value
+            expanded_cmd, effective_cwd, timeout, env
         )
 
         # Log result
@@ -153,7 +136,6 @@ def verify_step(
             step_num=step_num,
             passed=passed,
             returncode=returncode,
-            check_type=check_type,
             reason=reason,
             output_preview=full_output[:200] if full_output else "(empty)",
         )
@@ -162,7 +144,6 @@ def verify_step(
         debug_fn(
             f"Step {step_num} {'verified' if passed else 'failed'}",
             step=step_num,
-            check_type=check_type,
             reason=reason if not passed else None,
             output_preview=full_output[:200] if full_output else "(empty)",
         )

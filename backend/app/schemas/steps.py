@@ -39,7 +39,6 @@ class StepResponse(BaseModel):
     description: str
     spec: dict[str, Any] | None
     verify_command: str | None
-    expected_output: str | None
     passes: bool
     passed_at: datetime | None
     created_at: datetime | None
@@ -100,7 +99,6 @@ class StepCreateWithVerification(BaseModel):
     verify_command: str = Field(
         min_length=1, description="Bash command to verify completion (exit 0 = pass)"
     )
-    expected_output: str = Field(min_length=1, description="Description of what success looks like")
     spec: dict[str, Any] | None = Field(default=None, description="Step implementation spec")
 
     @field_validator("verify_command")
@@ -116,7 +114,7 @@ class StepCreateWithVerification(BaseModel):
 class StepFieldsUpdate(BaseModel):
     """Request model for updating step fields (description only).
 
-    NOTE: verify_command and expected_output are immutable after creation.
+    NOTE: verify_command is immutable after creation.
     Only the description field can be updated.
     """
 

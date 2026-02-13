@@ -121,14 +121,12 @@ def valid_plan() -> dict[str, Any]:
                     {
                         "description": "Create test file",
                         "verify_command": "echo 'test passed'",
-                        "expected_output": "test passed",
                     },
                     {
                         # Deploy step - uses echo to simulate rebuild.sh in tests
                         # Validation passes because description contains "deploy"
                         "description": "Deploy backend changes",
                         "verify_command": "echo 'rebuild.sh simulation: Rebuild complete'",
-                        "expected_output": "Rebuild complete",
                     },
                 ],
             },
@@ -140,7 +138,6 @@ def valid_plan() -> dict[str, Any]:
                     {
                         "description": "Verify implementation complete",
                         "verify_command": "echo 'verified'",
-                        "expected_output": "verified",
                     }
                 ],
             },
@@ -217,32 +214,7 @@ def plan_missing_verify_command() -> dict[str, Any]:
                 "steps": [
                     {
                         "description": "Step without verify_command",
-                        "expected_output": "something",
                         # Missing verify_command
-                    }
-                ],
-            }
-        ],
-    }
-
-
-def plan_missing_expected_output() -> dict[str, Any]:
-    """Plan with steps missing expected_output."""
-    return {
-        "title": "E2E Test - Missing expected_output",
-        "objective": "Test rejection of steps without expected_output",
-        "task_type": "task",
-        "complexity": "SIMPLE",
-        "subtasks": [
-            {
-                "id": "1.1",
-                "description": "Subtask with incomplete steps",
-                "phase": "verification",
-                "steps": [
-                    {
-                        "description": "Step without expected_output",
-                        "verify_command": "echo test",
-                        # Missing expected_output
                     }
                 ],
             }
@@ -266,12 +238,10 @@ def plan_no_verification_subtask() -> dict[str, Any]:
                     {
                         "description": "Do something",
                         "verify_command": "echo ok",
-                        "expected_output": "ok",
                     },
                     {
                         "description": "Deploy backend changes",
                         "verify_command": "echo 'rebuild.sh simulation: Rebuild complete'",
-                        "expected_output": "Rebuild complete",
                     },
                 ],
             }
@@ -295,7 +265,6 @@ def plan_missing_deploy_step() -> dict[str, Any]:
                     {
                         "description": "Do something",
                         "verify_command": "echo ok",
-                        "expected_output": "ok",
                     }
                 ],
             },
@@ -307,7 +276,6 @@ def plan_missing_deploy_step() -> dict[str, Any]:
                     {
                         "description": "Verify",
                         "verify_command": "echo done",
-                        "expected_output": "done",
                     }
                 ],
             },
@@ -331,13 +299,11 @@ def plan_frontend_missing_browser_check() -> dict[str, Any]:
                     {
                         "description": "Update component",
                         "verify_command": "echo ok",
-                        "expected_output": "ok",
                     },
                     {
                         # Has deploy but no browser check
                         "description": "Deploy frontend changes",
                         "verify_command": "echo 'rebuild.sh simulation: Rebuild complete'",
-                        "expected_output": "Rebuild complete",
                     },
                 ],
             },
@@ -349,7 +315,6 @@ def plan_frontend_missing_browser_check() -> dict[str, Any]:
                     {
                         "description": "Verify",
                         "verify_command": "echo done",
-                        "expected_output": "done",
                     }
                 ],
             },
@@ -373,17 +338,14 @@ def plan_frontend_valid() -> dict[str, Any]:
                     {
                         "description": "Update component",
                         "verify_command": "echo ok",
-                        "expected_output": "ok",
                     },
                     {
                         "description": "Deploy frontend changes",
                         "verify_command": "echo 'rebuild.sh simulation: Rebuild complete'",
-                        "expected_output": "Rebuild complete",
                     },
                     {
                         "description": "Verify no console errors",
                         "verify_command": "echo 'agent-browser errors: No errors'",
-                        "expected_output": "No errors",
                     },
                 ],
             },
@@ -395,7 +357,6 @@ def plan_frontend_valid() -> dict[str, Any]:
                     {
                         "description": "Verify",
                         "verify_command": "echo done",
-                        "expected_output": "done",
                     }
                 ],
             },
@@ -451,19 +412,6 @@ class TestVerifyGate:
             assert (
                 "verify_command" in result.stderr.lower()
                 or "verify_command" in result.stdout.lower()
-            )
-        finally:
-            plan_file.unlink()
-
-    def test_verify_rejects_missing_expected_output(self):
-        """st verify should reject steps without expected_output."""
-        plan_file = create_plan_file(plan_missing_expected_output())
-        try:
-            result = run_cli(["verify", str(plan_file)])
-            assert result.returncode == 1, f"Expected failure, got: {result.stdout}"
-            assert (
-                "expected_output" in result.stderr.lower()
-                or "expected_output" in result.stdout.lower()
             )
         finally:
             plan_file.unlink()
@@ -620,7 +568,6 @@ class TestSubtaskCreateGate:
                 {
                     "description": "Test step",
                     "verify_command": "echo ok",
-                    "expected_output": "ok",
                 }
             ]
         )
@@ -702,8 +649,8 @@ class TestSubtaskPassGate:
             description="Subtask with incomplete steps",
             display_order=0,
             steps=[
-                {"description": "Step 1", "verify_command": "echo 1", "expected_output": "1"},
-                {"description": "Step 2", "verify_command": "echo 2", "expected_output": "2"},
+                {"description": "Step 1", "verify_command": "echo 1"},
+                {"description": "Step 2", "verify_command": "echo 2"},
             ],
         )
 

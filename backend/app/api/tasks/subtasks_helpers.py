@@ -31,8 +31,6 @@ def convert_steps_to_storage_format(steps: list[Any]) -> list[str | dict[str, An
                 step_dict["spec"] = step.spec
             if step.verify_command:
                 step_dict["verify_command"] = step.verify_command
-            if step.expected_output:
-                step_dict["expected_output"] = step.expected_output
             result.append(step_dict)
     return result
 

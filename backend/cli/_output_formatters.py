@@ -127,8 +127,6 @@ def format_context_subtasks(subtasks: list[dict[str, Any]]) -> str:
             lines.append(f"  {step_num}. {step_pass} {step_desc}")
             if verify_cmd := step.get("verify_command"):
                 lines.append(f"       verify: {verify_cmd}")
-            if expected_out := step.get("expected_output"):
-                lines.append(f"       expect: {expected_out}")
     return "\n".join(lines)
 
 
@@ -215,8 +213,6 @@ def format_subtask_context_subtask(subtask: dict[str, Any]) -> str:
             lines.append(f"  {step_num}. {step_pass} {step_desc}")
             if verify_cmd := step.get("verify_command"):
                 lines.append(f"       verify: {verify_cmd}")
-            if expected_out := step.get("expected_output"):
-                lines.append(f"       expect: {expected_out}")
     return "\n".join(lines)
 
 

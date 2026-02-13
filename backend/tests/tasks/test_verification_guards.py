@@ -18,7 +18,7 @@ class TestNullVerifyCommandGuard:
     """verify_step() must fail when verify_command is missing."""
 
     def test_null_verify_command_returns_failed(self) -> None:
-        step = {"step_number": 1, "verify_command": None, "expected_output": "exit code 0"}
+        step = {"step_number": 1, "verify_command": None}
         result = verify_step(step, "/tmp/fake-worktree")
 
         assert not result.passed
@@ -27,14 +27,14 @@ class TestNullVerifyCommandGuard:
         assert "no verify_command" in result.output
 
     def test_empty_string_verify_command_returns_failed(self) -> None:
-        step = {"step_number": 2, "verify_command": "", "expected_output": "exit code 0"}
+        step = {"step_number": 2, "verify_command": ""}
         result = verify_step(step, "/tmp/fake-worktree")
 
         assert not result.passed
         assert result.reason == "missing_verify_command"
 
     def test_valid_verify_command_still_runs(self) -> None:
-        step = {"step_number": 1, "verify_command": "echo ok", "expected_output": "exit code 0"}
+        step = {"step_number": 1, "verify_command": "echo ok"}
         result = verify_step(step, "/tmp")
 
         assert result.passed
@@ -45,8 +45,8 @@ class TestNullVerifyCommandGuard:
         from app.tasks.autonomous.execution import _verify_steps
 
         steps: list[dict[str, Any]] = [
-            {"step_number": 1, "verify_command": None, "expected_output": ""},
-            {"step_number": 2, "verify_command": "echo ok", "expected_output": "exit code 0"},
+            {"step_number": 1, "verify_command": None},
+            {"step_number": 2, "verify_command": "echo ok"},
         ]
 
         with (

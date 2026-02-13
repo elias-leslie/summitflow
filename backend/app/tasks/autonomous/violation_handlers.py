@@ -50,68 +50,56 @@ def get_violation_steps(violation_type: str, table_name: str, detail: str) -> li
             {
                 "description": f"Create migration to add index on FK column in {table_name}",
                 "verify_command": f"ls backend/alembic/versions/*{table_name.lower()}*.py 2>/dev/null | head -1",
-                "expected_output": "migration file path",
             },
             {
                 "description": "Apply migration",
                 "verify_command": "cd backend && alembic upgrade head",
-                "expected_output": "exit code 0",
             },
             {
                 "description": "Verify index exists",
                 "verify_command": f"psql $DATABASE_URL -c \"SELECT indexname FROM pg_indexes WHERE tablename = '{table_name}'\"",
-                "expected_output": "index name",
             },
         ],
         "naming_violation": [
             {
                 "description": f"Create migration to rename {table_name} or columns",
                 "verify_command": "ls backend/alembic/versions/*rename*.py 2>/dev/null | head -1",
-                "expected_output": "migration file path",
             },
             {
                 "description": "Update all model references",
                 "verify_command": "dt mypy",
-                "expected_output": "TYPES:OK",
             },
             {
                 "description": "Apply migration",
                 "verify_command": "cd backend && alembic upgrade head",
-                "expected_output": "exit code 0",
             },
         ],
         "missing_timestamps": [
             {
                 "description": f"Create migration to add timestamps to {table_name}",
                 "verify_command": "ls backend/alembic/versions/*timestamp*.py 2>/dev/null | head -1",
-                "expected_output": "migration file path",
             },
             {
                 "description": "Update SQLAlchemy model with timestamp columns",
                 "verify_command": f"rg 'created_at|updated_at' backend/app/models/*.py | rg -i {table_name}",
-                "expected_output": "column definitions",
             },
             {
                 "description": "Apply migration",
                 "verify_command": "cd backend && alembic upgrade head",
-                "expected_output": "exit code 0",
             },
         ],
         "god_table": [
             {
                 "description": f"Analyze {table_name} for column groupings",
                 "verify_command": f"psql $DATABASE_URL -c \"SELECT column_name FROM information_schema.columns WHERE table_name = '{table_name}'\" | wc -l",
-                "expected_output": "column count",
             },
             {
                 "description": "Create migration to extract related columns",
                 "verify_command": f"ls backend/alembic/versions/*{table_name.lower()}*.py 2>/dev/null | head -1",
-                "expected_output": "migration file path",
             },
             {
                 "description": "Verify column count reduced",
                 "verify_command": f"psql $DATABASE_URL -c \"SELECT COUNT(*) FROM information_schema.columns WHERE table_name = '{table_name}'\" | tail -3 | head -1 | xargs test 20 -gt",
-                "expected_output": "exit code 0",
             },
         ],
     }
@@ -122,7 +110,6 @@ def get_violation_steps(violation_type: str, table_name: str, detail: str) -> li
             {
                 "description": f"Fix schema violation in {table_name}: {detail}",
                 "verify_command": "dt mypy",
-                "expected_output": "TYPES:OK",
             },
         ],
     )

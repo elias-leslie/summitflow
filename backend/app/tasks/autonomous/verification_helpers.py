@@ -65,32 +65,6 @@ def expand_command(cmd: str) -> str:
     return strip_venv_paths(cmd)
 
 
-def parse_expected(expected: str | None) -> tuple[str, str | None]:
-    """Parse expected_output into (check_type, value).
-
-    Returns:
-        (check_type, value) where check_type is one of:
-        - "exit_code": Check returncode == 0
-        - "contains": Check value in output
-        - "exact": Check output == value
-    """
-    if not expected:
-        return ("exit_code", None)
-
-    expected_lower = expected.lower().strip()
-
-    if expected_lower.startswith("exit code"):
-        return ("exit_code", None)
-
-    # Note: "lint:ok", "types:ok", "test:ok" are now checked as output content
-    # Previously only checked exit code, which caused false positives when
-    # commands failed but pipeline exit code was 0
-
-    if expected_lower.startswith("contains:"):
-        return ("contains", expected[9:].strip())
-
-    return ("contains", expected)
-
 
 def detect_changed_files(project_path: str) -> list[str]:
     """Detect Python files changed in the last commit.

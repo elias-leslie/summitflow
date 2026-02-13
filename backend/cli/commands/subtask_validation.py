@@ -58,7 +58,7 @@ def validate_steps_input(
         return steps
 
     output_error(
-        "Steps are required. Use --steps-json with verify_command and expected_output "
+        "Steps are required. Use --steps-json with verify_command "
         "on each step."
     )
     raise typer.Exit(1)
@@ -112,7 +112,4 @@ def validate_step_object(step: Any, index: int) -> None:
         raise typer.Exit(1)
     if not step.get("verify_command"):
         output_error(f"Step {index}: missing required 'verify_command'")
-        raise typer.Exit(1)
-    if not step.get("expected_output"):
-        output_error(f"Step {index}: missing required 'expected_output'")
         raise typer.Exit(1)

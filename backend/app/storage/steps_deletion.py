@@ -171,7 +171,6 @@ def _emit_step_deletion_event(
             "was_passed": was_passed,
             "subtask_invalidated": subtask_invalidated,
             "verify_command": step_details.get("verify_command"),
-            "expected_output": step_details.get("expected_output"),
             "description": step_details.get("description"),
         },
     )
