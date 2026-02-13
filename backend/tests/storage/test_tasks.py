@@ -4,6 +4,7 @@ import pytest
 
 from app.storage import tasks as task_store
 from app.storage.connection import get_connection
+from app.storage.tasks.status import VALID_TRANSITIONS
 
 
 @pytest.fixture
@@ -39,6 +40,22 @@ def test_task(project_id, cleanup_task):
         conn.commit()
 
     return task
+
+
+class TestValidTransitions:
+    """Unit tests for VALID_TRANSITIONS state machine (no DB needed)."""
+
+    @pytest.mark.parametrize("state", ["pending", "queue", "running", "paused", "blocked", "failed"])
+    def test_all_non_terminal_states_allow_abandoned(self, state):
+        """Every non-terminal state must allow transition to abandoned."""
+        assert "abandoned" in VALID_TRANSITIONS[state], (
+            f"State '{state}' missing 'abandoned' transition"
+        )
+
+    def test_terminal_states_have_no_outbound(self):
+        """Terminal states (cancelled, abandoned) have no outbound transitions."""
+        assert VALID_TRANSITIONS["cancelled"] == set()
+        assert VALID_TRANSITIONS["abandoned"] == set()
 
 
 class TestCreateTask:
@@ -123,6 +140,28 @@ class TestUpdateTaskStatus:
         result = task_store.update_task_status(test_task["id"], "paused")
 
         assert result["status"] == "paused"
+
+    def test_status_pending_to_abandoned(self, test_task):
+        """Test transition from pending to abandoned (st abandon on unclaimed task)."""
+        result = task_store.update_task_status(test_task["id"], "abandoned")
+
+        assert result["status"] == "abandoned"
+        assert result["completed_at"] is not None
+
+    def test_status_queue_to_abandoned(self, test_task):
+        """Test transition from queue to abandoned."""
+        task_store.update_task_status(test_task["id"], "queue")
+        result = task_store.update_task_status(test_task["id"], "abandoned")
+
+        assert result["status"] == "abandoned"
+
+    def test_status_failed_to_abandoned(self, test_task):
+        """Test transition from failed to abandoned (cleanup of failed tasks)."""
+        task_store.update_task_status(test_task["id"], "running")
+        task_store.update_task_status(test_task["id"], "failed")
+        result = task_store.update_task_status(test_task["id"], "abandoned")
+
+        assert result["status"] == "abandoned"
 
     def test_invalid_status_raises_error(self, test_task):
         """Test that invalid status raises ValueError."""

@@ -33,9 +33,9 @@ from .core import TASK_COLUMNS, _row_to_dict, get_task
 # Valid task status transitions
 VALID_TRANSITIONS: dict[str, set[str]] = {
     # Initial state
-    "pending": {"queue", "running", "paused", "blocked", "cancelled"},
+    "pending": {"queue", "running", "paused", "blocked", "cancelled", "abandoned"},
     # Queue state (autonomous execution pipeline)
-    "queue": {"running", "pending", "blocked", "cancelled"},
+    "queue": {"running", "pending", "blocked", "cancelled", "abandoned"},
     # Work states - can transition to abandoned (rollback without DB restore)
     "running": {
         "queue",
@@ -50,7 +50,7 @@ VALID_TRANSITIONS: dict[str, set[str]] = {
     },
     "paused": {"queue", "running", "pending", "failed", "cancelled", "abandoned"},
     "blocked": {"queue", "running", "pending", "failed", "cancelled", "abandoned"},
-    "failed": {"queue", "pending", "running", "cancelled"},
+    "failed": {"queue", "pending", "running", "cancelled", "abandoned"},
     # PR/Review states (agent workflow)
     "pr_created": {"ai_reviewing", "blocked", "failed", "cancelled", "abandoned"},
     "ai_reviewing": {"completed", "blocked", "running", "failed", "abandoned"},

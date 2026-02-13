@@ -23,8 +23,9 @@ ALTER TABLE tasks ADD CONSTRAINT tasks_status_check CHECK (
         'human_reviewing'::text,
         'completed'::text,
         'cancelled'::text,
-        'failed'::text
+        'failed'::text,
+        'abandoned'::text
     ])
 );
 
-COMMENT ON COLUMN tasks.status IS 'Task status: pending, queue, ready, running, paused, blocked, pr_created, ai_reviewing, human_review, needs_review, human_reviewing, completed, cancelled, failed';
+COMMENT ON COLUMN tasks.status IS 'Task status: pending, queue, ready, running, paused, blocked, pr_created, ai_reviewing, human_review, needs_review, human_reviewing, completed, cancelled, failed, abandoned';
