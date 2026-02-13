@@ -118,6 +118,58 @@ def test_subtask_execution_stops_on_failure_when_orchestrator_decides() -> None:
     assert results[1]["status"] == "failed"
 
 
+def test_subtask_execution_continues_on_failure_when_orchestrator_decides() -> None:
+    """Verify that execution continues when a subtask fails but the failure handler returns True."""
+    task_id = "test-failure-continue-task"
+    project_id = "test-project"
+    project_path = "/tmp/test-project"
+
+    subtasks = [
+        {"subtask_id": "1.1", "description": "First"},
+        {"subtask_id": "1.2", "description": "Second (fails)"},
+        {"subtask_id": "1.3", "description": "Third"},
+    ]
+
+    executed_ids = []
+
+    def mock_execute(
+        task_id: str,
+        subtask: dict[str, Any],
+        project_id: str,
+        issue_counts: dict[str, int],
+        task_type: str | None = None,
+        agent_override: str | None = None,
+    ) -> dict[str, Any]:
+        executed_ids.append(subtask["subtask_id"])
+        if "fails" in subtask["description"]:
+            return {"subtask_id": subtask["subtask_id"], "status": "failed", "issue_id": "test-failure"}
+        return {"subtask_id": subtask["subtask_id"], "status": "passed"}
+
+    # We need to patch the internal _handle_subtask_failure in execution_loop module
+    with patch("app.tasks.autonomous.exec_modules.execution_loop.execute_subtask", side_effect=mock_execute), \
+         patch("app.tasks.autonomous.exec_modules.execution_loop.emit_progress"), \
+         patch("app.tasks.autonomous.exec_modules.execution_loop.emit_log"), \
+         patch("app.tasks.autonomous.exec_modules.execution_loop.has_uncommitted_changes", return_value=False), \
+         patch("app.tasks.autonomous.exec_modules.execution_loop._handle_subtask_failure", return_value=True):
+
+        results, _ = execute_subtask_loop(
+            task_id=task_id,
+            project_id=project_id,
+            project_path=project_path,
+            incomplete_subtasks=subtasks,
+            total_subtasks=len(subtasks),
+            completed_count=0,
+            task_type=None,
+            agent_override=None
+        )
+
+    # Should NOT stop after 1.2 because _handle_subtask_failure returned True
+    assert executed_ids == ["1.1", "1.2", "1.3"]
+    assert len(results) == 3
+    assert results[1]["status"] == "failed"
+    assert results[2]["status"] == "passed"
+
+
 @patch("app.tasks.autonomous.exec_modules.orchestrator.task_store")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.get_subtasks_for_task")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.validate_pristine_codebase", return_value=True)
