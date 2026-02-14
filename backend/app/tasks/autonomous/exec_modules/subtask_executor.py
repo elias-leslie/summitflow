@@ -27,6 +27,7 @@ def execute_subtask(
     issue_counts: dict[str, int],
     task_type: str | None = None,
     agent_override: str | None = None,
+    tier_preference: str | None = None,
 ) -> dict[str, Any]:
     """Execute a single subtask with fresh context and self-healing retry loop."""
     start_time = time.time()
@@ -113,7 +114,8 @@ def execute_subtask(
 
         # Execute initial agent call
         response, agent_session_id = execute_agent_initial(
-            task_id, subtask_short_id, prompt, agent_slug, project_path, project_id
+            task_id, subtask_short_id, prompt, agent_slug, project_path, project_id,
+            tier_preference=tier_preference,
         )
 
         # Run self-healing retry loop
@@ -135,6 +137,7 @@ def execute_subtask(
             agent_slug,
             agent_session_id,
             response.content,
+            tier_preference=tier_preference,
         )
 
         # Cross-agent fallback: if primary agent failed, try alternative agents
@@ -156,6 +159,7 @@ def execute_subtask(
                     fb_response, fb_session = execute_agent_initial(
                         task_id, subtask_short_id, fallback_prompt,
                         fallback_slug, project_path, project_id,
+                        tier_preference=tier_preference,
                     )
                     (
                         all_passed, step_results, fb_self, fb_super, fb_ext, _,
@@ -163,6 +167,7 @@ def execute_subtask(
                         task_id, subtask_id, subtask_short_id, subtask,
                         steps, project_path, project_id,
                         fallback_slug, fb_session, fb_response.content,
+                        tier_preference=tier_preference,
                     )
                     if all_passed:
                         emit_log(

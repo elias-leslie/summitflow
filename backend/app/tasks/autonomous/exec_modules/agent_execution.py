@@ -23,6 +23,7 @@ def execute_agent_initial(
     agent_slug: str,
     project_path: str,
     project_id: str,
+    tier_preference: str | None = None,
 ) -> tuple[Any, str | None]:
     """Execute initial agent call for subtask.
 
@@ -70,6 +71,7 @@ def execute_agent_initial(
         trace_id=task_id,
         include_roles=AUTOCODE_ROLES,
         session_id=agent_session_id,
+        tier_preference=tier_preference,
     )
 
     # Update session ID if Agent Hub returned a different one
@@ -147,6 +149,7 @@ def execute_agent_fix(
     project_id: str,
     agent_session_id: str | None,
     model_override: str | None = None,
+    tier_preference: str | None = None,
 ) -> tuple[Any, str | None]:
     """Execute agent fix attempt.
 
@@ -189,6 +192,8 @@ def execute_agent_fix(
     }
     if model_override:
         fix_kwargs["model"] = model_override
+    if tier_preference:
+        fix_kwargs["tier_preference"] = tier_preference
 
     response = client.complete(**fix_kwargs)
 

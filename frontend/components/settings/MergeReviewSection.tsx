@@ -3,11 +3,19 @@ import { GitMerge } from 'lucide-react'
 import type { AutonomousExecutionSettings } from '@/lib/api'
 import { Label } from '../ui/label'
 
+const MERGE_TIERS = [
+  { value: 1, label: 'Tier 1', description: 'Simple fixes, formatting' },
+  { value: 2, label: 'Tier 2', description: 'Standard changes, small features' },
+  { value: 3, label: 'Tier 3', description: 'Complex changes, refactors' },
+  { value: 4, label: 'Tier 4', description: 'Architecture, critical changes' },
+]
+
 interface MergeReviewSectionProps {
   settings: AutonomousExecutionSettings
   isPending: boolean
   onAutoMergeToggle: () => void
   onRequireReviewToggle: () => void
+  onAutoMergeTiersChange: (tiers: number[]) => void
 }
 
 export function MergeReviewSection({
@@ -15,6 +23,7 @@ export function MergeReviewSection({
   isPending,
   onAutoMergeToggle,
   onRequireReviewToggle,
+  onAutoMergeTiersChange,
 }: MergeReviewSectionProps) {
   return (
     <div className="p-6 bg-slate-800/50 rounded-lg border border-slate-700 space-y-6">

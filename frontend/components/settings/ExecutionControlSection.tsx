@@ -1,5 +1,5 @@
 import { clsx } from 'clsx'
-import { CheckCircle2, Clock, Layers, XCircle } from 'lucide-react'
+import { CheckCircle2, Clock, Layers, Timer, XCircle } from 'lucide-react'
 import type { AutonomousExecutionSettings } from '@/lib/api'
 import { Slider } from '../ui/slider'
 import { Input } from '../ui/input'
@@ -21,6 +21,7 @@ interface ExecutionControlSectionProps {
   onConcurrencyChange: (value: string) => void
   onMaxTasksPerDayChange: (value: string) => void
   onCooldownChange: (value: string) => void
+  onFrequencyChange: (value: string) => void
 }
 
 export function ExecutionControlSection({
@@ -31,6 +32,7 @@ export function ExecutionControlSection({
   onConcurrencyChange,
   onMaxTasksPerDayChange,
   onCooldownChange,
+  onFrequencyChange,
 }: ExecutionControlSectionProps) {
   return (
     <div className="p-6 bg-slate-800/50 rounded-lg border border-slate-700 space-y-6">
@@ -163,6 +165,27 @@ export function ExecutionControlSection({
           min={0}
           value={settings.cooldown_minutes}
           onChange={(e) => onCooldownChange(e.target.value)}
+          disabled={isPending}
+          className="max-w-[200px]"
+        />
+      </div>
+
+      {/* Check Frequency */}
+      <div>
+        <Label htmlFor="frequency" className="text-slate-200 mb-2 flex items-center gap-2">
+          <Timer className="w-4 h-4 text-slate-400" />
+          Check Frequency (minutes)
+        </Label>
+        <p className="text-xs text-slate-400 mb-3">
+          How often to check for new work to execute (5–1440 min)
+        </p>
+        <Input
+          id="frequency"
+          type="number"
+          min={5}
+          max={1440}
+          value={settings.frequency_minutes}
+          onChange={(e) => onFrequencyChange(e.target.value)}
           disabled={isPending}
           className="max-w-[200px]"
         />

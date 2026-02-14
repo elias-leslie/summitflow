@@ -30,6 +30,7 @@ def run_self_healing_loop(
     agent_slug: str,
     agent_session_id: str | None,
     initial_response_content: str,
+    tier_preference: str | None = None,
 ) -> tuple[bool, list[dict[str, Any]], int, int, int, str | None]:
     """Run self-healing retry loop until success or exhaustion.
 
@@ -146,6 +147,7 @@ def run_self_healing_loop(
             supervisor_guided_attempts,
             heal_attempt,
             model_override=model_override,
+            tier_preference=tier_preference,
         )
 
         heal_attempt += 1

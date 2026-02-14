@@ -68,6 +68,11 @@ def execute_task_locked(
     task_type = task.get("task_type")
     agent_override = task.get("agent_override")
 
+    # Resolve tier preference from project config
+    from ....storage.agent_configs_autonomous import get_preferred_model_tier
+
+    tier_preference = get_preferred_model_tier(project_id)
+
     # Verify codebase is pristine before automated execution
     if not validate_pristine_codebase(task_id, project_id):
         return {
@@ -113,6 +118,7 @@ def execute_task_locked(
         completed,
         task_type,
         agent_override,
+        tier_preference=tier_preference,
     )
 
     # Check for main repo leakage

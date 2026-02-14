@@ -24,6 +24,7 @@ def execute_subtask_loop(
     completed_count: int,
     task_type: str | None,
     agent_override: str | None,
+    tier_preference: str | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """Execute incomplete subtasks in order.
 
@@ -53,7 +54,8 @@ def execute_subtask_loop(
             break
 
         result = execute_subtask(
-            task_id, subtask, project_id, issue_counts, task_type, agent_override
+            task_id, subtask, project_id, issue_counts, task_type, agent_override,
+            tier_preference=tier_preference,
         )
         results.append(result)
         completed += 1

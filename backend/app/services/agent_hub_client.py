@@ -111,6 +111,7 @@ class AgentHubLLMClient(LLMClient):
         task_id: str | None = None,
         use_memory: bool | None = None,
         memory_group_id: str | None = None,
+        tier_preference: str | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
         """Generate completion via Agent Hub.
@@ -153,6 +154,7 @@ class AgentHubLLMClient(LLMClient):
                 enable_caching=kwargs.get("enable_caching", True),
                 use_memory=effective_use_memory,
                 memory_group_id=effective_memory_group,
+                tier_preference=tier_preference,
             )
             return response_to_llm_response(response)
         except AgentHubError as e:
