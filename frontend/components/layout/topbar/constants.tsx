@@ -52,10 +52,11 @@ export const navItems = [
     activeColor: 'indigo',
   },
   {
-    id: 'commands',
-    label: 'Commands',
-    href: '/commands',
+    id: 'chat',
+    label: 'Chat',
+    href: 'https://agent.summitflow.dev/chat',
     icon: MessageSquare,
     activeColor: 'indigo',
+    external: true,
   },
 ] as const

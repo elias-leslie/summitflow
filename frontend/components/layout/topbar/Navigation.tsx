@@ -1,4 +1,5 @@
 import clsx from 'clsx'
+import { ExternalLink } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useGitHealth } from '@/hooks/useGitHealth'
@@ -13,39 +14,62 @@ export function Navigation() {
     <nav className="hidden lg:flex items-center gap-1 ml-4">
       {navItems.map((item) => {
         const Icon = item.icon
+        const isExternal = 'external' in item && item.external
         const isActive =
-          pathname === item.href ||
-          (item.href !== '/' && pathname.startsWith(item.href))
+          !isExternal &&
+          (pathname === item.href ||
+            (item.href !== '/' && pathname.startsWith(item.href)))
 
-        return (
-          <Link
-            key={item.id}
-            href={item.href}
-            className={clsx(
-              'group flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200',
-              isActive
-                ? item.activeColor === 'outrun'
-                  ? 'bg-outrun-500/15 text-outrun-400'
-                  : item.activeColor === 'violet'
-                    ? 'bg-violet-500/15 text-violet-400'
-                    : 'bg-indigo-500/15 text-indigo-400'
-                : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-300',
-            )}
-          >
-            <Icon
-              className={clsx(
-                'w-4 h-4 transition-colors duration-200',
-                isActive
-                  ? item.activeColor === 'outrun'
-                    ? 'text-outrun-400'
-                    : item.activeColor === 'violet'
-                      ? 'text-violet-400'
-                      : 'text-indigo-400'
-                  : 'text-slate-500 group-hover:text-slate-400',
-              )}
-            />
+        const className = clsx(
+          'group flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200',
+          isActive
+            ? item.activeColor === 'outrun'
+              ? 'bg-outrun-500/15 text-outrun-400'
+              : item.activeColor === 'violet'
+                ? 'bg-violet-500/15 text-violet-400'
+                : 'bg-indigo-500/15 text-indigo-400'
+            : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-300',
+        )
+
+        const iconClassName = clsx(
+          'w-4 h-4 transition-colors duration-200',
+          isActive
+            ? item.activeColor === 'outrun'
+              ? 'text-outrun-400'
+              : item.activeColor === 'violet'
+                ? 'text-violet-400'
+                : 'text-indigo-400'
+            : 'text-slate-500 group-hover:text-slate-400',
+        )
+
+        const content = (
+          <>
+            <Icon className={iconClassName} />
             <span>{item.label}</span>
             {item.id === 'git' && <GitStatusIndicator state={gitHealth} />}
+            {isExternal && (
+              <ExternalLink className="w-3 h-3 text-slate-600 group-hover:text-slate-500" />
+            )}
+          </>
+        )
+
+        if (isExternal) {
+          return (
+            <a
+              key={item.id}
+              href={item.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={className}
+            >
+              {content}
+            </a>
+          )
+        }
+
+        return (
+          <Link key={item.id} href={item.href} className={className}>
+            {content}
           </Link>
         )
       })}
