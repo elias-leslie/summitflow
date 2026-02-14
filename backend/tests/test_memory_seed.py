@@ -15,6 +15,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+import typer
 
 from cli.commands.memory_seed import (
     _build_skill_tag,
@@ -28,7 +29,7 @@ from cli.commands.memory_seed import (
 class TestParseFrontmatter:
     """Tests for _parse_frontmatter YAML parsing."""
 
-    def test_parse_frontmatter_extracts_yaml_metadata(self):
+    def test_parse_frontmatter_extracts_yaml_metadata(self) -> None:
         """Test that frontmatter extracts tier, summary, tags from YAML."""
         text = """---
 tier: guardrail
@@ -46,7 +47,7 @@ This is the body."""
         assert frontmatter["tags"] == ["skill:test", "autocode"]
         assert body == "# Test Content\nThis is the body."
 
-    def test_parse_frontmatter_handles_trigger_task_types_list(self):
+    def test_parse_frontmatter_handles_trigger_task_types_list(self) -> None:
         """Test that frontmatter handles trigger_task_types as list."""
         text = """---
 trigger_task_types: [feature, refactor, bug]
@@ -54,11 +55,11 @@ trigger_task_types: [feature, refactor, bug]
 
 Content here."""
 
-        frontmatter, body = _parse_frontmatter(text)
+        frontmatter, _body = _parse_frontmatter(text)
 
         assert frontmatter["trigger_task_types"] == ["feature", "refactor", "bug"]
 
-    def test_parse_frontmatter_handles_boolean_true(self):
+    def test_parse_frontmatter_handles_boolean_true(self) -> None:
         """Test that frontmatter parses pinned: true correctly."""
         text = """---
 pinned: true
@@ -66,11 +67,11 @@ pinned: true
 
 Body content."""
 
-        frontmatter, body = _parse_frontmatter(text)
+        frontmatter, _body = _parse_frontmatter(text)
 
         assert frontmatter["pinned"] is True
 
-    def test_parse_frontmatter_handles_boolean_false(self):
+    def test_parse_frontmatter_handles_boolean_false(self) -> None:
         """Test that frontmatter parses pinned: false correctly."""
         text = """---
 pinned: false
@@ -78,11 +79,11 @@ pinned: false
 
 Body content."""
 
-        frontmatter, body = _parse_frontmatter(text)
+        frontmatter, _body = _parse_frontmatter(text)
 
         assert frontmatter["pinned"] is False
 
-    def test_parse_frontmatter_handles_yes_no_booleans(self):
+    def test_parse_frontmatter_handles_yes_no_booleans(self) -> None:
         """Test that frontmatter recognizes yes/no as boolean values."""
         text = """---
 enabled: yes
@@ -91,12 +92,12 @@ disabled: no
 
 Body content."""
 
-        frontmatter, body = _parse_frontmatter(text)
+        frontmatter, _body = _parse_frontmatter(text)
 
         assert frontmatter["enabled"] is True
         assert frontmatter["disabled"] is False
 
-    def test_parse_frontmatter_returns_body_without_frontmatter(self):
+    def test_parse_frontmatter_returns_body_without_frontmatter(self) -> None:
         """Test that body content excludes frontmatter delimiters."""
         text = """---
 tier: reference
@@ -106,36 +107,36 @@ tier: reference
 
 This is the actual body text that should be returned."""
 
-        frontmatter, body = _parse_frontmatter(text)
+        _frontmatter, body = _parse_frontmatter(text)
 
         assert "---" not in body
         assert "tier:" not in body
         assert body.startswith("# Main Content")
 
-    def test_parse_frontmatter_returns_empty_dict_without_frontmatter(self):
+    def test_parse_frontmatter_returns_empty_dict_without_frontmatter(self) -> None:
         """Test that files without frontmatter return empty dict."""
         text = """# Regular Markdown
 
 No frontmatter here."""
 
-        frontmatter, body = _parse_frontmatter(text)
+        _frontmatter, body = _parse_frontmatter(text)
 
-        assert frontmatter == {}
+        assert _frontmatter == {}
         assert body == text
 
-    def test_parse_frontmatter_handles_incomplete_frontmatter(self):
+    def test_parse_frontmatter_handles_incomplete_frontmatter(self) -> None:
         """Test that incomplete frontmatter (only one ---) is ignored."""
         text = """---
 tier: guardrail
 
 # Content without closing delimiter"""
 
-        frontmatter, body = _parse_frontmatter(text)
+        _frontmatter, body = _parse_frontmatter(text)
 
-        assert frontmatter == {}
+        assert _frontmatter == {}
         assert body == text
 
-    def test_parse_frontmatter_ignores_comments(self):
+    def test_parse_frontmatter_ignores_comments(self) -> None:
         """Test that YAML comments are ignored during parsing."""
         text = """---
 # This is a comment
@@ -146,13 +147,13 @@ summary: Test
 
 Body content."""
 
-        frontmatter, body = _parse_frontmatter(text)
+        frontmatter, _body = _parse_frontmatter(text)
 
         assert frontmatter["tier"] == "guardrail"
         assert frontmatter["summary"] == "Test"
         assert "#" not in frontmatter
 
-    def test_parse_frontmatter_handles_quoted_strings(self):
+    def test_parse_frontmatter_handles_quoted_strings(self) -> None:
         """Test that quoted strings are properly unquoted."""
         text = """---
 summary: 'Single quoted'
@@ -161,12 +162,12 @@ description: "Double quoted"
 
 Body content."""
 
-        frontmatter, body = _parse_frontmatter(text)
+        frontmatter, _body = _parse_frontmatter(text)
 
         assert frontmatter["summary"] == "Single quoted"
         assert frontmatter["description"] == "Double quoted"
 
-    def test_parse_frontmatter_handles_empty_list(self):
+    def test_parse_frontmatter_handles_empty_list(self) -> None:
         """Test that empty lists are parsed correctly."""
         text = """---
 tags: []
@@ -175,12 +176,12 @@ trigger_task_types: []
 
 Body content."""
 
-        frontmatter, body = _parse_frontmatter(text)
+        frontmatter, _body = _parse_frontmatter(text)
 
         assert frontmatter["tags"] == []
         assert frontmatter["trigger_task_types"] == []
 
-    def test_parse_frontmatter_handles_numeric_values(self):
+    def test_parse_frontmatter_handles_numeric_values(self) -> None:
         """Test that numeric values are parsed as integers."""
         text = """---
 priority: 10
@@ -189,13 +190,13 @@ confidence: 90
 
 Body content."""
 
-        frontmatter, body = _parse_frontmatter(text)
+        frontmatter, _body = _parse_frontmatter(text)
 
         assert frontmatter["priority"] == 10
         assert frontmatter["confidence"] == 90
         assert isinstance(frontmatter["priority"], int)
 
-    def test_parse_frontmatter_handles_multiline_content(self):
+    def test_parse_frontmatter_handles_multiline_content(self) -> None:
         """Test that body with multiple lines is preserved."""
         text = """---
 tier: guardrail
@@ -210,7 +211,7 @@ Content line 2.
 
 More content."""
 
-        frontmatter, body = _parse_frontmatter(text)
+        _frontmatter, body = _parse_frontmatter(text)
 
         assert "# Section 1" in body
         assert "## Section 2" in body
@@ -220,27 +221,27 @@ More content."""
 class TestBuildSkillTag:
     """Tests for _build_skill_tag tag generation."""
 
-    def test_build_skill_tag_creates_tag_from_filename(self):
+    def test_build_skill_tag_creates_tag_from_filename(self) -> None:
         """Test that skill tag is created from filename stem."""
         tag = _build_skill_tag("autocode-guidelines.md")
 
         assert tag == "skill:autocode-guidelines"
 
-    def test_build_skill_tag_removes_extension(self):
+    def test_build_skill_tag_removes_extension(self) -> None:
         """Test that file extension is removed from tag."""
         tag = _build_skill_tag("memory-management.md")
 
         assert tag == "skill:memory-management"
         assert ".md" not in tag
 
-    def test_build_skill_tag_handles_path_object(self):
+    def test_build_skill_tag_handles_path_object(self) -> None:
         """Test that Path objects are handled correctly."""
         path = Path("/home/user/skills/test-skill.md")
         tag = _build_skill_tag(path.name)
 
         assert tag == "skill:test-skill"
 
-    def test_build_skill_tag_preserves_hyphens(self):
+    def test_build_skill_tag_preserves_hyphens(self) -> None:
         """Test that hyphens in filename are preserved."""
         tag = _build_skill_tag("quality-gate-rules.md")
 
@@ -251,7 +252,7 @@ class TestFindExistingByTag:
     """Tests for _find_existing_by_tag episode search."""
 
     @patch("cli.commands.memory_seed.agent_hub_request")
-    def test_find_existing_by_tag_returns_episode_when_found(self, mock_request: MagicMock):
+    def test_find_existing_by_tag_returns_episode_when_found(self, mock_request: MagicMock) -> None:
         """Test that existing episode is returned when tag matches."""
         mock_request.return_value = {
             "results": [
@@ -277,7 +278,7 @@ class TestFindExistingByTag:
         )
 
     @patch("cli.commands.memory_seed.agent_hub_request")
-    def test_find_existing_by_tag_returns_none_when_not_found(self, mock_request: MagicMock):
+    def test_find_existing_by_tag_returns_none_when_not_found(self, mock_request: MagicMock) -> None:
         """Test that None is returned when no matching episode exists."""
         mock_request.return_value = {"results": []}
 
@@ -286,7 +287,7 @@ class TestFindExistingByTag:
         assert result is None
 
     @patch("cli.commands.memory_seed.agent_hub_request")
-    def test_find_existing_by_tag_filters_by_exact_tag_match(self, mock_request: MagicMock):
+    def test_find_existing_by_tag_filters_by_exact_tag_match(self, mock_request: MagicMock) -> None:
         """Test that only episodes with exact tag match are returned."""
         mock_request.return_value = {
             "results": [
@@ -301,7 +302,7 @@ class TestFindExistingByTag:
         assert result["uuid"] == "ep-2"
 
     @patch("cli.commands.memory_seed.agent_hub_request")
-    def test_find_existing_by_tag_handles_api_errors(self, mock_request: MagicMock):
+    def test_find_existing_by_tag_handles_api_errors(self, mock_request: MagicMock) -> None:
         """Test that API errors are handled gracefully."""
         mock_request.side_effect = Exception("API error")
 
@@ -310,7 +311,7 @@ class TestFindExistingByTag:
         assert result is None
 
     @patch("cli.commands.memory_seed.agent_hub_request")
-    def test_find_existing_by_tag_passes_scope_parameters(self, mock_request: MagicMock):
+    def test_find_existing_by_tag_passes_scope_parameters(self, mock_request: MagicMock) -> None:
         """Test that scope and scope_id are passed to API."""
         mock_request.return_value = {"results": []}
 
@@ -565,10 +566,10 @@ class TestSeedImpl:
         self, mock_typer: MagicMock, tmp_path: Path
     ):
         """Test that seed_impl exits when directory does not exist."""
-        mock_typer.Exit = Exception
+        mock_typer.Exit = typer.Exit
         missing_dir = tmp_path / "missing"
 
-        with pytest.raises(Exception):
+        with pytest.raises(typer.Exit):
             seed_impl(missing_dir, "global", None, dry_run=False, project=None)
 
     @patch("cli.commands.memory_seed.typer")
@@ -576,11 +577,11 @@ class TestSeedImpl:
         self, mock_typer: MagicMock, tmp_path: Path
     ):
         """Test that seed_impl exits when path is a file not directory."""
-        mock_typer.Exit = Exception
+        mock_typer.Exit = typer.Exit
         file_path = tmp_path / "file.txt"
         file_path.write_text("test")
 
-        with pytest.raises(Exception):
+        with pytest.raises(typer.Exit):
             seed_impl(file_path, "global", None, dry_run=False, project=None)
 
     @patch("cli.commands.memory_seed._upsert_skill_episode")

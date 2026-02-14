@@ -53,15 +53,15 @@ class TestGetEventsWithFiltersAfter:
         assert len(calls) == 3  # COUNT, summary GROUP BY, events SELECT
 
         # Check COUNT query
-        count_sql, count_params = calls[0]
-        assert "timestamp > %s" in count_sql[0]
-        assert "test-project" in count_params[0]
-        assert after_timestamp in count_params[0]
+        count_sql, count_params = calls[0].args
+        assert "timestamp > %s" in count_sql
+        assert "test-project" in count_params
+        assert after_timestamp in count_params
 
         # Check events query
-        events_sql, events_params = calls[2]
-        assert "timestamp > %s" in events_sql[0]
-        assert after_timestamp in events_params[0]
+        events_sql, events_params = calls[2].args
+        assert "timestamp > %s" in events_sql
+        assert after_timestamp in events_params
 
         assert result["total"] == 5
         assert result["events"] == []
@@ -133,9 +133,9 @@ class TestGetEventsWithFiltersAfter:
 
         # Verify SQL does NOT contain timestamp filter
         calls = mock_cursor.execute.call_args_list
-        count_sql, count_params = calls[0]
-        assert "timestamp >" not in count_sql[0]
-        assert len(count_params[0]) == 1  # Only project_id
+        count_sql, count_params = calls[0].args
+        assert "timestamp >" not in count_sql
+        assert len(count_params) == 1  # Only project_id
 
 
 class TestGetEventsWithFiltersEventType:
@@ -163,15 +163,15 @@ class TestGetEventsWithFiltersEventType:
         assert len(calls) == 3
 
         # Check COUNT query
-        count_sql, count_params = calls[0]
-        assert "event_type = %s" in count_sql[0]
-        assert "test-project" in count_params[0]
-        assert "state_change" in count_params[0]
+        count_sql, count_params = calls[0].args
+        assert "event_type = %s" in count_sql
+        assert "test-project" in count_params
+        assert "state_change" in count_params
 
         # Check events query
-        events_sql, events_params = calls[2]
-        assert "event_type = %s" in events_sql[0]
-        assert "state_change" in events_params[0]
+        events_sql, events_params = calls[2].args
+        assert "event_type = %s" in events_sql
+        assert "state_change" in events_params
 
         assert result["total"] == 2
 
@@ -249,9 +249,9 @@ class TestGetEventsWithFiltersEventType:
 
         # Verify SQL does NOT contain event_type filter
         calls = mock_cursor.execute.call_args_list
-        count_sql, count_params = calls[0]
-        assert "event_type = %s" not in count_sql[0]
-        assert len(count_params[0]) == 1  # Only project_id
+        count_sql, count_params = calls[0].args
+        assert "event_type = %s" not in count_sql
+        assert len(count_params) == 1  # Only project_id
 
 
 class TestGetEventsWithFiltersCombined:
@@ -280,12 +280,12 @@ class TestGetEventsWithFiltersCombined:
 
         # Verify both conditions are in SQL
         calls = mock_cursor.execute.call_args_list
-        count_sql, count_params = calls[0]
-        assert "timestamp > %s" in count_sql[0]
-        assert "event_type = %s" in count_sql[0]
-        assert " AND " in count_sql[0]
-        assert after_timestamp in count_params[0]
-        assert "error" in count_params[0]
+        count_sql, count_params = calls[0].args
+        assert "timestamp > %s" in count_sql
+        assert "event_type = %s" in count_sql
+        assert " AND " in count_sql
+        assert after_timestamp in count_params
+        assert "error" in count_params
 
     @patch("app.storage.events.get_connection")
     def test_get_events_with_filters_after_and_event_type_with_other_filters(
@@ -313,22 +313,22 @@ class TestGetEventsWithFiltersCombined:
 
         # Verify all conditions are in SQL
         calls = mock_cursor.execute.call_args_list
-        count_sql, count_params = calls[0]
-        assert "project_id = %s" in count_sql[0]
-        assert "trace_id = %s" in count_sql[0]
-        assert "level = %s" in count_sql[0]
-        assert "visibility = %s" in count_sql[0]
-        assert "timestamp > %s" in count_sql[0]
-        assert "event_type = %s" in count_sql[0]
-        assert count_sql[0].count(" AND ") >= 5
+        count_sql, count_params = calls[0].args
+        assert "project_id = %s" in count_sql
+        assert "trace_id = %s" in count_sql
+        assert "level = %s" in count_sql
+        assert "visibility = %s" in count_sql
+        assert "timestamp > %s" in count_sql
+        assert "event_type = %s" in count_sql
+        assert count_sql.count(" AND ") >= 5
 
         # Verify params order matches conditions
-        assert "test-project" in count_params[0]
-        assert "test-trace-id" in count_params[0]
-        assert "error" in count_params[0]
-        assert "user" in count_params[0]
-        assert after_timestamp in count_params[0]
-        assert "state_change" in count_params[0]
+        assert "test-project" in count_params
+        assert "test-trace-id" in count_params
+        assert "error" in count_params
+        assert "user" in count_params
+        assert after_timestamp in count_params
+        assert "state_change" in count_params
 
 
 class TestGetEventsByTraceAfter:
@@ -353,12 +353,12 @@ class TestGetEventsByTraceAfter:
         calls = mock_cursor.execute.call_args_list
         assert len(calls) == 1
 
-        sql, params = calls[0]
-        assert "trace_id = %s" in sql[0]
-        assert "timestamp > %s" in sql[0]
-        assert " AND " in sql[0]
-        assert "test-trace-id" in params[0]
-        assert after_timestamp in params[0]
+        sql, params = calls[0].args
+        assert "trace_id = %s" in sql
+        assert "timestamp > %s" in sql
+        assert " AND " in sql
+        assert "test-trace-id" in params
+        assert after_timestamp in params
         assert result == []
 
     @patch("app.storage.events.get_connection")
@@ -414,9 +414,9 @@ class TestGetEventsByTraceAfter:
 
         # Verify SQL does NOT contain timestamp filter
         calls = mock_cursor.execute.call_args_list
-        sql, params = calls[0]
-        assert "timestamp >" not in sql[0]
-        assert len(params[0]) == 2  # trace_id + limit
+        sql, params = calls[0].args
+        assert "timestamp >" not in sql
+        assert len(params) == 2  # trace_id + limit
 
     @patch("app.storage.events.get_connection")
     def test_get_events_by_trace_after_with_other_filters(
@@ -441,17 +441,17 @@ class TestGetEventsByTraceAfter:
 
         # Verify all conditions are in SQL
         calls = mock_cursor.execute.call_args_list
-        sql, params = calls[0]
-        assert "trace_id = %s" in sql[0]
-        assert "visibility = %s" in sql[0]
-        assert "level = %s" in sql[0]
-        assert "timestamp > %s" in sql[0]
-        assert sql[0].count(" AND ") >= 3
+        sql, params = calls[0].args
+        assert "trace_id = %s" in sql
+        assert "visibility = %s" in sql
+        assert "level = %s" in sql
+        assert "timestamp > %s" in sql
+        assert sql.count(" AND ") >= 3
 
-        assert "test-trace-id" in params[0]
-        assert "user" in params[0]
-        assert "error" in params[0]
-        assert after_timestamp in params[0]
+        assert "test-trace-id" in params
+        assert "user" in params
+        assert "error" in params
+        assert after_timestamp in params
 
 
 class TestEventsAPIEndpoints:
@@ -479,7 +479,7 @@ class TestEventsAPIEndpoints:
 
         after_iso = "2026-02-14T10:00:00Z"
         response = client.get(
-            f"/projects/test-project/events?after={after_iso}&limit=10"
+            f"/api/projects/test-project/events?after={after_iso}&limit=10"
         )
 
         assert response.status_code == 200
@@ -501,7 +501,7 @@ class TestEventsAPIEndpoints:
         mock_cursor.fetchall.side_effect = [[], []]
 
         response = client.get(
-            "/projects/test-project/events?event_type=state_change&limit=10"
+            "/api/projects/test-project/events?event_type=state_change&limit=10"
         )
 
         assert response.status_code == 200
@@ -524,7 +524,7 @@ class TestEventsAPIEndpoints:
 
         after_iso = "2026-02-14T10:00:00Z"
         response = client.get(
-            f"/projects/test-project/events?after={after_iso}&event_type=error&limit=10"
+            f"/api/projects/test-project/events?after={after_iso}&event_type=error&limit=10"
         )
 
         assert response.status_code == 200
@@ -546,7 +546,7 @@ class TestEventsAPIEndpoints:
 
         after_iso = "2026-02-14T10:00:00Z"
         response = client.get(
-            f"/projects/test-project/events/by-trace/test-trace-id?after={after_iso}"
+            f"/api/projects/test-project/events/by-trace/test-trace-id?after={after_iso}"
         )
 
         assert response.status_code == 200
@@ -569,7 +569,7 @@ class TestEventsAPIEndpoints:
 
         after_iso = "2026-02-14T10:00:00Z"
         response = client.get(
-            f"/projects/test-project/events/by-trace/test-trace-id"
+            f"/api/projects/test-project/events/by-trace/test-trace-id"
             f"?after={after_iso}&visibility=user&level=error"
         )
 
