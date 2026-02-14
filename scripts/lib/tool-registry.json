@@ -8,7 +8,9 @@
     "st\\b",
     "db\\b",
     "restart\\.sh\\b",
-    "rebuild\\.sh\\b"
+    "rebuild\\.sh\\b",
+    "shutdown\\.sh\\b",
+    "worktree-services\\.sh\\b"
   ],
   "tools": [
     {
@@ -128,8 +130,28 @@
   ],
   "service_redirects": [
     {
-      "pattern": "systemctl\\s+(--user\\s+)?restart\\s+(summitflow|agent-hub|portfolio|sf-|ah-)",
-      "message": "Use project restart scripts: ~/summitflow/scripts/restart.sh, ~/agent-hub/scripts/restart.sh, or ~/portfolio-ai/scripts/restart.sh"
+      "pattern": "systemctl\\s+(--user\\s+)?(restart|stop|start|kill|disable|enable)\\s+(summitflow|agent-hub|portfolio|sf-|ah-|hatchet)",
+      "message": "Use restart.sh for service management or worktree-services.sh start/stop <task-id> for worktree services. Never manage services via systemctl directly."
+    },
+    {
+      "pattern": "(pkill|killall)\\b.*(uvicorn|gunicorn|next|hatchet|celery)",
+      "message": "Never kill service processes directly. Use restart.sh to restart services or worktree-services.sh stop <task-id> for worktree services."
+    },
+    {
+      "pattern": "(\\.venv/bin/)?(uvicorn|gunicorn)\\s+\\S+:\\S+",
+      "message": "Never start app servers directly. Use restart.sh for main services or worktree-services.sh start <task-id> for worktree services."
+    },
+    {
+      "pattern": "python[0-9.]*\\s+-m\\s+(uvicorn|gunicorn)\\b",
+      "message": "Never start app servers directly. Use restart.sh for main services or worktree-services.sh start <task-id> for worktree services."
+    },
+    {
+      "pattern": "(npm|pnpm)\\s+(run\\s+(dev|start)|start)\\b",
+      "message": "Never start dev servers directly. Use restart.sh for main services or worktree-services.sh start <task-id> for worktree services."
+    },
+    {
+      "pattern": "(npx\\s+)?next\\s+(dev|start)\\b",
+      "message": "Never start dev servers directly. Use restart.sh for main services or worktree-services.sh start <task-id> for worktree services."
     },
     {
       "pattern": "psql\\b",
