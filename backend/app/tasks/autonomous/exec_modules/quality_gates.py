@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 
+from ....storage.agent_configs_quality import build_dt_command
 from .events import emit_log
 from .quality_utils import find_dev_tools
 
@@ -11,12 +12,14 @@ from .quality_utils import find_dev_tools
 def run_final_quality_gate(
     task_id: str, project_path: str, project_id: str
 ) -> bool:
-    """Run dt --quick as final quality gate before AI review.
+    """Run quality gate as final check before AI review.
+
+    Uses per-project quality gate configuration to build the dt command.
 
     Args:
         task_id: Task ID for logging
         project_path: Path to the project/worktree
-        project_id: Project ID for logging
+        project_id: Project ID for logging and config lookup
 
     Returns:
         True if quality gate passes, False otherwise
@@ -25,17 +28,19 @@ def run_final_quality_gate(
     if not dt_cmd:
         return True
 
+    cmd = build_dt_command(dt_cmd, project_id)
+
     emit_log(
         task_id,
         "info",
-        "Running final quality gate (dt --quick)...",
+        f"Running final quality gate ({' '.join(cmd)})...",
         source="quality",
         project_id=project_id,
     )
 
     try:
         result = subprocess.run(
-            [dt_cmd, "--quick"],
+            cmd,
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -80,8 +85,14 @@ def run_final_quality_gate(
         return False
 
 
-def auto_fix_quality(project_path: str) -> bool:
+def auto_fix_quality(project_path: str, project_id: str) -> bool:
     """Run dt --fix to attempt auto-fixing quality issues.
+
+    Uses per-project config to determine if fix is allowed and which tools to fix.
+
+    Args:
+        project_path: Path to the project/worktree
+        project_id: Project ID for config lookup
 
     Returns:
         True if dt --fix ran successfully
@@ -90,9 +101,11 @@ def auto_fix_quality(project_path: str) -> bool:
     if not dt_cmd:
         return False
 
+    cmd = build_dt_command(dt_cmd, project_id, fix=True)
+
     try:
         result = subprocess.run(
-            [dt_cmd, "--fix"],
+            cmd,
             cwd=project_path,
             capture_output=True,
             text=True,

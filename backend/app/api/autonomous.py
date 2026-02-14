@@ -42,7 +42,12 @@ async def get_settings(project_id: str) -> AutonomousSettings:
 @router.patch("/{project_id}/autonomous/settings", response_model=AutonomousSettings)
 async def update_settings(project_id: str, update: AutonomousSettingsUpdate) -> AutonomousSettings:
     """Update autonomous execution settings for a project."""
-    from .autonomous_models import VALID_MODEL_TIERS, VALID_TASK_TYPES
+    from .autonomous_models import (
+        VALID_MODEL_TIERS,
+        VALID_QUALITY_GATE_MODES,
+        VALID_QUALITY_GATE_TOOLS,
+        VALID_TASK_TYPES,
+    )
 
     _verify_project_exists(project_id)
 
@@ -76,6 +81,22 @@ async def update_settings(project_id: str, update: AutonomousSettingsUpdate) -> 
         raise HTTPException(
             status_code=400,
             detail="max_tasks_per_day must be at least 1 (or null for unlimited)",
+        )
+
+    # Validate quality gate tools
+    if update.quality_gate_tools is not None:
+        for tool in update.quality_gate_tools:
+            if tool not in VALID_QUALITY_GATE_TOOLS:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid quality gate tool '{tool}'. Must be one of: {', '.join(VALID_QUALITY_GATE_TOOLS)}",
+                )
+
+    # Validate quality gate mode
+    if update.quality_gate_mode is not None and update.quality_gate_mode not in VALID_QUALITY_GATE_MODES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid quality gate mode '{update.quality_gate_mode}'. Must be one of: {', '.join(VALID_QUALITY_GATE_MODES)}",
         )
 
     return _update_settings(project_id, update)

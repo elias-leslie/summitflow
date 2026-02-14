@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Query
@@ -25,6 +26,8 @@ async def get_events(
     source: Annotated[str | None, Query(description="Filter by source")] = None,
     visibility: Annotated[EventVisibility | None, Query(description="Filter by visibility")] = None,
     search: Annotated[str | None, Query(description="Search in message")] = None,
+    after: Annotated[datetime | None, Query(description="Only events after this timestamp (ISO 8601)")] = None,
+    event_type: Annotated[str | None, Query(description="Filter by event_type")] = None,
     limit: Annotated[int, Query(ge=1, le=1000)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> dict[str, Any]:
@@ -40,6 +43,8 @@ async def get_events(
         level=level,
         visibility=visibility,
         search=search,
+        after=after,
+        event_type=event_type,
         limit=limit,
         offset=offset,
     )
@@ -75,18 +80,21 @@ async def get_events_for_trace(
     trace_id: str,
     visibility: Annotated[EventVisibility | None, Query(description="Filter by visibility")] = None,
     level: Annotated[EventLevel | None, Query(description="Filter by level")] = None,
+    after: Annotated[datetime | None, Query(description="Only events after this timestamp (ISO 8601)")] = None,
     limit: Annotated[int, Query(ge=1, le=5000)] = 1000,
 ) -> dict[str, Any]:
     """Get all events for a specific trace (execution run).
 
     Optimized for fetching a complete execution timeline.
     Returns events ordered by timestamp ascending.
+    Supports time-range pagination via `after` parameter.
     """
     events = await asyncio.to_thread(
         get_events_by_trace,
         trace_id=trace_id,
         visibility=visibility,
         level=level,
+        after=after,
         limit=limit,
     )
 

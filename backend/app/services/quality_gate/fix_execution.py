@@ -57,6 +57,9 @@ def verify_fix(
 ) -> bool:
     """Re-run the check to verify the fix worked.
 
+    Uses dt wrapper for consistent tool execution. Falls back to raw tools
+    only if dt is not available.
+
     Args:
         project_path: Path to project root
         check_type: Type of check (ruff, mypy, biome, tsc)
@@ -65,17 +68,20 @@ def verify_fix(
     Returns:
         True if the check now passes
     """
-    cmd: list[str] = []
-    cwd = project_path
+    import shutil
 
-    if check_type == "ruff":
+    dt_cmd = shutil.which("dt")
+
+    if dt_cmd and check_type in ("ruff", "mypy", "biome", "tsc"):
+        # Use dt for verification — consistent with quality gate pipeline
+        cmd = [dt_cmd, check_type]
+    elif check_type == "ruff":
         cmd = ["ruff", "check", file_path, "--quiet"]
     elif check_type == "mypy":
         cmd = ["mypy", file_path, "--no-error-summary", "--quiet"]
     elif check_type == "biome":
         cmd = ["npx", "biome", "check", file_path, "--quiet"]
     elif check_type == "tsc":
-        # For tsc we check the whole project since it needs tsconfig context
         cmd = ["npx", "tsc", "--noEmit"]
     else:
         logger.warning("unknown_check_type", check_type=check_type)
@@ -84,7 +90,7 @@ def verify_fix(
     try:
         result = subprocess.run(
             cmd,
-            cwd=cwd,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=60,

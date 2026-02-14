@@ -10,6 +10,7 @@ from ....logging_config import get_logger
 from ....storage.events import get_events_by_trace
 from ....storage.subtasks import get_handoff_context
 from ....storage.task_spirit import get_task_spirit
+from ...autonomous.pickup_guards import check_system_health
 
 logger = get_logger(__name__)
 
@@ -89,6 +90,30 @@ def build_failures_block(failed_steps: list[dict[str, Any]]) -> str:
         if output:
             parts.append(f"Output:\n```\n{output}\n```")
     return "\n\n".join(parts)
+
+
+def build_health_context(project_id: str) -> str:
+    """Build system health summary for agent prompt context.
+
+    Returns a markdown block describing current system health status
+    so agents can reason about infrastructure state.
+    """
+    try:
+        health_error = check_system_health(project_id)
+        if health_error is None:
+            return ""
+
+        details = health_error.get("details", {})
+        failing = health_error.get("failing_services", [])
+        lines = ["## System Health Warning"]
+        for service, status in details.items():
+            indicator = "unhealthy" if service in failing else "healthy"
+            lines.append(f"- {service}: {indicator}")
+        lines.append("")
+        lines.append("Some services are degraded. Avoid operations that depend on unhealthy services.")
+        return "\n".join(lines)
+    except Exception:
+        return ""
 
 
 def build_resume_context(task_id: str) -> str:
@@ -179,6 +204,11 @@ def build_subtask_prompt(
     # Append resume context for previously-paused tasks (outside template)
     if resume_block:
         prompt += resume_block
+
+    # Append health context if any services are degraded
+    health_block = build_health_context(project_id)
+    if health_block:
+        prompt += f"\n\n{health_block}"
 
     return prompt
 

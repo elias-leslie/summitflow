@@ -131,6 +131,9 @@ export interface AutonomousExecutionSettings {
   max_extensions: number
   auto_merge_enabled: boolean
   require_review: boolean
+  quality_gate_tools: string[]
+  quality_gate_mode: string
+  quality_gate_fix_enabled: boolean
 }
 
 export interface AutonomousExecutionSettingsUpdate {
@@ -150,4 +153,7 @@ export interface AutonomousExecutionSettingsUpdate {
   max_extensions?: number
   auto_merge_enabled?: boolean
   require_review?: boolean
+  quality_gate_tools?: string[]
+  quality_gate_mode?: string
+  quality_gate_fix_enabled?: boolean
 }

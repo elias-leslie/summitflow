@@ -31,6 +31,11 @@ class AgentConfig(TypedDict, total=False):
     autonomous_end_hour: int  # Hour (0-23) when autonomous execution must stop
     autonomous_max_concurrent: int  # Max concurrent autonomous tasks (1-3)
 
+    # Quality gate configuration
+    quality_gate_tools: list[str]  # e.g. ["ruff", "mypy", "biome", "tsc"] — empty = dt --quick
+    quality_gate_mode: str  # "quick", "check", or "changed-only"
+    quality_gate_fix_enabled: bool  # Allow dt --fix during self-heal
+
 
 DEFAULT_AGENT_CONFIG: AgentConfig = {
     "claude_enabled": True,
@@ -45,6 +50,10 @@ DEFAULT_AGENT_CONFIG: AgentConfig = {
     "autonomous_start_hour": 0,  # Default: 24/7 execution allowed
     "autonomous_end_hour": 24,  # 24 means end of day (midnight)
     "autonomous_max_concurrent": 1,  # Default: 1 concurrent task
+    # Quality gate defaults
+    "quality_gate_tools": [],  # Empty = use dt --quick (default behavior)
+    "quality_gate_mode": "quick",
+    "quality_gate_fix_enabled": True,
 }
 
 
@@ -149,12 +158,19 @@ from .agent_configs_components import (  # noqa: E402
     get_component_source,
     set_component_source,
 )
+from .agent_configs_quality import (  # noqa: E402
+    build_dt_command,
+    get_quality_gate_fix_enabled,
+    get_quality_gate_mode,
+    get_quality_gate_tools,
+)
 
 __all__ = [
     "COMPONENT_SOURCES",
     "DEFAULT_AGENT_CONFIG",
     "AgentConfig",
     "AutonomousScheduleConfig",
+    "build_dt_command",
     "enable_agent",
     "get_agent_config",
     "get_allowed_task_types",
@@ -168,6 +184,9 @@ __all__ = [
     "get_max_supervisor_attempts",
     "get_max_tasks_per_day",
     "get_preferred_model_tier",
+    "get_quality_gate_fix_enabled",
+    "get_quality_gate_mode",
+    "get_quality_gate_tools",
     "get_require_review",
     "is_autonomous_enabled",
     "is_within_autonomous_hours",

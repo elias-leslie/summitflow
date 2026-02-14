@@ -15,6 +15,10 @@ import psycopg
 
 from ...logging_config import get_logger
 from ...storage import quality_check_results as qcr_store
+from ...storage.agent_configs_autonomous import (
+    get_max_self_fix_attempts,
+    get_max_supervisor_attempts,
+)
 from ...storage.tasks.core import create_task
 
 logger = get_logger(__name__)
@@ -33,24 +37,35 @@ class FixAttemptResult:
     cost_usd: float = 0.0  # Cost incurred by this attempt
 
 
-# 3-2-1 escalation thresholds
+# Default thresholds (used when no project_id available)
 WORKER_ATTEMPTS = 3  # Attempts 1-3
 SUPERVISOR_ATTEMPTS = 2  # Attempts 4-5
 MAX_FIX_ATTEMPTS = WORKER_ATTEMPTS + SUPERVISOR_ATTEMPTS  # 5 total before HUMAN
 
 
-def get_escalation_level(attempts: int) -> str:
+def _get_thresholds(project_id: str | None) -> tuple[int, int, int]:
+    """Get escalation thresholds, using per-project config when available."""
+    if project_id:
+        worker = get_max_self_fix_attempts(project_id)
+        supervisor = get_max_supervisor_attempts(project_id)
+        return worker, supervisor, worker + supervisor
+    return WORKER_ATTEMPTS, SUPERVISOR_ATTEMPTS, MAX_FIX_ATTEMPTS
+
+
+def get_escalation_level(attempts: int, project_id: str | None = None) -> str:
     """Get current escalation level based on attempt count.
 
     Args:
         attempts: Number of fix attempts made
+        project_id: Optional project ID for per-project thresholds
 
     Returns:
         'WORKER', 'SUPERVISOR', or 'HUMAN'
     """
-    if attempts < WORKER_ATTEMPTS:
+    worker, _supervisor, max_total = _get_thresholds(project_id)
+    if attempts < worker:
         return "WORKER"
-    elif attempts < MAX_FIX_ATTEMPTS:
+    elif attempts < max_total:
         return "SUPERVISOR"
     else:
         return "HUMAN"

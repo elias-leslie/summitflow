@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import typer
 
 from .memory_commands import (
@@ -14,6 +16,7 @@ from .memory_commands import (
     list_impl,
     save_impl,
     search_impl,
+    seed_impl,
     stats_impl,
     update_impl,
 )
@@ -189,3 +192,22 @@ def cleanup(
 ) -> None:
     """Clean up memory system."""
     cleanup_impl(ctx.obj, orphaned, stale, ttl_days, scope, scope_id)
+
+
+@app.command("seed")
+def seed(
+    directory: Path = typer.Argument(
+        ..., help="Directory containing .md skill files (default: skills/)"
+    ),
+    dry_run: DryRunOpt = False,
+    project: str | None = typer.Option(None, "--project", "-p", help="Project name for scoping"),
+    scope: ScopeOpt = "global",
+    scope_id: ScopeIdOpt = None,
+) -> None:
+    """Seed memory episodes from markdown skill files.
+
+    Reads .md files with YAML frontmatter from a directory and upserts
+    them as memory episodes. Uses skill:<filename> tag for idempotent
+    re-seeding.
+    """
+    seed_impl(directory, scope, scope_id, dry_run, project)

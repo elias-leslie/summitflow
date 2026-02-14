@@ -50,6 +50,12 @@ def get_autonomous_settings(project_id: str) -> AutonomousSettings:
     auto_merge_enabled = bool(config.get("autonomous_auto_merge_enabled", True))
     require_review = bool(config.get("autonomous_require_review", True))
 
+    # Quality gate configuration
+    qg_tools_raw = config.get("quality_gate_tools", [])
+    quality_gate_tools = list(cast(list[str], qg_tools_raw)) if qg_tools_raw else []
+    quality_gate_mode = str(config.get("quality_gate_mode", "quick"))
+    quality_gate_fix_enabled = bool(config.get("quality_gate_fix_enabled", True))
+
     return AutonomousSettings(
         enabled=enabled,
         frequency_minutes=frequency_minutes,
@@ -67,6 +73,9 @@ def get_autonomous_settings(project_id: str) -> AutonomousSettings:
         max_extensions=max_extensions,
         auto_merge_enabled=auto_merge_enabled,
         require_review=require_review,
+        quality_gate_tools=quality_gate_tools,
+        quality_gate_mode=quality_gate_mode,
+        quality_gate_fix_enabled=quality_gate_fix_enabled,
     )
 
 
@@ -119,6 +128,14 @@ def update_autonomous_settings(
         updates["autonomous_auto_merge_enabled"] = settings.auto_merge_enabled
     if settings.require_review is not None:
         updates["autonomous_require_review"] = settings.require_review
+
+    # Quality gate configuration
+    if settings.quality_gate_tools is not None:
+        updates["quality_gate_tools"] = settings.quality_gate_tools
+    if settings.quality_gate_mode is not None:
+        updates["quality_gate_mode"] = settings.quality_gate_mode
+    if settings.quality_gate_fix_enabled is not None:
+        updates["quality_gate_fix_enabled"] = settings.quality_gate_fix_enabled
 
     if updates:
         update_agent_config(project_id, updates)  # type: ignore[arg-type]

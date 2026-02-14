@@ -10,6 +10,7 @@ from typing import Any
 from ....constants import PRISTINE_SELF_HEAL_MAX_ATTEMPTS
 from ....logging_config import get_logger
 from ....services.agent_hub_client import get_sync_client
+from ....storage.agent_configs_quality import build_dt_command
 from ....storage.projects import get_project_root_path
 from .events import emit_log, emit_progress_log
 from .git_ops import auto_commit, has_uncommitted_changes
@@ -47,7 +48,7 @@ def check_pristine_codebase(project_id: str) -> None:
 
     dt_cmd = find_dev_tools()
     if dt_cmd:
-        cmd = [dt_cmd, "--quick"]
+        cmd = build_dt_command(dt_cmd, project_id)
     else:
         dev_tools_script = repo_path / "scripts" / "dev-tools.sh"
         if not dev_tools_script.exists():
@@ -223,7 +224,7 @@ def pristine_self_heal(task_id: str, project_id: str) -> bool:
         logger.warning("pristine_self_heal_skipped", reason="dt not found")
         return True
 
-    cmd = [dt_cmd, "--quick"]
+    cmd = build_dt_command(dt_cmd, project_id)
     previous_error_count: int | None = None
     pristine_session_id: str | None = None
 

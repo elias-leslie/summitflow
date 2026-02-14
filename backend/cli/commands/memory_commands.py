@@ -26,6 +26,7 @@ from .memory_crud import (
     stats_impl,
     update_impl,
 )
+from .memory_seed import seed_impl
 
 # Re-export all implementations for backward compatibility
 __all__ = [
@@ -38,6 +39,7 @@ __all__ = [
     "list_impl",
     "save_impl",
     "search_impl",
+    "seed_impl",
     "stats_impl",
     "update_impl",
 ]

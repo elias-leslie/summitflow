@@ -154,6 +154,7 @@ def get_events_by_trace(
     *,
     visibility: EventVisibility | None = None,
     level: EventLevel | None = None,
+    after: datetime | None = None,
     from_sequence: int | None = None,
     limit: int = 1000,
 ) -> list[Event]:
@@ -163,6 +164,7 @@ def get_events_by_trace(
         trace_id: Trace ID to query
         visibility: Optional visibility filter
         level: Optional level filter
+        after: Only return events after this timestamp
         from_sequence: Optional starting timestamp for pagination
         limit: Max events to return
 
@@ -179,6 +181,10 @@ def get_events_by_trace(
     if level is not None:
         conditions.append("level = %s")
         params.append(level)
+
+    if after is not None:
+        conditions.append("timestamp > %s")
+        params.append(after)
 
     params.append(limit)
 
@@ -233,6 +239,8 @@ def get_events_with_filters(
     level: EventLevel | None = None,
     visibility: EventVisibility | None = None,
     search: str | None = None,
+    after: datetime | None = None,
+    event_type: str | None = None,
     limit: int = 100,
     offset: int = 0,
 ) -> EventsQueryResult:
@@ -245,6 +253,8 @@ def get_events_with_filters(
         level: Optional level filter
         visibility: Optional visibility filter
         search: Optional text search in message
+        after: Only return events after this timestamp
+        event_type: Optional event_type filter
         limit: Max events per page
         offset: Pagination offset
 
@@ -273,6 +283,14 @@ def get_events_with_filters(
     if search is not None:
         conditions.append("message ILIKE %s")
         params.append(f"%{search}%")
+
+    if after is not None:
+        conditions.append("timestamp > %s")
+        params.append(after)
+
+    if event_type is not None:
+        conditions.append("event_type = %s")
+        params.append(event_type)
 
     where_clause = " AND ".join(conditions)
 

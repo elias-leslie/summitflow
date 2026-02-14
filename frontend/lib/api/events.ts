@@ -44,6 +44,8 @@ export interface EventFilters {
   level?: EventLevel
   visibility?: EventVisibility
   search?: string
+  after?: string
+  event_type?: string
   limit?: number
   offset?: number
 }
@@ -66,6 +68,8 @@ export async function getEvents(
   if (filters.level) params.append('level', filters.level)
   if (filters.visibility) params.append('visibility', filters.visibility)
   if (filters.search) params.append('search', filters.search)
+  if (filters.after) params.append('after', filters.after)
+  if (filters.event_type) params.append('event_type', filters.event_type)
   if (filters.limit !== undefined)
     params.append('limit', filters.limit.toString())
   if (filters.offset !== undefined)

@@ -12,6 +12,7 @@ import {
 import { ExecutionControlSection } from './ExecutionControlSection'
 import { TaskFilteringSection } from './TaskFilteringSection'
 import { SelfHealingSection } from './SelfHealingSection'
+import { QualityGateSection } from './QualityGateSection'
 import { MergeReviewSection } from './MergeReviewSection'
 import { isInTimeWindow, TASK_TYPES } from './autonomous-utils'
 
@@ -152,6 +153,18 @@ export function AutonomousSettingsPanel({
     mutation.mutate({ auto_merge_tiers: tiers })
   }
 
+  const handleQualityToolsChange = (tools: string[]) => {
+    mutation.mutate({ quality_gate_tools: tools })
+  }
+
+  const handleQualityModeChange = (mode: string) => {
+    mutation.mutate({ quality_gate_mode: mode })
+  }
+
+  const handleQualityFixToggle = () => {
+    mutation.mutate({ quality_gate_fix_enabled: !settings.quality_gate_fix_enabled })
+  }
+
   const selectedTypes = settings.allowed_types || TASK_TYPES.map(t => t.value)
 
   return (
@@ -206,6 +219,15 @@ export function AutonomousSettingsPanel({
         isPending={mutation.isPending}
         onTaskTypeToggle={handleTaskTypeToggle}
         onModelTierChange={handleModelTierChange}
+      />
+
+      {/* Quality Gate Section */}
+      <QualityGateSection
+        settings={settings}
+        isPending={mutation.isPending}
+        onToolsChange={handleQualityToolsChange}
+        onModeChange={handleQualityModeChange}
+        onFixEnabledToggle={handleQualityFixToggle}
       />
 
       {/* Self-Healing Section */}

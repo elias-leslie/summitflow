@@ -35,7 +35,7 @@ def run_quality_gate_with_autofix(
             source="quality",
             project_id=project_id,
         )
-        auto_fix_quality(project_path)
+        auto_fix_quality(project_path, project_id)
 
         if has_uncommitted_changes(project_path):
             auto_commit(project_path, f"[auto-fix] Quality gate fixes for {task_id}")

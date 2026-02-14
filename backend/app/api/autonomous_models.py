@@ -68,6 +68,21 @@ class AutonomousSettings(BaseModel):
         default=True, description="Always run AI review before merge (even if auto_merge_enabled)"
     )
 
+    # Quality gate configuration
+    quality_gate_tools: list[str] = Field(
+        default=[], description="Specific tools to run (e.g. ['ruff', 'mypy']). Empty = use mode."
+    )
+    quality_gate_mode: str = Field(
+        default="quick", description="Quality gate mode: quick, check, or changed-only"
+    )
+    quality_gate_fix_enabled: bool = Field(
+        default=True, description="Allow dt --fix during self-heal"
+    )
+
+
+VALID_QUALITY_GATE_MODES = ["quick", "check", "changed-only"]
+VALID_QUALITY_GATE_TOOLS = ["pytest", "ruff", "mypy", "biome", "tsc", "sqlfluff", "squawk"]
+
 
 class AutonomousSettingsUpdate(BaseModel):
     """Request model for updating autonomous settings."""
@@ -99,3 +114,8 @@ class AutonomousSettingsUpdate(BaseModel):
     # Auto-merge control
     auto_merge_enabled: bool | None = None
     require_review: bool | None = None
+
+    # Quality gate configuration
+    quality_gate_tools: list[str] | None = None
+    quality_gate_mode: str | None = None
+    quality_gate_fix_enabled: bool | None = None

@@ -1,10 +1,11 @@
 """Guard conditions for autonomous task dispatch.
 
-Provides validation checks for scheduling, concurrency, and autonomous mode.
+Provides validation checks for scheduling, concurrency, autonomous mode, and system health.
 """
 
 from __future__ import annotations
 
+import subprocess
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -165,6 +166,67 @@ def check_allowed_task_type(project_id: str, task_type: str | None) -> dict[str,
     return None
 
 
+def check_system_health(project_id: str) -> dict[str, Any] | None:
+    """Check if critical system services are healthy.
+
+    Checks postgres, redis, and backend health. Blocks dispatch if any
+    critical service is unhealthy.
+
+    Args:
+        project_id: Project to check
+
+    Returns:
+        Error dict if any critical service is unhealthy, None if all healthy
+    """
+    failing_services: list[str] = []
+    details: dict[str, str] = {}
+
+    # Check PostgreSQL connectivity
+    try:
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("SELECT 1")
+        details["postgres"] = "healthy"
+    except Exception as e:
+        failing_services.append("postgres")
+        details["postgres"] = f"unhealthy: {e}"
+
+    # Check Redis connectivity
+    try:
+        import redis
+
+        r = redis.Redis.from_url("redis://localhost:6379/1", socket_timeout=3)
+        r.ping()
+        details["redis"] = "healthy"
+    except Exception as e:
+        failing_services.append("redis")
+        details["redis"] = f"unhealthy: {e}"
+
+    # Check backend process is alive (via systemd)
+    try:
+        result = subprocess.run(
+            ["systemctl", "--user", "is-active", "summitflow-backend"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.stdout.strip() == "active":
+            details["backend"] = "healthy"
+        else:
+            failing_services.append("backend")
+            details["backend"] = f"unhealthy: {result.stdout.strip()}"
+    except Exception:
+        # Can't check — don't block dispatch for monitoring failures
+        details["backend"] = "check_unavailable"
+
+    if failing_services:
+        return {
+            "status": "unhealthy",
+            "failing_services": failing_services,
+            "details": details,
+        }
+    return None
+
+
 def validate_autonomous_dispatch(
     project_id: str, task_type: str | None = None
 ) -> dict[str, Any] | None:
@@ -178,6 +240,9 @@ def validate_autonomous_dispatch(
         Error dict if any check fails, None if all pass
     """
     if error := check_autonomous_enabled(project_id):
+        return error
+
+    if error := check_system_health(project_id):
         return error
 
     if error := check_autonomous_hours(project_id):

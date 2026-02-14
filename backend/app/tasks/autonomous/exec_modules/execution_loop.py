@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from ....logging_config import get_logger
 from ....storage import tasks as task_store
+from ..pickup_guards import check_system_health
 from .agent_routing import supervisor_circuit_breaker_triage
 from .events import emit_log, emit_progress
 from .git_ops import auto_commit, has_uncommitted_changes, smart_commit
@@ -13,6 +15,54 @@ from .session import wind_down
 from .subtask_executor import MAX_ITERATIONS, execute_subtask
 
 logger = get_logger(__name__)
+
+# Health check backoff configuration
+_HEALTH_CHECK_DELAYS = [30, 60, 120]  # seconds
+
+
+def _check_health_or_wait(
+    task_id: str,
+    project_id: str,
+    max_retries: int = 3,
+) -> bool:
+    """Check system health before subtask execution, with exponential backoff.
+
+    Args:
+        task_id: Task ID for logging
+        project_id: Project ID for health check
+        max_retries: Maximum retry attempts
+
+    Returns:
+        True if system is healthy, False if unhealthy after all retries
+    """
+    health_error = check_system_health(project_id)
+    if health_error is None:
+        return True
+
+    for retry in range(max_retries):
+        delay = _HEALTH_CHECK_DELAYS[min(retry, len(_HEALTH_CHECK_DELAYS) - 1)]
+        failing = health_error.get("failing_services", [])
+        emit_log(
+            task_id,
+            "warn",
+            f"System unhealthy ({', '.join(failing)}), waiting {delay}s before retry {retry + 1}/{max_retries}",
+            source="health",
+            project_id=project_id,
+        )
+        time.sleep(delay)
+
+        health_error = check_system_health(project_id)
+        if health_error is None:
+            emit_log(
+                task_id,
+                "info",
+                "System health recovered, resuming execution",
+                source="health",
+                project_id=project_id,
+            )
+            return True
+
+    return False
 
 
 def execute_subtask_loop(
@@ -51,6 +101,18 @@ def execute_subtask_loop(
                 task_id, "warn", f"Max iterations ({MAX_ITERATIONS}) reached", project_id=project_id
             )
             wind_down(task_id, results, incomplete_subtasks, "max_iterations")
+            break
+
+        # Health check before each subtask
+        if not _check_health_or_wait(task_id, project_id):
+            emit_log(
+                task_id,
+                "error",
+                "System unhealthy after retries, winding down",
+                source="health",
+                project_id=project_id,
+            )
+            wind_down(task_id, results, incomplete_subtasks, "system_unhealthy")
             break
 
         result = execute_subtask(
