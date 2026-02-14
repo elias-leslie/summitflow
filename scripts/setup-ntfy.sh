@@ -57,7 +57,7 @@ echo "=== Setting up authentication ==="
 export NTFY_CONFIG_FILE="$NTFY_CONFIG"
 
 # Create phone user for subscriptions (read-only on sf-alerts)
-NTFY_PASSWORD=phone123 ntfy user add --ignore-exists phone
+NTFY_PASSWORD=$(openssl rand -base64 32) ntfy user add --ignore-exists phone
 echo "[OK] User 'phone' created (or already exists)"
 
 ntfy access phone 'sf-alerts' ro
