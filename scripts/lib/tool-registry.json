@@ -155,7 +155,7 @@
     },
     {
       "pattern": "psql\\b",
-      "message": "Use 'db' CLI instead of raw psql. Commands: db tables [--counts], db schema <table>, db sample <table> [n], db query \"SELECT...\", db exec \"UPDATE/DELETE...\", db count <table>. Use db -P <project> to target a specific project (summitflow, agent-hub, portfolio-ai, hatchet)."
+      "message": "Use 'db' CLI instead of raw psql. Commands: db tables [--counts], db schema <table>, db sample <table> [n], db query \"SELECT...\", db exec \"UPDATE/DELETE...\", db ddl \"CREATE INDEX...\", db count <table>. Use db -P <project> to target a specific project (summitflow, agent-hub, portfolio-ai, hatchet)."
     }
   ]
 }
