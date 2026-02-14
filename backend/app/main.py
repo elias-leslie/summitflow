@@ -20,6 +20,7 @@ from .api import (
     autonomous,
     backups,
     checkpoints,
+    commands,
     console_errors,
     context,
     design_standards,
@@ -108,6 +109,7 @@ app.include_router(checkpoints.router, tags=["checkpoints"])
 app.include_router(agent_hub.router, prefix="/api", tags=["agent-hub"])
 app.include_router(ideas.router, prefix="/api", tags=["ideas"])
 app.include_router(events.router, prefix="/api", tags=["events"])
+app.include_router(commands.router, prefix="/api", tags=["commands"])
 app.include_router(pipeline.router, prefix="/api", tags=["pipeline"])
 app.include_router(system.router, tags=["system"])
 app.include_router(ws_execution.router, tags=["execution"])

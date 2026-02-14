@@ -53,6 +53,28 @@ class Settings(BaseSettings):
         description="Hatchet TLS strategy (none for local)",
         json_schema_extra={"env": "HATCHET_CLIENT_TLS_STRATEGY"},
     )
+    # Notification delivery (ntfy)
+    ntfy_enabled: bool = Field(
+        default=False,
+        description="Enable push notifications via ntfy",
+        json_schema_extra={"env": "NTFY_ENABLED"},
+    )
+    ntfy_url: str = Field(
+        default="http://localhost:2586",
+        description="ntfy server URL (local service-to-service, no auth needed)",
+        json_schema_extra={"env": "NTFY_URL"},
+    )
+    ntfy_topic: str = Field(
+        default="sf-alerts",
+        description="ntfy topic for SummitFlow notifications",
+        json_schema_extra={"env": "NTFY_TOPIC"},
+    )
+    ntfy_default_priority: int = Field(
+        default=3,
+        description="Default ntfy priority (1=min, 3=default, 5=max urgent)",
+        json_schema_extra={"env": "NTFY_DEFAULT_PRIORITY"},
+    )
+
     cors_origins: list[str] = Field(
         default=[
             # Local development

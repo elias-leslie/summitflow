@@ -5,11 +5,17 @@ This module provides data access for notification alerts.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from typing import Any, Literal
 
 from psycopg.rows import TupleRow
 
 from .connection import generate_prefixed_id, get_connection
+
+logger = logging.getLogger(__name__)
+
+_background_tasks: set[asyncio.Task[None]] = set()
 
 NotificationType = Literal["task_failed", "task_needs_input", "task_completed", "system"]
 NotificationSeverity = Literal["info", "warning", "error", "critical"]
@@ -77,7 +83,39 @@ def create_notification(
         row = cur.fetchone()
         conn.commit()
 
-    return _row_to_dict(row)
+    notification = _row_to_dict(row)
+    _schedule_delivery(notification)
+    return notification
+
+
+def _schedule_delivery(notification: dict[str, Any]) -> None:
+    """Fire-and-forget push delivery for a notification.
+
+    Checks for a running asyncio loop and schedules delivery as a task.
+    Storage layer is sync, so this bridges into the async delivery service.
+    """
+    from app.config import settings
+
+    if not settings.ntfy_enabled:
+        return
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # No running loop — skip push delivery (e.g., in CLI/test contexts)
+        return
+
+    async def _deliver() -> None:
+        try:
+            from app.services.notifications.delivery import deliver
+
+            await deliver(notification)
+        except Exception:
+            logger.exception("Push delivery failed for notification %s", notification.get("id"))
+
+    task = loop.create_task(_deliver())
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
 
 def get_notification(notification_id: str) -> dict[str, Any] | None:
