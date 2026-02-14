@@ -97,6 +97,13 @@ class AgentConfigResponse(BaseModel):
     autonomous_end_hour: int = 24
     autonomous_max_concurrent: int = 1
 
+    # Quality gate configuration
+    quality_gate_tools: list[str] = []
+    quality_gate_mode: str = "quick"
+    quality_gate_fix_enabled: bool = True
+
+    model_config = {"extra": "ignore"}
+
 
 class AgentConfigUpdate(BaseModel):
     """Request model for updating agent configuration."""

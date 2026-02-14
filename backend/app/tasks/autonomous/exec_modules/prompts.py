@@ -106,7 +106,7 @@ def build_health_context(project_id: str) -> str:
         details = health_error.get("details", {})
         failing = health_error.get("failing_services", [])
         lines = ["## System Health Warning"]
-        for service, status in details.items():
+        for service, _status in details.items():
             indicator = "unhealthy" if service in failing else "healthy"
             lines.append(f"- {service}: {indicator}")
         lines.append("")

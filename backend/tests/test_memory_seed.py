@@ -334,7 +334,7 @@ class TestUpsertSkillEpisode:
     @patch("cli.commands.memory_seed.agent_hub_request")
     def test_upsert_skill_episode_creates_new_episode(
         self, mock_request: MagicMock, mock_find: MagicMock
-    ):
+    ) -> None:
         """Test that new episode is created when none exists."""
         mock_find.return_value = None
         frontmatter: dict[str, Any] = {
@@ -359,7 +359,7 @@ class TestUpsertSkillEpisode:
     @patch("cli.commands.memory_seed.agent_hub_request")
     def test_upsert_skill_episode_returns_unchanged_for_identical_content(
         self, mock_request: MagicMock, mock_find: MagicMock
-    ):
+    ) -> None:
         """Test that unchanged is returned when content matches."""
         mock_find.return_value = {
             "uuid": "ep-123",
@@ -378,7 +378,7 @@ class TestUpsertSkillEpisode:
     @patch("cli.commands.memory_seed.agent_hub_request")
     def test_upsert_skill_episode_updates_when_content_differs(
         self, mock_request: MagicMock, mock_find: MagicMock
-    ):
+    ) -> None:
         """Test that episode is updated when content changes."""
         mock_find.return_value = {
             "uuid": "ep-123",
@@ -403,7 +403,7 @@ class TestUpsertSkillEpisode:
     @patch("cli.commands.memory_seed.agent_hub_request")
     def test_upsert_skill_episode_dry_run_prevents_writes(
         self, mock_request: MagicMock, mock_find: MagicMock
-    ):
+    ) -> None:
         """Test that dry_run=True previews without writing."""
         mock_find.return_value = None
         frontmatter: dict[str, Any] = {}
@@ -419,7 +419,7 @@ class TestUpsertSkillEpisode:
     @patch("cli.commands.memory_seed.agent_hub_request")
     def test_upsert_skill_episode_dry_run_shows_would_update(
         self, mock_request: MagicMock, mock_find: MagicMock
-    ):
+    ) -> None:
         """Test that dry_run shows would_update for changed content."""
         mock_find.return_value = {
             "uuid": "ep-123",
@@ -438,7 +438,7 @@ class TestUpsertSkillEpisode:
     @patch("cli.commands.memory_seed.agent_hub_request")
     def test_upsert_skill_episode_merges_skill_tag_with_frontmatter_tags(
         self, mock_request: MagicMock, mock_find: MagicMock
-    ):
+    ) -> None:
         """Test that skill tag is merged with frontmatter tags."""
         mock_find.return_value = None
         frontmatter: dict[str, Any] = {
@@ -459,7 +459,7 @@ class TestUpsertSkillEpisode:
     @patch("cli.commands.memory_seed.agent_hub_request")
     def test_upsert_skill_episode_uses_default_tier_reference(
         self, mock_request: MagicMock, mock_find: MagicMock
-    ):
+    ) -> None:
         """Test that default tier is reference when not specified."""
         mock_find.return_value = None
         frontmatter: dict[str, Any] = {}
@@ -475,7 +475,7 @@ class TestUpsertSkillEpisode:
     @patch("cli.commands.memory_seed.agent_hub_request")
     def test_upsert_skill_episode_includes_trigger_task_types_when_present(
         self, mock_request: MagicMock, mock_find: MagicMock
-    ):
+    ) -> None:
         """Test that trigger_task_types are included in payload."""
         mock_find.return_value = None
         frontmatter: dict[str, Any] = {
@@ -493,7 +493,7 @@ class TestUpsertSkillEpisode:
     @patch("cli.commands.memory_seed.agent_hub_request")
     def test_upsert_skill_episode_includes_pinned_when_true(
         self, mock_request: MagicMock, mock_find: MagicMock
-    ):
+    ) -> None:
         """Test that pinned flag is included when true."""
         mock_find.return_value = None
         frontmatter: dict[str, Any] = {
@@ -511,7 +511,7 @@ class TestUpsertSkillEpisode:
     @patch("cli.commands.memory_seed.agent_hub_request")
     def test_upsert_skill_episode_omits_pinned_when_false(
         self, mock_request: MagicMock, mock_find: MagicMock
-    ):
+    ) -> None:
         """Test that pinned is omitted from payload when false."""
         mock_find.return_value = None
         frontmatter: dict[str, Any] = {
@@ -529,7 +529,7 @@ class TestUpsertSkillEpisode:
     @patch("cli.commands.memory_seed.agent_hub_request")
     def test_upsert_skill_episode_uses_skill_tag_as_default_summary(
         self, mock_request: MagicMock, mock_find: MagicMock
-    ):
+    ) -> None:
         """Test that skill tag is used as summary when not provided."""
         mock_find.return_value = None
         frontmatter: dict[str, Any] = {}
@@ -545,7 +545,7 @@ class TestUpsertSkillEpisode:
     @patch("cli.commands.memory_seed.agent_hub_request")
     def test_upsert_skill_episode_sets_confidence_to_90(
         self, mock_request: MagicMock, mock_find: MagicMock
-    ):
+    ) -> None:
         """Test that confidence is set to 90 for seeded episodes."""
         mock_find.return_value = None
         frontmatter: dict[str, Any] = {}
@@ -564,7 +564,7 @@ class TestSeedImpl:
     @patch("cli.commands.memory_seed.typer")
     def test_seed_impl_exits_when_directory_not_found(
         self, mock_typer: MagicMock, tmp_path: Path
-    ):
+    ) -> None:
         """Test that seed_impl exits when directory does not exist."""
         mock_typer.Exit = typer.Exit
         missing_dir = tmp_path / "missing"
@@ -575,7 +575,7 @@ class TestSeedImpl:
     @patch("cli.commands.memory_seed.typer")
     def test_seed_impl_exits_when_path_is_not_directory(
         self, mock_typer: MagicMock, tmp_path: Path
-    ):
+    ) -> None:
         """Test that seed_impl exits when path is a file not directory."""
         mock_typer.Exit = typer.Exit
         file_path = tmp_path / "file.txt"
@@ -587,7 +587,7 @@ class TestSeedImpl:
     @patch("cli.commands.memory_seed._upsert_skill_episode")
     def test_seed_impl_reads_all_md_files_from_directory(
         self, mock_upsert: MagicMock, tmp_path: Path
-    ):
+    ) -> None:
         """Test that all .md files are processed from directory."""
         # Create test files
         (tmp_path / "skill1.md").write_text("---\ntier: guardrail\n---\nContent 1")
@@ -602,7 +602,7 @@ class TestSeedImpl:
     @patch("cli.commands.memory_seed._upsert_skill_episode")
     def test_seed_impl_dry_run_previews_without_writing(
         self, mock_upsert: MagicMock, tmp_path: Path
-    ):
+    ) -> None:
         """Test that dry_run=True passes through to upsert."""
         (tmp_path / "test.md").write_text("---\ntier: guardrail\n---\nContent")
         mock_upsert.return_value = "would_create"
@@ -616,7 +616,7 @@ class TestSeedImpl:
     @patch("cli.commands.memory_seed._upsert_skill_episode")
     def test_seed_impl_skips_files_with_empty_body(
         self, mock_upsert: MagicMock, tmp_path: Path
-    ):
+    ) -> None:
         """Test that files with empty body are skipped."""
         (tmp_path / "empty.md").write_text("---\ntier: guardrail\n---\n\n")
         (tmp_path / "valid.md").write_text("---\ntier: guardrail\n---\nContent")
@@ -629,7 +629,7 @@ class TestSeedImpl:
     @patch("cli.commands.memory_seed._upsert_skill_episode")
     def test_seed_impl_handles_upsert_errors_gracefully(
         self, mock_upsert: MagicMock, tmp_path: Path
-    ):
+    ) -> None:
         """Test that errors during upsert are caught and counted."""
         (tmp_path / "fail.md").write_text("---\ntier: guardrail\n---\nContent")
         (tmp_path / "success.md").write_text("---\ntier: guardrail\n---\nContent")
@@ -643,7 +643,7 @@ class TestSeedImpl:
     @patch("cli.commands.memory_seed._upsert_skill_episode")
     def test_seed_impl_uses_project_scope_when_project_provided(
         self, mock_upsert: MagicMock, tmp_path: Path
-    ):
+    ) -> None:
         """Test that project parameter sets scope and scope_id."""
         (tmp_path / "test.md").write_text("---\ntier: guardrail\n---\nContent")
         mock_upsert.return_value = "created"
@@ -657,7 +657,7 @@ class TestSeedImpl:
     @patch("cli.commands.memory_seed._upsert_skill_episode")
     def test_seed_impl_processes_files_in_sorted_order(
         self, mock_upsert: MagicMock, tmp_path: Path
-    ):
+    ) -> None:
         """Test that files are processed in sorted order."""
         (tmp_path / "c.md").write_text("---\n---\nContent C")
         (tmp_path / "a.md").write_text("---\n---\nContent A")
@@ -672,7 +672,7 @@ class TestSeedImpl:
     @patch("cli.commands.memory_seed._upsert_skill_episode")
     def test_seed_impl_idempotent_reseeding_produces_no_changes(
         self, mock_upsert: MagicMock, tmp_path: Path
-    ):
+    ) -> None:
         """Test that re-seeding same content produces unchanged results."""
         (tmp_path / "test.md").write_text("---\ntier: guardrail\n---\nContent")
         mock_upsert.return_value = "unchanged"
@@ -684,7 +684,7 @@ class TestSeedImpl:
     @patch("cli.commands.memory_seed._upsert_skill_episode")
     def test_seed_impl_passes_frontmatter_tags_to_upsert(
         self, mock_upsert: MagicMock, tmp_path: Path
-    ):
+    ) -> None:
         """Test that frontmatter tags are passed to upsert."""
         (tmp_path / "test.md").write_text(
             "---\ntags: [autocode, quality]\n---\nContent"
@@ -699,7 +699,7 @@ class TestSeedImpl:
     @patch("cli.commands.memory_seed._upsert_skill_episode")
     def test_seed_impl_handles_files_without_frontmatter(
         self, mock_upsert: MagicMock, tmp_path: Path
-    ):
+    ) -> None:
         """Test that files without frontmatter are processed with defaults."""
         (tmp_path / "no-frontmatter.md").write_text("# Just content\n\nNo YAML.")
         mock_upsert.return_value = "created"

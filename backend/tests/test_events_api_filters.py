@@ -77,7 +77,7 @@ class TestGetEventsWithFiltersAfter:
         mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
 
         after_timestamp = datetime(2026, 2, 14, 10, 0, 0, tzinfo=UTC)
-        older_timestamp = datetime(2026, 2, 14, 9, 0, 0, tzinfo=UTC)
+        _older_timestamp = datetime(2026, 2, 14, 9, 0, 0, tzinfo=UTC)
         newer_timestamp = datetime(2026, 2, 14, 11, 0, 0, tzinfo=UTC)
 
         # Mock response with two events: one before, one after
@@ -129,7 +129,7 @@ class TestGetEventsWithFiltersAfter:
         mock_cursor.fetchone.side_effect = [(3,), None]
         mock_cursor.fetchall.side_effect = [[], []]
 
-        result = get_events_with_filters(project_id="test-project", after=None)
+        get_events_with_filters(project_id="test-project", after=None)
 
         # Verify SQL does NOT contain timestamp filter
         calls = mock_cursor.execute.call_args_list
@@ -245,7 +245,7 @@ class TestGetEventsWithFiltersEventType:
         mock_cursor.fetchone.side_effect = [(5,), None]
         mock_cursor.fetchall.side_effect = [[], []]
 
-        result = get_events_with_filters(project_id="test-project", event_type=None)
+        get_events_with_filters(project_id="test-project", event_type=None)
 
         # Verify SQL does NOT contain event_type filter
         calls = mock_cursor.execute.call_args_list
@@ -272,7 +272,7 @@ class TestGetEventsWithFiltersCombined:
         mock_cursor.fetchone.side_effect = [(1,), None]
         mock_cursor.fetchall.side_effect = [[], []]
 
-        result = get_events_with_filters(
+        get_events_with_filters(
             project_id="test-project",
             after=after_timestamp,
             event_type="error",
@@ -302,7 +302,7 @@ class TestGetEventsWithFiltersCombined:
         mock_cursor.fetchone.side_effect = [(1,), None]
         mock_cursor.fetchall.side_effect = [[], []]
 
-        result = get_events_with_filters(
+        get_events_with_filters(
             project_id="test-project",
             trace_id="test-trace-id",
             level="error",
@@ -410,7 +410,7 @@ class TestGetEventsByTraceAfter:
 
         mock_cursor.fetchall.return_value = []
 
-        result = get_events_by_trace(trace_id="test-trace-id", after=None)
+        get_events_by_trace(trace_id="test-trace-id", after=None)
 
         # Verify SQL does NOT contain timestamp filter
         calls = mock_cursor.execute.call_args_list
@@ -432,7 +432,7 @@ class TestGetEventsByTraceAfter:
 
         mock_cursor.fetchall.return_value = []
 
-        result = get_events_by_trace(
+        get_events_by_trace(
             trace_id="test-trace-id",
             visibility="user",
             level="error",

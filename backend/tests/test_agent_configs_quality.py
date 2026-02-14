@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-import pytest
-
+from app.services.quality_gate.escalation import get_escalation_level
 from app.storage.agent_configs import DEFAULT_AGENT_CONFIG, AgentConfig
 from app.storage.agent_configs_quality import (
     build_dt_command,
@@ -13,7 +12,6 @@ from app.storage.agent_configs_quality import (
     get_quality_gate_mode,
     get_quality_gate_tools,
 )
-from app.services.quality_gate.escalation import get_escalation_level
 
 
 class TestGetQualityGateTools:

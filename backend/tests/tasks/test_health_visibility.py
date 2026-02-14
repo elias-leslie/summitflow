@@ -8,10 +8,7 @@ Covers:
 
 from __future__ import annotations
 
-import time
 from unittest.mock import MagicMock, Mock, patch
-
-import pytest
 
 from app.tasks.autonomous.exec_modules.execution_loop import _check_health_or_wait
 from app.tasks.autonomous.exec_modules.prompts import build_health_context

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Annotated
 
 import typer
 
@@ -196,9 +197,7 @@ def cleanup(
 
 @app.command("seed")
 def seed(
-    directory: Path = typer.Argument(
-        ..., help="Directory containing .md skill files (default: skills/)"
-    ),
+    directory: Annotated[Path, typer.Argument(help="Directory containing .md skill files")],
     dry_run: DryRunOpt = False,
     project: str | None = typer.Option(None, "--project", "-p", help="Project name for scoping"),
     scope: ScopeOpt = "global",

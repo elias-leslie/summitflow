@@ -52,7 +52,7 @@ def get_autonomous_settings(project_id: str) -> AutonomousSettings:
 
     # Quality gate configuration
     qg_tools_raw = config.get("quality_gate_tools", [])
-    quality_gate_tools = list(cast(list[str], qg_tools_raw)) if qg_tools_raw else []
+    quality_gate_tools = list(qg_tools_raw) if qg_tools_raw else []
     quality_gate_mode = str(config.get("quality_gate_mode", "quick"))
     quality_gate_fix_enabled = bool(config.get("quality_gate_fix_enabled", True))
 

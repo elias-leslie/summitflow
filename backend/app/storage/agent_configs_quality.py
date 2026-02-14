@@ -73,12 +73,12 @@ def build_dt_command(
             return build_dt_command(dt_cmd, project_id, fix=False)
         tools = get_quality_gate_tools(project_id)
         if tools:
-            return [dt_cmd] + tools + ["--fix"]
+            return [dt_cmd, *tools, "--fix"]
         return [dt_cmd, "--fix"]
 
     tools = get_quality_gate_tools(project_id)
     if tools:
-        return [dt_cmd] + tools
+        return [dt_cmd, *tools]
 
     mode = get_quality_gate_mode(project_id)
     return [dt_cmd, f"--{mode}"]
