@@ -89,6 +89,51 @@ export function MergeReviewSection({
           </button>
         </div>
       </div>
+
+      {/* Auto-Merge Tiers */}
+      {settings.auto_merge_enabled && (
+        <div>
+          <Label className="text-slate-200 block mb-1">
+            Auto-Merge Eligible Tiers
+          </Label>
+          <p className="text-xs text-slate-400 mb-3">
+            Select which task complexity tiers can auto-merge without human review
+          </p>
+          <div className="space-y-2">
+            {MERGE_TIERS.map((tier) => {
+              const isSelected = (settings.auto_merge_tiers ?? [1]).includes(tier.value)
+              return (
+                <label
+                  key={tier.value}
+                  className={clsx(
+                    'flex items-center gap-3 p-2 rounded-md cursor-pointer transition-colors',
+                    isSelected ? 'bg-phosphor-500/10' : 'bg-transparent hover:bg-slate-700/50',
+                    isPending && 'opacity-50 cursor-not-allowed',
+                  )}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    disabled={isPending}
+                    onChange={() => {
+                      const current = settings.auto_merge_tiers ?? [1]
+                      const updated = isSelected
+                        ? current.filter((t) => t !== tier.value)
+                        : [...current, tier.value].sort()
+                      onAutoMergeTiersChange(updated)
+                    }}
+                    className="w-4 h-4 rounded border-slate-500 text-phosphor-500 focus:ring-phosphor-500 bg-slate-700"
+                  />
+                  <div>
+                    <span className="text-sm text-slate-200">{tier.label}</span>
+                    <span className="text-xs text-slate-400 ml-2">{tier.description}</span>
+                  </div>
+                </label>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

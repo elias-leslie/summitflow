@@ -1,5 +1,5 @@
 project: summitflow
-generated_at: 2026-02-12 23:37 UTC
+generated_at: 2026-02-14 01:09 UTC
 environment:
   python_version: '>=3.13'
   venv_path: backend/.venv
@@ -33,12 +33,15 @@ pages:
 - /projects/:id/settings (settings)
 - /projects/new (new)
 endpoints:
+- DELETE /projects/{project_id}/mockups/{mockup_id} (delete_mockup)
 - GET /activity (get_activity_feed)
 - GET /notifications (get_user_notifications)
 - GET /projects/{project_id}/events (get_events)
 - GET /projects/{project_id}/events/by-trace/{trace_id} (get_events_for_trace)
 - GET /projects/{project_id}/ideas (list_ideas)
 - GET /projects/{project_id}/ideas/{idea_id} (get_idea)
+- GET /projects/{project_id}/mockups/{mockup_id}/image (get_mockup_image)
+- GET /projects/{project_id}/mockups/{mockup_id}/screenshot (get_mockup_screenshot)
 - GET /projects/{project_id}/quality/results (list_check_results)
 - GET /projects/{project_id}/tdd/component-suggestions (get_component_suggestions)
 - GET /projects/{project_id}/tdd/suggestions (get_suggestions)
@@ -49,9 +52,6 @@ endpoints:
 - GET /{project_id}/explorer/children (get_children)
 - GET /{project_id}/explorer/entry/{entry_id} (get_entry_by_id)
 - GET /{project_id}/explorer/refactor-targets (get_refactor_targets)
-- GET /{project_id}/explorer/scan-comparison (get_scan_comparison)
-- GET /{project_id}/explorer/scan-history (get_scan_history)
-- GET /{project_id}/explorer/scan/status (get_scan_status)
 - GET /{project_id}/explorer/stats (get_stats)
 - GET /{project_id}/explorer/{entry_type}/{path:path} (get_entry)
 - GET /{project_id}/refactor-sessions/active (get_active_session)
@@ -78,7 +78,6 @@ tables:
 - artifacts
 - backup_schedules
 - backups
-- code_health_lists
 - design_rules
 - design_standards
 - events
@@ -91,13 +90,10 @@ tables:
 - model_performance_logs
 - model_performance_metrics
 - notifications
-- project_agent_config
 - projects
 - qa_issues
 - quality_check_results
 - refactor_sessions
-- scan_history
-- scan_states
 - sitemap_entries
 - subtask_citations
 - subtask_dependencies
@@ -130,14 +126,14 @@ tasks:
 - scan_all_projects (crontab(minute=0, hour="*/6"))
 - weekly_deep_scan (crontab(minute=0, hour=3, day_of_week=0))
 folders:
-  (root): 19 files - tests
+  (root): 18 files - tests
   .claude: 3 files
-  .dev-tools: 7 files - tests
+  .dev-tools: 10 files - tests
   .qna-session: 1 files
-  .st: 3 files
+  .st: 1 files
   assets: 2 files
-  backend: 797 files - api, components, services, tests
-  frontend: 438 files - api, components, services, tests
+  backend: 820 files - api, components, services, tests
+  frontend: 445 files - api, components, services, tests
   scripts: 35 files - services, tests
   tasks: 2 files - tests
   tests: 2 files - tests

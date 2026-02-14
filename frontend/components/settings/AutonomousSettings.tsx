@@ -141,6 +141,17 @@ export function AutonomousSettingsPanel({
     mutation.mutate({ require_review: !settings.require_review })
   }
 
+  const handleFrequencyChange = (value: string) => {
+    const numValue = parseInt(value, 10)
+    if (!Number.isNaN(numValue) && numValue >= 5 && numValue <= 1440) {
+      mutation.mutate({ frequency_minutes: numValue })
+    }
+  }
+
+  const handleAutoMergeTiersChange = (tiers: number[]) => {
+    mutation.mutate({ auto_merge_tiers: tiers })
+  }
+
   const selectedTypes = settings.allowed_types || TASK_TYPES.map(t => t.value)
 
   return (
@@ -185,6 +196,7 @@ export function AutonomousSettingsPanel({
         onConcurrencyChange={handleConcurrencyChange}
         onMaxTasksPerDayChange={handleMaxTasksPerDayChange}
         onCooldownChange={handleCooldownChange}
+        onFrequencyChange={handleFrequencyChange}
       />
 
       {/* Task Filtering Section */}
@@ -211,6 +223,7 @@ export function AutonomousSettingsPanel({
         isPending={mutation.isPending}
         onAutoMergeToggle={handleAutoMergeToggle}
         onRequireReviewToggle={handleRequireReviewToggle}
+        onAutoMergeTiersChange={handleAutoMergeTiersChange}
       />
 
       {/* Save indicator */}
