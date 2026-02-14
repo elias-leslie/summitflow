@@ -6,6 +6,7 @@ import {
   CheckSquare,
   GitBranch,
   LayoutGrid,
+  MessageSquare,
   Package,
   RefreshCw,
 } from 'lucide-react'
@@ -48,6 +49,13 @@ export const navItems = [
     label: 'Backups',
     href: '/backups',
     icon: Archive,
+    activeColor: 'indigo',
+  },
+  {
+    id: 'commands',
+    label: 'Commands',
+    href: '/commands',
+    icon: MessageSquare,
     activeColor: 'indigo',
   },
 ] as const
