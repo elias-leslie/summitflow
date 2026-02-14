@@ -609,7 +609,8 @@ class TestSeedImpl:
         seed_impl(tmp_path, "global", None, dry_run=True, project=None)
 
         mock_upsert.assert_called_once()
-        assert mock_upsert.call_args[1]["dry_run"] is True
+        # dry_run is 6th positional argument (index 5)
+        assert mock_upsert.call_args[0][5] is True
 
     @patch("cli.commands.memory_seed._upsert_skill_episode")
     def test_seed_impl_skips_files_with_empty_body(
