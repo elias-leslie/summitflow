@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from app.storage.notifications import (
     _is_duplicate,
     create_task_completion_notification,
@@ -113,7 +111,7 @@ class TestCreateTaskFailureNotification:
         mock_conn.return_value.__enter__ = lambda s: ctx
         mock_conn.return_value.__exit__ = lambda *a: None
 
-        result = create_task_failure_notification(
+        create_task_failure_notification(
             project_id="proj-1",
             task_id="task-1",
             task_title="Fix login",
@@ -231,7 +229,7 @@ class TestCreateTaskCompletionNotification:
         params = call_args[0][1]
         title = params[6]
         message = params[7]
-        assert "Task done: Deploy" == title
+        assert title == "Task done: Deploy"
         assert "Finished" in message
         assert "Auto-merged." in message
 
