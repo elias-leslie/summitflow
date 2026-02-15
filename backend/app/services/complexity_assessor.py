@@ -176,10 +176,7 @@ class ComplexityAssessor:
         return None
 
     async def ai_assess(self, title: str, description: str = "") -> ComplexityResult:
-        """Assess complexity using AI for edge cases.
-
-        Uses Agent Hub complete() with idea-intake-like analysis.
-        """
+        """Assess complexity using AI for edge cases."""
         from .agent_hub_client import get_async_client
 
         prompt = f"""Assess the complexity of this task:

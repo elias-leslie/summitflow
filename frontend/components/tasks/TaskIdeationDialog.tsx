@@ -324,7 +324,7 @@ export function TaskIdeationDialog({
                 className="h-full [&_.dark\:border-gray-700]:border-slate-800 [&_.dark\:bg-gray-800]:bg-slate-800/50"
               >
                 <ChatPanel
-                  agentSlug="task-ideator"
+                  agentSlug="ideator"
                   toolsEnabled
                   apiConfig={apiConfig}
                   title="Task Ideation"
