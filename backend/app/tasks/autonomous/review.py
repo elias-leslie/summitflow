@@ -74,6 +74,22 @@ def ai_review(
             "message": "No code changes detected — task produced zero diff",
         }
 
+    if git_diff.strip().startswith("(error"):
+        logger.warning("Diff error detected, blocking review", task_id=task_id, diff=git_diff[:200])
+        log_task_event(
+            task_id,
+            f"Review blocked: diff extraction failed — {git_diff.strip()[:200]}",
+            source="review",
+            level="error",
+        )
+        task_store.update_task_status(task_id, "blocked")
+        return {
+            "task_id": task_id,
+            "status": "blocked",
+            "verdict": "BLOCKED",
+            "message": f"Cannot review: {git_diff.strip()}",
+        }
+
     complexity = task.get("complexity") or "STANDARD"
 
     prompt = f"""Task: {task.get("title", "")}
