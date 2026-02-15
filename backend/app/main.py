@@ -26,7 +26,6 @@ from .api import (
     events,
     explorer,
     git,
-    ideas,
     mockups,
     notifications,
     pipeline,
@@ -106,7 +105,6 @@ app.include_router(mockups.router, prefix="/api", tags=["mockups"])
 app.include_router(context.router, prefix="/api", tags=["context"])
 app.include_router(checkpoints.router, tags=["checkpoints"])
 app.include_router(agent_hub.router, prefix="/api", tags=["agent-hub"])
-app.include_router(ideas.router, prefix="/api", tags=["ideas"])
 app.include_router(events.router, prefix="/api", tags=["events"])
 app.include_router(pipeline.router, prefix="/api", tags=["pipeline"])
 app.include_router(system.router, tags=["system"])

@@ -223,28 +223,6 @@ async def self_healing_wf(input: SelfHealingInput, ctx: Context) -> dict[str, An
     return await asyncio.to_thread(orchestrate_self_healing, input.max_errors, input.enabled)
 
 
-@hatchet.task(
-    name="summitflow-process-ideas",
-    input_validator=ProjectInput,
-    execution_timeout="1800s",
-    retries=3,
-    backoff_factor=2.0,
-    on_crons=["0 3 * * *"],
-    concurrency=ConcurrencyExpression(
-        expression="'summitflow-process-ideas'",
-        max_runs=1,
-        limit_strategy=ConcurrencyLimitStrategy.CANCEL_IN_PROGRESS,
-    ),
-)
-async def process_ideas_wf(input: ProjectInput, ctx: Context) -> dict[str, Any]:
-    from ..tasks.autonomous.ideas import process_crowdsourced_ideas
-    from .pipeline import _make_dispatch_callback
-
-    dispatch = _make_dispatch_callback()
-    return await asyncio.to_thread(
-        process_crowdsourced_ideas, input.project_id, dispatch=dispatch
-    )
-
 
 @hatchet.task(
     name="summitflow-health-monitor",

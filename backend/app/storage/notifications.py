@@ -77,7 +77,6 @@ def create_notification(
     severity: NotificationSeverity = "info",
     task_id: str | None = None,
     user_email: str | None = None,
-    idea_id: str | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Create a new notification.
@@ -90,7 +89,6 @@ def create_notification(
         severity: Severity level (info, warning, error, critical)
         task_id: Optional task ID to link to
         user_email: Optional user email for user-specific notifications
-        idea_id: Optional idea ID for crowdsourced idea notifications
         metadata: Optional additional metadata
 
     Returns:
@@ -114,9 +112,9 @@ def create_notification(
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO notifications (id, project_id, task_id, user_email, idea_id, type, title, message, severity, metadata)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
-            RETURNING id, project_id, task_id, user_email, idea_id, type, title, message, severity, status,
+            INSERT INTO notifications (id, project_id, task_id, user_email, type, title, message, severity, metadata)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+            RETURNING id, project_id, task_id, user_email, type, title, message, severity, status,
                       metadata, created_at, read_at, dismissed_at
             """,
             (
@@ -124,7 +122,6 @@ def create_notification(
                 project_id,
                 task_id,
                 user_email,
-                idea_id,
                 notification_type,
                 title,
                 message,
@@ -179,7 +176,7 @@ def get_notification(notification_id: str) -> dict[str, Any] | None:
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id, project_id, task_id, user_email, idea_id, type, title, message, severity, status,
+            SELECT id, project_id, task_id, user_email, type, title, message, severity, status,
                    metadata, created_at, read_at, dismissed_at
             FROM notifications
             WHERE id = %s
@@ -512,39 +509,6 @@ def get_notifications_by_user_email(
     return notifications
 
 
-def create_idea_completion_notification(
-    project_id: str,
-    user_email: str,
-    idea_id: str,
-    idea_title: str,
-    task_id: str | None = None,
-) -> dict[str, Any]:
-    """Create a notification for when a user's idea is implemented.
-
-    This is called when a crowdsourced idea task completes successfully.
-
-    Args:
-        project_id: Project ID
-        user_email: User's email (idea submitter)
-        idea_id: Idea ID
-        idea_title: Short description of the idea
-        task_id: Optional task ID that implemented the idea
-
-    Returns:
-        Created notification dict
-    """
-    return create_notification(
-        project_id=project_id,
-        notification_type="task_completed",
-        title="Your idea was implemented!",
-        message=f'Your suggestion "{idea_title}" has been implemented and is now live.',
-        severity="info",
-        task_id=task_id,
-        user_email=user_email,
-        idea_id=idea_id,
-        metadata={"idea_title": idea_title},
-    )
-
 
 def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert a database row to a notification dict."""
@@ -555,14 +519,13 @@ def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
         "project_id": row[1],
         "task_id": row[2],
         "user_email": row[3],
-        "idea_id": row[4],
-        "type": row[5],
-        "title": row[6],
-        "message": row[7],
-        "severity": row[8],
-        "status": row[9],
-        "metadata": row[10] or {},
-        "created_at": row[11],
-        "read_at": row[12],
-        "dismissed_at": row[13],
+        "type": row[4],
+        "title": row[5],
+        "message": row[6],
+        "severity": row[7],
+        "status": row[8],
+        "metadata": row[9] or {},
+        "created_at": row[10],
+        "read_at": row[11],
+        "dismissed_at": row[12],
     }

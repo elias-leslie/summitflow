@@ -98,22 +98,6 @@ export interface ProjectAgentConfigUpdate {
   extraction_rpm_limit?: number
 }
 
-export interface AutomationSettings {
-  schedule_preset: 'nightly' | 'weekly' | 'monthly'
-  cron_expression: string
-  daily_budget_usd: number
-  primary_agent: 'claude' | 'gemini'
-  secondary_agent: 'claude' | 'gemini'
-  enabled: boolean
-}
-
-export interface ExecuteNowResponse {
-  status: string
-  task_id: string
-  project_id: string
-  message: string
-}
-
 export interface AutonomousExecutionSettings {
   enabled: boolean
   frequency_minutes: number

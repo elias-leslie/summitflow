@@ -12,7 +12,6 @@ def create_notifications_tables(cur: psycopg.Cursor) -> None:
             project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
             task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
             user_email TEXT,
-            idea_id TEXT,
             type VARCHAR(50) NOT NULL,
             title TEXT NOT NULL,
             message TEXT NOT NULL,
