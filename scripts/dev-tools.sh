@@ -86,21 +86,26 @@ if [ -n "${1:-}" ] && [ -f "$TOOL_REGISTRY" ]; then
 fi
 
 # Parse remaining flags — unknown args are passed through to tool subcommands
+# When a tool subcommand was detected, ALL remaining args are pass-through to that tool
 CHANGED_ONLY=0
 EXTRA_ARGS=()
-for arg in "$@"; do
-    case $arg in
-        --check|-c) ACTION="check"; TARGET="current" ;;
-        --quick|-q) ACTION="quick_check"; TARGET="current" ;;
-        --changed-only|-d) CHANGED_ONLY=1 ;;
-        --frontend-only|--fe) ACTION="frontend_only_check"; TARGET="current" ;;
-        --fix|-f) ACTION="fix"; TARGET="current" ;;
-        --fix-all) ACTION="fix"; TARGET="all" ;;
-        --rebuild-venv) ACTION="rebuild"; TARGET="current" ;;
-        --help|-h) ACTION="help" ;;
-        *) EXTRA_ARGS+=("$arg") ;;
-    esac
-done
+if [[ "$ACTION" == "tool_toon" ]]; then
+    EXTRA_ARGS=("$@")
+else
+    for arg in "$@"; do
+        case $arg in
+            --check|-c) ACTION="check"; TARGET="current" ;;
+            --quick|-q) ACTION="quick_check"; TARGET="current" ;;
+            --changed-only|-d) CHANGED_ONLY=1 ;;
+            --frontend-only|--fe) ACTION="frontend_only_check"; TARGET="current" ;;
+            --fix|-f) ACTION="fix"; TARGET="current" ;;
+            --fix-all) ACTION="fix"; TARGET="all" ;;
+            --rebuild-venv) ACTION="rebuild"; TARGET="current" ;;
+            --help|-h) ACTION="help" ;;
+            *) EXTRA_ARGS+=("$arg") ;;
+        esac
+    done
+fi
 
 # =============================================================================
 # HELPER FUNCTIONS
