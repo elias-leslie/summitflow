@@ -27,6 +27,48 @@ def _generate_notification_id() -> str:
     return generate_prefixed_id("notif")
 
 
+def _is_duplicate(
+    project_id: str,
+    notification_type: NotificationType,
+    severity: NotificationSeverity,
+    task_id: str | None = None,
+    cooldown_minutes: int = 15,
+) -> bool:
+    """Check if a similar notification was created within the cooldown window.
+
+    Dedup rules:
+    - Same type + task_id + severity within cooldown → duplicate
+    - Severity escalation (e.g., warning → error for same task) is NOT a dup
+    - System notifications are never deduped (rare, intentional)
+    """
+    if notification_type == "system":
+        return False
+
+    severity_rank = {"info": 0, "warning": 1, "error": 2, "critical": 3}
+    current_rank = severity_rank.get(severity, 0)
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT severity FROM notifications
+            WHERE project_id = %s AND type = %s AND task_id IS NOT DISTINCT FROM %s
+              AND created_at > NOW() - INTERVAL '%s minutes'
+              AND status != 'dismissed'
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (project_id, notification_type, task_id, cooldown_minutes),
+        )
+        row = cur.fetchone()
+
+    if not row:
+        return False
+
+    # Allow severity escalation
+    existing_rank = severity_rank.get(row[0], 0)
+    return current_rank <= existing_rank
+
+
 def create_notification(
     project_id: str,
     notification_type: NotificationType,
@@ -52,9 +94,19 @@ def create_notification(
         metadata: Optional additional metadata
 
     Returns:
-        Created notification dict
+        Created notification dict, or empty dict if deduplicated
     """
     import json
+
+    # Dedup check — skip if a similar notification was sent recently
+    if _is_duplicate(project_id, notification_type, severity, task_id):
+        logger.debug(
+            "Notification deduplicated: type=%s task_id=%s severity=%s",
+            notification_type,
+            task_id,
+            severity,
+        )
+        return {}
 
     notification_id = _generate_notification_id()
     meta = metadata or {}
@@ -315,10 +367,9 @@ def create_task_failure_notification(
     task_title: str,
     error_message: str,
     criterion_id: str | None = None,
+    agent_hub_session_ids: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Create a notification for task failure.
-
-    This is a convenience function for the common case of task failures.
+    """Create a notification for task failure with Johnny's voice.
 
     Args:
         project_id: Project ID
@@ -326,14 +377,22 @@ def create_task_failure_notification(
         task_title: Task title for notification
         error_message: Error message from task
         criterion_id: Optional criterion ID that failed
+        agent_hub_session_ids: Optional session IDs for chat context
 
     Returns:
         Created notification dict
     """
-    title = f"Task Failed: {task_title}"
-    message = error_message
+    title = f"Task failed: {task_title}"
+    message = (
+        f"I was working on '{task_title}' but hit a problem: "
+        f"{error_message} Tap to chat about next steps."
+    )
 
-    metadata = {"criterion_id": criterion_id} if criterion_id else {}
+    metadata: dict[str, Any] = {"johnny": True}
+    if criterion_id:
+        metadata["criterion_id"] = criterion_id
+    if agent_hub_session_ids:
+        metadata["agent_hub_session_ids"] = agent_hub_session_ids
 
     return create_notification(
         project_id=project_id,
@@ -341,6 +400,46 @@ def create_task_failure_notification(
         title=title,
         message=message,
         severity="error",
+        task_id=task_id,
+        metadata=metadata,
+    )
+
+
+def create_task_completion_notification(
+    project_id: str,
+    task_id: str,
+    task_title: str,
+    detail: str = "",
+    agent_hub_session_ids: list[str] | None = None,
+) -> dict[str, Any]:
+    """Create a notification for task completion with Johnny's voice.
+
+    Uses severity 'warning' to trigger ntfy push (info stays in-app only).
+
+    Args:
+        project_id: Project ID
+        task_id: Completed task ID
+        task_title: Task title
+        detail: Optional detail about the completion
+        agent_hub_session_ids: Optional session IDs for chat context
+
+    Returns:
+        Created notification dict
+    """
+    title = f"Task done: {task_title}"
+    suffix = f" {detail}" if detail else ""
+    message = f"Finished '{task_title}' — all checks passed.{suffix} Tap to review."
+
+    metadata: dict[str, Any] = {"johnny": True}
+    if agent_hub_session_ids:
+        metadata["agent_hub_session_ids"] = agent_hub_session_ids
+
+    return create_notification(
+        project_id=project_id,
+        notification_type="task_completed",
+        title=title,
+        message=message,
+        severity="warning",
         task_id=task_id,
         metadata=metadata,
     )

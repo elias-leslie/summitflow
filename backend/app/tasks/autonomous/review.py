@@ -16,6 +16,7 @@ from ...logging_config import get_logger
 from ...services.agent_hub_client import get_sync_client
 from ...storage import log_task_event
 from ...storage import tasks as task_store
+from ...storage.notifications import create_task_failure_notification
 from .review_modules.actions import (
     auto_merge,
     create_fix_subtask,
@@ -67,6 +68,17 @@ def ai_review(
             level="warning",
         )
         task_store.update_task_status(task_id, "failed")
+        try:
+            session_ids = task_store.get_agent_hub_sessions(task_id)
+            create_task_failure_notification(
+                project_id=project_id,
+                task_id=task_id,
+                task_title=task.get("title", "Unknown"),
+                error_message="No code changes detected — task produced zero diff.",
+                agent_hub_session_ids=session_ids or None,
+            )
+        except Exception:
+            logger.exception("Failed to create notification", task_id=task_id)
         return {
             "task_id": task_id,
             "status": "rejected",
@@ -83,6 +95,17 @@ def ai_review(
             level="error",
         )
         task_store.update_task_status(task_id, "blocked")
+        try:
+            session_ids = task_store.get_agent_hub_sessions(task_id)
+            create_task_failure_notification(
+                project_id=project_id,
+                task_id=task_id,
+                task_title=task.get("title", "Unknown"),
+                error_message=f"Diff extraction failed: {git_diff.strip()[:200]}",
+                agent_hub_session_ids=session_ids or None,
+            )
+        except Exception:
+            logger.exception("Failed to create notification", task_id=task_id)
         return {
             "task_id": task_id,
             "status": "blocked",
@@ -121,6 +144,17 @@ Git Diff:
     except Exception as e:
         logger.warning("AI review failed", task_id=task_id, error=str(e))
         task_store.update_task_status(task_id, "blocked")
+        try:
+            session_ids = task_store.get_agent_hub_sessions(task_id)
+            create_task_failure_notification(
+                project_id=project_id,
+                task_id=task_id,
+                task_title=task.get("title", "Unknown"),
+                error_message=f"AI review failed: {e}",
+                agent_hub_session_ids=session_ids or None,
+            )
+        except Exception:
+            logger.exception("Failed to create notification", task_id=task_id)
         return {"task_id": task_id, "status": "error", "message": str(e)}
 
 

@@ -8,9 +8,29 @@ from typing import Any
 from ....logging_config import get_logger
 from ....storage import agent_configs
 from ....storage import tasks as task_store
+from ....storage.notifications import (
+    create_task_completion_notification,
+    create_task_failure_notification,
+)
 from .events import emit_log
 
 logger = get_logger(__name__)
+
+
+def _notify_completion(task_id: str, project_id: str) -> None:
+    """Send a task completion notification with Johnny's voice."""
+    try:
+        task = task_store.get_task(task_id)
+        task_title = task.get("title", "Unknown") if task else "Unknown"
+        session_ids = task_store.get_agent_hub_sessions(task_id)
+        create_task_completion_notification(
+            project_id=project_id,
+            task_id=task_id,
+            task_title=task_title,
+            agent_hub_session_ids=session_ids or None,
+        )
+    except Exception:
+        logger.exception("Failed to create completion notification", task_id=task_id)
 
 
 def build_early_completion_verification(total_subtasks: int) -> dict[str, Any]:
@@ -124,6 +144,7 @@ def transition_to_review_or_complete(
             f"{log_message}, skipping review (require_review=false)",
             project_id=project_id,
         )
+        _notify_completion(task_id, project_id)
         return "completed"
 
 
@@ -155,3 +176,16 @@ def handle_status_transition_error(
         "Task set to blocked due to status transition failure",
         project_id=project_id,
     )
+    try:
+        task = task_store.get_task(task_id)
+        task_title = task.get("title", "Unknown") if task else "Unknown"
+        session_ids = task_store.get_agent_hub_sessions(task_id)
+        create_task_failure_notification(
+            project_id=project_id,
+            task_id=task_id,
+            task_title=task_title,
+            error_message=f"Status transition failed: {error}",
+            agent_hub_session_ids=session_ids or None,
+        )
+    except Exception:
+        logger.exception("Failed to create failure notification", task_id=task_id)

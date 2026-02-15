@@ -130,3 +130,36 @@ class TestDeliver:
 
         call_kwargs = mock_send.call_args[1]
         assert "rotating_light" in call_kwargs["tags"]
+
+    @pytest.mark.asyncio
+    async def test_johnny_notification_includes_chat_action(self) -> None:
+        """Johnny-branded notifications get a 'Chat' action button."""
+        notification = _make_notification(task_id="t-test-123")
+        notification["metadata"] = {"johnny": True}
+
+        with patch("app.services.notifications.delivery.ntfy.send", new_callable=AsyncMock) as mock_send:
+            mock_send.return_value = True
+            await deliver(notification)
+
+        call_kwargs = mock_send.call_args[1]
+        actions = call_kwargs["actions"]
+        assert len(actions) == 2
+        assert actions[0]["label"] == "Details"
+        assert actions[1]["label"] == "Chat"
+        assert "agent=johnny" in actions[1]["url"]
+        assert "task=t-test-123" in actions[1]["url"]
+
+    @pytest.mark.asyncio
+    async def test_non_johnny_notification_no_chat_action(self) -> None:
+        """Non-Johnny notifications only get the Details button."""
+        notification = _make_notification(task_id="t-test-123")
+        # metadata has no "johnny" key
+
+        with patch("app.services.notifications.delivery.ntfy.send", new_callable=AsyncMock) as mock_send:
+            mock_send.return_value = True
+            await deliver(notification)
+
+        call_kwargs = mock_send.call_args[1]
+        actions = call_kwargs["actions"]
+        assert len(actions) == 1
+        assert actions[0]["label"] == "Details"

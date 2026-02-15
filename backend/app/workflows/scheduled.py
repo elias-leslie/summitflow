@@ -1,6 +1,6 @@
 """Scheduled (cron) workflows for SummitFlow.
 
-11 cron workflows on Hatchet schedule.
+12 cron workflows on Hatchet schedule.
 All use ConcurrencyExpression with CANCEL_IN_PROGRESS to prevent overlapping runs.
 """
 
@@ -244,3 +244,21 @@ async def process_ideas_wf(input: ProjectInput, ctx: Context) -> dict[str, Any]:
     return await asyncio.to_thread(
         process_crowdsourced_ideas, input.project_id, dispatch=dispatch
     )
+
+
+@hatchet.task(
+    name="summitflow-health-monitor",
+    input_validator=EmptyInput,
+    execution_timeout="60s",
+    retries=1,
+    on_crons=["*/1 * * * *"],
+    concurrency=ConcurrencyExpression(
+        expression="'summitflow-health-monitor'",
+        max_runs=1,
+        limit_strategy=ConcurrencyLimitStrategy.CANCEL_IN_PROGRESS,
+    ),
+)
+async def health_monitor_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
+    from ..services.notifications.health_monitor import check_and_notify
+
+    return await asyncio.to_thread(check_and_notify)

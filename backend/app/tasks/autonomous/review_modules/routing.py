@@ -8,9 +8,30 @@ from ....logging_config import get_logger
 from ....services.agent_hub_client import get_sync_client
 from ....storage import agent_configs, log_task_event
 from ....storage import tasks as task_store
+from ....storage.notifications import (
+    create_task_completion_notification,
+    create_task_failure_notification,
+)
 from .actions import auto_merge, create_fix_subtask, handle_plan_defect, run_qa_loop
 
 logger = get_logger(__name__)
+
+
+def _notify_completion(task_id: str, project_id: str, detail: str = "") -> None:
+    """Send a task completion notification with Johnny's voice."""
+    try:
+        task = task_store.get_task(task_id)
+        task_title = task.get("title", "Unknown") if task else "Unknown"
+        session_ids = task_store.get_agent_hub_sessions(task_id)
+        create_task_completion_notification(
+            project_id=project_id,
+            task_id=task_id,
+            task_title=task_title,
+            detail=detail,
+            agent_hub_session_ids=session_ids or None,
+        )
+    except Exception:
+        logger.exception("Failed to create completion notification", task_id=task_id)
 
 
 def supervisor_resolve_escalation(
@@ -103,6 +124,7 @@ def _handle_approved(task_id: str, complexity: str) -> None:
             task_id=task_id,
             complexity=complexity,
         )
+        _notify_completion(task_id, project_id, "Auto-merged after QA approval.")
     else:
         # Manual merge required
         task_store.update_task_status(task_id, "completed")
@@ -115,6 +137,7 @@ def _handle_approved(task_id: str, complexity: str) -> None:
             task_id=task_id,
             complexity=complexity,
         )
+        _notify_completion(task_id, project_id, "Ready for manual merge.")
 
 
 def _handle_needs_fix(task_id: str, review_result: dict[str, Any]) -> None:
@@ -145,6 +168,7 @@ def _handle_needs_fix(task_id: str, review_result: dict[str, Any]) -> None:
             f"QA no concerns, {'auto-merged' if auto_merge_enabled else 'ready for manual merge'}",
             task_id=task_id,
         )
+        _notify_completion(task_id, project_id, "QA passed with no concerns.")
         return
 
     # Try tight QA loop first
@@ -211,6 +235,7 @@ def _handle_escalation(task_id: str, review_result: dict[str, Any]) -> None:
             f"Escalation overridden by supervisor, {'auto-merged' if auto_merge_enabled else 'ready for manual merge'}",
             task_id=task_id,
         )
+        _notify_completion(task_id, project_id, "Supervisor override — approved.")
     elif decision == "fix":
         fix_review = {
             "concerns": [summary[:500]],
@@ -230,3 +255,15 @@ def _handle_escalation(task_id: str, review_result: dict[str, Any]) -> None:
             f"AI Review: ESCALATE - Blocked. {summary[:200]}",
         )
         logger.info("QA escalated, blocked by supervisor", task_id=task_id)
+        try:
+            task_title = task.get("title", "Unknown") if task else "Unknown"
+            session_ids = task_store.get_agent_hub_sessions(task_id)
+            create_task_failure_notification(
+                project_id=project_id,
+                task_id=task_id,
+                task_title=task_title,
+                error_message=f"Supervisor blocked this task: {summary[:200]}",
+                agent_hub_session_ids=session_ids or None,
+            )
+        except Exception:
+            logger.exception("Failed to create failure notification", task_id=task_id)

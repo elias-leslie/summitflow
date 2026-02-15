@@ -18,6 +18,7 @@ from app.workflows.pipeline import (
     triage_wf,
 )
 from app.workflows.scheduled import (
+    health_monitor_wf,
     monitor_browser_wf,
     monitor_systemd_wf,
     process_ideas_wf,
@@ -57,7 +58,7 @@ def main() -> None:
             review_wf,
             merge_cleanup_wf,
             escalation_wf,
-            # Scheduled (11)
+            # Scheduled (12)
             work_pickup_wf,
             review_pickup_wf,
             reset_claims_wf,
@@ -69,6 +70,7 @@ def main() -> None:
             monitor_browser_wf,
             self_healing_wf,
             process_ideas_wf,
+            health_monitor_wf,
             # Utility (10)
             backup_create_wf,
             backup_restore_wf,

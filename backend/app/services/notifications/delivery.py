@@ -14,6 +14,7 @@ from . import ntfy
 logger = logging.getLogger(__name__)
 
 FRONTEND_URL = "https://dev.summitflow.dev"
+AGENT_HUB_URL = "https://agent.summitflow.dev"
 
 # Severity → ntfy priority mapping
 _SEVERITY_PRIORITY: dict[str, int] = {
@@ -41,7 +42,7 @@ def _build_task_actions(notification: dict[str, Any]) -> list[dict[str, Any]]:
     if not task_id:
         return []
 
-    return [
+    actions = [
         {
             "action": "view",
             "label": "Details",
@@ -49,6 +50,18 @@ def _build_task_actions(notification: dict[str, Any]) -> list[dict[str, Any]]:
             "clear": True,
         },
     ]
+
+    # Add "Chat with Johnny" button for Johnny-branded notifications
+    metadata = notification.get("metadata") or {}
+    if metadata.get("johnny"):
+        actions.append({
+            "action": "view",
+            "label": "Chat",
+            "url": f"{AGENT_HUB_URL}/chat?agent=johnny&task={task_id}",
+            "clear": True,
+        })
+
+    return actions
 
 
 async def deliver(notification: dict[str, Any]) -> None:

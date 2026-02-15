@@ -7,6 +7,7 @@ from typing import Any
 
 from ....logging_config import get_logger
 from ....storage import tasks as task_store
+from ....storage.notifications import create_task_failure_notification
 from .completion_status import (
     build_early_completion_verification,
     build_partial_completion_verification,
@@ -19,6 +20,23 @@ from .followup_tasks import create_followup_task_for_failures
 from .quality_gate import run_quality_gate_with_autofix
 
 logger = get_logger(__name__)
+
+
+def _notify_failure(task_id: str, project_id: str, error_message: str) -> None:
+    """Send a task failure notification with Johnny's voice."""
+    try:
+        task = task_store.get_task(task_id)
+        task_title = task.get("title", "Unknown") if task else "Unknown"
+        session_ids = task_store.get_agent_hub_sessions(task_id)
+        create_task_failure_notification(
+            project_id=project_id,
+            task_id=task_id,
+            task_title=task_title,
+            error_message=error_message,
+            agent_hub_session_ids=session_ids or None,
+        )
+    except Exception:
+        logger.exception("Failed to create failure notification", task_id=task_id)
 
 
 def handle_early_completion(
@@ -64,6 +82,7 @@ def handle_early_completion(
             project_id=project_id,
         )
         task_store.update_task_status(task_id, "blocked")
+        _notify_failure(task_id, project_id, f"Status transition failed: {e}")
         return {
             "task_id": task_id,
             "status": "blocked",
@@ -99,6 +118,7 @@ def handle_successful_completion(
             "Final quality gate failed after auto-fix attempt",
             project_id=project_id,
         )
+        _notify_failure(task_id, project_id, "Quality gate failed after auto-fix attempt.")
         return False
 
     try:
@@ -169,6 +189,7 @@ def handle_partial_completion(
             project_id=project_id,
         )
         task_store.update_task_status(task_id, "blocked")
+        _notify_failure(task_id, project_id, f"Partial merge failed: {e}")
         return False
 
 
@@ -187,6 +208,7 @@ def handle_failed_execution(task_id: str, project_id: str) -> None:
             "Execution paused - subtask verification failed",
             project_id=project_id,
         )
+        _notify_failure(task_id, project_id, "All subtasks failed verification.")
     except Exception as e:
         emit_log(
             task_id,
