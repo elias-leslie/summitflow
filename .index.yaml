@@ -1,5 +1,5 @@
 project: summitflow
-generated_at: 2026-02-15 01:54 UTC
+generated_at: 2026-02-15 12:54 UTC
 environment:
   python_version: '>=3.13'
   venv_path: backend/.venv
@@ -126,13 +126,14 @@ tasks:
 - scan_all_projects (crontab(minute=0, hour="*/6"))
 - weekly_deep_scan (crontab(minute=0, hour=3, day_of_week=0))
 folders:
-  (root): 19 files - tests
+  (root): 20 files - tests
   .claude: 3 files
   .dev-tools: 8 files - tests
   .qna-session: 1 files
   .st: 1 files
   assets: 2 files
-  backend: 834 files - api, components, services, tests
+  backend: 837 files - api, components, services, tests
+  docs: 2 files
   frontend: 448 files - api, components, services, tests
   scripts: 37 files - services, tests
   skills: 3 files
