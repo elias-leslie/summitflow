@@ -12,7 +12,7 @@
 
 import { useState } from 'react'
 import type { TaskStatus, TaskType } from '@/lib/api'
-import { CreateTaskDialog } from './CreateTaskDialog'
+import { TaskIdeationDialog } from './TaskIdeationDialog'
 import { useIssueTasks } from './hooks/useIssueTasks'
 import { ReadyWorkSection } from './ReadyWorkSection'
 import { TaskStats } from './TaskStats'
@@ -88,7 +88,7 @@ export function IssueTasksTab({ projectId }: IssueTasksTabProps) {
       </div>
 
       {/* Create Task Dialog */}
-      <CreateTaskDialog
+      <TaskIdeationDialog
         open={showCreate}
         onOpenChange={setShowCreate}
         projectId={projectId}

@@ -11,7 +11,7 @@ import { ExplorerTab } from '@/components/explorer/ExplorerTab'
 import type { ExplorerType } from '@/components/explorer/types'
 import { HealthTab } from '@/components/health/HealthTab'
 import { TaskKanbanBoard } from '@/components/kanban/TaskKanbanBoard'
-import { CreateTaskDialog } from '@/components/tasks/CreateTaskDialog'
+import { TaskIdeationDialog } from '@/components/tasks/TaskIdeationDialog'
 import type { TaskFilterValues } from '@/components/tasks/TaskFilters'
 import { TaskModal } from '@/components/tasks/TaskModal'
 import { TasksTab } from '@/components/tasks/TasksTab'
@@ -233,7 +233,7 @@ export function ProjectDetailClient() {
                 initialFilters={taskInitialFilters}
               />
             )}
-            <CreateTaskDialog
+            <TaskIdeationDialog
               open={createTaskDialogOpen}
               onOpenChange={handleCreateDialogChange}
               projectId={projectId}

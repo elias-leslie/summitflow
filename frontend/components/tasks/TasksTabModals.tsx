@@ -4,7 +4,7 @@ import type { Task } from '@/lib/api'
 import { BulkDeleteConfirmDialog } from './BulkDeleteConfirmDialog'
 import { DeleteConfirmDialog } from './DeleteConfirmDialog'
 import { EnrichmentModal } from './EnrichmentModal'
-import { SimpleCreateDialog } from './SimpleCreateDialog'
+import { TaskIdeationDialog } from './TaskIdeationDialog'
 import { TaskModal } from './TaskModal'
 import { TaskReviewModal } from './TaskReviewModal'
 
@@ -19,7 +19,6 @@ interface TasksTabModalsProps {
   // Create dialog
   showCreate: boolean
   onShowCreateChange: (show: boolean) => void
-  onTaskCreated: (task: Task, mode: 'queue' | 'verify') => void
   // Enrichment modal
   enrichingTask: Task | null
   onEnrichmentComplete: (task: Task) => void
@@ -54,7 +53,6 @@ export function TasksTabModals({
   onTaskUpdate,
   showCreate,
   onShowCreateChange,
-  onTaskCreated,
   enrichingTask,
   onEnrichmentComplete,
   onEnrichmentError,
@@ -87,12 +85,11 @@ export function TasksTabModals({
         initialTask={selectedTask}
       />
 
-      {/* Simple Create Task Dialog */}
-      <SimpleCreateDialog
+      {/* Task Ideation Dialog */}
+      <TaskIdeationDialog
         open={showCreate}
         onOpenChange={onShowCreateChange}
         projectId={projectId}
-        onTaskCreated={onTaskCreated}
       />
 
       {/* Enrichment Progress Modal */}

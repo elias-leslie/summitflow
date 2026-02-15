@@ -60,18 +60,6 @@ export function useTasksTabState({
   }, [urlModal])
 
   // Task lifecycle handlers
-  const handleTaskCreated = useCallback(
-    (task: Task, mode: 'queue' | 'verify') => {
-      if (mode === 'verify' && task.enrichment_status === 'review') {
-        setReviewingTask(task)
-      } else if (mode === 'queue' && task.enrichment_status === 'enriching') {
-        setEnrichingTask(task)
-      }
-      refetch()
-    },
-    [refetch],
-  )
-
   const handleEnrichmentComplete = useCallback(
     (task: Task) => {
       setEnrichingTask(null)
@@ -142,7 +130,6 @@ export function useTasksTabState({
     enrichingTask,
     reviewingTask,
     // Handlers
-    handleTaskCreated,
     handleEnrichmentComplete,
     handleTaskAccepted,
     handleTaskClick,

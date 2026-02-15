@@ -53,7 +53,6 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
     showCreate,
     enrichingTask,
     reviewingTask,
-    handleTaskCreated,
     handleEnrichmentComplete,
     handleTaskAccepted,
     handleTaskClick,
@@ -124,7 +123,6 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
         onTaskUpdate={handleTaskUpdate}
         showCreate={showCreate}
         onShowCreateChange={handleShowCreateChange}
-        onTaskCreated={handleTaskCreated}
         enrichingTask={enrichingTask}
         onEnrichmentComplete={handleEnrichmentComplete}
         onEnrichmentError={(err) => {
