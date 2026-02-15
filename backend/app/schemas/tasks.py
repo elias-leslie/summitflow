@@ -70,6 +70,12 @@ from .task_enrichment import (
     EnrichmentResponse,
 )
 
+# Ideation agent
+from .task_ideation import (
+    IdeationTaskCreate,
+    IdeationTaskResponse,
+)
+
 # Subtasks
 from .task_subtasks import (
     StepInput,
@@ -123,6 +129,9 @@ __all__ = [
     "DiscussionResponse",
     "EnrichmentRequest",
     "EnrichmentResponse",
+    # Ideation agent
+    "IdeationTaskCreate",
+    "IdeationTaskResponse",
     "StartTaskRequest",
     # Subtasks
     "StepInput",

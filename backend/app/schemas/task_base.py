@@ -53,6 +53,10 @@ class TaskCreate(BaseModel):
         default=False,
         description="Enable autonomous execution (Flash/Opus pipeline) vs manual",
     )
+    auto_dispatch: bool = Field(
+        default=False,
+        description="Automatically dispatch to Hatchet pipeline after creation",
+    )
 
 
 class TaskUpdate(BaseModel):
