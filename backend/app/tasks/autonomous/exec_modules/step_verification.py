@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from ....storage.steps import update_step_passes
-from ..verification import verify_step
+from ..verification import VerificationResult, verify_step
 from .events import emit_log, emit_progress
 
 
@@ -95,7 +95,7 @@ def _emit_verification_logs(
     step_num: int,
     step_desc: str,
     step: dict[str, Any],
-    result: Any,
+    result: VerificationResult,
     project_id: str,
 ) -> None:
     """Emit detailed verification logs for a step."""
