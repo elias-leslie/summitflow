@@ -45,8 +45,37 @@ def create_plan(task_id: str, project_id: str) -> dict[str, Any]:
     title = task.get("title", "")
     description = task.get("description", "")
 
-    prompt = f"""Title: {title}
-Description: {description or "(no description)"}"""
+    prompt = f"""Create an implementation plan for this task.
+
+Title: {title}
+Description: {description or "(no description)"}
+
+You MUST respond with a JSON object (no markdown, no explanation outside the JSON):
+{{
+    "objective": "Clear 1-2 sentence objective",
+    "subtasks": [
+        {{
+            "subtask_id": "1.1",
+            "phase": "implementation",
+            "subtask_type": "backend|frontend|ui-design|refactor|bug-fix|test|config",
+            "description": "What this subtask accomplishes",
+            "steps": [
+                {{
+                    "description": "Specific implementation step",
+                    "verify_command": "rg -q 'pattern' file && echo OK"
+                }}
+            ],
+            "depends_on": []
+        }}
+    ],
+    "constraints": ["Any constraints or non-goals"]
+}}
+
+Rules for verify_command:
+- Use relative paths (commands run in worktree, not main repo)
+- Must exit non-zero on failure: rg -q, test -f, pytest
+- No trivial commands (echo, true, exit 0)
+- No absolute paths (/home/..., /tmp/...)"""
 
     try:
         client = get_sync_client()
@@ -57,13 +86,25 @@ Description: {description or "(no description)"}"""
         )
 
         plan_data = _parse_plan_response(response.content)
+
+        subtask_count = len(plan_data.get("subtasks", []))
+        if subtask_count == 0:
+            logger.warning("Planner produced 0 subtasks", task_id=task_id)
+            task_store.update_task_status(task_id, "blocked")
+            log_task_event(task_id, "Planning failed: planner produced no subtasks")
+            return {
+                "task_id": task_id,
+                "status": "error",
+                "message": "Planner produced no subtasks",
+            }
+
         save_plan_to_database(task_id, plan_data)
         route_based_on_complexity(task_id, title, description)
 
         return {
             "task_id": task_id,
             "status": "completed",
-            "subtasks_created": len(plan_data.get("subtasks", [])),
+            "subtasks_created": subtask_count,
         }
 
     except Exception as e:

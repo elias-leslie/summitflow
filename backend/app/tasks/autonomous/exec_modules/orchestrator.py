@@ -104,6 +104,17 @@ def execute_task_locked(
         task_id, total_subtasks=total, completed_subtasks=completed, project_id=project_id
     )
 
+    # Block if planning produced no subtasks — nothing to execute
+    if total == 0:
+        emit_error(task_id, "No subtasks to execute — planning may have failed", project_id=project_id)
+        task_store.update_task_status(task_id, "blocked")
+        return {
+            "task_id": task_id,
+            "status": "blocked",
+            "error": "No subtasks to execute",
+            "reason": "no_subtasks",
+        }
+
     # Handle case where all subtasks are already complete
     if not incomplete:
         return handle_early_completion(task_id, project_id, total, dispatch)

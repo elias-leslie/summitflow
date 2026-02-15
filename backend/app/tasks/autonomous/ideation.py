@@ -16,7 +16,7 @@ from ...logging_config import get_logger
 from ...services.agent_hub_client import get_sync_client
 from ...storage import log_task_event
 from ...storage import tasks as task_store
-from ...storage.task_spirit import create_task_spirit
+from ...storage.task_spirit import upsert_task_spirit
 
 logger = get_logger(__name__)
 
@@ -75,7 +75,7 @@ def ideate_task(task_id: str, project_id: str) -> dict[str, Any]:
 
         if result.get("objective"):
             # Save objective as task spirit
-            create_task_spirit(
+            upsert_task_spirit(
                 task_id,
                 objective=result["objective"],
                 context=result.get("scope", ""),

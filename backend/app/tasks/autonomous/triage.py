@@ -13,7 +13,7 @@ from ...logging_config import get_logger
 from ...services.agent_hub_client import get_sync_client
 from ...storage import log_task_event
 from ...storage import tasks as task_store
-from ...storage.task_spirit import create_task_spirit
+from ...storage.task_spirit import upsert_task_spirit
 from ...storage.tasks.dedup import duplicate_task_exists
 
 logger = get_logger(__name__)
@@ -174,7 +174,7 @@ def _process_triage_result(task_id: str, result: dict[str, Any]) -> None:
         task_store.update_task(task_id, complexity=complexity)
 
         if objective:
-            create_task_spirit(
+            upsert_task_spirit(
                 task_id=task_id,
                 objective=objective,
                 spirit_anti=spirit_anti,

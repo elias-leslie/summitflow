@@ -66,7 +66,7 @@ def validate_and_fix_plan(plan: dict[str, Any]) -> None:
         plan: Plan data with subtasks containing steps with verify_commands
 
     Raises:
-        ValueError: If validation fails on trivial or absolute path commands
+        ValueError: If validation fails on trivial commands
     """
     for subtask in plan.get("subtasks", []):
         for step in subtask.get("steps", []):
@@ -80,11 +80,33 @@ def validate_and_fix_plan(plan: dict[str, Any]) -> None:
                         f"Step in subtask {subtask.get('subtask_id')}: {trivial_error}"
                     )
 
-                # Block absolute paths (break worktree isolation)
-                abs_error = _validate_verify_command(verify)
-                if abs_error:
+                # Auto-fix absolute cd paths: strip "cd /abs/path && " prefix
+                # since commands already run with cwd=worktree
+                cd_match = _ABSOLUTE_CD_PATTERN.search(verify)
+                if cd_match:
+                    # Strip everything up to and including the "&&" after the cd
+                    fixed = re.sub(r"cd\s+/[^\s;|&]+\s*&&\s*", "", verify).strip()
+                    if fixed:
+                        logger.info(
+                            "auto_fixed_absolute_cd",
+                            subtask=subtask.get("subtask_id"),
+                            original=verify[:80],
+                            fixed=fixed[:80],
+                        )
+                        step["verify_command"] = fixed
+                        verify = fixed
+                    else:
+                        raise ValueError(
+                            f"Step in subtask {subtask.get('subtask_id')}: "
+                            "verify_command is only a cd to absolute path"
+                        )
+
+                # Block remaining absolute paths that can't be auto-fixed
+                if _ABSOLUTE_PATH_PREFIX.search(verify):
                     raise ValueError(
-                        f"Step in subtask {subtask.get('subtask_id')}: {abs_error}"
+                        f"Step in subtask {subtask.get('subtask_id')}: "
+                        "verify_command uses absolute path (breaks worktree isolation). "
+                        "Use relative paths — commands run with cwd=worktree"
                     )
 
                 # Fix cat | grep -> rg
