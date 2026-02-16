@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import subprocess
+from pathlib import Path
 from typing import Any
 
 from ....logging_config import get_logger
 from ....services.agent_hub_client import get_sync_client
 from ....storage import log_task_event
 from ....storage import tasks as task_store
+from ....storage.projects import get_project_root_path
 from ..exec_modules.memory_writes import save_qa_fix_pattern
 
 logger = get_logger(__name__)
@@ -15,6 +18,14 @@ logger = get_logger(__name__)
 # QA loop constants
 MAX_QA_LOOP_ITERATIONS = 7
 RECURRING_ISSUE_ESCALATION_THRESHOLD = 3
+
+# Production health URLs (via CF Access tunnel)
+PROD_HEALTH_URLS: dict[str, str] = {
+    "summitflow": "https://devapi.summitflow.dev/health",
+    "agent-hub": "https://agentapi.summitflow.dev/health",
+    "portfolio-ai": "https://portapi.summitflow.dev/health",
+    "terminal": "https://terminalapi.summitflow.dev/health",
+}
 
 
 def auto_merge(task_id: str) -> None:
@@ -41,7 +52,60 @@ def auto_merge(task_id: str) -> None:
         return
 
     logger.info("Triggering auto-merge", task_id=task_id, project_id=project_id)
-    merge_and_cleanup_task_worktree(task_id, project_id)
+    merge_result = merge_and_cleanup_task_worktree(task_id, project_id)
+
+    if merge_result.get("status") == "merged" and merge_result.get("post_merge_valid"):
+        _deploy_and_verify(task_id, project_id)
+
+
+def _deploy_and_verify(task_id: str, project_id: str) -> None:
+    """Run rebuild.sh and verify production health via CF Access."""
+    project_root = get_project_root_path(project_id)
+    if not project_root:
+        return
+
+    rebuild_script = str(Path(project_root) / "scripts" / "rebuild.sh")
+    try:
+        result = subprocess.run(
+            [rebuild_script],
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+        log_task_event(task_id, f"Auto-deploy failed: {e}", level="error")
+        return
+
+    if result.returncode != 0:
+        log_task_event(
+            task_id,
+            f"Auto-deploy failed: {result.stderr[-200:]}",
+            level="error",
+        )
+        return
+
+    log_task_event(task_id, "Auto-deploy: rebuild.sh succeeded")
+
+    prod_url = PROD_HEALTH_URLS.get(project_id)
+    if not prod_url:
+        return
+
+    try:
+        verify = subprocess.run(
+            ["cf-curl", "-sf", prod_url],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+        log_task_event(task_id, f"Production check error: {e}", level="warning")
+        return
+
+    if verify.returncode == 0:
+        log_task_event(task_id, f"Production verified: {prod_url}")
+    else:
+        log_task_event(task_id, f"Production check failed: {prod_url}", level="warning")
 
 
 def create_fix_subtask(task_id: str, review_result: dict[str, Any]) -> None:

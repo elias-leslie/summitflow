@@ -5,6 +5,8 @@ Handles task completion with branch merge and snapshot cleanup.
 
 from __future__ import annotations
 
+from typing import Any
+
 import typer
 
 from ..client import APIError, STClient
@@ -20,7 +22,7 @@ from .done_subtask import auto_close_subtasks
 from .done_validators import parse_db_error
 
 
-def validate_worktree_clean(snapshot_info: dict[str, str | int]) -> None:
+def validate_worktree_clean(snapshot_info: dict[str, str | int | None]) -> None:
     """Ensure worktree has no uncommitted changes."""
     raw_wt = snapshot_info.get("worktree_path")
     worktree_path: str | None = str(raw_wt) if raw_wt is not None else None
@@ -107,16 +109,24 @@ def _handle_dirty_main(strict: bool) -> bool:
     return git_stash_push()
 
 
-def _get_project_id_from_snapshot(snapshot_info: dict[str, str | int]) -> str | None:
+def _get_project_id_from_snapshot(snapshot_info: dict[str, str | int | None]) -> str | None:
     """Extract project_id from snapshot info."""
     raw_pid = snapshot_info.get("project_id")
     return str(raw_pid) if raw_pid is not None else None
 
 
+def _run_ai_review(client: STClient, task_id: str) -> dict[str, Any] | None:
+    """Trigger AI review via API. Returns None on failure (non-blocking)."""
+    try:
+        return client.post(client._global_url(f"/tasks/{task_id}/review"), json={})
+    except Exception:
+        return None
+
+
 def _perform_completion(
     client: STClient,
     task_id: str,
-    snapshot_info: dict[str, str | int],
+    snapshot_info: dict[str, str | int | None],
     project_id: str | None,
     strict: bool,
 ) -> None:
@@ -125,6 +135,17 @@ def _perform_completion(
         auto_close_subtasks(client, task_id, project_id)
 
     validate_completion_readiness(client, task_id)
+
+    # AI review gate
+    review_result = _run_ai_review(client, task_id)
+    if review_result and review_result.get("verdict") not in ("APPROVED", "UNKNOWN"):
+        concerns = review_result.get("concerns", [])
+        output_error(
+            f"AI Review: {review_result.get('verdict')}\n"
+            + "\n".join(f"  - {c}" for c in concerns)
+        )
+        raise typer.Exit(1)
+
     merge_and_update_status(client, task_id, project_id)
 
     claimed_at = snapshot_info.get("created_at") if snapshot_info else None
@@ -138,7 +159,7 @@ def _perform_completion(
     remove_snapshot(task_id, project_id=project_id)
 
 
-def _validate_snapshot(task_id: str) -> dict[str, str | int]:
+def _validate_snapshot(task_id: str) -> dict[str, str | int | None]:
     """Validate snapshot exists and return it."""
     snapshot_info = get_snapshot_info(task_id)
     if not snapshot_info:

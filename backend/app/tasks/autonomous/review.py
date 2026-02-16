@@ -17,6 +17,7 @@ from ...services.agent_hub_client import get_sync_client
 from ...storage import log_task_event
 from ...storage import tasks as task_store
 from ...storage.notifications import create_task_failure_notification
+from ...storage.task_spirit import get_task_spirit
 from .review_modules.actions import (
     auto_merge,
     create_fix_subtask,
@@ -115,13 +116,24 @@ def ai_review(
 
     complexity = task.get("complexity") or "STANDARD"
 
+    spirit = get_task_spirit(task_id)
+    done_when = spirit.get("done_when", []) if spirit else []
+    done_when_text = (
+        "\n".join(f"- {c}" for c in done_when) if done_when else "(none defined)"
+    )
+
     prompt = f"""Task: {task.get("title", "")}
 Complexity: {complexity}
+
+Success Criteria (done_when):
+{done_when_text}
 
 Git Diff:
 ```
 {git_diff[:5000]}
-```"""
+```
+
+If done_when criteria are defined, verify the diff addresses each one."""
 
     try:
         client = get_sync_client()

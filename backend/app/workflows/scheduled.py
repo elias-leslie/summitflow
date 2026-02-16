@@ -225,6 +225,38 @@ async def self_healing_wf(input: SelfHealingInput, ctx: Context) -> dict[str, An
 
 
 @hatchet.task(
+    name="summitflow-prod-smoke-test",
+    input_validator=EmptyInput,
+    execution_timeout="60s",
+    retries=1,
+    on_crons=["*/15 * * * *"],
+    concurrency=ConcurrencyExpression(
+        expression="'summitflow-prod-smoke-test'",
+        max_runs=1,
+        limit_strategy=ConcurrencyLimitStrategy.CANCEL_IN_PROGRESS,
+    ),
+)
+async def prod_smoke_test_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
+    from ..services.smoke_test import run_all_smoke_tests
+
+    result = await asyncio.to_thread(run_all_smoke_tests)
+
+    failures = result.get("failures", [])
+    if failures:
+        from ..services.notifications import send_ntfy
+
+        names = ", ".join(f["project"] for f in failures)
+        await send_ntfy(
+            message=f"Unhealthy: {names}",
+            title="Prod Smoke Test Failed",
+            priority=4,
+            tags=["rotating_light"],
+        )
+
+    return result
+
+
+@hatchet.task(
     name="summitflow-health-monitor",
     input_validator=EmptyInput,
     execution_timeout="60s",

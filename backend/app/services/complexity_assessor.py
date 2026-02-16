@@ -196,7 +196,8 @@ Respond with JSON only:
             client = get_async_client()
             response = await client.complete(
                 messages=[{"role": "user", "content": prompt}],
-                model="gemini-3-flash-preview",
+                project_id="summitflow",
+                agent_slug="complexity-assessor",
             )
 
             result = self._parse_ai_response(response.content)

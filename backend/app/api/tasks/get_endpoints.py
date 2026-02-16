@@ -4,6 +4,7 @@ Handles:
 - get_task_global: Get task by ID without project context (for CLI tools)
 - get_task: Get task by ID within project context
 - check_completion_readiness: Pre-validate completion gates without modifying state
+- review_task: Run AI reviewer on task diff
 """
 
 from __future__ import annotations
@@ -104,3 +105,51 @@ async def get_task(
         return PlainTextResponse(content=toon_format_task(task_response))
 
     return task_response
+
+
+@router.post("/tasks/{task_id}/review")
+async def review_task(task_id: str) -> dict[str, Any]:
+    """Run AI reviewer on task diff. Returns verdict without side effects."""
+    from ...services.agent_hub_client import get_sync_client
+    from ...storage.task_spirit import get_task_spirit
+    from ...tasks.autonomous.review_modules.diff import get_git_diff
+    from ...tasks.autonomous.review_modules.parsing import parse_review_response
+
+    task = get_task_or_404(task_id)
+    project_id = task.get("project_id", "summitflow")
+
+    git_diff = await asyncio.to_thread(get_git_diff, task_id, project_id)
+    if not git_diff or git_diff.strip() in ("(no changes)", ""):
+        return {"verdict": "REJECTED", "concerns": [], "summary": "No code changes detected"}
+
+    spirit = await asyncio.to_thread(get_task_spirit, task_id)
+    done_when = spirit.get("done_when", []) if spirit else []
+    done_when_text = (
+        "\n".join(f"- {c}" for c in done_when) if done_when else "(none defined)"
+    )
+
+    prompt = f"""Task: {task.get("title", "")}
+
+Success Criteria (done_when):
+{done_when_text}
+
+Git Diff:
+```
+{git_diff[:5000]}
+```
+
+If done_when criteria are defined, verify the diff addresses each one."""
+
+    client = await asyncio.to_thread(get_sync_client)
+    response = await asyncio.to_thread(
+        client.complete,
+        agent_slug="reviewer",
+        messages=[{"role": "user", "content": prompt}],
+        project_id=project_id,
+    )
+    result = parse_review_response(response.content)
+    return {
+        "verdict": result.get("verdict", "UNKNOWN"),
+        "concerns": result.get("concerns", []),
+        "summary": result.get("summary", ""),
+    }
