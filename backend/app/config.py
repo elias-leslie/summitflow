@@ -8,7 +8,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, field_validator
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,11 +24,8 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    database_url: str = Field(
-        default="",  # Validated to be non-empty; loaded from DATABASE_URL env var
-        description="PostgreSQL connection URL",
-        json_schema_extra={"env": "DATABASE_URL"},
-    )
+    # Database
+    database_url: str = ""
 
     @field_validator("database_url")
     @classmethod
@@ -38,57 +35,30 @@ class Settings(BaseSettings):
             raise ValueError("DATABASE_URL environment variable is required")
         return v
 
-    redis_url: str = Field(
-        default="redis://localhost:6379",
-        description="Redis connection URL",
-        json_schema_extra={"env": "REDIS_URL"},
-    )
-    hatchet_client_token: str = Field(
-        default="",
-        description="Hatchet client token for workflow orchestration",
-        json_schema_extra={"env": "HATCHET_CLIENT_TOKEN"},
-    )
-    hatchet_client_tls_strategy: str = Field(
-        default="none",
-        description="Hatchet TLS strategy (none for local)",
-        json_schema_extra={"env": "HATCHET_CLIENT_TLS_STRATEGY"},
-    )
-    # Notification delivery (ntfy)
-    ntfy_enabled: bool = Field(
-        default=False,
-        description="Enable push notifications via ntfy",
-        json_schema_extra={"env": "NTFY_ENABLED"},
-    )
-    ntfy_url: str = Field(
-        default="http://localhost:2586",
-        description="ntfy server URL (local service-to-service, no auth needed)",
-        json_schema_extra={"env": "NTFY_URL"},
-    )
-    ntfy_topic: str = Field(
-        default="sf-alerts",
-        description="ntfy topic for SummitFlow notifications",
-        json_schema_extra={"env": "NTFY_TOPIC"},
-    )
-    ntfy_default_priority: int = Field(
-        default=3,
-        description="Default ntfy priority (1=min, 3=default, 5=max urgent)",
-        json_schema_extra={"env": "NTFY_DEFAULT_PRIORITY"},
-    )
+    # Redis
+    redis_url: str = "redis://localhost:6379"
 
-    cors_origins: list[str] = Field(
-        default=[
-            # Local development
-            "http://localhost:3001",
-            "http://localhost:4001",
-            "http://localhost:3003",
-            # Production
-            "https://dev.summitflow.dev",
-            "https://test1.summitflow.dev",
-            "https://agent.summitflow.dev",
-        ],
-        description="Allowed CORS origins for cross-origin requests",
-        json_schema_extra={"env": "CORS_ORIGINS"},
-    )
+    # Hatchet
+    hatchet_client_token: str = ""
+    hatchet_client_tls_strategy: str = "none"
+
+    # Notification delivery (ntfy)
+    ntfy_enabled: bool = False
+    ntfy_url: str = "http://localhost:2586"
+    ntfy_topic: str = "sf-alerts"
+    ntfy_default_priority: int = 3
+
+    # CORS
+    cors_origins: list[str] = [
+        # Local development
+        "http://localhost:3001",
+        "http://localhost:4001",
+        "http://localhost:3003",
+        # Production
+        "https://dev.summitflow.dev",
+        "https://test1.summitflow.dev",
+        "https://agent.summitflow.dev",
+    ]
 
 
 @lru_cache
