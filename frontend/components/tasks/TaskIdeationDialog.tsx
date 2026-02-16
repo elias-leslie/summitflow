@@ -90,10 +90,13 @@ const COMPLEXITY_OPTIONS: { value: Complexity; label: string }[] = [
 /**
  * Get the base path for Agent Hub API calls.
  *
- * Routes through the SummitFlow backend proxy (/api/agent-hub/*)
- * which injects proper client credentials (X-Client-Id, X-Client-Secret).
- * This avoids exposing credentials in the browser and follows the
- * established backend proxy pattern (see backend/app/api/agent_hub.py).
+ * Browser: /api/agent-hub/* is rewritten (beforeFiles) to the Route Handler
+ * at /proxy-hub/agent-hub/[...path] which injects client credentials and
+ * proxies directly to Agent Hub (localhost:8003). Single-layer proxy,
+ * equivalent to Monkey Fight's Express proxy pattern.
+ *
+ * SSR: Falls back to backend proxy at localhost:8001 (shouldn't be hit
+ * since ChatPanel is a client component).
  */
 function getAgentHubProxyBase(): string {
   if (typeof window === 'undefined') {

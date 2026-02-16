@@ -1,12 +1,13 @@
 /**
  * Agent Hub proxy Route Handler.
  *
- * Proxies /api/agent-hub/* requests directly to Agent Hub (localhost:8003)
- * with client credentials injected server-side. This is equivalent to
- * Monkey Fight's Express proxy pattern — single layer, no double-proxying.
+ * Lives at /proxy-hub/agent-hub/[...path] and is reached via a beforeFiles
+ * rewrite: /api/agent-hub/* -> /proxy-hub/agent-hub/* (see next.config.ts).
+ * This ensures agent-hub requests are intercepted before the catch-all
+ * /api/* -> localhost:8001 rewrite can grab them.
  *
- * Route Handlers take priority over Next.js rewrites, so this intercepts
- * before the /api/* -> localhost:8001 rewrite can fire.
+ * Proxies directly to Agent Hub (localhost:8003) with client credentials
+ * injected server-side. Equivalent to Monkey Fight's Express proxy pattern.
  *
  * Supports SSE streaming for /api/complete by piping the response body.
  */
