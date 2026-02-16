@@ -91,18 +91,14 @@ const COMPLEXITY_OPTIONS: { value: Complexity; label: string }[] = [
  * Get Agent Hub API base path.
  *
  * Uses Next.js rewrite proxy (/agent-hub-api/* -> localhost:8003/*)
- * to avoid CORS issues and leverage same-origin auth bypass.
- * In production (dev.summitflow.dev), routes through agentapi.summitflow.dev.
+ * to avoid CORS issues and CF Access auth redirects.
+ * Same-origin routing works in both local dev and production since
+ * Next.js runs server-side on the same machine as agent-hub.
  */
 function getAgentHubBasePath(): string {
   if (typeof window === 'undefined') {
     return 'http://localhost:8003'
   }
-  const host = window.location.hostname
-  if (host === 'dev.summitflow.dev') {
-    return 'https://agentapi.summitflow.dev'
-  }
-  // Local dev (localhost, LAN IP, etc.) — use Next.js rewrite proxy
   return '/agent-hub-api'
 }
 
