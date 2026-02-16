@@ -153,7 +153,7 @@ class TestCleanupStaleTasks:
         assert "45+ days" in event_args[0][1]
 
     @patch("app.storage.tasks.get_stale_tasks")
-    @patch("app.tasks.autonomous.refactor_generation.task_store")
+    @patch("app.tasks.autonomous.cleanup_operations.task_store")
     def test_handles_update_errors(
         self,
         mock_store: MagicMock,
