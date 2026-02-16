@@ -23,7 +23,7 @@ import {
   XCircle,
 } from 'lucide-react'
 import Link from 'next/link'
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, useMemo, useRef, useState } from 'react'
 import { StatusBadge } from '@/components/backup/StatusBadge'
 import {
   type Backup,
@@ -466,6 +466,7 @@ export function BackupsClient() {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showSchedules, setShowSchedules] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const dispatchedAtRef = useRef(0)
 
   const { data: projects = [] } = useQuery({
     queryKey: ['projects'],
@@ -498,7 +499,8 @@ export function BackupsClient() {
       const hasActive = backups.some(
         (b) => b.status === 'pending' || b.status === 'running',
       )
-      return hasActive ? 5000 : false
+      const recentlyDispatched = Date.now() - dispatchedAtRef.current < 30_000
+      return hasActive || recentlyDispatched ? 3000 : false
     },
   })
 
@@ -510,6 +512,7 @@ export function BackupsClient() {
   const backups = backupsData?.backups ?? []
 
   const handleBackupCreated = async () => {
+    dispatchedAtRef.current = Date.now()
     await queryClient.invalidateQueries({ queryKey: ['all-backups'] })
     await queryClient.invalidateQueries({ queryKey: ['storage-summary'] })
   }
