@@ -1,5 +1,5 @@
 project: summitflow
-generated_at: 2026-02-15 22:06 UTC
+generated_at: 2026-02-16 14:42 UTC
 environment:
   python_version: '>=3.13'
   venv_path: backend/.venv
@@ -35,11 +35,8 @@ pages:
 endpoints:
 - DELETE /projects/{project_id}/mockups/{mockup_id} (delete_mockup)
 - GET /activity (get_activity_feed)
-- GET /notifications (get_user_notifications)
 - GET /projects/{project_id}/events (get_events)
 - GET /projects/{project_id}/events/by-trace/{trace_id} (get_events_for_trace)
-- GET /projects/{project_id}/ideas (list_ideas)
-- GET /projects/{project_id}/ideas/{idea_id} (get_idea)
 - GET /projects/{project_id}/mockups/{mockup_id}/image (get_mockup_image)
 - GET /projects/{project_id}/mockups/{mockup_id}/screenshot (get_mockup_screenshot)
 - GET /projects/{project_id}/quality/results (list_check_results)
@@ -59,10 +56,6 @@ endpoints:
 - PATCH /{project_id}/refactor-sessions/{task_id} (update_session)
 - POST /explorer/regenerate-all-indexes (regenerate_all_indexes)
 - POST /projects/{project_id}/errors/console (capture_console_error)
-- POST /projects/{project_id}/ideas/execute-now (execute_ideas_now)
-- POST /projects/{project_id}/ideas/{idea_id}/approve (approve_idea)
-- POST /projects/{project_id}/ideas/{idea_id}/refine (refine_idea_endpoint)
-- POST /projects/{project_id}/ideas/{idea_id}/retry (retry_refinement)
 - POST /projects/{project_id}/quality/auto-fix (trigger_auto_fix)
 - POST /projects/{project_id}/quality/results (create_check_result)
 - POST /projects/{project_id}/quality/results/{result_id}/fix-attempt (record_fix_attempt)
@@ -84,7 +77,6 @@ tables:
 - explorer_entries
 - explorer_relationships
 - explorer_sub_elements
-- ideas
 - migration_backup
 - mockups
 - model_performance_logs
@@ -132,7 +124,7 @@ folders:
   .qna-session: 1 files
   .st: 1 files
   assets: 2 files
-  backend: 851 files - api, components, services, tests
+  backend: 845 files - api, components, services, tests
   docs: 2 files
   frontend: 452 files - api, components, services, tests
   scripts: 37 files - services, tests
