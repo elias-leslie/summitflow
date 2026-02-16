@@ -19,7 +19,7 @@ from app.tasks.autonomous.task_generation import (
 class TestGenerateTasksFromScan:
     """Tests for generate_tasks_from_scan task."""
 
-    @patch("app.tasks.autonomous.task_generation.get_refactor_targets")
+    @patch("app.tasks.autonomous.refactor_generation.get_refactor_targets")
     def test_empty_targets_returns_zero_counts(self, mock_get_targets: MagicMock):
         """Test that empty targets returns zero counts."""
         mock_get_targets.return_value = {"targets": []}
@@ -30,7 +30,7 @@ class TestGenerateTasksFromScan:
         assert result["scanned_count"] == 0
         assert result["skipped_count"] == 0
 
-    @patch("app.tasks.autonomous.task_generation.get_refactor_targets")
+    @patch("app.tasks.autonomous.refactor_generation.get_refactor_targets")
     @patch("app.tasks.autonomous.task_generation.task_store")
     @patch("app.tasks.autonomous.task_generation.create_refactor_task")
     def test_creates_refactor_task_type(
@@ -61,7 +61,7 @@ class TestGenerateTasksFromScan:
         # Verify task creation was counted
         assert result["created_count"] == 1
 
-    @patch("app.tasks.autonomous.task_generation.get_refactor_targets")
+    @patch("app.tasks.autonomous.refactor_generation.get_refactor_targets")
     @patch("app.tasks.autonomous.task_generation.task_store")
     def test_skips_existing_tasks(
         self,
