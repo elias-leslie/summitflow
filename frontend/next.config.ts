@@ -8,6 +8,12 @@ const nextConfig: NextConfig = {
   // This enables same-origin routing, avoiding CF Access cookie issues
   async rewrites() {
     return [
+      // Agent Hub API proxy (for ChatPanel / ideation dialog)
+      // Must be before /api/:path* to take priority
+      {
+        source: '/agent-hub-api/:path*',
+        destination: 'http://localhost:8003/:path*',
+      },
       {
         source: '/api/:path*',
         destination: 'http://localhost:8001/api/:path*',

@@ -87,13 +87,20 @@ const COMPLEXITY_OPTIONS: { value: Complexity; label: string }[] = [
   { value: 'complex', label: 'Complex' },
 ]
 
-function getAgentHubBaseUrl(): string {
+/**
+ * Get Agent Hub API base path.
+ *
+ * Uses Next.js rewrite proxy (/agent-hub-api/* -> localhost:8003/*)
+ * to avoid CORS issues and leverage same-origin auth bypass.
+ * In production, routes through agentapi.summitflow.dev.
+ */
+function getAgentHubBasePath(): string {
   if (typeof window === 'undefined') {
     return 'http://localhost:8003'
   }
   const host = window.location.hostname
   if (host === 'localhost' || host === '127.0.0.1') {
-    return 'http://localhost:8003'
+    return '/agent-hub-api' // Next.js rewrite proxy
   }
   return 'https://agentapi.summitflow.dev'
 }
@@ -167,12 +174,15 @@ export function TaskIdeationDialog({
   const messagesRef = useRef<ChatMessage[]>([])
 
   const apiConfig: ChatStreamApiConfig = useMemo(() => {
-    const hubBase = getAgentHubBaseUrl()
+    const hubBase = getAgentHubBasePath()
     return {
       completeEndpoint: `${hubBase}/api/complete`,
       sessionsEndpoint: `${hubBase}/api/sessions`,
       projectId: projectId,
       memoryGroupPrefix: 'summitflow:',
+      fetchHeaders: {
+        'X-Agent-Hub-Internal': 'agent-hub-internal-v1',
+      },
     }
   }, [projectId])
 
