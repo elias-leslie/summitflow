@@ -105,7 +105,7 @@ class TestCleanupStaleTasks:
         assert result["max_age_days"] == 30
 
     @patch("app.storage.tasks.get_stale_tasks")
-    @patch("app.tasks.autonomous.refactor_generation.task_store")
+    @patch("app.tasks.autonomous.cleanup_operations.task_store")
     def test_cancels_stale_tasks(
         self,
         mock_store: MagicMock,
