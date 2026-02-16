@@ -88,18 +88,18 @@ const COMPLEXITY_OPTIONS: { value: Complexity; label: string }[] = [
 ]
 
 /**
- * Get Agent Hub API base path.
+ * Get the base path for Agent Hub API calls.
  *
- * Uses Next.js rewrite proxy (/agent-hub-api/* -> localhost:8003/*)
- * to avoid CORS issues and CF Access auth redirects.
- * Same-origin routing works in both local dev and production since
- * Next.js runs server-side on the same machine as agent-hub.
+ * Routes through the SummitFlow backend proxy (/api/agent-hub/*)
+ * which injects proper client credentials (X-Client-Id, X-Client-Secret).
+ * This avoids exposing credentials in the browser and follows the
+ * established backend proxy pattern (see backend/app/api/agent_hub.py).
  */
-function getAgentHubBasePath(): string {
+function getAgentHubProxyBase(): string {
   if (typeof window === 'undefined') {
-    return 'http://localhost:8003'
+    return 'http://localhost:8001/api/agent-hub'
   }
-  return '/agent-hub-api'
+  return '/api/agent-hub'
 }
 
 function extractCreateTaskTool(
@@ -170,33 +170,16 @@ export function TaskIdeationDialog({
   const [error, setError] = useState<string | null>(null)
   const messagesRef = useRef<ChatMessage[]>([])
 
-  // Wrap fetch with internal auth header (same pattern as Agent Hub frontend's fetchApi)
-  const fetchWithAuth = useCallback(
-    (url: string, options?: RequestInit) =>
-      fetch(url, {
-        ...options,
-        headers: {
-          ...options?.headers,
-          'X-Agent-Hub-Internal': 'agent-hub-internal-v1',
-        },
-      }),
-    [],
-  )
-
   const apiConfig: ChatStreamApiConfig = useMemo(() => {
-    const hubBase = getAgentHubBasePath()
+    const proxyBase = getAgentHubProxyBase()
     return {
-      completeEndpoint: `${hubBase}/api/complete`,
-      sessionsEndpoint: `${hubBase}/api/sessions`,
-      preferencesEndpoint: `${hubBase}/api/preferences`,
+      completeEndpoint: `${proxyBase}/complete`,
+      sessionsEndpoint: `${proxyBase}/sessions`,
+      preferencesEndpoint: `${proxyBase}/preferences`,
       projectId: projectId,
       memoryGroupPrefix: 'summitflow:',
-      fetchHeaders: {
-        'X-Agent-Hub-Internal': 'agent-hub-internal-v1',
-      },
-      fetchFn: fetchWithAuth,
     }
-  }, [projectId, fetchWithAuth])
+  }, [projectId])
 
   const handleMessagesChange = useCallback((messages: ChatMessage[]) => {
     messagesRef.current = messages
@@ -349,8 +332,7 @@ export function TaskIdeationDialog({
                   agentSlug="ideator"
                   toolsEnabled
                   apiConfig={apiConfig}
-                  fetchFn={fetchWithAuth}
-                  modelsEndpoint={`${getAgentHubBasePath()}/api/models`}
+                  modelsEndpoint={`${getAgentHubProxyBase()}/models`}
                   title="Task Ideation"
                   onMessagesChange={handleMessagesChange}
                 />

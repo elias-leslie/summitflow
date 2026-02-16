@@ -8,12 +8,9 @@ const nextConfig: NextConfig = {
   // This enables same-origin routing, avoiding CF Access cookie issues
   async rewrites() {
     return [
-      // Agent Hub API proxy (for ChatPanel / ideation dialog)
-      // Must be before /api/:path* to take priority
-      {
-        source: '/agent-hub-api/:path*',
-        destination: 'http://localhost:8003/:path*',
-      },
+      // Agent Hub requests go through /api/agent-hub/* which is proxied
+      // to localhost:8001 (SummitFlow backend) along with all other /api/* calls.
+      // The backend then forwards to Agent Hub with proper client credentials.
       {
         source: '/api/:path*',
         destination: 'http://localhost:8001/api/:path*',
