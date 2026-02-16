@@ -124,7 +124,7 @@ class TestCleanupStaleTasks:
         assert mock_store.update_task.call_count == 2
 
     @patch("app.storage.tasks.get_stale_tasks")
-    @patch("app.tasks.autonomous.refactor_generation.task_store")
+    @patch("app.tasks.autonomous.cleanup_operations.task_store")
     @patch("app.tasks.autonomous.cleanup_operations.log_task_event")
     def test_sets_cancelled_status_with_message(
         self,
