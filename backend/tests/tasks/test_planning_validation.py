@@ -104,12 +104,13 @@ class TestTrivialCommandBlocking:
 
 
 class TestAbsolutePathRaises:
-    """Absolute paths now raise ValueError instead of nullifying."""
+    """Absolute paths raise ValueError; cd prefixes are auto-fixed."""
 
-    def test_absolute_cd_path_raises(self) -> None:
+    def test_absolute_cd_path_auto_fixed(self) -> None:
+        """cd /abs/path && cmd is auto-fixed by stripping the cd prefix."""
         plan = _make_plan("cd /home/user/project && rg 'x' file")
-        with pytest.raises(ValueError, match="absolute path"):
-            _validate_and_fix_plan(plan)
+        _validate_and_fix_plan(plan)
+        assert plan["subtasks"][0]["steps"][0]["verify_command"] == "rg 'x' file"
 
     def test_absolute_path_prefix_raises(self) -> None:
         plan = _make_plan("cat /home/user/project/file.txt")
@@ -138,7 +139,7 @@ class TestSmallContextWindowWarning:
     )
     def test_small_context_window_logs_warning(self, cmd: str) -> None:
         plan = _make_plan(cmd)
-        with patch("app.tasks.autonomous.planning.logger") as mock_logger:
+        with patch("app.tasks.autonomous.planning_validation.logger") as mock_logger:
             _validate_and_fix_plan(plan)
             mock_logger.warning.assert_any_call(
                 "small_context_window",
@@ -148,7 +149,7 @@ class TestSmallContextWindowWarning:
 
     def test_large_context_window_no_warning(self) -> None:
         plan = _make_plan("rg 'pattern' file -A20")
-        with patch("app.tasks.autonomous.planning.logger") as mock_logger:
+        with patch("app.tasks.autonomous.planning_validation.logger") as mock_logger:
             _validate_and_fix_plan(plan)
             warning_events = [
                 call.args[0] for call in mock_logger.warning.call_args_list
@@ -176,7 +177,7 @@ class TestChainedRgPipeWarning:
     )
     def test_chained_rg_pipe_logs_warning(self, cmd: str) -> None:
         plan = _make_plan(cmd)
-        with patch("app.tasks.autonomous.planning.logger") as mock_logger:
+        with patch("app.tasks.autonomous.planning_validation.logger") as mock_logger:
             _validate_and_fix_plan(plan)
             mock_logger.warning.assert_any_call(
                 "chained_rg_pipe",
@@ -186,7 +187,7 @@ class TestChainedRgPipeWarning:
 
     def test_single_rg_no_warning(self) -> None:
         plan = _make_plan("rg 'pattern' file.py")
-        with patch("app.tasks.autonomous.planning.logger") as mock_logger:
+        with patch("app.tasks.autonomous.planning_validation.logger") as mock_logger:
             _validate_and_fix_plan(plan)
             warning_events = [
                 call.args[0] for call in mock_logger.warning.call_args_list
@@ -209,7 +210,7 @@ class TestHeadTailWarning:
     )
     def test_head_tail_logs_warning(self, cmd: str) -> None:
         plan = _make_plan(cmd)
-        with patch("app.tasks.autonomous.planning.logger") as mock_logger:
+        with patch("app.tasks.autonomous.planning_validation.logger") as mock_logger:
             _validate_and_fix_plan(plan)
             mock_logger.warning.assert_any_call(
                 "head_tail_usage",
@@ -219,7 +220,7 @@ class TestHeadTailWarning:
 
     def test_no_head_tail_no_warning(self) -> None:
         plan = _make_plan("rg 'pattern' file.py")
-        with patch("app.tasks.autonomous.planning.logger") as mock_logger:
+        with patch("app.tasks.autonomous.planning_validation.logger") as mock_logger:
             _validate_and_fix_plan(plan)
             warning_events = [
                 call.args[0] for call in mock_logger.warning.call_args_list

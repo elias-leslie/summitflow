@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 class TestSupervisorValidatePlan:
     """Test _supervisor_validate_plan in planning.py."""
 
-    @patch("app.tasks.autonomous.planning.get_sync_client")
+    @patch("app.tasks.autonomous.planning_routing.get_sync_client")
     def test_approved_returns_true(self, mock_client: MagicMock) -> None:
         from app.tasks.autonomous.planning import _supervisor_validate_plan
 
@@ -24,7 +24,7 @@ class TestSupervisorValidatePlan:
         )
         assert _supervisor_validate_plan("task-1", "complex reasoning", "test-project") is True
 
-    @patch("app.tasks.autonomous.planning.get_sync_client")
+    @patch("app.tasks.autonomous.planning_routing.get_sync_client")
     def test_blocked_returns_false(self, mock_client: MagicMock) -> None:
         from app.tasks.autonomous.planning import _supervisor_validate_plan
 
@@ -33,7 +33,7 @@ class TestSupervisorValidatePlan:
         )
         assert _supervisor_validate_plan("task-1", "complex reasoning", "test-project") is False
 
-    @patch("app.tasks.autonomous.planning.get_sync_client")
+    @patch("app.tasks.autonomous.planning_routing.get_sync_client")
     def test_exception_returns_true_optimistic(self, mock_client: MagicMock) -> None:
         from app.tasks.autonomous.planning import _supervisor_validate_plan
 
@@ -44,7 +44,7 @@ class TestSupervisorValidatePlan:
 class TestSupervisorCircuitBreakerTriage:
     """Test _supervisor_circuit_breaker_triage in execution.py."""
 
-    @patch("app.tasks.autonomous.execution.get_sync_client")
+    @patch("app.tasks.autonomous.exec_modules.agent_routing.get_sync_client")
     def test_continue_returns_true(self, mock_client: MagicMock) -> None:
         from app.tasks.autonomous.execution import _supervisor_circuit_breaker_triage
 
@@ -53,7 +53,7 @@ class TestSupervisorCircuitBreakerTriage:
         )
         assert _supervisor_circuit_breaker_triage("task-1", "abc123", 2, "test-project") is True
 
-    @patch("app.tasks.autonomous.execution.get_sync_client")
+    @patch("app.tasks.autonomous.exec_modules.agent_routing.get_sync_client")
     def test_block_returns_false(self, mock_client: MagicMock) -> None:
         from app.tasks.autonomous.execution import _supervisor_circuit_breaker_triage
 
@@ -62,7 +62,7 @@ class TestSupervisorCircuitBreakerTriage:
         )
         assert _supervisor_circuit_breaker_triage("task-1", "abc123", 2, "test-project") is False
 
-    @patch("app.tasks.autonomous.execution.get_sync_client")
+    @patch("app.tasks.autonomous.exec_modules.agent_routing.get_sync_client")
     def test_exception_returns_false_conservative(self, mock_client: MagicMock) -> None:
         from app.tasks.autonomous.execution import _supervisor_circuit_breaker_triage
 
@@ -73,7 +73,7 @@ class TestSupervisorCircuitBreakerTriage:
 class TestSupervisorResolveEscalation:
     """Test _supervisor_resolve_escalation in review.py."""
 
-    @patch("app.tasks.autonomous.review.get_sync_client")
+    @patch("app.tasks.autonomous.review_modules.routing.get_sync_client")
     def test_approve_decision(self, mock_client: MagicMock) -> None:
         from app.tasks.autonomous.review import _supervisor_resolve_escalation
 
@@ -82,7 +82,7 @@ class TestSupervisorResolveEscalation:
         )
         assert _supervisor_resolve_escalation("task-1", "minor issue", "test-project") == "approve"
 
-    @patch("app.tasks.autonomous.review.get_sync_client")
+    @patch("app.tasks.autonomous.review_modules.routing.get_sync_client")
     def test_fix_decision(self, mock_client: MagicMock) -> None:
         from app.tasks.autonomous.review import _supervisor_resolve_escalation
 
@@ -91,7 +91,7 @@ class TestSupervisorResolveEscalation:
         )
         assert _supervisor_resolve_escalation("task-1", "missing error handling", "test-project") == "fix"
 
-    @patch("app.tasks.autonomous.review.get_sync_client")
+    @patch("app.tasks.autonomous.review_modules.routing.get_sync_client")
     def test_block_decision(self, mock_client: MagicMock) -> None:
         from app.tasks.autonomous.review import _supervisor_resolve_escalation
 
@@ -100,7 +100,7 @@ class TestSupervisorResolveEscalation:
         )
         assert _supervisor_resolve_escalation("task-1", "design issue", "test-project") == "block"
 
-    @patch("app.tasks.autonomous.review.get_sync_client")
+    @patch("app.tasks.autonomous.review_modules.routing.get_sync_client")
     def test_exception_returns_block(self, mock_client: MagicMock) -> None:
         from app.tasks.autonomous.review import _supervisor_resolve_escalation
 
