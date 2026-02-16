@@ -32,7 +32,7 @@ class TestGenerateTasksFromScan:
 
     @patch("app.tasks.autonomous.refactor_generation.get_refactor_targets")
     @patch("app.tasks.autonomous.refactor_generation.task_store")
-    @patch("app.tasks.autonomous.task_generation.create_refactor_task")
+    @patch("app.tasks.autonomous.refactor_generation.create_refactor_task")
     def test_creates_refactor_task_type(
         self,
         mock_create_task: MagicMock,
@@ -125,7 +125,7 @@ class TestCleanupStaleTasks:
 
     @patch("app.storage.tasks.get_stale_tasks")
     @patch("app.tasks.autonomous.refactor_generation.task_store")
-    @patch("app.tasks.autonomous.task_generation.log_task_event")
+    @patch("app.tasks.autonomous.cleanup_operations.log_task_event")
     def test_sets_cancelled_status_with_message(
         self,
         mock_log_event: MagicMock,
