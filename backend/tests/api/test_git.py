@@ -87,4 +87,4 @@ class TestPREndpoints:
             response = client.post(endpoint, json=json_data)
 
         assert response.status_code == 404
-        assert "not found" in response.json()["detail"].lower()
+        assert "not found" in response.json()["message"].lower()

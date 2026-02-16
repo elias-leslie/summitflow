@@ -187,7 +187,7 @@ class TestAutoCloseSubtasks:
         }
         client.update_subtask.return_value = {"passes": True}
 
-        with patch("cli.commands.done.merge_subtask_branch") as mock_merge:
+        with patch("cli.commands.done_subtask.merge_subtask_branch") as mock_merge:
             _auto_close_subtasks(client, "task-123", "test-project")
 
         mock_merge.assert_called_once_with("task-123", "1.1", project_id="test-project")
@@ -201,14 +201,15 @@ class TestCompleteTaskSmart:
         client = MagicMock()
         client._global_url = MagicMock(side_effect=lambda p: f"http://test{p}")
         client.get.return_value = {"ready": True, "gates": []}
+        client.post.return_value = {"verdict": "APPROVED"}
         client.update_status.return_value = {"status": "completed"}
         return client
 
-    @patch("cli.commands.done.remove_snapshot")
-    @patch("cli.commands.done.merge_task_branch")
-    @patch("cli.commands.done._auto_close_subtasks")
-    @patch("cli.commands.done._is_working_tree_clean", return_value=True)
-    @patch("cli.commands.done.get_snapshot_info")
+    @patch("cli.commands.done_task.remove_snapshot")
+    @patch("cli.commands.done_task.merge_task_branch")
+    @patch("cli.commands.done_task.auto_close_subtasks")
+    @patch("cli.commands.done_task.is_working_tree_clean", return_value=True)
+    @patch("cli.commands.done_task._validate_snapshot")
     def test_calls_auto_close_by_default(
         self, mock_snap, mock_clean, mock_auto, mock_merge, mock_remove
     ):
@@ -220,11 +221,11 @@ class TestCompleteTaskSmart:
 
         mock_auto.assert_called_once_with(client, "task-123", "test")
 
-    @patch("cli.commands.done.remove_snapshot")
-    @patch("cli.commands.done.merge_task_branch")
-    @patch("cli.commands.done._auto_close_subtasks")
-    @patch("cli.commands.done._is_working_tree_clean", return_value=True)
-    @patch("cli.commands.done.get_snapshot_info")
+    @patch("cli.commands.done_task.remove_snapshot")
+    @patch("cli.commands.done_task.merge_task_branch")
+    @patch("cli.commands.done_task.auto_close_subtasks")
+    @patch("cli.commands.done_task.is_working_tree_clean", return_value=True)
+    @patch("cli.commands.done_task._validate_snapshot")
     def test_strict_skips_auto_close(
         self, mock_snap, mock_clean, mock_auto, mock_merge, mock_remove
     ):
@@ -236,13 +237,13 @@ class TestCompleteTaskSmart:
 
         mock_auto.assert_not_called()
 
-    @patch("cli.commands.done.remove_snapshot")
-    @patch("cli.commands.done.merge_task_branch")
-    @patch("cli.commands.done._auto_close_subtasks")
-    @patch("cli.commands.done._git_stash_pop")
-    @patch("cli.commands.done._git_stash_push", return_value=True)
-    @patch("cli.commands.done._is_working_tree_clean")
-    @patch("cli.commands.done.get_snapshot_info")
+    @patch("cli.commands.done_task.remove_snapshot")
+    @patch("cli.commands.done_task.merge_task_branch")
+    @patch("cli.commands.done_task.auto_close_subtasks")
+    @patch("cli.commands.done_task.git_stash_pop")
+    @patch("cli.commands.done_task.git_stash_push", return_value=True)
+    @patch("cli.commands.done_task.is_working_tree_clean")
+    @patch("cli.commands.done_task._validate_snapshot")
     def test_stash_merge_pop_on_dirty_main(
         self, mock_snap, mock_clean, mock_stash_push, mock_stash_pop,
         mock_auto, mock_merge, mock_remove
@@ -271,13 +272,13 @@ class TestCompleteTaskSmart:
         with pytest.raises(typer.Exit):
             _complete_task(client, "task-123", strict=True)
 
-    @patch("cli.commands.done.remove_snapshot")
-    @patch("cli.commands.done.merge_task_branch")
-    @patch("cli.commands.done._auto_close_subtasks")
-    @patch("cli.commands.done._git_stash_pop")
-    @patch("cli.commands.done._git_stash_push", return_value=True)
-    @patch("cli.commands.done._is_working_tree_clean")
-    @patch("cli.commands.done.get_snapshot_info")
+    @patch("cli.commands.done_task.remove_snapshot")
+    @patch("cli.commands.done_task.merge_task_branch")
+    @patch("cli.commands.done_task.auto_close_subtasks")
+    @patch("cli.commands.done_task.git_stash_pop")
+    @patch("cli.commands.done_task.git_stash_push", return_value=True)
+    @patch("cli.commands.done_task.is_working_tree_clean")
+    @patch("cli.commands.done_task._validate_snapshot")
     def test_stash_popped_on_failure(
         self, mock_snap, mock_clean, mock_stash_push, mock_stash_pop,
         mock_auto, mock_merge, mock_remove
@@ -295,11 +296,11 @@ class TestCompleteTaskSmart:
         # Stash should still be popped despite failure
         mock_stash_pop.assert_called_once()
 
-    @patch("cli.commands.done.remove_snapshot")
-    @patch("cli.commands.done.merge_task_branch")
-    @patch("cli.commands.done._auto_close_subtasks")
-    @patch("cli.commands.done._is_working_tree_clean", return_value=True)
-    @patch("cli.commands.done.get_snapshot_info")
+    @patch("cli.commands.done_task.remove_snapshot")
+    @patch("cli.commands.done_task.merge_task_branch")
+    @patch("cli.commands.done_task.auto_close_subtasks")
+    @patch("cli.commands.done_task.is_working_tree_clean", return_value=True)
+    @patch("cli.commands.done_task._validate_snapshot")
     def test_no_stash_when_main_clean(
         self, mock_snap, mock_clean, mock_auto, mock_merge, mock_remove
     ):
@@ -307,7 +308,7 @@ class TestCompleteTaskSmart:
         mock_snap.return_value = {"worktree_path": None, "project_id": "test"}
         client = self._setup_mocks()
 
-        with patch("cli.commands.done._git_stash_push") as mock_push:
+        with patch("cli.commands.done_task.git_stash_push") as mock_push:
             _complete_task(client, "task-123")
             mock_push.assert_not_called()
 

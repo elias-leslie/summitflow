@@ -10,6 +10,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+# Base module path for pristine.py where functions are imported/used
+_PRISTINE = "app.tasks.autonomous.exec_modules.pristine"
+
 
 class TestParseErrorCount:
     """Tests for _parse_error_count helper function."""
@@ -60,40 +63,66 @@ class TestPristineSelfHeal:
     @pytest.fixture
     def mock_project_path(self):
         """Mock get_project_root_path to return a test path."""
-        with patch("app.tasks.autonomous.execution.get_project_root_path") as mock:
+        with patch(f"{_PRISTINE}.get_project_root_path") as mock:
             mock.return_value = "/test/project"
             yield mock
 
     @pytest.fixture
     def mock_dt_found(self):
-        """Mock _find_dev_tools to return dt path."""
-        with patch("app.tasks.autonomous.execution._find_dev_tools") as mock:
+        """Mock find_dev_tools to return dt path."""
+        with patch(f"{_PRISTINE}.find_dev_tools") as mock:
             mock.return_value = "/usr/local/bin/dt"
             yield mock
 
     @pytest.fixture
     def mock_subprocess(self):
         """Mock subprocess.run."""
-        with patch("app.tasks.autonomous.execution.subprocess.run") as mock:
+        with patch(f"{_PRISTINE}.subprocess.run") as mock:
             yield mock
 
     @pytest.fixture
     def mock_agent_client(self):
         """Mock get_sync_client."""
-        with patch("app.tasks.autonomous.execution.get_sync_client") as mock:
+        with patch(f"{_PRISTINE}.get_sync_client") as mock:
             client = MagicMock()
             response = MagicMock()
             response.content = "Fixed the issues"
             response.session_id = "session-123"
+            response.progress_log = None
             client.complete.return_value = response
             mock.return_value = client
             yield client
 
     @pytest.fixture(autouse=True)
     def mock_prompt_template(self) -> Generator[MagicMock]:
-        """Mock _get_prompt_template to avoid hitting real API."""
-        with patch("app.tasks.autonomous.execution._get_prompt_template") as mock:
+        """Mock get_prompt_template to avoid hitting real API."""
+        with patch(f"{_PRISTINE}.get_prompt_template") as mock:
             mock.return_value = "Fix errors:\n```\n{errors_output}\n```"
+            yield mock
+
+    @pytest.fixture(autouse=True)
+    def mock_build_dt_command(self) -> Generator[MagicMock]:
+        """Mock build_dt_command to avoid hitting database."""
+        with patch(f"{_PRISTINE}.build_dt_command") as mock:
+            mock.return_value = ["/usr/local/bin/dt", "--quick"]
+            yield mock
+
+    @pytest.fixture(autouse=True)
+    def mock_emit_log(self) -> Generator[MagicMock]:
+        """Mock emit_log to avoid hitting Redis."""
+        with patch(f"{_PRISTINE}.emit_log") as mock:
+            yield mock
+
+    @pytest.fixture(autouse=True)
+    def mock_emit_progress_log(self) -> Generator[MagicMock]:
+        """Mock emit_progress_log to avoid hitting Redis."""
+        with patch(f"{_PRISTINE}.emit_progress_log") as mock:
+            yield mock
+
+    @pytest.fixture(autouse=True)
+    def mock_add_agent_hub_session(self) -> Generator[MagicMock]:
+        """Mock add_agent_hub_session to avoid hitting database."""
+        with patch("app.storage.tasks.core.add_agent_hub_session") as mock:
             yield mock
 
     def test_pristine_already_clean(self, mock_project_path, mock_dt_found, mock_subprocess):
@@ -118,9 +147,9 @@ class TestPristineSelfHeal:
             MagicMock(returncode=0, stdout="", stderr=""),
         ]
 
-        with patch("app.tasks.autonomous.execution._has_uncommitted_changes") as mock_changes:
+        with patch(f"{_PRISTINE}.has_uncommitted_changes") as mock_changes:
             mock_changes.return_value = True
-            with patch("app.tasks.autonomous.execution._auto_commit") as mock_commit:
+            with patch(f"{_PRISTINE}.auto_commit") as mock_commit:
                 mock_commit.return_value = True
 
                 result = pristine_self_heal("task-123", "test-project")
@@ -164,7 +193,7 @@ class TestPristineSelfHeal:
         """If project has no root_path, return False."""
         from app.tasks.autonomous.execution import pristine_self_heal
 
-        with patch("app.tasks.autonomous.execution.get_project_root_path") as mock:
+        with patch(f"{_PRISTINE}.get_project_root_path") as mock:
             mock.return_value = None
 
             result = pristine_self_heal("task-123", "test-project")
@@ -175,7 +204,7 @@ class TestPristineSelfHeal:
         """If dt not found, return True (skip check)."""
         from app.tasks.autonomous.execution import pristine_self_heal
 
-        with patch("app.tasks.autonomous.execution._find_dev_tools") as mock:
+        with patch(f"{_PRISTINE}.find_dev_tools") as mock:
             mock.return_value = None
 
             result = pristine_self_heal("task-123", "test-project")

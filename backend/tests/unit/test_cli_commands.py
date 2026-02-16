@@ -131,7 +131,11 @@ def mock_st_client():
     mock_client.project_id = "test-project"
 
     # Mock the STClient class to return our mock instance
-    with patch("cli.commands.tasks.STClient", return_value=mock_client):
+    # Patch both the direct reference and the import in tasks_import
+    with (
+        patch("cli.commands.tasks.STClient", return_value=mock_client),
+        patch("cli.commands.tasks_import.STClient", return_value=mock_client),
+    ):
         yield mock_client, tasks_db
 
 
@@ -517,7 +521,7 @@ class TestStepCreate:
             side_effect=APIError(404, "Task not found")
         )
 
-        with patch("cli.commands.step.STClient", return_value=mock_client):
+        with patch("cli.commands.step_operations.STClient", return_value=mock_client):
             result = runner.invoke(
                 step_app,
                 [

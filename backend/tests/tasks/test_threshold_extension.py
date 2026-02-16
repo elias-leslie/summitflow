@@ -1,9 +1,9 @@
 """Tests for threshold autonomy and supervisor-gated extensions.
 
 Covers:
-- _detect_progress(): progress detection from step results, git diff, defected steps
-- _request_extension(): supervisor LLM call for extension approval
-- Heal loop extension: for→while conversion, extension_granted flag, max 1 extension
+- detect_progress(): progress detection from step results, git diff, defected steps
+- request_extension(): supervisor LLM call for extension approval
+- Heal loop extension: run_self_healing_loop extension behavior
 """
 
 from __future__ import annotations
@@ -14,26 +14,26 @@ from unittest.mock import MagicMock, patch
 
 
 class TestDetectProgress:
-    """_detect_progress returns evidence dict when agent made measurable progress."""
+    """detect_progress returns evidence dict when agent made measurable progress."""
 
     def test_returns_none_when_no_progress(self, tmp_path: Path) -> None:
-        from app.tasks.autonomous.execution import _detect_progress
+        from app.tasks.autonomous.exec_modules.agent_routing import detect_progress
 
         step_results = [
             {"step_number": 1, "passed": False, "output": "error", "reason": "failed"},
         ]
         steps: list[dict[str, Any]] = [{"step_number": 1, "status": "pending"}]
 
-        with patch("app.tasks.autonomous.execution.subprocess") as mock_sub:
+        with patch("app.tasks.autonomous.exec_modules.agent_routing.subprocess") as mock_sub:
             mock_result = MagicMock()
             mock_result.stdout = ""
             mock_sub.run.return_value = mock_result
-            result = _detect_progress("sub-1", steps, step_results, str(tmp_path))
+            result = detect_progress("sub-1", steps, step_results, str(tmp_path))
 
         assert result is None
 
     def test_detects_passed_steps(self, tmp_path: Path) -> None:
-        from app.tasks.autonomous.execution import _detect_progress
+        from app.tasks.autonomous.exec_modules.agent_routing import detect_progress
 
         step_results = [
             {"step_number": 1, "passed": True, "output": "ok"},
@@ -41,35 +41,35 @@ class TestDetectProgress:
         ]
         steps: list[dict[str, Any]] = []
 
-        with patch("app.tasks.autonomous.execution.subprocess") as mock_sub:
+        with patch("app.tasks.autonomous.exec_modules.agent_routing.subprocess") as mock_sub:
             mock_result = MagicMock()
             mock_result.stdout = ""
             mock_sub.run.return_value = mock_result
-            result = _detect_progress("sub-1", steps, step_results, str(tmp_path))
+            result = detect_progress("sub-1", steps, step_results, str(tmp_path))
 
         assert result is not None
         assert result["steps_passed"] == "1/2"
 
     def test_detects_code_changes(self, tmp_path: Path) -> None:
-        from app.tasks.autonomous.execution import _detect_progress
+        from app.tasks.autonomous.exec_modules.agent_routing import detect_progress
 
         step_results = [
             {"step_number": 1, "passed": False, "output": "error", "reason": "failed"},
         ]
         steps: list[dict[str, Any]] = []
 
-        with patch("app.tasks.autonomous.execution.subprocess") as mock_sub:
+        with patch("app.tasks.autonomous.exec_modules.agent_routing.subprocess") as mock_sub:
             mock_result = MagicMock()
             mock_result.stdout = " 3 files changed, 50 insertions(+), 10 deletions(-)"
             mock_sub.run.return_value = mock_result
-            result = _detect_progress("sub-1", steps, step_results, str(tmp_path))
+            result = detect_progress("sub-1", steps, step_results, str(tmp_path))
 
         assert result is not None
         assert result["has_code_changes"] is True
         assert "3 files changed" in result["diff_summary"]
 
     def test_detects_defected_steps(self, tmp_path: Path) -> None:
-        from app.tasks.autonomous.execution import _detect_progress
+        from app.tasks.autonomous.exec_modules.agent_routing import detect_progress
 
         step_results = [
             {"step_number": 1, "passed": False, "output": "error", "reason": "failed"},
@@ -79,11 +79,11 @@ class TestDetectProgress:
             {"step_number": 2, "status": "pending"},
         ]
 
-        with patch("app.tasks.autonomous.execution.subprocess") as mock_sub:
+        with patch("app.tasks.autonomous.exec_modules.agent_routing.subprocess") as mock_sub:
             mock_result = MagicMock()
             mock_result.stdout = ""
             mock_sub.run.return_value = mock_result
-            result = _detect_progress("sub-1", steps, step_results, str(tmp_path))
+            result = detect_progress("sub-1", steps, step_results, str(tmp_path))
 
         assert result is not None
         assert result["adjusted_steps"] == 1
@@ -92,24 +92,24 @@ class TestDetectProgress:
         """Git diff timeout should not crash, just skip that evidence."""
         import subprocess as real_subprocess
 
-        from app.tasks.autonomous.execution import _detect_progress
+        from app.tasks.autonomous.exec_modules.agent_routing import detect_progress
 
         step_results = [
             {"step_number": 1, "passed": True, "output": "ok"},
         ]
         steps: list[dict[str, Any]] = []
 
-        with patch("app.tasks.autonomous.execution.subprocess") as mock_sub:
+        with patch("app.tasks.autonomous.exec_modules.agent_routing.subprocess") as mock_sub:
             mock_sub.run.side_effect = real_subprocess.TimeoutExpired("git", 10)
             mock_sub.TimeoutExpired = real_subprocess.TimeoutExpired
-            result = _detect_progress("sub-1", steps, step_results, str(tmp_path))
+            result = detect_progress("sub-1", steps, step_results, str(tmp_path))
 
         assert result is not None
         assert result["steps_passed"] == "1/1"
         assert "has_code_changes" not in result
 
     def test_combines_all_evidence(self, tmp_path: Path) -> None:
-        from app.tasks.autonomous.execution import _detect_progress
+        from app.tasks.autonomous.exec_modules.agent_routing import detect_progress
 
         step_results = [
             {"step_number": 1, "passed": True, "output": "ok"},
@@ -119,11 +119,11 @@ class TestDetectProgress:
             {"step_number": 1, "status": "plan_defect"},
         ]
 
-        with patch("app.tasks.autonomous.execution.subprocess") as mock_sub:
+        with patch("app.tasks.autonomous.exec_modules.agent_routing.subprocess") as mock_sub:
             mock_result = MagicMock()
             mock_result.stdout = " 1 file changed"
             mock_sub.run.return_value = mock_result
-            result = _detect_progress("sub-1", steps, step_results, str(tmp_path))
+            result = detect_progress("sub-1", steps, step_results, str(tmp_path))
 
         assert result is not None
         assert result["steps_passed"] == "1/2"
@@ -132,16 +132,16 @@ class TestDetectProgress:
 
 
 class TestRequestExtension:
-    """_request_extension asks supervisor LLM for more attempts."""
+    """request_extension asks supervisor LLM for more attempts."""
 
-    @patch("app.tasks.autonomous.execution.log_task_event")
-    @patch("app.tasks.autonomous.execution.get_sync_client")
+    @patch("app.tasks.autonomous.exec_modules.agent_routing.log_task_event")
+    @patch("app.tasks.autonomous.exec_modules.agent_routing.get_sync_client")
     def test_approved_returns_true_with_guidance(
         self,
         mock_client_factory: MagicMock,
         mock_log_event: MagicMock,
     ) -> None:
-        from app.tasks.autonomous.execution import _request_extension
+        from app.tasks.autonomous.exec_modules.agent_routing import request_extension
 
         mock_client = MagicMock()
         mock_response = MagicMock()
@@ -154,7 +154,7 @@ class TestRequestExtension:
         ]
         progress = {"steps_passed": "2/3", "has_code_changes": True}
 
-        approved, guidance = _request_extension(
+        approved, guidance = request_extension(
             "task-1", "1.1", step_results, progress, project_id="test-project",
         )
 
@@ -165,14 +165,14 @@ class TestRequestExtension:
         call_kwargs = mock_client.complete.call_args
         assert call_kwargs.kwargs["agent_slug"] == "supervisor"
 
-    @patch("app.tasks.autonomous.execution.log_task_event")
-    @patch("app.tasks.autonomous.execution.get_sync_client")
+    @patch("app.tasks.autonomous.exec_modules.agent_routing.log_task_event")
+    @patch("app.tasks.autonomous.exec_modules.agent_routing.get_sync_client")
     def test_denied_returns_false_no_guidance(
         self,
         mock_client_factory: MagicMock,
         mock_log_event: MagicMock,
     ) -> None:
-        from app.tasks.autonomous.execution import _request_extension
+        from app.tasks.autonomous.exec_modules.agent_routing import request_extension
 
         mock_client = MagicMock()
         mock_response = MagicMock()
@@ -185,21 +185,21 @@ class TestRequestExtension:
         ]
         progress = {"has_code_changes": True}
 
-        approved, guidance = _request_extension(
+        approved, guidance = request_extension(
             "task-1", "1.1", step_results, progress, project_id="test-project",
         )
 
         assert approved is False
         assert guidance is None
 
-    @patch("app.tasks.autonomous.execution.log_task_event")
-    @patch("app.tasks.autonomous.execution.get_sync_client")
+    @patch("app.tasks.autonomous.exec_modules.agent_routing.log_task_event")
+    @patch("app.tasks.autonomous.exec_modules.agent_routing.get_sync_client")
     def test_exception_returns_false(
         self,
         mock_client_factory: MagicMock,
         mock_log_event: MagicMock,
     ) -> None:
-        from app.tasks.autonomous.execution import _request_extension
+        from app.tasks.autonomous.exec_modules.agent_routing import request_extension
 
         mock_client = MagicMock()
         mock_client.complete.side_effect = ConnectionError("Agent Hub down")
@@ -208,21 +208,21 @@ class TestRequestExtension:
         step_results = [{"step_number": 1, "passed": False, "reason": "failed"}]
         progress = {"steps_passed": "1/2"}
 
-        approved, guidance = _request_extension(
+        approved, guidance = request_extension(
             "task-1", "1.1", step_results, progress, project_id="test-project",
         )
 
         assert approved is False
         assert guidance is None
 
-    @patch("app.tasks.autonomous.execution.log_task_event")
-    @patch("app.tasks.autonomous.execution.get_sync_client")
+    @patch("app.tasks.autonomous.exec_modules.agent_routing.log_task_event")
+    @patch("app.tasks.autonomous.exec_modules.agent_routing.get_sync_client")
     def test_logs_task_event_on_decision(
         self,
         mock_client_factory: MagicMock,
         mock_log_event: MagicMock,
     ) -> None:
-        from app.tasks.autonomous.execution import _request_extension
+        from app.tasks.autonomous.exec_modules.agent_routing import request_extension
 
         mock_client = MagicMock()
         mock_response = MagicMock()
@@ -230,7 +230,7 @@ class TestRequestExtension:
         mock_client.complete.return_value = mock_response
         mock_client_factory.return_value = mock_client
 
-        _request_extension(
+        request_extension(
             "task-1", "1.1",
             [{"step_number": 1, "passed": False, "reason": "failed"}],
             {"steps_passed": "1/2"},
@@ -245,87 +245,57 @@ class TestRequestExtension:
 class TestHealLoopExtension:
     """Heal loop grants extension when supervisor approves and progress detected."""
 
-    @patch("app.tasks.autonomous.execution._emit_log")
-    @patch("app.tasks.autonomous.execution._emit_progress")
-    @patch("app.tasks.autonomous.execution._emit_progress_log")
-    @patch("app.tasks.autonomous.execution.run_smoke_tests")
-    @patch("app.tasks.autonomous.execution.get_steps_for_subtask")
-    @patch("app.tasks.autonomous.execution._verify_steps")
-    @patch("app.tasks.autonomous.execution._build_fix_prompt")
-    @patch("app.tasks.autonomous.execution._check_worktree_health")
-    @patch("app.tasks.autonomous.execution._get_project_path")
-    @patch("app.tasks.autonomous.execution._build_subtask_prompt")
-    @patch("app.tasks.autonomous.execution.get_sync_client")
-    @patch("app.tasks.autonomous.execution._has_uncommitted_changes")
-    @patch("app.tasks.autonomous.execution._get_prompt_template")
-    @patch("app.tasks.autonomous.execution.get_handoff_context")
-    @patch("app.tasks.autonomous.execution.get_task_spirit")
-    @patch("app.tasks.autonomous.execution._detect_progress")
-    @patch("app.tasks.autonomous.execution._request_extension")
-    @patch("app.tasks.autonomous.execution.acknowledge_no_citations", create=True)
+    @patch("app.tasks.autonomous.exec_modules.retry_loop.execute_fix_attempt")
+    @patch("app.tasks.autonomous.exec_modules.retry_loop.determine_fix_prompt")
+    @patch("app.tasks.autonomous.exec_modules.retry_loop.handle_infrastructure_failures")
+    @patch("app.tasks.autonomous.exec_modules.retry_loop.check_and_request_extension")
+    @patch("app.tasks.autonomous.exec_modules.retry_loop.verify_steps_with_smoke_tests")
+    @patch("app.tasks.autonomous.exec_modules.retry_loop.check_worktree_health")
+    @patch("app.tasks.autonomous.exec_modules.retry_loop.get_steps_for_subtask")
+    @patch("app.tasks.autonomous.exec_modules.retry_loop.agent_configs")
     def test_extension_granted_adds_attempts(
         self,
-        mock_ack_citations: MagicMock,
-        mock_request_ext: MagicMock,
-        mock_detect: MagicMock,
-        mock_spirit: MagicMock,
-        mock_handoff: MagicMock,
-        mock_template: MagicMock,
-        mock_uncommitted: MagicMock,
-        mock_client_factory: MagicMock,
-        mock_build_prompt: MagicMock,
-        mock_project_path: MagicMock,
-        mock_worktree_health: MagicMock,
-        mock_build_fix: MagicMock,
-        mock_verify: MagicMock,
+        mock_agent_configs: MagicMock,
         mock_get_steps: MagicMock,
-        mock_smoke: MagicMock,
-        mock_progress_log: MagicMock,
-        mock_progress: MagicMock,
-        mock_log: MagicMock,
+        mock_worktree_health: MagicMock,
+        mock_verify: MagicMock,
+        mock_check_ext: MagicMock,
+        mock_handle_infra: MagicMock,
+        mock_determine_fix: MagicMock,
+        mock_execute_fix: MagicMock,
     ) -> None:
         """When extension is approved, agent gets more attempts and eventually passes."""
         from app.constants import SELF_HEAL_MAX_ATTEMPTS, SUPERVISOR_GUIDED_MAX_ATTEMPTS
-        from app.tasks.autonomous.execution import _execute_subtask
+        from app.tasks.autonomous.exec_modules.retry_loop import run_self_healing_loop
 
-        mock_project_path.return_value = "/tmp/test-worktree"
+        # Configure agent_configs to return 0 (fall back to constants)
+        mock_agent_configs.get_max_self_fix_attempts.return_value = 0
+        mock_agent_configs.get_max_supervisor_attempts.return_value = 0
+
         mock_worktree_health.return_value = True
-        mock_build_prompt.return_value = "test prompt"
-        mock_template.return_value = "fix {failures_block}"
-        mock_build_fix.return_value = "fix prompt"
-        mock_uncommitted.return_value = False
-        mock_spirit.return_value = {"objective": "test", "spirit_anti": ""}
-        mock_handoff.return_value = {}
-
-        mock_client = MagicMock()
-        mock_response = MagicMock()
-        mock_response.content = "fixed"
-        mock_response.session_id = "session-1"
-        mock_response.progress_log = []
-        mock_response.context_usage = None
-        mock_response.cited_uuids = []
-        mock_client.complete.return_value = mock_response
-        mock_client_factory.return_value = mock_client
+        mock_get_steps.return_value = [
+            {"step_number": 1, "description": "test", "verify_command": "echo ok"},
+        ]
 
         total_normal = SELF_HEAL_MAX_ATTEMPTS + SUPERVISOR_GUIDED_MAX_ATTEMPTS
         fail_result = [{"step_number": 1, "passed": False, "output": "error", "reason": "threshold", "returncode": 1}]
         pass_result = [{"step_number": 1, "passed": True, "output": "ok", "reason": "", "returncode": 0}]
 
-        # Fail for all normal attempts + 1 initial, then pass on extension attempt
-        verify_results = [fail_result] * (total_normal + 1) + [pass_result]
+        # Fail for all normal attempts + initial verify, then pass on first extension attempt
+        verify_results = [(False, fail_result)] * (total_normal + 1) + [(True, pass_result)]
         mock_verify.side_effect = verify_results
 
-        mock_get_steps.return_value = [
-            {"step_number": 1, "description": "test", "verify_command": "echo ok"},
-        ]
+        # handle_infrastructure_failures just passes through the failed steps
+        mock_handle_infra.side_effect = lambda failed, sub_id, task_id, proj_id: failed
 
-        mock_detect.return_value = {"steps_passed": "0/1", "has_code_changes": True}
-        mock_request_ext.return_value = (True, "Try adjusting the threshold with st step defect")
+        # determine_fix_prompt returns a prompt and no guidance
+        mock_determine_fix.return_value = ("fix prompt", None)
 
-        mock_smoke_result = MagicMock()
-        mock_smoke_result.passed = True
-        mock_smoke_result.files_tested = []
-        mock_smoke.return_value = mock_smoke_result
+        # execute_fix_attempt returns content and session_id
+        mock_execute_fix.return_value = ("fixed", "session-1")
+
+        # Extension approved on first call
+        mock_check_ext.return_value = (True, 1, "Try adjusting the threshold with st step defect")
 
         subtask = {
             "id": "sub-1",
@@ -334,88 +304,66 @@ class TestHealLoopExtension:
             "steps_from_table": [{"step_number": 1, "description": "test", "verify_command": "echo ok"}],
         }
 
-        with patch("app.tasks.autonomous.execution.update_subtask_passes"), \
-             patch("app.tasks.autonomous.execution.insert_subtask_summary"), \
-             patch("app.tasks.autonomous.execution.get_supervisor_guidance_sync", return_value="guidance"), \
-             patch("app.storage.tasks.core.add_agent_hub_session"):
-            result = _execute_subtask("task-1", subtask, "test-project", {})
+        steps = [{"step_number": 1, "description": "test", "verify_command": "echo ok"}]
 
-        assert result["status"] == "passed"
-        assert result["extensions_granted"] == 1
-        mock_detect.assert_called_once()
-        mock_request_ext.assert_called_once()
+        all_passed, step_results, self_fix, supervisor_guided, extensions_granted, session_id = (
+            run_self_healing_loop(
+                task_id="task-1",
+                subtask_id="sub-1",
+                subtask_short_id="1.1",
+                subtask=subtask,
+                steps=steps,
+                project_path="/tmp/test-worktree",
+                project_id="test-project",
+                agent_slug="coder",
+                agent_session_id="session-0",
+                initial_response_content="initial response",
+            )
+        )
 
-    @patch("app.tasks.autonomous.execution._emit_log")
-    @patch("app.tasks.autonomous.execution._emit_progress")
-    @patch("app.tasks.autonomous.execution._emit_progress_log")
-    @patch("app.tasks.autonomous.execution.run_smoke_tests")
-    @patch("app.tasks.autonomous.execution.get_steps_for_subtask")
-    @patch("app.tasks.autonomous.execution._verify_steps")
-    @patch("app.tasks.autonomous.execution._build_fix_prompt")
-    @patch("app.tasks.autonomous.execution._check_worktree_health")
-    @patch("app.tasks.autonomous.execution._get_project_path")
-    @patch("app.tasks.autonomous.execution._build_subtask_prompt")
-    @patch("app.tasks.autonomous.execution.get_sync_client")
-    @patch("app.tasks.autonomous.execution._has_uncommitted_changes")
-    @patch("app.tasks.autonomous.execution._get_prompt_template")
-    @patch("app.tasks.autonomous.execution.get_handoff_context")
-    @patch("app.tasks.autonomous.execution.get_task_spirit")
-    @patch("app.tasks.autonomous.execution._detect_progress")
-    @patch("app.tasks.autonomous.execution._request_extension")
-    @patch("app.tasks.autonomous.execution.acknowledge_no_citations", create=True)
+        assert all_passed is True
+        assert extensions_granted == 1
+        mock_check_ext.assert_called_once()
+
+    @patch("app.tasks.autonomous.exec_modules.retry_loop.execute_fix_attempt")
+    @patch("app.tasks.autonomous.exec_modules.retry_loop.determine_fix_prompt")
+    @patch("app.tasks.autonomous.exec_modules.retry_loop.handle_infrastructure_failures")
+    @patch("app.tasks.autonomous.exec_modules.retry_loop.check_and_request_extension")
+    @patch("app.tasks.autonomous.exec_modules.retry_loop.verify_steps_with_smoke_tests")
+    @patch("app.tasks.autonomous.exec_modules.retry_loop.check_worktree_health")
+    @patch("app.tasks.autonomous.exec_modules.retry_loop.get_steps_for_subtask")
+    @patch("app.tasks.autonomous.exec_modules.retry_loop.agent_configs")
     def test_extension_denied_fails_subtask(
         self,
-        mock_ack_citations: MagicMock,
-        mock_request_ext: MagicMock,
-        mock_detect: MagicMock,
-        mock_spirit: MagicMock,
-        mock_handoff: MagicMock,
-        mock_template: MagicMock,
-        mock_uncommitted: MagicMock,
-        mock_client_factory: MagicMock,
-        mock_build_prompt: MagicMock,
-        mock_project_path: MagicMock,
-        mock_worktree_health: MagicMock,
-        mock_build_fix: MagicMock,
-        mock_verify: MagicMock,
+        mock_agent_configs: MagicMock,
         mock_get_steps: MagicMock,
-        mock_smoke: MagicMock,
-        mock_progress_log: MagicMock,
-        mock_progress: MagicMock,
-        mock_log: MagicMock,
+        mock_worktree_health: MagicMock,
+        mock_verify: MagicMock,
+        mock_check_ext: MagicMock,
+        mock_handle_infra: MagicMock,
+        mock_determine_fix: MagicMock,
+        mock_execute_fix: MagicMock,
     ) -> None:
         """When extension is denied, subtask fails normally."""
-        from app.tasks.autonomous.execution import _execute_subtask
+        from app.tasks.autonomous.exec_modules.retry_loop import run_self_healing_loop
 
-        mock_project_path.return_value = "/tmp/test-worktree"
+        mock_agent_configs.get_max_self_fix_attempts.return_value = 0
+        mock_agent_configs.get_max_supervisor_attempts.return_value = 0
+
         mock_worktree_health.return_value = True
-        mock_build_prompt.return_value = "test prompt"
-        mock_template.return_value = "fix {failures_block}"
-        mock_build_fix.return_value = "fix prompt"
-        mock_uncommitted.return_value = False
-        mock_spirit.return_value = {"objective": "test", "spirit_anti": ""}
-        mock_handoff.return_value = {}
-
-        mock_client = MagicMock()
-        mock_response = MagicMock()
-        mock_response.content = "tried"
-        mock_response.session_id = "session-1"
-        mock_response.progress_log = []
-        mock_response.context_usage = None
-        mock_response.cited_uuids = []
-        mock_client.complete.return_value = mock_response
-        mock_client_factory.return_value = mock_client
+        mock_get_steps.return_value = [
+            {"step_number": 1, "description": "test", "verify_command": "echo ok"},
+        ]
 
         fail_result = [{"step_number": 1, "passed": False, "output": "error", "reason": "threshold", "returncode": 1}]
+        mock_verify.return_value = (False, fail_result)
 
-        mock_verify.return_value = fail_result
+        mock_handle_infra.side_effect = lambda failed, sub_id, task_id, proj_id: failed
+        mock_determine_fix.return_value = ("fix prompt", None)
+        mock_execute_fix.return_value = ("tried", "session-1")
 
-        mock_get_steps.return_value = [
-            {"step_number": 1, "description": "test", "verify_command": "echo ok"},
-        ]
-
-        mock_detect.return_value = {"has_code_changes": True}
-        mock_request_ext.return_value = (False, None)
+        # Extension denied
+        mock_check_ext.return_value = (False, 0, None)
 
         subtask = {
             "id": "sub-1",
@@ -423,82 +371,67 @@ class TestHealLoopExtension:
             "description": "test subtask",
             "steps_from_table": [{"step_number": 1, "description": "test", "verify_command": "echo ok"}],
         }
+        steps = [{"step_number": 1, "description": "test", "verify_command": "echo ok"}]
 
-        with patch("app.tasks.autonomous.execution.get_supervisor_guidance_sync", return_value="guidance"), \
-             patch("app.storage.tasks.core.add_agent_hub_session"):
-            result = _execute_subtask("task-1", subtask, "test-project", {})
+        all_passed, step_results, self_fix, supervisor_guided, extensions_granted, session_id = (
+            run_self_healing_loop(
+                task_id="task-1",
+                subtask_id="sub-1",
+                subtask_short_id="1.1",
+                subtask=subtask,
+                steps=steps,
+                project_path="/tmp/test-worktree",
+                project_id="test-project",
+                agent_slug="coder",
+                agent_session_id="session-0",
+                initial_response_content="initial response",
+            )
+        )
 
-        assert result["status"] == "failed"
-        assert result["extensions_granted"] == 0
-        mock_request_ext.assert_called_once()
+        assert all_passed is False
+        assert extensions_granted == 0
+        mock_check_ext.assert_called_once()
 
-    @patch("app.tasks.autonomous.execution._emit_log")
-    @patch("app.tasks.autonomous.execution._emit_progress")
-    @patch("app.tasks.autonomous.execution._emit_progress_log")
-    @patch("app.tasks.autonomous.execution.run_smoke_tests")
-    @patch("app.tasks.autonomous.execution.get_steps_for_subtask")
-    @patch("app.tasks.autonomous.execution._verify_steps")
-    @patch("app.tasks.autonomous.execution._build_fix_prompt")
-    @patch("app.tasks.autonomous.execution._check_worktree_health")
-    @patch("app.tasks.autonomous.execution._get_project_path")
-    @patch("app.tasks.autonomous.execution._build_subtask_prompt")
-    @patch("app.tasks.autonomous.execution.get_sync_client")
-    @patch("app.tasks.autonomous.execution._has_uncommitted_changes")
-    @patch("app.tasks.autonomous.execution._get_prompt_template")
-    @patch("app.tasks.autonomous.execution.get_handoff_context")
-    @patch("app.tasks.autonomous.execution.get_task_spirit")
-    @patch("app.tasks.autonomous.execution._detect_progress")
-    @patch("app.tasks.autonomous.execution.acknowledge_no_citations", create=True)
+    @patch("app.tasks.autonomous.exec_modules.retry_loop.execute_fix_attempt")
+    @patch("app.tasks.autonomous.exec_modules.retry_loop.determine_fix_prompt")
+    @patch("app.tasks.autonomous.exec_modules.retry_loop.handle_infrastructure_failures")
+    @patch("app.tasks.autonomous.exec_modules.retry_loop.check_and_request_extension")
+    @patch("app.tasks.autonomous.exec_modules.retry_loop.verify_steps_with_smoke_tests")
+    @patch("app.tasks.autonomous.exec_modules.retry_loop.check_worktree_health")
+    @patch("app.tasks.autonomous.exec_modules.retry_loop.get_steps_for_subtask")
+    @patch("app.tasks.autonomous.exec_modules.retry_loop.agent_configs")
     def test_no_progress_skips_extension_request(
         self,
-        mock_ack_citations: MagicMock,
-        mock_detect: MagicMock,
-        mock_spirit: MagicMock,
-        mock_handoff: MagicMock,
-        mock_template: MagicMock,
-        mock_uncommitted: MagicMock,
-        mock_client_factory: MagicMock,
-        mock_build_prompt: MagicMock,
-        mock_project_path: MagicMock,
-        mock_worktree_health: MagicMock,
-        mock_build_fix: MagicMock,
-        mock_verify: MagicMock,
+        mock_agent_configs: MagicMock,
         mock_get_steps: MagicMock,
-        mock_smoke: MagicMock,
-        mock_progress_log: MagicMock,
-        mock_progress: MagicMock,
-        mock_log: MagicMock,
+        mock_worktree_health: MagicMock,
+        mock_verify: MagicMock,
+        mock_check_ext: MagicMock,
+        mock_handle_infra: MagicMock,
+        mock_determine_fix: MagicMock,
+        mock_execute_fix: MagicMock,
     ) -> None:
-        """When no progress detected, extension is not even requested."""
-        from app.tasks.autonomous.execution import _execute_subtask
+        """When no progress detected, check_and_request_extension returns False
+        and run_self_healing_loop breaks out of the loop."""
+        from app.tasks.autonomous.exec_modules.retry_loop import run_self_healing_loop
 
-        mock_project_path.return_value = "/tmp/test-worktree"
+        mock_agent_configs.get_max_self_fix_attempts.return_value = 0
+        mock_agent_configs.get_max_supervisor_attempts.return_value = 0
+
         mock_worktree_health.return_value = True
-        mock_build_prompt.return_value = "test prompt"
-        mock_template.return_value = "fix {failures_block}"
-        mock_build_fix.return_value = "fix prompt"
-        mock_uncommitted.return_value = False
-        mock_spirit.return_value = {"objective": "test", "spirit_anti": ""}
-        mock_handoff.return_value = {}
-
-        mock_client = MagicMock()
-        mock_response = MagicMock()
-        mock_response.content = "tried"
-        mock_response.session_id = "session-1"
-        mock_response.progress_log = []
-        mock_response.context_usage = None
-        mock_response.cited_uuids = []
-        mock_client.complete.return_value = mock_response
-        mock_client_factory.return_value = mock_client
-
-        fail_result = [{"step_number": 1, "passed": False, "output": "error", "reason": "failed", "returncode": 1}]
-        mock_verify.return_value = fail_result
-
         mock_get_steps.return_value = [
             {"step_number": 1, "description": "test", "verify_command": "echo ok"},
         ]
 
-        mock_detect.return_value = None
+        fail_result = [{"step_number": 1, "passed": False, "output": "error", "reason": "failed", "returncode": 1}]
+        mock_verify.return_value = (False, fail_result)
+
+        mock_handle_infra.side_effect = lambda failed, sub_id, task_id, proj_id: failed
+        mock_determine_fix.return_value = ("fix prompt", None)
+        mock_execute_fix.return_value = ("tried", "session-1")
+
+        # No progress: check_and_request_extension returns not approved
+        mock_check_ext.return_value = (False, 0, None)
 
         subtask = {
             "id": "sub-1",
@@ -506,12 +439,24 @@ class TestHealLoopExtension:
             "description": "test subtask",
             "steps_from_table": [{"step_number": 1, "description": "test", "verify_command": "echo ok"}],
         }
+        steps = [{"step_number": 1, "description": "test", "verify_command": "echo ok"}]
 
-        with patch("app.tasks.autonomous.execution.get_supervisor_guidance_sync", return_value="guidance"), \
-             patch("app.tasks.autonomous.execution._request_extension") as mock_ext, \
-             patch("app.storage.tasks.core.add_agent_hub_session"):
-            result = _execute_subtask("task-1", subtask, "test-project", {})
+        all_passed, step_results, self_fix, supervisor_guided, extensions_granted, session_id = (
+            run_self_healing_loop(
+                task_id="task-1",
+                subtask_id="sub-1",
+                subtask_short_id="1.1",
+                subtask=subtask,
+                steps=steps,
+                project_path="/tmp/test-worktree",
+                project_id="test-project",
+                agent_slug="coder",
+                agent_session_id="session-0",
+                initial_response_content="initial response",
+            )
+        )
 
-        assert result["status"] == "failed"
-        assert result["extensions_granted"] == 0
-        mock_ext.assert_not_called()
+        assert all_passed is False
+        assert extensions_granted == 0
+        # check_and_request_extension is called (it internally handles the no-progress case)
+        mock_check_ext.assert_called_once()

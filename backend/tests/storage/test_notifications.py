@@ -121,8 +121,8 @@ class TestCreateTaskFailureNotification:
         # Verify the SQL was called with Johnny-branded text
         call_args = cur.execute.call_args
         params = call_args[0][1]
-        title = params[6]  # title param
-        message = params[7]  # message param
+        title = params[5]  # title param
+        message = params[6]  # message param
         assert title == "Task failed: Fix login"
         assert "I was working on" in message
         assert "Tap to chat" in message
@@ -159,7 +159,7 @@ class TestCreateTaskFailureNotification:
         call_args = cur.execute.call_args
         import json
 
-        metadata_json = call_args[0][1][9]  # metadata param (10th positional)
+        metadata_json = call_args[0][1][8]  # metadata param (9th positional)
         metadata = json.loads(metadata_json)
         assert metadata["johnny"] is True
         assert metadata["agent_hub_session_ids"] == ["sess-1", "sess-2"]
@@ -195,7 +195,7 @@ class TestCreateTaskCompletionNotification:
 
         call_args = cur.execute.call_args
         params = call_args[0][1]
-        severity = params[8]
+        severity = params[7]
         assert severity == "warning"
 
     @patch("app.storage.notifications._schedule_delivery")
@@ -227,8 +227,8 @@ class TestCreateTaskCompletionNotification:
 
         call_args = cur.execute.call_args
         params = call_args[0][1]
-        title = params[6]
-        message = params[7]
+        title = params[5]
+        message = params[6]
         assert title == "Task done: Deploy"
         assert "Finished" in message
         assert "Auto-merged." in message

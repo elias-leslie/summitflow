@@ -62,6 +62,8 @@ TASKS:
   autocode <id> [--dry-run] [--at TIME]    # queue for autonomous execution (immediate or scheduled)
   verify <plan.json>                       # validate plan file against schema
   exec-log <id> [-f] [-n N] [--debug]      # view execution log (subtasks, tool calls, events)
+  idea <description> [-p priority]         # shorthand: create + crowdsourced + autonomous
+  close                                    # (removed) use st done instead
 
 CHECKPOINT (claim -> done | abandon):
   claim <id> [--force]                     # claim task, create checkpoint (DB+git)

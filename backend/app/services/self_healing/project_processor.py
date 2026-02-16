@@ -19,6 +19,7 @@ def process_project(
     unfixed_counts: dict[str, int],
     remaining_budget: int,
     cumulative_cost: float = 0.0,
+    max_errors_per_project: int | None = None,
 ) -> dict[str, Any]:
     """Process a single project, fixing errors in priority order.
 
@@ -28,6 +29,8 @@ def process_project(
         unfixed_counts: Dict of check_type → unfixed count
         remaining_budget: Max errors we can still process this run
         cumulative_cost: Current cumulative cost for budget tracking
+        max_errors_per_project: Override for per-project error limit.
+            Defaults to MAX_ERRORS_PER_PROJECT from config.
 
     Returns:
         Results dict for this project including cumulative_cost_usd
@@ -39,6 +42,9 @@ def process_project(
     # (fix_agent imports from self_healing for pattern memory)
     from ..quality_gate.fix_agent import fix_unfixed_errors
 
+    if max_errors_per_project is None:
+        max_errors_per_project = MAX_ERRORS_PER_PROJECT
+
     project_results: dict[str, Any] = {
         "fixed": 0,
         "failed": 0,
@@ -47,7 +53,7 @@ def process_project(
         "cumulative_cost_usd": cumulative_cost,
     }
 
-    project_budget = min(remaining_budget, MAX_ERRORS_PER_PROJECT)
+    project_budget = min(remaining_budget, max_errors_per_project)
 
     # Process check types in priority order
     for check_type in CHECK_TYPE_PRIORITY:

@@ -74,7 +74,7 @@ class TestTriageDeterministicDedup:
 
         triage_idea("task-self", "test-project")
 
-        mock_dedup.assert_called_once_with("test-project", "Fix bug", exclude_task_id="task-self")
+        mock_dedup.assert_called_once_with("test-project", "Fix bug", exclude_task_id="task-self", description="")
 
 
 class TestTriagePromptCleanup:

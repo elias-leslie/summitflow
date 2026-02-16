@@ -115,6 +115,7 @@ class SelfHealingOrchestrator:
                     unfixed_counts=unfixed_counts,
                     remaining_budget=self.max_errors_per_run - total_processed,
                     cumulative_cost=cumulative_cost,
+                    max_errors_per_project=self.max_errors_per_project,
                 )
                 processed = self._update_results_from_project(results, project_id, project_results)
                 cumulative_cost = project_results.get("cumulative_cost_usd", cumulative_cost)

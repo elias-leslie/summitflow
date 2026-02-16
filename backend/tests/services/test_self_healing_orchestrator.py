@@ -55,8 +55,8 @@ class TestSelfHealingOrchestrator:
         assert orch.max_errors_per_run == 5
         assert orch.max_errors_per_project == 2
 
-    @patch("app.services.self_healing.orchestrator.list_projects")
-    @patch("app.services.self_healing.orchestrator.qcr_store")
+    @patch("app.services.self_healing.project_scanner.list_projects")
+    @patch("app.services.self_healing.project_scanner.qcr_store")
     def test_poll_and_fix_no_errors(
         self,
         mock_qcr: MagicMock,
@@ -76,8 +76,8 @@ class TestSelfHealingOrchestrator:
         assert result["total_escalated"] == 0
 
     @patch("app.services.quality_gate.fix_agent.fix_unfixed_errors")
-    @patch("app.services.self_healing.orchestrator.list_projects")
-    @patch("app.services.self_healing.orchestrator.qcr_store")
+    @patch("app.services.self_healing.project_scanner.list_projects")
+    @patch("app.services.self_healing.project_scanner.qcr_store")
     def test_poll_and_fix_single_project(
         self,
         mock_qcr: MagicMock,
@@ -108,8 +108,8 @@ class TestSelfHealingOrchestrator:
         mock_fix.assert_called_once()
 
     @patch("app.services.quality_gate.fix_agent.fix_unfixed_errors")
-    @patch("app.services.self_healing.orchestrator.list_projects")
-    @patch("app.services.self_healing.orchestrator.qcr_store")
+    @patch("app.services.self_healing.project_scanner.list_projects")
+    @patch("app.services.self_healing.project_scanner.qcr_store")
     def test_poll_and_fix_priority_order(
         self,
         mock_qcr: MagicMock,
@@ -142,8 +142,8 @@ class TestSelfHealingOrchestrator:
         assert calls[1].kwargs["check_type"] == "mypy"
 
     @patch("app.services.quality_gate.fix_agent.fix_unfixed_errors")
-    @patch("app.services.self_healing.orchestrator.list_projects")
-    @patch("app.services.self_healing.orchestrator.qcr_store")
+    @patch("app.services.self_healing.project_scanner.list_projects")
+    @patch("app.services.self_healing.project_scanner.qcr_store")
     def test_poll_and_fix_respects_run_budget(
         self,
         mock_qcr: MagicMock,
@@ -186,8 +186,8 @@ class TestSelfHealingOrchestrator:
             assert second_call.kwargs["limit"] <= 1
 
     @patch("app.services.quality_gate.fix_agent.fix_unfixed_errors")
-    @patch("app.services.self_healing.orchestrator.list_projects")
-    @patch("app.services.self_healing.orchestrator.qcr_store")
+    @patch("app.services.self_healing.project_scanner.list_projects")
+    @patch("app.services.self_healing.project_scanner.qcr_store")
     def test_poll_and_fix_respects_project_budget(
         self,
         mock_qcr: MagicMock,
@@ -218,8 +218,8 @@ class TestSelfHealingOrchestrator:
         call_args = mock_fix.call_args_list[0]
         assert call_args.kwargs["limit"] <= 7
 
-    @patch("app.services.self_healing.orchestrator.list_projects")
-    @patch("app.services.self_healing.orchestrator.qcr_store")
+    @patch("app.services.self_healing.project_scanner.list_projects")
+    @patch("app.services.self_healing.project_scanner.qcr_store")
     def test_get_health_summary_no_errors(
         self,
         mock_qcr: MagicMock,
@@ -237,8 +237,8 @@ class TestSelfHealingOrchestrator:
         assert summary["total_unfixed"] == 0
         assert summary["projects_needing_fixes"] == 0
 
-    @patch("app.services.self_healing.orchestrator.list_projects")
-    @patch("app.services.self_healing.orchestrator.qcr_store")
+    @patch("app.services.self_healing.project_scanner.list_projects")
+    @patch("app.services.self_healing.project_scanner.qcr_store")
     def test_get_health_summary_with_errors(
         self,
         mock_qcr: MagicMock,
@@ -270,8 +270,8 @@ class TestSelfHealingOrchestrator:
         assert summary["by_project"]["proj-2"] == 3
 
     @patch("app.services.quality_gate.fix_agent.fix_unfixed_errors")
-    @patch("app.services.self_healing.orchestrator.list_projects")
-    @patch("app.services.self_healing.orchestrator.qcr_store")
+    @patch("app.services.self_healing.project_scanner.list_projects")
+    @patch("app.services.self_healing.project_scanner.qcr_store")
     def test_poll_and_fix_handles_escalation(
         self,
         mock_qcr: MagicMock,
@@ -336,8 +336,8 @@ class TestBudgetCapEnforcement:
         assert "runaway costs" in str(error).lower()
 
     @patch("app.services.quality_gate.fix_agent.fix_unfixed_errors")
-    @patch("app.services.self_healing.orchestrator.list_projects")
-    @patch("app.services.self_healing.orchestrator.qcr_store")
+    @patch("app.services.self_healing.project_scanner.list_projects")
+    @patch("app.services.self_healing.project_scanner.qcr_store")
     def test_poll_and_fix_tracks_cumulative_cost(
         self,
         mock_qcr: MagicMock,
@@ -367,8 +367,8 @@ class TestBudgetCapEnforcement:
         assert result["budget_exceeded"] is False
 
     @patch("app.services.quality_gate.fix_agent.fix_unfixed_errors")
-    @patch("app.services.self_healing.orchestrator.list_projects")
-    @patch("app.services.self_healing.orchestrator.qcr_store")
+    @patch("app.services.self_healing.project_scanner.list_projects")
+    @patch("app.services.self_healing.project_scanner.qcr_store")
     def test_poll_and_fix_stops_on_budget_exceeded(
         self,
         mock_qcr: MagicMock,
@@ -396,8 +396,8 @@ class TestBudgetCapEnforcement:
         assert mock_fix.call_count == 1
 
     @patch("app.services.quality_gate.fix_agent.fix_unfixed_errors")
-    @patch("app.services.self_healing.orchestrator.list_projects")
-    @patch("app.services.self_healing.orchestrator.qcr_store")
+    @patch("app.services.self_healing.project_scanner.list_projects")
+    @patch("app.services.self_healing.project_scanner.qcr_store")
     def test_budget_passed_to_fix_unfixed_errors(
         self,
         mock_qcr: MagicMock,
@@ -427,8 +427,8 @@ class TestBudgetCapEnforcement:
         assert "cumulative_cost" in call_kwargs
 
     @patch("app.services.quality_gate.fix_agent.fix_unfixed_errors")
-    @patch("app.services.self_healing.orchestrator.list_projects")
-    @patch("app.services.self_healing.orchestrator.qcr_store")
+    @patch("app.services.self_healing.project_scanner.list_projects")
+    @patch("app.services.self_healing.project_scanner.qcr_store")
     def test_cumulative_cost_accumulates_across_projects(
         self,
         mock_qcr: MagicMock,
