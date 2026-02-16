@@ -92,17 +92,18 @@ const COMPLEXITY_OPTIONS: { value: Complexity; label: string }[] = [
  *
  * Uses Next.js rewrite proxy (/agent-hub-api/* -> localhost:8003/*)
  * to avoid CORS issues and leverage same-origin auth bypass.
- * In production, routes through agentapi.summitflow.dev.
+ * In production (dev.summitflow.dev), routes through agentapi.summitflow.dev.
  */
 function getAgentHubBasePath(): string {
   if (typeof window === 'undefined') {
     return 'http://localhost:8003'
   }
   const host = window.location.hostname
-  if (host === 'localhost' || host === '127.0.0.1') {
-    return '/agent-hub-api' // Next.js rewrite proxy
+  if (host === 'dev.summitflow.dev') {
+    return 'https://agentapi.summitflow.dev'
   }
-  return 'https://agentapi.summitflow.dev'
+  // Local dev (localhost, LAN IP, etc.) — use Next.js rewrite proxy
+  return '/agent-hub-api'
 }
 
 function extractCreateTaskTool(
