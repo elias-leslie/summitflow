@@ -1,9 +1,10 @@
+# Canonical source: synchronized across summitflow, agent-hub, portfolio-ai
 """Hatchet client singleton for workflow orchestration."""
 
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any  # Any: __getattr__ return is inherently dynamic
 
 if TYPE_CHECKING:
     from hatchet_sdk import Hatchet
@@ -34,4 +35,5 @@ class _LazyHatchet:
         return getattr(get_hatchet(), name)
 
 
+# type: ignore[assignment] — _LazyHatchet proxies Hatchet but isn't a subclass
 hatchet: Hatchet = _LazyHatchet()  # type: ignore[assignment]

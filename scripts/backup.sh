@@ -26,6 +26,19 @@ TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 ARCHIVE_NAME="${PROJECT_NAME}-${TIMESTAMP}.tar.gz"
 STAGING_DIR="/tmp/${PROJECT_NAME}-backup-$$"
 
+# Project-specific overrides (defaults)
+BACKUP_TABLES=()           # Empty = full DB dump; set to table names for selective dump
+BACKUP_DB_DUMP_NAME="database.sql.gz"  # Filename inside the archive
+BACKUP_EXTRA_EXCLUDES=()   # Additional tar exclusions beyond BACKUP_EXCLUDES
+QUICK_MODE_ENABLED=true    # Set to false to disable --quick support
+
+# Load project-specific config if it exists
+# Projects can override: BACKUP_TABLES, BACKUP_DB_DUMP_NAME,
+#   BACKUP_EXTRA_EXCLUDES, QUICK_MODE_ENABLED, DB_NAME, DB_USER
+if [ -f "$PROJECT_DIR/scripts/lib/backup-project.sh" ]; then
+    source "$PROJECT_DIR/scripts/lib/backup-project.sh"
+fi
+
 # Parse arguments
 QUICK_MODE=false
 LOCAL_ONLY=false
@@ -125,6 +138,7 @@ show_status() {
 
 # Database dump function
 # Returns 0 on success, 1 on failure, 2 if skipped (no database)
+# Supports selective table dumps via BACKUP_TABLES array
 dump_database() {
     local dump_file="$1"
 
@@ -139,7 +153,15 @@ dump_database() {
 
     export PGPASSWORD="$DB_PASSWORD"
 
-    if [ "$QUICK_MODE" = true ]; then
+    # Build table args for selective dump
+    local table_args=()
+    if [ ${#BACKUP_TABLES[@]} -gt 0 ]; then
+        for table in "${BACKUP_TABLES[@]}"; do
+            table_args+=(-t "$table")
+        done
+    fi
+
+    if [ "$QUICK_MODE" = true ] && [ "$QUICK_MODE_ENABLED" = true ]; then
         log "Quick mode: Using existing backup"
         local existing_backup="$PROJECT_DIR/backups/${PROJECT_NAME}_daily.sql.gz"
 
@@ -148,11 +170,15 @@ dump_database() {
             log_success "Copied existing backup ($(du -h "$dump_file" | cut -f1))"
         else
             log_warn "No existing backup found, creating fresh dump..."
-            pg_dump -U "$DB_USER" -h localhost "$DB_NAME" | gzip > "$dump_file"
+            pg_dump -U "$DB_USER" -h localhost "$DB_NAME" "${table_args[@]}" | gzip > "$dump_file"
         fi
     else
-        log "Creating fresh PostgreSQL dump..."
-        if pg_dump -U "$DB_USER" -h localhost "$DB_NAME" | gzip > "$dump_file"; then
+        if [ ${#BACKUP_TABLES[@]} -gt 0 ]; then
+            log "Dumping selected tables: ${BACKUP_TABLES[*]}"
+        else
+            log "Creating fresh PostgreSQL dump..."
+        fi
+        if pg_dump -U "$DB_USER" -h localhost "$DB_NAME" "${table_args[@]}" | gzip > "$dump_file"; then
             log_success "Database dump created ($(du -h "$dump_file" | cut -f1))"
         else
             log_error "Database dump failed"
