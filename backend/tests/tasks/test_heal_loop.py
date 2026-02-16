@@ -10,7 +10,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-
 # ---------------------------------------------------------------------------
 # Module path constants for patching
 # ---------------------------------------------------------------------------
@@ -332,7 +331,9 @@ class TestInitialWorktreeGuard:
         mock_log: MagicMock,
     ) -> None:
         """validate_subtask_environment returns failed when worktree is invalid at start."""
-        from app.tasks.autonomous.exec_modules.subtask_validation import validate_subtask_environment
+        from app.tasks.autonomous.exec_modules.subtask_validation import (
+            validate_subtask_environment,
+        )
 
         mock_worktree_health.return_value = False
 
@@ -427,7 +428,9 @@ class TestZeroStepSubtask:
         mock_log: MagicMock,
     ) -> None:
         """Subtask with 0 steps returns failed with reason=zero_steps."""
-        from app.tasks.autonomous.exec_modules.subtask_validation import validate_subtask_environment
+        from app.tasks.autonomous.exec_modules.subtask_validation import (
+            validate_subtask_environment,
+        )
 
         mock_worktree_health.return_value = True
 
