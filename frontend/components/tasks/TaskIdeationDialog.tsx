@@ -179,6 +179,7 @@ export function TaskIdeationDialog({
     return {
       completeEndpoint: `${hubBase}/api/complete`,
       sessionsEndpoint: `${hubBase}/api/sessions`,
+      preferencesEndpoint: `${hubBase}/api/preferences`,
       projectId: projectId,
       memoryGroupPrefix: 'summitflow:',
       fetchHeaders: {
@@ -338,6 +339,7 @@ export function TaskIdeationDialog({
                   agentSlug="ideator"
                   toolsEnabled
                   apiConfig={apiConfig}
+                  modelsEndpoint={`${getAgentHubBasePath()}/api/models`}
                   title="Task Ideation"
                   onMessagesChange={handleMessagesChange}
                 />
