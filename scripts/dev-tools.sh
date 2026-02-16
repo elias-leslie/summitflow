@@ -765,6 +765,14 @@ get_tool_working_dir() {
             [[ ! -d "$frontend_dir" ]] && frontend_dir="$PROJECT_DIR"
             echo "$frontend_dir"
             ;;
+        test)
+            # For test runners: prefer backend/tests, fall back to project root
+            if [[ -d "$BACKEND_PATH/tests" ]]; then
+                echo "$BACKEND_PATH"
+            else
+                echo "$PROJECT_DIR"
+            fi
+            ;;
         migrations)
             # For SQL linting: look for migrations/ in backend or root
             local mig_dir="$BACKEND_PATH/migrations"
@@ -834,7 +842,7 @@ run_tool_toon() {
     IFS='|' read -r label binary args count_method dir_type fallback_global pass_path <<< "$def"
 
     # Smart Check: Skip Python tools if no Python backend (when running explicit command like 'dt mypy')
-    if [[ "$dir_type" == "backend" ]]; then
+    if [[ "$dir_type" == "backend" || "$dir_type" == "test" ]]; then
         if ! has_python_backend "$PROJECT_DIR"; then
             echo "$label:OK:skipped_no_python"
             return 0
@@ -865,6 +873,13 @@ run_tool_toon() {
     # Change to appropriate directory for tools that need it
     if [[ "$dir_type" == "backend" ]]; then
         cd "$BACKEND_PATH"
+    elif [[ "$dir_type" == "test" ]]; then
+        # For test runners: prefer backend (when tests/ is there), else project root
+        if [[ -d "$BACKEND_PATH/tests" ]]; then
+            cd "$BACKEND_PATH"
+        else
+            cd "$PROJECT_DIR"
+        fi
     elif [[ "$dir_type" == "frontend" ]]; then
         cd "$PROJECT_DIR/frontend" 2>/dev/null || cd "$PROJECT_DIR"
     fi
