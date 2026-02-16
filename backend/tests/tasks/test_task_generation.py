@@ -31,7 +31,7 @@ class TestGenerateTasksFromScan:
         assert result["skipped_count"] == 0
 
     @patch("app.tasks.autonomous.refactor_generation.get_refactor_targets")
-    @patch("app.tasks.autonomous.task_generation.task_store")
+    @patch("app.tasks.autonomous.refactor_generation.task_store")
     @patch("app.tasks.autonomous.task_generation.create_refactor_task")
     def test_creates_refactor_task_type(
         self,
@@ -62,7 +62,7 @@ class TestGenerateTasksFromScan:
         assert result["created_count"] == 1
 
     @patch("app.tasks.autonomous.refactor_generation.get_refactor_targets")
-    @patch("app.tasks.autonomous.task_generation.task_store")
+    @patch("app.tasks.autonomous.refactor_generation.task_store")
     def test_skips_existing_tasks(
         self,
         mock_store: MagicMock,
@@ -105,7 +105,7 @@ class TestCleanupStaleTasks:
         assert result["max_age_days"] == 30
 
     @patch("app.storage.tasks.get_stale_tasks")
-    @patch("app.tasks.autonomous.task_generation.task_store")
+    @patch("app.tasks.autonomous.refactor_generation.task_store")
     def test_cancels_stale_tasks(
         self,
         mock_store: MagicMock,
@@ -124,7 +124,7 @@ class TestCleanupStaleTasks:
         assert mock_store.update_task.call_count == 2
 
     @patch("app.storage.tasks.get_stale_tasks")
-    @patch("app.tasks.autonomous.task_generation.task_store")
+    @patch("app.tasks.autonomous.refactor_generation.task_store")
     @patch("app.tasks.autonomous.task_generation.log_task_event")
     def test_sets_cancelled_status_with_message(
         self,
@@ -153,7 +153,7 @@ class TestCleanupStaleTasks:
         assert "45+ days" in event_args[0][1]
 
     @patch("app.storage.tasks.get_stale_tasks")
-    @patch("app.tasks.autonomous.task_generation.task_store")
+    @patch("app.tasks.autonomous.refactor_generation.task_store")
     def test_handles_update_errors(
         self,
         mock_store: MagicMock,
