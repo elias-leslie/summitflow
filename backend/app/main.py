@@ -8,10 +8,10 @@ from datetime import UTC, datetime
 from typing import cast
 
 import redis
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.exceptions import RequestValidationError
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+
+from .exception_handlers import setup_exception_handlers
 
 from .api import (
     activity,
@@ -133,51 +133,7 @@ app.include_router(ws_execution.router, tags=["execution"])
 
 
 # Global exception handlers for consistent error responses
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(
-    request: Request, exc: RequestValidationError
-) -> JSONResponse:
-    """Handle Pydantic validation errors with consistent JSON format."""
-    # Sanitize errors: ctx may contain non-serializable objects (e.g. ValueError)
-    errors = []
-    for error in exc.errors():
-        sanitized = dict(error)
-        if "ctx" in sanitized:
-            sanitized["ctx"] = {k: str(v) for k, v in sanitized["ctx"].items()}
-        errors.append(sanitized)
-    return JSONResponse(
-        status_code=422,
-        content={
-            "error": "Validation Error",
-            "detail": errors,
-        },
-    )
-
-
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
-    """Handle HTTP exceptions with consistent JSON format."""
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={
-            "error": exc.detail if isinstance(exc.detail, str) else "HTTP Error",
-            "detail": exc.detail,
-        },
-    )
-
-
-@app.exception_handler(Exception)
-async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    """Handle unexpected exceptions with consistent JSON format."""
-    logger.error("unhandled_exception", path=request.url.path, error=str(exc), exc_info=True)
-
-    return JSONResponse(
-        status_code=500,
-        content={
-            "error": "Internal Server Error",
-            "detail": "An unexpected error occurred. Please try again later.",
-        },
-    )
+setup_exception_handlers(app)
 
 
 @app.get("/health")
