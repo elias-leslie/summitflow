@@ -488,18 +488,19 @@ verify_backup() {
         }')
 
     local total_files checksum has_db
+    local db_dump_name="${BACKUP_DB_DUMP_NAME:-database.sql.gz}"
     total_files=$(tar -tzf "$archive_path" | grep -v '/$' | wc -l | tr -d ' ')
     checksum=$(sha256sum "$archive_path" | cut -d' ' -f1)
-    has_db=$(tar -tzf "$archive_path" | grep -c "database.sql.gz" || echo "0")
+    has_db=$(tar -tzf "$archive_path" | grep -c "$db_dump_name" || echo "0")
 
     local verified="true"
     local errors="[]"
     if [ "$has_db" -eq 0 ]; then
         verified="false"
-        errors='["Critical: database.sql.gz missing"]'
+        errors="[\"Critical: $db_dump_name missing\"]"
     fi
 
-    echo "{\"verified\":$verified,\"verified_at\":\"$(date -Iseconds)\",\"errors\":$errors,\"tree\":$tree_json,\"total_files\":$total_files,\"checksum\":\"sha256:$checksum\"}"
+    echo "{\"verified\":$verified,\"verified_at\":\"$(date -Iseconds)\",\"errors\":$errors,\"tree\":$tree_json,\"total_files\":$total_files,\"checksum\":\"sha256:$checksum\",\"has_db\":$([ "$has_db" -gt 0 ] && echo "true" || echo "false")}"
 }
 
 # Get backup count from index

@@ -61,7 +61,9 @@ while [ $# -gt 0 ]; do
             echo "Usage: $0 [--quick] [--local] [--keep-local] [--retention-days N] [--status]"
             echo ""
             echo "Options:"
-            echo "  --quick            Skip fresh DB dump, use existing backup"
+            if [ "$QUICK_MODE_ENABLED" = true ]; then
+                echo "  --quick            Skip fresh DB dump, use existing backup"
+            fi
             echo "  --local            Create archive locally only, skip SMB transfer"
             echo "  --keep-local       Upload to SMB AND keep local copy (for fast restore)"
             echo "  --retention-days N Override SMB retention days (default: $RETENTION_DAYS)"
@@ -70,6 +72,13 @@ while [ $# -gt 0 ]; do
             echo "Destination: //$SMB_HOST/$SMB_SHARE/$SMB_PATH"
             echo "Local backups: $PROJECT_DIR/backups/"
             echo "Retention: $RETENTION_DAYS days (SMB), $LOCAL_RETENTION copies (local)"
+            if [ ${#BACKUP_TABLES[@]} -gt 0 ]; then
+                echo ""
+                echo "Database: Backs up selected tables only:"
+                for table in "${BACKUP_TABLES[@]}"; do
+                    echo "  - $table"
+                done
+            fi
             exit 0
             ;;
     esac
@@ -200,15 +209,19 @@ create_archive() {
 
     cd "$PROJECT_DIR"
 
-    # Build tar exclusion args
+    # Build tar exclusion args (base + project-specific extras)
     local exclude_args=()
     for ex in "${BACKUP_EXCLUDES[@]}"; do
         exclude_args+=(--exclude="$ex")
     done
+    for ex in "${BACKUP_EXTRA_EXCLUDES[@]}"; do
+        exclude_args+=(--exclude="$ex")
+    done
 
-    # Ensure database dump is in staging dir
-    if [ "$db_dump" != "$STAGING_DIR/database.sql.gz" ]; then
-        cp "$db_dump" "$STAGING_DIR/database.sql.gz"
+    # Ensure database dump is in staging dir with correct name
+    local staging_dump="$STAGING_DIR/$BACKUP_DB_DUMP_NAME"
+    if [ "$db_dump" != "$staging_dump" ]; then
+        cp "$db_dump" "$staging_dump"
     fi
 
     # Create archive of entire project (minus exclusions)
@@ -222,7 +235,7 @@ create_archive() {
     tar --append \
         --file="$tar_path" \
         --transform="s|^|${PROJECT_NAME}/|" \
-        -C "$STAGING_DIR" "database.sql.gz"
+        -C "$STAGING_DIR" "$BACKUP_DB_DUMP_NAME"
 
     # Add Neo4j/Graphiti memory backups for agent-hub
     if [ "$PROJECT_NAME" = "agent-hub" ] && [ -d "$PROJECT_DIR/backups/memory" ]; then
@@ -284,11 +297,19 @@ main() {
     echo "========================================"
     echo ""
     echo "Project: $PROJECT_NAME ($PROJECT_DIR)"
+    if [ ${#BACKUP_TABLES[@]} -gt 0 ]; then
+        echo "Tables: ${BACKUP_TABLES[*]}"
+    fi
     echo ""
+
+    # Warn if --quick was requested but not supported
+    if [ "$QUICK_MODE" = true ] && [ "$QUICK_MODE_ENABLED" != true ]; then
+        log_warn "Quick mode not supported for $PROJECT_NAME, running full backup"
+    fi
 
     # Setup
     mkdir -p "$STAGING_DIR"
-    local db_dump="$STAGING_DIR/database.sql.gz"
+    local db_dump="$STAGING_DIR/$BACKUP_DB_DUMP_NAME"
     local archive_path="$STAGING_DIR/$ARCHIVE_NAME"
 
     # Dump database (may be skipped for projects without DB)

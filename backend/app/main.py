@@ -1,5 +1,6 @@
 """SummitFlow FastAPI application."""
 
+import os
 import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -39,9 +40,29 @@ from .api import (
     ws_execution,
 )
 from .config import REDIS_URL, settings
-from .logging_config import get_logger
+from .logging_config import SyslogPrefixFormatter, configure_logging, get_logger
 from .schemas.health import ComponentHealth, DetailedHealthResponse
 from .storage.connection import init_schema
+
+# Configure structured logging (skip in test mode - tests configure their own logging)
+if not os.getenv("PYTEST_CURRENT_TEST"):
+    configure_logging()
+
+    # Configure uvicorn loggers to use syslog prefixes for journald
+    import logging
+
+    uvicorn_access_logger = logging.getLogger("uvicorn.access")
+    uvicorn_error_logger = logging.getLogger("uvicorn.error")
+    uvicorn_logger = logging.getLogger("uvicorn")
+
+    # Apply syslog formatter to all uvicorn handlers
+    for _uvicorn_log in [uvicorn_access_logger, uvicorn_error_logger, uvicorn_logger]:
+        for _handler in _uvicorn_log.handlers:
+            _handler.setFormatter(
+                SyslogPrefixFormatter(
+                    "%(levelname)s:     %(message)s"  # Match uvicorn's format
+                )
+            )
 
 logger = get_logger(__name__)
 

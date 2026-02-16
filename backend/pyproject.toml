@@ -24,6 +24,8 @@ dependencies = [
     "croniter>=3.0.0",
     "pytz>=2024.1",
     "psutil>=6.0.0",
+    "structlog>=24.0.0",
+    "python-json-logger>=2.0.0",
 ]
 
 [project.scripts]
