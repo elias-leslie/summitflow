@@ -11,8 +11,6 @@ import redis
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from .exception_handlers import setup_exception_handlers
-
 from .api import (
     activity,
     agent_hub,
@@ -40,6 +38,7 @@ from .api import (
     ws_execution,
 )
 from .config import REDIS_URL, settings
+from .exception_handlers import setup_exception_handlers
 from .logging_config import SyslogPrefixFormatter, configure_logging, get_logger
 from .schemas.health import ComponentHealth, DetailedHealthResponse
 from .storage.connection import init_schema

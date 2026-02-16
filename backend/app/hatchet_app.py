@@ -35,5 +35,4 @@ class _LazyHatchet:
         return getattr(get_hatchet(), name)
 
 
-# type: ignore[assignment] — _LazyHatchet proxies Hatchet but isn't a subclass
-hatchet: Hatchet = _LazyHatchet()  # type: ignore[assignment]
+hatchet: Hatchet = _LazyHatchet()  # type: ignore[assignment]  # _LazyHatchet proxies Hatchet
