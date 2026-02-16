@@ -170,6 +170,19 @@ export function TaskIdeationDialog({
   const [error, setError] = useState<string | null>(null)
   const messagesRef = useRef<ChatMessage[]>([])
 
+  // Wrap fetch with internal auth header (same pattern as Agent Hub frontend's fetchApi)
+  const fetchWithAuth = useCallback(
+    (url: string, options?: RequestInit) =>
+      fetch(url, {
+        ...options,
+        headers: {
+          ...options?.headers,
+          'X-Agent-Hub-Internal': 'agent-hub-internal-v1',
+        },
+      }),
+    [],
+  )
+
   const apiConfig: ChatStreamApiConfig = useMemo(() => {
     const hubBase = getAgentHubBasePath()
     return {
@@ -181,8 +194,9 @@ export function TaskIdeationDialog({
       fetchHeaders: {
         'X-Agent-Hub-Internal': 'agent-hub-internal-v1',
       },
+      fetchFn: fetchWithAuth,
     }
-  }, [projectId])
+  }, [projectId, fetchWithAuth])
 
   const handleMessagesChange = useCallback((messages: ChatMessage[]) => {
     messagesRef.current = messages
@@ -335,6 +349,7 @@ export function TaskIdeationDialog({
                   agentSlug="ideator"
                   toolsEnabled
                   apiConfig={apiConfig}
+                  fetchFn={fetchWithAuth}
                   modelsEndpoint={`${getAgentHubBasePath()}/api/models`}
                   title="Task Ideation"
                   onMessagesChange={handleMessagesChange}
