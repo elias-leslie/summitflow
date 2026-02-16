@@ -110,8 +110,32 @@ def _run_backup(
         if "SMB unavailable" in result.stdout or "pending" in result.stdout.lower():
             return _handle_pending_upload(backup_id, project_id)
 
-        # Actual failure
-        return _handle_backup_failure(backup_id, result.stderr or result.stdout or "Unknown error")
+        # Actual failure — build informative error from rc + stderr + stdout
+        stderr_clean = result.stderr or ""
+        # Filter smbclient progress lines (e.g. "putting file ...")
+        stderr_lines = [
+            line
+            for line in stderr_clean.splitlines()
+            if not line.strip().startswith("putting file")
+        ]
+        stderr_filtered = "\n".join(stderr_lines).strip()
+        stdout_tail = (result.stdout or "")[-500:].strip()
+
+        parts = [f"rc={result.returncode}"]
+        if stderr_filtered:
+            parts.append(f"stderr: {stderr_filtered}")
+        if stdout_tail:
+            parts.append(f"stdout(tail): {stdout_tail}")
+        error_msg = " | ".join(parts) if any([stderr_filtered, stdout_tail]) else "Unknown error"
+
+        logger.error(
+            "create_backup_script_failed",
+            backup_id=backup_id,
+            returncode=result.returncode,
+            stderr=stderr_filtered[:200],
+            stdout_tail=stdout_tail[:200],
+        )
+        return _handle_backup_failure(backup_id, error_msg)
 
     except subprocess.TimeoutExpired:
         return _handle_backup_timeout(backup_id)

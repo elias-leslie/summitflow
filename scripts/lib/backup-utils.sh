@@ -155,7 +155,7 @@ upload_with_retry() {
     local archive_name="$2"
     local project_name="${3:-$PROJECT_NAME}"
     local max_retries="${SMB_MAX_RETRIES:-5}"
-    local initial_delay="${SMB_RETRY_DELAY:-30}"
+    local initial_delay="${SMB_RETRY_DELAY:-5}"
 
     local delay=$initial_delay
     local attempt=1
@@ -174,7 +174,7 @@ upload_with_retry() {
             log_warn "SMB unavailable (attempt $attempt/$max_retries), retrying in ${delay}s..."
             sleep $delay
             delay=$((delay * 2))  # Exponential backoff
-            [ $delay -gt 300 ] && delay=300  # Cap at 5 minutes
+            [ $delay -gt 60 ] && delay=60  # Cap at 60 seconds
         fi
 
         ((attempt++))
@@ -286,19 +286,26 @@ smb_upload() {
 
     log "Uploading $(basename "$local_file") to //$SMB_HOST/$SMB_SHARE/$remote_dir..."
 
-    smbclient "//$SMB_HOST/$SMB_SHARE" -A "$CREDENTIALS_FILE" << EOF
-mkdir $remote_dir
-cd $remote_dir
-put $local_file $remote_name
-EOF
+    # Ensure remote directory exists (ignore "already exists" errors)
+    smbclient "//$SMB_HOST/$SMB_SHARE" -A "$CREDENTIALS_FILE" \
+        -c "mkdir $remote_dir" 2>/dev/null || true
 
-    if [ $? -eq 0 ]; then
-        log_success "Upload complete"
-        return 0
-    else
-        log_error "Upload failed"
+    # Upload file — exit code is the sole success/failure indicator
+    if ! smbclient "//$SMB_HOST/$SMB_SHARE" -A "$CREDENTIALS_FILE" \
+        -c "cd $remote_dir; put $local_file $remote_name" 2>/dev/null; then
+        log_error "Upload failed (put returned non-zero)"
         return 1
     fi
+
+    # Post-upload verification: confirm the file landed on the server
+    if ! smbclient "//$SMB_HOST/$SMB_SHARE" -A "$CREDENTIALS_FILE" \
+        -c "cd $remote_dir; ls $remote_name" 2>/dev/null | grep -q "$remote_name"; then
+        log_error "Upload verification failed — file not found on server"
+        return 1
+    fi
+
+    log_success "Upload complete (verified)"
+    return 0
 }
 
 # List remote backups

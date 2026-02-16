@@ -10,7 +10,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-
 # Complexity values as the ideation agent sends them (lowercase)
 IdeationComplexity = Literal["simple", "standard", "complex"]
 

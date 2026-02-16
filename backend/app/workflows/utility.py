@@ -26,12 +26,20 @@ from .models import (
     name="summitflow-backup-create",
     input_validator=BackupInput,
     execution_timeout="900s",
-    retries=0,
-    concurrency=ConcurrencyExpression(
-        expression="input.project_id",
-        max_runs=1,
-        limit_strategy=ConcurrencyLimitStrategy.CANCEL_IN_PROGRESS,
-    ),
+    retries=2,
+    backoff_factor=2.0,
+    concurrency=[
+        ConcurrencyExpression(
+            expression="input.project_id",
+            max_runs=1,
+            limit_strategy=ConcurrencyLimitStrategy.CANCEL_IN_PROGRESS,
+        ),
+        ConcurrencyExpression(
+            expression="'backup-smb'",
+            max_runs=2,
+            limit_strategy=ConcurrencyLimitStrategy.GROUP_ROUND_ROBIN,
+        ),
+    ],
 )
 async def backup_create_wf(input: BackupInput, ctx: Context) -> dict[str, Any]:
     from ..tasks.backup import create_backup
