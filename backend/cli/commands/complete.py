@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 from typing import Annotated, Any, cast
 
 import httpx
@@ -16,8 +17,6 @@ app = typer.Typer(help="Agent Hub completion API")
 
 def _load_credentials() -> tuple[str, str, str]:
     """Load credentials from ~/.env.local."""
-    from pathlib import Path
-
     env_file = Path.home() / ".env.local"
     if not env_file.exists():
         output_error("~/.env.local not found")
@@ -51,6 +50,7 @@ def _complete(
     memory_group_id: str | None = None,
     execute_tools: bool = False,
     working_dir: str | None = None,
+    timeout: float = 60.0,
 ) -> dict[str, Any]:
     """Call /api/complete endpoint."""
     client_id, client_secret, request_source = _load_credentials()
@@ -83,7 +83,7 @@ def _complete(
     agent_hub_url = get_agent_hub_url()
 
     try:
-        with httpx.Client(timeout=60.0) as client:
+        with httpx.Client(timeout=timeout) as client:
             response = client.post(
                 f"{agent_hub_url}/api/complete",
                 json=payload,
@@ -142,23 +142,40 @@ def complete_default(
     working_dir: Annotated[
         str | None, typer.Option("--working-dir", "-w", help="Working directory for tool execution")
     ] = None,
+    file: Annotated[
+        str | None, typer.Option("--file", "-f", help="Read message from file")
+    ] = None,
+    timeout: Annotated[
+        float, typer.Option("--timeout", "-t", help="Request timeout in seconds")
+    ] = 60.0,
     raw: Annotated[bool, typer.Option("--raw", help="Output raw JSON")] = False,
 ) -> None:
     """Send a completion request to Agent Hub.
 
+    Input priority: message argument > --file > piped stdin.
+
     Examples:
         st complete "Say hello"
-        st complete "Analyze this" -a reasoner
-        st complete "Test" -m --raw
-        st complete "Test" --no-memory
+        st complete -a critic --file /tmp/review.txt
+        cat prompt.txt | st complete -a reasoner
+        st complete "Analyze" -a coder --timeout 300
     """
     if ctx.invoked_subcommand is None:
-        if not message:
+        resolved_message = _resolve_message(message, file)
+        if not resolved_message:
             typer.echo(ctx.get_help())
             return
 
         result = _complete(
-            agent, message, project, source, memory, memory_group, execute_tools, working_dir
+            agent,
+            resolved_message,
+            project,
+            source,
+            memory,
+            memory_group,
+            execute_tools,
+            working_dir,
+            timeout,
         )
 
         if raw:
@@ -166,3 +183,23 @@ def complete_default(
         else:
             content = result.get("content", "")
             typer.echo(content)
+
+
+def _resolve_message(message: str | None, file: str | None) -> str | None:
+    """Resolve message from argument, --file, or piped stdin."""
+    if message:
+        return message
+
+    if file:
+        path = Path(file)
+        if not path.is_file():
+            output_error(f"File not found: {file}")
+            raise typer.Exit(1)
+        return path.read_text()
+
+    if not sys.stdin.isatty():
+        content = sys.stdin.read()
+        if content.strip():
+            return content
+
+    return None
