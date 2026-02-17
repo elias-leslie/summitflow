@@ -213,7 +213,7 @@ def list_notifications(
         if status_filter:
             cur.execute(
                 """
-                SELECT id, project_id, task_id, user_email, idea_id, type, title, message, severity, status,
+                SELECT id, project_id, task_id, user_email, type, title, message, severity, status,
                        metadata, created_at, read_at, dismissed_at
                 FROM notifications
                 WHERE project_id = %s AND status = %s
@@ -225,7 +225,7 @@ def list_notifications(
         elif not include_dismissed:
             cur.execute(
                 """
-                SELECT id, project_id, task_id, user_email, idea_id, type, title, message, severity, status,
+                SELECT id, project_id, task_id, user_email, type, title, message, severity, status,
                        metadata, created_at, read_at, dismissed_at
                 FROM notifications
                 WHERE project_id = %s AND status != 'dismissed'
@@ -237,7 +237,7 @@ def list_notifications(
         else:
             cur.execute(
                 """
-                SELECT id, project_id, task_id, user_email, idea_id, type, title, message, severity, status,
+                SELECT id, project_id, task_id, user_email, type, title, message, severity, status,
                        metadata, created_at, read_at, dismissed_at
                 FROM notifications
                 WHERE project_id = %s
@@ -282,7 +282,7 @@ def mark_as_read(notification_id: str) -> dict[str, Any] | None:
             UPDATE notifications
             SET status = 'read', read_at = NOW()
             WHERE id = %s
-            RETURNING id, project_id, task_id, user_email, idea_id, type, title, message, severity, status,
+            RETURNING id, project_id, task_id, user_email, type, title, message, severity, status,
                       metadata, created_at, read_at, dismissed_at
             """,
             (notification_id,),
@@ -307,7 +307,7 @@ def dismiss_notification(notification_id: str) -> dict[str, Any] | None:
             UPDATE notifications
             SET status = 'dismissed', dismissed_at = NOW()
             WHERE id = %s
-            RETURNING id, project_id, task_id, user_email, idea_id, type, title, message, severity, status,
+            RETURNING id, project_id, task_id, user_email, type, title, message, severity, status,
                       metadata, created_at, read_at, dismissed_at
             """,
             (notification_id,),
@@ -467,7 +467,7 @@ def get_notifications_by_user_email(
         if status_filter:
             cur.execute(
                 """
-                SELECT id, project_id, task_id, user_email, idea_id, type, title, message, severity, status,
+                SELECT id, project_id, task_id, user_email, type, title, message, severity, status,
                        metadata, created_at, read_at, dismissed_at
                 FROM notifications
                 WHERE user_email = %s AND status = %s
@@ -479,7 +479,7 @@ def get_notifications_by_user_email(
         else:
             cur.execute(
                 """
-                SELECT id, project_id, task_id, user_email, idea_id, type, title, message, severity, status,
+                SELECT id, project_id, task_id, user_email, type, title, message, severity, status,
                        metadata, created_at, read_at, dismissed_at
                 FROM notifications
                 WHERE user_email = %s
