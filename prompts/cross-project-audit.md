@@ -1,6 +1,6 @@
 Phase 1: Cross-Project Audit (Parallel Teams)
 
-Deploy a team of explorer agents — one per project (Terminal, Monkey Fight, Portfolio-AI, Agent-Hub, SummitFlow) — to perform two audits in parallel:
+Deploy a team of explorer agents — one per project (Terminal, Agent-Hub, SummitFlow) — to perform two audits in parallel:
 
 AUDIT A: DRY Violations
 Scan for duplicated packages, methods, and code patterns both within and across projects.
