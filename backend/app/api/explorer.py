@@ -23,6 +23,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from ..services import explorer
 from ..storage import explorer as explorer_storage
 from . import explorer_helpers as helpers
+from .dependencies import validate_project_exists
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,7 @@ async def list_entries(
     offset: int = Query(0, ge=0, description="Offset for pagination"),
 ) -> dict[str, Any]:
     """List explorer entries with filtering, sorting, and pagination."""
-    helpers.validate_project_exists(project_id)
+    validate_project_exists(project_id)
 
     if type:
         helpers.validate_entry_type(type)
@@ -71,7 +72,7 @@ async def list_entries(
 @router.get("/{project_id}/explorer/stats")
 async def get_stats(project_id: str) -> dict[str, Any]:
     """Get aggregated statistics for explorer entries."""
-    helpers.validate_project_exists(project_id)
+    validate_project_exists(project_id)
     stats = explorer.get_stats(project_id)
     return helpers.format_stats_response(stats)
 
@@ -83,7 +84,7 @@ async def get_children(
     path: str = Query("", description="Parent path (empty for root level)"),
 ) -> list[dict[str, Any]]:
     """Get direct children of a path for tree navigation."""
-    helpers.validate_project_exists(project_id)
+    validate_project_exists(project_id)
     helpers.validate_entry_type(type)
     return explorer.get_children(project_id, type, path)
 
@@ -95,7 +96,7 @@ async def trigger_scan(
     type: str | None = Query(None, description="Entry type to scan. Scans all if not specified."),
 ) -> dict[str, Any]:
     """Trigger a scan for explorer entries. Runs in background."""
-    helpers.validate_project_exists(project_id)
+    validate_project_exists(project_id)
 
     if type:
         helpers.validate_entry_type(type)
@@ -118,7 +119,7 @@ async def trigger_scan(
 @router.get("/{project_id}/explorer/entry/{entry_id}")
 async def get_entry_by_id(project_id: str, entry_id: int) -> dict[str, Any]:
     """Get a single explorer entry by ID."""
-    helpers.validate_project_exists(project_id)
+    validate_project_exists(project_id)
     entry = explorer_storage.get_entry_by_id(entry_id)
     if not entry:
         raise HTTPException(status_code=404, detail=f"Entry {entry_id} not found")
@@ -138,7 +139,7 @@ async def get_refactor_targets(
     extensions: str | None = Query(None, description="Comma-separated extensions (.py,.ts)"),
 ) -> dict[str, Any]:
     """Get files that are candidates for refactoring."""
-    helpers.validate_project_exists(project_id)
+    validate_project_exists(project_id)
 
     if priority:
         helpers.validate_priority(priority)
@@ -162,14 +163,14 @@ async def get_refactor_targets(
 @router.get("/{project_id}/analysis/coverage-gaps")
 async def get_coverage_gaps(project_id: str) -> dict[str, Any]:
     """Get endpoints, pages, and tables without capability links."""
-    helpers.validate_project_exists(project_id)
+    validate_project_exists(project_id)
     return explorer_storage.get_coverage_gaps(project_id)
 
 
 @router.get("/{project_id}/explorer/{entry_type}/{path:path}")
 async def get_entry(project_id: str, entry_type: str, path: str) -> dict[str, Any]:
     """Get a single explorer entry by type and path."""
-    helpers.validate_project_exists(project_id)
+    validate_project_exists(project_id)
     helpers.validate_entry_type(entry_type)
     entry = explorer.get_entry(project_id, entry_type, path)
     if not entry:
@@ -185,7 +186,7 @@ async def trigger_health_check(
     project_id: str, background_tasks: BackgroundTasks
 ) -> dict[str, Any]:
     """Trigger health checks for all page entries."""
-    helpers.validate_project_exists(project_id)
+    validate_project_exists(project_id)
     return await helpers.dispatch_hatchet_workflow(
         "summitflow.run_page_health_checks",
         project_id,
@@ -196,7 +197,7 @@ async def trigger_health_check(
 @router.post("/{project_id}/explorer/regenerate-index")
 async def regenerate_index(project_id: str) -> dict[str, Any]:
     """Regenerate .index.yaml file for a project."""
-    helpers.validate_project_exists(project_id)
+    validate_project_exists(project_id)
     from ..services.explorer import write_index_file
 
     return helpers.format_index_regeneration_response(project_id, write_index_file(project_id))
@@ -217,7 +218,7 @@ async def regenerate_refactor_tasks(
     sync: bool = Query(False, description="Run synchronously instead of via background workflow"),
 ) -> dict[str, Any]:
     """Delete existing refactor tasks and regenerate from current scan."""
-    helpers.validate_project_exists(project_id)
+    validate_project_exists(project_id)
     if sync:
         from ..tasks.autonomous.task_generation import regenerate_refactor_tasks_sync
 
