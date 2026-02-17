@@ -15,7 +15,6 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 
 from ...storage import task_dependencies as dep_store
-from ...storage import tasks as task_store
 from ...storage.events import get_events_by_trace
 from ...storage.steps import get_steps_for_subtask
 from ...storage.subtasks import get_subtasks_for_task

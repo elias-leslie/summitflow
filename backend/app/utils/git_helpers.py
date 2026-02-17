@@ -7,9 +7,9 @@ import re
 import subprocess
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
-
 from ..api.models.git_models import BranchInfo, RepoStatus, SyncResult, WorktreeInfo
+
+logger = logging.getLogger(__name__)
 
 # Config repos always included (not SummitFlow projects)
 CONFIG_REPOS = [Path.home() / ".claude"]

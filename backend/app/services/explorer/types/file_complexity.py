@@ -8,14 +8,14 @@ from __future__ import annotations
 
 import logging
 
-logger = logging.getLogger(__name__)
-
 from .file_constants import (
     REFACTOR_HIGH_COMPLEXITY,
     REFACTOR_HIGH_LINES,
     REFACTOR_MEDIUM_COMPLEXITY,
     REFACTOR_MEDIUM_LINES,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def calculate_complexity_score(lines: int, function_count: int, class_count: int) -> float:

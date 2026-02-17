@@ -2,14 +2,9 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from app.tasks.autonomous.smoke_testing import (
-    SmokeTestResult,
-    TargetedTestResult,
     run_smoke_tests,
     run_targeted_tests,
     smoke_test_module,

@@ -18,8 +18,6 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from ..logging_config import get_logger
 from ..services.pubsub import subscribe_ws_events
 
-logger = get_logger(__name__)
-
 # Re-export for backward compatibility
 from .ws_execution_manager import (
     ConnectionManager,
@@ -32,6 +30,8 @@ from .ws_execution_manager import (
     unregister_stop_handler,
 )
 from .ws_execution_types import Message, MessageType
+
+logger = get_logger(__name__)
 
 __all__ = [
     "ConnectionManager",

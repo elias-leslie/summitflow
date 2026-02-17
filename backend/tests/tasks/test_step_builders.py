@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from app.tasks.autonomous.step_builders import (
     calculate_target_lines,
     find_test_file,

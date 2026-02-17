@@ -6,11 +6,8 @@ implementation to detect tautological commands (warning-only, never blocking).
 
 from __future__ import annotations
 
-import subprocess
 from typing import Any
 from unittest.mock import patch
-
-import pytest
 
 from app.tasks.autonomous.exec_modules.preflight import check_verify_commands_red
 

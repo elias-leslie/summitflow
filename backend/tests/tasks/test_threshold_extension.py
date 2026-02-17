@@ -306,7 +306,7 @@ class TestHealLoopExtension:
 
         steps = [{"step_number": 1, "description": "test", "verify_command": "echo ok"}]
 
-        all_passed, step_results, self_fix, supervisor_guided, extensions_granted, session_id = (
+        all_passed, _step_results, _self_fix, _supervisor_guided, extensions_granted, _session_id = (
             run_self_healing_loop(
                 task_id="task-1",
                 subtask_id="sub-1",
@@ -373,7 +373,7 @@ class TestHealLoopExtension:
         }
         steps = [{"step_number": 1, "description": "test", "verify_command": "echo ok"}]
 
-        all_passed, step_results, self_fix, supervisor_guided, extensions_granted, session_id = (
+        all_passed, _step_results, _self_fix, _supervisor_guided, extensions_granted, _session_id = (
             run_self_healing_loop(
                 task_id="task-1",
                 subtask_id="sub-1",
@@ -441,7 +441,7 @@ class TestHealLoopExtension:
         }
         steps = [{"step_number": 1, "description": "test", "verify_command": "echo ok"}]
 
-        all_passed, step_results, self_fix, supervisor_guided, extensions_granted, session_id = (
+        all_passed, _step_results, _self_fix, _supervisor_guided, extensions_granted, _session_id = (
             run_self_healing_loop(
                 task_id="task-1",
                 subtask_id="sub-1",

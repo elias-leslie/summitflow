@@ -7,7 +7,6 @@ active task context.
 
 from __future__ import annotations
 
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 from app.tasks.autonomous.triage import _parse_triage_response, triage_idea
