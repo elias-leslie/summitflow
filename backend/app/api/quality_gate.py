@@ -21,7 +21,8 @@ from .quality_gate_models import (
     HealthSummaryResponse,
     SyncResultsRequest,
 )
-from .quality_gate_utils import result_to_response, validate_project_exists
+from .dependencies import validate_project_exists
+from .quality_gate_utils import result_to_response
 
 router = APIRouter()
 
