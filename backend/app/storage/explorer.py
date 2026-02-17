@@ -4,6 +4,7 @@ This module acts as an orchestrator that re-exports functions from specialized m
 
 - explorer_entries: Core CRUD operations for explorer_entries table
 - explorer_analysis: Analysis and refactoring target queries
+- explorer_scan_state: Scan state persistence
 
 Per architecture: No other module should contain direct explorer DB queries.
 """
@@ -33,6 +34,12 @@ from .explorer_entries import (
     upsert_entries,
 )
 
+# Re-export from explorer_scan_state
+from .explorer_scan_state import (
+    get_scan_state,
+    update_scan_state,
+)
+
 __all__ = [
     "REFACTORABLE_EXTENSIONS",
     "REFACTOR_EXCLUDE_PATTERNS",
@@ -47,6 +54,8 @@ __all__ = [
     "get_entry",
     "get_entry_by_id",
     "get_refactor_targets",
+    "get_scan_state",
     "get_stats",
+    "update_scan_state",
     "upsert_entries",
 ]
