@@ -1,5 +1,5 @@
 project: summitflow
-generated_at: 2026-02-16 16:03 UTC
+generated_at: 2026-02-17 17:50 UTC
 environment:
   python_version: '>=3.13'
   venv_path: backend/.venv
@@ -35,6 +35,9 @@ pages:
 endpoints:
 - DELETE /projects/{project_id}/mockups/{mockup_id} (delete_mockup)
 - GET /activity (get_activity_feed)
+- GET /agent-hub/models (list_models)
+- GET /agent-hub/preferences (get_preferences)
+- GET /agent-hub/sessions/{session_id} (get_session)
 - GET /projects/{project_id}/events (get_events)
 - GET /projects/{project_id}/events/by-trace/{trace_id} (get_events_for_trace)
 - GET /projects/{project_id}/mockups/{mockup_id}/image (get_mockup_image)
@@ -54,6 +57,7 @@ endpoints:
 - GET /{project_id}/refactor-sessions/active (get_active_session)
 - GET /{project_id}/refactor-sessions/{task_id} (get_session)
 - PATCH /{project_id}/refactor-sessions/{task_id} (update_session)
+- POST /agent-hub/complete (proxy_complete)
 - POST /explorer/regenerate-all-indexes (regenerate_all_indexes)
 - POST /projects/{project_id}/errors/console (capture_console_error)
 - POST /projects/{project_id}/quality/auto-fix (trigger_auto_fix)
@@ -66,6 +70,7 @@ endpoints:
 - POST /{project_id}/explorer/scan (trigger_scan)
 - POST /{project_id}/refactor-sessions (create_session)
 - POST /{project_id}/refactor-sessions/{task_id}/complete (complete_session)
+- PUT /agent-hub/preferences (update_preferences)
 tables:
 - agent_sessions
 - artifacts
@@ -120,13 +125,13 @@ tasks:
 folders:
   (root): 20 files - tests
   .claude: 3 files
-  .dev-tools: 8 files - tests
+  .dev-tools: 10 files - tests
   .qna-session: 1 files
   .st: 1 files
   assets: 2 files
-  backend: 845 files - api, components, services, tests
+  backend: 850 files - api, components, services, tests
   docs: 2 files
-  frontend: 452 files - api, components, services, tests
+  frontend: 454 files - api, components, services, tests
   scripts: 37 files - services, tests
   skills: 3 files
   tasks: 2 files - tests
