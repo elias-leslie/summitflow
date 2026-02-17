@@ -20,24 +20,13 @@ from ...storage.events import get_events_by_trace
 from ...storage.steps import get_steps_for_subtask
 from ...storage.subtasks import get_subtasks_for_task
 from ...storage.task_spirit import get_task_spirit
+from .helpers import verify_task_project
 from .workflow_approval import approve_task_plan_impl
 from .workflow_export import build_export_data
 from .workflow_formatters import build_context_json, format_logs_toon, format_toon_context
 from .workflow_models import PlanApproveRequest, PlanApproveResponse
 
 router = APIRouter()
-
-
-def _verify_task_project(task_id: str, project_id: str) -> dict[str, Any]:
-    """Get task and verify it belongs to the project."""
-    task = task_store.get_task(task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-    if task["project_id"] != project_id:
-        raise HTTPException(
-            status_code=404, detail=f"Task {task_id} not found in project {project_id}"
-        )
-    return task
 
 
 # Endpoints
@@ -57,7 +46,7 @@ async def approve_task_plan(
     Returns:
         PlanApproveResponse with updated plan status
     """
-    _verify_task_project(task_id, project_id)
+    verify_task_project(task_id, project_id)
 
     approved_by = body.approved_by if body else "user"
     notes = body.notes if body else None
@@ -94,7 +83,7 @@ async def get_task_context(
         task_id: Task ID
         format: Output format ('json' for JSON, default is TOON)
     """
-    task = _verify_task_project(task_id, project_id)
+    task = verify_task_project(task_id, project_id)
 
     # Get spirit data
     spirit = get_task_spirit(task_id)
@@ -136,7 +125,7 @@ async def export_task(
         project_id: Project ID
         task_id: Task ID
     """
-    task = _verify_task_project(task_id, project_id)
+    task = verify_task_project(task_id, project_id)
 
     # Get spirit data
     spirit = get_task_spirit(task_id)
@@ -172,7 +161,7 @@ async def get_task_logs(
         task_id: Task ID
         format: Output format ('json' for JSON, default is TOON)
     """
-    _verify_task_project(task_id, project_id)
+    verify_task_project(task_id, project_id)
 
     # Get progress log from events table
     events = get_events_by_trace(task_id, visibility="user", limit=500)

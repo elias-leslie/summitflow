@@ -29,36 +29,6 @@ interface EscalationPanelProps {
   onApproveAndResume: (message?: string) => Promise<void>
 }
 
-function NotificationBadge() {
-  return (
-    <span className="absolute -top-1 -right-1 flex h-3 w-3">
-      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75" />
-      <span className="relative inline-flex rounded-full h-3 w-3 bg-orange-500" />
-    </span>
-  )
-}
-
-export function EscalationIndicator({
-  needsAttention,
-  onClick,
-}: {
-  needsAttention: boolean
-  onClick?: () => void
-}) {
-  if (!needsAttention) return null
-
-  return (
-    <button
-      onClick={onClick}
-      className="relative inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-orange-500/20 text-orange-400 border border-orange-500/30 hover:bg-orange-500/30 transition-colors"
-    >
-      <AlertTriangle className="h-3.5 w-3.5" />
-      <span className="text-xs font-medium">Needs attention</span>
-      <NotificationBadge />
-    </button>
-  )
-}
-
 export function EscalationPanel({
   task,
   recommendation,

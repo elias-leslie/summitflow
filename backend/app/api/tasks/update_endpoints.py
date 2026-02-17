@@ -98,7 +98,7 @@ async def update_task_status(
             error_message=update.error_message,
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from None
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
     if not updated:
         raise HTTPException(status_code=500, detail="Failed to update task status")
@@ -139,7 +139,7 @@ async def execute_task(project_id: str, task_id: str) -> TaskResponse:
     try:
         updated = await asyncio.to_thread(task_store.update_task_status, task_id, "queue")
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from None
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
     if not updated:
         raise HTTPException(status_code=500, detail="Failed to start execution")

@@ -115,7 +115,7 @@ class GraphitiClient:
             "scope_id": pattern.project_id,
         }
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
+        async with httpx.AsyncClient(timeout=self.timeout, headers=self._auth_headers) as client:
             response = await client.post(
                 f"{self.base_url}/api/memory/record-pattern",
                 json=payload,
@@ -164,7 +164,7 @@ class GraphitiClient:
             "min_score": min_score,
         }
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
+        async with httpx.AsyncClient(timeout=self.timeout, headers=self._auth_headers) as client:
             response = await client.get(
                 f"{self.base_url}/api/memory/search",
                 params=params,
@@ -221,7 +221,7 @@ class GraphitiClient:
             "scope_id": scope_id,
         }
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
+        async with httpx.AsyncClient(timeout=self.timeout, headers=self._auth_headers) as client:
             response = await client.post(
                 f"{self.base_url}/api/memory/record-gotcha",
                 json=payload,
@@ -240,7 +240,7 @@ class GraphitiClient:
         Returns:
             API response with deletion status
         """
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
+        async with httpx.AsyncClient(timeout=self.timeout, headers=self._auth_headers) as client:
             response = await client.delete(
                 f"{self.base_url}/api/memory/episode/{episode_id}",
             )

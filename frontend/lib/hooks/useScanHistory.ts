@@ -9,9 +9,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import {
-  fetchScanComparison,
   fetchScanHistory,
-  type ScanComparison,
   type ScanHistoryResponse,
 } from '@/lib/api/explorer-scan'
 
@@ -77,46 +75,3 @@ export function useScanHistory({
   }
 }
 
-interface UseScanComparisonOptions {
-  projectId: string
-  before: number
-  after: number
-  enabled?: boolean
-}
-
-interface UseScanComparisonReturn {
-  data: ScanComparison | undefined
-  isLoading: boolean
-  isError: boolean
-  error: Error | null
-}
-
-/**
- * Hook for fetching comparison between two scans.
- *
- * @param projectId - Project ID
- * @param before - Scan ID of the baseline scan
- * @param after - Scan ID of the comparison scan
- * @param enabled - Whether to enable the query
- */
-export function useScanComparison({
-  projectId,
-  before,
-  after,
-  enabled = true,
-}: UseScanComparisonOptions): UseScanComparisonReturn {
-  const query = useQuery({
-    queryKey: scanHistoryKeys.comparison(projectId, before, after),
-    queryFn: () => fetchScanComparison(projectId, before, after),
-    enabled: enabled && !!projectId && before > 0 && after > 0,
-    staleTime: 5 * 60 * 1000, // 5 minutes - comparisons don't change
-    gcTime: 30 * 60 * 1000, // 30 minutes
-  })
-
-  return {
-    data: query.data,
-    isLoading: query.isLoading,
-    isError: query.isError,
-    error: query.error,
-  }
-}

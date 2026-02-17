@@ -14,14 +14,3 @@ export {
   fetchWithErrorHandling,
   getApiBase,
 } from './api/utils'
-
-// Legacy type export for backwards compatibility
-export interface AcceptanceCriterion {
-  id: string
-  criterion: string
-  verification: string
-  type: string
-  passed: boolean | null
-  verified_at: string | null
-  verification_output: string | null
-}
