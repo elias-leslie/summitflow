@@ -395,6 +395,9 @@ run_types() {
         local app_dir="$backend/app"
         [[ ! -d "$app_dir" ]] && app_dir="$backend"
         type_targets="$app_dir"
+        # Also check tests/ and scripts/ so full check matches --changed-only scope
+        [[ -d "$backend/tests" ]] && type_targets="$type_targets $backend/tests"
+        [[ -d "$backend/scripts" ]] && type_targets="$type_targets $backend/scripts"
     fi
 
     cd "$backend"
