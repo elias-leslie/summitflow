@@ -484,14 +484,8 @@ quick_check() {
 
     # Python tools only if backend exists
     if has_python_backend "$project_dir"; then
-        # Use run_lint/run_types when in changed-only mode for proper file filtering
-        if [[ "$CHANGED_ONLY" == "1" ]]; then
-            run_lint "$project_dir" || ((errors++))
-            run_types "$project_dir" || ((errors++))
-        else
-            run_tool_toon ruff || ((errors++))
-            run_tool_toon mypy || ((errors++))
-        fi
+        run_lint "$project_dir" || ((errors++))
+        run_types "$project_dir" || ((errors++))
     else
         echo "LINT:OK:skipped_no_python"
         echo "TYPES:OK:skipped_no_python"
