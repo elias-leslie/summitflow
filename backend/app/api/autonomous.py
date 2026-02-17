@@ -2,7 +2,6 @@
 
 from fastapi import APIRouter, HTTPException
 
-from ..storage.connection import get_connection
 from .autonomous_models import (
     AutonomousSettings,
     AutonomousSettingsUpdate,
@@ -13,6 +12,7 @@ from .autonomous_service import (
 from .autonomous_service import (
     update_autonomous_settings as _update_settings,
 )
+from .dependencies import validate_project_exists
 
 router = APIRouter()
 
@@ -24,18 +24,10 @@ __all__ = [
 ]
 
 
-def _verify_project_exists(project_id: str) -> None:
-    """Verify that a project exists, raising 404 if not."""
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
-        if not cur.fetchone():
-            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
-
-
 @router.get("/{project_id}/autonomous/settings", response_model=AutonomousSettings)
 async def get_settings(project_id: str) -> AutonomousSettings:
     """Get autonomous execution settings for a project."""
-    _verify_project_exists(project_id)
+    validate_project_exists(project_id)
     return _get_settings(project_id)
 
 
@@ -49,7 +41,7 @@ async def update_settings(project_id: str, update: AutonomousSettingsUpdate) -> 
         VALID_TASK_TYPES,
     )
 
-    _verify_project_exists(project_id)
+    validate_project_exists(project_id)
 
     # Validate auto_merge_tiers
     if update.auto_merge_tiers is not None:

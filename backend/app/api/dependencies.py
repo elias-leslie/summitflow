@@ -53,6 +53,24 @@ def get_valid_project(
     }
 
 
+def validate_project_exists(project_id: str) -> None:
+    """Validate that a project exists, raising 404 if not.
+
+    Lightweight check that doesn't fetch project data.
+    Use get_valid_project() instead if you need the project record.
+
+    Args:
+        project_id: Project ID to validate
+
+    Raises:
+        HTTPException: 404 if project not found
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM projects WHERE id = %s", (project_id,))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+
+
 def get_valid_task(
     task_id: Annotated[str, Path(description="Task ID")],
 ) -> dict[str, Any]:
