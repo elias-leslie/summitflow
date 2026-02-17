@@ -60,6 +60,13 @@ class GraphitiClient:
         """
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self._auth_headers: dict[str, str] = {}
+        if SUMMITFLOW_CLIENT_ID:
+            self._auth_headers["X-Client-Id"] = SUMMITFLOW_CLIENT_ID
+        if SUMMITFLOW_CLIENT_SECRET:
+            self._auth_headers["X-Client-Secret"] = SUMMITFLOW_CLIENT_SECRET
+        if SUMMITFLOW_REQUEST_SOURCE:
+            self._auth_headers["X-Request-Source"] = SUMMITFLOW_REQUEST_SOURCE
 
     async def health_check(self) -> dict[str, Any]:
         """Check if the Graphiti API is healthy.
@@ -70,7 +77,7 @@ class GraphitiClient:
         Raises:
             httpx.HTTPError: If the health check fails
         """
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
+        async with httpx.AsyncClient(timeout=self.timeout, headers=self._auth_headers) as client:
             response = await client.get(f"{self.base_url}/api/memory/health")
             response.raise_for_status()
             return cast(dict[str, Any], response.json())
