@@ -20,7 +20,7 @@ import type { Task, TaskStatus } from '@/lib/api'
 import { deleteTask, executeTask } from '@/lib/api/tasks'
 import { DragOverlayTaskCard } from './TaskCard'
 import { KanbanRow } from './KanbanRow'
-import { DeleteConfirmDialog } from './DeleteConfirmDialog'
+import { ConfirmDeleteDialog } from '@/components/shared/ConfirmDeleteDialog'
 import {
   ROWS,
   columnToStatus,
@@ -271,8 +271,9 @@ export function TaskKanbanBoard({
       </DndContext>
 
       {deleteConfirmTask && (
-        <DeleteConfirmDialog
-          task={deleteConfirmTask}
+        <ConfirmDeleteDialog
+          entityType="task"
+          entityName={`${deleteConfirmTask.id}: ${deleteConfirmTask.title}`}
           isDeleting={deleteMutation.isPending}
           isError={deleteMutation.isError}
           onConfirm={handleDeleteConfirm}

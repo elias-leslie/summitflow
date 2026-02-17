@@ -6,6 +6,10 @@ Extracted from files.py for focused responsibility.
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 from .file_constants import (
     REFACTOR_HIGH_COMPLEXITY,
     REFACTOR_HIGH_LINES,
@@ -52,6 +56,7 @@ def calculate_radon_cc(content: str) -> tuple[float, float] | None:
         return (avg_cc, max_cc)
     except Exception:
         # Radon can fail on syntax errors, encoding issues, etc.
+        logger.debug("Radon cyclomatic complexity analysis failed", exc_info=True)
         return None
 
 

@@ -7,14 +7,15 @@ Currently supports ntfy; designed for future channels (Web Push, etc.).
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 from . import ntfy
 
 logger = logging.getLogger(__name__)
 
-FRONTEND_URL = "https://dev.summitflow.dev"
-AGENT_HUB_URL = "https://agent.summitflow.dev"
+FRONTEND_URL = os.getenv("SUMMITFLOW_FRONTEND_URL", "https://dev.summitflow.dev")
+AGENT_HUB_URL = os.getenv("AGENT_HUB_FRONTEND_URL", "https://agent.summitflow.dev")
 
 # Severity → ntfy priority mapping
 _SEVERITY_PRIORITY: dict[str, int] = {

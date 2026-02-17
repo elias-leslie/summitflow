@@ -2,7 +2,7 @@
  * Mockups API module
  */
 
-import { fetchWithErrorHandling } from './utils'
+import { buildQueryString, fetchWithErrorHandling } from './utils'
 
 export interface Mockup {
   id: number
@@ -75,18 +75,17 @@ export async function fetchMockups(
   projectId: string,
   filters: MockupFilters = {},
 ): Promise<MockupListResponse> {
-  const params = new URLSearchParams()
-  if (filters.limit) params.set('limit', String(filters.limit))
-  if (filters.offset) params.set('offset', String(filters.offset))
-  if (filters.mockup_type) params.set('mockup_type', filters.mockup_type)
-  if (filters.status) params.set('status', filters.status)
-  if (filters.task_id) params.set('task_id', filters.task_id)
-  if (filters.page_path) params.set('page_path', filters.page_path)
-  if (filters.generator) params.set('generator', filters.generator)
-  if (filters.search) params.set('search', filters.search)
-
-  const queryString = params.toString()
-  const url = `/api/projects/${projectId}/mockups${queryString ? `?${queryString}` : ''}`
+  const query = buildQueryString({
+    limit: filters.limit,
+    offset: filters.offset,
+    mockup_type: filters.mockup_type,
+    status: filters.status,
+    task_id: filters.task_id,
+    page_path: filters.page_path,
+    generator: filters.generator,
+    search: filters.search,
+  })
+  const url = `/api/projects/${projectId}/mockups${query}`
 
   return fetchWithErrorHandling<MockupListResponse>(url, {
     errorMessage: 'Failed to fetch mockups',

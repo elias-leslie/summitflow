@@ -5,7 +5,10 @@ Estimates cost of LLM calls based on token usage and model pricing.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # Pricing per 1M tokens (approximate)
 PRICING = {
@@ -48,4 +51,5 @@ def estimate_cost_from_response(response: Any) -> float:
         return input_cost + output_cost
 
     except Exception:
+        logger.debug("Failed to estimate cost from LLM response", exc_info=True)
         return 0.0

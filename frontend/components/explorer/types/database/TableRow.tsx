@@ -6,6 +6,7 @@
 
 import { AlertTriangle, Database } from 'lucide-react'
 import type { ExplorerEntry } from '@/lib/api/explorer'
+import { formatNumber, formatPercent } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { ColumnValue } from '../../DataList'
 import { HealthBadge, type HealthStatus } from '../../HealthBadge'
@@ -18,18 +19,6 @@ interface SchemaViolation {
   type: string
   detail: string
   severity: string
-}
-
-const formatNumber = (n: number | undefined | null) => {
-  const num = n ?? 0
-  if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`
-  if (num >= 1_000) return `${(num / 1_000).toFixed(1)}K`
-  return num.toLocaleString()
-}
-
-const formatPercent = (pct: number | undefined | null) => {
-  if (pct === undefined || pct === null) return '-'
-  return `${Math.round(pct)}%`
 }
 
 const violationTypeLabels: Record<string, string> = {

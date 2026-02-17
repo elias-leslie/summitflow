@@ -177,6 +177,7 @@ class FileScanner(BaseScanner):
                 },
             )
         except Exception:
+            logger.debug("Failed to scan file: %s", rel_path, exc_info=True)
             return None
 
     def _add_git_info_batch(self, entries: list[ExplorerEntryCreate]) -> None:

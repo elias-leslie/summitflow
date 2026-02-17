@@ -3,7 +3,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 import { useState } from 'react'
-import { DeleteTaskDialog } from '@/components/tasks/DeleteTaskDialog'
+import { ConfirmDeleteDialog } from '@/components/shared/ConfirmDeleteDialog'
 import { TaskModalContent } from '@/components/tasks/TaskModalContent'
 import { TaskModalHeader } from '@/components/tasks/TaskModalHeader'
 import { useTaskModal } from '@/components/tasks/useTaskModal'
@@ -172,12 +172,14 @@ export function TaskModal({
 
         {/* Delete Confirmation Dialog */}
         {deleteConfirm && task && (
-          <DeleteTaskDialog
-            task={task}
+          <ConfirmDeleteDialog
+            entityType="task"
+            entityName={`${task.id}: ${task.title}`}
             isDeleting={deleteMutation.isPending}
             isError={deleteMutation.isError}
             onConfirm={handleDeleteConfirm}
             onCancel={() => setDeleteConfirm(false)}
+            zIndex="z-[60]"
           />
         )}
       </DialogContent>

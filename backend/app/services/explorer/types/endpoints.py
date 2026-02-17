@@ -219,6 +219,7 @@ class EndpointScanner(BaseScanner):
                 return func_match.group(1)
 
         except Exception:
+            logger.debug("Failed to extract function name for route %s %s", method, path, exc_info=True)
             pass
 
         return None

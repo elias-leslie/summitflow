@@ -5,21 +5,11 @@
  */
 
 import type { ExplorerEntry } from '@/lib/api/explorer'
+import { formatDate, formatDuration } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 interface EndpointDetailProps {
   entry: ExplorerEntry
-}
-
-const formatDate = (dateStr: string | undefined | null) => {
-  if (!dateStr) return '-'
-  return new Date(dateStr).toLocaleString()
-}
-
-const formatDuration = (ms: number | undefined | null) => {
-  if (ms === undefined || ms === null) return '-'
-  if (ms < 1000) return `${ms}ms`
-  return `${(ms / 1000).toFixed(2)}s`
 }
 
 export function EndpointDetail({ entry }: EndpointDetailProps) {

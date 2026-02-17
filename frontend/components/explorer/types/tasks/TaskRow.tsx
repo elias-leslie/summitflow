@@ -6,25 +6,13 @@
 
 import { Clock, Zap } from 'lucide-react'
 import type { ExplorerEntry } from '@/lib/api/explorer'
+import { formatDuration, formatPercent } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { ColumnValue } from '../../DataList'
 import { HealthBadge, type HealthStatus } from '../../HealthBadge'
 
 interface TaskRowProps {
   entry: ExplorerEntry
-}
-
-// Helpers
-const formatDuration = (ms: number | undefined | null) => {
-  if (ms === undefined || ms === null) return '-'
-  if (ms < 1000) return `${ms}ms`
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`
-  return `${(ms / 60000).toFixed(1)}m`
-}
-
-const formatPercent = (pct: number | undefined | null) => {
-  if (pct === undefined || pct === null) return '-'
-  return `${Math.round(pct)}%`
 }
 
 export function TaskRow({ entry }: TaskRowProps) {

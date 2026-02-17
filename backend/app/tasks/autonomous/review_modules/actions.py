@@ -8,6 +8,7 @@ from typing import Any
 
 from ....logging_config import get_logger
 from ....services.agent_hub_client import get_sync_client
+from ....services.smoke_test import PROD_HEALTH_URLS
 from ....storage import log_task_event
 from ....storage import tasks as task_store
 from ....storage.projects import get_project_root_path
@@ -18,14 +19,6 @@ logger = get_logger(__name__)
 # QA loop constants
 MAX_QA_LOOP_ITERATIONS = 7
 RECURRING_ISSUE_ESCALATION_THRESHOLD = 3
-
-# Production health URLs (via CF Access tunnel)
-PROD_HEALTH_URLS: dict[str, str] = {
-    "summitflow": "https://devapi.summitflow.dev/health",
-    "agent-hub": "https://agentapi.summitflow.dev/health",
-    "portfolio-ai": "https://portapi.summitflow.dev/health",
-    "terminal": "https://terminalapi.summitflow.dev/health",
-}
 
 
 def auto_merge(task_id: str) -> None:

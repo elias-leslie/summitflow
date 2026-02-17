@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import subprocess
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from ..api.models.git_models import BranchInfo, RepoStatus, SyncResult, WorktreeInfo
 
@@ -44,6 +47,7 @@ def get_managed_repos() -> list[Path]:
                 if path.exists() and (path / ".git").exists():
                     repos.append(path)
     except Exception:
+        logger.debug("Failed to query managed repos from database", exc_info=True)
         pass
 
     # Always include config repos

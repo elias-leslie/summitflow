@@ -12,7 +12,10 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import WebSocket
 
+from ..logging_config import get_logger
 from .ws_execution_types import Message
+
+logger = get_logger(__name__)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -81,6 +84,7 @@ class ConnectionManager:
             try:
                 await websocket.send_json(message.to_dict())
             except Exception:
+                logger.debug("WebSocket send failed, marking client as disconnected", exc_info=True)
                 disconnected.append(websocket)
 
         # Clean up disconnected clients
@@ -110,6 +114,7 @@ class ConnectionManager:
             try:
                 await websocket.send_json(message.to_dict())
             except Exception:
+                logger.debug("WebSocket replay send failed, stopping replay", exc_info=True)
                 break
 
     def get_connection_count(self, task_id: str) -> int:

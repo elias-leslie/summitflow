@@ -113,6 +113,7 @@ def build_health_context(project_id: str) -> str:
         lines.append("Some services are degraded. Avoid operations that depend on unhealthy services.")
         return "\n".join(lines)
     except Exception:
+        logger.debug("Failed to build health context", exc_info=True)
         return ""
 
 

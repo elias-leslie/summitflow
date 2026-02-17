@@ -15,7 +15,10 @@ import contextlib
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from ..logging_config import get_logger
 from ..services.pubsub import subscribe_ws_events
+
+logger = get_logger(__name__)
 
 # Re-export for backward compatibility
 from .ws_execution_manager import (
@@ -82,6 +85,7 @@ async def _forward_redis_events(task_id: str) -> None:
             msg_type = MessageType(msg_type_str) if msg_type_str in MessageType.__members__.values() else MessageType.LOG
             await manager.broadcast(task_id, Message(type=msg_type, task_id=task_id, data=event.get("data", {})))
         except Exception:
+            logger.debug("Error forwarding Redis event to WebSocket clients", exc_info=True)
             break
 
 

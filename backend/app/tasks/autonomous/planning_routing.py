@@ -37,6 +37,7 @@ def supervisor_validate_plan(task_id: str, reasoning: str, project_id: str) -> b
         )
         return "BLOCKED" not in response.content.upper()
     except Exception:
+        logger.warning("Supervisor plan validation failed, defaulting to proceed", exc_info=True)
         return True
 
 

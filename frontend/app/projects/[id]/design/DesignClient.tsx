@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'next/navigation'
 import { useState } from 'react'
 import { BulkActionBar } from '@/components/design/BulkActionBar'
-import { DeleteConfirmDialog } from '@/components/design/DeleteConfirmDialog'
+import { ConfirmDeleteDialog } from '@/components/shared/ConfirmDeleteDialog'
 import { DesignFilters, type TypeFilter } from '@/components/design/DesignFilters'
 import { DesignHeader, type ViewMode } from '@/components/design/DesignHeader'
 import { GenerateMockupDialog } from '@/components/design/GenerateMockupDialog'
@@ -218,7 +218,8 @@ export function DesignClient(): React.ReactElement {
         />
 
         {showDeleteConfirm && (
-          <DeleteConfirmDialog
+          <ConfirmDeleteDialog
+            entityType="mockups"
             count={selectedMockups.size}
             isDeleting={deleteMutation.isPending}
             onConfirm={confirmDelete}

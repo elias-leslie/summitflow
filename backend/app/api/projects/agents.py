@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException
 
 from ...constants import VALID_CLAUDE_MODELS, VALID_GEMINI_MODELS
 from ...storage import agent_configs
-from ...storage.connection import get_connection
+from ..dependencies import validate_project_exists
 from .models import AgentConfigResponse, AgentConfigUpdate
 
 router = APIRouter()
@@ -15,12 +15,7 @@ router = APIRouter()
 @router.get("/{project_id}/agents", response_model=AgentConfigResponse)
 async def get_agent_config(project_id: str) -> AgentConfigResponse:
     """Get agent configuration for a project."""
-    # Verify project exists
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
-        if not cur.fetchone():
-            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
-
+    validate_project_exists(project_id)
     config = agent_configs.get_agent_config(project_id)
     return AgentConfigResponse(**config)
 
@@ -28,11 +23,7 @@ async def get_agent_config(project_id: str) -> AgentConfigResponse:
 @router.patch("/{project_id}/agents", response_model=AgentConfigResponse)
 async def update_agent_config(project_id: str, update: AgentConfigUpdate) -> AgentConfigResponse:
     """Update agent configuration for a project."""
-    # Verify project exists
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
-        if not cur.fetchone():
-            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+    validate_project_exists(project_id)
 
     # Build config update dict from non-None values
     config_update: dict[str, Any] = {}
@@ -85,10 +76,5 @@ async def update_agent_config(project_id: str, update: AgentConfigUpdate) -> Age
 @router.get("/{project_id}/agents/enabled", response_model=list[str])
 async def get_enabled_agents(project_id: str) -> list[str]:
     """Get list of enabled agents for a project."""
-    # Verify project exists
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
-        if not cur.fetchone():
-            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
-
+    validate_project_exists(project_id)
     return agent_configs.get_enabled_agents(project_id)

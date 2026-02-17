@@ -6,6 +6,7 @@ Graphiti knowledge graph for storing and retrieving fix patterns.
 
 from __future__ import annotations
 
+import inspect
 import logging
 import os
 from dataclasses import dataclass
@@ -60,13 +61,22 @@ class GraphitiClient:
         """
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
-        self._auth_headers: dict[str, str] = {}
+        self._auth_headers: dict[str, str] = {
+            "X-Source-Client": "summitflow",
+        }
         if SUMMITFLOW_CLIENT_ID:
             self._auth_headers["X-Client-Id"] = SUMMITFLOW_CLIENT_ID
         if SUMMITFLOW_CLIENT_SECRET:
             self._auth_headers["X-Client-Secret"] = SUMMITFLOW_CLIENT_SECRET
         if SUMMITFLOW_REQUEST_SOURCE:
             self._auth_headers["X-Request-Source"] = SUMMITFLOW_REQUEST_SOURCE
+
+    def _headers_with_source_path(self) -> dict[str, str]:
+        """Return auth headers with X-Source-Path from caller."""
+        headers = dict(self._auth_headers)
+        frame = inspect.stack()[2]  # caller of the public method
+        headers["X-Source-Path"] = f"{frame.filename}:{frame.lineno}"
+        return headers
 
     async def health_check(self) -> dict[str, Any]:
         """Check if the Graphiti API is healthy.
@@ -77,7 +87,7 @@ class GraphitiClient:
         Raises:
             httpx.HTTPError: If the health check fails
         """
-        async with httpx.AsyncClient(timeout=self.timeout, headers=self._auth_headers) as client:
+        async with httpx.AsyncClient(timeout=self.timeout, headers=self._headers_with_source_path()) as client:
             response = await client.get(f"{self.base_url}/api/memory/health")
             response.raise_for_status()
             return cast(dict[str, Any], response.json())
@@ -115,7 +125,7 @@ class GraphitiClient:
             "scope_id": pattern.project_id,
         }
 
-        async with httpx.AsyncClient(timeout=self.timeout, headers=self._auth_headers) as client:
+        async with httpx.AsyncClient(timeout=self.timeout, headers=self._headers_with_source_path()) as client:
             response = await client.post(
                 f"{self.base_url}/api/memory/record-pattern",
                 json=payload,
@@ -164,7 +174,7 @@ class GraphitiClient:
             "min_score": min_score,
         }
 
-        async with httpx.AsyncClient(timeout=self.timeout, headers=self._auth_headers) as client:
+        async with httpx.AsyncClient(timeout=self.timeout, headers=self._headers_with_source_path()) as client:
             response = await client.get(
                 f"{self.base_url}/api/memory/search",
                 params=params,
@@ -221,7 +231,7 @@ class GraphitiClient:
             "scope_id": scope_id,
         }
 
-        async with httpx.AsyncClient(timeout=self.timeout, headers=self._auth_headers) as client:
+        async with httpx.AsyncClient(timeout=self.timeout, headers=self._headers_with_source_path()) as client:
             response = await client.post(
                 f"{self.base_url}/api/memory/record-gotcha",
                 json=payload,
@@ -240,7 +250,7 @@ class GraphitiClient:
         Returns:
             API response with deletion status
         """
-        async with httpx.AsyncClient(timeout=self.timeout, headers=self._auth_headers) as client:
+        async with httpx.AsyncClient(timeout=self.timeout, headers=self._headers_with_source_path()) as client:
             response = await client.delete(
                 f"{self.base_url}/api/memory/episode/{episode_id}",
             )

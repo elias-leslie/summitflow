@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import subprocess
 
+from ....logging_config import get_logger
 from ....storage.agent_configs_quality import build_dt_command
 from .events import emit_log
 from .quality_utils import find_dev_tools
+
+logger = get_logger(__name__)
 
 
 def run_final_quality_gate(
@@ -113,4 +116,5 @@ def auto_fix_quality(project_path: str, project_id: str) -> bool:
         )
         return result.returncode == 0
     except Exception:
+        logger.warning("Auto-fix quality gate failed", exc_info=True)
         return False

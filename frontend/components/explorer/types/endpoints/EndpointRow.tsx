@@ -6,6 +6,7 @@
 
 import { FileText, Globe } from 'lucide-react'
 import type { ExplorerEntry } from '@/lib/api/explorer'
+import { formatDuration } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { ColumnValue } from '../../DataList'
 import { HealthBadge, type HealthStatus } from '../../HealthBadge'
@@ -21,13 +22,6 @@ const methodColors: Record<string, string> = {
   PUT: 'bg-amber-500/20 text-amber-400',
   PATCH: 'bg-yellow-500/20 text-yellow-400',
   DELETE: 'bg-red-500/20 text-red-400',
-}
-
-// Helpers
-const formatDuration = (ms: number | undefined | null) => {
-  if (ms === undefined || ms === null) return '-'
-  if (ms < 1000) return `${ms}ms`
-  return `${(ms / 1000).toFixed(2)}s`
 }
 
 export function EndpointRow({ entry }: EndpointRowProps) {

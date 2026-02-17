@@ -6,19 +6,13 @@
 
 import { FileText } from 'lucide-react'
 import type { ExplorerEntry } from '@/lib/api/explorer'
+import { formatDuration } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { ColumnValue } from '../../DataList'
 import { HealthBadge, type HealthStatus } from '../../HealthBadge'
 
 interface PageRowProps {
   entry: ExplorerEntry
-}
-
-// Helpers
-const formatDuration = (ms: number | undefined | null) => {
-  if (ms === undefined || ms === null) return '-'
-  if (ms < 1000) return `${ms}ms`
-  return `${(ms / 1000).toFixed(2)}s`
 }
 
 export function PageRow({ entry }: PageRowProps) {

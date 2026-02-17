@@ -20,7 +20,7 @@ from ...schemas.steps import (
     StepSummary,
 )
 from .steps_handlers import handle_foreign_key_error
-from .steps_helpers import convert_steps_to_storage_format
+from .subtasks_helpers import convert_steps_to_storage_format
 
 
 def get_steps_handler(table_id: str) -> list[StepResponse]:

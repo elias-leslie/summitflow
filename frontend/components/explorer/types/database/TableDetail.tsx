@@ -5,13 +5,12 @@
  */
 
 import type { ExplorerEntry } from '@/lib/api/explorer'
+import { formatNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 interface TableDetailProps {
   entry: ExplorerEntry
 }
-
-const formatNumber = (n: number | undefined | null) => (n ?? 0).toLocaleString()
 
 export function TableDetail({ entry }: TableDetailProps) {
   const meta = entry.metadata

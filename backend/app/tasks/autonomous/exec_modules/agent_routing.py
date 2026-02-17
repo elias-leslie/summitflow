@@ -117,6 +117,7 @@ def supervisor_circuit_breaker_triage(
         )
         return "CONTINUE" in response.content.upper()
     except Exception:
+        logger.warning("Supervisor circuit breaker triage failed, defaulting to stop", exc_info=True)
         return False
 
 

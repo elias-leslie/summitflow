@@ -5,20 +5,11 @@
  */
 
 import type { ExplorerEntry } from '@/lib/api/explorer'
+import { formatBytes, formatNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 interface FileDetailProps {
   entry: ExplorerEntry
-}
-
-// Helpers
-const formatNumber = (n: number | undefined | null) => (n ?? 0).toLocaleString()
-
-const formatBytes = (bytes: number | undefined | null) => {
-  const b = bytes ?? 0
-  if (b < 1024) return `${b} B`
-  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`
-  return `${(b / (1024 * 1024)).toFixed(1)} MB`
 }
 
 export function FileDetail({ entry }: FileDetailProps) {

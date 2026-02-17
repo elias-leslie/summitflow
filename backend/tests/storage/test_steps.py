@@ -6,37 +6,7 @@ import pytest
 
 from app.storage import steps as step_store
 from app.storage import subtasks as subtask_store
-from app.storage import tasks as task_store
-from app.storage.connection import get_connection
 from app.storage.steps import StepVerificationError
-
-
-@pytest.fixture
-def project_id():
-    """Ensure test project exists."""
-    project_id = "test-project"
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            "INSERT INTO projects (id, name, base_url) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
-            (project_id, "SummitFlow", "http://localhost:3001"),
-        )
-        conn.commit()
-    return project_id
-
-
-@pytest.fixture
-def test_task(project_id):
-    """Create and cleanup a test task for step tests."""
-    task = task_store.create_task(
-        project_id=project_id,
-        title="Test Task for Steps",
-        description="Created by test fixture",
-    )
-
-    yield task
-
-    # Cleanup task (cascades to subtasks and steps)
-    task_store.delete_task(task["id"])
 
 
 @pytest.fixture

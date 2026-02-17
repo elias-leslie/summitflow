@@ -5,10 +5,13 @@ Provides functions for analyzing table columns, freshness, and completeness.
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import text
+
+logger = logging.getLogger(__name__)
 
 
 def analyze_column_completeness(
@@ -42,6 +45,7 @@ def analyze_column_completeness(
                 if row_count > 0 and (row_count - non_null) / row_count > 0.5:
                     columns_mostly_null.append(col_name)
             except Exception:
+                logger.debug("Failed to analyze column completeness for %s.%s", table_name, col_name, exc_info=True)
                 continue
 
     column_count = len(column_names)
@@ -80,6 +84,7 @@ def analyze_table_freshness(
                     days: int = (datetime.now(UTC).date() - last_date).days
                     return days
             except Exception:
+                logger.debug("Failed to analyze freshness for %s.%s", table_name, date_col, exc_info=True)
                 continue
     return None
 

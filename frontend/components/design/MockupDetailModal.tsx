@@ -5,7 +5,7 @@ import { useMockupModal } from './mockup-modal/useMockupModal'
 import { ModalHeader } from './mockup-modal/ModalHeader'
 import { PreviewArea } from './mockup-modal/PreviewArea'
 import { DetailsSidebar } from './mockup-modal/DetailsSidebar'
-import { DeleteConfirmDialog } from './mockup-modal/DeleteConfirmDialog'
+import { ConfirmDeleteDialog } from '@/components/shared/ConfirmDeleteDialog'
 
 interface MockupDetailModalProps {
   mockup: Mockup
@@ -71,11 +71,14 @@ export function MockupDetailModal({
         </div>
 
         {showDeleteConfirm && (
-          <DeleteConfirmDialog
-            mockupName={mockup.name}
+          <ConfirmDeleteDialog
+            entityType="mockup"
+            entityName={mockup.name}
             isDeleting={deleteMutation.isPending}
             onConfirm={() => deleteMutation.mutate()}
             onCancel={() => setShowDeleteConfirm(false)}
+            positioning="absolute"
+            zIndex="z-10"
           />
         )}
       </div>

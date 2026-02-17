@@ -6,22 +6,13 @@
 
 import { File, Folder } from 'lucide-react'
 import type { ExplorerEntry } from '@/lib/api/explorer'
-import { formatTimeAgo } from '@/lib/format'
+import { formatBytes, formatNumber, formatTimeAgo } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { ColumnValue } from '../../DataList'
 import { HealthBadge, type HealthStatus } from '../../HealthBadge'
 
 interface FileRowProps {
   entry: ExplorerEntry
-}
-
-const formatNumber = (n: number | undefined | null) => (n ?? 0).toLocaleString()
-
-const formatBytes = (bytes: number | undefined | null) => {
-  const b = bytes ?? 0
-  if (b < 1024) return `${b} B`
-  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`
-  return `${(b / (1024 * 1024)).toFixed(1)} MB`
 }
 
 

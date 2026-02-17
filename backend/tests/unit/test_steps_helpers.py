@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-from app.api.tasks.steps_helpers import get_verification_cwd
+from app.api.tasks.subtasks_helpers import get_verification_cwd
 
 WORKTREE_INFO_PATH = "cli.lib.worktree.get_worktree_info"
 PROJECT_ROOT_PATH = "app.storage.projects.get_project_root_path"

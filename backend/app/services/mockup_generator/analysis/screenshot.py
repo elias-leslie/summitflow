@@ -70,6 +70,7 @@ async def capture_page_screenshot(
             )
             await asyncio.wait_for(close_proc.communicate(), timeout=5)
         except Exception:
+            logger.debug("Failed to close browser after screenshot timeout", exc_info=True)
             pass
         return False, "Screenshot operation timed out"
     except Exception as e:

@@ -5,24 +5,11 @@
  */
 
 import type { ExplorerEntry } from '@/lib/api/explorer'
+import { formatDate, formatDuration, formatNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 interface TaskDetailProps {
   entry: ExplorerEntry
-}
-
-const formatNumber = (n: number | undefined | null) => (n ?? 0).toLocaleString()
-
-const formatDuration = (ms: number | undefined | null) => {
-  if (ms === undefined || ms === null) return '-'
-  if (ms < 1000) return `${ms}ms`
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`
-  return `${(ms / 60000).toFixed(1)}m`
-}
-
-const formatDate = (dateStr: string | undefined | null) => {
-  if (!dateStr) return '-'
-  return new Date(dateStr).toLocaleString()
 }
 
 export function TaskDetail({ entry }: TaskDetailProps) {

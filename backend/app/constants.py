@@ -8,11 +8,11 @@
 
 # Claude 4.5 models (Anthropic)
 CLAUDE_SONNET = "claude-sonnet-4-5"
-CLAUDE_OPUS = "claude-opus-4-5"
+CLAUDE_OPUS = "claude-opus-4-6"
 CLAUDE_HAIKU = "claude-haiku-4-5"
 
 # Full model IDs (for APIs that need them)
-CLAUDE_OPUS_FULL = "claude-opus-4-5-20251101"
+CLAUDE_OPUS_FULL = "claude-opus-4-6-20260201"
 CLAUDE_SONNET_FULL = "claude-sonnet-4-5-20251101"
 
 # Gemini 3 models (Google)

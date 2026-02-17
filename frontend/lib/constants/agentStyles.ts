@@ -6,7 +6,9 @@
 import type { LucideIcon } from 'lucide-react'
 import { Bot, Sparkles, User } from 'lucide-react'
 
-export type AgentType = 'user' | 'claude' | 'gemini'
+import type { AgentType as ApiAgentType } from '@/lib/api/tasks-types'
+
+export type AgentType = ApiAgentType | 'user'
 
 export interface AgentStyle {
   name: string

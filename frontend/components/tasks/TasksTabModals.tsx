@@ -1,8 +1,7 @@
 'use client'
 
 import type { Task } from '@/lib/api'
-import { BulkDeleteConfirmDialog } from './BulkDeleteConfirmDialog'
-import { DeleteConfirmDialog } from './DeleteConfirmDialog'
+import { ConfirmDeleteDialog } from '@/components/shared/ConfirmDeleteDialog'
 import { EnrichmentModal } from './EnrichmentModal'
 import { TaskIdeationDialog } from './TaskIdeationDialog'
 import { TaskModal } from './TaskModal'
@@ -117,8 +116,9 @@ export function TasksTabModals({
 
       {/* Single Delete Confirmation Dialog */}
       {deleteConfirmTask && (
-        <DeleteConfirmDialog
-          task={deleteConfirmTask}
+        <ConfirmDeleteDialog
+          entityType="task"
+          entityName={`${deleteConfirmTask.id}: ${deleteConfirmTask.title}`}
           isDeleting={isDeletingTask}
           isError={isDeleteError}
           onConfirm={onDeleteConfirm}
@@ -128,7 +128,8 @@ export function TasksTabModals({
 
       {/* Bulk Delete Confirmation Dialog */}
       {bulkDeleteConfirm && (
-        <BulkDeleteConfirmDialog
+        <ConfirmDeleteDialog
+          entityType="tasks"
           taskIds={selectedTaskIds}
           isDeleting={isBulkDeleting}
           isError={isBulkDeleteError}

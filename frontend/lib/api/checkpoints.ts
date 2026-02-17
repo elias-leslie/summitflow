@@ -4,6 +4,8 @@
  * Provides checkpoint information for dashboard and task detail views.
  */
 
+import { buildQueryString } from './utils'
+
 export interface BranchInfo {
   branch: string
   subtask_id: string
@@ -36,10 +38,7 @@ export interface CheckpointsListResponse {
 export async function listCheckpoints(
   projectId?: string,
 ): Promise<CheckpointsListResponse> {
-  const params = new URLSearchParams()
-  if (projectId) params.set('project_id', projectId)
-
-  const url = `/api/checkpoints${params.toString() ? `?${params}` : ''}`
+  const url = `/api/checkpoints${buildQueryString({ project_id: projectId })}`
   const response = await fetch(url)
 
   if (!response.ok) {
@@ -60,10 +59,7 @@ export async function getCheckpoint(
   taskId: string,
   projectId?: string,
 ): Promise<Checkpoint | null> {
-  const params = new URLSearchParams()
-  if (projectId) params.set('project_id', projectId)
-
-  const url = `/api/checkpoints/${taskId}${params.toString() ? `?${params}` : ''}`
+  const url = `/api/checkpoints/${taskId}${buildQueryString({ project_id: projectId })}`
   const response = await fetch(url)
 
   if (response.status === 404) {

@@ -5,6 +5,8 @@
  * Follows existing patterns from lib/api/explorer.ts.
  */
 
+import { buildQueryString } from './utils'
+
 // ============================================================================
 // Types - Aligned with backend Event schema
 // ============================================================================
@@ -61,23 +63,20 @@ export async function getEvents(
   projectId: string,
   filters: EventFilters = {},
 ): Promise<EventsQueryResult> {
-  const params = new URLSearchParams()
+  const query = buildQueryString({
+    trace_id: filters.trace_id,
+    source: filters.source,
+    level: filters.level,
+    visibility: filters.visibility,
+    search: filters.search,
+    after: filters.after,
+    event_type: filters.event_type,
+    limit: filters.limit,
+    offset: filters.offset,
+  })
 
-  if (filters.trace_id) params.append('trace_id', filters.trace_id)
-  if (filters.source) params.append('source', filters.source)
-  if (filters.level) params.append('level', filters.level)
-  if (filters.visibility) params.append('visibility', filters.visibility)
-  if (filters.search) params.append('search', filters.search)
-  if (filters.after) params.append('after', filters.after)
-  if (filters.event_type) params.append('event_type', filters.event_type)
-  if (filters.limit !== undefined)
-    params.append('limit', filters.limit.toString())
-  if (filters.offset !== undefined)
-    params.append('offset', filters.offset.toString())
-
-  const queryString = params.toString()
   const res = await fetch(
-    `/api/projects/${projectId}/events${queryString ? `?${queryString}` : ''}`,
+    `/api/projects/${projectId}/events${query}`,
   )
   if (!res.ok) {
     const error = await res

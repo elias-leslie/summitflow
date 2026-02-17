@@ -67,6 +67,7 @@ def check_verify_commands_red(
         except subprocess.TimeoutExpired:
             pass
         except Exception:
+            logger.debug("Preflight verify_command check failed for step %s", step_num, exc_info=True)
             pass
 
     return warnings

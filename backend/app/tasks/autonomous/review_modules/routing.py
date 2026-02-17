@@ -70,6 +70,7 @@ def supervisor_resolve_escalation(
             return "fix"
         return "block"
     except Exception:
+        logger.warning("Supervisor escalation resolution failed, defaulting to block", exc_info=True)
         return "block"
 
 

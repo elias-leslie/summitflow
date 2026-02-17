@@ -251,6 +251,7 @@ class CodeViolationDetector:
             )
 
         except Exception:
+            logger.debug("Failed to parse vulture output line", exc_info=True)
             return None
 
     def _detect_missing_infrastructure(self) -> list[CodeViolation]:
@@ -407,6 +408,7 @@ class CodeViolationDetector:
                             implementations.append((py_file, i))
                             break
                 except Exception:
+                    logger.debug("Failed to read file for parallel implementation scan: %s", py_file, exc_info=True)
                     continue
 
         if len(implementations) > 1:

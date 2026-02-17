@@ -8,14 +8,6 @@ from ...storage.connection import get_connection
 from .models import ProjectResponse, ProjectStats, ProjectWithStats
 
 
-def verify_project_exists(project_id: str) -> None:
-    """Verify that a project exists, raise HTTPException if not."""
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
-        if not cur.fetchone():
-            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
-
-
 def get_project_from_db(project_id: str) -> ProjectResponse:
     """Fetch a project from the database by ID."""
     with get_connection() as conn, conn.cursor() as cur:

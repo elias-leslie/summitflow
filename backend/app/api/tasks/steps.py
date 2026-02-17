@@ -37,7 +37,7 @@ from .steps_endpoints import (
     update_fields_handler,
 )
 from .steps_handlers import handle_update_step_passes, handle_update_step_status
-from .steps_helpers import get_subtask_table_id, get_verification_cwd
+from .subtasks_helpers import get_subtask_table_id, get_verification_cwd
 
 router = APIRouter()
 
