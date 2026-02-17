@@ -8,10 +8,10 @@ import { SubtaskProgress } from './SubtaskProgress'
 import {
   formatRelativeTime,
   priorityConfig,
-  statusConfig,
+  statusIconConfig,
   statusToKanbanLabel,
   typeConfig,
-} from './taskConfig'
+} from '@/lib/task-config'
 
 interface TaskListRowProps {
   task: Task
@@ -36,7 +36,7 @@ export function TaskListRow({
   const taskType = task.task_type ?? 'task'
   const priorityStyle = priorityConfig[priority] || priorityConfig[2]
   const typeStyle = typeConfig[taskType] || typeConfig.task
-  const statusStyle = statusConfig[task.status] || statusConfig.pending
+  const statusStyle = statusIconConfig[task.status] || statusIconConfig.pending
   const phaseStyle =
     statusToKanbanLabel[task.status] || statusToKanbanLabel.pending
 

@@ -11,7 +11,7 @@ import {
 import { AnimatePresence, motion } from 'motion/react'
 import { useMemo, useState } from 'react'
 import type { Subtask } from '@/lib/api/tasks'
-import { PHASE_CONFIG } from '@/lib/utils/task-status'
+import { PHASE_CONFIG } from '@/lib/task-config'
 import { StepsList } from './subtasks/StepsList'
 import { getStepInfo, groupByPhase } from './subtasks/utils'
 

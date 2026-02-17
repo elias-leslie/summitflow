@@ -6,7 +6,7 @@ import { ListTodo, Zap } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import type { Task } from '@/lib/api'
 import { cn } from '@/lib/utils'
-import { priorityConfig, typeIcons } from './taskConfig'
+import { priorityConfig, typeIcons } from '@/lib/task-config'
 
 interface ReadyWorkSectionProps {
   tasks: Task[]

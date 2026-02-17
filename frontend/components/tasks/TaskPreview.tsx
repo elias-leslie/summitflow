@@ -17,7 +17,7 @@ import {
   getPriorityConfig,
   PHASE_COLORS,
   PHASE_ICONS,
-} from '@/lib/utils/task-status'
+} from '@/lib/task-config'
 
 interface TaskPreviewProps {
   task: Task

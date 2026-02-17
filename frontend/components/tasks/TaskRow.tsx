@@ -13,9 +13,9 @@ import { ExecutionTimeline } from './ExecutionTimeline'
 import {
   formatDate,
   priorityConfig,
-  statusConfig,
+  statusIconConfig,
   typeIcons,
-} from './taskConfig'
+} from '@/lib/task-config'
 
 interface TaskRowProps {
   task: Task
@@ -35,7 +35,7 @@ export function TaskRow({
   projectId,
 }: TaskRowProps) {
   const priority = priorityConfig[task.priority] || priorityConfig[2]
-  const status = statusConfig[task.status] || statusConfig.pending
+  const status = statusIconConfig[task.status] || statusIconConfig.pending
   const TypeIcon = typeIcons[task.task_type] || ListTodo
   const StatusIcon = status.icon
 
