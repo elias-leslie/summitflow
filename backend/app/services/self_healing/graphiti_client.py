@@ -7,15 +7,22 @@ Graphiti knowledge graph for storing and retrieving fix patterns.
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from typing import Any, cast
 
 import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
 
+from .._agent_hub_config import (
+    SUMMITFLOW_CLIENT_ID,
+    SUMMITFLOW_CLIENT_SECRET,
+    SUMMITFLOW_REQUEST_SOURCE,
+)
+
 logger = logging.getLogger(__name__)
 
-AGENT_HUB_BASE_URL = "http://localhost:8003"
+AGENT_HUB_BASE_URL = os.getenv("AGENT_HUB_URL", "http://localhost:8003")
 DEFAULT_TIMEOUT = 10.0
 
 
