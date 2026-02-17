@@ -322,12 +322,8 @@ smb_download() {
 
     log "Downloading $remote_file..."
 
-    smbclient "//$SMB_HOST/$SMB_SHARE" -A "$CREDENTIALS_FILE" << EOF
-cd $SMB_PATH
-get $remote_file $local_path
-EOF
-
-    if [ $? -eq 0 ]; then
+    if smbclient "//$SMB_HOST/$SMB_SHARE" -A "$CREDENTIALS_FILE" \
+        -c "cd $SMB_PATH; get $remote_file $local_path" 2>/dev/null; then
         log_success "Download complete"
         return 0
     else
@@ -342,10 +338,8 @@ smb_delete() {
 
     log "Deleting remote file: $remote_file"
 
-    smbclient "//$SMB_HOST/$SMB_SHARE" -A "$CREDENTIALS_FILE" << EOF
-cd $SMB_PATH
-rm $remote_file
-EOF
+    smbclient "//$SMB_HOST/$SMB_SHARE" -A "$CREDENTIALS_FILE" \
+        -c "cd $SMB_PATH; rm $remote_file" 2>/dev/null
 }
 
 # Update backup index JSON
@@ -438,8 +432,11 @@ apply_retention() {
                      date -j -f "%Y-%m-%d %H:%M:%S" "${year}-${month}-${day} ${hour}:${min}:${sec}" +%s 2>/dev/null)
 
         if [ -n "$file_epoch" ] && [ "$file_epoch" -lt "$cutoff_epoch" ]; then
-            smb_delete "$backup"
-            ((deleted++))
+            if smb_delete "$backup"; then
+                ((deleted++))
+            else
+                log_warn "Failed to delete $backup, skipping"
+            fi
         fi
     done
 

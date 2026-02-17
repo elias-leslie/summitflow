@@ -240,7 +240,10 @@ create_archive() {
     # Add Neo4j/Graphiti memory backups for agent-hub
     if [ "$PROJECT_NAME" = "agent-hub" ] && [ -d "$PROJECT_DIR/backups/memory" ]; then
         local latest_memory_backup
-        latest_memory_backup=$(ls -td "$PROJECT_DIR/backups/memory"/*/ 2>/dev/null | head -1)
+        # Avoid ls | head pipeline — SIGPIPE under set -eo pipefail
+        local -a _memory_dirs=()
+        mapfile -t _memory_dirs < <(ls -td "$PROJECT_DIR/backups/memory"/*/ 2>/dev/null || true)
+        latest_memory_backup="${_memory_dirs[0]:-}"
         if [ -n "$latest_memory_backup" ] && [ -d "$latest_memory_backup" ]; then
             log "Adding Neo4j memory backup to archive..."
             tar --append \
