@@ -2,7 +2,7 @@
 
 import { AlertCircle, Loader2 } from 'lucide-react'
 import { useCallback, useMemo, useRef, useState } from 'react'
-import { useExecutionWebSocket } from './hooks/useExecutionWebSocket'
+import { useExecutionWebSocketStream } from '@/hooks/useExecutionWebSocket'
 import { useTimelineHistory } from './hooks/useTimelineHistory'
 import { useVoiceRecording } from './hooks/useVoiceRecording'
 import { TimelineChatInput } from './TimelineChatInput'
@@ -62,7 +62,7 @@ export function ExecutionTimeline({
 
   // Connect to WebSocket
   const { isConnected, error, connect, sendChatMessage, setLastSequence } =
-    useExecutionWebSocket({
+    useExecutionWebSocketStream({
       taskId,
       autoConnect,
       onMessage: handleMessage,
@@ -176,4 +176,4 @@ export function ExecutionTimeline({
 
 // Export helper types and methods for external use
 export type { TimelineMessage }
-export { getWebSocketUrl } from './hooks/useExecutionWebSocket'
+export { getWebSocketUrl } from '@/hooks/useExecutionWebSocket'
