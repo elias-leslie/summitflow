@@ -26,14 +26,6 @@ def validate_entry_type(entry_type: str) -> None:
         )
 
 
-def validate_project_exists(project_id: str) -> None:
-    """Validate project exists in database."""
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("SELECT 1 FROM projects WHERE id = %s", (project_id,))
-        if not cur.fetchone():
-            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
-
-
 def validate_association(association: str) -> None:
     """Validate association filter parameter."""
     if association not in {"orphan", "linked", "is_component"}:

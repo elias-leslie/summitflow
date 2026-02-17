@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 
 from ..services.health_cache import HealthCache
-from ..storage.connection import get_connection
+from .dependencies import validate_project_exists
 from .pipeline_models import PipelineStatsResponse
 from .pipeline_stats import compute_pipeline_stats
 
@@ -21,14 +21,6 @@ def _get_pipeline_stats_cache() -> HealthCache[PipelineStatsResponse]:
     if _pipeline_stats_cache is None:
         _pipeline_stats_cache = HealthCache[PipelineStatsResponse]()
     return _pipeline_stats_cache
-
-
-def _verify_project_exists(project_id: str) -> None:
-    """Verify that a project exists, raising 404 if not."""
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
-        if not cur.fetchone():
-            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
 
 
 async def _fetch_pipeline_stats(project_id: str) -> PipelineStatsResponse:
@@ -60,7 +52,7 @@ async def get_pipeline_stats(project_id: str) -> PipelineStatsResponse:
     Returns:
         Pipeline statistics including all metrics defined in PipelineStatsResponse
     """
-    _verify_project_exists(project_id)
+    validate_project_exists(project_id)
 
     # Use cache with 30-second TTL (similar to health endpoint pattern)
     cache = _get_pipeline_stats_cache()

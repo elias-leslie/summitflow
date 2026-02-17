@@ -2,25 +2,7 @@
 
 from typing import Any
 
-from fastapi import HTTPException
-
-from ..storage.connection import get_connection
 from .quality_gate_models import CheckResultResponse
-
-
-def validate_project_exists(project_id: str) -> None:
-    """Validate project exists in database.
-
-    Args:
-        project_id: Project ID to validate
-
-    Raises:
-        HTTPException: 404 if project not found
-    """
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("SELECT 1 FROM projects WHERE id = %s", (project_id,))
-        if not cur.fetchone():
-            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
 
 
 def result_to_response(result: dict[str, Any]) -> CheckResultResponse:
