@@ -27,7 +27,6 @@ from ..health import calculate_health_for_entry
 from ..models import ExplorerEntryCreate
 from .task_categorization import categorize_task
 from .task_schedule import format_interval, get_beat_schedule
-from .task_stats import fetch_task_stats
 
 logger = get_logger(__name__)
 
@@ -80,8 +79,8 @@ class TaskScanner(BaseScanner):
             logger.warning(f"No beat schedule found for {self.project_id}")
             return []
 
-        # Fetch execution stats from celery_taskmeta
-        self._task_stats = fetch_task_stats(self.project_id)
+        # Task stats unavailable (Celery removed, Hatchet TBD)
+        self._task_stats = {}
 
         entries: list[ExplorerEntryCreate] = []
 
@@ -123,7 +122,7 @@ class TaskScanner(BaseScanner):
 
         category = categorize_task(task_name)
 
-        # Get stats from celery_taskmeta (match by task path)
+        # Get cached stats (match by task path)
         task_stats = self._task_stats.get(task_path, {})
 
         return ExplorerEntryCreate(

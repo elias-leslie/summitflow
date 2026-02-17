@@ -21,8 +21,6 @@ if _env_file.exists():
 
 # System tables to exclude
 SYSTEM_TABLES = {
-    "celery_taskmeta",
-    "celery_tasksetmeta",
     "alembic_version",
     "spatial_ref_sys",
 }
