@@ -8,7 +8,7 @@ from ..logging_config import get_logger
 from ..storage.tasks.core import create_task
 from ..storage.tasks.dedup import bug_task_exists_for_error
 from .quality_gate_models import ConsoleErrorRequest, ConsoleErrorResponse
-from .quality_gate_utils import validate_project_exists
+from .dependencies import validate_project_exists
 
 logger = get_logger(__name__)
 
