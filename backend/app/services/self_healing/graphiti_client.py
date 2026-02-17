@@ -74,7 +74,11 @@ class GraphitiClient:
     def _headers_with_source_path(self) -> dict[str, str]:
         """Return auth headers with X-Source-Path from caller."""
         headers = dict(self._auth_headers)
-        frame = inspect.stack()[2]  # caller of the public method
+        # stack[0]=here, [1]=public method, [2]=caller of the public method.
+        # If decorators (e.g. @retry) wrap the public method, this may capture
+        # the decorator frame instead. Acceptable — the path still identifies
+        # the module even if the line number points to tenacity internals.
+        frame = inspect.stack()[2]
         headers["X-Source-Path"] = f"{frame.filename}:{frame.lineno}"
         return headers
 

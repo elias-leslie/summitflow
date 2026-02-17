@@ -4,7 +4,7 @@ export function formatNumber(n: number | undefined | null): string {
 
 export function formatPercent(n: number | undefined | null): string {
   if (n === undefined || n === null) return '-'
-  return `${n.toFixed(1)}%`
+  return `${Math.round(n)}%`
 }
 
 export function formatBytes(bytes: number | null | undefined): string {
