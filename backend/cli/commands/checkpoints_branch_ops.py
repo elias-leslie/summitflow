@@ -35,7 +35,7 @@ def get_task_branches(task_id: str) -> list[dict[str, str]]:
     return branches
 
 
-def get_branch_unmerged_commits(branch: str) -> list[dict]:
+def get_branch_unmerged_commits(branch: str) -> list[dict[str, str]]:
     """Get unmerged commits for a branch (commits not in main)."""
     commits = []
     try:

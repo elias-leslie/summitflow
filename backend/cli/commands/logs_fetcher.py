@@ -5,17 +5,18 @@ from __future__ import annotations
 import json
 import subprocess
 from datetime import UTC, datetime
+from typing import Any
 
 from .logs_config import ALL_SERVICES, SYSLOG_PRIORITY_TO_LEVEL, USER_SERVICES, LogEntry
 
 
-def extract_timestamp(entry: dict) -> datetime:
+def extract_timestamp(entry: dict[str, Any]) -> datetime:
     """Extract timestamp from journald entry."""
     timestamp_us = int(entry.get("__REALTIME_TIMESTAMP", 0))
     return datetime.fromtimestamp(timestamp_us / 1000000, tz=UTC)
 
 
-def map_service(entry: dict) -> str:
+def map_service(entry: dict[str, Any]) -> str:
     """Map systemd unit to service name."""
     # User services use _SYSTEMD_USER_UNIT, system services use _SYSTEMD_UNIT
     unit = str(
@@ -47,7 +48,7 @@ def map_service(entry: dict) -> str:
     return "unknown"
 
 
-def extract_message(entry: dict) -> str | None:
+def extract_message(entry: dict[str, Any]) -> str | None:
     """Extract and decode message from journald entry."""
     message_raw = entry.get("MESSAGE", "")
     if isinstance(message_raw, list):
@@ -58,7 +59,7 @@ def extract_message(entry: dict) -> str | None:
     return str(message_raw)
 
 
-def determine_level(entry: dict) -> str:
+def determine_level(entry: dict[str, Any]) -> str:
     """Determine log level from journald PRIORITY field."""
     priority = int(entry.get("PRIORITY", 6))  # Default to info
     return SYSLOG_PRIORITY_TO_LEVEL.get(priority, "INFO")

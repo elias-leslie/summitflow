@@ -8,7 +8,7 @@ idempotent re-seeding.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import typer
 
@@ -84,7 +84,7 @@ def _find_existing_by_tag(
         for ep in result.get("results", []):
             tags = ep.get("tags", [])
             if skill_tag in tags:
-                return ep
+                return cast(dict[str, Any], ep)
     except Exception:
         pass
     return None
