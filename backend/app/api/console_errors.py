@@ -7,8 +7,8 @@ from fastapi import APIRouter
 from ..logging_config import get_logger
 from ..storage.tasks.core import create_task
 from ..storage.tasks.dedup import bug_task_exists_for_error
-from .quality_gate_models import ConsoleErrorRequest, ConsoleErrorResponse
 from .dependencies import validate_project_exists
+from .quality_gate_models import ConsoleErrorRequest, ConsoleErrorResponse
 
 logger = get_logger(__name__)
 

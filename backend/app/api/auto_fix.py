@@ -3,8 +3,8 @@
 from fastapi import APIRouter
 
 from ..storage.connection import get_connection
-from .quality_gate_models import AutoFixRequest, AutoFixResponse
 from .dependencies import validate_project_exists
+from .quality_gate_models import AutoFixRequest, AutoFixResponse
 
 router = APIRouter()
 

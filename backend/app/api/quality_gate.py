@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException, Query
 from ..storage import quality_check_results as qcr_store
 from ..storage.connection import get_connection
 from ..storage.tasks.core import update_task
+from .dependencies import validate_project_exists
 from .quality_gate_models import (
     CheckResultListResponse,
     CheckResultResponse,
@@ -21,7 +22,6 @@ from .quality_gate_models import (
     HealthSummaryResponse,
     SyncResultsRequest,
 )
-from .dependencies import validate_project_exists
 from .quality_gate_utils import result_to_response
 
 router = APIRouter()
