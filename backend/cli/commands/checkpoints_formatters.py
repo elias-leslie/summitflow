@@ -6,6 +6,7 @@ Handles output formatting for compact and detailed checkpoint displays.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
 from ..lib.checkpoint import get_snapshot_info
 from ..output import output_json
@@ -32,14 +33,14 @@ def format_age(created_at: str) -> str:
         return "unknown"
 
 
-def format_compact_checkpoints(checkpoints: list[dict]) -> None:
+def format_compact_checkpoints(checkpoints: list[dict[str, Any]]) -> None:
     """Output checkpoints in TOON format."""
     if not checkpoints:
         print("CHECKPOINTS[0]")
         return
 
     # Group by project
-    by_project: dict[str, list[dict]] = {}
+    by_project: dict[str, list[dict[str, Any]]] = {}
     for cp in checkpoints:
         proj = cp.get("project_id", "unknown")
         if proj not in by_project:
@@ -76,7 +77,7 @@ def format_details(out: OutputContext, task_id: str) -> None:
         print(f"No checkpoint found for {task_id}")
         return
 
-    age = format_age(info.get("created_at", ""))
+    age = format_age(str(info.get("created_at", "")))
     branches = get_task_branches(task_id)
 
     if out.is_compact:
@@ -116,7 +117,7 @@ def format_cleanup_summary(cleaned_meta: int, cleaned_sql: int, cleaned_branches
         print(f"  (auto-cleaned: {', '.join(parts)})")
 
 
-def format_review_needed(needs_review: list[dict]) -> None:
+def format_review_needed(needs_review: list[dict[str, Any]]) -> None:
     """Format and print branches needing review with instructions."""
     if needs_review:
         print()

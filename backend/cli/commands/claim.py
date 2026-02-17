@@ -63,7 +63,7 @@ def _claim_task(
     if existing and not force:
         from datetime import UTC, datetime
 
-        created = datetime.fromisoformat(existing["created_at"].replace("Z", "+00:00"))
+        created = datetime.fromisoformat(str(existing["created_at"]).replace("Z", "+00:00"))
         age = datetime.now(UTC) - created
         hours = int(age.total_seconds() / 3600)
         mins = int((age.total_seconds() % 3600) / 60)

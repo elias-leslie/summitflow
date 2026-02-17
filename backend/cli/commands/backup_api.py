@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -43,7 +43,7 @@ class BackupAPI:
         response = httpx.get(url, timeout=self.timeout)
         if response.status_code >= 400:
             raise self._make_error(response)
-        return response.json()
+        return cast(dict[str, Any], response.json())
 
     def create_backup(self, note: str | None = None, keep_local: bool = False) -> dict[str, Any]:
         """Create a new backup.
@@ -63,7 +63,7 @@ class BackupAPI:
         response = httpx.post(url, json=data, timeout=self.timeout)
         if response.status_code >= 400:
             raise self._make_error(response)
-        return response.json()
+        return cast(dict[str, Any], response.json())
 
     def get_backup(self, backup_id: str) -> dict[str, Any]:
         """Get backup details.
@@ -81,7 +81,7 @@ class BackupAPI:
         response = httpx.get(url, timeout=self.timeout)
         if response.status_code >= 400:
             raise self._make_error(response)
-        return response.json()
+        return cast(dict[str, Any], response.json())
 
     def restore_backup(self, backup_id: str, dry_run: bool = False) -> dict[str, Any]:
         """Restore from a backup.
@@ -100,7 +100,7 @@ class BackupAPI:
         response = httpx.post(url, json={"dry_run": dry_run}, timeout=self.timeout)
         if response.status_code >= 400:
             raise self._make_error(response)
-        return response.json()
+        return cast(dict[str, Any], response.json())
 
     def delete_backup(self, backup_id: str) -> dict[str, Any]:
         """Delete a backup.
@@ -118,7 +118,7 @@ class BackupAPI:
         response = httpx.delete(url, timeout=self.timeout)
         if response.status_code >= 400:
             raise self._make_error(response)
-        return response.json()
+        return cast(dict[str, Any], response.json())
 
     def get_schedule(self) -> dict[str, Any] | None:
         """Get backup schedule.
@@ -135,7 +135,7 @@ class BackupAPI:
             return None
         if response.status_code >= 400:
             raise self._make_error(response)
-        return response.json()
+        return cast(dict[str, Any], response.json())
 
     def update_schedule(
         self,
@@ -169,7 +169,7 @@ class BackupAPI:
         response = httpx.put(url, json=data, timeout=self.timeout)
         if response.status_code >= 400:
             raise self._make_error(response)
-        return response.json()
+        return cast(dict[str, Any], response.json())
 
     def _make_error(self, response: httpx.Response) -> APIError:
         """Create APIError from response.

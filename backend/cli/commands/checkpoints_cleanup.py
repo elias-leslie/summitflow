@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from typing import Any
 
 from ..lib.worktree import get_worktree_info
 from .checkpoints_branch_ops import (
@@ -17,7 +18,7 @@ from .checkpoints_branch_ops import (
 )
 
 
-def auto_cleanup_safe_items() -> tuple[int, int, int, list[dict]]:
+def auto_cleanup_safe_items() -> tuple[int, int, int, list[dict[str, Any]]]:
     """Auto-cleanup clearly safe items.
 
     Returns (stale_meta, legacy_sql, cleaned_branches, branches_needing_review).
@@ -28,7 +29,7 @@ def auto_cleanup_safe_items() -> tuple[int, int, int, list[dict]]:
     cleaned_meta = 0
     cleaned_sql = 0
     cleaned_branches = 0
-    branches_needing_review: list[dict] = []
+    branches_needing_review: list[dict[str, Any]] = []
 
     # Find and clean stale metadata (no worktree AND no branch)
     if snapshots_dir.exists():

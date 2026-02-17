@@ -45,13 +45,11 @@ __all__ = [
     "debug",
     "debug_async_timer",
     "debug_async_timer_decorator",
-    "debug_detailed",
     "debug_error",
     "debug_section",
     "debug_success",
     "debug_timer",
     "debug_timer_decorator",
-    "debug_verbose",
     "debug_warning",
     "is_debug_enabled",
 ]
@@ -73,56 +71,6 @@ def debug(
         **kwargs: Additional attributes to include
     """
     if not is_debug_enabled(1):
-        return
-
-    func_name, _, _ = get_caller_info()
-    attrs = format_attributes(function_name=func_name, **kwargs)
-    emit_stderr(message, function_name=func_name, **kwargs)
-    emit_debug_event(
-        message,
-        task_id=task_id,
-        project_id=project_id,
-        **attrs,
-    )
-
-
-def debug_detailed(
-    message: str,
-    *,
-    task_id: str | None = None,
-    project_id: str | None = None,
-    **kwargs: Any,
-) -> None:
-    """Emit a detailed debug message (level 2).
-
-    Use for messages that include timing or payload previews.
-    """
-    if not is_debug_enabled(2):
-        return
-
-    func_name, _, _ = get_caller_info()
-    attrs = format_attributes(function_name=func_name, **kwargs)
-    emit_stderr(message, function_name=func_name, **kwargs)
-    emit_debug_event(
-        message,
-        task_id=task_id,
-        project_id=project_id,
-        **attrs,
-    )
-
-
-def debug_verbose(
-    message: str,
-    *,
-    task_id: str | None = None,
-    project_id: str | None = None,
-    **kwargs: Any,
-) -> None:
-    """Emit a verbose debug message (level 3).
-
-    Use for full payloads and detailed state dumps.
-    """
-    if not is_debug_enabled(3):
         return
 
     func_name, _, _ = get_caller_info()
