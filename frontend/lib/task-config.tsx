@@ -464,9 +464,11 @@ export const statusToKanbanLabel: Record<
     label: 'AI Review',
     className: 'bg-purple-600/50 text-purple-300',
   },
+  queue: { label: 'Queue', className: 'bg-indigo-600/50 text-indigo-300' },
   completed: { label: 'Done', className: 'bg-green-600/50 text-green-300' },
   failed: { label: 'Done', className: 'bg-red-600/50 text-red-300' },
   cancelled: { label: 'Done', className: 'bg-slate-600/50 text-slate-300' },
+  abandoned: { label: 'Done', className: 'bg-slate-600/50 text-slate-300' },
 }
 
 // ============================================================================
