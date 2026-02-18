@@ -137,6 +137,7 @@ def task_to_response(task: dict[str, Any], criteria_count: int | None = None) ->
         subtask_summary=_parse_subtask_summary(task),
         subtasks=_parse_subtasks(task),
         autonomous=task.get("autonomous", False),
+        ai_review=task.get("ai_review", True),
         qa_status=task.get("qa_status", "pending"),
         qa_signoff_at=task.get("qa_signoff_at"),
         qa_signoff_by=task.get("qa_signoff_by"),
