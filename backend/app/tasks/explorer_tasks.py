@@ -23,6 +23,94 @@ logger = get_logger(__name__)
 INTER_PROJECT_DELAY = 5
 
 
+def _fetch_projects(project_id: str | None) -> list[tuple]:
+    """Fetch projects from the database."""
+    with get_connection() as conn, conn.cursor() as cur:
+        if project_id:
+            cur.execute(
+                "SELECT id, name, root_path FROM projects WHERE id = %s",
+                (project_id,),
+            )
+        else:
+            cur.execute("SELECT id, name, root_path FROM projects ORDER BY created_at")
+        return cur.fetchall()
+
+
+def _make_dry_run_detail(proj_id: str, proj_name: str) -> dict[str, Any]:
+    """Build a dry-run detail entry and log it."""
+    logger.info("would_scan", project_id=proj_id, project_name=proj_name)
+    return {"project_id": proj_id, "project_name": proj_name, "status": "would_scan"}
+
+
+def _dispatch_post_scan_tasks(dispatch: Callable[[str, str, str], None], proj_id: str) -> None:
+    """Trigger post-scan downstream tasks via the dispatch callback."""
+    logger.info("triggering_post_scan_tasks", project_id=proj_id)
+    dispatch("generate_tasks", "", proj_id)
+    dispatch("schema_tasks", "", proj_id)
+    dispatch("architecture_tasks", "", proj_id)
+    dispatch("check_resolved", "", proj_id)
+
+
+def _scan_single_project(
+    proj_id: str,
+    proj_name: str,
+    entry_type: str | None,
+    dispatch: Callable[[str, str, str], None] | None,
+) -> tuple[dict[str, Any], bool]:
+    """Scan one project; return (detail_dict, success_flag)."""
+    try:
+        result = scan_project(proj_id, entry_type)
+        logger.info("project_scanned", project_id=proj_id, results_count=len(result))
+        if dispatch:
+            _dispatch_post_scan_tasks(dispatch, proj_id)
+        detail = {
+            "project_id": proj_id,
+            "project_name": proj_name,
+            "status": "success",
+            "results": result,
+        }
+        return detail, True
+    except Exception as e:
+        logger.error("project_scan_failed", project_id=proj_id, error=str(e))
+        detail = {
+            "project_id": proj_id,
+            "project_name": proj_name,
+            "status": "error",
+            "error": str(e),
+        }
+        return detail, False
+
+
+def _process_projects(
+    projects: list[tuple],
+    entry_type: str | None,
+    dry_run: bool,
+    dispatch: Callable[[str, str, str], None] | None,
+) -> tuple[int, int, list[dict[str, Any]]]:
+    """Iterate projects and return (scanned, errors, details)."""
+    scanned = 0
+    errors = 0
+    details: list[dict[str, Any]] = []
+
+    for i, (proj_id, proj_name, _root_path) in enumerate(projects):
+        if i > 0 and not dry_run:
+            time.sleep(INTER_PROJECT_DELAY)
+
+        if dry_run:
+            details.append(_make_dry_run_detail(proj_id, proj_name))
+            scanned += 1
+            continue
+
+        detail, success = _scan_single_project(proj_id, proj_name, entry_type, dispatch)
+        details.append(detail)
+        if success:
+            scanned += 1
+        else:
+            errors += 1
+
+    return scanned, errors, details
+
+
 def scan_all_projects(
     project_id: str | None = None,
     entry_type: str | None = None,
@@ -50,91 +138,15 @@ def scan_all_projects(
     )
 
     try:
-        # Get projects to scan
-        with get_connection() as conn, conn.cursor() as cur:
-            if project_id:
-                cur.execute(
-                    "SELECT id, name, root_path FROM projects WHERE id = %s",
-                    (project_id,),
-                )
-            else:
-                cur.execute("SELECT id, name, root_path FROM projects ORDER BY created_at")
-            projects = cur.fetchall()
+        projects = _fetch_projects(project_id)
 
         if not projects:
             logger.info("no_projects_found")
             return {"status": "success", "message": "No projects to scan", "scanned": 0}
 
-        scanned = 0
-        errors = 0
-        details: list[dict[str, Any]] = []
+        scanned, errors, details = _process_projects(projects, entry_type, dry_run, dispatch)
 
-        for i, (proj_id, proj_name, _root_path) in enumerate(projects):
-            # Rate limit between projects (except first)
-            if i > 0 and not dry_run:
-                time.sleep(INTER_PROJECT_DELAY)
-
-            if dry_run:
-                logger.info("would_scan", project_id=proj_id, project_name=proj_name)
-                details.append(
-                    {
-                        "project_id": proj_id,
-                        "project_name": proj_name,
-                        "status": "would_scan",
-                    }
-                )
-                scanned += 1
-                continue
-
-            try:
-                result = scan_project(proj_id, entry_type)
-                details.append(
-                    {
-                        "project_id": proj_id,
-                        "project_name": proj_name,
-                        "status": "success",
-                        "results": result,
-                    }
-                )
-                scanned += 1
-                logger.info(
-                    "project_scanned",
-                    project_id=proj_id,
-                    results_count=len(result),
-                )
-
-                # Trigger post-scan tasks via dispatch callback
-                if dispatch:
-                    logger.info(
-                        "triggering_post_scan_tasks",
-                        project_id=proj_id,
-                    )
-                    dispatch("generate_tasks", "", proj_id)
-                    dispatch("schema_tasks", "", proj_id)
-                    dispatch("architecture_tasks", "", proj_id)
-                    dispatch("check_resolved", "", proj_id)
-            except Exception as e:
-                errors += 1
-                details.append(
-                    {
-                        "project_id": proj_id,
-                        "project_name": proj_name,
-                        "status": "error",
-                        "error": str(e),
-                    }
-                )
-                logger.error(
-                    "project_scan_failed",
-                    project_id=proj_id,
-                    error=str(e),
-                )
-
-        logger.info(
-            "scan_all_projects_complete",
-            scanned=scanned,
-            errors=errors,
-        )
-
+        logger.info("scan_all_projects_complete", scanned=scanned, errors=errors)
         return {
             "status": "success" if errors == 0 else "partial",
             "dry_run": dry_run,
