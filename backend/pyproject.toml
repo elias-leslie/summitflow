@@ -44,7 +44,6 @@ dev = [
     "pytest-randomly>=3.16.0",
     # Linting & Type Checking
     "ruff>=0.15.0",
-    "mypy>=1.19.0",
     "ty>=0.0.17",
     "types-jsonschema>=4.26.0",
 ]
@@ -72,18 +71,6 @@ unfixable = ["F401"]
 "**/scripts/**" = ["E402", "SIM105", "SIM117"]
 "**/tests/**" = ["SIM105"]
 "**/migrations/**" = ["SIM117"]
-
-[tool.mypy]
-python_version = "3.13"
-strict = true
-warn_unused_ignores = true
-
-[[tool.mypy.overrides]]
-module = [
-    "agent_hub", "agent_hub.*",
-    "radon", "radon.*",
-]
-ignore_missing_imports = true
 
 [tool.ty.rules]
 # Suppress beta-quality rules (ty 0.0.x false positives)

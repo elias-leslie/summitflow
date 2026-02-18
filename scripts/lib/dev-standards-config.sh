@@ -12,7 +12,6 @@
 
 # Linting & Formatting
 export CANONICAL_RUFF="0.15.0"
-export CANONICAL_MYPY="1.19.1"  # kept for editors
 export CANONICAL_TY="0.0.17"
 export CANONICAL_PRECOMMIT="4.5.1"
 
