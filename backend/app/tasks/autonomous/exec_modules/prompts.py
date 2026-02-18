@@ -214,6 +214,42 @@ def build_subtask_prompt(
     return prompt
 
 
+FEEDBACK_PROMPT = """Before this work stint ends, submit any feedback on the tools and infrastructure you used during this task.
+
+Search first to avoid duplicates: st feedback search "keyword"
+
+Then report:
+- What caused friction? st feedback report <component> "issue" --type friction --severity medium
+- Any improvement ideas? st feedback report <component> "idea" --type idea
+- What worked well? st feedback report <component> "what worked" --type praise
+
+Components: sf.cli, sf.dt, sf.quality, sf.worktree, sf.api, ah.memory, ah.sessions, ah.hooks, xc.tool_registry, xc.error_handling
+
+If nothing to report, say "no feedback".
+
+Task summary: {task_summary}"""
+
+
+def build_feedback_prompt(results: list[dict[str, Any]]) -> str:
+    """Build a feedback prompt with task execution summary.
+
+    Args:
+        results: List of subtask execution results
+
+    Returns:
+        Formatted feedback prompt string
+    """
+    summary_parts = []
+    for r in results:
+        sid = r.get("subtask_id", "?")
+        status = r.get("status", "unknown")
+        attempts = 1 + r.get("self_fix_attempts", 0) + r.get("supervisor_guided_attempts", 0)
+        summary_parts.append(f"- Subtask {sid}: {status} ({attempts} attempts)")
+
+    task_summary = "\n".join(summary_parts) if summary_parts else "No subtask results"
+    return FEEDBACK_PROMPT.format(task_summary=task_summary)
+
+
 def build_fix_prompt(
     subtask: dict[str, Any],
     failed_steps: list[dict[str, Any]],

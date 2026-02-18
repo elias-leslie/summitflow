@@ -688,6 +688,9 @@ main() {
         local label="COMMIT"
         $SYNC_ONLY && label="SYNC"
         echo "${label}[${total}]:ok=${success_count}|skip=${skip_count}|err=${error_count}|blocked=${blocked_count}:${status}"
+        if [[ "$status" == "SUCCESS" && $success_count -gt 0 ]]; then
+            echo "💡 Friction or ideas? st feedback search \"keyword\" or st feedback report <component> \"title\"" >&2
+        fi
     fi
 
     [[ $error_count -gt 0 || $blocked_count -gt 0 ]] && exit 1

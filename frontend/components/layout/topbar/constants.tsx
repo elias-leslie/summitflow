@@ -7,6 +7,7 @@ import {
   GitBranch,
   LayoutGrid,
   MessageSquare,
+  MessageSquareWarning,
   Package,
   RefreshCw,
 } from 'lucide-react'
@@ -50,6 +51,13 @@ export const navItems = [
     href: '/backups',
     icon: Archive,
     activeColor: 'indigo',
+  },
+  {
+    id: 'feedback',
+    label: 'Feedback',
+    href: '/feedback',
+    icon: MessageSquareWarning,
+    activeColor: 'rose',
   },
   {
     id: 'chat',

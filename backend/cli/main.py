@@ -18,6 +18,7 @@ from .commands import (
     deps,
     done,
     exec_monitor,
+    feedback,
     git,
     health,
     logs,
@@ -118,6 +119,11 @@ PROMPT: prompt list [--global] | get <slug> | create <slug> <name> -f path | upd
 
 MEMORY: memory stats | save <text> [--tier T] | list | search <query> | get <id> | delete <id>
 
+FEEDBACK: feedback report <component> <title> [--type T] [--severity S] | feedback search <query>
+          feedback list [--component C] [--type T] [--status S] [--sort S]
+          feedback get <id> | feedback vote <id> --session <sid> | feedback resolve <id>
+          feedback summary [--project P] [--days N]
+
 TOOLS: tools status [--hours N]
 
 LOGS (unified service logs):
@@ -191,6 +197,7 @@ app.add_typer(tools.app, name="tools")
 app.add_typer(cleanup.app, name="cleanup")
 app.add_typer(prompt.app, name="prompt")
 app.add_typer(refactor.app, name="refactor")
+app.add_typer(feedback.app, name="feedback")
 app.command("exec-log")(exec_monitor.exec_log_command)
 app.command("exec-monitor", hidden=True)(exec_monitor.exec_monitor_command)  # alias
 

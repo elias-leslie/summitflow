@@ -89,6 +89,7 @@ def _handle_task_completion(
     base_branch = result.get("base_branch", "main")
     output_success(f"Task {id} completed. Checkpoint removed.")
     typer.echo(f"  Merged to: {base_branch}")
+    typer.echo("💡 Any feedback? st feedback report <component> \"title\" --type friction|idea|improvement|praise", err=True)
 
 
 @app.command(name="done")

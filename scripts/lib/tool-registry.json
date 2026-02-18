@@ -15,6 +15,7 @@
   "tools": [
     {
       "name": "pytest",
+      "component_id": "sf.dt",
       "redirect_patterns": [
         "(\\.venv/bin/)?pytest\\b",
         "python[0-9.]*\\s+-m\\s+pytest\\b",
@@ -33,6 +34,7 @@
     },
     {
       "name": "types",
+      "component_id": "sf.dt",
       "redirect_patterns": [
         "(\\.venv/bin/)?mypy\\b",
         "(\\.venv/bin/)?ty\\b"
@@ -50,6 +52,7 @@
     },
     {
       "name": "ruff",
+      "component_id": "sf.dt",
       "redirect_patterns": [
         "(\\.venv/bin/)?ruff\\b"
       ],
@@ -66,6 +69,7 @@
     },
     {
       "name": "biome",
+      "component_id": "sf.dt",
       "redirect_patterns": [
         "(npx\\s+)?biome\\b"
       ],
@@ -82,6 +86,7 @@
     },
     {
       "name": "tsc",
+      "component_id": "sf.dt",
       "redirect_patterns": [
         "(npx\\s+)?tsc\\b"
       ],
@@ -98,6 +103,7 @@
     },
     {
       "name": "sqlfluff",
+      "component_id": "sf.dt",
       "redirect_patterns": [
         "(\\.venv/bin/)?sqlfluff\\b"
       ],
@@ -114,6 +120,7 @@
     },
     {
       "name": "squawk",
+      "component_id": "sf.dt",
       "redirect_patterns": [
         "squawk\\b"
       ],
@@ -132,31 +139,38 @@
   "service_redirects": [
     {
       "pattern": "systemctl\\s+(--user\\s+)?(restart|stop|start|kill|disable|enable)\\s+(summitflow|agent-hub|portfolio|sf-|ah-|hatchet)",
-      "message": "Use restart.sh for service management or worktree-services.sh start/stop <task-id> for worktree services. Never manage services via systemctl directly."
+      "message": "Use restart.sh for service management or worktree-services.sh start/stop <task-id> for worktree services. Never manage services via systemctl directly.",
+      "component_id": "sf.scripts"
     },
     {
       "pattern": "(pkill|killall)\\b.*(uvicorn|gunicorn|next|hatchet|celery)",
-      "message": "Never kill service processes directly. Use restart.sh to restart services or worktree-services.sh stop <task-id> for worktree services."
+      "message": "Never kill service processes directly. Use restart.sh to restart services or worktree-services.sh stop <task-id> for worktree services.",
+      "component_id": "sf.scripts"
     },
     {
       "pattern": "(\\.venv/bin/)?(uvicorn|gunicorn)\\s+\\S+:\\S+",
-      "message": "Never start app servers directly. Use restart.sh for main services or worktree-services.sh start <task-id> for worktree services."
+      "message": "Never start app servers directly. Use restart.sh for main services or worktree-services.sh start <task-id> for worktree services.",
+      "component_id": "sf.scripts"
     },
     {
       "pattern": "python[0-9.]*\\s+-m\\s+(uvicorn|gunicorn)\\b",
-      "message": "Never start app servers directly. Use restart.sh for main services or worktree-services.sh start <task-id> for worktree services."
+      "message": "Never start app servers directly. Use restart.sh for main services or worktree-services.sh start <task-id> for worktree services.",
+      "component_id": "sf.scripts"
     },
     {
       "pattern": "(npm|pnpm)\\s+(run\\s+(dev|start)|start)\\b",
-      "message": "Never start dev servers directly. Use restart.sh for main services or worktree-services.sh start <task-id> for worktree services."
+      "message": "Never start dev servers directly. Use restart.sh for main services or worktree-services.sh start <task-id> for worktree services.",
+      "component_id": "sf.scripts"
     },
     {
       "pattern": "(npx\\s+)?next\\s+(dev|start)\\b",
-      "message": "Never start dev servers directly. Use restart.sh for main services or worktree-services.sh start <task-id> for worktree services."
+      "message": "Never start dev servers directly. Use restart.sh for main services or worktree-services.sh start <task-id> for worktree services.",
+      "component_id": "sf.scripts"
     },
     {
       "pattern": "psql\\b",
-      "message": "Use 'db' CLI instead of raw psql. Commands: db tables [--counts], db schema <table>, db sample <table> [n], db query \"SELECT...\", db exec \"UPDATE/DELETE...\", db ddl \"CREATE INDEX...\", db count <table>. Use db -P <project> to target a specific project (summitflow, agent-hub, portfolio-ai, hatchet)."
+      "message": "Use 'db' CLI instead of raw psql. Commands: db tables [--counts], db schema <table>, db sample <table> [n], db query \"SELECT...\", db exec \"UPDATE/DELETE...\", db ddl \"CREATE INDEX...\", db count <table>. Use db -P <project> to target a specific project (summitflow, agent-hub, portfolio-ai, hatchet).",
+      "component_id": "sf.storage"
     }
   ]
 }

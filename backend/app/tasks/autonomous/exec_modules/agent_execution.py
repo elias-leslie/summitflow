@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from agent_hub import CompletionResponse
 
 from ....logging_config import get_logger
@@ -137,3 +139,60 @@ def execute_agent_fix(
     else:
         log_context_usage(task_id, response, project_id, phase="check")
     return response, agent_session_id
+
+
+def execute_agent_feedback(
+    task_id: str,
+    project_path: str,
+    project_id: str,
+    results: list[dict[str, Any]],
+    agent_slug: str = "coder",
+    tier_preference: str | None = None,
+) -> None:
+    """Collect feedback from agent after task execution.
+
+    Creates a short session and asks the agent for friction/idea/praise feedback.
+    Fire-and-forget — failures are logged but never block task completion.
+
+    Args:
+        task_id: Task identifier
+        project_path: Working directory path
+        project_id: Project identifier
+        results: Subtask execution results (for context in prompt)
+        agent_slug: Agent to ask for feedback
+        tier_preference: Optional model tier preference
+    """
+    from .prompts import build_feedback_prompt
+
+    try:
+        client = get_sync_client()
+        feedback_session_id = create_session(task_id)
+        prompt = build_feedback_prompt(results)
+
+        emit_log(
+            task_id, "info",
+            f"Requesting agent feedback (session {feedback_session_id})",
+            source="orchestrator", project_id=project_id,
+        )
+
+        client.complete(
+            **build_complete_kwargs(
+                prompt=prompt,
+                agent_slug=agent_slug,
+                project_path=project_path,
+                project_id=project_id,
+                task_id=task_id,
+                session_id=feedback_session_id,
+                max_turns=3,
+                tier_preference=tier_preference,
+                include_roles=AUTOCODE_ROLES,
+            )
+        )
+
+        emit_log(
+            task_id, "info", "Agent feedback collection completed",
+            source="orchestrator", project_id=project_id,
+        )
+    except Exception as e:
+        # Never block on feedback failures
+        logger.warning("Agent feedback collection failed", task_id=task_id, error=str(e))

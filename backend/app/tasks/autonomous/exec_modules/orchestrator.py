@@ -9,6 +9,7 @@ from ....core.debug import debug_section
 from ....logging_config import get_logger
 from ....storage import tasks as task_store
 from ....storage.subtasks import get_subtasks_for_task
+from .agent_execution import execute_agent_feedback
 from .completion_handler import (
     handle_early_completion,
     handle_failed_execution,
@@ -134,6 +135,13 @@ def execute_task_locked(
 
     # Check for main repo leakage
     check_main_repo_leakage(task_id, project_id, project_path)
+
+    # Collect agent feedback (fire-and-forget, never blocks completion)
+    execute_agent_feedback(
+        task_id, project_path, project_id, results,
+        agent_slug=agent_override or "coder",
+        tier_preference=tier_preference,
+    )
 
     # Handle completion or failure
     all_passed = all(r.get("status") == "passed" for r in results)
