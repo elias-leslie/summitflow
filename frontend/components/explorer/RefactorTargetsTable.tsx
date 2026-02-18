@@ -6,10 +6,13 @@
 
 import {
   ArrowUpDown,
+  CheckCircle2,
   ChevronDown,
   ChevronRight,
   ExternalLink,
   FileCode,
+  Flame,
+  XCircle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { RefactorTarget } from './utils/codeHealthApi'
@@ -52,15 +55,22 @@ export function RefactorTargetsTable({
   return (
     <div className="border border-slate-700/50 rounded overflow-hidden">
       {/* Table header */}
-      <div className="grid grid-cols-12 gap-2 px-3 py-2 bg-slate-800/80 border-b border-slate-700/50 text-xs text-slate-400">
-        <div className="col-span-1" /> {/* Expand toggle */}
+      <div className="grid grid-cols-[2rem_1fr_5rem_5rem_4rem_5rem] gap-2 px-3 py-2 bg-slate-800/80 border-b border-slate-700/50 text-xs text-slate-400">
+        <div /> {/* Expand toggle */}
         <SortableHeader
           field="path"
           label="FILE"
           currentField={sortField}
           currentDir={sortDir}
           onSort={onSort}
-          className="col-span-5"
+        />
+        <SortableHeader
+          field="hotspot_score"
+          label="HOTSPOT"
+          currentField={sortField}
+          currentDir={sortDir}
+          onSort={onSort}
+          className="justify-end"
         />
         <SortableHeader
           field="complexity_score"
@@ -68,7 +78,7 @@ export function RefactorTargetsTable({
           currentField={sortField}
           currentDir={sortDir}
           onSort={onSort}
-          className="col-span-2 justify-end"
+          className="justify-end"
         />
         <SortableHeader
           field="lines_of_code"
@@ -76,7 +86,7 @@ export function RefactorTargetsTable({
           currentField={sortField}
           currentDir={sortDir}
           onSort={onSort}
-          className="col-span-2 justify-end"
+          className="justify-end"
         />
         <SortableHeader
           field="priority"
@@ -84,7 +94,7 @@ export function RefactorTargetsTable({
           currentField={sortField}
           currentDir={sortDir}
           onSort={onSort}
-          className="col-span-2 justify-center"
+          className="justify-center"
         />
       </div>
 
@@ -155,33 +165,44 @@ function TargetRow({
 }) {
   const style = getPriorityStyles(target.priority)
 
+  const hotspotColor =
+    target.hotspot_score >= 500
+      ? 'text-red-400'
+      : target.hotspot_score >= 100
+        ? 'text-amber-400'
+        : 'text-slate-400'
+
   return (
     <div className={cn('border-b border-slate-700/30', style.bg)}>
       {/* Main row */}
       <div
-        className="grid grid-cols-12 gap-2 px-3 py-2 items-center cursor-pointer hover:bg-slate-700/20 transition-colors"
+        className="grid grid-cols-[2rem_1fr_5rem_5rem_4rem_5rem] gap-2 px-3 py-2 items-center cursor-pointer hover:bg-slate-700/20 transition-colors"
         onClick={onToggle}
       >
-        <div className="col-span-1">
+        <div>
           {isExpanded ? (
             <ChevronDown className="w-4 h-4 text-slate-500" />
           ) : (
             <ChevronRight className="w-4 h-4 text-slate-500" />
           )}
         </div>
-        <div className="col-span-5 truncate text-slate-300" title={target.path}>
+        <div className="truncate text-slate-300" title={target.path}>
           <span className="text-slate-500">
             {target.path.split('/').slice(0, -1).join('/')}/
           </span>
           <span className="font-medium">{target.name}</span>
         </div>
-        <div className={cn('col-span-2 text-right tabular-nums', style.text)}>
+        <div className={cn('text-right tabular-nums flex items-center justify-end gap-1', hotspotColor)}>
+          {target.hotspot_score >= 500 && <Flame className="w-3 h-3" />}
+          {target.hotspot_score.toFixed(0)}
+        </div>
+        <div className={cn('text-right tabular-nums', style.text)}>
           {target.complexity_score.toFixed(1)}
         </div>
-        <div className="col-span-2 text-right tabular-nums text-slate-400">
+        <div className="text-right tabular-nums text-slate-400">
           {target.lines_of_code.toLocaleString()}
         </div>
-        <div className="col-span-2 flex justify-center">
+        <div className="flex justify-center">
           <span
             className={cn(
               'px-2 py-0.5 text-xs rounded text-white font-medium',
@@ -210,6 +231,12 @@ function TargetRow({
                 <span className="text-slate-500">Reason:</span>
                 <span className={cn('ml-2', style.text)}>{target.reason}</span>
               </div>
+              <div>
+                <span className="text-slate-500">Complexity Method:</span>
+                <span className="ml-2 text-slate-300">
+                  {target.complexity_method === 'radon' ? 'Radon CC' : 'Heuristic'}
+                </span>
+              </div>
             </div>
             <div className="space-y-2">
               <div className="flex gap-4">
@@ -226,6 +253,34 @@ function TargetRow({
                   </span>
                 </span>
               </div>
+              <div className="flex gap-4">
+                <span>
+                  <span className="text-slate-500">Churn (90d):</span>
+                  <span className="ml-2 text-slate-300">
+                    {target.commit_count_90d} commits
+                  </span>
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="text-slate-500">Tests:</span>
+                  {target.test_file_exists ? (
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                  ) : (
+                    <XCircle className="w-3 h-3 text-red-400" />
+                  )}
+                </span>
+              </div>
+              {target.health_flags.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {target.health_flags.map((flag) => (
+                    <span
+                      key={flag}
+                      className="px-1.5 py-0.5 rounded bg-slate-700/50 border border-slate-600/50 text-slate-400"
+                    >
+                      {flag.replace(/_/g, ' ')}
+                    </span>
+                  ))}
+                </div>
+              )}
               {onFileSelect && (
                 <button
                   onClick={(e) => {

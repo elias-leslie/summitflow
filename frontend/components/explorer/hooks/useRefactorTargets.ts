@@ -18,7 +18,7 @@ import {
 
 export function useRefactorTargets(projectId: string) {
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('all')
-  const [sortField, setSortField] = useState<SortField>('complexity_score')
+  const [sortField, setSortField] = useState<SortField>('hotspot_score')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
 

@@ -8,6 +8,7 @@ export type SortField =
   | 'path'
   | 'complexity_score'
   | 'lines_of_code'
+  | 'hotspot_score'
   | 'priority'
 export type SortDir = 'asc' | 'desc'
 export type PriorityFilter = 'all' | 'high' | 'medium'
@@ -41,6 +42,9 @@ export function sortTargets(
         break
       case 'complexity_score':
         cmp = a.complexity_score - b.complexity_score
+        break
+      case 'hotspot_score':
+        cmp = a.hotspot_score - b.hotspot_score
         break
       case 'lines_of_code':
         cmp = a.lines_of_code - b.lines_of_code
