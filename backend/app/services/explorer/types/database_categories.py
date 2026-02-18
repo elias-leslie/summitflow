@@ -5,7 +5,10 @@ Provides logic to categorize database tables by their naming patterns.
 
 from __future__ import annotations
 
+_DEFAULT_CATEGORY = "data"
+
 # Maps a category name to the substrings that indicate membership.
+# Ordered from most specific to most general to ensure correct precedence.
 _CATEGORY_PATTERNS: list[tuple[str, tuple[str, ...]]] = [
     ("auth",      ("user", "auth", "credential")),
     ("logging",   ("log", "history", "audit")),
@@ -22,9 +25,12 @@ _CATEGORY_PATTERNS: list[tuple[str, tuple[str, ...]]] = [
 ]
 
 
-def _matches_category(name: str, keywords: tuple[str, ...]) -> bool:
-    """Return True if *name* contains any of the given keywords."""
-    return any(keyword in name for keyword in keywords)
+def _first_matching_category(name: str) -> str | None:
+    """Return the first category whose keywords appear in *name*, or None."""
+    for category, keywords in _CATEGORY_PATTERNS:
+        if any(keyword in name for keyword in keywords):
+            return category
+    return None
 
 
 def categorize_table(table_name: str) -> str:
@@ -37,9 +43,4 @@ def categorize_table(table_name: str) -> str:
         Category string (e.g., 'auth', 'logging', 'data')
     """
     name = table_name.lower()
-
-    for category, keywords in _CATEGORY_PATTERNS:
-        if _matches_category(name, keywords):
-            return category
-
-    return "data"
+    return _first_matching_category(name) or _DEFAULT_CATEGORY
