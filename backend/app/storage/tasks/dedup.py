@@ -55,6 +55,11 @@ def _normalize_error_pattern(error_title: str) -> tuple[str, set[str]]:
     """
     title_lower = error_title.lower().strip()
 
+    # Strip timestamps (e.g. "2026-02-18 07:01:13,450") and standalone numbers
+    title_lower = re.sub(r"\d{4}-\d{2}-\d{2}[Tt ]\d{2}:\d{2}:\d{2}[.,]?\d*[Zz]?", "", title_lower)
+    title_lower = re.sub(r"\b\d{2,}\b", "", title_lower)
+    title_lower = re.sub(r"\s+", " ", title_lower).strip()
+
     # Common substitutions to normalize variations
     substitutions = [
         # Database variations

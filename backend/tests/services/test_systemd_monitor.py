@@ -41,8 +41,29 @@ class TestComputeErrorHash:
             ("summitflow-backend", "Error", "summitflow-frontend", "Error", False),
             ("unit", "Error A", "unit", "Error B", False),
             ("unit", "ERROR MESSAGE", "unit", "error message", True),  # Case insensitive
+            (
+                "summitflow-backend.service",
+                "2026-02-18 01:00:44,996 - app.tasks.cleanup - ERROR - constraint violation",
+                "summitflow-backend.service",
+                "2026-02-18 07:01:08,381 - app.tasks.cleanup - ERROR - constraint violation",
+                True,
+            ),  # Different timestamps, same error
+            (
+                "summitflow-backend.service",
+                "{'event': 'No database URL', 'timestamp': '2026-02-18T12:01:13.450886Z'}",
+                "summitflow-backend.service",
+                "{'event': 'No database URL', 'timestamp': '2026-02-18T07:00:30.123456Z'}",
+                True,
+            ),  # ISO timestamps stripped
         ],
-        ids=["stable_hash", "different_units", "different_messages", "case_insensitive"],
+        ids=[
+            "stable_hash",
+            "different_units",
+            "different_messages",
+            "case_insensitive",
+            "same_error_different_timestamps",
+            "iso_timestamps_stripped",
+        ],
     )
     def test_hash_comparison(
         self, unit1: str, msg1: str, unit2: str, msg2: str, should_equal: bool

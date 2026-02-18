@@ -182,7 +182,7 @@ def create_schema_task(
         title=title,
         description=description,
         priority=2 if severity == "error" else 3,
-        task_type="schema",
+        task_type="debt",
         tier=tier,
         objective=objective,
         spirit_anti="Do NOT break existing queries. Do NOT rename without updating all references.",

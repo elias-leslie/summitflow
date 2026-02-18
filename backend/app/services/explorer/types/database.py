@@ -45,7 +45,7 @@ class DatabaseScanner(BaseScanner):
             self.db_url = get_db_url_for_project(self.project_id)
 
         if not self.db_url:
-            logger.error(f"No database URL configured for project {self.project_id}")
+            logger.warning(f"No database URL configured for project {self.project_id}")
             return []
 
         logger.info(f"Database scan started for {self.project_id}")

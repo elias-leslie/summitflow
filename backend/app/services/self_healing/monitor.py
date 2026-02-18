@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -60,8 +61,13 @@ def compute_error_hash(unit: str, message: str) -> str:
     # Normalize: lowercase, strip whitespace
     normalized = message.lower().strip()
 
-    # Remove common varying parts (line numbers, PIDs, timestamps)
-    # This is a simple approach; can be refined based on actual patterns
+    # Strip timestamps (2026-02-18 07:01:13,450 / ISO / epoch patterns)
+    normalized = re.sub(r"\d{4}-\d{2}-\d{2}[Tt ]\d{2}:\d{2}:\d{2}[.,]?\d*[Zz]?", "", normalized)
+    # Strip standalone numbers that look like PIDs, line numbers, ports
+    normalized = re.sub(r"\b\d{2,}\b", "", normalized)
+    # Collapse whitespace
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+
     parts = [unit, normalized[:200]]  # Truncate long messages
     content = "|".join(parts)
     return hashlib.sha256(content.encode()).hexdigest()[:16]
