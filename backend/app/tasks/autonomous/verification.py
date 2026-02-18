@@ -79,6 +79,75 @@ def _execute_and_check(
     return passed, reason, full_output, result.returncode
 
 
+def _missing_verify_command_result(step_num: int) -> VerificationResult:
+    """Return a failed result for steps with no verify_command."""
+    logger.warning(
+        "Step has no verify_command — cannot pass without verification",
+        step_num=step_num,
+    )
+    return VerificationResult(
+        passed=False,
+        step_number=step_num,
+        output="Step has no verify_command. Every step must have verification.",
+        returncode=-1,
+        reason="missing_verify_command",
+    )
+
+
+def _prepare_verify_command(
+    verify_cmd: str,
+    working_dir: str,
+    timeout: int,
+    project_id: str | None,
+) -> tuple[str, str, dict[str, str], int]:
+    """Expand command, resolve cwd, build env, and adjust timeout.
+
+    Returns:
+        Tuple of (expanded_cmd, effective_cwd, env, adjusted_timeout)
+    """
+    expanded_cmd = expand_command(verify_cmd)
+    env = build_project_env(project_id, working_dir=working_dir)
+
+    if any(cmd in expanded_cmd for cmd in ["dt ", "commit.sh", "npm run build"]):
+        timeout = max(timeout, 300)
+
+    effective_cwd = resolve_working_directory(working_dir, expanded_cmd)
+    expanded_cmd = adjust_command_for_cwd(expanded_cmd, working_dir, effective_cwd)
+    return expanded_cmd, effective_cwd, env, timeout
+
+
+def _log_and_build_result(
+    step_num: int,
+    passed: bool,
+    reason: str,
+    full_output: str,
+    returncode: int,
+) -> VerificationResult:
+    """Log verification outcome and return a VerificationResult."""
+    logger.info(
+        "Step verification result",
+        step_num=step_num,
+        passed=passed,
+        returncode=returncode,
+        reason=reason,
+        output_preview=full_output[:200] if full_output else "(empty)",
+    )
+    debug_fn = debug_success if passed else debug_error
+    debug_fn(
+        f"Step {step_num} {'verified' if passed else 'failed'}",
+        step=step_num,
+        reason=reason if not passed else None,
+        output_preview=full_output[:200] if full_output else "(empty)",
+    )
+    return VerificationResult(
+        passed=passed,
+        step_number=step_num,
+        output=full_output[:1000],
+        returncode=returncode,
+        reason=reason,
+    )
+
+
 def verify_step(
     step: dict[str, Any],
     working_dir: str,
@@ -100,28 +169,11 @@ def verify_step(
     verify_cmd = step.get("verify_command")
 
     if not verify_cmd:
-        logger.warning(
-            "Step has no verify_command — cannot pass without verification",
-            step_num=step_num,
-        )
-        return VerificationResult(
-            passed=False,
-            step_number=step_num,
-            output="Step has no verify_command. Every step must have verification.",
-            returncode=-1,
-            reason="missing_verify_command",
-        )
+        return _missing_verify_command_result(step_num)
 
-    expanded_cmd = expand_command(verify_cmd)
-    env = build_project_env(project_id, working_dir=working_dir)
-
-    # Increase timeout for long-running commands
-    if any(cmd in expanded_cmd for cmd in ["dt ", "commit.sh", "npm run build"]):
-        timeout = max(timeout, 300)
-
-    # Resolve effective working directory
-    effective_cwd = resolve_working_directory(working_dir, expanded_cmd)
-    expanded_cmd = adjust_command_for_cwd(expanded_cmd, working_dir, effective_cwd)
+    expanded_cmd, effective_cwd, env, timeout = _prepare_verify_command(
+        verify_cmd, working_dir, timeout, project_id
+    )
 
     logger.info(
         "Verifying step",
@@ -135,48 +187,15 @@ def verify_step(
         passed, reason, full_output, returncode = _execute_and_check(
             expanded_cmd, effective_cwd, timeout, env
         )
-
-        # Log result
-        logger.info(
-            "Step verification result",
-            step_num=step_num,
-            passed=passed,
-            returncode=returncode,
-            reason=reason,
-            output_preview=full_output[:200] if full_output else "(empty)",
-        )
-
-        debug_fn = debug_success if passed else debug_error
-        debug_fn(
-            f"Step {step_num} {'verified' if passed else 'failed'}",
-            step=step_num,
-            reason=reason if not passed else None,
-            output_preview=full_output[:200] if full_output else "(empty)",
-        )
-
-        return VerificationResult(
-            passed=passed,
-            step_number=step_num,
-            output=full_output[:1000],
-            returncode=returncode,
-            reason=reason,
-        )
+        return _log_and_build_result(step_num, passed, reason, full_output, returncode)
 
     except subprocess.TimeoutExpired:
         logger.warning("Step verification timed out", step_num=step_num, timeout=timeout)
         return VerificationResult(
-            passed=False,
-            step_number=step_num,
-            output="",
-            returncode=-1,
-            reason="timeout",
+            passed=False, step_number=step_num, output="", returncode=-1, reason="timeout"
         )
     except Exception as e:
         logger.warning("Step verification error", step_num=step_num, error=str(e))
         return VerificationResult(
-            passed=False,
-            step_number=step_num,
-            output="",
-            returncode=-1,
-            reason=f"error: {e}",
+            passed=False, step_number=step_num, output="", returncode=-1, reason=f"error: {e}"
         )
