@@ -93,14 +93,14 @@ def _make_mock_subtask(task_id: str, subtask_id: str, **kwargs: Any) -> dict[str
 
 
 @pytest.fixture
-def mock_st_client() -> Generator[tuple[MagicMock, dict[str, Any]], None, None]:
+def mock_st_client() -> Generator[tuple[MagicMock, dict[str, dict[str, Any]]], None, None]:
     """Mock STClient to avoid real HTTP calls to API.
 
     This fixture mocks the CLI's HTTP client so no real API calls are made.
     Used for tests that invoke CLI commands which would otherwise hit the real API.
     """
     task_counter = [0]
-    tasks_db: dict[str, Any] = {}
+    tasks_db: dict[str, dict[str, Any]] = {}
 
     def mock_create_task(data: dict[str, Any]) -> dict[str, Any]:
         task_counter[0] += 1
@@ -200,7 +200,7 @@ class TestCreateFromFile:
     Uses mock_st_client to avoid hitting the real API.
     """
 
-    def test_from_file_valid_json(self, mock_st_client: tuple[MagicMock, dict[str, Any]]) -> None:
+    def test_from_file_valid_json(self, mock_st_client: tuple[MagicMock, dict[str, dict[str, Any]]]) -> None:
         """Test creating tasks from a valid JSON file."""
         tasks_data = {
             "tasks": [
@@ -232,7 +232,7 @@ class TestCreateFromFile:
             _, tasks_db = mock_st_client
             assert len(tasks_db) == 2
 
-    def test_from_file_with_subtasks(self, mock_st_client: tuple[MagicMock, dict[str, Any]]) -> None:
+    def test_from_file_with_subtasks(self, mock_st_client: tuple[MagicMock, dict[str, dict[str, Any]]]) -> None:
         """Test creating a full task with subtasks and steps."""
         tasks_data = {
             "tasks": [
@@ -383,7 +383,7 @@ class TestSubtaskCreate:
     Since they test CLI commands that need task existence, we use mock_st_client.
     """
 
-    def test_subtask_create_requires_steps(self, mock_st_client: tuple[MagicMock, dict[str, Any]]) -> None:
+    def test_subtask_create_requires_steps(self, mock_st_client: tuple[MagicMock, dict[str, dict[str, Any]]]) -> None:
         """Test that creating a subtask without steps fails."""
         # Create mock task first
         mock_client, _tasks_db = mock_st_client
@@ -415,7 +415,7 @@ class TestSubtaskCreate:
             assert result.exit_code == 1
             assert "steps are required" in result.output.lower()
 
-    def test_subtask_create_with_steps_json(self, mock_st_client: tuple[MagicMock, dict[str, Any]]) -> None:
+    def test_subtask_create_with_steps_json(self, mock_st_client: tuple[MagicMock, dict[str, dict[str, Any]]]) -> None:
         """Test creating a subtask with proper step structure via --steps-json."""
         mock_client, _tasks_db = mock_st_client
         task = mock_client.create_task(
@@ -465,7 +465,7 @@ class TestSubtaskCreate:
             assert '"success": true' in result.output
             assert '"message": "1.1"' in result.output
 
-    def test_subtask_create_legacy_steps_warning(self, mock_st_client: tuple[MagicMock, dict[str, Any]]) -> None:
+    def test_subtask_create_legacy_steps_warning(self, mock_st_client: tuple[MagicMock, dict[str, dict[str, Any]]]) -> None:
         """Test that using --step shows warning about missing verify_command."""
         mock_client, _tasks_db = mock_st_client
         task = mock_client.create_task(

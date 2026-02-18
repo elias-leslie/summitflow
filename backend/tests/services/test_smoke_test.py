@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 from app.services.smoke_test import (
@@ -82,7 +83,7 @@ class TestRunAllSmokeTests:
 
     @patch("app.services.smoke_test.check_health")
     def test_some_unhealthy(self, mock_check: MagicMock) -> None:
-        def side_effect(pid: str, url: str) -> dict:
+        def side_effect(pid: str, url: str) -> dict[str, Any]:
             if pid == "summitflow":
                 return {"project": pid, "url": url, "ok": False, "status": "unhealthy"}
             return {"project": pid, "url": url, "ok": True, "status": "healthy"}

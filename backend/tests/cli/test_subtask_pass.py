@@ -76,10 +76,12 @@ class TestIsStepResolved:
 
     def test_real_world_scenario(self) -> None:
         """Test a real-world scenario with multiple steps and plan defects."""
+        from typing import Any
+
         # Simulate the scenario from task-1ca3cfc4 subtask 1.1:
         # Steps 1, 4, 7, 8, 9, 11, 12 passed
         # Steps 2, 3, 5, 6, 10 are plan_defect with fix steps
-        steps = [
+        steps: list[dict[str, Any]] = [
             {"step_number": 1, "passes": True, "status": "pending", "fix_step_number": None},
             {"step_number": 2, "passes": False, "status": "plan_defect", "fix_step_number": 7},
             {"step_number": 3, "passes": False, "status": "plan_defect", "fix_step_number": 8},

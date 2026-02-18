@@ -6,6 +6,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from typing import Any
+
 from app.services.notifications.delivery import deliver
 
 
@@ -15,7 +17,7 @@ def _make_notification(
     title: str = "Test Notification",
     message: str = "Something happened",
     notification_id: str = "notif-test-001",
-) -> dict:
+) -> dict[str, Any]:
     """Build a notification dict matching storage layer output."""
     return {
         "id": notification_id,

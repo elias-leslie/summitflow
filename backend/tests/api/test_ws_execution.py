@@ -9,10 +9,12 @@ Covers:
 
 from __future__ import annotations
 
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
 from pytest_mock import MockerFixture
+from starlette.routing import Route
 
 from app.api.ws_execution import (
     ConnectionManager,
@@ -32,7 +34,7 @@ from app.main import app
 class TestMessageTypes:
     """Tests for message type enum and Message class."""
 
-    def test_message_types_defined(self):
+    def test_message_types_defined(self) -> None:
         """Test all required message types exist."""
         assert MessageType.LOG.value == "log"
         assert MessageType.PROGRESS.value == "progress"
@@ -42,7 +44,7 @@ class TestMessageTypes:
         assert MessageType.CONNECTED.value == "connected"
         assert MessageType.ERROR.value == "error"
 
-    def test_message_to_dict(self):
+    def test_message_to_dict(self) -> None:
         """Test Message serialization."""
         msg = Message(
             type=MessageType.LOG,
@@ -52,7 +54,7 @@ class TestMessageTypes:
         result = msg.to_dict()
         assert result["type"] == "log"
         assert result["task_id"] == "task-123"
-        assert result["data"]["level"] == "info"
+        assert cast(dict[str, Any], result["data"])["level"] == "info"
         assert "timestamp" in result
         assert result["sequence"] == 0
 
@@ -61,12 +63,12 @@ class TestConnectionManager:
     """Tests for the ConnectionManager class."""
 
     @pytest.fixture
-    def conn_manager(self):
+    def conn_manager(self) -> ConnectionManager:
         """Create a fresh ConnectionManager for each test."""
         return ConnectionManager()
 
     @pytest.mark.asyncio
-    async def test_connection_count(self, conn_manager):
+    async def test_connection_count(self, conn_manager: ConnectionManager) -> None:
         """Test connection counting."""
         mock_ws = AsyncMock()
         await conn_manager.connect(mock_ws, "task-1")
@@ -74,7 +76,7 @@ class TestConnectionManager:
         assert conn_manager.get_connection_count("task-2") == 0
 
     @pytest.mark.asyncio
-    async def test_disconnect(self, conn_manager):
+    async def test_disconnect(self, conn_manager: ConnectionManager) -> None:
         """Test disconnection removes websocket."""
         mock_ws = AsyncMock()
         await conn_manager.connect(mock_ws, "task-1")
@@ -84,7 +86,7 @@ class TestConnectionManager:
         assert conn_manager.get_connection_count("task-1") == 0
 
     @pytest.mark.asyncio
-    async def test_broadcast_assigns_sequence(self, conn_manager):
+    async def test_broadcast_assigns_sequence(self, conn_manager: ConnectionManager) -> None:
         """Test broadcast assigns incrementing sequence numbers."""
         mock_ws = AsyncMock()
         await conn_manager.connect(mock_ws, "task-1")
@@ -98,7 +100,7 @@ class TestConnectionManager:
         assert msg2.sequence == 2
 
     @pytest.mark.asyncio
-    async def test_broadcast_sends_to_all(self, conn_manager):
+    async def test_broadcast_sends_to_all(self, conn_manager: ConnectionManager) -> None:
         """Test broadcast sends to all connected clients."""
         ws1 = AsyncMock()
         ws2 = AsyncMock()
@@ -112,7 +114,9 @@ class TestConnectionManager:
         ws2.send_json.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_replay_sends_messages_after_sequence(self, conn_manager):
+    async def test_replay_sends_messages_after_sequence(
+        self, conn_manager: ConnectionManager
+    ) -> None:
         """Test replay only sends messages after specified sequence."""
         mock_ws = AsyncMock()
         await conn_manager.connect(mock_ws, "task-1")
@@ -130,7 +134,7 @@ class TestConnectionManager:
         assert replay_ws.send_json.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_redis_cache_limited(self, conn_manager):
+    async def test_redis_cache_limited(self, conn_manager: ConnectionManager) -> None:
         """Test Redis cache doesn't exceed MAX_REPLAY_MESSAGES."""
         mock_ws = AsyncMock()
         await conn_manager.connect(mock_ws, "task-1")
@@ -148,7 +152,7 @@ class TestConnectionManager:
 class TestStopHandlers:
     """Tests for stop signal handler registration."""
 
-    def test_register_and_unregister_handler(self):
+    def test_register_and_unregister_handler(self) -> None:
         """Test stop handler registration and unregistration."""
         handler = lambda: None  # noqa: E731
         register_stop_handler("task-1", handler)
@@ -162,7 +166,7 @@ class TestHelperFunctions:
     """Tests for helper functions that send messages."""
 
     @pytest.mark.asyncio
-    async def test_send_log(self, mocker: MockerFixture):
+    async def test_send_log(self, mocker: MockerFixture) -> None:
         """Test send_log broadcasts correct message."""
         mock_broadcast = mocker.patch.object(manager, "broadcast", new_callable=AsyncMock)
         await send_log("task-1", "info", "Test message", source="test")
@@ -176,7 +180,7 @@ class TestHelperFunctions:
         assert msg.data["source"] == "test"
 
     @pytest.mark.asyncio
-    async def test_send_progress(self, mocker: MockerFixture):
+    async def test_send_progress(self, mocker: MockerFixture) -> None:
         """Test send_progress broadcasts correct message."""
         mock_broadcast = mocker.patch.object(manager, "broadcast", new_callable=AsyncMock)
         await send_progress(
@@ -195,7 +199,7 @@ class TestHelperFunctions:
         assert msg.data["status"] == "completed"
 
     @pytest.mark.asyncio
-    async def test_send_model_change(self, mocker: MockerFixture):
+    async def test_send_model_change(self, mocker: MockerFixture) -> None:
         """Test send_model_change broadcasts correct message."""
         mock_broadcast = mocker.patch.object(manager, "broadcast", new_callable=AsyncMock)
         await send_model_change("task-1", "claude-sonnet-4-5", reason="Stuck pattern")
@@ -206,7 +210,7 @@ class TestHelperFunctions:
         assert msg.data["reason"] == "Stuck pattern"
 
     @pytest.mark.asyncio
-    async def test_send_error(self, mocker: MockerFixture):
+    async def test_send_error(self, mocker: MockerFixture) -> None:
         """Test send_error broadcasts correct message."""
         mock_broadcast = mocker.patch.object(manager, "broadcast", new_callable=AsyncMock)
         await send_error("task-1", "Something failed", recoverable=False)
@@ -220,14 +224,14 @@ class TestHelperFunctions:
 class TestWebSocketEndpoint:
     """Tests for the WebSocket endpoint itself."""
 
-    def test_websocket_route_exists(self):
+    def test_websocket_route_exists(self) -> None:
         """Test that the WebSocket route is registered."""
-        # Check routes in app
-        routes = [r.path for r in app.routes]
+        # Check routes in app - only Route instances have .path
+        routes = [r.path for r in app.routes if isinstance(r, Route)]
         assert "/ws/execution/{task_id}" in routes
 
     @pytest.mark.asyncio
-    async def test_websocket_validates_task_id(self, mocker: MockerFixture):
+    async def test_websocket_validates_task_id(self, mocker: MockerFixture) -> None:
         """Test that WebSocket sends error and closes for non-existent task."""
         from starlette.testclient import TestClient
 
@@ -245,7 +249,7 @@ class TestWebSocketEndpoint:
         mock_get_task.assert_called_once_with("nonexistent-task")
 
     @pytest.mark.asyncio
-    async def test_websocket_accepts_valid_task(self, mocker: MockerFixture):
+    async def test_websocket_accepts_valid_task(self, mocker: MockerFixture) -> None:
         """Test that WebSocket accepts connection for valid task."""
         from starlette.testclient import TestClient
 
