@@ -130,6 +130,33 @@ def _schedule_delivery(notification: dict[str, Any]) -> None:
     task.add_done_callback(_background_tasks.discard)
 
 
+def _insert_notification(
+    notification_id: str,
+    project_id: str,
+    notification_type: NotificationType,
+    title: str,
+    message: str,
+    severity: NotificationSeverity,
+    task_id: str | None,
+    user_email: str | None,
+    meta: dict[str, Any],
+) -> dict[str, Any]:
+    """Execute the INSERT and return the created notification dict."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO notifications (id, project_id, task_id, user_email, type, title, message, severity, metadata)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+            RETURNING id, project_id, task_id, user_email, type, title, message, severity, status,
+                      metadata, created_at, read_at, dismissed_at
+            """,
+            (notification_id, project_id, task_id, user_email, notification_type, title, message, severity, json.dumps(meta)),
+        )
+        row = cur.fetchone()
+        conn.commit()
+    return _row_to_dict(row)
+
+
 def create_notification(
     project_id: str,
     notification_type: NotificationType,
@@ -140,21 +167,7 @@ def create_notification(
     user_email: str | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Create a new notification.
-
-    Args:
-        project_id: Project ID
-        notification_type: Type of notification (task_failed, task_needs_input, etc)
-        title: Short notification title
-        message: Detailed notification message
-        severity: Severity level (info, warning, error, critical)
-        task_id: Optional task ID to link to
-        user_email: Optional user email for user-specific notifications
-        metadata: Optional additional metadata
-
-    Returns:
-        Created notification dict, or empty dict if deduplicated
-    """
+    """Create a new notification, or return {} if deduplicated."""
     if _is_duplicate(project_id, notification_type, severity, task_id):
         logger.debug(
             "Notification deduplicated: type=%s task_id=%s severity=%s",
@@ -163,34 +176,10 @@ def create_notification(
             severity,
         )
         return {}
-
-    notification_id = _generate_notification_id()
-    meta = metadata or {}
-
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO notifications (id, project_id, task_id, user_email, type, title, message, severity, metadata)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
-            RETURNING id, project_id, task_id, user_email, type, title, message, severity, status,
-                      metadata, created_at, read_at, dismissed_at
-            """,
-            (
-                notification_id,
-                project_id,
-                task_id,
-                user_email,
-                notification_type,
-                title,
-                message,
-                severity,
-                json.dumps(meta),
-            ),
-        )
-        row = cur.fetchone()
-        conn.commit()
-
-    notification = _row_to_dict(row)
+    notification = _insert_notification(
+        _generate_notification_id(), project_id, notification_type,
+        title, message, severity, task_id, user_email, metadata or {},
+    )
     _schedule_delivery(notification)
     return notification
 
