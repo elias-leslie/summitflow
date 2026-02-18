@@ -1,22 +1,13 @@
 'use client'
 
 import { Filter } from 'lucide-react'
-import type { TaskType } from '@/lib/api'
+import type { TaskStatus, TaskType } from '@/lib/api'
 import { cn } from '@/lib/utils'
-
-export type PhaseFilter =
-  | 'all'
-  | 'active'
-  | 'ideas'
-  | 'planning'
-  | 'queue'
-  | 'blocked'
-  | 'done'
-  | 'failed'
+import { statusIconConfig } from '@/lib/task-config'
 
 export interface TaskFilterValues {
   type: TaskType | 'all'
-  status: PhaseFilter
+  status: TaskStatus | 'all'
   priority: number | 'all'
 }
 
@@ -27,15 +18,12 @@ interface TaskFiltersProps {
   className?: string
 }
 
-const PHASE_OPTIONS = [
+const STATUS_OPTIONS: { value: TaskStatus | 'all'; label: string }[] = [
   { value: 'all', label: 'All Statuses' },
-  { value: 'active', label: 'Active' },
-  { value: 'ideas', label: 'Ideas' },
-  { value: 'planning', label: 'Planning' },
-  { value: 'queue', label: 'Queue' },
-  { value: 'blocked', label: 'Blocked' },
-  { value: 'done', label: 'Done' },
-  { value: 'failed', label: 'Failed' },
+  ...Object.entries(statusIconConfig).map(([value, config]) => ({
+    value: value as TaskStatus,
+    label: config.label,
+  })),
 ]
 
 const TYPE_OPTIONS = [
@@ -86,13 +74,13 @@ export function TaskFilters({
         ))}
       </select>
 
-      {/* Phase Filter */}
+      {/* Status Filter */}
       <select
         value={filters.status}
         onChange={(e) => handleChange('status', e.target.value)}
         className="px-2 py-1.5 text-xs bg-slate-800 border border-slate-700 rounded text-white"
       >
-        {PHASE_OPTIONS.map((opt) => (
+        {STATUS_OPTIONS.map((opt) => (
           <option key={opt.value} value={opt.value}>
             {opt.label}
           </option>
@@ -120,7 +108,7 @@ export function TaskFilters({
 
 export const DEFAULT_FILTERS: TaskFilterValues = {
   type: 'all',
-  status: 'active',
+  status: 'all',
   priority: 'all',
 }
 

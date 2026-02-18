@@ -49,44 +49,19 @@ export function useTasksList(
         ? blockedTasksData?.tasks || []
         : tasksData?.tasks || []
 
-    const isCrowdsourced = (t: Task) =>
-      t.labels?.some((l) => l.toLowerCase() === 'crowdsourced')
-
     const filtered = tasks.filter((task) => {
       // Type filter
       if (filters.type !== 'all' && task.task_type !== filters.type) {
         return false
       }
 
-      // Phase filter (maps pipeline phases to underlying statuses)
-      if (filters.status !== 'all' && filters.status !== 'blocked') {
-        switch (filters.status) {
-          case 'active':
-            if (
-              task.status === 'completed' ||
-              task.status === 'failed' ||
-              task.status === 'cancelled'
-            )
-              return false
-            break
-          case 'ideas':
-            if (task.status !== 'pending' || !isCrowdsourced(task))
-              return false
-            break
-          case 'planning':
-            if (task.status !== 'pending' || isCrowdsourced(task))
-              return false
-            break
-          case 'queue':
-            if (task.status !== 'queue') return false
-            break
-          case 'done':
-            if (task.status !== 'completed') return false
-            break
-          case 'failed':
-            if (task.status !== 'failed') return false
-            break
-        }
+      // Status filter (direct match)
+      if (
+        filters.status !== 'all' &&
+        filters.status !== 'blocked' &&
+        task.status !== filters.status
+      ) {
+        return false
       }
 
       // Priority filter
