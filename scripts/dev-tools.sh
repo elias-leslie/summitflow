@@ -277,7 +277,7 @@ install_deps() {
     local installed=0
     local failed=0
 
-    for pkg_spec in "ruff==$CANONICAL_RUFF" "mypy==$CANONICAL_MYPY" "ty==$CANONICAL_TY" "pytest==$CANONICAL_PYTEST" \
+    for pkg_spec in "ruff==$CANONICAL_RUFF" "ty==$CANONICAL_TY" "pytest==$CANONICAL_PYTEST" \
                     "pytest-asyncio==$CANONICAL_PYTEST_ASYNCIO" "pytest-cov==$CANONICAL_PYTEST_COV" \
                     "pytest-xdist==$CANONICAL_PYTEST_XDIST" "pytest-mock==$CANONICAL_PYTEST_MOCK" \
                     "pytest-timeout==$CANONICAL_PYTEST_TIMEOUT" "pytest-randomly==$CANONICAL_PYTEST_RANDOMLY" \
@@ -830,7 +830,7 @@ run_tool_toon() {
 
     IFS='|' read -r label binary args count_method dir_type fallback_global pass_path <<< "$def"
 
-    # Smart Check: Skip Python tools if no Python backend (when running explicit command like 'dt mypy')
+    # Smart Check: Skip Python tools if no Python backend (when running explicit command like 'dt types')
     if [[ "$dir_type" == "backend" || "$dir_type" == "test" ]]; then
         if ! has_python_backend "$PROJECT_DIR"; then
             echo "$label:OK:skipped_no_python"
