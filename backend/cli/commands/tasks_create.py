@@ -13,6 +13,47 @@ from ..output import handle_api_error, output_error, output_task
 from .tasks_import import create_from_file
 
 
+def _build_task_data(
+    title: str,
+    task_type: str,
+    priority: int,
+    description: str | None,
+    labels: str | None,
+    parent: str | None,
+    autonomous: bool,
+) -> dict[str, Any]:
+    data: dict[str, Any] = {"title": title, "task_type": task_type, "priority": priority}
+    if description:
+        data["description"] = description
+    if labels:
+        data["labels"] = labels.split(",")
+    if parent:
+        data["parent_task_id"] = parent
+    if autonomous:
+        data["autonomous"] = True
+    return data
+
+
+def _apply_plan(client: STClient, task: dict[str, Any], plan: str) -> dict[str, Any]:
+    try:
+        plan_content = json.loads(plan)
+        task = client.update_task(task["id"], plan_content=plan_content)
+    except (json.JSONDecodeError, APIError) as e:
+        output_error(f"Failed to set plan: {e}")
+    return task
+
+
+def _apply_blocked_by(
+    client: STClient, task: dict[str, Any], blocked_by: str
+) -> dict[str, Any]:
+    try:
+        client.add_dependency(task["id"], blocked_by, dep_type="blocks")
+        task["blocked_by"] = blocked_by
+    except APIError as e:
+        task["dependency_error"] = e.detail
+    return task
+
+
 def create_task_command(
     title: str | None,
     from_file: Path | None,
@@ -36,12 +77,10 @@ def create_task_command(
         st create --from-file tasks.json
         st create --from-file tasks.json --dry-run
     """
-    # Handle --from-file mode
     if from_file:
         create_from_file(from_file, dry_run)
         return
 
-    # Regular single-task creation requires title
     if not title:
         output_error("Either provide a title or use --from-file")
         raise typer.Exit(1)
@@ -51,20 +90,7 @@ def create_task_command(
         raise typer.Exit(1)
 
     client = STClient()
-
-    data: dict[str, Any] = {
-        "title": title,
-        "task_type": task_type,
-        "priority": priority,
-    }
-    if description:
-        data["description"] = description
-    if labels:
-        data["labels"] = labels.split(",")
-    if parent:
-        data["parent_task_id"] = parent
-    if autonomous:
-        data["autonomous"] = True
+    data = _build_task_data(title, task_type, priority, description, labels, parent, autonomous)
 
     try:
         task = client.create_task(data)
@@ -73,19 +99,8 @@ def create_task_command(
         return
 
     if plan:
-        # Update with plan_content
-        try:
-            plan_content = json.loads(plan)
-            task = client.update_task(task["id"], plan_content=plan_content)
-        except (json.JSONDecodeError, APIError) as e:
-            output_error(f"Failed to set plan: {e}")
-
-    # Create blocking dependency if --blocked-by provided
+        task = _apply_plan(client, task, plan)
     if blocked_by:
-        try:
-            client.add_dependency(task["id"], blocked_by, dep_type="blocks")
-            task["blocked_by"] = blocked_by
-        except APIError as e:
-            task["dependency_error"] = e.detail
+        task = _apply_blocked_by(client, task, blocked_by)
 
     output_task(task)
