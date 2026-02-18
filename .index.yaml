@@ -1,5 +1,5 @@
 project: summitflow
-generated_at: 2026-02-18 04:10 UTC
+generated_at: 2026-02-18 05:30 UTC
 environment:
   python_version: '>=3.13'
   venv_path: backend/.venv
@@ -129,11 +129,11 @@ tasks:
 folders:
   (root): 21 files - tests
   .claude: 3 files
-  .dev-tools: 15 files - tests
+  .dev-tools: 10 files - tests
   .qna-session: 1 files
   .st: 1 files
   assets: 2 files
-  backend: 840 files - api, components, services, tests
+  backend: 841 files - api, components, services, tests
   docs: 2 files
   frontend: 428 files - api, components, services, tests
   prompts: 1 files
