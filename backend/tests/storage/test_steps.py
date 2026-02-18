@@ -552,7 +552,7 @@ class TestSanitizeVerifyCommand:
         [
             "rg pattern src/",
             "test -f backend/app/main.py",
-            "pytest tests/",
+            "dt pytest tests/",
             "dt --quick --changed-only",
             "echo 'checking' && rg -q 'pattern' file",
         ],
