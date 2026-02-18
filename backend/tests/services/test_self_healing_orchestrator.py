@@ -31,11 +31,11 @@ class TestSelfHealingOrchestrator:
     def test_check_type_priority_order(self) -> None:
         """Verify priority order: lint before types before tests."""
         # Lint tools should come first
-        assert CHECK_TYPE_PRIORITY.index("ruff") < CHECK_TYPE_PRIORITY.index("mypy")
+        assert CHECK_TYPE_PRIORITY.index("ruff") < CHECK_TYPE_PRIORITY.index("types")
         assert CHECK_TYPE_PRIORITY.index("biome") < CHECK_TYPE_PRIORITY.index("tsc")
 
         # Types before tests
-        assert CHECK_TYPE_PRIORITY.index("mypy") < CHECK_TYPE_PRIORITY.index("pytest")
+        assert CHECK_TYPE_PRIORITY.index("types") < CHECK_TYPE_PRIORITY.index("pytest")
         assert CHECK_TYPE_PRIORITY.index("tsc") < CHECK_TYPE_PRIORITY.index("pytest")
 
     def test_init_default_limits(self, mock_conn: MagicMock) -> None:
@@ -120,12 +120,12 @@ class TestSelfHealingOrchestrator:
         """Test that check types are processed in priority order."""
         mock_list_projects.return_value = [{"id": "proj-1"}]
 
-        # Both ruff and mypy have errors
+        # Both ruff and types have errors
         def get_unfixed_count(conn: Any, project_id: str, check_type: str) -> int:
             if project_id == "proj-1":
                 if check_type == "ruff":
                     return 2
-                if check_type == "mypy":
+                if check_type == "types":
                     return 3
             return 0
 
@@ -139,7 +139,7 @@ class TestSelfHealingOrchestrator:
         calls = mock_fix.call_args_list
         assert len(calls) == 2
         assert calls[0].kwargs["check_type"] == "ruff"
-        assert calls[1].kwargs["check_type"] == "mypy"
+        assert calls[1].kwargs["check_type"] == "types"
 
     @patch("app.services.quality_gate.fix_agent.fix_unfixed_errors")
     @patch("app.services.self_healing.project_scanner.list_projects")
@@ -254,7 +254,7 @@ class TestSelfHealingOrchestrator:
         def get_unfixed_count(conn: Any, project_id: str, check_type: str) -> int:
             if project_id == "proj-1" and check_type == "ruff":
                 return 5
-            if project_id == "proj-2" and check_type == "mypy":
+            if project_id == "proj-2" and check_type == "types":
                 return 3
             return 0
 

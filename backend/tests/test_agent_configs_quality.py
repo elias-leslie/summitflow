@@ -34,14 +34,14 @@ class TestGetQualityGateTools:
         """Test get_quality_gate_tools returns configured tool list."""
         # Arrange
         config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
-        config["quality_gate_tools"] = ["ruff", "mypy"]
+        config["quality_gate_tools"] = ["ruff", "types"]
 
         # Act
         with patch("app.storage.agent_configs_quality.get_agent_config", return_value=config):
             result = get_quality_gate_tools("test-project")
 
         # Assert
-        assert result == ["ruff", "mypy"]
+        assert result == ["ruff", "types"]
 
     def test_get_quality_gate_tools_converts_non_strings(self) -> None:
         """Test get_quality_gate_tools converts items to strings."""
@@ -175,17 +175,17 @@ class TestBuildDtCommand:
         assert result == ["dt", "--quick"]
 
     def test_build_dt_command_with_specific_tools_returns_tools(self) -> None:
-        """Test build_dt_command with specific tools returns dt ruff mypy."""
+        """Test build_dt_command with specific tools returns dt ruff types."""
         # Arrange
         config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
-        config["quality_gate_tools"] = ["ruff", "mypy"]
+        config["quality_gate_tools"] = ["ruff", "types"]
 
         # Act
         with patch("app.storage.agent_configs_quality.get_agent_config", return_value=config):
             result = build_dt_command("dt", "test-project")
 
         # Assert
-        assert result == ["dt", "ruff", "mypy"]
+        assert result == ["dt", "ruff", "types"]
 
     def test_build_dt_command_with_fix_true_and_fix_enabled_returns_fix_flag(self) -> None:
         """Test build_dt_command with fix=True and fix enabled returns dt ruff --fix."""
@@ -261,14 +261,14 @@ class TestBuildDtCommand:
         """Test build_dt_command with multiple tools returns all tools."""
         # Arrange
         config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
-        config["quality_gate_tools"] = ["ruff", "mypy", "biome", "tsc"]
+        config["quality_gate_tools"] = ["ruff", "types", "biome", "tsc"]
 
         # Act
         with patch("app.storage.agent_configs_quality.get_agent_config", return_value=config):
             result = build_dt_command("dt", "test-project")
 
         # Assert
-        assert result == ["dt", "ruff", "mypy", "biome", "tsc"]
+        assert result == ["dt", "ruff", "types", "biome", "tsc"]
 
     def test_build_dt_command_with_custom_dt_path(self) -> None:
         """Test build_dt_command uses provided dt path."""

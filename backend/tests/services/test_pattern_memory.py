@@ -135,7 +135,7 @@ class TestPatternMemoryService:
     ) -> None:
         """Test recording a gotcha."""
         result = await service.record_gotcha(
-            check_type="mypy",
+            check_type="types",
             gotcha="Type ignore comments can mask real errors",
             context="When fixing type errors",
             solution="Review all type: ignore comments",
@@ -145,7 +145,7 @@ class TestPatternMemoryService:
         mock_client.record_gotcha.assert_called_once()
 
         call_args = mock_client.record_gotcha.call_args
-        assert call_args[1]["context"] == "mypy: When fixing type errors"
+        assert call_args[1]["context"] == "types: When fixing type errors"
         assert call_args[1]["scope"] == "project"
 
     def test_parse_search_result_valid(self, service: PatternMemoryService) -> None:
