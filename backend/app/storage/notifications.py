@@ -1,25 +1,57 @@
 """Notifications storage layer - Notification CRUD and status management.
 
 This module provides data access for notification alerts.
+Query helpers live in notifications_query.py; shared types in notifications_helpers.py.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
-from typing import Any, Literal
-
-from psycopg.rows import TupleRow
+from typing import Any
 
 from .connection import generate_prefixed_id, get_connection
+from .notifications_helpers import (
+    NotificationSeverity,
+    NotificationStatus,
+    NotificationType,
+    _row_to_dict,
+)
+from .notifications_query import (
+    get_notification,
+    get_notifications_by_user_email,
+    get_pending_count,
+    list_notifications,
+)
+from .notifications_write import (
+    delete_notification,
+    dismiss_all_for_project,
+    dismiss_notification,
+    mark_as_read,
+)
 
 logger = logging.getLogger(__name__)
 
 _background_tasks: set[asyncio.Task[None]] = set()
 
-NotificationType = Literal["task_failed", "task_needs_input", "task_completed", "system"]
-NotificationSeverity = Literal["info", "warning", "error", "critical"]
-NotificationStatus = Literal["pending", "read", "dismissed"]
+# Re-export type aliases for backward compatibility
+__all__ = [
+    "NotificationSeverity",
+    "NotificationStatus",
+    "NotificationType",
+    "create_notification",
+    "create_task_completion_notification",
+    "create_task_failure_notification",
+    "delete_notification",
+    "dismiss_all_for_project",
+    "dismiss_notification",
+    "get_notification",
+    "get_notifications_by_user_email",
+    "get_pending_count",
+    "list_notifications",
+    "mark_as_read",
+]
 
 
 def _generate_notification_id() -> str:
@@ -64,9 +96,38 @@ def _is_duplicate(
     if not row:
         return False
 
-    # Allow severity escalation
     existing_rank = severity_rank.get(row[0], 0)
     return current_rank <= existing_rank
+
+
+def _schedule_delivery(notification: dict[str, Any]) -> None:
+    """Fire-and-forget push delivery for a notification.
+
+    Checks for a running asyncio loop and schedules delivery as a task.
+    Storage layer is sync, so this bridges into the async delivery service.
+    """
+    from app.config import settings
+
+    if not settings.ntfy_enabled:
+        return
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # No running loop — skip push delivery (e.g., in CLI/test contexts)
+        return
+
+    async def _deliver() -> None:
+        try:
+            from app.services.notifications.delivery import deliver
+
+            await deliver(notification)
+        except Exception:
+            logger.exception("Push delivery failed for notification %s", notification.get("id"))
+
+    task = loop.create_task(_deliver())
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
 
 def create_notification(
@@ -94,9 +155,6 @@ def create_notification(
     Returns:
         Created notification dict, or empty dict if deduplicated
     """
-    import json
-
-    # Dedup check — skip if a similar notification was sent recently
     if _is_duplicate(project_id, notification_type, severity, task_id):
         logger.debug(
             "Notification deduplicated: type=%s task_id=%s severity=%s",
@@ -135,227 +193,6 @@ def create_notification(
     notification = _row_to_dict(row)
     _schedule_delivery(notification)
     return notification
-
-
-def _schedule_delivery(notification: dict[str, Any]) -> None:
-    """Fire-and-forget push delivery for a notification.
-
-    Checks for a running asyncio loop and schedules delivery as a task.
-    Storage layer is sync, so this bridges into the async delivery service.
-    """
-    from app.config import settings
-
-    if not settings.ntfy_enabled:
-        return
-
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        # No running loop — skip push delivery (e.g., in CLI/test contexts)
-        return
-
-    async def _deliver() -> None:
-        try:
-            from app.services.notifications.delivery import deliver
-
-            await deliver(notification)
-        except Exception:
-            logger.exception("Push delivery failed for notification %s", notification.get("id"))
-
-    task = loop.create_task(_deliver())
-    _background_tasks.add(task)
-    task.add_done_callback(_background_tasks.discard)
-
-
-def get_notification(notification_id: str) -> dict[str, Any] | None:
-    """Get a notification by ID.
-
-    Returns:
-        Notification dict or None if not found
-    """
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT id, project_id, task_id, user_email, type, title, message, severity, status,
-                   metadata, created_at, read_at, dismissed_at
-            FROM notifications
-            WHERE id = %s
-            """,
-            (notification_id,),
-        )
-        row = cur.fetchone()
-
-    if not row:
-        return None
-    return _row_to_dict(row)
-
-
-def list_notifications(
-    project_id: str,
-    status_filter: NotificationStatus | None = None,
-    limit: int = 50,
-    offset: int = 0,
-    include_dismissed: bool = False,
-) -> list[dict[str, Any]]:
-    """List notifications for a project.
-
-    Args:
-        project_id: Project ID
-        status_filter: Optional status filter (pending, read, dismissed)
-        limit: Max results (default 50)
-        offset: Result offset
-        include_dismissed: Include dismissed notifications (default False)
-
-    Returns:
-        List of notification dicts
-    """
-    with get_connection() as conn, conn.cursor() as cur:
-        if status_filter:
-            cur.execute(
-                """
-                SELECT id, project_id, task_id, user_email, type, title, message, severity, status,
-                       metadata, created_at, read_at, dismissed_at
-                FROM notifications
-                WHERE project_id = %s AND status = %s
-                ORDER BY created_at DESC
-                LIMIT %s OFFSET %s
-                """,
-                (project_id, status_filter, limit, offset),
-            )
-        elif not include_dismissed:
-            cur.execute(
-                """
-                SELECT id, project_id, task_id, user_email, type, title, message, severity, status,
-                       metadata, created_at, read_at, dismissed_at
-                FROM notifications
-                WHERE project_id = %s AND status != 'dismissed'
-                ORDER BY created_at DESC
-                LIMIT %s OFFSET %s
-                """,
-                (project_id, limit, offset),
-            )
-        else:
-            cur.execute(
-                """
-                SELECT id, project_id, task_id, user_email, type, title, message, severity, status,
-                       metadata, created_at, read_at, dismissed_at
-                FROM notifications
-                WHERE project_id = %s
-                ORDER BY created_at DESC
-                LIMIT %s OFFSET %s
-                """,
-                (project_id, limit, offset),
-            )
-        rows = cur.fetchall()
-
-    return [_row_to_dict(row) for row in rows]
-
-
-def get_pending_count(project_id: str) -> int:
-    """Get count of pending notifications for a project.
-
-    Returns:
-        Number of pending notifications
-    """
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT COUNT(*) FROM notifications
-            WHERE project_id = %s AND status = 'pending'
-            """,
-            (project_id,),
-        )
-        row = cur.fetchone()
-
-    return row[0] if row else 0
-
-
-def mark_as_read(notification_id: str) -> dict[str, Any] | None:
-    """Mark a notification as read.
-
-    Returns:
-        Updated notification dict or None if not found
-    """
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            UPDATE notifications
-            SET status = 'read', read_at = NOW()
-            WHERE id = %s
-            RETURNING id, project_id, task_id, user_email, type, title, message, severity, status,
-                      metadata, created_at, read_at, dismissed_at
-            """,
-            (notification_id,),
-        )
-        row = cur.fetchone()
-        conn.commit()
-
-    if not row:
-        return None
-    return _row_to_dict(row)
-
-
-def dismiss_notification(notification_id: str) -> dict[str, Any] | None:
-    """Dismiss a notification.
-
-    Returns:
-        Updated notification dict or None if not found
-    """
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            UPDATE notifications
-            SET status = 'dismissed', dismissed_at = NOW()
-            WHERE id = %s
-            RETURNING id, project_id, task_id, user_email, type, title, message, severity, status,
-                      metadata, created_at, read_at, dismissed_at
-            """,
-            (notification_id,),
-        )
-        row = cur.fetchone()
-        conn.commit()
-
-    if not row:
-        return None
-    return _row_to_dict(row)
-
-
-def dismiss_all_for_project(project_id: str) -> int:
-    """Dismiss all notifications for a project.
-
-    Returns:
-        Number of notifications dismissed
-    """
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            UPDATE notifications
-            SET status = 'dismissed', dismissed_at = NOW()
-            WHERE project_id = %s AND status != 'dismissed'
-            """,
-            (project_id,),
-        )
-        count = cur.rowcount
-        conn.commit()
-
-    return count
-
-
-def delete_notification(notification_id: str) -> bool:
-    """Delete a notification.
-
-    Returns:
-        True if deleted, False if not found
-    """
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            "DELETE FROM notifications WHERE id = %s RETURNING id",
-            (notification_id,),
-        )
-        result = cur.fetchone()
-        conn.commit()
-
-    return result is not None
 
 
 def create_task_failure_notification(
@@ -440,92 +277,3 @@ def create_task_completion_notification(
         task_id=task_id,
         metadata=metadata,
     )
-
-
-def get_notifications_by_user_email(
-    user_email: str,
-    status_filter: NotificationStatus | None = "pending",
-    mark_as_seen: bool = True,
-    limit: int = 20,
-) -> list[dict[str, Any]]:
-    """Get notifications for a specific user by email.
-
-    This is used by game clients to fetch user-specific notifications
-    (e.g., when their crowdsourced idea is implemented).
-
-    Args:
-        user_email: User's email address
-        status_filter: Filter by status (default: pending only)
-        mark_as_seen: Whether to mark returned notifications as read (default: True)
-        limit: Max results (default 20)
-
-    Returns:
-        List of notification dicts
-    """
-    with get_connection() as conn, conn.cursor() as cur:
-        # Build query
-        if status_filter:
-            cur.execute(
-                """
-                SELECT id, project_id, task_id, user_email, type, title, message, severity, status,
-                       metadata, created_at, read_at, dismissed_at
-                FROM notifications
-                WHERE user_email = %s AND status = %s
-                ORDER BY created_at DESC
-                LIMIT %s
-                """,
-                (user_email, status_filter, limit),
-            )
-        else:
-            cur.execute(
-                """
-                SELECT id, project_id, task_id, user_email, type, title, message, severity, status,
-                       metadata, created_at, read_at, dismissed_at
-                FROM notifications
-                WHERE user_email = %s
-                ORDER BY created_at DESC
-                LIMIT %s
-                """,
-                (user_email, limit),
-            )
-
-        rows = cur.fetchall()
-        notifications = [_row_to_dict(row) for row in rows]
-
-        # Mark as seen if requested
-        if mark_as_seen and notifications:
-            notification_ids = [n["id"] for n in notifications if n["status"] == "pending"]
-            if notification_ids:
-                cur.execute(
-                    """
-                    UPDATE notifications
-                    SET status = 'read', read_at = NOW()
-                    WHERE id = ANY(%s::text[])
-                    """,
-                    (notification_ids,),
-                )
-                conn.commit()
-
-    return notifications
-
-
-
-def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
-    """Convert a database row to a notification dict."""
-    if row is None:
-        raise ValueError("Row cannot be None")
-    return {
-        "id": row[0],
-        "project_id": row[1],
-        "task_id": row[2],
-        "user_email": row[3],
-        "type": row[4],
-        "title": row[5],
-        "message": row[6],
-        "severity": row[7],
-        "status": row[8],
-        "metadata": row[9] or {},
-        "created_at": row[10],
-        "read_at": row[11],
-        "dismissed_at": row[12],
-    }
