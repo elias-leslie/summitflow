@@ -5,6 +5,7 @@ Handles task completion with branch merge and snapshot cleanup.
 
 from __future__ import annotations
 
+import subprocess
 from typing import Any
 
 import typer
@@ -15,25 +16,51 @@ from ..lib.checkpoint import (
     merge_task_branch,
     remove_snapshot,
 )
-from ..output import output_error
+from ..output import output_error, output_warning
 from .done_git import git_stash_pop, git_stash_push, is_working_tree_clean
 from .done_memory import report_task_outcome
 from .done_subtask import auto_close_subtasks
 from .done_validators import parse_db_error
 
 
-def validate_worktree_clean(snapshot_info: dict[str, str | int | None]) -> None:
-    """Ensure worktree has no uncommitted changes."""
+def _auto_commit_worktree(worktree_path: str) -> bool:
+    """Auto-commit tracked changes in worktree via commit.sh.
+
+    Uses --skip-checks (st done runs its own verify_commands) and
+    --no-push (branch is ephemeral — about to be merged and deleted).
+    commit.sh handles pre-commit hook retries automatically.
+    """
+    try:
+        result = subprocess.run(
+            ["commit.sh", "--skip-checks", "--no-push", "--current"],
+            cwd=worktree_path,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        output_warning(f"Auto-commit failed: {e}")
+        return False
+
+
+def ensure_worktree_clean(snapshot_info: dict[str, str | int | None]) -> None:
+    """Ensure worktree is clean, auto-committing tracked changes if needed."""
     raw_wt = snapshot_info.get("worktree_path")
     worktree_path: str | None = str(raw_wt) if raw_wt is not None else None
 
-    if worktree_path and not is_working_tree_clean(worktree_path):
-        output_error(
-            f"Worktree has uncommitted changes.\n"
-            f"  Path: {worktree_path}\n"
-            f"Commit first: cd {worktree_path} && git commit -m 'message'"
-        )
-        raise typer.Exit(1)
+    if not worktree_path or is_working_tree_clean(worktree_path):
+        return
+
+    if _auto_commit_worktree(worktree_path):
+        return
+
+    output_error(
+        f"Worktree has uncommitted changes that could not be auto-committed.\n"
+        f"  Path: {worktree_path}\n"
+        f"Commit manually: cd {worktree_path} && git add -u && git commit -m 'message'"
+    )
+    raise typer.Exit(1)
 
 
 def _output_gate_error(gate: dict[str, str]) -> None:
@@ -190,8 +217,9 @@ def complete_task(
     Strict mode: fails if gates not pre-passed or main dirty.
     """
     snapshot_info = _validate_snapshot(task_id)
-    validate_worktree_clean(snapshot_info)
+    ensure_worktree_clean(snapshot_info)
     project_id = _get_project_id_from_snapshot(snapshot_info)
+    base_branch = str(snapshot_info.get("base_branch", "main"))
     stashed = _handle_dirty_main(strict)
 
     try:
@@ -205,4 +233,5 @@ def complete_task(
         "action": "completed",
         "merged": True,
         "snapshot_removed": True,
+        "base_branch": base_branch,
     }

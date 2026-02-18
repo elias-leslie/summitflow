@@ -122,6 +122,9 @@ def merge_task_branch(task_id: str, project_id: str | None = None) -> bool:
         _run_git(["git", "branch", "-d", task_branch], repo_cwd)
         print(f"Deleted branch {task_branch}")
 
+    with contextlib.suppress(subprocess.CalledProcessError):
+        _run_git(["git", "push"], repo_cwd)
+
     return True
 
 

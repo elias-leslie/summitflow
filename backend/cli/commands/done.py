@@ -85,9 +85,10 @@ def _handle_task_completion(
     strict: bool,
 ) -> None:
     """Handle task completion."""
-    complete_task(client, id, message, strict=strict)
+    result = complete_task(client, id, message, strict=strict)
+    base_branch = result.get("base_branch", "main")
     output_success(f"Task {id} completed. Checkpoint removed.")
-    typer.echo(f"  Merged to: {get_snapshot_info(id) or 'main'}")
+    typer.echo(f"  Merged to: {base_branch}")
 
 
 @app.command(name="done")
