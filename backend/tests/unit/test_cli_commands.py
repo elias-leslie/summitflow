@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import json
 import tempfile
+from collections.abc import Generator
 from datetime import UTC, datetime
-from typing import Any, Generator
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -93,7 +94,7 @@ def _make_mock_subtask(task_id: str, subtask_id: str, **kwargs: Any) -> dict[str
 
 
 @pytest.fixture
-def mock_st_client() -> Generator[tuple[MagicMock, dict[str, dict[str, Any]]], None, None]:
+def mock_st_client() -> Generator[tuple[MagicMock, dict[str, dict[str, Any]]]]:
     """Mock STClient to avoid real HTTP calls to API.
 
     This fixture mocks the CLI's HTTP client so no real API calls are made.
@@ -141,7 +142,7 @@ def mock_st_client() -> Generator[tuple[MagicMock, dict[str, dict[str, Any]]], N
 
 
 @pytest.fixture
-def mock_storage() -> Generator[dict[str, Any], None, None]:
+def mock_storage() -> Generator[dict[str, Any]]:
     """Mock storage layer to avoid hitting production DB.
 
     This fixture mocks the storage modules for tests that directly

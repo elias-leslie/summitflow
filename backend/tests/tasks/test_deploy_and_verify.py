@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+from app.services.smoke_test import PROD_HEALTH_URLS
 from app.tasks.autonomous.review_modules.actions import (
-    PROD_HEALTH_URLS,
     _deploy_and_verify,
     auto_merge,
 )

@@ -109,7 +109,7 @@ def build_refactor_steps(
         },
         {
             "description": "Quality gate: auto-fix, lint, types, targeted tests",
-            "verify_command": f"dt --fix 2>/dev/null; {get_targeted_test_command(relative_path)} && dt --quick",
+            "verify_command": f"dt --fix 2>/dev/null; {get_targeted_test_command(relative_path)} && dt --quick --changed-only",
         },
     ]
 

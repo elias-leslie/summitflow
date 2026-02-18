@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Generator
+from collections.abc import Generator
+from typing import Any
 
 import pytest
 
@@ -11,7 +12,7 @@ from app.storage.connection import get_connection
 
 
 @pytest.fixture
-def project_id() -> Generator[str, None, None]:
+def project_id() -> Generator[str]:
     """Ensure test project exists."""
     project_id = "test-project"
     with get_connection() as conn, conn.cursor() as cur:
@@ -24,7 +25,7 @@ def project_id() -> Generator[str, None, None]:
 
 
 @pytest.fixture
-def test_task(project_id: str) -> Generator[dict[str, Any], None, None]:
+def test_task(project_id: str) -> Generator[dict[str, Any]]:
     """Create and cleanup a test task."""
     task = task_store.create_task(
         project_id=project_id,

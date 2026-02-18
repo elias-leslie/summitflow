@@ -6,6 +6,8 @@ Tests verify multi-context discovery:
 3. Project with own lockfile is treated as standalone even in workspace
 """
 
+from __future__ import annotations
+
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -18,11 +20,11 @@ class TestStandaloneProjectDetection:
     """Test multi-context discovery for standalone vs workspace projects."""
 
     @pytest.fixture
-    def root_path(self):
+    def root_path(self) -> Path:
         """Create a mock project root."""
         return Path("/fake/project")
 
-    def test_standalone_project_no_workspace(self, root_path):
+    def test_standalone_project_no_workspace(self, root_path: Path) -> None:
         """Standalone project without workspace should be detected correctly."""
         # Patch the functions in dependencies_nodejs module
         with (
@@ -49,7 +51,7 @@ class TestStandaloneProjectDetection:
             mock_scan.assert_called_once()
             assert len(result) == 1
 
-    def test_workspace_member_not_standalone(self, root_path):
+    def test_workspace_member_not_standalone(self, root_path: Path) -> None:
         """Workspace member should NOT be treated as standalone."""
         workspace_root = Path("/fake/workspace")
         workspace_packages = [
@@ -93,7 +95,7 @@ class TestStandaloneProjectDetection:
 
             mock_standalone.assert_not_called()
 
-    def test_project_with_own_lockfile_treated_as_standalone(self, root_path):
+    def test_project_with_own_lockfile_treated_as_standalone(self, root_path: Path) -> None:
         """Project with own lockfile should be standalone even if workspace exists."""
         workspace_root = Path("/fake/workspace")
         workspace_packages = [
@@ -129,7 +131,7 @@ class TestStandaloneProjectDetection:
 
             mock_standalone.assert_called_once()
 
-    def test_mixed_parent_directory_scenario(self, root_path):
+    def test_mixed_parent_directory_scenario(self, root_path: Path) -> None:
         """Project should correctly identify when it has own resolution context.
 
         Scenario: Workspace at parent level but project has own lockfile.

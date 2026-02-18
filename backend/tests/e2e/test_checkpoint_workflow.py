@@ -55,27 +55,27 @@ def _git_clean() -> bool:
 
 
 @pytest.fixture
-def requires_backend():
+def requires_backend() -> None:
     """Skip test if backend server is not running."""
     if not _backend_available():
         pytest.skip("Backend server not running (required for checkpoint E2E test)")
 
 
 @pytest.fixture
-def requires_clean_git():
+def requires_clean_git() -> None:
     """Skip test if git working tree has uncommitted changes."""
     if not _git_clean():
         pytest.skip("Git working tree has uncommitted changes (st claim requires clean tree)")
 
 
 @pytest.fixture
-def test_project_id():
+def test_project_id() -> str:
     """Return test project ID (test-project for E2E tests)."""
     return TEST_PROJECT_ID
 
 
 @pytest.fixture
-def cleanup_checkpoints():
+def cleanup_checkpoints() -> Any:
     """Clean up checkpoint data after tests."""
     task_ids: list[str] = []
     yield task_ids
@@ -84,7 +84,7 @@ def cleanup_checkpoints():
 
 
 @pytest.fixture
-def cleanup_tasks():
+def cleanup_tasks() -> Any:
     """Track and cleanup test tasks after tests."""
     task_ids: list[str] = []
     yield task_ids
@@ -101,7 +101,7 @@ def run_cli(
     timeout: int = 60,
     project_id: str | None = TEST_PROJECT_ID,
     stdin_input: str | None = None,
-) -> subprocess.CompletedProcess:
+) -> subprocess.CompletedProcess[str]:
     """Run st CLI command and return result.
 
     Args:
@@ -129,7 +129,7 @@ def run_cli(
     return result
 
 
-def run_git(args: list[str], cwd: str | Path | None = None) -> subprocess.CompletedProcess:
+def run_git(args: list[str], cwd: str | Path | None = None) -> subprocess.CompletedProcess[str]:
     """Run git command and return result."""
     return subprocess.run(
         ["git", *args],
@@ -183,12 +183,12 @@ class TestHappyPath:
 
     def test_single_agent_workflow(
         self,
-        requires_backend,
-        requires_clean_git,
-        test_project_id,
-        cleanup_tasks,
-        cleanup_checkpoints,
-    ):
+        requires_backend: None,
+        requires_clean_git: None,
+        test_project_id: str,
+        cleanup_tasks: Any,
+        cleanup_checkpoints: Any,
+    ) -> None:
         """Test complete workflow for a single agent."""
         task = create_test_task(test_project_id, "Happy Path Test")
         cleanup_tasks.append(task["id"])
@@ -225,12 +225,12 @@ class TestHappyPath:
 
     def test_context_with_subtask_flag(
         self,
-        requires_backend,
-        requires_clean_git,
-        test_project_id,
-        cleanup_tasks,
-        cleanup_checkpoints,
-    ):
+        requires_backend: None,
+        requires_clean_git: None,
+        test_project_id: str,
+        cleanup_tasks: Any,
+        cleanup_checkpoints: Any,
+    ) -> None:
         """Test st context --subtask shows step details."""
         task = create_test_task(test_project_id, "Context Subtask Test")
         cleanup_tasks.append(task["id"])
@@ -249,12 +249,12 @@ class TestSubtaskAbandon:
 
     def test_abandon_subtask_deletes_branch(
         self,
-        requires_backend,
-        requires_clean_git,
-        test_project_id,
-        cleanup_tasks,
-        cleanup_checkpoints,
-    ):
+        requires_backend: None,
+        requires_clean_git: None,
+        test_project_id: str,
+        cleanup_tasks: Any,
+        cleanup_checkpoints: Any,
+    ) -> None:
         """Abandoning a subtask should delete its git branch only."""
         task = create_test_task(test_project_id, "Subtask Abandon Test")
         cleanup_tasks.append(task["id"])
@@ -276,12 +276,12 @@ class TestTaskAbandon:
 
     def test_abandon_task_deletes_branches(
         self,
-        requires_backend,
-        requires_clean_git,
-        test_project_id,
-        cleanup_tasks,
-        cleanup_checkpoints,
-    ):
+        requires_backend: None,
+        requires_clean_git: None,
+        test_project_id: str,
+        cleanup_tasks: Any,
+        cleanup_checkpoints: Any,
+    ) -> None:
         """Abandoning a task should delete all branches and mark as abandoned."""
         task = create_test_task(test_project_id, "Task Abandon Test")
         cleanup_tasks.append(task["id"])
@@ -305,12 +305,12 @@ class TestProjectLock:
 
     def test_second_claim_blocked(
         self,
-        requires_backend,
-        requires_clean_git,
-        test_project_id,
-        cleanup_tasks,
-        cleanup_checkpoints,
-    ):
+        requires_backend: None,
+        requires_clean_git: None,
+        test_project_id: str,
+        cleanup_tasks: Any,
+        cleanup_checkpoints: Any,
+    ) -> None:
         """Second task claim should fail when one is already active."""
         task1 = create_test_task(test_project_id, "Project Lock Test 1")
         task2 = create_test_task(test_project_id, "Project Lock Test 2")
@@ -335,12 +335,12 @@ class TestCheckpointsCommand:
 
     def test_checkpoints_lists_active(
         self,
-        requires_backend,
-        requires_clean_git,
-        test_project_id,
-        cleanup_tasks,
-        cleanup_checkpoints,
-    ):
+        requires_backend: None,
+        requires_clean_git: None,
+        test_project_id: str,
+        cleanup_tasks: Any,
+        cleanup_checkpoints: Any,
+    ) -> None:
         """st checkpoints should list active checkpoints."""
         task = create_test_task(test_project_id, "Checkpoints List Test")
         cleanup_tasks.append(task["id"])
@@ -359,12 +359,12 @@ class TestResumeAfterInterruption:
 
     def test_detect_existing_checkpoint(
         self,
-        requires_backend,
-        requires_clean_git,
-        test_project_id,
-        cleanup_tasks,
-        cleanup_checkpoints,
-    ):
+        requires_backend: None,
+        requires_clean_git: None,
+        test_project_id: str,
+        cleanup_tasks: Any,
+        cleanup_checkpoints: Any,
+    ) -> None:
         """Claiming existing checkpoint should offer resume."""
         task = create_test_task(test_project_id, "Resume Test")
         cleanup_tasks.append(task["id"])
@@ -387,19 +387,19 @@ class TestResumeAfterInterruption:
 class TestRemovedCommands:
     """Test that removed commands show helpful errors."""
 
-    def test_work_shows_error(self):
+    def test_work_shows_error(self) -> None:
         """st work should show helpful error pointing to st claim."""
         result = run_cli(["work"], project_id=None)
         assert result.returncode != 0, "Expected non-zero exit code"
         assert "claim" in result.stderr.lower(), f"Expected 'claim' in error: {result.stderr}"
 
-    def test_show_shows_error(self):
+    def test_show_shows_error(self) -> None:
         """st show should show helpful error pointing to st context."""
         result = run_cli(["show"], project_id=None)
         assert result.returncode != 0, "Expected non-zero exit code"
         assert "context" in result.stderr.lower(), f"Expected 'context' in error: {result.stderr}"
 
-    def test_close_shows_error(self):
+    def test_close_shows_error(self) -> None:
         """st close should show helpful error pointing to st done."""
         result = run_cli(["close"], project_id=None)
         assert result.returncode != 0, "Expected non-zero exit code"

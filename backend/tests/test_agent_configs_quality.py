@@ -17,7 +17,7 @@ from app.storage.agent_configs_quality import (
 class TestGetQualityGateTools:
     """Tests for get_quality_gate_tools function."""
 
-    def test_get_quality_gate_tools_returns_empty_list_when_not_configured(self):
+    def test_get_quality_gate_tools_returns_empty_list_when_not_configured(self) -> None:
         """Test get_quality_gate_tools returns empty list when quality_gate_tools is not set."""
         # Arrange
         config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
@@ -30,7 +30,7 @@ class TestGetQualityGateTools:
         # Assert
         assert result == []
 
-    def test_get_quality_gate_tools_returns_configured_tools(self):
+    def test_get_quality_gate_tools_returns_configured_tools(self) -> None:
         """Test get_quality_gate_tools returns configured tool list."""
         # Arrange
         config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
@@ -43,7 +43,7 @@ class TestGetQualityGateTools:
         # Assert
         assert result == ["ruff", "mypy"]
 
-    def test_get_quality_gate_tools_converts_non_strings(self):
+    def test_get_quality_gate_tools_converts_non_strings(self) -> None:
         """Test get_quality_gate_tools converts items to strings."""
         # Arrange
         config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
@@ -57,7 +57,7 @@ class TestGetQualityGateTools:
         # Assert
         assert result == ["ruff", "123"]
 
-    def test_get_quality_gate_tools_returns_empty_when_not_a_list(self):
+    def test_get_quality_gate_tools_returns_empty_when_not_a_list(self) -> None:
         """Test get_quality_gate_tools returns empty list when value is not a list."""
         # Arrange
         config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
@@ -74,7 +74,7 @@ class TestGetQualityGateTools:
 class TestGetQualityGateMode:
     """Tests for get_quality_gate_mode function."""
 
-    def test_get_quality_gate_mode_returns_quick_when_not_configured(self):
+    def test_get_quality_gate_mode_returns_quick_when_not_configured(self) -> None:
         """Test get_quality_gate_mode returns 'quick' by default."""
         # Arrange
         config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
@@ -87,7 +87,7 @@ class TestGetQualityGateMode:
         # Assert
         assert result == "quick"
 
-    def test_get_quality_gate_mode_returns_check_when_configured(self):
+    def test_get_quality_gate_mode_returns_check_when_configured(self) -> None:
         """Test get_quality_gate_mode returns 'check' when configured."""
         # Arrange
         config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
@@ -100,7 +100,7 @@ class TestGetQualityGateMode:
         # Assert
         assert result == "check"
 
-    def test_get_quality_gate_mode_returns_changed_only_when_configured(self):
+    def test_get_quality_gate_mode_returns_changed_only_when_configured(self) -> None:
         """Test get_quality_gate_mode returns 'changed-only' when configured."""
         # Arrange
         config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
@@ -113,11 +113,11 @@ class TestGetQualityGateMode:
         # Assert
         assert result == "changed-only"
 
-    def test_get_quality_gate_mode_returns_quick_for_invalid_mode(self):
+    def test_get_quality_gate_mode_returns_quick_for_invalid_mode(self) -> None:
         """Test get_quality_gate_mode returns 'quick' for invalid mode."""
         # Arrange
         config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
-        config["quality_gate_mode"] = "invalid-mode"  # type: ignore[typeddict-item]
+        config["quality_gate_mode"] = "invalid-mode"
 
         # Act
         with patch("app.storage.agent_configs_quality.get_agent_config", return_value=config):
@@ -130,7 +130,7 @@ class TestGetQualityGateMode:
 class TestGetQualityGateFixEnabled:
     """Tests for get_quality_gate_fix_enabled function."""
 
-    def test_get_quality_gate_fix_enabled_returns_true_by_default(self):
+    def test_get_quality_gate_fix_enabled_returns_true_by_default(self) -> None:
         """Test get_quality_gate_fix_enabled returns True by default."""
         # Arrange
         config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
@@ -143,7 +143,7 @@ class TestGetQualityGateFixEnabled:
         # Assert
         assert result is True
 
-    def test_get_quality_gate_fix_enabled_returns_false_when_disabled(self):
+    def test_get_quality_gate_fix_enabled_returns_false_when_disabled(self) -> None:
         """Test get_quality_gate_fix_enabled returns False when disabled."""
         # Arrange
         config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
@@ -160,7 +160,7 @@ class TestGetQualityGateFixEnabled:
 class TestBuildDtCommand:
     """Tests for build_dt_command function."""
 
-    def test_build_dt_command_with_empty_tools_returns_quick_mode(self):
+    def test_build_dt_command_with_empty_tools_returns_quick_mode(self) -> None:
         """Test build_dt_command with empty tools list returns dt --quick (default mode)."""
         # Arrange
         config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
@@ -174,7 +174,7 @@ class TestBuildDtCommand:
         # Assert
         assert result == ["dt", "--quick"]
 
-    def test_build_dt_command_with_specific_tools_returns_tools(self):
+    def test_build_dt_command_with_specific_tools_returns_tools(self) -> None:
         """Test build_dt_command with specific tools returns dt ruff mypy."""
         # Arrange
         config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
@@ -187,7 +187,7 @@ class TestBuildDtCommand:
         # Assert
         assert result == ["dt", "ruff", "mypy"]
 
-    def test_build_dt_command_with_fix_true_and_fix_enabled_returns_fix_flag(self):
+    def test_build_dt_command_with_fix_true_and_fix_enabled_returns_fix_flag(self) -> None:
         """Test build_dt_command with fix=True and fix enabled returns dt ruff --fix."""
         # Arrange
         config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
@@ -201,7 +201,7 @@ class TestBuildDtCommand:
         # Assert
         assert result == ["dt", "ruff", "--fix"]
 
-    def test_build_dt_command_with_fix_true_and_fix_disabled_falls_back_to_check(self):
+    def test_build_dt_command_with_fix_true_and_fix_disabled_falls_back_to_check(self) -> None:
         """Test build_dt_command with fix=True and fix disabled falls back to check mode."""
         # Arrange
         config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
@@ -215,7 +215,7 @@ class TestBuildDtCommand:
         # Assert
         assert result == ["dt", "ruff"]
 
-    def test_build_dt_command_with_mode_check_returns_check_flag(self):
+    def test_build_dt_command_with_mode_check_returns_check_flag(self) -> None:
         """Test build_dt_command with mode='check' returns dt --check."""
         # Arrange
         config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
@@ -229,7 +229,7 @@ class TestBuildDtCommand:
         # Assert
         assert result == ["dt", "--check"]
 
-    def test_build_dt_command_with_mode_changed_only_returns_changed_only_flag(self):
+    def test_build_dt_command_with_mode_changed_only_returns_changed_only_flag(self) -> None:
         """Test build_dt_command with mode='changed-only' returns dt --changed-only."""
         # Arrange
         config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
@@ -243,7 +243,7 @@ class TestBuildDtCommand:
         # Assert
         assert result == ["dt", "--changed-only"]
 
-    def test_build_dt_command_with_fix_true_no_tools_returns_dt_fix(self):
+    def test_build_dt_command_with_fix_true_no_tools_returns_dt_fix(self) -> None:
         """Test build_dt_command with fix=True and no tools returns dt --fix."""
         # Arrange
         config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
@@ -257,7 +257,7 @@ class TestBuildDtCommand:
         # Assert
         assert result == ["dt", "--fix"]
 
-    def test_build_dt_command_with_multiple_tools(self):
+    def test_build_dt_command_with_multiple_tools(self) -> None:
         """Test build_dt_command with multiple tools returns all tools."""
         # Arrange
         config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
@@ -270,7 +270,7 @@ class TestBuildDtCommand:
         # Assert
         assert result == ["dt", "ruff", "mypy", "biome", "tsc"]
 
-    def test_build_dt_command_with_custom_dt_path(self):
+    def test_build_dt_command_with_custom_dt_path(self) -> None:
         """Test build_dt_command uses provided dt path."""
         # Arrange
         config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
@@ -287,7 +287,7 @@ class TestBuildDtCommand:
 class TestGetEscalationLevel:
     """Tests for get_escalation_level function with per-project thresholds."""
 
-    def test_get_escalation_level_with_project_id_reads_per_project_thresholds(self):
+    def test_get_escalation_level_with_project_id_reads_per_project_thresholds(self) -> None:
         """Test get_escalation_level with project_id reads per-project thresholds."""
         # Arrange
         worker_attempts = 5
@@ -308,7 +308,7 @@ class TestGetEscalationLevel:
             assert get_escalation_level(8, "test-project") == "HUMAN"
             assert get_escalation_level(10, "test-project") == "HUMAN"
 
-    def test_get_escalation_level_without_project_id_uses_hardcoded_defaults(self):
+    def test_get_escalation_level_without_project_id_uses_hardcoded_defaults(self) -> None:
         """Test get_escalation_level without project_id uses hardcoded defaults (backward compat)."""
         # Act & Assert
         # Default thresholds: WORKER_ATTEMPTS=3, SUPERVISOR_ATTEMPTS=2, MAX=5
@@ -325,7 +325,7 @@ class TestGetEscalationLevel:
         assert get_escalation_level(5) == "HUMAN"
         assert get_escalation_level(10) == "HUMAN"
 
-    def test_get_escalation_level_with_project_id_custom_thresholds(self):
+    def test_get_escalation_level_with_project_id_custom_thresholds(self) -> None:
         """Test get_escalation_level with custom per-project thresholds."""
         # Arrange
         worker_attempts = 2
@@ -344,7 +344,7 @@ class TestGetEscalationLevel:
             # Human level (attempts >= 3)
             assert get_escalation_level(3, "test-project") == "HUMAN"
 
-    def test_get_escalation_level_with_zero_supervisor_attempts(self):
+    def test_get_escalation_level_with_zero_supervisor_attempts(self) -> None:
         """Test get_escalation_level with zero supervisor attempts."""
         # Arrange
         worker_attempts = 3

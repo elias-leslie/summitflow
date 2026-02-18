@@ -25,7 +25,7 @@ class TestGetEventsWithFiltersAfter:
     @patch("app.storage._events_query.get_connection")
     def test_get_events_with_filters_after_builds_correct_sql_condition(
         self, mock_get_connection: MagicMock
-    ):
+    ) -> None:
         """Test that after timestamp parameter builds correct SQL WHERE condition."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
@@ -69,7 +69,7 @@ class TestGetEventsWithFiltersAfter:
     @patch("app.storage._events_query.get_connection")
     def test_get_events_with_filters_after_excludes_older_events(
         self, mock_get_connection: MagicMock
-    ):
+    ) -> None:
         """Test that after filter excludes events at or before the timestamp."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
@@ -119,7 +119,7 @@ class TestGetEventsWithFiltersAfter:
     @patch("app.storage._events_query.get_connection")
     def test_get_events_with_filters_after_none_includes_all_events(
         self, mock_get_connection: MagicMock
-    ):
+    ) -> None:
         """Test that after=None includes all events without timestamp filter."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
@@ -144,7 +144,7 @@ class TestGetEventsWithFiltersEventType:
     @patch("app.storage._events_query.get_connection")
     def test_get_events_with_filters_event_type_builds_correct_sql_condition(
         self, mock_get_connection: MagicMock
-    ):
+    ) -> None:
         """Test that event_type parameter builds correct SQL WHERE condition."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
@@ -178,7 +178,7 @@ class TestGetEventsWithFiltersEventType:
     @patch("app.storage._events_query.get_connection")
     def test_get_events_with_filters_event_type_filters_correctly(
         self, mock_get_connection: MagicMock
-    ):
+    ) -> None:
         """Test that event_type filter returns only matching event types."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
@@ -235,7 +235,7 @@ class TestGetEventsWithFiltersEventType:
     @patch("app.storage._events_query.get_connection")
     def test_get_events_with_filters_event_type_none_includes_all_types(
         self, mock_get_connection: MagicMock
-    ):
+    ) -> None:
         """Test that event_type=None includes all event types without filter."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
@@ -260,7 +260,7 @@ class TestGetEventsWithFiltersCombined:
     @patch("app.storage._events_query.get_connection")
     def test_get_events_with_filters_after_and_event_type_combines_filters(
         self, mock_get_connection: MagicMock
-    ):
+    ) -> None:
         """Test that after + event_type filters combine correctly with AND."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
@@ -290,7 +290,7 @@ class TestGetEventsWithFiltersCombined:
     @patch("app.storage._events_query.get_connection")
     def test_get_events_with_filters_after_and_event_type_with_other_filters(
         self, mock_get_connection: MagicMock
-    ):
+    ) -> None:
         """Test that after + event_type work with other existing filters."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
@@ -337,7 +337,7 @@ class TestGetEventsByTraceAfter:
     @patch("app.storage._events_query.get_connection")
     def test_get_events_by_trace_after_builds_correct_sql_condition(
         self, mock_get_connection: MagicMock
-    ):
+    ) -> None:
         """Test that after timestamp parameter builds correct SQL WHERE condition."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
@@ -364,7 +364,7 @@ class TestGetEventsByTraceAfter:
     @patch("app.storage._events_query.get_connection")
     def test_get_events_by_trace_after_filters_correctly(
         self, mock_get_connection: MagicMock
-    ):
+    ) -> None:
         """Test that after filter returns only events after timestamp."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
@@ -401,7 +401,7 @@ class TestGetEventsByTraceAfter:
     @patch("app.storage._events_query.get_connection")
     def test_get_events_by_trace_after_none_includes_all_events(
         self, mock_get_connection: MagicMock
-    ):
+    ) -> None:
         """Test that after=None includes all events without timestamp filter."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
@@ -421,7 +421,7 @@ class TestGetEventsByTraceAfter:
     @patch("app.storage._events_query.get_connection")
     def test_get_events_by_trace_after_with_other_filters(
         self, mock_get_connection: MagicMock
-    ):
+    ) -> None:
         """Test that after works with visibility and level filters."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
@@ -467,7 +467,7 @@ class TestEventsAPIEndpoints:
     @patch("app.storage.events.get_connection")
     def test_get_events_endpoint_accepts_after_parameter(
         self, mock_get_connection: MagicMock, client: TestClient
-    ):
+    ) -> None:
         """Test that /projects/{id}/events endpoint accepts after query param."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
@@ -490,7 +490,7 @@ class TestEventsAPIEndpoints:
     @patch("app.storage.events.get_connection")
     def test_get_events_endpoint_accepts_event_type_parameter(
         self, mock_get_connection: MagicMock, client: TestClient
-    ):
+    ) -> None:
         """Test that /projects/{id}/events endpoint accepts event_type query param."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
@@ -512,7 +512,7 @@ class TestEventsAPIEndpoints:
     @patch("app.storage.events.get_connection")
     def test_get_events_endpoint_accepts_combined_after_and_event_type(
         self, mock_get_connection: MagicMock, client: TestClient
-    ):
+    ) -> None:
         """Test that /projects/{id}/events accepts both after and event_type."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
@@ -535,7 +535,7 @@ class TestEventsAPIEndpoints:
     @patch("app.storage.events.get_connection")
     def test_get_events_for_trace_endpoint_accepts_after_parameter(
         self, mock_get_connection: MagicMock, client: TestClient
-    ):
+    ) -> None:
         """Test that /projects/{id}/events/by-trace/{trace_id} accepts after param."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
@@ -558,7 +558,7 @@ class TestEventsAPIEndpoints:
     @patch("app.storage.events.get_connection")
     def test_get_events_for_trace_endpoint_after_with_other_params(
         self, mock_get_connection: MagicMock, client: TestClient
-    ):
+    ) -> None:
         """Test that by-trace endpoint accepts after with visibility and level."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()

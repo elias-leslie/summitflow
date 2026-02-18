@@ -1,5 +1,5 @@
 project: summitflow
-generated_at: 2026-02-17 22:53 UTC
+generated_at: 2026-02-18 01:08 UTC
 environment:
   python_version: '>=3.13'
   venv_path: backend/.venv
@@ -52,6 +52,8 @@ endpoints:
 - GET /{project_id}/explorer/children (get_children)
 - GET /{project_id}/explorer/entry/{entry_id} (get_entry_by_id)
 - GET /{project_id}/explorer/refactor-targets (get_refactor_targets)
+- GET /{project_id}/explorer/scan-comparison (get_scan_comparison)
+- GET /{project_id}/explorer/scan-history (get_scan_history)
 - GET /{project_id}/explorer/stats (get_stats)
 - GET /{project_id}/explorer/{entry_type}/{path:path} (get_entry)
 - GET /{project_id}/refactor-sessions/active (get_active_session)
@@ -91,6 +93,8 @@ tables:
 - qa_issues
 - quality_check_results
 - refactor_sessions
+- scan_history
+- scan_states
 - sitemap_entries
 - subtask_citations
 - subtask_dependencies
@@ -125,11 +129,11 @@ tasks:
 folders:
   (root): 21 files - tests
   .claude: 3 files
-  .dev-tools: 14 files - tests
+  .dev-tools: 17 files - tests
   .qna-session: 1 files
   .st: 1 files
   assets: 2 files
-  backend: 836 files - api, components, services, tests
+  backend: 838 files - api, components, services, tests
   docs: 2 files
   frontend: 428 files - api, components, services, tests
   prompts: 1 files

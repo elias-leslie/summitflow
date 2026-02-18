@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Generator
+from collections.abc import Generator
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -13,7 +14,7 @@ from app.storage.steps import StepVerificationError
 
 
 @pytest.fixture
-def test_subtask(test_task: dict[str, Any]) -> Generator[dict[str, Any], None, None]:
+def test_subtask(test_task: dict[str, Any]) -> Generator[dict[str, Any]]:
     """Create and cleanup a test subtask for step tests."""
     subtask = subtask_store.create_subtask(
         task_id=test_task["id"],

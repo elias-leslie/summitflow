@@ -20,7 +20,7 @@ class TestGenerateTasksFromScan:
     """Tests for generate_tasks_from_scan task."""
 
     @patch("app.tasks.autonomous.refactor_generation.get_refactor_targets")
-    def test_empty_targets_returns_zero_counts(self, mock_get_targets: MagicMock):
+    def test_empty_targets_returns_zero_counts(self, mock_get_targets: MagicMock) -> None:
         """Test that empty targets returns zero counts."""
         mock_get_targets.return_value = {"targets": []}
 
@@ -38,7 +38,7 @@ class TestGenerateTasksFromScan:
         mock_create_task: MagicMock,
         mock_store: MagicMock,
         mock_get_targets: MagicMock,
-    ):
+    ) -> None:
         """Test that refactor tasks are created from scan targets."""
         mock_get_targets.return_value = {
             "targets": [
@@ -67,7 +67,7 @@ class TestGenerateTasksFromScan:
         self,
         mock_store: MagicMock,
         mock_get_targets: MagicMock,
-    ):
+    ) -> None:
         """Test that existing tasks are skipped."""
         mock_get_targets.return_value = {
             "targets": [
@@ -94,7 +94,7 @@ class TestCleanupStaleTasks:
     """Tests for cleanup_stale_tasks task."""
 
     @patch("app.storage.tasks.get_stale_tasks")
-    def test_no_stale_tasks_returns_zero_counts(self, mock_get_stale: MagicMock):
+    def test_no_stale_tasks_returns_zero_counts(self, mock_get_stale: MagicMock) -> None:
         """Test that no stale tasks returns zero counts."""
         mock_get_stale.return_value = []
 
@@ -110,7 +110,7 @@ class TestCleanupStaleTasks:
         self,
         mock_store: MagicMock,
         mock_get_stale: MagicMock,
-    ):
+    ) -> None:
         """Test that stale tasks are cancelled."""
         mock_get_stale.return_value = [
             {"id": "task-1", "title": "Stale task 1"},
@@ -131,7 +131,7 @@ class TestCleanupStaleTasks:
         mock_log_event: MagicMock,
         mock_store: MagicMock,
         mock_get_stale: MagicMock,
-    ):
+    ) -> None:
         """Test that cancelled tasks have proper status and message."""
         mock_get_stale.return_value = [
             {"id": "task-1", "title": "Stale task 1"},
@@ -158,7 +158,7 @@ class TestCleanupStaleTasks:
         self,
         mock_store: MagicMock,
         mock_get_stale: MagicMock,
-    ):
+    ) -> None:
         """Test that update errors are handled gracefully."""
         mock_get_stale.return_value = [
             {"id": "task-1", "title": "Stale task 1"},

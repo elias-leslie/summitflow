@@ -6,9 +6,12 @@ Usage:
     python migrate_steps_to_table.py             # Execute migration
 """
 
+from __future__ import annotations
+
 import argparse
 import sys
 from pathlib import Path
+from typing import Any
 
 # Add backend to path for imports
 backend_path = Path(__file__).parent.parent
@@ -18,7 +21,7 @@ from app.storage.connection import get_connection
 from app.storage.steps import bulk_create_steps
 
 
-def get_subtasks_with_steps() -> list[dict]:
+def get_subtasks_with_steps() -> list[dict[str, Any]]:
     """Get all subtasks that have non-empty steps JSONB array."""
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute("""
@@ -51,7 +54,7 @@ def check_existing_steps(subtask_table_id: str) -> int:
         return row[0] if row else 0
 
 
-def migrate_subtask_steps(subtask: dict, dry_run: bool = True) -> dict:
+def migrate_subtask_steps(subtask: dict[str, Any], dry_run: bool = True) -> dict[str, Any]:
     """Migrate steps for a single subtask.
 
     Returns:
@@ -101,7 +104,7 @@ def migrate_subtask_steps(subtask: dict, dry_run: bool = True) -> dict:
         }
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Migrate steps from JSONB to table")
     parser.add_argument(
         "--dry-run",

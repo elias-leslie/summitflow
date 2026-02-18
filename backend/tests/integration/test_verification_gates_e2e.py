@@ -41,14 +41,14 @@ def _backend_available() -> bool:
 
 
 @pytest.fixture
-def requires_backend():
+def requires_backend() -> None:
     """Skip test if backend server is not running."""
     if not _backend_available():
         pytest.skip("Backend server not running (required for this E2E test)")
 
 
 @pytest.fixture
-def project_id():
+def project_id() -> str:
     """Ensure test project exists."""
     project_id = "test-project"
     with get_connection() as conn, conn.cursor() as cur:
@@ -61,7 +61,7 @@ def project_id():
 
 
 @pytest.fixture
-def cleanup_tasks():
+def cleanup_tasks() -> Any:
     """Track and cleanup test tasks after tests."""
     task_ids: list[str] = []
     yield task_ids
@@ -75,7 +75,7 @@ def cleanup_tasks():
 
 def run_cli(
     args: list[str], check: bool = False, project_id: str = "test-project"
-) -> subprocess.CompletedProcess:
+) -> subprocess.CompletedProcess[str]:
     """Run st CLI command and return result."""
     import os
 
@@ -372,7 +372,7 @@ def plan_frontend_valid() -> dict[str, Any]:
 class TestVerifyGate:
     """Test st verify command rejects invalid plans."""
 
-    def test_verify_rejects_missing_steps(self):
+    def test_verify_rejects_missing_steps(self) -> None:
         """st verify should reject plans where subtasks have no steps."""
         plan_file = create_plan_file(plan_missing_steps())
         try:
@@ -382,7 +382,7 @@ class TestVerifyGate:
         finally:
             plan_file.unlink()
 
-    def test_verify_rejects_empty_steps(self):
+    def test_verify_rejects_empty_steps(self) -> None:
         """st verify should reject plans with empty steps array."""
         plan_file = create_plan_file(plan_empty_steps())
         try:
@@ -393,7 +393,7 @@ class TestVerifyGate:
         finally:
             plan_file.unlink()
 
-    def test_verify_rejects_string_steps(self):
+    def test_verify_rejects_string_steps(self) -> None:
         """st verify should reject plans with string steps instead of objects."""
         plan_file = create_plan_file(plan_string_steps())
         try:
@@ -403,7 +403,7 @@ class TestVerifyGate:
         finally:
             plan_file.unlink()
 
-    def test_verify_rejects_missing_verify_command(self):
+    def test_verify_rejects_missing_verify_command(self) -> None:
         """st verify should reject steps without verify_command."""
         plan_file = create_plan_file(plan_missing_verify_command())
         try:
@@ -416,7 +416,7 @@ class TestVerifyGate:
         finally:
             plan_file.unlink()
 
-    def test_verify_rejects_no_verification_subtask(self):
+    def test_verify_rejects_no_verification_subtask(self) -> None:
         """st verify should reject plans without final verification subtask."""
         plan_file = create_plan_file(plan_no_verification_subtask())
         try:
@@ -428,7 +428,7 @@ class TestVerifyGate:
         finally:
             plan_file.unlink()
 
-    def test_verify_rejects_missing_deploy_step(self):
+    def test_verify_rejects_missing_deploy_step(self) -> None:
         """st verify should reject backend/frontend subtasks without deploy step."""
         plan_file = create_plan_file(plan_missing_deploy_step())
         try:
@@ -440,7 +440,7 @@ class TestVerifyGate:
         finally:
             plan_file.unlink()
 
-    def test_verify_rejects_frontend_missing_browser_check(self):
+    def test_verify_rejects_frontend_missing_browser_check(self) -> None:
         """st verify should reject frontend subtasks without browser verification."""
         plan_file = create_plan_file(plan_frontend_missing_browser_check())
         try:
@@ -454,7 +454,7 @@ class TestVerifyGate:
         finally:
             plan_file.unlink()
 
-    def test_verify_accepts_valid_frontend_plan(self):
+    def test_verify_accepts_valid_frontend_plan(self) -> None:
         """st verify should accept frontend plan with deploy and browser check."""
         plan_file = create_plan_file(plan_frontend_valid())
         try:
@@ -464,7 +464,7 @@ class TestVerifyGate:
         finally:
             plan_file.unlink()
 
-    def test_verify_accepts_valid_plan(self):
+    def test_verify_accepts_valid_plan(self) -> None:
         """st verify should accept a fully valid plan."""
         plan_file = create_plan_file(valid_plan())
         try:
@@ -483,7 +483,7 @@ class TestVerifyGate:
 class TestImportGate:
     """Test st import command rejects invalid plans."""
 
-    def test_import_rejects_string_steps(self):
+    def test_import_rejects_string_steps(self) -> None:
         """st import should reject plans with string steps."""
         plan_file = create_plan_file(plan_string_steps())
         try:
@@ -492,7 +492,7 @@ class TestImportGate:
         finally:
             plan_file.unlink()
 
-    def test_import_rejects_missing_verify_command(self):
+    def test_import_rejects_missing_verify_command(self) -> None:
         """st import should reject plans with missing verify_command."""
         plan_file = create_plan_file(plan_missing_verify_command())
         try:
@@ -501,7 +501,7 @@ class TestImportGate:
         finally:
             plan_file.unlink()
 
-    def test_import_rejects_no_verification_subtask(self):
+    def test_import_rejects_no_verification_subtask(self) -> None:
         """st import should reject plans without verification subtask."""
         plan_file = create_plan_file(plan_no_verification_subtask())
         try:
@@ -510,7 +510,7 @@ class TestImportGate:
         finally:
             plan_file.unlink()
 
-    def test_import_accepts_valid_plan_dry_run(self):
+    def test_import_accepts_valid_plan_dry_run(self) -> None:
         """st import --dry-run should accept a valid plan."""
         plan_file = create_plan_file(valid_plan())
         try:
@@ -528,7 +528,7 @@ class TestImportGate:
 class TestSubtaskCreateGate:
     """Test st subtask create command requires proper steps."""
 
-    def test_subtask_create_rejects_no_steps(self, project_id, cleanup_tasks):
+    def test_subtask_create_rejects_no_steps(self, project_id: str, cleanup_tasks: Any) -> None:
         """st subtask create should reject subtasks without steps."""
         # First create a task to add subtask to
         task = task_store.create_task(
@@ -554,7 +554,7 @@ class TestSubtaskCreateGate:
         assert result.returncode == 1, f"Expected failure, got: {result.stdout}"
         assert "steps" in result.stderr.lower() or "required" in result.stderr.lower()
 
-    def test_subtask_create_accepts_proper_steps(self, project_id, cleanup_tasks):
+    def test_subtask_create_accepts_proper_steps(self, project_id: str, cleanup_tasks: Any) -> None:
         """st subtask create should accept subtasks with proper steps."""
         task = task_store.create_task(
             project_id=project_id,
@@ -597,7 +597,7 @@ class TestSubtaskCreateGate:
 class TestSubtaskPassGate:
     """Test st subtask pass command requires completed steps."""
 
-    def test_subtask_pass_fails_without_steps(self, project_id, cleanup_tasks):
+    def test_subtask_pass_fails_without_steps(self, project_id: str, cleanup_tasks: Any) -> None:
         """st subtask pass should fail if subtask has no steps."""
         # Create task
         task = task_store.create_task(
@@ -632,7 +632,7 @@ class TestSubtaskPassGate:
         assert result.returncode == 1, f"Expected failure, got: {result.stdout}"
         assert "no steps" in result.stderr.lower() or "gate" in result.stderr.lower()
 
-    def test_subtask_pass_fails_with_incomplete_steps(self, project_id, cleanup_tasks):
+    def test_subtask_pass_fails_with_incomplete_steps(self, project_id: str, cleanup_tasks: Any) -> None:
         """st subtask pass should fail if steps are not completed."""
         task = task_store.create_task(
             project_id=project_id,

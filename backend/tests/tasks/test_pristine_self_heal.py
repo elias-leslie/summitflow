@@ -17,28 +17,28 @@ _PRISTINE = "app.tasks.autonomous.exec_modules.pristine"
 class TestParseErrorCount:
     """Tests for _parse_error_count helper function."""
 
-    def test_parse_found_n_errors(self):
+    def test_parse_found_n_errors(self) -> None:
         """Parse 'Found N errors' pattern."""
         from app.tasks.autonomous.execution import _parse_error_count
 
         output = "Running lint... Found 5 errors in 3 files"
         assert _parse_error_count(output) == 5
 
-    def test_parse_n_errors(self):
+    def test_parse_n_errors(self) -> None:
         """Parse 'N errors' pattern."""
         from app.tasks.autonomous.execution import _parse_error_count
 
         output = "Lint check failed: 12 errors detected"
         assert _parse_error_count(output) == 12
 
-    def test_parse_n_failed(self):
+    def test_parse_n_failed(self) -> None:
         """Parse 'N failed' pattern."""
         from app.tasks.autonomous.execution import _parse_error_count
 
         output = "Test results: 3 failed, 47 passed"
         assert _parse_error_count(output) == 3
 
-    def test_parse_fallback_to_error_lines(self):
+    def test_parse_fallback_to_error_lines(self) -> None:
         """Fall back to counting error lines."""
         from app.tasks.autonomous.execution import _parse_error_count
 
@@ -49,7 +49,7 @@ error: syntax error
 """
         assert _parse_error_count(output) == 3
 
-    def test_parse_no_errors(self):
+    def test_parse_no_errors(self) -> None:
         """No errors returns 0."""
         from app.tasks.autonomous.execution import _parse_error_count
 
@@ -61,27 +61,27 @@ class TestPristineSelfHeal:
     """Tests for pristine_self_heal function."""
 
     @pytest.fixture
-    def mock_project_path(self):
+    def mock_project_path(self) -> Generator[MagicMock]:
         """Mock get_project_root_path to return a test path."""
         with patch(f"{_PRISTINE}.get_project_root_path") as mock:
             mock.return_value = "/test/project"
             yield mock
 
     @pytest.fixture
-    def mock_dt_found(self):
+    def mock_dt_found(self) -> Generator[MagicMock]:
         """Mock find_dev_tools to return dt path."""
         with patch(f"{_PRISTINE}.find_dev_tools") as mock:
             mock.return_value = "/usr/local/bin/dt"
             yield mock
 
     @pytest.fixture
-    def mock_subprocess(self):
+    def mock_subprocess(self) -> Generator[MagicMock]:
         """Mock subprocess.run."""
         with patch(f"{_PRISTINE}.subprocess.run") as mock:
             yield mock
 
     @pytest.fixture
-    def mock_agent_client(self):
+    def mock_agent_client(self) -> Generator[MagicMock]:
         """Mock get_sync_client."""
         with patch(f"{_PRISTINE}.get_sync_client") as mock:
             client = MagicMock()
@@ -125,7 +125,12 @@ class TestPristineSelfHeal:
         with patch("app.storage.tasks.core.add_agent_hub_session") as mock:
             yield mock
 
-    def test_pristine_already_clean(self, mock_project_path, mock_dt_found, mock_subprocess):
+    def test_pristine_already_clean(
+        self,
+        mock_project_path: MagicMock,
+        mock_dt_found: MagicMock,
+        mock_subprocess: MagicMock,
+    ) -> None:
         """If dt --check passes on first try, return True without agent call."""
         from app.tasks.autonomous.execution import pristine_self_heal
 
@@ -137,8 +142,12 @@ class TestPristineSelfHeal:
         mock_subprocess.assert_called_once()
 
     def test_pristine_fix_succeeds(
-        self, mock_project_path, mock_dt_found, mock_subprocess, mock_agent_client
-    ):
+        self,
+        mock_project_path: MagicMock,
+        mock_dt_found: MagicMock,
+        mock_subprocess: MagicMock,
+        mock_agent_client: MagicMock,
+    ) -> None:
         """Agent fixes issues successfully."""
         from app.tasks.autonomous.execution import pristine_self_heal
 
@@ -159,8 +168,12 @@ class TestPristineSelfHeal:
         mock_commit.assert_called()
 
     def test_pristine_error_count_regression_reverts(
-        self, mock_project_path, mock_dt_found, mock_subprocess, mock_agent_client
-    ):
+        self,
+        mock_project_path: MagicMock,
+        mock_dt_found: MagicMock,
+        mock_subprocess: MagicMock,
+        mock_agent_client: MagicMock,
+    ) -> None:
         """If error count increases, revert with git checkout and return False."""
         from app.tasks.autonomous.execution import pristine_self_heal
 
@@ -177,8 +190,12 @@ class TestPristineSelfHeal:
         assert len(git_checkout_calls) == 1
 
     def test_pristine_max_attempts_exhausted(
-        self, mock_project_path, mock_dt_found, mock_subprocess, mock_agent_client
-    ):
+        self,
+        mock_project_path: MagicMock,
+        mock_dt_found: MagicMock,
+        mock_subprocess: MagicMock,
+        mock_agent_client: MagicMock,
+    ) -> None:
         """After max attempts, return False."""
         from app.tasks.autonomous.execution import pristine_self_heal
 
@@ -189,7 +206,7 @@ class TestPristineSelfHeal:
         assert result is False
         assert mock_agent_client.complete.call_count == 2
 
-    def test_pristine_no_project_path(self):
+    def test_pristine_no_project_path(self) -> None:
         """If project has no root_path, return False."""
         from app.tasks.autonomous.execution import pristine_self_heal
 
@@ -200,7 +217,7 @@ class TestPristineSelfHeal:
 
         assert result is False
 
-    def test_pristine_no_dt_command(self, mock_project_path):
+    def test_pristine_no_dt_command(self, mock_project_path: MagicMock) -> None:
         """If dt not found, return True (skip check)."""
         from app.tasks.autonomous.execution import pristine_self_heal
 
@@ -211,7 +228,12 @@ class TestPristineSelfHeal:
 
         assert result is True
 
-    def test_pristine_timeout(self, mock_project_path, mock_dt_found, mock_subprocess):
+    def test_pristine_timeout(
+        self,
+        mock_project_path: MagicMock,
+        mock_dt_found: MagicMock,
+        mock_subprocess: MagicMock,
+    ) -> None:
         """Timeout returns False."""
         import subprocess
 

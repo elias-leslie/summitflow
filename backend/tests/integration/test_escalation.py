@@ -56,4 +56,4 @@ class TestSupervisorGuidance:
     def test_supervisor_guidance_function_exists(self) -> None:
         """Supervisor guidance function should exist."""
         assert callable(supervisor_guidance)
-        assert supervisor_guidance.name == "autonomous.supervisor_guidance"
+        assert supervisor_guidance.__name__ == "supervisor_guidance"

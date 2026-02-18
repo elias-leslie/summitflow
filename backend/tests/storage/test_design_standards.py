@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Generator
+from collections.abc import Generator
+from typing import Any
 
 import pytest
 
@@ -11,14 +12,14 @@ from app.storage.connection import get_connection
 
 
 @pytest.fixture
-def conn() -> Generator[Any, None, None]:
+def conn() -> Generator[Any]:
     """Database connection fixture."""
     with get_connection() as connection:
         yield connection
 
 
 @pytest.fixture
-def cleanup_project(conn: Any) -> Generator[str, None, None]:
+def cleanup_project(conn: Any) -> Generator[str]:
     """Fixture to clean up test project data after tests."""
     project_id = "test-design-project"
 
@@ -42,7 +43,7 @@ def cleanup_project(conn: Any) -> Generator[str, None, None]:
 
 
 @pytest.fixture
-def base_standard(conn: Any) -> Generator[dict[str, Any], None, None]:
+def base_standard(conn: Any) -> Generator[dict[str, Any]]:
     """Create a base standard for testing."""
     with conn.cursor() as cur:
         cur.execute("DELETE FROM design_standards WHERE is_base = TRUE AND project_id IS NULL")

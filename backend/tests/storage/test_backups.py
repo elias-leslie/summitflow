@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from datetime import UTC
-from typing import Any, Generator
+from typing import Any
 
-import psycopg2
 import pytest
 
 from app.storage import backups
@@ -13,14 +13,14 @@ from app.storage.connection import get_connection
 
 
 @pytest.fixture
-def conn() -> Generator[Any, None, None]:
+def conn() -> Generator[Any]:
     """Database connection fixture."""
     with get_connection() as connection:
         yield connection
 
 
 @pytest.fixture
-def cleanup_project(conn: Any) -> Generator[str, None, None]:
+def cleanup_project(conn: Any) -> Generator[str]:
     """Fixture to clean up test project data after tests."""
     project_id = "test-backup-project"
 

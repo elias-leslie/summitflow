@@ -17,6 +17,7 @@ Usage:
 from __future__ import annotations
 
 import os
+from collections.abc import Generator
 from dataclasses import dataclass
 from typing import Any, ClassVar
 from unittest.mock import MagicMock, patch
@@ -190,7 +191,7 @@ def create_mock_session_response(
 
 
 @pytest.fixture
-def mock_agent_hub_client():
+def mock_agent_hub_client() -> Generator[MagicMock]:
     """Create a mock AgentHubClient for testing."""
     with patch("agent_hub.AgentHubClient") as mock_class:
         mock_client = MagicMock()
@@ -199,7 +200,7 @@ def mock_agent_hub_client():
 
 
 @pytest.fixture
-def live_agent_hub_available(request):
+def live_agent_hub_available(request: pytest.FixtureRequest) -> None:
     """Check if live Agent Hub is available for testing."""
     if not request.config.getoption("--run-live-agent-hub", default=False):
         pytest.skip("Live Agent Hub tests require --run-live-agent-hub flag")
@@ -222,7 +223,7 @@ def live_agent_hub_available(request):
 class TestCompletionContract:
     """Tests for the /api/complete endpoint contract."""
 
-    def test_request_format_with_system_prompt(self, mock_agent_hub_client):
+    def test_request_format_with_system_prompt(self, mock_agent_hub_client: MagicMock) -> None:
         """Verify request format when system prompt is provided."""
         from app.services.agent_hub_client import AgentHubLLMClient
 
@@ -254,7 +255,7 @@ class TestCompletionContract:
         assert messages[0] == {"role": "system", "content": "You are a helpful assistant"}
         assert messages[1] == {"role": "user", "content": "Hello"}
 
-    def test_request_format_without_system_prompt(self, mock_agent_hub_client):
+    def test_request_format_without_system_prompt(self, mock_agent_hub_client: MagicMock) -> None:
         """Verify request format when no system prompt is provided."""
         from app.services.agent_hub_client import AgentHubLLMClient
 
@@ -273,7 +274,7 @@ class TestCompletionContract:
         assert len(messages) == 1
         assert messages[0] == {"role": "user", "content": "Hello"}
 
-    def test_response_parsing(self, mock_agent_hub_client):
+    def test_response_parsing(self, mock_agent_hub_client: MagicMock) -> None:
         """Verify SummitFlow correctly parses completion response."""
         from app.services.agent_hub_client import AgentHubLLMClient
 
@@ -303,14 +304,14 @@ class TestCompletionContract:
         assert result.raw_response["session_id"] == "sess-abc"
         assert result.raw_response["from_cache"] is True
 
-    def test_response_contract_validation(self, mock_agent_hub_client):
+    def test_response_contract_validation(self, mock_agent_hub_client: MagicMock) -> None:
         """Verify response conforms to expected contract."""
         mock_response = create_mock_completion_response()
 
         violations = CompletionResponseContract.validate_response(mock_response)
         assert violations == [], f"Response contract violations: {violations}"
 
-    def test_external_id_passed_for_task_linkage(self, mock_agent_hub_client):
+    def test_external_id_passed_for_task_linkage(self, mock_agent_hub_client: MagicMock) -> None:
         """Verify task_id is passed as external_id for session linkage."""
         from app.services.agent_hub_client import AgentHubLLMClient
 
@@ -326,7 +327,7 @@ class TestCompletionContract:
         call_kwargs = mock_agent_hub_client.complete.call_args.kwargs
         assert call_kwargs.get("external_id") == "task-12345678"
 
-    def test_caching_enabled_by_default(self, mock_agent_hub_client):
+    def test_caching_enabled_by_default(self, mock_agent_hub_client: MagicMock) -> None:
         """Verify caching is enabled by default."""
         from app.services.agent_hub_client import AgentHubLLMClient
 
@@ -346,7 +347,7 @@ class TestCompletionContract:
 class TestErrorHandlingContract:
     """Tests for error handling contracts."""
 
-    def test_authentication_error_handling(self, mock_agent_hub_client):
+    def test_authentication_error_handling(self, mock_agent_hub_client: MagicMock) -> None:
         """Verify AuthenticationError (401) is handled correctly."""
         from app.services.agent_hub_client import AgentHubLLMClient
 
@@ -360,7 +361,7 @@ class TestErrorHandlingContract:
             with pytest.raises(RuntimeError, match="Agent Hub request failed"):
                 client.generate(prompt="Hello")
 
-    def test_rate_limit_error_handling(self, mock_agent_hub_client):
+    def test_rate_limit_error_handling(self, mock_agent_hub_client: MagicMock) -> None:
         """Verify RateLimitError (429) is handled correctly."""
         from app.services.agent_hub_client import AgentHubLLMClient
 
@@ -376,7 +377,7 @@ class TestErrorHandlingContract:
             with pytest.raises(RuntimeError, match="Agent Hub request failed"):
                 client.generate(prompt="Hello")
 
-    def test_validation_error_handling(self, mock_agent_hub_client):
+    def test_validation_error_handling(self, mock_agent_hub_client: MagicMock) -> None:
         """Verify ValidationError (422) is handled correctly."""
         from app.services.agent_hub_client import AgentHubLLMClient
 
@@ -390,7 +391,7 @@ class TestErrorHandlingContract:
             with pytest.raises(RuntimeError, match="Agent Hub request failed"):
                 client.generate(prompt="Hello")
 
-    def test_server_error_handling(self, mock_agent_hub_client):
+    def test_server_error_handling(self, mock_agent_hub_client: MagicMock) -> None:
         """Verify ServerError (5xx) is handled correctly."""
         from app.services.agent_hub_client import AgentHubLLMClient
 
@@ -404,7 +405,7 @@ class TestErrorHandlingContract:
             with pytest.raises(RuntimeError, match="Agent Hub request failed"):
                 client.generate(prompt="Hello")
 
-    def test_client_disabled_error_handling(self, mock_agent_hub_client):
+    def test_client_disabled_error_handling(self, mock_agent_hub_client: MagicMock) -> None:
         """Verify ClientDisabledError (dormant mode) is handled correctly."""
         from app.services.agent_hub_client import AgentHubLLMClient
 
@@ -420,7 +421,7 @@ class TestErrorHandlingContract:
             with pytest.raises(RuntimeError, match="Agent Hub request failed"):
                 client.generate(prompt="Hello")
 
-    def test_generic_agent_hub_error_handling(self, mock_agent_hub_client):
+    def test_generic_agent_hub_error_handling(self, mock_agent_hub_client: MagicMock) -> None:
         """Verify generic AgentHubError is handled correctly."""
         from app.services.agent_hub_client import AgentHubLLMClient
 
@@ -438,7 +439,7 @@ class TestErrorHandlingContract:
 class TestClientConfigurationContract:
     """Tests for client configuration contracts."""
 
-    def test_sync_client_configuration(self):
+    def test_sync_client_configuration(self) -> None:
         """Verify get_sync_client passes correct configuration."""
         # Must patch where it's imported, not where it's defined
         with patch("app.services.agent_hub_client.AgentHubClient") as mock_class:
@@ -458,7 +459,7 @@ class TestClientConfigurationContract:
             assert call_kwargs["timeout"] == 120.0
             assert call_kwargs["client_name"] == "test-client"
 
-    def test_async_client_configuration(self):
+    def test_async_client_configuration(self) -> None:
         """Verify get_async_client passes correct configuration."""
         # Must patch where it's imported, not where it's defined
         with patch("app.services.agent_hub_client.AsyncAgentHubClient") as mock_class:
@@ -478,7 +479,7 @@ class TestClientConfigurationContract:
             assert call_kwargs["timeout"] == 120.0
             assert call_kwargs["client_name"] == "test-client"
 
-    def test_client_credentials_injected(self):
+    def test_client_credentials_injected(self) -> None:
         """Verify client credentials are injected from environment."""
         # Test that get_sync_client uses module-level credential constants
         # by checking the call args include the expected credential fields
@@ -503,7 +504,7 @@ class TestClientConfigurationContract:
 class TestSessionContract:
     """Tests for session management contract."""
 
-    def test_availability_check_uses_list_sessions(self, mock_agent_hub_client):
+    def test_availability_check_uses_list_sessions(self, mock_agent_hub_client: MagicMock) -> None:
         """Verify is_available() uses list_sessions for health check."""
         from app.services.agent_hub_client import AgentHubLLMClient
 
@@ -519,7 +520,7 @@ class TestSessionContract:
         assert result is True
         mock_agent_hub_client.list_sessions.assert_called_once_with(page_size=1)
 
-    def test_availability_check_returns_false_on_error(self, mock_agent_hub_client):
+    def test_availability_check_returns_false_on_error(self, mock_agent_hub_client: MagicMock) -> None:
         """Verify is_available() returns False when Agent Hub is down."""
         from app.services.agent_hub_client import AgentHubLLMClient
 
@@ -544,17 +545,17 @@ CONTRACT_TEST_PROJECT_ID = "summitflow-contract-test"
 
 
 @pytest.fixture
-def live_client_with_cleanup(live_agent_hub_available):
+def live_client_with_cleanup(live_agent_hub_available: None) -> Any:
     """Provides a live client and cleans up created sessions after test."""
     from app.services.agent_hub_client import get_sync_client
 
     client = get_sync_client()
-    created_sessions = []
+    created_sessions: list[str] = []
 
     class TrackedClient:
         """Wrapper that tracks created sessions for cleanup."""
 
-        def complete(self, **kwargs):
+        def complete(self, **kwargs: Any) -> Any:
             # Force test project ID to avoid production pollution
             kwargs["project_id"] = CONTRACT_TEST_PROJECT_ID
             kwargs.setdefault("purpose", "contract_test")
@@ -563,10 +564,10 @@ def live_client_with_cleanup(live_agent_hub_available):
                 created_sessions.append(response.session_id)
             return response
 
-        def get_session(self, session_id):
+        def get_session(self, session_id: str) -> Any:
             return client.get_session(session_id)
 
-        def delete_session(self, session_id):
+        def delete_session(self, session_id: str) -> Any:
             return client.delete_session(session_id)
 
     yield TrackedClient()
@@ -592,13 +593,13 @@ class TestLiveAgentHubContract:
     - Requires explicit opt-in via --run-live-agent-hub flag
     """
 
-    def test_live_completion_request(self, live_agent_hub_available):
+    def test_live_completion_request(self, live_agent_hub_available: None) -> None:
         """Test actual completion request against Agent Hub."""
         from app.services.agent_hub_client import AgentHubLLMClient
 
         # Use test project ID to avoid production pollution
         client = AgentHubLLMClient(
-            model="claude-sonnet-4-5",
+            agent_slug="claude-sonnet-4-5",
             project_id=CONTRACT_TEST_PROJECT_ID,
         )
         response = client.generate(
@@ -625,7 +626,7 @@ class TestLiveAgentHubContract:
         except Exception:
             pass  # Best effort cleanup
 
-    def test_live_session_created(self, live_client_with_cleanup):
+    def test_live_session_created(self, live_client_with_cleanup: Any) -> None:
         """Test that completion creates a session."""
         client = live_client_with_cleanup
         response = client.complete(
@@ -642,7 +643,7 @@ class TestLiveAgentHubContract:
         assert session.status is not None
         # Session cleanup handled by fixture
 
-    def test_live_error_on_invalid_model(self, live_agent_hub_available):
+    def test_live_error_on_invalid_model(self, live_agent_hub_available: None) -> None:
         """Test that invalid model triggers appropriate error."""
         from app.services.agent_hub_client import get_sync_client
 

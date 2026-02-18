@@ -19,14 +19,14 @@ from app.tasks.backup import (
 
 
 @pytest.fixture
-def conn() -> Generator[Any, None, None]:
+def conn() -> Generator[Any]:
     """Database connection fixture."""
     with get_connection() as connection:
         yield connection
 
 
 @pytest.fixture
-def cleanup_project(conn: Any) -> Generator[str, None, None]:
+def cleanup_project(conn: Any) -> Generator[str]:
     """Fixture to clean up test project data after tests."""
     project_id = "test-backup-task-project"
 

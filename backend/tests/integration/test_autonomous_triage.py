@@ -14,7 +14,7 @@ class TestTriageIdea:
     def test_triage_module_exists(self) -> None:
         """Verify triage module is properly structured."""
         assert callable(triage_idea)
-        assert triage_idea.name == "autonomous.triage_idea"
+        assert triage_idea.__name__ == "triage_idea"
 
     def test_triage_missing_task_returns_error(self) -> None:
         """Triage on missing task should return error."""

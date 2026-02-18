@@ -14,7 +14,7 @@ class TestCreatePlan:
     def test_planning_module_exists(self) -> None:
         """Verify planning module is properly structured."""
         assert callable(create_plan)
-        assert create_plan.name == "autonomous.create_plan"
+        assert create_plan.__name__ == "create_plan"
 
     def test_planning_missing_task_returns_error(self) -> None:
         """Planning on missing task should return error."""
