@@ -33,6 +33,11 @@ export interface RefactorTarget {
   class_count: number
   priority: 'high' | 'medium' | 'none'
   reason: string
+  hotspot_score: number
+  commit_count_90d: number
+  test_file_exists: boolean
+  complexity_method: 'radon' | 'heuristic'
+  health_flags: string[]
 }
 
 export interface RefactorTargetsResponse {
