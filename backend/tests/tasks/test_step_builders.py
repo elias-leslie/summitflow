@@ -177,6 +177,27 @@ class TestBuildRefactorSteps:
         assert len(structural) == 1
         assert "len(r['classes'])<=5" in structural[0]["verify_command"]
 
+    def test_has_large_classes_verified(self) -> None:
+        """has_large_classes generates method count check."""
+        steps = build_refactor_steps(
+            "backend/app/services/foo.py", "/abs/path", 200, 150, False,
+            refactor_issues=["has_large_classes"],
+        )
+        structural = [s for s in steps if "structural" in s["description"].lower()]
+        assert len(structural) == 1
+        assert "len(c['methods'])<=10" in structural[0]["verify_command"]
+
+    def test_too_many_imports_verified(self) -> None:
+        """too_many_imports generates import count check."""
+        steps = build_refactor_steps(
+            "backend/app/services/foo.py", "/abs/path", 200, 150, False,
+            refactor_issues=["too_many_imports"],
+        )
+        structural = [s for s in steps if "structural" in s["description"].lower()]
+        assert len(structural) == 1
+        assert "grep" in structural[0]["verify_command"]
+        assert "30" in structural[0]["verify_command"]
+
     def test_quality_gate_always_present(self) -> None:
         """Quality gate step is always included."""
         steps = build_refactor_steps(

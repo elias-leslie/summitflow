@@ -145,6 +145,17 @@ def build_refactor_steps(
             f"r=parse_python_file('{relative_path}'); "
             f"assert len(r['classes'])<=5, f'Class count: {{len(r[\\\"classes\\\"])}}'\""
         )
+    if "has_large_classes" in issues:
+        structural_checks.append(
+            f"python -c \"from app.services.explorer.analyzers.ast_analyzer import parse_python_file; "
+            f"r=parse_python_file('{relative_path}'); "
+            f"assert all(len(c['methods'])<=10 for c in r['classes']), "
+            f"f'Large classes: {{[c[\\\"name\\\"] for c in r[\\\"classes\\\"] if len(c[\\\"methods\\\"])>10]}}'\""
+        )
+    if "too_many_imports" in issues:
+        structural_checks.append(
+            f"test $(grep -cE '^(import |from .+ import )' {relative_path}) -le 30"
+        )
 
     if structural_checks:
         steps.append({
