@@ -186,7 +186,7 @@ def get_refactor_targets(
                 "test_file_exists": row[9],
                 "hotspot_score": float(row[10]) if row[10] is not None else 0.0,
                 "complexity_method": row[11],
-                "health_flags": row[12] if isinstance(row[12], list) else [],
+                "health_flags": list(row[12].keys()) if isinstance(row[12], dict) else row[12] if isinstance(row[12], list) else [],
                 "refactor_issues": row[13] if isinstance(row[13], list) else [],
             }
             for row in rows
