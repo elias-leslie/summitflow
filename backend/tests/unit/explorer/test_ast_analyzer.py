@@ -1,5 +1,9 @@
 """Tests for AST analyzer."""
 
+from __future__ import annotations
+
+from pathlib import Path
+
 import pytest
 
 from app.services.explorer.analyzers.ast_analyzer import parse_python_file
@@ -8,7 +12,7 @@ from app.services.explorer.analyzers.ast_analyzer import parse_python_file
 class TestParsePythonFile:
     """Tests for parse_python_file function."""
 
-    def test_parse_simple_function(self, tmp_path):
+    def test_parse_simple_function(self, tmp_path: Path) -> None:
         """Test parsing a file with a simple function."""
         code = '''
 def hello(name: str) -> str:
@@ -27,7 +31,7 @@ def hello(name: str) -> str:
         assert func["has_docstring"] is True
         assert func["lines"] > 0
 
-    def test_parse_async_function(self, tmp_path):
+    def test_parse_async_function(self, tmp_path: Path) -> None:
         """Test parsing async function."""
         code = """
 async def fetch(url):
@@ -42,7 +46,7 @@ async def fetch(url):
         assert result["functions"][0]["name"] == "fetch"
         assert result["functions"][0]["params"] == ["url"]
 
-    def test_parse_class_with_methods(self, tmp_path):
+    def test_parse_class_with_methods(self, tmp_path: Path) -> None:
         """Test parsing a class with methods."""
         code = '''
 class Calculator:
@@ -66,7 +70,7 @@ class Calculator:
         assert "subtract" in cls["methods"]
         assert cls["has_docstring"] is True
 
-    def test_parse_nesting_depth(self, tmp_path):
+    def test_parse_nesting_depth(self, tmp_path: Path) -> None:
         """Test calculating max nesting depth."""
         code = """
 def deeply_nested():
@@ -83,7 +87,7 @@ def deeply_nested():
 
         assert result["max_nesting"] == 4  # if > for > while > if
 
-    def test_parse_no_nesting(self, tmp_path):
+    def test_parse_no_nesting(self, tmp_path: Path) -> None:
         """Test file with no nesting."""
         code = """
 x = 1
@@ -96,7 +100,7 @@ y = 2
 
         assert result["max_nesting"] == 0
 
-    def test_parse_function_params(self, tmp_path):
+    def test_parse_function_params(self, tmp_path: Path) -> None:
         """Test parsing various parameter types."""
         code = """
 def complex_params(a, b, /, c, d=1, *args, e, f=2, **kwargs):
@@ -115,7 +119,7 @@ def complex_params(a, b, /, c, d=1, *args, e, f=2, **kwargs):
         assert "e" in params
         assert "**kwargs" in params
 
-    def test_parse_no_docstring(self, tmp_path):
+    def test_parse_no_docstring(self, tmp_path: Path) -> None:
         """Test function without docstring."""
         code = """
 def no_docs():
@@ -128,7 +132,7 @@ def no_docs():
 
         assert result["functions"][0]["has_docstring"] is False
 
-    def test_parse_empty_file(self, tmp_path):
+    def test_parse_empty_file(self, tmp_path: Path) -> None:
         """Test parsing empty file."""
         file = tmp_path / "empty.py"
         file.write_text("")
@@ -139,12 +143,12 @@ def no_docs():
         assert result["classes"] == []
         assert result["max_nesting"] == 0
 
-    def test_parse_nonexistent_file(self):
+    def test_parse_nonexistent_file(self) -> None:
         """Test parsing non-existent file raises error."""
         with pytest.raises(FileNotFoundError):
             parse_python_file("/nonexistent/file.py")
 
-    def test_parse_syntax_error(self, tmp_path):
+    def test_parse_syntax_error(self, tmp_path: Path) -> None:
         """Test parsing file with syntax error raises error."""
         file = tmp_path / "bad.py"
         file.write_text("def broken(")

@@ -10,7 +10,7 @@ Tests cover:
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 # =============================================================================
 # T3: _determine_next_stage routing
@@ -24,8 +24,8 @@ class TestDetermineNextStage:
     @patch("app.tasks.autonomous.pickup.get_task_spirit")
     @patch("app.tasks.autonomous.pickup.task_store")
     def test_crowdsourced_no_spirit_returns_ideation(
-        self, mock_store, mock_spirit, mock_subtasks
-    ):
+        self, mock_store: MagicMock, mock_spirit: MagicMock, mock_subtasks: MagicMock
+    ) -> None:
         """Crowdsourced task with no spirit → ideation."""
         from app.tasks.autonomous.pickup import _determine_next_stage
 
@@ -39,8 +39,8 @@ class TestDetermineNextStage:
     @patch("app.tasks.autonomous.pickup.get_task_spirit")
     @patch("app.tasks.autonomous.pickup.task_store")
     def test_crowdsourced_no_objective_returns_ideation(
-        self, mock_store, mock_spirit, mock_subtasks
-    ):
+        self, mock_store: MagicMock, mock_spirit: MagicMock, mock_subtasks: MagicMock
+    ) -> None:
         """Crowdsourced task with spirit but no objective → ideation."""
         from app.tasks.autonomous.pickup import _determine_next_stage
 
@@ -54,8 +54,8 @@ class TestDetermineNextStage:
     @patch("app.tasks.autonomous.pickup.get_task_spirit")
     @patch("app.tasks.autonomous.pickup.task_store")
     def test_crowdsourced_with_spirit_no_subtasks_returns_planning(
-        self, mock_store, mock_spirit, mock_subtasks
-    ):
+        self, mock_store: MagicMock, mock_spirit: MagicMock, mock_subtasks: MagicMock
+    ) -> None:
         """Crowdsourced task with spirit + objective but no subtasks → planning."""
         from app.tasks.autonomous.pickup import _determine_next_stage
 
@@ -69,8 +69,8 @@ class TestDetermineNextStage:
     @patch("app.tasks.autonomous.pickup.get_task_spirit")
     @patch("app.tasks.autonomous.pickup.task_store")
     def test_no_crowdsourced_no_spirit_returns_triage(
-        self, mock_store, mock_spirit, mock_subtasks
-    ):
+        self, mock_store: MagicMock, mock_spirit: MagicMock, mock_subtasks: MagicMock
+    ) -> None:
         """Non-crowdsourced task with no spirit → triage (not ideation)."""
         from app.tasks.autonomous.pickup import _determine_next_stage
 
@@ -84,8 +84,8 @@ class TestDetermineNextStage:
     @patch("app.tasks.autonomous.pickup.get_task_spirit")
     @patch("app.tasks.autonomous.pickup.task_store")
     def test_with_spirit_no_subtasks_returns_planning(
-        self, mock_store, mock_spirit, mock_subtasks
-    ):
+        self, mock_store: MagicMock, mock_spirit: MagicMock, mock_subtasks: MagicMock
+    ) -> None:
         """Task with spirit/objective but no subtasks → planning."""
         from app.tasks.autonomous.pickup import _determine_next_stage
 
@@ -99,8 +99,8 @@ class TestDetermineNextStage:
     @patch("app.tasks.autonomous.pickup.get_task_spirit")
     @patch("app.tasks.autonomous.pickup.task_store")
     def test_with_incomplete_subtasks_returns_execution(
-        self, mock_store, mock_spirit, mock_subtasks
-    ):
+        self, mock_store: MagicMock, mock_spirit: MagicMock, mock_subtasks: MagicMock
+    ) -> None:
         """Task with incomplete subtasks → execution."""
         from app.tasks.autonomous.pickup import _determine_next_stage
 
@@ -117,8 +117,8 @@ class TestDetermineNextStage:
     @patch("app.tasks.autonomous.pickup.get_task_spirit")
     @patch("app.tasks.autonomous.pickup.task_store")
     def test_all_subtasks_passed_returns_unknown(
-        self, mock_store, mock_spirit, mock_subtasks
-    ):
+        self, mock_store: MagicMock, mock_spirit: MagicMock, mock_subtasks: MagicMock
+    ) -> None:
         """Task with all subtasks passed → unknown (nothing left to do)."""
         from app.tasks.autonomous.pickup import _determine_next_stage
 
@@ -139,7 +139,7 @@ class TestDetermineNextStage:
 class TestCrossAgentFallback:
     """Tests for agent routing fallback in agent_routing.py."""
 
-    def test_get_fallback_agents_backend(self):
+    def test_get_fallback_agents_backend(self) -> None:
         """Backend subtask type → fallback agents excluding current."""
         from app.tasks.autonomous.exec_modules.agent_routing import get_fallback_agents
 
@@ -148,7 +148,7 @@ class TestCrossAgentFallback:
         assert "coder" not in result
         assert len(result) > 0
 
-    def test_get_fallback_agents_excludes_current(self):
+    def test_get_fallback_agents_excludes_current(self) -> None:
         """Fallback list should exclude the current agent."""
         from app.tasks.autonomous.exec_modules.agent_routing import get_fallback_agents
 
@@ -157,21 +157,21 @@ class TestCrossAgentFallback:
         # bug-fix fallbacks are ["coder", "refactor"] minus "coder"
         assert "refactor" in result
 
-    def test_get_fallback_agents_unknown_type(self):
+    def test_get_fallback_agents_unknown_type(self) -> None:
         """Unknown subtask type → empty fallback list."""
         from app.tasks.autonomous.exec_modules.agent_routing import get_fallback_agents
 
         result = get_fallback_agents("nonexistent-type", "coder")
         assert result == []
 
-    def test_get_fallback_agents_none_type(self):
+    def test_get_fallback_agents_none_type(self) -> None:
         """None subtask type → empty fallback list."""
         from app.tasks.autonomous.exec_modules.agent_routing import get_fallback_agents
 
         result = get_fallback_agents(None, "coder")
         assert result == []
 
-    def test_get_agent_for_subtask_known_types(self):
+    def test_get_agent_for_subtask_known_types(self) -> None:
         """Known subtask types map to correct agents."""
         from app.tasks.autonomous.exec_modules.agent_routing import get_agent_for_subtask
 
@@ -180,14 +180,14 @@ class TestCrossAgentFallback:
         assert get_agent_for_subtask("bug-fix") == "debugger"
         assert get_agent_for_subtask("ui-design") == "ux-polisher"
 
-    def test_get_agent_for_subtask_falls_back_to_task_type(self):
+    def test_get_agent_for_subtask_falls_back_to_task_type(self) -> None:
         """Unknown subtask type falls back to task_type mapping."""
         from app.tasks.autonomous.exec_modules.agent_routing import get_agent_for_subtask
 
         result = get_agent_for_subtask("unknown", task_type="bug")
         assert result == "debugger"
 
-    def test_get_agent_for_subtask_default_agent(self):
+    def test_get_agent_for_subtask_default_agent(self) -> None:
         """Unknown subtask + task type → default agent (coder)."""
         from app.tasks.autonomous.exec_modules.agent_routing import (
             DEFAULT_AGENT,
@@ -197,7 +197,7 @@ class TestCrossAgentFallback:
         result = get_agent_for_subtask("unknown", task_type="unknown")
         assert result == DEFAULT_AGENT
 
-    def test_fallback_map_covers_all_subtask_types(self):
+    def test_fallback_map_covers_all_subtask_types(self) -> None:
         """Every subtask type in the agent map has a fallback entry."""
         from app.tasks.autonomous.exec_modules.agent_routing import (
             CROSS_AGENT_FALLBACK_MAP,
@@ -230,13 +230,13 @@ class TestModelEscalation:
     @patch("app.tasks.autonomous.exec_modules.retry_loop.get_steps_for_subtask")
     def test_model_override_none_during_self_heal(
         self,
-        mock_get_steps,
-        mock_health,
-        mock_verify,
-        mock_infra,
-        mock_prompt,
-        mock_fix,
-    ):
+        mock_get_steps: MagicMock,
+        mock_health: MagicMock,
+        mock_verify: MagicMock,
+        mock_infra: MagicMock,
+        mock_prompt: MagicMock,
+        mock_fix: MagicMock,
+    ) -> None:
         """During self-heal phase (attempts < threshold), model_override is None."""
         from app.tasks.autonomous.exec_modules.retry_loop import run_self_healing_loop
 
@@ -290,13 +290,13 @@ class TestModelEscalation:
     @patch("app.tasks.autonomous.exec_modules.retry_loop.get_steps_for_subtask")
     def test_model_override_escalation_after_threshold(
         self,
-        mock_get_steps,
-        mock_health,
-        mock_verify,
-        mock_infra,
-        mock_prompt,
-        mock_fix,
-    ):
+        mock_get_steps: MagicMock,
+        mock_health: MagicMock,
+        mock_verify: MagicMock,
+        mock_infra: MagicMock,
+        mock_prompt: MagicMock,
+        mock_fix: MagicMock,
+    ) -> None:
         """After self-heal exhausted, model_override is set to ESCALATION_MODEL."""
         from app.constants import ESCALATION_MODEL, SELF_HEAL_MAX_ATTEMPTS
         from app.tasks.autonomous.exec_modules.retry_loop import run_self_healing_loop
@@ -356,7 +356,7 @@ class TestMemoryWrites:
     """Tests for memory_writes.py functions."""
 
     @patch("app.tasks.autonomous.exec_modules.memory_writes.get_sync_client")
-    def test_save_subtask_learning_clean_pass_skips(self, mock_client):
+    def test_save_subtask_learning_clean_pass_skips(self, mock_client: MagicMock) -> None:
         """Clean pass (first attempt) should NOT save learning."""
         from app.tasks.autonomous.exec_modules.memory_writes import (
             save_subtask_learning,
@@ -376,7 +376,7 @@ class TestMemoryWrites:
         mock_client.return_value.save_learning.assert_not_called()
 
     @patch("app.tasks.autonomous.exec_modules.memory_writes.get_sync_client")
-    def test_save_subtask_learning_passed_with_retries(self, mock_client):
+    def test_save_subtask_learning_passed_with_retries(self, mock_client: MagicMock) -> None:
         """Passed subtask that required retries → save learning with issues."""
         from app.tasks.autonomous.exec_modules.memory_writes import (
             save_subtask_learning,
@@ -403,7 +403,7 @@ class TestMemoryWrites:
         assert "reference" in str(call_kwargs)
 
     @patch("app.tasks.autonomous.exec_modules.memory_writes.get_sync_client")
-    def test_save_subtask_learning_failed(self, mock_client):
+    def test_save_subtask_learning_failed(self, mock_client: MagicMock) -> None:
         """Failed subtask → save learning with failure info."""
         from app.tasks.autonomous.exec_modules.memory_writes import (
             save_subtask_learning,
@@ -428,7 +428,7 @@ class TestMemoryWrites:
         assert "FAILED" in content
 
     @patch("app.tasks.autonomous.exec_modules.memory_writes.get_sync_client")
-    def test_save_qa_fix_pattern(self, mock_client):
+    def test_save_qa_fix_pattern(self, mock_client: MagicMock) -> None:
         """QA fix pattern → save learning with correct content."""
         from app.tasks.autonomous.exec_modules.memory_writes import (
             save_qa_fix_pattern,
@@ -448,7 +448,7 @@ class TestMemoryWrites:
         assert "Missing error handling" in content
 
     @patch("app.tasks.autonomous.exec_modules.memory_writes.get_sync_client")
-    def test_rate_cited_memories(self, mock_client):
+    def test_rate_cited_memories(self, mock_client: MagicMock) -> None:
         """Rate cited memories → calls rate_episode for each UUID."""
         from app.tasks.autonomous.exec_modules.memory_writes import rate_cited_memories
 
@@ -460,7 +460,7 @@ class TestMemoryWrites:
         mock_client.return_value.rate_episode.assert_any_call("uuid-3", "helpful")
 
     @patch("app.tasks.autonomous.exec_modules.memory_writes.get_sync_client")
-    def test_rate_cited_memories_empty_list(self, mock_client):
+    def test_rate_cited_memories_empty_list(self, mock_client: MagicMock) -> None:
         """Empty cited UUIDs → no API calls."""
         from app.tasks.autonomous.exec_modules.memory_writes import rate_cited_memories
 
@@ -469,7 +469,7 @@ class TestMemoryWrites:
         mock_client.assert_not_called()
 
     @patch("app.tasks.autonomous.exec_modules.memory_writes.get_sync_client")
-    def test_rate_cited_memories_caps_at_10(self, mock_client):
+    def test_rate_cited_memories_caps_at_10(self, mock_client: MagicMock) -> None:
         """More than 10 UUIDs → only first 10 are rated."""
         from app.tasks.autonomous.exec_modules.memory_writes import rate_cited_memories
 
@@ -479,7 +479,7 @@ class TestMemoryWrites:
         assert mock_client.return_value.rate_episode.call_count == 10
 
     @patch("app.tasks.autonomous.exec_modules.memory_writes.get_sync_client")
-    def test_save_subtask_learning_handles_exception(self, mock_client):
+    def test_save_subtask_learning_handles_exception(self, mock_client: MagicMock) -> None:
         """Exception in save_learning should NOT propagate."""
         from app.tasks.autonomous.exec_modules.memory_writes import (
             save_subtask_learning,
@@ -500,7 +500,7 @@ class TestMemoryWrites:
         )
 
     @patch("app.tasks.autonomous.exec_modules.memory_writes.get_sync_client")
-    def test_rate_cited_memories_handles_exception(self, mock_client):
+    def test_rate_cited_memories_handles_exception(self, mock_client: MagicMock) -> None:
         """Exception in rate_episode should NOT propagate."""
         from app.tasks.autonomous.exec_modules.memory_writes import rate_cited_memories
 
@@ -519,7 +519,7 @@ class TestResumeContext:
     """Tests for build_resume_context in prompts.py."""
 
     @patch("app.tasks.autonomous.exec_modules.prompts.get_events_by_trace")
-    def test_no_events_returns_empty(self, mock_events):
+    def test_no_events_returns_empty(self, mock_events: MagicMock) -> None:
         """No prior events → empty string."""
         from app.tasks.autonomous.exec_modules.prompts import build_resume_context
 
@@ -529,7 +529,7 @@ class TestResumeContext:
         assert result == ""
 
     @patch("app.tasks.autonomous.exec_modules.prompts.get_events_by_trace")
-    def test_with_failure_events_returns_context(self, mock_events):
+    def test_with_failure_events_returns_context(self, mock_events: MagicMock) -> None:
         """Prior failure events → resume context with failure summary."""
         from app.tasks.autonomous.exec_modules.prompts import build_resume_context
 
@@ -544,7 +544,7 @@ class TestResumeContext:
         assert "FAILED" in result
 
     @patch("app.tasks.autonomous.exec_modules.prompts.get_events_by_trace")
-    def test_with_session_end_events(self, mock_events):
+    def test_with_session_end_events(self, mock_events: MagicMock) -> None:
         """SESSION END events → resume context with session state."""
         from app.tasks.autonomous.exec_modules.prompts import build_resume_context
 
@@ -557,7 +557,7 @@ class TestResumeContext:
         assert "SESSION END" in result
 
     @patch("app.tasks.autonomous.exec_modules.prompts.get_events_by_trace")
-    def test_no_relevant_events_returns_empty(self, mock_events):
+    def test_no_relevant_events_returns_empty(self, mock_events: MagicMock) -> None:
         """Events without SESSION END or FAILED → empty string."""
         from app.tasks.autonomous.exec_modules.prompts import build_resume_context
 
@@ -570,7 +570,7 @@ class TestResumeContext:
         assert result == ""
 
     @patch("app.tasks.autonomous.exec_modules.prompts.get_events_by_trace")
-    def test_exception_returns_empty(self, mock_events):
+    def test_exception_returns_empty(self, mock_events: MagicMock) -> None:
         """Exception in event query → empty string (no propagation)."""
         from app.tasks.autonomous.exec_modules.prompts import build_resume_context
 

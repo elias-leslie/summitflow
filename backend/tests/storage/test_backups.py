@@ -1,7 +1,11 @@
 """Tests for the backup storage module."""
 
-from datetime import UTC
+from __future__ import annotations
 
+from datetime import UTC
+from typing import Any, Generator
+
+import psycopg2
 import pytest
 
 from app.storage import backups
@@ -9,14 +13,14 @@ from app.storage.connection import get_connection
 
 
 @pytest.fixture
-def conn():
+def conn() -> Generator[Any, None, None]:
     """Database connection fixture."""
     with get_connection() as connection:
         yield connection
 
 
 @pytest.fixture
-def cleanup_project(conn):
+def cleanup_project(conn: Any) -> Generator[str, None, None]:
     """Fixture to clean up test project data after tests."""
     project_id = "test-backup-project"
 
@@ -43,7 +47,7 @@ def cleanup_project(conn):
 class TestBackupCRUD:
     """Tests for backup CRUD operations."""
 
-    def test_create_backup_record(self, cleanup_project):
+    def test_create_backup_record(self, cleanup_project: str) -> None:
         """Create backup record returns valid record."""
         backup = backups.create_backup_record(
             project_id=cleanup_project,
@@ -58,7 +62,7 @@ class TestBackupCRUD:
         assert backup["note"] == "Test backup"
         assert backup["created_at"] is not None
 
-    def test_get_backup(self, cleanup_project):
+    def test_get_backup(self, cleanup_project: str) -> None:
         """Get backup by ID returns correct record."""
         created = backups.create_backup_record(cleanup_project)
         fetched = backups.get_backup(created["id"])
@@ -67,18 +71,18 @@ class TestBackupCRUD:
         assert fetched["id"] == created["id"]
         assert fetched["project_id"] == cleanup_project
 
-    def test_get_backup_not_found(self):
+    def test_get_backup_not_found(self) -> None:
         """Get nonexistent backup returns None."""
         result = backups.get_backup("bkp-nonexistent")
         assert result is None
 
-    def test_list_backups_empty(self, cleanup_project):
+    def test_list_backups_empty(self, cleanup_project: str) -> None:
         """List backups returns empty for new project."""
         result, total = backups.list_backups(project_id=cleanup_project)
         assert result == []
         assert total == 0
 
-    def test_list_backups_with_data(self, cleanup_project):
+    def test_list_backups_with_data(self, cleanup_project: str) -> None:
         """List backups returns created records."""
         backups.create_backup_record(cleanup_project, note="First")
         backups.create_backup_record(cleanup_project, note="Second")
@@ -87,7 +91,7 @@ class TestBackupCRUD:
         assert len(result) == 2
         assert total == 2
 
-    def test_list_backups_filter_by_status(self, cleanup_project):
+    def test_list_backups_filter_by_status(self, cleanup_project: str) -> None:
         """List backups filters by status."""
         b1 = backups.create_backup_record(cleanup_project)
         backups.create_backup_record(cleanup_project)
@@ -97,7 +101,7 @@ class TestBackupCRUD:
         assert len(result) == 1
         assert result[0]["id"] == b1["id"]
 
-    def test_update_backup_status(self, cleanup_project):
+    def test_update_backup_status(self, cleanup_project: str) -> None:
         """Update backup status changes status and timestamps."""
         backup = backups.create_backup_record(cleanup_project)
 
@@ -105,6 +109,7 @@ class TestBackupCRUD:
             backup["id"],
             status="running",
         )
+        assert updated is not None
         assert updated["status"] == "running"
         assert updated["started_at"] is not None
 
@@ -116,12 +121,13 @@ class TestBackupCRUD:
             files_size_bytes=512000,
             location="/backups/test",
         )
+        assert completed is not None
         assert completed["status"] == "completed"
         assert completed["completed_at"] is not None
         assert completed["size_bytes"] == 1024000
         assert completed["location"] == "/backups/test"
 
-    def test_update_backup_status_failed(self, cleanup_project):
+    def test_update_backup_status_failed(self, cleanup_project: str) -> None:
         """Update backup to failed status includes error message."""
         backup = backups.create_backup_record(cleanup_project)
 
@@ -130,10 +136,11 @@ class TestBackupCRUD:
             status="failed",
             error_message="Disk full",
         )
+        assert failed is not None
         assert failed["status"] == "failed"
         assert failed["error_message"] == "Disk full"
 
-    def test_delete_backup_record(self, cleanup_project):
+    def test_delete_backup_record(self, cleanup_project: str) -> None:
         """Delete backup removes record."""
         backup = backups.create_backup_record(cleanup_project)
         assert backups.get_backup(backup["id"]) is not None
@@ -142,7 +149,7 @@ class TestBackupCRUD:
         assert deleted is True
         assert backups.get_backup(backup["id"]) is None
 
-    def test_delete_backup_not_found(self):
+    def test_delete_backup_not_found(self) -> None:
         """Delete nonexistent backup returns False."""
         result = backups.delete_backup_record("bkp-nonexistent")
         assert result is False
@@ -151,12 +158,12 @@ class TestBackupCRUD:
 class TestScheduleCRUD:
     """Tests for schedule CRUD operations."""
 
-    def test_get_schedule_not_found(self, cleanup_project):
+    def test_get_schedule_not_found(self, cleanup_project: str) -> None:
         """Get schedule returns None when not set."""
         result = backups.get_schedule(cleanup_project)
         assert result is None
 
-    def test_upsert_schedule_create(self, cleanup_project):
+    def test_upsert_schedule_create(self, cleanup_project: str) -> None:
         """Upsert creates new schedule."""
         schedule = backups.upsert_schedule(
             project_id=cleanup_project,
@@ -170,7 +177,7 @@ class TestScheduleCRUD:
         assert schedule["frequency"] == "daily"
         assert schedule["retention_days"] == 7
 
-    def test_upsert_schedule_update(self, cleanup_project):
+    def test_upsert_schedule_update(self, cleanup_project: str) -> None:
         """Upsert updates existing schedule."""
         backups.upsert_schedule(cleanup_project, True, "daily", 5)
 
@@ -185,7 +192,7 @@ class TestScheduleCRUD:
         assert updated["frequency"] == "weekly"
         assert updated["retention_days"] == 10
 
-    def test_update_schedule_last_run(self, cleanup_project):
+    def test_update_schedule_last_run(self, cleanup_project: str) -> None:
         """Update schedule last run updates timestamps."""
         from datetime import datetime, timedelta
 
@@ -196,10 +203,11 @@ class TestScheduleCRUD:
         assert result is True
 
         schedule = backups.get_schedule(cleanup_project)
+        assert schedule is not None
         assert schedule["last_run_at"] is not None
         assert schedule["next_run_at"] is not None
 
-    def test_list_due_schedules(self, conn, cleanup_project):
+    def test_list_due_schedules(self, conn: Any, cleanup_project: str) -> None:
         """List due schedules returns schedules ready to run."""
         backups.upsert_schedule(cleanup_project, True, "daily")
 
@@ -218,13 +226,13 @@ class TestScheduleCRUD:
 class TestStorageSummary:
     """Tests for storage summary functions."""
 
-    def test_get_storage_summary_empty(self, cleanup_project):
+    def test_get_storage_summary_empty(self, cleanup_project: str) -> None:
         """Storage summary returns zeros for empty project."""
         summary = backups.get_storage_summary(cleanup_project)
         assert summary["total_count"] == 0
         assert summary["total_bytes"] == 0
 
-    def test_get_storage_summary_with_data(self, cleanup_project):
+    def test_get_storage_summary_with_data(self, cleanup_project: str) -> None:
         """Storage summary returns correct counts and sizes."""
         b1 = backups.create_backup_record(cleanup_project)
         b2 = backups.create_backup_record(cleanup_project)
@@ -237,7 +245,7 @@ class TestStorageSummary:
         assert summary["total_bytes"] == 3000
         assert summary["by_status"]["completed"] == 2
 
-    def test_get_latest_backup(self, cleanup_project):
+    def test_get_latest_backup(self, cleanup_project: str) -> None:
         """Get latest backup returns most recent completed."""
         b1 = backups.create_backup_record(cleanup_project, note="First")
         b2 = backups.create_backup_record(cleanup_project, note="Second")
@@ -249,7 +257,7 @@ class TestStorageSummary:
         assert latest is not None
         assert latest["note"] == "Second"
 
-    def test_get_latest_backup_no_completed(self, cleanup_project):
+    def test_get_latest_backup_no_completed(self, cleanup_project: str) -> None:
         """Get latest backup returns None when no completed backups."""
         backups.create_backup_record(cleanup_project)
 
@@ -260,7 +268,7 @@ class TestStorageSummary:
 class TestCleanupExpiredRecords:
     """Tests for cleanup_expired_backup_records."""
 
-    def test_cleanup_expired_deletes_old_records(self, conn, cleanup_project):
+    def test_cleanup_expired_deletes_old_records(self, conn: Any, cleanup_project: str) -> None:
         """Cleanup deletes completed records older than retention, keeping min per project."""
         # Create 5 completed backups, backdate 4 of them to 20 days ago
         records = []
@@ -289,7 +297,7 @@ class TestCleanupExpiredRecords:
         completed = [r for r in remaining if r["status"] == "completed"]
         assert len(completed) == 3
 
-    def test_cleanup_expired_respects_min_keep(self, conn, cleanup_project):
+    def test_cleanup_expired_respects_min_keep(self, conn: Any, cleanup_project: str) -> None:
         """Cleanup never deletes below min_keep per project."""
         # Create 3 completed backups, all old
         records = []
@@ -310,7 +318,7 @@ class TestCleanupExpiredRecords:
         deleted = backups.cleanup_expired_backup_records(retention_days=14, min_keep=3)
         assert deleted == 0
 
-    def test_cleanup_expired_ignores_non_completed(self, conn, cleanup_project):
+    def test_cleanup_expired_ignores_non_completed(self, conn: Any, cleanup_project: str) -> None:
         """Cleanup only affects completed records, not pending/failed."""
         # Create a pending and a failed backup, both old
         backups.create_backup_record(cleanup_project, note="Pending old")

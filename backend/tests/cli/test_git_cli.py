@@ -16,7 +16,7 @@ runner = CliRunner()
 class TestGitStatus:
     """Tests for st git status command."""
 
-    def test_status_help(self):
+    def test_status_help(self) -> None:
         """Verify help text displays."""
         result = runner.invoke(app, ["status", "--help"])
         assert result.exit_code == 0
@@ -24,7 +24,7 @@ class TestGitStatus:
 
     @patch("cli.commands.git._get_repo_status")
     @patch("cli.commands.git._get_managed_repos")
-    def test_status_json_output(self, mock_managed: MagicMock, mock_status: MagicMock):
+    def test_status_json_output(self, mock_managed: MagicMock, mock_status: MagicMock) -> None:
         """Test JSON output format for status."""
         mock_managed.return_value = [Path("/test/repo")]
         mock_status.return_value = {
@@ -44,7 +44,7 @@ class TestGitStatus:
 
     @patch("cli.commands.git._get_repo_status")
     @patch("cli.commands.git._get_managed_repos")
-    def test_status_toon_output(self, mock_managed: MagicMock, mock_status: MagicMock):
+    def test_status_toon_output(self, mock_managed: MagicMock, mock_status: MagicMock) -> None:
         """Test TOON format output for status."""
         mock_managed.return_value = [Path("/test/repo")]
         mock_status.return_value = {
@@ -65,7 +65,7 @@ class TestGitStatus:
 class TestGitSync:
     """Tests for st git sync command."""
 
-    def test_sync_help(self):
+    def test_sync_help(self) -> None:
         """Verify help text displays."""
         result = runner.invoke(app, ["sync", "--help"])
         assert result.exit_code == 0
@@ -73,7 +73,7 @@ class TestGitSync:
 
     @patch("cli.commands.git._get_repo_status")
     @patch("cli.commands.git._get_managed_repos")
-    def test_sync_skips_dirty_repos(self, mock_managed: MagicMock, mock_status: MagicMock):
+    def test_sync_skips_dirty_repos(self, mock_managed: MagicMock, mock_status: MagicMock) -> None:
         """Test that sync skips repos with uncommitted changes."""
         mock_managed.return_value = [Path("/test/repo")]
         mock_status.return_value = {
@@ -94,7 +94,7 @@ class TestGitSync:
 class TestFormatCompactRepo:
     """Tests for TOON format helper."""
 
-    def test_format_clean_repo(self):
+    def test_format_clean_repo(self) -> None:
         """Test formatting a clean repository."""
         repo = {
             "name": "myrepo",
@@ -110,7 +110,7 @@ class TestFormatCompactRepo:
         assert "clean" in result
         assert "uncommitted:0" in result
 
-    def test_format_dirty_repo(self):
+    def test_format_dirty_repo(self) -> None:
         """Test formatting a dirty repository."""
         repo = {
             "name": "dirtyrepo",
@@ -131,12 +131,12 @@ class TestFormatCompactRepo:
 class TestGetRepoStatus:
     """Tests for repository status detection."""
 
-    def test_nonexistent_repo_returns_none(self, tmp_path: Path):
+    def test_nonexistent_repo_returns_none(self, tmp_path: Path) -> None:
         """Non-existent path returns None."""
         result = _get_repo_status(tmp_path / "nonexistent")
         assert result is None
 
-    def test_non_git_dir_returns_none(self, tmp_path: Path):
+    def test_non_git_dir_returns_none(self, tmp_path: Path) -> None:
         """Directory without .git returns None."""
         (tmp_path / "somedir").mkdir()
         result = _get_repo_status(tmp_path / "somedir")

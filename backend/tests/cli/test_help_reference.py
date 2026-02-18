@@ -4,6 +4,8 @@ This test ensures that whenever new commands or subcommands are added to the CLI
 the CLI_REFERENCE help text is also updated. Prevents --help from becoming stale.
 """
 
+from __future__ import annotations
+
 import pytest
 
 try:
@@ -18,7 +20,8 @@ def get_all_command_names() -> set[str]:
 
     # Root level commands
     for cmd in app.registered_commands:
-        name = cmd.name or cmd.callback.__name__
+        callback = cmd.callback
+        name = cmd.name or (callback.__name__ if callback is not None else "")
         commands.add(name)
 
     # Subcommand groups
@@ -29,9 +32,14 @@ def get_all_command_names() -> set[str]:
             commands.add(group_name)
             # Add subcommands within group
             if hasattr(group, "typer_instance"):
-                for subcmd in group.typer_instance.registered_commands:
-                    subname = subcmd.name or subcmd.callback.__name__
-                    commands.add(f"{group_name} {subname}")
+                typer_instance = group.typer_instance
+                if typer_instance is not None:
+                    for subcmd in typer_instance.registered_commands:
+                        subcmd_callback = subcmd.callback
+                        subname = subcmd.name or (
+                            subcmd_callback.__name__ if subcmd_callback is not None else ""
+                        )
+                        commands.add(f"{group_name} {subname}")
 
     return commands
 
@@ -39,11 +47,12 @@ def get_all_command_names() -> set[str]:
 class TestCLIReferenceComplete:
     """Tests to ensure CLI_REFERENCE documents all commands."""
 
-    def test_all_root_commands_documented(self):
+    def test_all_root_commands_documented(self) -> None:
         """Verify all root-level commands appear in CLI_REFERENCE."""
         missing = []
         for cmd in app.registered_commands:
-            name = cmd.name or cmd.callback.__name__
+            callback = cmd.callback
+            name = cmd.name or (callback.__name__ if callback is not None else "")
             # Skip hidden commands (deprecated/removed commands)
             if getattr(cmd, "hidden", False):
                 continue
@@ -56,7 +65,7 @@ class TestCLIReferenceComplete:
             "Update CLI_REFERENCE in cli/main.py to include these commands."
         )
 
-    def test_all_subcommand_groups_documented(self):
+    def test_all_subcommand_groups_documented(self) -> None:
         """Verify all subcommand groups appear in CLI_REFERENCE."""
         missing = []
         for group in app.registered_groups:
@@ -74,7 +83,7 @@ class TestCLIReferenceComplete:
             "Update CLI_REFERENCE in cli/main.py to include these groups."
         )
 
-    def test_core_workflow_commands_have_examples(self):
+    def test_core_workflow_commands_have_examples(self) -> None:
         """Verify core workflow commands have examples in CLI_REFERENCE."""
         core_commands = [
             "ready",
@@ -100,7 +109,7 @@ class TestCLIReferenceComplete:
             "These are frequently used - add examples to CLI_REFERENCE."
         )
 
-    def test_global_flags_documented(self):
+    def test_global_flags_documented(self) -> None:
         """Verify global flags are documented in CLI_REFERENCE."""
         required_flags = ["--compact", "--human", "--project", "--progress-only"]
 
@@ -111,7 +120,7 @@ class TestCLIReferenceComplete:
             "Update the FLAGS line in CLI_REFERENCE."
         )
 
-    def test_cli_reference_not_empty(self):
+    def test_cli_reference_not_empty(self) -> None:
         """Basic sanity check that CLI_REFERENCE has content."""
         assert len(CLI_REFERENCE) > 500, (
             "CLI_REFERENCE seems too short - check it wasn't accidentally truncated"

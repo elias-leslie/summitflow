@@ -83,10 +83,14 @@ def main() -> int:
     # Check current state
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute("SELECT COUNT(*) FROM context_access_log WHERE task_outcome IS NULL")
-        null_count = cur.fetchone()[0]
+        null_row = cur.fetchone()
+        assert null_row is not None
+        null_count = null_row[0]
 
         cur.execute("SELECT COUNT(*) FROM context_access_log WHERE task_outcome IS NOT NULL")
-        filled_count = cur.fetchone()[0]
+        filled_row = cur.fetchone()
+        assert filled_row is not None
+        filled_count = filled_row[0]
 
     logger.info(f"Current state: {filled_count} with outcomes, {null_count} without")
 
@@ -105,7 +109,9 @@ def main() -> int:
     # Verify final state
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute("SELECT COUNT(*) FROM context_access_log WHERE task_outcome IS NULL")
-        remaining = cur.fetchone()[0]
+        remaining_row = cur.fetchone()
+        assert remaining_row is not None
+        remaining = remaining_row[0]
         logger.info(f"  Remaining NULL entries: {remaining}")
 
     return 0 if stats["errors"] == 0 else 1

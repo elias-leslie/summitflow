@@ -6,7 +6,11 @@ Tests for:
 - GET /export: Complete task JSON for plan.json round-trip
 """
 
+from __future__ import annotations
+
 import json
+from collections.abc import Callable
+from typing import Any
 
 from app.storage.connection import get_connection
 
@@ -14,7 +18,9 @@ from app.storage.connection import get_connection
 class TestApproveEndpoint:
     """Test POST /approve endpoint."""
 
-    def test_approve_task_with_spirit(self, client, test_project_id, cleanup_task):
+    def test_approve_task_with_spirit(
+        self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
+    ) -> None:
         """Approving a task with existing spirit data should succeed."""
         # Create a task
         response = client.post(
@@ -55,7 +61,9 @@ class TestApproveEndpoint:
         assert data["plan_approved_by"] == "test-user"
         assert data["plan_approved_at"] is not None
 
-    def test_approve_task_without_spirit(self, client, test_project_id, cleanup_task):
+    def test_approve_task_without_spirit(
+        self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
+    ) -> None:
         """Approving a task without spirit data should create spirit and approve."""
         # Create a task (no spirit data)
         response = client.post(
@@ -81,7 +89,7 @@ class TestApproveEndpoint:
         assert data["plan_status"] == "approved"
         assert data["plan_approved_by"] == "user"  # Default
 
-    def test_approve_nonexistent_task(self, client, test_project_id):
+    def test_approve_nonexistent_task(self, client: Any, test_project_id: str) -> None:
         """Approving a nonexistent task should return 404."""
         response = client.post(f"/api/projects/{test_project_id}/tasks/task-nonexistent/approve")
         assert response.status_code == 404
@@ -90,7 +98,9 @@ class TestApproveEndpoint:
 class TestContextEndpoint:
     """Test GET /context endpoint."""
 
-    def test_context_returns_toon_by_default(self, client, test_project_id, cleanup_task):
+    def test_context_returns_toon_by_default(
+        self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
+    ) -> None:
         """Context endpoint should return TOON format by default."""
         # Create a task
         response = client.post(
@@ -116,7 +126,9 @@ class TestContextEndpoint:
         assert content.startswith("TASK:")
         assert task_id in content
 
-    def test_context_returns_json_when_requested(self, client, test_project_id, cleanup_task):
+    def test_context_returns_json_when_requested(
+        self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
+    ) -> None:
         """Context endpoint should return JSON when format=json."""
         # Create a task
         response = client.post(
@@ -147,7 +159,9 @@ class TestContextEndpoint:
         assert "subtasks" in data
         assert "blockers" in data
 
-    def test_context_includes_subtasks(self, client, test_project_id, cleanup_task):
+    def test_context_includes_subtasks(
+        self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
+    ) -> None:
         """Context should include subtask details."""
         # Create a task
         response = client.post(
@@ -195,7 +209,9 @@ class TestContextEndpoint:
 class TestExportEndpoint:
     """Test GET /export endpoint."""
 
-    def test_export_returns_complete_task_data(self, client, test_project_id, cleanup_task):
+    def test_export_returns_complete_task_data(
+        self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
+    ) -> None:
         """Export should return complete task data for plan.json round-trip."""
         # Create a task
         response = client.post(
@@ -244,8 +260,8 @@ class TestExportEndpoint:
         assert "progress_log" in data
 
     def test_export_includes_acceptance_criteria_from_done_when(
-        self, client, test_project_id, cleanup_task
-    ):
+        self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
+    ) -> None:
         """Export should convert done_when to acceptance_criteria."""
         # Create a task
         response = client.post(
@@ -290,7 +306,7 @@ class TestExportEndpoint:
         assert ac[1]["id"] == "ac-2"
         assert ac[1]["criterion"] == "Second condition"
 
-    def test_export_nonexistent_task(self, client, test_project_id):
+    def test_export_nonexistent_task(self, client: Any, test_project_id: str) -> None:
         """Exporting a nonexistent task should return 404."""
         response = client.get(f"/api/projects/{test_project_id}/tasks/task-nonexistent/export")
         assert response.status_code == 404

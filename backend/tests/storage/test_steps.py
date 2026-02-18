@@ -1,6 +1,9 @@
 """Unit tests for steps storage layer."""
 
-from unittest.mock import patch
+from __future__ import annotations
+
+from typing import Any, Generator
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -10,7 +13,7 @@ from app.storage.steps import StepVerificationError
 
 
 @pytest.fixture
-def test_subtask(test_task):
+def test_subtask(test_task: dict[str, Any]) -> Generator[dict[str, Any], None, None]:
     """Create and cleanup a test subtask for step tests."""
     subtask = subtask_store.create_subtask(
         task_id=test_task["id"],
@@ -28,7 +31,7 @@ def test_subtask(test_task):
 class TestCreateStep:
     """Tests for create_step function."""
 
-    def test_create_step_basic(self, test_subtask):
+    def test_create_step_basic(self, test_subtask: dict[str, Any]) -> None:
         """Test creating a basic step."""
         step = step_store.create_step(
             subtask_id=test_subtask["id"],
@@ -44,7 +47,7 @@ class TestCreateStep:
         assert step["passed_at"] is None
         assert step["created_at"] is not None
 
-    def test_create_step_multiple(self, test_subtask):
+    def test_create_step_multiple(self, test_subtask: dict[str, Any]) -> None:
         """Test creating multiple steps with sequential numbers."""
         step1 = step_store.create_step(test_subtask["id"], 1, "Step one")
         step2 = step_store.create_step(test_subtask["id"], 2, "Step two")
@@ -58,13 +61,13 @@ class TestCreateStep:
 class TestGetStepsForSubtask:
     """Tests for get_steps_for_subtask function."""
 
-    def test_get_steps_empty(self, test_subtask):
+    def test_get_steps_empty(self, test_subtask: dict[str, Any]) -> None:
         """Test getting steps from subtask with no steps."""
         steps = step_store.get_steps_for_subtask(test_subtask["id"])
 
         assert steps == []
 
-    def test_get_steps_populated(self, test_subtask):
+    def test_get_steps_populated(self, test_subtask: dict[str, Any]) -> None:
         """Test getting steps from subtask with steps."""
         step_store.create_step(test_subtask["id"], 1, "First step")
         step_store.create_step(test_subtask["id"], 2, "Second step")
@@ -75,7 +78,7 @@ class TestGetStepsForSubtask:
         assert steps[0]["step_number"] == 1
         assert steps[1]["step_number"] == 2
 
-    def test_get_steps_ordered(self, test_subtask):
+    def test_get_steps_ordered(self, test_subtask: dict[str, Any]) -> None:
         """Test that steps are returned in order by step_number."""
         # Create out of order
         step_store.create_step(test_subtask["id"], 3, "Third")
@@ -87,7 +90,7 @@ class TestGetStepsForSubtask:
         assert len(steps) == 3
         assert [s["step_number"] for s in steps] == [1, 2, 3]
 
-    def test_get_steps_nonexistent_subtask(self):
+    def test_get_steps_nonexistent_subtask(self) -> None:
         """Test getting steps for non-existent subtask returns empty list."""
         steps = step_store.get_steps_for_subtask("nonexistent-subtask-id")
 
@@ -102,7 +105,7 @@ class TestUpdateStepPasses:
     """
 
     @patch("app.storage.steps_updates_passes.run_verify_command")
-    def test_update_step_passes_true(self, mock_verify, test_subtask):
+    def test_update_step_passes_true(self, mock_verify: MagicMock, test_subtask: dict[str, Any]) -> None:
         """Test marking a step as passing with successful verification."""
         mock_verify.return_value = ("passed", 0, "ok")
         step_store.create_step(
@@ -117,7 +120,7 @@ class TestUpdateStepPasses:
         mock_verify.assert_called_once_with("rg -q 'pass' file.py", cwd=None, project_id=None)
 
     @patch("app.storage.steps_updates_passes.run_verify_command")
-    def test_update_step_passes_false(self, mock_verify, test_subtask):
+    def test_update_step_passes_false(self, mock_verify: MagicMock, test_subtask: dict[str, Any]) -> None:
         """Test marking a step as not passing (resetting)."""
         mock_verify.return_value = ("passed", 0, "ok")
         step_store.create_step(
@@ -133,7 +136,7 @@ class TestUpdateStepPasses:
         assert updated["passed_at"] is None
 
     @patch("app.storage.steps_updates_passes.run_verify_command")
-    def test_update_step_passes_toggle(self, mock_verify, test_subtask):
+    def test_update_step_passes_toggle(self, mock_verify: MagicMock, test_subtask: dict[str, Any]) -> None:
         """Test toggling step pass status multiple times."""
         mock_verify.return_value = ("passed", 0, "ok")
         step_store.create_step(
@@ -142,23 +145,26 @@ class TestUpdateStepPasses:
 
         # Toggle on
         updated1 = step_store.update_step_passes(test_subtask["id"], 1, True)
+        assert updated1 is not None
         assert updated1["passes"] is True
 
         # Toggle off
         updated2 = step_store.update_step_passes(test_subtask["id"], 1, False)
+        assert updated2 is not None
         assert updated2["passes"] is False
 
         # Toggle on again
         updated3 = step_store.update_step_passes(test_subtask["id"], 1, True)
+        assert updated3 is not None
         assert updated3["passes"] is True
 
-    def test_update_step_passes_nonexistent(self, test_subtask):
+    def test_update_step_passes_nonexistent(self, test_subtask: dict[str, Any]) -> None:
         """Test updating non-existent step returns None."""
         result = step_store.update_step_passes(test_subtask["id"], 999, True)
 
         assert result is None
 
-    def test_update_step_passes_no_verify_command_raises(self, test_subtask):
+    def test_update_step_passes_no_verify_command_raises(self, test_subtask: dict[str, Any]) -> None:
         """Test that passes=True without verify_command raises error."""
         step_store.create_step(test_subtask["id"], 1, "Test step")  # No verify_command
 
@@ -166,7 +172,7 @@ class TestUpdateStepPasses:
             step_store.update_step_passes(test_subtask["id"], 1, True)
 
     @patch("app.storage.steps_updates_passes.run_verify_command")
-    def test_update_step_passes_verification_fails(self, mock_verify, test_subtask):
+    def test_update_step_passes_verification_fails(self, mock_verify: MagicMock, test_subtask: dict[str, Any]) -> None:
         """Test that verification failure raises error."""
         mock_verify.return_value = ("failed", 1, "error output")
         step_store.create_step(
@@ -177,7 +183,7 @@ class TestUpdateStepPasses:
             step_store.update_step_passes(test_subtask["id"], 1, True)
 
     @patch("app.storage.steps_updates_passes.run_verify_command")
-    def test_already_verified_skips_verify_command(self, mock_verify, test_subtask):
+    def test_already_verified_skips_verify_command(self, mock_verify: MagicMock, test_subtask: dict[str, Any]) -> None:
         """Test that already_verified=True skips running verify_command."""
         step_store.create_step(
             test_subtask["id"], 1, "Test step", verify_command="rg -q 'pass' file.py"
@@ -193,7 +199,7 @@ class TestUpdateStepPasses:
         mock_verify.assert_not_called()
 
     @patch("app.storage.steps_updates_passes.run_verify_command")
-    def test_already_verified_false_still_runs_verification(self, mock_verify, test_subtask):
+    def test_already_verified_false_still_runs_verification(self, mock_verify: MagicMock, test_subtask: dict[str, Any]) -> None:
         """Test that already_verified=False (default) still runs verify_command."""
         mock_verify.return_value = ("passed", 0, "ok")
         step_store.create_step(
@@ -212,7 +218,7 @@ class TestUpdateStepPasses:
 class TestBulkCreateSteps:
     """Tests for bulk_create_steps function."""
 
-    def test_bulk_create_steps_basic(self, test_subtask):
+    def test_bulk_create_steps_basic(self, test_subtask: dict[str, Any]) -> None:
         """Test bulk creating multiple steps."""
         descriptions = ["Step 1", "Step 2", "Step 3"]
 
@@ -224,13 +230,13 @@ class TestBulkCreateSteps:
         assert created[2]["step_number"] == 3
         assert created[0]["description"] == "Step 1"
 
-    def test_bulk_create_steps_empty(self, test_subtask):
+    def test_bulk_create_steps_empty(self, test_subtask: dict[str, Any]) -> None:
         """Test bulk creating with empty list."""
         created = step_store.bulk_create_steps(test_subtask["id"], [])
 
         assert created == []
 
-    def test_bulk_create_steps_single(self, test_subtask):
+    def test_bulk_create_steps_single(self, test_subtask: dict[str, Any]) -> None:
         """Test bulk creating single step."""
         created = step_store.bulk_create_steps(test_subtask["id"], ["Only step"])
 
@@ -242,7 +248,7 @@ class TestBulkCreateSteps:
 class TestDeleteStepsForSubtask:
     """Tests for delete_steps_for_subtask function."""
 
-    def test_delete_steps_basic(self, test_subtask):
+    def test_delete_steps_basic(self, test_subtask: dict[str, Any]) -> None:
         """Test deleting all steps for a subtask."""
         step_store.bulk_create_steps(test_subtask["id"], ["Step 1", "Step 2", "Step 3"])
 
@@ -254,13 +260,13 @@ class TestDeleteStepsForSubtask:
         steps = step_store.get_steps_for_subtask(test_subtask["id"])
         assert steps == []
 
-    def test_delete_steps_empty(self, test_subtask):
+    def test_delete_steps_empty(self, test_subtask: dict[str, Any]) -> None:
         """Test deleting from subtask with no steps."""
         count = step_store.delete_steps_for_subtask(test_subtask["id"])
 
         assert count == 0
 
-    def test_delete_steps_nonexistent_subtask(self):
+    def test_delete_steps_nonexistent_subtask(self) -> None:
         """Test deleting steps for non-existent subtask."""
         count = step_store.delete_steps_for_subtask("nonexistent-subtask")
 
@@ -270,7 +276,7 @@ class TestDeleteStepsForSubtask:
 class TestGetStepSummary:
     """Tests for get_step_summary function."""
 
-    def test_step_summary_empty(self, test_subtask):
+    def test_step_summary_empty(self, test_subtask: dict[str, Any]) -> None:
         """Test summary with no steps."""
         summary = step_store.get_step_summary(test_subtask["id"])
 
@@ -278,7 +284,7 @@ class TestGetStepSummary:
         assert summary["completed"] == 0
         assert summary["progress_percent"] == 0
 
-    def test_step_summary_all_incomplete(self, test_subtask):
+    def test_step_summary_all_incomplete(self, test_subtask: dict[str, Any]) -> None:
         """Test summary with all steps incomplete."""
         step_store.bulk_create_steps(test_subtask["id"], ["Step 1", "Step 2", "Step 3"])
 
@@ -289,10 +295,10 @@ class TestGetStepSummary:
         assert summary["progress_percent"] == 0
 
     @patch("app.storage.steps_updates_passes.run_verify_command")
-    def test_step_summary_partial(self, mock_verify, test_subtask):
+    def test_step_summary_partial(self, mock_verify: MagicMock, test_subtask: dict[str, Any]) -> None:
         """Test summary with partial completion."""
         mock_verify.return_value = ("passed", 0, "ok")
-        steps = [
+        steps: list[str | dict[str, Any]] = [
             {"description": "Step 1", "verify_command": "rg -q 'step1' file.py"},
             {"description": "Step 2", "verify_command": "rg -q 'step2' file.py"},
             {"description": "Step 3", "verify_command": "rg -q 'step3' file.py"},
@@ -309,10 +315,10 @@ class TestGetStepSummary:
         assert summary["progress_percent"] == 50.0
 
     @patch("app.storage.steps_updates_passes.run_verify_command")
-    def test_step_summary_all_complete(self, mock_verify, test_subtask):
+    def test_step_summary_all_complete(self, mock_verify: MagicMock, test_subtask: dict[str, Any]) -> None:
         """Test summary with all steps complete."""
         mock_verify.return_value = ("passed", 0, "ok")
-        steps = [
+        steps: list[str | dict[str, Any]] = [
             {"description": "Step 1", "verify_command": "rg -q 'step1' file.py"},
             {"description": "Step 2", "verify_command": "rg -q 'step2' file.py"},
         ]
@@ -326,7 +332,7 @@ class TestGetStepSummary:
         assert summary["completed"] == 2
         assert summary["progress_percent"] == 100.0
 
-    def test_step_summary_nonexistent_subtask(self):
+    def test_step_summary_nonexistent_subtask(self) -> None:
         """Test summary for non-existent subtask."""
         summary = step_store.get_step_summary("nonexistent-subtask")
 
@@ -343,10 +349,10 @@ class TestStepGates:
     """
 
     @patch("app.storage.steps_updates_passes.run_verify_command")
-    def test_step_gate_allows_out_of_order_completion(self, mock_verify, test_subtask):
+    def test_step_gate_allows_out_of_order_completion(self, mock_verify: MagicMock, test_subtask: dict[str, Any]) -> None:
         """Can mark step 2 as passed even if step 1 is not passed (logs info)."""
         mock_verify.return_value = ("passed", 0, "ok")
-        steps = [
+        steps: list[str | dict[str, Any]] = [
             {"description": "Step 1", "verify_command": "rg -q 'step1' file.py"},
             {"description": "Step 2", "verify_command": "rg -q 'step2' file.py"},
             {"description": "Step 3", "verify_command": "rg -q 'step3' file.py"},
@@ -354,13 +360,14 @@ class TestStepGates:
         step_store.bulk_create_steps(test_subtask["id"], steps)
 
         result = step_store.update_step_passes(test_subtask["id"], step_number=2, passes=True)
+        assert result is not None
         assert result["passes"] is True
 
     @patch("app.storage.steps_updates_passes.run_verify_command")
-    def test_step_gate_allows_sequential_completion(self, mock_verify, test_subtask):
+    def test_step_gate_allows_sequential_completion(self, mock_verify: MagicMock, test_subtask: dict[str, Any]) -> None:
         """Can mark step 2 as passed after step 1 is passed."""
         mock_verify.return_value = ("passed", 0, "ok")
-        steps = [
+        steps: list[str | dict[str, Any]] = [
             {"description": "Step 1", "verify_command": "rg -q 'step1' file.py"},
             {"description": "Step 2", "verify_command": "rg -q 'step2' file.py"},
             {"description": "Step 3", "verify_command": "rg -q 'step3' file.py"},
@@ -369,15 +376,17 @@ class TestStepGates:
 
         # Mark step 1 as passed
         result1 = step_store.update_step_passes(test_subtask["id"], step_number=1, passes=True)
+        assert result1 is not None
         assert result1["passes"] is True
 
         # Now step 2 should work
         result2 = step_store.update_step_passes(test_subtask["id"], step_number=2, passes=True)
+        assert result2 is not None
         assert result2["passes"] is True
 
-    def test_step_gate_force_param_removed(self, test_subtask):
+    def test_step_gate_force_param_removed(self, test_subtask: dict[str, Any]) -> None:
         """Force flag has been removed - no bypass available."""
-        steps = [
+        steps: list[str | dict[str, Any]] = [
             {"description": "Step 1", "verify_command": "rg -q 'step1' file.py"},
             {"description": "Step 2", "verify_command": "rg -q 'step2' file.py"},
         ]
@@ -385,15 +394,14 @@ class TestStepGates:
 
         # force=True should raise TypeError
         with pytest.raises(TypeError, match="unexpected keyword argument 'force'"):
-            step_store.update_step_passes(
-                test_subtask["id"], step_number=2, passes=True, force=True
-            )
+            fn: Any = step_store.update_step_passes
+            fn(test_subtask["id"], step_number=2, passes=True, force=True)
 
     @patch("app.storage.steps_updates_passes.run_verify_command")
-    def test_step_gate_first_step_no_check(self, mock_verify, test_subtask):
+    def test_step_gate_first_step_no_check(self, mock_verify: MagicMock, test_subtask: dict[str, Any]) -> None:
         """First step has no gate check (no previous steps)."""
         mock_verify.return_value = ("passed", 0, "ok")
-        steps = [
+        steps: list[str | dict[str, Any]] = [
             {"description": "Step 1", "verify_command": "rg -q 'step1' file.py"},
             {"description": "Step 2", "verify_command": "rg -q 'step2' file.py"},
         ]
@@ -401,13 +409,14 @@ class TestStepGates:
 
         # Step 1 should always work
         result = step_store.update_step_passes(test_subtask["id"], step_number=1, passes=True)
+        assert result is not None
         assert result["passes"] is True
 
     @patch("app.storage.steps_updates_passes.run_verify_command")
-    def test_step_gate_logs_missing_steps(self, mock_verify, test_subtask):
+    def test_step_gate_logs_missing_steps(self, mock_verify: MagicMock, test_subtask: dict[str, Any]) -> None:
         """Gate logs missing steps but allows completion with valid verify_command."""
         mock_verify.return_value = ("passed", 0, "ok")
-        steps = [
+        steps: list[str | dict[str, Any]] = [
             {"description": "Step 1", "verify_command": "rg -q 'step1' file.py"},
             {"description": "Step 2", "verify_command": "rg -q 'step2' file.py"},
             {"description": "Step 3", "verify_command": "rg -q 'step3' file.py"},
@@ -415,21 +424,23 @@ class TestStepGates:
         step_store.bulk_create_steps(test_subtask["id"], steps)
 
         result = step_store.update_step_passes(test_subtask["id"], step_number=3, passes=True)
+        assert result is not None
         assert result["passes"] is True
 
-    def test_clearing_step_has_no_gate(self, test_subtask):
+    def test_clearing_step_has_no_gate(self, test_subtask: dict[str, Any]) -> None:
         """Setting passes=False has no gate check (can clear any step)."""
         step_store.bulk_create_steps(test_subtask["id"], ["Step 1", "Step 2"])
 
         # Can clear step 2 even if step 1 is not passed (no verify_command needed for False)
         result = step_store.update_step_passes(test_subtask["id"], step_number=2, passes=False)
+        assert result is not None
         assert result["passes"] is False
 
 
 class TestInsertStep:
     """Tests for insert_step function."""
 
-    def test_insert_step_at_beginning(self, test_subtask):
+    def test_insert_step_at_beginning(self, test_subtask: dict[str, Any]) -> None:
         """Insert at position 1 shifts all existing steps."""
         step_store.bulk_create_steps(test_subtask["id"], ["Step 1", "Step 2"])
 
@@ -446,7 +457,7 @@ class TestInsertStep:
         assert steps[2]["description"] == "Step 2"
         assert steps[2]["step_number"] == 3
 
-    def test_insert_step_in_middle(self, test_subtask):
+    def test_insert_step_in_middle(self, test_subtask: dict[str, Any]) -> None:
         """Insert in middle shifts only steps at and after position."""
         step_store.bulk_create_steps(test_subtask["id"], ["Step 1", "Step 2", "Step 3"])
 
@@ -465,7 +476,7 @@ class TestInsertStep:
         assert steps[3]["description"] == "Step 3"
         assert steps[3]["step_number"] == 4
 
-    def test_insert_step_at_end(self, test_subtask):
+    def test_insert_step_at_end(self, test_subtask: dict[str, Any]) -> None:
         """Insert at position after last step acts like append."""
         step_store.bulk_create_steps(test_subtask["id"], ["Step 1", "Step 2"])
 
@@ -477,7 +488,7 @@ class TestInsertStep:
         assert len(steps) == 3
         assert steps[2]["description"] == "Step 3"
 
-    def test_insert_step_empty_subtask(self, test_subtask):
+    def test_insert_step_empty_subtask(self, test_subtask: dict[str, Any]) -> None:
         """Insert into empty subtask works."""
         inserted = step_store.insert_step(test_subtask["id"], 1, "First Step")
 
@@ -486,7 +497,7 @@ class TestInsertStep:
         steps = step_store.get_steps_for_subtask(test_subtask["id"])
         assert len(steps) == 1
 
-    def test_insert_step_invalid_position(self, test_subtask):
+    def test_insert_step_invalid_position(self, test_subtask: dict[str, Any]) -> None:
         """Position < 1 raises ValueError."""
         with pytest.raises(ValueError, match="Position must be >= 1"):
             step_store.insert_step(test_subtask["id"], 0, "Invalid")
@@ -495,41 +506,41 @@ class TestInsertStep:
 class TestSanitizeVerifyCommand:
     """Tests for _sanitize_verify_command absolute path rejection."""
 
-    def test_sanitize_none_passes_through(self):
+    def test_sanitize_none_passes_through(self) -> None:
         from app.storage.steps_crud import _sanitize_verify_command
 
         assert _sanitize_verify_command(None) is None
 
-    def test_sanitize_empty_passes_through(self):
+    def test_sanitize_empty_passes_through(self) -> None:
         from app.storage.steps_crud import _sanitize_verify_command
 
         assert _sanitize_verify_command("") == ""
 
-    def test_sanitize_relative_command_passes(self):
+    def test_sanitize_relative_command_passes(self) -> None:
         from app.storage.steps_crud import _sanitize_verify_command
 
         cmd = "rg 'pattern' backend/app/main.py"
         assert _sanitize_verify_command(cmd) == cmd
 
-    def test_sanitize_rejects_cd_absolute_path(self):
+    def test_sanitize_rejects_cd_absolute_path(self) -> None:
         from app.storage.steps_crud import _sanitize_verify_command
 
         with pytest.raises(ValueError, match="absolute path"):
             _sanitize_verify_command("cd /home/user/project && grep foo bar.py")
 
-    def test_sanitize_rejects_absolute_home_path(self):
+    def test_sanitize_rejects_absolute_home_path(self) -> None:
         from app.storage.steps_crud import _sanitize_verify_command
 
         with pytest.raises(ValueError, match="absolute path"):
             _sanitize_verify_command("cat /home/user/project/file.txt")
 
-    def test_sanitize_rejects_absolute_tmp_path(self):
+    def test_sanitize_rejects_absolute_tmp_path(self) -> None:
         from app.storage.steps_crud import _sanitize_verify_command
 
         with pytest.raises(ValueError, match="absolute path"):
             _sanitize_verify_command("ls /tmp/test-output")
 
-    def test_sanitize_rejects_absolute_opt_path(self):
+    def test_sanitize_rejects_absolute_opt_path(self) -> None:
         from app.storage.steps_crud import _sanitize_verify_command
 
         with pytest.raises(ValueError, match="absolute path"):
@@ -545,30 +556,30 @@ class TestSanitizeVerifyCommand:
             "echo 'checking' && rg -q 'pattern' file",
         ],
     )
-    def test_sanitize_allows_relative_commands(self, cmd):
+    def test_sanitize_allows_relative_commands(self, cmd: str) -> None:
         from app.storage.steps_crud import _sanitize_verify_command
 
         assert _sanitize_verify_command(cmd) == cmd
 
-    def test_sanitize_rejects_echo_only(self):
+    def test_sanitize_rejects_echo_only(self) -> None:
         from app.storage.steps_crud import _sanitize_verify_command
 
         with pytest.raises(ValueError, match="echo-only"):
             _sanitize_verify_command("echo hello")
 
-    def test_sanitize_rejects_true(self):
+    def test_sanitize_rejects_true(self) -> None:
         from app.storage.steps_crud import _sanitize_verify_command
 
         with pytest.raises(ValueError, match="always exits 0"):
             _sanitize_verify_command("true")
 
-    def test_sanitize_rejects_whitespace_only(self):
+    def test_sanitize_rejects_whitespace_only(self) -> None:
         from app.storage.steps_crud import _sanitize_verify_command
 
         with pytest.raises(ValueError, match="empty"):
             _sanitize_verify_command("   ")
 
-    def test_create_step_raises_on_absolute_path(self, test_subtask):
+    def test_create_step_raises_on_absolute_path(self, test_subtask: dict[str, Any]) -> None:
         """Integration: create_step propagates ValueError from sanitizer."""
         with pytest.raises(ValueError, match="absolute path"):
             step_store.create_step(
@@ -578,9 +589,9 @@ class TestSanitizeVerifyCommand:
                 verify_command="cd /home/user/project && echo test",
             )
 
-    def test_bulk_create_raises_on_absolute_path(self, test_subtask):
+    def test_bulk_create_raises_on_absolute_path(self, test_subtask: dict[str, Any]) -> None:
         """Integration: bulk_create_steps propagates ValueError from sanitizer."""
-        steps = [
+        steps: list[str | dict[str, Any]] = [
             {"description": "Bad step", "verify_command": "cat /home/user/file.txt"},
         ]
         with pytest.raises(ValueError, match="absolute path"):

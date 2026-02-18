@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any, Generator
+
 import pytest
 
 from app.storage import tasks as task_store
@@ -9,7 +11,7 @@ from app.storage.connection import get_connection
 
 
 @pytest.fixture
-def project_id():
+def project_id() -> Generator[str, None, None]:
     """Ensure test project exists."""
     project_id = "test-project"
     with get_connection() as conn, conn.cursor() as cur:
@@ -18,11 +20,11 @@ def project_id():
             (project_id, "SummitFlow", "http://localhost:3001"),
         )
         conn.commit()
-    return project_id
+    yield project_id
 
 
 @pytest.fixture
-def test_task(project_id):
+def test_task(project_id: str) -> Generator[dict[str, Any], None, None]:
     """Create and cleanup a test task."""
     task = task_store.create_task(
         project_id=project_id,

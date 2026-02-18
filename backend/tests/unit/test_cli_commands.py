@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import tempfile
 from datetime import UTC, datetime
+from typing import Any, Generator
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -23,7 +24,7 @@ from cli.commands.tasks import app as tasks_app
 runner = CliRunner()
 
 
-def _make_mock_task(task_id: str, **kwargs) -> dict:
+def _make_mock_task(task_id: str, **kwargs: Any) -> dict[str, Any]:
     """Create a mock task dict with default values."""
     return {
         "id": task_id,
@@ -74,7 +75,7 @@ def _make_mock_task(task_id: str, **kwargs) -> dict:
     }
 
 
-def _make_mock_subtask(task_id: str, subtask_id: str, **kwargs) -> dict:
+def _make_mock_subtask(task_id: str, subtask_id: str, **kwargs: Any) -> dict[str, Any]:
     """Create a mock subtask dict with default values."""
     return {
         "id": 1,
@@ -92,30 +93,30 @@ def _make_mock_subtask(task_id: str, subtask_id: str, **kwargs) -> dict:
 
 
 @pytest.fixture
-def mock_st_client():
+def mock_st_client() -> Generator[tuple[MagicMock, dict[str, Any]], None, None]:
     """Mock STClient to avoid real HTTP calls to API.
 
     This fixture mocks the CLI's HTTP client so no real API calls are made.
     Used for tests that invoke CLI commands which would otherwise hit the real API.
     """
     task_counter = [0]
-    tasks_db: dict[str, dict] = {}
+    tasks_db: dict[str, Any] = {}
 
-    def mock_create_task(data):
+    def mock_create_task(data: dict[str, Any]) -> dict[str, Any]:
         task_counter[0] += 1
         task_id = f"task-mock-{task_counter[0]:08x}"
         task = _make_mock_task(task_id, **data)
         tasks_db[task_id] = task
         return task
 
-    def mock_batch_create_tasks(items):
+    def mock_batch_create_tasks(items: list[dict[str, Any]]) -> dict[str, Any]:
         created = []
         for item in items:
             task = mock_create_task(item)
             created.append(task)
         return {"created": created, "errors": []}
 
-    def mock_get_task(task_id):
+    def mock_get_task(task_id: str) -> dict[str, Any]:
         task = tasks_db.get(task_id)
         if not task:
             from cli.client import APIError
@@ -140,7 +141,7 @@ def mock_st_client():
 
 
 @pytest.fixture
-def mock_storage():
+def mock_storage() -> Generator[dict[str, Any], None, None]:
     """Mock storage layer to avoid hitting production DB.
 
     This fixture mocks the storage modules for tests that directly
@@ -148,37 +149,37 @@ def mock_storage():
     """
     task_counter = [0]
     subtask_counter = [0]
-    tasks_db: dict[str, dict] = {}
-    subtasks_db: dict[str, dict] = {}  # key: f"{task_id}:{subtask_id}"
+    tasks_db: dict[str, Any] = {}
+    subtasks_db: dict[str, Any] = {}  # key: f"{task_id}:{subtask_id}"
 
-    def mock_create_task(project_id, title, **kwargs):
+    def mock_create_task(project_id: str, title: str, **kwargs: Any) -> dict[str, Any]:
         task_counter[0] += 1
         task_id = kwargs.get("task_id") or f"task-mock-{task_counter[0]:08x}"
         task = _make_mock_task(task_id, project_id=project_id, title=title, **kwargs)
         tasks_db[task_id] = task
         return task
 
-    def mock_get_task(task_id):
+    def mock_get_task(task_id: str) -> dict[str, Any] | None:
         return tasks_db.get(task_id)
 
-    def mock_delete_task(task_id):
+    def mock_delete_task(task_id: str) -> bool:
         if task_id in tasks_db:
             del tasks_db[task_id]
             return True
         return False
 
-    def mock_create_subtask(task_id, subtask_id, description, **kwargs):
+    def mock_create_subtask(task_id: str, subtask_id: str, description: str, **kwargs: Any) -> dict[str, Any]:
         subtask_counter[0] += 1
         key = f"{task_id}:{subtask_id}"
         subtask = _make_mock_subtask(task_id, subtask_id, description=description, **kwargs)
         subtasks_db[key] = subtask
         return subtask
 
-    def mock_get_subtask(task_id, subtask_id):
+    def mock_get_subtask(task_id: str, subtask_id: str) -> dict[str, Any] | None:
         key = f"{task_id}:{subtask_id}"
         return subtasks_db.get(key)
 
-    def mock_list_subtasks(task_id):
+    def mock_list_subtasks(task_id: str) -> list[dict[str, Any]]:
         return [s for s in subtasks_db.values() if s["task_id"] == task_id]
 
     with (
@@ -199,7 +200,7 @@ class TestCreateFromFile:
     Uses mock_st_client to avoid hitting the real API.
     """
 
-    def test_from_file_valid_json(self, mock_st_client):
+    def test_from_file_valid_json(self, mock_st_client: tuple[MagicMock, dict[str, Any]]) -> None:
         """Test creating tasks from a valid JSON file."""
         tasks_data = {
             "tasks": [
@@ -231,7 +232,7 @@ class TestCreateFromFile:
             _, tasks_db = mock_st_client
             assert len(tasks_db) == 2
 
-    def test_from_file_with_subtasks(self, mock_st_client):
+    def test_from_file_with_subtasks(self, mock_st_client: tuple[MagicMock, dict[str, Any]]) -> None:
         """Test creating a full task with subtasks and steps."""
         tasks_data = {
             "tasks": [
@@ -260,7 +261,7 @@ class TestCreateFromFile:
             assert result.exit_code == 0
             assert "Created: 1/1 tasks" in result.output
 
-    def test_from_file_dry_run(self):
+    def test_from_file_dry_run(self) -> None:
         """Test --dry-run shows preview without creating."""
         tasks_data = {
             "tasks": [
@@ -293,7 +294,7 @@ class TestCreateFromFileErrors:
     These tests verify validation errors - no mocking needed since they fail before API calls.
     """
 
-    def test_invalid_json_syntax(self):
+    def test_invalid_json_syntax(self) -> None:
         """Test handling of invalid JSON syntax."""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             f.write('{"tasks": [invalid json')
@@ -304,7 +305,7 @@ class TestCreateFromFileErrors:
             assert result.exit_code == 1
             assert "Invalid JSON" in result.output
 
-    def test_missing_tasks_array(self):
+    def test_missing_tasks_array(self) -> None:
         """Test handling of missing 'tasks' key."""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump({"items": []}, f)
@@ -315,7 +316,7 @@ class TestCreateFromFileErrors:
             assert result.exit_code == 1
             assert "must contain a 'tasks' array" in result.output
 
-    def test_missing_required_fields(self):
+    def test_missing_required_fields(self) -> None:
         """Test handling of missing required fields."""
         tasks_data = {
             "tasks": [
@@ -333,7 +334,7 @@ class TestCreateFromFileErrors:
             assert "Missing required field 'title'" in result.output
             assert "Missing required field 'task_type'" in result.output
 
-    def test_invalid_task_type(self):
+    def test_invalid_task_type(self) -> None:
         """Test handling of invalid task_type."""
         tasks_data = {
             "tasks": [
@@ -350,7 +351,7 @@ class TestCreateFromFileErrors:
             assert result.exit_code == 1
             assert "task_type must be one of" in result.output
 
-    def test_invalid_priority(self):
+    def test_invalid_priority(self) -> None:
         """Test handling of invalid priority."""
         tasks_data = {
             "tasks": [
@@ -367,7 +368,7 @@ class TestCreateFromFileErrors:
             assert result.exit_code == 1
             assert "priority must be integer 0-4" in result.output
 
-    def test_file_not_found(self):
+    def test_file_not_found(self) -> None:
         """Test handling of non-existent file."""
         result = runner.invoke(tasks_app, ["create", "--from-file", "/nonexistent/file.json"])
 
@@ -382,7 +383,7 @@ class TestSubtaskCreate:
     Since they test CLI commands that need task existence, we use mock_st_client.
     """
 
-    def test_subtask_create_requires_steps(self, mock_st_client):
+    def test_subtask_create_requires_steps(self, mock_st_client: tuple[MagicMock, dict[str, Any]]) -> None:
         """Test that creating a subtask without steps fails."""
         # Create mock task first
         mock_client, _tasks_db = mock_st_client
@@ -414,7 +415,7 @@ class TestSubtaskCreate:
             assert result.exit_code == 1
             assert "steps are required" in result.output.lower()
 
-    def test_subtask_create_with_steps_json(self, mock_st_client):
+    def test_subtask_create_with_steps_json(self, mock_st_client: tuple[MagicMock, dict[str, Any]]) -> None:
         """Test creating a subtask with proper step structure via --steps-json."""
         mock_client, _tasks_db = mock_st_client
         task = mock_client.create_task(
@@ -464,7 +465,7 @@ class TestSubtaskCreate:
             assert '"success": true' in result.output
             assert '"message": "1.1"' in result.output
 
-    def test_subtask_create_legacy_steps_warning(self, mock_st_client):
+    def test_subtask_create_legacy_steps_warning(self, mock_st_client: tuple[MagicMock, dict[str, Any]]) -> None:
         """Test that using --step shows warning about missing verify_command."""
         mock_client, _tasks_db = mock_st_client
         task = mock_client.create_task(
@@ -508,11 +509,11 @@ class TestStepCreate:
     @pytest.mark.skip(
         reason="Requires complex storage mocking - use integration tests for full flow"
     )
-    def test_step_create(self, mock_storage):
+    def test_step_create(self, mock_storage: dict[str, Any]) -> None:
         """Test creating steps for a subtask."""
         pass
 
-    def test_step_new_invalid_task(self):
+    def test_step_new_invalid_task(self) -> None:
         """Test error when creating steps for non-existent task."""
         from cli.client import APIError
 
@@ -546,11 +547,11 @@ class TestBackupCommands:
     """
 
     @pytest.fixture(autouse=True)
-    def set_project_env(self, monkeypatch):
+    def set_project_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Set ST_PROJECT_ID for all backup tests."""
         monkeypatch.setenv("ST_PROJECT_ID", "summitflow")
 
-    def test_backup_list(self):
+    def test_backup_list(self) -> None:
         """Test st backup list command."""
         from cli.commands.backup import app as backup_app
 
@@ -558,7 +559,7 @@ class TestBackupCommands:
         # Should succeed even with no backups
         assert result.exit_code == 0
 
-    def test_backup_list_compact(self):
+    def test_backup_list_compact(self) -> None:
         """Test st --compact backup list outputs TOON format."""
         from cli.commands.backup import app as backup_app
         from cli.output import set_compact_output
@@ -572,7 +573,7 @@ class TestBackupCommands:
         finally:
             set_compact_output(False)
 
-    def test_backup_schedule_view(self):
+    def test_backup_schedule_view(self) -> None:
         """Test st backup schedule shows current config."""
         from cli.commands.backup import app as backup_app
 
@@ -580,7 +581,7 @@ class TestBackupCommands:
         # Should succeed even with no schedule configured
         assert result.exit_code == 0
 
-    def test_backup_status(self):
+    def test_backup_status(self) -> None:
         """Test st backup status shows latest backup."""
         from cli.commands.backup import app as backup_app
 
@@ -588,7 +589,7 @@ class TestBackupCommands:
         # Should succeed even with no backups
         assert result.exit_code == 0
 
-    def test_backup_create_help(self):
+    def test_backup_create_help(self) -> None:
         """Test st backup create --help."""
         from cli.commands.backup import app as backup_app
 
@@ -597,7 +598,7 @@ class TestBackupCommands:
         assert "--note" in result.output
         assert "--keep-local" in result.output
 
-    def test_backup_restore_help(self):
+    def test_backup_restore_help(self) -> None:
         """Test st backup restore --help."""
         from cli.commands.backup import app as backup_app
 
@@ -618,7 +619,7 @@ class TestVerifyPlanGates:
     Note: st verify only reads files, doesn't create tasks - no mocking needed.
     """
 
-    def test_verify_rejects_missing_steps(self):
+    def test_verify_rejects_missing_steps(self) -> None:
         """st verify rejects plans with subtasks missing steps array."""
         plan = {
             "title": "Test plan with missing steps array",
@@ -642,7 +643,7 @@ class TestVerifyPlanGates:
             assert result.exit_code == 1
             assert "missing required 'steps' array" in result.output.lower()
 
-    def test_verify_rejects_empty_steps(self):
+    def test_verify_rejects_empty_steps(self) -> None:
         """st verify rejects plans with empty steps array."""
         plan = {
             "title": "Test plan with empty steps array",
@@ -667,7 +668,7 @@ class TestVerifyPlanGates:
             assert result.exit_code == 1
             assert "missing required 'steps' array" in result.output.lower()
 
-    def test_verify_rejects_steps_without_verify_command(self):
+    def test_verify_rejects_steps_without_verify_command(self) -> None:
         """st verify rejects steps missing verify_command."""
         plan = {
             "title": "Test plan with steps missing verify_command",
@@ -696,7 +697,7 @@ class TestVerifyPlanGates:
             assert result.exit_code == 1
             assert "missing required 'verify_command'" in result.output.lower()
 
-    def test_verify_rejects_string_steps(self):
+    def test_verify_rejects_string_steps(self) -> None:
         """st verify rejects legacy string steps (must be objects)."""
         plan = {
             "title": "Test plan with string steps",
@@ -721,7 +722,7 @@ class TestVerifyPlanGates:
             assert result.exit_code == 1
             assert "must be object with verify_command" in result.output.lower()
 
-    def test_verify_requires_final_verification_subtask(self):
+    def test_verify_requires_final_verification_subtask(self) -> None:
         """st verify rejects plans without a final verification subtask."""
         plan = {
             "title": "Test plan without verification subtask",
@@ -752,7 +753,7 @@ class TestVerifyPlanGates:
             assert result.exit_code == 1
             assert "must be a verification subtask" in result.output.lower()
 
-    def test_verify_accepts_valid_plan_with_verification_subtask(self):
+    def test_verify_accepts_valid_plan_with_verification_subtask(self) -> None:
         """st verify accepts plan with proper steps and verification subtask."""
         plan = {
             "title": "Test plan with proper structure",
@@ -807,11 +808,11 @@ class TestStepUpdateImmutableVerification:
     """
 
     @pytest.mark.skip(reason="Requires deep storage mocking - use integration tests")
-    def test_update_verify_immutable_command_blocked(self):
+    def test_update_verify_immutable_command_blocked(self) -> None:
         """st step update -v should be blocked with immutable error."""
         pass
 
     @pytest.mark.skip(reason="Requires deep storage mocking - use integration tests")
-    def test_step_update_description_allowed(self):
+    def test_step_update_description_allowed(self) -> None:
         """st step update -d should still work (only description is mutable)."""
         pass

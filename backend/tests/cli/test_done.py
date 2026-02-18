@@ -21,12 +21,12 @@ from cli.commands.done import (
 
 
 class TestIsSubtaskId:
-    def test_valid_subtask_ids(self):
+    def test_valid_subtask_ids(self) -> None:
         assert _is_subtask_id("1.1") is True
         assert _is_subtask_id("2.3") is True
         assert _is_subtask_id("10.20") is True
 
-    def test_invalid_subtask_ids(self):
+    def test_invalid_subtask_ids(self) -> None:
         assert _is_subtask_id("task-abc") is False
         assert _is_subtask_id("1.2.3") is False
         assert _is_subtask_id("abc") is False
@@ -36,12 +36,12 @@ class TestIsSubtaskId:
 class TestAutoCloseSubtasks:
     """Tests for _auto_close_subtasks smart closure logic."""
 
-    def _make_client(self):
+    def _make_client(self) -> MagicMock:
         client = MagicMock()
         client._global_url = MagicMock(side_effect=lambda p: f"http://test{p}")
         return client
 
-    def test_skips_already_passed_subtasks(self):
+    def test_skips_already_passed_subtasks(self) -> None:
         """Already-passed subtasks are skipped entirely."""
         client = self._make_client()
         client.get_subtasks.return_value = {
@@ -56,7 +56,7 @@ class TestAutoCloseSubtasks:
         client.update_step.assert_not_called()
         client.update_subtask.assert_not_called()
 
-    def test_verifies_unpassed_steps(self):
+    def test_verifies_unpassed_steps(self) -> None:
         """Unpassed steps get verified via update_step."""
         client = self._make_client()
         client.get_subtasks.return_value = {
@@ -81,7 +81,7 @@ class TestAutoCloseSubtasks:
         client.update_step.assert_called_once_with("task-123", "1.1", 1, passes=True)
         client.update_subtask.assert_called_once_with("task-123", "1.1", passes=True)
 
-    def test_skips_plan_defect_steps(self):
+    def test_skips_plan_defect_steps(self) -> None:
         """Plan_defect steps are skipped (they have fix steps)."""
         client = self._make_client()
         client.get_subtasks.return_value = {
@@ -105,7 +105,7 @@ class TestAutoCloseSubtasks:
         # Step 2 (plan_defect) should NOT be verified
         client.update_step.assert_not_called()
 
-    def test_aborts_on_step_failure(self):
+    def test_aborts_on_step_failure(self) -> None:
         """If step verification returns passes=False, abort immediately."""
         client = self._make_client()
         client.get_subtasks.return_value = {
@@ -127,7 +127,7 @@ class TestAutoCloseSubtasks:
         # Subtask should NOT be closed
         client.update_subtask.assert_not_called()
 
-    def test_acknowledges_citations(self):
+    def test_acknowledges_citations(self) -> None:
         """Citations are acknowledged before subtask close."""
         client = self._make_client()
         client.get_subtasks.return_value = {
@@ -149,7 +149,7 @@ class TestAutoCloseSubtasks:
 
         client.acknowledge_no_citations.assert_called_once_with("task-123", "1.1")
 
-    def test_skips_acknowledged_citations(self):
+    def test_skips_acknowledged_citations(self) -> None:
         """Already-acknowledged citations are not re-acknowledged."""
         client = self._make_client()
         client.get_subtasks.return_value = {
@@ -171,7 +171,7 @@ class TestAutoCloseSubtasks:
 
         client.acknowledge_no_citations.assert_not_called()
 
-    def test_merges_subtask_branch(self):
+    def test_merges_subtask_branch(self) -> None:
         """After closing subtask, its branch is merged."""
         client = self._make_client()
         client.get_subtasks.return_value = {
@@ -196,7 +196,7 @@ class TestAutoCloseSubtasks:
 class TestCompleteTaskSmart:
     """Tests for _complete_task smart default behavior."""
 
-    def _setup_mocks(self):
+    def _setup_mocks(self) -> MagicMock:
         """Set up common mocks for _complete_task tests."""
         client = MagicMock()
         client._global_url = MagicMock(side_effect=lambda p: f"http://test{p}")
@@ -211,8 +211,9 @@ class TestCompleteTaskSmart:
     @patch("cli.commands.done_task.is_working_tree_clean", return_value=True)
     @patch("cli.commands.done_task._validate_snapshot")
     def test_calls_auto_close_by_default(
-        self, mock_snap, mock_clean, mock_auto, mock_merge, mock_remove
-    ):
+        self, mock_snap: MagicMock, mock_clean: MagicMock, mock_auto: MagicMock,
+        mock_merge: MagicMock, mock_remove: MagicMock
+    ) -> None:
         """Smart mode calls _auto_close_subtasks by default."""
         mock_snap.return_value = {"worktree_path": None, "project_id": "test"}
         client = self._setup_mocks()
@@ -227,8 +228,9 @@ class TestCompleteTaskSmart:
     @patch("cli.commands.done_task.is_working_tree_clean", return_value=True)
     @patch("cli.commands.done_task._validate_snapshot")
     def test_strict_skips_auto_close(
-        self, mock_snap, mock_clean, mock_auto, mock_merge, mock_remove
-    ):
+        self, mock_snap: MagicMock, mock_clean: MagicMock, mock_auto: MagicMock,
+        mock_merge: MagicMock, mock_remove: MagicMock
+    ) -> None:
         """Strict mode does NOT call _auto_close_subtasks."""
         mock_snap.return_value = {"worktree_path": None, "project_id": "test"}
         client = self._setup_mocks()
@@ -245,9 +247,10 @@ class TestCompleteTaskSmart:
     @patch("cli.commands.done_task.is_working_tree_clean")
     @patch("cli.commands.done_task._validate_snapshot")
     def test_stash_merge_pop_on_dirty_main(
-        self, mock_snap, mock_clean, mock_stash_push, mock_stash_pop,
-        mock_auto, mock_merge, mock_remove
-    ):
+        self, mock_snap: MagicMock, mock_clean: MagicMock, mock_stash_push: MagicMock,
+        mock_stash_pop: MagicMock, mock_auto: MagicMock, mock_merge: MagicMock,
+        mock_remove: MagicMock
+    ) -> None:
         """Dirty main gets stashed before merge, popped after."""
         # worktree_path=None means worktree clean check is skipped,
         # only main dirty check runs (returns False = dirty)
@@ -262,7 +265,9 @@ class TestCompleteTaskSmart:
 
     @patch("cli.commands.done._is_working_tree_clean")
     @patch("cli.commands.done.get_snapshot_info")
-    def test_strict_errors_on_dirty_main(self, mock_snap, mock_clean):
+    def test_strict_errors_on_dirty_main(
+        self, mock_snap: MagicMock, mock_clean: MagicMock
+    ) -> None:
         """Strict mode errors instead of stashing on dirty main."""
         mock_snap.return_value = {"worktree_path": None, "project_id": "test"}
         # First call: worktree check (skipped, no path), Second call: main dirty (False)
@@ -280,9 +285,10 @@ class TestCompleteTaskSmart:
     @patch("cli.commands.done_task.is_working_tree_clean")
     @patch("cli.commands.done_task._validate_snapshot")
     def test_stash_popped_on_failure(
-        self, mock_snap, mock_clean, mock_stash_push, mock_stash_pop,
-        mock_auto, mock_merge, mock_remove
-    ):
+        self, mock_snap: MagicMock, mock_clean: MagicMock, mock_stash_push: MagicMock,
+        mock_stash_pop: MagicMock, mock_auto: MagicMock, mock_merge: MagicMock,
+        mock_remove: MagicMock
+    ) -> None:
         """Stash is popped even when merge fails (via finally block)."""
         # worktree_path=None skips worktree check, main check returns False (dirty)
         mock_snap.return_value = {"worktree_path": None, "project_id": "test"}
@@ -302,8 +308,9 @@ class TestCompleteTaskSmart:
     @patch("cli.commands.done_task.is_working_tree_clean", return_value=True)
     @patch("cli.commands.done_task._validate_snapshot")
     def test_no_stash_when_main_clean(
-        self, mock_snap, mock_clean, mock_auto, mock_merge, mock_remove
-    ):
+        self, mock_snap: MagicMock, mock_clean: MagicMock, mock_auto: MagicMock,
+        mock_merge: MagicMock, mock_remove: MagicMock
+    ) -> None:
         """Clean main does not trigger stash."""
         mock_snap.return_value = {"worktree_path": None, "project_id": "test"}
         client = self._setup_mocks()
@@ -317,7 +324,7 @@ class TestGitStashHelpers:
     """Tests for _git_stash_push and _git_stash_pop."""
 
     @patch("subprocess.run")
-    def test_stash_push_returns_true_on_new_entry(self, mock_run):
+    def test_stash_push_returns_true_on_new_entry(self, mock_run: MagicMock) -> None:
         """Returns True when a stash entry is created."""
         # stash list before (0 entries), stash push, stash list after (1 entry)
         mock_run.side_effect = [
@@ -328,7 +335,7 @@ class TestGitStashHelpers:
         assert _git_stash_push() is True
 
     @patch("subprocess.run")
-    def test_stash_push_returns_false_on_nothing_to_stash(self, mock_run):
+    def test_stash_push_returns_false_on_nothing_to_stash(self, mock_run: MagicMock) -> None:
         """Returns False when nothing was stashed."""
         mock_run.side_effect = [
             MagicMock(stdout="", returncode=0),
@@ -338,7 +345,7 @@ class TestGitStashHelpers:
         assert _git_stash_push() is False
 
     @patch("subprocess.run")
-    def test_stash_pop_handles_failure_gracefully(self, mock_run):
+    def test_stash_pop_handles_failure_gracefully(self, mock_run: MagicMock) -> None:
         """Pop failure is a warning, not a crash."""
         import subprocess as sp
         mock_run.side_effect = sp.CalledProcessError(1, "git", stderr="conflict")

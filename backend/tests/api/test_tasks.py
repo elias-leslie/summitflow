@@ -6,7 +6,11 @@ Tests verify that:
 3. List endpoint returns spirit fields for all tasks
 """
 
+from __future__ import annotations
+
 import json
+from collections.abc import Callable
+from typing import Any
 
 from app.storage.connection import get_connection
 
@@ -14,7 +18,9 @@ from app.storage.connection import get_connection
 class TestTaskSpiritJoin:
     """Test task_spirit LEFT JOIN functionality."""
 
-    def test_get_task_with_spirit_data(self, client, test_project_id, cleanup_task):
+    def test_get_task_with_spirit_data(
+        self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
+    ) -> None:
         """Task with spirit data should return all spirit fields populated."""
         # Create a task
         response = client.post(
@@ -67,7 +73,9 @@ class TestTaskSpiritJoin:
         assert task_data["done_when"] == ["All tests pass", "PR merged"]
         assert task_data["plan_status"] == "approved"
 
-    def test_get_task_without_spirit_data(self, client, test_project_id, cleanup_task):
+    def test_get_task_without_spirit_data(
+        self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
+    ) -> None:
         """Task without spirit data should return null/empty for spirit fields."""
         # Create a task (no spirit data)
         response = client.post(
@@ -96,7 +104,9 @@ class TestTaskSpiritJoin:
         assert task_data["constraints"] == [] or task_data["constraints"] is None
         assert task_data["done_when"] == [] or task_data["done_when"] is None
 
-    def test_list_tasks_returns_spirit_fields(self, client, test_project_id, cleanup_task):
+    def test_list_tasks_returns_spirit_fields(
+        self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
+    ) -> None:
         """List endpoint should return tasks with spirit fields populated."""
         # Create two tasks - one with spirit, one without
         response1 = client.post(

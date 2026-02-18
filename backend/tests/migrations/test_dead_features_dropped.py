@@ -23,7 +23,9 @@ class TestEvidenceSystemDropped:
                 )
                 """
             )
-            exists = cur.fetchone()[0]
+            row = cur.fetchone()
+            assert row is not None
+            exists = row[0]
             assert not exists, "evidence table should be dropped"
 
     def test_evidence_regressions_table_dropped(self) -> None:
@@ -38,7 +40,9 @@ class TestEvidenceSystemDropped:
                 )
                 """
             )
-            exists = cur.fetchone()[0]
+            row = cur.fetchone()
+            assert row is not None
+            exists = row[0]
             assert not exists, "evidence_regressions table should be dropped"
 
     def test_evidence_capture_jobs_table_dropped(self) -> None:
@@ -53,7 +57,9 @@ class TestEvidenceSystemDropped:
                 )
                 """
             )
-            exists = cur.fetchone()[0]
+            row = cur.fetchone()
+            assert row is not None
+            exists = row[0]
             assert not exists, "evidence_capture_jobs table should be dropped"
 
     def test_evidence_types_table_dropped(self) -> None:
@@ -68,7 +74,9 @@ class TestEvidenceSystemDropped:
                 )
                 """
             )
-            exists = cur.fetchone()[0]
+            row = cur.fetchone()
+            assert row is not None
+            exists = row[0]
             assert not exists, "evidence_types table should be dropped"
 
     def test_project_evidence_config_table_dropped(self) -> None:
@@ -83,7 +91,9 @@ class TestEvidenceSystemDropped:
                 )
                 """
             )
-            exists = cur.fetchone()[0]
+            row = cur.fetchone()
+            assert row is not None
+            exists = row[0]
             assert not exists, "project_evidence_config table should be dropped"
 
     def test_no_evidence_tables_exist(self) -> None:
@@ -115,7 +125,9 @@ class TestTestsSystemDropped:
                 )
                 """
             )
-            exists = cur.fetchone()[0]
+            row = cur.fetchone()
+            assert row is not None
+            exists = row[0]
             assert not exists, "tests table should be dropped"
 
     def test_test_runs_table_dropped(self) -> None:
@@ -130,7 +142,9 @@ class TestTestsSystemDropped:
                 )
                 """
             )
-            exists = cur.fetchone()[0]
+            row = cur.fetchone()
+            assert row is not None
+            exists = row[0]
             assert not exists, "test_runs table should be dropped"
 
     def test_criterion_tests_table_dropped(self) -> None:
@@ -145,5 +159,7 @@ class TestTestsSystemDropped:
                 )
                 """
             )
-            exists = cur.fetchone()[0]
+            row = cur.fetchone()
+            assert row is not None
+            exists = row[0]
             assert not exists, "criterion_tests table should be dropped"

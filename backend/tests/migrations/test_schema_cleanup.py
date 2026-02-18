@@ -23,7 +23,9 @@ class TestLegacyTablesDropped:
                 )
                 """
             )
-            exists = cur.fetchone()[0]
+            row = cur.fetchone()
+            assert row is not None
+            exists = row[0]
             assert not exists, "acceptance_criteria table should be dropped"
 
     def test_task_criteria_table_dropped(self) -> None:
@@ -38,7 +40,9 @@ class TestLegacyTablesDropped:
                 )
                 """
             )
-            exists = cur.fetchone()[0]
+            row = cur.fetchone()
+            assert row is not None
+            exists = row[0]
             assert not exists, "task_criteria table should be dropped"
 
     def test_capability_criteria_table_dropped(self) -> None:
@@ -53,7 +57,9 @@ class TestLegacyTablesDropped:
                 )
                 """
             )
-            exists = cur.fetchone()[0]
+            row = cur.fetchone()
+            assert row is not None
+            exists = row[0]
             assert not exists, "capability_criteria table should be dropped"
 
     def test_criterion_amendments_table_dropped(self) -> None:
@@ -68,7 +74,9 @@ class TestLegacyTablesDropped:
                 )
                 """
             )
-            exists = cur.fetchone()[0]
+            row = cur.fetchone()
+            assert row is not None
+            exists = row[0]
             assert not exists, "criterion_amendments table should be dropped"
 
 
@@ -86,7 +94,9 @@ class TestEnforcementTriggersDropped:
                 )
                 """
             )
-            exists = cur.fetchone()[0]
+            row = cur.fetchone()
+            assert row is not None
+            exists = row[0]
             assert not exists, "lock_criteria_on_running trigger should be dropped"
 
     def test_prevent_locked_changes_trigger_dropped(self) -> None:
@@ -100,7 +110,9 @@ class TestEnforcementTriggersDropped:
                 )
                 """
             )
-            exists = cur.fetchone()[0]
+            row = cur.fetchone()
+            assert row is not None
+            exists = row[0]
             assert not exists, "prevent_locked_criteria_changes trigger should be dropped"
 
     def test_verification_status_trigger_dropped(self) -> None:
@@ -114,7 +126,9 @@ class TestEnforcementTriggersDropped:
                 )
                 """
             )
-            exists = cur.fetchone()[0]
+            row = cur.fetchone()
+            assert row is not None
+            exists = row[0]
             assert not exists, (
                 "enforce_verified_requires_verification_status trigger should be dropped"
             )
@@ -130,7 +144,9 @@ class TestEnforcementTriggersDropped:
                 )
                 """
             )
-            exists = cur.fetchone()[0]
+            row = cur.fetchone()
+            assert row is not None
+            exists = row[0]
             assert not exists, "enforce_criteria_verified_before_qa_pass trigger should be dropped"
 
     def test_qa_signoff_trigger_dropped(self) -> None:
@@ -144,7 +160,9 @@ class TestEnforcementTriggersDropped:
                 )
                 """
             )
-            exists = cur.fetchone()[0]
+            row = cur.fetchone()
+            assert row is not None
+            exists = row[0]
             assert not exists, "enforce_qa_signoff_before_complete trigger should be dropped"
 
     def test_plan_approval_trigger_dropped(self) -> None:
@@ -158,7 +176,9 @@ class TestEnforcementTriggersDropped:
                 )
                 """
             )
-            exists = cur.fetchone()[0]
+            row = cur.fetchone()
+            assert row is not None
+            exists = row[0]
             assert not exists, "enforce_plan_approval_before_running trigger should be dropped"
 
 
@@ -180,7 +200,9 @@ class TestCriteriaTableDropped:
                 )
                 """
             )
-            exists = cur.fetchone()[0]
+            row = cur.fetchone()
+            assert row is not None
+            exists = row[0]
             assert not exists, "task_acceptance_criteria table should be dropped"
 
     def test_criterion_subtask_map_table_dropped(self) -> None:
@@ -194,5 +216,7 @@ class TestCriteriaTableDropped:
                 )
                 """
             )
-            exists = cur.fetchone()[0]
+            row = cur.fetchone()
+            assert row is not None
+            exists = row[0]
             assert not exists, "criterion_subtask_map table should be dropped"
