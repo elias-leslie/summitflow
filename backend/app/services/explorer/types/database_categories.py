@@ -5,6 +5,27 @@ Provides logic to categorize database tables by their naming patterns.
 
 from __future__ import annotations
 
+# Maps a category name to the substrings that indicate membership.
+_CATEGORY_PATTERNS: list[tuple[str, tuple[str, ...]]] = [
+    ("auth",      ("user", "auth", "credential")),
+    ("logging",   ("log", "history", "audit")),
+    ("config",    ("config", "setting", "pref")),
+    ("cache",     ("cache", "temp")),
+    ("analytics", ("metric", "stat", "analytic")),
+    ("tasks",     ("task", "job", "queue")),
+    ("features",  ("feature", "capability")),
+    ("sitemap",   ("sitemap", "endpoint", "route")),
+    ("evidence",  ("evidence", "artifact")),
+    ("vision",    ("vision", "goal")),
+    ("files",     ("file", "scan", "explorer")),
+    ("projects",  ("project",)),
+]
+
+
+def _matches_category(name: str, keywords: tuple[str, ...]) -> bool:
+    """Return True if *name* contains any of the given keywords."""
+    return any(keyword in name for keyword in keywords)
+
 
 def categorize_table(table_name: str) -> str:
     """Categorize a table by its name pattern.
@@ -17,29 +38,8 @@ def categorize_table(table_name: str) -> str:
     """
     name = table_name.lower()
 
-    if "user" in name or "auth" in name or "credential" in name:
-        return "auth"
-    if "log" in name or "history" in name or "audit" in name:
-        return "logging"
-    if "config" in name or "setting" in name or "pref" in name:
-        return "config"
-    if "cache" in name or "temp" in name:
-        return "cache"
-    if "metric" in name or "stat" in name or "analytic" in name:
-        return "analytics"
-    if "task" in name or "job" in name or "queue" in name:
-        return "tasks"
-    if "feature" in name or "capability" in name:
-        return "features"
-    if "sitemap" in name or "endpoint" in name or "route" in name:
-        return "sitemap"
-    if "evidence" in name or "artifact" in name:
-        return "evidence"
-    if "vision" in name or "goal" in name:
-        return "vision"
-    if "file" in name or "scan" in name or "explorer" in name:
-        return "files"
-    if "project" in name:
-        return "projects"
+    for category, keywords in _CATEGORY_PATTERNS:
+        if _matches_category(name, keywords):
+            return category
 
     return "data"
