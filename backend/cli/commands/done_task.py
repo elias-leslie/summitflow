@@ -123,6 +123,15 @@ def _run_ai_review(client: STClient, task_id: str) -> dict[str, Any] | None:
         return None
 
 
+def _should_run_ai_review(client: STClient, task_id: str) -> bool:
+    """Check if AI review should run for this task."""
+    try:
+        task = client.get(client._global_url(f"/tasks/{task_id}"))
+        return bool(task.get("ai_review", True))
+    except Exception:
+        return True  # Default to running review if we can't fetch the flag
+
+
 def _perform_completion(
     client: STClient,
     task_id: str,
@@ -136,15 +145,16 @@ def _perform_completion(
 
     validate_completion_readiness(client, task_id)
 
-    # AI review gate
-    review_result = _run_ai_review(client, task_id)
-    if review_result and review_result.get("verdict") not in ("APPROVED", "UNKNOWN"):
-        concerns = review_result.get("concerns", [])
-        output_error(
-            f"AI Review: {review_result.get('verdict')}\n"
-            + "\n".join(f"  - {c}" for c in concerns)
-        )
-        raise typer.Exit(1)
+    # AI review gate — skip for tasks with ai_review=False (e.g. refactors)
+    if _should_run_ai_review(client, task_id):
+        review_result = _run_ai_review(client, task_id)
+        if review_result and review_result.get("verdict") not in ("APPROVED", "UNKNOWN"):
+            concerns = review_result.get("concerns", [])
+            output_error(
+                f"AI Review: {review_result.get('verdict')}\n"
+                + "\n".join(f"  - {c}" for c in concerns)
+            )
+            raise typer.Exit(1)
 
     merge_and_update_status(client, task_id, project_id)
 

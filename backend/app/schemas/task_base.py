@@ -53,6 +53,10 @@ class TaskCreate(BaseModel):
         default=False,
         description="Enable autonomous execution (Flash/Opus pipeline) vs manual",
     )
+    ai_review: bool = Field(
+        default=True,
+        description="Whether to run AI review before task completion. Set False for mechanical tasks.",
+    )
     auto_dispatch: bool = Field(
         default=False,
         description="Automatically dispatch to Hatchet pipeline after creation",
@@ -85,6 +89,7 @@ class TaskUpdate(BaseModel):
     done_when: list[str] | None = None
     complexity: Literal["SIMPLE", "STANDARD", "COMPLEX"] | None = None
     autonomous: bool | None = None
+    ai_review: bool | None = None
     # Agent override for autonomous execution
     agent_override: str | None = Field(
         default=None, description="Override which agent executes this task (slug from Agent Hub)"
@@ -198,6 +203,8 @@ class TaskResponse(BaseModel):
     subtask_summary: SubtaskSummary | None = None
     # Autonomous execution flag
     autonomous: bool = False
+    # AI review gate
+    ai_review: bool = True
     # Agent override for autonomous execution
     agent_override: str | None = Field(
         default=None, description="Override which agent executes this task (slug from Agent Hub)"

@@ -34,6 +34,7 @@ def create_task(
     complexity: str | None = None,
     autonomous: bool = False,
     labels: list[str] | None = None,
+    ai_review: bool = True,
 ) -> dict[str, Any]:
     """Create a new task.
 
@@ -53,6 +54,7 @@ def create_task(
         complexity: Task complexity tier (SIMPLE, STANDARD, COMPLEX)
         autonomous: Enable autonomous execution (Flash/Opus pipeline)
         labels: Optional list of labels (e.g. ["crowdsourced", "domains:backend"])
+        ai_review: Whether to run AI review before completion (default True)
 
     Note:
         - objective, spirit_anti, decisions, constraints, done_when are stored
@@ -74,8 +76,8 @@ def create_task(
             INSERT INTO tasks (id, project_id, capability_id, title, description,
                                priority, task_type, parent_task_id, tier,
                                current_phase, raw_request, enrichment_status,
-                               complexity, autonomous, labels)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                               complexity, autonomous, labels, ai_review)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING {TASK_COLUMNS}
             """,
             (
@@ -94,6 +96,7 @@ def create_task(
                 complexity,
                 autonomous,
                 labels or [],
+                ai_review,
             ),
         )
         row = cur.fetchone()

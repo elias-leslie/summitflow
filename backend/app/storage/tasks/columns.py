@@ -10,6 +10,7 @@ This module defines the column lists used in task queries.
 # Note: Migration 099 dropped: progress_log (moved to events table)
 # Note: Migration 101 added: agent_override
 # Note: Migration 028147425749 added: agent_hub_session_ids
+# Note: Migration 105 added: ai_review
 TASK_COLUMNS = """id, project_id, capability_id, title, description, status,
     error_message, branch_name, commits, pull_request_url,
     total_sessions, total_tokens_used, created_at, started_at, completed_at,
@@ -19,7 +20,7 @@ TASK_COLUMNS = """id, project_id, capability_id, title, description, status,
     raw_request, enrichment_status, enriched_by, enriched_at,
     complexity, autonomous,
     qa_status, qa_signoff_at, qa_signoff_by, qa_issues, agent_override, agent_hub_session_ids,
-    labels"""
+    labels, ai_review"""
 
 # Aliased version for JOINs (prefixed with t.)
 TASK_COLUMNS_ALIASED = """t.id, t.project_id, t.capability_id, t.title, t.description, t.status,
@@ -31,9 +32,9 @@ TASK_COLUMNS_ALIASED = """t.id, t.project_id, t.capability_id, t.title, t.descri
     t.raw_request, t.enrichment_status, t.enriched_by, t.enriched_at,
     t.complexity, t.autonomous,
     t.qa_status, t.qa_signoff_at, t.qa_signoff_by, t.qa_issues, t.agent_override, t.agent_hub_session_ids,
-    t.labels"""
+    t.labels, t.ai_review"""
 
-EXPECTED_TASK_COLUMNS = 40
+EXPECTED_TASK_COLUMNS = 41
 
 # Columns for queries that JOIN with task_spirit (46 columns total)
 # Adds 6 spirit fields: objective, spirit_anti, decisions, constraints, done_when, plan_status
@@ -46,7 +47,7 @@ TASK_COLUMNS_WITH_SPIRIT = """t.id, t.project_id, t.capability_id, t.title, t.de
     t.raw_request, t.enrichment_status, t.enriched_by, t.enriched_at,
     t.complexity, t.autonomous,
     t.qa_status, t.qa_signoff_at, t.qa_signoff_by, t.qa_issues, t.agent_override, t.agent_hub_session_ids,
-    t.labels,
+    t.labels, t.ai_review,
     ts.objective, ts.spirit_anti, ts.decisions, ts.constraints, ts.done_when, ts.plan_status"""
 
-EXPECTED_TASK_COLUMNS_WITH_SPIRIT = 46
+EXPECTED_TASK_COLUMNS_WITH_SPIRIT = 47

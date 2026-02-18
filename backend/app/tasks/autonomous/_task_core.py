@@ -24,6 +24,7 @@ def create_task_with_spirit(
     done_when: list[str],
     complexity: str,
     auto_approve: bool = True,
+    ai_review: bool = True,
 ) -> str | None:
     """Create a task with spirit.
 
@@ -39,6 +40,7 @@ def create_task_with_spirit(
         done_when: List of completion criteria
         complexity: Complexity level (SIMPLE/MODERATE/COMPLEX)
         auto_approve: Whether to auto-approve the plan
+        ai_review: Whether to run AI review before completion
 
     Returns:
         Task ID or None if creation failed
@@ -50,6 +52,7 @@ def create_task_with_spirit(
         priority=priority,
         task_type=task_type,
         tier=tier,
+        ai_review=ai_review,
     )
 
     if not task:

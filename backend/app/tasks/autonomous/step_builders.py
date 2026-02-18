@@ -71,7 +71,7 @@ def get_targeted_test_command(relative_path: str) -> str:
         path_match = re.match(r"^backend/(app|cli)/(.+?)(?:/([^/]+))?\.py$", relative_path)
         if path_match:
             rest = relative_path[len("backend/") : -len(".py")].replace("/", ".")
-            return f"test -f {test_path} && dt pytest {test_path} -q --tb=short || python -c 'from {rest} import *'"
+            return f"test -f {test_path} && dt pytest {test_path} -q --tb=short || python3 -c 'from {rest} import *'"
 
     # Frontend files - just check import/build
     if relative_path.startswith("frontend/"):
@@ -79,7 +79,7 @@ def get_targeted_test_command(relative_path: str) -> str:
 
     # Fallback: simple import check using python
     module_path = relative_path.replace("/", ".").replace(".py", "")
-    return f"python -c 'import {module_path}' 2>/dev/null || echo 'Import check skipped'"
+    return f"python3 -c 'import {module_path}' 2>/dev/null || echo 'Import check skipped'"
 
 
 def build_refactor_steps(
@@ -118,39 +118,46 @@ def build_refactor_steps(
             "verify_command": f"test $(wc -l < {relative_path}) -lt {target_lines}",
         })
 
-    # Step 2: Structural issue verification (Python-specific AST checks)
+    # Step 2: Structural issue verification (stdlib ast — no external deps)
     structural_checks: list[str] = []
     if "has_long_functions" in issues:
         structural_checks.append(
-            f"python -c \"from app.services.explorer.analyzers.ast_analyzer import parse_python_file; "
-            f"r=parse_python_file('{relative_path}'); "
-            f"assert all(f['lines']<=50 for f in r['functions']), "
-            f"f'Long functions: {{[f[\\\"name\\\"] for f in r[\\\"functions\\\"] if f[\\\"lines\\\"]>50]}}'\""
+            f"python3 -c \"import ast; t=ast.parse(open('{relative_path}').read()); "
+            f"bad=[n.name for n in ast.walk(t) "
+            f"if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)) "
+            f"and n.end_lineno-n.lineno>50]; "
+            f"assert not bad, f'Long functions: {{bad}}'\""
         )
     if "deep_nesting" in issues:
         structural_checks.append(
-            f"python -c \"from app.services.explorer.analyzers.ast_analyzer import parse_python_file; "
-            f"r=parse_python_file('{relative_path}'); "
-            f"assert r['max_nesting']<=3, f'Nesting depth: {{r[\\\"max_nesting\\\"]}}'\""
+            f"python3 -c \"import ast; t=ast.parse(open('{relative_path}').read()); "
+            f"deep=[n.name for n in ast.walk(t) "
+            f"if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)) "
+            f"for c in ast.walk(n) "
+            f"if isinstance(c,(ast.If,ast.For,ast.While,ast.With,ast.Try)) "
+            f"and (c.col_offset-n.col_offset)//4>3]; "
+            f"assert not deep, f'Deep nesting in: {{set(deep)}}'\""
         )
     if "too_many_functions" in issues:
         structural_checks.append(
-            f"python -c \"from app.services.explorer.analyzers.ast_analyzer import parse_python_file; "
-            f"r=parse_python_file('{relative_path}'); "
-            f"assert len(r['functions'])<=20, f'Function count: {{len(r[\\\"functions\\\"])}}'\""
+            f"python3 -c \"import ast; t=ast.parse(open('{relative_path}').read()); "
+            f"fns=[n.name for n in ast.walk(t) "
+            f"if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef))]; "
+            f"assert len(fns)<=20, f'Function count: {{len(fns)}}'\""
         )
     if "too_many_classes" in issues:
         structural_checks.append(
-            f"python -c \"from app.services.explorer.analyzers.ast_analyzer import parse_python_file; "
-            f"r=parse_python_file('{relative_path}'); "
-            f"assert len(r['classes'])<=5, f'Class count: {{len(r[\\\"classes\\\"])}}'\""
+            f"python3 -c \"import ast; t=ast.parse(open('{relative_path}').read()); "
+            f"cls=[n.name for n in ast.walk(t) if isinstance(n,ast.ClassDef)]; "
+            f"assert len(cls)<=5, f'Class count: {{len(cls)}}'\""
         )
     if "has_large_classes" in issues:
         structural_checks.append(
-            f"python -c \"from app.services.explorer.analyzers.ast_analyzer import parse_python_file; "
-            f"r=parse_python_file('{relative_path}'); "
-            f"assert all(len(c['methods'])<=10 for c in r['classes']), "
-            f"f'Large classes: {{[c[\\\"name\\\"] for c in r[\\\"classes\\\"] if len(c[\\\"methods\\\"])>10]}}'\""
+            f"python3 -c \"import ast; t=ast.parse(open('{relative_path}').read()); "
+            f"big=[n.name for n in ast.walk(t) if isinstance(n,ast.ClassDef) "
+            f"and sum(1 for c in ast.iter_child_nodes(n) "
+            f"if isinstance(c,(ast.FunctionDef,ast.AsyncFunctionDef)))>10]; "
+            f"assert not big, f'Large classes: {{big}}'\""
         )
     if "too_many_imports" in issues:
         structural_checks.append(

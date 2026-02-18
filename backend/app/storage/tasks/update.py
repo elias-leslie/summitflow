@@ -58,6 +58,7 @@ ALLOWED_UPDATE_FIELDS = {
     "agent_override",
     "agent_hub_session_ids",
     "labels",
+    "ai_review",
 }
 
 # JSONB dict fields

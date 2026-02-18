@@ -145,7 +145,7 @@ class TestBuildRefactorSteps:
         assert not any("wc -l" in s["verify_command"] for s in steps)
 
     def test_structural_issues_get_ast_verification(self) -> None:
-        """Structural issues generate AST-based verify commands."""
+        """Structural issues generate stdlib ast-based verify commands."""
         steps = build_refactor_steps(
             "backend/app/services/foo.py", "/abs/path", 200, 150, False,
             refactor_issues=["has_long_functions", "deep_nesting"],
@@ -153,9 +153,9 @@ class TestBuildRefactorSteps:
         structural_step = [s for s in steps if "structural" in s["description"].lower()]
         assert len(structural_step) == 1
         cmd = structural_step[0]["verify_command"]
-        assert "parse_python_file" in cmd
-        assert "max_nesting" in cmd
-        assert "lines" in cmd  # function line check
+        assert "import ast" in cmd
+        assert "col_offset" in cmd  # nesting depth check
+        assert "end_lineno" in cmd  # function line check
 
     def test_too_many_functions_verified(self) -> None:
         """too_many_functions generates function count check."""
@@ -165,7 +165,10 @@ class TestBuildRefactorSteps:
         )
         structural = [s for s in steps if "structural" in s["description"].lower()]
         assert len(structural) == 1
-        assert "len(r['functions'])<=20" in structural[0]["verify_command"]
+        cmd = structural[0]["verify_command"]
+        assert "import ast" in cmd
+        assert "<=20" in cmd
+        assert "FunctionDef" in cmd
 
     def test_too_many_classes_verified(self) -> None:
         """too_many_classes generates class count check."""
@@ -175,7 +178,10 @@ class TestBuildRefactorSteps:
         )
         structural = [s for s in steps if "structural" in s["description"].lower()]
         assert len(structural) == 1
-        assert "len(r['classes'])<=5" in structural[0]["verify_command"]
+        cmd = structural[0]["verify_command"]
+        assert "import ast" in cmd
+        assert "<=5" in cmd
+        assert "ClassDef" in cmd
 
     def test_has_large_classes_verified(self) -> None:
         """has_large_classes generates method count check."""
@@ -185,7 +191,10 @@ class TestBuildRefactorSteps:
         )
         structural = [s for s in steps if "structural" in s["description"].lower()]
         assert len(structural) == 1
-        assert "len(c['methods'])<=10" in structural[0]["verify_command"]
+        cmd = structural[0]["verify_command"]
+        assert "import ast" in cmd
+        assert ">10" in cmd
+        assert "ClassDef" in cmd
 
     def test_too_many_imports_verified(self) -> None:
         """too_many_imports generates import count check."""

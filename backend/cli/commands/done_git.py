@@ -10,6 +10,8 @@ from pathlib import Path
 
 from ..output import output_warning
 
+GIT_TIMEOUT = 60  # seconds
+
 
 def is_working_tree_clean(path: str | None = None) -> bool:
     """Check if git working tree is clean.
@@ -34,9 +36,10 @@ def is_working_tree_clean(path: str | None = None) -> bool:
             capture_output=True,
             text=True,
             check=True,
+            timeout=GIT_TIMEOUT,
         )
         return len(result.stdout.strip()) == 0
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return False
 
 
@@ -47,6 +50,7 @@ def _get_stash_count() -> int:
         capture_output=True,
         text=True,
         check=True,
+        timeout=GIT_TIMEOUT,
     )
     return len(result.stdout.strip().splitlines()) if result.stdout.strip() else 0
 
@@ -65,12 +69,15 @@ def git_stash_push() -> bool:
             capture_output=True,
             text=True,
             check=True,
+            timeout=GIT_TIMEOUT,
         )
 
         after_count = _get_stash_count()
         return after_count > before_count
-    except subprocess.CalledProcessError as e:
-        output_warning(f"git stash push failed: {e.stderr}")
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+        raw = e.stderr if hasattr(e, "stderr") else str(e)
+        stderr = raw.decode() if isinstance(raw, bytes) else raw
+        output_warning(f"git stash push failed: {stderr}")
         return False
 
 
@@ -82,8 +89,11 @@ def git_stash_pop() -> None:
             capture_output=True,
             text=True,
             check=True,
+            timeout=GIT_TIMEOUT,
         )
-    except subprocess.CalledProcessError as e:
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+        raw = e.stderr if hasattr(e, "stderr") else str(e)
+        stderr = raw.decode() if isinstance(raw, bytes) else raw
         output_warning(
-            f"git stash pop failed (manual resolve may be needed): {e.stderr}"
+            f"git stash pop failed (manual resolve may be needed): {stderr}"
         )

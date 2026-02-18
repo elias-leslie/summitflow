@@ -140,6 +140,7 @@ def create_refactor_task(
         done_when=done_when,
         complexity="SIMPLE",
         auto_approve=True,
+        ai_review=False,
     )
 
     if not task_id:
