@@ -38,6 +38,7 @@ export interface RefactorTarget {
   test_file_exists: boolean
   complexity_method: 'radon' | 'heuristic'
   health_flags: string[]
+  refactor_issues: string[]
 }
 
 export interface RefactorTargetsResponse {

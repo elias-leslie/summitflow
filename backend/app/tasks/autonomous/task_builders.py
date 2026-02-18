@@ -24,6 +24,84 @@ from app.tasks.autonomous._task_core import (
 logger = logging.getLogger(__name__)
 
 
+_ISSUE_LABELS: dict[str, str] = {
+    "high_complexity": "high cyclomatic complexity",
+    "medium_complexity": "elevated complexity",
+    "oversized": "oversized file (>500 LOC)",
+    "large_file": "large file (>300 LOC)",
+    "bloat_critical": "critical file bloat",
+    "bloat_warning": "file bloat",
+    "too_many_functions": "too many functions (>20)",
+    "too_many_classes": "too many classes (>5)",
+    "too_many_imports": "too many imports (>30)",
+    "has_long_functions": "functions exceeding 50 lines",
+    "has_large_classes": "classes with >10 methods",
+    "deep_nesting": "nesting deeper than 3 levels",
+    "magic_strings": "hardcoded magic strings",
+    "stale_todos": "stale TODO/FIXME comments",
+    "deprecated_code": "deprecated code markers",
+    "legacy_code": "legacy variable naming",
+}
+
+
+def _build_issue_aware_objective(
+    relative_path: str,
+    lines: int,
+    target_lines: int,
+    refactor_issues: list[str],
+) -> str:
+    """Build task objective from actual issues, not just line count."""
+    parts = [f"Refactor {relative_path}"]
+
+    has_size_issue = any(i in refactor_issues for i in ("oversized", "large_file", "bloat_critical", "bloat_warning"))
+    if has_size_issue:
+        parts.append(f"to reduce from {lines} to <{target_lines} lines")
+
+    structural = [i for i in refactor_issues if i not in ("oversized", "large_file", "bloat_critical", "bloat_warning", "high_complexity", "medium_complexity")]
+    if structural:
+        labels = [_ISSUE_LABELS.get(i, i.replace("_", " ")) for i in structural[:4]]
+        parts.append(f"resolving: {', '.join(labels)}")
+
+    parts.append("while preserving all existing behavior")
+    return " — ".join(parts) + "."
+
+
+def _build_issue_aware_done_when(
+    lines: int,
+    target_lines: int,
+    refactor_issues: list[str],
+    is_frontend: bool,
+) -> list[str]:
+    """Build done_when criteria from actual issues."""
+    criteria = ["All quality gates pass (ruff, mypy, pytest)"]
+
+    has_size_issue = any(i in refactor_issues for i in ("oversized", "large_file", "bloat_critical", "bloat_warning"))
+    if has_size_issue:
+        criteria.append(f"File line count reduced to <{target_lines} lines (current: {lines})")
+
+    if "has_long_functions" in refactor_issues:
+        criteria.append("No functions exceed 50 lines")
+    if "deep_nesting" in refactor_issues:
+        criteria.append("No nesting deeper than 3 levels")
+    if "too_many_functions" in refactor_issues:
+        criteria.append("Functions per file reduced to <=20")
+    if "too_many_classes" in refactor_issues:
+        criteria.append("Classes per file reduced to <=5")
+    if "has_large_classes" in refactor_issues:
+        criteria.append("No class has more than 10 methods")
+    if "magic_strings" in refactor_issues:
+        criteria.append("Magic strings extracted to constants or config")
+    if "too_many_imports" in refactor_issues:
+        criteria.append("Imports reduced to <=30")
+
+    criteria.append("No regressions - all existing tests pass")
+
+    if is_frontend:
+        criteria.append("No console errors in browser")
+
+    return criteria
+
+
 def create_refactor_task(
     project_id: str,
     relative_path: str,
@@ -35,24 +113,20 @@ def create_refactor_task(
     priority: str,
     tier: int,
     steps: list[dict[str, str]],
+    refactor_issues: list[str] | None = None,
 ) -> tuple[str | None, int | None]:
     """Create refactor task with spirit, subtasks, and steps."""
+    issues = refactor_issues or []
     file_name = relative_path.split("/")[-1]
     title = f"Refactor: {reason} in {file_name}"
     description = build_refactor_description(relative_path, lines, target_lines, complexity, priority)
 
     issue_id = create_refactor_issue(project_id, relative_path, complexity, lines, target_lines, reason)
 
-    objective = f"Refactor {relative_path} to reduce line count from {lines} to <{target_lines} lines while preserving all existing behavior."
-    done_when = [
-        "All quality gates pass (ruff, mypy, pytest)",
-        f"File line count reduced to <{target_lines} lines (current: {lines})",
-        "No regressions - all existing tests pass",
-    ]
+    objective = _build_issue_aware_objective(relative_path, lines, target_lines, issues)
 
     category = "backend" if relative_path.endswith(".py") else "frontend"
-    if category == "frontend":
-        done_when.append("No console errors in browser")
+    done_when = _build_issue_aware_done_when(lines, target_lines, issues, is_frontend=(category == "frontend"))
 
     task_id = create_task_with_spirit(
         project_id=project_id,

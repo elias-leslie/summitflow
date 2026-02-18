@@ -17,6 +17,7 @@ import {
 import { cn } from '@/lib/utils'
 import type { RefactorTarget } from './utils/codeHealthApi'
 import {
+  getIssueStyle,
   getPriorityStyles,
   type SortDir,
   type SortField,
@@ -186,11 +187,33 @@ function TargetRow({
             <ChevronRight className="w-4 h-4 text-slate-500" />
           )}
         </div>
-        <div className="truncate text-slate-300" title={target.path}>
-          <span className="text-slate-500">
-            {target.path.split('/').slice(0, -1).join('/')}/
-          </span>
-          <span className="font-medium">{target.name}</span>
+        <div className="min-w-0">
+          <div className="truncate text-slate-300" title={target.path}>
+            <span className="text-slate-500">
+              {target.path.split('/').slice(0, -1).join('/')}/
+            </span>
+            <span className="font-medium">{target.name}</span>
+          </div>
+          {target.refactor_issues.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-0.5">
+              {target.refactor_issues.slice(0, 4).map((issue) => {
+                const s = getIssueStyle(issue)
+                return (
+                  <span
+                    key={issue}
+                    className={cn('px-1 py-0 text-[10px] rounded border', s.color)}
+                  >
+                    {s.label}
+                  </span>
+                )
+              })}
+              {target.refactor_issues.length > 4 && (
+                <span className="text-[10px] text-slate-500">
+                  +{target.refactor_issues.length - 4}
+                </span>
+              )}
+            </div>
+          )}
         </div>
         <div className={cn('text-right tabular-nums flex items-center justify-end gap-1', hotspotColor)}>
           {target.hotspot_score >= 500 && <Flame className="w-3 h-3" />}
@@ -269,16 +292,22 @@ function TargetRow({
                   )}
                 </span>
               </div>
-              {target.health_flags.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {target.health_flags.map((flag) => (
-                    <span
-                      key={flag}
-                      className="px-1.5 py-0.5 rounded bg-slate-700/50 border border-slate-600/50 text-slate-400"
-                    >
-                      {flag.replace(/_/g, ' ')}
-                    </span>
-                  ))}
+              {target.refactor_issues.length > 0 && (
+                <div>
+                  <span className="text-slate-500 block mb-1">Issues:</span>
+                  <div className="flex flex-wrap gap-1">
+                    {target.refactor_issues.map((issue) => {
+                      const s = getIssueStyle(issue)
+                      return (
+                        <span
+                          key={issue}
+                          className={cn('px-1.5 py-0.5 rounded border text-[11px]', s.color)}
+                        >
+                          {s.label}
+                        </span>
+                      )
+                    })}
+                  </div>
                 </div>
               )}
               {onFileSelect && (

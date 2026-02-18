@@ -141,8 +141,14 @@ def get_refactor_targets(
                    CASE
                        WHEN (metadata->>'complexity_score')::float > 15 THEN 'High complexity score'
                        WHEN (metadata->>'lines_of_code')::int > 500 THEN 'High line count'
+                       WHEN metadata->'health_flags' IS NOT NULL
+                            AND jsonb_typeof(metadata->'health_flags') = 'object'
+                            AND (SELECT count(*) FROM jsonb_object_keys(metadata->'health_flags')) >= 3
+                            THEN 'Multiple structural issues'
                        WHEN (metadata->>'complexity_score')::float > 10 THEN 'Medium complexity'
-                       ELSE 'Medium line count'
+                       WHEN (metadata->>'lines_of_code')::int > 300 THEN 'Medium line count'
+                       WHEN (metadata->>'bloat_level') = 'warning' THEN 'File bloat'
+                       ELSE 'Structural issues'
                    END as reason,
                    COALESCE((metadata->>'commit_count_90d')::int, 0) as commit_count_90d,
                    COALESCE((metadata->>'test_file_exists')::boolean, false) as test_file_exists,
@@ -150,7 +156,8 @@ def get_refactor_targets(
                    ROUND((COALESCE((metadata->>'commit_count_90d')::int, 0) *
                          COALESCE((metadata->>'complexity_score')::float, 0))::numeric, 2) as hotspot_score,
                    COALESCE(metadata->>'complexity_method', 'heuristic') as complexity_method,
-                   COALESCE(metadata->'health_flags', '[]'::jsonb) as health_flags
+                   COALESCE(metadata->'health_flags', '[]'::jsonb) as health_flags,
+                   COALESCE(metadata->'refactor_issues', '[]'::jsonb) as refactor_issues
             FROM explorer_entries
             WHERE {where_clause}
             ORDER BY
@@ -180,6 +187,7 @@ def get_refactor_targets(
                 "hotspot_score": row[10],
                 "complexity_method": row[11],
                 "health_flags": row[12] if isinstance(row[12], list) else [],
+                "refactor_issues": row[13] if isinstance(row[13], list) else [],
             }
             for row in rows
         ]

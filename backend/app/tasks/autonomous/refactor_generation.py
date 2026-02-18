@@ -81,6 +81,11 @@ def calculate_task_tier(complexity: float, lines: int) -> int:
     return 1
 
 
+def _has_size_issues(issues: list[str]) -> bool:
+    """Check if any issues relate to file size."""
+    return any(i in issues for i in ("oversized", "large_file", "bloat_critical", "bloat_warning"))
+
+
 def process_refactor_target(
     project_id: str,
     target: dict[str, Any],
@@ -93,20 +98,29 @@ def process_refactor_target(
     reason = target.get("reason", "High complexity")
     complexity = target.get("complexity_score", 0)
     lines = target.get("lines_of_code", 0)
+    refactor_issues: list[str] = target.get("refactor_issues", [])
 
     target_lines = calculate_target_lines(lines)
 
-    should_skip, skip_reason = should_skip_refactor_target(
-        project_id, relative_path, lines, target_lines, skip_existing
-    )
-    if should_skip:
-        logger.info(skip_reason)
+    # Only apply size-based skip logic when the target has size issues
+    if _has_size_issues(refactor_issues) or not refactor_issues:
+        should_skip, skip_reason = should_skip_refactor_target(
+            project_id, relative_path, lines, target_lines, skip_existing
+        )
+        if should_skip:
+            logger.info(skip_reason)
+            return False
+    elif skip_existing and task_store.task_exists_for_file(project_id, relative_path):
+        logger.info(f"Skipping {relative_path}: task already exists")
         return False
 
     tier = calculate_task_tier(complexity, lines)
     file_path = f"{project_root}/{relative_path}" if project_root else relative_path
     is_frontend = relative_path.startswith("frontend/")
-    steps = build_refactor_steps(relative_path, file_path, lines, target_lines, is_frontend)
+    steps = build_refactor_steps(
+        relative_path, file_path, lines, target_lines, is_frontend,
+        refactor_issues=refactor_issues,
+    )
 
     task_id, issue_id = create_refactor_task(
         project_id=project_id,
@@ -119,6 +133,7 @@ def process_refactor_target(
         priority=priority,
         tier=tier,
         steps=steps,
+        refactor_issues=refactor_issues,
     )
 
     if task_id:

@@ -83,21 +83,92 @@ def calculate_comment_density(content: str) -> float | None:
         return None
 
 
-def calculate_refactor_priority(complexity_score: float, lines: int) -> str:
-    """Determine refactor priority based on complexity and lines.
+def calculate_refactor_priority(
+    complexity_score: float,
+    lines: int,
+    health_flags: dict[str, bool] | None = None,
+    bloat_level: str | None = None,
+) -> str:
+    """Determine refactor priority based on complexity, lines, health flags, and bloat.
 
     Args:
         complexity_score: Calculated complexity score
         lines: Number of lines in file
+        health_flags: Dict of structural issue flags (e.g. deep_nesting, has_long_functions)
+        bloat_level: File bloat level ("ok", "warning", "critical")
 
     Returns:
         Priority level: "high", "medium", or "none"
     """
-    if complexity_score > REFACTOR_HIGH_COMPLEXITY or lines > REFACTOR_HIGH_LINES:
+    flag_count = len(health_flags) if health_flags else 0
+
+    # High: complexity/LOC thresholds, critical bloat, or 3+ health flags
+    if (
+        complexity_score > REFACTOR_HIGH_COMPLEXITY
+        or lines > REFACTOR_HIGH_LINES
+        or bloat_level == "critical"
+        or flag_count >= 3
+    ):
         return "high"
-    if complexity_score > REFACTOR_MEDIUM_COMPLEXITY or lines > REFACTOR_MEDIUM_LINES:
+
+    # Medium: moderate complexity/LOC, warning bloat, or any health flags
+    if (
+        complexity_score > REFACTOR_MEDIUM_COMPLEXITY
+        or lines > REFACTOR_MEDIUM_LINES
+        or bloat_level == "warning"
+        or flag_count >= 1
+    ):
         return "medium"
+
     return "none"
+
+
+def build_refactor_issues(
+    complexity_score: float,
+    lines: int,
+    health_flags: dict[str, bool] | None = None,
+    bloat_level: str | None = None,
+    magic_strings: dict[str, int] | None = None,
+    compat_cruft: dict[str, int] | None = None,
+) -> list[str]:
+    """Build a list of specific refactoring issues found for a file.
+
+    Returns:
+        List of issue identifier strings (e.g. ["high_complexity", "deep_nesting"]).
+    """
+    issues: list[str] = []
+
+    if complexity_score > REFACTOR_HIGH_COMPLEXITY:
+        issues.append("high_complexity")
+    elif complexity_score > REFACTOR_MEDIUM_COMPLEXITY:
+        issues.append("medium_complexity")
+
+    if lines > REFACTOR_HIGH_LINES:
+        issues.append("oversized")
+    elif lines > REFACTOR_MEDIUM_LINES:
+        issues.append("large_file")
+
+    if bloat_level == "critical":
+        issues.append("bloat_critical")
+    elif bloat_level == "warning":
+        issues.append("bloat_warning")
+
+    if health_flags:
+        for flag in sorted(health_flags):
+            issues.append(flag)
+
+    if magic_strings:
+        issues.append("magic_strings")
+
+    if compat_cruft:
+        if compat_cruft.get("stale_todos", 0) > 0:
+            issues.append("stale_todos")
+        if compat_cruft.get("deprecated_markers", 0) > 0:
+            issues.append("deprecated_code")
+        if compat_cruft.get("legacy_vars", 0) > 0:
+            issues.append("legacy_code")
+
+    return issues
 
 
 def analyze_python_complexity(

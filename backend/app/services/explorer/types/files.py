@@ -37,6 +37,7 @@ from ..models import ExplorerEntryCreate
 from .file_analysis import calculate_basic_metrics, calculate_bloat, read_file_content
 from .file_complexity import (
     analyze_python_complexity,
+    build_refactor_issues,
     calculate_complexity_score,
     calculate_refactor_priority,
 )
@@ -138,8 +139,6 @@ class FileScanner(BaseScanner):
                 cc_max = None
                 comment_density = None
 
-            refactor_priority = calculate_refactor_priority(complexity_score, lines)
-
             # Detect magic strings
             magic_strings = detect_magic_strings(rel_path, content)
 
@@ -149,6 +148,22 @@ class FileScanner(BaseScanner):
             # Compute health flags from thresholds
             health_flags = compute_health_flags(
                 file_path, ext, function_count, class_count, import_count
+            )
+
+            # Priority considers ALL issue dimensions, not just complexity/LOC
+            refactor_priority = calculate_refactor_priority(
+                complexity_score, lines,
+                health_flags=health_flags or None,
+                bloat_level=bloat_level,
+            )
+
+            # Build explicit list of all issues found
+            refactor_issues = build_refactor_issues(
+                complexity_score, lines,
+                health_flags=health_flags or None,
+                bloat_level=bloat_level,
+                magic_strings=magic_strings or None,
+                compat_cruft=compat_cruft or None,
             )
 
             return ExplorerEntryCreate(
@@ -171,6 +186,7 @@ class FileScanner(BaseScanner):
                     "cyclomatic_complexity_max": cc_max,
                     "comment_density": comment_density,
                     "refactor_priority": refactor_priority,
+                    "refactor_issues": refactor_issues if refactor_issues else None,
                     "magic_strings": magic_strings if magic_strings else None,
                     "compat_cruft": compat_cruft if compat_cruft else None,
                     "health_flags": health_flags if health_flags else None,

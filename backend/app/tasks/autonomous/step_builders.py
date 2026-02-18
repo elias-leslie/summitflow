@@ -88,8 +88,12 @@ def build_refactor_steps(
     lines: int,
     target_lines: int,
     is_frontend: bool,
+    refactor_issues: list[str] | None = None,
 ) -> list[dict[str, str]]:
     """Build verification steps for a refactor task.
+
+    Generates issue-specific verify commands so each detected problem
+    is verified as resolved, not just line count.
 
     Args:
         relative_path: Relative file path for display and verification commands
@@ -98,27 +102,66 @@ def build_refactor_steps(
         lines: Current line count
         target_lines: Target line count
         is_frontend: Whether this is a frontend file
+        refactor_issues: List of specific issue identifiers to verify
 
     Returns:
         List of step dictionaries with description, verify_command
     """
-    steps = [
-        {
+    issues = refactor_issues or []
+    steps: list[dict[str, str]] = []
+
+    # Step 1: Size reduction (only when file has size issues)
+    has_size_issue = any(i in issues for i in ("oversized", "large_file", "bloat_critical", "bloat_warning"))
+    if has_size_issue or not issues:
+        steps.append({
             "description": f"Refactor {relative_path} from {lines} to <{target_lines} lines",
             "verify_command": f"test $(wc -l < {relative_path}) -lt {target_lines}",
-        },
-        {
-            "description": "Quality gate: auto-fix, lint, types, targeted tests",
-            "verify_command": f"dt --fix 2>/dev/null; {get_targeted_test_command(relative_path)} && dt --quick --changed-only",
-        },
-    ]
+        })
+
+    # Step 2: Structural issue verification (Python-specific AST checks)
+    structural_checks: list[str] = []
+    if "has_long_functions" in issues:
+        structural_checks.append(
+            f"python -c \"from app.services.explorer.analyzers.ast_analyzer import parse_python_file; "
+            f"r=parse_python_file('{relative_path}'); "
+            f"assert all(f['lines']<=50 for f in r['functions']), "
+            f"f'Long functions: {{[f[\\\"name\\\"] for f in r[\\\"functions\\\"] if f[\\\"lines\\\"]>50]}}'\""
+        )
+    if "deep_nesting" in issues:
+        structural_checks.append(
+            f"python -c \"from app.services.explorer.analyzers.ast_analyzer import parse_python_file; "
+            f"r=parse_python_file('{relative_path}'); "
+            f"assert r['max_nesting']<=3, f'Nesting depth: {{r[\\\"max_nesting\\\"]}}'\""
+        )
+    if "too_many_functions" in issues:
+        structural_checks.append(
+            f"python -c \"from app.services.explorer.analyzers.ast_analyzer import parse_python_file; "
+            f"r=parse_python_file('{relative_path}'); "
+            f"assert len(r['functions'])<=20, f'Function count: {{len(r[\\\"functions\\\"])}}'\""
+        )
+    if "too_many_classes" in issues:
+        structural_checks.append(
+            f"python -c \"from app.services.explorer.analyzers.ast_analyzer import parse_python_file; "
+            f"r=parse_python_file('{relative_path}'); "
+            f"assert len(r['classes'])<=5, f'Class count: {{len(r[\\\"classes\\\"])}}'\""
+        )
+
+    if structural_checks:
+        steps.append({
+            "description": "Verify structural issues resolved (function length, nesting, counts)",
+            "verify_command": " && ".join(structural_checks),
+        })
+
+    # Step 3: Quality gate (always)
+    steps.append({
+        "description": "Quality gate: auto-fix, lint, types, targeted tests",
+        "verify_command": f"dt --fix 2>/dev/null; {get_targeted_test_command(relative_path)} && dt --quick --changed-only",
+    })
 
     if is_frontend:
-        steps.append(
-            {
-                "description": "Verify no console errors in browser",
-                "verify_command": "agent-browser open http://localhost:3001 && agent-browser wait --load networkidle",
-            }
-        )
+        steps.append({
+            "description": "Verify no console errors in browser",
+            "verify_command": "agent-browser open http://localhost:3001 && agent-browser wait --load networkidle",
+        })
 
     return steps
