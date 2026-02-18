@@ -107,9 +107,6 @@ export function TasksTabTable({
                 direction={sortDirection}
               />
             </th>
-            <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-16">
-              Phase
-            </th>
             <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-36">
               Progress
             </th>

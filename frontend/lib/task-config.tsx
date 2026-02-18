@@ -174,68 +174,6 @@ export function getTaskTypeConfigSmall(
 }
 
 // ============================================================================
-// Status Configuration
-// ============================================================================
-
-export interface StatusConfig {
-  label: string
-  className: string
-  icon?: React.ReactNode
-}
-
-export const statusConfig: Record<TaskStatus, StatusConfig> = {
-  pending: {
-    label: 'Pending',
-    className: 'bg-slate-500/20 text-slate-400 border-slate-500/30',
-  },
-  queue: {
-    label: 'Queued',
-    className: 'bg-sky-500/20 text-sky-400 border-sky-500/30',
-    icon: <Clock className="h-3 w-3" />,
-  },
-  running: {
-    label: 'Running',
-    className: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-    icon: <Loader2 className="h-3 w-3 animate-spin" />,
-  },
-  paused: {
-    label: 'Paused',
-    className: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
-    icon: <Clock className="h-3 w-3" />,
-  },
-  blocked: {
-    label: 'Blocked',
-    className: 'bg-red-500/20 text-red-400 border-red-500/30',
-  },
-  pr_created: {
-    label: 'PR Created',
-    className: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
-  },
-  ai_reviewing: {
-    label: 'AI Reviewing',
-    className: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
-    icon: <Loader2 className="h-3 w-3 animate-spin" />,
-  },
-  completed: {
-    label: 'Completed',
-    className: 'bg-phosphor-500/20 text-phosphor-400 border-phosphor-500/30',
-    icon: <CheckCircle2 className="h-3 w-3" />,
-  },
-  failed: {
-    label: 'Failed',
-    className: 'bg-red-500/20 text-red-400 border-red-500/30',
-  },
-  cancelled: {
-    label: 'Cancelled',
-    className: 'bg-slate-500/20 text-slate-400 border-slate-500/30',
-  },
-}
-
-export function getStatusConfig(status: TaskStatus): StatusConfig {
-  return statusConfig[status] || statusConfig.pending
-}
-
-// ============================================================================
 // Task Status Configuration (for TaskCard - includes title)
 // ============================================================================
 
@@ -291,6 +229,11 @@ export const taskStatusCardConfig: Record<TaskStatus, TaskStatusCardConfig> = {
     icon: <X className="h-3.5 w-3.5" />,
     className: 'text-slate-500',
     title: 'Task cancelled',
+  },
+  abandoned: {
+    icon: <X className="h-3.5 w-3.5" />,
+    className: 'text-slate-500',
+    title: 'Task abandoned',
   },
 }
 
@@ -433,42 +376,11 @@ export const statusIconConfig: Record<
     className: 'text-slate-500',
     label: 'Cancelled',
   },
-}
-
-// ============================================================================
-// Kanban Label Mapping (status → column name)
-// ============================================================================
-
-export const statusToKanbanLabel: Record<
-  string,
-  { label: string; className: string }
-> = {
-  pending: { label: 'Planning', className: 'bg-slate-600/50 text-slate-300' },
-  running: {
-    label: 'In Progress',
-    className: 'bg-blue-600/50 text-blue-300',
+  abandoned: {
+    icon: XCircle,
+    className: 'text-slate-500',
+    label: 'Abandoned',
   },
-  paused: {
-    label: 'In Progress',
-    className: 'bg-amber-600/50 text-amber-300',
-  },
-  blocked: {
-    label: 'In Progress',
-    className: 'bg-orange-600/50 text-orange-300',
-  },
-  ai_reviewing: {
-    label: 'AI Review',
-    className: 'bg-cyan-600/50 text-cyan-300',
-  },
-  pr_created: {
-    label: 'AI Review',
-    className: 'bg-purple-600/50 text-purple-300',
-  },
-  queue: { label: 'Queue', className: 'bg-indigo-600/50 text-indigo-300' },
-  completed: { label: 'Done', className: 'bg-green-600/50 text-green-300' },
-  failed: { label: 'Done', className: 'bg-red-600/50 text-red-300' },
-  cancelled: { label: 'Done', className: 'bg-slate-600/50 text-slate-300' },
-  abandoned: { label: 'Done', className: 'bg-slate-600/50 text-slate-300' },
 }
 
 // ============================================================================

@@ -93,6 +93,11 @@ const statusIcons: Record<
     color: 'text-slate-400',
     bg: 'bg-slate-500/20',
   },
+  abandoned: {
+    icon: <Ban className="h-3 w-3" />,
+    color: 'text-slate-400',
+    bg: 'bg-slate-500/20',
+  },
 }
 
 // ============================================================================

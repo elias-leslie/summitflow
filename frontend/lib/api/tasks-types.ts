@@ -17,6 +17,7 @@ export type TaskStatus =
   | 'completed'
   | 'failed'
   | 'cancelled'
+  | 'abandoned'
 
 export type TaskType =
   | 'feature'

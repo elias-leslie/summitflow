@@ -75,6 +75,7 @@ export const statusToColumn: Record<TaskStatus, TaskKanbanColumn> = {
   completed: 'done',
   failed: 'done',
   cancelled: 'done',
+  abandoned: 'done',
 }
 
 // Map Kanban column to task status (for drag-drop)

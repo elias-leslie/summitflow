@@ -9,7 +9,6 @@ import {
   formatRelativeTime,
   priorityConfig,
   statusIconConfig,
-  statusToKanbanLabel,
   typeConfig,
 } from '@/lib/task-config'
 
@@ -37,8 +36,6 @@ export function TaskListRow({
   const priorityStyle = priorityConfig[priority] || priorityConfig[2]
   const typeStyle = typeConfig[taskType] || typeConfig.task
   const statusStyle = statusIconConfig[task.status] || statusIconConfig.pending
-  const phaseStyle =
-    statusToKanbanLabel[task.status] || statusToKanbanLabel.pending
 
   const TypeIcon = typeStyle.icon
   const StatusIcon = statusStyle.icon
@@ -106,15 +103,6 @@ export function TaskListRow({
             </span>
           )}
         </div>
-      </td>
-
-      {/* Phase Badge */}
-      <td className="px-3 py-3 cursor-pointer" onClick={onToggle}>
-        <span
-          className={`text-2xs px-1.5 py-0.5 rounded font-medium ${phaseStyle.className}`}
-        >
-          {phaseStyle.label}
-        </span>
       </td>
 
       {/* Progress Indicators */}

@@ -60,34 +60,6 @@ VALID_TRANSITIONS: dict[str, set[str]] = {
     "abandoned": set(),  # Terminal - claimed but rolled back
 }
 
-# Status to kanban column mapping (6 columns)
-STATUS_TO_KANBAN_COLUMN: dict[str, str] = {
-    "pending": "Planning",
-    "queue": "Queue",
-    "running": "Active",
-    "paused": "Active",
-    "pr_created": "Active",
-    "ai_reviewing": "Active",
-    "blocked": "Blocked",
-    "completed": "Done",
-    "failed": "Done",
-    "cancelled": "Done",
-    "abandoned": "Done",
-}
-
-
-def status_to_kanban_column(status: str) -> str:
-    """Map task status to kanban column name.
-
-    Args:
-        status: Task status value
-
-    Returns:
-        Kanban column name (Planning, Queue, Active, Blocked, Done)
-    """
-    return STATUS_TO_KANBAN_COLUMN.get(status, "Planning")
-
-
 def validate_status_transition(current: str, target: str) -> bool:
     """Check if a status transition is valid.
 
@@ -163,7 +135,6 @@ def update_task_status(
                 END,
                 current_phase = CASE
                     WHEN %s = 'completed' THEN 'complete'
-                    WHEN %s IN ('abandoned', 'cancelled', 'failed') THEN NULL
                     ELSE current_phase
                 END,
                 claimed_by = CASE WHEN %s IN ('completed', 'failed', 'cancelled', 'abandoned') THEN NULL ELSE claimed_by END,
@@ -179,7 +150,6 @@ def update_task_status(
                 status,
                 status,
                 error_message,
-                status,
                 status,
                 status,
                 status,
