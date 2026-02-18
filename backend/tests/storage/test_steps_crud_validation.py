@@ -106,14 +106,14 @@ class TestRawToolRejection:
         "cmd",
         [
             "dt pytest tests/test_foo.py -q",
-            "dt mypy app/main.py",
+            "dt types app/main.py",
             "dt ruff check app/",
             "dt biome check src/",
             "dt tsc --noEmit",
             "dt --quick",
             "dt --fix && dt --quick --changed-only",
         ],
-        ids=["dt_pytest", "dt_mypy", "dt_ruff", "dt_biome", "dt_tsc", "dt_quick", "dt_compound"],
+        ids=["dt_pytest", "dt_types", "dt_ruff", "dt_biome", "dt_tsc", "dt_quick", "dt_compound"],
     )
     def test_dt_wrapped_tools_allowed(self, cmd: str) -> None:
         assert sanitize_verify_command(cmd) == cmd
