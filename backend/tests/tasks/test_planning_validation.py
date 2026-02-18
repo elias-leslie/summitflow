@@ -236,7 +236,7 @@ class TestRawToolBlocking:
         "cmd,tool",
         [
             ("pytest tests/test_foo.py -q", "pytest"),
-            ("ty check app/main.py", "types"),
+            ("mypy app/main.py", "types"),
             ("ruff check app/", "ruff"),
             ("biome check src/", "biome"),
             ("tsc --noEmit", "tsc"),

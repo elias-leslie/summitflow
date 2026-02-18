@@ -22,10 +22,10 @@ ERROR_BLOCKLIST_PATTERNS = [
     "connection failed",
     "psql",
     # Pre-existing type errors (not new bugs, need consolidated approach)
-    "types",
     "type error",
     "type mismatch",
-    "type check",
+    "type.check",
+    "ty check",
     # TypeScript transient issues
     "typescript.*not found",
     "ts2307",

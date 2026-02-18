@@ -110,6 +110,9 @@ def run_types(project_path: Path) -> dict[str, Any]:
         return {"status": "skip", "reason": "ty not found"}
 
     venv_python = backend_path / ".venv" / "bin" / "python"
+    if not venv_python.exists():
+        return {"status": "skip", "reason": "No venv python in backend/"}
+
     success, output = run_command(
         ["ty", "check", "--python", str(venv_python), "app/"],
         cwd=backend_path,

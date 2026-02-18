@@ -8,9 +8,9 @@ from unittest.mock import MagicMock, patch
 from app.tasks.ai_review import review_pull_request
 from app.tasks.ai_review_checks import (
     _has_frontend_changes,
-    _run_types,
     _run_precommit,
     _run_pytest,
+    _run_types,
     _verify_step_completion,
 )
 from app.tasks.ai_review_constants import ARCHITECTURE_KEYWORDS, SECURITY_KEYWORDS
@@ -141,10 +141,11 @@ class TestRunTypes:
         result = _run_types(tmp_path)
         assert result["status"] == "skip"
 
-    def test_no_types_in_venv(self, tmp_path: Path) -> None:
+    def test_no_ty_binary(self, tmp_path: Path) -> None:
         backend = tmp_path / "backend"
         backend.mkdir()
-        result = _run_types(tmp_path)
+        with patch("app.tasks.ai_review_tools.shutil.which", return_value=None):
+            result = _run_types(tmp_path)
         assert result["status"] == "skip"
 
 

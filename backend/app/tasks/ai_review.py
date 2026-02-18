@@ -16,10 +16,10 @@ from app.storage import tasks as task_store
 from .ai_review_checks import (
     _run_breaking_change_detection,
     _run_code_quality_review,
-    _run_types,
     _run_precommit,
     _run_pytest,
     _run_security_risk_classification,
+    _run_types,
     _run_ui_review,
     _verify_step_completion,
 )

@@ -12,7 +12,7 @@
 #   dt --rebuild-venv     # Nuclear option: delete and recreate venv
 #   dt pytest             # Run pytest with TOON output
 #   dt ruff               # Run ruff with TOON output
-#   dt mypy               # Run mypy with TOON output
+#   dt types              # Run ty with TOON output
 #
 
 set -o pipefail
@@ -277,7 +277,7 @@ install_deps() {
     local installed=0
     local failed=0
 
-    for pkg_spec in "ruff==$CANONICAL_RUFF" "mypy==$CANONICAL_MYPY" "pytest==$CANONICAL_PYTEST" \
+    for pkg_spec in "ruff==$CANONICAL_RUFF" "mypy==$CANONICAL_MYPY" "ty==$CANONICAL_TY" "pytest==$CANONICAL_PYTEST" \
                     "pytest-asyncio==$CANONICAL_PYTEST_ASYNCIO" "pytest-cov==$CANONICAL_PYTEST_COV" \
                     "pytest-xdist==$CANONICAL_PYTEST_XDIST" "pytest-mock==$CANONICAL_PYTEST_MOCK" \
                     "pytest-timeout==$CANONICAL_PYTEST_TIMEOUT" "pytest-randomly==$CANONICAL_PYTEST_RANDOMLY" \
@@ -625,7 +625,7 @@ status_dashboard() {
     local total=0
     local healthy=0
 
-    echo "DEVSTD[${#MANAGED_PROJECTS[@]}]:canonical:ruff=$CANONICAL_RUFF|mypy=$CANONICAL_MYPY|pytest=$CANONICAL_PYTEST"
+    echo "DEVSTD[${#MANAGED_PROJECTS[@]}]:canonical:ruff=$CANONICAL_RUFF|ty=$CANONICAL_TY|pytest=$CANONICAL_PYTEST"
 
     for project_dir in $(get_all_project_dirs); do
         local name=$(basename "$project_dir")
@@ -634,7 +634,7 @@ status_dashboard() {
 
         local venv_ok="N"
         local ruff_v="-"
-        local mypy_v="-"
+        local ty_v="-"
         local pytest_v="-"
         local hooks_v="-"
         local test_count="0"
@@ -644,17 +644,17 @@ status_dashboard() {
         if check_venv "$venv"; then
             venv_ok="Y"
             ruff_v=$(get_installed_version "$venv" ruff)
-            mypy_v=$(get_installed_version "$venv" mypy)
+            ty_v=$(ty --version 2>/dev/null | awk '{print $2}' || echo "-")
             pytest_v=$(get_installed_version "$venv" pytest)
             hooks_v=$(get_installed_version "$venv" pre-commit)
             [[ -z "$ruff_v" ]] && ruff_v="-"
-            [[ -z "$mypy_v" ]] && mypy_v="-"
+            [[ -z "$ty_v" ]] && ty_v="-"
             [[ -z "$pytest_v" ]] && pytest_v="-"
             [[ -z "$hooks_v" ]] && hooks_v="-"
 
             # Check for version drift (exact match required)
             [[ "$ruff_v" != "-" && "$ruff_v" != "$CANONICAL_RUFF" ]] && drift="ruff"
-            [[ "$mypy_v" != "-" && "$mypy_v" != "$CANONICAL_MYPY" ]] && drift="${drift:+$drift,}mypy"
+            [[ "$ty_v" != "-" && "$ty_v" != "$CANONICAL_TY" ]] && drift="${drift:+$drift,}ty"
             [[ "$pytest_v" != "-" && "$pytest_v" != "$CANONICAL_PYTEST" ]] && drift="${drift:+$drift,}pytest"
             [[ "$hooks_v" != "-" && "$hooks_v" != "$CANONICAL_PRECOMMIT" ]] && drift="${drift:+$drift,}hooks"
         fi
@@ -664,7 +664,7 @@ status_dashboard() {
         fi
 
         # Determine health status
-        if [[ "$venv_ok" == "N" || "$ruff_v" == "-" || "$mypy_v" == "-" || "$pytest_v" == "-" || "$hooks_v" == "-" ]]; then
+        if [[ "$venv_ok" == "N" || "$ruff_v" == "-" || "$ty_v" == "-" || "$pytest_v" == "-" || "$hooks_v" == "-" ]]; then
             status="FAIL"
         elif [[ -n "$drift" ]]; then
             status="DRIFT"
@@ -678,7 +678,7 @@ status_dashboard() {
         ((total++))
 
         # Output line with drift info if present
-        local line="$status $name|venv=$venv_ok|ruff=$ruff_v|mypy=$mypy_v|pytest=$pytest_v|hooks=$hooks_v|tests=$test_count"
+        local line="$status $name|venv=$venv_ok|ruff=$ruff_v|ty=$ty_v|pytest=$pytest_v|hooks=$hooks_v|tests=$test_count"
         [[ -n "$drift" ]] && line="$line|drift=$drift"
         echo "$line"
     done
@@ -933,7 +933,7 @@ show_help() {
     echo "Subcommands (TOON output for Claude):"
     echo "  pytest           Run pytest with TOON output (<100 bytes on pass)"
     echo "  ruff             Run ruff with TOON output (<50 bytes on clean)"
-    echo "  mypy             Run mypy with TOON output (<50 bytes on clean)"
+    echo "  types            Run ty with TOON output (<50 bytes on clean)"
     echo "  biome            Run biome lint with TOON output (frontend)"
     echo "  tsc              Run tsc with TOON output (frontend)"
     echo "  sqlfluff         Run sqlfluff lint with TOON output (migrations)"

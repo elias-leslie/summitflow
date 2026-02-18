@@ -34,6 +34,11 @@ def _checkout_branch(branch: str, cwd: str | None = None) -> None:
         sys.exit(1)
 
 
+def _abort_merge(cwd: str | None = None) -> None:
+    """Abort an in-progress merge to restore clean working tree state."""
+    _run_git(["git", "merge", "--abort"], cwd=cwd, check=False)
+
+
 def _get_current_branch(cwd: str | None = None) -> str:
     """Get current branch name."""
     result = _run_git(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=cwd, check=False)
@@ -76,6 +81,7 @@ def merge_subtask_branch(task_id: str, subtask_id: str, project_id: str | None =
     try:
         _run_git(["git", "merge", "--no-ff", subtask_branch, "-m", f"Merge subtask {subtask_id}"], cwd)
     except subprocess.CalledProcessError as e:
+        _abort_merge(cwd)
         print(f"Error: Failed to merge {subtask_branch}: {e.stderr}", file=sys.stderr)
         sys.exit(1)
 
@@ -110,6 +116,7 @@ def merge_task_branch(task_id: str, project_id: str | None = None) -> bool:
         _run_git(["git", "merge", "--no-ff", task_branch, "-m", f"Merge task {task_id}"], repo_cwd)
         print(f"Merged {task_branch} into {base_branch}")
     except subprocess.CalledProcessError as e:
+        _abort_merge(repo_cwd)
         print(f"Error: Failed to merge {task_branch}: {e.stderr}", file=sys.stderr)
         sys.exit(1)
 

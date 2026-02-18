@@ -53,6 +53,12 @@ def merge_task_branch(
         timeout=60,
     )
     if result.returncode != 0:
+        subprocess.run(
+            ["git", "merge", "--abort"],
+            cwd=project_root,
+            capture_output=True,
+            timeout=10,
+        )
         return f"Failed to merge {task_branch}: {result.stderr}"
     return None
 
