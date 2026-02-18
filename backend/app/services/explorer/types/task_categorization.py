@@ -1,27 +1,22 @@
 """Task categorization utilities."""
 
+_CATEGORY_KEYWORDS: list[tuple[str, list[str]]] = [
+    ("data-fetch", ["fetch", "sync", "pull"]),
+    ("maintenance", ["cleanup", "prune", "archive"]),
+    ("reporting", ["report", "summary", "digest"]),
+    ("alerts", ["alert", "notify"]),
+    ("backup", ["backup", "snapshot"]),
+    ("analytics", ["analytics", "metric", "stat"]),
+    ("market-data", ["market", "price", "quote"]),
+    ("news", ["news", "headline"]),
+    ("indicators", ["indicator", "signal"]),
+]
+
 
 def categorize_task(task_name: str) -> str:
     """Categorize a task by its name pattern."""
     name = task_name.lower()
-
-    if "fetch" in name or "sync" in name or "pull" in name:
-        return "data-fetch"
-    if "cleanup" in name or "prune" in name or "archive" in name:
-        return "maintenance"
-    if "report" in name or "summary" in name or "digest" in name:
-        return "reporting"
-    if "alert" in name or "notify" in name:
-        return "alerts"
-    if "backup" in name or "snapshot" in name:
-        return "backup"
-    if "analytics" in name or "metric" in name or "stat" in name:
-        return "analytics"
-    if "market" in name or "price" in name or "quote" in name:
-        return "market-data"
-    if "news" in name or "headline" in name:
-        return "news"
-    if "indicator" in name or "signal" in name:
-        return "indicators"
-
+    for category, keywords in _CATEGORY_KEYWORDS:
+        if any(kw in name for kw in keywords):
+            return category
     return "scheduled"
