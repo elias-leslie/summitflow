@@ -88,7 +88,7 @@ class TestRawToolRejection:
         "cmd,tool",
         [
             ("pytest tests/test_foo.py -q", "pytest"),
-            ("mypy app/main.py", "mypy"),
+            ("ty check app/main.py", "types"),
             ("ruff check app/", "ruff"),
             ("biome check src/", "biome"),
             ("tsc --noEmit", "tsc"),
@@ -96,7 +96,7 @@ class TestRawToolRejection:
             ("npx biome check .", "biome"),
             ("python -m pytest tests/", "pytest"),
         ],
-        ids=["pytest", "mypy", "ruff", "biome", "tsc", "venv_pytest", "npx_biome", "python_m_pytest"],
+        ids=["pytest", "types", "ruff", "biome", "tsc", "venv_pytest", "npx_biome", "python_m_pytest"],
     )
     def test_raw_tool_raises(self, cmd: str, tool: str) -> None:
         with pytest.raises(ValueError, match=f"Raw '{tool}'"):
