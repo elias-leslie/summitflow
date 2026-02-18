@@ -9,6 +9,7 @@ import re
 from typing import Any
 
 from ...logging_config import get_logger
+from ...storage.steps_crud_validation import check_raw_tool_usage
 
 logger = get_logger(__name__)
 
@@ -141,4 +142,11 @@ def validate_and_fix_plan(plan: dict[str, Any]) -> None:
                         "head_tail_usage",
                         subtask=subtask.get("subtask_id"),
                         verify_command=verify[:80],
+                    )
+
+                # Block raw tool usage (must use dt wrapper)
+                raw_tool_error = check_raw_tool_usage(verify)
+                if raw_tool_error:
+                    raise ValueError(
+                        f"Step in subtask {subtask.get('subtask_id')}: {raw_tool_error}"
                     )

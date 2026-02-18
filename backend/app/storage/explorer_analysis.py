@@ -148,7 +148,9 @@ def get_refactor_targets(
                    COALESCE((metadata->>'test_file_exists')::boolean, false) as test_file_exists,
                    -- Hotspot score: high churn + high complexity = high priority
                    ROUND((COALESCE((metadata->>'commit_count_90d')::int, 0) *
-                         COALESCE((metadata->>'complexity_score')::float, 0))::numeric, 2) as hotspot_score
+                         COALESCE((metadata->>'complexity_score')::float, 0))::numeric, 2) as hotspot_score,
+                   COALESCE(metadata->>'complexity_method', 'heuristic') as complexity_method,
+                   COALESCE(metadata->'health_flags', '[]'::jsonb) as health_flags
             FROM explorer_entries
             WHERE {where_clause}
             ORDER BY
@@ -176,6 +178,8 @@ def get_refactor_targets(
                 "commit_count_90d": row[8],
                 "test_file_exists": row[9],
                 "hotspot_score": row[10],
+                "complexity_method": row[11],
+                "health_flags": row[12] if isinstance(row[12], list) else [],
             }
             for row in rows
         ]

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import re
+from pathlib import Path
 
 _ABSOLUTE_CD_PATTERN = re.compile(r"\bcd\s+/[^\s;|&]+")
 _ABSOLUTE_PATH_PREFIX = re.compile(r"(?:^|\s)/(?:home|root|tmp|var|opt|usr)/\S+")
@@ -11,7 +13,7 @@ _TRIVIAL_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (
         re.compile(r"^(true|:|exit\s+0)$"),
         "verify_command '{cmd}' always exits 0. Use a command that checks "
-        "actual state: rg -q 'pattern' file, test -f path, pytest tests/test_foo.py -q",
+        "actual state: rg -q 'pattern' file, test -f path, dt pytest tests/test_foo.py -q",
     ),
     (
         re.compile(r"^#"),
@@ -22,6 +24,47 @@ _TRIVIAL_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         "verify_command is echo-only (always exits 0). Append a real check: echo ... && rg -q 'pattern' file",
     ),
 ]
+
+
+def _load_registry_patterns() -> list[tuple[str, list[re.Pattern[str]]]]:
+    """Load redirect patterns from tool-registry.json (cached at module level)."""
+    try:
+        registry_path = (
+            Path(__file__).resolve().parents[3] / "scripts" / "lib" / "tool-registry.json"
+        )
+        with open(registry_path) as f:
+            data = json.load(f)
+        result: list[tuple[str, list[re.Pattern[str]]]] = []
+        for tool in data.get("tools", []):
+            raw_patterns = tool.get("redirect_patterns", [])
+            if raw_patterns:
+                compiled = [re.compile(p) for p in raw_patterns]
+                result.append((tool["name"], compiled))
+        return result
+    except (FileNotFoundError, json.JSONDecodeError, KeyError):
+        return []
+
+
+_REGISTRY_PATTERNS = _load_registry_patterns()
+
+
+def check_raw_tool_usage(cmd: str) -> str | None:
+    """Check if command uses raw tools that should be wrapped by dt.
+
+    Returns error message if a raw tool is detected, None otherwise.
+    Loaded from tool-registry.json redirect_patterns.
+    """
+    for tool_name, patterns in _REGISTRY_PATTERNS:
+        for pattern in patterns:
+            for match in pattern.finditer(cmd):
+                before = cmd[: match.start()]
+                if re.search(r"\bdt\s+$", before):
+                    continue
+                return (
+                    f"Raw '{tool_name}' in verify_command — "
+                    f"use 'dt {tool_name}' instead: {cmd[:120]}"
+                )
+    return None
 
 
 def sanitize_verify_command(cmd: str | None) -> str | None:
@@ -56,5 +99,9 @@ def sanitize_verify_command(cmd: str | None) -> str | None:
             f"Use relative paths — commands run with cwd=worktree: {cmd[:120]}"
         )
         raise ValueError(msg)
+
+    raw_tool_error = check_raw_tool_usage(stripped)
+    if raw_tool_error:
+        raise ValueError(raw_tool_error)
 
     return cmd

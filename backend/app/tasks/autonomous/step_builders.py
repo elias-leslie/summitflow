@@ -71,7 +71,7 @@ def get_targeted_test_command(relative_path: str) -> str:
         path_match = re.match(r"^backend/(app|cli)/(.+?)(?:/([^/]+))?\.py$", relative_path)
         if path_match:
             rest = relative_path[len("backend/") : -len(".py")].replace("/", ".")
-            return f"test -f {test_path} && pytest {test_path} -q --tb=short || python -c 'from {rest} import *'"
+            return f"test -f {test_path} && dt pytest {test_path} -q --tb=short || python -c 'from {rest} import *'"
 
     # Frontend files - just check import/build
     if relative_path.startswith("frontend/"):

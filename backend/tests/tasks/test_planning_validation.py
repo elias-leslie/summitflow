@@ -93,9 +93,10 @@ class TestTrivialCommandBlocking:
             "test -f file.py",
             "rg -q 'def main' app/main.py",
             "python -c 'import foo'",
-            "pytest tests/test_foo.py -q",
+            "dt pytest tests/test_foo.py -q",
+            "dt --quick --changed-only",
         ],
-        ids=["test_f", "rg_q", "python_import", "pytest"],
+        ids=["test_f", "rg_q", "python_import", "dt_pytest", "dt_quick"],
     )
     def test_legitimate_commands_allowed(self, cmd: str) -> None:
         plan = _make_plan(cmd)
@@ -226,6 +227,31 @@ class TestHeadTailWarning:
                 call.args[0] for call in mock_logger.warning.call_args_list
             ]
             assert "head_tail_usage" not in warning_events
+
+
+class TestRawToolBlocking:
+    """Raw tools that should be wrapped by dt are blocked."""
+
+    @pytest.mark.parametrize(
+        "cmd,tool",
+        [
+            ("pytest tests/test_foo.py -q", "pytest"),
+            ("mypy app/main.py", "mypy"),
+            ("ruff check app/", "ruff"),
+            ("biome check src/", "biome"),
+            ("tsc --noEmit", "tsc"),
+        ],
+        ids=["pytest", "mypy", "ruff", "biome", "tsc"],
+    )
+    def test_raw_tool_raises(self, cmd: str, tool: str) -> None:
+        plan = _make_plan(cmd)
+        with pytest.raises(ValueError, match=f"Raw '{tool}'"):
+            _validate_and_fix_plan(plan)
+
+    def test_dt_wrapped_tool_allowed(self) -> None:
+        plan = _make_plan("dt pytest tests/test_foo.py -q")
+        _validate_and_fix_plan(plan)
+        assert plan["subtasks"][0]["steps"][0]["verify_command"] == "dt pytest tests/test_foo.py -q"
 
 
 class TestGrepRewriting:

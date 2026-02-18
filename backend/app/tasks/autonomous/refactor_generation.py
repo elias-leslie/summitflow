@@ -133,7 +133,7 @@ def generate_refactor_tasks_internal(
     project_id: str, skip_existing: bool, project_root: str | None = None
 ) -> dict[str, Any]:
     """Generate refactoring tasks from Explorer scan results."""
-    result = get_refactor_targets(project_id, limit=30)
+    result = get_refactor_targets(project_id, limit=100)
     targets = result.get("targets", [])
     created = 0
     scanned = 0

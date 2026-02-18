@@ -25,12 +25,14 @@ class TestSanitizePassthrough:
         [
             "rg -q 'pattern' file.py",
             "test -f backend/app/main.py",
-            "pytest tests/test_foo.py -q",
+            "dt pytest tests/test_foo.py -q",
             "dt --quick --changed-only",
             "python -c 'import app.main'",
             "echo 'checking' && rg -q 'def main' app.py",
+            "dt ruff check app/",
+            "dt mypy app/main.py",
         ],
-        ids=["rg", "test_f", "pytest", "dt", "python_import", "echo_compound"],
+        ids=["rg", "test_f", "dt_pytest", "dt_quick", "python_import", "echo_compound", "dt_ruff", "dt_mypy"],
     )
     def test_valid_commands_pass_through(self, cmd: str) -> None:
         assert sanitize_verify_command(cmd) == cmd
@@ -77,6 +79,44 @@ class TestTrivialCommandRejection:
     def test_comment_only_raises(self) -> None:
         with pytest.raises(ValueError, match="comment"):
             sanitize_verify_command("# just a note")
+
+
+class TestRawToolRejection:
+    """Raw tools that should be wrapped by dt are rejected."""
+
+    @pytest.mark.parametrize(
+        "cmd,tool",
+        [
+            ("pytest tests/test_foo.py -q", "pytest"),
+            ("mypy app/main.py", "mypy"),
+            ("ruff check app/", "ruff"),
+            ("biome check src/", "biome"),
+            ("tsc --noEmit", "tsc"),
+            (".venv/bin/pytest tests/ -x", "pytest"),
+            ("npx biome check .", "biome"),
+            ("python -m pytest tests/", "pytest"),
+        ],
+        ids=["pytest", "mypy", "ruff", "biome", "tsc", "venv_pytest", "npx_biome", "python_m_pytest"],
+    )
+    def test_raw_tool_raises(self, cmd: str, tool: str) -> None:
+        with pytest.raises(ValueError, match=f"Raw '{tool}'"):
+            sanitize_verify_command(cmd)
+
+    @pytest.mark.parametrize(
+        "cmd",
+        [
+            "dt pytest tests/test_foo.py -q",
+            "dt mypy app/main.py",
+            "dt ruff check app/",
+            "dt biome check src/",
+            "dt tsc --noEmit",
+            "dt --quick",
+            "dt --fix && dt --quick --changed-only",
+        ],
+        ids=["dt_pytest", "dt_mypy", "dt_ruff", "dt_biome", "dt_tsc", "dt_quick", "dt_compound"],
+    )
+    def test_dt_wrapped_tools_allowed(self, cmd: str) -> None:
+        assert sanitize_verify_command(cmd) == cmd
 
 
 class TestAbsolutePathRejection:
