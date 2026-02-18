@@ -161,7 +161,11 @@ def update_task_status(
                     WHEN %s IN ('completed', 'failed') THEN %s
                     ELSE error_message
                 END,
-                current_phase = CASE WHEN %s = 'completed' THEN 'complete' ELSE current_phase END,
+                current_phase = CASE
+                    WHEN %s = 'completed' THEN 'complete'
+                    WHEN %s IN ('abandoned', 'cancelled', 'failed') THEN NULL
+                    ELSE current_phase
+                END,
                 claimed_by = CASE WHEN %s IN ('completed', 'failed', 'cancelled', 'abandoned') THEN NULL ELSE claimed_by END,
                 claimed_at = CASE WHEN %s IN ('completed', 'failed', 'cancelled', 'abandoned') THEN NULL ELSE claimed_at END,
                 lock_expires_at = CASE WHEN %s IN ('completed', 'failed', 'cancelled', 'abandoned') THEN NULL ELSE lock_expires_at END
@@ -175,6 +179,7 @@ def update_task_status(
                 status,
                 status,
                 error_message,
+                status,
                 status,
                 status,
                 status,
