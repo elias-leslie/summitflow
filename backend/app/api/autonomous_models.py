@@ -70,7 +70,7 @@ class AutonomousSettings(BaseModel):
 
     # Quality gate configuration
     quality_gate_tools: list[str] = Field(
-        default=[], description="Specific tools to run (e.g. ['ruff', 'mypy']). Empty = use mode."
+        default=[], description="Specific tools to run (e.g. ['ruff', 'types']). Empty = use mode."
     )
     quality_gate_mode: str = Field(
         default="quick", description="Quality gate mode: quick, check, or changed-only"
@@ -81,7 +81,7 @@ class AutonomousSettings(BaseModel):
 
 
 VALID_QUALITY_GATE_MODES = ["quick", "check", "changed-only"]
-VALID_QUALITY_GATE_TOOLS = ["pytest", "ruff", "mypy", "biome", "tsc", "sqlfluff", "squawk"]
+VALID_QUALITY_GATE_TOOLS = ["pytest", "ruff", "types", "biome", "tsc", "sqlfluff", "squawk"]
 
 
 class AutonomousSettingsUpdate(BaseModel):

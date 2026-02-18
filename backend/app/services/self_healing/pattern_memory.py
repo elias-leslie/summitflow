@@ -40,7 +40,7 @@ def compute_error_signature(
     files and contexts.
 
     Args:
-        check_type: Type of check (ruff, mypy, pytest, etc.)
+        check_type: Type of check (ruff, types, pytest, etc.)
         error_code: Specific error code (F401, E0602, etc.)
         error_message: Error message (normalized)
 
@@ -91,7 +91,7 @@ class PatternMemoryService:
         quality gate passes. Patterns are stored for future retrieval.
 
         Args:
-            check_type: Type of check (ruff, mypy, pytest)
+            check_type: Type of check (ruff, types, pytest)
             error_code: Specific error code (F401, E0602)
             error_message: Full error message
             file_path: File where error occurred

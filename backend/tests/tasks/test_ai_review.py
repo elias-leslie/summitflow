@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 from app.tasks.ai_review import review_pull_request
 from app.tasks.ai_review_checks import (
     _has_frontend_changes,
-    _run_mypy,
+    _run_types,
     _run_precommit,
     _run_pytest,
     _verify_step_completion,
@@ -134,17 +134,17 @@ class TestRunPrecommit:
         assert result["status"] == "fail"
 
 
-class TestRunMypy:
-    """Tests for _run_mypy helper."""
+class TestRunTypes:
+    """Tests for _run_types helper."""
 
     def test_no_backend_directory(self, tmp_path: Path) -> None:
-        result = _run_mypy(tmp_path)
+        result = _run_types(tmp_path)
         assert result["status"] == "skip"
 
-    def test_no_mypy_in_venv(self, tmp_path: Path) -> None:
+    def test_no_types_in_venv(self, tmp_path: Path) -> None:
         backend = tmp_path / "backend"
         backend.mkdir()
-        result = _run_mypy(tmp_path)
+        result = _run_types(tmp_path)
         assert result["status"] == "skip"
 
 
@@ -193,7 +193,7 @@ class TestReviewPullRequest:
     @patch("app.tasks.ai_review._get_project_path")
     @patch("app.tasks.ai_review._run_pytest")
     @patch("app.tasks.ai_review._run_precommit")
-    @patch("app.tasks.ai_review._run_mypy")
+    @patch("app.tasks.ai_review._run_types")
     @patch("app.tasks.ai_review._run_code_quality_review")
     @patch("app.tasks.ai_review._run_ui_review")
     @patch("app.tasks.ai_review._verify_step_completion")
@@ -204,7 +204,7 @@ class TestReviewPullRequest:
         mock_verify_criteria: MagicMock,
         mock_ui_review: MagicMock,
         mock_code_quality: MagicMock,
-        mock_mypy: MagicMock,
+        mock_types: MagicMock,
         mock_precommit: MagicMock,
         mock_pytest: MagicMock,
         mock_project_path: MagicMock,
@@ -219,7 +219,7 @@ class TestReviewPullRequest:
 
         mock_pytest.return_value = {"status": "pass"}
         mock_precommit.return_value = {"status": "pass"}
-        mock_mypy.return_value = {"status": "pass"}
+        mock_types.return_value = {"status": "pass"}
         mock_code_quality.return_value = {"status": "pass", "verdict": "APPROVE"}
         mock_ui_review.return_value = {"status": "skip", "reason": "No frontend"}
         mock_verify_criteria.return_value = {"status": "pass", "verified": 3, "total": 3}
@@ -235,7 +235,7 @@ class TestReviewPullRequest:
     @patch("app.tasks.ai_review._run_pytest")
     @patch("app.tasks.ai_review._run_breaking_change_detection")
     @patch("app.tasks.ai_review._run_precommit")
-    @patch("app.tasks.ai_review._run_mypy")
+    @patch("app.tasks.ai_review._run_types")
     @patch("app.tasks.ai_review._run_code_quality_review")
     @patch("app.tasks.ai_review._run_ui_review")
     @patch("app.tasks.ai_review._verify_step_completion")
@@ -246,7 +246,7 @@ class TestReviewPullRequest:
         mock_verify_criteria: MagicMock,
         mock_ui_review: MagicMock,
         mock_code_quality: MagicMock,
-        mock_mypy: MagicMock,
+        mock_types: MagicMock,
         mock_precommit: MagicMock,
         mock_breaking_change: MagicMock,
         mock_pytest: MagicMock,
@@ -267,7 +267,7 @@ class TestReviewPullRequest:
         # Breaking change detection returns pass to avoid escalation
         mock_breaking_change.return_value = {"status": "pass", "has_breaking_change": False}
         mock_precommit.return_value = {"status": "pass"}
-        mock_mypy.return_value = {"status": "pass"}
+        mock_types.return_value = {"status": "pass"}
         mock_code_quality.return_value = {"status": "pass"}
         mock_ui_review.return_value = {"status": "skip"}
         mock_verify_criteria.return_value = {"status": "pass"}
@@ -365,7 +365,7 @@ class TestEscalationToHumanReview:
     @patch("app.tasks.ai_review._get_project_path")
     @patch("app.tasks.ai_review._run_pytest")
     @patch("app.tasks.ai_review._run_precommit")
-    @patch("app.tasks.ai_review._run_mypy")
+    @patch("app.tasks.ai_review._run_types")
     @patch("app.tasks.ai_review._run_code_quality_review")
     @patch("app.tasks.ai_review._run_ui_review")
     @patch("app.tasks.ai_review._verify_step_completion")
@@ -376,7 +376,7 @@ class TestEscalationToHumanReview:
         mock_verify_criteria: MagicMock,
         mock_ui_review: MagicMock,
         mock_code_quality: MagicMock,
-        mock_mypy: MagicMock,
+        mock_types: MagicMock,
         mock_precommit: MagicMock,
         mock_pytest: MagicMock,
         mock_project_path: MagicMock,
@@ -394,7 +394,7 @@ class TestEscalationToHumanReview:
 
         mock_pytest.return_value = {"status": "pass"}
         mock_precommit.return_value = {"status": "pass"}
-        mock_mypy.return_value = {"status": "pass"}
+        mock_types.return_value = {"status": "pass"}
         mock_code_quality.return_value = {"status": "pass"}
         mock_ui_review.return_value = {"status": "skip"}
         mock_verify_criteria.return_value = {"status": "pass"}
@@ -409,7 +409,7 @@ class TestEscalationToHumanReview:
     @patch("app.tasks.ai_review._get_project_path")
     @patch("app.tasks.ai_review._run_pytest")
     @patch("app.tasks.ai_review._run_precommit")
-    @patch("app.tasks.ai_review._run_mypy")
+    @patch("app.tasks.ai_review._run_types")
     @patch("app.tasks.ai_review._run_code_quality_review")
     @patch("app.tasks.ai_review._run_ui_review")
     @patch("app.tasks.ai_review._verify_step_completion")
@@ -420,7 +420,7 @@ class TestEscalationToHumanReview:
         mock_verify_criteria: MagicMock,
         mock_ui_review: MagicMock,
         mock_code_quality: MagicMock,
-        mock_mypy: MagicMock,
+        mock_types: MagicMock,
         mock_precommit: MagicMock,
         mock_pytest: MagicMock,
         mock_project_path: MagicMock,
@@ -437,7 +437,7 @@ class TestEscalationToHumanReview:
         # All pass but one error
         mock_pytest.return_value = {"status": "pass"}
         mock_precommit.return_value = {"status": "pass"}
-        mock_mypy.return_value = {"status": "pass"}
+        mock_types.return_value = {"status": "pass"}
         mock_code_quality.return_value = {"status": "error", "error": "API timeout"}
         mock_ui_review.return_value = {"status": "skip"}
         mock_verify_criteria.return_value = {"status": "pass"}

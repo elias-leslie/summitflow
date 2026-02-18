@@ -38,7 +38,7 @@ def run_verify_command(
             "Ensure project_id is set and worktree/project root is resolvable."
         )
     working_dir = cwd
-    env = build_project_env(project_id)
+    env = build_project_env(project_id, working_dir=cwd)
     verify_command = strip_venv_paths(verify_command)
 
     try:

@@ -17,7 +17,7 @@ tags: [skill:quality-gate-rules, quality, dt]
 ## Quality Gate Tools
 - **pytest**: Backend tests (`dt pytest`)
 - **ruff**: Python linting (`dt ruff`)
-- **mypy**: Python type checking (`dt mypy`)
+- **types**: Python type checking (`dt types`)
 - **biome**: Frontend linting (`dt biome`)
 - **tsc**: TypeScript compilation (`dt tsc`)
 - **sqlfluff**: SQL linting (`dt sqlfluff`)
@@ -26,7 +26,7 @@ tags: [skill:quality-gate-rules, quality, dt]
 ## Per-Project Configuration
 - Quality gate tools and mode are configurable per project in autonomous settings
 - Empty tool list = use mode (quick/check/changed-only)
-- Specific tools override mode: `["ruff", "mypy"]` runs only those
+- Specific tools override mode: `["ruff", "types"]` runs only those
 
 ## Self-Healing Flow
 1. Quality gate fails -> attempt `dt --fix`

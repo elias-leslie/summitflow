@@ -16,7 +16,7 @@ async def trigger_auto_fix(
 ) -> AutoFixResponse:
     """Trigger auto-fix for unfixed quality issues.
 
-    Uses GEMINI_FLASH for lint/type errors (ruff, mypy, biome, tsc)
+    Uses GEMINI_FLASH for lint/type errors (ruff, types, biome, tsc)
     and CLAUDE_SONNET for test failures (pytest).
 
     Args:
@@ -40,7 +40,7 @@ async def trigger_auto_fix(
             results["fixed"] = test_results["fixed"]
             results["failed"] = test_results["failed"]
             results["escalated"] = test_results["escalated"]
-        elif request.check_type in ("ruff", "mypy", "biome", "tsc"):
+        elif request.check_type in ("ruff", "types", "biome", "tsc"):
             # Use lint/type fix agent
             lint_results = fix_unfixed_errors(
                 conn, project_id, check_type=request.check_type, limit=request.limit

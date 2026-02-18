@@ -113,7 +113,7 @@ def verify_step(
         )
 
     expanded_cmd = expand_command(verify_cmd)
-    env = build_project_env(project_id)
+    env = build_project_env(project_id, working_dir=working_dir)
 
     # Increase timeout for long-running commands
     if any(cmd in expanded_cmd for cmd in ["dt ", "commit.sh", "npm run build"]):

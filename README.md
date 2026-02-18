@@ -177,7 +177,7 @@ SummitFlow `scripts/` is the canonical source for shared development scripts. Ot
 - `rebuild.sh` - Build and restart all services
 - `backup.sh` - Database backup to NAS
 - `restore.sh` - Database restore from backup
-- `dev-tools.sh` - Quality tool wrapper (`dt` CLI for ruff, mypy, pytest, biome)
+- `dev-tools.sh` - Quality tool wrapper (`dt` CLI for ruff, types, pytest, biome)
 - `commit.sh` - Multi-repo commit handler
 
 ## Services
@@ -203,7 +203,7 @@ cd frontend
 pnpm run test
 
 # Quality checks
-dt --check            # Full quality check (ruff, mypy, biome, pytest)
+dt --check            # Full quality check (ruff, types, biome, pytest)
 dt -q -d              # Quick check on changed files
 ```
 

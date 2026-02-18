@@ -1,7 +1,7 @@
 """Self-healing orchestration service for automated fix triggering.
 
 Polls quality gate for unfixed errors and triggers fix agents automatically.
-Respects check type priority: ruff → mypy → pytest (lint before type before test).
+Respects check type priority: ruff → types → pytest (lint before type before test).
 
 Implements 3-2-1 escalation through existing fix_agent infrastructure.
 """
@@ -43,7 +43,7 @@ class SelfHealingOrchestrator:
 
     Workflow:
     1. Poll all projects for unfixed quality gate errors
-    2. Prioritize: ruff → mypy → pytest
+    2. Prioritize: ruff → types → pytest
     3. Trigger fix_agent with 3-2-1 escalation
     4. Track results and return summary
 

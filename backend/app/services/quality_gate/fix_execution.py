@@ -62,7 +62,7 @@ def verify_fix(
 
     Args:
         project_path: Path to project root
-        check_type: Type of check (ruff, mypy, biome, tsc)
+        check_type: Type of check (ruff, types, biome, tsc)
         file_path: Path to the fixed file
 
     Returns:
@@ -72,13 +72,13 @@ def verify_fix(
 
     dt_cmd = shutil.which("dt")
 
-    if dt_cmd and check_type in ("ruff", "mypy", "biome", "tsc"):
+    if dt_cmd and check_type in ("ruff", "types", "biome", "tsc"):
         # Use dt for verification — consistent with quality gate pipeline
         cmd = [dt_cmd, check_type]
     elif check_type == "ruff":
         cmd = ["ruff", "check", file_path, "--quiet"]
-    elif check_type == "mypy":
-        cmd = ["mypy", file_path, "--no-error-summary", "--quiet"]
+    elif check_type == "types":
+        cmd = ["ty", "check", file_path]
     elif check_type == "biome":
         cmd = ["npx", "biome", "check", file_path, "--quiet"]
     elif check_type == "tsc":

@@ -35,11 +35,11 @@ def get_projects_with_unfixed_errors(
         unfixed_counts: dict[str, int] = {}
 
         # Check each fixable check type
-        for check_type in ["ruff", "mypy", "biome", "tsc"]:
+        for check_type in ["ruff", "types", "biome", "tsc"]:
             count = qcr_store.get_unfixed_count(
                 conn,
                 project_id,
-                check_type=check_type,  # type: ignore[arg-type]
+                check_type=check_type,
             )
             if count > 0:
                 unfixed_counts[check_type] = count

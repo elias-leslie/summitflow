@@ -81,7 +81,7 @@ def process_project(
         fix_results = fix_unfixed_errors(
             conn=conn,
             project_id=project_id,
-            check_type=check_type,  # type: ignore[arg-type]
+            check_type=check_type,
             limit=project_budget,
             budget_cap_usd=BUDGET_CAP_USD,
             cumulative_cost=project_results["cumulative_cost_usd"],

@@ -241,7 +241,7 @@ def _get_design_standard(project_id: str, standards_id: str) -> dict[str, Any] |
     if not design_standard:
         design_standard = get_base_standard()
 
-    return design_standard  # type: ignore[no-any-return]
+    return design_standard
 
 
 def _extract_path_from_url(url: str) -> str:

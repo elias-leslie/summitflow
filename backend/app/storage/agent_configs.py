@@ -32,7 +32,7 @@ class AgentConfig(TypedDict, total=False):
     autonomous_max_concurrent: int  # Max concurrent autonomous tasks (1-3)
 
     # Quality gate configuration
-    quality_gate_tools: list[str]  # e.g. ["ruff", "mypy", "biome", "tsc"] — empty = dt --quick
+    quality_gate_tools: list[str]  # e.g. ["ruff", "types", "biome", "tsc"] — empty = dt --quick
     quality_gate_mode: str  # "quick", "check", or "changed-only"
     quality_gate_fix_enabled: bool  # Allow dt --fix during self-heal
 

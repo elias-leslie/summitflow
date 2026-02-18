@@ -138,6 +138,6 @@ def update_autonomous_settings(
         updates["quality_gate_fix_enabled"] = settings.quality_gate_fix_enabled
 
     if updates:
-        update_agent_config(project_id, updates)  # type: ignore[arg-type]
+        update_agent_config(project_id, updates)
 
     return get_autonomous_settings(project_id)

@@ -237,7 +237,7 @@ def _check_cache_health() -> ComponentHealth:
     start_time = time.time()
     try:
         # Connect to Redis DB 1 (shared with rate limiter and pub/sub)
-        r = redis.from_url(f"{REDIS_URL}/1")  # type: ignore[no-untyped-call]
+        r = redis.from_url(f"{REDIS_URL}/1")
         r.ping()
         response_time_ms = (time.time() - start_time) * 1000
         return ComponentHealth(

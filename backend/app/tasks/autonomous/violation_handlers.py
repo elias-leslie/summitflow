@@ -30,7 +30,7 @@ def get_violation_done_when(violation_type: str, table_name: str) -> list[str]:
     base = [
         "Migration created and applied successfully",
         "All existing queries still work",
-        "dt mypy passes",
+        "dt types passes",
     ]
 
     specific = {
@@ -67,7 +67,7 @@ def get_violation_steps(violation_type: str, table_name: str, detail: str) -> li
             },
             {
                 "description": "Update all model references",
-                "verify_command": "dt mypy",
+                "verify_command": "dt types",
             },
             {
                 "description": "Apply migration",
@@ -109,7 +109,7 @@ def get_violation_steps(violation_type: str, table_name: str, detail: str) -> li
         [
             {
                 "description": f"Fix schema violation in {table_name}: {detail}",
-                "verify_command": "dt mypy",
+                "verify_command": "dt types",
             },
         ],
     )

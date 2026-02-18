@@ -12,7 +12,7 @@ BACKUP_LOCK_TTL = 900  # 15 minutes (matches time_limit)
 
 def _get_redis() -> redis.Redis:
     """Get Redis connection for backup locks."""
-    return redis.from_url(f"{REDIS_URL}/1", decode_responses=False)  # type: ignore[no-untyped-call,no-any-return]
+    return redis.from_url(f"{REDIS_URL}/1", decode_responses=False)
 
 
 def acquire_backup_lock(project_id: str) -> bool:

@@ -89,7 +89,7 @@ def check_and_notify() -> dict[str, str]:
 def _get_last_status() -> str | None:
     """Read last known health status from Redis."""
     try:
-        r = redis.from_url(f"{REDIS_URL}/1")  # type: ignore[no-untyped-call]
+        r = redis.from_url(f"{REDIS_URL}/1")
         raw = r.get(_REDIS_KEY)
         if raw:
             data = json.loads(raw)
@@ -102,7 +102,7 @@ def _get_last_status() -> str | None:
 def _set_last_status(status: str) -> None:
     """Store current health status in Redis."""
     try:
-        r = redis.from_url(f"{REDIS_URL}/1")  # type: ignore[no-untyped-call]
+        r = redis.from_url(f"{REDIS_URL}/1")
         r.set(_REDIS_KEY, json.dumps({"status": status}), ex=_REDIS_TTL)
     except Exception:
         logger.debug("Could not store health status in Redis")

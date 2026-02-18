@@ -43,7 +43,7 @@ def import_tests(
 
     Examples:
         st test import --from pytest
-        st test import --from mypy
+        st test import --from types
         st test import --from ruff
     """
     client = STClient()

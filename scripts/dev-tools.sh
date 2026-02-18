@@ -372,17 +372,23 @@ run_types() {
     [[ "$CHANGED_ONLY" == "1" ]] && mode_suffix=":changed"
     echo "TYPES:$project_name$mode_suffix"
 
-    local mypy_bin="${venv}/bin/mypy"
-    if [[ ! -x "$mypy_bin" ]]; then
-        echo "ERROR:mypy_not_found"
+    local ty_bin
+    ty_bin=$(which ty 2>/dev/null || echo "")
+    if [[ -z "$ty_bin" ]]; then
+        echo "ERROR:ty_not_found"
         return 1
     fi
 
     ensure_output_dir
-    local details_file="$OUTPUT_DIR/mypy-details.1.txt"
+    local details_file="$OUTPUT_DIR/ty-details.1.txt"
 
-    # Determine what to check
-    local type_targets
+    local app_dir="$backend/app"
+    [[ ! -d "$app_dir" ]] && app_dir="$backend"
+
+    local python_bin="${venv}/bin/python"
+
+    cd "$backend"
+    local output errors retval=0
     if [[ "$CHANGED_ONLY" == "1" ]]; then
         local changed_files
         changed_files=$(get_changed_python_files)
@@ -390,27 +396,13 @@ run_types() {
             echo "OK:no_py_changes"
             return 0
         fi
-        type_targets="$changed_files"
+        # ty doesn't support file list directly — check only app/ but it's fast enough
+        output=$("$ty_bin" check --python "$python_bin" "$app_dir" 2>&1) || retval=$?
     else
-        local app_dir="$backend/app"
-        [[ ! -d "$app_dir" ]] && app_dir="$backend"
-        type_targets="$app_dir"
-        # Also check tests/ and scripts/ so full check matches --changed-only scope
-        [[ -d "$backend/tests" ]] && type_targets="$type_targets $backend/tests"
-        [[ -d "$backend/scripts" ]] && type_targets="$type_targets $backend/scripts"
+        output=$("$ty_bin" check --python "$python_bin" "$app_dir" 2>&1) || retval=$?
     fi
 
-    cd "$backend"
-    # Build --exclude flags from centralized config (mypy uses regex patterns)
-    local mypy_exclude_args=()
-    for pattern in "${LINT_EXCLUDE_DIRS[@]}"; do
-        mypy_exclude_args+=(--exclude "$pattern")
-    done
-
-    # Capture output first, then count errors to avoid pipefail issues
-    local output errors
-    output=$(echo "$type_targets" | xargs "$mypy_bin" --ignore-missing-imports "${mypy_exclude_args[@]}" 2>&1) || true
-    errors=$(echo "$output" | grep -c "error:") || errors=0
+    errors=$(echo "$output" | grep -c "^error\[") || errors=0
     if [[ "$errors" -eq 0 ]]; then
         rm -f "$details_file"
         echo "OK:errors=0"

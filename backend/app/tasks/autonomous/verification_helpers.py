@@ -38,7 +38,7 @@ def strip_venv_paths(cmd: str) -> str:
     Handles:
         .venv/bin/ruff check app/     -> ruff check app/
         backend/.venv/bin/pytest ...  -> pytest ...
-        cd backend && .venv/bin/mypy  -> cd backend && mypy
+        cd backend && .venv/bin/ty  -> cd backend && ty
         source .venv/bin/activate &&  -> (removed entirely)
     """
     if ".venv" not in cmd:

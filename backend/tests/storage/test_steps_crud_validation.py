@@ -30,9 +30,9 @@ class TestSanitizePassthrough:
             "python -c 'import app.main'",
             "echo 'checking' && rg -q 'def main' app.py",
             "dt ruff check app/",
-            "dt mypy app/main.py",
+            "dt types app/main.py",
         ],
-        ids=["rg", "test_f", "dt_pytest", "dt_quick", "python_import", "echo_compound", "dt_ruff", "dt_mypy"],
+        ids=["rg", "test_f", "dt_pytest", "dt_quick", "python_import", "echo_compound", "dt_ruff", "dt_types"],
     )
     def test_valid_commands_pass_through(self, cmd: str) -> None:
         assert sanitize_verify_command(cmd) == cmd

@@ -12,7 +12,7 @@ def get_quality_gate_tools(project_id: str) -> list[str]:
         project_id: Project ID
 
     Returns:
-        List of tool names (e.g. ["ruff", "mypy"]), or empty for default dt mode
+        List of tool names (e.g. ["ruff", "types"]), or empty for default dt mode
     """
     config = get_agent_config(project_id)
     tools = config.get("quality_gate_tools", [])
@@ -64,7 +64,7 @@ def build_dt_command(
         fix: If True, build a --fix command instead of check
 
     Returns:
-        Command list, e.g. ["dt", "ruff", "mypy"] or ["dt", "--quick"]
+        Command list, e.g. ["dt", "ruff", "types"] or ["dt", "--quick"]
     """
     if fix:
         fix_enabled = get_quality_gate_fix_enabled(project_id)

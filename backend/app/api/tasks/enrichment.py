@@ -163,7 +163,7 @@ async def discuss_task_endpoint(
         updated_task=task_to_response(updated_task) if result.updated_task else None,
         history=[
             DiscussionMessage(
-                role=h["role"],  # type: ignore[arg-type]  # str from DB narrowed to Literal
+                role=h["role"],  # str from DB narrowed to Literal
                 content=h["content"],
                 timestamp="",
             )

@@ -52,7 +52,7 @@ class HealthSummaryResponse(BaseModel):
 class CreateCheckResultRequest(BaseModel):
     """Request to create a check result."""
 
-    check_type: Literal["pytest", "ruff", "mypy", "biome", "tsc"]
+    check_type: Literal["pytest", "ruff", "types", "biome", "tsc"]
     status: Literal["pass", "fail", "error", "skipped"]
     check_name: str | None = None
     error_count: int = 0
@@ -69,7 +69,7 @@ class CreateCheckResultRequest(BaseModel):
 class SyncResultsRequest(BaseModel):
     """Request to sync results from dt output."""
 
-    check_type: Literal["pytest", "ruff", "mypy", "biome", "tsc"]
+    check_type: Literal["pytest", "ruff", "types", "biome", "tsc"]
     status: Literal["pass", "fail", "error", "skipped"]
     error_count: int = 0
     warning_count: int = 0
@@ -82,7 +82,7 @@ class SyncResultsRequest(BaseModel):
 class AutoFixRequest(BaseModel):
     """Request to trigger auto-fix."""
 
-    check_type: Literal["pytest", "ruff", "mypy", "biome", "tsc"] | None = None
+    check_type: Literal["pytest", "ruff", "types", "biome", "tsc"] | None = None
     limit: int = 10
 
 

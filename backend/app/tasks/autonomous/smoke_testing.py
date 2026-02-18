@@ -103,7 +103,7 @@ def run_smoke_tests(
         logger.info("smoke_test_skipped", reason="no changed files")
         return SmokeTestResult(passed=True)
 
-    env = build_project_env(project_id)
+    env = build_project_env(project_id, working_dir=project_path)
     failures: list[dict[str, str]] = []
     tested: list[str] = []
 
@@ -183,7 +183,7 @@ def run_targeted_tests(
         logger.info("targeted_tests_skipped", reason="no changed files")
         return TargetedTestResult(passed=True)
 
-    env = build_project_env(project_id)
+    env = build_project_env(project_id, working_dir=project_path)
     backend_path = Path(project_path) / "backend"
     cwd = str(backend_path) if backend_path.is_dir() else project_path
 

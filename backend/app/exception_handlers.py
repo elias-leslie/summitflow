@@ -15,7 +15,7 @@ try:
     import structlog
     logger = structlog.stdlib.get_logger(__name__)
 except ModuleNotFoundError:
-    logger = logging.getLogger(__name__)  # type: ignore[assignment]
+    logger = logging.getLogger(__name__)
 
 
 def _sanitize_validation_errors(exc: RequestValidationError) -> list[dict[str, object]]:

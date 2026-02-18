@@ -91,7 +91,7 @@ def health_default(ctx: typer.Context) -> None:
 def status(ctx: typer.Context) -> None:
     """Show quality gate health summary for current project.
 
-    Displays the latest status for each check type (pytest, ruff, mypy, biome, tsc)
+    Displays the latest status for each check type (pytest, ruff, types, biome, tsc)
     and the overall pass/fail status.
 
     Examples:
@@ -119,7 +119,7 @@ def results(
     ctx: typer.Context,
     check_type: Annotated[
         str | None,
-        typer.Option("--type", "-t", help="Filter by check type (pytest, ruff, mypy, biome, tsc)"),
+        typer.Option("--type", "-t", help="Filter by check type (pytest, ruff, types, biome, tsc)"),
     ] = None,
     status_filter: Annotated[
         str | None,
@@ -177,7 +177,7 @@ def sync(
     ctx: typer.Context,
     check_type: Annotated[
         str,
-        typer.Argument(help="Check type (pytest, ruff, mypy, biome, tsc)"),
+        typer.Argument(help="Check type (pytest, ruff, types, biome, tsc)"),
     ],
     status_val: Annotated[
         str,
@@ -206,7 +206,7 @@ def sync(
     Examples:
         st health sync pytest pass
         st health sync ruff fail --errors 5
-        st health sync mypy fail --errors 3 --triggered-by manual
+        st health sync types fail --errors 3 --triggered-by manual
     """
     try:
         client = STClient()

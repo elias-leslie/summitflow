@@ -35,8 +35,8 @@ def get_tdd_suggestions(project_id: str) -> dict[str, Any]:
     coverage_summary = get_coverage_summary(project_id)
 
     # Convert TypedDict to plain dict for compatibility
-    components_dict: list[dict[str, Any]] = [dict(c) for c in suggested_components]
-    tests_dict: list[dict[str, Any]] = [dict(t) for t in existing_tests]
+    components_dict: list[dict[str, Any]] = [dict(**c) for c in suggested_components]
+    tests_dict: list[dict[str, Any]] = [dict(**t) for t in existing_tests]
 
     return {
         "suggested_components": components_dict,
@@ -74,7 +74,7 @@ def get_component_suggestions_by_source(project_id: str, source_type: str) -> li
         return []
 
     # Convert TypedDict to plain dict for compatibility
-    filtered: list[dict[str, Any]] = [dict(s) for s in all_suggestions if s.get("type") == target_type]
+    filtered: list[dict[str, Any]] = [dict(**s) for s in all_suggestions if s.get("type") == target_type]
     return filtered
 
 

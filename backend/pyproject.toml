@@ -45,8 +45,8 @@ dev = [
     # Linting & Type Checking
     "ruff>=0.15.0",
     "mypy>=1.19.0",
+    "ty>=0.0.17",
     "types-jsonschema>=4.26.0",
-
 ]
 
 [build-system]
@@ -84,4 +84,11 @@ module = [
     "radon", "radon.*",
 ]
 ignore_missing_imports = true
+
+[tool.ty.rules]
+# Suppress beta-quality rules (ty 0.0.x false positives)
+# Remove these as ty matures past 0.1
+invalid-argument-type = "ignore"  # dict unpacking, ParamSpec middleware
+unknown-argument = "ignore"       # structlog bound logger kwargs
+unresolved-import = "ignore"      # self-imports from packages, lazy imports
 

@@ -30,7 +30,7 @@ def check_verify_commands_red(
         List of dicts with step_number and warning message for tautological steps.
     """
     warnings: list[dict[str, Any]] = []
-    env = build_project_env(project_id)
+    env = build_project_env(project_id, working_dir=project_path)
 
     for step in steps:
         step_num = step.get("step_number", 0)

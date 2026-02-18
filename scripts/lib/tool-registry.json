@@ -32,18 +32,18 @@
       }
     },
     {
-      "name": "mypy",
+      "name": "types",
       "redirect_patterns": [
         "(\\.venv/bin/)?mypy\\b"
       ],
-      "redirect_message": "Use 'dt mypy [args]' — handles venv, TOON output, worktree resolution.",
+      "redirect_message": "Use 'dt types [args]' — handles venv, TOON output, worktree resolution.",
       "dt": {
         "label": "TYPES",
-        "binary": "mypy",
-        "args": "--ignore-missing-imports",
+        "binary": "ty",
+        "args": "check --output-format concise",
         "count_method": "grep_error",
         "working_dir": "backend",
-        "fallback_global": false,
+        "fallback_global": true,
         "pass_path": true
       }
     },

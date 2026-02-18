@@ -1,7 +1,7 @@
 """AI Review task for pull request validation.
 
 Implements the AI review gate for git workflow. Runs when task transitions to ai_reviewing status.
-Pipeline: pytest, pre-commit, mypy, code quality (Opus), UI review (Gemini), step verification.
+Pipeline: pytest, pre-commit, types, code quality (Opus), UI review (Gemini), step verification.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from app.storage import tasks as task_store
 from .ai_review_checks import (
     _run_breaking_change_detection,
     _run_code_quality_review,
-    _run_mypy,
+    _run_types,
     _run_precommit,
     _run_pytest,
     _run_security_risk_classification,
@@ -53,14 +53,14 @@ def _run_standard_checks(task: dict[str, Any], project_path: Path, checks: dict[
     task_id = task.get("id")
     check_configs = [
         ("precommit", lambda: _run_precommit(project_path), "pre-commit: Lint/format issues", False),
-        ("mypy", lambda: _run_mypy(project_path), "mypy: Type errors", False),
+        ("types", lambda: _run_types(project_path), "types: Type errors", False),
         ("code_quality", lambda: _run_code_quality_review(task, project_path), None, True),
         ("ui_review", lambda: _run_ui_review(task, project_path), None, True),
         ("step_completion", lambda: _verify_step_completion(task), None, False),
     ]
     for check_name, check_fn, simple_msg, has_details in check_configs:
         logger.info(f"running_{check_name}", task_id=task_id)
-        checks[check_name] = check_fn()  # type: ignore[no-untyped-call]
+        checks[check_name] = check_fn()
         if checks[check_name].get("status") == "fail":
             if simple_msg:
                 all_issues.append(simple_msg)

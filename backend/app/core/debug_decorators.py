@@ -116,7 +116,7 @@ def debug_timer_decorator[**P, R](
     """
 
     def decorator(fn: Callable[P, R]) -> Callable[P, R]:
-        op_name = operation or fn.__name__
+        op_name = operation or fn.__name__  # ty: ignore[unresolved-attribute]
 
         @functools.wraps(fn)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
@@ -124,7 +124,7 @@ def debug_timer_decorator[**P, R](
                 return fn(*args, **kwargs)
 
             start = time.perf_counter()
-            emit_stderr(f"→ {op_name}", function_name=fn.__name__)
+            emit_stderr(f"→ {op_name}", function_name=fn.__name__)  # ty: ignore[unresolved-attribute]
             try:
                 return fn(*args, **kwargs)
             finally:
@@ -159,7 +159,7 @@ def debug_async_timer_decorator[**P, R](
     def decorator(
         fn: Callable[P, Coroutine[Any, Any, R]],
     ) -> Callable[P, Coroutine[Any, Any, R]]:
-        op_name = operation or fn.__name__
+        op_name = operation or fn.__name__  # ty: ignore[unresolved-attribute]
 
         @functools.wraps(fn)
         async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
@@ -167,7 +167,7 @@ def debug_async_timer_decorator[**P, R](
                 return await fn(*args, **kwargs)
 
             start = time.perf_counter()
-            emit_stderr(f"→ {op_name}", function_name=fn.__name__)
+            emit_stderr(f"→ {op_name}", function_name=fn.__name__)  # ty: ignore[unresolved-attribute]
             try:
                 return await fn(*args, **kwargs)
             finally:

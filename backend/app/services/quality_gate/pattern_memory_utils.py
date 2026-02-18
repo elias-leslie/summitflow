@@ -52,7 +52,7 @@ def get_similar_patterns(
     """Retrieve similar fix patterns from memory.
 
     Args:
-        check_type: Type of check (ruff, mypy, etc.)
+        check_type: Type of check (ruff, types, etc.)
         error_code: Error code (F401, etc.)
         error_message: Error message
 
@@ -97,7 +97,7 @@ def store_successful_pattern(
     for future retrieval when similar errors occur.
 
     Args:
-        check_type: Type of check (ruff, mypy, etc.)
+        check_type: Type of check (ruff, types, etc.)
         check_name: Error code/rule name
         error_message: Original error message
         file_path: File that was fixed

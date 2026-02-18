@@ -1,6 +1,6 @@
 """Storage module for quality check results.
 
-Tracks results from dt quality gate checks (pytest, ruff, mypy, biome, tsc)
+Tracks results from dt quality gate checks (pytest, ruff, types, biome, tsc)
 and their fix status.
 """
 
@@ -12,7 +12,7 @@ import psycopg
 logger = logging.getLogger(__name__)
 
 # Type definitions
-CheckType = Literal["pytest", "ruff", "mypy", "biome", "tsc"]
+CheckType = Literal["pytest", "ruff", "types", "biome", "tsc"]
 Status = Literal["pass", "fail", "error", "skipped"]
 TriggerType = Literal["commit", "manual", "ci", "agent"]
 
@@ -39,7 +39,7 @@ def create_check_result(
     Args:
         conn: Database connection
         project_id: Project ID
-        check_type: Type of check (pytest, ruff, mypy, biome, tsc)
+        check_type: Type of check (pytest, ruff, types, biome, tsc)
         status: Result status (pass, fail, error, skipped)
         check_name: Specific test name or rule (optional)
         error_count: Number of errors

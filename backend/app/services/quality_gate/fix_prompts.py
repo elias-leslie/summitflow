@@ -74,10 +74,10 @@ def build_fix_prompt(
                 "",
             ]
         )
-    elif check_type == "mypy":
+    elif check_type == "types":
         lines.extend(
             [
-                "Fix the mypy type error. Common fixes:",
+                "Fix the type error. Common fixes:",
                 "- Add type annotations",
                 "- Add proper None checks",
                 "- Use cast() or type guards",

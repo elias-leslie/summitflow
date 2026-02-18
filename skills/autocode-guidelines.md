@@ -16,7 +16,7 @@ tags: [skill:autocode-guidelines, autocode]
 ## During Execution
 - Follow test-first for backend: read tests, adjust tests, then implement
 - Complete the vertical slice: backend changes need UI updates
-- Use `dt` for all quality checks, never raw tools (ruff, mypy, etc.)
+- Use `dt` for all quality checks, never raw tools (ruff, types, etc.)
 - Track bugs immediately with `st bug "Fix: X"` when discovered
 
 ## Post-Execution

@@ -1,7 +1,8 @@
-"""Tool runners for AI review task (pytest, pre-commit, mypy)."""
+"""Tool runners for AI review task (pytest, pre-commit, types)."""
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -92,8 +93,8 @@ def run_precommit(project_path: Path) -> dict[str, Any]:
     }
 
 
-def run_mypy(project_path: Path) -> dict[str, Any]:
-    """Run mypy type checking.
+def run_types(project_path: Path) -> dict[str, Any]:
+    """Run ty type checking.
 
     Args:
         project_path: Path to project root
@@ -105,12 +106,12 @@ def run_mypy(project_path: Path) -> dict[str, Any]:
     if not backend_path.exists():
         return {"status": "skip", "reason": "No backend directory"}
 
-    venv_mypy = backend_path / ".venv" / "bin" / "mypy"
-    if not venv_mypy.exists():
-        return {"status": "skip", "reason": "No mypy in venv"}
+    if not shutil.which("ty"):
+        return {"status": "skip", "reason": "ty not found"}
 
+    venv_python = backend_path / ".venv" / "bin" / "python"
     success, output = run_command(
-        [str(venv_mypy), "app/", "--ignore-missing-imports"],
+        ["ty", "check", "--python", str(venv_python), "app/"],
         cwd=backend_path,
         timeout=120,
     )

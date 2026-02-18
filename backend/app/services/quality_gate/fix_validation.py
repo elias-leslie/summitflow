@@ -14,7 +14,7 @@ from ...storage.projects import get_project_root_path
 logger = get_logger(__name__)
 
 # Supported check types for automatic fixing
-SUPPORTED_CHECK_TYPES = ("ruff", "mypy", "biome", "tsc")
+SUPPORTED_CHECK_TYPES = ("ruff", "types", "biome", "tsc")
 
 
 def validate_check_result(check_result: dict[str, Any] | None, result_id: int) -> str | None:

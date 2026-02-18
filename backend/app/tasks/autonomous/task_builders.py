@@ -73,7 +73,7 @@ def _build_issue_aware_done_when(
     is_frontend: bool,
 ) -> list[str]:
     """Build done_when criteria from actual issues."""
-    criteria = ["All quality gates pass (ruff, mypy, pytest)"]
+    criteria = ["All quality gates pass (ruff, types, pytest)"]
 
     has_size_issue = any(i in refactor_issues for i in ("oversized", "large_file", "bloat_critical", "bloat_warning"))
     if has_size_issue:

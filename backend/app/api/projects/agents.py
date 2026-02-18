@@ -67,7 +67,7 @@ async def update_agent_config(project_id: str, update: AgentConfigUpdate) -> Age
     if not config_update:
         raise HTTPException(status_code=400, detail="No fields to update")
 
-    updated = agent_configs.update_agent_config(project_id, config_update)  # type: ignore[arg-type]
+    updated = agent_configs.update_agent_config(project_id, config_update)
     if not updated:
         raise HTTPException(status_code=500, detail="Failed to update agent config")
     return AgentConfigResponse(**updated)

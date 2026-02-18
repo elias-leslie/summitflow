@@ -113,12 +113,18 @@ def find_project_by_cwd(cwd: str) -> dict[str, Any] | None:
         return None
 
 
-def build_project_env(project_id: str | None) -> dict[str, str]:
+def build_project_env(project_id: str | None, working_dir: str | None = None) -> dict[str, str]:
     """Build environment dict with the correct project venv on PATH.
 
     Single source of truth for subprocess environment in verification.
     Resolves the main repo's venv from project_id (handles worktrees
     since worktrees don't have their own .venv).
+
+    Args:
+        project_id: Project ID for resolving venv paths.
+        working_dir: Optional worktree path. When provided, injects it into
+                     PYTHONPATH so import checks resolve against the worktree
+                     rather than the main repo's editable install.
     """
     env = os.environ.copy()
     if not project_id:
@@ -139,6 +145,11 @@ def build_project_env(project_id: str | None) -> dict[str, str]:
             env["PATH"] = f"{venv_bin}:{env.get('PATH', '')}"
             env.pop("PYTHONHOME", None)
             logger.info("resolved_project_venv: venv=%s project_id=%s", venv_path, project_id)
+            if working_dir:
+                backend_dir = os.path.join(working_dir, "backend")
+                if os.path.isdir(backend_dir):
+                    existing = env.get("PYTHONPATH", "")
+                    env["PYTHONPATH"] = f"{backend_dir}:{existing}" if existing else backend_dir
             return env
 
     logger.debug("no_venv_found: project_id=%s main_repo=%s", project_id, main_repo)

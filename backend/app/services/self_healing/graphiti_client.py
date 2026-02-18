@@ -35,7 +35,7 @@ class FixPattern:
     fix_diff: str
     root_cause_summary: str
     project_id: str | None = None
-    check_type: str | None = None  # ruff, mypy, pytest, etc.
+    check_type: str | None = None  # ruff, types, pytest, etc.
 
 
 @dataclass

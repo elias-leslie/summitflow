@@ -33,7 +33,7 @@ from .ai_review_tools import (
     run_command as _run_command,
 )
 from .ai_review_tools import (
-    run_mypy as _run_mypy,
+    run_types as _run_types,
 )
 from .ai_review_tools import (
     run_precommit as _run_precommit,
@@ -50,7 +50,7 @@ __all__ = [
     "_run_breaking_change_detection",
     "_run_code_quality_review",
     "_run_command",
-    "_run_mypy",
+    "_run_types",
     "_run_precommit",
     "_run_pytest",
     "_run_security_risk_classification",

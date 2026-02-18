@@ -22,7 +22,7 @@ ERROR_BLOCKLIST_PATTERNS = [
     "connection failed",
     "psql",
     # Pre-existing type errors (not new bugs, need consolidated approach)
-    "mypy",
+    "types",
     "type error",
     "type mismatch",
     "type check",
