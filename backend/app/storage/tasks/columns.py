@@ -11,8 +11,9 @@ This module defines the column lists used in task queries.
 # Note: Migration 101 added: agent_override
 # Note: Migration 028147425749 added: agent_hub_session_ids
 # Note: Migration 105 added: ai_review
+# Note: Migration a3b7c1d2e4f5 dropped: pull_request_url
 TASK_COLUMNS = """id, project_id, capability_id, title, description, status,
-    error_message, branch_name, commits, pull_request_url,
+    error_message, branch_name, commits,
     total_sessions, total_tokens_used, created_at, started_at, completed_at,
     priority, task_type, parent_task_id, feature_id,
     claimed_by, claimed_at, lock_expires_at, tier, pre_merge_sha, review_result,
@@ -24,7 +25,7 @@ TASK_COLUMNS = """id, project_id, capability_id, title, description, status,
 
 # Aliased version for JOINs (prefixed with t.)
 TASK_COLUMNS_ALIASED = """t.id, t.project_id, t.capability_id, t.title, t.description, t.status,
-    t.error_message, t.branch_name, t.commits, t.pull_request_url,
+    t.error_message, t.branch_name, t.commits,
     t.total_sessions, t.total_tokens_used, t.created_at, t.started_at, t.completed_at,
     t.priority, t.task_type, t.parent_task_id, t.feature_id,
     t.claimed_by, t.claimed_at, t.lock_expires_at, t.tier, t.pre_merge_sha, t.review_result,
@@ -34,12 +35,12 @@ TASK_COLUMNS_ALIASED = """t.id, t.project_id, t.capability_id, t.title, t.descri
     t.qa_status, t.qa_signoff_at, t.qa_signoff_by, t.qa_issues, t.agent_override, t.agent_hub_session_ids,
     t.labels, t.ai_review"""
 
-EXPECTED_TASK_COLUMNS = 41
+EXPECTED_TASK_COLUMNS = 40
 
 # Columns for queries that JOIN with task_spirit (46 columns total)
 # Adds 6 spirit fields: objective, spirit_anti, decisions, constraints, done_when, plan_status
 TASK_COLUMNS_WITH_SPIRIT = """t.id, t.project_id, t.capability_id, t.title, t.description, t.status,
-    t.error_message, t.branch_name, t.commits, t.pull_request_url,
+    t.error_message, t.branch_name, t.commits,
     t.total_sessions, t.total_tokens_used, t.created_at, t.started_at, t.completed_at,
     t.priority, t.task_type, t.parent_task_id, t.feature_id,
     t.claimed_by, t.claimed_at, t.lock_expires_at, t.tier, t.pre_merge_sha, t.review_result,
@@ -50,4 +51,4 @@ TASK_COLUMNS_WITH_SPIRIT = """t.id, t.project_id, t.capability_id, t.title, t.de
     t.labels, t.ai_review,
     ts.objective, ts.spirit_anti, ts.decisions, ts.constraints, ts.done_when, ts.plan_status"""
 
-EXPECTED_TASK_COLUMNS_WITH_SPIRIT = 47
+EXPECTED_TASK_COLUMNS_WITH_SPIRIT = 46

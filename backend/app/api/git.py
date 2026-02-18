@@ -19,17 +19,13 @@ from ..utils.git_helpers import (
 )
 from .git_helpers.db_helpers import get_project_root, get_project_root_with_fallback
 from .git_helpers.endpoints import (
-    create_pull_request_for_task,
     execute_smart_sync,
-    get_task_pr_status,
 )
 from .git_helpers.response_builders import aggregate_sync_results, build_sync_response_from_result
 from .models.git_models import (
     BranchesResponse,
     GitStatusResponse,
     GitSyncResponse,
-    PRCreateRequest,
-    PRResponse,
     RepoStatus,
     WorktreeInfo,
     WorktreesResponse,
@@ -77,23 +73,6 @@ async def sync_repositories() -> GitSyncResponse:
     counts = aggregate_sync_results(results)
 
     return GitSyncResponse(results=results, **counts)
-
-
-@router.post(
-    "/tasks/{task_id}/pr",
-    response_model=PRResponse,
-    tags=["git"],
-)
-async def create_pull_request(task_id: str, request: PRCreateRequest) -> PRResponse:
-    """Create a pull request from the task's branch."""
-    result = create_pull_request_for_task(task_id, request.title, request.body)
-    return PRResponse(**result)
-
-
-@router.get("/tasks/{task_id}/pr", tags=["git"])
-async def get_pr_status(task_id: str) -> dict[str, Any]:
-    """Get the pull request status for a task."""
-    return get_task_pr_status(task_id)
 
 
 @router.get("/git/worktrees", response_model=WorktreesResponse, tags=["git"])

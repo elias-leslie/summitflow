@@ -69,7 +69,6 @@ class TaskUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
     branch_name: str | None = None
-    pull_request_url: str | None = None
     # Issue tracking fields
     priority: int | None = Field(default=None, ge=0, le=4)
     labels: list[str] | None = None
@@ -102,7 +101,7 @@ class TaskUpdate(BaseModel):
 class TaskStatusUpdate(BaseModel):
     """Request model for updating task status."""
 
-    status: str  # pending, running, paused, blocked, pr_created, ai_reviewing, completed, failed, cancelled
+    status: str  # pending, running, paused, blocked, ai_reviewing, completed, failed, cancelled
     error_message: str | None = None
     reason: str | None = None  # Completion reason (logged to events table)
     skip_gates: bool = Field(
@@ -164,7 +163,6 @@ class TaskResponse(BaseModel):
     error_message: str | None
     branch_name: str | None
     commits: list[str]
-    pull_request_url: str | None
     total_sessions: int
     total_tokens_used: int
     created_at: datetime | None

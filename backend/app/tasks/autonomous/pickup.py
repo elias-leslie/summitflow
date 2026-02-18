@@ -23,9 +23,9 @@ from app.storage.subtasks import get_subtasks_for_task
 from app.storage.task_dependencies import is_blocked
 from app.storage.task_spirit import get_task_spirit
 
-from .pickup_dispatch import dispatch_to_review, dispatch_to_stage
+from .pickup_dispatch import dispatch_to_stage
 from .pickup_guards import validate_autonomous_dispatch
-from .pickup_queries import get_queued_autonomous_tasks, get_tasks_awaiting_review
+from .pickup_queries import get_queued_autonomous_tasks
 
 logger = get_logger(__name__)
 
@@ -106,39 +106,6 @@ def autonomous_work_pickup(
     logger.info("Work pickup complete", project_id=project_id, dispatched=dispatched)
 
     return {"project_id": project_id, "dispatched": total, "breakdown": dispatched}
-
-
-def review_pending_tasks(
-    project_id: str,
-    dispatch: Callable[[str, str, str], None] | None = None,
-) -> dict[str, Any]:
-    """Pick up tasks awaiting AI review and dispatch to reviewer.
-
-    Args:
-        project_id: Project ID to process
-        dispatch: Optional dispatch callback function
-
-    Returns:
-        Dict with review dispatch count
-    """
-    logger.info("Starting review task pickup", project_id=project_id)
-
-    tasks = get_tasks_awaiting_review(project_id)
-    if not tasks:
-        return {"project_id": project_id, "dispatched": 0, "message": "No tasks awaiting review"}
-
-    dispatched = 0
-    for task in tasks:
-        task_id = task["id"]
-        try:
-            if dispatch_to_review(task_id, project_id, dispatch):
-                dispatched += 1
-        except Exception as e:
-            logger.warning("Failed to dispatch review", task_id=task_id, error=str(e))
-
-    logger.info("Review pickup complete", project_id=project_id, dispatched=dispatched)
-
-    return {"project_id": project_id, "dispatched": dispatched}
 
 
 def dispatch_task_immediate(

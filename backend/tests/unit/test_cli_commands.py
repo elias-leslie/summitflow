@@ -38,7 +38,6 @@ def _make_mock_task(task_id: str, **kwargs: Any) -> dict[str, Any]:
         "error_message": None,
         "branch_name": None,
         "commits": [],
-        "pull_request_url": None,
         "total_sessions": 0,
         "total_tokens_used": 0,
         "created_at": datetime.now(UTC).isoformat(),

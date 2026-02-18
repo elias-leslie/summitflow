@@ -46,39 +46,3 @@ def get_queued_autonomous_tasks(project_id: str, limit: int = 10) -> list[dict[s
         }
         for row in rows
     ]
-
-
-def get_tasks_awaiting_review(project_id: str, limit: int = 10) -> list[dict[str, Any]]:
-    """Get autonomous tasks waiting for AI review.
-
-    Args:
-        project_id: Project ID to filter by
-        limit: Max tasks to return
-
-    Returns:
-        List of task dicts with id, title, complexity, status
-    """
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT id, title, complexity, status
-            FROM tasks
-            WHERE project_id = %s
-              AND status = 'pr_created'
-              AND autonomous = TRUE
-            ORDER BY created_at ASC
-            LIMIT %s
-            """,
-            (project_id, limit),
-        )
-        rows = cur.fetchall()
-
-    return [
-        {
-            "id": row[0],
-            "title": row[1],
-            "complexity": row[2],
-            "status": row[3],
-        }
-        for row in rows
-    ]

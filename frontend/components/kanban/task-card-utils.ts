@@ -22,7 +22,6 @@ export function getPhaseFromStatus(status: TaskStatus): ExecutionPhase | null {
     case 'running':
       return 'Execute'
     case 'ai_reviewing':
-    case 'pr_created':
       return 'Review'
     default:
       return null

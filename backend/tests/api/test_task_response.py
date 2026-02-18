@@ -19,7 +19,6 @@ def _minimal_task(**overrides: object) -> dict[str, object]:
         "error_message": None,
         "branch_name": None,
         "commits": [],
-        "pull_request_url": None,
         "total_sessions": 0,
         "total_tokens_used": 0,
         "created_at": None,

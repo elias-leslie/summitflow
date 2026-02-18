@@ -95,7 +95,6 @@ def _create_tasks_table(cur: psycopg.Cursor) -> None:
             error_message TEXT,
             branch_name TEXT,
             commits TEXT[] DEFAULT '{}',
-            pull_request_url TEXT,
             total_sessions INTEGER DEFAULT 0,
             total_tokens_used INTEGER DEFAULT 0,
             created_at TIMESTAMPTZ DEFAULT NOW(),

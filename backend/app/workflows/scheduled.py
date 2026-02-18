@@ -44,27 +44,6 @@ async def work_pickup_wf(input: ProjectInput, ctx: Context) -> dict[str, Any]:
 
 
 @hatchet.task(
-    name="summitflow-review-pickup",
-    input_validator=ProjectInput,
-    execution_timeout="900s",
-    retries=3,
-    backoff_factor=2.0,
-    on_crons=["*/30 * * * *"],
-    concurrency=ConcurrencyExpression(
-        expression="'summitflow-review-pickup'",
-        max_runs=1,
-        limit_strategy=ConcurrencyLimitStrategy.CANCEL_IN_PROGRESS,
-    ),
-)
-async def review_pickup_wf(input: ProjectInput, ctx: Context) -> dict[str, Any]:
-    from ..tasks.autonomous.pickup import review_pending_tasks
-    from .pipeline import _make_dispatch_callback
-
-    dispatch = _make_dispatch_callback()
-    return await asyncio.to_thread(review_pending_tasks, input.project_id, dispatch=dispatch)
-
-
-@hatchet.task(
     name="summitflow-reset-claims",
     input_validator=EmptyInput,
     execution_timeout="120s",

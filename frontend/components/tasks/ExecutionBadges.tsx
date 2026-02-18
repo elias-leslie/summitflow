@@ -7,7 +7,6 @@ import {
   Clock,
   DollarSign,
   Eye,
-  GitPullRequest,
   Loader2,
   RefreshCw,
   XCircle,
@@ -67,11 +66,6 @@ const statusIcons: Record<
     icon: <AlertCircle className="h-3 w-3" />,
     color: 'text-red-400',
     bg: 'bg-red-500/20',
-  },
-  pr_created: {
-    icon: <GitPullRequest className="h-3 w-3" />,
-    color: 'text-purple-400',
-    bg: 'bg-purple-500/20',
   },
   ai_reviewing: {
     icon: <Eye className="h-3 w-3 animate-pulse" />,

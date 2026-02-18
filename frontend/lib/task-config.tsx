@@ -14,7 +14,6 @@ import {
   Clock,
   Database,
   FileCode,
-  GitPullRequest,
   Layout,
   ListTodo,
   Loader2,
@@ -205,11 +204,6 @@ export const taskStatusCardConfig: Record<TaskStatus, TaskStatusCardConfig> = {
     className: 'text-orange-400',
     title: 'Task blocked',
   },
-  pr_created: {
-    icon: <GitPullRequest className="h-3.5 w-3.5" />,
-    className: 'text-amber-400',
-    title: 'PR created',
-  },
   ai_reviewing: {
     icon: <Bot className="h-3.5 w-3.5 animate-pulse" />,
     className: 'text-amber-400',
@@ -350,11 +344,6 @@ export const statusIconConfig: Record<
     icon: OctagonX,
     className: 'text-orange-400',
     label: 'Blocked',
-  },
-  pr_created: {
-    icon: GitPullRequest,
-    className: 'text-amber-400',
-    label: 'PR Created',
   },
   ai_reviewing: {
     icon: Bot,

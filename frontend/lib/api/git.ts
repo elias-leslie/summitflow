@@ -70,35 +70,6 @@ export async function syncRepositories(): Promise<GitSyncResponse> {
   )
 }
 
-export interface PRCreateRequest {
-  title?: string
-  body?: string
-}
-
-export interface PRCreateResponse {
-  pr_url: string
-  branch_name: string
-  task_id: string
-}
-
-/**
- * Create a pull request for a task.
- */
-export async function createPullRequest(
-  taskId: string,
-  request?: PRCreateRequest,
-): Promise<PRCreateResponse> {
-  return fetchWithErrorHandling<PRCreateResponse>(
-    `${getApiBase()}/api/tasks/${taskId}/pr`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(request ?? {}),
-      errorMessage: 'Failed to create pull request',
-    },
-  )
-}
-
 /**
  * Pull changes for a specific project's repository.
  */

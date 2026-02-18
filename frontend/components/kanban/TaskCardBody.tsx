@@ -1,6 +1,4 @@
 import {
-  ExternalLink,
-  GitPullRequest,
   Link2,
   Loader2,
 } from 'lucide-react'
@@ -39,7 +37,7 @@ export function TaskCardBody({ task, currentStep, canExpand }: TaskCardBodyProps
 
       {canExpand && <StepProgressIndicator status={task.status} />}
 
-      {(task.status === 'ai_reviewing' || task.status === 'pr_created') && (
+      {task.status === 'ai_reviewing' && (
         <div className="flex items-center gap-2 mb-2 py-1.5 px-2 -mx-1 rounded bg-slate-800/50">
           <span
             className={`flex items-center gap-1.5 ${statusConfig?.className || ''}`}
@@ -47,19 +45,6 @@ export function TaskCardBody({ task, currentStep, canExpand }: TaskCardBodyProps
             {statusConfig?.icon}
             <span className="text-xs font-medium">{statusConfig?.title}</span>
           </span>
-          {task.pull_request_url && (
-            <a
-              href={task.pull_request_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="ml-auto flex items-center gap-1 text-xs text-violet-400 hover:text-violet-300 transition-colors"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <GitPullRequest className="h-3 w-3" />
-              <span>PR</span>
-              <ExternalLink className="h-2.5 w-2.5" />
-            </a>
-          )}
         </div>
       )}
 
@@ -78,20 +63,6 @@ export function TaskCardBody({ task, currentStep, canExpand }: TaskCardBodyProps
               </span>
             )}
           </div>
-        ) : task.pull_request_url &&
-          task.status !== 'ai_reviewing' &&
-          task.status !== 'pr_created' ? (
-          <a
-            href={task.pull_request_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1 text-xs text-violet-400 hover:text-violet-300 transition-colors"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <GitPullRequest className="h-3 w-3" />
-            <span>View PR</span>
-            <ExternalLink className="h-2.5 w-2.5" />
-          </a>
         ) : (
           <span className="text-xs text-slate-600 italic">Standalone</span>
         )}

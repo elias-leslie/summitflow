@@ -17,7 +17,6 @@ from .execution import start_execution
 from .pickup import (
     autonomous_work_pickup,
     dispatch_task_immediate,
-    review_pending_tasks,
 )
 from .planning import create_plan
 from .review import ai_review
@@ -34,7 +33,6 @@ __all__ = [
     "merge_and_cleanup_task_worktree",
     "regenerate_refactor_tasks",
     "reset_expired_task_claims",
-    "review_pending_tasks",
     "start_execution",
     "supervisor_guidance",
     "triage_idea",

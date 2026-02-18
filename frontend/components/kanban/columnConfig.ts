@@ -67,7 +67,6 @@ export const statusToColumn: Record<TaskStatus, TaskKanbanColumn> = {
   // Active column (all running/transient states)
   running: 'active',
   paused: 'active',
-  pr_created: 'active',
   ai_reviewing: 'active',
   // Blocked column
   blocked: 'blocked',

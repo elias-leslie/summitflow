@@ -8,7 +8,6 @@ Status values:
 - paused: Temporarily paused
 - failed: Task failed, can retry
 - blocked: Task blocked by dependency, issue, or escalation
-- pr_created: Pull request created, awaiting review
 - ai_reviewing: AI review in progress
 - completed: Successfully completed
 - cancelled: Task cancelled (auto-cancelled or never started)
@@ -18,7 +17,7 @@ Kanban column mapping (6 columns):
 - Ideas: pending (crowdsourced)
 - Planning: pending
 - Queue: queue
-- Active: running, paused, ai_reviewing, pr_created
+- Active: running, paused, ai_reviewing
 - Blocked: blocked
 - Done: completed, failed, cancelled, abandoned
 """
@@ -42,7 +41,6 @@ VALID_TRANSITIONS: dict[str, set[str]] = {
         "paused",
         "failed",
         "blocked",
-        "pr_created",
         "completed",
         "ai_reviewing",
         "cancelled",
@@ -51,8 +49,7 @@ VALID_TRANSITIONS: dict[str, set[str]] = {
     "paused": {"queue", "running", "pending", "failed", "cancelled", "abandoned"},
     "blocked": {"queue", "running", "pending", "failed", "cancelled", "abandoned"},
     "failed": {"queue", "pending", "running", "cancelled", "abandoned"},
-    # PR/Review states (agent workflow)
-    "pr_created": {"ai_reviewing", "blocked", "failed", "cancelled", "abandoned"},
+    # Review states (agent workflow)
     "ai_reviewing": {"completed", "blocked", "running", "failed", "abandoned"},
     # Terminal states
     "completed": {"failed", "pending"},  # Reopen if incorrectly closed
@@ -100,7 +97,6 @@ def update_task_status(
         "paused",
         "failed",
         "blocked",
-        "pr_created",
         "ai_reviewing",
         "completed",
         "cancelled",

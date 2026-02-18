@@ -26,7 +26,6 @@ from .autonomous import (
     is_security_sensitive,
     is_standalone,
     reset_expired_task_claims,
-    review_pending_tasks,
 )
 
 __all__ = [
@@ -45,5 +44,4 @@ __all__ = [
     "is_security_sensitive",
     "is_standalone",
     "reset_expired_task_claims",
-    "review_pending_tasks",
 ]

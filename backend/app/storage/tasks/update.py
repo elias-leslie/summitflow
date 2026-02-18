@@ -27,7 +27,6 @@ ALLOWED_UPDATE_FIELDS = {
     "error_message",
     "branch_name",
     "commits",
-    "pull_request_url",
     "total_sessions",
     "total_tokens_used",
     "started_at",

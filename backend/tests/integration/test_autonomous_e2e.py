@@ -531,9 +531,9 @@ class TestAIReviewE2E:
         )
         task_id = task["id"]
         cleanup_tasks.append(task_id)
-        # Transition: pending → running → pr_created
+        # Transition: pending → running → ai_reviewing
         task_store.update_task_status(task_id, "running")
-        task_store.update_task_status(task_id, "pr_created")
+        task_store.update_task_status(task_id, "ai_reviewing")
 
         review_json = json.dumps(
             {
@@ -624,9 +624,9 @@ class TestAIReviewE2E:
         )
         task_id = task["id"]
         cleanup_tasks.append(task_id)
-        # Transition: pending → running → pr_created
+        # Transition: pending → running → ai_reviewing
         task_store.update_task_status(task_id, "running")
-        task_store.update_task_status(task_id, "pr_created")
+        task_store.update_task_status(task_id, "ai_reviewing")
 
         review_json = json.dumps(
             {

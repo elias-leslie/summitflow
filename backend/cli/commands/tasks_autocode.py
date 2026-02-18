@@ -75,7 +75,7 @@ def _validate_task_for_autocode(
     if current_status in ("running", "queue"):
         output_error(f"Task {task_id} is already {current_status}.")
         raise typer.Exit(1)
-    if current_status in ("completed", "merged", "pr_created"):
+    if current_status in ("completed", "merged"):
         output_error(f"Task {task_id} is already {current_status}.")
         raise typer.Exit(1)
 

@@ -44,21 +44,6 @@ class GitSyncResponse(BaseModel):
     skipped: int
 
 
-class PRCreateRequest(BaseModel):
-    """Request to create a PR."""
-
-    title: str | None = None
-    body: str | None = None
-
-
-class PRResponse(BaseModel):
-    """Response for PR operations."""
-
-    pr_url: str
-    branch_name: str
-    task_id: str
-
-
 class WorktreeInfo(BaseModel):
     """Information about a worktree."""
 

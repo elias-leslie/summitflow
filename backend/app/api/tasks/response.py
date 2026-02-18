@@ -111,7 +111,6 @@ def task_to_response(task: dict[str, Any], criteria_count: int | None = None) ->
         error_message=task["error_message"],
         branch_name=task["branch_name"],
         commits=task["commits"] or [],
-        pull_request_url=task["pull_request_url"],
         total_sessions=task["total_sessions"],
         total_tokens_used=task["total_tokens_used"],
         created_at=task.get("created_at"),

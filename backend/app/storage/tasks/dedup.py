@@ -29,7 +29,7 @@ def task_exists_for_file(project_id: str, file_path: str) -> bool:
             SELECT EXISTS (
                 SELECT 1 FROM tasks
                 WHERE project_id = %s
-                AND status IN ('pending', 'running', 'paused', 'blocked', 'pr_created', 'ai_reviewing')
+                AND status IN ('pending', 'running', 'paused', 'blocked', 'ai_reviewing')
                 AND (
                     description LIKE %s
                     OR title LIKE %s
@@ -153,7 +153,7 @@ def duplicate_task_exists(
     query = """
         SELECT id, title, description FROM tasks
         WHERE project_id = %s
-        AND status IN ('pending', 'running', 'queue', 'paused', 'blocked', 'pr_created', 'ai_reviewing')
+        AND status IN ('pending', 'running', 'queue', 'paused', 'blocked', 'ai_reviewing')
     """
     params: list[Any] = [project_id]
     if exclude_task_id:
@@ -209,7 +209,7 @@ def bug_task_exists_for_error(project_id: str, error_title: str) -> bool:
             SELECT EXISTS (
                 SELECT 1 FROM tasks
                 WHERE project_id = %s
-                AND status IN ('pending', 'running', 'paused', 'blocked', 'pr_created', 'ai_reviewing')
+                AND status IN ('pending', 'running', 'paused', 'blocked', 'ai_reviewing')
                 AND task_type = 'bug'
                 AND (
                     LOWER(title) LIKE %s
@@ -229,7 +229,7 @@ def bug_task_exists_for_error(project_id: str, error_title: str) -> bool:
             """
             SELECT title, description FROM tasks
             WHERE project_id = %s
-            AND status IN ('pending', 'running', 'paused', 'blocked', 'pr_created', 'ai_reviewing')
+            AND status IN ('pending', 'running', 'paused', 'blocked', 'ai_reviewing')
             AND task_type = 'bug'
             """,
             (project_id,),

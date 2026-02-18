@@ -12,7 +12,6 @@ export type TaskStatus =
   | 'running'
   | 'paused'
   | 'blocked'
-  | 'pr_created'
   | 'ai_reviewing'
   | 'completed'
   | 'failed'
@@ -79,7 +78,6 @@ export interface Task {
   error_message: string | null
   branch_name: string | null
   commits: string[]
-  pull_request_url: string | null
   total_sessions: number
   total_tokens_used: number
   created_at: string | null
