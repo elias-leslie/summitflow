@@ -184,7 +184,7 @@ def get_refactor_targets(
                 "reason": row[7],
                 "commit_count_90d": row[8],
                 "test_file_exists": row[9],
-                "hotspot_score": row[10],
+                "hotspot_score": float(row[10]) if row[10] is not None else 0.0,
                 "complexity_method": row[11],
                 "health_flags": row[12] if isinstance(row[12], list) else [],
                 "refactor_issues": row[13] if isinstance(row[13], list) else [],
