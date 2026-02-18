@@ -125,6 +125,17 @@ def transition_to_review_or_complete(
     """
     require_review = agent_configs.get_require_review(project_id)
 
+    # Task-level ai_review=False overrides project-level setting (e.g. refactor tasks)
+    if require_review:
+        task = task_store.get_task(task_id)
+        if task and task.get("ai_review") is False:
+            require_review = False
+            logger.info(
+                "Skipping AI review (task ai_review=False)",
+                task_id=task_id,
+                project_id=project_id,
+            )
+
     if require_review:
         task_store.update_task_status(task_id, "ai_reviewing")
         emit_log(
