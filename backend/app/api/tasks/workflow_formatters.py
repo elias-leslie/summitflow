@@ -11,6 +11,66 @@ from ...storage.events import get_events_by_trace
 from ...storage.steps import get_steps_for_subtask
 
 
+def _format_context_lines(spirit: dict[str, Any]) -> list[str]:
+    """Return CONTEXT line(s) from spirit context dict."""
+    ctx = spirit.get("context")
+    if not ctx:
+        return []
+    parts: list[str] = []
+    if ctx.get("files_to_modify"):
+        parts.append(f"modify:{','.join(ctx['files_to_modify'][:5])}")
+    if ctx.get("files_to_create"):
+        parts.append(f"create:{','.join(ctx['files_to_create'][:5])}")
+    if ctx.get("references"):
+        parts.append(f"refs:{len(ctx['references'])}")
+    if ctx.get("testing_strategy"):
+        parts.append(f"testing:{ctx['testing_strategy'][:80]}")
+    return [f"CONTEXT:{' | '.join(parts)}"] if parts else []
+
+
+def _format_subtask_lines(subtasks: list[dict[str, Any]]) -> tuple[list[str], int, int]:
+    """Return subtask lines, total criteria count, and verified criteria count."""
+    if not subtasks:
+        return [], 0, 0
+    completed = sum(1 for s in subtasks if s.get("passes"))
+    pct = int(completed / len(subtasks) * 100)
+    lines: list[str] = [f"SUBTASKS[{len(subtasks)}]:{completed}/{len(subtasks)}:{pct}%"]
+    total_criteria = 0
+    verified_criteria = 0
+    for st in subtasks:
+        steps = get_steps_for_subtask(st["id"])
+        total_criteria += len(steps)
+        passed = sum(1 for s in steps if s.get("passes"))
+        verified_criteria += passed
+        marker = "PASS" if st.get("passes") else "____"
+        phase = f"[{st['phase']}] " if st.get("phase") else ""
+        raw_desc = st.get("description", "")
+        desc = raw_desc[:45] + ("..." if len(raw_desc) > 45 else "")
+        lines.append(f"{st['subtask_id']}   {marker} {phase}{desc} [{passed}/{len(steps)}]")
+        for step in steps:
+            step_desc = step.get("description", "")[:60]
+            status = "PASS" if step.get("passes") else "____"
+            lines.append(f"  {step.get('step_number', 0)}. {status} {step_desc}")
+            if step.get("verify_command"):
+                lines.append(f"       verify: {step['verify_command']}")
+    return lines, total_criteria, verified_criteria
+
+
+def _format_event_log_lines(task_id: str) -> list[str]:
+    """Return LOG lines for the last 3 user-visible events."""
+    events = get_events_by_trace(task_id, visibility="user", limit=100)
+    if not events:
+        return []
+    lines = [f"LOG[{len(events)}]:"]
+    for event in events[-3:]:
+        msg = event.get("message") or ""
+        ts = event.get("timestamp")
+        ts_str = ts.strftime("%Y-%m-%d %H:%M:%S") if ts else ""
+        preview = f"[{ts_str}] {msg[:80]}" + ("..." if len(msg) > 80 else "")
+        lines.append(f"  {preview}")
+    return lines
+
+
 def format_toon_context(
     task: dict[str, Any],
     spirit: dict[str, Any] | None,
@@ -21,115 +81,39 @@ def format_toon_context(
 
     Format matches `st context` output for API-CLI parity.
     """
-    lines: list[str] = []
-
-    # Task header: TASK:id|status|priority|type|complexity
     priority = f"P{task.get('priority', 2)}"
-    complexity = task.get("complexity") or spirit.get("complexity") if spirit else ""
-    complexity = complexity or "STANDARD"
-    lines.append(
+    complexity = (task.get("complexity") or (spirit.get("complexity") if spirit else None)) or "STANDARD"
+    lines: list[str] = [
         f"TASK:{task['id']}|{task['status']}|{priority}|{task.get('task_type', 'task')}|{complexity}"
-    )
+    ]
 
-    # Workflow status
     plan_status = spirit.get("plan_status", "draft") if spirit else "draft"
     qa_status = task.get("qa_status", "pending")
-    criteria_count = 0
-    for st in subtasks:
-        steps = get_steps_for_subtask(st["id"])
-        criteria_count += len(steps)
+    subtask_lines, criteria_count, criteria_verified = _format_subtask_lines(subtasks)
     decisions_count = len(spirit.get("decisions", [])) if spirit else 0
-    lines.append(
-        f"WORKFLOW:plan:{plan_status}|qa:{qa_status}|criteria:{criteria_count}|decisions:{decisions_count}"
-    )
+    lines.append(f"WORKFLOW:plan:{plan_status}|qa:{qa_status}|criteria:{criteria_count}|decisions:{decisions_count}")
 
-    # Objective
     if spirit and spirit.get("objective"):
         lines.append(f"OBJECTIVE:{spirit['objective']}")
-
-    # Spirit & Anti-pattern
     if spirit and spirit.get("spirit_anti"):
         lines.append(f"SPIRIT_ANTI:{spirit['spirit_anti']}")
 
-    # Done when
-    if spirit and spirit.get("done_when"):
-        done_when_list = spirit["done_when"]
+    if spirit:
+        done_when_list = spirit.get("done_when") or []
         if done_when_list:
-            done_when_strs = [str(d) for d in done_when_list]
-            lines.append(f"DONE_WHEN[{len(done_when_strs)}]:{' | '.join(done_when_strs)}")
+            strs = [str(d) for d in done_when_list]
+            lines.append(f"DONE_WHEN[{len(strs)}]:{' | '.join(strs)}")
+        lines.extend(_format_context_lines(spirit))
 
-    # Context (files to modify/create, refs, testing)
-    if spirit and spirit.get("context"):
-        ctx = spirit["context"]
-        ctx_parts: list[str] = []
-        if ctx.get("files_to_modify"):
-            ctx_parts.append(f"modify:{','.join(ctx['files_to_modify'][:5])}")
-        if ctx.get("files_to_create"):
-            ctx_parts.append(f"create:{','.join(ctx['files_to_create'][:5])}")
-        if ctx.get("references"):
-            ctx_parts.append(f"refs:{len(ctx['references'])}")
-        if ctx.get("testing_strategy"):
-            ctx_parts.append(f"testing:{ctx['testing_strategy'][:80]}")
-        if ctx_parts:
-            lines.append(f"CONTEXT:{' | '.join(ctx_parts)}")
+    lines.extend(subtask_lines)
 
-    # Subtasks summary and details
-    if subtasks:
-        completed = sum(1 for s in subtasks if s.get("passes"))
-        lines.append(
-            f"SUBTASKS[{len(subtasks)}]:{completed}/{len(subtasks)}:{int(completed / len(subtasks) * 100) if subtasks else 0}%"
-        )
-
-        for st in subtasks:
-            steps = get_steps_for_subtask(st["id"])
-            passed_steps = sum(1 for s in steps if s.get("passes"))
-            status_marker = "PASS" if st.get("passes") else "____"
-            phase_tag = f"[{st.get('phase', 'work')}] " if st.get("phase") else ""
-            # Truncate description
-            desc = st.get("description", "")[:45]
-            if len(st.get("description", "")) > 45:
-                desc += "..."
-            lines.append(
-                f"{st['subtask_id']}   {status_marker} {phase_tag}{desc} [{passed_steps}/{len(steps)}]"
-            )
-
-            # Steps under each subtask
-            for step in steps:
-                step_num = step.get("step_number", 0)
-                step_status = "PASS" if step.get("passes") else "____"
-                step_desc = step.get("description", "")[:60]
-                lines.append(f"  {step_num}. {step_status} {step_desc}")
-
-                # Verify command
-                if step.get("verify_command"):
-                    lines.append(f"       verify: {step['verify_command']}")
-
-    # Blockers
     if blockers:
         lines.append(f"BLOCKERS[{len(blockers)}]:")
         for b in blockers:
             lines.append(f"  {b['id']}|{b['status']}|{b['title'][:50]}")
 
-    # Progress log from events table (last 3 entries for session continuity)
-    events = get_events_by_trace(task["id"], visibility="user", limit=100)
-    if events:
-        recent_events = events[-3:]
-        lines.append(f"LOG[{len(events)}]:")
-        for event in recent_events:
-            msg = event.get("message") or ""
-            ts = event.get("timestamp")
-            ts_str = ts.strftime("%Y-%m-%d %H:%M:%S") if ts else ""
-            log_preview = f"[{ts_str}] {msg[:80]}"
-            if len(msg) > 80:
-                log_preview += "..."
-            lines.append(f"  {log_preview}")
-
-    # Acceptance criteria count
-    criteria_verified = sum(
-        1 for st in subtasks for s in get_steps_for_subtask(st["id"]) if s.get("passes")
-    )
+    lines.extend(_format_event_log_lines(task["id"]))
     lines.append(f"CRITERIA[{criteria_verified}]:{criteria_verified}/{criteria_count}")
-
     return "\n".join(lines)
 
 
