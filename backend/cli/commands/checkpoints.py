@@ -25,6 +25,26 @@ from .checkpoints_formatters import (
 app = typer.Typer(help="Checkpoint management - show active checkpoints, cleanup stale artifacts")
 
 
+def _checkpoint_to_dict(cp: object) -> dict:
+    return {
+        "task_id": cp.task_id,
+        "project_id": cp.project_id,
+        "worktree_path": cp.worktree_path,
+        "base_branch": cp.base_branch,
+        "created_at": cp.created_at,
+        "claimed_by": cp.claimed_by,
+        "branches": get_task_branches(cp.task_id),
+    }
+
+
+def _output_compact(ctx_obj: OutputContext, checkpoints: list, cleaned: tuple) -> None:
+    cleaned_meta, cleaned_sql, cleaned_branches, needs_review = cleaned
+    checkpoint_data = [info for cp in checkpoints if (info := get_snapshot_info(cp.task_id))]
+    format_compact_checkpoints(checkpoint_data)
+    format_cleanup_summary(cleaned_meta, cleaned_sql, cleaned_branches)
+    format_review_needed(needs_review)
+
+
 @app.callback(invoke_without_command=True)
 def checkpoints_callback(
     ctx: typer.Context,
@@ -40,50 +60,14 @@ def checkpoints_callback(
     """Show active checkpoints (default when no subcommand given)."""
     if ctx.obj is None:
         ctx.obj = OutputContext()
-
-    # If a subcommand is invoked, don't run the default list behavior
     if ctx.invoked_subcommand is not None:
         return
-
-    # Default behavior: list checkpoints (same as old checkpoints_command)
     if details:
         format_details(ctx.obj, details)
         return
-
-    # Auto-cleanup stale items BEFORE listing (so stale items don't appear)
-    cleaned_meta, cleaned_sql, cleaned_branches, needs_review = auto_cleanup_safe_items()
-
-    # Now get active checkpoints (after cleanup)
+    cleaned = auto_cleanup_safe_items()
     checkpoints = get_active_checkpoints(project)
-
     if ctx.obj.is_compact:
-        checkpoint_data = []
-        for cp in checkpoints:
-            info = get_snapshot_info(cp.task_id)
-            if info:
-                checkpoint_data.append(info)
-        format_compact_checkpoints(checkpoint_data)
-
-        # Report what was cleaned
-        format_cleanup_summary(cleaned_meta, cleaned_sql, cleaned_branches)
-
-        # Report branches needing review with instructions
-        format_review_needed(needs_review)
+        _output_compact(ctx.obj, checkpoints, cleaned)
     else:
-        output_json(
-            {
-                "checkpoints": [
-                    {
-                        "task_id": cp.task_id,
-                        "project_id": cp.project_id,
-                        "worktree_path": cp.worktree_path,
-                        "base_branch": cp.base_branch,
-                        "created_at": cp.created_at,
-                        "claimed_by": cp.claimed_by,
-                        "branches": get_task_branches(cp.task_id),
-                    }
-                    for cp in checkpoints
-                ],
-                "total": len(checkpoints),
-            }
-        )
+        output_json({"checkpoints": [_checkpoint_to_dict(cp) for cp in checkpoints], "total": len(checkpoints)})
