@@ -6,8 +6,6 @@ import base64
 import time
 from typing import Any
 
-from agent_hub.exceptions import AgentHubError
-
 from ....constants import GEMINI_IMAGE
 from ....logging_config import get_logger
 from ....storage import mockups as mockups_storage
