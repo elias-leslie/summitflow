@@ -12,6 +12,84 @@ from app.storage.task_spirit import approve_plan, create_task_spirit
 logger = logging.getLogger(__name__)
 
 
+_ISSUE_LABELS: dict[str, str] = {
+    "high_complexity": "high cyclomatic complexity",
+    "medium_complexity": "elevated complexity",
+    "oversized": "oversized file (>500 LOC)",
+    "large_file": "large file (>300 LOC)",
+    "bloat_critical": "critical file bloat",
+    "bloat_warning": "file bloat",
+    "too_many_functions": "too many functions (>20)",
+    "too_many_classes": "too many classes (>5)",
+    "too_many_imports": "too many imports (>30)",
+    "has_long_functions": "functions exceeding 50 lines",
+    "has_large_classes": "classes with >10 methods",
+    "deep_nesting": "nesting deeper than 3 levels",
+    "magic_strings": "hardcoded magic strings",
+    "stale_todos": "stale TODO/FIXME comments",
+    "deprecated_code": "deprecated code markers",
+    "legacy_code": "legacy variable naming",
+}
+
+_SIZE_ISSUES = frozenset({"oversized", "large_file", "bloat_critical", "bloat_warning"})
+
+_STRUCTURAL_CRITERIA: dict[str, str] = {
+    "has_long_functions": "No functions exceed 50 lines",
+    "deep_nesting": "No nesting deeper than 3 levels",
+    "too_many_functions": "Functions per file reduced to <=20",
+    "too_many_classes": "Classes per file reduced to <=5",
+    "has_large_classes": "No class has more than 10 methods",
+    "magic_strings": "Magic strings extracted to constants or config",
+    "too_many_imports": "Imports reduced to <=30",
+}
+
+
+def _build_issue_aware_objective(
+    relative_path: str,
+    lines: int,
+    target_lines: int,
+    refactor_issues: list[str],
+) -> str:
+    """Build task objective from actual issues, not just line count."""
+    parts = [f"Refactor {relative_path}"]
+
+    if any(i in _SIZE_ISSUES for i in refactor_issues):
+        parts.append(f"to reduce from {lines} to <{target_lines} lines")
+
+    structural = [i for i in refactor_issues if i not in _SIZE_ISSUES | {"high_complexity", "medium_complexity"}]
+    if structural:
+        labels = [_ISSUE_LABELS.get(i, i.replace("_", " ")) for i in structural[:4]]
+        parts.append(f"resolving: {', '.join(labels)}")
+
+    parts.append("while preserving all existing behavior")
+    return " — ".join(parts) + "."
+
+
+def _build_issue_aware_done_when(
+    lines: int,
+    target_lines: int,
+    refactor_issues: list[str],
+    is_frontend: bool,
+) -> list[str]:
+    """Build done_when criteria from actual issues."""
+    criteria = ["All quality gates pass (ruff, types, pytest)"]
+
+    if any(i in _SIZE_ISSUES for i in refactor_issues):
+        criteria.append(f"File line count reduced to <{target_lines} lines (current: {lines})")
+
+    criteria.extend(
+        criterion
+        for issue_key, criterion in _STRUCTURAL_CRITERIA.items()
+        if issue_key in refactor_issues
+    )
+
+    criteria.append("No regressions - all existing tests pass")
+    if is_frontend:
+        criteria.append("No console errors in browser")
+
+    return criteria
+
+
 def create_task_with_spirit(
     project_id: str,
     title: str,
