@@ -48,12 +48,51 @@ export interface FeedbackListResponse {
   total: number
 }
 
+/** Raw shape from Agent Hub API */
+interface FeedbackSummaryRaw {
+  total_items: number
+  counts_by_type_status: { feedback_type: string; status: string; count: number }[]
+  top_unresolved: {
+    id: string; component_id: string; feedback_type: string;
+    title: string; vote_count: number; status: string; created_at: string;
+  }[]
+  by_component: {
+    component_id: string; open_count: number; resolved_count: number;
+    friction_count: number; idea_count: number; praise_count: number; total_votes: number;
+  }[]
+}
+
+/** Transformed shape used by frontend components */
 export interface FeedbackSummary {
   total: number
   by_type: Record<string, number>
   by_status: Record<string, number>
-  top_unresolved: FeedbackItem[]
+  top_unresolved: FeedbackSummaryRaw['top_unresolved']
   by_component: Record<string, { total: number; open: number }>
+}
+
+/** Transform raw API response into frontend-friendly shape */
+function transformSummary(raw: FeedbackSummaryRaw): FeedbackSummary {
+  const by_type: Record<string, number> = {}
+  const by_status: Record<string, number> = {}
+  for (const row of raw.counts_by_type_status) {
+    by_type[row.feedback_type] = (by_type[row.feedback_type] ?? 0) + row.count
+    by_status[row.status] = (by_status[row.status] ?? 0) + row.count
+  }
+  const by_component: Record<string, { total: number; open: number }> = {}
+  for (const c of raw.by_component) {
+    by_component[c.component_id] = {
+      total: c.open_count + c.resolved_count,
+      open: c.open_count,
+    }
+  }
+  return {
+    total: raw.total_items,
+    by_type,
+    by_status,
+    top_unresolved: raw.top_unresolved,
+    by_component,
+  }
 }
 
 export interface ComponentFeedback {
@@ -112,7 +151,8 @@ export async function fetchFeedbackSummary(
   projectId?: string,
 ): Promise<FeedbackSummary> {
   const query = buildQueryString({ project_id: projectId })
-  return feedbackFetch<FeedbackSummary>(`/summary${query}`)
+  const raw = await feedbackFetch<FeedbackSummaryRaw>(`/summary${query}`)
+  return transformSummary(raw)
 }
 
 /**
