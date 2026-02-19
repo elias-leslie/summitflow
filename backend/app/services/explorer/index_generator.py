@@ -1,16 +1,8 @@
 """Index file generator for Explorer service.
 
-Generates a .index.yaml file at project root containing:
-- Environment info (Python/Node versions, package manager)
-- Services and ports
-- CLI commands
-- Pages (all frontend routes)
-- Endpoints (all API routes, fully expanded)
-- Tables (all database tables)
-- Background tasks (all scheduled jobs)
-- Folder structure
-
-Constraint: Output should be scannable by AI agents.
+Generates a .index.yaml file at project root with environment info, services,
+CLI commands, pages, endpoints, tables, background tasks, and folder structure.
+Output is designed to be scannable by AI agents.
 """
 
 from __future__ import annotations
@@ -29,185 +21,106 @@ from .port_detection import get_services
 
 logger = get_logger(__name__)
 
+_LIMITS = {"page": 100, "endpoint": 500, "table": 100, "task": 50, "file": 10000}
+_PATH_PATTERNS = {"tests": ("test", "spec"), "api": ("api", "route"), "components": ("component",), "services": ("service",)}
+
 
 def get_pages(project_id: str) -> list[str]:
     """Get all frontend pages."""
-    entries = storage.get_entries(project_id, {"type": "page", "limit": 100})
-
-    pages = []
+    entries = storage.get_entries(project_id, {"type": "page", "limit": _LIMITS["page"]})
+    result = []
     for e in entries:
-        path = e.get("path", "")
-        name = e.get("name", "")
-        if name and name != path:
-            pages.append(f"{path} ({name})")
-        else:
-            pages.append(path)
-
-    return sorted(pages)
+        path, name = e.get("path", ""), e.get("name", "")
+        result.append(f"{path} ({name})" if name and name != path else path)
+    return sorted(result)
 
 
 def get_endpoints(project_id: str) -> list[str]:
     """Get all API endpoints, fully expanded."""
-    entries = storage.get_entries(project_id, {"type": "endpoint", "limit": 500})
-
-    endpoints = []
+    entries = storage.get_entries(project_id, {"type": "endpoint", "limit": _LIMITS["endpoint"]})
+    result = []
     for e in entries:
         path = e.get("path", "")
-        meta = e.get("metadata", {})
-        func_name = meta.get("function_name", "")
-
-        # Format: "GET /api/tasks/{id} (get_task)"
-        if func_name:
-            endpoints.append(f"{path} ({func_name})")
-        else:
-            endpoints.append(path)
-
-    return sorted(endpoints)
+        func_name = e.get("metadata", {}).get("function_name", "")
+        result.append(f"{path} ({func_name})" if func_name else path)
+    return sorted(result)
 
 
 def get_tables(project_id: str) -> list[str]:
     """Get all database tables."""
-    entries = storage.get_entries(project_id, {"type": "table", "limit": 100})
+    entries = storage.get_entries(project_id, {"type": "table", "limit": _LIMITS["table"]})
     return sorted([e.get("name", e.get("path", "")) for e in entries])
 
 
 def get_background_tasks(project_id: str) -> list[str]:
     """Get all background/scheduled tasks."""
-    entries = storage.get_entries(project_id, {"type": "task", "limit": 50})
-
-    tasks = []
+    entries = storage.get_entries(project_id, {"type": "task", "limit": _LIMITS["task"]})
+    result = []
     for e in entries:
         name = e.get("name", "")
         schedule = e.get("metadata", {}).get("schedule_human", "")
-        if schedule:
-            tasks.append(f"{name} ({schedule})")
-        else:
-            tasks.append(name)
-
-    return sorted(tasks)
+        result.append(f"{name} ({schedule})" if schedule else name)
+    return sorted(result)
 
 
 def get_folders(project_id: str) -> dict[str, str]:
     """Get folder structure with file counts and patterns."""
-    entries = storage.get_entries(project_id, {"type": "file", "limit": 10000})
-
+    entries = storage.get_entries(project_id, {"type": "file", "limit": _LIMITS["file"]})
     if not entries:
         return {}
 
     folders: dict[str, dict[str, Any]] = {}
-
     for entry in entries:
         path = entry.get("path", "")
         parts = path.split("/")
         folder = "(root)" if len(parts) < 2 else parts[0]
-
-        if folder not in folders:
-            folders[folder] = {"files": 0, "patterns": set()}
-
-        folders[folder]["files"] += 1
-
-        # Detect patterns
+        info = folders.setdefault(folder, {"files": 0, "patterns": set()})
+        info["files"] += 1
         path_lower = path.lower()
-        if "test" in path_lower or "spec" in path_lower:
-            folders[folder]["patterns"].add("tests")
-        if "api" in path_lower or "route" in path_lower:
-            folders[folder]["patterns"].add("api")
-        if "component" in path_lower:
-            folders[folder]["patterns"].add("components")
-        if "service" in path_lower:
-            folders[folder]["patterns"].add("services")
+        info["patterns"].update(
+            label for label, kws in _PATH_PATTERNS.items() if any(k in path_lower for k in kws)
+        )
 
-    # Format output
-    output: dict[str, str] = {}
-    for folder, info in sorted(folders.items()):
-        patterns = sorted(info["patterns"])
-        if patterns:
-            output[folder] = f"{info['files']} files - {', '.join(patterns)}"
-        else:
-            output[folder] = f"{info['files']} files"
-
-    return output
+    return {
+        folder: (
+            f"{info['files']} files - {', '.join(sorted(info['patterns']))}"
+            if info["patterns"]
+            else f"{info['files']} files"
+        )
+        for folder, info in sorted(folders.items())
+    }
 
 
 def generate_index(project_id: str) -> str:
-    """Generate a YAML index string from explorer data.
-
-    Args:
-        project_id: Project to generate index for
-
-    Returns:
-        YAML string with comprehensive project overview
-    """
-    # Gather all data
-    environment = get_environment(project_id)
-    services = get_services(project_id)
-    cli = get_cli_info(project_id)
-    pages = get_pages(project_id)
-    endpoints = get_endpoints(project_id)
-    tables = get_tables(project_id)
-    tasks = get_background_tasks(project_id)
-    folders = get_folders(project_id)
-
-    # Build index structure
+    """Generate a YAML index string from explorer data."""
     index_data: dict[str, Any] = {
         "project": project_id,
         "generated_at": datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC"),
     }
-
-    # Environment info (Python/Node versions, etc.)
-    if environment:
-        index_data["environment"] = environment
-
-    # Services and ports
-    if services:
-        index_data["services"] = services
-
-    # CLI commands
-    if cli:
-        index_data["cli"] = cli
-
-    # Pages (frontend routes)
-    if pages:
-        index_data["pages"] = pages
-
-    # Endpoints (full API surface)
-    if endpoints:
-        index_data["endpoints"] = endpoints
-
-    # Tables (data model)
-    if tables:
-        index_data["tables"] = tables
-
-    # Background tasks
-    if tasks:
-        index_data["tasks"] = tasks
-
-    # Folder structure
-    if folders:
-        index_data["folders"] = folders
-
+    for key, value in [
+        ("environment", get_environment(project_id)),
+        ("services", get_services(project_id)),
+        ("cli", get_cli_info(project_id)),
+        ("pages", get_pages(project_id)),
+        ("endpoints", get_endpoints(project_id)),
+        ("tables", get_tables(project_id)),
+        ("tasks", get_background_tasks(project_id)),
+        ("folders", get_folders(project_id)),
+    ]:
+        if value:
+            index_data[key] = value
     return yaml.dump(index_data, default_flow_style=False, sort_keys=False)
 
 
 def write_index_file(project_id: str) -> str | None:
-    """Generate and write .index.yaml to project root.
-
-    Args:
-        project_id: Project to generate index for
-
-    Returns:
-        Path to written file, or None if failed
-    """
+    """Generate and write .index.yaml to project root."""
     root_path = get_project_root(project_id)
     if not root_path:
         logger.warning(f"No root path found for project {project_id}")
         return None
-
-    index_content = generate_index(project_id)
     index_path = Path(root_path) / ".index.yaml"
-
     try:
-        index_path.write_text(index_content)
+        index_path.write_text(generate_index(project_id))
         logger.info(f"Wrote index file: {index_path}")
         return str(index_path)
     except OSError as e:
@@ -216,24 +129,17 @@ def write_index_file(project_id: str) -> str | None:
 
 
 def write_all_index_files() -> dict[str, str | None]:
-    """Generate index files for all projects.
-
-    Returns:
-        Dict mapping project_id to written file path (or None if failed)
-    """
+    """Generate index files for all projects."""
     from ...storage.connection import get_connection
 
     results: dict[str, str | None] = {}
-
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute("SELECT id FROM projects WHERE root_path IS NOT NULL")
         rows = cur.fetchall()
-
     for (project_id,) in rows:
         try:
             results[project_id] = write_index_file(project_id)
         except Exception as e:
             logger.error(f"Failed to generate index for {project_id}: {e}")
             results[project_id] = None
-
     return results
