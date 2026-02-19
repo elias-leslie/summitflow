@@ -1,7 +1,4 @@
-"""Tasks storage - Deduplication helpers for task creation.
-
-This module provides semantic matching to prevent duplicate tasks.
-"""
+"""Tasks storage - Deduplication helpers for task creation."""
 
 from __future__ import annotations
 
@@ -10,32 +7,34 @@ from typing import Any
 
 from ..connection import get_connection
 
+_ACTIVE = "('pending', 'running', 'paused', 'blocked', 'ai_reviewing')"
+_ACTIVE_Q = "('pending', 'running', 'queue', 'paused', 'blocked', 'ai_reviewing')"
+_STOP_WORDS_ERR = {"the", "and", "for", "due", "with", "from", "error", "fix"}
+_STOP_WORDS_TITLE = {
+    "the", "and", "for", "due", "with", "from", "into", "that", "this",
+    "not", "but", "was", "are", "has", "had", "been", "task", "test", "autotest", "auto",
+}
+_ERROR_SUBS = [
+    (r"postgresql|postgres|pg", "database"),
+    (r"database connection|db connection", "database connection"),
+    (r"missing (user |database |db )?role", "missing role"),
+    (r"role ('\w+'|`\w+`|\w+) (does not exist|not found)", "missing role"),
+    (r"connection (failed|error|refused|timeout)", "connection failed"),
+    (r"authentication (failed|error)", "authentication failed"),
+    (r"uuid (is not json serializable|serialization)", "uuid serialization"),
+    (r"json serializ(ation|able)", "json serialization"),
+    (r"(module|import).*not found", "import error"),
+    (r"no module named", "import error"),
+]
+
 
 def task_exists_for_file(project_id: str, file_path: str) -> bool:
-    """Check if a task already exists that targets a specific file.
-
-    Used for deduplication when auto-generating tasks from Explorer scans.
-
-    Args:
-        project_id: Project to check
-        file_path: File path to look for in task description or title
-
-    Returns:
-        True if a pending/running task exists for this file
-    """
+    """Check if a pending/running task targets a specific file path."""
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            """
-            SELECT EXISTS (
-                SELECT 1 FROM tasks
-                WHERE project_id = %s
-                AND status IN ('pending', 'running', 'paused', 'blocked', 'ai_reviewing')
-                AND (
-                    description LIKE %s
-                    OR title LIKE %s
-                )
-            )
-            """,
+            f"SELECT EXISTS (SELECT 1 FROM tasks WHERE project_id = %s"
+            f" AND status IN {_ACTIVE}"
+            f" AND (description LIKE %s OR title LIKE %s))",
             (project_id, f"%{file_path}%", f"%{file_path}%"),
         )
         result = cur.fetchone()
@@ -43,81 +42,52 @@ def task_exists_for_file(project_id: str, file_path: str) -> bool:
 
 
 def _normalize_error_pattern(error_title: str) -> tuple[str, set[str]]:
-    """Extract normalized pattern and keywords from error title.
-
-    Handles variations like:
-    - "PostgreSQL connection failed due to missing role"
-    - "PostgreSQL connection failed due to missing user role"
-    - "Database connection failed due to missing role"
-
-    Returns:
-        Tuple of (normalized_pattern, keyword_set)
-    """
-    title_lower = error_title.lower().strip()
-
-    # Strip timestamps (e.g. "2026-02-18 07:01:13,450") and standalone numbers
-    title_lower = re.sub(r"\d{4}-\d{2}-\d{2}[Tt ]\d{2}:\d{2}:\d{2}[.,]?\d*[Zz]?", "", title_lower)
-    title_lower = re.sub(r"\b\d{2,}\b", "", title_lower)
-    title_lower = re.sub(r"\s+", " ", title_lower).strip()
-
-    # Common substitutions to normalize variations
-    substitutions = [
-        # Database variations
-        (r"postgresql|postgres|pg", "database"),
-        (r"database connection|db connection", "database connection"),
-        # Role variations
-        (r"missing (user |database |db )?role", "missing role"),
-        (r"role ('\w+'|`\w+`|\w+) (does not exist|not found)", "missing role"),
-        # Connection variations
-        (r"connection (failed|error|refused|timeout)", "connection failed"),
-        (r"authentication (failed|error)", "authentication failed"),
-        # UUID/JSON variations
-        (r"uuid (is not json serializable|serialization)", "uuid serialization"),
-        (r"json serializ(ation|able)", "json serialization"),
-        # Import variations
-        (r"(module|import).*not found", "import error"),
-        (r"no module named", "import error"),
-    ]
-
-    normalized = title_lower
-    for pattern, replacement in substitutions:
-        normalized = re.sub(pattern, replacement, normalized)
-
-    # Extract significant keywords (3+ chars, not stop words)
-    stop_words = {"the", "and", "for", "due", "with", "from", "error", "fix"}
-    keywords = {word for word in re.findall(r"\b\w{3,}\b", normalized) if word not in stop_words}
-
-    return normalized, keywords
+    """Return (normalized_pattern, keyword_set) for an error title."""
+    s = error_title.lower().strip()
+    s = re.sub(r"\d{4}-\d{2}-\d{2}[Tt ]\d{2}:\d{2}:\d{2}[.,]?\d*[Zz]?", "", s)
+    s = re.sub(r"\b\d{2,}\b", "", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    for pattern, replacement in _ERROR_SUBS:
+        s = re.sub(pattern, replacement, s)
+    keywords = {w for w in re.findall(r"\b\w{3,}\b", s) if w not in _STOP_WORDS_ERR}
+    return s, keywords
 
 
-def _calculate_keyword_overlap(keywords1: set[str], keywords2: set[str]) -> float:
-    """Calculate Jaccard similarity between two keyword sets."""
-    if not keywords1 or not keywords2:
+def _calculate_keyword_overlap(kw1: set[str], kw2: set[str]) -> float:
+    """Jaccard similarity between two keyword sets."""
+    if not kw1 or not kw2:
         return 0.0
-    intersection = len(keywords1 & keywords2)
-    union = len(keywords1 | keywords2)
-    return intersection / union if union > 0 else 0.0
+    union = len(kw1 | kw2)
+    return len(kw1 & kw2) / union if union > 0 else 0.0
 
 
 def _extract_title_keywords(title: str) -> set[str]:
-    """Extract significant keywords from a task title for dedup comparison.
+    """Strip noise and return significant keywords from a title."""
+    s = title.lower().strip()
+    s = re.sub(r"\b[0-9a-f]{8,}\b", "", s)
+    s = re.sub(r"\b\d+\b", "", s)
+    return {w for w in re.findall(r"\b[a-z]{3,}\b", s) if w not in _STOP_WORDS_TITLE}
 
-    Strips noise: hex IDs, pure numbers, timestamps, and stop words.
-    This ensures "AutoTest: Scheduled exec 111" and "AutoTest: Scheduled exec 222"
-    produce identical keyword sets and are recognized as duplicates.
-    """
-    title_lower = title.lower().strip()
-    # Remove hex-like tokens (8+ hex chars — UUIDs, random IDs)
-    title_lower = re.sub(r"\b[0-9a-f]{8,}\b", "", title_lower)
-    # Remove pure numbers (timestamps, counters)
-    title_lower = re.sub(r"\b\d+\b", "", title_lower)
 
-    stop_words = {
-        "the", "and", "for", "due", "with", "from", "into", "that", "this",
-        "not", "but", "was", "are", "has", "had", "been",
-        "task", "test", "autotest", "auto",
-    }
-    return {word for word in re.findall(r"\b[a-z]{3,}\b", title_lower) if word not in stop_words}
+def _desc_overlap_passes(new_desc_kw: set[str], existing_desc: str) -> bool:
+    """True if description similarity >= 0.5, or if comparison is not applicable."""
+    if not new_desc_kw:
+        return True
+    existing_kw = _extract_title_keywords(existing_desc)
+    return not existing_kw or _calculate_keyword_overlap(new_desc_kw, existing_kw) >= 0.5
+
+
+def _find_duplicate_in_rows(
+    rows: list[Any], new_kw: set[str], new_desc_kw: set[str]
+) -> str | None:
+    """Return the first row's ID whose title/description overlaps sufficiently."""
+    for row in rows:
+        existing_kw = _extract_title_keywords(row[1] or "")
+        if _calculate_keyword_overlap(new_kw, existing_kw) < 0.9:
+            continue
+        if _desc_overlap_passes(new_desc_kw, row[2] or ""):
+            return str(row[0])
+    return None
 
 
 def duplicate_task_exists(
@@ -126,125 +96,52 @@ def duplicate_task_exists(
     exclude_task_id: str | None = None,
     description: str | None = None,
 ) -> str | None:
-    """Check if a duplicate task exists based on keyword similarity.
-
-    Uses Jaccard similarity on extracted keywords. When description is provided,
-    requires BOTH title (>= 0.9) AND description (>= 0.5) to match, reducing
-    false positives from generic titles with different scope.
-
-    Args:
-        project_id: Project to check within
-        title: Title of the new/current task
-        exclude_task_id: Task ID to exclude from comparison (self)
-        description: Optional description for stricter matching
-
-    Returns:
-        The ID of the duplicate task if found, None otherwise.
-    """
-    new_keywords = _extract_title_keywords(title)
-    if len(new_keywords) < 3:
-        # Fewer than 3 keywords means insufficient signal for reliable dedup.
-        # Short keyword sets (e.g. 2 words after noise stripping) produce
-        # high Jaccard scores even for semantically different tasks.
+    """Return ID of a duplicate task (Jaccard >= 0.9 on title keywords), or None."""
+    new_kw = _extract_title_keywords(title)
+    if len(new_kw) < 3:
         return None
-
-    new_desc_keywords = _extract_title_keywords(description) if description else set()
-
-    query = """
-        SELECT id, title, description FROM tasks
-        WHERE project_id = %s
-        AND status IN ('pending', 'running', 'queue', 'paused', 'blocked', 'ai_reviewing')
-    """
+    new_desc_kw = _extract_title_keywords(description) if description else set()
+    query = "SELECT id, title, description FROM tasks WHERE project_id = %s AND status IN " + _ACTIVE_Q
     params: list[Any] = [project_id]
     if exclude_task_id:
         query += " AND id != %s"
         params.append(exclude_task_id)
-
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(query, params)
+        return _find_duplicate_in_rows(cur.fetchall(), new_kw, new_desc_kw)
 
-        for row in cur.fetchall():
-            existing_id, existing_title = row[0], row[1] or ""
-            existing_keywords = _extract_title_keywords(existing_title)
-            title_overlap = _calculate_keyword_overlap(new_keywords, existing_keywords)
 
-            if title_overlap < 0.9:
-                continue
+def _bug_exact_match(cur: Any, project_id: str, pattern_prefix: str) -> bool:
+    """True if any bug task matches the normalized pattern prefix via LIKE."""
+    cur.execute(
+        f"SELECT EXISTS (SELECT 1 FROM tasks WHERE project_id = %s"
+        f" AND status IN {_ACTIVE} AND task_type = 'bug'"
+        f" AND (LOWER(title) LIKE %s OR LOWER(description) LIKE %s))",
+        (project_id, f"%{pattern_prefix}%", f"%{pattern_prefix}%"),
+    )
+    result = cur.fetchone()
+    return bool(result and result[0])
 
-            # If description provided, also check description similarity
-            if new_desc_keywords:
-                existing_desc = row[2] or ""
-                existing_desc_keywords = _extract_title_keywords(existing_desc)
-                if existing_desc_keywords and new_desc_keywords:
-                    desc_overlap = _calculate_keyword_overlap(
-                        new_desc_keywords, existing_desc_keywords
-                    )
-                    if desc_overlap < 0.5:
-                        continue
 
-            return str(existing_id)
-
-    return None
+def _bug_keyword_match(cur: Any, project_id: str, error_kw: set[str]) -> bool:
+    """True if any existing bug task has >= 0.7 keyword overlap."""
+    cur.execute(
+        f"SELECT title, description FROM tasks WHERE project_id = %s"
+        f" AND status IN {_ACTIVE} AND task_type = 'bug'",
+        (project_id,),
+    )
+    for row in cur.fetchall():
+        combined = f"{row[0] or ''} {row[1] or ''}"
+        _, existing_kw = _normalize_error_pattern(combined)
+        if _calculate_keyword_overlap(error_kw, existing_kw) >= 0.7:
+            return True
+    return False
 
 
 def bug_task_exists_for_error(project_id: str, error_title: str) -> bool:
-    """Check if a bug task already exists for a specific error.
-
-    Uses semantic deduplication with pattern normalization and keyword overlap
-    to catch variations like "missing user role" vs "missing database role".
-
-    Args:
-        project_id: Project to check
-        error_title: Error title to look for in task titles
-
-    Returns:
-        True if a pending/running bug task exists for this error
-    """
-    normalized_pattern, error_keywords = _normalize_error_pattern(error_title)
-
+    """True if a bug task already exists for this error (semantic dedup)."""
+    normalized, error_kw = _normalize_error_pattern(error_title)
     with get_connection() as conn, conn.cursor() as cur:
-        # First, try exact/substring match with normalized pattern
-        cur.execute(
-            """
-            SELECT EXISTS (
-                SELECT 1 FROM tasks
-                WHERE project_id = %s
-                AND status IN ('pending', 'running', 'paused', 'blocked', 'ai_reviewing')
-                AND task_type = 'bug'
-                AND (
-                    LOWER(title) LIKE %s
-                    OR LOWER(description) LIKE %s
-                )
-            )
-            """,
-            (project_id, f"%{normalized_pattern[:50]}%", f"%{normalized_pattern[:50]}%"),
-        )
-        result = cur.fetchone()
-        if result and result[0]:
+        if _bug_exact_match(cur, project_id, normalized[:50]):
             return True
-
-        # Second pass: Check for keyword overlap with existing bug tasks
-        # This catches semantic duplicates that substring matching misses
-        cur.execute(
-            """
-            SELECT title, description FROM tasks
-            WHERE project_id = %s
-            AND status IN ('pending', 'running', 'paused', 'blocked', 'ai_reviewing')
-            AND task_type = 'bug'
-            """,
-            (project_id,),
-        )
-
-        for row in cur.fetchall():
-            existing_title = row[0] or ""
-            existing_desc = row[1] or ""
-            combined = f"{existing_title} {existing_desc}"
-
-            _, existing_keywords = _normalize_error_pattern(combined)
-            overlap = _calculate_keyword_overlap(error_keywords, existing_keywords)
-
-            # If 70%+ keyword overlap, consider it a duplicate
-            if overlap >= 0.7:
-                return True
-
-        return False
+        return _bug_keyword_match(cur, project_id, error_kw)
