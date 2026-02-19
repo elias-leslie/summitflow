@@ -28,16 +28,10 @@ def create_subtask(
         typer.Option("--steps-json", help="JSON array of step objects with verify_command"),
     ] = None,
 ) -> None:
-    """Create a subtask for a task.
+    """Create a subtask for a task. Uses active context if no --task given.
 
-    If no task_id is provided, uses the active context from 'st work'.
-
-    Steps must be provided with verify_command (exit 0 = pass).
-    Use --steps-json for full step objects, or --step for simple descriptions (legacy).
-
-    Examples:
-        st subtask create 1.1 -d "Add component" --task task-abc123 \\
-          --steps-json '[{"description": "Do X", "verify_command": "test -f output.txt"}]'
+    Steps require verify_command. Use --steps-json for full step objects,
+    or --step for legacy simple descriptions.
     """
     from ..context import require_task_id
 
@@ -65,21 +59,12 @@ def pass_subtask(
     subtask_id: str,
     task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
 ) -> None:
-    """Mark a subtask as passed.
-
-    All steps must be complete before passing (enforced by DB trigger).
-    If no task_id is provided, uses the active context from 'st work'.
-
-    Examples:
-        st subtask pass 1.1 --task task-abc123
-        st subtask pass 1.1    # Uses active context
-    """
+    """Mark a subtask as passed. All steps must be complete (enforced by DB trigger)."""
     from ..context import require_task_id
 
     task_id = require_task_id(task_id)
     client = STClient()
 
-    # Pre-check: verify all steps are complete
     _check_incomplete_steps(client, task_id, subtask_id)
 
     try:
@@ -91,44 +76,32 @@ def pass_subtask(
     output_success(subtask_id)
 
 
+def _get_incomplete_steps(steps: list[dict[str, Any]]) -> list[int]:
+    """Return step numbers that are not yet resolved."""
+    step_passes_map = {s["step_number"]: s.get("passes", False) for s in steps}
+    return [s["step_number"] for s in steps if not is_step_resolved(s, step_passes_map)]
+
+
 def _check_incomplete_steps(client: STClient, task_id: str, subtask_id: str) -> None:
-    """Check for incomplete steps before marking subtask as passed.
-
-    Args:
-        client: API client instance
-        task_id: Task identifier
-        subtask_id: Subtask identifier
-
-    Raises:
-        typer.Exit: If incomplete steps are found
-    """
+    """Raise typer.Exit(1) if the subtask has incomplete steps."""
     try:
         result = client.get_subtasks(task_id, include_steps=True)
-        subtasks = result.get("subtasks", [])
-        target = None
-        for s in subtasks:
-            if s.get("subtask_id") == subtask_id:
-                target = s
-                break
-
-        if target:
-            steps_from_table = target.get("steps_from_table", [])
-            if steps_from_table:
-                # Build map of step_number -> passes for fix step lookups
-                step_passes_map = {
-                    s["step_number"]: s.get("passes", False) for s in steps_from_table
-                }
-
-                incomplete = [
-                    s["step_number"]
-                    for s in steps_from_table
-                    if not is_step_resolved(s, step_passes_map)
-                ]
-                if incomplete:
-                    output_error(f"INCOMPLETE:{subtask_id}|steps:{','.join(map(str, incomplete))}")
-                    raise typer.Exit(1)
     except APIError:
-        pass  # Continue - let API handle any errors
+        return  # Let API handle errors
+
+    subtasks = result.get("subtasks", [])
+    target = next((s for s in subtasks if s.get("subtask_id") == subtask_id), None)
+    if not target:
+        return
+
+    steps = target.get("steps_from_table", [])
+    if not steps:
+        return
+
+    incomplete = _get_incomplete_steps(steps)
+    if incomplete:
+        output_error(f"INCOMPLETE:{subtask_id}|steps:{','.join(map(str, incomplete))}")
+        raise typer.Exit(1)
 
 
 @app.command("delete")
@@ -136,14 +109,7 @@ def delete_subtask(
     subtask_id: str,
     task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
 ) -> None:
-    """Delete a subtask and all its steps.
-
-    If no task_id is provided, uses the active context from 'st work'.
-
-    Examples:
-        st subtask delete 99.1 --task task-abc123
-        st subtask delete 99.1    # Uses active context
-    """
+    """Delete a subtask and all its steps. Uses active context if no --task given."""
     from ..context import require_task_id
 
     task_id = require_task_id(task_id)
