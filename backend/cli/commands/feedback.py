@@ -7,6 +7,7 @@ from typing import Annotated
 import typer
 
 from .feedback_commands import (
+    delete_impl,
     get_impl,
     list_impl,
     report_impl,
@@ -207,6 +208,18 @@ def resolve(
       st feedback resolve a1b2c3d4 --note "Fixed in commit abc123"
     """
     resolve_impl(item_id, note=note)
+
+
+@app.command("delete")
+def delete(
+    item_id: Annotated[str, typer.Argument(help="Feedback item ID to delete")],
+) -> None:
+    """Delete a feedback item and all its votes.
+
+    Examples:
+      st feedback delete a1b2c3d4-...
+    """
+    delete_impl(item_id)
 
 
 @app.command("summary")

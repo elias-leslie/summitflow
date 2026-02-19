@@ -10,12 +10,14 @@ import {
   Loader2,
   Sparkles,
   ThumbsUp,
+  Trash2,
   TrendingUp,
   X,
   Zap,
 } from 'lucide-react'
 import { useState } from 'react'
 import {
+  deleteFeedbackItem,
   fetchFeedbackItem,
   updateFeedbackStatus,
 } from '@/lib/api/feedback'
@@ -69,6 +71,18 @@ export function FeedbackDetail({ itemId, onClose }: FeedbackDetailProps) {
     },
     onError: (error: Error) => {
       console.error('Failed to update feedback status:', error.message)
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteFeedbackItem(itemId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['feedback-items'] })
+      queryClient.invalidateQueries({ queryKey: ['feedback-summary'] })
+      onClose()
+    },
+    onError: (error: Error) => {
+      console.error('Failed to delete feedback item:', error.message)
     },
   })
 
@@ -221,7 +235,7 @@ export function FeedbackDetail({ itemId, onClose }: FeedbackDetailProps) {
 
       {/* Actions */}
       {item.status !== 'resolved' && item.status !== 'wont_fix' && (
-        <div className="px-5 py-4 border-t border-slate-700/50 space-y-3">
+        <div className="px-5 pt-4 pb-2 border-t border-slate-700/50 space-y-3">
           {showResolveInput ? (
             <div className="space-y-2">
               <input
@@ -301,6 +315,27 @@ export function FeedbackDetail({ itemId, onClose }: FeedbackDetailProps) {
           )}
         </div>
       )}
+      {/* Delete — always available */}
+      <div className="px-5 py-3 border-t border-slate-700/50">
+        <button
+          onClick={() => {
+            if (window.confirm('Delete this feedback item? This cannot be undone.')) {
+              deleteMutation.mutate()
+            }
+          }}
+          disabled={deleteMutation.isPending}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-rose-500/60
+                     hover:text-rose-400 hover:bg-rose-500/10 rounded-md
+                     transition-all disabled:opacity-50"
+        >
+          {deleteMutation.isPending ? (
+            <Loader2 className="w-3 h-3 animate-spin" />
+          ) : (
+            <Trash2 className="w-3 h-3" />
+          )}
+          Delete
+        </button>
+      </div>
     </div>
   )
 }

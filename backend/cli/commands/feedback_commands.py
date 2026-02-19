@@ -232,6 +232,12 @@ def resolve_impl(
     print(f"FEEDBACK:RESOLVED:{result.get('id', item_id)[:8]}|{result.get('title', '')}")
 
 
+def delete_impl(item_id: str) -> None:
+    """Delete a feedback item."""
+    feedback_request("DELETE", f"/api/feedback/{item_id}")
+    print(f"FEEDBACK:DELETED:{item_id[:8]}")
+
+
 def summary_impl(
     *,
     project_id: str | None = None,

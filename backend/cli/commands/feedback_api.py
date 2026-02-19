@@ -39,6 +39,8 @@ def feedback_request(
                 response = client.get(url, params=params, headers=headers)
             elif method == "PATCH":
                 response = client.patch(url, json=json, headers=headers)
+            elif method == "DELETE":
+                response = client.delete(url, headers=headers)
             else:
                 response = client.post(url, json=json, headers=headers)
 

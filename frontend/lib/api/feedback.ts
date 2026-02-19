@@ -183,3 +183,14 @@ export async function updateFeedbackStatus(
     body: JSON.stringify(data),
   })
 }
+
+/**
+ * Delete a feedback item and all its votes.
+ */
+export async function deleteFeedbackItem(
+  id: string,
+): Promise<{ deleted: boolean; id: string }> {
+  return feedbackFetch<{ deleted: boolean; id: string }>(`/${id}`, {
+    method: 'DELETE',
+  })
+}
