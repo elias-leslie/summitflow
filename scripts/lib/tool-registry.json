@@ -37,7 +37,7 @@
       "component_id": "sf.dt",
       "redirect_patterns": [
         "(\\.venv/bin/)?mypy\\b",
-        "(\\.venv/bin/)?ty\\b"
+        "(\\.venv/bin/)?\\bty\\b"
       ],
       "redirect_message": "Use 'dt types [args]' — handles venv, TOON output, worktree resolution.",
       "dt": {
