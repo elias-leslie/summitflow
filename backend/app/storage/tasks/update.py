@@ -67,6 +67,36 @@ JSONB_DICT_FIELDS = {"review_result", "verification_result"}
 JSONB_LIST_FIELDS = {"qa_issues"}
 
 
+def _build_set_clauses(
+    fields: dict[str, Any],
+) -> tuple[list[sql.Composable], list[Any]]:
+    """Build SQL SET clauses and parameters from a field dict.
+
+    Args:
+        fields: Mapping of column name to value.
+
+    Returns:
+        A tuple of (set_clauses, params).
+    """
+    set_clauses: list[sql.Composable] = []
+    params: list[Any] = []
+
+    for field, value in fields.items():
+        if field in ("commits", "labels", "agent_hub_session_ids") and isinstance(value, list):
+            set_clauses.append(sql.SQL("{} = %s").format(sql.Identifier(field)))
+            params.append(value)
+        elif (field in JSONB_DICT_FIELDS and isinstance(value, dict)) or (
+            field in JSONB_LIST_FIELDS and isinstance(value, list)
+        ):
+            set_clauses.append(sql.SQL("{} = %s::jsonb").format(sql.Identifier(field)))
+            params.append(json.dumps(value))
+        else:
+            set_clauses.append(sql.SQL("{} = %s").format(sql.Identifier(field)))
+            params.append(value)
+
+    return set_clauses, params
+
+
 def update_task_fields(task_id: str, **fields: Any) -> dict[str, Any] | None:
     """Update task fields.
 
@@ -87,22 +117,7 @@ def update_task_fields(task_id: str, **fields: Any) -> dict[str, Any] | None:
     if invalid:
         raise ValueError(f"Invalid fields: {invalid}")
 
-    set_clauses: list[sql.Composable] = []
-    params: list[Any] = []
-
-    for field, value in fields.items():
-        if field in ("commits", "labels", "agent_hub_session_ids") and isinstance(value, list):
-            set_clauses.append(sql.SQL("{} = %s").format(sql.Identifier(field)))
-            params.append(value)
-        elif (field in JSONB_DICT_FIELDS and isinstance(value, dict)) or (
-            field in JSONB_LIST_FIELDS and isinstance(value, list)
-        ):
-            set_clauses.append(sql.SQL("{} = %s::jsonb").format(sql.Identifier(field)))
-            params.append(json.dumps(value))
-        else:
-            set_clauses.append(sql.SQL("{} = %s").format(sql.Identifier(field)))
-            params.append(value)
-
+    set_clauses, params = _build_set_clauses(fields)
     params.append(task_id)
 
     with get_connection() as conn, conn.cursor() as cur:
