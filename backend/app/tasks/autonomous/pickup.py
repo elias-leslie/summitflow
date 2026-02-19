@@ -94,19 +94,7 @@ def dispatch_task_immediate(
     project_id: str,
     dispatch: Callable[[str, str, str], None] | None = None,
 ) -> dict[str, object]:
-    """Dispatch a single task immediately (event-driven path).
-
-    Called when st autocode publishes to Redis pub/sub.
-    Bypasses polling delay for instant task pickup.
-
-    Args:
-        task_id: Task to dispatch
-        project_id: Project ID
-        dispatch: Optional dispatch callback function
-
-    Returns:
-        Dict with dispatch result
-    """
+    """Dispatch a single task immediately (event-driven path from st autocode)."""
     logger.info("Immediate dispatch requested", task_id=task_id, project_id=project_id)
 
     task = task_store.get_task(task_id)
