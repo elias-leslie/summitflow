@@ -5,6 +5,12 @@ Merged patterns from executor.py and files.py for consistent directory exclusion
 
 from __future__ import annotations
 
+# Scan status values
+SCAN_STATUS_IDLE = "idle"
+SCAN_STATUS_RUNNING = "running"
+SCAN_STATUS_COMPLETED = "completed"
+SCAN_STATUS_FAILED = "failed"
+
 # Directories to skip during scanning (union of all skip patterns)
 SKIP_DIRS: frozenset[str] = frozenset(
     {
