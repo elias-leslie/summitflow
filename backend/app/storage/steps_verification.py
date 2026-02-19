@@ -7,27 +7,26 @@ import subprocess
 VERIFY_COMMAND_TIMEOUT = 300
 
 
+def _classify_exit_code(exit_code: int) -> str:
+    """Return 'passed' (0), 'failed' (1-125), or 'crashed' (126+)."""
+    if exit_code == 0:
+        return "passed"
+    elif exit_code <= 125:
+        return "failed"
+    return "crashed"
+
+
 def run_verify_command(
     verify_command: str,
     timeout: int = VERIFY_COMMAND_TIMEOUT,
     cwd: str | None = None,
     project_id: str | None = None,
 ) -> tuple[str, int, str]:
-    """Execute a verify_command and return classification.
+    """Execute a verify_command and return (status, exit_code, output).
 
-    Args:
-        verify_command: The bash command to run
-        timeout: Command timeout in seconds
-        cwd: Working directory to run from. Required - raises ValueError if None.
-
-        project_id: Project ID for resolving venv paths. When provided,
-                    sets up the correct venv environment (handles worktrees).
-
-    Returns:
-        Tuple of (status, exit_code, output) where status is one of:
-        - 'passed': Exit code 0
-        - 'failed': Exit code != 0
-        - 'crashed': Exit code 126-127 or exception
+    Status is 'passed' (exit 0), 'failed' (exit 1-125), or
+    'crashed' (exit 126+ or exception). Raises ValueError if cwd is None.
+    project_id is used to set up the correct venv environment.
     """
     from ..tasks.autonomous.verification_helpers import strip_venv_paths
     from .projects import build_project_env
@@ -37,7 +36,6 @@ def run_verify_command(
             "verify_command requires a working directory (cwd). "
             "Ensure project_id is set and worktree/project root is resolvable."
         )
-    working_dir = cwd
     env = build_project_env(project_id, working_dir=cwd)
     verify_command = strip_venv_paths(verify_command)
 
@@ -47,20 +45,12 @@ def run_verify_command(
             capture_output=True,
             text=True,
             timeout=timeout,
-            cwd=working_dir,
+            cwd=cwd,
             env=env,
         )
-
         exit_code = result.returncode
         output = result.stdout + result.stderr
-
-        # Classify based on exit code
-        if exit_code == 0:
-            return ("passed", 0, output)
-        elif 1 <= exit_code <= 125:
-            return ("failed", exit_code, output)
-        else:  # 126-127 = command not found or not executable
-            return ("crashed", exit_code, output)
+        return (_classify_exit_code(exit_code), exit_code, output)
 
     except subprocess.TimeoutExpired:
         return ("crashed", -1, f"Command timed out after {timeout}s")
