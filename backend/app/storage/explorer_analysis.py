@@ -13,6 +13,14 @@ from typing import Any
 from psycopg import sql
 
 from .connection import get_connection
+from .explorer_analysis_helpers import (
+    REFACTOR_SUMMARY_SQL,
+    REFACTOR_TARGETS_SQL,
+    STALE_METADATA_SQL,
+    UNLINKED_ENTRIES_SQL,
+    build_summary,
+    row_to_target,
+)
 
 # Extensions for code files that can be refactored
 REFACTORABLE_EXTENSIONS = {".py", ".ts", ".tsx", ".js", ".mjs"}
@@ -21,21 +29,16 @@ REFACTORABLE_EXTENSIONS = {".py", ".ts", ".tsx", ".js", ".mjs"}
 REFACTOR_EXCLUDE_PATTERNS = {"test_", "tests/", "__test__", ".test.", ".spec."}
 
 
+def _build_where(conditions: list[str]) -> sql.Composable:
+    return sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)
+
+
 def _build_refactor_filter_conditions(
     project_id: str,
     extensions: list[str] | None = None,
     code_only: bool = True,
 ) -> tuple[list[str], list[Any]]:
-    """Build WHERE conditions for refactor target queries.
-
-    Args:
-        project_id: Project ID for scoping
-        extensions: Explicit list of extensions to include
-        code_only: If True and extensions is None, filter to REFACTORABLE_EXTENSIONS
-
-    Returns:
-        Tuple of (conditions list, params list)
-    """
+    """Build WHERE conditions for refactor target queries."""
     conditions = [
         "project_id = %s",
         "entry_type = 'file'",
@@ -44,15 +47,11 @@ def _build_refactor_filter_conditions(
     ]
     params: list[Any] = [project_id]
 
-    # Filter by extensions
-    if extensions:
+    ext_list = extensions or (list(REFACTORABLE_EXTENSIONS) if code_only else None)
+    if ext_list:
         conditions.append("(metadata->>'extension') = ANY(%s)")
-        params.append(extensions)
-    elif code_only:
-        conditions.append("(metadata->>'extension') = ANY(%s)")
-        params.append(list(REFACTORABLE_EXTENSIONS))
+        params.append(ext_list)
 
-    # Exclude test files and other non-production code
     for pattern in REFACTOR_EXCLUDE_PATTERNS:
         conditions.append("path NOT LIKE %s")
         params.append(f"%{pattern}%")
@@ -60,27 +59,28 @@ def _build_refactor_filter_conditions(
     return conditions, params
 
 
+def _add_optional_filters(
+    conditions: list[str],
+    params: list[Any],
+    priority: str | None,
+    min_complexity: float | None,
+    min_lines: int | None,
+) -> None:
+    """Append optional WHERE conditions and params in place."""
+    if priority:
+        conditions.append("(metadata->>'refactor_priority') = %s")
+        params.append(priority)
+    if min_complexity:
+        conditions.append("(metadata->>'complexity_score')::float >= %s")
+        params.append(min_complexity)
+    if min_lines:
+        conditions.append("(metadata->>'lines_of_code')::int >= %s")
+        params.append(min_lines)
+
+
 def _get_unlinked_entries(cur: Any, project_id: str, entry_type: str) -> list[tuple[Any, ...]]:
-    """Get entries of a given type.
-
-    Args:
-        cur: Database cursor
-        project_id: Project ID for scoping
-        entry_type: Entry type to query
-
-    Returns:
-        List of tuples (path, name, metadata)
-    """
-    cur.execute(
-        """
-        SELECT ee.path, ee.name, ee.metadata
-        FROM explorer_entries ee
-        WHERE ee.project_id = %s
-          AND ee.entry_type = %s
-        ORDER BY ee.path
-        """,
-        (project_id, entry_type),
-    )
+    """Get entries of a given type, returning (path, name, metadata) tuples."""
+    cur.execute(UNLINKED_ENTRIES_SQL, (project_id, entry_type))
     return list(cur.fetchall())
 
 
@@ -107,124 +107,29 @@ def get_refactor_targets(
     Returns:
         Dict with targets list and summary stats
     """
-    # Build base filter conditions
     conditions, params = _build_refactor_filter_conditions(
-        project_id=project_id,
-        extensions=extensions,
-        code_only=code_only,
+        project_id=project_id, extensions=extensions, code_only=code_only
+    )
+    _add_optional_filters(conditions, params, priority, min_complexity, min_lines)
+
+    summary_conditions, summary_params = _build_refactor_filter_conditions(
+        project_id=project_id, extensions=extensions, code_only=code_only
     )
 
-    # Add optional filters for main query
-    if priority:
-        conditions.append("(metadata->>'refactor_priority') = %s")
-        params.append(priority)
-
-    if min_complexity:
-        conditions.append("(metadata->>'complexity_score')::float >= %s")
-        params.append(min_complexity)
-
-    if min_lines:
-        conditions.append("(metadata->>'lines_of_code')::int >= %s")
-        params.append(min_lines)
-
     with get_connection() as conn, conn.cursor() as cur:
-        where_clause_sql = sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)
-
         cur.execute(
-            sql.SQL("""
-            SELECT path, name,
-                   (metadata->>'complexity_score')::float as complexity_score,
-                   (metadata->>'lines_of_code')::int as lines_of_code,
-                   (metadata->>'function_count')::int as function_count,
-                   (metadata->>'class_count')::int as class_count,
-                   (metadata->>'refactor_priority') as priority,
-                   CASE
-                       WHEN (metadata->>'complexity_score')::float > 15 THEN 'High complexity score'
-                       WHEN (metadata->>'lines_of_code')::int > 500 THEN 'High line count'
-                       WHEN metadata->'health_flags' IS NOT NULL
-                            AND jsonb_typeof(metadata->'health_flags') = 'object'
-                            AND (SELECT count(*) FROM jsonb_object_keys(metadata->'health_flags')) >= 3
-                            THEN 'Multiple structural issues'
-                       WHEN (metadata->>'complexity_score')::float > 10 THEN 'Medium complexity'
-                       WHEN (metadata->>'lines_of_code')::int > 300 THEN 'Medium line count'
-                       WHEN (metadata->>'bloat_level') = 'warning' THEN 'File bloat'
-                       ELSE 'Structural issues'
-                   END as reason,
-                   COALESCE((metadata->>'commit_count_90d')::int, 0) as commit_count_90d,
-                   COALESCE((metadata->>'test_file_exists')::boolean, false) as test_file_exists,
-                   -- Hotspot score: high churn + high complexity = high priority
-                   ROUND((COALESCE((metadata->>'commit_count_90d')::int, 0) *
-                         COALESCE((metadata->>'complexity_score')::float, 0))::numeric, 2) as hotspot_score,
-                   COALESCE(metadata->>'complexity_method', 'heuristic') as complexity_method,
-                   COALESCE(metadata->'health_flags', '[]'::jsonb) as health_flags,
-                   COALESCE(metadata->'refactor_issues', '[]'::jsonb) as refactor_issues
-            FROM explorer_entries
-            WHERE {where_clause}
-            ORDER BY
-                CASE WHEN (metadata->>'refactor_priority') = 'high' THEN 0 ELSE 1 END,
-                -- Sort by hotspot_score DESC, then complexity
-                COALESCE((metadata->>'commit_count_90d')::int, 0) *
-                COALESCE((metadata->>'complexity_score')::float, 0) DESC,
-                (metadata->>'complexity_score')::float DESC
-            LIMIT %s
-            """).format(where_clause=where_clause_sql),
+            sql.SQL(REFACTOR_TARGETS_SQL).format(where_clause=_build_where(conditions)),
             (*params, limit),
         )
-        rows = cur.fetchall()
+        targets = [row_to_target(row) for row in cur.fetchall()]
 
-        targets = [
-            {
-                "path": row[0],
-                "name": row[1],
-                "complexity_score": row[2],
-                "lines_of_code": row[3],
-                "function_count": row[4],
-                "class_count": row[5],
-                "priority": row[6],
-                "reason": row[7],
-                "commit_count_90d": row[8],
-                "test_file_exists": row[9],
-                "hotspot_score": float(row[10]) if row[10] is not None else 0.0,
-                "complexity_method": row[11],
-                "health_flags": list(row[12].keys()) if isinstance(row[12], dict) else row[12] if isinstance(row[12], list) else [],
-                "refactor_issues": row[13] if isinstance(row[13], list) else [],
-            }
-            for row in rows
-        ]
-
-        # Get summary counts using same base filter
-        summary_conditions, summary_params = _build_refactor_filter_conditions(
-            project_id=project_id,
-            extensions=extensions,
-            code_only=code_only,
-        )
-        summary_where = sql.SQL(" AND ").join(sql.SQL(c) for c in summary_conditions)
         cur.execute(
-            sql.SQL("""
-            SELECT
-                (metadata->>'refactor_priority') as priority,
-                COUNT(*) as count,
-                SUM((metadata->>'complexity_score')::float) as total_complexity
-            FROM explorer_entries
-            WHERE {where_clause}
-            GROUP BY (metadata->>'refactor_priority')
-            """).format(where_clause=summary_where),
+            sql.SQL(REFACTOR_SUMMARY_SQL).format(where_clause=_build_where(summary_conditions)),
             summary_params,
         )
-        summary_rows = cur.fetchall()
-        summary = {
-            "high_priority_count": 0,
-            "medium_priority_count": 0,
-            "total_complexity": 0.0,
-        }
-        for row in summary_rows:
-            if row[0] == "high":
-                summary["high_priority_count"] = row[1]
-            elif row[0] == "medium":
-                summary["medium_priority_count"] = row[1]
-            summary["total_complexity"] += row[2] or 0
+        summary = build_summary(cur.fetchall())
 
-        return {"targets": targets, "summary": summary}
+    return {"targets": targets, "summary": summary}
 
 
 def count_stale_metadata_entries(project_id: str, min_version: int = 2) -> int:
@@ -240,20 +145,7 @@ def count_stale_metadata_entries(project_id: str, min_version: int = 2) -> int:
         Count of file entries with stale metadata
     """
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT COUNT(*)
-            FROM explorer_entries
-            WHERE project_id = %s
-              AND entry_type = 'file'
-              AND COALESCE((metadata->>'is_directory')::boolean, false) = false
-              AND (
-                  (metadata->>'_schema_version') IS NULL
-                  OR (metadata->>'_schema_version')::int < %s
-              )
-            """,
-            (project_id, min_version),
-        )
+        cur.execute(STALE_METADATA_SQL, (project_id, min_version))
         row = cur.fetchone()
         return row[0] if row else 0
 
@@ -270,24 +162,20 @@ def get_coverage_gaps(project_id: str) -> dict[str, Any]:
     with get_connection() as conn, conn.cursor() as cur:
         endpoint_rows = _get_unlinked_entries(cur, project_id, "endpoint")
         uncovered_endpoints = [
-            {"path": row[0], "name": row[1], "method": (row[2] or {}).get("method", "")}
-            for row in endpoint_rows
+            {"path": r[0], "name": r[1], "method": (r[2] or {}).get("method", "")}
+            for r in endpoint_rows
         ]
 
         page_rows = _get_unlinked_entries(cur, project_id, "page")
         uncovered_pages = [
-            {"path": row[0], "name": row[1], "route": (row[2] or {}).get("route", "")}
-            for row in page_rows
+            {"path": r[0], "name": r[1], "route": (r[2] or {}).get("route", "")}
+            for r in page_rows
         ]
 
         table_rows = _get_unlinked_entries(cur, project_id, "table")
         orphan_tables = [
-            {
-                "path": row[0],
-                "name": row[1],
-                "column_count": len((row[2] or {}).get("columns", [])),
-            }
-            for row in table_rows
+            {"path": r[0], "name": r[1], "column_count": len((r[2] or {}).get("columns", []))}
+            for r in table_rows
         ]
 
         return {
@@ -295,9 +183,7 @@ def get_coverage_gaps(project_id: str) -> dict[str, Any]:
             "uncovered_pages": uncovered_pages,
             "orphan_tables": orphan_tables,
             "summary": {
-                "total_uncovered": len(uncovered_endpoints)
-                + len(uncovered_pages)
-                + len(orphan_tables),
+                "total_uncovered": len(uncovered_endpoints) + len(uncovered_pages) + len(orphan_tables),
                 "endpoint_count": len(uncovered_endpoints),
                 "page_count": len(uncovered_pages),
                 "table_count": len(orphan_tables),
