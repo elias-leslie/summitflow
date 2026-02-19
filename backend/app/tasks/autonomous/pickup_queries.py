@@ -1,13 +1,43 @@
-"""Database queries for autonomous task pickup.
+"""Database queries and stage routing for autonomous task pickup.
 
-Provides read-only queries to find tasks ready for autonomous processing.
+Provides read-only queries to find tasks ready for autonomous processing,
+and logic to determine which pipeline stage a task needs next.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+from app.storage import tasks as task_store
 from app.storage.connection import get_connection
+from app.storage.subtasks import get_subtasks_for_task
+from app.storage.task_spirit import get_task_spirit
+
+
+def determine_next_stage(task_id: str) -> str:
+    """Determine which pipeline stage a queued task needs.
+
+    Returns:
+        Stage name: 'ideation', 'triage', 'planning', 'execution', or 'unknown'
+    """
+    task = task_store.get_task(task_id)
+    spirit = get_task_spirit(task_id)
+    subtasks = get_subtasks_for_task(task_id)
+
+    is_crowdsourced = task and "crowdsourced" in (task.get("labels") or [])
+    if is_crowdsourced and (not spirit or not spirit.get("objective")):
+        return "ideation"
+
+    if not spirit or not spirit.get("objective"):
+        return "triage"
+
+    if not subtasks:
+        return "planning"
+
+    if any(not s.get("passes") for s in subtasks):
+        return "execution"
+
+    return "unknown"
 
 
 def get_queued_autonomous_tasks(project_id: str, limit: int = 10) -> list[dict[str, Any]]:

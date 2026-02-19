@@ -227,6 +227,27 @@ def check_system_health(project_id: str) -> dict[str, Any] | None:
     return None
 
 
+def check_task_dispatchable(task: dict[str, object]) -> dict[str, object] | None:
+    """Check if a task is in a state that allows dispatch.
+
+    Args:
+        task: Task dict with at least 'id', 'status', and optionally 'claimed_by'
+
+    Returns:
+        Error dict if task cannot be dispatched, None if dispatchable
+    """
+    task_id = task["id"]
+    status = task["status"]
+
+    if status == "running":
+        return {"status": "already_running", "task_id": task_id}
+
+    if status not in ("queue", "pending", "blocked"):
+        return {"status": "skipped", "task_id": task_id, "reason": f"status={status}"}
+
+    return None
+
+
 def validate_autonomous_dispatch(
     project_id: str, task_type: str | None = None
 ) -> dict[str, Any] | None:
