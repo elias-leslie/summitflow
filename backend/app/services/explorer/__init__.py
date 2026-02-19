@@ -20,10 +20,11 @@ Usage:
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import Any
 
 from ...storage import explorer as storage
+from ._scan_tracking import get_scan_status, start_scan
+from ._scan_tracking import run_scan_with_tracking as _run_scan_with_tracking
 from .base import BaseScanner, get_project_config, get_project_root
 from .health import calculate_health
 from .index_generator import generate_index, write_all_index_files, write_index_file
@@ -35,7 +36,7 @@ from .models import (
     ExplorerStats,
     ScanResult,
 )
-from .types import get_scanner, list_registered_types
+from .types import get_scanner
 
 __all__ = [
     "BaseScanner",
@@ -62,81 +63,6 @@ __all__ = [
 ]
 
 
-# ============================================================================
-# Scan status & state tracking
-# ============================================================================
-
-
-def get_scan_status(project_id: str) -> dict[str, Any]:
-    """Get current scan status for a project.
-
-    Reads from database for persistence across backend restarts.
-
-    Returns:
-        Dict with status, progress, and timing info
-    """
-    state = storage.get_scan_state(project_id)
-
-    if not state:
-        return {
-            "status": "idle",
-            "current_type": None,
-            "types_total": 0,
-            "types_completed": 0,
-            "progress_pct": 0,
-            "started_at": None,
-            "completed_at": None,
-            "error": None,
-            "results": [],
-        }
-
-    types_total = state.get("types_total", 0)
-    types_completed = state.get("types_completed", 0)
-
-    return {
-        "status": state.get("status", "idle"),
-        "current_type": state.get("current_type"),
-        "types_total": types_total,
-        "types_completed": types_completed,
-        "progress_pct": int(types_completed / types_total * 100) if types_total > 0 else 0,
-        "started_at": state.get("started_at"),
-        "completed_at": state.get("completed_at"),
-        "error": state.get("error"),
-        "results": (state.get("results") or {}).get("scans", []),
-    }
-
-
-def start_scan(project_id: str, entry_type: str | None = None) -> dict[str, Any]:
-    """Start a scan and track its state.
-
-    Persists state to database for resilience across restarts.
-
-    Args:
-        project_id: Project to scan
-        entry_type: Optional specific type to scan (scans all if None)
-
-    Returns:
-        Initial status dict
-    """
-    types_to_scan = [entry_type] if entry_type else list_registered_types()
-
-    storage.update_scan_state(
-        project_id=project_id,
-        status="running",
-        types_total=len(types_to_scan),
-        types_completed=0,
-        started_at=datetime.now(UTC),
-        results={"scans": []},
-    )
-
-    return get_scan_status(project_id)
-
-
-# ============================================================================
-# Scan execution
-# ============================================================================
-
-
 def scan(project_id: str, entry_type: str, config: dict[str, Any] | None = None) -> ScanResult:
     """Trigger a scan for a project and entry type.
 
@@ -147,18 +73,10 @@ def scan(project_id: str, entry_type: str, config: dict[str, Any] | None = None)
 
     Returns:
         ScanResult with scan statistics
-
-    Raises:
-        ValueError: If entry_type is not registered
     """
     scanner_class = get_scanner(entry_type)
     if not scanner_class:
-        return ScanResult(
-            success=False,
-            entry_type=entry_type,
-            error=f"Unknown entry type: {entry_type}",
-        )
-
+        return ScanResult(success=False, entry_type=entry_type, error=f"Unknown entry type: {entry_type}")
     scanner = scanner_class(project_id, config)
     return scanner.run()
 
@@ -166,74 +84,14 @@ def scan(project_id: str, entry_type: str, config: dict[str, Any] | None = None)
 def run_scan_with_tracking(project_id: str, entry_type: str | None = None) -> None:
     """Run scan with progress tracking (for background tasks).
 
-    Updates scan state in database as each type completes. Persists across restarts.
+    Updates scan state in database as each type completes.
     Called from API background task.
 
     Args:
         project_id: Project to scan
         entry_type: Optional specific type (scans all if None)
     """
-    types_to_scan = [entry_type] if entry_type else list_registered_types()
-    scan_results: list[dict[str, Any]] = []
-    error_msg: str | None = None
-
-    # Get current state to preserve types_total
-    current_state = storage.get_scan_state(project_id)
-    types_total = (
-        current_state.get("types_total", len(types_to_scan))
-        if current_state
-        else len(types_to_scan)
-    )
-
-    for i, t in enumerate(types_to_scan):
-        # Update current type being scanned
-        storage.update_scan_state(
-            project_id=project_id,
-            status="running",
-            current_type=t,
-            types_total=types_total,
-            types_completed=i,
-            started_at=datetime.fromisoformat(current_state["started_at"])
-            if current_state and current_state.get("started_at")
-            else datetime.now(UTC),
-            results={"scans": scan_results},
-        )
-
-        # Run the scan
-        result = scan(project_id, t)
-
-        # Record result
-        scan_results.append(
-            {
-                "entry_type": result.entry_type,
-                "entries_found": result.entries_found,
-                "entries_saved": result.entries_saved,
-                "duration_ms": result.duration_ms,
-                "success": result.success,
-            }
-        )
-
-        if not result.success and error_msg is None:
-            error_msg = result.error
-
-    # Mark scan complete
-    storage.update_scan_state(
-        project_id=project_id,
-        status="completed" if not error_msg else "failed",
-        current_type=None,
-        types_total=types_total,
-        types_completed=len(types_to_scan),
-        started_at=datetime.fromisoformat(current_state["started_at"])
-        if current_state and current_state.get("started_at")
-        else datetime.now(UTC),
-        completed_at=datetime.now(UTC),
-        error=error_msg,
-        results={"scans": scan_results},
-    )
-
-    # Generate index file at project root on successful scan
-    if not error_msg:
-        write_index_file(project_id)
+    _run_scan_with_tracking(project_id, entry_type, scan)
 
 
 def get_entries(project_id: str, filters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
