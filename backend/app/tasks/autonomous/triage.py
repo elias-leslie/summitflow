@@ -1,11 +1,9 @@
-"""Idea triage task using Agent Hub complete().
-
-Triages incoming ideas to assess clarity and ask clarifying questions.
-"""
+"""Idea triage task using Agent Hub complete()."""
 
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from ...constants import AGENT_TRIAGER
@@ -18,114 +16,25 @@ from ...storage.tasks.dedup import duplicate_task_exists
 
 logger = get_logger(__name__)
 
-
-def triage_idea(task_id: str, project_id: str) -> dict[str, Any]:
-    """Triage a task using the triager agent.
-
-    First runs a deterministic duplicate check (keyword Jaccard similarity).
-    If no duplicate, uses Agent Hub complete() with the triager agent to assess:
-    - Clarity of the task
-    - Whether clarifying questions are needed
-    - Suggested complexity
-
-    If duplicate found: cancels immediately without LLM call.
-    If clear (READY): moves task to Planning status.
-    If unclear (NEEDS_CLARIFICATION): adds questions to events log.
-    If rejected (REJECT): marks task as cancelled.
-
-    Args:
-        task_id: The task ID to triage
-        project_id: The project ID
-
-    Returns:
-        Triage result with status and any questions
-    """
-    logger.info("Starting idea triage", task_id=task_id, project_id=project_id)
-
-    task = task_store.get_task(task_id)
-    if not task:
-        logger.warning("Task not found for triage", task_id=task_id)
-        return {"task_id": task_id, "status": "error", "message": "Task not found"}
-
-    title = task.get("title", "")
-    description = task.get("description", "")
-
-    # Deterministic duplicate check — cheaper and more accurate than LLM
-    dup_id = duplicate_task_exists(
-        project_id, title, exclude_task_id=task_id, description=description
-    )
-    if dup_id:
-        task_store.update_task_status(task_id, "cancelled")
-        log_task_event(task_id, f"Triage: REJECTED - Duplicate of {dup_id} (deterministic match)")
-        logger.info("Triage rejected duplicate", task_id=task_id, duplicate_of=dup_id)
-        return {
-            "task_id": task_id,
-            "status": "completed",
-            "result": {"status": "REJECT", "reject_reason": f"Duplicate of {dup_id}"},
-        }
-
-    prompt = f"""Assess this task for clarity, feasibility, and readiness:
-
-Title: {title}
-Description: {description or "(no description provided)"}
-
-Provide your assessment in JSON format:
-{{
-    "status": "READY" | "NEEDS_CLARIFICATION" | "REJECT",
-    "objective": "Single measurable goal",
-    "spirit": "Core intent - what TO accomplish",
-    "anti": "What should absolutely NOT be done",
-    "requirements": ["List of acceptance criteria"],
-    "suggested_complexity": "SIMPLE" | "STANDARD" | "COMPLEX",
-    "priority": "critical" | "high" | "medium" | "low",
-    "clarifying_questions": ["Only if NEEDS_CLARIFICATION"],
-    "reject_reason": "Only if REJECT",
-    "reasoning": "Brief explanation"
-}}"""
-
-    try:
-        client = get_sync_client()
-        response = client.complete(
-            messages=[{"role": "user", "content": prompt}],
-            project_id=project_id,
-            agent_slug=AGENT_TRIAGER.replace("agent:", ""),
-        )
-
-        triage_result = _parse_triage_response(response.content)
-        _process_triage_result(task_id, triage_result)
-
-        return {
-            "task_id": task_id,
-            "status": "completed",
-            "result": triage_result,
-        }
-
-    except Exception as e:
-        logger.warning("Triage failed", task_id=task_id, error=str(e))
-        return {
-            "task_id": task_id,
-            "status": "error",
-            "message": str(e),
-        }
+_TRIAGE_PROMPT_TEMPLATE = (
+    "Assess this task for clarity, feasibility, and readiness:\n\n"
+    "Title: {title}\nDescription: {description}\n\n"
+    'Provide your assessment in JSON format:\n{{\n'
+    '    "status": "READY" | "NEEDS_CLARIFICATION" | "REJECT",\n'
+    '    "objective": "Single measurable goal",\n'
+    '    "spirit": "Core intent - what TO accomplish",\n'
+    '    "anti": "What should absolutely NOT be done",\n'
+    '    "requirements": ["List of acceptance criteria"],\n'
+    '    "suggested_complexity": "SIMPLE" | "STANDARD" | "COMPLEX",\n'
+    '    "priority": "critical" | "high" | "medium" | "low",\n'
+    '    "clarifying_questions": ["Only if NEEDS_CLARIFICATION"],\n'
+    '    "reject_reason": "Only if REJECT",\n'
+    '    "reasoning": "Brief explanation"\n}}'
+)
 
 
 def _parse_triage_response(content: str) -> dict[str, Any]:
-    """Parse the triager agent's response.
-
-    Expected format:
-    {
-        "status": "READY" | "NEEDS_CLARIFICATION" | "REJECT",
-        "objective": "...",
-        "requirements": [...],
-        "suggested_complexity": "SIMPLE" | "STANDARD" | "COMPLEX",
-        "priority": "critical" | "high" | "medium" | "low",
-        "clarifying_questions": [...],
-        "reject_reason": "...",
-        "reasoning": "..."
-    }
-    """
-    import re
-
+    """Parse the triager agent's response into a structured dict."""
     try:
         json_match = re.search(r"\{[\s\S]*\}", content)
         if json_match:
@@ -143,60 +52,93 @@ def _parse_triage_response(content: str) -> dict[str, Any]:
     }
 
 
-def _process_triage_result(task_id: str, result: dict[str, Any]) -> None:
-    """Process triage result and update task accordingly.
+def _handle_reject(task_id: str, result: dict[str, Any]) -> None:
+    reason = result.get("reject_reason", result.get("reasoning", "Rejected by triager"))
+    task_store.update_task_status(task_id, "cancelled")
+    log_task_event(task_id, f"Triage: REJECTED - {reason}")
+    logger.info("Triage rejected task", task_id=task_id, reason=reason[:100])
 
-    If READY: Create task_spirit with objective and move to 'queue' status for planning.
-    If NEEDS_CLARIFICATION: Add questions to events log and block.
-    If REJECT: Cancel the task.
-    """
-    status = result.get("status", "").upper()
 
-    # Handle REJECT verdict
-    if status == "REJECT":
-        reason = result.get("reject_reason", result.get("reasoning", "Rejected by triager"))
-        task_store.update_task_status(task_id, "cancelled")
-        log_task_event(task_id, f"Triage: REJECTED - {reason}")
-        logger.info("Triage rejected task", task_id=task_id, reason=reason[:100])
-        return
+def _handle_ready(task_id: str, result: dict[str, Any]) -> None:
+    complexity = result.get("suggested_complexity", "STANDARD")
+    objective = result.get("objective", "")
+    requirements = result.get("requirements", [])
+    spirit = result.get("spirit", "")
+    anti = result.get("anti", "")
+    spirit_anti = f"SPIRIT: {spirit}. ANTI: {anti}." if (spirit or anti) else None
 
-    if status in ("CLEAR", "READY"):
-        complexity = result.get("suggested_complexity", "STANDARD")
-        objective = result.get("objective", "")
-        requirements = result.get("requirements", [])
-        spirit = result.get("spirit", "")
-        anti = result.get("anti", "")
-
-        spirit_anti = None
-        if spirit or anti:
-            spirit_anti = f"SPIRIT: {spirit}. ANTI: {anti}."
-
-        task_store.update_task(task_id, complexity=complexity)
-
-        if objective:
-            upsert_task_spirit(
-                task_id=task_id,
-                objective=objective,
-                spirit_anti=spirit_anti,
-                complexity=complexity,
-                done_when=requirements if requirements else None,
-            )
-            logger.info("Created task spirit", task_id=task_id, objective=objective[:50])
-
-        task_store.update_task_status(task_id, "queue")
-        log_task_event(
-            task_id,
-            f"Triage complete: CLEAR - Complexity: {complexity}. Moving to queue.",
+    task_store.update_task(task_id, complexity=complexity)
+    if objective:
+        upsert_task_spirit(
+            task_id=task_id,
+            objective=objective,
+            spirit_anti=spirit_anti,
+            complexity=complexity,
+            done_when=requirements if requirements else None,
         )
-        logger.info("Triage clear, moving to queue", task_id=task_id, complexity=complexity)
+        logger.info("Created task spirit", task_id=task_id, objective=objective[:50])
 
+    task_store.update_task_status(task_id, "queue")
+    log_task_event(task_id, f"Triage complete: CLEAR - Complexity: {complexity}. Moving to queue.")
+    logger.info("Triage clear, moving to queue", task_id=task_id, complexity=complexity)
+
+
+def _handle_needs_clarification(task_id: str, result: dict[str, Any]) -> None:
+    questions = result.get("clarifying_questions", [])
+    if questions:
+        questions_text = "\n".join(f"- {q}" for q in questions)
+        log_task_event(task_id, f"Triage: Needs clarification\n{questions_text}")
+    task_store.update_task_status(task_id, "blocked")
+    logger.info("Triage needs clarification", task_id=task_id, questions=len(questions))
+
+
+def _process_triage_result(task_id: str, result: dict[str, Any]) -> None:
+    """Process triage result and update task accordingly."""
+    status = result.get("status", "").upper()
+    if status == "REJECT":
+        _handle_reject(task_id, result)
+    elif status in ("CLEAR", "READY"):
+        _handle_ready(task_id, result)
     else:
-        questions = result.get("clarifying_questions", [])
-        if questions:
-            questions_text = "\n".join(f"- {q}" for q in questions)
-            log_task_event(
-                task_id,
-                f"Triage: Needs clarification\n{questions_text}",
-            )
-        task_store.update_task_status(task_id, "blocked")
-        logger.info("Triage needs clarification", task_id=task_id, questions=len(questions))
+        _handle_needs_clarification(task_id, result)
+
+
+def _check_duplicate(task_id: str, project_id: str, title: str, description: str) -> dict[str, Any] | None:
+    """Return a completed-duplicate result dict if a duplicate exists, else None."""
+    dup_id = duplicate_task_exists(project_id, title, exclude_task_id=task_id, description=description)
+    if not dup_id:
+        return None
+    task_store.update_task_status(task_id, "cancelled")
+    log_task_event(task_id, f"Triage: REJECTED - Duplicate of {dup_id} (deterministic match)")
+    logger.info("Triage rejected duplicate", task_id=task_id, duplicate_of=dup_id)
+    return {"task_id": task_id, "status": "completed", "result": {"status": "REJECT", "reject_reason": f"Duplicate of {dup_id}"}}
+
+
+def triage_idea(task_id: str, project_id: str) -> dict[str, Any]:
+    """Triage a task; duplicate-check first, then call Agent Hub for assessment."""
+    logger.info("Starting idea triage", task_id=task_id, project_id=project_id)
+    task = task_store.get_task(task_id)
+    if not task:
+        logger.warning("Task not found for triage", task_id=task_id)
+        return {"task_id": task_id, "status": "error", "message": "Task not found"}
+
+    title = task.get("title", "")
+    description = task.get("description", "")
+    dup_result = _check_duplicate(task_id, project_id, title, description)
+    if dup_result:
+        return dup_result
+
+    prompt = _TRIAGE_PROMPT_TEMPLATE.format(title=title, description=description or "(no description provided)")
+    try:
+        client = get_sync_client()
+        response = client.complete(
+            messages=[{"role": "user", "content": prompt}],
+            project_id=project_id,
+            agent_slug=AGENT_TRIAGER.replace("agent:", ""),
+        )
+        triage_result = _parse_triage_response(response.content)
+        _process_triage_result(task_id, triage_result)
+        return {"task_id": task_id, "status": "completed", "result": triage_result}
+    except Exception as e:
+        logger.warning("Triage failed", task_id=task_id, error=str(e))
+        return {"task_id": task_id, "status": "error", "message": str(e)}
