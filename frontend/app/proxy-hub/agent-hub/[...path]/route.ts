@@ -120,6 +120,23 @@ export async function PUT(request: Request, { params }: RouteContext) {
   })
 }
 
+export async function PATCH(request: Request, { params }: RouteContext) {
+  const { path } = await params
+  const url = buildUpstreamUrl(config, path)
+  const body = await request.text()
+  const response = await fetch(url, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...auth },
+    body,
+  })
+  return new Response(response.body, {
+    status: response.status,
+    headers: {
+      'Content-Type': response.headers.get('Content-Type') ?? 'application/json',
+    },
+  })
+}
+
 export async function DELETE(request: Request, { params }: RouteContext) {
   const { path } = await params
   const url = buildUpstreamUrl(config, path, new URL(request.url).searchParams.toString())

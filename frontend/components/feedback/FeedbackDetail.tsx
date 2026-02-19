@@ -31,6 +31,13 @@ const TYPE_CONFIG = {
   praise: { icon: Sparkles, label: 'Praise', color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/30' },
 } as const
 
+const STATUS_LABELS: Record<string, string> = {
+  open: 'Open',
+  acknowledged: 'Acknowledged',
+  resolved: 'Resolved',
+  wont_fix: "Won't Fix",
+}
+
 // ============================================================================
 // Component
 // ============================================================================
@@ -59,6 +66,9 @@ export function FeedbackDetail({ itemId, onClose }: FeedbackDetailProps) {
       queryClient.invalidateQueries({ queryKey: ['feedback-summary'] })
       setShowResolveInput(false)
       setResolutionNote('')
+    },
+    onError: (error: Error) => {
+      console.error('Failed to update feedback status:', error.message)
     },
   })
 
@@ -131,7 +141,7 @@ export function FeedbackDetail({ itemId, onClose }: FeedbackDetailProps) {
 
         {/* Metadata */}
         <div className="grid grid-cols-2 gap-3">
-          <MetadataItem label="Status" value={item.status.replace('_', ' ')} />
+          <MetadataItem label="Status" value={STATUS_LABELS[item.status] ?? item.status} />
           <MetadataItem label="Votes" value={String(item.vote_count)} />
           <MetadataItem label="Project" value={item.project_id} />
           <MetadataItem
@@ -269,9 +279,10 @@ export function FeedbackDetail({ itemId, onClose }: FeedbackDetailProps) {
               )}
               <button
                 onClick={() => setShowResolveInput(true)}
+                disabled={statusMutation.isPending}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 text-emerald-400
                            border border-emerald-500/30 rounded-md text-xs font-medium
-                           hover:bg-emerald-500/20 transition-all"
+                           hover:bg-emerald-500/20 transition-all disabled:opacity-50"
               >
                 <Check className="w-3 h-3" />
                 Resolve

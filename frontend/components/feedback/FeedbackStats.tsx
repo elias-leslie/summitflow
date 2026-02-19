@@ -63,26 +63,32 @@ interface FeedbackStatsProps {
   summary: FeedbackSummary | undefined
   isLoading: boolean
   activeType: string | undefined
+  activeStatus: string | undefined
   onTypeClick: (type: string | undefined) => void
+  onStatusClick: (status: string | undefined) => void
 }
 
 export function FeedbackStats({
   summary,
   isLoading,
   activeType,
+  activeStatus,
   onTypeClick,
+  onStatusClick,
 }: FeedbackStatsProps) {
   return (
     <section className="grid grid-cols-2 md:grid-cols-5 gap-3">
       {STAT_CARDS.map((card) => {
         const Icon = card.icon
         const isActive =
-          (card.key === 'open' && !activeType) ||
+          (card.key === 'open' && activeStatus === 'open') ||
           (card.key !== 'open' && activeType === card.key)
         const handleClick = () => {
           if (card.key === 'open') {
             onTypeClick(undefined)
+            onStatusClick(activeStatus === 'open' ? undefined : 'open')
           } else {
+            onStatusClick(undefined)
             onTypeClick(activeType === card.key ? undefined : card.key)
           }
         }

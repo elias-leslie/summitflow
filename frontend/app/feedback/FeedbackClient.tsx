@@ -43,6 +43,10 @@ export function FeedbackClient() {
     handleFiltersChange({ feedback_type: type })
   }
 
+  const handleStatusClick = (status: string | undefined) => {
+    handleFiltersChange({ status })
+  }
+
   const handleComponentClick = (componentId: string | undefined) => {
     handleFiltersChange({ component_id: componentId })
   }
@@ -72,7 +76,9 @@ export function FeedbackClient() {
           summary={summary}
           isLoading={summaryLoading}
           activeType={filters.feedback_type}
+          activeStatus={filters.status}
           onTypeClick={handleTypeClick}
+          onStatusClick={handleStatusClick}
         />
 
         {/* Component summary */}

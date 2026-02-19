@@ -11,7 +11,7 @@ import {
   TrendingUp,
   Zap,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { FeedbackItem, FeedbackFilters } from '@/lib/api/feedback'
 
 // ============================================================================
@@ -107,6 +107,10 @@ export function FeedbackBoard({
   selectedId,
 }: FeedbackBoardProps) {
   const [searchInput, setSearchInput] = useState(filters.query || '')
+
+  useEffect(() => {
+    setSearchInput(filters.query || '')
+  }, [filters.query])
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()

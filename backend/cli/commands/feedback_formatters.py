@@ -79,8 +79,8 @@ def output_feedback_detail(item: dict[str, Any]) -> None:
 
 
 def output_duplicate_candidates(candidates: list[dict[str, Any]]) -> None:
-    """Output duplicate candidates for interactive dedup."""
-    print("\nSimilar existing feedback found:", file=sys.stderr)
+    """Output duplicate candidates as informational TOON lines."""
+    print("FEEDBACK:DUPLICATES_FOUND", file=sys.stderr)
     for c in candidates:
         id_short = c.get("id", "")[:8]
         ftype = c.get("feedback_type", "?")
@@ -92,9 +92,8 @@ def output_duplicate_candidates(candidates: list[dict[str, Any]]) -> None:
             file=sys.stderr,
         )
     print(
-        "\nVote on existing? (enter ID, or 'new' to create): ",
+        "  Use: st feedback vote <id> to vote on existing",
         file=sys.stderr,
-        end="",
     )
 
 
