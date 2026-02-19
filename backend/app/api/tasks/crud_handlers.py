@@ -8,6 +8,7 @@ Helper functions for complex CRUD operations including:
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
 from fastapi import HTTPException
 
@@ -21,82 +22,109 @@ from .response import task_to_response
 logger = get_logger(__name__)
 
 
-async def handle_batch_create_tasks(project_id: str, body: BatchTaskRequest) -> BatchTaskResponse:
-    """Handle batch task creation with nested subtasks. Handles partial failures."""
-    from ...storage.subtasks import bulk_add_subtask_dependencies, bulk_create_subtasks
+def _format_batch_error(err_msg: str, item: object) -> str:
+    """Return a human-friendly error string for a batch create failure."""
+    lower = err_msg.lower()
+    if "violates foreign key constraint" not in lower:
+        return err_msg
+    if "capability_id" in lower:
+        return f"Capability with id {item.capability_id} not found"  # type: ignore[attr-defined]
+    if "parent_task_id" in lower:
+        return f"Parent task {item.parent_task_id} not found"  # type: ignore[attr-defined]
+    return err_msg
+
+
+async def _save_task_spirit(task_id: str, item: object) -> None:
+    """Persist spirit fields to the task_spirit table, if any are set."""
     from ...storage.task_spirit import upsert_task_spirit
 
+    spirit_fields = {"objective", "spirit_anti", "decisions", "constraints", "done_when"}
+    has_spirit = any(getattr(item, f, None) for f in spirit_fields) or getattr(item, "complexity", None)
+    if not has_spirit:
+        return
+    try:
+        await asyncio.to_thread(
+            upsert_task_spirit,
+            task_id=task_id,
+            objective=getattr(item, "objective", None) or "",
+            **item.model_dump(include={"spirit_anti", "decisions", "constraints", "done_when", "complexity"}),  # type: ignore[attr-defined]
+        )
+    except Exception as e:
+        logger.warning(f"Failed to create task_spirit for task {task_id}: {e}")
+
+
+async def _create_subtasks_with_deps(task_id: str, item: object) -> list[dict[str, Any]] | None:
+    """Bulk-create subtasks and their dependencies. Returns created subtask list or None."""
+    from ...storage.subtasks import bulk_add_subtask_dependencies, bulk_create_subtasks
+
+    subtasks = getattr(item, "subtasks", None)
+    if not subtasks:
+        return None
+
+    sub_dicts = [
+        {
+            "subtask_id": s.subtask_id,
+            "phase": s.phase,
+            "subtask_type": s.subtask_type,
+            "description": s.description,
+            "steps": [
+                step if isinstance(step, str) else step.model_dump(exclude_none=True)
+                for step in s.steps
+            ],
+            "display_order": s.display_order,
+        }
+        for s in subtasks
+    ]
+
+    try:
+        created_subs = await asyncio.to_thread(bulk_create_subtasks, task_id, sub_dicts)
+    except Exception as e:
+        logger.warning(f"Failed to create subtasks for task {task_id}: {e}")
+        return None
+
+    deps = [(s.subtask_id, d) for s in subtasks if s.depends_on for d in s.depends_on]
+    if deps:
+        try:
+            await asyncio.to_thread(bulk_add_subtask_dependencies, task_id, deps)
+        except Exception as dep_err:
+            logger.warning(f"Failed dependencies for task {task_id}: {dep_err}")
+
+    return created_subs if created_subs else None
+
+
+async def _create_single_task(project_id: str, item: object) -> TaskResponse:
+    """Create one task with its spirit fields and subtasks; return its TaskResponse."""
+    task = await asyncio.to_thread(
+        task_store.create_task,
+        project_id=project_id,
+        **item.model_dump(  # type: ignore[attr-defined]
+            include={
+                "title", "description", "capability_id", "priority",
+                "task_type", "parent_task_id", "complexity", "autonomous",
+                "labels",
+            }
+        ),
+    )
+
+    await _save_task_spirit(task["id"], item)
+
+    created_subs = await _create_subtasks_with_deps(task["id"], item)
+    if created_subs:
+        task["subtasks"] = created_subs
+
+    return task_to_response(task)
+
+
+async def handle_batch_create_tasks(project_id: str, body: BatchTaskRequest) -> BatchTaskResponse:
+    """Handle batch task creation with nested subtasks. Handles partial failures."""
     created: list[TaskResponse] = []
     errors: list[BatchTaskResult] = []
 
     for item in body.items:
         try:
-            # Create task (basic fields only)
-            task = await asyncio.to_thread(
-                task_store.create_task,
-                project_id=project_id,
-                **item.model_dump(
-                    include={
-                        "title", "description", "capability_id", "priority",
-                        "task_type", "parent_task_id", "complexity", "autonomous",
-                        "labels",
-                    }
-                ),
-            )
-
-            # Save spirit fields to task_spirit table
-            spirit_fields = {"objective", "spirit_anti", "decisions", "constraints", "done_when"}
-            if any(getattr(item, f) for f in spirit_fields) or item.complexity:
-                try:
-                    await asyncio.to_thread(
-                        upsert_task_spirit,
-                        task_id=task["id"],
-                        objective=item.objective or "",
-                        **item.model_dump(include={"spirit_anti", "decisions", "constraints", "done_when", "complexity"}),
-                    )
-                except Exception as e:
-                    logger.warning(f"Failed to create task_spirit for task {task['id']}: {e}")
-
-            # Create nested subtasks if provided
-            if item.subtasks:
-                try:
-                    sub_dicts = [
-                        {
-                            "subtask_id": s.subtask_id,
-                            "phase": s.phase,
-                            "subtask_type": s.subtask_type,
-                            "description": s.description,
-                            "steps": [
-                                step if isinstance(step, str) else step.model_dump(exclude_none=True)
-                                for step in s.steps
-                            ],
-                            "display_order": s.display_order,
-                        }
-                        for s in item.subtasks
-                    ]
-                    created_subs = await asyncio.to_thread(bulk_create_subtasks, task["id"], sub_dicts)
-                    
-                    # Handle subtask dependencies
-                    deps = [(s.subtask_id, d) for s in item.subtasks if s.depends_on for d in s.depends_on]
-                    if deps:
-                        try:
-                            await asyncio.to_thread(bulk_add_subtask_dependencies, task["id"], deps)
-                        except Exception as dep_err:
-                            logger.warning(f"Failed dependencies for task {task['id']}: {dep_err}")
-                    
-                    if created_subs:
-                        task["subtasks"] = created_subs
-                except Exception as e:
-                    logger.warning(f"Failed to create subtasks for task {task['id']}: {e}")
-
-            created.append(task_to_response(task))
+            created.append(await _create_single_task(project_id, item))
         except Exception as e:
-            err_msg = str(e)
-            if "violates foreign key constraint" in err_msg.lower():
-                if "capability_id" in err_msg.lower():
-                    err_msg = f"Capability with id {item.capability_id} not found"
-                elif "parent_task_id" in err_msg.lower():
-                    err_msg = f"Parent task {item.parent_task_id} not found"
+            err_msg = _format_batch_error(str(e), item)
             errors.append(BatchTaskResult(title=item.title, success=False, error=err_msg))
 
     return BatchTaskResponse(created=created, errors=errors)
