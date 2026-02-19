@@ -4,105 +4,33 @@ from __future__ import annotations
 
 from typing import Any
 
-import httpx
-
 from ....logging_config import get_logger
 from ....storage.events import get_events_by_trace
 from ....storage.subtasks import get_handoff_context
 from ....storage.task_spirit import get_task_spirit
 from ...autonomous.pickup_guards import check_system_health
+from ._prompt_blocks import (
+    EVENTS_FETCH_LIMIT,
+    FEEDBACK_PROMPT,
+    MAX_PRIOR_ERRORS,
+    build_failures_block,
+    build_steps_block,
+    classify_events,
+)
+from ._prompt_fetch import get_prompt_template
 
 logger = get_logger(__name__)
 
-# Prompt cache for process lifetime
-_prompt_cache: dict[str, str] = {}
-
-
-def get_prompt_template(slug: str) -> str:
-    """Fetch prompt content from Agent Hub API by slug.
-
-    Results are cached for the process lifetime to avoid repeated HTTP calls.
-    Raises RuntimeError if the prompt cannot be fetched — DB is the sole
-    source of truth, there are no hardcoded fallbacks.
-    """
-    if slug in _prompt_cache:
-        return _prompt_cache[slug]
-
-    from ....services.agent_hub_client import (
-        AGENT_HUB_URL,
-        SUMMITFLOW_CLIENT_ID,
-        SUMMITFLOW_CLIENT_SECRET,
-        SUMMITFLOW_REQUEST_SOURCE,
-    )
-
-    url = f"{AGENT_HUB_URL}/api/prompts/{slug}"
-    headers: dict[str, str] = {}
-    if SUMMITFLOW_CLIENT_ID and SUMMITFLOW_CLIENT_SECRET:
-        headers = {
-            "X-Client-Id": SUMMITFLOW_CLIENT_ID,
-            "X-Client-Secret": SUMMITFLOW_CLIENT_SECRET,
-            "X-Request-Source": SUMMITFLOW_REQUEST_SOURCE or "summitflow",
-        }
-    try:
-        response = httpx.get(url, headers=headers, timeout=5.0)
-    except httpx.HTTPError as e:
-        raise RuntimeError(f"Cannot fetch prompt '{slug}' from {url}: {e}") from e
-
-    if not response.is_success:
-        raise RuntimeError(
-            f"Prompt '{slug}' not found (HTTP {response.status_code}). "
-            f"Seed it with: st prompt create {slug} '<name>' -f <file>"
-        )
-
-    data = response.json()
-    content: str = data.get("content", "")
-    if not content:
-        raise RuntimeError(f"Prompt '{slug}' exists but has empty content")
-
-    _prompt_cache[slug] = content
-    return content
-
-
-def build_steps_block(steps: list[dict[str, Any]]) -> str:
-    """Build formatted steps block from step dicts."""
-    if not steps:
-        return ""
-    lines = ["Steps to complete:"]
-    for step in steps:
-        step_num = step.get("step_number", 0)
-        desc = step.get("description", "")
-        verify = step.get("verify_command", "")
-        lines.append(f"{step_num}. {desc}")
-        if verify:
-            lines.append(f"   Verify: {verify}")
-    return "\n".join(lines)
-
-
-def build_failures_block(failed_steps: list[dict[str, Any]]) -> str:
-    """Build formatted failures block from failed step results."""
-    parts = []
-    for fail in failed_steps:
-        step_num = fail.get("step_number", "?")
-        reason = fail.get("reason", "unknown")
-        output = fail.get("output", "")[:500]
-        parts.append(f"### Step {step_num}: FAILED")
-        parts.append(f"Reason: {reason}")
-        if output:
-            parts.append(f"Output:\n```\n{output}\n```")
-    return "\n\n".join(parts)
+_SLUG_AUTOCODE_SUBTASK = "autocode-subtask"
+_SLUG_AUTOCODE_FIX = "autocode-fix"
 
 
 def build_health_context(project_id: str) -> str:
-    """Build system health summary for agent prompt context.
-
-    Returns a markdown block describing current system health status
-    so agents can reason about infrastructure state.
-    """
+    """Build system health summary for agent prompt context."""
     try:
         health_error = check_system_health(project_id)
         if health_error is None:
             return ""
-
         details = health_error.get("details", {})
         failing = health_error.get("failing_services", [])
         lines = ["## System Health Warning"]
@@ -120,43 +48,41 @@ def build_health_context(project_id: str) -> str:
 def build_resume_context(task_id: str) -> str:
     """Build continuity context for a resumed task.
 
-    Queries task events for wind_down logs and prior execution history
-    to provide the agent with context about what was previously tried.
-
     Returns empty string if no prior execution history exists.
     """
     try:
-        events = get_events_by_trace(task_id, limit=50)
+        events = get_events_by_trace(task_id, limit=EVENTS_FETCH_LIMIT)
         if not events:
             return ""
-
-        # Look for wind_down events and failure summaries
-        wind_down_msgs = []
-        error_msgs = []
-        for evt in events:
-            msg = evt.get("message", "") or ""
-            if "SESSION END" in msg:
-                wind_down_msgs.append(msg[:500])
-            elif evt.get("level") in ("error", "warn") and "FAILED" in msg.upper():
-                error_msgs.append(msg[:200])
-
+        wind_down_msgs, error_msgs = classify_events(events)
         if not wind_down_msgs and not error_msgs:
             return ""
-
         lines = ["\n# Resume Context (prior execution)"]
         if wind_down_msgs:
-            lines.append("Last session state:")
-            lines.append(wind_down_msgs[-1])
+            lines.extend(["Last session state:", wind_down_msgs[-1]])
         if error_msgs:
             lines.append(f"\nPrior failures ({len(error_msgs)}):")
-            for msg in error_msgs[-3:]:
-                lines.append(f"- {msg}")
+            lines.extend(f"- {msg}" for msg in error_msgs[-MAX_PRIOR_ERRORS:])
         lines.append("\nApproach this with a fresh perspective based on the above history.")
-
         return "\n".join(lines)
     except Exception as e:
         logger.debug("Failed to build resume context", error=str(e))
         return ""
+
+
+def _build_spirit_block(spirit_anti: str) -> str:
+    if not spirit_anti:
+        return ""
+    return f"\n# Guiding Principles\n{spirit_anti}"
+
+
+def _build_handoff_block(handoff: dict[str, Any]) -> str:
+    previous_summaries = handoff.get("previous_summaries")
+    if not previous_summaries:
+        return ""
+    lines = ["\n# Previous Work Summary"]
+    lines.extend(f"- Subtask {s['short_id']}: {s['summary']}" for s in previous_summaries)
+    return "\n".join(lines)
 
 
 def build_subtask_prompt(
@@ -169,84 +95,37 @@ def build_subtask_prompt(
     spirit = get_task_spirit(task_id)
     objective = spirit.get("objective", "") if spirit else ""
     spirit_anti = spirit.get("spirit_anti", "") if spirit else ""
-
     subtask_short_id = subtask.get("subtask_id", "")
     handoff = get_handoff_context(task_id, subtask_short_id)
 
-    spirit_anti_block = ""
-    if spirit_anti:
-        spirit_anti_block = f"\n# Guiding Principles\n{spirit_anti}"
-
-    handoff_block = ""
-    if handoff.get("previous_summaries"):
-        handoff_lines = ["\n# Previous Work Summary"]
-        for summary in handoff["previous_summaries"]:
-            handoff_lines.append(f"- Subtask {summary['short_id']}: {summary['summary']}")
-        handoff_block = "\n".join(handoff_lines)
-
-    # Inject resume context for previously-paused tasks
-    resume_block = build_resume_context(task_id)
-
-    steps = subtask.get("steps_from_table", [])
-    steps_block = build_steps_block(steps)
-
-    template = get_prompt_template("autocode-subtask")
-
+    template = get_prompt_template(_SLUG_AUTOCODE_SUBTASK)
     prompt = template.format_map({
         "objective": objective,
-        "spirit_anti_block": spirit_anti_block,
-        "handoff_block": handoff_block,
+        "spirit_anti_block": _build_spirit_block(spirit_anti),
+        "handoff_block": _build_handoff_block(handoff),
         "subtask_id": subtask_short_id,
         "description": subtask.get("description", ""),
-        "steps_block": steps_block,
+        "steps_block": build_steps_block(subtask.get("steps_from_table", [])),
         "project_path": project_path,
     })
 
-    # Append resume context for previously-paused tasks (outside template)
+    resume_block = build_resume_context(task_id)
     if resume_block:
         prompt += resume_block
-
-    # Append health context if any services are degraded
     health_block = build_health_context(project_id)
     if health_block:
         prompt += f"\n\n{health_block}"
-
     return prompt
 
 
-FEEDBACK_PROMPT = """Before this work stint ends, submit any feedback on the tools and infrastructure you used during this task.
-
-Search first to avoid duplicates: st feedback search "keyword"
-
-Then report:
-- What caused friction? st feedback report <component> "issue" --type friction --severity medium
-- Any improvement ideas? st feedback report <component> "idea" --type idea
-- What worked well? st feedback report <component> "what worked" --type praise
-
-Components: sf.cli, sf.dt, sf.quality, sf.worktree, sf.api, ah.memory, ah.sessions, ah.hooks, xc.tool_registry, xc.error_handling
-
-If nothing to report, say "no feedback".
-
-Task summary: {task_summary}"""
-
-
 def build_feedback_prompt(results: list[dict[str, Any]]) -> str:
-    """Build a feedback prompt with task execution summary.
-
-    Args:
-        results: List of subtask execution results
-
-    Returns:
-        Formatted feedback prompt string
-    """
-    summary_parts = []
-    for r in results:
-        sid = r.get("subtask_id", "?")
-        status = r.get("status", "unknown")
-        attempts = 1 + r.get("self_fix_attempts", 0) + r.get("supervisor_guided_attempts", 0)
-        summary_parts.append(f"- Subtask {sid}: {status} ({attempts} attempts)")
-
-    task_summary = "\n".join(summary_parts) if summary_parts else "No subtask results"
+    """Build a feedback prompt with task execution summary."""
+    parts = [
+        f"- Subtask {r.get('subtask_id', '?')}: {r.get('status', 'unknown')} "
+        f"({1 + r.get('self_fix_attempts', 0) + r.get('supervisor_guided_attempts', 0)} attempts)"
+        for r in results
+    ]
+    task_summary = "\n".join(parts) if parts else "No subtask results"
     return FEEDBACK_PROMPT.format(task_summary=task_summary)
 
 
@@ -256,35 +135,13 @@ def build_fix_prompt(
     previous_response: str,
     supervisor_guidance: str | None = None,
 ) -> str:
-    """Build a fix prompt with error context for self-healing.
-
-    Args:
-        subtask: The subtask being executed
-        failed_steps: List of failed step verification results
-        previous_response: Agent's previous response (for context)
-        supervisor_guidance: Optional supervisor guidance text
-
-    Returns:
-        Fix prompt to send to agent
-    """
-    subtask_short_id = subtask.get("subtask_id", "")
-    subtask_desc = subtask.get("description", "")
-
-    failures_block = build_failures_block(failed_steps)
-
-    supervisor_block = ""
-    if supervisor_guidance:
-        supervisor_block = f"\n## Supervisor Guidance\n{supervisor_guidance}"
-
-    steps = subtask.get("steps_from_table", [])
-    steps_block = build_steps_block(steps)
-
-    template = get_prompt_template("autocode-fix")
-
+    """Build a fix prompt with error context for self-healing."""
+    supervisor_block = f"\n## Supervisor Guidance\n{supervisor_guidance}" if supervisor_guidance else ""
+    template = get_prompt_template(_SLUG_AUTOCODE_FIX)
     return template.format_map({
-        "subtask_id": subtask_short_id,
-        "description": subtask_desc,
-        "failures_block": failures_block,
+        "subtask_id": subtask.get("subtask_id", ""),
+        "description": subtask.get("description", ""),
+        "failures_block": build_failures_block(failed_steps),
         "supervisor_block": supervisor_block,
-        "steps_block": steps_block,
+        "steps_block": build_steps_block(subtask.get("steps_from_table", [])),
     })
