@@ -1,20 +1,17 @@
 'use client'
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { clsx } from 'clsx'
-import { Loader2, Zap } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { Loader2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import {
-  type AutonomousExecutionSettingsUpdate,
-  getAutonomousSettings,
-  updateAutonomousSettings,
-} from '@/lib/api'
+import { getAutonomousSettings } from '@/lib/api'
 import { ExecutionControlSection } from './ExecutionControlSection'
 import { TaskFilteringSection } from './TaskFilteringSection'
 import { SelfHealingSection } from './SelfHealingSection'
 import { QualityGateSection } from './QualityGateSection'
 import { MergeReviewSection } from './MergeReviewSection'
+import { MasterToggle } from './MasterToggle'
 import { isInTimeWindow, TASK_TYPES } from './autonomous-utils'
+import { useAutonomousSettingsHandlers } from './useAutonomousSettingsHandlers'
 
 interface AutonomousSettingsPanelProps {
   projectId: string
@@ -23,7 +20,6 @@ interface AutonomousSettingsPanelProps {
 export function AutonomousSettingsPanel({
   projectId,
 }: AutonomousSettingsPanelProps) {
-  const queryClient = useQueryClient()
   const [currentInWindow, setCurrentInWindow] = useState(false)
 
   const { data: settings, isLoading } = useQuery({
@@ -31,29 +27,17 @@ export function AutonomousSettingsPanel({
     queryFn: () => getAutonomousSettings(projectId),
   })
 
-  // Update time window status every minute
   useEffect(() => {
     if (!settings) return
-
     const updateStatus = () => {
       setCurrentInWindow(isInTimeWindow(settings.start_hour, settings.end_hour))
     }
-
     updateStatus()
-    const interval = setInterval(updateStatus, 60000) // Check every minute
-
+    const interval = setInterval(updateStatus, 60000)
     return () => clearInterval(interval)
   }, [settings])
 
-  const mutation = useMutation({
-    mutationFn: (update: AutonomousExecutionSettingsUpdate) =>
-      updateAutonomousSettings(projectId, update),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ['autonomous-settings', projectId],
-      })
-    },
-  })
+  const handlers = useAutonomousSettingsHandlers(projectId, settings!)
 
   if (isLoading) {
     return (
@@ -71,185 +55,60 @@ export function AutonomousSettingsPanel({
     )
   }
 
-  const handleTimeRangeChange = (values: number[]) => {
-    const [start, end] = values
-    mutation.mutate({ start_hour: start, end_hour: end })
-  }
-
-  const handleConcurrencyChange = (value: string) => {
-    mutation.mutate({ max_concurrent: parseInt(value, 10) })
-  }
-
-  const handleEnabledToggle = () => {
-    mutation.mutate({ enabled: !settings.enabled })
-  }
-
-  const handleMaxTasksPerDayChange = (value: string) => {
-    const numValue = value === '' ? null : parseInt(value, 10)
-    if (numValue === null || (numValue >= 1 && !Number.isNaN(numValue))) {
-      mutation.mutate({ max_tasks_per_day: numValue })
-    }
-  }
-
-  const handleCooldownChange = (value: string) => {
-    const numValue = parseInt(value, 10)
-    if (!Number.isNaN(numValue) && numValue >= 0) {
-      mutation.mutate({ cooldown_minutes: numValue })
-    }
-  }
-
-  const handleTaskTypeToggle = (taskType: string) => {
-    const currentTypes = settings.allowed_types || TASK_TYPES.map(t => t.value)
-    const newTypes = currentTypes.includes(taskType)
-      ? currentTypes.filter(t => t !== taskType)
-      : [...currentTypes, taskType]
-
-    // If all types are selected, send null (allow all)
-    const allSelected = newTypes.length === TASK_TYPES.length
-    mutation.mutate({ allowed_types: allSelected ? null : newTypes })
-  }
-
-  const handleModelTierChange = (value: string) => {
-    mutation.mutate({ preferred_model_tier: value })
-  }
-
-  const handleSelfFixAttemptsChange = (value: string) => {
-    const numValue = parseInt(value, 10)
-    if (!Number.isNaN(numValue) && numValue >= 0 && numValue <= 10) {
-      mutation.mutate({ max_self_fix_attempts: numValue })
-    }
-  }
-
-  const handleSupervisorAttemptsChange = (value: string) => {
-    const numValue = parseInt(value, 10)
-    if (!Number.isNaN(numValue) && numValue >= 0 && numValue <= 10) {
-      mutation.mutate({ max_supervisor_attempts: numValue })
-    }
-  }
-
-  const handleExtensionsChange = (value: string) => {
-    const numValue = parseInt(value, 10)
-    if (!Number.isNaN(numValue) && numValue >= 0 && numValue <= 10) {
-      mutation.mutate({ max_extensions: numValue })
-    }
-  }
-
-  const handleAutoMergeToggle = () => {
-    mutation.mutate({ auto_merge_enabled: !settings.auto_merge_enabled })
-  }
-
-  const handleRequireReviewToggle = () => {
-    mutation.mutate({ require_review: !settings.require_review })
-  }
-
-  const handleFrequencyChange = (value: string) => {
-    const numValue = parseInt(value, 10)
-    if (!Number.isNaN(numValue) && numValue >= 5 && numValue <= 1440) {
-      mutation.mutate({ frequency_minutes: numValue })
-    }
-  }
-
-  const handleAutoMergeTiersChange = (tiers: number[]) => {
-    mutation.mutate({ auto_merge_tiers: tiers })
-  }
-
-  const handleQualityToolsChange = (tools: string[]) => {
-    mutation.mutate({ quality_gate_tools: tools })
-  }
-
-  const handleQualityModeChange = (mode: string) => {
-    mutation.mutate({ quality_gate_mode: mode })
-  }
-
-  const handleQualityFixToggle = () => {
-    mutation.mutate({ quality_gate_fix_enabled: !settings.quality_gate_fix_enabled })
-  }
-
   const selectedTypes = settings.allowed_types || TASK_TYPES.map(t => t.value)
 
   return (
     <div className="space-y-6">
-      {/* Master Toggle */}
-      <div className="p-6 bg-slate-800/50 rounded-lg border border-slate-700">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-medium text-slate-200 flex items-center gap-2">
-              <Zap className="w-4 h-4 text-yellow-400" />
-              Autonomous Execution
-            </h3>
-            <p className="text-xs text-slate-400 mt-1">
-              Enable AI agents to automatically execute refactor, debt, and
-              regression tasks
-            </p>
-          </div>
-          <button
-            onClick={handleEnabledToggle}
-            disabled={mutation.isPending}
-            className={clsx(
-              'relative w-12 h-6 rounded-full transition-colors',
-              settings.enabled ? 'bg-phosphor-500' : 'bg-slate-600',
-            )}
-          >
-            <span
-              className={clsx(
-                'absolute top-1 w-4 h-4 bg-white rounded-full transition-transform',
-                settings.enabled ? 'translate-x-7' : 'translate-x-1',
-              )}
-            />
-          </button>
-        </div>
-      </div>
+      <MasterToggle
+        enabled={settings.enabled}
+        isPending={handlers.isPending}
+        onToggle={handlers.handleEnabledToggle}
+      />
 
-      {/* Execution Control Section */}
       <ExecutionControlSection
         settings={settings}
         currentInWindow={currentInWindow}
-        isPending={mutation.isPending}
-        onTimeRangeChange={handleTimeRangeChange}
-        onConcurrencyChange={handleConcurrencyChange}
-        onMaxTasksPerDayChange={handleMaxTasksPerDayChange}
-        onCooldownChange={handleCooldownChange}
-        onFrequencyChange={handleFrequencyChange}
+        isPending={handlers.isPending}
+        onTimeRangeChange={handlers.handleTimeRangeChange}
+        onConcurrencyChange={handlers.handleConcurrencyChange}
+        onMaxTasksPerDayChange={handlers.handleMaxTasksPerDayChange}
+        onCooldownChange={handlers.handleCooldownChange}
+        onFrequencyChange={handlers.handleFrequencyChange}
       />
 
-      {/* Task Filtering Section */}
       <TaskFilteringSection
         settings={settings}
         selectedTypes={selectedTypes}
-        isPending={mutation.isPending}
-        onTaskTypeToggle={handleTaskTypeToggle}
-        onModelTierChange={handleModelTierChange}
+        isPending={handlers.isPending}
+        onTaskTypeToggle={handlers.handleTaskTypeToggle}
+        onModelTierChange={handlers.handleModelTierChange}
       />
 
-      {/* Quality Gate Section */}
       <QualityGateSection
         settings={settings}
-        isPending={mutation.isPending}
-        onToolsChange={handleQualityToolsChange}
-        onModeChange={handleQualityModeChange}
-        onFixEnabledToggle={handleQualityFixToggle}
+        isPending={handlers.isPending}
+        onToolsChange={handlers.handleQualityToolsChange}
+        onModeChange={handlers.handleQualityModeChange}
+        onFixEnabledToggle={handlers.handleQualityFixToggle}
       />
 
-      {/* Self-Healing Section */}
       <SelfHealingSection
         settings={settings}
-        isPending={mutation.isPending}
-        onSelfFixAttemptsChange={handleSelfFixAttemptsChange}
-        onSupervisorAttemptsChange={handleSupervisorAttemptsChange}
-        onExtensionsChange={handleExtensionsChange}
+        isPending={handlers.isPending}
+        onSelfFixAttemptsChange={handlers.handleSelfFixAttemptsChange}
+        onSupervisorAttemptsChange={handlers.handleSupervisorAttemptsChange}
+        onExtensionsChange={handlers.handleExtensionsChange}
       />
 
-      {/* Merge & Review Section */}
       <MergeReviewSection
         settings={settings}
-        isPending={mutation.isPending}
-        onAutoMergeToggle={handleAutoMergeToggle}
-        onRequireReviewToggle={handleRequireReviewToggle}
-        onAutoMergeTiersChange={handleAutoMergeTiersChange}
+        isPending={handlers.isPending}
+        onAutoMergeToggle={handlers.handleAutoMergeToggle}
+        onRequireReviewToggle={handlers.handleRequireReviewToggle}
+        onAutoMergeTiersChange={handlers.handleAutoMergeTiersChange}
       />
 
-      {/* Save indicator */}
-      {mutation.isPending && (
+      {handlers.isPending && (
         <div className="flex items-center justify-center gap-2 text-sm text-slate-400">
           <Loader2 className="w-4 h-4 animate-spin" />
           Saving...
