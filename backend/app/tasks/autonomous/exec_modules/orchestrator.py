@@ -33,25 +33,76 @@ def start_execution(
 ) -> dict[str, Any]:
     """Start autonomous execution of a task.
 
-    Executes subtasks in order with fresh context per subtask.
-    Uses complete() with execute_tools=True for agentic execution.
-
-    Concurrency is handled by Hatchet ConcurrencyExpression (max_runs=1 per task_id).
-
-    Args:
-        task_id: The task ID to execute
-        project_id: The project ID
-        dispatch: Optional callback to trigger downstream workflows
-
-    Returns:
-        Execution result with status
+    Executes subtasks in order with fresh context per subtask, using
+    complete() with execute_tools=True. Concurrency handled by Hatchet
+    ConcurrencyExpression (max_runs=1 per task_id).
     """
     debug_section("Autonomous Execution", task_id=task_id, project_id=project_id)
     logger.info("Starting autonomous execution", task_id=task_id, project_id=project_id)
-
     emit_log(task_id, "info", "Starting autonomous execution", project_id=project_id)
-
     return execute_task_locked(task_id, project_id, dispatch=dispatch)
+
+
+def _prepare_execution(
+    task_id: str, project_id: str,
+) -> tuple[dict[str, Any] | None, str | None, str | None, str | None, str | None]:
+    """Validate task and set up worktree. Returns (error, path, task_type, agent_override, tier)."""
+    task = task_store.get_task(task_id)
+    if not task:
+        emit_error(task_id, "Task not found", recoverable=False, project_id=project_id)
+        return {"task_id": task_id, "status": "error", "message": "Task not found"}, None, None, None, None
+
+    task_type = task.get("task_type")
+    agent_override = task.get("agent_override")
+
+    from ....storage.agent_configs_autonomous import get_preferred_model_tier
+    tier_preference = get_preferred_model_tier(project_id)
+
+    if not validate_pristine_codebase(task_id, project_id):
+        return (
+            {"task_id": task_id, "status": "blocked", "error": "Pristine validation failed", "reason": "pristine_self_heal_failed"},
+            None, None, None, None,
+        )
+
+    project_path = setup_worktree(task_id, project_id)
+    if not project_path:
+        return (
+            {"task_id": task_id, "status": "blocked", "error": "Worktree creation failed", "reason": "worktree_creation_failed"},
+            None, None, None, None,
+        )
+
+    return None, project_path, task_type, agent_override, tier_preference
+
+
+def _load_subtasks(task_id: str, project_id: str) -> tuple[dict[str, Any] | None, list, int, int]:
+    """Load subtasks. Returns (error, incomplete, total, completed)."""
+    subtasks = get_subtasks_for_task(task_id, include_steps=True)
+    reset_steps_for_rerun(subtasks)
+    incomplete = [s for s in subtasks if not s.get("passes")]
+    total = len(subtasks)
+    completed = total - len(incomplete)
+    emit_progress(task_id, total_subtasks=total, completed_subtasks=completed, project_id=project_id)
+    if total == 0:
+        emit_error(task_id, "No subtasks to execute — planning may have failed", project_id=project_id)
+        task_store.update_task_status(task_id, "blocked")
+        return {"task_id": task_id, "status": "blocked", "error": "No subtasks to execute", "reason": "no_subtasks"}, [], 0, 0
+    return None, incomplete, total, completed
+
+
+def _handle_completion(
+    task_id: str, project_id: str, project_path: str,
+    results: list, incomplete: list, dispatch: Callable[[str, str, str], None] | None,
+) -> None:
+    """Route to appropriate completion handler based on results."""
+    all_passed = all(r.get("status") == "passed" for r in results)
+    any_passed = any(r.get("status") == "passed" for r in results)
+    if all_passed and len(results) == len(incomplete):
+        handle_successful_completion(task_id, project_id, project_path, results, dispatch)
+    elif any_passed:
+        if not handle_partial_completion(task_id, project_id, project_path, results, dispatch):
+            handle_failed_execution(task_id, project_id)
+    else:
+        handle_failed_execution(task_id, project_id)
 
 
 def execute_task_locked(
@@ -60,101 +111,30 @@ def execute_task_locked(
     dispatch: Callable[[str, str, str], None] | None = None,
 ) -> dict[str, Any]:
     """Inner execution body. Concurrency handled by Hatchet."""
-    task = task_store.get_task(task_id)
-    if not task:
-        emit_error(task_id, "Task not found", recoverable=False, project_id=project_id)
-        return {"task_id": task_id, "status": "error", "message": "Task not found"}
-
-    # Extract agent routing info
-    task_type = task.get("task_type")
-    agent_override = task.get("agent_override")
-
-    # Resolve tier preference from project config
-    from ....storage.agent_configs_autonomous import get_preferred_model_tier
-
-    tier_preference = get_preferred_model_tier(project_id)
-
-    # Verify codebase is pristine before automated execution
-    if not validate_pristine_codebase(task_id, project_id):
-        return {
-            "task_id": task_id,
-            "status": "blocked",
-            "error": "Pristine validation failed",
-            "reason": "pristine_self_heal_failed",
-        }
-
-    # Setup worktree and handle orphaned changes
-    project_path = setup_worktree(task_id, project_id)
-    if not project_path:
-        return {
-            "task_id": task_id,
-            "status": "blocked",
-            "error": "Worktree creation failed",
-            "reason": "worktree_creation_failed",
-        }
+    error, project_path, task_type, agent_override, tier_preference = _prepare_execution(task_id, project_id)
+    if error:
+        return error
 
     task_store.update_task_status(task_id, "running")
 
-    subtasks = get_subtasks_for_task(task_id, include_steps=True)
-    reset_steps_for_rerun(subtasks)
-    incomplete = [s for s in subtasks if not s.get("passes")]
-    total = len(subtasks)
-    completed = total - len(incomplete)
+    error, incomplete, total, completed = _load_subtasks(task_id, project_id)
+    if error:
+        return error
 
-    emit_progress(
-        task_id, total_subtasks=total, completed_subtasks=completed, project_id=project_id
-    )
-
-    # Block if planning produced no subtasks — nothing to execute
-    if total == 0:
-        emit_error(task_id, "No subtasks to execute — planning may have failed", project_id=project_id)
-        task_store.update_task_status(task_id, "blocked")
-        return {
-            "task_id": task_id,
-            "status": "blocked",
-            "error": "No subtasks to execute",
-            "reason": "no_subtasks",
-        }
-
-    # Handle case where all subtasks are already complete
     if not incomplete:
         return handle_early_completion(task_id, project_id, total, dispatch)
 
-    # Execute incomplete subtasks
     results, completed = execute_subtask_loop(
-        task_id,
-        project_id,
-        project_path,
-        incomplete,
-        total,
-        completed,
-        task_type,
-        agent_override,
-        tier_preference=tier_preference,
+        task_id, project_id, project_path, incomplete, total, completed,
+        task_type, agent_override, tier_preference=tier_preference,
     )
 
-    # Check for main repo leakage
     check_main_repo_leakage(task_id, project_id, project_path)
-
-    # Collect agent feedback (fire-and-forget, never blocks completion)
     execute_agent_feedback(
         task_id, project_path, project_id, results,
         agent_slug=agent_override or "coder",
         tier_preference=tier_preference,
     )
 
-    # Handle completion or failure
-    all_passed = all(r.get("status") == "passed" for r in results)
-    any_passed = any(r.get("status") == "passed" for r in results)
-    if all_passed and len(results) == len(incomplete):
-        handle_successful_completion(task_id, project_id, project_path, results, dispatch)
-    elif any_passed:
-        # Partial success: merge passing work, create follow-up for failures
-        if not handle_partial_completion(
-            task_id, project_id, project_path, results, dispatch
-        ):
-            handle_failed_execution(task_id, project_id)
-    else:
-        handle_failed_execution(task_id, project_id)
-
+    _handle_completion(task_id, project_id, project_path, results, incomplete, dispatch)
     return {"task_id": task_id, "status": "executed", "subtask_results": results}
