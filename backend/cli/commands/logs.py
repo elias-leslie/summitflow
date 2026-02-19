@@ -1,7 +1,6 @@
 """Log viewing commands using systemd journal.
 
 Provides unified log tailing across SummitFlow and Agent Hub services.
-Based on portfolio-ai's journalctl integration pattern.
 """
 
 from __future__ import annotations
@@ -13,12 +12,14 @@ import typer
 from ..output import output_error, output_json
 from ..output_context import OutputContext
 from .logs_config import (
+    DEFAULT_SINCE,
+    LEVELS_SCAN_LINES,
     SYSTEM_SERVICES,
     USER_SERVICES,
     get_service_list,
     validate_since,
 )
-from .logs_fetcher import fetch_logs, follow_logs, format_logs_compact
+from .logs_fetcher import collect_all_logs, follow_logs, format_logs_compact
 
 app = typer.Typer(help="View and tail service logs")
 
@@ -56,11 +57,7 @@ def tail(
     ] = None,
     lines: Annotated[
         int,
-        typer.Option(
-            "--lines",
-            "-n",
-            help="Number of lines to show",
-        ),
+        typer.Option("--lines", "-n", help="Number of lines to show"),
     ] = 100,
     since: Annotated[
         str,
@@ -68,14 +65,10 @@ def tail(
             "--since",
             help="Time range (e.g., '30 minutes ago', '1 hour ago', 'today')",
         ),
-    ] = "30 minutes ago",
+    ] = DEFAULT_SINCE,
     follow: Annotated[
         bool,
-        typer.Option(
-            "--follow",
-            "-f",
-            help="Follow log output (like tail -f)",
-        ),
+        typer.Option("--follow", "-f", help="Follow log output (like tail -f)"),
     ] = False,
 ) -> None:
     """Tail service logs with filtering.
@@ -87,35 +80,19 @@ def tail(
         st logs tail --since "1 hour ago" --lines 200
         st logs tail -f  # Follow mode
     """
-    validated_since = validate_since(since)
     user_svcs, system_svcs = get_service_list(service)
 
     if follow:
-        # Use journalctl --follow directly
         follow_logs(user_svcs, system_svcs, level)
         return
 
-    # Fetch from both user and system services
-    all_logs = []
+    validated_since = validate_since(since)
+    all_logs = collect_all_logs(user_svcs, system_svcs, lines, validated_since)
 
-    if user_svcs:
-        all_logs.extend(
-            fetch_logs(user_svcs, is_user_mode=True, lines=lines, since=validated_since)
-        )
-    if system_svcs:
-        all_logs.extend(
-            fetch_logs(system_svcs, is_user_mode=False, lines=lines, since=validated_since)
-        )
-
-    # Sort by timestamp
-    all_logs.sort(key=lambda x: x.timestamp)
-
-    # Filter by level if specified
     if level:
         level_upper = level.upper()
         all_logs = [log for log in all_logs if log.level == level_upper]
 
-    # Limit to requested number
     all_logs = all_logs[-lines:]
 
     if not all_logs:
@@ -143,12 +120,7 @@ def services(ctx: typer.Context) -> None:
         for name, unit in SYSTEM_SERVICES.items():
             print(f"  {name:15} {unit}")
     else:
-        output_json(
-            {
-                "user_services": USER_SERVICES,
-                "system_services": SYSTEM_SERVICES,
-            }
-        )
+        output_json({"user_services": USER_SERVICES, "system_services": SYSTEM_SERVICES})
 
 
 @app.command()
@@ -159,16 +131,8 @@ def levels(ctx: typer.Context) -> None:
         st logs levels
     """
     user_svcs, system_svcs = get_service_list("all")
-    since = "30 minutes ago"
-    lines = 1000
+    all_logs = collect_all_logs(user_svcs, system_svcs, LEVELS_SCAN_LINES, DEFAULT_SINCE)
 
-    all_logs = []
-    if user_svcs:
-        all_logs.extend(fetch_logs(user_svcs, is_user_mode=True, lines=lines, since=since))
-    if system_svcs:
-        all_logs.extend(fetch_logs(system_svcs, is_user_mode=False, lines=lines, since=since))
-
-    # Count by level
     counts: dict[str, int] = {}
     for log in all_logs:
         counts[log.level] = counts.get(log.level, 0) + 1
@@ -181,4 +145,4 @@ def levels(ctx: typer.Context) -> None:
             if count > 0:
                 print(f"  {lvl:8} {count}")
     else:
-        output_json({"counts": counts, "total": len(all_logs), "since": since})
+        output_json({"counts": counts, "total": len(all_logs), "since": DEFAULT_SINCE})
