@@ -18,23 +18,17 @@ logger = logging.getLogger(__name__)
 
 
 def delete_existing_refactor_tasks(project_id: str) -> int:
-    """Delete existing refactor tasks for a project, preserving in-progress work.
+    """Delete ALL existing refactor tasks for a project, regardless of status.
 
-    Skips tasks that are running, paused, or blocked — these represent
-    active work that should not be destroyed by a regenerate cycle.
+    Every regeneration cycle starts fresh — all completed, pending, running,
+    paused, and blocked refactor tasks are deleted before new ones are created.
     """
-    protected_statuses = {"running", "paused", "blocked"}
     refactor_tasks = list_tasks(project_id=project_id, task_type_filter="refactor", limit=500)
     deleted = 0
-    protected = 0
 
     for task in refactor_tasks:
         task_id = task.get("id")
         if not task_id:
-            continue
-        if task.get("status") in protected_statuses:
-            protected += 1
-            logger.info(f"Protecting in-progress task {task_id}: {task.get('title', '')[:50]}")
             continue
         try:
             if delete_task(task_id):
@@ -43,11 +37,8 @@ def delete_existing_refactor_tasks(project_id: str) -> int:
         except Exception as e:
             logger.warning(f"Failed to delete task {task_id}: {e}")
 
-    if deleted > 0 or protected > 0:
-        logger.info(
-            f"Refactor task cleanup for {project_id}: "
-            f"deleted={deleted}, protected={protected}"
-        )
+    if deleted > 0:
+        logger.info(f"Refactor task cleanup for {project_id}: deleted={deleted}")
     return deleted
 
 
@@ -148,7 +139,7 @@ def generate_refactor_tasks_internal(
     project_id: str, skip_existing: bool, project_root: str | None = None
 ) -> dict[str, Any]:
     """Generate refactoring tasks from Explorer scan results."""
-    result = get_refactor_targets(project_id, limit=20)
+    result = get_refactor_targets(project_id, limit=15)
     targets = result.get("targets", [])
     created = 0
     scanned = 0
