@@ -51,39 +51,45 @@ class FileScanner(BaseScanner):
             return []
 
         logger.info(f"File scan started for {self.project_id}: {self.root_path}")
-
         entries: list[ExplorerEntryCreate] = []
         dir_stats: dict[str, dict[str, int]] = {}
 
         for root_dir, dirnames, filenames in os.walk(self.root_path):
             dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
             rel_root = Path(root_dir).relative_to(self.root_path)
-
-            for filename in filenames:
-                file_path = Path(root_dir) / filename
-                rel_path = str(rel_root / filename) if rel_root != Path(".") else filename
-                ext = file_path.suffix.lower()
-
-                if ext in SKIP_EXTENSIONS:
-                    continue
-
-                try:
-                    entry = self._scan_file(file_path, rel_path, ext)
-                    if entry:
-                        entries.append(entry)
-                        aggregate_to_parents(rel_path, entry, dir_stats)
-                except Exception as e:
-                    logger.warning(f"File scan error for {rel_path}: {e}")
+            self._scan_dir(root_dir, rel_root, filenames, entries, dir_stats)
 
         self._add_git_info_batch(entries)
         dir_entries = create_directory_entries(dir_stats)
         entries.extend(dir_entries)
-
         logger.info(
             f"File scan found {len(entries)} entries "
             f"({len(entries) - len(dir_entries)} files, {len(dir_entries)} dirs)"
         )
         return entries
+
+    def _scan_dir(
+        self,
+        root_dir: str,
+        rel_root: Path,
+        filenames: list[str],
+        entries: list[ExplorerEntryCreate],
+        dir_stats: dict[str, dict[str, int]],
+    ) -> None:
+        """Scan all files in a single directory."""
+        for filename in filenames:
+            file_path = Path(root_dir) / filename
+            rel_path = str(rel_root / filename) if rel_root != Path(".") else filename
+            ext = file_path.suffix.lower()
+            if ext in SKIP_EXTENSIONS:
+                continue
+            try:
+                entry = self._scan_file(file_path, rel_path, ext)
+                if entry:
+                    entries.append(entry)
+                    aggregate_to_parents(rel_path, entry, dir_stats)
+            except Exception as e:
+                logger.warning(f"File scan error for {rel_path}: {e}")
 
     def _scan_file(self, file_path: Path, rel_path: str, ext: str) -> ExplorerEntryCreate | None:
         """Scan a single file and return entry."""
