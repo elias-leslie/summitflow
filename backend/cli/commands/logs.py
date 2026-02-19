@@ -36,73 +36,53 @@ def logs_default(ctx: typer.Context) -> None:
         tail(ctx)
 
 
+def _do_tail(
+    ctx: typer.Context,
+    user_svcs: list[str],
+    system_svcs: list[str],
+    level: str | None,
+    lines: int,
+    since: str,
+) -> None:
+    """Fetch, filter, and render tail logs."""
+    validated_since = validate_since(since)
+    all_logs = collect_all_logs(user_svcs, system_svcs, lines, validated_since)
+    if level:
+        all_logs = [log for log in all_logs if log.level == level.upper()]
+    all_logs = all_logs[-lines:]
+    if not all_logs:
+        output_error("No logs found")
+        return
+    if ctx.obj.is_compact:
+        format_logs_compact(all_logs)
+    else:
+        output_json([log.to_dict() for log in all_logs])
+
+
 @app.command()
 def tail(
     ctx: typer.Context,
     service: Annotated[
         str | None,
-        typer.Option(
-            "--service",
-            "-s",
-            help="Filter by service (summitflow,agent-hub,redis,postgres,neo4j,all)",
-        ),
+        typer.Option("--service", "-s", help="Filter by service (summitflow,agent-hub,redis,postgres,neo4j,all)"),
     ] = None,
     level: Annotated[
         str | None,
-        typer.Option(
-            "--level",
-            "-l",
-            help="Filter by level (ERROR,WARN,INFO,DEBUG)",
-        ),
+        typer.Option("--level", "-l", help="Filter by level (ERROR,WARN,INFO,DEBUG)"),
     ] = None,
-    lines: Annotated[
-        int,
-        typer.Option("--lines", "-n", help="Number of lines to show"),
-    ] = 100,
+    lines: Annotated[int, typer.Option("--lines", "-n", help="Number of lines to show")] = 100,
     since: Annotated[
         str,
-        typer.Option(
-            "--since",
-            help="Time range (e.g., '30 minutes ago', '1 hour ago', 'today')",
-        ),
+        typer.Option("--since", help="Time range (e.g., '30 minutes ago', '1 hour ago', 'today')"),
     ] = DEFAULT_SINCE,
-    follow: Annotated[
-        bool,
-        typer.Option("--follow", "-f", help="Follow log output (like tail -f)"),
-    ] = False,
+    follow: Annotated[bool, typer.Option("--follow", "-f", help="Follow log output (like tail -f)")] = False,
 ) -> None:
-    """Tail service logs with filtering.
-
-    Examples:
-        st logs tail
-        st logs tail --service summitflow
-        st logs tail -s agent-hub --level ERROR
-        st logs tail --since "1 hour ago" --lines 200
-        st logs tail -f  # Follow mode
-    """
+    """Tail service logs with filtering."""
     user_svcs, system_svcs = get_service_list(service)
-
     if follow:
         follow_logs(user_svcs, system_svcs, level)
         return
-
-    validated_since = validate_since(since)
-    all_logs = collect_all_logs(user_svcs, system_svcs, lines, validated_since)
-
-    if level:
-        level_upper = level.upper()
-        all_logs = [log for log in all_logs if log.level == level_upper]
-
-    all_logs = all_logs[-lines:]
-
-    if not all_logs:
-        output_error("No logs found")
-        return
-
-    if ctx.obj.is_compact:
-        format_logs_compact(all_logs)
-    else:
-        output_json([log.to_dict() for log in all_logs])
+    _do_tail(ctx, user_svcs, system_svcs, level, lines, since)
 
 
 @app.command()
