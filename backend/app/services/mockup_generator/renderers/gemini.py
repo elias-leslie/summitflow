@@ -190,13 +190,6 @@ def generate_mockup_gemini(
         )
         return _build_success_result(mockup, image_path, generation_time)
 
-    except AgentHubError as e:
-        return _build_error_result(
-            project_id,
-            explorer_entry_id,
-            e,
-            int((time.monotonic() - start_time) * 1000),
-        )
     except Exception as e:
         return _build_error_result(
             project_id,
