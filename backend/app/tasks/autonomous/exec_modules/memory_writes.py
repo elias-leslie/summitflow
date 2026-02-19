@@ -14,6 +14,16 @@ from ....services.agent_hub_client import get_sync_client
 
 logger = get_logger(__name__)
 
+_TIER = "reference"
+_SCOPE = "project"
+
+
+def _issues(step_results: list[dict[str, Any]]) -> str:
+    failed = [r for r in step_results if not r.get("passed")]
+    return "; ".join(
+        r.get("reason", r.get("error", "unknown"))[:80] for r in failed[:3]
+    )
+
 
 def save_subtask_learning(
     task_id: str,
@@ -32,50 +42,26 @@ def save_subtask_learning(
     """
     total_attempts = 1 + self_fix_attempts + supervisor_guided_attempts
     if passed and total_attempts == 1:
-        # Clean pass, nothing interesting to learn
-        return
-
+        return  # Clean pass, nothing interesting to learn
     try:
         client = get_sync_client()
-        type_tag = f" [{subtask_type}]" if subtask_type else ""
-
-        if passed and total_attempts > 1:
-            failed_steps = [r for r in step_results if not r.get("passed")]
-            issues = "; ".join(
-                r.get("reason", r.get("error", "unknown"))[:80]
-                for r in failed_steps[:3]
-            )
+        tag = f" [{subtask_type}]" if subtask_type else ""
+        ctx = f"task:{task_id} subtask:{subtask_short_id}"
+        if passed:
             content = (
-                f"Subtask {subtask_short_id}{type_tag} required {total_attempts} attempts "
+                f"Subtask {subtask_short_id}{tag} required {total_attempts} attempts "
                 f"({self_fix_attempts} self-fix, {supervisor_guided_attempts} guided). "
-                f"Initial issues: {issues}"
+                f"Initial issues: {_issues(step_results)}"
             )
-            client.save_learning(
-                content,
-                injection_tier="reference",
-                confidence=70,
-                context=f"task:{task_id} subtask:{subtask_short_id}",
-                scope="project",
-                scope_id=project_id,
-            )
-        elif not passed:
-            failed_steps = [r for r in step_results if not r.get("passed")]
-            issues = "; ".join(
-                r.get("reason", r.get("error", "unknown"))[:80]
-                for r in failed_steps[:3]
-            )
+            client.save_learning(content, injection_tier=_TIER, confidence=70,
+                                 context=ctx, scope=_SCOPE, scope_id=project_id)
+        else:
             content = (
-                f"Subtask {subtask_short_id}{type_tag} FAILED after {total_attempts} "
-                f"attempts. Unresolved: {issues}"
+                f"Subtask {subtask_short_id}{tag} FAILED after {total_attempts} "
+                f"attempts. Unresolved: {_issues(step_results)}"
             )
-            client.save_learning(
-                content,
-                injection_tier="reference",
-                confidence=60,
-                context=f"task:{task_id} subtask:{subtask_short_id}",
-                scope="project",
-                scope_id=project_id,
-            )
+            client.save_learning(content, injection_tier=_TIER, confidence=60,
+                                 context=ctx, scope=_SCOPE, scope_id=project_id)
     except Exception as e:
         logger.debug("Memory write failed (non-blocking)", error=str(e))
 
@@ -93,14 +79,9 @@ def save_qa_fix_pattern(
             f"QA fix pattern: concern '{concern[:120]}' resolved in "
             f"{fix_iteration} iteration(s). Task {task_id}."
         )
-        client.save_learning(
-            content,
-            injection_tier="reference",
-            confidence=75,
-            context=f"task:{task_id} qa-fix",
-            scope="project",
-            scope_id=project_id,
-        )
+        client.save_learning(content, injection_tier=_TIER, confidence=75,
+                             context=f"task:{task_id} qa-fix",
+                             scope=_SCOPE, scope_id=project_id)
     except Exception as e:
         logger.debug("QA fix memory write failed (non-blocking)", error=str(e))
 
