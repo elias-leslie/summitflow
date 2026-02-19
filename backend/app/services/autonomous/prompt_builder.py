@@ -64,24 +64,44 @@ def build_execution_prompt(
     return "\n".join(lines).replace("\n\n\n", "\n\n")
 
 
+def _format_steps(lines: list[str], steps: list[dict[str, Any]]) -> None:
+    """Append formatted step entries to lines."""
+    lines.append("**Steps to complete:**")
+    for s in steps:
+        m = "✓" if s.get("passes") else "○"
+        lines.append(f"{m} {s.get('step_number')}. {s.get('description', '')}")
+    lines.append("")
+
+
+def _add_steps_from_subtasks(lines: list[str], task_id: str) -> bool:
+    """Try to populate steps from subtask records; return True if populated."""
+    for subtask in get_subtasks_for_task(task_id, include_steps=False):
+        if subtask.get("passes"):
+            continue
+        steps = get_steps_for_subtask(subtask.get("id", ""))
+        if not steps:
+            continue
+        _format_steps(lines, steps)
+        return True
+    return False
+
+
 def _add_steps(lines: list[str], task: dict[str, Any]) -> None:
     """Add steps to the prompt from subtasks or plan content."""
-    if task_id := task.get("id"):
-        for subtask in get_subtasks_for_task(task_id, include_steps=False):
-            if not subtask.get("passes") and (steps := get_steps_for_subtask(subtask.get("id", ""))):
-                lines.append("**Steps to complete:**")
-                for s in steps:
-                    m = "✓" if s.get("passes") else "○"
-                    lines.append(f"{m} {s.get('step_number')}. {s.get('description', '')}")
-                lines.append("")
-                return
+    task_id = task.get("id")
+    if task_id and _add_steps_from_subtasks(lines, task_id):
+        return
 
     plan = task.get("plan_content") or {}
-    if isinstance(plan, dict) and (tasks := plan.get("tasks", [])):
-        current_id = plan.get("current_task_id")
-        if cur := next((t for t in tasks if t.get("id") == current_id), None):
-            lines.append("**Steps to complete:**")
-            lines.extend([f"1. {s}" for s in cur.get("steps", [])] + [""])
+    if not isinstance(plan, dict):
+        return
+    tasks = plan.get("tasks", [])
+    current_id = plan.get("current_task_id")
+    cur = next((t for t in tasks if t.get("id") == current_id), None)
+    if cur is None:
+        return
+    lines.append("**Steps to complete:**")
+    lines.extend([f"1. {s}" for s in cur.get("steps", [])] + [""])
 
 
 def _add_rules(lines: list[str], rules: dict[str, str]) -> None:
