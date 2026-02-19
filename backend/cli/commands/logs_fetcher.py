@@ -7,7 +7,12 @@ import subprocess
 from datetime import UTC, datetime
 from typing import Any
 
-from .logs_config import ALL_SERVICES, SYSLOG_PRIORITY_TO_LEVEL, USER_SERVICES, LogEntry
+from .logs_config import (
+    ALL_SERVICES,
+    SYSLOG_PRIORITY_TO_LEVEL,
+    USER_SERVICES,
+    LogEntry,
+)
 
 
 def extract_timestamp(entry: dict[str, Any]) -> datetime:
@@ -193,3 +198,19 @@ def follow_logs(
         subprocess.run(cmd, check=False)
     except KeyboardInterrupt:
         print("\nStopped following logs")
+
+
+def collect_all_logs(
+    user_svcs: list[str],
+    system_svcs: list[str],
+    lines: int,
+    since: str,
+) -> list[LogEntry]:
+    """Fetch and merge logs from user and system services sorted by timestamp."""
+    all_logs: list[LogEntry] = []
+    if user_svcs:
+        all_logs.extend(fetch_logs(user_svcs, is_user_mode=True, lines=lines, since=since))
+    if system_svcs:
+        all_logs.extend(fetch_logs(system_svcs, is_user_mode=False, lines=lines, since=since))
+    all_logs.sort(key=lambda x: x.timestamp)
+    return all_logs

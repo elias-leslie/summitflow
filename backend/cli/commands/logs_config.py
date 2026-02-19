@@ -40,6 +40,12 @@ SYSLOG_PRIORITY_TO_LEVEL = {
     7: "DEBUG",  # debug
 }
 
+# Default time window for log queries
+DEFAULT_SINCE = "30 minutes ago"
+
+# Number of log entries to scan for the levels command
+LEVELS_SCAN_LINES = 1000
+
 # Valid time range values
 VALID_SINCE = [
     "5 minutes ago",
