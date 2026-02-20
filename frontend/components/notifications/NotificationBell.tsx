@@ -55,7 +55,10 @@ export function NotificationBell({
   const [loading, setLoading] = useState(false)
 
   // Redirect push notification deep link (?notification_id=X) to /chat
+  // Only redirects if we're NOT already on /chat (avoids infinite loop)
   useEffect(() => {
+    if (window.location.pathname === '/chat') return
+
     const params = new URLSearchParams(window.location.search)
     const notificationId = params.get('notification_id')
     if (!notificationId) return
