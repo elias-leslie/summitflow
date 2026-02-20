@@ -25,10 +25,17 @@ export function PushNotificationToggle() {
         setState('denied')
         return
       }
-      const subscribed = await isSubscribed()
-      setState(subscribed ? 'subscribed' : 'unsubscribed')
+      try {
+        const subscribed = await isSubscribed()
+        setState(subscribed ? 'subscribed' : 'unsubscribed')
+      } catch {
+        // SW not ready or pushManager unavailable - show as unsubscribed
+        setState('unsubscribed')
+      }
     }
-    check()
+    // Timeout fallback in case SW ready hangs
+    const timeout = setTimeout(() => setState('unsubscribed'), 3000)
+    check().finally(() => clearTimeout(timeout))
   }, [])
 
   const handleToggle = useCallback(async () => {
