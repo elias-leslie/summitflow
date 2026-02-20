@@ -1,6 +1,6 @@
 'use client'
 
-import { Loader2, Play } from 'lucide-react'
+import { Loader2, RotateCcw } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
 import { getApiBaseUrl } from '@/lib/api-config'
@@ -27,15 +27,15 @@ export function ResumeBar({ taskId }: ResumeBarProps) {
 
       if (!response.ok) {
         const body = await response.json().catch(() => null)
-        throw new Error(body?.detail || `Resume failed (${response.status})`)
+        throw new Error(body?.detail || `Re-run failed (${response.status})`)
       }
 
       setResumed(true)
-      toast.success('Task resumed', {
-        description: `Task ${taskId} moved back to queue`,
+      toast.success('Task re-queued', {
+        description: 'Johnny will retry this task with your guidance',
       })
     } catch (err) {
-      toast.error('Failed to resume task', {
+      toast.error('Failed to re-run task', {
         description: err instanceof Error ? err.message : 'Unknown error',
       })
     } finally {
@@ -44,11 +44,11 @@ export function ResumeBar({ taskId }: ResumeBarProps) {
   }, [taskId])
 
   return (
-    <div className="flex items-center gap-2 sm:gap-3 animate-slide-up">
+    <div className="flex items-center gap-2 sm:gap-3">
       <span className="text-xs text-slate-500 font-mono truncate hidden sm:inline">
         {resumed
-          ? 'Task queued — Johnny is on it'
-          : 'Give Johnny direction, then resume'}
+          ? 'Queued — Johnny will retry'
+          : 'Chat with Johnny, then re-run when ready'}
       </span>
       <button
         type="button"
@@ -59,9 +59,9 @@ export function ResumeBar({ taskId }: ResumeBarProps) {
         {isResuming ? (
           <Loader2 className="w-3.5 h-3.5 animate-spin" />
         ) : (
-          <Play className="w-3.5 h-3.5" />
+          <RotateCcw className="w-3.5 h-3.5" />
         )}
-        {resumed ? 'Resumed' : isResuming ? 'Resuming…' : 'Resume'}
+        {resumed ? 'Queued' : isResuming ? 'Queuing…' : 'Re-run Task'}
       </button>
     </div>
   )

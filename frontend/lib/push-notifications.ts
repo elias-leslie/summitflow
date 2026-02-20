@@ -84,7 +84,7 @@ export async function subscribe(): Promise<boolean> {
     let registration = await navigator.serviceWorker.getRegistration()
     if (!registration) {
       console.log('[push] No SW found, registering...')
-      registration = await navigator.serviceWorker.register('/sw.js?v=22')
+      registration = await navigator.serviceWorker.register('/sw.js?v=23')
       await navigator.serviceWorker.ready
     }
 
