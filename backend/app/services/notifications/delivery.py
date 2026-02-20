@@ -99,7 +99,9 @@ async def _deliver_web_push(notification: dict[str, Any]) -> int:
         if sent:
             sent_count += 1
             # Update last_used_at in background
-            asyncio.to_thread(push_subscriptions.touch_subscription, sub["endpoint"])
+            asyncio.ensure_future(
+                asyncio.to_thread(push_subscriptions.touch_subscription, sub["endpoint"])
+            )
 
     return sent_count
 

@@ -118,7 +118,7 @@ export default function RootLayout({
             __html: `
               if ('serviceWorker' in navigator) {
                 window.addEventListener('load', function() {
-                  navigator.serviceWorker.register('/sw.js?v=20').then(
+                  navigator.serviceWorker.register('/sw.js?v=21').then(
                     function(registration) {
                       console.log('SW registered:', registration.scope);
                     },
