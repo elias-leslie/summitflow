@@ -40,12 +40,22 @@ export function PushNotificationToggle() {
 
   const handleToggle = useCallback(async () => {
     setState('loading')
-    if (state === 'subscribed') {
-      const ok = await unsubscribe()
-      setState(ok ? 'unsubscribed' : 'subscribed')
-    } else {
-      const ok = await subscribe()
-      setState(ok ? 'subscribed' : getPermissionState() === 'denied' ? 'denied' : 'unsubscribed')
+    try {
+      if (state === 'subscribed') {
+        const ok = await Promise.race([
+          unsubscribe(),
+          new Promise<false>((r) => setTimeout(() => r(false), 10000)),
+        ])
+        setState(ok ? 'unsubscribed' : 'subscribed')
+      } else {
+        const ok = await Promise.race([
+          subscribe(),
+          new Promise<false>((r) => setTimeout(() => r(false), 10000)),
+        ])
+        setState(ok ? 'subscribed' : getPermissionState() === 'denied' ? 'denied' : 'unsubscribed')
+      }
+    } catch {
+      setState('unsubscribed')
     }
   }, [state])
 

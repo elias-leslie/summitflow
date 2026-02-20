@@ -73,19 +73,23 @@ export async function subscribe(): Promise<boolean> {
 
   // Request permission
   const permission = await Notification.requestPermission()
-  if (permission !== 'granted') return false
+  if (permission !== 'granted') {
+    console.warn('[push] Permission not granted:', permission)
+    return false
+  }
 
   try {
-    // Get VAPID key from backend
+    console.log('[push] Fetching VAPID key...')
     const vapidKey = await fetchVapidKey()
-    // Subscribe via PushManager
+
+    console.log('[push] Subscribing via PushManager...')
     const registration = await navigator.serviceWorker.ready
     const subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(vapidKey).buffer as ArrayBuffer,
     })
 
-    // Send subscription to backend
+    console.log('[push] PushManager subscribed, saving to backend...')
     const subJson = subscription.toJSON()
     const res = await fetch('/api/push-subscriptions', {
       method: 'POST',
@@ -99,9 +103,10 @@ export async function subscribe(): Promise<boolean> {
       }),
     })
 
+    console.log('[push] Backend response:', res.status)
     return res.ok
   } catch (err) {
-    console.error('Push subscription failed:', err)
+    console.error('[push] Subscription failed:', err)
     return false
   }
 }
