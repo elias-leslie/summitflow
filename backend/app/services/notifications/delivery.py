@@ -27,14 +27,10 @@ _PUSH_SEVERITIES = {"critical", "error", "warning"}
 
 
 def _build_task_url(notification: dict[str, Any]) -> str:
-    """Build the chat deep-link URL with task and notification context."""
-    task_id = notification.get("task_id")
+    """Build deep-link URL that opens NotificationDetailModal on the main page."""
     notification_id = notification.get("id")
-    if task_id:
-        url = f"{FRONTEND_URL}/chat?task_id={task_id}"
-        if notification_id:
-            url += f"&notification_id={notification_id}"
-        return url
+    if notification_id:
+        return f"{FRONTEND_URL}/?notification_id={notification_id}"
     return FRONTEND_URL
 
 

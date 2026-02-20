@@ -10,8 +10,10 @@ import {
   X,
 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
 import {
   dismissNotification,
+  fetchNotification,
   fetchNotificationCount,
   fetchNotifications,
   markNotificationRead,
@@ -49,6 +51,33 @@ export function NotificationBell({
   const [loading, setLoading] = useState(false)
   const [selectedNotification, setSelectedNotification] =
     useState<Notification | null>(null)
+
+  const searchParams = useSearchParams()
+  const router = useRouter()
+
+  // Auto-open modal from push notification deep link (?notification_id=X)
+  useEffect(() => {
+    const notificationId = searchParams.get('notification_id')
+    if (!notificationId) return
+
+    const openFromDeepLink = async () => {
+      try {
+        const notification = await fetchNotification(projectId, notificationId)
+        if (notification.status === 'pending') {
+          await markNotificationRead(projectId, notificationId)
+        }
+        setSelectedNotification(notification)
+      } catch {
+        // Notification not found or already dismissed — ignore
+      }
+      // Clean the URL param
+      const url = new URL(window.location.href)
+      url.searchParams.delete('notification_id')
+      router.replace(url.pathname + url.search, { scroll: false })
+    }
+
+    openFromDeepLink()
+  }, [searchParams, projectId, router])
 
   // Fetch pending count periodically
   useEffect(() => {
