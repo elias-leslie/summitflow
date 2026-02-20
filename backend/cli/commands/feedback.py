@@ -52,9 +52,6 @@ def report(
     session_type: Annotated[
         str | None, typer.Option("--session-type", help="Session type")
     ] = None,
-    auto_dedup: Annotated[
-        bool, typer.Option("--auto-dedup", help="Auto-vote on similar existing instead of creating new")
-    ] = False,
 ) -> None:
     """Report new feedback on a component.
 
@@ -75,7 +72,6 @@ def report(
         agent_slug=agent_slug,
         model_used=model_used,
         session_type=session_type,
-        auto_dedup=auto_dedup,
     )
 
 

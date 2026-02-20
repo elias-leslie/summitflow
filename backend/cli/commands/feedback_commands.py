@@ -73,7 +73,6 @@ def report_impl(
     agent_slug: str | None = None,
     model_used: str | None = None,
     session_type: str | None = None,
-    auto_dedup: bool = False,
 ) -> None:
     """Create a new feedback item."""
     _validate_component_id(component_id)
@@ -95,7 +94,6 @@ def report_impl(
         "feedback_type": feedback_type,
         "title": title,
         "project_id": project_id,
-        "auto_dedup": auto_dedup,
     }
     if description:
         body["description"] = description
@@ -113,13 +111,7 @@ def report_impl(
     result = feedback_request("POST", "/api/feedback", json=body)
 
     item = result.get("item", {})
-    created = result.get("created", True)
     candidates = result.get("duplicate_candidates", [])
-
-    if not created:
-        # Auto-dedup voted on existing
-        output_feedback_voted(item)
-        return
 
     if candidates:
         output_duplicate_candidates(candidates)
