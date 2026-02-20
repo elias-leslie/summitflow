@@ -76,7 +76,7 @@ export function TaskIdeationDialog({
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.15 }}
-                className="h-full [&_.dark\:border-gray-700]:border-slate-800 [&_.dark\:bg-gray-800]:bg-slate-800/50"
+                className="h-full chat-outrun"
               >
                 <ChatPanel
                   agentSlug={AGENT_SLUG}

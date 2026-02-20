@@ -71,13 +71,11 @@ export function HeartbeatSettings() {
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
 
-  if (interval === null) return null
+  if (interval == null) return null
 
   const currentLabel =
-    interval === 0
-      ? 'Off'
-      : (INTERVAL_OPTIONS.find((o) => o.value === String(interval))?.label ??
-        `${interval}m`)
+    INTERVAL_OPTIONS.find((o) => o.value === String(interval))?.label ??
+    (interval === 0 ? 'Off' : `${interval}m`)
 
   return (
     <div className="relative" data-heartbeat-settings>

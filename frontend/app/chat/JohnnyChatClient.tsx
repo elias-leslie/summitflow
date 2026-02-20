@@ -61,29 +61,31 @@ export function JohnnyChatClient() {
   }, [])
 
   return (
-    <div className="flex flex-col h-full">
-      <ChatPanel
-        agentSlug={AGENT_SLUG}
-        toolsEnabled
-        initialPrompt={initialPrompt}
-        apiConfig={apiConfig}
-        modelsEndpoint={`${getAgentHubProxyBase()}/models`}
-        voiceWsUrl={voiceWsUrl ?? undefined}
-        ttsBaseUrl={ttsBaseUrl ?? undefined}
-        title="Johnny"
-        renderBanner={
-          taskId
-            ? () => (
-                <BlockerBanner
-                  taskId={taskId}
-                  notification={notification}
-                />
-              )
-            : undefined
-        }
-        onSessionCreated={handleSessionCreated}
-      />
-      <div className="flex items-center justify-between px-4 py-2 border-t border-slate-750/60 bg-slate-950/80 backdrop-blur-sm">
+    <div className="flex flex-col h-full bg-slate-950 chat-outrun">
+      <div className="flex-1 min-h-0">
+        <ChatPanel
+          agentSlug={AGENT_SLUG}
+          toolsEnabled
+          initialPrompt={initialPrompt}
+          apiConfig={apiConfig}
+          modelsEndpoint={`${getAgentHubProxyBase()}/models`}
+          voiceWsUrl={voiceWsUrl ?? undefined}
+          ttsBaseUrl={ttsBaseUrl ?? undefined}
+          title="Johnny"
+          renderBanner={
+            taskId
+              ? () => (
+                  <BlockerBanner
+                    taskId={taskId}
+                    notification={notification}
+                  />
+                )
+              : undefined
+          }
+          onSessionCreated={handleSessionCreated}
+        />
+      </div>
+      <div className="flex items-center justify-between px-4 py-2 border-t border-slate-800 bg-slate-950/80 backdrop-blur-sm">
         <div className="flex-1">
           {taskId && sessionId && <ResumeBar taskId={taskId} />}
         </div>

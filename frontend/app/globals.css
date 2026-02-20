@@ -617,3 +617,154 @@ body::before {
 .xterm-screen canvas {
   /* Remove any forced dimensions that could cause stretching */
 }
+
+/* ============================================================================
+   ChatPanel (@agent-hub/chat-ui) — Outrun Theme Overrides
+   Tailwind v4 doesn't generate dark: variants for the chat-ui package
+   since it has no @source directive. Override light-mode classes directly.
+   ============================================================================ */
+
+.chat-outrun .bg-white {
+  background: var(--color-slate-900) !important;
+}
+
+.chat-outrun .border-gray-200 {
+  border-color: var(--color-slate-800) !important;
+}
+
+.chat-outrun .border-gray-300 {
+  border-color: var(--color-slate-700) !important;
+}
+
+.chat-outrun .text-gray-900 {
+  color: var(--color-slate-100, #e2e8f0) !important;
+}
+
+.chat-outrun .text-gray-500 {
+  color: var(--color-slate-500, #64748b) !important;
+}
+
+.chat-outrun .text-gray-600 {
+  color: var(--color-slate-400, #94a3b8) !important;
+}
+
+.chat-outrun .text-gray-700 {
+  color: var(--color-slate-300, #cbd5e1) !important;
+}
+
+/* Input buttons */
+.chat-outrun .bg-gray-100 {
+  background: var(--color-slate-800) !important;
+}
+
+.chat-outrun .bg-gray-200 {
+  background: var(--color-slate-750) !important;
+}
+
+.chat-outrun .bg-gray-300 {
+  background: var(--color-slate-700) !important;
+}
+
+/* Hover states */
+.chat-outrun .hover\:bg-gray-200:hover {
+  background: var(--color-slate-750) !important;
+}
+
+.chat-outrun .hover\:bg-gray-300:hover {
+  background: var(--color-slate-700) !important;
+}
+
+.chat-outrun .hover\:text-gray-700:hover {
+  color: var(--color-slate-200, #e2e8f0) !important;
+}
+
+.chat-outrun .hover\:bg-gray-100:hover {
+  background: var(--color-slate-800) !important;
+}
+
+/* Focus states — phosphor accent */
+.chat-outrun .focus\:ring-blue-500\/50:focus {
+  --tw-ring-color: rgba(0, 245, 255, 0.3) !important;
+}
+
+.chat-outrun .focus\:border-blue-500:focus {
+  border-color: rgba(0, 245, 255, 0.5) !important;
+}
+
+/* Placeholder text */
+.chat-outrun textarea::placeholder {
+  color: var(--color-slate-600, #475569) !important;
+}
+
+/* Error states */
+.chat-outrun .bg-red-50 {
+  background: rgba(244, 63, 94, 0.1) !important;
+}
+
+.chat-outrun .border-red-200 {
+  border-color: rgba(244, 63, 94, 0.25) !important;
+}
+
+.chat-outrun .text-red-600 {
+  color: #fb7185 !important;
+}
+
+/* Tool execution panels */
+.chat-outrun .bg-emerald-50 {
+  background: rgba(16, 185, 129, 0.08) !important;
+}
+
+.chat-outrun .border-emerald-200 {
+  border-color: rgba(16, 185, 129, 0.2) !important;
+}
+
+.chat-outrun .bg-amber-50 {
+  background: rgba(245, 158, 11, 0.08) !important;
+}
+
+.chat-outrun .border-amber-200 {
+  border-color: rgba(245, 158, 11, 0.2) !important;
+}
+
+/* Mention popup */
+.chat-outrun .bg-white\/95 {
+  background: rgba(15, 10, 24, 0.95) !important;
+}
+
+.chat-outrun .border-gray-200\/80 {
+  border-color: rgba(45, 29, 66, 0.8) !important;
+}
+
+.chat-outrun .border-gray-100 {
+  border-color: var(--color-slate-800) !important;
+}
+
+.chat-outrun .text-gray-400 {
+  color: var(--color-slate-500, #64748b) !important;
+}
+
+.chat-outrun .hover\:bg-gray-50:hover {
+  background: var(--color-slate-850) !important;
+}
+
+/* Thinking block */
+.chat-outrun .bg-purple-50 {
+  background: rgba(147, 51, 234, 0.08) !important;
+}
+
+.chat-outrun .border-purple-100 {
+  border-color: rgba(147, 51, 234, 0.15) !important;
+}
+
+/* Slate overrides from chat-ui */
+.chat-outrun .bg-slate-100 {
+  background: var(--color-slate-800) !important;
+}
+
+.chat-outrun .hover\:bg-slate-200:hover {
+  background: var(--color-slate-750) !important;
+}
+
+.chat-outrun .text-slate-700 {
+  color: var(--color-slate-300, #cbd5e1) !important;
+}
