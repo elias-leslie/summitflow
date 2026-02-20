@@ -36,10 +36,10 @@ export async function isSubscribed(): Promise<boolean> {
 }
 
 /**
- * Fetch the VAPID public key from the backend.
+ * Fetch the VAPID public key from Agent Hub push service.
  */
 async function fetchVapidKey(): Promise<string> {
-  const res = await fetch('/api/push-subscriptions/vapid-key')
+  const res = await fetch('/api/agent-hub/push/vapid-key')
   if (!res.ok) throw new Error('Failed to fetch VAPID key')
   const data = await res.json()
   return data.public_key
@@ -97,9 +97,9 @@ export async function subscribe(): Promise<boolean> {
       applicationServerKey: urlBase64ToUint8Array(vapidKey).buffer as ArrayBuffer,
     })
 
-    console.log('[push] PushManager subscribed, saving to backend...')
+    console.log('[push] PushManager subscribed, saving to Agent Hub...')
     const subJson = subscription.toJSON()
-    const res = await fetch('/api/push-subscriptions', {
+    const res = await fetch('/api/agent-hub/push/subscriptions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -134,8 +134,8 @@ export async function unsubscribe(): Promise<boolean> {
     const subscription = await registration.pushManager.getSubscription()
 
     if (subscription) {
-      // Remove from backend
-      await fetch('/api/push-subscriptions', {
+      // Remove from Agent Hub
+      await fetch('/api/agent-hub/push/subscriptions', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ endpoint: subscription.endpoint }),

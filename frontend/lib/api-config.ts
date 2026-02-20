@@ -110,3 +110,20 @@ export function getVoiceWsUrl(): string | null {
 
   return null
 }
+
+/**
+ * Get Agent Hub TTS base URL for text-to-speech.
+ * Used by ChatPanel for voice responses.
+ */
+export function getTtsBaseUrl(): string | null {
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname
+    if (host === 'localhost' || host === '127.0.0.1') {
+      return 'http://localhost:8003/api/voice'
+    }
+    if (host === PROD_DOMAIN) {
+      return 'https://agentapi.summitflow.dev/api/voice'
+    }
+  }
+  return null
+}

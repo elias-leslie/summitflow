@@ -61,6 +61,16 @@ export async function fetchNotificationCount(
   return data.pending
 }
 
+export async function fetchNotification(
+  projectId: string,
+  notificationId: string,
+): Promise<Notification> {
+  return fetchWithErrorHandling(
+    `/api/projects/${projectId}/notifications/${notificationId}`,
+    { errorMessage: 'Failed to fetch notification' },
+  )
+}
+
 export async function markNotificationRead(
   projectId: string,
   notificationId: string,

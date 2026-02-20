@@ -1,26 +1,20 @@
-"""Notification delivery via Web Push.
+"""Notification delivery via Agent Hub push service.
 
-Routes notifications to registered push subscriptions based on severity.
+Routes notifications to Agent Hub's shared push delivery based on severity.
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 from typing import Any
 
-from app.storage import push_subscriptions
-
-from . import web_push
+import httpx
 
 logger = logging.getLogger(__name__)
 
-# prevent background tasks from being garbage-collected
-_background_tasks: set[asyncio.Task[None]] = set()
-
 FRONTEND_URL = os.getenv("SUMMITFLOW_FRONTEND_URL", "https://dev.summitflow.dev")
-AGENT_HUB_URL = os.getenv("AGENT_HUB_FRONTEND_URL", "https://agent.summitflow.dev")
+AGENT_HUB_URL = os.getenv("AGENT_HUB_URL", "http://localhost:8003")
 
 # Severities that trigger push delivery (info stays in-app only)
 _PUSH_SEVERITIES = {"critical", "error", "warning"}
@@ -33,10 +27,10 @@ def _build_task_url(notification: dict[str, Any]) -> str:
 
 
 async def deliver(notification: dict[str, Any]) -> None:
-    """Route a notification to Web Push delivery.
+    """Route a notification to Agent Hub push delivery.
 
     Severity routing:
-        critical/error/warning → Web Push to all registered devices
+        critical/error/warning → Web Push via Agent Hub
         info                   → DB only (no push)
 
     Args:
@@ -48,10 +42,6 @@ async def deliver(notification: dict[str, Any]) -> None:
     if severity not in _PUSH_SEVERITIES:
         return
 
-    subs = await asyncio.to_thread(push_subscriptions.get_all_subscriptions)
-    if not subs:
-        return
-
     task_url = _build_task_url(notification)
     payload = {
         "title": notification.get("title", "SummitFlow"),
@@ -60,22 +50,30 @@ async def deliver(notification: dict[str, Any]) -> None:
         "tag": notification.get("id", ""),
         "severity": severity,
         "task_id": notification.get("task_id"),
+        "notification_id": notification.get("id"),
+        "project_id": "summitflow",
     }
 
-    sent_count = 0
-    for sub in subs:
-        sent = await web_push.send(subscription=sub, payload=payload)
-        if sent:
-            sent_count += 1
-            task = asyncio.ensure_future(
-                asyncio.to_thread(push_subscriptions.touch_subscription, sub["endpoint"])
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f"{AGENT_HUB_URL}/api/push/send",
+                json=payload,
             )
-            _background_tasks.add(task)
-            task.add_done_callback(_background_tasks.discard)
-
-    if sent_count > 0:
-        logger.debug(
-            "Delivered notification %s via web push (%d devices)",
-            notification.get("id"),
-            sent_count,
-        )
+            if resp.status_code == 200:
+                data = resp.json()
+                delivered = data.get("delivered", 0)
+                if delivered > 0:
+                    logger.debug(
+                        "Delivered notification %s via Agent Hub push (%d devices)",
+                        notification.get("id"),
+                        delivered,
+                    )
+            else:
+                logger.warning(
+                    "Agent Hub push send failed: %s %s",
+                    resp.status_code,
+                    resp.text[:200],
+                )
+    except Exception:
+        logger.exception("Failed to deliver notification via Agent Hub push")
