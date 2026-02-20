@@ -44,8 +44,8 @@ export function ResumeBar({ taskId }: ResumeBarProps) {
   }, [taskId])
 
   return (
-    <div className="flex items-center gap-3 animate-slide-up">
-      <span className="text-xs text-slate-500 font-mono">
+    <div className="flex items-center gap-2 sm:gap-3 animate-slide-up">
+      <span className="text-xs text-slate-500 font-mono truncate hidden sm:inline">
         {resumed
           ? 'Task queued — Johnny is on it'
           : 'Give Johnny direction, then resume'}
@@ -54,14 +54,14 @@ export function ResumeBar({ taskId }: ResumeBarProps) {
         type="button"
         onClick={handleResume}
         disabled={isResuming || resumed}
-        className="flex items-center gap-2 px-4 py-1.5 text-sm font-medium font-display rounded-md bg-phosphor-600 hover:bg-phosphor-500 text-slate-950 disabled:opacity-40 disabled:cursor-not-allowed transition-all hover:shadow-[0_0_12px_rgba(0,245,255,0.3)]"
+        className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 text-sm font-medium font-display rounded-md bg-phosphor-600 hover:bg-phosphor-500 text-slate-950 disabled:opacity-40 disabled:cursor-not-allowed transition-all hover:shadow-[0_0_12px_rgba(0,245,255,0.3)] whitespace-nowrap flex-shrink-0"
       >
         {isResuming ? (
           <Loader2 className="w-3.5 h-3.5 animate-spin" />
         ) : (
           <Play className="w-3.5 h-3.5" />
         )}
-        {resumed ? 'Resumed' : isResuming ? 'Resuming…' : 'Resume Task'}
+        {resumed ? 'Resumed' : isResuming ? 'Resuming…' : 'Resume'}
       </button>
     </div>
   )

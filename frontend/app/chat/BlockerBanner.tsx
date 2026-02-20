@@ -26,23 +26,25 @@ export function BlockerBanner({ taskId, notification }: BlockerBannerProps) {
 
   return (
     <div
-      className={`flex items-center gap-3 px-4 py-2.5 border-b animate-fade-in ${styles}`}
+      className={`px-3 sm:px-4 py-2 sm:py-2.5 border-b animate-fade-in ${styles}`}
     >
-      <Link
-        href={`/projects/summitflow/tasks/${taskId}`}
-        className="shrink-0 text-current hover:text-outrun-400 transition-colors"
-        aria-label="Back to task"
-      >
-        <ArrowLeft className="w-4 h-4" />
-      </Link>
-      <AlertTriangle className="w-4 h-4 shrink-0 animate-pulse" />
-      <span className="text-sm font-medium font-display truncate">
-        {title}
-      </span>
-      {notification?.message && (
-        <span className="text-xs opacity-50 truncate hidden sm:inline font-mono">
-          — {notification.message}
+      <div className="flex items-center gap-2 sm:gap-3">
+        <Link
+          href={`/projects/summitflow/tasks/${taskId}`}
+          className="shrink-0 text-current hover:text-outrun-400 transition-colors"
+          aria-label="Back to task"
+        >
+          <ArrowLeft className="w-4 h-4" />
+        </Link>
+        <AlertTriangle className="w-4 h-4 shrink-0 animate-pulse" />
+        <span className="text-sm font-medium font-display truncate">
+          {title}
         </span>
+      </div>
+      {notification?.message && (
+        <p className="text-xs opacity-60 font-mono mt-1 ml-6 sm:ml-[2.75rem] line-clamp-2">
+          {notification.message}
+        </p>
       )}
     </div>
   )

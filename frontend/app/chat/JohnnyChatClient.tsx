@@ -31,17 +31,6 @@ export function JohnnyChatClient() {
       .catch(() => {}) // Non-critical — chat works without it
   }, [notificationId])
 
-  // Build initial prompt from deep-link context
-  const initialPrompt = useMemo(() => {
-    if (!taskId) return undefined
-    const parts = [`I came from a notification about task ${taskId}.`]
-    if (notification?.message) {
-      parts.push(`The notification said: "${notification.message}"`)
-    }
-    parts.push('What happened and what do you recommend?')
-    return parts.join(' ')
-  }, [taskId, notification])
-
   const apiConfig: ChatStreamApiConfig = useMemo(() => {
     const proxyBase = getAgentHubProxyBase()
     return {
@@ -61,12 +50,11 @@ export function JohnnyChatClient() {
   }, [])
 
   return (
-    <div className="flex flex-col h-full bg-slate-950 chat-outrun">
+    <div className="flex flex-col h-[calc(100dvh-4rem)] bg-slate-950 chat-outrun">
       <div className="flex-1 min-h-0">
         <ChatPanel
           agentSlug={AGENT_SLUG}
           toolsEnabled
-          initialPrompt={initialPrompt}
           apiConfig={apiConfig}
           modelsEndpoint={`${getAgentHubProxyBase()}/models`}
           voiceWsUrl={voiceWsUrl ?? undefined}
@@ -85,8 +73,8 @@ export function JohnnyChatClient() {
           onSessionCreated={handleSessionCreated}
         />
       </div>
-      <div className="flex items-center justify-between px-4 py-2 border-t border-slate-800 bg-slate-950/80 backdrop-blur-sm">
-        <div className="flex-1">
+      <div className="flex items-center justify-between gap-2 px-3 sm:px-4 py-2 border-t border-slate-800 bg-slate-950/80 backdrop-blur-sm flex-shrink-0">
+        <div className="flex-1 min-w-0">
           {taskId && sessionId && <ResumeBar taskId={taskId} />}
         </div>
         <HeartbeatSettings />
