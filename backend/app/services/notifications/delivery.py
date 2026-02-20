@@ -1,7 +1,6 @@
-"""Channel-agnostic notification dispatcher.
+"""Notification delivery via Web Push.
 
-Routes notifications to delivery channels based on severity.
-Supports Web Push (PWA) and ntfy (legacy).
+Routes notifications to registered push subscriptions based on severity.
 """
 
 from __future__ import annotations
@@ -11,26 +10,20 @@ import logging
 import os
 from typing import Any
 
-from . import ntfy, web_push
+from app.storage import push_subscriptions
+
+from . import web_push
 
 logger = logging.getLogger(__name__)
+
+# prevent background tasks from being garbage-collected
+_background_tasks: set[asyncio.Task[None]] = set()
 
 FRONTEND_URL = os.getenv("SUMMITFLOW_FRONTEND_URL", "https://dev.summitflow.dev")
 AGENT_HUB_URL = os.getenv("AGENT_HUB_FRONTEND_URL", "https://agent.summitflow.dev")
 
-# Severity → ntfy priority mapping
-_SEVERITY_PRIORITY: dict[str, int] = {
-    "critical": 5,
-    "error": 5,
-    "warning": 3,
-}
-
-# ntfy emoji tags per severity
-_SEVERITY_TAGS: dict[str, list[str]] = {
-    "critical": ["rotating_light"],
-    "error": ["x"],
-    "warning": ["warning"],
-}
+# Severities that trigger push delivery (info stays in-app only)
+_PUSH_SEVERITIES = {"critical", "error", "warning"}
 
 
 def _build_task_url(notification: dict[str, Any]) -> str:
@@ -39,49 +32,25 @@ def _build_task_url(notification: dict[str, Any]) -> str:
     return f"{FRONTEND_URL}/tasks/{task_id}" if task_id else FRONTEND_URL
 
 
-def _build_task_actions(notification: dict[str, Any]) -> list[dict[str, Any]]:
-    """Build ntfy action buttons for task-related notifications.
+async def deliver(notification: dict[str, Any]) -> None:
+    """Route a notification to Web Push delivery.
 
-    Uses 'view' actions (opens URL in browser) rather than headless 'http'
-    actions, because the API is behind CF Access — the browser already has
-    the CF_Authorization cookie, so view actions work seamlessly.
+    Severity routing:
+        critical/error/warning → Web Push to all registered devices
+        info                   → DB only (no push)
+
+    Args:
+        notification: Notification dict from storage layer (must have
+            'severity', 'title', 'message', and optionally 'task_id').
     """
-    task_id = notification.get("task_id")
-    if not task_id:
-        return []
+    severity: str = notification.get("severity", "info")
 
-    actions = [
-        {
-            "action": "view",
-            "label": "Details",
-            "url": f"{FRONTEND_URL}/tasks/{task_id}",
-            "clear": True,
-        },
-    ]
-
-    # Add "Chat with Johnny" button for Johnny-branded notifications
-    metadata = notification.get("metadata") or {}
-    if metadata.get("johnny"):
-        actions.append({
-            "action": "view",
-            "label": "Chat",
-            "url": f"{AGENT_HUB_URL}/chat?agent=johnny&task={task_id}",
-            "clear": True,
-        })
-
-    return actions
-
-
-async def _deliver_web_push(notification: dict[str, Any]) -> int:
-    """Send notification to all registered Web Push subscriptions.
-
-    Returns number of successful deliveries.
-    """
-    from app.storage import push_subscriptions
+    if severity not in _PUSH_SEVERITIES:
+        return
 
     subs = await asyncio.to_thread(push_subscriptions.get_all_subscriptions)
     if not subs:
-        return 0
+        return
 
     task_url = _build_task_url(notification)
     payload = {
@@ -89,7 +58,7 @@ async def _deliver_web_push(notification: dict[str, Any]) -> int:
         "body": notification.get("message", ""),
         "url": task_url,
         "tag": notification.get("id", ""),
-        "severity": notification.get("severity", "info"),
+        "severity": severity,
         "task_id": notification.get("task_id"),
     }
 
@@ -98,57 +67,15 @@ async def _deliver_web_push(notification: dict[str, Any]) -> int:
         sent = await web_push.send(subscription=sub, payload=payload)
         if sent:
             sent_count += 1
-            # Update last_used_at in background
-            asyncio.ensure_future(
+            task = asyncio.ensure_future(
                 asyncio.to_thread(push_subscriptions.touch_subscription, sub["endpoint"])
             )
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
 
-    return sent_count
-
-
-async def deliver(notification: dict[str, Any]) -> None:
-    """Route a notification to configured delivery channels.
-
-    Severity routing:
-        critical/error → push (Web Push + ntfy)
-        warning        → push (Web Push + ntfy)
-        info           → DB only (no push)
-
-    Sends to both Web Push and ntfy in parallel. Either or both
-    may be disabled — delivery is best-effort.
-
-    Args:
-        notification: Notification dict from storage layer (must have
-            'severity', 'title', 'message', and optionally 'task_id').
-    """
-    severity: str = notification.get("severity", "info")
-
-    # Info notifications stay in-app only — no push
-    if severity not in _SEVERITY_PRIORITY:
-        return
-
-    priority = _SEVERITY_PRIORITY[severity]
-    tags = _SEVERITY_TAGS.get(severity)
-    actions = _build_task_actions(notification)
-    click_url = _build_task_url(notification)
-
-    # Send to both channels in parallel
-    web_push_task = _deliver_web_push(notification)
-    ntfy_task = ntfy.send(
-        message=notification.get("message", ""),
-        title=notification.get("title", "SummitFlow"),
-        priority=priority,
-        tags=tags,
-        actions=actions or None,
-        click_url=click_url,
-    )
-
-    web_push_count, ntfy_sent = await asyncio.gather(
-        web_push_task, ntfy_task, return_exceptions=True
-    )
-
-    nid = notification.get("id")
-    if isinstance(web_push_count, int) and web_push_count > 0:
-        logger.debug("Delivered notification %s via web push (%d devices)", nid, web_push_count)
-    if ntfy_sent is True:
-        logger.debug("Delivered notification %s via ntfy", nid)
+    if sent_count > 0:
+        logger.debug(
+            "Delivered notification %s via web push (%d devices)",
+            notification.get("id"),
+            sent_count,
+        )

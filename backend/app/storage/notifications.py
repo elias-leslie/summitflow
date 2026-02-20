@@ -108,7 +108,7 @@ def _schedule_delivery(notification: dict[str, Any]) -> None:
     """
     from app.config import settings
 
-    if not settings.ntfy_enabled:
+    if not settings.vapid_public_key:
         return
 
     try:
@@ -237,7 +237,7 @@ def create_task_completion_notification(
 ) -> dict[str, Any]:
     """Create a notification for task completion with Johnny's voice.
 
-    Uses severity 'warning' to trigger ntfy push (info stays in-app only).
+    Uses severity 'warning' to trigger push delivery (info stays in-app only).
 
     Args:
         project_id: Project ID

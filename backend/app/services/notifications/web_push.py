@@ -1,7 +1,7 @@
 """Web Push notification sender.
 
 Sends push notifications via the Web Push protocol using VAPID authentication.
-Mirrors the ntfy.py pattern: never raises, logs errors and returns False.
+Never raises — logs errors and returns False.
 """
 
 from __future__ import annotations

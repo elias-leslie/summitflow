@@ -42,12 +42,6 @@ class Settings(BaseSettings):
     hatchet_client_token: str = ""
     hatchet_client_tls_strategy: str = "none"
 
-    # Notification delivery (ntfy)
-    ntfy_enabled: bool = False
-    ntfy_url: str = "http://localhost:2586"
-    ntfy_topic: str = "sf-alerts"
-    ntfy_default_priority: int = 3
-
     # Web Push (VAPID)
     vapid_public_key: str = ""
     vapid_private_key: str = ""

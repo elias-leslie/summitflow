@@ -222,15 +222,14 @@ async def prod_smoke_test_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
 
     failures = result.get("failures", [])
     if failures:
-        from ..services.notifications import send_ntfy
+        from ..services.notifications import deliver
 
         names = ", ".join(f["project"] for f in failures)
-        await send_ntfy(
-            message=f"Unhealthy: {names}",
-            title="Prod Smoke Test Failed",
-            priority=4,
-            tags=["rotating_light"],
-        )
+        await deliver({
+            "title": "Prod Smoke Test Failed",
+            "message": f"Unhealthy: {names}",
+            "severity": "error",
+        })
 
     return result
 

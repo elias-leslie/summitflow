@@ -1,9 +1,9 @@
-"""Tests for notification delivery dispatcher."""
+"""Tests for notification delivery via Web Push."""
 
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -31,136 +31,143 @@ def _make_notification(
     }
 
 
+_MOCK_SUB = {
+    "id": "sub-1",
+    "endpoint": "https://fcm.googleapis.com/wp/test",
+    "p256dh_key": "test-key",
+    "auth_key": "test-auth",
+}
+
+
 class TestDeliver:
     """Tests for deliver() dispatcher."""
 
     @pytest.mark.asyncio
-    async def test_deliver_critical_sends_priority_5(self) -> None:
-        """Critical notifications are sent with max priority."""
-        notification = _make_notification(severity="critical")
-
-        with patch("app.services.notifications.delivery.ntfy.send", new_callable=AsyncMock) as mock_send:
-            mock_send.return_value = True
-            await deliver(notification)
-
-        mock_send.assert_called_once()
-        assert mock_send.call_args[1]["priority"] == 5
-
-    @pytest.mark.asyncio
-    async def test_deliver_error_sends_priority_5(self) -> None:
-        """Error notifications are sent with max priority."""
-        notification = _make_notification(severity="error")
-
-        with patch("app.services.notifications.delivery.ntfy.send", new_callable=AsyncMock) as mock_send:
-            mock_send.return_value = True
-            await deliver(notification)
-
-        mock_send.assert_called_once()
-        assert mock_send.call_args[1]["priority"] == 5
-
-    @pytest.mark.asyncio
-    async def test_deliver_warning_sends_priority_3(self) -> None:
-        """Warning notifications are sent with normal priority."""
-        notification = _make_notification(severity="warning")
-
-        with patch("app.services.notifications.delivery.ntfy.send", new_callable=AsyncMock) as mock_send:
-            mock_send.return_value = True
-            await deliver(notification)
-
-        mock_send.assert_called_once()
-        assert mock_send.call_args[1]["priority"] == 3
-
-    @pytest.mark.asyncio
     async def test_deliver_info_no_push(self) -> None:
-        """Info notifications stay in-app only — no ntfy call."""
+        """Info notifications stay in-app only — no push."""
         notification = _make_notification(severity="info")
 
-        with patch("app.services.notifications.delivery.ntfy.send", new_callable=AsyncMock) as mock_send:
+        with patch(
+            "app.services.notifications.delivery.web_push.send",
+            new_callable=AsyncMock,
+        ) as mock_send:
+            await deliver(notification)
+            mock_send.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_deliver_error_sends_web_push(self) -> None:
+        """Error notifications are sent via web push."""
+        notification = _make_notification(severity="error")
+        mock_store = MagicMock()
+        mock_store.get_all_subscriptions.return_value = [_MOCK_SUB]
+
+        with (
+            patch("app.services.notifications.delivery.push_subscriptions", mock_store),
+            patch(
+                "app.services.notifications.delivery.web_push.send",
+                new_callable=AsyncMock,
+            ) as mock_send,
+        ):
+            mock_send.return_value = True
+            await deliver(notification)
+
+        mock_send.assert_called_once()
+        payload = mock_send.call_args[1]["payload"]
+        assert payload["title"] == "Test Notification"
+        assert payload["body"] == "Something happened"
+
+    @pytest.mark.asyncio
+    async def test_deliver_warning_sends_web_push(self) -> None:
+        """Warning notifications trigger push delivery."""
+        notification = _make_notification(severity="warning")
+        mock_store = MagicMock()
+        mock_store.get_all_subscriptions.return_value = [_MOCK_SUB]
+
+        with (
+            patch("app.services.notifications.delivery.push_subscriptions", mock_store),
+            patch(
+                "app.services.notifications.delivery.web_push.send",
+                new_callable=AsyncMock,
+            ) as mock_send,
+        ):
+            mock_send.return_value = True
+            await deliver(notification)
+
+        mock_send.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_deliver_critical_sends_web_push(self) -> None:
+        """Critical notifications trigger push delivery."""
+        notification = _make_notification(severity="critical")
+        mock_store = MagicMock()
+        mock_store.get_all_subscriptions.return_value = [_MOCK_SUB]
+
+        with (
+            patch("app.services.notifications.delivery.push_subscriptions", mock_store),
+            patch(
+                "app.services.notifications.delivery.web_push.send",
+                new_callable=AsyncMock,
+            ) as mock_send,
+        ):
+            mock_send.return_value = True
+            await deliver(notification)
+
+        mock_send.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_deliver_no_subscriptions_skips(self) -> None:
+        """No subscriptions means no push attempted."""
+        notification = _make_notification(severity="error")
+        mock_store = MagicMock()
+        mock_store.get_all_subscriptions.return_value = []
+
+        with (
+            patch("app.services.notifications.delivery.push_subscriptions", mock_store),
+            patch(
+                "app.services.notifications.delivery.web_push.send",
+                new_callable=AsyncMock,
+            ) as mock_send,
+        ):
             await deliver(notification)
 
         mock_send.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_deliver_task_notification_includes_view_actions(self) -> None:
-        """Task-linked notifications include 'view' action buttons."""
-        notification = _make_notification(task_id="t-test-456")
-
-        with patch("app.services.notifications.delivery.ntfy.send", new_callable=AsyncMock) as mock_send:
-            mock_send.return_value = True
-            await deliver(notification)
-
-        call_kwargs = mock_send.call_args[1]
-        actions = call_kwargs["actions"]
-        assert len(actions) == 1
-        assert actions[0]["action"] == "view"
-        assert actions[0]["label"] == "Details"
-        assert "t-test-456" in actions[0]["url"]
-
-    @pytest.mark.asyncio
-    async def test_deliver_no_task_id_omits_actions(self) -> None:
-        """Notifications without task_id have no action buttons."""
-        notification = _make_notification(task_id=None)
-
-        with patch("app.services.notifications.delivery.ntfy.send", new_callable=AsyncMock) as mock_send:
-            mock_send.return_value = True
-            await deliver(notification)
-
-        call_kwargs = mock_send.call_args[1]
-        assert call_kwargs["actions"] is None
-
-    @pytest.mark.asyncio
-    async def test_deliver_click_url_points_to_task(self) -> None:
-        """click_url opens the task page in the PWA."""
+    async def test_deliver_payload_includes_task_url(self) -> None:
+        """Push payload includes deep-link URL to task."""
         notification = _make_notification(task_id="t-test-789")
+        mock_store = MagicMock()
+        mock_store.get_all_subscriptions.return_value = [_MOCK_SUB]
 
-        with patch("app.services.notifications.delivery.ntfy.send", new_callable=AsyncMock) as mock_send:
+        with (
+            patch("app.services.notifications.delivery.push_subscriptions", mock_store),
+            patch(
+                "app.services.notifications.delivery.web_push.send",
+                new_callable=AsyncMock,
+            ) as mock_send,
+        ):
             mock_send.return_value = True
             await deliver(notification)
 
-        call_kwargs = mock_send.call_args[1]
-        assert call_kwargs["click_url"] == "https://dev.summitflow.dev/tasks/t-test-789"
+        payload = mock_send.call_args[1]["payload"]
+        assert "t-test-789" in payload["url"]
 
     @pytest.mark.asyncio
-    async def test_deliver_critical_has_rotating_light_tag(self) -> None:
-        """Critical notifications get the rotating_light emoji tag."""
-        notification = _make_notification(severity="critical")
+    async def test_deliver_sends_to_multiple_devices(self) -> None:
+        """Delivery sends to all registered subscriptions."""
+        notification = _make_notification(severity="error")
+        sub2 = {**_MOCK_SUB, "id": "sub-2", "endpoint": "https://fcm.googleapis.com/wp/test2"}
+        mock_store = MagicMock()
+        mock_store.get_all_subscriptions.return_value = [_MOCK_SUB, sub2]
 
-        with patch("app.services.notifications.delivery.ntfy.send", new_callable=AsyncMock) as mock_send:
+        with (
+            patch("app.services.notifications.delivery.push_subscriptions", mock_store),
+            patch(
+                "app.services.notifications.delivery.web_push.send",
+                new_callable=AsyncMock,
+            ) as mock_send,
+        ):
             mock_send.return_value = True
             await deliver(notification)
 
-        call_kwargs = mock_send.call_args[1]
-        assert "rotating_light" in call_kwargs["tags"]
-
-    @pytest.mark.asyncio
-    async def test_johnny_notification_includes_chat_action(self) -> None:
-        """Johnny-branded notifications get a 'Chat' action button."""
-        notification = _make_notification(task_id="t-test-123")
-        notification["metadata"] = {"johnny": True}
-
-        with patch("app.services.notifications.delivery.ntfy.send", new_callable=AsyncMock) as mock_send:
-            mock_send.return_value = True
-            await deliver(notification)
-
-        call_kwargs = mock_send.call_args[1]
-        actions = call_kwargs["actions"]
-        assert len(actions) == 2
-        assert actions[0]["label"] == "Details"
-        assert actions[1]["label"] == "Chat"
-        assert "agent=johnny" in actions[1]["url"]
-        assert "task=t-test-123" in actions[1]["url"]
-
-    @pytest.mark.asyncio
-    async def test_non_johnny_notification_no_chat_action(self) -> None:
-        """Non-Johnny notifications only get the Details button."""
-        notification = _make_notification(task_id="t-test-123")
-        # metadata has no "johnny" key
-
-        with patch("app.services.notifications.delivery.ntfy.send", new_callable=AsyncMock) as mock_send:
-            mock_send.return_value = True
-            await deliver(notification)
-
-        call_kwargs = mock_send.call_args[1]
-        actions = call_kwargs["actions"]
-        assert len(actions) == 1
-        assert actions[0]["label"] == "Details"
+        assert mock_send.call_count == 2
