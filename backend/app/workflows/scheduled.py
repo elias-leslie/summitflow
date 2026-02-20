@@ -220,13 +220,14 @@ async def prod_smoke_test_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
 
     result = await asyncio.to_thread(run_all_smoke_tests)
 
-    failures = result.get("failures", [])
-    if failures:
+    # Only notify on state transitions (healthy->unhealthy), not every check
+    if result.get("should_notify"):
         from ..services.notifications import deliver
 
+        failures = result.get("failures", [])
         names = ", ".join(f["project"] for f in failures)
         await deliver({
-            "title": "Prod Smoke Test Failed",
+            "title": "Smoke Test Failed",
             "message": f"Unhealthy: {names}",
             "severity": "error",
         })
