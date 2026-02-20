@@ -15,7 +15,6 @@ from .tables import (
     create_core_tables,
     create_design_tables,
     create_notifications_tables,
-    create_push_subscriptions_table,
 )
 
 logger = logging.getLogger(__name__)
@@ -61,7 +60,6 @@ def _do_init_schema(conn: psycopg.Connection, cur: psycopg.Cursor) -> None:
     create_core_tables(cur)
     create_agent_tables(cur)
     create_notifications_tables(cur)
-    create_push_subscriptions_table(cur)
     create_design_tables(cur)
 
     # Apply backward compatibility migrations

@@ -165,6 +165,90 @@ class TestCreateTaskFailureNotification:
         assert metadata["agent_hub_session_ids"] == ["sess-1", "sess-2"]
 
 
+    @patch("app.storage.notifications._schedule_delivery")
+    @patch("app.storage.notifications._is_duplicate", return_value=False)
+    @patch("app.storage.notifications.get_connection")
+    def test_blocker_context_in_metadata(
+        self, mock_conn: MagicMock, mock_dedup: MagicMock, mock_delivery: MagicMock
+    ) -> None:
+        """Blocker context fields are included in notification metadata."""
+        cur = MagicMock()
+        cur.fetchone.return_value = (
+            "notif-1", "test-proj", "t-test-1", None, None,
+            "task_failed", "title", "msg",
+            "error", "pending",
+            {
+                "johnny": True,
+                "subtask_id": "st-test-42",
+                "blocker_summary": "TypeError in module X",
+                "recommendation": "Check type annotations",
+            },
+            None, None, None,
+        )
+        ctx = MagicMock()
+        ctx.cursor.return_value.__enter__ = lambda s: cur
+        ctx.cursor.return_value.__exit__ = lambda *a: None
+        mock_conn.return_value.__enter__ = lambda s: ctx
+        mock_conn.return_value.__exit__ = lambda *a: None
+
+        create_task_failure_notification(
+            project_id="test-proj",
+            task_id="t-test-1",
+            task_title="Test",
+            error_message="Error.",
+            subtask_id="st-test-42",
+            blocker_summary="TypeError in module X",
+            recommendation="Check type annotations",
+        )
+
+        call_args = cur.execute.call_args
+        import json
+
+        metadata_json = call_args[0][1][8]  # metadata param (9th positional)
+        metadata = json.loads(metadata_json)
+        assert metadata["johnny"] is True
+        assert metadata["subtask_id"] == "st-test-42"
+        assert metadata["blocker_summary"] == "TypeError in module X"
+        assert metadata["recommendation"] == "Check type annotations"
+
+    @patch("app.storage.notifications._schedule_delivery")
+    @patch("app.storage.notifications._is_duplicate", return_value=False)
+    @patch("app.storage.notifications.get_connection")
+    def test_blocker_context_omitted_when_none(
+        self, mock_conn: MagicMock, mock_dedup: MagicMock, mock_delivery: MagicMock
+    ) -> None:
+        """Blocker context fields are omitted from metadata when None."""
+        cur = MagicMock()
+        cur.fetchone.return_value = (
+            "notif-1", "test-proj", "t-test-1", None, None,
+            "task_failed", "title", "msg",
+            "error", "pending", {"johnny": True},
+            None, None, None,
+        )
+        ctx = MagicMock()
+        ctx.cursor.return_value.__enter__ = lambda s: cur
+        ctx.cursor.return_value.__exit__ = lambda *a: None
+        mock_conn.return_value.__enter__ = lambda s: ctx
+        mock_conn.return_value.__exit__ = lambda *a: None
+
+        create_task_failure_notification(
+            project_id="test-proj",
+            task_id="t-test-1",
+            task_title="Test",
+            error_message="Error.",
+        )
+
+        call_args = cur.execute.call_args
+        import json
+
+        metadata_json = call_args[0][1][8]
+        metadata = json.loads(metadata_json)
+        assert metadata["johnny"] is True
+        assert "subtask_id" not in metadata
+        assert "blocker_summary" not in metadata
+        assert "recommendation" not in metadata
+
+
 class TestCreateTaskCompletionNotification:
     """Tests for Johnny-branded task completion notifications."""
 

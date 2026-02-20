@@ -191,6 +191,9 @@ def create_task_failure_notification(
     error_message: str,
     criterion_id: str | None = None,
     agent_hub_session_ids: list[str] | None = None,
+    subtask_id: str | None = None,
+    recommendation: str | None = None,
+    blocker_summary: str | None = None,
 ) -> dict[str, Any]:
     """Create a notification for task failure with Johnny's voice.
 
@@ -201,6 +204,9 @@ def create_task_failure_notification(
         error_message: Error message from task
         criterion_id: Optional criterion ID that failed
         agent_hub_session_ids: Optional session IDs for chat context
+        subtask_id: Optional ID of the subtask that caused the failure
+        recommendation: Optional recommendation for resolving the blocker
+        blocker_summary: Optional summary of what blocked execution
 
     Returns:
         Created notification dict
@@ -216,6 +222,12 @@ def create_task_failure_notification(
         metadata["criterion_id"] = criterion_id
     if agent_hub_session_ids:
         metadata["agent_hub_session_ids"] = agent_hub_session_ids
+    if subtask_id:
+        metadata["subtask_id"] = subtask_id
+    if recommendation:
+        metadata["recommendation"] = recommendation
+    if blocker_summary:
+        metadata["blocker_summary"] = blocker_summary
 
     return create_notification(
         project_id=project_id,

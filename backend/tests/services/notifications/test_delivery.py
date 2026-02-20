@@ -88,9 +88,9 @@ class TestDeliver:
         mock_client.post.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_deliver_payload_includes_task_url(self) -> None:
-        """Push payload includes deep-link URL to task."""
-        notification = _make_notification(task_id="t-test-789")
+    async def test_deliver_payload_deep_links_to_chat(self) -> None:
+        """Push payload URL deep-links to /chat with task_id and notification_id."""
+        notification = _make_notification(task_id="t-test-789", notification_id="notif-test-456")
 
         mock_response = AsyncMock()
         mock_response.status_code = 200
@@ -105,7 +105,50 @@ class TestDeliver:
             await deliver(notification)
 
         payload = mock_client.post.call_args[1]["json"]
-        assert "t-test-789" in payload["url"]
+        assert "/chat?" in payload["url"]
+        assert "task_id=t-test-789" in payload["url"]
+        assert "notification_id=notif-test-456" in payload["url"]
+
+    @pytest.mark.asyncio
+    async def test_deliver_payload_includes_notification_id(self) -> None:
+        """Push payload includes notification_id field for SW forwarding."""
+        notification = _make_notification(notification_id="notif-test-777")
+
+        mock_response = AsyncMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"status": "sent", "delivered": 1}
+
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("app.services.notifications.delivery.httpx.AsyncClient", return_value=mock_client):
+            await deliver(notification)
+
+        payload = mock_client.post.call_args[1]["json"]
+        assert payload["notification_id"] == "notif-test-777"
+
+    @pytest.mark.asyncio
+    async def test_deliver_no_task_id_falls_back_to_frontend_url(self) -> None:
+        """When task_id is None, URL falls back to frontend root."""
+        notification = _make_notification(task_id=None)
+
+        mock_response = AsyncMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"status": "sent", "delivered": 1}
+
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("app.services.notifications.delivery.httpx.AsyncClient", return_value=mock_client):
+            await deliver(notification)
+
+        payload = mock_client.post.call_args[1]["json"]
+        assert "/chat" not in payload["url"]
+        assert "task_id" not in payload["url"]
 
     @pytest.mark.asyncio
     async def test_deliver_handles_agent_hub_error(self) -> None:

@@ -1,8 +1,8 @@
 // SummitFlow Service Worker
 // Provides offline caching and PWA support
 
-const CACHE_NAME = 'summitflow-v21';
-const STATIC_CACHE_NAME = 'summitflow-static-v21';
+const CACHE_NAME = 'summitflow-v22';
+const STATIC_CACHE_NAME = 'summitflow-static-v22';
 
 // Static assets to cache on install
 const STATIC_ASSETS = [
@@ -177,6 +177,7 @@ self.addEventListener('push', (event) => {
     data: {
       url: data.url || '/',
       task_id: data.task_id || null,
+      notification_id: data.notification_id || null,
     },
     actions: data.task_id
       ? [{ action: 'view', title: 'View Task' }]

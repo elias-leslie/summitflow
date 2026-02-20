@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from typing import Any
+
+import httpx
 
 from ....logging_config import get_logger
 from ....storage import tasks as task_store
@@ -21,8 +24,35 @@ from .quality_gate import run_quality_gate_with_autofix
 
 logger = get_logger(__name__)
 
+_AGENT_HUB_URL = os.getenv("AGENT_HUB_URL", "http://localhost:8003")
 
-def _notify_failure(task_id: str, project_id: str, error_message: str) -> None:
+
+def _wake_johnny(task_id: str, project_id: str, event_type: str, context: str) -> None:
+    """Fire-and-forget wake to Johnny via Agent Hub. Non-blocking."""
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            client.post(
+                f"{_AGENT_HUB_URL}/api/wake",
+                json={
+                    "agent_slug": "johnny",
+                    "context": context,
+                    "project_id": project_id,
+                    "event_type": event_type,
+                    "task_id": task_id,
+                },
+            )
+    except Exception:
+        logger.debug("Johnny wake failed (non-critical)", task_id=task_id)
+
+
+def _notify_failure(
+    task_id: str,
+    project_id: str,
+    error_message: str,
+    subtask_id: str | None = None,
+    blocker_summary: str | None = None,
+    recommendation: str | None = None,
+) -> None:
     """Send a task failure notification with Johnny's voice."""
     try:
         task = task_store.get_task(task_id)
@@ -34,6 +64,9 @@ def _notify_failure(task_id: str, project_id: str, error_message: str) -> None:
             task_title=task_title,
             error_message=error_message,
             agent_hub_session_ids=session_ids or None,
+            subtask_id=subtask_id,
+            blocker_summary=blocker_summary,
+            recommendation=recommendation,
         )
     except Exception:
         logger.exception("Failed to create failure notification", task_id=task_id)
@@ -119,6 +152,10 @@ def handle_successful_completion(
             project_id=project_id,
         )
         _notify_failure(task_id, project_id, "Quality gate failed after auto-fix attempt.")
+        _wake_johnny(
+            task_id, project_id, "quality_gate",
+            f"Task {task_id} quality gate failed after auto-fix. Investigate and advise.",
+        )
         return False
 
     try:
@@ -129,6 +166,10 @@ def handle_successful_completion(
         log_message = f"All subtasks passed + quality gate passed (clean={execution_clean})"
 
         transition_to_review_or_complete(task_id, project_id, log_message, dispatch)
+        _wake_johnny(
+            task_id, project_id, "autocode_complete",
+            f"Task {task_id} completed successfully — all subtasks passed + quality gate passed.",
+        )
         return True
     except Exception as e:
         handle_status_transition_error(task_id, project_id, e, {"Results": results})
@@ -193,13 +234,28 @@ def handle_partial_completion(
         return False
 
 
-def handle_failed_execution(task_id: str, project_id: str) -> None:
+def handle_failed_execution(
+    task_id: str,
+    project_id: str,
+    results: list[dict[str, Any]] | None = None,
+) -> None:
     """Handle case where subtasks failed.
 
     Args:
         task_id: The task ID
         project_id: The project ID
+        results: Optional list of subtask execution results for blocker context
     """
+    # Extract context from the first failed subtask (if available)
+    subtask_id: str | None = None
+    blocker_summary: str | None = None
+    if results:
+        for r in results:
+            if r.get("status") != "passed":
+                subtask_id = r.get("subtask_id")
+                blocker_summary = r.get("error") or r.get("message")
+                break
+
     try:
         task_store.update_task_status(task_id, "blocked")
         emit_log(
@@ -208,7 +264,18 @@ def handle_failed_execution(task_id: str, project_id: str) -> None:
             "Execution paused - subtask verification failed",
             project_id=project_id,
         )
-        _notify_failure(task_id, project_id, "All subtasks failed verification.")
+        _notify_failure(
+            task_id,
+            project_id,
+            "All subtasks failed verification.",
+            subtask_id=subtask_id,
+            blocker_summary=blocker_summary,
+        )
+        _wake_johnny(
+            task_id, project_id, "task_failure",
+            f"Task {task_id} failed — all subtasks failed verification. "
+            f"Blocker: {blocker_summary or 'unknown'}. Investigate and advise.",
+        )
     except Exception as e:
         emit_log(
             task_id,

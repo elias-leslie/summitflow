@@ -100,9 +100,9 @@ def _handle_completion(
         handle_successful_completion(task_id, project_id, project_path, results, dispatch)
     elif any_passed:
         if not handle_partial_completion(task_id, project_id, project_path, results, dispatch):
-            handle_failed_execution(task_id, project_id)
+            handle_failed_execution(task_id, project_id, results=results)
     else:
-        handle_failed_execution(task_id, project_id)
+        handle_failed_execution(task_id, project_id, results=results)
 
 
 def execute_task_locked(

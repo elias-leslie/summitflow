@@ -1,6 +1,6 @@
 'use client'
 
-import { Play } from 'lucide-react'
+import { Loader2, Play } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
 import { getApiBaseUrl } from '@/lib/api-config'
@@ -11,6 +11,7 @@ interface ResumeBarProps {
 
 export function ResumeBar({ taskId }: ResumeBarProps) {
   const [isResuming, setIsResuming] = useState(false)
+  const [resumed, setResumed] = useState(false)
 
   const handleResume = useCallback(async () => {
     setIsResuming(true)
@@ -29,6 +30,7 @@ export function ResumeBar({ taskId }: ResumeBarProps) {
         throw new Error(body?.detail || `Resume failed (${response.status})`)
       }
 
+      setResumed(true)
       toast.success('Task resumed', {
         description: `Task ${taskId} moved back to queue`,
       })
@@ -42,17 +44,24 @@ export function ResumeBar({ taskId }: ResumeBarProps) {
   }, [taskId])
 
   return (
-    <div className="flex items-center justify-between px-4 py-3 border-t border-slate-700/50 bg-slate-900/50">
-      <span className="text-xs text-muted-foreground">
-        Give Johnny direction, then resume the task
+    <div className="flex items-center justify-between px-4 py-3 border-t border-slate-750/60 bg-slate-950/80 backdrop-blur-sm animate-slide-up">
+      <span className="text-xs text-slate-500 font-mono">
+        {resumed
+          ? 'Task queued — Johnny is on it'
+          : 'Give Johnny direction, then resume the task'}
       </span>
       <button
+        type="button"
         onClick={handleResume}
-        disabled={isResuming}
-        className="flex items-center gap-2 px-4 py-1.5 text-sm font-medium rounded-md bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        disabled={isResuming || resumed}
+        className="flex items-center gap-2 px-4 py-1.5 text-sm font-medium font-display rounded-md bg-phosphor-600 hover:bg-phosphor-500 text-slate-950 disabled:opacity-40 disabled:cursor-not-allowed transition-all hover:shadow-[0_0_12px_rgba(0,245,255,0.3)]"
       >
-        <Play className="w-3.5 h-3.5" />
-        {isResuming ? 'Resuming...' : 'Resume Task'}
+        {isResuming ? (
+          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+        ) : (
+          <Play className="w-3.5 h-3.5" />
+        )}
+        {resumed ? 'Resumed' : isResuming ? 'Resuming…' : 'Resume Task'}
       </button>
     </div>
   )
