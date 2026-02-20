@@ -18,7 +18,7 @@ export function ResumeBar({ taskId }: ResumeBarProps) {
     try {
       const apiBase = getApiBaseUrl()
       const response = await fetch(
-        `${apiBase}/api/projects/summitflow/tasks/${taskId}/resume`,
+        `${apiBase}/api/projects/summitflow/tasks/${taskId}/execute`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

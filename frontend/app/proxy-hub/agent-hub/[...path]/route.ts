@@ -140,9 +140,11 @@ export async function PATCH(request: Request, { params }: RouteContext) {
 export async function DELETE(request: Request, { params }: RouteContext) {
   const { path } = await params
   const url = buildUpstreamUrl(config, path, new URL(request.url).searchParams.toString())
+  const body = await request.text()
   const response = await fetch(url, {
     method: 'DELETE',
-    headers: auth,
+    headers: body ? { 'Content-Type': 'application/json', ...auth } : auth,
+    ...(body ? { body } : {}),
   })
   return new Response(response.body, {
     status: response.status,
