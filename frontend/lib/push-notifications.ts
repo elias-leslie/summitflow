@@ -79,11 +79,19 @@ export async function subscribe(): Promise<boolean> {
   }
 
   try {
+    // Ensure SW is registered (may have been cleared)
+    console.log('[push] Ensuring service worker is registered...')
+    let registration = await navigator.serviceWorker.getRegistration()
+    if (!registration) {
+      console.log('[push] No SW found, registering...')
+      registration = await navigator.serviceWorker.register('/sw.js?v=21')
+      await navigator.serviceWorker.ready
+    }
+
     console.log('[push] Fetching VAPID key...')
     const vapidKey = await fetchVapidKey()
 
     console.log('[push] Subscribing via PushManager...')
-    const registration = await navigator.serviceWorker.ready
     const subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(vapidKey).buffer as ArrayBuffer,
