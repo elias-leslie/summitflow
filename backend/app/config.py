@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     ntfy_topic: str = "sf-alerts"
     ntfy_default_priority: int = 3
 
+    # Web Push (VAPID)
+    vapid_public_key: str = ""
+    vapid_private_key: str = ""
+    vapid_subject: str = "mailto:admin@summitflow.dev"
+
     # CORS
     cors_origins: list[str] = [
         # Local development

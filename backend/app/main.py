@@ -29,6 +29,7 @@ from .api import (
     notifications,
     pipeline,
     projects,
+    push_subscriptions,
     quality_gate,
     refactor_sessions,
     schemas,
@@ -109,6 +110,7 @@ app.include_router(explorer.router, prefix="/api/projects", tags=["explorer"])
 
 app.include_router(tasks.router, prefix="/api", tags=["tasks"])
 app.include_router(notifications.router, prefix="/api", tags=["notifications"])
+app.include_router(push_subscriptions.router, prefix="/api", tags=["push-notifications"])
 app.include_router(agent_sessions.router, prefix="/api/projects", tags=["tdd"])
 app.include_router(tdd.router, prefix="/api", tags=["tdd"])
 app.include_router(autonomous.router, prefix="/api/projects", tags=["autonomous"])

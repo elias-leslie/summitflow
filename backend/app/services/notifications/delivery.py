@@ -1,16 +1,17 @@
 """Channel-agnostic notification dispatcher.
 
 Routes notifications to delivery channels based on severity.
-Currently supports ntfy; designed for future channels (Web Push, etc.).
+Supports Web Push (PWA) and ntfy (legacy).
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from typing import Any
 
-from . import ntfy
+from . import ntfy, web_push
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,12 @@ _SEVERITY_TAGS: dict[str, list[str]] = {
     "error": ["x"],
     "warning": ["warning"],
 }
+
+
+def _build_task_url(notification: dict[str, Any]) -> str:
+    """Build the task deep-link URL."""
+    task_id = notification.get("task_id")
+    return f"{FRONTEND_URL}/tasks/{task_id}" if task_id else FRONTEND_URL
 
 
 def _build_task_actions(notification: dict[str, Any]) -> list[dict[str, Any]]:
@@ -65,13 +72,48 @@ def _build_task_actions(notification: dict[str, Any]) -> list[dict[str, Any]]:
     return actions
 
 
+async def _deliver_web_push(notification: dict[str, Any]) -> int:
+    """Send notification to all registered Web Push subscriptions.
+
+    Returns number of successful deliveries.
+    """
+    from app.storage import push_subscriptions
+
+    subs = await asyncio.to_thread(push_subscriptions.get_all_subscriptions)
+    if not subs:
+        return 0
+
+    task_url = _build_task_url(notification)
+    payload = {
+        "title": notification.get("title", "SummitFlow"),
+        "body": notification.get("message", ""),
+        "url": task_url,
+        "tag": notification.get("id", ""),
+        "severity": notification.get("severity", "info"),
+        "task_id": notification.get("task_id"),
+    }
+
+    sent_count = 0
+    for sub in subs:
+        sent = await web_push.send(subscription=sub, payload=payload)
+        if sent:
+            sent_count += 1
+            # Update last_used_at in background
+            asyncio.to_thread(push_subscriptions.touch_subscription, sub["endpoint"])
+
+    return sent_count
+
+
 async def deliver(notification: dict[str, Any]) -> None:
     """Route a notification to configured delivery channels.
 
     Severity routing:
-        critical/error → ntfy priority 5 (urgent push)
-        warning        → ntfy priority 3 (normal push)
+        critical/error → push (Web Push + ntfy)
+        warning        → push (Web Push + ntfy)
         info           → DB only (no push)
+
+    Sends to both Web Push and ntfy in parallel. Either or both
+    may be disabled — delivery is best-effort.
 
     Args:
         notification: Notification dict from storage layer (must have
@@ -86,11 +128,11 @@ async def deliver(notification: dict[str, Any]) -> None:
     priority = _SEVERITY_PRIORITY[severity]
     tags = _SEVERITY_TAGS.get(severity)
     actions = _build_task_actions(notification)
+    click_url = _build_task_url(notification)
 
-    task_id = notification.get("task_id")
-    click_url = f"{FRONTEND_URL}/tasks/{task_id}" if task_id else FRONTEND_URL
-
-    sent = await ntfy.send(
+    # Send to both channels in parallel
+    web_push_task = _deliver_web_push(notification)
+    ntfy_task = ntfy.send(
         message=notification.get("message", ""),
         title=notification.get("title", "SummitFlow"),
         priority=priority,
@@ -99,5 +141,12 @@ async def deliver(notification: dict[str, Any]) -> None:
         click_url=click_url,
     )
 
-    if sent:
-        logger.debug("Delivered notification %s via ntfy", notification.get("id"))
+    web_push_count, ntfy_sent = await asyncio.gather(
+        web_push_task, ntfy_task, return_exceptions=True
+    )
+
+    nid = notification.get("id")
+    if isinstance(web_push_count, int) and web_push_count > 0:
+        logger.debug("Delivered notification %s via web push (%d devices)", nid, web_push_count)
+    if ntfy_sent is True:
+        logger.debug("Delivered notification %s via ntfy", nid)

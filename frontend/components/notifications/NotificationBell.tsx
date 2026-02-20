@@ -18,6 +18,7 @@ import {
   type Notification,
 } from '@/lib/api'
 import { NotificationDetailModal } from './NotificationDetailModal'
+import { PushNotificationToggle } from './PushNotificationToggle'
 
 interface NotificationBellProps {
   projectId: string
@@ -150,11 +151,14 @@ export function NotificationBell({
                 <h3 className="text-sm font-medium text-slate-200">
                   Notifications
                 </h3>
-                {pendingCount > 0 && (
-                  <span className="text-xs text-slate-400">
-                    {pendingCount} pending
-                  </span>
-                )}
+                <div className="flex items-center gap-2">
+                  {pendingCount > 0 && (
+                    <span className="text-xs text-slate-400">
+                      {pendingCount} pending
+                    </span>
+                  )}
+                  <PushNotificationToggle />
+                </div>
               </div>
 
               {/* Notification List */}

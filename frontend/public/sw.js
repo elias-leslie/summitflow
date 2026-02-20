@@ -153,3 +153,59 @@ self.addEventListener('message', (event) => {
     self.skipWaiting();
   }
 });
+
+// ============================================================================
+// Push Notification Handlers
+// ============================================================================
+
+// Handle incoming push notifications
+self.addEventListener('push', (event) => {
+  if (!event.data) return;
+
+  let data;
+  try {
+    data = event.data.json();
+  } catch {
+    data = { title: 'SummitFlow', body: event.data.text() };
+  }
+
+  const options = {
+    body: data.body || '',
+    icon: '/icons/icon-192.png',
+    badge: '/icons/icon-192.png',
+    tag: data.tag || 'summitflow-notification',
+    data: {
+      url: data.url || '/',
+      task_id: data.task_id || null,
+    },
+    actions: data.task_id
+      ? [{ action: 'view', title: 'View Task' }]
+      : [],
+  };
+
+  event.waitUntil(
+    self.registration.showNotification(data.title || 'SummitFlow', options)
+  );
+});
+
+// Handle notification click — open/focus PWA and navigate to task
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+
+  const url = event.notification.data?.url || '/';
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+      // If PWA is already open, focus it and navigate
+      for (const client of windowClients) {
+        if ('focus' in client) {
+          client.focus();
+          client.navigate(url);
+          return;
+        }
+      }
+      // Otherwise open a new window
+      return clients.openWindow(url);
+    })
+  );
+});

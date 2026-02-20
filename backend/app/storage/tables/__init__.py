@@ -8,6 +8,7 @@ from .core import create_core_tables
 from .design import create_design_tables
 from .migrations import apply_schema_migrations
 from .notifications import create_notifications_tables
+from .push_subscriptions import create_push_subscriptions_table
 
 __all__ = [
     "apply_schema_migrations",
@@ -15,4 +16,5 @@ __all__ = [
     "create_core_tables",
     "create_design_tables",
     "create_notifications_tables",
+    "create_push_subscriptions_table",
 ]
