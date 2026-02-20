@@ -8,6 +8,7 @@ import { getVoiceWsUrl, getTtsBaseUrl } from '@/lib/api-config'
 import { getAgentHubProxyBase } from '@/components/tasks/useTaskIdeation'
 import { fetchNotification, type Notification } from '@/lib/api/notifications'
 import { BlockerBanner } from './BlockerBanner'
+import { HeartbeatSettings } from './HeartbeatSettings'
 import { ResumeBar } from './ResumeBar'
 
 const PROJECT_ID = 'summitflow'
@@ -82,9 +83,12 @@ export function JohnnyChatClient() {
         }
         onSessionCreated={handleSessionCreated}
       />
-      {taskId && sessionId && (
-        <ResumeBar taskId={taskId} />
-      )}
+      <div className="flex items-center justify-between px-4 py-2 border-t border-slate-750/60 bg-slate-950/80 backdrop-blur-sm">
+        <div className="flex-1">
+          {taskId && sessionId && <ResumeBar taskId={taskId} />}
+        </div>
+        <HeartbeatSettings />
+      </div>
     </div>
   )
 }

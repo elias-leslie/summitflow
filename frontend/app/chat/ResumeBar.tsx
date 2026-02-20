@@ -44,11 +44,11 @@ export function ResumeBar({ taskId }: ResumeBarProps) {
   }, [taskId])
 
   return (
-    <div className="flex items-center justify-between px-4 py-3 border-t border-slate-750/60 bg-slate-950/80 backdrop-blur-sm animate-slide-up">
+    <div className="flex items-center gap-3 animate-slide-up">
       <span className="text-xs text-slate-500 font-mono">
         {resumed
           ? 'Task queued — Johnny is on it'
-          : 'Give Johnny direction, then resume the task'}
+          : 'Give Johnny direction, then resume'}
       </span>
       <button
         type="button"
