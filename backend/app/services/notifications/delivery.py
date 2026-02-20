@@ -11,10 +11,16 @@ from typing import Any
 
 import httpx
 
+from app.services._agent_hub_config import (
+    AGENT_HUB_URL,
+    SUMMITFLOW_CLIENT_ID,
+    SUMMITFLOW_CLIENT_SECRET,
+    SUMMITFLOW_REQUEST_SOURCE,
+)
+
 logger = logging.getLogger(__name__)
 
 FRONTEND_URL = os.getenv("SUMMITFLOW_FRONTEND_URL", "https://dev.summitflow.dev")
-AGENT_HUB_URL = os.getenv("AGENT_HUB_URL", "http://localhost:8003")
 
 # Severities that trigger push delivery (info stays in-app only)
 _PUSH_SEVERITIES = {"critical", "error", "warning"}
@@ -61,10 +67,16 @@ async def deliver(notification: dict[str, Any]) -> None:
     }
 
     try:
+        headers = {
+            "X-Client-Id": SUMMITFLOW_CLIENT_ID or "",
+            "X-Client-Secret": SUMMITFLOW_CLIENT_SECRET or "",
+            "X-Request-Source": SUMMITFLOW_REQUEST_SOURCE,
+        }
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(
                 f"{AGENT_HUB_URL}/api/push/send",
                 json=payload,
+                headers=headers,
             )
             if resp.status_code == 200:
                 data = resp.json()

@@ -106,9 +106,9 @@ def _schedule_delivery(notification: dict[str, Any]) -> None:
     Checks for a running asyncio loop and schedules delivery as a task.
     Storage layer is sync, so this bridges into the async delivery service.
     """
-    from app.config import settings
+    from app.services._agent_hub_config import AGENT_HUB_URL
 
-    if not settings.vapid_public_key:
+    if not AGENT_HUB_URL:
         return
 
     try:

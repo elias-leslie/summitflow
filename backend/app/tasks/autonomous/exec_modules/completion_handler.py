@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import Callable
 from typing import Any
 
 import httpx
 
 from ....logging_config import get_logger
+from ....services._agent_hub_config import (
+    AGENT_HUB_URL,
+    SUMMITFLOW_CLIENT_ID,
+    SUMMITFLOW_CLIENT_SECRET,
+    SUMMITFLOW_REQUEST_SOURCE,
+)
 from ....storage import tasks as task_store
 from ....storage.notifications import create_task_failure_notification
 from .completion_status import (
@@ -24,15 +29,17 @@ from .quality_gate import run_quality_gate_with_autofix
 
 logger = get_logger(__name__)
 
-_AGENT_HUB_URL = os.getenv("AGENT_HUB_URL", "http://localhost:8003")
-
-
 def _wake_johnny(task_id: str, project_id: str, event_type: str, context: str) -> None:
     """Fire-and-forget wake to Johnny via Agent Hub. Non-blocking."""
     try:
+        headers = {
+            "X-Client-Id": SUMMITFLOW_CLIENT_ID or "",
+            "X-Client-Secret": SUMMITFLOW_CLIENT_SECRET or "",
+            "X-Request-Source": SUMMITFLOW_REQUEST_SOURCE,
+        }
         with httpx.Client(timeout=5.0) as client:
             client.post(
-                f"{_AGENT_HUB_URL}/api/wake",
+                f"{AGENT_HUB_URL}/api/wake",
                 json={
                     "agent_slug": "johnny",
                     "context": context,
@@ -40,6 +47,7 @@ def _wake_johnny(task_id: str, project_id: str, event_type: str, context: str) -
                     "event_type": event_type,
                     "task_id": task_id,
                 },
+                headers=headers,
             )
     except Exception:
         logger.debug("Johnny wake failed (non-critical)", task_id=task_id)
