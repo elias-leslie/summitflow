@@ -1,6 +1,6 @@
 """Scheduled (cron) workflows for SummitFlow.
 
-12 cron workflows on Hatchet schedule.
+10 active cron workflows on Hatchet schedule (2 disabled: systemd monitor, browser monitor).
 All use ConcurrencyExpression with CANCEL_IN_PROGRESS to prevent overlapping runs.
 """
 
@@ -149,7 +149,10 @@ async def task_generation_wf(input: ProjectInput, ctx: Context) -> dict[str, Any
     execution_timeout="300s",
     retries=3,
     backoff_factor=2.0,
-    on_crons=["*/5 * * * *"],
+    # DISABLED: Creates noisy bug tasks from transient log errors with broken
+    # dedup (28 pending, 0 ever completed). Runtime errors belong in
+    # observability, not the task system. — 2026-02-20
+    # on_crons=["*/5 * * * *"],
     concurrency=ConcurrencyExpression(
         expression="'summitflow-monitor-systemd'",
         max_runs=1,
@@ -170,7 +173,10 @@ async def monitor_systemd_wf(input: SystemdMonitorInput, ctx: Context) -> dict[s
     execution_timeout="600s",
     retries=3,
     backoff_factor=2.0,
-    on_crons=["30 */6 * * *"],
+    # DISABLED: Creates bug tasks from console errors that are never resolved
+    # autonomously. Console errors should surface in Explorer dashboard for
+    # human review, not auto-create tasks. — 2026-02-20
+    # on_crons=["30 */6 * * *"],
     concurrency=ConcurrencyExpression(
         expression="'summitflow-monitor-browser'",
         max_runs=1,
