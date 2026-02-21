@@ -1,6 +1,6 @@
 'use client'
 
-import { Info } from 'lucide-react'
+import { Info, MessageSquare } from 'lucide-react'
 import Link from 'next/link'
 import { NotificationBell } from '@/components/notifications'
 import { GlobalAutoExecDropdown } from './GlobalAutoExecDropdown'
@@ -19,6 +19,13 @@ export function TopBar() {
         <GlobalAutoExecDropdown />
         <TaskSearch />
         <div className="flex items-center gap-1 flex-shrink-0">
+          <Link
+            href="/chat"
+            className="lg:hidden p-2.5 rounded-lg text-phosphor-400 hover:bg-phosphor-500/10 hover:text-phosphor-300 transition-all duration-200"
+            title="Johnny"
+          >
+            <MessageSquare className="w-5 h-5" />
+          </Link>
           <Link
             href="/about"
             data-testid="topbar-about"

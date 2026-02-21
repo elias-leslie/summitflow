@@ -9,6 +9,7 @@ import {
   ChevronRight,
   FolderKanban,
   Info,
+  MessageSquare,
   Plus,
 } from 'lucide-react'
 import Link from 'next/link'
@@ -45,6 +46,18 @@ export function DashboardClient() {
           Quick Access
         </h2>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          <Link
+            href="/chat"
+            className="card p-4 flex items-center gap-3 hover:border-phosphor-500/50 hover:bg-phosphor-500/5 transition-all group"
+          >
+            <div className="p-2 rounded-lg bg-phosphor-500/20 text-phosphor-400 group-hover:bg-phosphor-500/30 transition-colors">
+              <MessageSquare className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="text-sm font-medium text-white">Johnny</div>
+              <div className="text-xs text-slate-500">Voice concierge</div>
+            </div>
+          </Link>
           <Link
             href="/backups"
             className="card p-4 flex items-center gap-3 hover:border-indigo-500/50 hover:bg-indigo-500/5 transition-all group"

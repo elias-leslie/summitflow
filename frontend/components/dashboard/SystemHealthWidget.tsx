@@ -132,7 +132,7 @@ export function SystemHealthWidget({ className }: SystemHealthWidgetProps) {
                                     style={{ width: `${Math.min(data.disk.percent_used, 100)}%` }}
                                 />
                             </div>
-                            <span className="text-[10px] text-slate-600 text-center">Disk</span>
+                            <span className="text-[10px] text-slate-600 text-center">{data.disk.used_gb.toFixed(0)}/{data.disk.total_gb.toFixed(0)}GB</span>
                         </div>
                     </div>
 

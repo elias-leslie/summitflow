@@ -16,6 +16,12 @@ const nextConfig: NextConfig = {
           source: '/api/agent-hub/:path*',
           destination: '/proxy-hub/agent-hub/:path*',
         },
+        // Voice STT/TTS: proxy to Agent Hub backend (not SummitFlow)
+        // Must be in beforeFiles so /api/:path* catch-all doesn't grab it
+        {
+          source: '/api/voice/:path*',
+          destination: 'http://localhost:8003/api/voice/:path*',
+        },
       ],
       afterFiles: [
         // All other API calls proxy to SummitFlow backend

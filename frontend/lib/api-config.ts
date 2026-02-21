@@ -84,28 +84,29 @@ export function buildApiUrl(path: string): string {
 }
 
 /**
- * Get Agent Hub voice WebSocket URL (external service).
- * Returns null if not configured (feature disabled).
+ * Get Agent Hub voice WebSocket URL.
+ * Returns null server-side (voice is client-only).
  *
- * Voice is provided by agent-hub, which may or may not be available.
+ * Uses same-origin routing in production to avoid CF Access cookie issues:
+ * Browser → wss://dev.summitflow.dev/api/voice/ws → CF tunnel → Next.js → rewrite → Agent Hub
  */
 export function getVoiceWsUrl(): string | null {
-  // Check if voice is configured via env var
   const voiceUrl = process.env.NEXT_PUBLIC_VOICE_URL
-  if (voiceUrl) {
-    return voiceUrl
+  if (voiceUrl) return voiceUrl
+
+  if (typeof window === 'undefined') return null
+
+  const host = window.location.hostname
+  const params = 'user_id=summitflow_user&app=summitflow&mode=transcribe'
+
+  // Development: direct to Agent Hub backend
+  if (host === 'localhost' || host === '127.0.0.1') {
+    return `ws://localhost:8003/api/voice/ws?${params}`
   }
 
-  // In development, try to connect to local agent-hub
-  if (typeof window !== 'undefined') {
-    const host = window.location.hostname
-    if (host === 'localhost' || host === '127.0.0.1') {
-      return 'ws://localhost:8003/api/voice/ws?user_id=summitflow_user&app=summitflow'
-    }
-    // Production: use agent-hub production URL
-    if (host === PROD_DOMAIN) {
-      return 'wss://agentapi.summitflow.dev/api/voice/ws?user_id=summitflow_user&app=summitflow'
-    }
+  // Production: same-origin WebSocket via CF tunnel + Next.js rewrite
+  if (host === PROD_DOMAIN) {
+    return `wss://${PROD_DOMAIN}/api/voice/ws?${params}`
   }
 
   return null
@@ -114,16 +115,25 @@ export function getVoiceWsUrl(): string | null {
 /**
  * Get Agent Hub TTS base URL for text-to-speech.
  * Used by ChatPanel for voice responses.
+ * Returns the origin only — useVoice appends /api/voice/tts.
+ *
+ * Same-origin in production: Next.js rewrite proxies /api/voice/* to Agent Hub.
  */
 export function getTtsBaseUrl(): string | null {
-  if (typeof window !== 'undefined') {
-    const host = window.location.hostname
-    if (host === 'localhost' || host === '127.0.0.1') {
-      return 'http://localhost:8003/api/voice'
-    }
-    if (host === PROD_DOMAIN) {
-      return 'https://agentapi.summitflow.dev/api/voice'
-    }
+  if (typeof window === 'undefined') return null
+
+  const host = window.location.hostname
+
+  // Development: direct to Agent Hub backend
+  if (host === 'localhost' || host === '127.0.0.1') {
+    return 'http://localhost:8003'
   }
+
+  // Production: same-origin (rewrite proxies /api/voice/tts to Agent Hub)
+  // Return explicit origin — useVoice checks !ttsBaseUrl, and '' is falsy
+  if (host === PROD_DOMAIN) {
+    return window.location.origin
+  }
+
   return null
 }
