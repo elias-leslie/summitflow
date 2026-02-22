@@ -7,17 +7,19 @@ import type { ChatStreamApiConfig } from '@agent-hub/chat-ui'
 import { getVoiceWsUrl, getTtsBaseUrl } from '@/lib/api-config'
 import { getAgentHubProxyBase } from '@/components/tasks/useTaskIdeation'
 import { fetchNotification, type Notification } from '@/lib/api/notifications'
+import { usePersonaName } from '@/hooks/usePersonaName'
 import { BlockerBanner } from './BlockerBanner'
 import { ResumeBar } from './ResumeBar'
 
 const PROJECT_ID = 'summitflow'
-const AGENT_SLUG = 'johnny'
+const AGENT_SLUG = 'persona'
 const MEMORY_GROUP_PREFIX = 'summitflow:'
 
-export function JohnnyChatClient() {
+export function PersonaChatClient() {
   const searchParams = useSearchParams()
   const taskId = searchParams.get('task_id')
   const notificationId = searchParams.get('notification_id')
+  const personaName = usePersonaName()
 
   const [notification, setNotification] = useState<Notification | null>(null)
   const [sessionId, setSessionId] = useState<string | null>(null)
@@ -58,7 +60,7 @@ export function JohnnyChatClient() {
           modelsEndpoint={`${getAgentHubProxyBase()}/models`}
           voiceWsUrl={voiceWsUrl ?? undefined}
           ttsBaseUrl={ttsBaseUrl ?? undefined}
-          title="Johnny"
+          title={personaName}
           renderBanner={
             taskId
               ? () => (
@@ -74,7 +76,7 @@ export function JohnnyChatClient() {
       </div>
       {taskId && sessionId && (
         <div className="px-3 sm:px-4 py-2 border-t border-slate-800 bg-slate-950/80 backdrop-blur-sm flex-shrink-0">
-          <ResumeBar taskId={taskId} />
+          <ResumeBar taskId={taskId} personaName={personaName} />
         </div>
       )}
     </div>

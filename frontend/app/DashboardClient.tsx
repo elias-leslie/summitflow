@@ -16,10 +16,12 @@ import Link from 'next/link'
 import { useState } from 'react'
 import { ActivityFeed, ProjectCard, SystemHealthWidget } from '@/components/dashboard'
 import { fetchProjectsWithStats, type ProjectWithStats } from '@/lib/api'
+import { usePersonaName } from '@/hooks/usePersonaName'
 
 const PROJECTS_PER_PAGE = 9
 
 export function DashboardClient() {
+  const personaName = usePersonaName()
   const [page, setPage] = useState(0)
 
   const { data, isLoading, error } = useQuery({
@@ -54,8 +56,8 @@ export function DashboardClient() {
               <MessageSquare className="w-5 h-5" />
             </div>
             <div>
-              <div className="text-sm font-medium text-white">Johnny</div>
-              <div className="text-xs text-slate-500">Voice concierge</div>
+              <div className="text-sm font-medium text-white">{personaName}</div>
+              <div className="text-xs text-slate-500">AI concierge</div>
             </div>
           </Link>
           <Link

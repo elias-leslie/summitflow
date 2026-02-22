@@ -30,6 +30,8 @@ HEALTH_URLS: dict[str, str] = {
     "portfolio-ai": "http://localhost:8000/health",
     "terminal": "http://localhost:8002/health",
 }
+# Backward compatibility alias for refactored name
+PROD_HEALTH_URLS = HEALTH_URLS
 
 
 def check_health(project_id: str, url: str) -> dict[str, Any]:

@@ -123,7 +123,7 @@ export function NotificationBell({
         // Silently fail
       }
     }
-    // Navigate to Johnny chat with context
+    // Navigate to persona chat with context
     navigateToChat(notification)
     setIsOpen(false)
   }

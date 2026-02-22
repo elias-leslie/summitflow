@@ -61,7 +61,7 @@ export const navItems = [
   },
   {
     id: 'chat',
-    label: 'Johnny',
+    label: 'Persona',
     href: '/chat',
     icon: MessageSquare,
     activeColor: 'phosphor',

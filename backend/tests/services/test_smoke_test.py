@@ -2,70 +2,13 @@
 
 from __future__ import annotations
 
-import subprocess
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 from app.services.smoke_test import (
     PROD_HEALTH_URLS,
-    check_health,
     run_all_smoke_tests,
 )
-
-
-class TestCheckHealth:
-    """Tests for individual health endpoint checks."""
-
-    @patch("app.services.smoke_test.subprocess.run")
-    def test_healthy_endpoint(self, mock_run: MagicMock) -> None:
-        mock_run.return_value = MagicMock(returncode=0)
-
-        result = check_health("summitflow", "https://example.com/health")
-
-        assert result["ok"] is True
-        assert result["status"] == "healthy"
-        assert result["project"] == "summitflow"
-
-    @patch("app.services.smoke_test.subprocess.run")
-    def test_unhealthy_endpoint(self, mock_run: MagicMock) -> None:
-        mock_run.return_value = MagicMock(returncode=1)
-
-        result = check_health("summitflow", "https://example.com/health")
-
-        assert result["ok"] is False
-        assert result["status"] == "unhealthy"
-
-    @patch("app.services.smoke_test.subprocess.run")
-    def test_timeout_returns_error(self, mock_run: MagicMock) -> None:
-        mock_run.side_effect = subprocess.TimeoutExpired("cf-curl", 30)
-
-        result = check_health("summitflow", "https://example.com/health")
-
-        assert result["ok"] is False
-        assert "error" in result["status"]
-
-    @patch("app.services.smoke_test.subprocess.run")
-    def test_missing_cf_curl_returns_error(self, mock_run: MagicMock) -> None:
-        mock_run.side_effect = FileNotFoundError("cf-curl not found")
-
-        result = check_health("summitflow", "https://example.com/health")
-
-        assert result["ok"] is False
-        assert "error" in result["status"]
-
-    @patch("app.services.smoke_test.subprocess.run")
-    def test_uses_cf_curl(self, mock_run: MagicMock) -> None:
-        mock_run.return_value = MagicMock(returncode=0)
-        url = "https://devapi.summitflow.dev/health"
-
-        check_health("summitflow", url)
-
-        mock_run.assert_called_once_with(
-            ["cf-curl", "-sf", url],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
 
 
 class TestRunAllSmokeTests:

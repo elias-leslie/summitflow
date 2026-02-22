@@ -7,9 +7,10 @@ import { getApiBaseUrl } from '@/lib/api-config'
 
 interface ResumeBarProps {
   taskId: string
+  personaName?: string
 }
 
-export function ResumeBar({ taskId }: ResumeBarProps) {
+export function ResumeBar({ taskId, personaName = 'Persona' }: ResumeBarProps) {
   const [isResuming, setIsResuming] = useState(false)
   const [resumed, setResumed] = useState(false)
 
@@ -32,7 +33,7 @@ export function ResumeBar({ taskId }: ResumeBarProps) {
 
       setResumed(true)
       toast.success('Task re-queued', {
-        description: 'Johnny will retry this task with your guidance',
+        description: `${personaName} will retry this task with your guidance`,
       })
     } catch (err) {
       toast.error('Failed to re-run task', {
@@ -47,8 +48,8 @@ export function ResumeBar({ taskId }: ResumeBarProps) {
     <div className="flex items-center gap-2 sm:gap-3">
       <span className="text-xs text-slate-500 font-mono truncate hidden sm:inline">
         {resumed
-          ? 'Queued — Johnny will retry'
-          : 'Chat with Johnny, then re-run when ready'}
+          ? `Queued — ${personaName} will retry`
+          : `Chat with ${personaName}, then re-run when ready`}
       </span>
       <button
         type="button"

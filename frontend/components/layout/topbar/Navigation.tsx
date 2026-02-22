@@ -3,12 +3,14 @@ import { ExternalLink } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useGitHealth } from '@/hooks/useGitHealth'
+import { usePersonaName } from '@/hooks/usePersonaName'
 import { GitStatusIndicator } from './GitStatusIndicator'
 import { navItems } from './constants'
 
 export function Navigation() {
   const pathname = usePathname()
   const gitHealth = useGitHealth()
+  const personaName = usePersonaName()
 
   return (
     <nav className="hidden lg:flex items-center gap-1 ml-4">
@@ -46,7 +48,7 @@ export function Navigation() {
         const content = (
           <>
             <Icon className={iconClassName} />
-            <span>{item.label}</span>
+            <span>{item.id === 'chat' ? personaName : item.label}</span>
             {item.id === 'git' && <GitStatusIndicator state={gitHealth} />}
             {isExternal && (
               <ExternalLink className="w-3 h-3 text-slate-600 group-hover:text-slate-500" />

@@ -64,8 +64,12 @@ def agent_hub_request(
     agent_hub_url = get_agent_hub_url()
     url = f"{agent_hub_url}{path}"
 
+    # Memory save/update operations involve Graphiti embedding + Neo4j writes
+    # which can take 30-60s. Use generous read timeout to prevent partial
+    # operations (e.g., create succeeds but delete times out → duplicates).
+    timeout = httpx.Timeout(connect=5.0, read=90.0, write=30.0, pool=30.0)
     try:
-        with httpx.Client(timeout=30.0) as client:
+        with httpx.Client(timeout=timeout) as client:
             if method == "GET":
                 response = client.get(url, params=params, headers=headers)
             elif method == "DELETE":

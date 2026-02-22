@@ -297,10 +297,23 @@ def update_impl(
             typer.echo(f"Error creating new episode: {create_result}")
             raise typer.Exit(1)
 
-        delete_result = agent_hub_request(
-            "DELETE", f"/api/memory/episode/{uuid}", tool_name="st memory update"
-        )
-        if not delete_result.get("success"):
+        # Delete original — retry once on failure to prevent orphaned duplicates
+        delete_ok = False
+        for attempt in range(2):
+            try:
+                delete_result = agent_hub_request(
+                    "DELETE", f"/api/memory/episode/{uuid}", tool_name="st memory update"
+                )
+                if delete_result.get("success"):
+                    delete_ok = True
+                    break
+            except SystemExit:
+                if attempt == 0:
+                    typer.echo("  Retrying delete...")
+                    continue
+                raise
+
+        if not delete_ok:
             typer.echo(
                 f"Warning: Failed to delete original: {delete_result.get('detail', 'Unknown')}"
             )
