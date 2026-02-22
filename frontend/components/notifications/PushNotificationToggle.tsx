@@ -8,7 +8,7 @@ import {
   isSubscribed,
   subscribe,
   unsubscribe,
-} from '@/lib/push-notifications'
+} from '@agent-hub/push-client'
 
 type PushState = 'loading' | 'unsupported' | 'denied' | 'subscribed' | 'unsubscribed'
 

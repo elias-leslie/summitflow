@@ -23,6 +23,7 @@ from .commands import (
     health,
     logs,
     memory,
+    persona,
     projects,
     prompt,
     refactor,
@@ -198,6 +199,7 @@ app.add_typer(cleanup.app, name="cleanup")
 app.add_typer(prompt.app, name="prompt")
 app.add_typer(refactor.app, name="refactor")
 app.add_typer(feedback.app, name="feedback")
+app.add_typer(persona.app, name="persona")
 app.command("exec-log")(exec_monitor.exec_log_command)
 app.command("exec-monitor", hidden=True)(exec_monitor.exec_monitor_command)  # alias
 
