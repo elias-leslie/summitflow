@@ -90,9 +90,6 @@ def handle_existing_checkpoint(task_id: str, existing: dict[str, Any]) -> dict[s
     typer.echo(f"Size: {existing.get('size', 'unknown')}")
     if existing.get("worktree_path"):
         typer.echo(f"Worktree: {existing['worktree_path']}")
-    if not typer.confirm("Resume existing work?", default=True):
-        typer.echo("Aborting. Use --force to overwrite.")
-        raise typer.Exit(1)
     worktree_path = existing.get("worktree_path")
     if worktree_path and existing.get("worktree_exists") == "true":
         return _resume_from_worktree(task_id, existing)

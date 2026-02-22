@@ -98,9 +98,9 @@ def get(out: OutputContext, uuids: list[str]) -> None:
     get_impl(out, uuids)
 
 
-def delete(uuids: list[str], confirm: bool) -> None:
+def delete(uuids: list[str]) -> None:
     """Delete memory episode(s)."""
-    delete_impl(uuids, confirm)
+    delete_impl(uuids)
 
 
 def update(
@@ -110,10 +110,9 @@ def update(
     summary: str | None,
     trigger_types: str | None,
     pinned: bool | None,
-    confirm: bool,
 ) -> None:
     """Update a memory episode."""
-    update_impl(uuid, content, tier, summary, trigger_types, pinned, confirm)
+    update_impl(uuid, content, tier, summary, trigger_types, pinned)
 
 
 def batch_tier(

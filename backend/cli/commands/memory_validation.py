@@ -102,5 +102,4 @@ def validate_content_format(content: str, summary: str) -> None:
         raise typer.Exit(1)
 
     if content.count(".") > 3 or len(content) > 500:
-        typer.echo("Hint: Long content detected. Is this ONE rule or multiple?")
-        typer.echo("      Multiple rules = split into separate episodes for clarity.")
+        typer.echo("Hint: Long content detected. Consider splitting into separate episodes.", err=True)

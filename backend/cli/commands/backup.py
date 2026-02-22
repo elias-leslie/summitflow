@@ -72,23 +72,11 @@ def restore_backup(
     ctx: typer.Context,
     backup_id: Annotated[str, typer.Argument(help="Backup ID to restore")],
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Preview without restoring")] = False,
-    yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip confirmation")] = False,
 ) -> None:
     """Restore from a backup. DANGEROUS: This will overwrite current data."""
     api = _get_api()
     try:
         backup = api.get_backup(backup_id)
-
-        if not dry_run and not yes:
-            config = get_config()
-            print(f"About to restore from backup: {backup.get('name', backup_id)}")
-            print(f"  Project: {config.project_id}")
-            print(f"  Created: {backup.get('created_at', '?')}")
-            print(f"  Size: {format_size(backup.get('size_bytes'))}")
-            print()
-            if typer.prompt(f"Type '{config.project_id}' to confirm restore") != config.project_id:
-                output_error("Restore cancelled - confirmation did not match")
-                raise typer.Exit(1)
 
         result = api.restore_backup(backup_id, dry_run=dry_run)
         if ctx.obj.is_compact:
@@ -166,13 +154,8 @@ def show_backup(
 def delete_backup(
     ctx: typer.Context,
     backup_id: Annotated[str, typer.Argument(help="Backup ID to delete")],
-    yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip confirmation")] = False,
 ) -> None:
     """Delete a backup record. Note: Only deletes DB record, not backup files."""
-    if not yes and not typer.confirm(f"Delete backup {backup_id}?"):
-        output_error("Cancelled")
-        raise typer.Exit(1)
-
     try:
         _get_api().delete_backup(backup_id)
         output_deleted(ctx.obj, backup_id)

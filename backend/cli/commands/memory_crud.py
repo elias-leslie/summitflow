@@ -183,16 +183,7 @@ def get_impl(out: OutputContext, uuids: list[str]) -> None:
             output_json(result)
 
 
-def delete_impl(uuids: list[str], confirm: bool) -> None:
-    if confirm:
-        typer.echo(f"Will delete {len(uuids)} episode(s):")
-        for uuid in uuids:
-            typer.echo(f"  - {uuid[:8]}...")
-
-        if not typer.confirm("Proceed with deletion?"):
-            typer.echo("Cancelled.")
-            raise typer.Exit(0)
-
+def delete_impl(uuids: list[str]) -> None:
     if len(uuids) == 1:
         result = agent_hub_request(
             "DELETE",
@@ -226,7 +217,6 @@ def update_impl(
     summary: str | None,
     trigger_types: str | None,
     pinned: bool | None,
-    confirm: bool,
 ) -> None:
     if not any([content, tier, summary, trigger_types, pinned is not None]):
         typer.echo(
@@ -253,26 +243,6 @@ def update_impl(
     if content:
         effective_summary = summary or existing.get("summary", "")
         validate_content_format(content, effective_summary)
-
-    if confirm:
-        typer.echo(f"  UUID: {uuid[:8]}...")
-        if tier:
-            typer.echo(f"  Tier: {old_tier} -> {tier}")
-        if content:
-            typer.echo(f"  Old content: {old_content}")
-            typer.echo(f"  New content: {content}")
-        if summary:
-            typer.echo(f"  Summary: {summary}")
-        if trigger_types:
-            typer.echo(f"  Trigger types: {trigger_types}")
-        if pinned is not None:
-            typer.echo(f"  Pinned: {pinned}")
-        if content_or_tier_changed:
-            typer.echo("  Usage stats will be preserved.")
-
-        if not typer.confirm("Proceed with update?"):
-            typer.echo("Cancelled.")
-            raise typer.Exit(0)
 
     target_uuid = full_uuid
 

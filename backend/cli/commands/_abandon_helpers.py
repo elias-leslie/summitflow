@@ -98,10 +98,6 @@ def confirm_task_abandon(
         typer.echo(f"  - DISCARD {unmerged} unmerged commits")
     typer.echo("")
     typer.echo("NOTE: Database will NOT be restored (append-only task metadata).")
-    typer.echo("")
-    if not typer.confirm("Proceed with abandon?", default=False):
-        typer.echo("Aborted.")
-        raise typer.Exit(0)
 
 
 def abandon_subtask(

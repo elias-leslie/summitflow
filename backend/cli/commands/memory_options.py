@@ -126,12 +126,6 @@ UUIDsBatchArg = Annotated[
     typer.Argument(help="UUIDs to update (when using --tier)"),
 ]
 
-# Confirmation option
-ConfirmOpt = Annotated[
-    bool,
-    typer.Option("--confirm", help="Require confirmation prompt (default: no confirmation)"),
-]
-
 # Batch operation options
 InputFileOpt = Annotated[
     Path | None,

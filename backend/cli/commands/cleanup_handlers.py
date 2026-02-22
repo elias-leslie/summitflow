@@ -59,15 +59,14 @@ def print_worktree_summary(
 
 
 def confirm_force_cleanup(worktree_count: int, unmerged_count: int) -> bool:
-    """Prompt user for force cleanup confirmation. Returns True if confirmed."""
+    """Check force cleanup conditions. Always returns True (CLI is non-interactive)."""
     from ..output import output_warning
 
-    typer.echo("")
     output_warning(
-        f"FORCE MODE: Will cleanup ALL {worktree_count} worktrees including "
-        f"{unmerged_count} with unmerged commits!"
+        f"FORCE MODE: Cleaning ALL {worktree_count} worktrees including "
+        f"{unmerged_count} with unmerged commits"
     )
-    return typer.confirm("Are you sure?", default=False)
+    return True
 
 
 @dataclass

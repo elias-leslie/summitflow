@@ -24,7 +24,6 @@ from .memory_commands import (
 from .memory_options import (
     BatchTierOpt,
     ConfidenceOpt,
-    ConfirmOpt,
     ContentArg,
     ContentOpt,
     ContextOpt,
@@ -132,9 +131,9 @@ def get(ctx: typer.Context, uuids: UUIDsArg) -> None:
 
 
 @app.command()
-def delete(uuids: UUIDsDeleteArg, confirm: ConfirmOpt = False) -> None:
+def delete(uuids: UUIDsDeleteArg) -> None:
     """Delete one or more episodes from memory."""
-    delete_impl(uuids, confirm)
+    delete_impl(uuids)
 
 
 @app.command()
@@ -145,10 +144,9 @@ def update(
     summary: SummaryUpdateOpt = None,
     trigger_types: TriggerTypesUpdateOpt = None,
     pinned: PinnedUpdateOpt = None,
-    confirm: ConfirmOpt = False,
 ) -> None:
     """Update an episode (delete + recreate for content/tier, PATCH for properties)."""
-    update_impl(uuid, content, tier, summary, trigger_types, pinned, confirm)
+    update_impl(uuid, content, tier, summary, trigger_types, pinned)
 
 
 @app.command("batch-tier")
