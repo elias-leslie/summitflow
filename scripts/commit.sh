@@ -148,7 +148,7 @@ generate_simple_message() {
     local changed
     changed=$(git diff --cached --name-only 2>/dev/null || git diff --name-only)
     local file_count
-    file_count=$(echo "$changed" | grep -c . || echo "0")
+    file_count=$(echo "$changed" | grep -c . || true)
 
     local type="chore"
     local scope=""
