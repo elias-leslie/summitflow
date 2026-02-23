@@ -14,7 +14,6 @@ import httpx
 from app.services._agent_hub_config import (
     AGENT_HUB_URL,
     SUMMITFLOW_CLIENT_ID,
-    SUMMITFLOW_CLIENT_SECRET,
     SUMMITFLOW_REQUEST_SOURCE,
 )
 
@@ -69,7 +68,6 @@ async def deliver(notification: dict[str, Any]) -> None:
     try:
         headers = {
             "X-Client-Id": SUMMITFLOW_CLIENT_ID or "",
-            "X-Client-Secret": SUMMITFLOW_CLIENT_SECRET or "",
             "X-Request-Source": SUMMITFLOW_REQUEST_SOURCE,
         }
         async with httpx.AsyncClient(timeout=10.0) as client:

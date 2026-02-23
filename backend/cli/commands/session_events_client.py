@@ -13,7 +13,7 @@ from ..config import get_agent_hub_url
 from ..output import handle_api_error, output_error
 
 
-def load_credentials() -> tuple[str, str, str]:
+def load_credentials() -> tuple[str, str]:
     """Load credentials from ~/.env.local."""
     env_file = Path.home() / ".env.local"
     if not env_file.exists():
@@ -27,16 +27,15 @@ def load_credentials() -> tuple[str, str, str]:
             creds[key.strip()] = val.strip()
 
     client_id = creds.get("SUMMITFLOW_CLIENT_ID") or creds.get("CONSULT_CLIENT_ID")
-    client_secret = creds.get("SUMMITFLOW_CLIENT_SECRET") or creds.get("CONSULT_CLIENT_SECRET")
     request_source = creds.get("SUMMITFLOW_REQUEST_SOURCE", "st-session-events")
 
-    if not client_id or not client_secret:
+    if not client_id:
         output_error(
-            "Missing CONSULT_CLIENT_ID/SECRET or SUMMITFLOW_CLIENT_ID/SECRET in ~/.env.local"
+            "Missing CONSULT_CLIENT_ID or SUMMITFLOW_CLIENT_ID in ~/.env.local"
         )
         raise typer.Exit(1)
 
-    return client_id, client_secret, request_source
+    return client_id, request_source
 
 
 def get_session_events(
@@ -47,11 +46,10 @@ def get_session_events(
     page_size: int = 100,
 ) -> dict[str, Any]:
     """Fetch session events from Agent Hub directly by session ID."""
-    client_id, client_secret, request_source = load_credentials()
+    client_id, request_source = load_credentials()
 
     headers = {
         "X-Client-Id": client_id,
-        "X-Client-Secret": client_secret,
         "X-Request-Source": request_source,
     }
 

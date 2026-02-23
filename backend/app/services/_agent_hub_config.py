@@ -17,7 +17,6 @@ AGENT_HUB_API_KEY = os.getenv("AGENT_HUB_API_KEY")
 
 # SummitFlow client credentials for Agent Hub authentication
 SUMMITFLOW_CLIENT_ID = os.getenv("SUMMITFLOW_CLIENT_ID")
-SUMMITFLOW_CLIENT_SECRET = os.getenv("SUMMITFLOW_CLIENT_SECRET")
 SUMMITFLOW_REQUEST_SOURCE = os.getenv("SUMMITFLOW_REQUEST_SOURCE", "summitflow")
 
 
@@ -44,7 +43,6 @@ def get_sync_client(
         timeout=timeout,
         client_name=client_name,
         client_id=SUMMITFLOW_CLIENT_ID,
-        client_secret=SUMMITFLOW_CLIENT_SECRET,
         request_source=SUMMITFLOW_REQUEST_SOURCE,
     )
 
@@ -72,7 +70,6 @@ def get_async_client(
         timeout=timeout,
         client_name=client_name,
         client_id=SUMMITFLOW_CLIENT_ID,
-        client_secret=SUMMITFLOW_CLIENT_SECRET,
         request_source=SUMMITFLOW_REQUEST_SOURCE,
     )
 
@@ -101,7 +98,6 @@ __all__ = [
     "AGENT_HUB_API_KEY",
     "AGENT_HUB_URL",
     "SUMMITFLOW_CLIENT_ID",
-    "SUMMITFLOW_CLIENT_SECRET",
     "SUMMITFLOW_REQUEST_SOURCE",
     "get_async_client",
     "get_sync_client",

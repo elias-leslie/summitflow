@@ -52,7 +52,7 @@ class AgentHubEventsResponse(BaseModel):
     max_turn: int
 
 
-def _load_credentials() -> tuple[str, str, str]:
+def _load_credentials() -> tuple[str, str]:
     """Load Agent Hub credentials from ~/.env.local."""
     import os
     from pathlib import Path
@@ -71,20 +71,15 @@ def _load_credentials() -> tuple[str, str, str]:
         or creds.get("SUMMITFLOW_CLIENT_ID")
         or creds.get("CONSULT_CLIENT_ID")
     )
-    client_secret = (
-        os.getenv("SUMMITFLOW_CLIENT_SECRET")
-        or creds.get("SUMMITFLOW_CLIENT_SECRET")
-        or creds.get("CONSULT_CLIENT_SECRET")
-    )
     request_source = os.getenv("SUMMITFLOW_REQUEST_SOURCE", "summitflow-observability")
 
-    if not client_id or not client_secret:
+    if not client_id:
         raise HTTPException(
             status_code=500,
-            detail="Missing SUMMITFLOW_CLIENT_ID/SECRET credentials for Agent Hub",
+            detail="Missing SUMMITFLOW_CLIENT_ID credential for Agent Hub",
         )
 
-    return client_id, client_secret, request_source
+    return client_id, request_source
 
 
 def _get_agent_hub_url() -> str:
@@ -102,11 +97,10 @@ def _fetch_session_events(
     page_size: int = 500,
 ) -> dict[str, Any]:
     """Fetch events from Agent Hub for a single session."""
-    client_id, client_secret, request_source = _load_credentials()
+    client_id, request_source = _load_credentials()
 
     headers = {
         "X-Client-Id": client_id,
-        "X-Client-Secret": client_secret,
         "X-Request-Source": request_source,
     }
 

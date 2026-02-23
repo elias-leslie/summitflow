@@ -17,7 +17,6 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 from .._agent_hub_config import (
     SUMMITFLOW_CLIENT_ID,
-    SUMMITFLOW_CLIENT_SECRET,
     SUMMITFLOW_REQUEST_SOURCE,
 )
 
@@ -66,8 +65,6 @@ class GraphitiClient:
         }
         if SUMMITFLOW_CLIENT_ID:
             self._auth_headers["X-Client-Id"] = SUMMITFLOW_CLIENT_ID
-        if SUMMITFLOW_CLIENT_SECRET:
-            self._auth_headers["X-Client-Secret"] = SUMMITFLOW_CLIENT_SECRET
         if SUMMITFLOW_REQUEST_SOURCE:
             self._auth_headers["X-Request-Source"] = SUMMITFLOW_REQUEST_SOURCE
 

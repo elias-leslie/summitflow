@@ -13,7 +13,6 @@ _prompt_cache: dict[str, str] = {}
 
 # HTTP header names
 _HEADER_CLIENT_ID = "X-Client-Id"
-_HEADER_CLIENT_SECRET = "X-Client-Secret"
 _HEADER_REQUEST_SOURCE = "X-Request-Source"
 _DEFAULT_REQUEST_SOURCE = "summitflow"
 
@@ -31,16 +30,14 @@ def get_prompt_template(slug: str) -> str:
     from ....services.agent_hub_client import (
         AGENT_HUB_URL,
         SUMMITFLOW_CLIENT_ID,
-        SUMMITFLOW_CLIENT_SECRET,
         SUMMITFLOW_REQUEST_SOURCE,
     )
 
     url = f"{AGENT_HUB_URL}/api/prompts/{slug}"
     headers: dict[str, str] = {}
-    if SUMMITFLOW_CLIENT_ID and SUMMITFLOW_CLIENT_SECRET:
+    if SUMMITFLOW_CLIENT_ID:
         headers = {
             _HEADER_CLIENT_ID: SUMMITFLOW_CLIENT_ID,
-            _HEADER_CLIENT_SECRET: SUMMITFLOW_CLIENT_SECRET,
             _HEADER_REQUEST_SOURCE: SUMMITFLOW_REQUEST_SOURCE or _DEFAULT_REQUEST_SOURCE,
         }
     try:

@@ -20,11 +20,10 @@ def feedback_request(
     json: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Make a request to Agent Hub feedback API with proper authentication."""
-    client_id, client_secret, _ = load_credentials()
+    client_id, _ = load_credentials()
 
     headers = {
         "X-Client-Id": client_id,
-        "X-Client-Secret": client_secret,
         "X-Request-Source": "st-feedback",
         "X-Source-Client": "st-cli",
         "X-Tool-Name": "st feedback",

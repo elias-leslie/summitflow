@@ -11,7 +11,6 @@ from ....logging_config import get_logger
 from ....services._agent_hub_config import (
     AGENT_HUB_URL,
     SUMMITFLOW_CLIENT_ID,
-    SUMMITFLOW_CLIENT_SECRET,
     SUMMITFLOW_REQUEST_SOURCE,
 )
 from ....storage import tasks as task_store
@@ -34,7 +33,6 @@ def _wake_johnny(task_id: str, project_id: str, event_type: str, context: str) -
     try:
         headers = {
             "X-Client-Id": SUMMITFLOW_CLIENT_ID or "",
-            "X-Client-Secret": SUMMITFLOW_CLIENT_SECRET or "",
             "X-Request-Source": SUMMITFLOW_REQUEST_SOURCE,
         }
         with httpx.Client(timeout=5.0) as client:

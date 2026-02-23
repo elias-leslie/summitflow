@@ -488,7 +488,6 @@ class TestClientConfigurationContract:
         with (
             patch("app.services.agent_hub_client.AgentHubClient") as mock_class,
             patch.object(agent_hub_module, "SUMMITFLOW_CLIENT_ID", "test-client-id"),
-            patch.object(agent_hub_module, "SUMMITFLOW_CLIENT_SECRET", "test-secret"),
             patch.object(agent_hub_module, "SUMMITFLOW_REQUEST_SOURCE", "test-source"),
         ):
             from app.services.agent_hub_client import get_sync_client
@@ -497,7 +496,6 @@ class TestClientConfigurationContract:
 
             call_kwargs = mock_class.call_args.kwargs
             assert call_kwargs["client_id"] == "test-client-id"
-            assert call_kwargs["client_secret"] == "test-secret"
             assert call_kwargs["request_source"] == "test-source"
 
 

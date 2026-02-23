@@ -20,7 +20,6 @@ const ENV_PREFIX = 'SUMMITFLOW'
 interface ProxyConfig {
   agentHubUrl: string
   clientId: string
-  clientSecret: string
   requestSource: string
 }
 
@@ -29,7 +28,6 @@ function resolveConfig(): ProxyConfig {
   return {
     agentHubUrl: process.env.AGENT_HUB_URL ?? 'http://localhost:8003',
     clientId: process.env[envKey('CLIENT_ID')] ?? '',
-    clientSecret: process.env[envKey('CLIENT_SECRET')] ?? '',
     requestSource: process.env[envKey('REQUEST_SOURCE')] ?? '',
   }
 }
@@ -48,7 +46,6 @@ function buildAuthHeaders(config: ProxyConfig): Record<string, string> {
   const headers: Record<string, string> = {}
   if (config.requestSource) headers['X-Request-Source'] = config.requestSource
   if (config.clientId) headers['X-Client-Id'] = config.clientId
-  if (config.clientSecret) headers['X-Client-Secret'] = config.clientSecret
   return headers
 }
 

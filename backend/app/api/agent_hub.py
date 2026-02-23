@@ -2,7 +2,7 @@
 
 Proxies requests to Agent Hub with proper client authentication.
 Frontend calls /api/agent-hub/* which forwards to Agent Hub backend
-with X-Client-Id, X-Client-Secret, X-Request-Source headers injected.
+with X-Client-Id and X-Request-Source headers injected.
 
 This avoids CORS issues and keeps credentials server-side.
 """
@@ -20,7 +20,6 @@ from pydantic import BaseModel
 from ..services._agent_hub_config import (
     AGENT_HUB_URL,
     SUMMITFLOW_CLIENT_ID,
-    SUMMITFLOW_CLIENT_SECRET,
     SUMMITFLOW_REQUEST_SOURCE,
 )
 
@@ -32,8 +31,6 @@ def _auth_headers() -> dict[str, str]:
     headers: dict[str, str] = {}
     if SUMMITFLOW_CLIENT_ID:
         headers["X-Client-Id"] = SUMMITFLOW_CLIENT_ID
-    if SUMMITFLOW_CLIENT_SECRET:
-        headers["X-Client-Secret"] = SUMMITFLOW_CLIENT_SECRET
     headers["X-Request-Source"] = SUMMITFLOW_REQUEST_SOURCE or "summitflow-frontend"
     return headers
 

@@ -14,7 +14,6 @@ from ._agent_hub_config import (
     AGENT_HUB_API_KEY,
     AGENT_HUB_URL,
     SUMMITFLOW_CLIENT_ID,
-    SUMMITFLOW_CLIENT_SECRET,
     SUMMITFLOW_REQUEST_SOURCE,
     get_async_client,
     get_sync_client,
@@ -65,7 +64,6 @@ class AgentHubLLMClient(LLMClient):
                 timeout=DEFAULT_TIMEOUT,
                 client_name=DEFAULT_CLIENT_NAME,
                 client_id=SUMMITFLOW_CLIENT_ID,
-                client_secret=SUMMITFLOW_CLIENT_SECRET,
                 request_source=SUMMITFLOW_REQUEST_SOURCE,
             )
         return self._client
@@ -137,7 +135,6 @@ __all__ = [
     "AGENT_HUB_API_KEY",
     "AGENT_HUB_URL",
     "SUMMITFLOW_CLIENT_ID",
-    "SUMMITFLOW_CLIENT_SECRET",
     "SUMMITFLOW_REQUEST_SOURCE",
     "AgentHubLLMClient",
     "LLMClient",
