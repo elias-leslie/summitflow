@@ -69,6 +69,13 @@ def _add_missing_columns(cur: psycopg.Cursor) -> None:
         ("agent_hub_session_ids TEXT[] DEFAULT '{}'::text[]", "tasks"),
         # Subtask type for agent routing (v2 autocode)
         ("subtask_type TEXT", "task_subtasks"),
+        # Labels array for task categorization
+        ("labels TEXT[] DEFAULT '{}'::text[]", "tasks"),
+        # AI review results
+        ("ai_review JSONB", "tasks"),
+        # Git conflict handling (migration 52bde0e4709d)
+        ("conflict_info JSONB", "tasks"),
+        ("merge_sha TEXT", "tasks"),
     ]
 
     for column, table in column_additions:

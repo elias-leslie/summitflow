@@ -28,8 +28,8 @@ from .quality_gate import run_quality_gate_with_autofix
 
 logger = get_logger(__name__)
 
-def _wake_johnny(task_id: str, project_id: str, event_type: str, context: str) -> None:
-    """Fire-and-forget wake to Johnny via Agent Hub. Non-blocking."""
+def _wake_persona(task_id: str, project_id: str, event_type: str, context: str) -> None:
+    """Fire-and-forget wake to persona agent via Agent Hub. Non-blocking."""
     try:
         headers = {
             "X-Client-Id": SUMMITFLOW_CLIENT_ID or "",
@@ -39,7 +39,7 @@ def _wake_johnny(task_id: str, project_id: str, event_type: str, context: str) -
             client.post(
                 f"{AGENT_HUB_URL}/api/wake",
                 json={
-                    "agent_slug": "johnny",
+                    "agent_slug": "persona",
                     "context": context,
                     "project_id": project_id,
                     "event_type": event_type,
@@ -48,7 +48,7 @@ def _wake_johnny(task_id: str, project_id: str, event_type: str, context: str) -
                 headers=headers,
             )
     except Exception:
-        logger.debug("Johnny wake failed (non-critical)", task_id=task_id)
+        logger.debug("Persona wake failed (non-critical)", task_id=task_id)
 
 
 def _notify_failure(
@@ -158,7 +158,7 @@ def handle_successful_completion(
             project_id=project_id,
         )
         _notify_failure(task_id, project_id, "Quality gate failed after auto-fix attempt.")
-        _wake_johnny(
+        _wake_persona(
             task_id, project_id, "quality_gate",
             f"Task {task_id} quality gate failed after auto-fix. Investigate and advise.",
         )
@@ -172,7 +172,7 @@ def handle_successful_completion(
         log_message = f"All subtasks passed + quality gate passed (clean={execution_clean})"
 
         transition_to_review_or_complete(task_id, project_id, log_message, dispatch)
-        _wake_johnny(
+        _wake_persona(
             task_id, project_id, "autocode_complete",
             f"Task {task_id} completed successfully — all subtasks passed + quality gate passed.",
         )
@@ -277,7 +277,7 @@ def handle_failed_execution(
             subtask_id=subtask_id,
             blocker_summary=blocker_summary,
         )
-        _wake_johnny(
+        _wake_persona(
             task_id, project_id, "task_failure",
             f"Task {task_id} failed — all subtasks failed verification. "
             f"Blocker: {blocker_summary or 'unknown'}. Investigate and advise.",

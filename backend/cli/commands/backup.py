@@ -76,7 +76,7 @@ def restore_backup(
     """Restore from a backup. DANGEROUS: This will overwrite current data."""
     api = _get_api()
     try:
-        backup = api.get_backup(backup_id)
+        api.get_backup(backup_id)  # validate backup exists
 
         result = api.restore_backup(backup_id, dry_run=dry_run)
         if ctx.obj.is_compact:

@@ -124,6 +124,10 @@ def _create_tasks_table(cur: psycopg.Cursor) -> None:
             autonomous BOOLEAN DEFAULT FALSE,
             agent_override VARCHAR(50),
             agent_hub_session_ids TEXT[] DEFAULT '{}',
+            labels TEXT[] DEFAULT '{}',
+            ai_review JSONB,
+            conflict_info JSONB,
+            merge_sha TEXT,
             updated_at TIMESTAMPTZ DEFAULT NOW()
         )
         """

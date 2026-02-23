@@ -48,23 +48,6 @@ def check_autonomous_enabled(project_id: str) -> dict[str, Any] | None:
         }
 
 
-def check_autonomous_hours(project_id: str) -> dict[str, Any] | None:
-    """Check if current time is within autonomous hours.
-
-    Now handled by Agent Hub's execution-permission endpoint (time window
-    is checked there). This function is kept for backward compatibility
-    with callers that check hours separately, but delegates to AH.
-
-    Args:
-        project_id: Project to check
-
-    Returns:
-        Error dict if outside hours, None if within hours
-    """
-    # Time window is now checked by check_autonomous_enabled via AH API.
-    # If we get here, the AH check already passed (including time window).
-    return None
-
 
 def check_concurrency_limit(project_id: str) -> dict[str, Any] | None:
     """Check if concurrency limit has been reached.
@@ -278,9 +261,6 @@ def validate_autonomous_dispatch(
         return error
 
     if error := check_system_health(project_id):
-        return error
-
-    if error := check_autonomous_hours(project_id):
         return error
 
     if error := check_concurrency_limit(project_id):
