@@ -4,7 +4,7 @@ import { Info, MessageSquare } from 'lucide-react'
 import Link from 'next/link'
 import { NotificationBell } from '@/components/notifications'
 import { usePersonaName } from '@/hooks/usePersonaName'
-import { GlobalAutoExecDropdown } from './GlobalAutoExecDropdown'
+
 import { AnimatedLogo } from './topbar/AnimatedLogo'
 import { Navigation } from './topbar/Navigation'
 import { TaskSearch } from './topbar/TaskSearch'
@@ -18,7 +18,6 @@ export function TopBar() {
         <AnimatedLogo />
         <Navigation />
         <div className="flex-1" />
-        <GlobalAutoExecDropdown />
         <TaskSearch />
         <div className="flex items-center gap-1 flex-shrink-0">
           <Link
