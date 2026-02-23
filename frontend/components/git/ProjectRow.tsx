@@ -562,7 +562,7 @@ interface ProjectRowProps {
 }
 
 export function ProjectRow({ repo, isConfigRepo = false }: ProjectRowProps) {
-  const [expanded, setExpanded] = useState(!isConfigRepo)
+  const [expanded, setExpanded] = useState(false)
   const stateInfo = getStateInfo(repo.state)
   const StateIcon = stateInfo.icon
   const queryClient = useQueryClient()
