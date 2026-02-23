@@ -1,7 +1,5 @@
-import { clsx } from 'clsx'
-import { CheckCircle2, Clock, Layers, Timer, XCircle } from 'lucide-react'
+import { Layers, Timer } from 'lucide-react'
 import type { AutonomousExecutionSettings } from '@/lib/api'
-import { Slider } from '../ui/slider'
 import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import {
@@ -11,13 +9,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../ui/select'
-import { formatHour } from './autonomous-utils'
 
 interface ExecutionControlSectionProps {
   settings: AutonomousExecutionSettings
-  currentInWindow: boolean
   isPending: boolean
-  onTimeRangeChange: (values: number[]) => void
   onConcurrencyChange: (value: string) => void
   onMaxTasksPerDayChange: (value: string) => void
   onCooldownChange: (value: string) => void
@@ -26,9 +21,7 @@ interface ExecutionControlSectionProps {
 
 export function ExecutionControlSection({
   settings,
-  currentInWindow,
   isPending,
-  onTimeRangeChange,
   onConcurrencyChange,
   onMaxTasksPerDayChange,
   onCooldownChange,
@@ -37,73 +30,6 @@ export function ExecutionControlSection({
   return (
     <div className="p-6 bg-slate-800/50 rounded-lg border border-slate-700 space-y-6">
       <h3 className="text-base font-medium text-slate-100">Execution Control</h3>
-
-      {/* Time Range */}
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <Label className="text-slate-200 flex items-center gap-2">
-            <Clock className="w-4 h-4 text-slate-400" />
-            Execution Window
-          </Label>
-          {settings.enabled && (
-            <span
-              className={clsx(
-                'flex items-center gap-1 text-xs px-2 py-1 rounded-full',
-                currentInWindow
-                  ? 'bg-phosphor-500/20 text-phosphor-400'
-                  : 'bg-amber-500/20 text-amber-400',
-              )}
-            >
-              {currentInWindow ? (
-                <>
-                  <CheckCircle2 className="w-3 h-3" />
-                  Active window
-                </>
-              ) : (
-                <>
-                  <XCircle className="w-3 h-3" />
-                  Outside window
-                </>
-              )}
-            </span>
-          )}
-        </div>
-        <p className="text-xs text-slate-400 mb-4">
-          Set the daily time range when autonomous execution is allowed
-        </p>
-
-        <div className="space-y-4">
-          <div className="flex items-center justify-between text-sm text-slate-300">
-            <span>{formatHour(settings.start_hour)}</span>
-            <span className="text-slate-500">to</span>
-            <span>{formatHour(settings.end_hour)}</span>
-          </div>
-
-          <Slider
-            value={[settings.start_hour, settings.end_hour]}
-            min={0}
-            max={24}
-            step={1}
-            onValueChange={onTimeRangeChange}
-            disabled={isPending}
-            className="w-full"
-          />
-
-          <div className="flex justify-between text-xs text-slate-500">
-            <span>12 AM</span>
-            <span>6 AM</span>
-            <span>12 PM</span>
-            <span>6 PM</span>
-            <span>12 AM</span>
-          </div>
-        </div>
-
-        {settings.start_hour === 0 && settings.end_hour === 24 && (
-          <p className="text-xs text-phosphor-400 mt-3">
-            Execution allowed 24/7
-          </p>
-        )}
-      </div>
 
       {/* Max Concurrent */}
       <div>

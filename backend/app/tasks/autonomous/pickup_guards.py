@@ -15,24 +15,45 @@ from app.storage.connection import get_connection
 
 
 def check_autonomous_enabled(project_id: str) -> dict[str, Any] | None:
-    """Check if autonomous mode is enabled.
+    """Check if autonomous mode is enabled via Agent Hub API.
+
+    Replaces local agent_configs check with centralized Agent Hub
+    permission system. Fail-closed on error.
 
     Args:
         project_id: Project to check
 
     Returns:
-        Error dict if disabled, None if enabled
+        Error dict if disabled/error, None if enabled
     """
-    if not agent_configs.is_autonomous_enabled(project_id):
+    import httpx
+
+    try:
+        resp = httpx.get(
+            f"http://localhost:8003/api/projects/{project_id}/execution-permission",
+            timeout=5.0,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if not data.get("allowed"):
+            return {
+                "status": "disabled",
+                "reason": data.get("reason", "not_allowed"),
+            }
+        return None
+    except Exception as e:
         return {
             "status": "disabled",
-            "reason": "autonomous_enabled=false",
+            "reason": f"agent_hub_unreachable: {e}",
         }
-    return None
 
 
 def check_autonomous_hours(project_id: str) -> dict[str, Any] | None:
     """Check if current time is within autonomous hours.
+
+    Now handled by Agent Hub's execution-permission endpoint (time window
+    is checked there). This function is kept for backward compatibility
+    with callers that check hours separately, but delegates to AH.
 
     Args:
         project_id: Project to check
@@ -40,15 +61,8 @@ def check_autonomous_hours(project_id: str) -> dict[str, Any] | None:
     Returns:
         Error dict if outside hours, None if within hours
     """
-    current_hour = datetime.now().hour
-    if not agent_configs.is_within_autonomous_hours(project_id, current_hour):
-        schedule = agent_configs.get_autonomous_schedule(project_id)
-        return {
-            "status": "outside_hours",
-            "current_hour": current_hour,
-            "start_hour": schedule.get("start_hour", 0),
-            "end_hour": schedule.get("end_hour", 24),
-        }
+    # Time window is now checked by check_autonomous_enabled via AH API.
+    # If we get here, the AH check already passed (including time window).
     return None
 
 
@@ -61,8 +75,8 @@ def check_concurrency_limit(project_id: str) -> dict[str, Any] | None:
     Returns:
         Error dict if at limit, None if under limit
     """
-    schedule = agent_configs.get_autonomous_schedule(project_id)
-    max_concurrent = schedule.get("max_concurrent", 1)
+    config = agent_configs.get_agent_config(project_id)
+    max_concurrent = int(config.get("autonomous_max_concurrent", 1))
     running_count = task_store.count_running_tasks(project_id)
 
     if running_count >= max_concurrent:

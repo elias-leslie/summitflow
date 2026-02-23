@@ -36,6 +36,7 @@ from .models.git_models import (
     GitStatusResponse,
     GitSyncResponse,
     MergedTaskSummary,
+    ProjectDashboardResponse,
     RecentCommitsResponse,
     RecentMergesResponse,
     RepoStatus,
@@ -49,7 +50,7 @@ router = APIRouter()
 
 
 def _collect_worktrees() -> list[WorktreeInfo]:
-    """Collect worktree info from the base directory."""
+    """Collect worktree info from the base directory, enriched with project_id."""
     if not WORKTREES_BASE_DIR.exists():
         return []
     worktrees: list[WorktreeInfo] = []
@@ -59,6 +60,20 @@ def _collect_worktrees() -> list[WorktreeInfo]:
         info = get_worktree_info(entry.name)
         if info:
             worktrees.append(info)
+
+    # Enrich with project_id from tasks table
+    if worktrees:
+        task_ids = [w.task_id for w in worktrees]
+        placeholders = ",".join(["%s"] * len(task_ids))
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                f"SELECT id, project_id FROM tasks WHERE id IN ({placeholders})",
+                tuple(task_ids),
+            )
+            task_map = {row[0]: row[1] for row in cur.fetchall()}
+        for w in worktrees:
+            w.project_id = task_map.get(w.task_id)
+
     return worktrees
 
 
@@ -99,9 +114,13 @@ async def sync_repositories() -> GitSyncResponse:
 
 
 @router.get("/git/worktrees", response_model=WorktreesResponse, tags=["git"])
-async def get_worktrees() -> WorktreesResponse:
-    """Get list of active worktrees."""
+async def get_worktrees(
+    project_id: str | None = Query(default=None),
+) -> WorktreesResponse:
+    """Get list of active worktrees, optionally filtered by project."""
     worktrees = _collect_worktrees()
+    if project_id:
+        worktrees = [w for w in worktrees if w.project_id == project_id]
     return WorktreesResponse(worktrees=worktrees, count=len(worktrees))
 
 
@@ -171,15 +190,20 @@ async def smart_sync_project(project_id: str) -> dict[str, object]:
 
 
 @router.get("/git/conflicts", response_model=ConflictsResponse, tags=["git"])
-async def get_conflicts() -> ConflictsResponse:
-    """Get all tasks with active merge conflicts."""
+async def get_conflicts(
+    project_id: str | None = Query(default=None),
+) -> ConflictsResponse:
+    """Get all tasks with active merge conflicts, optionally filtered by project."""
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            """SELECT id, title, project_id, conflict_info
+        sql = """SELECT id, title, project_id, conflict_info
                FROM tasks
-               WHERE status = 'conflicted' AND conflict_info IS NOT NULL
-               ORDER BY completed_at DESC NULLS LAST"""
-        )
+               WHERE status = 'conflicted' AND conflict_info IS NOT NULL"""
+        params: list[object] = []
+        if project_id:
+            sql += " AND project_id = %s"
+            params.append(project_id)
+        sql += " ORDER BY completed_at DESC NULLS LAST"
+        cur.execute(sql, tuple(params) if params else None)
         rows = cur.fetchall()
 
     conflicts: list[ConflictInfo] = []
@@ -283,19 +307,22 @@ async def get_task_diff_endpoint(task_id: str) -> TaskDiffResponse:
 @router.get("/git/recent-merges", response_model=RecentMergesResponse, tags=["git"])
 async def get_recent_merges(
     limit: int = Query(default=20, le=100),
+    project_id: str | None = Query(default=None),
 ) -> RecentMergesResponse:
-    """Get recently merged tasks with diff stats."""
+    """Get recently merged tasks with diff stats, optionally filtered by project."""
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            """SELECT id, title, project_id, completed_at, pre_merge_sha, merge_sha
+        sql = """SELECT id, title, project_id, completed_at, pre_merge_sha, merge_sha
                FROM tasks
                WHERE status = 'completed'
                  AND merge_sha IS NOT NULL
-                 AND pre_merge_sha IS NOT NULL
-               ORDER BY completed_at DESC NULLS LAST
-               LIMIT %s""",
-            (limit,),
-        )
+                 AND pre_merge_sha IS NOT NULL"""
+        params: list[object] = []
+        if project_id:
+            sql += " AND project_id = %s"
+            params.append(project_id)
+        sql += " ORDER BY completed_at DESC NULLS LAST LIMIT %s"
+        params.append(limit)
+        cur.execute(sql, tuple(params))
         rows = cur.fetchall()
 
     merges: list[MergedTaskSummary] = []
@@ -319,6 +346,76 @@ async def get_recent_merges(
         ))
 
     return RecentMergesResponse(merges=merges, count=len(merges))
+
+
+# --- Single Commit Diff Endpoint ---
+
+
+@router.get(
+    "/git/commits/{sha}/diff",
+    response_model=TaskDiffResponse,
+    tags=["git"],
+)
+async def get_commit_diff(
+    sha: str,
+    project_id: str | None = Query(default=None),
+) -> TaskDiffResponse:
+    """Get the diff for a single commit by SHA."""
+    import subprocess
+
+    def _find_repo_for_sha(commit_sha: str) -> Path | None:
+        """Find which managed repo contains the given SHA."""
+        for repo_path in get_managed_repos():
+            try:
+                result = subprocess.run(
+                    ["git", "cat-file", "-t", commit_sha],
+                    cwd=repo_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                if result.returncode == 0 and result.stdout.strip() == "commit":
+                    return repo_path
+            except (subprocess.TimeoutExpired, OSError):
+                continue
+        return None
+
+    # Determine the repo path
+    if project_id:
+        repo_path = _get_project_path(project_id)
+    else:
+        repo_path_found = _find_repo_for_sha(sha)
+        if not repo_path_found:
+            raise HTTPException(status_code=404, detail=f"Commit {sha} not found in any managed repo")
+        repo_path = repo_path_found
+
+    # Get commit message
+    try:
+        msg_result = subprocess.run(
+            ["git", "log", "-1", "--format=%s", sha],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        title = msg_result.stdout.strip() if msg_result.returncode == 0 else sha
+    except (subprocess.TimeoutExpired, OSError):
+        title = sha
+
+    # Get diff: sha~1..sha
+    try:
+        files, stats = get_task_diff(repo_path, f"{sha}~1", sha)
+    except Exception:
+        files, stats = [], DiffStats(files_changed=0, additions=0, deletions=0)
+
+    return TaskDiffResponse(
+        task_id=sha,
+        task_title=title,
+        pre_merge_sha=f"{sha}~1",
+        merge_sha=sha,
+        files=files,
+        stats=stats,
+    )
 
 
 # --- Commit History Endpoints ---
@@ -398,6 +495,49 @@ async def revert_snapshot(task_id: str) -> dict[str, str]:
         raise HTTPException(status_code=500, detail="Revert failed — may have conflicts")
 
     return {"status": "reverted", "reverted_to": new_sha}
+
+
+# --- Project Dashboard Endpoint ---
+
+
+@router.get(
+    "/git/projects/{project_id}/dashboard",
+    response_model=ProjectDashboardResponse,
+    tags=["git"],
+)
+async def get_project_dashboard(
+    project_id: str,
+    commits_limit: int = Query(default=15, le=100),
+) -> ProjectDashboardResponse:
+    """Get combined dashboard data for a single project (lazy-loaded per row)."""
+    repo_path = _get_project_path(project_id)
+
+    # Worktrees filtered by project
+    all_worktrees = _collect_worktrees()
+    worktrees = [w for w in all_worktrees if w.project_id == project_id]
+
+    # Recent merges for this project
+    merges_resp = await get_recent_merges(limit=10, project_id=project_id)
+    merges = merges_resp.merges
+
+    # Recent commits for this project
+    commits = get_recent_commits(repo_path, limit=commits_limit)
+
+    # Snapshots for this project
+    snapshots = list_snapshots(repo_path)
+    _enrich_snapshots(snapshots, project_id)
+
+    # Conflicts for this project
+    conflicts_resp = await get_conflicts(project_id=project_id)
+    conflicts = conflicts_resp.conflicts
+
+    return ProjectDashboardResponse(
+        worktrees=worktrees,
+        recent_merges=merges,
+        recent_commits=commits,
+        snapshots=snapshots,
+        conflicts=conflicts,
+    )
 
 
 # --- Helpers ---

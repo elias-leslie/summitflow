@@ -52,6 +52,7 @@ class WorktreeInfo(BaseModel):
     branch: str
     base_branch: str
     is_active: bool
+    project_id: str | None = None
 
 
 class WorktreesResponse(BaseModel):
@@ -201,3 +202,13 @@ class SnapshotsResponse(BaseModel):
 
     snapshots: list[SnapshotInfo]
     count: int
+
+
+class ProjectDashboardResponse(BaseModel):
+    """Combined dashboard data for a single project."""
+
+    worktrees: list[WorktreeInfo]
+    recent_merges: list[MergedTaskSummary]
+    recent_commits: list[CommitInfo]
+    snapshots: list[SnapshotInfo]
+    conflicts: list[ConflictInfo]

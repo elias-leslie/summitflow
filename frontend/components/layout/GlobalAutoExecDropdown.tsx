@@ -1,150 +1,96 @@
 'use client'
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
-import { ChevronDown, Loader2, Settings2, Zap } from 'lucide-react'
-import Link from 'next/link'
+import { ChevronDown, ExternalLink, Loader2, Zap } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import {
-  fetchProjects,
-  getAutonomousSettings,
-  type Project,
-  updateAutonomousSettings,
-} from '@/lib/api'
+import { fetchProjects } from '@/lib/api'
 
 // ============================================================================
 // Types
 // ============================================================================
 
-interface ProjectAutoExecStatus {
+interface AHProjectPermission {
+  project_id: string
+  permission_tier: 'off' | 'read' | 'write' | 'yolo'
+  auto_exec_enabled: boolean
+  execution_start_hour: number
+  execution_end_hour: number
+}
+
+interface ProjectExecStatus {
   projectId: string
   projectName: string
-  enabled: boolean
-  isInTimeWindow: boolean
-  status: 'active' | 'paused' | 'off'
+  tier: string
+  autoExec: boolean
+  status: 'active' | 'restricted' | 'off'
+}
+
+const TIER_CONFIG = {
+  off: { label: 'Off', dot: 'bg-slate-600', text: 'text-slate-500' },
+  read: { label: 'Read', dot: 'bg-blue-400', text: 'text-blue-400' },
+  write: { label: 'Write', dot: 'bg-amber-400', text: 'text-amber-400' },
+  yolo: { label: 'YOLO', dot: 'bg-emerald-400', text: 'text-emerald-400' },
+} as const
+
+// ============================================================================
+// API
+// ============================================================================
+
+async function fetchAHPermissions(): Promise<AHProjectPermission[]> {
+  const res = await fetch('/api/agent-hub/projects/permissions')
+  if (!res.ok) return []
+  return res.json()
 }
 
 // ============================================================================
-// Helper Functions
+// Project Status Row
 // ============================================================================
 
-function calculateTimeWindowStatus(
-  enabled: boolean,
-  startHour: number,
-  endHour: number,
-): boolean {
-  if (!enabled) return false
-
-  const now = new Date()
-  const currentHour = now.getHours()
-
-  if (startHour === 0 && endHour === 24) {
-    return true
-  } else if (startHour < endHour) {
-    return currentHour >= startHour && currentHour < endHour
-  } else {
-    return currentHour >= startHour || currentHour < endHour
-  }
-}
-
-// ============================================================================
-// Project Toggle Component
-// ============================================================================
-
-interface ProjectAutoExecToggleProps {
-  project: Project
-  status: ProjectAutoExecStatus
-  onToggle: (projectId: string, newEnabled: boolean) => void
-  isUpdating: boolean
-}
-
-function ProjectAutoExecToggle({
-  project,
-  status,
-  onToggle,
-  isUpdating,
-}: ProjectAutoExecToggleProps) {
-  const handleToggle = () => {
-    onToggle(project.id, !status.enabled)
-  }
+function ProjectExecRow({ status }: { status: ProjectExecStatus }) {
+  const tierCfg = TIER_CONFIG[status.tier as keyof typeof TIER_CONFIG] ?? TIER_CONFIG.off
 
   return (
     <div className="group flex items-center gap-3 px-3 py-2 hover:bg-slate-800/50 rounded-lg transition-colors">
-      {/* Project Icon */}
       <div className="relative flex-shrink-0">
         <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-slate-800/50 border border-slate-700/50">
           <span className="text-xs font-bold text-slate-400">
-            {project.name.charAt(0).toUpperCase()}
+            {status.projectName.charAt(0).toUpperCase()}
           </span>
         </div>
       </div>
 
-      {/* Project Info */}
       <div className="flex-1 min-w-0">
         <div className="text-sm font-medium text-slate-300 truncate">
-          {project.name}
+          {status.projectName}
         </div>
         <div className="flex items-center gap-1.5 mt-0.5">
-          <div
-            className={clsx(
-              'w-1.5 h-1.5 rounded-full',
-              status.status === 'active'
-                ? 'bg-phosphor-400 shadow-[0_0_6px_rgba(0,245,255,0.5)]'
-                : status.status === 'paused'
-                  ? 'bg-amber-400'
-                  : 'bg-slate-600',
-            )}
-          />
-          <span
-            className={clsx(
-              'text-xs font-medium',
-              status.status === 'active'
-                ? 'text-phosphor-400'
-                : status.status === 'paused'
-                  ? 'text-amber-400'
-                  : 'text-slate-500',
-            )}
-          >
-            {status.status === 'active'
-              ? 'Active'
-              : status.status === 'paused'
-                ? 'Paused'
-                : 'Off'}
+          <div className={clsx('w-1.5 h-1.5 rounded-full', tierCfg.dot)} />
+          <span className={clsx('text-xs font-medium', tierCfg.text)}>
+            {tierCfg.label}
           </span>
+          {status.autoExec && (
+            <span className="text-[10px] text-phosphor-400 ml-1">+ exec</span>
+          )}
         </div>
       </div>
 
-      {/* Toggle Switch */}
-      <button
-        onClick={handleToggle}
-        disabled={isUpdating}
+      <span
         className={clsx(
-          'relative w-11 h-6 rounded-full transition-all duration-200 disabled:opacity-50',
-          status.enabled ? 'bg-phosphor-500/30' : 'bg-slate-700/50',
+          'text-[10px] font-bold px-1.5 py-0.5 rounded',
+          status.status === 'active'
+            ? 'bg-phosphor-500/15 text-phosphor-400'
+            : status.status === 'restricted'
+              ? 'bg-amber-500/15 text-amber-400'
+              : 'bg-slate-700/50 text-slate-500',
         )}
       >
-        <div
-          className={clsx(
-            'absolute top-0.5 w-5 h-5 rounded-full transition-all duration-200 shadow-lg',
-            status.enabled
-              ? 'left-[22px] bg-phosphor-400'
-              : 'left-0.5 bg-slate-500',
-          )}
-        >
-          {isUpdating && (
-            <Loader2 className="w-3 h-3 absolute inset-0 m-auto animate-spin text-slate-900" />
-          )}
-        </div>
-      </button>
-
-      {/* Settings Link */}
-      <Link
-        href={`/projects/${project.id}/settings`}
-        className="p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-700/50 transition-colors"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <Settings2 className="w-4 h-4" />
-      </Link>
+        {status.status === 'active'
+          ? 'ACTIVE'
+          : status.status === 'restricted'
+            ? 'LIMITED'
+            : 'OFF'}
+      </span>
     </div>
   )
 }
@@ -155,123 +101,78 @@ function ProjectAutoExecToggle({
 
 export function GlobalAutoExecDropdown() {
   const [isOpen, setIsOpen] = useState(false)
-  const [updatingProject, setUpdatingProject] = useState<string | null>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
-  const queryClient = useQueryClient()
 
-  // Fetch all projects
   const { data: projects } = useQuery({
     queryKey: ['projects'],
     queryFn: fetchProjects,
   })
 
-  // Fetch autonomous settings for all projects
-  const projectSettings = useQuery({
-    queryKey: ['all-autonomous-settings'],
-    queryFn: async () => {
-      if (!projects) return []
-      const settingsPromises = projects.map((p) =>
-        getAutonomousSettings(p.id).catch(() => null),
-      )
-      return Promise.all(settingsPromises)
-    },
-    enabled: !!projects && projects.length > 0,
-    staleTime: 30000,
-    refetchInterval: 60000,
+  const { data: permissions, isLoading: permLoading } = useQuery({
+    queryKey: ['ah-project-permissions'],
+    queryFn: fetchAHPermissions,
+    staleTime: 60_000,
+    refetchInterval: 120_000,
   })
 
-  // Calculate global status
-  const globalStatus = useMemo(() => {
-    if (!projects || !projectSettings.data) {
-      return { color: 'red', label: 'Unknown' }
+  const { statuses, globalColor } = useMemo(() => {
+    if (!projects || !permissions) {
+      return { statuses: [], globalColor: 'red' as const }
     }
 
-    const statuses: ProjectAutoExecStatus[] = projects.map((project, idx) => {
-      const settings = projectSettings.data[idx]
-      const enabled = settings?.enabled ?? false
-      const isInTimeWindow = settings
-        ? calculateTimeWindowStatus(
-            settings.enabled,
-            settings.start_hour,
-            settings.end_hour,
-          )
-        : false
+    const permMap = new Map(permissions.map((p) => [p.project_id, p]))
+    const statusList: ProjectExecStatus[] = projects.map((project) => {
+      const perm = permMap.get(project.id)
+      const tier = perm?.permission_tier ?? 'off'
+      const autoExec = perm?.auto_exec_enabled ?? false
+      let status: ProjectExecStatus['status'] = 'off'
+      if (tier === 'yolo' && autoExec) status = 'active'
+      else if (tier !== 'off') status = 'restricted'
 
       return {
         projectId: project.id,
         projectName: project.name,
-        enabled,
-        isInTimeWindow,
-        status: !enabled ? 'off' : isInTimeWindow ? 'active' : 'paused',
+        tier,
+        autoExec,
+        status,
       }
     })
 
-    const activeCount = statuses.filter((s) => s.status === 'active').length
-    const enabledCount = statuses.filter((s) => s.enabled).length
+    const activeCount = statusList.filter((s) => s.status === 'active').length
+    const offCount = statusList.filter((s) => s.status === 'off').length
 
-    if (enabledCount === 0) {
-      return { color: 'red', label: 'All Off', statuses }
-    } else if (activeCount === projects.length) {
-      return { color: 'green', label: 'All Active', statuses }
-    } else {
-      return { color: 'yellow', label: 'Partial', statuses }
+    let color: 'green' | 'yellow' | 'red' = 'red'
+    if (activeCount === projects.length) {
+      color = 'green'
+    } else if (offCount < projects.length) {
+      color = 'yellow'
     }
-  }, [projects, projectSettings.data])
 
-  // Toggle mutation
-  const toggleMutation = useMutation({
-    mutationFn: async ({
-      projectId,
-      enabled,
-    }: {
-      projectId: string
-      enabled: boolean
-    }) => {
-      return updateAutonomousSettings(projectId, { enabled })
-    },
-    onMutate: ({ projectId }) => {
-      setUpdatingProject(projectId)
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['all-autonomous-settings'] })
-      queryClient.invalidateQueries({ queryKey: ['autonomous-settings'] })
-    },
-    onSettled: () => {
-      setUpdatingProject(null)
-    },
-  })
+    return { statuses: statusList, globalColor: color }
+  }, [projects, permissions])
 
-  // Close dropdown on outside click
+  // Close on outside click
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(e.target as Node)
-      ) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setIsOpen(false)
       }
     }
-
     if (isOpen) {
       document.addEventListener('mousedown', handleClickOutside)
       return () => document.removeEventListener('mousedown', handleClickOutside)
     }
   }, [isOpen])
 
-  const handleToggle = (projectId: string, newEnabled: boolean) => {
-    toggleMutation.mutate({ projectId, enabled: newEnabled })
-  }
-
   return (
     <div className="relative" ref={dropdownRef}>
-      {/* Trigger Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={clsx(
           'group flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200',
-          globalStatus.color === 'green'
+          globalColor === 'green'
             ? 'bg-phosphor-500/15 text-phosphor-400 hover:bg-phosphor-500/20'
-            : globalStatus.color === 'yellow'
+            : globalColor === 'yellow'
               ? 'bg-amber-500/15 text-amber-400 hover:bg-amber-500/20'
               : 'bg-red-500/15 text-red-400 hover:bg-red-500/20',
         )}
@@ -279,9 +180,9 @@ export function GlobalAutoExecDropdown() {
         <Zap
           className={clsx(
             'w-4 h-4 transition-colors duration-200',
-            globalStatus.color === 'green'
+            globalColor === 'green'
               ? 'text-phosphor-400'
-              : globalStatus.color === 'yellow'
+              : globalColor === 'yellow'
                 ? 'text-amber-400'
                 : 'text-red-400',
           )}
@@ -295,45 +196,51 @@ export function GlobalAutoExecDropdown() {
         />
       </button>
 
-      {/* Dropdown */}
       {isOpen && (
         <div className="absolute top-full right-0 mt-2 w-80 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl shadow-black/50 overflow-hidden z-50">
-          {/* Header */}
           <div className="px-3 py-2.5 border-b border-slate-700/50 bg-slate-800/50">
-            <div className="flex items-center gap-2">
-              <Zap className="w-4 h-4 text-slate-400" />
-              <span className="text-sm font-semibold text-slate-300">
-                Auto-exec Status
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Zap className="w-4 h-4 text-slate-400" />
+                <span className="text-sm font-semibold text-slate-300">
+                  Auto-exec Status
+                </span>
+              </div>
+              <span className="text-[10px] text-slate-500">
+                via Agent Hub
               </span>
             </div>
           </div>
 
-          {/* Project List */}
           <div className="max-h-96 overflow-y-auto p-2">
-            {projectSettings.isLoading ? (
+            {permLoading ? (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="w-5 h-5 animate-spin text-slate-500" />
               </div>
-            ) : globalStatus.statuses && globalStatus.statuses.length > 0 ? (
+            ) : statuses.length > 0 ? (
               <div className="space-y-1">
-                {projects?.map((project, idx) => {
-                  const status = globalStatus.statuses[idx]
-                  return (
-                    <ProjectAutoExecToggle
-                      key={project.id}
-                      project={project}
-                      status={status}
-                      onToggle={handleToggle}
-                      isUpdating={updatingProject === project.id}
-                    />
-                  )
-                })}
+                {statuses.map((status) => (
+                  <ProjectExecRow key={status.projectId} status={status} />
+                ))}
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center py-8 text-slate-500">
                 <span className="text-sm">No projects found</span>
               </div>
             )}
+          </div>
+
+          {/* Link to Agent Hub permissions */}
+          <div className="px-3 py-2 border-t border-slate-700/50 bg-slate-800/30">
+            <a
+              href="/api/agent-hub/projects/permissions"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-300 transition-colors"
+            >
+              <ExternalLink className="w-3 h-3" />
+              Manage in Agent Hub
+            </a>
           </div>
         </div>
       )}

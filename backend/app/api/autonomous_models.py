@@ -1,4 +1,9 @@
-"""Autonomous execution models."""
+"""Autonomous execution models.
+
+Access control (enabled, start_hour, end_hour) is now managed centrally
+by Agent Hub's project_permissions table. This module retains execution
+behavior settings only.
+"""
 
 from pydantic import BaseModel, Field
 
@@ -7,9 +12,12 @@ VALID_MODEL_TIERS = ["standard", "advanced", "economy"]
 
 
 class AutonomousSettings(BaseModel):
-    """Autonomous execution settings for a project."""
+    """Autonomous execution behavior settings for a project.
 
-    enabled: bool = Field(default=False, description="Master switch for autonomous execution")
+    Access control (enabled, schedule hours) is managed by Agent Hub's
+    project_permissions. These settings control HOW execution proceeds.
+    """
+
     frequency_minutes: int = Field(
         default=30, ge=5, le=1440, description="How often to check for work (5-1440 min)"
     )
@@ -19,13 +27,6 @@ class AutonomousSettings(BaseModel):
     task_types: list[str] = Field(
         default=["auto-generated"],
         description="Task labels eligible for autonomous execution",
-    )
-    # Schedule settings (per-project time window)
-    start_hour: int = Field(
-        default=0, ge=0, le=23, description="Hour (0-23) when execution can start"
-    )
-    end_hour: int = Field(
-        default=24, ge=1, le=24, description="Hour (1-24) when execution must stop"
     )
     max_concurrent: int = Field(
         default=1, ge=1, le=3, description="Max concurrent autonomous tasks (1-3)"
@@ -85,15 +86,11 @@ VALID_QUALITY_GATE_TOOLS = ["pytest", "ruff", "types", "biome", "tsc", "sqlfluff
 
 
 class AutonomousSettingsUpdate(BaseModel):
-    """Request model for updating autonomous settings."""
+    """Request model for updating autonomous execution behavior settings."""
 
-    enabled: bool | None = None
     frequency_minutes: int | None = Field(default=None, ge=5, le=1440)
     auto_merge_tiers: list[int] | None = None
     task_types: list[str] | None = None
-    # Schedule settings
-    start_hour: int | None = Field(default=None, ge=0, le=23)
-    end_hour: int | None = Field(default=None, ge=1, le=24)
     max_concurrent: int | None = Field(default=None, ge=1, le=3)
 
     # Frequency limits

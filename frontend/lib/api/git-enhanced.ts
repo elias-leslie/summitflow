@@ -101,6 +101,39 @@ export interface SnapshotsResponse {
   count: number
 }
 
+// --- Worktree Types ---
+
+export interface WorktreeInfo {
+  task_id: string
+  path: string
+  branch: string
+  base_branch: string
+  is_active: boolean
+  project_id?: string
+}
+
+// --- Project Dashboard Types ---
+
+export interface ProjectDashboardResponse {
+  worktrees: WorktreeInfo[]
+  recent_merges: MergedTaskSummary[]
+  recent_commits: CommitInfo[]
+  snapshots: SnapshotInfo[]
+  conflicts: ConflictInfo[]
+}
+
+// --- Project Dashboard API ---
+
+export async function fetchProjectDashboard(
+  projectId: string,
+  commitsLimit = 15,
+): Promise<ProjectDashboardResponse> {
+  return fetchWithErrorHandling<ProjectDashboardResponse>(
+    `${getApiBase()}/api/git/projects/${projectId}/dashboard?commits_limit=${commitsLimit}`,
+    { errorMessage: 'Failed to fetch project dashboard' },
+  )
+}
+
 // --- Conflict API ---
 
 export async function fetchConflicts(): Promise<ConflictsResponse> {
@@ -137,6 +170,19 @@ export async function fetchRecentMerges(limit = 20): Promise<RecentMergesRespons
   return fetchWithErrorHandling<RecentMergesResponse>(
     `${getApiBase()}/api/git/recent-merges?limit=${limit}`,
     { errorMessage: 'Failed to fetch recent merges' },
+  )
+}
+
+// --- Single Commit Diff API ---
+
+export async function fetchCommitDiff(
+  sha: string,
+  projectId?: string,
+): Promise<TaskDiffResponse> {
+  const params = projectId ? `?project_id=${projectId}` : ''
+  return fetchWithErrorHandling<TaskDiffResponse>(
+    `${getApiBase()}/api/git/commits/${sha}/diff${params}`,
+    { errorMessage: 'Failed to fetch commit diff' },
   )
 }
 

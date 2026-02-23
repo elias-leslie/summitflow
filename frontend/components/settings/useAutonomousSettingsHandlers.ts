@@ -25,17 +25,8 @@ export function useAutonomousSettingsHandlers(
   const mutate = (update: AutonomousExecutionSettingsUpdate) =>
     mutation.mutate(update)
 
-  const handleTimeRangeChange = (values: number[]) => {
-    const [start, end] = values
-    mutate({ start_hour: start, end_hour: end })
-  }
-
   const handleConcurrencyChange = (value: string) => {
     mutate({ max_concurrent: parseInt(value, 10) })
-  }
-
-  const handleEnabledToggle = () => {
-    mutate({ enabled: !settings.enabled })
   }
 
   const handleMaxTasksPerDayChange = (value: string) => {
@@ -119,9 +110,7 @@ export function useAutonomousSettingsHandlers(
 
   return {
     isPending: mutation.isPending,
-    handleTimeRangeChange,
     handleConcurrencyChange,
-    handleEnabledToggle,
     handleMaxTasksPerDayChange,
     handleCooldownChange,
     handleTaskTypeToggle,

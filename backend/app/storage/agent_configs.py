@@ -138,10 +138,8 @@ from .agent_configs_agents import (  # noqa: E402
     set_default_agent,
 )
 from .agent_configs_autonomous import (  # noqa: E402
-    AutonomousScheduleConfig,
     get_allowed_task_types,
     get_auto_merge_enabled,
-    get_autonomous_schedule,
     get_cooldown_minutes,
     get_max_extensions,
     get_max_self_fix_attempts,
@@ -149,9 +147,6 @@ from .agent_configs_autonomous import (  # noqa: E402
     get_max_tasks_per_day,
     get_preferred_model_tier,
     get_require_review,
-    is_autonomous_enabled,
-    is_within_autonomous_hours,
-    update_autonomous_schedule,
 )
 from .agent_configs_components import (  # noqa: E402
     COMPONENT_SOURCES,
@@ -169,13 +164,11 @@ __all__ = [
     "COMPONENT_SOURCES",
     "DEFAULT_AGENT_CONFIG",
     "AgentConfig",
-    "AutonomousScheduleConfig",
     "build_dt_command",
     "enable_agent",
     "get_agent_config",
     "get_allowed_task_types",
     "get_auto_merge_enabled",
-    "get_autonomous_schedule",
     "get_component_source",
     "get_cooldown_minutes",
     "get_enabled_agents",
@@ -188,10 +181,7 @@ __all__ = [
     "get_quality_gate_mode",
     "get_quality_gate_tools",
     "get_require_review",
-    "is_autonomous_enabled",
-    "is_within_autonomous_hours",
     "set_component_source",
     "set_default_agent",
     "update_agent_config",
-    "update_autonomous_schedule",
 ]

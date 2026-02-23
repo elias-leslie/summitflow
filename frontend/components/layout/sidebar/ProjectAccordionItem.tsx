@@ -6,6 +6,14 @@ import type { Project } from '@/lib/api'
 import type { NavItemId } from './types'
 import { projectNavItems } from './constants'
 import { ProjectNavItem } from './ProjectNavItem'
+import { useProjectPermissionTier } from './useProjectPermissionTier'
+
+const TIER_BADGE_CONFIG = {
+  off: { label: 'OFF', bg: 'bg-slate-600/30', text: 'text-slate-500', border: 'border-slate-600/40' },
+  read: { label: 'R', bg: 'bg-blue-500/15', text: 'text-blue-400', border: 'border-blue-500/30' },
+  write: { label: 'W', bg: 'bg-amber-500/15', text: 'text-amber-400', border: 'border-amber-500/30' },
+  yolo: { label: 'Y', bg: 'bg-emerald-500/15', text: 'text-emerald-400', border: 'border-emerald-500/30' },
+} as const
 
 interface ProjectAccordionItemProps {
   project: Project
@@ -25,6 +33,8 @@ export function ProjectAccordionItem({
   getProjectNavHref,
 }: ProjectAccordionItemProps) {
   const pathname = usePathname()
+  const tier = useProjectPermissionTier(project.id)
+  const badge = tier ? TIER_BADGE_CONFIG[tier as keyof typeof TIER_BADGE_CONFIG] : null
 
   return (
     <div
@@ -86,6 +96,19 @@ export function ProjectAccordionItem({
             {project.name}
           </div>
         </div>
+
+        {/* Permission tier badge */}
+        {badge && (
+          <span
+            className={clsx(
+              'flex-shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none border',
+              badge.bg, badge.text, badge.border,
+            )}
+            title={`Permission tier: ${tier}`}
+          >
+            {badge.label}
+          </span>
+        )}
 
         {/* Expand chevron */}
         <ChevronDown

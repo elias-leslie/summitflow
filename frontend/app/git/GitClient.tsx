@@ -1,26 +1,16 @@
 'use client'
 
 import clsx from 'clsx'
-import { AlertCircle, GitBranch, RefreshCw, GitPullRequest, Clock, XCircle } from 'lucide-react'
-import { WorktreeList } from '@/components/git/WorktreeList'
+import { GitBranch, RefreshCw, XCircle } from 'lucide-react'
 import { ConflictAlerts } from '@/components/git/ConflictAlerts'
-import { CommitActivityStream } from '@/components/git/CommitActivityStream'
-import { MergedTasksList } from '@/components/git/MergedTasksList'
-import { SnapshotTimeline } from '@/components/git/SnapshotTimeline'
-import { StatsWidget } from './StatsWidget'
-import { GitProjectCard } from './GitProjectCard'
+import { ProjectRow } from '@/components/git/ProjectRow'
 import { useGitStatus } from './useGitStatus'
 
 export function GitClient() {
   const { data: gitStatus, isLoading, isError, refetch } = useGitStatus()
 
-  // Derived Stats
-  const totalRepos = gitStatus?.total ?? 0
-  const dirtyCount = gitStatus?.repositories.filter(r => r.state === 'dirty').length ?? 0
-  const syncCount = gitStatus?.repositories.filter(r => r.behind > 0 || r.ahead > 0).length ?? 0
-
   return (
-    <div className="p-6 space-y-8 max-w-7xl mx-auto">
+    <div className="p-6 space-y-6 max-w-7xl mx-auto">
       {/* Header Section */}
       <section className="flex flex-col md:flex-row md:items-end justify-between gap-4 animate-in fade-in slide-in-from-top-4 duration-500">
         <div>
@@ -44,42 +34,19 @@ export function GitClient() {
         </button>
       </section>
 
-      {/* 1. Conflict Alerts — highest urgency, top of page */}
+      {/* Conflict Alerts — highest urgency, top of page */}
       <ConflictAlerts />
 
-      {/* 2. Recent Activity — commit timeline */}
-      <CommitActivityStream />
-
-      {/* 3. Merged Tasks — PR review substitute */}
-      <MergedTasksList />
-
-      {/* 4. Snapshots — safety net, collapsed by default */}
-      <SnapshotTimeline />
-
-      {/* 5. Active Worktrees — existing component */}
-      <WorktreeList />
-
-      {/* 6. Stats Dashboard */}
-      {gitStatus && (
-        <section className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-in fade-in slide-in-from-top-8 delay-100 duration-500">
-          <StatsWidget
-            label="Total Repositories"
-            value={totalRepos}
-            icon={GitPullRequest}
-            color="text-white"
-          />
-          <StatsWidget
-            label="Changes Pending"
-            value={dirtyCount}
-            icon={AlertCircle}
-            color={dirtyCount > 0 ? "text-pink-500" : "text-slate-500"}
-          />
-          <StatsWidget
-            label="Sync Required"
-            value={syncCount}
-            icon={Clock}
-            color={syncCount > 0 ? "text-cyan-400" : "text-emerald-500"}
-          />
+      {/* Project Rows */}
+      {gitStatus && !isLoading && (
+        <section className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          {gitStatus.repositories.map((repo) => (
+            <ProjectRow
+              key={repo.path}
+              repo={repo}
+              isConfigRepo={repo.name === '.claude'}
+            />
+          ))}
         </section>
       )}
 
@@ -102,15 +69,6 @@ export function GitClient() {
             <p className="text-sm opacity-80">Unable to reach the Git service. Please verify the backend is running.</p>
           </div>
         </div>
-      )}
-
-      {/* 7. Repo Cards Grid */}
-      {gitStatus && !isLoading && (
-        <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-8 delay-200 duration-500">
-          {gitStatus.repositories.map((repo) => (
-            <GitProjectCard key={repo.path} repo={repo} />
-          ))}
-        </section>
       )}
 
       {/* Empty State */}

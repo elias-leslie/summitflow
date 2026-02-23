@@ -99,12 +99,11 @@ export interface ProjectAgentConfigUpdate {
 }
 
 export interface AutonomousExecutionSettings {
-  enabled: boolean
+  // Access control (enabled, hours) now managed by Agent Hub project permissions.
+  // See: agent.summitflow.dev/access-control/permissions
   frequency_minutes: number
   auto_merge_tiers: number[]
   task_types: string[]
-  start_hour: number
-  end_hour: number
   max_concurrent: number
   max_tasks_per_day: number | null
   cooldown_minutes: number
@@ -121,12 +120,9 @@ export interface AutonomousExecutionSettings {
 }
 
 export interface AutonomousExecutionSettingsUpdate {
-  enabled?: boolean
   frequency_minutes?: number
   auto_merge_tiers?: number[]
   task_types?: string[]
-  start_hour?: number
-  end_hour?: number
   max_concurrent?: number
   max_tasks_per_day?: number | null
   cooldown_minutes?: number

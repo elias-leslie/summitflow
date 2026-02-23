@@ -1,4 +1,8 @@
-"""Autonomous execution service layer."""
+"""Autonomous execution service layer.
+
+Access control (enabled, schedule hours) is now managed by Agent Hub's
+project_permissions. This service handles execution behavior settings only.
+"""
 
 from __future__ import annotations
 
@@ -12,7 +16,7 @@ from .autonomous_models import (
 
 
 def _parse_core_settings(config: dict[str, Any]) -> dict[str, Any]:
-    """Parse core scheduling and frequency settings from config."""
+    """Parse execution behavior settings from config."""
     freq_raw = config.get("autonomous_frequency_minutes", 30)
     frequency_minutes = int(cast(int, freq_raw) if freq_raw else 30)
     auto_merge_tiers_raw = config.get("autonomous_auto_merge_tiers")
@@ -24,12 +28,9 @@ def _parse_core_settings(config: dict[str, Any]) -> dict[str, Any]:
     allowed_types_raw = config.get("autonomous_allowed_types")
     allowed_types = list(cast(list[str], allowed_types_raw)) if allowed_types_raw else None
     return {
-        "enabled": bool(config.get("autonomous_enabled", False)),
         "frequency_minutes": frequency_minutes,
         "auto_merge_tiers": auto_merge_tiers,
         "task_types": task_types,
-        "start_hour": int(config.get("autonomous_start_hour", 0)),
-        "end_hour": int(config.get("autonomous_end_hour", 24)),
         "max_concurrent": int(config.get("autonomous_max_concurrent", 1)),
         "max_tasks_per_day": max_tasks_per_day,
         "cooldown_minutes": int(str(config.get("autonomous_cooldown_minutes", 0))),
@@ -63,18 +64,12 @@ def _build_updates(settings: AutonomousSettingsUpdate) -> dict[str, Any]:
     """Build the updates dict from an AutonomousSettingsUpdate."""
     updates: dict[str, Any] = {}
 
-    if settings.enabled is not None:
-        updates["autonomous_enabled"] = settings.enabled
     if settings.frequency_minutes is not None:
         updates["autonomous_frequency_minutes"] = settings.frequency_minutes
     if settings.auto_merge_tiers is not None:
         updates["autonomous_auto_merge_tiers"] = settings.auto_merge_tiers
     if settings.task_types is not None:
         updates["autonomous_task_types"] = settings.task_types
-    if settings.start_hour is not None:
-        updates["autonomous_start_hour"] = settings.start_hour
-    if settings.end_hour is not None:
-        updates["autonomous_end_hour"] = settings.end_hour
     if settings.max_concurrent is not None:
         updates["autonomous_max_concurrent"] = settings.max_concurrent
     if settings.max_tasks_per_day is not None:

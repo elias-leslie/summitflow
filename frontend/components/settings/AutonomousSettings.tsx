@@ -1,16 +1,14 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { Loader2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { ExternalLink, Loader2, Shield } from 'lucide-react'
 import { getAutonomousSettings } from '@/lib/api'
 import { ExecutionControlSection } from './ExecutionControlSection'
 import { TaskFilteringSection } from './TaskFilteringSection'
 import { SelfHealingSection } from './SelfHealingSection'
 import { QualityGateSection } from './QualityGateSection'
 import { MergeReviewSection } from './MergeReviewSection'
-import { MasterToggle } from './MasterToggle'
-import { isInTimeWindow, TASK_TYPES } from './autonomous-utils'
+import { TASK_TYPES } from './autonomous-utils'
 import { useAutonomousSettingsHandlers } from './useAutonomousSettingsHandlers'
 
 interface AutonomousSettingsPanelProps {
@@ -20,22 +18,10 @@ interface AutonomousSettingsPanelProps {
 export function AutonomousSettingsPanel({
   projectId,
 }: AutonomousSettingsPanelProps) {
-  const [currentInWindow, setCurrentInWindow] = useState(false)
-
   const { data: settings, isLoading } = useQuery({
     queryKey: ['autonomous-settings', projectId],
     queryFn: () => getAutonomousSettings(projectId),
   })
-
-  useEffect(() => {
-    if (!settings) return
-    const updateStatus = () => {
-      setCurrentInWindow(isInTimeWindow(settings.start_hour, settings.end_hour))
-    }
-    updateStatus()
-    const interval = setInterval(updateStatus, 60000)
-    return () => clearInterval(interval)
-  }, [settings])
 
   const handlers = useAutonomousSettingsHandlers(projectId, settings!)
 
@@ -59,17 +45,32 @@ export function AutonomousSettingsPanel({
 
   return (
     <div className="space-y-6">
-      <MasterToggle
-        enabled={settings.enabled}
-        isPending={handlers.isPending}
-        onToggle={handlers.handleEnabledToggle}
-      />
+      {/* Access control banner — points to Agent Hub */}
+      <div className="p-4 bg-slate-800/50 rounded-lg border border-slate-700 flex items-start gap-3">
+        <Shield className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+        <div className="flex-1">
+          <p className="text-sm font-medium text-slate-200">
+            Access control managed by Agent Hub
+          </p>
+          <p className="text-xs text-slate-400 mt-1">
+            Enable/disable autonomous execution, permission tiers, and execution
+            time windows are now configured in Agent Hub&apos;s Access Control.
+          </p>
+          <a
+            href="/api/agent-hub/projects/permissions"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-amber-400 hover:text-amber-300 mt-2 transition-colors"
+          >
+            <ExternalLink className="w-3 h-3" />
+            Open Agent Hub Permissions
+          </a>
+        </div>
+      </div>
 
       <ExecutionControlSection
         settings={settings}
-        currentInWindow={currentInWindow}
         isPending={handlers.isPending}
-        onTimeRangeChange={handlers.handleTimeRangeChange}
         onConcurrencyChange={handlers.handleConcurrencyChange}
         onMaxTasksPerDayChange={handlers.handleMaxTasksPerDayChange}
         onCooldownChange={handlers.handleCooldownChange}
