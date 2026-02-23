@@ -3,6 +3,10 @@
 import clsx from 'clsx'
 import { AlertCircle, GitBranch, RefreshCw, GitPullRequest, Clock, XCircle } from 'lucide-react'
 import { WorktreeList } from '@/components/git/WorktreeList'
+import { ConflictAlerts } from '@/components/git/ConflictAlerts'
+import { CommitActivityStream } from '@/components/git/CommitActivityStream'
+import { MergedTasksList } from '@/components/git/MergedTasksList'
+import { SnapshotTimeline } from '@/components/git/SnapshotTimeline'
 import { StatsWidget } from './StatsWidget'
 import { GitProjectCard } from './GitProjectCard'
 import { useGitStatus } from './useGitStatus'
@@ -40,9 +44,22 @@ export function GitClient() {
         </button>
       </section>
 
+      {/* 1. Conflict Alerts — highest urgency, top of page */}
+      <ConflictAlerts />
+
+      {/* 2. Recent Activity — commit timeline */}
+      <CommitActivityStream />
+
+      {/* 3. Merged Tasks — PR review substitute */}
+      <MergedTasksList />
+
+      {/* 4. Snapshots — safety net, collapsed by default */}
+      <SnapshotTimeline />
+
+      {/* 5. Active Worktrees — existing component */}
       <WorktreeList />
 
-      {/* Stats Dashboard */}
+      {/* 6. Stats Dashboard */}
       {gitStatus && (
         <section className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-in fade-in slide-in-from-top-8 delay-100 duration-500">
           <StatsWidget
@@ -87,7 +104,7 @@ export function GitClient() {
         </div>
       )}
 
-      {/* Main Grid */}
+      {/* 7. Repo Cards Grid */}
       {gitStatus && !isLoading && (
         <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-8 delay-200 duration-500">
           {gitStatus.repositories.map((repo) => (

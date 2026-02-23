@@ -1,10 +1,10 @@
 """Tasks storage - Status transitions and state machine.
 
 Status values: pending, queue, running, paused, failed, blocked, ai_reviewing,
-completed, cancelled, abandoned.
+completed, cancelled, abandoned, conflicted.
 
 Kanban columns: Ideas/Planning=pending, Queue=queue, Active=running/paused/ai_reviewing,
-Blocked=blocked, Done=completed/failed/cancelled/abandoned.
+Blocked=blocked/conflicted, Done=completed/failed/cancelled/abandoned.
 """
 
 from __future__ import annotations
@@ -30,6 +30,8 @@ VALID_TRANSITIONS: dict[str, set[str]] = {
     "failed": {"queue", "pending", "running", "cancelled", "abandoned"},
     # Review states (agent workflow)
     "ai_reviewing": {"completed", "blocked", "running", "failed", "abandoned"},
+    # Conflict state (merge failed due to conflict, awaiting retry)
+    "conflicted": {"queue", "running", "pending", "failed", "cancelled", "abandoned"},
     # Terminal states
     "completed": {"failed", "pending"},  # Reopen if incorrectly closed
     "cancelled": set(),
@@ -43,7 +45,7 @@ VALID_STATUSES: frozenset[str] = frozenset(VALID_TRANSITIONS.keys())
 _UPDATE_SQL = f"""
     UPDATE tasks SET status = %s,
         started_at = CASE WHEN %s = 'running' THEN COALESCE(started_at, NOW()) ELSE started_at END,
-        completed_at = CASE WHEN %s IN ('completed','failed','cancelled','abandoned') THEN NOW() ELSE completed_at END,
+        completed_at = CASE WHEN %s IN ('completed','failed','cancelled','abandoned','conflicted') THEN NOW() ELSE completed_at END,
         error_message = CASE WHEN %s = 'running' THEN NULL WHEN %s IN ('completed','failed') THEN %s ELSE error_message END,
         current_phase = CASE WHEN %s = 'completed' THEN 'complete' ELSE current_phase END,
         claimed_by = CASE WHEN %s IN ('completed','failed','cancelled','abandoned') THEN NULL ELSE claimed_by END,

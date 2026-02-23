@@ -3,9 +3,21 @@
 from __future__ import annotations
 
 import logging
+import re
 import subprocess
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class MergeOutcome:
+    """Result of a merge attempt with structured conflict info."""
+
+    success: bool
+    merge_sha: str | None = None
+    error: str | None = None
+    conflicting_files: list[str] | None = None
 
 
 def checkout_base_branch(project_root: str, base_branch: str) -> str | None:
@@ -34,7 +46,7 @@ def merge_task_branch(
     project_root: str,
     task_branch: str,
     task_id: str,
-) -> str | None:
+) -> MergeOutcome:
     """Merge task branch into current branch.
 
     Args:
@@ -43,7 +55,7 @@ def merge_task_branch(
         task_id: Task ID for commit message
 
     Returns:
-        Error message if merge failed, None if successful
+        MergeOutcome with success/failure details and merge SHA.
     """
     result = subprocess.run(
         ["git", "merge", "--no-ff", task_branch, "-m", f"Merge task {task_id}"],
@@ -53,14 +65,49 @@ def merge_task_branch(
         timeout=60,
     )
     if result.returncode != 0:
+        stderr = result.stderr
+        conflicting = extract_conflicting_files(stderr)
         subprocess.run(
             ["git", "merge", "--abort"],
             cwd=project_root,
             capture_output=True,
             timeout=10,
         )
-        return f"Failed to merge {task_branch}: {result.stderr}"
-    return None
+        return MergeOutcome(
+            success=False,
+            error=f"Failed to merge {task_branch}: {stderr}",
+            conflicting_files=conflicting if conflicting else None,
+        )
+
+    # Capture the merge commit SHA
+    sha_result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=project_root,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    merge_sha = sha_result.stdout.strip() if sha_result.returncode == 0 else None
+
+    return MergeOutcome(success=True, merge_sha=merge_sha)
+
+
+def extract_conflicting_files(stderr: str) -> list[str]:
+    """Extract conflicting file paths from git merge stderr output.
+
+    Parses lines like:
+        CONFLICT (content): Merge conflict in src/api/foo.py
+
+    Args:
+        stderr: The stderr output from a failed git merge
+
+    Returns:
+        List of conflicting file paths.
+    """
+    files: list[str] = []
+    for match in re.finditer(r"CONFLICT.*?:\s+.*?in\s+(.+?)$", stderr, re.MULTILINE):
+        files.append(match.group(1).strip())
+    return files
 
 
 def delete_task_branch(

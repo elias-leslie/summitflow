@@ -15,7 +15,7 @@ from .columns import EXPECTED_TASK_COLUMNS, EXPECTED_TASK_COLUMNS_WITH_SPIRIT
 def row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert a database row to a task dict.
 
-    Column order (40 columns):
+    Column order (42 columns):
         id, project_id, capability_id, title, description, status,
         error_message, branch_name, commits,
         total_sessions, total_tokens_used, created_at, started_at, completed_at,
@@ -25,7 +25,7 @@ def row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
         raw_request, enrichment_status, enriched_by, enriched_at,
         complexity, autonomous,
         qa_status, qa_signoff_at, qa_signoff_by, qa_issues, agent_override,
-        agent_hub_session_ids, labels, ai_review
+        agent_hub_session_ids, labels, ai_review, conflict_info, merge_sha
     """
     if row is None:
         raise ValueError("Row cannot be None")
@@ -72,32 +72,34 @@ def row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
         "agent_hub_session_ids": row[37] or [],
         "labels": row[38] or [],
         "ai_review": row[39] if row[39] is not None else True,
+        "conflict_info": row[40],
+        "merge_sha": row[41],
     }
 
 
 def row_to_dict_with_spirit(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert a database row with spirit fields to a task dict.
 
-    Column order (46 columns):
-        First 40 columns are standard task columns (see row_to_dict).
+    Column order (48 columns):
+        First 42 columns are standard task columns (see row_to_dict).
         Then 6 spirit columns:
-        40: objective, 41: spirit_anti, 42: decisions, 43: constraints,
-        44: done_when, 45: plan_status
+        42: objective, 43: spirit_anti, 44: decisions, 45: constraints,
+        46: done_when, 47: plan_status
     """
     if row is None:
         raise ValueError("Row cannot be None")
     if len(row) != EXPECTED_TASK_COLUMNS_WITH_SPIRIT:
         raise ValueError(f"Expected {EXPECTED_TASK_COLUMNS_WITH_SPIRIT} columns, got {len(row)}")
 
-    # Build base task dict from first 40 columns
+    # Build base task dict from first 42 columns
     task = row_to_dict(row[:EXPECTED_TASK_COLUMNS])
 
-    # Add spirit fields (columns 40-45)
-    task["objective"] = row[40]
-    task["spirit_anti"] = row[41]
-    task["decisions"] = row[42] if row[42] else []
-    task["constraints"] = row[43] if row[43] else []
-    task["done_when"] = row[44] if row[44] else []
-    task["plan_status"] = row[45]
+    # Add spirit fields (columns 42-47)
+    task["objective"] = row[42]
+    task["spirit_anti"] = row[43]
+    task["decisions"] = row[44] if row[44] else []
+    task["constraints"] = row[45] if row[45] else []
+    task["done_when"] = row[46] if row[46] else []
+    task["plan_status"] = row[47]
 
     return task

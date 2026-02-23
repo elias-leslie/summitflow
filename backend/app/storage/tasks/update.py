@@ -58,10 +58,12 @@ ALLOWED_UPDATE_FIELDS = {
     "agent_hub_session_ids",
     "labels",
     "ai_review",
+    "conflict_info",
+    "merge_sha",
 }
 
 # JSONB dict fields
-JSONB_DICT_FIELDS = {"review_result", "verification_result"}
+JSONB_DICT_FIELDS = {"review_result", "verification_result", "conflict_info"}
 
 # JSONB list fields
 JSONB_LIST_FIELDS = {"qa_issues"}

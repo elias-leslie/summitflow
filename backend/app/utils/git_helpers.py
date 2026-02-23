@@ -7,7 +7,16 @@ import re
 import subprocess
 from pathlib import Path
 
-from ..api.models.git_models import BranchInfo, RepoStatus, SyncResult, WorktreeInfo
+from ..api.models.git_models import (
+    BranchInfo,
+    CommitInfo,
+    DiffFile,
+    DiffStats,
+    RepoStatus,
+    SnapshotInfo,
+    SyncResult,
+    WorktreeInfo,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -359,3 +368,298 @@ def get_all_branches(repo_path: Path) -> list[BranchInfo]:
     )
 
     return branches
+
+
+# --- Diff Helpers ---
+
+
+def get_task_diff(
+    project_root: Path,
+    pre_merge_sha: str,
+    merge_sha: str,
+) -> tuple[list[DiffFile], DiffStats]:
+    """Get file-level diffs between two SHAs.
+
+    Args:
+        project_root: Path to the git repo
+        pre_merge_sha: SHA before merge
+        merge_sha: SHA after merge
+
+    Returns:
+        Tuple of (list of DiffFile, aggregate DiffStats).
+    """
+    sha_range = f"{pre_merge_sha}..{merge_sha}"
+
+    # Get numstat for per-file counts
+    numstat = run_git(["diff", "--numstat", sha_range], project_root)
+    files: list[DiffFile] = []
+    total_add = 0
+    total_del = 0
+
+    if numstat.returncode == 0:
+        for line in numstat.stdout.strip().split("\n"):
+            if not line.strip():
+                continue
+            parts = line.split("\t")
+            if len(parts) != 3:
+                continue
+            adds = int(parts[0]) if parts[0] != "-" else 0
+            dels = int(parts[1]) if parts[1] != "-" else 0
+            path = parts[2]
+            total_add += adds
+            total_del += dels
+            files.append(DiffFile(
+                path=path,
+                status="modified",
+                additions=adds,
+                deletions=dels,
+                diff_content="",
+            ))
+
+    # Get full unified diff
+    full_diff = run_git(["diff", sha_range], project_root)
+    if full_diff.returncode == 0:
+        _assign_diff_content(files, full_diff.stdout)
+
+    # Detect added/deleted via diff-tree
+    tree_result = run_git(
+        ["diff-tree", "--no-commit-id", "-r", "--name-status", sha_range],
+        project_root,
+    )
+    if tree_result.returncode == 0:
+        status_map: dict[str, str] = {}
+        for line in tree_result.stdout.strip().split("\n"):
+            if not line.strip():
+                continue
+            parts = line.split("\t")
+            if len(parts) >= 2:
+                code = parts[0][0]  # A, M, D, R
+                fpath = parts[-1]
+                status_map[fpath] = {
+                    "A": "added",
+                    "M": "modified",
+                    "D": "deleted",
+                    "R": "renamed",
+                }.get(code, "modified")
+        for f in files:
+            if f.path in status_map:
+                f.status = status_map[f.path]
+
+    stats = DiffStats(
+        files_changed=len(files),
+        additions=total_add,
+        deletions=total_del,
+    )
+    return files, stats
+
+
+def _assign_diff_content(files: list[DiffFile], full_diff: str) -> None:
+    """Split a unified diff into per-file chunks and assign to DiffFile objects."""
+    file_map = {f.path: f for f in files}
+    current_path: str | None = None
+    current_lines: list[str] = []
+
+    for line in full_diff.split("\n"):
+        if line.startswith("diff --git"):
+            # Flush previous file
+            if current_path and current_path in file_map:
+                file_map[current_path].diff_content = "\n".join(current_lines)
+            # Parse new file path: "diff --git a/path b/path"
+            parts = line.split(" b/", 1)
+            current_path = parts[1] if len(parts) > 1 else None
+            current_lines = [line]
+        else:
+            current_lines.append(line)
+
+    # Flush last file
+    if current_path and current_path in file_map:
+        file_map[current_path].diff_content = "\n".join(current_lines)
+
+
+def get_diff_stats(project_root: Path, sha_range: str) -> DiffStats:
+    """Get aggregate diff statistics for a SHA range."""
+    result = run_git(["diff", "--shortstat", sha_range], project_root)
+    files_count = 0
+    adds = 0
+    dels = 0
+    if result.returncode == 0 and result.stdout.strip():
+        text = result.stdout.strip()
+        m = re.search(r"(\d+) file", text)
+        if m:
+            files_count = int(m.group(1))
+        m = re.search(r"(\d+) insertion", text)
+        if m:
+            adds = int(m.group(1))
+        m = re.search(r"(\d+) deletion", text)
+        if m:
+            dels = int(m.group(1))
+    return DiffStats(files_changed=files_count, additions=adds, deletions=dels)
+
+
+# --- Commit History Helpers ---
+
+
+def get_recent_commits(repo_path: Path, limit: int = 30) -> list[CommitInfo]:
+    """Get recent commits from a repository.
+
+    Args:
+        repo_path: Path to the git repo
+        limit: Maximum number of commits to return
+
+    Returns:
+        List of CommitInfo objects.
+    """
+    result = run_git(
+        [
+            "log",
+            f"-n{limit}",
+            "--format=COMMIT_START%n%H%n%h%n%s%n%an%n%ae%n%cI",
+            "--numstat",
+        ],
+        repo_path,
+    )
+    if result.returncode != 0:
+        return []
+
+    commits: list[CommitInfo] = []
+    repo_name = repo_path.name
+    blocks = result.stdout.split("COMMIT_START\n")
+
+    for block in blocks:
+        if not block.strip():
+            continue
+        lines = block.strip().split("\n")
+        if len(lines) < 6:
+            continue
+
+        sha = lines[0]
+        short_sha = lines[1]
+        message = lines[2]
+        author_name = lines[3]
+        author_email = lines[4]
+        date = lines[5]
+
+        # Parse numstat lines (remaining lines after the 6 header lines)
+        files_changed = 0
+        insertions = 0
+        deletions = 0
+        for stat_line in lines[6:]:
+            if not stat_line.strip():
+                continue
+            parts = stat_line.split("\t")
+            if len(parts) == 3:
+                files_changed += 1
+                insertions += int(parts[0]) if parts[0] != "-" else 0
+                deletions += int(parts[1]) if parts[1] != "-" else 0
+
+        commits.append(CommitInfo(
+            sha=sha,
+            short_sha=short_sha,
+            message=message,
+            author_name=author_name,
+            author_email=author_email,
+            date=date,
+            repo_name=repo_name,
+            files_changed=files_changed,
+            insertions=insertions,
+            deletions=deletions,
+        ))
+
+    return commits
+
+
+# --- Snapshot Helpers ---
+
+
+def list_snapshots(repo_path: Path) -> list[SnapshotInfo]:
+    """List pre-merge snapshot tags from a repository.
+
+    Args:
+        repo_path: Path to the git repo
+
+    Returns:
+        List of SnapshotInfo objects.
+    """
+    result = run_git(
+        ["tag", "-l", "snapshot/pre-merge/*", "--sort=-creatordate",
+         "--format=%(refname:short)\t%(objectname)\t%(objectname:short)\t%(creatordate:iso-strict)"],
+        repo_path,
+    )
+    if result.returncode != 0:
+        return []
+
+    # Get current HEAD
+    head_result = run_git(["rev-parse", "HEAD"], repo_path)
+    head_sha = head_result.stdout.strip() if head_result.returncode == 0 else ""
+
+    repo_name = repo_path.name
+    snapshots: list[SnapshotInfo] = []
+
+    for line in result.stdout.strip().split("\n"):
+        if not line.strip():
+            continue
+        parts = line.split("\t")
+        if len(parts) < 4:
+            continue
+
+        tag_name = parts[0]  # snapshot/pre-merge/{task_id}
+        sha = parts[1]
+        short_sha = parts[2]
+        created_at = parts[3]
+
+        # Extract task_id from tag name
+        task_id = tag_name.replace("snapshot/pre-merge/", "")
+
+        # Count commits ahead
+        ahead_result = run_git(
+            ["rev-list", "--count", f"{sha}..HEAD"],
+            repo_path,
+        )
+        commits_ahead = (
+            int(ahead_result.stdout.strip())
+            if ahead_result.returncode == 0
+            else 0
+        )
+
+        snapshots.append(SnapshotInfo(
+            task_id=task_id,
+            task_title="",  # Populated by API endpoint from DB
+            sha=sha,
+            short_sha=short_sha,
+            created_at=created_at,
+            project_id="",  # Populated by API endpoint
+            repo_name=repo_name,
+            is_current=sha == head_sha,
+            commits_ahead=commits_ahead,
+        ))
+
+    return snapshots
+
+
+def revert_to_snapshot(repo_path: Path, sha: str, commits_ahead: int) -> str | None:
+    """Revert HEAD to a snapshot point using git revert (preserves history).
+
+    Args:
+        repo_path: Path to the git repo
+        sha: The snapshot SHA to revert to
+        commits_ahead: Number of commits to revert
+
+    Returns:
+        The new HEAD SHA, or None on failure.
+    """
+    if commits_ahead <= 0:
+        return None
+
+    # Revert the range of commits (newest first)
+    result = run_git(
+        ["revert", "--no-edit", f"HEAD~{commits_ahead}..HEAD"],
+        repo_path,
+    )
+    if result.returncode != 0:
+        # Abort the revert on failure
+        run_git(["revert", "--abort"], repo_path)
+        return None
+
+    # Return the new HEAD
+    head_result = run_git(["rev-parse", "HEAD"], repo_path)
+    return head_result.stdout.strip() if head_result.returncode == 0 else None

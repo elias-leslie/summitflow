@@ -1,0 +1,174 @@
+/**
+ * Enhanced Git API client — conflicts, diffs, commits, snapshots.
+ */
+
+import { fetchWithErrorHandling, getApiBase } from './utils'
+
+// --- Conflict Types ---
+
+export interface ConflictInfo {
+  task_id: string
+  task_title: string
+  project_id: string
+  conflicting_files: string[]
+  task_branch: string
+  base_branch: string
+  detected_at: string
+  error_output?: string
+}
+
+export interface ConflictsResponse {
+  conflicts: ConflictInfo[]
+  count: number
+}
+
+// --- Diff Types ---
+
+export interface DiffFile {
+  path: string
+  status: string
+  additions: number
+  deletions: number
+  diff_content: string
+}
+
+export interface DiffStats {
+  files_changed: number
+  additions: number
+  deletions: number
+}
+
+export interface TaskDiffResponse {
+  task_id: string
+  task_title: string
+  pre_merge_sha: string | null
+  merge_sha: string | null
+  files: DiffFile[]
+  stats: DiffStats
+}
+
+export interface MergedTaskSummary {
+  task_id: string
+  task_title: string
+  project_id: string
+  merged_at: string
+  files_changed: number
+  additions: number
+  deletions: number
+}
+
+export interface RecentMergesResponse {
+  merges: MergedTaskSummary[]
+  count: number
+}
+
+// --- Commit Types ---
+
+export interface CommitInfo {
+  sha: string
+  short_sha: string
+  message: string
+  author_name: string
+  author_email: string
+  date: string
+  repo_name: string
+  files_changed: number
+  insertions: number
+  deletions: number
+}
+
+export interface RecentCommitsResponse {
+  commits: CommitInfo[]
+  count: number
+}
+
+// --- Snapshot Types ---
+
+export interface SnapshotInfo {
+  task_id: string
+  task_title: string
+  sha: string
+  short_sha: string
+  created_at: string
+  project_id: string
+  repo_name: string
+  is_current: boolean
+  commits_ahead: number
+}
+
+export interface SnapshotsResponse {
+  snapshots: SnapshotInfo[]
+  count: number
+}
+
+// --- Conflict API ---
+
+export async function fetchConflicts(): Promise<ConflictsResponse> {
+  return fetchWithErrorHandling<ConflictsResponse>(
+    `${getApiBase()}/api/git/conflicts`,
+    { errorMessage: 'Failed to fetch conflicts' },
+  )
+}
+
+export async function retryMerge(taskId: string): Promise<Record<string, unknown>> {
+  return fetchWithErrorHandling<Record<string, unknown>>(
+    `${getApiBase()}/api/git/tasks/${taskId}/retry-merge`,
+    { method: 'POST', errorMessage: 'Failed to retry merge' },
+  )
+}
+
+export async function dismissConflict(taskId: string): Promise<{ status: string }> {
+  return fetchWithErrorHandling<{ status: string }>(
+    `${getApiBase()}/api/git/tasks/${taskId}/dismiss-conflict`,
+    { method: 'POST', errorMessage: 'Failed to dismiss conflict' },
+  )
+}
+
+// --- Diff / Merge Review API ---
+
+export async function fetchTaskDiff(taskId: string): Promise<TaskDiffResponse> {
+  return fetchWithErrorHandling<TaskDiffResponse>(
+    `${getApiBase()}/api/tasks/${taskId}/diff`,
+    { errorMessage: 'Failed to fetch task diff' },
+  )
+}
+
+export async function fetchRecentMerges(limit = 20): Promise<RecentMergesResponse> {
+  return fetchWithErrorHandling<RecentMergesResponse>(
+    `${getApiBase()}/api/git/recent-merges?limit=${limit}`,
+    { errorMessage: 'Failed to fetch recent merges' },
+  )
+}
+
+// --- Commit History API ---
+
+export async function fetchRecentCommits(
+  limit = 50,
+  projectId?: string,
+): Promise<RecentCommitsResponse> {
+  const params = new URLSearchParams({ limit: String(limit) })
+  if (projectId) params.set('project_id', projectId)
+  return fetchWithErrorHandling<RecentCommitsResponse>(
+    `${getApiBase()}/api/git/commits/recent?${params}`,
+    { errorMessage: 'Failed to fetch recent commits' },
+  )
+}
+
+// --- Snapshot API ---
+
+export async function fetchSnapshots(projectId?: string): Promise<SnapshotsResponse> {
+  const params = projectId ? `?project_id=${projectId}` : ''
+  return fetchWithErrorHandling<SnapshotsResponse>(
+    `${getApiBase()}/api/git/snapshots${params}`,
+    { errorMessage: 'Failed to fetch snapshots' },
+  )
+}
+
+export async function revertToSnapshot(
+  taskId: string,
+): Promise<{ status: string; reverted_to: string }> {
+  return fetchWithErrorHandling<{ status: string; reverted_to: string }>(
+    `${getApiBase()}/api/git/snapshots/${taskId}/revert`,
+    { method: 'POST', errorMessage: 'Failed to revert to snapshot' },
+  )
+}

@@ -50,6 +50,22 @@ class MergeError(TypedDict):
     error: str
 
 
+class MergeConflicted(TypedDict):
+    """Merge conflict detected — task branch preserved for retry."""
+
+    task_id: str
+    status: Literal["conflicted"]
+    task_branch: str
+    base_branch: str
+    conflicting_files: list[str]
+    error_output: str
+
+
 MergeResult = (
-    MergeSuccess | MergeBlocked | MergeSkipped | MergeRolledBack | MergeError
+    MergeSuccess
+    | MergeBlocked
+    | MergeSkipped
+    | MergeRolledBack
+    | MergeError
+    | MergeConflicted
 )
