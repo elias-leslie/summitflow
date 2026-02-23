@@ -638,8 +638,7 @@ export function ProjectRow({ repo, isConfigRepo = false }: ProjectRowProps) {
         </div>
 
         {/* Smart Sync button */}
-        {!isConfigRepo && (
-          <button
+        <button
             disabled={syncMutation.isPending}
             onClick={(e) => {
               e.stopPropagation()
@@ -659,7 +658,6 @@ export function ProjectRow({ repo, isConfigRepo = false }: ProjectRowProps) {
             )}
             {syncMutation.isPending ? 'Syncing...' : 'Smart Sync'}
           </button>
-        )}
       </div>
 
       {/* Sync result — always visible when present */}

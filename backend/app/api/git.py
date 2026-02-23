@@ -389,29 +389,64 @@ async def get_commit_diff(
             raise HTTPException(status_code=404, detail=f"Commit {sha} not found in any managed repo")
         repo_path = repo_path_found
 
-    # Get commit message
+    # Validate SHA exists in this repo when project_id is explicit
+    if project_id:
+        try:
+            check = subprocess.run(
+                ["git", "cat-file", "-t", sha],
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if check.returncode != 0 or check.stdout.strip() != "commit":
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Commit {sha} not found in project {project_id}",
+                )
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            raise HTTPException(status_code=500, detail="Git lookup failed") from exc
+
+    # Get commit metadata: message and parent count
     try:
-        msg_result = subprocess.run(
-            ["git", "log", "-1", "--format=%s", sha],
+        meta_result = subprocess.run(
+            ["git", "log", "-1", "--format=%s%n%P", sha],
             cwd=repo_path,
             capture_output=True,
             text=True,
             timeout=5,
         )
-        title = msg_result.stdout.strip() if msg_result.returncode == 0 else sha
+        if meta_result.returncode == 0:
+            lines = meta_result.stdout.strip().split("\n")
+            title = lines[0] if lines else sha
+            parents = lines[1].split() if len(lines) > 1 and lines[1] else []
+        else:
+            title = sha
+            parents = []
     except (subprocess.TimeoutExpired, OSError):
         title = sha
+        parents = []
 
-    # Get diff: sha~1..sha
+    # Determine the diff base
+    if not parents:
+        # Root commit — diff against empty tree
+        base_sha = "4b825dc642cb6eb9a060e54bf899d15363da7b23"
+    elif len(parents) > 1:
+        # Merge commit — diff against first parent (shows what the merge brought in)
+        base_sha = parents[0]
+    else:
+        # Normal commit
+        base_sha = parents[0]
+
     try:
-        files, stats = get_task_diff(repo_path, f"{sha}~1", sha)
+        files, stats = get_task_diff(repo_path, base_sha, sha)
     except Exception:
         files, stats = [], DiffStats(files_changed=0, additions=0, deletions=0)
 
     return TaskDiffResponse(
         task_id=sha,
         task_title=title,
-        pre_merge_sha=f"{sha}~1",
+        pre_merge_sha=base_sha,
         merge_sha=sha,
         files=files,
         stats=stats,
