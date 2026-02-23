@@ -253,15 +253,15 @@ upload_pending_backups() {
             if smb_upload "$archive" "$smb_path" "$archive_name"; then
                 log_success "Uploaded: $archive_name"
                 rm -f "$archive" "$meta_file"
-                ((uploaded++))
+                uploaded=$((uploaded + 1))
             else
                 # Update retry count
                 local retry_count=$(jq -r '.retry_count' "$meta_file")
-                ((retry_count++))
+                retry_count=$((retry_count + 1))
                 jq --argjson rc "$retry_count" '.retry_count = $rc | .last_retry = "'"$(date -Iseconds)"'"' \
                     "$meta_file" > "${meta_file}.tmp" && mv "${meta_file}.tmp" "$meta_file"
                 log_error "Failed to upload: $archive_name (retry $retry_count)"
-                ((failed++))
+                failed=$((failed + 1))
             fi
         else
             log_warn "No metadata for $archive_name, skipping"
@@ -433,7 +433,7 @@ apply_retention() {
 
         if [ -n "$file_epoch" ] && [ "$file_epoch" -lt "$cutoff_epoch" ]; then
             if smb_delete "$backup"; then
-                ((deleted++))
+                deleted=$((deleted + 1))
             else
                 log_warn "Failed to delete $backup, skipping"
             fi
@@ -718,7 +718,7 @@ EOF
                '.backups += [{"name": $name, "timestamp": $ts, "size_bytes": $size, "db_size_bytes": 0, "status": "ok", "verification": null}]' \
                "$BACKUP_INDEX" > "$temp_file" && validate_index "$temp_file"; then
                 mv "$temp_file" "$BACKUP_INDEX"
-                ((added++))
+                added=$((added + 1))
             else
                 log_error "Failed to add $backup to index"
                 rm -f "$temp_file"
@@ -734,7 +734,7 @@ EOF
             if jq --arg name "$backup" '.backups = [.backups[] | select(.name != $name)]' \
                "$BACKUP_INDEX" > "$temp_file" && validate_index "$temp_file"; then
                 mv "$temp_file" "$BACKUP_INDEX"
-                ((removed++))
+                removed=$((removed + 1))
             else
                 log_error "Failed to remove orphan $backup"
                 rm -f "$temp_file"
@@ -797,7 +797,7 @@ EOF
                        '(.backups[] | select(.name == $name)).verification = $v' \
                        "$BACKUP_INDEX" > "$index_temp" && validate_index "$index_temp"; then
                         mv "$index_temp" "$BACKUP_INDEX"
-                        ((verified++))
+                        verified=$((verified + 1))
                         log_success "Verified: $backup ($(echo "$verification" | jq -r '.total_files') files)"
                     else
                         rm -f "$index_temp"

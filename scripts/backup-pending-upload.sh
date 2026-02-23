@@ -69,7 +69,7 @@ show_pending_status() {
         local meta_file="${archive}.meta"
         local size=$(stat -c%s "$archive" 2>/dev/null || echo "0")
         total_size=$((total_size + size))
-        ((count++))
+        count=$((count + 1))
 
         echo "  $archive_name"
         echo "    Size: $(numfmt --to=iec $size 2>/dev/null || echo "$size bytes")"
