@@ -11,7 +11,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from .graphiti_client import FixPattern, GraphitiClient, SearchResult
+from .memory_client import FixPattern, MemoryClient, SearchResult
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +56,7 @@ def compute_error_signature(
 
 
 class PatternMemoryService:
-    """Service for storing and retrieving fix patterns from Graphiti.
+    """Service for storing and retrieving fix patterns from Agent Hub memory.
 
     Patterns are stored with project scope to allow learning from
     project-specific fixes while avoiding cross-project contamination.
@@ -64,16 +64,16 @@ class PatternMemoryService:
 
     def __init__(
         self,
-        client: GraphitiClient | None = None,
+        client: MemoryClient | None = None,
         project_id: str = "summitflow",
     ):
         """Initialize the pattern memory service.
 
         Args:
-            client: GraphitiClient instance (created if not provided)
+            client: MemoryClient instance (created if not provided)
             project_id: Project ID for scoping patterns
         """
-        self.client = client or GraphitiClient()
+        self.client = client or MemoryClient()
         self.project_id = project_id
 
     async def store_fix_pattern(
@@ -85,7 +85,7 @@ class PatternMemoryService:
         fix_diff: str,
         root_cause_summary: str,
     ) -> dict[str, Any]:
-        """Store a successful fix pattern in Graphiti.
+        """Store a successful fix pattern in Agent Hub memory.
 
         Called when a fix agent successfully resolves an error and the
         quality gate passes. Patterns are stored for future retrieval.
@@ -166,7 +166,7 @@ class PatternMemoryService:
         """Parse a search result into a StoredPattern.
 
         Args:
-            result: Search result from Graphiti
+            result: Search result from Agent Hub memory
 
         Returns:
             StoredPattern or None if parsing fails

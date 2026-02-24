@@ -1,7 +1,7 @@
-"""Graphiti client for Agent Hub memory API integration.
+"""Memory client for Agent Hub memory API integration.
 
 This client provides SummitFlow's self-healing system with access to the
-Graphiti knowledge graph for storing and retrieving fix patterns.
+Agent Hub knowledge graph for storing and retrieving fix patterns.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ DEFAULT_TIMEOUT = 10.0
 
 @dataclass
 class FixPattern:
-    """A fix pattern stored in Graphiti."""
+    """A fix pattern stored in Agent Hub memory."""
 
     error_signature: str
     fix_diff: str
@@ -39,7 +39,7 @@ class FixPattern:
 
 @dataclass
 class SearchResult:
-    """A search result from Graphiti."""
+    """A search result from Agent Hub memory."""
 
     pattern: str
     applies_to: str
@@ -48,11 +48,11 @@ class SearchResult:
     metadata: dict[str, Any] | None = None
 
 
-class GraphitiClient:
-    """Client for interacting with Agent Hub's Graphiti memory API."""
+class MemoryClient:
+    """Client for interacting with Agent Hub's memory API."""
 
     def __init__(self, base_url: str = AGENT_HUB_BASE_URL, timeout: float = DEFAULT_TIMEOUT):
-        """Initialize the Graphiti client.
+        """Initialize the memory client.
 
         Args:
             base_url: Agent Hub API base URL
@@ -80,7 +80,7 @@ class GraphitiClient:
         return headers
 
     async def health_check(self) -> dict[str, Any]:
-        """Check if the Graphiti API is healthy.
+        """Check if the memory API is healthy.
 
         Returns:
             Health status dict with 'status' and 'neo4j' keys
@@ -103,7 +103,7 @@ class GraphitiClient:
         pattern: FixPattern,
         scope: str = "project",
     ) -> dict[str, Any]:
-        """Store a fix pattern in Graphiti.
+        """Store a fix pattern in memory.
 
         Uses the record-pattern endpoint to store successful fixes
         that can be retrieved for similar errors.
@@ -257,3 +257,7 @@ class GraphitiClient:
             )
             response.raise_for_status()
             return cast(dict[str, Any], response.json())
+
+
+# Backward-compatible alias (deprecated, use MemoryClient)
+GraphitiClient = MemoryClient

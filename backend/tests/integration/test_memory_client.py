@@ -1,11 +1,11 @@
-"""Integration tests for Graphiti client.
+"""Integration tests for memory client.
 
 These tests require Agent Hub to be running at localhost:8003.
-Graphiti operations can be slow (30-120s) due to Neo4j and LLM calls.
+Memory operations can be slow (30-120s) due to Neo4j and LLM calls.
 
 Tests create episodes and clean them up afterwards to avoid polluting the graph.
 
-Run with: dt pytest -- -m slow backend/tests/integration/test_graphiti_client.py
+Run with: dt pytest -- -m slow backend/tests/integration/test_memory_client.py
 """
 
 from __future__ import annotations
@@ -14,23 +14,23 @@ from collections.abc import AsyncIterator
 
 import pytest
 
-from app.services.self_healing.graphiti_client import FixPattern, GraphitiClient
+from app.services.self_healing.memory_client import FixPattern, MemoryClient
 
 # Mark all tests in this module as slow (skipped by default)
 pytestmark = [pytest.mark.slow, pytest.mark.integration]
 
-# Extended timeout for Graphiti operations - LLM entity extraction can take 30-90s
-GRAPHITI_TIMEOUT = 120.0
+# Extended timeout for memory operations - LLM entity extraction can take 30-90s
+MEMORY_CLIENT_TIMEOUT = 120.0
 
 
 @pytest.fixture
-def client() -> GraphitiClient:
-    """Create a Graphiti client for testing with extended timeout."""
-    return GraphitiClient(timeout=GRAPHITI_TIMEOUT)
+def client() -> MemoryClient:
+    """Create a memory client for testing with extended timeout."""
+    return MemoryClient(timeout=MEMORY_CLIENT_TIMEOUT)
 
 
 @pytest.fixture
-async def cleanup_episodes(client: GraphitiClient) -> AsyncIterator[list[str]]:
+async def cleanup_episodes(client: MemoryClient) -> AsyncIterator[list[str]]:
     """Fixture to track and clean up created episodes after test.
 
     Usage:
@@ -51,7 +51,7 @@ async def cleanup_episodes(client: GraphitiClient) -> AsyncIterator[list[str]]:
 
 
 @pytest.mark.asyncio
-async def test_health_check(client: GraphitiClient) -> None:
+async def test_health_check(client: MemoryClient) -> None:
     """Test that health check returns healthy status."""
     result = await client.health_check()
     assert result["status"] == "healthy"
@@ -59,8 +59,8 @@ async def test_health_check(client: GraphitiClient) -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(180)  # 3 minutes for Graphiti LLM operations
-async def test_store_pattern(client: GraphitiClient, cleanup_episodes: list[str]) -> None:
+@pytest.mark.timeout(180)  # 3 minutes for memory LLM operations
+async def test_store_pattern(client: MemoryClient, cleanup_episodes: list[str]) -> None:
     """Test storing a fix pattern.
 
     This test may be slow (~30-90s) as it involves LLM entity extraction.
@@ -82,7 +82,7 @@ async def test_store_pattern(client: GraphitiClient, cleanup_episodes: list[str]
 
 
 @pytest.mark.asyncio
-async def test_search_patterns(client: GraphitiClient) -> None:
+async def test_search_patterns(client: MemoryClient) -> None:
     """Test searching for patterns.
 
     Note: Results may be empty if no patterns have been indexed yet.
@@ -94,14 +94,14 @@ async def test_search_patterns(client: GraphitiClient) -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(180)  # 3 minutes for Graphiti LLM operations
-async def test_record_gotcha(client: GraphitiClient, cleanup_episodes: list[str]) -> None:
+@pytest.mark.timeout(180)  # 3 minutes for memory LLM operations
+async def test_record_gotcha(client: MemoryClient, cleanup_episodes: list[str]) -> None:
     """Test recording a gotcha.
 
     This test may be slow (~30-90s) as it involves LLM entity extraction.
     """
     result = await client.record_gotcha(
-        gotcha="GraphitiClient requires httpx async",
+        gotcha="MemoryClient requires httpx async",
         context="self-healing integration",
         solution="Use httpx.AsyncClient with async/await",
         scope="project",

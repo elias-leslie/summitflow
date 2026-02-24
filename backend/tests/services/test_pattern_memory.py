@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.services.self_healing.graphiti_client import SearchResult
+from app.services.self_healing.memory_client import SearchResult
 from app.services.self_healing.pattern_memory import (
     PatternMemoryService,
     compute_error_signature,
@@ -48,7 +48,7 @@ class TestPatternMemoryService:
 
     @pytest.fixture
     def mock_client(self) -> MagicMock:
-        """Create a mock GraphitiClient."""
+        """Create a mock MemoryClient."""
         client = MagicMock()
         client.store_pattern = AsyncMock(
             return_value={"success": True, "episode_uuid": "test-uuid"}

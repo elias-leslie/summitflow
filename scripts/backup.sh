@@ -237,7 +237,7 @@ create_archive() {
         --transform="s|^|${PROJECT_NAME}/|" \
         -C "$STAGING_DIR" "$BACKUP_DB_DUMP_NAME"
 
-    # Add Neo4j/Graphiti memory backups for agent-hub
+    # Add Neo4j memory backups for agent-hub
     if [ "$PROJECT_NAME" = "agent-hub" ] && [ -d "$PROJECT_DIR/backups/memory" ]; then
         local latest_memory_backup
         # Avoid ls | head pipeline — SIGPIPE under set -eo pipefail
@@ -327,9 +327,9 @@ main() {
     local db_size
     db_size=$(stat -c%s "$db_dump" 2>/dev/null || stat -f%z "$db_dump" 2>/dev/null || echo "0")
 
-    # Dump Neo4j Graphiti for agent-hub (runs memory backup)
+    # Dump Neo4j memory for agent-hub (runs memory backup)
     if [ "$PROJECT_NAME" = "agent-hub" ]; then
-        dump_neo4j_graphiti "backup-$TIMESTAMP" || log_warn "Neo4j backup failed (continuing with PostgreSQL backup)"
+        dump_neo4j_memory "backup-$TIMESTAMP" || log_warn "Neo4j backup failed (continuing with PostgreSQL backup)"
     fi
 
     # Create archive

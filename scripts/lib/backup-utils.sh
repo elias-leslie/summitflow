@@ -819,9 +819,9 @@ EOF
     fi
 }
 
-# Neo4j Graphiti backup for agent-hub
-# Creates JSON exports of Graphiti nodes/edges
-dump_neo4j_graphiti() {
+# Neo4j memory backup for agent-hub
+# Creates JSON exports of memory graph nodes/edges
+dump_neo4j_memory() {
     local name="${1:-daily-backup}"
     local agent_hub_dir="/home/kasadis/agent-hub"
     local backup_script="$agent_hub_dir/backend/scripts/memory/backup.py"
@@ -837,7 +837,7 @@ dump_neo4j_graphiti() {
         return 1
     fi
 
-    log "Creating Neo4j Graphiti backup..."
+    log "Creating Neo4j memory backup..."
 
     # Activate agent-hub venv and run backup
     if (
@@ -845,10 +845,10 @@ dump_neo4j_graphiti() {
         source .venv/bin/activate && \
         python -m scripts.memory.backup --name "$name"
     ); then
-        log_success "Neo4j Graphiti backup complete"
+        log_success "Neo4j memory backup complete"
         return 0
     else
-        log_error "Neo4j Graphiti backup failed"
+        log_error "Neo4j memory backup failed"
         return 1
     fi
 }
@@ -862,4 +862,4 @@ export -f update_backup_index get_backup_count remove_oldest_from_index
 export -f apply_retention backup_checkpoint
 export -f build_backup_manifest verify_backup
 export -f validate_index restore_index_from_git sync_index_from_smb
-export -f dump_neo4j_graphiti
+export -f dump_neo4j_memory

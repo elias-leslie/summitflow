@@ -1,6 +1,6 @@
 """Self-healing services for automated error detection and resolution."""
 
-from .graphiti_client import FixPattern, GraphitiClient, SearchResult
+from .memory_client import FixPattern, GraphitiClient, MemoryClient, SearchResult
 from .monitor import (
     JournalError,
     SystemdMonitor,
@@ -20,7 +20,8 @@ __all__ = [
     "BUDGET_CAP_USD",
     "BudgetExceededError",
     "FixPattern",
-    "GraphitiClient",
+    "GraphitiClient",  # Deprecated alias, use MemoryClient
+    "MemoryClient",
     "JournalError",
     "PatternMemoryService",
     "SearchResult",
