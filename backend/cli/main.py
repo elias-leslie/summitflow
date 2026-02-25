@@ -93,7 +93,7 @@ DEP:
   dep add <task-id> <depends-on-id>
   dep rm <task-id> <depends-on-id>
 
-PROJECTS: projects list | projects current
+PROJECTS: projects [list|current|get|create|update|delete]
 
 TEST: test list [--type T] | import --framework pytest|vitest
 
