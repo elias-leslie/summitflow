@@ -51,6 +51,7 @@ MANAGED_PROJECTS=(
     "agent-hub"
     "terminal"
     "portfolio-ai"
+    "persona-sandbox"
 )
 export MANAGED_PROJECTS
 
