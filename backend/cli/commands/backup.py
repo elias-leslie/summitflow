@@ -43,10 +43,15 @@ def list_backups(
     ctx: typer.Context,
     limit: Annotated[int, typer.Option("--limit", "-l", help="Max results")] = 20,
     status: Annotated[str | None, typer.Option("--status", "-s", help="Filter by status")] = None,
+    source: Annotated[str | None, typer.Option("--source", help="Filter by source ID")] = None,
 ) -> None:
-    """List backups for the current project."""
+    """List backups. Use --source to filter by source ID."""
     try:
-        result = _get_api().list_backups(limit=limit, status=status)
+        api = _get_api()
+        if source:
+            result = api.list_source_backups(source, limit=limit, status=status)
+        else:
+            result = api.list_backups(limit=limit, status=status)
         backups = result.get("backups", [])
         total = result.get("total", len(backups))
         output_backups(ctx.obj, backups, total)
@@ -78,13 +83,16 @@ def restore_backup(
     ctx: typer.Context,
     backup_id: Annotated[str, typer.Argument(help="Backup ID to restore")],
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Preview without restoring")] = False,
+    source: Annotated[str | None, typer.Option("--source", help="Source ID (for non-project restores)")] = None,
 ) -> None:
-    """Restore from a backup. DANGEROUS: This will overwrite current data."""
+    """Restore from a backup. Use --source for non-project sources."""
     api = _get_api()
     try:
-        api.get_backup(backup_id)  # validate backup exists
-
-        result = api.restore_backup(backup_id, dry_run=dry_run)
+        if source:
+            result = api.restore_source_backup(source, backup_id, dry_run=dry_run)
+        else:
+            api.get_backup(backup_id)  # validate backup exists
+            result = api.restore_backup(backup_id, dry_run=dry_run)
         if ctx.obj.is_compact:
             print(f"{'DRY_RUN' if dry_run else 'QUEUED'} {result.get('task_id', '?')}")
         else:

@@ -37,7 +37,7 @@ def run_scheduled_backups() -> dict[str, Any]:
 
     for source in due_sources:
         source_id = source["id"]
-        project_id = source.get("project_id") or source_id
+        project_id = source.get("project_id") or source_id  # non-project sources use source_id
         frequency = source["frequency"]
 
         logger.info(

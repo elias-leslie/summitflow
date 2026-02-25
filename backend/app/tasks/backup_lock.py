@@ -15,14 +15,14 @@ def _get_redis() -> redis.Redis:
     return redis.from_url(f"{REDIS_URL}/1", decode_responses=False)
 
 
-def acquire_backup_lock(project_id: str) -> bool:
-    """Acquire a per-project backup lock. Returns True if acquired."""
+def acquire_backup_lock(source_id: str) -> bool:
+    """Acquire a per-source backup lock. Returns True if acquired."""
     r = _get_redis()
-    result = r.set(f"{BACKUP_LOCK_PREFIX}{project_id}", "1", nx=True, ex=BACKUP_LOCK_TTL)
+    result = r.set(f"{BACKUP_LOCK_PREFIX}{source_id}", "1", nx=True, ex=BACKUP_LOCK_TTL)
     return bool(result)
 
 
-def release_backup_lock(project_id: str) -> None:
-    """Release a per-project backup lock."""
+def release_backup_lock(source_id: str) -> None:
+    """Release a per-source backup lock."""
     r = _get_redis()
-    r.delete(f"{BACKUP_LOCK_PREFIX}{project_id}")
+    r.delete(f"{BACKUP_LOCK_PREFIX}{source_id}")

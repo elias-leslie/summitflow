@@ -8,6 +8,7 @@ from typing import Any
 
 from ..logging_config import get_logger
 from ..storage import backups as backup_store
+from ..storage.notifications import create_notification
 from .backup_lock import acquire_backup_lock, release_backup_lock
 from .backup_utils import get_project_root, get_source_path, parse_backup_output
 
@@ -216,6 +217,23 @@ def _handle_pending_upload(backup_id: str, project_id: str) -> dict[str, Any]:
     }
 
 
+def _notify_backup_failure(backup_id: str, error_msg: str) -> None:
+    """Send a notification for backup failure."""
+    try:
+        backup = backup_store.get_backup(backup_id)
+        source_id = backup["source_id"] if backup else "unknown"
+        create_notification(
+            project_id="summitflow",
+            notification_type="system",
+            title=f"Backup failed: {source_id}",
+            message=error_msg[:500],
+            severity="error",
+            metadata={"backup_id": backup_id, "source_id": source_id},
+        )
+    except Exception:
+        logger.warning("backup_failure_notification_failed", backup_id=backup_id)
+
+
 def _handle_backup_failure(backup_id: str, error_msg: str) -> dict[str, Any]:
     """Handle backup failure."""
     backup_store.update_backup_status(backup_id, "failed", error_message=error_msg)
@@ -224,6 +242,7 @@ def _handle_backup_failure(backup_id: str, error_msg: str) -> dict[str, Any]:
         backup_id=backup_id,
         error=error_msg[:200],
     )
+    _notify_backup_failure(backup_id, error_msg)
     return {"status": "failed", "backup_id": backup_id, "error": error_msg}
 
 
@@ -232,6 +251,7 @@ def _handle_backup_timeout(backup_id: str) -> dict[str, Any]:
     error_msg = "Backup timed out after 10 minutes"
     backup_store.update_backup_status(backup_id, "failed", error_message=error_msg)
     logger.error("create_backup_timeout", backup_id=backup_id)
+    _notify_backup_failure(backup_id, error_msg)
     return {"status": "failed", "backup_id": backup_id, "error": error_msg}
 
 
@@ -239,4 +259,5 @@ def _handle_backup_exception(backup_id: str, error_msg: str) -> dict[str, Any]:
     """Handle backup exception."""
     backup_store.update_backup_status(backup_id, "failed", error_message=error_msg)
     logger.error("create_backup_exception", backup_id=backup_id)
+    _notify_backup_failure(backup_id, error_msg)
     return {"status": "failed", "backup_id": backup_id, "error": error_msg}

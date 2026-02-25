@@ -148,6 +148,29 @@ export async function restoreBackup(
 }
 
 /**
+ * Restore from a backup via source endpoint (works for all source types).
+ */
+export async function restoreSourceBackup(
+  sourceId: string,
+  backupId: string,
+  options?: { dry_run?: boolean; db_only?: boolean; files_only?: boolean },
+): Promise<RestoreResponse> {
+  return fetchWithErrorHandling<RestoreResponse>(
+    `/api/backup-sources/${sourceId}/backups/${backupId}/restore`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        dry_run: options?.dry_run ?? false,
+        db_only: options?.db_only ?? false,
+        files_only: options?.files_only ?? false,
+      }),
+      errorMessage: 'Failed to restore backup',
+    },
+  )
+}
+
+/**
  * Preview what would be restored.
  */
 export async function previewRestore(

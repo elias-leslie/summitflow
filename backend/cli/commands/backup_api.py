@@ -114,6 +114,16 @@ class BackupAPI:
             raise self._make_error(response)
         return cast(dict[str, Any], response.json())
 
+    def restore_source_backup(
+        self, source_id: str, backup_id: str, dry_run: bool = False
+    ) -> dict[str, Any]:
+        """Restore a backup via source endpoint."""
+        url = f"{self.base_url}/backup-sources/{source_id}/backups/{backup_id}/restore"
+        response = httpx.post(url, json={"dry_run": dry_run}, timeout=self.timeout)
+        if response.status_code >= 400:
+            raise self._make_error(response)
+        return cast(dict[str, Any], response.json())
+
     def list_source_backups(
         self, source_id: str, limit: int = 20, status: str | None = None
     ) -> dict[str, Any]:

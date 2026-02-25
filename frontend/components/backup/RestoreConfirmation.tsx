@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { RotateCcw } from 'lucide-react'
 import type { Backup } from '@/lib/api/backups'
-import { restoreBackup } from '@/lib/api/backups'
+import { restoreBackup, restoreSourceBackup } from '@/lib/api/backups'
 import { ConfirmStep } from './restore/ConfirmStep'
 import { PreviewStep } from './restore/PreviewStep'
 import { RestoreFooter } from './restore/RestoreFooter'
@@ -15,7 +15,8 @@ type RestoreStep = 'preview' | 'confirm' | 'restoring' | 'success' | 'error'
 
 interface RestoreConfirmationProps {
   backup: Backup
-  projectId: string
+  projectId?: string
+  sourceId?: string
   projectName: string
   onClose: () => void
   onSuccess: () => void
@@ -24,6 +25,7 @@ interface RestoreConfirmationProps {
 export function RestoreConfirmation({
   backup,
   projectId,
+  sourceId,
   projectName,
   onClose,
   onSuccess,
@@ -32,7 +34,10 @@ export function RestoreConfirmation({
   const [confirmText, setConfirmText] = useState('')
 
   const restoreMutation = useMutation({
-    mutationFn: () => restoreBackup(projectId, backup.id),
+    mutationFn: () =>
+      sourceId
+        ? restoreSourceBackup(sourceId, backup.id)
+        : restoreBackup(projectId!, backup.id),
     onSuccess: () => {
       setStep('success')
       onSuccess()

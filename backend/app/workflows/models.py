@@ -44,6 +44,7 @@ class BackupInput(BaseModel):
 
 class RestoreInput(BaseModel):
     project_id: str
+    source_id: str | None = None
     backup_id: str | None = None
     backup_file: str | None = None
     dry_run: bool = False

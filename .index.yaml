@@ -1,5 +1,5 @@
 project: summitflow
-generated_at: 2026-02-25 17:04 UTC
+generated_at: 2026-02-25 19:06 UTC
 environment:
   python_version: '>=3.13'
   venv_path: backend/.venv
@@ -24,6 +24,7 @@ pages:
 - / (app)
 - /about (about)
 - /backups (backups)
+- /backups/:sourceId (backups/:sourceId)
 - /chat (chat)
 - /feedback (feedback)
 - /git (git)
@@ -78,7 +79,7 @@ endpoints:
 tables:
 - agent_sessions
 - artifacts
-- backup_schedules
+- backup_sources
 - backups
 - celery_taskmeta
 - celery_tasksetmeta
@@ -133,15 +134,15 @@ tasks:
 folders:
   (root): 21 files - tests
   .claude: 3 files
-  .dev-tools: 11 files - tests
+  .dev-tools: 12 files - tests
   .qna-session: 1 files
   .st: 1 files
   assets: 2 files
-  backend: 872 files - api, components, services, tests
+  backend: 873 files - api, components, services, tests
   docs: 3 files
   frontend: 443 files - api, components, services, tests
   prompts: 1 files
-  scripts: 35 files - services, tests
+  scripts: 36 files - services, tests
   skills: 3 files
   tasks: 2 files - tests
   tests: 2 files - tests

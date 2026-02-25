@@ -61,6 +61,13 @@ async def backup_create_wf(input: BackupInput, ctx: Context) -> dict[str, Any]:
     execution_timeout="2100s",
     retries=2,
     backoff_factor=2.0,
+    concurrency=[
+        ConcurrencyExpression(
+            expression="input.project_id",
+            max_runs=1,
+            limit_strategy=ConcurrencyLimitStrategy.CANCEL_IN_PROGRESS,
+        ),
+    ],
 )
 async def backup_restore_wf(input: RestoreInput, ctx: Context) -> dict[str, Any]:
     from ..tasks.backup import restore_backup
@@ -73,6 +80,7 @@ async def backup_restore_wf(input: RestoreInput, ctx: Context) -> dict[str, Any]
         input.dry_run,
         input.db_only,
         input.files_only,
+        input.source_id,
     )
 
 

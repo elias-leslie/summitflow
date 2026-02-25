@@ -33,14 +33,17 @@ def cleanup_stale_backup_records(max_age_days: int = 30) -> int:
     return len(deleted)
 
 
-def cleanup_expired_backup_records(retention_days: int = 14, min_keep: int = 3) -> int:
-    """Delete completed backup records older than retention_days, keeping min_keep per source.
+def cleanup_expired_backup_records(default_retention_days: int = 14, min_keep: int = 3) -> int:
+    """Delete completed backup records older than their source's retention_days.
 
-    Uses a window function to ensure at least min_keep completed records
+    Uses per-source retention_days from backup_sources table, falling back to
+    default_retention_days for backups without a matching source.
+
+    A window function ensures at least min_keep completed records
     are preserved per source regardless of age.
 
     Args:
-        retention_days: Delete completed records older than this many days
+        default_retention_days: Fallback for backups without a source retention setting
         min_keep: Minimum number of completed records to keep per source
 
     Returns:
@@ -51,7 +54,11 @@ def cleanup_expired_backup_records(retention_days: int = 14, min_keep: int = 3) 
             """
             DELETE FROM backups
             WHERE status = 'completed'
-              AND created_at < NOW() - INTERVAL '1 day' * %s
+              AND created_at < NOW() - INTERVAL '1 day' * COALESCE(
+                (SELECT bs.retention_days FROM backup_sources bs
+                 WHERE bs.id = backups.source_id),
+                %s
+              )
               AND id NOT IN (
                 SELECT id FROM (
                   SELECT id, ROW_NUMBER() OVER (
@@ -62,7 +69,7 @@ def cleanup_expired_backup_records(retention_days: int = 14, min_keep: int = 3) 
               )
             RETURNING id
             """,
-            (retention_days, min_keep),
+            (default_retention_days, min_keep),
         )
         deleted = cur.fetchall()
         conn.commit()
