@@ -840,7 +840,7 @@ export function BackupsClient() {
                             >
                               <Eye className="w-4 h-4" />
                             </Link>
-                            {backup.status === 'completed' && (
+                            {backup.status === 'completed' && source?.source_type === 'project' && (
                               <Link
                                 href={`/projects/${backup.project_id}/backups/${backup.id}/restore`}
                                 className="p-1.5 text-slate-400 hover:text-yellow-400 transition-colors"
