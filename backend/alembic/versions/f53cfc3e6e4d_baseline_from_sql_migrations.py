@@ -5,16 +5,12 @@ Revises:
 Create Date: 2026-01-29 13:01:38.575477
 
 This is a baseline migration that marks the starting point for Alembic tracking.
-The actual schema was created by 100 raw SQL migrations in migrations/*.sql.
+The actual schema was created by raw SQL migrations now archived in migrations-archive/.
 
 To apply this baseline on an existing database:
     alembic stamp head
 
-To apply on a fresh database:
-    1. Run the SQL migrations first: python migrations/run_migration.py
-    2. Then stamp: alembic stamp head
-
-Future migrations will be tracked by Alembic from this point forward.
+Future migrations are tracked by Alembic from this point forward.
 """
 
 from collections.abc import Sequence
