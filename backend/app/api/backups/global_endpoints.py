@@ -14,10 +14,11 @@ async def list_all_backups(
     limit: int = 50,
     offset: int = 0,
     status: str | None = None,
+    source_id: str | None = None,
 ) -> BackupListResponse:
-    """List all backups across all projects."""
+    """List all backups across all sources."""
     backups, total = backup_store.list_backups(
-        project_id=None,
+        source_id=source_id,
         limit=limit,
         offset=offset,
         status=status,
@@ -29,13 +30,16 @@ async def list_all_backups(
 
 
 @router.get("/backups/storage", response_model=StorageSummaryResponse)
-async def get_storage_summary(project_id: str | None = None) -> StorageSummaryResponse:
+async def get_storage_summary(
+    project_id: str | None = None,
+    source_id: str | None = None,
+) -> StorageSummaryResponse:
     """Get storage usage summary.
 
-    If project_id is provided, returns summary for that project only.
-    Otherwise returns global summary across all projects.
+    If source_id or project_id is provided, returns summary for that source/project only.
+    Otherwise returns global summary across all sources.
     """
-    summary = backup_store.get_storage_summary(project_id)
+    summary = backup_store.get_storage_summary(project_id=project_id, source_id=source_id)
     return StorageSummaryResponse(
         total_count=summary["total_count"],
         total_bytes=summary["total_bytes"],

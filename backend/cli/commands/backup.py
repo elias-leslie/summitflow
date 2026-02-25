@@ -8,7 +8,7 @@ import typer
 
 from ..client import APIError, STClient
 from ..config import get_config
-from ..output import handle_api_error, output_error, output_json
+from ..output import handle_api_error, output_json
 from ..output_context import OutputContext
 from .backup_api import BackupAPI
 from .backup_formatters import (
@@ -16,7 +16,8 @@ from .backup_formatters import (
     output_backup,
     output_backups,
     output_deleted,
-    output_schedule,
+    output_source,
+    output_sources,
     output_task_queued,
 )
 
@@ -58,10 +59,15 @@ def create_backup(
     ctx: typer.Context,
     note: Annotated[str | None, typer.Option("--note", "-n", help="Backup note")] = None,
     keep_local: Annotated[bool, typer.Option("--keep-local", help="Keep local copy")] = False,
+    source: Annotated[str | None, typer.Option("--source", help="Source ID (for non-project backups)")] = None,
 ) -> None:
-    """Create a new backup for the current project."""
+    """Create a new backup. Use --source for non-project sources."""
     try:
-        result = _get_api().create_backup(note=note, keep_local=keep_local)
+        api = _get_api()
+        if source:
+            result = api.create_source_backup(source, note=note, keep_local=keep_local)
+        else:
+            result = api.create_backup(note=note, keep_local=keep_local)
         output_task_queued(ctx.obj, result.get("task_id", "?"))
     except APIError as e:
         handle_api_error(e)
@@ -92,8 +98,10 @@ def backup_status(
     ctx: typer.Context,
     task_id: Annotated[str | None, typer.Argument(help="Job ID")] = None,
 ) -> None:
-    """Show backup/restore job status. Without task_id, shows most recent backup."""
+    """Show most recent backup status."""
     if task_id:
+        from ..output import output_error
+
         output_error("Task status lookup not yet implemented. Use 'st backup list' instead.")
         raise typer.Exit(1)
 
@@ -118,17 +126,21 @@ def backup_status(
 @app.command("schedule")
 def backup_schedule(
     ctx: typer.Context,
+    source_id: Annotated[str, typer.Argument(help="Source ID to configure")],
     enable: Annotated[bool | None, typer.Option("--enable/--disable", help="Enable or disable")] = None,
     frequency: Annotated[str | None, typer.Option("--frequency", "-f", help="daily, weekly, monthly")] = None,
     retention_days: Annotated[int | None, typer.Option("--retention-days", "-r", help="Days to retain backups")] = None,
 ) -> None:
-    """View or configure backup schedule."""
+    """View or configure backup schedule for a source."""
     api = _get_api()
     try:
         if enable is None and frequency is None and retention_days is None:
-            output_schedule(ctx.obj, api.get_schedule())
+            source = api.get_source(source_id)
+            output_source(ctx.obj, source)
         else:
-            result = api.update_schedule(enabled=enable, frequency=frequency, retention_days=retention_days)
+            result = api.update_source(
+                source_id, enabled=enable, frequency=frequency, retention_days=retention_days
+            )
             if ctx.obj.is_compact:
                 enabled = "enabled" if result.get("enabled") else "disabled"
                 print(f"SCHEDULE_UPDATED {enabled}|{result.get('frequency')}|retention_days:{result.get('retention_days')}")
@@ -159,5 +171,18 @@ def delete_backup(
     try:
         _get_api().delete_backup(backup_id)
         output_deleted(ctx.obj, backup_id)
+    except APIError as e:
+        handle_api_error(e)
+
+
+@app.command("sources")
+def list_sources(
+    ctx: typer.Context,
+    source_type: Annotated[str | None, typer.Option("--type", "-t", help="Filter by type: project, config, workspace")] = None,
+) -> None:
+    """List all registered backup sources."""
+    try:
+        sources = _get_api().list_sources(source_type=source_type)
+        output_sources(ctx.obj, sources)
     except APIError as e:
         handle_api_error(e)

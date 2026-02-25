@@ -9,7 +9,7 @@ from typing import Any
 from ..logging_config import get_logger
 from ..storage import backups as backup_store
 from .backup_lock import acquire_backup_lock, release_backup_lock
-from .backup_utils import get_project_root, parse_backup_output
+from .backup_utils import get_project_root, get_source_path, parse_backup_output
 
 logger = get_logger(__name__)
 
@@ -24,8 +24,9 @@ def create_backup(
     backup_type: str = "manual",
     keep_local: bool = False,
     retention_days: int | None = None,
+    source_id: str | None = None,
 ) -> dict[str, Any]:
-    """Create a backup for a project.
+    """Create a backup for a source.
 
     Wraps the existing backup.sh script.
 
@@ -35,35 +36,42 @@ def create_backup(
         backup_type: 'manual' or 'scheduled'
         keep_local: If True, keep local copy in addition to SMB
         retention_days: Days to retain backups (overrides default)
+        source_id: Backup source ID (defaults to project_id)
 
     Returns:
         Backup record dict
     """
+    resolved_source_id = source_id or project_id
+
     logger.info(
         "create_backup_started",
-        project_id=project_id,
+        source_id=resolved_source_id,
         backup_type=backup_type,
     )
 
-    # Get project root path first to validate project exists
-    project_dir = get_project_root(project_id)
-    if not project_dir:
-        error_msg = f"Project {project_id} not found or has no root_path"
-        logger.error("create_backup_failed", project_id=project_id, error=error_msg)
+    # Resolve backup directory: try source path first, then project root
+    backup_dir = get_source_path(resolved_source_id) if source_id else None
+    if not backup_dir:
+        backup_dir = get_project_root(project_id)
+    if not backup_dir:
+        error_msg = f"Source {resolved_source_id} not found or has no path"
+        logger.error("create_backup_failed", source_id=resolved_source_id, error=error_msg)
         return {"status": "failed", "error": error_msg}
 
-    # Acquire per-project lock to prevent concurrent backups
-    if not acquire_backup_lock(project_id):
+    # Acquire per-source lock to prevent concurrent backups
+    if not acquire_backup_lock(resolved_source_id):
         logger.info(
             "create_backup_skipped_locked",
-            project_id=project_id,
+            source_id=resolved_source_id,
         )
-        return {"status": "skipped", "error": f"Backup already running for {project_id}"}
+        return {"status": "skipped", "error": f"Backup already running for {resolved_source_id}"}
 
     try:
-        return _run_backup(project_id, project_dir, note, backup_type, keep_local, retention_days)
+        return _run_backup(
+            project_id, backup_dir, note, backup_type, keep_local, retention_days, resolved_source_id
+        )
     finally:
-        release_backup_lock(project_id)
+        release_backup_lock(resolved_source_id)
 
 
 def _run_backup(
@@ -73,6 +81,7 @@ def _run_backup(
     backup_type: str,
     keep_local: bool,
     retention_days: int | None = None,
+    source_id: str | None = None,
 ) -> dict[str, Any]:
     """Execute backup with lock already held."""
     # Create pending backup record
@@ -80,6 +89,7 @@ def _run_backup(
         project_id=project_id,
         backup_type=backup_type,
         note=note,
+        source_id=source_id,
     )
     backup_id = backup_record["id"]
 

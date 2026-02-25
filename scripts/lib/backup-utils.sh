@@ -85,7 +85,22 @@ BACKUP_EXCLUDES=(
     # Evidence/artifacts (regenerable)
     "data/artifacts"
     "data/evidence"
+
+    # Node modules (anywhere)
+    "node_modules"
 )
+
+# Load .backupignore if present (per-repo exclusions, like .gitignore for backups)
+if [ -f "$PROJECT_DIR/.backupignore" ]; then
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        # Skip comments and blank lines
+        [[ "$line" =~ ^[[:space:]]*# ]] && continue
+        [[ -z "${line// }" ]] && continue
+        # Strip trailing slashes for directory patterns
+        line="${line%/}"
+        BACKUP_EXCLUDES+=("$line")
+    done < "$PROJECT_DIR/.backupignore"
+fi
 
 # Logging functions
 log() {

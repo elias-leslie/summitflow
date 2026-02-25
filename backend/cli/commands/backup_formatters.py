@@ -33,6 +33,21 @@ def format_compact_backup(backup: dict[str, Any]) -> str:
     return f"{backup_id} {status} {size} {created} {note}"
 
 
+def format_compact_source(source: dict[str, Any]) -> str:
+    """Format source as compact one-liner.
+
+    Format: <id:20> <type:10> <enabled:8> <frequency:8> <retention:4> <name>
+    """
+    source_id = (source.get("id") or "?")[:20].ljust(20)
+    source_type = (source.get("source_type") or "?")[:10].ljust(10)
+    enabled = "enabled" if source.get("enabled") else "disabled"
+    enabled = enabled[:8].ljust(8)
+    freq = (source.get("frequency") or "?")[:8].ljust(8)
+    ret = str(source.get("retention_days", "?"))[:4].ljust(4)
+    name = source.get("name") or "?"
+    return f"{source_id} {source_type} {enabled} {freq} {ret} {name}"
+
+
 def output_backups(out: OutputContext, backups: list[dict[str, Any]], total: int) -> None:
     """Output backup list."""
     if out.is_compact:
@@ -51,22 +66,22 @@ def output_backup(out: OutputContext, backup: dict[str, Any]) -> None:
         output_json(backup)
 
 
-def output_schedule(out: OutputContext, schedule: dict[str, Any] | None) -> None:
-    """Output backup schedule."""
-    if schedule is None:
-        if out.is_compact:
-            print("SCHEDULE disabled")
-        else:
-            output_json({"enabled": False, "message": "No schedule configured"})
+def output_sources(out: OutputContext, sources: list[dict[str, Any]]) -> None:
+    """Output backup sources list."""
+    if out.is_compact:
+        print(f"SOURCES[{len(sources)}]")
+        for s in sources:
+            print(format_compact_source(s))
     else:
-        if out.is_compact:
-            enabled = "enabled" if schedule.get("enabled") else "disabled"
-            freq = schedule.get("frequency", "?")
-            ret = schedule.get("retention_days", "?")
-            next_run = (schedule.get("next_run_at") or "?")[:10]
-            print(f"SCHEDULE {enabled}|{freq}|retention_days:{ret}|next:{next_run}")
-        else:
-            output_json(schedule)
+        output_json({"sources": sources, "total": len(sources)})
+
+
+def output_source(out: OutputContext, source: dict[str, Any]) -> None:
+    """Output a single backup source."""
+    if out.is_compact:
+        print(format_compact_source(source))
+    else:
+        output_json(source)
 
 
 def output_task_queued(out: OutputContext, task_id: str) -> None:

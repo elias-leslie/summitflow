@@ -1,5 +1,5 @@
 /**
- * Backup API - Create, list, and restore project backups.
+ * Backup API - Create, list, and restore backups across all sources.
  */
 
 import { buildQueryString, fetchWithErrorHandling } from './utils'
@@ -31,6 +31,7 @@ export interface Backup {
     total_files: number
     checksum: string
   } | null
+  source_id: string
 }
 
 export interface BackupListResponse {
@@ -38,9 +39,12 @@ export interface BackupListResponse {
   total: number
 }
 
-export interface BackupSchedule {
-  id: number
-  project_id: string
+export interface BackupSource {
+  id: string
+  name: string
+  path: string
+  source_type: 'project' | 'config' | 'workspace'
+  project_id: string | null
   enabled: boolean
   frequency: 'daily' | 'weekly' | 'monthly'
   retention_days: number
@@ -178,49 +182,12 @@ export async function deleteBackup(
 }
 
 /**
- * Get backup schedule for a project.
- */
-export async function fetchBackupSchedule(
-  projectId: string,
-): Promise<BackupSchedule | null> {
-  try {
-    const res = await fetch(`/api/projects/${projectId}/backups/schedule`)
-    if (!res.ok) {
-      if (res.status === 404) return null
-      throw new Error('Failed to fetch backup schedule')
-    }
-    const data = await res.json()
-    return data
-  } catch {
-    return null
-  }
-}
-
-/**
- * Update backup schedule for a project.
- */
-export async function updateBackupSchedule(
-  projectId: string,
-  schedule: { enabled: boolean; frequency: string; retention_days?: number },
-): Promise<BackupSchedule> {
-  return fetchWithErrorHandling<BackupSchedule>(
-    `/api/projects/${projectId}/backups/schedule`,
-    {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(schedule),
-      errorMessage: 'Failed to update backup schedule',
-    },
-  )
-}
-
-/**
- * Get storage summary (global or per-project).
+ * Get storage summary (global or per-source).
  */
 export async function fetchStorageSummary(
-  projectId?: string,
+  sourceId?: string,
 ): Promise<StorageSummary> {
-  const query = projectId ? `?project_id=${projectId}` : ''
+  const query = sourceId ? `?source_id=${sourceId}` : ''
   return fetchWithErrorHandling<StorageSummary>(
     `/api/backups/storage${query}`,
     { errorMessage: 'Failed to fetch storage summary' },
@@ -234,13 +201,104 @@ export async function fetchAllBackups(options?: {
   limit?: number
   offset?: number
   status?: string
+  source_id?: string
 }): Promise<BackupListResponse> {
   const query = buildQueryString({
     limit: options?.limit ?? 50,
     offset: options?.offset,
     status: options?.status,
+    source_id: options?.source_id,
   })
   return fetchWithErrorHandling<BackupListResponse>(`/api/backups${query}`, {
     errorMessage: 'Failed to fetch backups',
   })
+}
+
+// --- Backup Sources ---
+
+/**
+ * List all backup sources.
+ */
+export async function fetchBackupSources(
+  sourceType?: string,
+): Promise<BackupSource[]> {
+  const query = sourceType ? `?source_type=${sourceType}` : ''
+  return fetchWithErrorHandling<BackupSource[]>(
+    `/api/backup-sources${query}`,
+    { errorMessage: 'Failed to fetch backup sources' },
+  )
+}
+
+/**
+ * Get a single backup source.
+ */
+export async function fetchBackupSource(
+  sourceId: string,
+): Promise<BackupSource> {
+  return fetchWithErrorHandling<BackupSource>(
+    `/api/backup-sources/${sourceId}`,
+    { errorMessage: 'Failed to fetch backup source' },
+  )
+}
+
+/**
+ * Update a backup source (schedule config, name, etc).
+ */
+export async function updateBackupSource(
+  sourceId: string,
+  data: {
+    name?: string
+    enabled?: boolean
+    frequency?: string
+    retention_days?: number
+  },
+): Promise<BackupSource> {
+  return fetchWithErrorHandling<BackupSource>(
+    `/api/backup-sources/${sourceId}`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+      errorMessage: 'Failed to update backup source',
+    },
+  )
+}
+
+/**
+ * Create a backup for a specific source.
+ */
+export async function createSourceBackup(
+  sourceId: string,
+  options?: { note?: string; keep_local?: boolean },
+): Promise<BackupCreateResponse> {
+  return fetchWithErrorHandling<BackupCreateResponse>(
+    `/api/backup-sources/${sourceId}/backups`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        note: options?.note ?? null,
+        keep_local: options?.keep_local ?? false,
+      }),
+      errorMessage: 'Failed to create backup',
+    },
+  )
+}
+
+/**
+ * List backups for a specific source.
+ */
+export async function fetchSourceBackups(
+  sourceId: string,
+  options?: { limit?: number; offset?: number; status?: string },
+): Promise<BackupListResponse> {
+  const query = buildQueryString({
+    limit: options?.limit ?? 50,
+    offset: options?.offset,
+    status: options?.status,
+  })
+  return fetchWithErrorHandling<BackupListResponse>(
+    `/api/backup-sources/${sourceId}/backups${query}`,
+    { errorMessage: 'Failed to fetch source backups' },
+  )
 }

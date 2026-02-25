@@ -23,6 +23,7 @@ def create_backup_record(
     project_id: str,
     backup_type: str = "manual",
     note: str | None = None,
+    source_id: str | None = None,
 ) -> dict[str, Any]:
     """Create a new backup record in pending status.
 
@@ -30,6 +31,7 @@ def create_backup_record(
         project_id: Project ID
         backup_type: 'manual' or 'scheduled'
         note: Optional user note
+        source_id: Backup source ID (defaults to project_id)
 
     Returns:
         Created backup record
@@ -38,16 +40,17 @@ def create_backup_record(
         RuntimeError: If record creation fails
     """
     backup_id = generate_backup_id()
-    name = f"{project_id}-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}"
+    resolved_source_id = source_id or project_id
+    name = f"{resolved_source_id}-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}"
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             f"""
-            INSERT INTO backups (id, project_id, name, backup_type, status, note)
-            VALUES (%s, %s, %s, %s, 'pending', %s)
+            INSERT INTO backups (id, project_id, name, backup_type, status, note, source_id)
+            VALUES (%s, %s, %s, %s, 'pending', %s, %s)
             RETURNING {BACKUP_COLUMNS}
             """,
-            (backup_id, project_id, name, backup_type, note),
+            (backup_id, project_id, name, backup_type, note, resolved_source_id),
         )
         row = cur.fetchone()
         conn.commit()
@@ -81,6 +84,7 @@ def list_backups(
     limit: int = 50,
     offset: int = 0,
     status: str | None = None,
+    source_id: str | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """List backups with optional filtering.
 
@@ -89,6 +93,7 @@ def list_backups(
         limit: Max records to return
         offset: Pagination offset
         status: Filter by status
+        source_id: Filter by backup source (takes precedence over project_id)
 
     Returns:
         Tuple of (backups, total_count)
@@ -96,7 +101,10 @@ def list_backups(
     where_clauses = []
     params: list[Any] = []
 
-    if project_id:
+    if source_id:
+        where_clauses.append("source_id = %s")
+        params.append(source_id)
+    elif project_id:
         where_clauses.append("project_id = %s")
         params.append(project_id)
 

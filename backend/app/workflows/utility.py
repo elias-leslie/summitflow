@@ -51,6 +51,7 @@ async def backup_create_wf(input: BackupInput, ctx: Context) -> dict[str, Any]:
         input.backup_type,
         input.keep_local,
         input.retention_days,
+        input.source_id,
     )
 
 

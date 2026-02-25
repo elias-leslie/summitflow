@@ -27,32 +27,51 @@ import { Fragment, useMemo, useRef, useState } from 'react'
 import { StatusBadge } from '@/components/backup/StatusBadge'
 import {
   type Backup,
-  createBackup,
+  type BackupSource,
+  createSourceBackup,
   fetchAllBackups,
-  fetchBackupSchedule,
+  fetchBackupSources,
   fetchStorageSummary,
 } from '@/lib/api/backups'
 import { formatBytes, formatDate } from '@/lib/format'
-import { fetchProjects, type Project } from '@/lib/api/projects'
+
+const SOURCE_TYPE_STYLES = {
+  project: 'bg-blue-500/15 text-blue-400 border-blue-500/25',
+  config: 'bg-amber-500/15 text-amber-400 border-amber-500/25',
+  workspace: 'bg-purple-500/15 text-purple-400 border-purple-500/25',
+} as const
+
+function SourceTypeBadge({ type }: { type: BackupSource['source_type'] }) {
+  return (
+    <span
+      className={clsx(
+        'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border leading-none',
+        SOURCE_TYPE_STYLES[type] ?? 'bg-slate-600 text-slate-300 border-slate-500',
+      )}
+    >
+      {type}
+    </span>
+  )
+}
 
 interface CreateBackupModalProps {
-  projects: Project[]
+  sources: BackupSource[]
   onClose: () => void
   onCreated: () => Promise<void>
 }
 
 function CreateBackupModal({
-  projects,
+  sources,
   onClose,
   onCreated,
 }: CreateBackupModalProps) {
-  const [selectedProjects, setSelectedProjects] = useState<Set<string>>(new Set())
+  const [selectedSources, setSelectedSources] = useState<Set<string>>(new Set())
   const [note, setNote] = useState<string>('')
   const [isPending, setIsPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const toggleProject = (id: string) => {
-    setSelectedProjects((prev) => {
+  const toggleSource = (id: string) => {
+    setSelectedSources((prev) => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
       else next.add(id)
@@ -61,10 +80,10 @@ function CreateBackupModal({
   }
 
   const toggleAll = () => {
-    if (selectedProjects.size === projects.length) {
-      setSelectedProjects(new Set())
+    if (selectedSources.size === sources.length) {
+      setSelectedSources(new Set())
     } else {
-      setSelectedProjects(new Set(projects.map((p) => p.id)))
+      setSelectedSources(new Set(sources.map((s) => s.id)))
     }
   }
 
@@ -73,8 +92,8 @@ function CreateBackupModal({
     setError(null)
     try {
       await Promise.all(
-        Array.from(selectedProjects).map((projectId) =>
-          createBackup(projectId, { note: note || undefined }),
+        Array.from(selectedSources).map((sourceId) =>
+          createSourceBackup(sourceId, { note: note || undefined }),
         ),
       )
       await onCreated()
@@ -90,7 +109,7 @@ function CreateBackupModal({
     }
   }
 
-  const count = selectedProjects.size
+  const count = selectedSources.size
 
   return (
     <div
@@ -110,31 +129,34 @@ function CreateBackupModal({
           <div>
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm text-slate-300">
-                Select Projects
+                Select Sources
               </span>
               <button
                 onClick={toggleAll}
                 className="text-xs text-phosphor-400 hover:text-phosphor-300 transition-colors"
               >
-                {selectedProjects.size === projects.length ? 'Deselect all' : 'Select all'}
+                {selectedSources.size === sources.length ? 'Deselect all' : 'Select all'}
               </button>
             </div>
             <div
-              className="max-h-48 overflow-y-auto rounded-md border border-slate-600 bg-slate-700 divide-y divide-slate-600/50"
-              data-testid="backup-project-select"
+              className="max-h-56 overflow-y-auto rounded-md border border-slate-600 bg-slate-700 divide-y divide-slate-600/50"
+              data-testid="backup-source-select"
             >
-              {projects.map((p) => (
+              {sources.map((s) => (
                 <label
-                  key={p.id}
+                  key={s.id}
                   className="flex items-center gap-3 px-3 py-2 hover:bg-slate-600/40 cursor-pointer transition-colors"
                 >
                   <input
                     type="checkbox"
-                    checked={selectedProjects.has(p.id)}
-                    onChange={() => toggleProject(p.id)}
+                    checked={selectedSources.has(s.id)}
+                    onChange={() => toggleSource(s.id)}
                     className="rounded border-slate-500 bg-slate-600 text-phosphor-500 focus:ring-phosphor-500 focus:ring-offset-0"
                   />
-                  <span className="text-sm text-slate-200">{p.name}</span>
+                  <span className="text-sm text-slate-200 flex items-center gap-2">
+                    {s.name}
+                    <SourceTypeBadge type={s.source_type} />
+                  </span>
                 </label>
               ))}
             </div>
@@ -202,110 +224,109 @@ function CreateBackupModal({
   )
 }
 
-interface ScheduleCardProps {
-  projectId: string
-  projectName: string
-}
-
-function ScheduleCard({ projectId, projectName }: ScheduleCardProps) {
-  const { data: schedule, isLoading } = useQuery({
-    queryKey: ['backup-schedule', projectId],
-    queryFn: () => fetchBackupSchedule(projectId),
-  })
-
-  if (isLoading) {
-    return (
-      <div className="p-4 bg-slate-700/30 rounded-lg animate-pulse">
-        <div className="h-4 bg-slate-600 rounded w-1/3 mb-2" />
-        <div className="h-3 bg-slate-600 rounded w-1/2" />
-      </div>
-    )
-  }
-
-  if (!schedule) {
-    return (
-      <div className="p-4 bg-slate-700/30 rounded-lg border border-slate-600/50">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-slate-200">{projectName}</p>
-            <p className="text-xs text-slate-500 mt-0.5">
-              No schedule configured
-            </p>
-          </div>
-          <Link
-            href={`/projects/${projectId}/backups?from=backups`}
-            className="text-xs text-phosphor-400 hover:text-phosphor-300"
-          >
-            Configure
-          </Link>
-        </div>
-      </div>
-    )
-  }
-
+function ScheduleTable({ sources }: { sources: BackupSource[] }) {
   return (
-    <div
-      className={clsx(
-        'p-4 rounded-lg border',
-        schedule.enabled
-          ? 'bg-green-500/5 border-green-500/20'
-          : 'bg-slate-700/30 border-slate-600/50',
-      )}
-      data-testid={`schedule-card-${projectId}`}
-    >
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          {schedule.enabled ? (
-            <Power className="w-4 h-4 text-green-400" />
-          ) : (
-            <PowerOff className="w-4 h-4 text-slate-500" />
-          )}
-          <p className="text-sm font-medium text-slate-200">{projectName}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <span
-            className={clsx(
-              'text-xs px-2 py-0.5 rounded-full',
-              schedule.enabled
-                ? 'bg-green-500/20 text-green-400'
-                : 'bg-slate-600 text-slate-400',
-            )}
-          >
-            {schedule.enabled ? schedule.frequency : 'disabled'}
-          </span>
-          <Link
-            href={`/projects/${projectId}/backups?from=backups`}
-            className="text-xs text-phosphor-400 hover:text-phosphor-300"
-          >
-            Edit
-          </Link>
-        </div>
-      </div>
-      {schedule.enabled && (
-        <div className="text-xs text-slate-400 space-y-1">
-          <p className="flex items-center gap-1">
-            <Calendar className="w-3 h-3" />
-            Next:{' '}
-            {schedule.next_run_at
-              ? formatDate(schedule.next_run_at)
-              : 'Not scheduled'}
-          </p>
-          <p>Retention: {schedule.retention_days} days</p>
-        </div>
-      )}
+    <div className="bg-slate-800/50 rounded-lg border border-slate-700 overflow-hidden">
+      <table className="w-full">
+        <thead>
+          <tr className="border-b border-slate-700 bg-slate-800/80">
+            <th className="px-4 py-2.5 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
+              Source
+            </th>
+            <th className="px-4 py-2.5 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
+              Status
+            </th>
+            <th className="px-4 py-2.5 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
+              Frequency
+            </th>
+            <th className="px-4 py-2.5 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
+              Retention
+            </th>
+            <th className="px-4 py-2.5 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
+              Last Run
+            </th>
+            <th className="px-4 py-2.5 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
+              Next Run
+            </th>
+            <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-400 uppercase tracking-wider w-16" />
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-700/50">
+          {sources.map((source) => (
+            <tr key={source.id} className="hover:bg-slate-700/20 transition-colors">
+              <td className="px-4 py-2.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-slate-200">{source.name}</span>
+                  <SourceTypeBadge type={source.source_type} />
+                </div>
+              </td>
+              <td className="px-4 py-2.5">
+                <div className="flex items-center gap-1.5">
+                  {source.enabled ? (
+                    <Power className="w-3.5 h-3.5 text-green-400" />
+                  ) : (
+                    <PowerOff className="w-3.5 h-3.5 text-slate-500" />
+                  )}
+                  <span
+                    className={clsx(
+                      'text-xs',
+                      source.enabled ? 'text-green-400' : 'text-slate-500',
+                    )}
+                  >
+                    {source.enabled ? 'enabled' : 'disabled'}
+                  </span>
+                </div>
+              </td>
+              <td className="px-4 py-2.5 text-sm text-slate-300">
+                {source.enabled ? source.frequency : '-'}
+              </td>
+              <td className="px-4 py-2.5 text-sm text-slate-300">
+                {source.enabled ? `${source.retention_days}d` : '-'}
+              </td>
+              <td className="px-4 py-2.5 text-sm text-slate-400">
+                {source.last_run_at ? formatDate(source.last_run_at) : 'Never'}
+              </td>
+              <td className="px-4 py-2.5 text-sm text-slate-400">
+                {source.enabled && source.next_run_at
+                  ? formatDate(source.next_run_at)
+                  : '-'}
+              </td>
+              <td className="px-4 py-2.5 text-right">
+                <Link
+                  href={`/backups/${source.id}`}
+                  className="text-xs text-phosphor-400 hover:text-phosphor-300 transition-colors"
+                >
+                  Edit
+                </Link>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }
 
-function BackupExpandedRow({ backup, projectName }: { backup: Backup; projectName: string }) {
+function BackupExpandedRow({
+  backup,
+  sourceName,
+  sourceType,
+}: {
+  backup: Backup
+  sourceName: string
+  sourceType: BackupSource['source_type'] | undefined
+}) {
   return (
     <tr>
       <td colSpan={7} className="px-4 py-0">
         <div className="py-4 pl-6 border-l-2 border-slate-600 ml-2 space-y-3">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
             <div>
-              <p className="text-slate-500 text-xs mb-0.5">Project</p>
-              <p className="text-slate-200">{projectName}</p>
+              <p className="text-slate-500 text-xs mb-0.5">Source</p>
+              <p className="text-slate-200 flex items-center gap-2">
+                {sourceName}
+                {sourceType && <SourceTypeBadge type={sourceType} />}
+              </p>
             </div>
             <div>
               <p className="text-slate-500 text-xs mb-0.5">Type</p>
@@ -468,18 +489,18 @@ export function BackupsClient() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const dispatchedAtRef = useRef(0)
 
-  const { data: projects = [] } = useQuery({
-    queryKey: ['projects'],
-    queryFn: fetchProjects,
+  const { data: sources = [] } = useQuery({
+    queryKey: ['backup-sources'],
+    queryFn: () => fetchBackupSources(),
   })
 
-  const projectMap = useMemo(() => {
-    const map: Record<string, string> = {}
-    for (const p of projects) {
-      map[p.id] = p.name
+  const sourceMap = useMemo(() => {
+    const map: Record<string, BackupSource> = {}
+    for (const s of sources) {
+      map[s.id] = s
     }
     return map
-  }, [projects])
+  }, [sources])
 
   const {
     data: backupsData,
@@ -521,7 +542,7 @@ export function BackupsClient() {
     <main className="content-container py-8">
       {showCreateModal && (
         <CreateBackupModal
-          projects={projects}
+          sources={sources}
           onClose={() => setShowCreateModal(false)}
           onCreated={handleBackupCreated}
         />
@@ -534,7 +555,7 @@ export function BackupsClient() {
             All Backups
           </h1>
           <p className="text-sm text-slate-400 mt-1">
-            Overview of backups across all projects
+            Overview of backups across all sources
           </p>
         </div>
         <button
@@ -652,24 +673,14 @@ export function BackupsClient() {
           <span>Backup Schedules</span>
           <span
             className={clsx(
-              'transition-transform',
+              'transition-transform text-xs',
               showSchedules ? 'rotate-180' : '',
             )}
           >
-            ▼
+            &#9660;
           </span>
         </button>
-        {showSchedules && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {projects.map((project) => (
-              <ScheduleCard
-                key={project.id}
-                projectId={project.id}
-                projectName={project.name}
-              />
-            ))}
-          </div>
-        )}
+        {showSchedules && <ScheduleTable sources={sources} />}
       </section>
 
       {/* Filters */}
@@ -723,7 +734,7 @@ export function BackupsClient() {
             <p className="text-slate-400">
               {statusFilter
                 ? `No backups with status "${statusFilter}"`
-                : 'Create your first backup from a project page.'}
+                : 'Create your first backup using the button above.'}
             </p>
           </div>
         ) : (
@@ -733,7 +744,7 @@ export function BackupsClient() {
                 <tr className="border-b border-slate-700 bg-slate-800/80">
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider w-8" />
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
-                    Project
+                    Source
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
                     Status
@@ -755,6 +766,7 @@ export function BackupsClient() {
               <tbody className="divide-y divide-slate-700/50">
                 {backups.map((backup) => {
                   const isExpanded = expandedId === backup.id
+                  const source = sourceMap[backup.source_id]
                   return (
                     <Fragment key={backup.id}>
                       <tr
@@ -776,11 +788,12 @@ export function BackupsClient() {
                         </td>
                         <td className="px-4 py-3">
                           <Link
-                            href={`/projects/${backup.project_id}/backups?from=backups`}
-                            className="text-sm text-phosphor-400 hover:text-phosphor-300"
+                            href={`/backups/${backup.source_id}`}
+                            className="text-sm text-phosphor-400 hover:text-phosphor-300 inline-flex items-center gap-2"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            {projectMap[backup.project_id] || backup.project_id}
+                            {source?.name ?? backup.source_id}
+                            {source && <SourceTypeBadge type={source.source_type} />}
                           </Link>
                         </td>
                         <td className="px-4 py-3">
@@ -821,9 +834,9 @@ export function BackupsClient() {
                             onClick={(e) => e.stopPropagation()}
                           >
                             <Link
-                              href={`/projects/${backup.project_id}/backups?from=backups`}
+                              href={`/backups/${backup.source_id}`}
                               className="p-1.5 text-slate-400 hover:text-phosphor-400 transition-colors"
-                              title="View in Project"
+                              title="View Source"
                             >
                               <Eye className="w-4 h-4" />
                             </Link>
@@ -842,7 +855,8 @@ export function BackupsClient() {
                       {isExpanded && (
                         <BackupExpandedRow
                           backup={backup}
-                          projectName={projectMap[backup.project_id] || backup.project_id}
+                          sourceName={source?.name ?? backup.source_id}
+                          sourceType={source?.source_type}
                         />
                       )}
                     </Fragment>

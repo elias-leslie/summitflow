@@ -12,8 +12,24 @@ from ..storage.connection import get_connection
 logger = get_logger(__name__)
 
 
+def get_source_path(source_id: str) -> str | None:
+    """Get path for a backup source."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT path FROM backup_sources WHERE id = %s",
+            (source_id,),
+        )
+        row = cur.fetchone()
+        return row[0] if row and row[0] else None
+
+
 def get_project_root(project_id: str) -> str | None:
-    """Get root_path for a project."""
+    """Get root_path for a project. Falls back to backup_sources path."""
+    # Try backup_sources first (handles non-project sources)
+    source_path = get_source_path(project_id)
+    if source_path:
+        return source_path
+
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             "SELECT root_path FROM projects WHERE id = %s",

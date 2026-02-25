@@ -12,11 +12,11 @@ import {
   PowerOff,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { fetchBackupSchedule, updateBackupSchedule } from '@/lib/api/backups'
+import { fetchBackupSource, updateBackupSource } from '@/lib/api/backups'
 import { formatDate } from '@/lib/format'
 
 interface BackupScheduleConfigProps {
-  projectId: string
+  sourceId: string
 }
 
 const FREQUENCY_OPTIONS = [
@@ -25,7 +25,7 @@ const FREQUENCY_OPTIONS = [
   { value: 'monthly', label: 'Monthly', description: 'Backup once a month' },
 ]
 
-export function BackupScheduleConfig({ projectId }: BackupScheduleConfigProps) {
+export function BackupScheduleConfig({ sourceId }: BackupScheduleConfigProps) {
   const queryClient = useQueryClient()
 
   const [enabled, setEnabled] = useState(false)
@@ -35,18 +35,18 @@ export function BackupScheduleConfig({ projectId }: BackupScheduleConfigProps) {
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
-  const { data: schedule, isLoading } = useQuery({
-    queryKey: ['backup-schedule', projectId],
-    queryFn: () => fetchBackupSchedule(projectId),
+  const { data: source, isLoading } = useQuery({
+    queryKey: ['backup-source', sourceId],
+    queryFn: () => fetchBackupSource(sourceId),
   })
 
   useEffect(() => {
-    if (schedule) {
-      setEnabled(schedule.enabled)
-      setFrequency(schedule.frequency)
-      setRetentionDays(schedule.retention_days)
+    if (source) {
+      setEnabled(source.enabled)
+      setFrequency(source.frequency)
+      setRetentionDays(source.retention_days)
     }
-  }, [schedule])
+  }, [source])
 
   const handleSave = async () => {
     setSaving(true)
@@ -54,13 +54,16 @@ export function BackupScheduleConfig({ projectId }: BackupScheduleConfigProps) {
     setSaveError(null)
 
     try {
-      await updateBackupSchedule(projectId, {
+      await updateBackupSource(sourceId, {
         enabled,
         frequency,
         retention_days: retentionDays,
       })
       queryClient.invalidateQueries({
-        queryKey: ['backup-schedule', projectId],
+        queryKey: ['backup-source', sourceId],
+      })
+      queryClient.invalidateQueries({
+        queryKey: ['backup-sources'],
       })
       setSaveSuccess(true)
       setTimeout(() => setSaveSuccess(false), 2000)
@@ -73,12 +76,11 @@ export function BackupScheduleConfig({ projectId }: BackupScheduleConfigProps) {
     }
   }
 
-  const isNewSchedule = !schedule
-  const hasChanges = isNewSchedule
-    ? enabled
-    : enabled !== schedule.enabled ||
-      frequency !== schedule.frequency ||
-      retentionDays !== schedule.retention_days
+  const hasChanges = source
+    ? enabled !== source.enabled ||
+      frequency !== source.frequency ||
+      retentionDays !== source.retention_days
+    : enabled
 
   if (isLoading) {
     return (
@@ -97,7 +99,7 @@ export function BackupScheduleConfig({ projectId }: BackupScheduleConfigProps) {
         Backup Schedule
       </h3>
       <p className="text-sm text-slate-400 mb-6">
-        Configure automatic backups for this project.
+        Configure automatic backups for this source.
       </p>
 
       <div className="space-y-6">
@@ -189,7 +191,7 @@ export function BackupScheduleConfig({ projectId }: BackupScheduleConfigProps) {
           </p>
         </div>
 
-        {schedule && (
+        {source && (
           <div className="p-4 bg-slate-700/30 rounded-lg space-y-2">
             <div className="flex items-center justify-between text-sm">
               <span className="text-slate-400 flex items-center gap-2">
@@ -197,17 +199,17 @@ export function BackupScheduleConfig({ projectId }: BackupScheduleConfigProps) {
                 Last Backup
               </span>
               <span className="text-slate-200">
-                {schedule.last_run_at ? formatDate(schedule.last_run_at) : 'Never'}
+                {source.last_run_at ? formatDate(source.last_run_at) : 'Never'}
               </span>
             </div>
-            {enabled && schedule.next_run_at && (
+            {enabled && source.next_run_at && (
               <div className="flex items-center justify-between text-sm">
                 <span className="text-slate-400 flex items-center gap-2">
                   <Calendar className="w-4 h-4" />
                   Next Backup
                 </span>
                 <span className="text-phosphor-400">
-                  {formatDate(schedule.next_run_at)}
+                  {formatDate(source.next_run_at)}
                 </span>
               </div>
             )}

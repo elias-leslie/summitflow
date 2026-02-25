@@ -34,14 +34,14 @@ def cleanup_stale_backup_records(max_age_days: int = 30) -> int:
 
 
 def cleanup_expired_backup_records(retention_days: int = 14, min_keep: int = 3) -> int:
-    """Delete completed backup records older than retention_days, keeping min_keep per project.
+    """Delete completed backup records older than retention_days, keeping min_keep per source.
 
     Uses a window function to ensure at least min_keep completed records
-    are preserved per project regardless of age.
+    are preserved per source regardless of age.
 
     Args:
         retention_days: Delete completed records older than this many days
-        min_keep: Minimum number of completed records to keep per project
+        min_keep: Minimum number of completed records to keep per source
 
     Returns:
         Number of records deleted
@@ -55,7 +55,7 @@ def cleanup_expired_backup_records(retention_days: int = 14, min_keep: int = 3) 
               AND id NOT IN (
                 SELECT id FROM (
                   SELECT id, ROW_NUMBER() OVER (
-                    PARTITION BY project_id ORDER BY created_at DESC
+                    PARTITION BY source_id ORDER BY created_at DESC
                   ) AS rn
                   FROM backups WHERE status = 'completed'
                 ) ranked WHERE rn <= %s
@@ -70,17 +70,28 @@ def cleanup_expired_backup_records(retention_days: int = 14, min_keep: int = 3) 
     return len(deleted)
 
 
-def get_storage_summary(project_id: str | None = None) -> dict[str, Any]:
+def get_storage_summary(
+    project_id: str | None = None,
+    source_id: str | None = None,
+) -> dict[str, Any]:
     """Get storage usage summary.
 
     Args:
         project_id: Filter by project (None for all)
+        source_id: Filter by source (takes precedence over project_id)
 
     Returns:
         Storage summary with total_bytes, backup_count, by_status
     """
-    where_clause = "WHERE project_id = %s" if project_id else ""
-    params = [project_id] if project_id else []
+    if source_id:
+        where_clause = "WHERE source_id = %s"
+        params = [source_id]
+    elif project_id:
+        where_clause = "WHERE project_id = %s"
+        params = [project_id]
+    else:
+        where_clause = ""
+        params = []
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
@@ -123,21 +134,34 @@ def get_storage_summary(project_id: str | None = None) -> dict[str, Any]:
     }
 
 
-def get_latest_backup(project_id: str) -> dict[str, Any] | None:
-    """Get the most recent completed backup for a project.
+def get_latest_backup(
+    project_id: str | None = None,
+    source_id: str | None = None,
+) -> dict[str, Any] | None:
+    """Get the most recent completed backup for a source or project.
 
     Args:
-        project_id: Project ID
+        project_id: Project ID (used if source_id not provided)
+        source_id: Source ID (takes precedence)
 
     Returns:
         Latest completed backup record or None if no completed backups exist
     """
+    if source_id:
+        where = "source_id = %s"
+        param = source_id
+    elif project_id:
+        where = "project_id = %s"
+        param = project_id
+    else:
+        return None
+
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             f"SELECT {BACKUP_COLUMNS} FROM backups "
-            "WHERE project_id = %s AND status = 'completed' "
+            f"WHERE {where} AND status = 'completed' "
             "ORDER BY completed_at DESC LIMIT 1",
-            (project_id,),
+            (param,),
         )
         row = cur.fetchone()
 

@@ -15,7 +15,7 @@ logger = get_logger(__name__)
 def run_scheduled_backups() -> dict[str, Any]:
     """Check and run due scheduled backups.
 
-    Queries backup_schedules for any that are due and triggers backups.
+    Queries backup_sources for any that are due and triggers backups.
 
     Returns:
         Summary of scheduled backups run
@@ -27,25 +27,26 @@ def run_scheduled_backups() -> dict[str, Any]:
     if cleaned:
         logger.info("cleaned_stale_backup_records", count=cleaned)
 
-    due_schedules = backup_store.list_due_schedules()
+    due_sources = backup_store.list_due_sources()
 
-    if not due_schedules:
+    if not due_sources:
         logger.info("no_scheduled_backups_due")
         return {"status": "success", "message": "No scheduled backups due", "count": 0}
 
     results: list[dict[str, Any]] = []
 
-    for schedule in due_schedules:
-        project_id = schedule["project_id"]
-        frequency = schedule["frequency"]
+    for source in due_sources:
+        source_id = source["id"]
+        project_id = source.get("project_id") or source_id
+        frequency = source["frequency"]
 
         logger.info(
             "triggering_scheduled_backup",
-            project_id=project_id,
+            source_id=source_id,
             frequency=frequency,
         )
 
-        retention_days = schedule.get("retention_days")
+        retention_days = source.get("retention_days")
 
         # Run backup directly (Hatchet handles async scheduling)
         create_backup(
@@ -53,15 +54,16 @@ def run_scheduled_backups() -> dict[str, Any]:
             backup_type="scheduled",
             note=f"Scheduled {frequency} backup",
             retention_days=retention_days,
+            source_id=source_id,
         )
 
         # Calculate next run time
         next_run = calculate_next_run(frequency)
-        backup_store.update_schedule_last_run(project_id, next_run)
+        backup_store.update_source_last_run(source_id, next_run)
 
         results.append(
             {
-                "project_id": project_id,
+                "source_id": source_id,
                 "next_run": next_run.isoformat() if next_run else None,
             }
         )

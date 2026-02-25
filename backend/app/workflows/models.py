@@ -35,6 +35,7 @@ class EmptyInput(BaseModel):
 
 class BackupInput(BaseModel):
     project_id: str
+    source_id: str | None = None
     note: str | None = None
     backup_type: str = "manual"
     keep_local: bool = False

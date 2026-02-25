@@ -34,6 +34,7 @@ class BackupResponse(BaseModel):
     checksum: str | None = None
     total_files: int | None = None
     verification_json: dict[str, object] | None = None
+    source_id: str | None = None
 
 
 class BackupListResponse(BaseModel):
@@ -59,19 +60,34 @@ class RestoreResponse(BaseModel):
     message: str
 
 
-class ScheduleRequest(BaseModel):
-    """Request model for backup schedule."""
+class BackupSourceCreate(BaseModel):
+    """Request model for registering a backup source."""
 
-    enabled: bool
-    frequency: str  # 'daily', 'weekly', 'monthly'
-    retention_days: int = 14
+    id: str
+    name: str
+    path: str
+    source_type: str = "project"
+    project_id: str | None = None
 
 
-class ScheduleResponse(BaseModel):
-    """Response model for backup schedule."""
+class BackupSourceUpdate(BaseModel):
+    """Request model for updating a backup source."""
 
-    id: int
-    project_id: str
+    name: str | None = None
+    enabled: bool | None = None
+    frequency: str | None = None
+    retention_days: int | None = None
+    path: str | None = None
+
+
+class BackupSourceResponse(BaseModel):
+    """Response model for a backup source."""
+
+    id: str
+    name: str
+    path: str
+    source_type: str
+    project_id: str | None = None
     enabled: bool
     frequency: str
     retention_days: int

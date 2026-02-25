@@ -15,7 +15,7 @@ from .models import (
     RestoreRequest,
     RestoreResponse,
 )
-from .utils import parse_iso_datetime, validate_backup_access
+from .utils import validate_backup_access
 
 router = APIRouter()
 
@@ -58,6 +58,7 @@ async def create_project_backup(
     await backup_create_wf.aio_run_no_wait(
         BackupInput(
             project_id=project_id,
+            source_id=project_id,
             note=request.note,
             backup_type="manual",
             keep_local=request.keep_local,

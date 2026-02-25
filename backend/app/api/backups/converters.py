@@ -27,6 +27,7 @@ def backup_to_response(backup: dict[str, object]) -> BackupResponse:
         checksum=_get_str_or_none(backup, "checksum"),
         total_files=_get_int_or_none(backup, "total_files"),
         verification_json=_get_dict_or_none(backup, "verification_json"),
+        source_id=_get_str_or_none(backup, "source_id"),
     )
 
 

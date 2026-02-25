@@ -7,13 +7,9 @@ from typing import Any
 # Base SELECT columns for backup queries
 BACKUP_COLUMNS = """id, project_id, name, backup_type, status, size_bytes, db_size_bytes,
        files_size_bytes, location, note, created_at, started_at, completed_at, error_message,
-       verified, verified_at, checksum, total_files, verification_json"""
+       verified, verified_at, checksum, total_files, verification_json, source_id"""
 
-BACKUP_SCHEDULE_COLUMNS = """id, project_id, enabled, frequency, retention_days,
-       last_run_at, next_run_at, created_at, updated_at"""
-
-EXPECTED_BACKUP_COLUMNS = 19
-EXPECTED_SCHEDULE_COLUMNS = 9
+EXPECTED_BACKUP_COLUMNS = 20
 
 
 def row_to_backup(row: tuple[Any, ...]) -> dict[str, Any]:
@@ -50,33 +46,7 @@ def row_to_backup(row: tuple[Any, ...]) -> dict[str, Any]:
         "checksum": row[16],
         "total_files": row[17],
         "verification_json": row[18],
-    }
-
-
-def row_to_schedule(row: tuple[Any, ...]) -> dict[str, Any]:
-    """Convert database row to schedule dict.
-
-    Args:
-        row: Database row tuple with schedule data
-
-    Returns:
-        Dictionary representation of schedule record
-
-    Raises:
-        ValueError: If row has incorrect number of columns
-    """
-    if len(row) != EXPECTED_SCHEDULE_COLUMNS:
-        raise ValueError(f"Expected {EXPECTED_SCHEDULE_COLUMNS} columns, got {len(row)}")
-    return {
-        "id": row[0],
-        "project_id": row[1],
-        "enabled": row[2],
-        "frequency": row[3],
-        "retention_days": row[4],
-        "last_run_at": row[5].isoformat() if row[5] else None,
-        "next_run_at": row[6].isoformat() if row[6] else None,
-        "created_at": row[7].isoformat() if row[7] else None,
-        "updated_at": row[8].isoformat() if row[8] else None,
+        "source_id": row[19],
     }
 
 
