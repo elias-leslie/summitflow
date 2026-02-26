@@ -8,7 +8,7 @@ Uses 3-2-1 escalation pattern:
 
 from __future__ import annotations
 
-from typing import Any
+from pathlib import Path
 
 import psycopg
 
@@ -29,72 +29,85 @@ logger = get_logger(__name__)
 __all__ = ["fix_lint_type_error", "fix_unfixed_errors"]
 
 
-def fix_lint_type_error(
-    conn: psycopg.Connection[Any],
+def _get_file_data(
+    check_result: dict[str, object], result_id: int
+) -> tuple[Path, Path, str, str] | None:
+    """Return (project_path, file_path, file_rel_path, file_content) or None."""
+    paths = get_project_file_path(check_result, result_id)
+    if not paths:
+        return None
+    project_path, file_path = paths
+    file_content = read_file_content(file_path)
+    if not file_content:
+        logger.warning("file_not_found", path=str(file_path))
+        return None
+    return project_path, file_path, str(check_result["file_path"]), file_content
+
+
+def _build_prompt(
+    check_result: dict[str, object], file_content: str, project_path: Path, level: str
+) -> str:
+    """Build the LLM prompt, enhancing it for supervisor level."""
+    check_type = str(check_result["check_type"])
+    check_name = str(check_result.get("check_name") or "")
+    error_message = str(check_result.get("error_message") or "")
+    similar = get_similar_patterns(check_type, check_name, error_message)
+    prompt = build_fix_prompt(check_result, file_content, project_path, similar)
+    return enhance_prompt_for_supervisor(prompt) if level == "SUPERVISOR" else prompt
+
+
+def _apply_and_verify(
+    conn: psycopg.Connection[dict[str, object]],
     result_id: int,
+    check_result: dict[str, object],
+    project_path: Path,
+    file_path: Path,
+    file_rel_path: str,
+    file_content: str,
+    new_content: str,
+    agent_slug: str,
+    level: str,
+) -> FixResult:
+    """Apply the fix to disk and run verification; return the outcome."""
+    if not apply_fix(file_path, new_content):
+        return "failed"
+    return verify_and_process_fix(
+        conn, result_id, project_path,
+        str(check_result["check_type"]), file_rel_path, agent_slug, level,
+        str(check_result.get("check_name") or ""),
+        str(check_result.get("error_message") or ""),
+        file_content, new_content,
+    )
+
+
+def fix_lint_type_error(
+    conn: psycopg.Connection[dict[str, object]], result_id: int
 ) -> FixAttemptResult:
-    """Attempt to fix a lint/type error using 3-2-1 escalation.
-
-    Args:
-        conn: Database connection
-        result_id: ID of the quality_check_result to fix
-
-    Returns:
-        FixAttemptResult with outcome and cost_usd for budget tracking
-    """
+    """Attempt to fix a lint/type error using 3-2-1 escalation."""
     check_result = qcr_store.get_check_result(conn, result_id)
-
-    # Validate preconditions
     validation_error = validate_check_result(check_result, result_id)
     if validation_error:
         outcome: FixResult = "fixed" if validation_error == "already_fixed" else "failed"
         return FixAttemptResult(outcome=outcome, cost_usd=0.0)
-
     assert check_result is not None
 
-    # Check escalation level
-    attempts = check_result.get("fix_attempts", 0)
+    attempts = int(check_result.get("fix_attempts") or 0)
     level = get_escalation_level(attempts)
-
     if level == "HUMAN":
         logger.info("escalated_to_human", result_id=result_id, attempts=attempts)
         escalate_to_human(conn, result_id)
         return FixAttemptResult(outcome="escalated_human", cost_usd=0.0)
 
-    # Get paths and content
-    paths = get_project_file_path(check_result, result_id)
-    if not paths:
+    file_data = _get_file_data(check_result, result_id)
+    if not file_data:
         return FixAttemptResult(outcome="failed", cost_usd=0.0)
-    project_path, file_path = paths
-
-    file_rel_path = check_result["file_path"]
-    file_content = read_file_content(file_path)
-    if not file_content:
-        logger.warning("file_not_found", path=str(file_path))
-        return FixAttemptResult(outcome="failed", cost_usd=0.0)
+    project_path, file_path, file_rel_path, file_content = file_data
 
     qcr_store.record_fix_attempt(conn, result_id)
-
-    # Build prompt
-    check_type = check_result["check_type"]
-    check_name = check_result.get("check_name", "")
-    error_message = check_result.get("error_message", "")
-    similar_patterns = get_similar_patterns(check_type, check_name, error_message)
-
-    prompt = build_fix_prompt(check_result, file_content, project_path, similar_patterns)
-    if level == "SUPERVISOR":
-        prompt = enhance_prompt_for_supervisor(prompt)
-
-    # Execute fix
+    prompt = _build_prompt(check_result, file_content, project_path, level)
     agent_slug = select_agent(level)
-    logger.info(
-        "fix_attempt",
-        result_id=result_id,
-        escalation_level=level,
-        attempt=attempts + 1,
-        agent_slug=agent_slug,
-    )
-
+    logger.info("fix_attempt", result_id=result_id, escalation_level=level,
+                attempt=attempts + 1, agent_slug=agent_slug)
     try:
         new_content, cost_usd = execute_llm_fix(
             prompt, agent_slug, get_temperature(level), result_id
@@ -103,27 +116,13 @@ def fix_lint_type_error(
         logger.error("llm_failed", error=str(e))
         return FixAttemptResult(outcome="failed", cost_usd=0.0)
 
-    # Handle CANNOT_FIX
     is_cannot_fix, reason = is_cannot_fix_response(new_content)
     if is_cannot_fix:
         logger.info("cannot_fix", result_id=result_id, reason=reason)
         return FixAttemptResult(outcome="failed", cost_usd=cost_usd)
 
-    # Apply and verify
-    if not apply_fix(file_path, new_content):
-        return FixAttemptResult(outcome="failed", cost_usd=cost_usd)
-
-    outcome = verify_and_process_fix(
-        conn,
-        result_id,
-        project_path,
-        check_type,
-        file_rel_path,
-        agent_slug,
-        level,
-        check_name,
-        error_message,
-        file_content,
-        new_content,
+    outcome = _apply_and_verify(
+        conn, result_id, check_result, project_path, file_path,
+        file_rel_path, file_content, new_content, agent_slug, level,
     )
     return FixAttemptResult(outcome=outcome, cost_usd=cost_usd)
