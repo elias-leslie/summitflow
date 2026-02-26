@@ -26,13 +26,38 @@ def load_credentials() -> tuple[str, str]:
             creds[key.strip()] = val.strip()
 
     client_id = creds.get("SUMMITFLOW_CLIENT_ID")
-    request_source = "st-memory"
-
     if not client_id:
         output_error("Missing SUMMITFLOW_CLIENT_ID in ~/.env.local")
         raise typer.Exit(1)
 
-    return client_id, request_source
+    return client_id, "st-memory"
+
+
+def _dispatch(client: httpx.Client, method: str, url: str, **kw: Any) -> httpx.Response:
+    """Dispatch HTTP request by method."""
+    if method == "GET":
+        return client.get(url, params=kw.get("params"), headers=kw["headers"])
+    if method == "DELETE":
+        return client.delete(url, headers=kw["headers"])
+    if method == "PUT":
+        return client.put(url, json=kw.get("json"), headers=kw["headers"])
+    if method == "PATCH":
+        return client.patch(url, json=kw.get("json"), headers=kw["headers"])
+    return client.post(url, json=kw.get("json"), headers=kw["headers"])
+
+
+def _check_response(response: httpx.Response, agent_hub_url: str) -> dict[str, Any]:
+    """Validate response and return parsed body."""
+    if response.status_code >= 400:
+        try:
+            detail = response.json().get("detail", response.text)
+        except Exception:
+            detail = response.text
+        output_error(f"API error ({response.status_code}): {detail}")
+        raise typer.Exit(1) from None
+    if response.status_code == 204:
+        return {"success": True}
+    return cast(dict[str, Any], response.json())
 
 
 def agent_hub_request(
@@ -47,7 +72,6 @@ def agent_hub_request(
 ) -> dict[str, Any]:
     """Make a request to Agent Hub API with proper authentication."""
     client_id, request_source = load_credentials()
-
     headers = {
         "X-Client-Id": client_id,
         "X-Request-Source": request_source,
@@ -61,36 +85,12 @@ def agent_hub_request(
 
     agent_hub_url = get_agent_hub_url()
     url = f"{agent_hub_url}{path}"
-
-    # Memory save/update operations involve Graphiti embedding + Neo4j writes
-    # which can take 30-60s. Use generous read timeout to prevent partial
-    # operations (e.g., create succeeds but delete times out → duplicates).
+    # Graphiti embedding + Neo4j writes can take 30-60s; generous timeout prevents partial ops.
     timeout = httpx.Timeout(connect=5.0, read=90.0, write=30.0, pool=30.0)
     try:
         with httpx.Client(timeout=timeout) as client:
-            if method == "GET":
-                response = client.get(url, params=params, headers=headers)
-            elif method == "DELETE":
-                response = client.delete(url, headers=headers)
-            elif method == "PUT":
-                response = client.put(url, json=json, headers=headers)
-            elif method == "PATCH":
-                response = client.patch(url, json=json, headers=headers)
-            else:
-                response = client.post(url, json=json, headers=headers)
-
-            if response.status_code >= 400:
-                try:
-                    detail = response.json().get("detail", response.text)
-                except Exception:
-                    detail = response.text
-                output_error(f"API error ({response.status_code}): {detail}")
-                raise typer.Exit(1) from None
-
-            if response.status_code == 204:
-                return {"success": True}
-
-            return cast(dict[str, Any], response.json())
+            response = _dispatch(client, method, url, params=params, json=json, headers=headers)
+            return _check_response(response, agent_hub_url)
     except httpx.ConnectError:
         output_error(f"Cannot connect to Agent Hub at {agent_hub_url}")
         raise typer.Exit(1) from None
