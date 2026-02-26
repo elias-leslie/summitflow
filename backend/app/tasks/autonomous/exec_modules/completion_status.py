@@ -91,14 +91,7 @@ def wake_persona(task_id: str, project_id: str, event_type: str, context: str) -
 
 
 def build_early_completion_verification(total_subtasks: int) -> dict[str, Any]:
-    """Build verification result for early completion case.
-
-    Args:
-        total_subtasks: Total number of subtasks
-
-    Returns:
-        Verification result dict
-    """
+    """Build verification result for early completion (all subtasks already done)."""
     return {
         "execution_clean": True,
         "subtask_count": total_subtasks,
@@ -108,14 +101,7 @@ def build_early_completion_verification(total_subtasks: int) -> dict[str, Any]:
 
 
 def build_successful_completion_verification(results: list[dict[str, Any]]) -> dict[str, Any]:
-    """Build verification result for successful completion.
-
-    Args:
-        results: List of subtask execution results
-
-    Returns:
-        Verification result dict
-    """
+    """Build verification result when all subtasks pass."""
     execution_clean = all(
         r.get("self_fix_attempts", 0) == 0 and r.get("supervisor_guided_attempts", 0) == 0
         for r in results
@@ -138,16 +124,7 @@ def build_partial_completion_verification(
     passed: list[dict[str, Any]],
     failed: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """Build verification result for partial completion.
-
-    Args:
-        results: All subtask execution results
-        passed: Passing subtask results
-        failed: Failed subtask results
-
-    Returns:
-        Verification result dict
-    """
+    """Build verification result when only some subtasks pass (partial merge)."""
     failed_ids = [r.get("subtask_id", "") for r in failed]
 
     return {
@@ -163,6 +140,52 @@ def build_partial_completion_verification(
     }
 
 
+def _resolve_require_review(task_id: str, project_id: str) -> bool:
+    """Resolve whether AI review is required, respecting task-level overrides.
+
+    Task-level ai_review=False overrides the project-level require_review setting.
+    """
+    require_review = agent_configs.get_require_review(project_id)
+    if not require_review:
+        return False
+    task = task_store.get_task(task_id)
+    if task and task.get("ai_review") is False:
+        logger.info(
+            "Skipping AI review (task ai_review=False)",
+            task_id=task_id,
+            project_id=project_id,
+        )
+        return False
+    return True
+
+
+def _do_review_transition(
+    task_id: str,
+    project_id: str,
+    log_message: str,
+    dispatch: Callable[[str, str, str], None] | None,
+) -> str:
+    """Set task to ai_reviewing and optionally dispatch the review workflow."""
+    task_store.update_task_status(task_id, "ai_reviewing")
+    emit_log(task_id, "info", f"{log_message}, starting QA review", project_id=project_id)
+    if dispatch:
+        dispatch("review", task_id, project_id)
+    return "ai_reviewing"
+
+
+def _do_complete_transition(task_id: str, project_id: str, log_message: str) -> str:
+    """Set task to completed and send a completion notification."""
+    task_store.update_task_status(task_id, "completed")
+    emit_log(
+        task_id,
+        "info",
+        f"{log_message}, skipping review (require_review=false)",
+        project_id=project_id,
+    )
+    _notify_completion(task_id, project_id)
+    return "completed"
+
+
 def transition_to_review_or_complete(
     task_id: str,
     project_id: str,
@@ -171,49 +194,11 @@ def transition_to_review_or_complete(
 ) -> str:
     """Transition task to ai_reviewing or completed based on require_review setting.
 
-    Args:
-        task_id: The task ID
-        project_id: The project ID
-        log_message: Base log message (review status will be appended)
-        dispatch: Optional callback to trigger downstream workflows
-
-    Returns:
-        Final status: "ai_reviewing" or "completed"
+    Returns the final status: "ai_reviewing" or "completed".
     """
-    require_review = agent_configs.get_require_review(project_id)
-
-    # Task-level ai_review=False overrides project-level setting (e.g. refactor tasks)
-    if require_review:
-        task = task_store.get_task(task_id)
-        if task and task.get("ai_review") is False:
-            require_review = False
-            logger.info(
-                "Skipping AI review (task ai_review=False)",
-                task_id=task_id,
-                project_id=project_id,
-            )
-
-    if require_review:
-        task_store.update_task_status(task_id, "ai_reviewing")
-        emit_log(
-            task_id,
-            "info",
-            f"{log_message}, starting QA review",
-            project_id=project_id,
-        )
-        if dispatch:
-            dispatch("review", task_id, project_id)
-        return "ai_reviewing"
-    else:
-        task_store.update_task_status(task_id, "completed")
-        emit_log(
-            task_id,
-            "info",
-            f"{log_message}, skipping review (require_review=false)",
-            project_id=project_id,
-        )
-        _notify_completion(task_id, project_id)
-        return "completed"
+    if _resolve_require_review(task_id, project_id):
+        return _do_review_transition(task_id, project_id, log_message, dispatch)
+    return _do_complete_transition(task_id, project_id, log_message)
 
 
 def handle_status_transition_error(
@@ -222,14 +207,7 @@ def handle_status_transition_error(
     error: Exception,
     context: dict[str, Any] | None = None,
 ) -> None:
-    """Handle errors during status transitions.
-
-    Args:
-        task_id: The task ID
-        project_id: The project ID
-        error: The exception that occurred
-        context: Optional context information for debugging
-    """
+    """Log, block, and notify on a status-transition failure."""
     error_msg = f"Failed to transition status: {type(error).__name__}: {error!s}"
     if context:
         error_msg += f"\nTask ID: {task_id}\nProject ID: {project_id}"
