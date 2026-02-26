@@ -1,7 +1,7 @@
 """Notifications storage layer - Notification CRUD and status management.
 
-This module provides data access for notification alerts.
 Query helpers live in notifications_query.py; shared types in notifications_helpers.py.
+Factory functions (task_failed, task_completed) live in notifications_write.py.
 """
 
 from __future__ import annotations
@@ -25,6 +25,8 @@ from .notifications_query import (
     list_notifications,
 )
 from .notifications_write import (
+    create_task_completion_notification,
+    create_task_failure_notification,
     delete_notification,
     dismiss_all_for_project,
     dismiss_notification,
@@ -34,29 +36,16 @@ from .notifications_write import (
 logger = logging.getLogger(__name__)
 
 _background_tasks: set[asyncio.Task[None]] = set()
+_SEVERITY_RANK: dict[str, int] = {"info": 0, "warning": 1, "error": 2, "critical": 3}
 
-# Re-export type aliases for backward compatibility
 __all__ = [
-    "NotificationSeverity",
-    "NotificationStatus",
-    "NotificationType",
-    "create_notification",
-    "create_task_completion_notification",
-    "create_task_failure_notification",
-    "delete_notification",
-    "dismiss_all_for_project",
-    "dismiss_notification",
-    "get_notification",
-    "get_notifications_by_user_email",
-    "get_pending_count",
-    "list_notifications",
+    "NotificationSeverity", "NotificationStatus", "NotificationType",
+    "create_notification", "create_task_completion_notification",
+    "create_task_failure_notification", "delete_notification",
+    "dismiss_all_for_project", "dismiss_notification", "get_notification",
+    "get_notifications_by_user_email", "get_pending_count", "list_notifications",
     "mark_as_read",
 ]
-
-
-def _generate_notification_id() -> str:
-    """Generate a unique notification ID."""
-    return generate_prefixed_id("notif")
 
 
 def _is_duplicate(
@@ -66,19 +55,10 @@ def _is_duplicate(
     task_id: str | None = None,
     cooldown_minutes: int = 15,
 ) -> bool:
-    """Check if a similar notification was created within the cooldown window.
-
-    Dedup rules:
-    - Same type + task_id + severity within cooldown → duplicate
-    - Severity escalation (e.g., warning → error for same task) is NOT a dup
-    - System notifications are never deduped (rare, intentional)
-    """
+    """Check for a recent identical notification; returns True if it is a dup."""
     if notification_type == "system":
         return False
-
-    severity_rank = {"info": 0, "warning": 1, "error": 2, "critical": 3}
-    current_rank = severity_rank.get(severity, 0)
-
+    current_rank = _SEVERITY_RANK.get(severity, 0)
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
@@ -92,30 +72,21 @@ def _is_duplicate(
             (project_id, notification_type, task_id, cooldown_minutes),
         )
         row = cur.fetchone()
-
     if not row:
         return False
-
-    existing_rank = severity_rank.get(row[0], 0)
-    return current_rank <= existing_rank
+    return current_rank <= _SEVERITY_RANK.get(row[0], 0)
 
 
 def _schedule_delivery(notification: dict[str, Any]) -> None:
-    """Fire-and-forget push delivery for a notification.
-
-    Checks for a running asyncio loop and schedules delivery as a task.
-    Storage layer is sync, so this bridges into the async delivery service.
-    """
+    """Fire-and-forget push delivery; bridges sync storage into async delivery."""
     from app.services._agent_hub_config import AGENT_HUB_URL
 
     if not AGENT_HUB_URL:
         return
-
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
-        # No running loop — skip push delivery (e.g., in CLI/test contexts)
-        return
+        return  # No running loop — skip (CLI/test contexts)
 
     async def _deliver() -> None:
         try:
@@ -131,26 +102,22 @@ def _schedule_delivery(notification: dict[str, Any]) -> None:
 
 
 def _insert_notification(
-    notification_id: str,
-    project_id: str,
-    notification_type: NotificationType,
-    title: str,
-    message: str,
-    severity: NotificationSeverity,
-    task_id: str | None,
-    user_email: str | None,
-    meta: dict[str, Any],
+    notification_id: str, project_id: str, notification_type: NotificationType,
+    title: str, message: str, severity: NotificationSeverity,
+    task_id: str | None, user_email: str | None, meta: dict[str, Any],
 ) -> dict[str, Any]:
     """Execute the INSERT and return the created notification dict."""
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO notifications (id, project_id, task_id, user_email, type, title, message, severity, metadata)
+            INSERT INTO notifications
+              (id, project_id, task_id, user_email, type, title, message, severity, metadata)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
             RETURNING id, project_id, task_id, user_email, type, title, message, severity, status,
                       metadata, created_at, read_at, dismissed_at
             """,
-            (notification_id, project_id, task_id, user_email, notification_type, title, message, severity, json.dumps(meta)),
+            (notification_id, project_id, task_id, user_email,
+             notification_type, title, message, severity, json.dumps(meta)),
         )
         row = cur.fetchone()
         conn.commit()
@@ -171,110 +138,12 @@ def create_notification(
     if _is_duplicate(project_id, notification_type, severity, task_id):
         logger.debug(
             "Notification deduplicated: type=%s task_id=%s severity=%s",
-            notification_type,
-            task_id,
-            severity,
+            notification_type, task_id, severity,
         )
         return {}
     notification = _insert_notification(
-        _generate_notification_id(), project_id, notification_type,
+        generate_prefixed_id("notif"), project_id, notification_type,
         title, message, severity, task_id, user_email, metadata or {},
     )
     _schedule_delivery(notification)
     return notification
-
-
-def create_task_failure_notification(
-    project_id: str,
-    task_id: str,
-    task_title: str,
-    error_message: str,
-    criterion_id: str | None = None,
-    agent_hub_session_ids: list[str] | None = None,
-    subtask_id: str | None = None,
-    recommendation: str | None = None,
-    blocker_summary: str | None = None,
-) -> dict[str, Any]:
-    """Create a notification for task failure with Johnny's voice.
-
-    Args:
-        project_id: Project ID
-        task_id: Failed task ID
-        task_title: Task title for notification
-        error_message: Error message from task
-        criterion_id: Optional criterion ID that failed
-        agent_hub_session_ids: Optional session IDs for chat context
-        subtask_id: Optional ID of the subtask that caused the failure
-        recommendation: Optional recommendation for resolving the blocker
-        blocker_summary: Optional summary of what blocked execution
-
-    Returns:
-        Created notification dict
-    """
-    title = f"Task failed: {task_title}"
-    message = (
-        f"I was working on '{task_title}' but hit a problem: "
-        f"{error_message} Tap to chat about next steps."
-    )
-
-    metadata: dict[str, Any] = {"johnny": True}
-    if criterion_id:
-        metadata["criterion_id"] = criterion_id
-    if agent_hub_session_ids:
-        metadata["agent_hub_session_ids"] = agent_hub_session_ids
-    if subtask_id:
-        metadata["subtask_id"] = subtask_id
-    if recommendation:
-        metadata["recommendation"] = recommendation
-    if blocker_summary:
-        metadata["blocker_summary"] = blocker_summary
-
-    return create_notification(
-        project_id=project_id,
-        notification_type="task_failed",
-        title=title,
-        message=message,
-        severity="error",
-        task_id=task_id,
-        metadata=metadata,
-    )
-
-
-def create_task_completion_notification(
-    project_id: str,
-    task_id: str,
-    task_title: str,
-    detail: str = "",
-    agent_hub_session_ids: list[str] | None = None,
-) -> dict[str, Any]:
-    """Create a notification for task completion with Johnny's voice.
-
-    Uses severity 'warning' to trigger push delivery (info stays in-app only).
-
-    Args:
-        project_id: Project ID
-        task_id: Completed task ID
-        task_title: Task title
-        detail: Optional detail about the completion
-        agent_hub_session_ids: Optional session IDs for chat context
-
-    Returns:
-        Created notification dict
-    """
-    title = f"Task done: {task_title}"
-    suffix = f" {detail}" if detail else ""
-    message = f"Finished '{task_title}' — all checks passed.{suffix} Tap to review."
-
-    metadata: dict[str, Any] = {"johnny": True}
-    if agent_hub_session_ids:
-        metadata["agent_hub_session_ids"] = agent_hub_session_ids
-
-    return create_notification(
-        project_id=project_id,
-        notification_type="task_completed",
-        title=title,
-        message=message,
-        severity="warning",
-        task_id=task_id,
-        metadata=metadata,
-    )
