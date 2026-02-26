@@ -5,7 +5,14 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+import httpx
+
 from ....logging_config import get_logger
+from ....services._agent_hub_config import (
+    AGENT_HUB_URL,
+    SUMMITFLOW_CLIENT_ID,
+    SUMMITFLOW_REQUEST_SOURCE,
+)
 from ....storage import agent_configs
 from ....storage import tasks as task_store
 from ....storage.notifications import (
@@ -31,6 +38,56 @@ def _notify_completion(task_id: str, project_id: str) -> None:
         )
     except Exception:
         logger.exception("Failed to create completion notification", task_id=task_id)
+
+
+def notify_failure(
+    task_id: str,
+    project_id: str,
+    error_message: str,
+    subtask_id: str | None = None,
+    blocker_summary: str | None = None,
+    recommendation: str | None = None,
+) -> None:
+    """Send a task failure notification."""
+    try:
+        task = task_store.get_task(task_id)
+        task_title = task.get("title", "Unknown") if task else "Unknown"
+        session_ids = task_store.get_agent_hub_sessions(task_id)
+        create_task_failure_notification(
+            project_id=project_id,
+            task_id=task_id,
+            task_title=task_title,
+            error_message=error_message,
+            agent_hub_session_ids=session_ids or None,
+            subtask_id=subtask_id,
+            blocker_summary=blocker_summary,
+            recommendation=recommendation,
+        )
+    except Exception:
+        logger.exception("Failed to create failure notification", task_id=task_id)
+
+
+def wake_persona(task_id: str, project_id: str, event_type: str, context: str) -> None:
+    """Fire-and-forget wake to persona agent via Agent Hub. Non-blocking."""
+    try:
+        headers = {
+            "X-Client-Id": SUMMITFLOW_CLIENT_ID or "",
+            "X-Request-Source": SUMMITFLOW_REQUEST_SOURCE,
+        }
+        with httpx.Client(timeout=5.0) as client:
+            client.post(
+                f"{AGENT_HUB_URL}/api/wake",
+                json={
+                    "agent_slug": "persona",
+                    "context": context,
+                    "project_id": project_id,
+                    "event_type": event_type,
+                    "task_id": task_id,
+                },
+                headers=headers,
+            )
+    except Exception:
+        logger.debug("Persona wake failed (non-critical)", task_id=task_id)
 
 
 def build_early_completion_verification(total_subtasks: int) -> dict[str, Any]:
@@ -187,16 +244,4 @@ def handle_status_transition_error(
         "Task set to blocked due to status transition failure",
         project_id=project_id,
     )
-    try:
-        task = task_store.get_task(task_id)
-        task_title = task.get("title", "Unknown") if task else "Unknown"
-        session_ids = task_store.get_agent_hub_sessions(task_id)
-        create_task_failure_notification(
-            project_id=project_id,
-            task_id=task_id,
-            task_title=task_title,
-            error_message=f"Status transition failed: {error}",
-            agent_hub_session_ids=session_ids or None,
-        )
-    except Exception:
-        logger.exception("Failed to create failure notification", task_id=task_id)
+    notify_failure(task_id, project_id, f"Status transition failed: {error}")
