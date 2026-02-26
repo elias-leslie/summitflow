@@ -17,6 +17,19 @@ from .memory_api import agent_hub_request
 
 _HUB_TOOL = "st memory seed"
 
+def _parse_fm_value(val: str) -> Any:
+    """Parse a single YAML frontmatter value string into a Python type."""
+    if val.startswith("[") and val.endswith("]"):
+        return [i for i in (s.strip().strip("'\"") for s in val[1:-1].split(",")) if i]
+    if val.lower() in ("true", "yes"):
+        return True
+    if val.lower() in ("false", "no"):
+        return False
+    if val.isdigit():
+        return int(val)
+    return val.strip("'\"")
+
+
 def _parse_frontmatter(text: str) -> tuple[dict[str, Any], str]:
     """Parse YAML frontmatter from markdown text. Returns (frontmatter, body)."""
     if not text.startswith("---"):
@@ -30,17 +43,7 @@ def _parse_frontmatter(text: str) -> tuple[dict[str, Any], str]:
         if not line or line.startswith("#") or ":" not in line:
             continue
         key, val = line.split(":", 1)
-        key, val = key.strip(), val.strip()
-        if val.startswith("[") and val.endswith("]"):
-            fm[key] = [i for i in (s.strip().strip("'\"") for s in val[1:-1].split(",")) if i]
-        elif val.lower() in ("true", "yes"):
-            fm[key] = True
-        elif val.lower() in ("false", "no"):
-            fm[key] = False
-        elif val.isdigit():
-            fm[key] = int(val)
-        else:
-            fm[key] = val.strip("'\"")
+        fm[key.strip()] = _parse_fm_value(val.strip())
     return fm, parts[2].strip()
 
 
