@@ -22,49 +22,24 @@ from .renderers import generate_mockup_claude_fallback, generate_mockup_gemini
 logger = get_logger(__name__)
 
 
-def generate_mockup(
+def _fetch_page_info(explorer_entry_id: int) -> dict[str, object] | MockupResult:
+    """Fetch page info from explorer entry. Returns dict on success, MockupResult on failure."""
+    from ..storage.explorer_entries import get_entry_by_id
+
+    entry = get_entry_by_id(explorer_entry_id)
+    if not entry:
+        return MockupResult(success=False, error=f"Explorer entry {explorer_entry_id} not found")
+    return {"path": entry.get("path"), "name": entry.get("name"), "description": entry.get("description")}
+
+
+def _run_with_fallback(
     project_id: str,
     explorer_entry_id: int,
-    standards_id: str = "base",
-    design_direction: str | None = None,
-    page_info: dict | None = None,
+    page_info: dict[str, object],
+    design_standard: object,
+    design_direction: str | None,
 ) -> MockupResult:
-    """Generate a mockup for a page using design standards.
-
-    Uses Agent Hub (Gemini) as primary, Claude HTML as fallback.
-
-    Args:
-        project_id: Project ID
-        explorer_entry_id: Explorer entry ID for the page
-        standards_id: Design standard ID to use (default: "base")
-        design_direction: Optional specific design direction
-        page_info: Page info (if not provided, fetched from explorer)
-
-    Returns:
-        MockupResult with evidence details
-    """
-    if page_info is None:
-        from ..storage.explorer_entries import get_entry_by_id
-
-        entry = get_entry_by_id(explorer_entry_id)
-        if not entry:
-            return MockupResult(
-                success=False,
-                error=f"Explorer entry {explorer_entry_id} not found",
-            )
-        page_info = {
-            "path": entry.get("path"),
-            "name": entry.get("name"),
-            "description": entry.get("description"),
-        }
-
-    design_standard = get_design_standard(project_id, standards_id)
-    if not design_standard:
-        return MockupResult(
-            success=False,
-            error=f"Design standard '{standards_id}' not found",
-        )
-
+    """Try Gemini first, fall back to Claude HTML if it fails."""
     result = generate_mockup_gemini(
         project_id=project_id,
         explorer_entry_id=explorer_entry_id,
@@ -72,23 +47,35 @@ def generate_mockup(
         design_standard=design_standard,
         design_direction=design_direction,
     )
+    if result.success:
+        return result
+    logger.info("falling_back_to_claude", project_id=project_id, explorer_entry_id=explorer_entry_id, gemini_error=result.error)
+    return generate_mockup_claude_fallback(
+        project_id=project_id,
+        explorer_entry_id=explorer_entry_id,
+        page_info=page_info,
+        design_standard=design_standard,
+        design_direction=design_direction,
+    )
 
-    if not result.success:
-        logger.info(
-            "falling_back_to_claude",
-            project_id=project_id,
-            explorer_entry_id=explorer_entry_id,
-            gemini_error=result.error,
-        )
-        result = generate_mockup_claude_fallback(
-            project_id=project_id,
-            explorer_entry_id=explorer_entry_id,
-            page_info=page_info,
-            design_standard=design_standard,
-            design_direction=design_direction,
-        )
 
-    return result
+def generate_mockup(
+    project_id: str,
+    explorer_entry_id: int,
+    standards_id: str = "base",
+    design_direction: str | None = None,
+    page_info: dict | None = None,
+) -> MockupResult:
+    """Generate a mockup using design standards (Gemini primary, Claude fallback)."""
+    if page_info is None:
+        result_or_info = _fetch_page_info(explorer_entry_id)
+        if isinstance(result_or_info, MockupResult):
+            return result_or_info
+        page_info = result_or_info  # type: ignore[assignment]
+    design_standard = get_design_standard(project_id, standards_id)
+    if not design_standard:
+        return MockupResult(success=False, error=f"Design standard '{standards_id}' not found")
+    return _run_with_fallback(project_id, explorer_entry_id, page_info, design_standard, design_direction)
 
 
 async def analyze_page_design(
