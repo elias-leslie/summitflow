@@ -19,6 +19,36 @@ from .core import (
 )
 
 
+def _build_task_filters(
+    project_id: str,
+    status_filter: str | None = None,
+    task_type_filter: str | None = None,
+    priority_filter: int | None = None,
+    labels_filter: list[str] | None = None,
+    orphans_only: bool = False,
+) -> tuple[list[str], list[Any]]:
+    """Build WHERE conditions and params for task queries."""
+    conditions = ["t.project_id = %s"]
+    params: list[Any] = [project_id]
+
+    if status_filter:
+        conditions.append("t.status = %s")
+        params.append(status_filter)
+    if task_type_filter:
+        conditions.append("t.task_type = %s")
+        params.append(task_type_filter)
+    if priority_filter is not None:
+        conditions.append("t.priority = %s")
+        params.append(priority_filter)
+    if labels_filter:
+        conditions.append("t.labels @> %s")
+        params.append(labels_filter)
+    if orphans_only:
+        conditions.append("t.capability_id IS NULL")
+
+    return conditions, params
+
+
 def list_tasks(
     project_id: str,
     status_filter: str | None = None,
@@ -44,25 +74,10 @@ def list_tasks(
     Returns:
         List of task dicts with spirit fields.
     """
-    conditions = ["t.project_id = %s"]
-    params: list[Any] = [project_id]
-
-    if status_filter:
-        conditions.append("t.status = %s")
-        params.append(status_filter)
-    if task_type_filter:
-        conditions.append("t.task_type = %s")
-        params.append(task_type_filter)
-    if priority_filter is not None:
-        conditions.append("t.priority = %s")
-        params.append(priority_filter)
-    if labels_filter:
-        # Task must contain all specified labels
-        conditions.append("t.labels @> %s")
-        params.append(labels_filter)
-    if orphans_only:
-        conditions.append("t.capability_id IS NULL")
-
+    conditions, params = _build_task_filters(
+        project_id, status_filter, task_type_filter,
+        priority_filter, labels_filter, orphans_only,
+    )
     params.extend([limit, offset])
 
     with get_connection() as conn, conn.cursor() as cur:
@@ -80,6 +95,38 @@ def list_tasks(
         rows = cur.fetchall()
 
     return [_row_to_dict_with_spirit(row) for row in rows]
+
+
+def count_tasks(
+    project_id: str,
+    status_filter: str | None = None,
+    task_type_filter: str | None = None,
+    priority_filter: int | None = None,
+    labels_filter: list[str] | None = None,
+    orphans_only: bool = False,
+) -> int:
+    """Count tasks matching the same filters as list_tasks.
+
+    Returns:
+        Total count of matching tasks (ignoring limit/offset).
+    """
+    conditions, params = _build_task_filters(
+        project_id, status_filter, task_type_filter,
+        priority_filter, labels_filter, orphans_only,
+    )
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            sql.SQL("""
+            SELECT COUNT(*)
+            FROM tasks t
+            WHERE {conditions}
+            """).format(conditions=sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)),
+            tuple(params),
+        )
+        row = cur.fetchone()
+
+    return int(row[0]) if row else 0
 
 
 def get_tasks_by_enrichment_status(

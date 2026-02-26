@@ -92,9 +92,13 @@ fi
 CHANGED_ONLY=0
 EXTRA_ARGS=()
 if [[ "$ACTION" == "tool_toon" ]]; then
+    _passthrough=0
     for arg in "$@"; do
-        if [[ "$arg" == "--" ]] && [[ ${#EXTRA_ARGS[@]} -eq 0 ]]; then
-            continue  # strip leading -- separator
+        if [[ $_passthrough -eq 0 ]]; then
+            case $arg in
+                --changed-only|-d) CHANGED_ONLY=1; continue ;;
+                --) _passthrough=1; continue ;;  # strip separator, start passthrough
+            esac
         fi
         EXTRA_ARGS+=("$arg")
     done

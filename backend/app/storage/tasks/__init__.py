@@ -28,6 +28,7 @@ from .core import (
 from .dedup import bug_task_exists_for_error, duplicate_task_exists, task_exists_for_file
 from .queries import (
     count_completed_tasks_today,
+    count_tasks,
     get_stale_tasks,
     get_tasks_by_enrichment_status,
     list_blocked_tasks,
@@ -54,6 +55,7 @@ __all__ = [
     "claim_task",
     "count_completed_tasks_today",
     "count_running_tasks",
+    "count_tasks",
     "create_task",
     "delete_task",
     "duplicate_task_exists",

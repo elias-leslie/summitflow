@@ -221,6 +221,46 @@ def get_blocking_tasks(task_id: str) -> list[dict[str, Any]]:
     ]
 
 
+def get_blocking_tasks_batch(task_ids: list[str]) -> dict[str, list[dict[str, Any]]]:
+    """Get unresolved blocking dependencies for multiple tasks in a single query.
+
+    Args:
+        task_ids: List of task IDs
+
+    Returns:
+        Dict mapping task_id to list of blocking task details.
+        Tasks with no blockers are omitted from the dict.
+    """
+    if not task_ids:
+        return {}
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT d.task_id, t.id, t.title, t.status, t.priority
+            FROM task_dependencies d
+            JOIN tasks t ON d.depends_on_task_id = t.id
+            WHERE d.task_id = ANY(%s)
+              AND d.dependency_type = 'blocks'
+              AND t.status NOT IN ('completed')
+            ORDER BY t.priority ASC, t.created_at ASC
+            """,
+            (task_ids,),
+        )
+        rows = cur.fetchall()
+
+    result: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        blockers = result.setdefault(row[0], [])
+        blockers.append({
+            "id": row[1],
+            "title": row[2],
+            "status": row[3],
+            "priority": row[4],
+        })
+    return result
+
+
 def is_blocked(task_id: str) -> bool:
     """Check if a task is blocked by unresolved dependencies.
 

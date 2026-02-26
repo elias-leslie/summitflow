@@ -78,7 +78,7 @@ def _build_prompt(task: dict, complexity: str, git_diff: str, task_id: str) -> s
     return (
         f"Task: {task.get('title', '')}\nComplexity: {complexity}\n\n"
         f"Success Criteria (done_when):\n{done_when_text}\n\n"
-        f"Git Diff:\n```\n{git_diff[:5000]}\n```\n\n"
+        f"Git Diff:\n```\n{git_diff[:50000]}\n```\n\n"
         "If done_when criteria are defined, verify the diff addresses each one."
     )
 

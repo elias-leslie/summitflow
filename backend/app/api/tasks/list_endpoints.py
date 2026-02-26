@@ -49,26 +49,30 @@ async def list_tasks(
     includes = include.split(",") if include else []
     include_blockers = "blockers" in includes
 
-    tasks = await asyncio.to_thread(
-        task_store.list_tasks,
-        project_id,
+    filter_kwargs = dict(
         status_filter=status,
         task_type_filter=task_type,
         priority_filter=priority,
         labels_filter=labels_list,
         orphans_only=orphans_only,
-        limit=limit,
-        offset=offset,
     )
 
-    # Add blockers info if requested
+    tasks, total = await asyncio.gather(
+        asyncio.to_thread(
+            task_store.list_tasks, project_id, **filter_kwargs, limit=limit, offset=offset,
+        ),
+        asyncio.to_thread(task_store.count_tasks, project_id, **filter_kwargs),
+    )
+
+    task_ids = [t["id"] for t in tasks]
+
+    # Add blockers info if requested (batch query)
     if include_blockers:
+        blockers_map = await asyncio.to_thread(dep_store.get_blocking_tasks_batch, task_ids)
         for task in tasks:
-            blockers = await asyncio.to_thread(dep_store.get_blocking_tasks, task["id"])
-            task["blockers"] = blockers
+            task["blockers"] = blockers_map.get(task["id"], [])
 
     # Batch fetch criteria counts to avoid N+1 queries
-    task_ids = [t["id"] for t in tasks]
     criteria_counts = await asyncio.to_thread(get_step_counts_batch, task_ids)
 
     task_responses = [task_to_response(t, criteria_counts.get(t["id"], 0)) for t in tasks]
@@ -81,7 +85,7 @@ async def list_tasks(
 
     return TaskListResponse(
         tasks=task_responses,
-        total=len(tasks),  # TODO: Add proper total count
+        total=total,
         hints=get_hints(task_responses, project_id, endpoint_type="list"),
     )
 
