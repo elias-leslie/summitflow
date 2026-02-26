@@ -1,6 +1,5 @@
-"""Escalation logic for fix agent.
+"""Escalation logic for fix agent (3-2-1 pattern).
 
-Implements the 3-2-1 escalation pattern:
 - WORKER (3 attempts): GEMINI_FLASH
 - SUPERVISOR (2 attempts): CLAUDE_SONNET with different strategy
 - HUMAN: Create blocking task for manual review
@@ -28,10 +27,7 @@ FixResult = Literal["fixed", "failed", "escalated_supervisor", "escalated_human"
 
 @dataclass
 class FixAttemptResult:
-    """Result of a fix attempt including cost tracking.
-
-    Used for budget enforcement in the self-healing orchestrator.
-    """
+    """Result of a fix attempt including cost tracking."""
 
     outcome: FixResult
     cost_usd: float = 0.0  # Cost incurred by this attempt
@@ -53,97 +49,75 @@ def _get_thresholds(project_id: str | None) -> tuple[int, int, int]:
 
 
 def get_escalation_level(attempts: int, project_id: str | None = None) -> str:
-    """Get current escalation level based on attempt count.
-
-    Args:
-        attempts: Number of fix attempts made
-        project_id: Optional project ID for per-project thresholds
-
-    Returns:
-        'WORKER', 'SUPERVISOR', or 'HUMAN'
-    """
+    """Get current escalation level: 'WORKER', 'SUPERVISOR', or 'HUMAN'."""
     worker, _supervisor, max_total = _get_thresholds(project_id)
     if attempts < worker:
         return "WORKER"
     elif attempts < max_total:
         return "SUPERVISOR"
-    else:
-        return "HUMAN"
+    return "HUMAN"
 
 
-def escalate_to_human(
-    conn: psycopg.Connection[Any],
-    result_id: int,
-) -> str | None:
-    """Create a blocking bug task for manual review of an unfixable error.
+def _build_escalation_title(
+    check_type: str, check_name: str, file_path: str, line_number: int | None
+) -> str:
+    """Build task title for a human-escalation bug task."""
+    location = f"{file_path}:{line_number}" if line_number else file_path
+    if check_name:
+        return f"Fix: {check_type} {check_name} in {location}"
+    return f"Fix: {check_type} error in {location}"
 
-    Called when fix attempts exceed MAX_FIX_ATTEMPTS (3 worker + 2 supervisor).
-    Creates a P1 bug task linked to the check result.
 
-    Args:
-        conn: Database connection
-        result_id: ID of the quality_check_result to escalate
+_PIPELINE_NOTE = (
+    "This error could not be fixed automatically by the 3-2-1 escalation pipeline:\n"
+    "- 3 attempts with GEMINI_FLASH (worker level)\n"
+    "- 2 attempts with CLAUDE_SONNET + GEMINI_PRO (supervisor level)\n\n"
+    "Manual investigation required."
+)
 
-    Returns:
-        Created task ID, or None if escalation failed
+
+def _build_escalation_description(
+    check_type: str, check_name: str, file_path: str,
+    line_number: int | None, error_message: str, result_id: int,
+) -> str:
+    """Build task description for a human-escalation bug task."""
+    parts = [
+        f"**Auto-fix failed after {MAX_FIX_ATTEMPTS} attempts.**", "",
+        f"**Check type:** {check_type}", f"**File:** {file_path}",
+    ]
+    if line_number:
+        parts.append(f"**Line:** {line_number}")
+    if check_name:
+        parts.append(f"**Rule/Check:** {check_name}")
+    parts += ["", "**Error message:**", "```", error_message, "```", "",
+              f"**Quality check result ID:** {result_id}", "", _PIPELINE_NOTE]
+    return "\n".join(parts)
+
+
+def escalate_to_human(conn: psycopg.Connection[Any], result_id: int) -> str | None:
+    """Create a P1 bug task for manual review when auto-fix is exhausted.
+
+    Returns the created task ID, or None if escalation failed.
     """
     check_result = qcr_store.get_check_result(conn, result_id)
     if not check_result:
         logger.error("check_result_not_found_for_escalation", result_id=result_id)
         return None
 
-    # Skip if already escalated
     existing_task_id = check_result.get("escalation_task_id")
     if existing_task_id:
-        logger.info(
-            "already_escalated",
-            result_id=result_id,
-            task_id=existing_task_id,
-        )
+        logger.info("already_escalated", result_id=result_id, task_id=existing_task_id)
         return str(existing_task_id)
 
     check_type = check_result["check_type"]
     file_path = check_result.get("file_path", "unknown")
     line_number = check_result.get("line_number")
-    error_message = check_result.get("error_message", "")[:200]  # Truncate for title
+    error_message = check_result.get("error_message", "")[:200]
     check_name = check_result.get("check_name", "")
-
-    # Build task title
-    location = f"{file_path}:{line_number}" if line_number else file_path
-    if check_name:
-        title = f"Fix: {check_type} {check_name} in {location}"
-    else:
-        title = f"Fix: {check_type} error in {location}"
-
-    # Build description with context
-    description_parts = [
-        f"**Auto-fix failed after {MAX_FIX_ATTEMPTS} attempts.**",
-        "",
-        f"**Check type:** {check_type}",
-        f"**File:** {file_path}",
-    ]
-    if line_number:
-        description_parts.append(f"**Line:** {line_number}")
-    if check_name:
-        description_parts.append(f"**Rule/Check:** {check_name}")
-    description_parts.extend(
-        [
-            "",
-            "**Error message:**",
-            "```",
-            error_message,
-            "```",
-            "",
-            f"**Quality check result ID:** {result_id}",
-            "",
-            "This error could not be fixed automatically by the 3-2-1 escalation pipeline:",
-            "- 3 attempts with GEMINI_FLASH (worker level)",
-            "- 2 attempts with CLAUDE_SONNET + GEMINI_PRO (supervisor level)",
-            "",
-            "Manual investigation required.",
-        ]
+    title = _build_escalation_title(check_type, check_name, file_path, line_number)
+    description = _build_escalation_description(
+        check_type, check_name, file_path, line_number, error_message, result_id
     )
-    description = "\n".join(description_parts)
 
     try:
         task = create_task(
@@ -155,11 +129,8 @@ def escalate_to_human(
             complexity="STANDARD",
         )
         task_id: str = task["id"]
-
-        # Link the check result to the task
         qcr_store.mark_escalated(conn, result_id, task_id)
         conn.commit()
-
         logger.info(
             "escalated_to_task",
             result_id=result_id,
@@ -167,9 +138,7 @@ def escalate_to_human(
             check_type=check_type,
             file_path=file_path,
         )
-
         return task_id
-
     except Exception as e:
         logger.error("escalation_failed", result_id=result_id, error=str(e))
         return None
