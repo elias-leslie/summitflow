@@ -87,10 +87,17 @@ fi
 
 # Parse remaining flags — unknown args are passed through to tool subcommands
 # When a tool subcommand was detected, ALL remaining args are pass-through to that tool
+# A leading `--` separator is stripped so it doesn't leak into the underlying tool
+# (e.g., `dt pytest -- -k "persona"` → pytest receives `-k persona`, not `-- -k persona`)
 CHANGED_ONLY=0
 EXTRA_ARGS=()
 if [[ "$ACTION" == "tool_toon" ]]; then
-    EXTRA_ARGS=("$@")
+    for arg in "$@"; do
+        if [[ "$arg" == "--" ]] && [[ ${#EXTRA_ARGS[@]} -eq 0 ]]; then
+            continue  # strip leading -- separator
+        fi
+        EXTRA_ARGS+=("$arg")
+    done
 else
     for arg in "$@"; do
         case $arg in
