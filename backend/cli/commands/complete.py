@@ -34,6 +34,7 @@ def _load_credentials() -> tuple[str, str]:
         raise typer.Exit(1)
     return client_id, request_source
 
+
 def _handle_error_response(response: httpx.Response) -> None:
     """Handle a non-2xx response, printing diagnostics and exiting."""
     try:
@@ -51,27 +52,31 @@ def _handle_error_response(response: httpx.Response) -> None:
             print(f"  {info}", file=sys.stderr)
     raise typer.Exit(1) from None
 
-def _complete(
-    agent_slug: str | None, message: str, project_id: str = "st-cli",
-    source_client: str = "st-cli", use_memory: bool = True,
-    memory_group_id: str | None = None, execute_tools: bool = False,
-    working_dir: str | None = None, timeout: float = 60.0,
-    skip_cache: bool = False, session_id: str | None = None,
-    thinking_level: str | None = None, max_turns: int = 1,
-    stream: bool = False, trace_id: str | None = None,
-    include_roles: list[str] | None = None,
-) -> dict[str, Any]:
-    """Call /api/complete endpoint."""
-    client_id, request_source = _load_credentials()
-    agent_hub_url = get_agent_hub_url()
+
+def _build_headers(
+    client_id: str, request_source: str, source_client: str, skip_cache: bool
+) -> dict[str, str]:
+    """Build request headers for /api/complete."""
     headers: dict[str, str] = {
         "Content-Type": "application/json",
         "X-Client-Id": client_id,
-        "X-Request-Source": request_source, "X-Source-Client": source_client,
+        "X-Request-Source": request_source,
+        "X-Source-Client": source_client,
         "X-Tool-Name": "st complete",
     }
     if skip_cache:
         headers["X-Skip-Cache"] = "true"
+    return headers
+
+
+def _build_payload(
+    message: str, project_id: str, agent_slug: str | None,
+    memory_group_id: str | None, working_dir: str | None,
+    session_id: str | None, thinking_level: str | None,
+    trace_id: str | None, use_memory: bool, execute_tools: bool,
+    max_turns: int, stream: bool, include_roles: list[str] | None,
+) -> dict[str, Any]:
+    """Build request payload for /api/complete."""
     payload: dict[str, Any] = {
         "project_id": project_id,
         "messages": [{"role": "user", "content": message}],
@@ -93,6 +98,28 @@ def _complete(
         payload["stream"] = True
     if include_roles:
         payload["include_roles"] = include_roles
+    return payload
+
+
+def _complete(
+    agent_slug: str | None, message: str, project_id: str = "st-cli",
+    source_client: str = "st-cli", use_memory: bool = True,
+    memory_group_id: str | None = None, execute_tools: bool = False,
+    working_dir: str | None = None, timeout: float = 60.0,
+    skip_cache: bool = False, session_id: str | None = None,
+    thinking_level: str | None = None, max_turns: int = 1,
+    stream: bool = False, trace_id: str | None = None,
+    include_roles: list[str] | None = None,
+) -> dict[str, Any]:
+    """Call /api/complete endpoint."""
+    client_id, request_source = _load_credentials()
+    agent_hub_url = get_agent_hub_url()
+    headers = _build_headers(client_id, request_source, source_client, skip_cache)
+    payload = _build_payload(
+        message, project_id, agent_slug, memory_group_id, working_dir,
+        session_id, thinking_level, trace_id, use_memory, execute_tools,
+        max_turns, stream, include_roles,
+    )
     try:
         if stream:
             return _stream_complete(agent_hub_url, headers, payload, timeout)
@@ -172,6 +199,17 @@ def _resolve_message(message: str | None, file: str | None) -> str | None:
     return None
 
 
+def _output_result(result: dict[str, Any], stream: bool, raw: bool) -> None:
+    """Output the completion result to stdout."""
+    if stream and not raw:
+        # Content already printed during streaming
+        return
+    if raw:
+        output_json(result)
+    else:
+        typer.echo(result.get("content", ""))
+
+
 @app.callback(invoke_without_command=True)
 def complete_default(
     ctx: typer.Context,
@@ -219,10 +257,4 @@ def complete_default(
         execute_tools, working_dir, timeout, skip_cache, session_id,
         thinking_level, max_turns, stream, trace_id, roles,
     )
-    if stream and not raw:
-        # Content already printed during streaming
-        return
-    if raw:
-        output_json(result)
-    else:
-        typer.echo(result.get("content", ""))
+    _output_result(result, stream, raw)
