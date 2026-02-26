@@ -84,12 +84,16 @@ def _determine_verdict(checks: dict[str, Any], all_issues: list[str]) -> tuple[R
     return ReviewVerdict.PASS, "All checks passed"
 
 
+def _apply_pass_verdict(task_id: str, pr_url: str | None) -> None:
+    if pr_url:
+        _auto_merge_pr(task_id, pr_url, _get_project_path(task_store.get_task(task_id)))
+    task_store.update_task_status(task_id, "completed")
+    logger.info("review_passed", task_id=task_id)
+
+
 def _apply_verdict(task_id: str, pr_url: str | None, verdict: ReviewVerdict, summary: str, all_issues: list[str]) -> None:
     if verdict == ReviewVerdict.PASS:
-        if pr_url:
-            _auto_merge_pr(task_id, pr_url, _get_project_path(task_store.get_task(task_id)))
-        task_store.update_task_status(task_id, "completed")
-        logger.info("review_passed", task_id=task_id)
+        _apply_pass_verdict(task_id, pr_url)
     elif verdict == ReviewVerdict.NEEDS_FIX:
         log_task_event(task_id, f"AI Review needs fixes: {', '.join(all_issues[:3])}")
         logger.info("review_needs_fix", task_id=task_id, issues=len(all_issues))
@@ -125,15 +129,24 @@ def _do_review(task_id: str, task: dict[str, Any], pr_url: str | None) -> dict[s
     _apply_verdict(task_id, pr_url, verdict, summary, all_issues)
     return result.to_dict()
 
+
+def _validate_task_for_review(task_id: str, task: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Return an error result dict if the task is invalid, else None."""
+    if not task:
+        return ReviewResult(verdict=ReviewVerdict.FAIL, summary=f"Task {task_id} not found", issues=[f"Task {task_id} not found"]).to_dict()
+    if task.get("status") != "ai_reviewing":
+        logger.warning("task_not_in_review", task_id=task_id, status=task.get("status"))
+        return ReviewResult(verdict=ReviewVerdict.FAIL, summary=f"Task not in ai_reviewing status (current: {task.get('status')})", issues=["Task must be in ai_reviewing status for review"]).to_dict()
+    return None
+
+
 def review_pull_request(task_id: str, pr_url: str | None = None) -> dict[str, Any]:
     logger.info("review_pull_request_start", task_id=task_id, pr_url=pr_url)
     try:
         task = task_store.get_task(task_id)
-        if not task:
-            return ReviewResult(verdict=ReviewVerdict.FAIL, summary=f"Task {task_id} not found", issues=[f"Task {task_id} not found"]).to_dict()
-        if task.get("status") != "ai_reviewing":
-            logger.warning("task_not_in_review", task_id=task_id, status=task.get("status"))
-            return ReviewResult(verdict=ReviewVerdict.FAIL, summary=f"Task not in ai_reviewing status (current: {task.get('status')})", issues=["Task must be in ai_reviewing status for review"]).to_dict()
+        error = _validate_task_for_review(task_id, task)
+        if error is not None:
+            return error
         return _do_review(task_id, task, pr_url)
     except Exception as e:
         logger.error("review_pull_request_error", task_id=task_id, error=str(e))
