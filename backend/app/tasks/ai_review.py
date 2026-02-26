@@ -44,6 +44,19 @@ def _handle_escalation(
     return result.to_dict()
 
 
+def _collect_check_issues(
+    check_name: str, check_result: dict[str, Any], simple_msg: str | None, has_details: bool
+) -> tuple[list[str], list[str]]:
+    """Extract issues and suggestions from a failed check result."""
+    if simple_msg:
+        return [simple_msg], []
+    if has_details:
+        return check_result.get("issues", []), check_result.get("suggestions", [])
+    if check_name == "step_completion":
+        return [f"Incomplete steps: {len(check_result.get('missing', []))}"], []
+    return [], []
+
+
 def _run_standard_checks(task: dict[str, Any], project_path: Path, checks: dict[str, Any]) -> tuple[list[str], list[str]]:
     all_issues: list[str] = []
     all_suggestions: list[str] = []
@@ -60,13 +73,9 @@ def _run_standard_checks(task: dict[str, Any], project_path: Path, checks: dict[
         checks[check_name] = check_fn()
         if checks[check_name].get("status") != "fail":
             continue
-        if simple_msg:
-            all_issues.append(simple_msg)
-        elif has_details:
-            all_issues.extend(checks[check_name].get("issues", []))
-            all_suggestions.extend(checks[check_name].get("suggestions", []))
-        elif check_name == "step_completion":
-            all_issues.append(f"Incomplete steps: {len(checks[check_name].get('missing', []))}")
+        issues, suggestions = _collect_check_issues(check_name, checks[check_name], simple_msg, has_details)
+        all_issues.extend(issues)
+        all_suggestions.extend(suggestions)
     return all_issues, all_suggestions
 
 
@@ -142,11 +151,11 @@ def _validate_task_for_review(task_id: str, task: dict[str, Any] | None) -> dict
 
 def review_pull_request(task_id: str, pr_url: str | None = None) -> dict[str, Any]:
     logger.info("review_pull_request_start", task_id=task_id, pr_url=pr_url)
+    task = task_store.get_task(task_id)
+    error = _validate_task_for_review(task_id, task)
+    if error is not None:
+        return error
     try:
-        task = task_store.get_task(task_id)
-        error = _validate_task_for_review(task_id, task)
-        if error is not None:
-            return error
         return _do_review(task_id, task, pr_url)
     except Exception as e:
         logger.error("review_pull_request_error", task_id=task_id, error=str(e))
