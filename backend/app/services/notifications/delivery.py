@@ -21,8 +21,13 @@ logger = logging.getLogger(__name__)
 
 FRONTEND_URL = os.getenv("SUMMITFLOW_FRONTEND_URL", "https://dev.summitflow.dev")
 
-# Severities that trigger push delivery (info stays in-app only)
 _PUSH_SEVERITIES = {"critical", "error", "warning"}
+_DEFAULT_TITLE = "SummitFlow"
+_PROJECT_ID = "summitflow"
+_PUSH_ENDPOINT = "/api/push/send"
+_HTTP_TIMEOUT = 10.0
+_HTTP_OK = 200
+_LOG_TEXT_LIMIT = 200
 
 
 def _build_task_url(notification: dict[str, Any]) -> str:
@@ -32,9 +37,21 @@ def _build_task_url(notification: dict[str, Any]) -> str:
         params.append(f"task_id={notification['task_id']}")
     if notification.get("id"):
         params.append(f"notification_id={notification['id']}")
-    if params:
-        return f"{FRONTEND_URL}/chat?{'&'.join(params)}"
-    return FRONTEND_URL
+    return f"{FRONTEND_URL}/chat?{'&'.join(params)}" if params else FRONTEND_URL
+
+
+def _build_payload(notification: dict[str, Any]) -> dict[str, Any]:
+    """Build the push payload dict for Agent Hub delivery."""
+    return {
+        "title": notification.get("title", _DEFAULT_TITLE),
+        "body": notification.get("message", ""),
+        "url": _build_task_url(notification),
+        "tag": notification.get("id", ""),
+        "severity": notification.get("severity", "info"),
+        "task_id": notification.get("task_id"),
+        "notification_id": notification.get("id"),
+        "project_id": _PROJECT_ID,
+    }
 
 
 async def deliver(notification: dict[str, Any]) -> None:
@@ -48,37 +65,19 @@ async def deliver(notification: dict[str, Any]) -> None:
         notification: Notification dict from storage layer (must have
             'severity', 'title', 'message', and optionally 'task_id').
     """
-    severity: str = notification.get("severity", "info")
-
-    if severity not in _PUSH_SEVERITIES:
+    if notification.get("severity", "info") not in _PUSH_SEVERITIES:
         return
 
-    task_url = _build_task_url(notification)
-    payload = {
-        "title": notification.get("title", "SummitFlow"),
-        "body": notification.get("message", ""),
-        "url": task_url,
-        "tag": notification.get("id", ""),
-        "severity": severity,
-        "task_id": notification.get("task_id"),
-        "notification_id": notification.get("id"),
-        "project_id": "summitflow",
-    }
-
+    headers = {"X-Client-Id": SUMMITFLOW_CLIENT_ID or "", "X-Request-Source": SUMMITFLOW_REQUEST_SOURCE}
     try:
-        headers = {
-            "X-Client-Id": SUMMITFLOW_CLIENT_ID or "",
-            "X-Request-Source": SUMMITFLOW_REQUEST_SOURCE,
-        }
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
             resp = await client.post(
-                f"{AGENT_HUB_URL}/api/push/send",
-                json=payload,
+                f"{AGENT_HUB_URL}{_PUSH_ENDPOINT}",
+                json=_build_payload(notification),
                 headers=headers,
             )
-            if resp.status_code == 200:
-                data = resp.json()
-                delivered = data.get("delivered", 0)
+            if resp.status_code == _HTTP_OK:
+                delivered = resp.json().get("delivered", 0)
                 if delivered > 0:
                     logger.debug(
                         "Delivered notification %s via Agent Hub push (%d devices)",
@@ -89,7 +88,7 @@ async def deliver(notification: dict[str, Any]) -> None:
                 logger.warning(
                     "Agent Hub push send failed: %s %s",
                     resp.status_code,
-                    resp.text[:200],
+                    resp.text[:_LOG_TEXT_LIMIT],
                 )
     except Exception:
         logger.exception("Failed to deliver notification via Agent Hub push")
