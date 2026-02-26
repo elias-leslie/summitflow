@@ -1,7 +1,6 @@
 """AI Review task for pull request validation.
 
-Implements the AI review gate for git workflow. Runs when task transitions to ai_reviewing status.
-Pipeline: pytest, pre-commit, types, code quality (Opus), UI review (Gemini), step verification.
+Implements the AI review gate for git workflow. Runs when task transitions to ai_reviewing status. Pipeline: pytest, pre-commit, types, code quality (Opus), UI review (Gemini), step verification.
 """
 
 from __future__ import annotations
@@ -38,9 +37,7 @@ def _handle_escalation(
     task_id: str, checks: dict[str, Any], escalation_type: str, reason: str, issues: list[str], risk_level: RiskLevel
 ) -> dict[str, Any]:
     logger.info(f"{escalation_type}_escalation", task_id=task_id, reason=reason)
-    result = ReviewResult(
-        verdict=ReviewVerdict.FAIL, summary=f"{escalation_type}: {reason}", checks=checks, issues=issues, risk_level=risk_level
-    )
+    result = ReviewResult(verdict=ReviewVerdict.FAIL, summary=f"{escalation_type}: {reason}", checks=checks, issues=issues, risk_level=risk_level)
     task_store.update_task(task_id, review_result=result.to_dict())
     task_store.update_task_status(task_id, "blocked")
     _notify_human_review_needed(task_id, reason)
@@ -102,6 +99,32 @@ def _apply_verdict(task_id: str, pr_url: str | None, verdict: ReviewVerdict, sum
         logger.info("review_escalated", task_id=task_id)
 
 
+def _do_review(task_id: str, task: dict[str, Any], pr_url: str | None) -> dict[str, Any]:
+    project_path = _get_project_path(task)
+    checks: dict[str, Any] = {}
+    logger.info("running_security_risk_classification", task_id=task_id)
+    checks["security_risk"] = _run_security_risk_classification(task, project_path)
+    risk_level = RiskLevel(checks["security_risk"].get("risk_level", "low"))
+    if checks["security_risk"].get("status") == "escalate":
+        reason = checks["security_risk"].get("escalation_reason", "High-risk changes")
+        reasons = checks["security_risk"].get("reasons", [])
+        return _handle_escalation(task_id, checks, "Security gate", reason, [f"SECURITY GATE: {reason}", *reasons], risk_level)
+    logger.info("running_pytest", task_id=task_id)
+    checks["pytest"] = _run_pytest(project_path)
+    all_issues = ["pytest: Tests failed"] if checks["pytest"].get("status") == "fail" else []
+    logger.info("running_breaking_change_detection", task_id=task_id)
+    checks["breaking_change"] = _run_breaking_change_detection(task, project_path, checks["pytest"])
+    if checks["breaking_change"].get("status") == "escalate":
+        bc_reasons = checks["breaking_change"].get("reasons", [])
+        return _handle_escalation(task_id, checks, "Breaking change gate", f"Breaking changes detected: {'; '.join(bc_reasons)}", [f"BREAKING CHANGE: {r}" for r in bc_reasons], risk_level)
+    issues, suggestions = _run_standard_checks(task, project_path, checks)
+    all_issues.extend(issues)
+    verdict, summary = _determine_verdict(checks, all_issues)
+    result = ReviewResult(verdict=verdict, summary=summary, checks=checks, issues=all_issues, suggestions=suggestions, risk_level=risk_level)
+    task_store.update_task(task_id, review_result=result.to_dict())
+    _apply_verdict(task_id, pr_url, verdict, summary, all_issues)
+    return result.to_dict()
+
 def review_pull_request(task_id: str, pr_url: str | None = None) -> dict[str, Any]:
     logger.info("review_pull_request_start", task_id=task_id, pr_url=pr_url)
     try:
@@ -111,31 +134,7 @@ def review_pull_request(task_id: str, pr_url: str | None = None) -> dict[str, An
         if task.get("status") != "ai_reviewing":
             logger.warning("task_not_in_review", task_id=task_id, status=task.get("status"))
             return ReviewResult(verdict=ReviewVerdict.FAIL, summary=f"Task not in ai_reviewing status (current: {task.get('status')})", issues=["Task must be in ai_reviewing status for review"]).to_dict()
-        project_path = _get_project_path(task)
-        checks: dict[str, Any] = {}
-        logger.info("running_security_risk_classification", task_id=task_id)
-        checks["security_risk"] = _run_security_risk_classification(task, project_path)
-        risk_level = RiskLevel(checks["security_risk"].get("risk_level", "low"))
-        if checks["security_risk"].get("status") == "escalate":
-            reason = checks["security_risk"].get("escalation_reason", "High-risk changes")
-            reasons = checks["security_risk"].get("reasons", [])
-            return _handle_escalation(task_id, checks, "Security gate", reason, [f"SECURITY GATE: {reason}", *reasons], risk_level)
-        logger.info("running_pytest", task_id=task_id)
-        checks["pytest"] = _run_pytest(project_path)
-        all_issues = ["pytest: Tests failed"] if checks["pytest"].get("status") == "fail" else []
-        logger.info("running_breaking_change_detection", task_id=task_id)
-        checks["breaking_change"] = _run_breaking_change_detection(task, project_path, checks["pytest"])
-        if checks["breaking_change"].get("status") == "escalate":
-            bc_reasons = checks["breaking_change"].get("reasons", [])
-            reason = f"Breaking changes detected: {'; '.join(bc_reasons)}"
-            return _handle_escalation(task_id, checks, "Breaking change gate", reason, [f"BREAKING CHANGE: {r}" for r in bc_reasons], risk_level)
-        issues, suggestions = _run_standard_checks(task, project_path, checks)
-        all_issues.extend(issues)
-        verdict, summary = _determine_verdict(checks, all_issues)
-        result = ReviewResult(verdict=verdict, summary=summary, checks=checks, issues=all_issues, suggestions=suggestions, risk_level=risk_level)
-        task_store.update_task(task_id, review_result=result.to_dict())
-        _apply_verdict(task_id, pr_url, verdict, summary, all_issues)
-        return result.to_dict()
+        return _do_review(task_id, task, pr_url)
     except Exception as e:
         logger.error("review_pull_request_error", task_id=task_id, error=str(e))
         return ReviewResult(verdict=ReviewVerdict.FAIL, summary=f"Review error: {e}", issues=[str(e)]).to_dict()
