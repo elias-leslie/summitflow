@@ -6,7 +6,7 @@ Ensures verify commands are safe, effective, and worktree-compatible.
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import TypedDict
 
 from ...logging_config import get_logger
 from ...storage.steps_crud_validation import check_raw_tool_usage
@@ -28,6 +28,19 @@ _ECHO_ONLY = re.compile(r"^echo\s", re.IGNORECASE)
 _COMMENT_ONLY = re.compile(r"^#")
 
 
+class _Step(TypedDict, total=False):
+    verify_command: str
+
+
+class _Subtask(TypedDict, total=False):
+    subtask_id: str
+    steps: list[_Step]
+
+
+class _Plan(TypedDict, total=False):
+    subtasks: list[_Subtask]
+
+
 def _is_trivial_command(cmd: str) -> str | None:
     """Return error message if verify_command is trivial (always exits 0), else None."""
     stripped = cmd.strip()
@@ -45,22 +58,7 @@ def _is_trivial_command(cmd: str) -> str | None:
     return None
 
 
-def _validate_verify_command(cmd: str) -> str | None:
-    """Return error message if verify_command has absolute paths, else None."""
-    if _ABSOLUTE_CD_PATTERN.search(cmd):
-        return (
-            "verify_command uses absolute path (breaks worktree isolation). "
-            "Use relative paths — commands run with cwd=worktree"
-        )
-    if _ABSOLUTE_PATH_PREFIX.search(cmd):
-        return (
-            "verify_command uses absolute path (breaks worktree isolation). "
-            "Use relative paths — commands run with cwd=worktree"
-        )
-    return None
-
-
-def validate_and_fix_plan(plan: dict[str, Any]) -> None:
+def validate_and_fix_plan(plan: _Plan) -> None:
     """Validate and fix common issues in verify_commands.
 
     Args:
@@ -85,7 +83,6 @@ def validate_and_fix_plan(plan: dict[str, Any]) -> None:
                 # since commands already run with cwd=worktree
                 cd_match = _ABSOLUTE_CD_PATTERN.search(verify)
                 if cd_match:
-                    # Strip everything up to and including the "&&" after the cd
                     fixed = re.sub(r"cd\s+/[^\s;|&]+\s*&&\s*", "", verify).strip()
                     if fixed:
                         logger.info(
