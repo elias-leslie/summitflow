@@ -281,3 +281,69 @@ def build_complete_kwargs(
     if tier_preference:
         kwargs["tier_preference"] = tier_preference
     return kwargs
+
+
+def call_complete(
+    client: Any,
+    prompt: str,
+    agent_slug: str,
+    project_path: str,
+    project_id: str,
+    task_id: str,
+    session_id: str,
+    max_turns: int,
+    include_roles: list[str],
+    tier_preference: str | None = None,
+    model_override: str | None = None,
+) -> CompletionResponse:
+    """Invoke client.complete with standard kwargs."""
+    return client.complete(
+        **build_complete_kwargs(
+            prompt=prompt,
+            agent_slug=agent_slug,
+            project_path=project_path,
+            project_id=project_id,
+            task_id=task_id,
+            session_id=session_id,
+            max_turns=max_turns,
+            tier_preference=tier_preference,
+            model_override=model_override,
+            include_roles=include_roles,
+        )
+    )
+
+
+def post_initial_response(
+    task_id: str,
+    subtask_short_id: str,
+    response: CompletionResponse,
+    project_id: str,
+) -> None:
+    """Handle post-response logging for initial execution."""
+    handle_progress_log(task_id, subtask_short_id, response, project_id)
+    log_initial_completion_fallback(task_id, subtask_short_id, response, project_id)
+    log_context_usage(task_id, response, project_id, phase="initial")
+    log_memory_citations(task_id, response, project_id)
+    record_citations(task_id, subtask_short_id, response)
+
+
+def post_fix_response(
+    task_id: str,
+    subtask_short_id: str,
+    response: CompletionResponse,
+    project_id: str,
+    current_session_id: str,
+) -> str:
+    """Handle post-response logic for fix execution.
+
+    Returns the (possibly reset) session ID.
+    """
+    handle_progress_log(task_id, subtask_short_id, response, project_id)
+    emit_log(
+        task_id, "info", "Agent fix attempt completed",
+        source="agent", project_id=project_id,
+    )
+    if check_context_reset_needed(task_id, response, project_id):
+        return create_session(task_id)
+    log_context_usage(task_id, response, project_id, phase="check")
+    return current_session_id
