@@ -79,6 +79,16 @@ class SyncResultsRequest(BaseModel):
     triggered_by: Literal["commit", "manual", "ci", "agent"] = "commit"
 
 
+class SyncResultsResponse(BaseModel):
+    """Response from syncing quality check results."""
+
+    synced: bool
+    check_type: str
+    status: str
+    created_count: int
+    auto_closed_count: int
+
+
 class AutoFixRequest(BaseModel):
     """Request to trigger auto-fix."""
 
