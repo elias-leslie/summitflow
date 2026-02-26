@@ -54,6 +54,49 @@ class OrchestrateResult(TypedDict, total=False):
     by_project: dict[str, ProjectData]
 
 
+def _aggregate_check_types(by_project: dict[str, ProjectData]) -> ByCheckType:
+    """Aggregate check-type counts across all projects."""
+    by_check: ByCheckType = {}
+    for pr_data in by_project.values():
+        for check_type, counts in cast(ByCheckType, pr_data.get("by_check_type", {})).items():
+            if check_type not in by_check:
+                by_check[check_type] = {"fixed": 0, "failed": 0, "escalated": 0}
+            for key in ("fixed", "failed", "escalated"):
+                by_check[check_type][key] += counts.get(key, 0)
+    return by_check
+
+
+def _process_project_into_results(
+    conn: psycopg.Connection,
+    results: OrchestrateResult,
+    project_id: str,
+    unfixed_counts: dict[str, int],
+    total_processed: int,
+    max_errors_per_run: int,
+    max_errors_per_project: int,
+) -> tuple[int, bool]:
+    """Process one project, update results in-place. Returns (total_processed, budget_exceeded)."""
+    try:
+        pr = process_project(
+            conn=conn, project_id=project_id, unfixed_counts=unfixed_counts,
+            remaining_budget=max_errors_per_run - total_processed,
+            cumulative_cost=results["cumulative_cost_usd"],
+            max_errors_per_project=max_errors_per_project,
+        )
+        results["projects_processed"] += 1
+        results["total_fixed"] += pr["fixed"]
+        results["total_failed"] += pr["failed"]
+        results["total_escalated"] += pr["escalated"]
+        results["by_project"][project_id] = pr
+        results["cumulative_cost_usd"] = pr.get("cumulative_cost_usd", results["cumulative_cost_usd"])
+        return total_processed + pr["fixed"] + pr["failed"] + pr["escalated"], False
+    except BudgetExceededError as e:
+        logger.warning("orchestrator_budget_exceeded", cumulative_cost=e.cumulative_cost, budget=e.budget, project_id=project_id)
+        results["budget_exceeded"] = True
+        results["cumulative_cost_usd"] = e.cumulative_cost
+        return total_processed, True
+
+
 class SelfHealingOrchestrator:
     """Orchestrates automated fix triggering for quality gate failures.
 
@@ -103,36 +146,14 @@ class SelfHealingOrchestrator:
             if total_processed >= self.max_errors_per_run:
                 logger.info("max_errors_reached", processed=total_processed, max=self.max_errors_per_run)
                 break
-            try:
-                pr = process_project(
-                    conn=self.conn,
-                    project_id=project_id,
-                    unfixed_counts=unfixed_counts,
-                    remaining_budget=self.max_errors_per_run - total_processed,
-                    cumulative_cost=results["cumulative_cost_usd"],
-                    max_errors_per_project=self.max_errors_per_project,
-                )
-                results["projects_processed"] += 1
-                results["total_fixed"] += pr["fixed"]
-                results["total_failed"] += pr["failed"]
-                results["total_escalated"] += pr["escalated"]
-                results["by_project"][project_id] = pr
-                results["cumulative_cost_usd"] = pr.get("cumulative_cost_usd", results["cumulative_cost_usd"])
-                total_processed += pr["fixed"] + pr["failed"] + pr["escalated"]
-            except BudgetExceededError as e:
-                logger.warning("orchestrator_budget_exceeded", cumulative_cost=e.cumulative_cost, budget=e.budget, project_id=project_id)
-                results["budget_exceeded"] = True
-                results["cumulative_cost_usd"] = e.cumulative_cost
+            total_processed, exceeded = _process_project_into_results(
+                self.conn, results, project_id, unfixed_counts,
+                total_processed, self.max_errors_per_run, self.max_errors_per_project,
+            )
+            if exceeded:
                 break
 
-        by_check: ByCheckType = {}
-        for pr_data in results["by_project"].values():
-            for check_type, counts in cast(ByCheckType, pr_data.get("by_check_type", {})).items():
-                if check_type not in by_check:
-                    by_check[check_type] = {"fixed": 0, "failed": 0, "escalated": 0}
-                for key in ("fixed", "failed", "escalated"):
-                    by_check[check_type][key] += counts.get(key, 0)
-        results["by_check_type"] = by_check
+        results["by_check_type"] = _aggregate_check_types(results["by_project"])
 
         logger.info(
             "orchestrator_poll_complete",
