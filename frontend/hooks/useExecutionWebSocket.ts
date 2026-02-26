@@ -5,8 +5,16 @@ import type {
   ExecutionLog,
   ExecutionState,
 } from '@/components/kanban/ExecutionPanel'
-import type { TimelineMessage } from '@/components/tasks/TimelineEvent'
 import { getWsUrl } from '@/lib/api-config'
+import {
+  INITIAL_RECONNECT_DELAY,
+  MAX_RECONNECT_DELAY,
+  RECONNECT_MULTIPLIER,
+} from './websocketTypes'
+import type { WebSocketMessage } from './websocketTypes'
+
+// Re-export stream hook for backward compatibility
+export { useExecutionWebSocketStream } from './useExecutionWebSocketStream'
 
 // ============================================================================
 // Shared Utilities
@@ -15,24 +23,6 @@ import { getWsUrl } from '@/lib/api-config'
 export function getWebSocketUrl(taskId: string, fromSequence?: number): string {
   const path = `/ws/execution/${taskId}${fromSequence ? `?from_sequence=${fromSequence}` : ''}`
   return getWsUrl(path)
-}
-
-// Message types from backend
-type MessageType =
-  | 'log'
-  | 'progress'
-  | 'model_change'
-  | 'chat_message'
-  | 'stop_signal'
-  | 'connected'
-  | 'error'
-
-interface WebSocketMessage {
-  type: MessageType
-  task_id: string
-  data: Record<string, unknown>
-  timestamp: string
-  sequence: number
 }
 
 interface UseExecutionWebSocketOptions {
@@ -48,11 +38,6 @@ interface UseExecutionWebSocketReturn {
   sendMessage: (message: string) => void
   sendStop: () => void
 }
-
-// Exponential backoff config
-const INITIAL_RECONNECT_DELAY = 1000
-const MAX_RECONNECT_DELAY = 30000
-const RECONNECT_MULTIPLIER = 2
 
 export function useExecutionWebSocket({
   taskId,
@@ -93,7 +78,6 @@ export function useExecutionWebSocket({
       setConnecting(false)
       wsRef.current = null
 
-      // Schedule reconnection with exponential backoff
       if (enabled) {
         reconnectTimeoutRef.current = setTimeout(() => {
           reconnectDelayRef.current = Math.min(
@@ -113,74 +97,13 @@ export function useExecutionWebSocket({
       try {
         const msg: WebSocketMessage = JSON.parse(event.data)
         lastSequenceRef.current = msg.sequence
-
-        switch (msg.type) {
-          case 'connected':
-            setExecution((prev) => ({ ...prev, status: 'running' }))
-            break
-
-          case 'log': {
-            const logData = msg.data as { level?: string; message?: string }
-            const newLog: ExecutionLog = {
-              id: `${msg.sequence}`,
-              timestamp: msg.timestamp,
-              level: (logData.level as ExecutionLog['level']) || 'info',
-              message: String(logData.message || ''),
-            }
-            setExecution((prev) => ({
-              ...prev,
-              logs: [...prev.logs.slice(-99), newLog], // Keep last 100 logs
-            }))
-            break
-          }
-
-          case 'progress': {
-            const progressData = msg.data as {
-              completed_subtasks?: number
-              total_subtasks?: number
-              status?: string
-            }
-            const completed = progressData.completed_subtasks || 0
-            const total = progressData.total_subtasks || 1
-            const progress = Math.round((completed / total) * 100)
-            setExecution((prev) => ({
-              ...prev,
-              progress,
-              currentStep: progressData.status,
-            }))
-            break
-          }
-
-          case 'model_change': {
-            const modelData = msg.data as { model?: string }
-            setExecution((prev) => ({
-              ...prev,
-              currentModel: String(modelData.model || prev.currentModel),
-            }))
-            break
-          }
-
-          case 'stop_signal':
-            setExecution((prev) => ({ ...prev, status: 'stopped' }))
-            break
-
-          case 'error': {
-            const errorData = msg.data as { error?: string }
-            onError?.(String(errorData.error || 'Unknown error'))
-            break
-          }
-
-          case 'chat_message':
-            // Chat messages from other clients - could show in logs
-            break
-        }
+        handleMessage(msg, setExecution, onError)
       } catch (e) {
         console.error('Failed to parse WebSocket message:', e)
       }
     }
   }, [taskId, enabled, onError])
 
-  // Connect on mount, disconnect on unmount
   useEffect(() => {
     connect()
 
@@ -197,150 +120,78 @@ export function useExecutionWebSocket({
 
   const sendMessage = useCallback((message: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(
-        JSON.stringify({
-          type: 'chat_message',
-          data: { message },
-        }),
-      )
+      wsRef.current.send(JSON.stringify({ type: 'chat_message', data: { message } }))
     }
   }, [])
 
   const sendStop = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(
-        JSON.stringify({
-          type: 'stop_signal',
-          data: {},
-        }),
-      )
+      wsRef.current.send(JSON.stringify({ type: 'stop_signal', data: {} }))
     }
   }, [])
 
-  return {
-    execution,
-    connected,
-    connecting,
-    sendMessage,
-    sendStop,
-  }
+  return { execution, connected, connecting, sendMessage, sendStop }
 }
 
-// ============================================================================
-// useExecutionWebSocketStream — Raw stream variant for ExecutionTimeline
-// ============================================================================
+// Message handler extracted to reduce connect() complexity
+function handleMessage(
+  msg: WebSocketMessage,
+  setExecution: React.Dispatch<React.SetStateAction<ExecutionState>>,
+  onError?: (error: string) => void,
+) {
+  switch (msg.type) {
+    case 'connected':
+      setExecution((prev) => ({ ...prev, status: 'running' }))
+      break
 
-interface UseExecutionWebSocketStreamOptions {
-  taskId: string
-  autoConnect: boolean
-  onMessage: (message: TimelineMessage) => void
-  onScrollToBottom: () => void
-}
-
-export function useExecutionWebSocketStream({
-  taskId,
-  autoConnect,
-  onMessage,
-  onScrollToBottom,
-}: UseExecutionWebSocketStreamOptions) {
-  const [isConnected, setIsConnected] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const wsRef = useRef<WebSocket | null>(null)
-  const lastSequenceRef = useRef<number>(0)
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-  const reconnectAttemptRef = useRef<number>(0)
-
-  const connect = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return
-
-    try {
-      const ws = new WebSocket(getWebSocketUrl(taskId, lastSequenceRef.current))
-
-      ws.onopen = () => {
-        setIsConnected(true)
-        setError(null)
-        reconnectAttemptRef.current = 0
+    case 'log': {
+      const logData = msg.data as { level?: string; message?: string }
+      const newLog: ExecutionLog = {
+        id: `${msg.sequence}`,
+        timestamp: msg.timestamp,
+        level: (logData.level as ExecutionLog['level']) || 'info',
+        message: String(logData.message || ''),
       }
+      setExecution((prev) => ({
+        ...prev,
+        logs: [...prev.logs.slice(-99), newLog],
+      }))
+      break
+    }
 
-      ws.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data) as TimelineMessage
-          lastSequenceRef.current = Math.max(
-            lastSequenceRef.current,
-            message.sequence,
-          )
-          onMessage(message)
-          setTimeout(onScrollToBottom, 10)
-        } catch (err) {
-          console.error('Failed to parse message:', err)
-        }
+    case 'progress': {
+      const progressData = msg.data as {
+        completed_subtasks?: number
+        total_subtasks?: number
+        status?: string
       }
-
-      ws.onerror = () => {
-        setError('Connection error')
-        setIsConnected(false)
-      }
-
-      ws.onclose = () => {
-        setIsConnected(false)
-        if (autoConnect) {
-          const attempt = reconnectAttemptRef.current
-          const delay = Math.min(
-            INITIAL_RECONNECT_DELAY * RECONNECT_MULTIPLIER ** attempt,
-            MAX_RECONNECT_DELAY,
-          )
-          reconnectAttemptRef.current = attempt + 1
-          reconnectTimeoutRef.current = setTimeout(connect, delay)
-        }
-      }
-
-      wsRef.current = ws
-    } catch (err) {
-      console.error('Failed to connect:', err)
-      setError('Failed to connect to execution stream')
+      const completed = progressData.completed_subtasks || 0
+      const total = progressData.total_subtasks || 1
+      const progress = Math.round((completed / total) * 100)
+      setExecution((prev) => ({ ...prev, progress, currentStep: progressData.status }))
+      break
     }
-  }, [taskId, autoConnect, onMessage, onScrollToBottom])
 
-  const disconnect = useCallback(() => {
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current)
-      reconnectTimeoutRef.current = null
+    case 'model_change': {
+      const modelData = msg.data as { model?: string }
+      setExecution((prev) => ({
+        ...prev,
+        currentModel: String(modelData.model || prev.currentModel),
+      }))
+      break
     }
-    if (wsRef.current) {
-      wsRef.current.close()
-      wsRef.current = null
-    }
-  }, [])
 
-  const sendChatMessage = useCallback((text: string) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(
-        JSON.stringify({
-          type: 'chat_message',
-          data: { message: text, sender: 'user' },
-        }),
-      )
-    }
-  }, [])
+    case 'stop_signal':
+      setExecution((prev) => ({ ...prev, status: 'stopped' }))
+      break
 
-  useEffect(() => {
-    if (autoConnect) {
-      connect()
+    case 'error': {
+      const errorData = msg.data as { error?: string }
+      onError?.(String(errorData.error || 'Unknown error'))
+      break
     }
-    return () => {
-      disconnect()
-    }
-  }, [autoConnect, connect, disconnect])
 
-  return {
-    isConnected,
-    error,
-    connect,
-    disconnect,
-    sendChatMessage,
-    setLastSequence: (seq: number) => {
-      lastSequenceRef.current = seq
-    },
+    case 'chat_message':
+      break
   }
 }
