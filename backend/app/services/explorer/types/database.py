@@ -39,7 +39,6 @@ class DatabaseScanner(BaseScanner):
 
     def scan(self) -> list[ExplorerEntryCreate]:
         """Scan database tables and return entries."""
-        # Get DB URL from config or environment variable
         self.db_url = self.config.get("db_url") if self.config else None
         if not self.db_url:
             self.db_url = get_db_url_for_project(self.project_id)
@@ -51,29 +50,68 @@ class DatabaseScanner(BaseScanner):
         logger.info(f"Database scan started for {self.project_id}")
 
         entries: list[ExplorerEntryCreate] = []
-
         try:
             engine = create_engine(self.db_url)
             inspector = inspect(engine)
-
             with engine.connect() as conn:
-                for table_name in inspector.get_table_names():
-                    if table_name in SYSTEM_TABLES:
-                        continue
-
-                    try:
-                        entry = self._scan_table(table_name, conn, inspector)
-                        if entry:
-                            entries.append(entry)
-                    except Exception as e:
-                        logger.warning(f"Failed to scan table {table_name}: {e}")
-
+                self._collect_entries(conn, inspector, entries)
             logger.info(f"Database scan found {len(entries)} tables")
-
         except Exception as e:
             logger.error(f"Database scan failed: {e}")
 
         return entries
+
+    def _collect_entries(
+        self,
+        conn: Any,
+        inspector: Any,
+        entries: list[ExplorerEntryCreate],
+    ) -> None:
+        """Iterate tables and append scanned entries, skipping system tables."""
+        for table_name in inspector.get_table_names():
+            if table_name in SYSTEM_TABLES:
+                continue
+            self._try_append_entry(table_name, conn, inspector, entries)
+
+    def _try_append_entry(
+        self,
+        table_name: str,
+        conn: Any,
+        inspector: Any,
+        entries: list[ExplorerEntryCreate],
+    ) -> None:
+        """Scan one table and append the result, logging on failure."""
+        try:
+            entry = self._scan_table(table_name, conn, inspector)
+            if entry:
+                entries.append(entry)
+        except Exception as e:
+            logger.warning(f"Failed to scan table {table_name}: {e}")
+
+    def _get_row_count(self, table_name: str, conn: Any) -> int:
+        """Return the number of rows in the given table."""
+        result = conn.execute(text(f'SELECT COUNT(*) FROM "{table_name}"'))
+        row = result.fetchone()
+        return int(row[0]) if row else 0
+
+    def _get_schema_violations(
+        self,
+        table_name: str,
+        columns: list[Any],
+        fks: list[Any],
+        indexes: list[Any],
+    ) -> list[dict[str, Any]]:
+        """Detect schema violations and return serialised violation dicts."""
+        schema_violations = self._violation_detector.detect_violations(
+            table_name=table_name,
+            columns=columns,
+            foreign_keys=fks,
+            indexes=indexes,
+        )
+        return [
+            {"type": v.violation_type.value, "detail": v.detail, "severity": v.severity}
+            for v in schema_violations
+        ]
 
     def _scan_table(
         self,
@@ -82,42 +120,22 @@ class DatabaseScanner(BaseScanner):
         inspector: Any,
     ) -> ExplorerEntryCreate | None:
         """Scan a single table and return entry."""
-        # Row count
-        result = conn.execute(text(f'SELECT COUNT(*) FROM "{table_name}"'))
-        row = result.fetchone()
-        row_count = int(row[0]) if row else 0
+        row_count = self._get_row_count(table_name, conn)
 
-        # Columns
         columns = inspector.get_columns(table_name)
         column_names = [col["name"] for col in columns]
 
-        # Column completeness analysis
         columns_with_data, columns_mostly_null, completeness_pct = analyze_column_completeness(
             table_name, column_names, row_count, conn
         )
 
-        # Freshness analysis
         freshness_days = analyze_table_freshness(table_name, column_names, conn)
 
-        # Foreign key relationships
         fks = inspector.get_foreign_keys(table_name)
         references = extract_foreign_key_references(fks)
 
-        # Get indexes for schema violation detection
         indexes = inspector.get_indexes(table_name)
-
-        # Detect schema violations
-        schema_violations = self._violation_detector.detect_violations(
-            table_name=table_name,
-            columns=columns,
-            foreign_keys=fks,
-            indexes=indexes,
-        )
-
-        violations = [
-            {"type": v.violation_type.value, "detail": v.detail, "severity": v.severity}
-            for v in schema_violations
-        ]
+        violations = self._get_schema_violations(table_name, columns, fks, indexes)
 
         category = categorize_table(table_name)
 
