@@ -13,238 +13,133 @@ from app.storage.projects import get_project_root_path
 from app.storage.tasks.status import update_task_status
 from app.storage.tasks.update import update_task_fields
 
-from .git_operations import (
-    checkout_base_branch,
-    delete_task_branch,
-    merge_task_branch,
-)
+from .git_operations import checkout_base_branch, delete_task_branch, merge_task_branch
 from .merge_types import MergeResult
 from .validation import auto_rollback, run_post_merge_validation
 
 logger = logging.getLogger(__name__)
 
 
-def merge_and_cleanup_task_worktree(
-    task_id: str,
-    project_id: str,
-) -> MergeResult:
-    """Merge task branch to main and clean up worktree.
+def _err(task_id: str, msg: str) -> MergeResult:
+    return {"task_id": task_id, "status": "error", "error": msg}
 
-    Used for auto-approved SIMPLE tasks. Performs:
-    1. Get task worktree info
-    2. Switch to base branch in main repo
-    3. Merge task branch with --no-ff
-    4. Remove worktree
-    5. Delete task branch
 
-    Args:
-        task_id: Task ID to merge and clean up
-        project_id: Project ID for worktree lookup
+def _git(args: list[str], cwd: str, text: bool = True) -> subprocess.CompletedProcess:
+    return subprocess.run(args, cwd=cwd, capture_output=True, text=text, timeout=10)
 
-    Returns:
-        Dict with merge/cleanup result
-    """
+
+def merge_and_cleanup_task_worktree(task_id: str, project_id: str) -> MergeResult:
+    """Merge task branch to main and clean up worktree (auto-approved SIMPLE tasks)."""
     try:
         if is_task_running(task_id):
-            return {
-                "task_id": task_id,
-                "status": "blocked",
-                "reason": "task_still_running",
-            }
-
+            return {"task_id": task_id, "status": "blocked", "reason": "task_still_running"}
         worktree = get_task_worktree(task_id, project_id)
         if not worktree:
-            return {
-                "task_id": task_id,
-                "status": "skipped",
-                "reason": "no_worktree",
-            }
-
+            return {"task_id": task_id, "status": "skipped", "reason": "no_worktree"}
         project_root = get_project_root_path(project_id)
         if not project_root:
-            return {
-                "task_id": task_id,
-                "status": "error",
-                "error": f"No root path for project {project_id}",
-            }
+            return _err(task_id, f"No root path for project {project_id}")
 
         task_branch = worktree.branch
         base_branch = worktree.base_branch or "main"
-
         checkout_error = checkout_base_branch(project_root, base_branch)
         if checkout_error:
-            return {
-                "task_id": task_id,
-                "status": "error",
-                "error": checkout_error,
-            }
+            return _err(task_id, checkout_error)
 
-        # Capture pre-merge SHA for snapshot/revert support
-        pre_sha_result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=project_root,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        pre_merge_sha = (
-            pre_sha_result.stdout.strip()
-            if pre_sha_result.returncode == 0
-            else None
-        )
-
-        # Create snapshot tag before merge
-        if pre_merge_sha:
-            subprocess.run(
-                ["git", "tag", f"snapshot/pre-merge/{task_id}", "HEAD"],
-                cwd=project_root,
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            update_task_fields(task_id, pre_merge_sha=pre_merge_sha)
-
+        _capture_pre_merge_snapshot(task_id, project_root)
         merge_outcome = merge_task_branch(project_root, task_branch, task_id)
         if not merge_outcome.success:
-            # Check if this is a conflict (has conflicting files) vs generic error
-            if merge_outcome.conflicting_files:
-                conflict_info = {
-                    "conflicting_files": merge_outcome.conflicting_files,
-                    "task_branch": task_branch,
-                    "base_branch": base_branch,
-                    "detected_at": datetime.now(UTC).isoformat(),
-                    "error_output": (merge_outcome.error or "")[:500],
-                }
-                update_task_fields(task_id, conflict_info=conflict_info)
-                update_task_status(
-                    task_id,
-                    "conflicted",
-                    error_message=f"Merge conflict in {len(merge_outcome.conflicting_files)} file(s)",
-                    validate_transition=False,
-                )
-                log_task_event(
-                    task_id,
-                    f"Merge conflict detected in {len(merge_outcome.conflicting_files)} file(s): "
-                    f"{', '.join(merge_outcome.conflicting_files[:5])}",
-                )
-                logger.warning(
-                    f"Merge conflict for {task_branch}",
-                    extra={
-                        "task_id": task_id,
-                        "conflicting_files": merge_outcome.conflicting_files,
-                    },
-                )
-                return {
-                    "task_id": task_id,
-                    "status": "conflicted",
-                    "task_branch": task_branch,
-                    "base_branch": base_branch,
-                    "conflicting_files": merge_outcome.conflicting_files,
-                    "error_output": (merge_outcome.error or "")[:500],
-                }
+            return _build_merge_failure_result(task_id, task_branch, base_branch, merge_outcome)
 
-            return {
-                "task_id": task_id,
-                "status": "error",
-                "error": merge_outcome.error or "Unknown merge error",
-            }
-
-        # Store merge SHA
         if merge_outcome.merge_sha:
             update_task_fields(task_id, merge_sha=merge_outcome.merge_sha)
-
-        logger.info(
-            f"Merged {task_branch} into {base_branch}",
-            extra={"task_id": task_id},
-        )
-
-        remove_task_worktree(task_id, delete_branch=False, project_id=project_id)
-
-        branch_deleted = delete_task_branch(project_root, task_branch, task_id)
-
-        validation_passed = run_post_merge_validation(
-            task_id, project_root, project_id
-        )
-
-        if not validation_passed:
-            rollback_success = auto_rollback(
-                task_id, project_root, project_id, task_branch
-            )
-            if rollback_success:
-                return {
-                    "task_id": task_id,
-                    "status": "rolled_back",
-                    "task_branch": task_branch,
-                    "base_branch": base_branch,
-                    "reason": "post_merge_validation_failed",
-                }
-
-        # Cleanup old snapshot tags (keep most recent 20)
-        _cleanup_old_snapshots(project_root)
-
-        return {
-            "task_id": task_id,
-            "status": "merged",
-            "task_branch": task_branch,
-            "base_branch": base_branch,
-            "branch_deleted": branch_deleted,
-            "post_merge_valid": validation_passed,
-        }
+        logger.info(f"Merged {task_branch} into {base_branch}", extra={"task_id": task_id})
+        return _finalize_merge(task_id, project_root, project_id, task_branch, base_branch)
 
     except subprocess.TimeoutExpired:
         logger.error(f"Timeout during merge/cleanup for task {task_id}")
-        return {
-            "task_id": task_id,
-            "status": "error",
-            "error": "Git operation timed out",
-        }
+        return _err(task_id, "Git operation timed out")
     except Exception as e:
         logger.error(f"Error merging/cleaning up task {task_id}: {e}")
+        return _err(task_id, str(e))
+
+
+def _capture_pre_merge_snapshot(task_id: str, project_root: str) -> None:
+    """Capture HEAD SHA and create a pre-merge snapshot tag."""
+    result = _git(["git", "rev-parse", "HEAD"], project_root)
+    if result.returncode != 0:
+        return
+    pre_merge_sha = result.stdout.strip()
+    _git(["git", "tag", f"snapshot/pre-merge/{task_id}", "HEAD"], project_root)
+    update_task_fields(task_id, pre_merge_sha=pre_merge_sha)
+
+
+def _build_merge_failure_result(
+    task_id: str, task_branch: str, base_branch: str, merge_outcome
+) -> MergeResult:
+    """Build result for a failed merge — conflict or generic error."""
+    if not merge_outcome.conflicting_files:
+        return _err(task_id, merge_outcome.error or "Unknown merge error")
+    num_conflicts = len(merge_outcome.conflicting_files)
+    update_task_fields(task_id, conflict_info={
+        "conflicting_files": merge_outcome.conflicting_files,
+        "task_branch": task_branch, "base_branch": base_branch,
+        "detected_at": datetime.now(UTC).isoformat(),
+        "error_output": (merge_outcome.error or "")[:500],
+    })
+    update_task_status(task_id, "conflicted",
+        error_message=f"Merge conflict in {num_conflicts} file(s)", validate_transition=False)
+    log_task_event(task_id,
+        f"Merge conflict detected in {num_conflicts} file(s): "
+        f"{', '.join(merge_outcome.conflicting_files[:5])}")
+    logger.warning(f"Merge conflict for {task_branch}",
+        extra={"task_id": task_id, "conflicting_files": merge_outcome.conflicting_files})
+    return {
+        "task_id": task_id, "status": "conflicted",
+        "task_branch": task_branch, "base_branch": base_branch,
+        "conflicting_files": merge_outcome.conflicting_files,
+        "error_output": (merge_outcome.error or "")[:500],
+    }
+
+
+def _finalize_merge(
+    task_id: str, project_root: str, project_id: str, task_branch: str, base_branch: str
+) -> MergeResult:
+    """Remove worktree, delete branch, run post-merge validation, clean up snapshots."""
+    remove_task_worktree(task_id, delete_branch=False, project_id=project_id)
+    branch_deleted = delete_task_branch(project_root, task_branch, task_id)
+    validation_passed = run_post_merge_validation(task_id, project_root, project_id)
+    if not validation_passed and auto_rollback(task_id, project_root, project_id, task_branch):
         return {
-            "task_id": task_id,
-            "status": "error",
-            "error": str(e),
+            "task_id": task_id, "status": "rolled_back",
+            "task_branch": task_branch, "base_branch": base_branch,
+            "reason": "post_merge_validation_failed",
         }
+    _cleanup_old_snapshots(project_root)
+    return {
+        "task_id": task_id, "status": "merged",
+        "task_branch": task_branch, "base_branch": base_branch,
+        "branch_deleted": branch_deleted, "post_merge_valid": validation_passed,
+    }
 
 
 def _cleanup_old_snapshots(project_root: str, keep: int = 20) -> None:
     """Remove old snapshot tags, keeping the most recent `keep` tags."""
-    result = subprocess.run(
-        ["git", "tag", "-l", "snapshot/pre-merge/*", "--sort=-creatordate"],
-        cwd=project_root,
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
+    result = _git(["git", "tag", "-l", "snapshot/pre-merge/*", "--sort=-creatordate"], project_root)
     if result.returncode != 0:
         return
     tags = [t.strip() for t in result.stdout.strip().split("\n") if t.strip()]
     for old_tag in tags[keep:]:
-        subprocess.run(
-            ["git", "tag", "-d", old_tag],
-            cwd=project_root,
-            capture_output=True,
-            timeout=10,
-        )
+        _git(["git", "tag", "-d", old_tag], project_root, text=False)
 
 
 def is_task_running(task_id: str) -> bool:
-    """Check if task is still running.
-
-    Args:
-        task_id: Task ID to check
-
-    Returns:
-        True if task is running, False otherwise
-    """
+    """Check if task is still running."""
     task = task_store.get_task(task_id)
-    if task and task.get("status") == "running":
-        logger.warning(
-            "merge_blocked_task_running",
-            extra={"task_id": task_id},
-        )
-        return True
-    return False
+    running = bool(task and task.get("status") == "running")
+    if running:
+        logger.warning("merge_blocked_task_running", extra={"task_id": task_id})
+    return running
 
 
 # Re-export internal functions for backward compatibility
