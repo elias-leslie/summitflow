@@ -37,32 +37,31 @@ def verify_migration() -> None:
     """Verify migration results."""
     print("\nVerification:")
 
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            # Check table exists
-            cur.execute("""
+    with get_connection() as conn, conn.cursor() as cur:
+        # Check table exists
+        cur.execute("""
                 SELECT EXISTS (
                     SELECT 1 FROM information_schema.tables
                     WHERE table_name = 'explorer_entries'
                 )
             """)
-            exists = cur.fetchone()[0]
-            print(f"  explorer_entries table exists: {exists}")
+        exists = cur.fetchone()[0]
+        print(f"  explorer_entries table exists: {exists}")
 
-            if exists:
-                # Count by type
-                cur.execute("""
+        if exists:
+            # Count by type
+            cur.execute("""
                     SELECT entry_type, COUNT(*) as count
                     FROM explorer_entries
                     GROUP BY entry_type
                     ORDER BY entry_type
                 """)
-                rows = cur.fetchall()
-                total = 0
-                for entry_type, count in rows:
-                    print(f"    {entry_type}: {count}")
-                    total += count
-                print(f"    TOTAL: {total}")
+            rows = cur.fetchall()
+            total = 0
+            for entry_type, count in rows:
+                print(f"    {entry_type}: {count}")
+                total += count
+            print(f"    TOTAL: {total}")
 
 
 def main() -> None:

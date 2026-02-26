@@ -21,8 +21,8 @@ __all__ = [
     "BudgetExceededError",
     "FixPattern",
     "GraphitiClient",  # Deprecated alias, use MemoryClient
-    "MemoryClient",
     "JournalError",
+    "MemoryClient",
     "PatternMemoryService",
     "SearchResult",
     "SelfHealingOrchestrator",
