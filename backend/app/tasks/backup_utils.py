@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -86,6 +87,34 @@ def parse_size(size_str: str) -> int | None:
         return int(size_str)
     except ValueError:
         return None
+
+
+def build_script_error_message(result: subprocess.CompletedProcess[str]) -> str:
+    """Build an informative error message from a failed subprocess result."""
+    stderr_clean = result.stderr or ""
+    stderr_lines = [ln for ln in stderr_clean.splitlines() if not ln.strip().startswith("putting file")]
+    stderr_filtered = "\n".join(stderr_lines).strip()
+    stdout_tail = (result.stdout or "")[-500:].strip()
+    parts = [f"rc={result.returncode}"]
+    if stderr_filtered:
+        parts.append(f"stderr: {stderr_filtered}")
+    if stdout_tail:
+        parts.append(f"stdout(tail): {stdout_tail}")
+    return " | ".join(parts) if any([stderr_filtered, stdout_tail]) else "Unknown error"
+
+
+def build_verification_kwargs(verification: dict[str, Any]) -> dict[str, Any]:
+    """Extract verification fields into update_backup_status kwargs."""
+    vkw: dict[str, Any] = {
+        "verified": verification.get("verified"),
+        "verified_at": verification.get("verified_at"),
+        "checksum": verification.get("checksum"),
+        "verification_json": verification,
+    }
+    total = verification.get("total_files")
+    if total is not None:
+        vkw["total_files"] = int(total)
+    return vkw
 
 
 def calculate_next_run(frequency: str) -> datetime:
