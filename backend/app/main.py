@@ -24,6 +24,7 @@ from .api import (
     design_standards,
     events,
     explorer,
+    files,
     git,
     mockups,
     notifications,
@@ -106,6 +107,7 @@ app.add_middleware(
 # Include routers
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
 app.include_router(explorer.router, prefix="/api/projects", tags=["explorer"])
+app.include_router(files.router, prefix="/api/projects", tags=["files"])
 
 app.include_router(tasks.router, prefix="/api", tags=["tasks"])
 app.include_router(notifications.router, prefix="/api", tags=["notifications"])

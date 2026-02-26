@@ -1,6 +1,7 @@
 import {
   Activity,
   Compass,
+  FolderOpen,
   ListTodo,
   Palette,
 } from 'lucide-react'
@@ -27,6 +28,17 @@ export const projectNavItems: NavItemConfig[] = [
     inactiveClasses: 'text-slate-400 hover:bg-teal-500/10 hover:text-teal-400',
     iconActiveClasses: 'text-teal-400',
     iconInactiveClasses: 'text-slate-500 group-hover:text-teal-400',
+  },
+  {
+    id: 'files',
+    label: 'Files',
+    href: '/files',
+    icon: FolderOpen,
+    activeClasses: 'bg-emerald-500/15 text-emerald-400',
+    inactiveClasses:
+      'text-slate-400 hover:bg-emerald-500/10 hover:text-emerald-400',
+    iconActiveClasses: 'text-emerald-400',
+    iconInactiveClasses: 'text-slate-500 group-hover:text-emerald-400',
   },
   {
     id: 'health',

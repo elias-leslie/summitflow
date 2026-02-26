@@ -19,6 +19,7 @@ export function useProjectNavigation(): UseProjectNavigationReturn {
     if (pathname.includes('/settings')) return 'settings' as NavItemId
     if (pathname.includes('/git')) return 'git' as NavItemId
     if (pathname.includes('/backups')) return 'backups' as NavItemId
+    if (pathname.includes('/files')) return 'files'
     if (pathname.includes('/design')) return 'design'
     const tab = searchParams.get('tab') as NavItemId | null
     return tab || 'tasks'
