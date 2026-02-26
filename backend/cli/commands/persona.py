@@ -28,48 +28,8 @@ _Opt = typer.Option
 _Arg = typer.Argument
 
 
-@app.command()
-def show() -> None:
-    """Show full persona configuration."""
-    from .persona_api import get_persona
-
-    try:
-        persona = get_persona()
-    except Exception as e:
-        output_error(f"Failed to fetch persona: {e}")
-        raise typer.Exit(1) from e
-
-    # TOON-style compact output
-    personality_preview = ""
-    if persona.get("personality"):
-        lines = persona["personality"].strip().splitlines()
-        personality_preview = lines[0][:60] if lines else ""
-
-    def _field_status(field: str) -> str:
-        val = persona.get(field)
-        if val:
-            return f"set ({len(val)} chars)"
-        return "unset"
-
-    print(f"persona | {persona.get('name', '?')} | agent={persona.get('agent_slug', '?')}")
-    print(f"  voice={persona.get('voice_id', '?')} enabled={persona.get('voice_enabled', False)}")
-    print(f"  heartbeat={persona.get('heartbeat_interval_minutes', 0)}m")
-    reset_mode = persona.get("session_reset_mode", "off")
-    reset_detail = ""
-    if reset_mode == "daily":
-        reset_detail = f" hour={persona.get('session_reset_hour', 0)}"
-    elif reset_mode == "idle":
-        reset_detail = f" idle={persona.get('session_reset_idle_minutes', 30)}m"
-    print(f"  session_reset={reset_mode}{reset_detail}")
-    print(f"  personality_v{persona.get('version', 0)}: {personality_preview}")
-    print(f"  heartbeat_instructions: {_field_status('heartbeat_instructions')}")
-    print(f"  user_context: {_field_status('user_context')}")
-    if persona.get("onboarding_phase"):
-        print(f"  onboarding_phase: {persona['onboarding_phase']}")
-
-
 def _read_file(path: str) -> str:
-    """Read content from a file path."""
+    """Read content from a file, exiting on missing file."""
     p = Path(path)
     if not p.is_file():
         output_error(f"File not found: {path}")
@@ -77,30 +37,63 @@ def _read_file(path: str) -> str:
     return p.read_text()
 
 
+def _field_status(persona: dict, field: str) -> str:
+    """Return 'set (N chars)' or 'unset' for a persona field."""
+    val = persona.get(field)
+    return f"set ({len(val)} chars)" if val else "unset"
+
+
+def _print_persona(persona: dict) -> None:
+    """Print persona overview in compact format."""
+    preview = ""
+    if persona.get("personality"):
+        lines = persona["personality"].strip().splitlines()
+        preview = lines[0][:60] if lines else ""
+    print(f"persona | {persona.get('name', '?')} | agent={persona.get('agent_slug', '?')}")
+    print(f"  voice={persona.get('voice_id', '?')} enabled={persona.get('voice_enabled', False)}")
+    print(f"  heartbeat={persona.get('heartbeat_interval_minutes', 0)}m")
+    mode = persona.get("session_reset_mode", "off")
+    if mode == "daily":
+        detail = f" hour={persona.get('session_reset_hour', 0)}"
+    elif mode == "idle":
+        detail = f" idle={persona.get('session_reset_idle_minutes', 30)}m"
+    else:
+        detail = ""
+    print(f"  session_reset={mode}{detail}")
+    print(f"  personality_v{persona.get('version', 0)}: {preview}")
+    print(f"  heartbeat_instructions: {_field_status(persona, 'heartbeat_instructions')}")
+    print(f"  user_context: {_field_status(persona, 'user_context')}")
+    if persona.get("onboarding_phase"):
+        print(f"  onboarding_phase: {persona['onboarding_phase']}")
+
+
 @app.command()
-def update(
-    heartbeat_instructions: Annotated[str | None, _Opt("--heartbeat-instructions", "-H", help="File containing heartbeat instructions")] = None,
-    user_context: Annotated[str | None, _Opt("--user-context", "-U", help="File containing user context")] = None,
-    voice_enabled: Annotated[bool | None, _Opt("--voice-enabled/--no-voice", help="Toggle voice")] = None,
-    voice_id: Annotated[str | None, _Opt("--voice-id", help="Voice ID string")] = None,
-    heartbeat_interval: Annotated[int | None, _Opt("--heartbeat-interval", help="Minutes between heartbeats (0-1440)")] = None,
-    session_reset_mode: Annotated[str | None, _Opt("--session-reset-mode", help="off, daily, or idle")] = None,
-    session_reset_hour: Annotated[int | None, _Opt("--session-reset-hour", help="Hour (0-23) for daily reset")] = None,
-    greeting: Annotated[str | None, _Opt("--greeting", help="Greeting message")] = None,
-    limits: Annotated[str | None, _Opt("--limits", help="JSON file for limits")] = None,
+def show() -> None:
+    """Show full persona configuration."""
+    from .persona_api import get_persona
+    try:
+        _print_persona(get_persona())
+    except Exception as e:
+        output_error(f"Failed to fetch persona: {e}")
+        raise typer.Exit(1) from e
+
+
+def _apply_file_and_scalar_fields(
+    fields: dict,
+    heartbeat_instructions: str | None,
+    user_context: str | None,
+    voice_enabled: bool | None,
+    voice_id: str | None,
+    heartbeat_interval: int | None,
+    session_reset_mode: str | None,
+    session_reset_hour: int | None,
+    greeting: str | None,
 ) -> None:
-    """Update persona fields. Text fields accept file paths."""
-    from .persona_api import update_persona
-
-    fields: dict = {}
-
-    # Text fields — read from file
+    """Populate fields dict from provided update arguments."""
     if heartbeat_instructions is not None:
         fields["heartbeat_instructions"] = _read_file(heartbeat_instructions)
     if user_context is not None:
         fields["user_context"] = _read_file(user_context)
-
-    # Scalar fields
     if voice_enabled is not None:
         fields["voice_enabled"] = voice_enabled
     if voice_id is not None:
@@ -113,6 +106,27 @@ def update(
         fields["session_reset_hour"] = session_reset_hour
     if greeting is not None:
         fields["greeting"] = greeting
+
+
+@app.command()
+def update(
+    heartbeat_instructions: Annotated[str | None, _Opt("--heartbeat-instructions", "-H", help="File with heartbeat instructions")] = None,
+    user_context: Annotated[str | None, _Opt("--user-context", "-U", help="File with user context")] = None,
+    voice_enabled: Annotated[bool | None, _Opt("--voice-enabled/--no-voice", help="Toggle voice")] = None,
+    voice_id: Annotated[str | None, _Opt("--voice-id", help="Voice ID string")] = None,
+    heartbeat_interval: Annotated[int | None, _Opt("--heartbeat-interval", help="Minutes between heartbeats (0-1440)")] = None,
+    session_reset_mode: Annotated[str | None, _Opt("--session-reset-mode", help="off, daily, or idle")] = None,
+    session_reset_hour: Annotated[int | None, _Opt("--session-reset-hour", help="Hour (0-23) for daily reset")] = None,
+    greeting: Annotated[str | None, _Opt("--greeting", help="Greeting message")] = None,
+    limits: Annotated[str | None, _Opt("--limits", help="JSON file for limits")] = None,
+) -> None:
+    """Update persona fields. Text fields accept file paths."""
+    from .persona_api import update_persona
+    fields: dict = {}
+    _apply_file_and_scalar_fields(
+        fields, heartbeat_instructions, user_context, voice_enabled, voice_id,
+        heartbeat_interval, session_reset_mode, session_reset_hour, greeting,
+    )
     if limits is not None:
         content = _read_file(limits)
         try:
@@ -120,16 +134,13 @@ def update(
         except json.JSONDecodeError as e:
             output_error(f"Invalid JSON in limits file: {e}")
             raise typer.Exit(1) from e
-
     if not fields:
         output_error("No fields specified. Use --help to see available flags.")
         raise typer.Exit(1)
-
     try:
         result = update_persona(fields)
         print(f"Persona updated (version {result.get('version', '?')})")
-        for key in fields:
-            val = fields[key]
+        for key, val in fields.items():
             if isinstance(val, str) and len(val) > 50:
                 print(f"  {key}: set ({len(val)} chars)")
             else:
@@ -139,6 +150,28 @@ def update(
         raise typer.Exit(1) from e
 
 
+def _edit_personality_in_editor(current: dict) -> None:
+    """Open personality in $EDITOR and persist changes."""
+    from .persona_api import update_personality
+    editor = os.environ.get("EDITOR", "vi")
+    with tempfile.NamedTemporaryFile(suffix=".md", mode="w", delete=False) as f:
+        f.write(current.get("personality") or "")
+        tmp_path = f.name
+    try:
+        subprocess.run([editor, tmp_path], check=True)
+        new_text = Path(tmp_path).read_text()
+        if new_text.strip() == (current.get("personality") or "").strip():
+            print("No changes made.")
+            return
+        result = update_personality(new_text, reason="Edited via st persona personality --edit")
+        print(f"Personality updated (version {result.get('version', '?')})")
+    except subprocess.CalledProcessError as e:
+        output_error("Editor exited with error")
+        raise typer.Exit(1) from e
+    finally:
+        os.unlink(tmp_path)
+
+
 @app.command()
 def personality(
     edit: Annotated[bool, _Opt("--edit", "-e", help="Open $EDITOR to modify personality")] = False,
@@ -146,9 +179,7 @@ def personality(
 ) -> None:
     """Print or modify the personality document."""
     from .persona_api import get_personality, update_personality
-
     if set_text is not None:
-        # Direct set
         try:
             result = update_personality(set_text, reason="Set via st persona personality --set")
             print(f"Personality updated (version {result.get('version', '?')})")
@@ -156,49 +187,20 @@ def personality(
             output_error(f"Failed to update personality: {e}")
             raise typer.Exit(1) from e
         return
-
     if edit:
-        # Open in $EDITOR
         try:
             current = get_personality()
         except Exception as e:
             output_error(f"Failed to fetch personality: {e}")
             raise typer.Exit(1) from e
-
-        editor = os.environ.get("EDITOR", "vi")
-        with tempfile.NamedTemporaryFile(suffix=".md", mode="w", delete=False) as f:
-            f.write(current.get("personality") or "")
-            tmp_path = f.name
-
-        try:
-            subprocess.run([editor, tmp_path], check=True)
-            with open(tmp_path) as f:
-                new_personality = f.read()
-
-            if new_personality.strip() == (current.get("personality") or "").strip():
-                print("No changes made.")
-                return
-
-            result = update_personality(new_personality, reason="Edited via st persona personality --edit")
-            print(f"Personality updated (version {result.get('version', '?')})")
-        except subprocess.CalledProcessError as e:
-            output_error("Editor exited with error")
-            raise typer.Exit(1) from e
-        finally:
-            os.unlink(tmp_path)
+        _edit_personality_in_editor(current)
         return
-
-    # Default: print current personality
     try:
         data = get_personality()
     except Exception as e:
         output_error(f"Failed to fetch personality: {e}")
         raise typer.Exit(1) from e
-
-    if data.get("personality"):
-        print(data["personality"])
-    else:
-        print("(No personality document set)")
+    print(data["personality"] if data.get("personality") else "(No personality document set)")
 
 
 @app.command()
@@ -207,7 +209,6 @@ def name(
 ) -> None:
     """Show or set the persona's display name."""
     from .persona_api import get_persona, update_persona
-
     if new_name is not None:
         try:
             result = update_persona({"name": new_name})
@@ -216,8 +217,6 @@ def name(
             output_error(f"Failed to update name: {e}")
             raise typer.Exit(1) from e
         return
-
-    # Show current name
     try:
         persona = get_persona()
         print(persona.get("name", "Unknown"))
