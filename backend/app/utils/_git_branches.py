@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from ..api.models.git_models import BranchInfo, WorktreeInfo
+if TYPE_CHECKING:
+    from ..api.models.git_models import BranchInfo, WorktreeInfo
+
 from ._git_core import WORKTREES_BASE_DIR, is_valid_git_repo, run_git
 
 _BASE_BRANCH_CANDIDATES = ["main", "master", "develop"]
@@ -42,6 +45,10 @@ def get_worktree_branches() -> dict[str, str]:
 
 def get_all_branches(repo_path: Path) -> list[BranchInfo]:
     """Get list of all local branches with worktree indicators."""
+    from ..api.models.git_models import (
+        BranchInfo,
+    )
+
     worktree_branches = get_worktree_branches()
 
     cr = run_git(["rev-parse", "--abbrev-ref", "HEAD"], repo_path)
@@ -75,6 +82,10 @@ def get_all_branches(repo_path: Path) -> list[BranchInfo]:
 
 def get_worktree_info(task_id: str) -> WorktreeInfo | None:
     """Get information about an existing worktree."""
+    from ..api.models.git_models import (
+        WorktreeInfo,
+    )
+
     worktree_path = WORKTREES_BASE_DIR / task_id
     if not is_valid_git_repo(worktree_path):
         return None

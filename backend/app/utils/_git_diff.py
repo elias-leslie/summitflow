@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from ..api.models.git_models import CommitInfo, DiffFile, DiffStats, SnapshotInfo
+if TYPE_CHECKING:
+    from ..api.models.git_models import CommitInfo, DiffFile, DiffStats, SnapshotInfo
+
 from ._git_core import run_git
 
 _STATUS_CODE_MAP = {"A": "added", "M": "modified", "D": "deleted", "R": "renamed"}
@@ -15,6 +18,8 @@ _SNAPSHOT_TAG_PREFIX = "snapshot/pre-merge/"
 
 def _parse_numstat(output: str) -> tuple[list[DiffFile], int, int]:
     """Parse git diff --numstat into DiffFile list plus totals."""
+    from ..api.models.git_models import DiffFile
+
     files: list[DiffFile] = []
     total_add = total_del = 0
     for line in output.strip().split("\n"):
@@ -83,11 +88,15 @@ def get_task_diff(
     if tree_result.returncode == 0:
         _apply_status_map(files, tree_result.stdout)
 
+    from ..api.models.git_models import DiffStats
+
     return files, DiffStats(files_changed=len(files), additions=total_add, deletions=total_del)
 
 
 def get_diff_stats(project_root: Path, sha_range: str) -> DiffStats:
     """Get aggregate diff statistics for a SHA range."""
+    from ..api.models.git_models import DiffStats
+
     result = run_git(["diff", "--shortstat", sha_range], project_root)
     files_count = adds = dels = 0
     if result.returncode == 0 and result.stdout.strip():
@@ -106,6 +115,8 @@ def get_diff_stats(project_root: Path, sha_range: str) -> DiffStats:
 
 def _parse_commit_block(block: str, repo_name: str) -> CommitInfo | None:
     """Parse a single COMMIT_START block into a CommitInfo."""
+    from ..api.models.git_models import CommitInfo
+
     lines = block.strip().split("\n")
     if len(lines) < 6:
         return None
@@ -147,6 +158,8 @@ def _parse_snapshot_line(
     line: str, head_sha: str, repo_name: str, repo_path: Path
 ) -> SnapshotInfo | None:
     """Parse one snapshot tag line into a SnapshotInfo."""
+    from ..api.models.git_models import SnapshotInfo
+
     if not line.strip():
         return None
     parts = line.split("\t")

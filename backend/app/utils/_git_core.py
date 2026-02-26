@@ -5,8 +5,10 @@ from __future__ import annotations
 import logging
 import subprocess
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from ..api.models.git_models import RepoStatus, SyncResult
+if TYPE_CHECKING:
+    from ..api.models.git_models import RepoStatus, SyncResult
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +56,8 @@ def get_managed_repos() -> list[Path]:
 
 def _make_failed_sync(repo_path: Path, branch: str = "unknown", error: str = "") -> SyncResult:
     """Build a failed SyncResult."""
+    from ..api.models.git_models import SyncResult
+
     return SyncResult(
         path=str(repo_path),
         name=repo_path.name,
@@ -65,6 +69,8 @@ def _make_failed_sync(repo_path: Path, branch: str = "unknown", error: str = "")
 
 def get_repo_status(repo_path: Path) -> RepoStatus | None:
     """Get status information for a git repository."""
+    from ..api.models.git_models import RepoStatus
+
     if not is_valid_git_repo(repo_path):
         return None
     result = run_git(["rev-parse", "--abbrev-ref", "HEAD"], repo_path)
@@ -98,6 +104,8 @@ def sync_repository(repo_path: Path) -> SyncResult:
 
 def fetch_repository(repo_path: Path) -> SyncResult:
     """Fetch changes from remote without merging."""
+    from ..api.models.git_models import SyncResult
+
     result = SyncResult(path=str(repo_path), name=repo_path.name, branch="unknown", status="unknown")
     repo_status = get_repo_status(repo_path)
     if repo_status:
@@ -111,6 +119,8 @@ def fetch_repository(repo_path: Path) -> SyncResult:
 
 def pull_repository(repo_path: Path) -> SyncResult:
     """Pull changes from remote (fast-forward only)."""
+    from ..api.models.git_models import SyncResult
+
     repo_status = get_repo_status(repo_path)
     if not repo_status:
         return _make_failed_sync(repo_path)
@@ -128,6 +138,8 @@ def pull_repository(repo_path: Path) -> SyncResult:
 
 def push_repository(repo_path: Path) -> SyncResult:
     """Push changes to remote."""
+    from ..api.models.git_models import SyncResult
+
     repo_status = get_repo_status(repo_path)
     if not repo_status:
         return _make_failed_sync(repo_path)
