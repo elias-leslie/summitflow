@@ -48,6 +48,15 @@ def _load_registry_patterns() -> list[tuple[str, list[re.Pattern[str]]]]:
 _REGISTRY_PATTERNS = _load_registry_patterns()
 
 
+def _is_raw_tool_match(cmd: str, pattern: re.Pattern[str]) -> bool:
+    """Return True if cmd contains a raw (unwrapped) tool match for pattern."""
+    for match in pattern.finditer(cmd):
+        before = cmd[: match.start()]
+        if not re.search(r"\bdt\s+$", before):
+            return True
+    return False
+
+
 def check_raw_tool_usage(cmd: str) -> str | None:
     """Check if command uses raw tools that should be wrapped by dt.
 
@@ -56,10 +65,7 @@ def check_raw_tool_usage(cmd: str) -> str | None:
     """
     for tool_name, patterns in _REGISTRY_PATTERNS:
         for pattern in patterns:
-            for match in pattern.finditer(cmd):
-                before = cmd[: match.start()]
-                if re.search(r"\bdt\s+$", before):
-                    continue
+            if _is_raw_tool_match(cmd, pattern):
                 return (
                     f"Raw '{tool_name}' in verify_command — "
                     f"use 'dt {tool_name}' instead: {cmd[:120]}"
