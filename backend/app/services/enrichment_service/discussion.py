@@ -12,6 +12,110 @@ from .parsers import load_prompt, parse_enrichment_response
 logger = logging.getLogger(__name__)
 
 
+def _fetch_task_if_needed(task_id: str, current_task: dict[str, Any] | None) -> dict[str, Any]:
+    """Fetch the task from storage if not already provided.
+
+    Args:
+        task_id: Task ID to fetch
+        current_task: Existing task dict, or None to trigger a fetch
+
+    Returns:
+        Task dict from storage
+
+    Raises:
+        ValueError: If the task is not found
+    """
+    if current_task is not None:
+        return current_task
+    from ...storage.tasks import get_task
+
+    task = get_task(task_id)
+    if task is None:
+        raise ValueError(f"Task {task_id} not found")
+    return task
+
+
+def _build_conversation_string(history: list[dict[str, str]]) -> str:
+    """Format conversation history into a readable string.
+
+    Args:
+        history: List of role/content message dicts
+
+    Returns:
+        Formatted conversation string, or empty string if no history
+    """
+    return "\n".join(
+        f"{'User' if h.get('role') == 'user' else 'Assistant'}: {h.get('content', '')}"
+        for h in history
+    )
+
+
+def _build_discussion_prompt(
+    discussion_prompt: str,
+    task_json: str,
+    conversation: str,
+    message: str,
+) -> str:
+    """Assemble the full discussion prompt sent to the LLM.
+
+    Args:
+        discussion_prompt: Base prompt loaded from file
+        task_json: JSON-serialised current task state
+        conversation: Formatted conversation history string
+        message: Current user message
+
+    Returns:
+        Complete prompt string
+    """
+    conversation_section = conversation if conversation else "(No previous messages)"
+    return f"""{discussion_prompt}
+
+## Current Task State
+
+```json
+{task_json}
+```
+
+## Conversation History
+
+{conversation_section}
+
+## Current Message
+
+User: {message}
+
+## Instructions
+
+Respond to the user's message about this task.
+Return ONLY valid JSON matching the response format in the prompt above."""
+
+
+def _call_llm_for_discussion(prompt: str) -> dict[str, Any]:
+    """Send the discussion prompt to the LLM and parse the response.
+
+    Args:
+        prompt: Fully assembled prompt string
+
+    Returns:
+        Parsed response data dict
+
+    Raises:
+        RuntimeError: If the Claude API is not available
+    """
+    from ..agent_hub_client import AgentHubLLMClient
+
+    client = AgentHubLLMClient(agent_slug="planner")
+    if not client.is_available():
+        raise RuntimeError("Claude API not available")
+
+    response = client.generate(
+        prompt=prompt,
+        temperature=0.5,
+        purpose="task_discussion",
+    )
+    return parse_enrichment_response(response.content)
+
+
 def discuss_task(
     project_id: str,
     task_id: str,
@@ -33,64 +137,20 @@ def discuss_task(
     """
     _ = project_id
 
-    if current_task is None:
-        from ...storage.tasks import get_task
-
-        current_task = get_task(task_id)
-        if current_task is None:
-            raise ValueError(f"Task {task_id} not found")
-
+    current_task = _fetch_task_if_needed(task_id, current_task)
     discussion_prompt = load_prompt("task_discussion")
 
-    history = history or []
-    conversation = "\n".join(
-        f"{'User' if h.get('role') == 'user' else 'Assistant'}: {h.get('content', '')}"
-        for h in history
-    )
-
+    conversation = _build_conversation_string(history or [])
     task_json = json.dumps(current_task, indent=2, default=str)
-    prompt = f"""{discussion_prompt}
-
-## Current Task State
-
-```json
-{task_json}
-```
-
-## Conversation History
-
-{conversation if conversation else "(No previous messages)"}
-
-## Current Message
-
-User: {message}
-
-## Instructions
-
-Respond to the user's message about this task.
-Return ONLY valid JSON matching the response format in the prompt above."""
-
-    from ..agent_hub_client import AgentHubLLMClient
-
-    client = AgentHubLLMClient(agent_slug="planner")
-    if not client.is_available():
-        raise RuntimeError("Claude API not available")
+    prompt = _build_discussion_prompt(discussion_prompt, task_json, conversation, message)
 
     try:
-        response = client.generate(
-            prompt=prompt,
-            temperature=0.5,
-            purpose="task_discussion",
-        )
-
-        data = parse_enrichment_response(response.content)
-
+        data = _call_llm_for_discussion(prompt)
         return DiscussionResponse(
             response=data.get("response", "I'm not sure how to respond to that."),
             changes_made=data.get("changes_made", []),
             updated_task=data.get("updated_task"),
         )
-
     except Exception as e:
         logger.error("Discussion failed: %s", e)
         return DiscussionResponse(
