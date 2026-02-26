@@ -15,213 +15,135 @@ import typer
 from ..output import output_error
 from .memory_api import agent_hub_request
 
+_HUB_TOOL = "st memory seed"
 
 def _parse_frontmatter(text: str) -> tuple[dict[str, Any], str]:
-    """Parse YAML frontmatter from markdown text.
-
-    Returns:
-        Tuple of (frontmatter dict, body text)
-    """
+    """Parse YAML frontmatter from markdown text. Returns (frontmatter, body)."""
     if not text.startswith("---"):
         return {}, text
-
     parts = text.split("---", 2)
     if len(parts) < 3:
         return {}, text
-
-    # Parse simple YAML key-value pairs (avoid heavy yaml dependency)
-    frontmatter: dict[str, Any] = {}
-    for line in parts[1].strip().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
+    fm: dict[str, Any] = {}
+    for raw in parts[1].strip().splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or ":" not in line:
             continue
-        if ":" not in line:
-            continue
-        key, value = line.split(":", 1)
-        key = key.strip()
-        value = value.strip()
-
-        # Parse lists: [a, b, c]
-        if value.startswith("[") and value.endswith("]"):
-            items = [item.strip().strip("'\"") for item in value[1:-1].split(",")]
-            frontmatter[key] = [i for i in items if i]
-        # Parse booleans
-        elif value.lower() in ("true", "yes"):
-            frontmatter[key] = True
-        elif value.lower() in ("false", "no"):
-            frontmatter[key] = False
-        # Parse numbers
-        elif value.isdigit():
-            frontmatter[key] = int(value)
+        key, val = line.split(":", 1)
+        key, val = key.strip(), val.strip()
+        if val.startswith("[") and val.endswith("]"):
+            fm[key] = [i for i in (s.strip().strip("'\"") for s in val[1:-1].split(",")) if i]
+        elif val.lower() in ("true", "yes"):
+            fm[key] = True
+        elif val.lower() in ("false", "no"):
+            fm[key] = False
+        elif val.isdigit():
+            fm[key] = int(val)
         else:
-            frontmatter[key] = value.strip("'\"")
-
-    body = parts[2].strip()
-    return frontmatter, body
+            fm[key] = val.strip("'\"")
+    return fm, parts[2].strip()
 
 
 def _build_skill_tag(filename: str) -> str:
     """Build a skill tag from filename for idempotent upserts."""
-    stem = Path(filename).stem
-    return f"skill:{stem}"
+    return f"skill:{Path(filename).stem}"
 
 
-def _find_existing_by_tag(
-    skill_tag: str,
-    scope: str,
-    scope_id: str | None,
-) -> dict[str, Any] | None:
+def _find_existing_by_tag(skill_tag: str, scope: str, scope_id: str | None) -> dict[str, Any] | None:
     """Search for an existing episode with the given skill tag."""
     try:
         result = agent_hub_request(
-            "GET",
-            "/api/memory/search",
-            params={"query": skill_tag, "limit": 5},
-            scope=scope,
-            scope_id=scope_id,
-            tool_name="st memory seed",
+            "GET", "/api/memory/search", params={"query": skill_tag, "limit": 5},
+            scope=scope, scope_id=scope_id, tool_name=_HUB_TOOL,
         )
         for ep in result.get("results", []):
-            tags = ep.get("tags", [])
-            if skill_tag in tags:
+            if skill_tag in ep.get("tags", []):
                 return cast(dict[str, Any], ep)
     except Exception:
         pass
     return None
 
 
-def _upsert_skill_episode(
-    skill_tag: str,
-    content: str,
-    frontmatter: dict[str, Any],
-    scope: str,
-    scope_id: str | None,
-    dry_run: bool,
-) -> str:
-    """Upsert a skill episode. Returns action taken: 'created', 'updated', or 'unchanged'."""
-    tier = frontmatter.get("tier", "reference")
-    summary = frontmatter.get("summary", skill_tag)
-    trigger_types = frontmatter.get("trigger_task_types", [])
-    pinned = frontmatter.get("pinned", False)
-    tags = frontmatter.get("tags", [])
+def _build_episode_payload(skill_tag: str, content: str, fm: dict[str, Any]) -> dict[str, Any]:
+    """Build the API payload for saving an episode."""
+    tags = list(fm.get("tags", []))
     if skill_tag not in tags:
         tags.append(skill_tag)
+    payload: dict[str, Any] = {
+        "content": content, "injection_tier": fm.get("tier", "reference"),
+        "confidence": 90, "summary": fm.get("summary", skill_tag), "tags": tags,
+    }
+    if fm.get("trigger_task_types"):
+        payload["trigger_task_types"] = fm["trigger_task_types"]
+    if fm.get("pinned"):
+        payload["pinned"] = True
+    return payload
 
+
+def _upsert_skill_episode(
+    skill_tag: str, content: str, frontmatter: dict[str, Any],
+    scope: str, scope_id: str | None, dry_run: bool,
+) -> str:
+    """Upsert a skill episode. Returns action: 'created', 'updated', or 'unchanged'."""
     existing = _find_existing_by_tag(skill_tag, scope, scope_id)
-
     if existing:
-        existing_content = existing.get("content", "")
-        if existing_content.strip() == content.strip():
+        if existing.get("content", "").strip() == content.strip():
             return "unchanged"
-
         if dry_run:
             return "would_update"
-
-        # Delete and recreate (content change requires delete+create)
-        uuid = existing["uuid"]
         agent_hub_request(
-            "DELETE",
-            f"/api/memory/{uuid}",
-            scope=scope,
-            scope_id=scope_id,
-            tool_name="st memory seed",
+            "DELETE", f"/api/memory/{existing['uuid']}",
+            scope=scope, scope_id=scope_id, tool_name=_HUB_TOOL,
         )
-
-    if dry_run:
-        return "would_create" if not existing else "would_update"
-
-    payload: dict[str, Any] = {
-        "content": content,
-        "injection_tier": tier,
-        "confidence": 90,
-        "summary": summary,
-        "tags": tags,
-    }
-    if trigger_types:
-        payload["trigger_task_types"] = trigger_types
-    if pinned:
-        payload["pinned"] = True
-
+    elif dry_run:
+        return "would_create"
     agent_hub_request(
-        "POST",
-        "/api/memory/save",
-        json=payload,
-        scope=scope,
-        scope_id=scope_id,
-        tool_name="st memory seed",
+        "POST", "/api/memory/save",
+        json=_build_episode_payload(skill_tag, content, frontmatter),
+        scope=scope, scope_id=scope_id, tool_name=_HUB_TOOL,
     )
     return "updated" if existing else "created"
 
 
-def seed_impl(
-    directory: Path,
-    scope: str,
-    scope_id: str | None,
-    dry_run: bool,
-    project: str | None,
+def _process_md_file(
+    md_file: Path, scope: str, scope_id: str | None, dry_run: bool, results: dict[str, int],
 ) -> None:
-    """Seed memory episodes from markdown files in a directory.
+    """Process one markdown file and update results counters in place."""
+    skill_tag = _build_skill_tag(md_file.name)
+    try:
+        frontmatter, body = _parse_frontmatter(md_file.read_text())
+        if not body.strip():
+            typer.echo(f"  SKIP {md_file.name}: empty body")
+            return
+        action = _upsert_skill_episode(skill_tag, body, frontmatter, scope, scope_id, dry_run)
+        typer.echo(f"  {action.replace('would_', '').upper()} {md_file.name} [{skill_tag}]")
+        key = action.replace("would_", "")
+        results[key] = results.get(key, 0) + 1
+    except Exception as e:
+        typer.echo(f"  FAILED {md_file.name}: {e}")
+        results["failed"] += 1
 
-    Each .md file with YAML frontmatter becomes a memory episode.
-    Uses skill:<filename> tag for idempotent re-seeding.
 
-    Args:
-        directory: Path to skills directory
-        scope: Memory scope (global or project)
-        scope_id: Scope ID for project-scoped episodes
-        dry_run: Preview without writing
-        project: Project name to use as scope_id
-    """
+def seed_impl(
+    directory: Path, scope: str, scope_id: str | None, dry_run: bool, project: str | None,
+) -> None:
+    """Seed memory episodes from markdown files in a directory."""
     if not directory.exists():
         output_error(f"Directory not found: {directory}")
         raise typer.Exit(1)
-
     if not directory.is_dir():
         output_error(f"Not a directory: {directory}")
         raise typer.Exit(1)
-
-    # Resolve scope from project name if provided
     if project:
-        scope = "project"
-        scope_id = project
-
+        scope, scope_id = "project", project
     md_files = sorted(directory.glob("*.md"))
     if not md_files:
         typer.echo(f"No .md files found in {directory}")
         return
-
-    if dry_run:
-        typer.echo(f"DRY RUN: Processing {len(md_files)} files from {directory}")
-    else:
-        typer.echo(f"Seeding {len(md_files)} skill files from {directory}")
-
+    typer.echo(f"{'DRY RUN: Processing' if dry_run else 'Seeding'} {len(md_files)} files from {directory}")
     results: dict[str, int] = {"created": 0, "updated": 0, "unchanged": 0, "failed": 0}
-
     for md_file in md_files:
-        skill_tag = _build_skill_tag(md_file.name)
-        try:
-            text = md_file.read_text()
-            frontmatter, body = _parse_frontmatter(text)
-
-            if not body.strip():
-                typer.echo(f"  SKIP {md_file.name}: empty body")
-                continue
-
-            action = _upsert_skill_episode(
-                skill_tag, body, frontmatter, scope, scope_id, dry_run
-            )
-
-            display_action = action.replace("would_", "").upper()
-            typer.echo(f"  {display_action} {md_file.name} [{skill_tag}]")
-
-            if action.startswith("would_"):
-                action = action.replace("would_", "")
-            results[action] = results.get(action, 0) + 1
-
-        except Exception as e:
-            typer.echo(f"  FAILED {md_file.name}: {e}")
-            results["failed"] += 1
-
+        _process_md_file(md_file, scope, scope_id, dry_run, results)
     typer.echo(
         f"\nSeed complete: {results['created']} created, {results['updated']} updated, "
         f"{results['unchanged']} unchanged, {results['failed']} failed"
