@@ -71,9 +71,7 @@ def get_all_last_commits(root_path: Path) -> dict[str, tuple[int, str, str]]:
             if line.startswith("\x00"):
                 current_commit = _parse_commit_header(line)
             elif line.strip() and current_commit:
-                file_path = line.strip()
-                if file_path not in file_commits:
-                    file_commits[file_path] = current_commit
+                file_commits.setdefault(line.strip(), current_commit)
 
         logger.info(f"Batch git: got last commit info for {len(file_commits)} files")
         return file_commits
