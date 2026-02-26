@@ -61,14 +61,15 @@ def _run_standard_checks(task: dict[str, Any], project_path: Path, checks: dict[
     for check_name, check_fn, simple_msg, has_details in check_configs:
         logger.info(f"running_{check_name}", task_id=task_id)
         checks[check_name] = check_fn()
-        if checks[check_name].get("status") == "fail":
-            if simple_msg:
-                all_issues.append(simple_msg)
-            elif has_details:
-                all_issues.extend(checks[check_name].get("issues", []))
-                all_suggestions.extend(checks[check_name].get("suggestions", []))
-            elif check_name == "step_completion":
-                all_issues.append(f"Incomplete steps: {len(checks[check_name].get('missing', []))}")
+        if checks[check_name].get("status") != "fail":
+            continue
+        if simple_msg:
+            all_issues.append(simple_msg)
+        elif has_details:
+            all_issues.extend(checks[check_name].get("issues", []))
+            all_suggestions.extend(checks[check_name].get("suggestions", []))
+        elif check_name == "step_completion":
+            all_issues.append(f"Incomplete steps: {len(checks[check_name].get('missing', []))}")
     return all_issues, all_suggestions
 
 
@@ -79,11 +80,26 @@ def _determine_verdict(checks: dict[str, Any], all_issues: list[str]) -> tuple[R
     if security_escalation:
         all_issues.insert(0, f"SECURITY: {security_escalation}")
         return ReviewVerdict.FAIL, f"Security concerns detected: {security_escalation}"
-    elif error_checks:
+    if error_checks:
         raise RuntimeError(f"Check errors: {error_checks}")
-    elif failed_checks:
+    if failed_checks:
         return ReviewVerdict.NEEDS_FIX, f"Review found issues in: {', '.join(failed_checks)}"
     return ReviewVerdict.PASS, "All checks passed"
+
+
+def _apply_verdict(task_id: str, pr_url: str | None, verdict: ReviewVerdict, summary: str, all_issues: list[str]) -> None:
+    if verdict == ReviewVerdict.PASS:
+        if pr_url:
+            _auto_merge_pr(task_id, pr_url, _get_project_path(task_store.get_task(task_id)))
+        task_store.update_task_status(task_id, "completed")
+        logger.info("review_passed", task_id=task_id)
+    elif verdict == ReviewVerdict.NEEDS_FIX:
+        log_task_event(task_id, f"AI Review needs fixes: {', '.join(all_issues[:3])}")
+        logger.info("review_needs_fix", task_id=task_id, issues=len(all_issues))
+    else:
+        task_store.update_task_status(task_id, "blocked")
+        _notify_human_review_needed(task_id, summary)
+        logger.info("review_escalated", task_id=task_id)
 
 
 def review_pull_request(task_id: str, pr_url: str | None = None) -> dict[str, Any]:
@@ -91,16 +107,10 @@ def review_pull_request(task_id: str, pr_url: str | None = None) -> dict[str, An
     try:
         task = task_store.get_task(task_id)
         if not task:
-            return ReviewResult(
-                verdict=ReviewVerdict.FAIL, summary=f"Task {task_id} not found", issues=[f"Task {task_id} not found"]
-            ).to_dict()
+            return ReviewResult(verdict=ReviewVerdict.FAIL, summary=f"Task {task_id} not found", issues=[f"Task {task_id} not found"]).to_dict()
         if task.get("status") != "ai_reviewing":
             logger.warning("task_not_in_review", task_id=task_id, status=task.get("status"))
-            return ReviewResult(
-                verdict=ReviewVerdict.FAIL,
-                summary=f"Task not in ai_reviewing status (current: {task.get('status')})",
-                issues=["Task must be in ai_reviewing status for review"],
-            ).to_dict()
+            return ReviewResult(verdict=ReviewVerdict.FAIL, summary=f"Task not in ai_reviewing status (current: {task.get('status')})", issues=["Task must be in ai_reviewing status for review"]).to_dict()
         project_path = _get_project_path(task)
         checks: dict[str, Any] = {}
         logger.info("running_security_risk_classification", task_id=task_id)
@@ -122,22 +132,9 @@ def review_pull_request(task_id: str, pr_url: str | None = None) -> dict[str, An
         issues, suggestions = _run_standard_checks(task, project_path, checks)
         all_issues.extend(issues)
         verdict, summary = _determine_verdict(checks, all_issues)
-        result = ReviewResult(
-            verdict=verdict, summary=summary, checks=checks, issues=all_issues, suggestions=suggestions, risk_level=risk_level
-        )
+        result = ReviewResult(verdict=verdict, summary=summary, checks=checks, issues=all_issues, suggestions=suggestions, risk_level=risk_level)
         task_store.update_task(task_id, review_result=result.to_dict())
-        if verdict == ReviewVerdict.PASS:
-            if pr_url:
-                _auto_merge_pr(task_id, pr_url, project_path)
-            task_store.update_task_status(task_id, "completed")
-            logger.info("review_passed", task_id=task_id)
-        elif verdict == ReviewVerdict.NEEDS_FIX:
-            log_task_event(task_id, f"AI Review needs fixes: {', '.join(all_issues[:3])}")
-            logger.info("review_needs_fix", task_id=task_id, issues=len(all_issues))
-        else:
-            task_store.update_task_status(task_id, "blocked")
-            _notify_human_review_needed(task_id, summary)
-            logger.info("review_escalated", task_id=task_id)
+        _apply_verdict(task_id, pr_url, verdict, summary, all_issues)
         return result.to_dict()
     except Exception as e:
         logger.error("review_pull_request_error", task_id=task_id, error=str(e))
