@@ -19,6 +19,109 @@ from .worktree import get_project_path
 logger = get_logger(__name__)
 
 
+def _setup_subtask(
+    task_id: str,
+    subtask: dict[str, Any],
+    project_id: str,
+) -> tuple[str, str, str, Any]:
+    """Initialize logging and validate the subtask environment.
+
+    Returns (subtask_id, subtask_short_id, project_path, validation_result).
+    validation_result is non-None when execution should be aborted early.
+    """
+    subtask_id = subtask.get("id", "")
+    subtask_short_id = subtask.get("subtask_id", "")
+    subtask_desc = subtask.get("description", "")[:60]
+
+    initialize_subtask_logging(task_id, subtask_short_id, subtask_desc, project_id)
+
+    project_path = get_project_path(project_id, task_id)
+    validation_result = validate_subtask_environment(
+        task_id, subtask, subtask_short_id, project_path, project_id
+    )
+    return subtask_id, subtask_short_id, project_path, validation_result
+
+
+def _run_initial_agent(
+    task_id: str,
+    subtask_id: str,
+    subtask_short_id: str,
+    subtask: dict[str, Any],
+    agent_slug: str,
+    prompt: str,
+    project_path: str,
+    project_id: str,
+    tier_preference: str | None,
+) -> tuple[bool, list[Any], int, int, int, str, str | None]:
+    """Execute the agent and run the self-healing loop.
+
+    Returns (all_passed, step_results, self_fix_attempts,
+             supervisor_guided_attempts, extensions_granted,
+             initial_content, agent_session_id).
+    """
+    steps = subtask.get("steps_from_table", [])
+
+    logger.info(
+        "Executing in project",
+        subtask_id=subtask_short_id,
+        project_path=project_path,
+        prompt_length=len(prompt),
+        agent_slug=agent_slug,
+    )
+
+    response, agent_session_id = execute_agent_initial(
+        task_id, subtask_short_id, prompt, agent_slug, project_path, project_id,
+        tier_preference=tier_preference,
+    )
+
+    all_passed, step_results, self_fix_attempts, supervisor_guided_attempts, extensions_granted, _ = (
+        run_self_healing_loop(
+            task_id, subtask_id, subtask_short_id, subtask,
+            steps, project_path, project_id,
+            agent_slug, agent_session_id, response.content,
+            tier_preference=tier_preference,
+        )
+    )
+
+    return (
+        all_passed, step_results,
+        self_fix_attempts, supervisor_guided_attempts, extensions_granted,
+        response.content, agent_session_id,
+    )
+
+
+def _apply_fallbacks(
+    task_id: str,
+    subtask_id: str,
+    subtask_short_id: str,
+    subtask: dict[str, Any],
+    subtask_type: str | None,
+    agent_slug: str,
+    prompt: str,
+    project_path: str,
+    project_id: str,
+    agent_override: str | None,
+    tier_preference: str | None,
+    all_passed: bool,
+    step_results: list[Any],
+    self_fix_attempts: int,
+    supervisor_guided_attempts: int,
+    extensions_granted: int,
+) -> tuple[bool, list[Any], str, int, int, int]:
+    """Apply fallback strategies after the primary self-healing loop.
+
+    Returns (all_passed, step_results, agent_slug, self_fix_attempts,
+             supervisor_guided_attempts, extensions_granted).
+    """
+    steps = subtask.get("steps_from_table", [])
+    return execute_with_fallbacks(
+        task_id, subtask_id, subtask_short_id, subtask, subtask_type,
+        steps, project_path, project_id, agent_slug, prompt,
+        all_passed, step_results, self_fix_attempts, supervisor_guided_attempts,
+        extensions_granted, agent_override, tier_preference,
+    )
+
+
 def execute_subtask(
     task_id: str,
     subtask: dict[str, Any],
@@ -30,59 +133,38 @@ def execute_subtask(
 ) -> dict[str, Any]:
     """Execute a single subtask with fresh context and self-healing retry loop."""
     start_time = time.time()
-    subtask_id = subtask.get("id", "")
-    subtask_short_id = subtask.get("subtask_id", "")
-    subtask_desc = subtask.get("description", "")[:60]
-
-    initialize_subtask_logging(task_id, subtask_short_id, subtask_desc, project_id)
 
     try:
-        project_path = get_project_path(project_id, task_id)
-        validation_result = validate_subtask_environment(
-            task_id, subtask, subtask_short_id, project_path, project_id
+        subtask_id, subtask_short_id, project_path, validation_result = _setup_subtask(
+            task_id, subtask, project_id
         )
         if validation_result:
             return validation_result
 
-        steps = subtask.get("steps_from_table", [])
-        prompt = build_subtask_prompt(task_id, subtask, project_id, project_path)
         subtask_type = subtask.get("subtask_type")
         agent_slug = agent_override or get_agent_for_subtask(subtask_type, task_type)
+        prompt = build_subtask_prompt(task_id, subtask, project_id, project_path)
 
-        logger.info(
-            "Executing in project",
-            subtask_id=subtask_short_id,
-            project_path=project_path,
-            prompt_length=len(prompt),
-            agent_slug=agent_slug,
-        )
-
-        response, agent_session_id = execute_agent_initial(
-            task_id, subtask_short_id, prompt, agent_slug, project_path, project_id,
-            tier_preference=tier_preference,
-        )
-
-        all_passed, step_results, self_fix_attempts, supervisor_guided_attempts, extensions_granted, _ = (
-            run_self_healing_loop(
+        all_passed, step_results, self_fix_attempts, supervisor_guided_attempts, extensions_granted, initial_content, _ = (
+            _run_initial_agent(
                 task_id, subtask_id, subtask_short_id, subtask,
-                steps, project_path, project_id,
-                agent_slug, agent_session_id, response.content,
-                tier_preference=tier_preference,
+                agent_slug, prompt, project_path, project_id, tier_preference,
             )
         )
 
         all_passed, step_results, agent_slug, self_fix_attempts, supervisor_guided_attempts, extensions_granted = (
-            execute_with_fallbacks(
+            _apply_fallbacks(
                 task_id, subtask_id, subtask_short_id, subtask, subtask_type,
-                steps, project_path, project_id, agent_slug, prompt,
-                all_passed, step_results, self_fix_attempts, supervisor_guided_attempts,
-                extensions_granted, agent_override, tier_preference,
+                agent_slug, prompt, project_path, project_id,
+                agent_override, tier_preference,
+                all_passed, step_results, self_fix_attempts,
+                supervisor_guided_attempts, extensions_granted,
             )
         )
 
         return process_final_result(
             task_id, subtask_id, subtask_short_id, project_id,
-            all_passed, step_results, response.content,
+            all_passed, step_results, initial_content,
             time.time() - start_time,
             self_fix_attempts, supervisor_guided_attempts, extensions_granted,
             issue_counts, subtask_type=subtask_type,
