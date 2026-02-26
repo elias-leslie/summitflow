@@ -5,6 +5,7 @@ Handles file I/O and verification of fixes.
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -12,17 +13,25 @@ from ...logging_config import get_logger
 
 logger = get_logger(__name__)
 
+_DT_CHECK_TYPES = frozenset({"ruff", "types", "biome", "tsc"})
+
+
+def _build_verify_cmd(check_type: str, file_path: str) -> list[str] | None:
+    """Return the command list for verifying a check type, or None if unknown."""
+    dt_cmd = shutil.which("dt")
+    if dt_cmd and check_type in _DT_CHECK_TYPES:
+        return [dt_cmd, check_type]
+    fallbacks: dict[str, list[str]] = {
+        "ruff": ["ruff", "check", file_path, "--quiet"],
+        "types": ["ty", "check", file_path],
+        "biome": ["npx", "biome", "check", file_path, "--quiet"],
+        "tsc": ["npx", "tsc", "--noEmit"],
+    }
+    return fallbacks.get(check_type)
+
 
 def read_file_content(file_path: Path, _context_lines: int = 10) -> str | None:
-    """Read file content with surrounding context.
-
-    Args:
-        file_path: Path to file
-        context_lines: Number of lines of context to include around error
-
-    Returns:
-        File content or None if file doesn't exist
-    """
+    """Read file content, returning None if the file is missing or unreadable."""
     if not file_path.exists():
         return None
     try:
@@ -33,15 +42,7 @@ def read_file_content(file_path: Path, _context_lines: int = 10) -> str | None:
 
 
 def apply_fix(file_path: Path, new_content: str) -> bool:
-    """Apply the fix to the file.
-
-    Args:
-        file_path: Path to file
-        new_content: New file content
-
-    Returns:
-        True if fix was applied successfully
-    """
+    """Write new_content to file_path, returning True on success."""
     try:
         file_path.write_text(new_content)
         return True
@@ -50,11 +51,7 @@ def apply_fix(file_path: Path, new_content: str) -> bool:
         return False
 
 
-def verify_fix(
-    project_path: Path,
-    check_type: str,
-    file_path: str,
-) -> bool:
+def verify_fix(project_path: Path, check_type: str, file_path: str) -> bool:
     """Re-run the check to verify the fix worked.
 
     Uses dt wrapper for consistent tool execution. Falls back to raw tools
@@ -68,32 +65,13 @@ def verify_fix(
     Returns:
         True if the check now passes
     """
-    import shutil
-
-    dt_cmd = shutil.which("dt")
-
-    if dt_cmd and check_type in ("ruff", "types", "biome", "tsc"):
-        # Use dt for verification — consistent with quality gate pipeline
-        cmd = [dt_cmd, check_type]
-    elif check_type == "ruff":
-        cmd = ["ruff", "check", file_path, "--quiet"]
-    elif check_type == "types":
-        cmd = ["ty", "check", file_path]
-    elif check_type == "biome":
-        cmd = ["npx", "biome", "check", file_path, "--quiet"]
-    elif check_type == "tsc":
-        cmd = ["npx", "tsc", "--noEmit"]
-    else:
+    cmd = _build_verify_cmd(check_type, file_path)
+    if cmd is None:
         logger.warning("unknown_check_type", check_type=check_type)
         return False
-
     try:
         result = subprocess.run(
-            cmd,
-            cwd=project_path,
-            capture_output=True,
-            text=True,
-            timeout=60,
+            cmd, cwd=project_path, capture_output=True, text=True, timeout=60
         )
         return result.returncode == 0
     except subprocess.TimeoutExpired:
