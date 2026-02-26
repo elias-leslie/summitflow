@@ -51,6 +51,53 @@ def _write_step_pass(
     return row_to_dict(row)
 
 
+def _verify_and_pass_step(
+    subtask_id: str,
+    step_number: int,
+    project_root: str | None,
+    project_id: str | None,
+) -> dict[str, object] | None:
+    """Fetch step, run verify_command, mark passed on success."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(_SELECT_SQL, (subtask_id, step_number))
+        row = cur.fetchone()
+
+    if not row:
+        logger.warning("Step %d not found for subtask %s", step_number, subtask_id)
+        return None
+
+    step = row_to_dict(row)
+    verify_command = step.get("verify_command")
+
+    if not verify_command:
+        raise StepVerificationError(
+            message=f"Step {step_number} has no verify_command.",
+            step_number=step_number,
+            output="",
+            exit_code=-1,
+            verify_command=None,
+            cwd=project_root,
+        )
+
+    status, exit_code, output = run_verify_command(verify_command, cwd=project_root, project_id=project_id)
+
+    if status != "passed":
+        raise StepVerificationError(
+            message=f"Step {step_number} verification failed (exit code {exit_code}).\nCommand: {verify_command}\nOutput: {output[:500]}",
+            step_number=step_number,
+            output=output,
+            exit_code=exit_code,
+            verify_command=verify_command,
+            cwd=project_root,
+        )
+
+    logger.info("Step %d verify_command passed for subtask %s", step_number, subtask_id)
+    result = _write_step_pass(subtask_id, step_number, passes=True, passed_at=datetime.now(UTC), log_incomplete=True)
+    if result is not None:
+        logger.info("Step %d passed for subtask %s (verified)", step_number, subtask_id)
+    return result
+
+
 def update_step_passes(
     subtask_id: str,
     step_number: int,
@@ -82,51 +129,4 @@ def update_step_passes(
             logger.info("Step %d passed for subtask %s (pre-verified)", step_number, subtask_id)
         return result
 
-    # passes=True without pre-verification: fetch step, run verify_command
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(_SELECT_SQL, (subtask_id, step_number))
-        row = cur.fetchone()
-
-    if not row:
-        logger.warning("Step %d not found for subtask %s", step_number, subtask_id)
-        return None
-
-    step = row_to_dict(row)
-    verify_command = step.get("verify_command")
-
-    if not verify_command:
-        raise StepVerificationError(
-            message=f"Step {step_number} has no verify_command. Every step must have verification.",
-            step_number=step_number,
-            output="",
-            exit_code=-1,
-            verify_command=None,
-            cwd=project_root,
-        )
-
-    status, exit_code, output = run_verify_command(
-        verify_command, cwd=project_root, project_id=project_id,
-    )
-
-    if status != "passed":
-        raise StepVerificationError(
-            message=(
-                f"Step {step_number} verification failed (exit code {exit_code}).\n"
-                f"Command: {verify_command}\n"
-                f"Output: {output[:500]}"
-            ),
-            step_number=step_number,
-            output=output,
-            exit_code=exit_code,
-            verify_command=verify_command,
-            cwd=project_root,
-        )
-
-    logger.info("Step %d verify_command passed for subtask %s", step_number, subtask_id)
-
-    result = _write_step_pass(
-        subtask_id, step_number, passes=True, passed_at=datetime.now(UTC), log_incomplete=True
-    )
-    if result is not None:
-        logger.info("Step %d passed for subtask %s (verified)", step_number, subtask_id)
-    return result
+    return _verify_and_pass_step(subtask_id, step_number, project_root, project_id)
