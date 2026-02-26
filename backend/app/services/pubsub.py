@@ -63,6 +63,17 @@ def _extract_event_fields(event: dict[str, object]) -> tuple[str, str | None, di
     return event_type, message, data_dict
 
 
+def _parse_message(raw: object) -> dict[str, object] | None:
+    """Decode and parse a Redis pubsub message. Returns None on parse failure."""
+    try:
+        decoded = raw.decode("utf-8") if isinstance(raw, bytes) else raw
+        result = json.loads(decoded)
+        return result if isinstance(result, dict) else None
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        logger.warning("Failed to parse Redis message", error=str(e))
+        return None
+
+
 def publish_ws_event(
     task_id: str,
     event: dict[str, object],
@@ -124,13 +135,12 @@ async def subscribe_ws_events(task_id: str) -> AsyncIterator[dict[str, object]]:
 
         while True:
             message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
-            if message is not None and message["type"] == "message":
-                try:
-                    raw = message["data"]
-                    yield json.loads(raw.decode("utf-8") if isinstance(raw, bytes) else raw)
-                except (json.JSONDecodeError, UnicodeDecodeError) as e:
-                    logger.warning("Failed to parse Redis message", error=str(e))
             await asyncio.sleep(0.01)
+            if message is None or message["type"] != "message":
+                continue
+            parsed = _parse_message(message["data"])
+            if parsed is not None:
+                yield parsed
 
     except asyncio.CancelledError:
         logger.debug("Redis subscription cancelled", task_id=task_id)
