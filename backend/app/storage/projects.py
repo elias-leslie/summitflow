@@ -16,67 +16,32 @@ logger = logging.getLogger(__name__)
 
 
 def get_project_test_config(project_id: str) -> tuple[Any, ...] | None:
-    """Get project test configuration from database.
-
-    Args:
-        project_id: The project ID to look up
-
-    Returns:
-        Tuple of (root_path, test_config) or None if project not found.
-    """
+    """Get project test configuration (root_path, test_config) or None."""
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            """
-            SELECT root_path, test_config
-            FROM projects
-            WHERE id = %s
-            """,
+            "SELECT root_path, test_config FROM projects WHERE id = %s",
             (project_id,),
         )
         return cur.fetchone()
 
 
 def project_exists(project_id: str) -> bool:
-    """Check if a project exists.
-
-    Args:
-        project_id: The project ID to check
-
-    Returns:
-        True if project exists, False otherwise.
-    """
+    """Return True if project exists, False otherwise."""
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            "SELECT 1 FROM projects WHERE id = %s",
-            (project_id,),
-        )
+        cur.execute("SELECT 1 FROM projects WHERE id = %s", (project_id,))
         return cur.fetchone() is not None
 
 
 def get_project_root_path(project_id: str) -> str | None:
-    """Get project root path.
-
-    Args:
-        project_id: The project ID
-
-    Returns:
-        Root path string or None if project not found.
-    """
+    """Return project root path or None if project not found."""
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            "SELECT root_path FROM projects WHERE id = %s",
-            (project_id,),
-        )
+        cur.execute("SELECT root_path FROM projects WHERE id = %s", (project_id,))
         row = cur.fetchone()
         return row[0] if row else None
 
 
 def get_all_project_root_paths() -> list[str]:
-    """Get all project root paths.
-
-    Returns:
-        List of root path strings for all registered projects.
-    """
+    """Return list of root paths for all registered projects."""
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute("SELECT root_path FROM projects WHERE root_path IS NOT NULL")
         return [row[0] for row in cur.fetchall()]
@@ -85,17 +50,10 @@ def get_all_project_root_paths() -> list[str]:
 def find_project_by_cwd(cwd: str) -> dict[str, Any] | None:
     """Find project whose root_path matches the given working directory.
 
-    Checks if cwd starts with any project's root_path.
-
-    Args:
-        cwd: Current working directory path
-
-    Returns:
-        Project dict with id, name, root_path or None if no match.
+    Checks if cwd starts with any project's root_path. Returns the most
+    specific (longest) match or None.
     """
     with get_connection() as conn, conn.cursor() as cur:
-        # Find project where cwd starts with root_path
-        # Order by root_path length descending to get most specific match
         cur.execute(
             """
             SELECT id, name, root_path
@@ -108,9 +66,30 @@ def find_project_by_cwd(cwd: str) -> dict[str, Any] | None:
             (cwd,),
         )
         row = cur.fetchone()
-        if row:
-            return {"id": row[0], "name": row[1], "root_path": row[2]}
-        return None
+        if not row:
+            return None
+        return {"id": row[0], "name": row[1], "root_path": row[2]}
+
+
+def _apply_working_dir_pythonpath(env: dict[str, str], working_dir: str) -> None:
+    """Inject worktree backend dir into PYTHONPATH if it exists."""
+    backend_dir = os.path.join(working_dir, "backend")
+    if not os.path.isdir(backend_dir):
+        return
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = f"{backend_dir}:{existing}" if existing else backend_dir
+
+
+def _resolve_venv(main_repo: str) -> Path | None:
+    """Return the first valid venv path found under main_repo, or None."""
+    candidates = [
+        Path(main_repo) / "backend" / ".venv",
+        Path(main_repo) / ".venv",
+    ]
+    for venv_path in candidates:
+        if (venv_path / "bin" / "python").exists():
+            return venv_path
+    return None
 
 
 def build_project_env(project_id: str | None, working_dir: str | None = None) -> dict[str, str]:
@@ -134,48 +113,30 @@ def build_project_env(project_id: str | None, working_dir: str | None = None) ->
     if not main_repo:
         return env
 
-    candidates = [
-        Path(main_repo) / "backend" / ".venv",
-        Path(main_repo) / ".venv",
-    ]
-    for venv_path in candidates:
-        if (venv_path / "bin" / "python").exists():
-            venv_bin = str(venv_path / "bin")
-            env["VIRTUAL_ENV"] = str(venv_path)
-            env["PATH"] = f"{venv_bin}:{env.get('PATH', '')}"
-            env.pop("PYTHONHOME", None)
-            logger.info("resolved_project_venv: venv=%s project_id=%s", venv_path, project_id)
-            if working_dir:
-                backend_dir = os.path.join(working_dir, "backend")
-                if os.path.isdir(backend_dir):
-                    existing = env.get("PYTHONPATH", "")
-                    env["PYTHONPATH"] = f"{backend_dir}:{existing}" if existing else backend_dir
-            return env
+    venv_path = _resolve_venv(main_repo)
+    if not venv_path:
+        logger.debug("no_venv_found: project_id=%s main_repo=%s", project_id, main_repo)
+        return env
 
-    logger.debug("no_venv_found: project_id=%s main_repo=%s", project_id, main_repo)
+    venv_bin = str(venv_path / "bin")
+    env["VIRTUAL_ENV"] = str(venv_path)
+    env["PATH"] = f"{venv_bin}:{env.get('PATH', '')}"
+    env.pop("PYTHONHOME", None)
+    logger.info("resolved_project_venv: venv=%s project_id=%s", venv_path, project_id)
+
+    if working_dir:
+        _apply_working_dir_pythonpath(env, working_dir)
+
     return env
 
 
 def list_projects() -> list[dict[str, Any]]:
-    """List all projects.
-
-    Returns:
-        List of project dicts with id, name, root_path.
-    """
+    """Return list of all projects with id, name, root_path, created_at."""
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            """
-            SELECT id, name, root_path, created_at
-            FROM projects
-            ORDER BY created_at
-            """
+            "SELECT id, name, root_path, created_at FROM projects ORDER BY created_at"
         )
         return [
-            {
-                "id": row[0],
-                "name": row[1],
-                "root_path": row[2],
-                "created_at": row[3],
-            }
+            {"id": row[0], "name": row[1], "root_path": row[2], "created_at": row[3]}
             for row in cur.fetchall()
         ]
