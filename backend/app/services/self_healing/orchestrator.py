@@ -18,7 +18,7 @@ from .config import (
     MAX_ERRORS_PER_RUN,
 )
 from .exceptions import BudgetExceededError
-from .project_processor import process_project
+from .project_processor import ProjectResults, process_project
 from .project_scanner import get_projects_with_unfixed_errors
 
 if TYPE_CHECKING:
@@ -37,7 +37,7 @@ __all__ = [
     "poll_and_fix_all",
 ]
 
-ProjectData = dict[str, object]
+ProjectData = ProjectResults
 ByCheckType = dict[str, dict[str, int]]
 
 
