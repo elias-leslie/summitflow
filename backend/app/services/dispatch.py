@@ -6,7 +6,7 @@ Called from CLI (st autocode) and API endpoints to queue tasks for execution.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TypedDict
 
 from ..logging_config import get_logger
 from ..storage import tasks as task_store
@@ -15,7 +15,39 @@ from ..tasks.autonomous.pickup import _determine_next_stage
 logger = get_logger(__name__)
 
 
-async def dispatch_task(task_id: str, project_id: str) -> dict[str, Any]:
+class DispatchResult(TypedDict):
+    task_id: str
+    project_id: str
+    stage: str
+    status: str
+
+
+async def _trigger_workflow(stage: str, task_id: str, project_id: str) -> None:
+    """Trigger the appropriate Hatchet workflow for the given stage."""
+    from ..workflows.models import TaskInput
+    from ..workflows.pipeline import (
+        execute_wf,
+        ideate_wf,
+        plan_wf,
+        triage_wf,
+    )
+
+    task_input = TaskInput(task_id=task_id, project_id=project_id)
+
+    if stage == "ideation":
+        await ideate_wf.aio_run_no_wait(task_input)
+    elif stage == "triage":
+        await triage_wf.aio_run_no_wait(task_input)
+    elif stage == "planning":
+        await plan_wf.aio_run_no_wait(task_input)
+    elif stage == "execution":
+        await execute_wf.aio_run_no_wait(task_input)
+    else:
+        logger.warning("Unknown stage, dispatching to triage", task_id=task_id, stage=stage)
+        await triage_wf.aio_run_no_wait(task_input)
+
+
+async def dispatch_task(task_id: str, project_id: str) -> DispatchResult:
     """Dispatch a task for autonomous execution via Hatchet.
 
     Determines the appropriate pipeline stage using the canonical
@@ -38,32 +70,7 @@ async def dispatch_task(task_id: str, project_id: str) -> dict[str, Any]:
 
     stage = _determine_next_stage(task_id)
 
-    # Trigger appropriate Hatchet workflow
-    from ..workflows.models import TaskInput
-
-    task_input = TaskInput(task_id=task_id, project_id=project_id)
-
-    if stage == "ideation":
-        from ..workflows.pipeline import ideate_wf
-
-        await ideate_wf.aio_run_no_wait(task_input)
-    elif stage == "triage":
-        from ..workflows.pipeline import triage_wf
-
-        await triage_wf.aio_run_no_wait(task_input)
-    elif stage == "planning":
-        from ..workflows.pipeline import plan_wf
-
-        await plan_wf.aio_run_no_wait(task_input)
-    elif stage == "execution":
-        from ..workflows.pipeline import execute_wf
-
-        await execute_wf.aio_run_no_wait(task_input)
-    else:
-        logger.warning("Unknown stage, dispatching to triage", task_id=task_id, stage=stage)
-        from ..workflows.pipeline import triage_wf
-
-        await triage_wf.aio_run_no_wait(task_input)
+    await _trigger_workflow(stage, task_id, project_id)
 
     logger.info(
         "task_dispatched",
@@ -72,9 +79,9 @@ async def dispatch_task(task_id: str, project_id: str) -> dict[str, Any]:
         stage=stage,
     )
 
-    return {
-        "task_id": task_id,
-        "project_id": project_id,
-        "stage": stage,
-        "status": "dispatched",
-    }
+    return DispatchResult(
+        task_id=task_id,
+        project_id=project_id,
+        stage=stage,
+        status="dispatched",
+    )
