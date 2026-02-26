@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 import typer
 
 from ..output import output_error, output_json
 from ..output_context import OutputContext
+from ._memory_crud_helpers import (
+    build_save_payload,
+    fetch_existing_episode,
+    patch_episode_properties,
+    replace_episode,
+    validate_save_inputs,
+)
 from .memory_api import agent_hub_request
 from .memory_formatters import (
     format_batch_get_compact,
@@ -22,13 +27,8 @@ from .memory_validation import validate_content_format, validate_summary_length
 
 def stats_impl(out: OutputContext, scope: str, scope_id: str | None) -> None:
     result = agent_hub_request(
-        "GET",
-        "/api/memory/stats",
-        scope=scope,
-        scope_id=scope_id,
-        tool_name="st memory stats",
+        "GET", "/api/memory/stats", scope=scope, scope_id=scope_id, tool_name="st memory stats"
     )
-
     if out.is_compact:
         format_stats_compact(result)
     else:
@@ -47,44 +47,13 @@ def save_impl(
     scope: str,
     scope_id: str | None,
 ) -> None:
-    if tier not in ("mandate", "guardrail", "reference"):
-        output_error(f"Invalid tier: {tier}. Must be mandate, guardrail, or reference.")
-        raise typer.Exit(1)
-
-    if confidence < 0 or confidence > 100:
-        output_error(f"Invalid confidence: {confidence}. Must be 0-100.")
-        raise typer.Exit(1)
-
-    if not summary or not summary.strip():
-        output_error("--summary is required. Provide a short action phrase (~35 chars).")
-        raise typer.Exit(1)
-
-    summary = summary.strip()
-    validate_summary_length(summary)
+    summary = validate_save_inputs(tier, confidence, summary)
     validate_content_format(content, summary)
-
-    payload: dict[str, Any] = {
-        "content": content,
-        "injection_tier": tier,
-        "confidence": confidence,
-        "summary": summary,
-    }
-    if context:
-        payload["context"] = context
-    if pinned:
-        payload["pinned"] = True
-    if trigger_types:
-        payload["trigger_task_types"] = [t.strip() for t in trigger_types.split(",")]
-
+    payload = build_save_payload(content, summary, tier, confidence, context, pinned, trigger_types)
     result = agent_hub_request(
-        "POST",
-        "/api/memory/save-learning",
-        json=payload,
-        scope=scope,
-        scope_id=scope_id,
-        tool_name="st memory save",
+        "POST", "/api/memory/save-learning", json=payload,
+        scope=scope, scope_id=scope_id, tool_name="st memory save",
     )
-
     if out.is_compact:
         format_save_compact(result)
     else:
@@ -99,21 +68,15 @@ def list_impl(
     scope: str,
     scope_id: str | None,
 ) -> None:
-    params: dict[str, Any] = {"limit": limit}
+    params: dict[str, object] = {"limit": limit}
     if cursor:
         params["cursor"] = cursor
     if tier:
         params["category"] = tier
-
     result = agent_hub_request(
-        "GET",
-        "/api/memory/list",
-        params=params,
-        scope=scope,
-        scope_id=scope_id,
-        tool_name="st memory list",
+        "GET", "/api/memory/list", params=params,
+        scope=scope, scope_id=scope_id, tool_name="st memory list",
     )
-
     if out.is_compact:
         format_list_compact(result)
     else:
@@ -128,21 +91,11 @@ def search_impl(
     scope: str,
     scope_id: str | None,
 ) -> None:
-    params: dict[str, Any] = {
-        "query": query,
-        "limit": limit,
-        "min_score": min_score,
-    }
-
+    params: dict[str, object] = {"query": query, "limit": limit, "min_score": min_score}
     result = agent_hub_request(
-        "GET",
-        "/api/memory/search",
-        params=params,
-        scope=scope,
-        scope_id=scope_id,
-        tool_name="st memory search",
+        "GET", "/api/memory/search", params=params,
+        scope=scope, scope_id=scope_id, tool_name="st memory search",
     )
-
     if out.is_compact:
         format_search_compact(result)
     else:
@@ -154,60 +107,48 @@ def get_impl(out: OutputContext, uuids: list[str]) -> None:
         output_error("At least one UUID required")
         raise typer.Exit(1)
 
-    if len(uuids) == 1:
+    if len(uuids) > 1:
         result = agent_hub_request(
-            "GET",
-            f"/api/memory/episode/{uuids[0]}",
-            tool_name="st memory get",
+            "POST", "/api/memory/batch-get", json={"uuids": uuids}, tool_name="st memory get"
         )
-
-        if "detail" in result:
-            output_error(result["detail"])
-            raise typer.Exit(1)
-
-        if out.is_compact:
-            format_get_compact(result)
-        else:
-            output_json(result)
-    else:
-        result = agent_hub_request(
-            "POST",
-            "/api/memory/batch-get",
-            json={"uuids": uuids},
-            tool_name="st memory get",
-        )
-
         if out.is_compact:
             format_batch_get_compact(result)
         else:
             output_json(result)
+        return
+
+    result = agent_hub_request("GET", f"/api/memory/episode/{uuids[0]}", tool_name="st memory get")
+    if "detail" in result:
+        output_error(result["detail"])
+        raise typer.Exit(1)
+    if out.is_compact:
+        format_get_compact(result)
+    else:
+        output_json(result)
 
 
 def delete_impl(uuids: list[str]) -> None:
     if len(uuids) == 1:
-        result = agent_hub_request(
-            "DELETE",
-            f"/api/memory/episode/{uuids[0]}",
-            tool_name="st memory delete",
-        )
-        if result.get("success"):
-            typer.echo(f"Deleted: {uuids[0][:8]}")
-            typer.echo("\nDeleted: 1, Failed: 0")
-        else:
-            typer.echo(f"Failed: {uuids[0][:8]} - {result.get('detail', 'Unknown error')}")
-            typer.echo("\nDeleted: 0, Failed: 1")
+        _delete_single(uuids[0])
+        return
+    result = agent_hub_request(
+        "POST", "/api/memory/bulk-delete", json={"ids": uuids}, tool_name="st memory delete"
+    )
+    for error in result.get("errors", []):
+        typer.echo(f"Failed: {error['id'][:8]} - {error.get('error', 'Unknown')}")
+    typer.echo(f"\nDeleted: {result.get('deleted', 0)}, Failed: {result.get('failed', 0)}")
+
+
+def _delete_single(uuid: str) -> None:
+    result = agent_hub_request(
+        "DELETE", f"/api/memory/episode/{uuid}", tool_name="st memory delete"
+    )
+    if result.get("success"):
+        typer.echo(f"Deleted: {uuid[:8]}")
+        typer.echo("\nDeleted: 1, Failed: 0")
     else:
-        result = agent_hub_request(
-            "POST",
-            "/api/memory/bulk-delete",
-            json={"ids": uuids},
-            tool_name="st memory delete",
-        )
-        deleted = result.get("deleted", 0)
-        failed = result.get("failed", 0)
-        for error in result.get("errors", []):
-            typer.echo(f"Failed: {error['id'][:8]} - {error.get('error', 'Unknown')}")
-        typer.echo(f"\nDeleted: {deleted}, Failed: {failed}")
+        typer.echo(f"Failed: {uuid[:8]} - {result.get('detail', 'Unknown error')}")
+        typer.echo("\nDeleted: 0, Failed: 1")
 
 
 def update_impl(
@@ -227,102 +168,25 @@ def update_impl(
     if summary:
         validate_summary_length(summary)
 
-    existing = agent_hub_request("GET", f"/api/memory/episode/{uuid}", tool_name="st memory update")
-    if "detail" in existing:
-        typer.echo(f"Error: {existing['detail']}")
-        raise typer.Exit(1)
-
-    full_uuid = existing.get("uuid", uuid)
-    old_tier = existing.get("injection_tier", "reference")
-    old_content = existing.get("content", "")
-
+    existing = fetch_existing_episode(uuid)
     content_or_tier_changed = bool(content or tier)
     properties_changed = bool(summary or trigger_types or pinned is not None)
 
-    # FORMAT_STANDARD validation for content updates
     if content:
-        effective_summary = summary or existing.get("summary", "")
-        validate_content_format(content, effective_summary)
+        validate_content_format(content, summary or str(existing.get("summary", "")))
 
-    target_uuid = full_uuid
+    target_uuid = str(existing.get("uuid", uuid))
 
     if content_or_tier_changed:
-        new_content = content if content else old_content
-        new_tier = tier if tier else old_tier
-
-        create_result = agent_hub_request(
-            "POST",
-            "/api/memory/add",
-            json={
-                "content": new_content,
-                "name": existing.get("name", "updated_episode"),
-                "injection_tier": new_tier,
-                "preserve_stats_from": full_uuid,
-            },
-            tool_name="st memory update",
-        )
-
-        new_uuid = create_result.get("uuid")
-        if not new_uuid:
-            typer.echo(f"Error creating new episode: {create_result}")
-            raise typer.Exit(1)
-
-        # Delete original — retry once on failure to prevent orphaned duplicates
-        delete_ok = False
-        for attempt in range(2):
-            try:
-                delete_result = agent_hub_request(
-                    "DELETE", f"/api/memory/episode/{uuid}", tool_name="st memory update"
-                )
-                if delete_result.get("success"):
-                    delete_ok = True
-                    break
-            except SystemExit:
-                if attempt == 0:
-                    typer.echo("  Retrying delete...")
-                    continue
-                raise
-
-        if not delete_ok:
-            typer.echo(
-                f"Warning: Failed to delete original: {delete_result.get('detail', 'Unknown')}"
-            )
-            typer.echo(f"New episode created: {new_uuid[:8]}")
-            typer.echo(f"Please manually delete: {uuid[:8]}")
-            raise typer.Exit(1)
-
-        target_uuid = new_uuid
-        typer.echo(f"Updated: {uuid[:8]} -> {new_uuid[:8]}")
+        new_content = content if content else str(existing.get("content", ""))
+        new_tier = tier if tier else str(existing.get("injection_tier", "reference"))
+        target_uuid = replace_episode(uuid, new_content, new_tier, existing)
+        typer.echo(f"Updated: {uuid[:8]} -> {target_uuid[:8]}")
         if tier:
             typer.echo(f"  Tier: {new_tier}")
 
     if properties_changed:
-        props: dict[str, Any] = {}
-        if summary:
-            props["summary"] = summary
-        if trigger_types:
-            props["trigger_task_types"] = [t.strip() for t in trigger_types.split(",")]
-        if pinned is not None:
-            props["pinned"] = pinned
-
-        patch_result = agent_hub_request(
-            "PATCH",
-            f"/api/memory/episode/{target_uuid}/properties",
-            json=props,
-            tool_name="st memory update",
-        )
-
-        if not patch_result.get("success"):
-            typer.echo(
-                f"Warning: Failed to update properties: {patch_result.get('message', 'Unknown')}"
-            )
-        else:
-            if summary:
-                typer.echo(f"  Summary: {summary}")
-            if trigger_types:
-                typer.echo(f"  Trigger types: {props['trigger_task_types']}")
-            if pinned is not None:
-                typer.echo(f"  Pinned: {pinned}")
+        patch_episode_properties(target_uuid, summary, trigger_types, pinned)
 
     if not content_or_tier_changed and not properties_changed:
         typer.echo("No changes made.")
