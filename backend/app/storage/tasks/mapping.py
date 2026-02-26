@@ -79,3 +79,28 @@ def row_to_dict_with_spirit(row: TupleRow | tuple[Any, ...] | None) -> dict[str,
     task["done_when"] = row[46] if row[46] else []
     task["plan_status"] = row[47]
     return task
+
+
+def row_to_dict_with_subtask_summary(row: TupleRow | tuple[Any, ...]) -> dict[str, Any]:
+    """Convert a row with spirit fields and subtask counts to a task dict.
+
+    Expects EXPECTED_TASK_COLUMNS_WITH_SPIRIT + 2 columns:
+    standard spirit columns followed by subtask_total and subtask_completed.
+    """
+    expected = EXPECTED_TASK_COLUMNS_WITH_SPIRIT + 2
+    if len(row) != expected:
+        raise ValueError(f"Expected {expected} columns, got {len(row)}")
+
+    task = row_to_dict_with_spirit(row[:EXPECTED_TASK_COLUMNS_WITH_SPIRIT])
+    subtask_total = row[EXPECTED_TASK_COLUMNS_WITH_SPIRIT]
+    subtask_completed = row[EXPECTED_TASK_COLUMNS_WITH_SPIRIT + 1]
+    progress_percent = (
+        round((subtask_completed / subtask_total) * 100, 1) if subtask_total > 0 else 0.0
+    )
+    task["subtask_summary"] = {
+        "total": subtask_total,
+        "completed": subtask_completed,
+        "next_subtask_id": None,
+        "progress_percent": progress_percent,
+    }
+    return task
