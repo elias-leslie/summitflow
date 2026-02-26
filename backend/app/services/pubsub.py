@@ -1,20 +1,12 @@
 """Redis pub/sub for cross-process WebSocket messaging.
 
-Enables background workers to publish messages that FastAPI WebSocket handlers receive.
-This solves the process isolation problem: Hatchet workers can't directly access
-FastAPI's in-memory ConnectionManager.
+Background workers publish messages that FastAPI WebSocket handlers receive,
+solving process isolation: Hatchet workers can't access FastAPI's in-memory
+ConnectionManager directly.
 
-Events are persisted to PostgreSQL for historical queries, then published to Redis
-for live streaming. If Redis fails after DB write, event is persisted but live
-clients may miss it until reconnect (acceptable trade-off).
-
-Usage:
-    # In background worker (sync):
-    publish_ws_event(task_id, {"type": "log", "data": {...}}, project_id="proj", trace_id="task-123")
-
-    # In FastAPI WebSocket handler (async):
-    async for message in subscribe_ws_events(task_id):
-        await websocket.send_json(message)
+Events are persisted to PostgreSQL, then published to Redis for live streaming.
+If Redis fails after DB write, the event is persisted but live clients may miss
+it until reconnect (acceptable trade-off).
 """
 
 from __future__ import annotations
@@ -22,7 +14,6 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator
-from typing import Any
 
 import redis
 import redis.asyncio as aioredis
@@ -61,9 +52,31 @@ def get_channel_name(task_id: str) -> str:
     return f"{WS_CHANNEL_PREFIX}{task_id}"
 
 
+def _extract_event_fields(event: dict[str, object]) -> tuple[str, str | None, dict[str, object]]:
+    """Extract event_type, message, and attributes from an event dict."""
+    event_type = str(event.get("type", "log"))
+    data = event.get("data")
+    if not isinstance(data, dict):
+        return event_type, None, {"raw": data}
+    data_dict: dict[str, object] = {str(k): v for k, v in data.items()}
+    message: str | None = str(data_dict["message"]) if "message" in data_dict else None
+    return event_type, message, data_dict
+
+
+def _parse_message(raw: object) -> dict[str, object] | None:
+    """Decode and parse a Redis pubsub message. Returns None on parse failure."""
+    try:
+        decoded = raw.decode("utf-8") if isinstance(raw, bytes) else raw
+        result = json.loads(decoded)
+        return result if isinstance(result, dict) else None
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        logger.warning("Failed to parse Redis message", error=str(e))
+        return None
+
+
 def publish_ws_event(
     task_id: str,
-    event: dict[str, Any],
+    event: dict[str, object],
     *,
     project_id: str | None = None,
     trace_id: str | None = None,
@@ -73,38 +86,17 @@ def publish_ws_event(
 ) -> bool:
     """Publish a WebSocket event to Redis (sync, for background workers).
 
-    Persists event to PostgreSQL first, then publishes to Redis for live streaming.
-    If Redis fails after DB write, event is still persisted.
+    Persists event to PostgreSQL first, then publishes to Redis for live
+    streaming. If Redis fails after DB write, event is still persisted.
 
-    Args:
-        task_id: Task ID to publish to
-        event: Event dict with type and data
-        project_id: Project ID for DB persistence (required for persistence)
-        trace_id: Trace ID for DB persistence (defaults to task_id)
-        source: Event source (worker, orchestrator, agent, system)
-        level: Log level (error, warning, info, debug)
-        visibility: Visibility scope (user, internal, debug)
-
-    Returns:
-        True if published successfully, False on error
+    Returns True if published successfully, False on error.
     """
     if trace_id is None:
         trace_id = task_id
 
     if project_id is not None:
+        event_type, message, attributes = _extract_event_fields(event)
         try:
-            event_type = event.get("type", "log")
-            message = (
-                event.get("data", {}).get("message")
-                if isinstance(event.get("data"), dict)
-                else None
-            )
-            attributes = (
-                event.get("data", {})
-                if isinstance(event.get("data"), dict)
-                else {"raw": event.get("data")}
-            )
-
             create_event(
                 project_id=project_id,
                 trace_id=trace_id,
@@ -120,50 +112,35 @@ def publish_ws_event(
 
     try:
         r = redis.Redis(connection_pool=_get_sync_pool())
-        channel = get_channel_name(task_id)
-        message = json.dumps(event)
-        r.publish(channel, message)
+        r.publish(get_channel_name(task_id), json.dumps(event))
         return True
     except redis.RedisError as e:
         logger.warning("Failed to publish WebSocket event", task_id=task_id, error=str(e))
         return False
 
 
-async def subscribe_ws_events(task_id: str) -> AsyncIterator[dict[str, Any]]:
+async def subscribe_ws_events(task_id: str) -> AsyncIterator[dict[str, object]]:
     """Subscribe to WebSocket events for a task (async, for FastAPI).
 
-    Yields event dicts as they arrive. Exits when client disconnects
-    or connection is closed.
-
-    Args:
-        task_id: Task ID to subscribe to
-
-    Yields:
-        Event dicts from the Redis channel
+    Yields event dicts as they arrive. Exits when the client disconnects
+    or the connection is closed.
     """
-    r: aioredis.Redis | None = None
     pubsub: aioredis.client.PubSub | None = None
+    channel = get_channel_name(task_id)
 
     try:
-        r = aioredis.Redis(connection_pool=_get_async_pool())
-        pubsub = r.pubsub()
-        channel = get_channel_name(task_id)
-
+        pubsub = aioredis.Redis(connection_pool=_get_async_pool()).pubsub()
         await pubsub.subscribe(channel)
         logger.debug("Subscribed to Redis channel", channel=channel)
 
         while True:
             message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
-            if message is not None and message["type"] == "message":
-                try:
-                    data = message["data"]
-                    if isinstance(data, bytes):
-                        data = data.decode("utf-8")
-                    event = json.loads(data)
-                    yield event
-                except (json.JSONDecodeError, UnicodeDecodeError) as e:
-                    logger.warning("Failed to parse Redis message", error=str(e))
             await asyncio.sleep(0.01)
+            if message is None or message["type"] != "message":
+                continue
+            parsed = _parse_message(message["data"])
+            if parsed is not None:
+                yield parsed
 
     except asyncio.CancelledError:
         logger.debug("Redis subscription cancelled", task_id=task_id)
@@ -172,5 +149,5 @@ async def subscribe_ws_events(task_id: str) -> AsyncIterator[dict[str, Any]]:
         logger.warning("Redis subscription error", task_id=task_id, error=str(e))
     finally:
         if pubsub:
-            await pubsub.unsubscribe(get_channel_name(task_id))
+            await pubsub.unsubscribe(channel)
             await pubsub.close()
