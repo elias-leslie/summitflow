@@ -69,26 +69,21 @@ def _resolve_project_from_list(projects: list[object], cwd: Path) -> tuple[str |
     return None, None
 
 
+def _parse_projects_response(response: httpx.Response) -> list[object] | str | None:
+    """Parse /projects response. Returns list on success, str (error msg) on bad status, None on bad format."""
+    if response.status_code != 200:
+        return f"status={response.status_code}"
+    data = response.json()
+    if not isinstance(data, list):
+        return None
+    return data
+
+
 def _fetch_projects_with_retry(api_base: str, max_retries: int) -> list[object] | None:
     """Fetch /projects with retry on transient failures; return None on permanent failure."""
     for attempt in range(max_retries):
-        delay = _RETRY_DELAY * (attempt + 1)
         try:
-            with httpx.Client(timeout=5.0) as client:
-                response = client.get(f"{api_base}/projects")
-            if response.status_code != 200:
-                logger.warning(
-                    "Project detection: API returned %d (attempt %d/%d)",
-                    response.status_code, attempt + 1, max_retries,
-                )
-                if attempt < max_retries - 1:
-                    time.sleep(delay)
-                continue
-            data = response.json()
-            if not isinstance(data, list):
-                logger.warning("Project detection: API returned non-list response")
-                return None
-            return data
+            response = httpx.get(f"{api_base}/projects", timeout=5.0)
         except httpx.TimeoutException as e:
             logger.warning("Project detection timeout (attempt %d/%d): %s", attempt + 1, max_retries, e)
         except httpx.RequestError as e:
@@ -96,8 +91,16 @@ def _fetch_projects_with_retry(api_base: str, max_retries: int) -> list[object] 
         except Exception as e:
             logger.error("Project detection unexpected error: %s", e)
             return None
+        else:
+            result = _parse_projects_response(response)
+            if isinstance(result, list):
+                return result
+            if result is None:
+                logger.warning("Project detection: API returned non-list response")
+                return None
+            logger.warning("Project detection: API returned %s (attempt %d/%d)", result, attempt + 1, max_retries)
         if attempt < max_retries - 1:
-            time.sleep(delay)
+            time.sleep(_RETRY_DELAY * (attempt + 1))
     return None
 
 
