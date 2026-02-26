@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import time
 from dataclasses import dataclass
 from functools import lru_cache
@@ -13,14 +14,22 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_API_BASE = "http://localhost:8001/api"
+_DEFAULT_AGENT_HUB_URL = "http://localhost:8003"
+_RETRY_DELAY = 0.5
+_PROJECT_NOT_FOUND_MSG = (
+    "Error: Could not determine project.\n\n"
+    "Options:\n"
+    "  1. Run from within a registered project directory\n"
+    "  2. Set ST_PROJECT_ID environment variable\n"
+    "  3. Use --project / -P flag: st -P myproject list\n\n"
+    "List available projects: st projects"
+)
+
 
 def get_agent_hub_url() -> str:
-    """Get Agent Hub API URL.
-
-    Uses AGENT_HUB_URL environment variable with fallback to localhost:8003.
-    This is the single source of truth for Agent Hub URL in the CLI.
-    """
-    return os.getenv("AGENT_HUB_URL", "http://localhost:8003")
+    """Get Agent Hub API URL (AGENT_HUB_URL env var, fallback localhost:8003)."""
+    return os.getenv("AGENT_HUB_URL", _DEFAULT_AGENT_HUB_URL)
 
 
 @dataclass(frozen=True)
@@ -29,7 +38,7 @@ class Config:
 
     api_base: str
     project_id: str
-    project_root: str | None = None  # Filesystem path to project root
+    project_root: str | None = None
 
 
 # Module-level override (set by --project flag in main.py)
@@ -37,198 +46,103 @@ _project_override: str | None = None
 
 
 def set_project_override(project_id: str | None) -> None:
-    """Set project override from --project flag."""
+    """Set project override from --project flag and clear config cache."""
     global _project_override
     _project_override = project_id
-    # Clear cached config so next call picks up the override
     get_config.cache_clear()
 
 
+def _resolve_project_from_list(projects: list[object], cwd: Path) -> tuple[str | None, str | None]:
+    """Return (project_id, root_path) for the project containing cwd, or (None, None)."""
+    for project in projects:
+        if not isinstance(project, dict):
+            continue
+        root_path = project.get("root_path")
+        if not root_path:
+            continue
+        root = Path(str(root_path)).resolve()
+        try:
+            cwd.relative_to(root)
+            return project.get("id"), str(root)
+        except ValueError:
+            continue
+    return None, None
+
+
+def _fetch_projects_with_retry(api_base: str, max_retries: int) -> list[object] | None:
+    """Fetch /projects with retry on transient failures; return None on permanent failure."""
+    for attempt in range(max_retries):
+        delay = _RETRY_DELAY * (attempt + 1)
+        try:
+            with httpx.Client(timeout=5.0) as client:
+                response = client.get(f"{api_base}/projects")
+            if response.status_code != 200:
+                logger.warning(
+                    "Project detection: API returned %d (attempt %d/%d)",
+                    response.status_code, attempt + 1, max_retries,
+                )
+                if attempt < max_retries - 1:
+                    time.sleep(delay)
+                continue
+            data = response.json()
+            if not isinstance(data, list):
+                logger.warning("Project detection: API returned non-list response")
+                return None
+            return data
+        except httpx.TimeoutException as e:
+            logger.warning("Project detection timeout (attempt %d/%d): %s", attempt + 1, max_retries, e)
+        except httpx.RequestError as e:
+            logger.warning("Project detection network error (attempt %d/%d): %s", attempt + 1, max_retries, e)
+        except Exception as e:
+            logger.error("Project detection unexpected error: %s", e)
+            return None
+        if attempt < max_retries - 1:
+            time.sleep(delay)
+    return None
+
+
 def _detect_project_from_cwd(api_base: str, max_retries: int = 3) -> tuple[str | None, str | None]:
-    """Detect project_id from current working directory.
-
-    Queries the projects API and finds a project whose root_path
-    contains or matches the current working directory.
-
-    Args:
-        api_base: API base URL to query projects from
-        max_retries: Maximum number of retry attempts on transient failures
+    """Detect project_id/root_path from cwd by querying projects API.
 
     Returns:
         Tuple of (project_id, root_path) or (None, None) if not found.
     """
-    cwd = Path.cwd().resolve()
+    projects = _fetch_projects_with_retry(api_base, max_retries)
+    if projects is None:
+        return None, None
+    return _resolve_project_from_list(projects, Path.cwd().resolve())
 
-    for attempt in range(max_retries):
-        try:
-            with httpx.Client(timeout=5.0) as client:
-                response = client.get(f"{api_base}/projects")
-                if response.status_code != 200:
-                    logger.warning(
-                        "Project detection: API returned %d (attempt %d/%d)",
-                        response.status_code,
-                        attempt + 1,
-                        max_retries,
-                    )
-                    if attempt < max_retries - 1:
-                        time.sleep(0.5 * (attempt + 1))
-                        continue
-                    return None, None
 
-                projects = response.json()
-                if not isinstance(projects, list):
-                    logger.warning("Project detection: API returned non-list response")
-                    return None, None
-
-                # Find project whose root_path contains or matches cwd
-                for project in projects:
-                    root_path = project.get("root_path")
-                    if not root_path:
-                        continue
-
-                    root = Path(root_path).resolve()
-
-                    # Check if cwd is within this project's root
-                    try:
-                        cwd.relative_to(root)
-                        return project.get("id"), str(root)
-                    except ValueError:
-                        # cwd is not relative to this root
-                        continue
-
-                # No matching project found (not a transient error, don't retry)
-                return None, None
-
-        except httpx.TimeoutException as e:
-            logger.warning(
-                "Project detection timeout (attempt %d/%d): %s",
-                attempt + 1,
-                max_retries,
-                e,
-            )
-            if attempt < max_retries - 1:
-                time.sleep(0.5 * (attempt + 1))
-                continue
-        except httpx.RequestError as e:
-            logger.warning(
-                "Project detection network error (attempt %d/%d): %s",
-                attempt + 1,
-                max_retries,
-                e,
-            )
-            if attempt < max_retries - 1:
-                time.sleep(0.5 * (attempt + 1))
-                continue
-        except Exception as e:
-            logger.error("Project detection unexpected error: %s", e)
-            break
-
-    return None, None
+def _resolve_project(api_base: str) -> tuple[str | None, str | None]:
+    """Resolve (project_id, root_path) using priority: override > env > cwd detection."""
+    if _project_override:
+        return _project_override, None
+    env_project = os.getenv("ST_PROJECT_ID")
+    if env_project:
+        return env_project, None
+    return _detect_project_from_cwd(api_base)
 
 
 @lru_cache
 def get_config() -> Config:
-    """Get CLI configuration.
+    """Get CLI configuration (exits with error if no project can be determined).
 
-    Priority:
-    1. --project flag (via _project_override)
-    2. ST_PROJECT_ID environment variable
-    3. Auto-detect from current working directory
-    4. Error if none of the above work
-
-    Returns:
-        Config with api_base and project_id.
-
-    Raises:
-        SystemExit: If no project can be determined.
+    Priority: --project flag > ST_PROJECT_ID env > cwd auto-detect.
     """
-    api_base = os.getenv("ST_API_BASE", "http://localhost:8001/api")
-
-    # Priority 1: --project flag override
-    if _project_override:
-        return Config(
-            api_base=api_base,
-            project_id=_project_override,
-            project_root=None,  # Could fetch from API if needed
-        )
-
-    # Priority 2: Environment variable
-    env_project = os.getenv("ST_PROJECT_ID")
-    if env_project:
-        return Config(
-            api_base=api_base,
-            project_id=env_project,
-            project_root=None,
-        )
-
-    # Priority 3: Auto-detect from cwd
-    detected_id, detected_root = _detect_project_from_cwd(api_base)
-    if detected_id:
-        return Config(
-            api_base=api_base,
-            project_id=detected_id,
-            project_root=detected_root,
-        )
-
-    # Priority 4: No project found - show helpful error
-    import sys
-
-    print(
-        "Error: Could not determine project.\n"
-        "\n"
-        "Options:\n"
-        "  1. Run from within a registered project directory\n"
-        "  2. Set ST_PROJECT_ID environment variable\n"
-        "  3. Use --project / -P flag: st -P myproject list\n"
-        "\n"
-        "List available projects: st projects",
-        file=sys.stderr,
-    )
+    api_base = os.getenv("ST_API_BASE", _DEFAULT_API_BASE)
+    project_id, project_root = _resolve_project(api_base)
+    if project_id:
+        return Config(api_base=api_base, project_id=project_id, project_root=project_root)
+    print(_PROJECT_NOT_FOUND_MSG, file=sys.stderr)
     sys.exit(1)
 
 
 def get_config_optional() -> Config:
     """Get CLI configuration without requiring a project.
 
-    Same as get_config() but returns a Config with empty project_id
-    instead of exiting if no project can be determined. Useful for
-    commands that can operate without project context (e.g., global
-    task lookups).
-
-    Returns:
-        Config with api_base always set; project_id may be empty string.
+    Same as get_config() but returns Config with empty project_id instead of
+    exiting. Useful for commands that operate without project context.
     """
-    api_base = os.getenv("ST_API_BASE", "http://localhost:8001/api")
-
-    # Priority 1: --project flag override
-    if _project_override:
-        return Config(
-            api_base=api_base,
-            project_id=_project_override,
-            project_root=None,
-        )
-
-    # Priority 2: Environment variable
-    env_project = os.getenv("ST_PROJECT_ID")
-    if env_project:
-        return Config(
-            api_base=api_base,
-            project_id=env_project,
-            project_root=None,
-        )
-
-    # Priority 3: Auto-detect from cwd
-    detected_id, detected_root = _detect_project_from_cwd(api_base)
-    if detected_id:
-        return Config(
-            api_base=api_base,
-            project_id=detected_id,
-            project_root=detected_root,
-        )
-
-    # No project found - return minimal config
-    return Config(
-        api_base=api_base,
-        project_id="",  # Empty string signals no project
-        project_root=None,
-    )
+    api_base = os.getenv("ST_API_BASE", _DEFAULT_API_BASE)
+    project_id, project_root = _resolve_project(api_base)
+    return Config(api_base=api_base, project_id=project_id or "", project_root=project_root)
