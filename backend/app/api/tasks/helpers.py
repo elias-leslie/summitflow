@@ -14,19 +14,25 @@ from ...storage.subtasks import get_subtasks_for_task
 logger = get_logger(__name__)
 
 
+def _build_worktree_response(task_id: str) -> Any | None:
+    """Build WorktreeResponse from worktree info, or return None if not found."""
+    from ...cli.lib.worktree import get_worktree_info
+    from ...schemas.tasks import WorktreeResponse
+
+    worktree_info = get_worktree_info(task_id)
+    if not worktree_info:
+        return None
+    return WorktreeResponse(
+        path=str(worktree_info.path),
+        branch=worktree_info.branch,
+        is_active=worktree_info.is_active,
+    )
+
+
 def get_worktree_response(task_id: str) -> Any | None:
     """Get worktree info for a task if it exists, or None."""
     try:
-        from ...cli.lib.worktree import get_worktree_info
-        from ...schemas.tasks import WorktreeResponse
-
-        worktree_info = get_worktree_info(task_id)
-        if worktree_info:
-            return WorktreeResponse(
-                path=str(worktree_info.path),
-                branch=worktree_info.branch,
-                is_active=worktree_info.is_active,
-            )
+        return _build_worktree_response(task_id)
     except ImportError:
         pass
     except Exception as e:
@@ -59,6 +65,21 @@ def _classify_step(step: dict[str, Any], step_id: str) -> tuple[int, str | None]
     return 0, step_id
 
 
+def _tally_subtask_steps(subtask_id: str) -> tuple[int, int, list[str]]:
+    """Return (total, verified, unverified_ids) for all steps in a subtask."""
+    total = 0
+    verified = 0
+    unverified: list[str] = []
+    for step in get_steps_for_subtask(subtask_id):
+        total += 1
+        step_id = f"{subtask_id}.{step.get('step_number', 0)}"
+        v_inc, unverified_id = _classify_step(step, step_id)
+        verified += v_inc
+        if unverified_id:
+            unverified.append(unverified_id)
+    return total, verified, unverified
+
+
 def get_step_verification_status(task_id: str) -> dict[str, Any]:
     """Get step verification status: total, verified, unverified IDs, all_verified."""
     subtasks = get_subtasks_for_task(task_id, include_steps=False)
@@ -70,14 +91,10 @@ def get_step_verification_status(task_id: str) -> dict[str, Any]:
     unverified: list[str] = []
 
     for subtask in subtasks:
-        subtask_id = subtask.get("id", "")
-        for step in get_steps_for_subtask(subtask_id):
-            total += 1
-            step_id = f"{subtask_id}.{step.get('step_number', 0)}"
-            v_inc, unverified_id = _classify_step(step, step_id)
-            verified += v_inc
-            if unverified_id:
-                unverified.append(unverified_id)
+        sub_total, sub_verified, sub_unverified = _tally_subtask_steps(subtask.get("id", ""))
+        total += sub_total
+        verified += sub_verified
+        unverified.extend(sub_unverified)
 
     return {"total": total, "verified": verified, "unverified": unverified, "all_verified": len(unverified) == 0}
 
