@@ -1,0 +1,83 @@
+"""Request/input Pydantic models for step operations.
+
+Covers create, update, insert, and batch-create request bodies.
+"""
+
+import re
+from typing import Any
+
+from pydantic import BaseModel, Field, field_validator
+
+
+class StepInput(BaseModel):
+    """Input model for a step - can be simple string or object with spec."""
+
+    description: str = Field(min_length=5, description="Step description")
+    spec: dict[str, Any] | None = Field(default=None, description="Step implementation spec")
+
+
+class StepCreate(BaseModel):
+    """Request model for creating a single step."""
+
+    step_number: int = Field(ge=1, description="1-indexed step number")
+    description: str = Field(min_length=5, description="Step description")
+    spec: dict[str, Any] | None = Field(default=None, description="Step implementation spec")
+
+
+class StepUpdate(BaseModel):
+    """Request model for updating step pass status."""
+
+    passes: bool = Field(description="Whether step passes/is complete")
+    already_verified: bool = Field(
+        default=False,
+        description="Skip server-side verification (caller already ran verify_command)",
+    )
+
+
+class StepInsert(BaseModel):
+    """Request model for inserting a step at a specific position."""
+
+    description: str = Field(min_length=1, description="Step description")
+    spec: dict[str, Any] | None = Field(default=None, description="Step implementation spec")
+
+
+class StepCreateWithVerification(BaseModel):
+    """Request model for creating a single step with required verification."""
+
+    description: str = Field(min_length=1, description="Step description")
+    verify_command: str = Field(
+        min_length=1, description="Bash command to verify completion (exit 0 = pass)"
+    )
+    spec: dict[str, Any] | None = Field(default=None, description="Step implementation spec")
+
+    @field_validator("verify_command")
+    @classmethod
+    def reject_absolute_paths(cls, v: str) -> str:
+        if re.search(r"\bcd\s+/[^\s;|&]+", v):
+            raise ValueError(f"verify_command must not contain absolute cd paths: {v[:80]}")
+        if re.search(r"(?:^|\s)/(?:home|root|tmp|var|opt|usr)/\S+", v):
+            raise ValueError(f"verify_command must not contain absolute paths: {v[:80]}")
+        return v
+
+
+class StepFieldsUpdate(BaseModel):
+    """Request model for updating step fields (description only).
+
+    NOTE: verify_command is immutable after creation.
+    Only the description field can be updated.
+    """
+
+    description: str | None = Field(default=None, min_length=1, description="Step description")
+
+
+class BatchStepCreate(BaseModel):
+    """Request model for batch step creation.
+
+    Steps can be provided as:
+    - List of strings (description only, backward compatible)
+    - List of StepInput objects with {description, spec}
+    """
+
+    steps: list[str | StepInput] = Field(
+        min_length=1, description="List of steps (strings or {description, spec} objects)"
+    )
