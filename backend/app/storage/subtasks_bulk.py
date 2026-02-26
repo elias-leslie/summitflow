@@ -14,6 +14,101 @@ from .subtasks_helpers import SUBTASK_COLUMNS, generate_subtask_id, row_to_dict
 
 logger = logging.getLogger(__name__)
 
+_INSERT_SQL = f"""
+    INSERT INTO task_subtasks (id, task_id, subtask_id, phase, description,
+                               display_order, subtask_type)
+    VALUES (%s, %s, %s, %s, %s, %s, %s)
+    ON CONFLICT (task_id, subtask_id) DO UPDATE SET
+        phase = EXCLUDED.phase,
+        description = EXCLUDED.description,
+        display_order = EXCLUDED.display_order,
+        subtask_type = EXCLUDED.subtask_type
+    RETURNING {SUBTASK_COLUMNS}
+"""
+
+
+def _insert_one_subtask(cur: Any, task_id: str, subtask: dict[str, Any], idx: int) -> tuple[dict[str, Any], str, list[Any]]:
+    """Execute the INSERT for a single subtask row and return (row_dict, table_id, steps)."""
+    subtask_id = subtask["subtask_id"]
+    table_id = generate_subtask_id(task_id, subtask_id)
+    display_order = subtask.get("display_order", idx)
+    steps = subtask.get("steps", [])
+
+    cur.execute(
+        _INSERT_SQL,
+        (
+            table_id,
+            task_id,
+            subtask_id,
+            subtask.get("phase"),
+            subtask["description"],
+            display_order,
+            subtask.get("subtask_type"),
+        ),
+    )
+    row = cur.fetchone()
+    return row_to_dict(row), table_id, steps
+
+
+def _insert_subtasks_in_transaction(
+    task_id: str,
+    subtasks: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[tuple[str, list[str | dict[str, Any]]]]]:
+    """Insert subtask rows inside a single DB transaction.
+
+    Returns:
+        A tuple of (created_subtask_dicts, steps_to_create) where
+        steps_to_create is a list of (subtask_table_id, step_items) pairs
+        for subtasks that have steps defined.
+    """
+    created: list[dict[str, Any]] = []
+    steps_to_create: list[tuple[str, list[str | dict[str, Any]]]] = []
+
+    with get_connection() as conn, conn.cursor() as cur:
+        for idx, subtask in enumerate(subtasks):
+            row_dict, table_id, steps = _insert_one_subtask(cur, task_id, subtask, idx)
+            created.append(row_dict)
+            if steps:
+                steps_to_create.append((table_id, steps))
+        conn.commit()
+
+    return created, steps_to_create
+
+
+def _create_steps_for_subtasks(
+    steps_to_create: list[tuple[str, list[str | dict[str, Any]]]],
+) -> dict[str, list[dict[str, Any]]]:
+    """Create step rows for each subtask outside the subtask transaction.
+
+    Args:
+        steps_to_create: List of (subtask_table_id, step_items) pairs.
+
+    Returns:
+        Mapping of subtask_table_id -> list of created step dicts.
+    """
+    subtasks_with_steps: dict[str, list[dict[str, Any]]] = {}
+    for subtask_table_id, step_items in steps_to_create:
+        try:
+            created_steps = bulk_create_steps(subtask_table_id, step_items)
+            subtasks_with_steps[subtask_table_id] = created_steps
+        except ValueError:
+            raise  # Validation errors (bad verify_command) must propagate
+        except Exception as e:
+            logger.error("Failed to create steps for subtask %s: %s", subtask_table_id, e)
+            # Continue - subtask created, steps failed (partial success)
+    return subtasks_with_steps
+
+
+def _attach_steps_to_subtasks(
+    created: list[dict[str, Any]],
+    subtasks_with_steps: dict[str, list[dict[str, Any]]],
+) -> None:
+    """Mutate each subtask dict to include its created steps list."""
+    for subtask in created:
+        subtask_table_id = subtask["id"]
+        if subtask_table_id in subtasks_with_steps:
+            subtask["steps_from_table"] = subtasks_with_steps[subtask_table_id]
+
 
 def bulk_create_subtasks(
     task_id: str,
@@ -42,65 +137,9 @@ def bulk_create_subtasks(
     if not subtasks:
         return []
 
-    created = []
-    steps_to_create: list[tuple[str, list[str | dict[str, Any]]]] = []
-
-    with get_connection() as conn, conn.cursor() as cur:
-        for idx, subtask in enumerate(subtasks):
-            subtask_id = subtask["subtask_id"]
-            table_id = generate_subtask_id(task_id, subtask_id)
-            display_order = subtask.get("display_order", idx)
-            steps = subtask.get("steps", [])
-
-            cur.execute(
-                f"""
-                INSERT INTO task_subtasks (id, task_id, subtask_id, phase, description,
-                                           display_order, subtask_type)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (task_id, subtask_id) DO UPDATE SET
-                    phase = EXCLUDED.phase,
-                    description = EXCLUDED.description,
-                    display_order = EXCLUDED.display_order,
-                    subtask_type = EXCLUDED.subtask_type
-                RETURNING {SUBTASK_COLUMNS}
-                """,
-                (
-                    table_id,
-                    task_id,
-                    subtask_id,
-                    subtask.get("phase"),
-                    subtask["description"],
-                    display_order,
-                    subtask.get("subtask_type"),
-                ),
-            )
-            row = cur.fetchone()
-            created.append(row_to_dict(row))
-
-            # Queue steps for creation after subtask commit
-            if steps:
-                steps_to_create.append((table_id, steps))
-
-        conn.commit()
-
-    # Create steps in normalized table (outside subtask transaction for safety)
-    # Track which subtasks got steps so we can update the response
-    subtasks_with_steps: dict[str, list[dict[str, Any]]] = {}
-    for subtask_table_id, step_items in steps_to_create:
-        try:
-            created_steps = bulk_create_steps(subtask_table_id, step_items)
-            subtasks_with_steps[subtask_table_id] = created_steps
-        except ValueError:
-            raise  # Validation errors (bad verify_command) must propagate
-        except Exception as e:
-            logger.error("Failed to create steps for subtask %s: %s", subtask_table_id, e)
-            # Continue - subtask created, steps failed (partial success)
-
-    # Update returned subtasks with their created steps
-    for subtask in created:
-        subtask_table_id = subtask["id"]
-        if subtask_table_id in subtasks_with_steps:
-            subtask["steps_from_table"] = subtasks_with_steps[subtask_table_id]
+    created, steps_to_create = _insert_subtasks_in_transaction(task_id, subtasks)
+    subtasks_with_steps = _create_steps_for_subtasks(steps_to_create)
+    _attach_steps_to_subtasks(created, subtasks_with_steps)
 
     logger.info("Created %d subtasks for task %s", len(created), task_id)
     return created
