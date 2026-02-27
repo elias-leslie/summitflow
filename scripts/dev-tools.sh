@@ -884,18 +884,12 @@ run_tool_toon() {
         cd "$PROJECT_DIR/frontend" 2>/dev/null || cd "$PROJECT_DIR"
     fi
 
-    # Append extra args passed via CLI (e.g., dt pytest tests/specific_file.py)
-    local extra="${EXTRA_ARGS[*]:-}"
-    if [[ -n "$extra" ]]; then
-        args="$args $extra"
-    fi
-
-    # Execute tool
+    # Execute tool (EXTRA_ARGS passed as array to preserve quoted arguments like -k "expr with spaces")
     local output retval=0
     if [[ "$pass_path" == "1" ]]; then
-        output=$("$tool_bin" $args "$work_dir" 2>&1) || retval=$?
+        output=$("$tool_bin" $args "${EXTRA_ARGS[@]}" "$work_dir" 2>&1) || retval=$?
     else
-        output=$("$tool_bin" $args 2>&1) || retval=$?
+        output=$("$tool_bin" $args "${EXTRA_ARGS[@]}" 2>&1) || retval=$?
     fi
 
     # Count issues
@@ -929,7 +923,12 @@ run_tool_toon() {
         # Rotate previous failures before writing new one
         rotate_details "$details_file"
         echo "$output" | strip_ansi > "$details_file"
-        echo "$label:FAIL:$count|details:$details_file"
+        # Include first line of output as hint for quick diagnosis (e.g., invalid flag errors)
+        local hint=""
+        if [[ -n "$output" ]]; then
+            hint=$(echo "$output" | strip_ansi | head -1 | cut -c1-120)
+        fi
+        echo "$label:FAIL:$count|details:$details_file${hint:+|hint:$hint}"
         # Sync fail result to quality gate
         sync_quality_result "$tool_name" "fail" "$count"
         return 1
