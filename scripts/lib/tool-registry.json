@@ -146,7 +146,7 @@
       "dt": {
         "label": "CODERABBIT",
         "binary": "coderabbit",
-        "args": "review --prompt-only -t committed",
+        "args": "review --plain -t committed",
         "count_method": "wc_l",
         "working_dir": "project_root",
         "fallback_global": true,
