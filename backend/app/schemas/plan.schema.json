@@ -4,7 +4,7 @@
   "title": "SummitFlow Plan Schema",
   "description": "Schema for plan.json - the canonical format for task planning. DB schema mirrors this exactly.",
   "type": "object",
-  "required": ["title", "objective", "complexity", "subtasks"],
+  "required": ["title", "objective", "complexity"],
 
   "properties": {
 
@@ -106,8 +106,7 @@
 
     "subtasks": {
       "type": "array",
-      "minItems": 1,
-      "description": "Work breakdown. Each subtask has steps.",
+      "description": "Work breakdown. Each subtask has steps. Optional for intent-only plans.",
       "items": {
         "type": "object",
         "required": ["id", "description", "steps"],

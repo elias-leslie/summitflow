@@ -121,14 +121,14 @@ def _validate_deploy_browser(subtasks: list[dict]) -> list[str]:
 
 def validate_plan_schema(plan: dict[str, Any]) -> list[str]:
     """Validate plan structure and return list of issues."""
-    subtasks = plan.get("subtasks", [])
-    valid_ids = {s.get("id") for s in subtasks if s.get("id")}
     issues = _validate_complexity(plan)
+    subtasks = plan.get("subtasks", [])
+    if not subtasks:
+        return issues
+    valid_ids = {s.get("id") for s in subtasks if s.get("id")}
     issues += _validate_subtask_deps(subtasks, valid_ids)
     issues += _validate_subtask_steps(subtasks)
     issues += _validate_deploy_browser(subtasks)
-    if not subtasks:
-        return issues
     last = subtasks[-1]
     last_id = last.get("id", "?")
     last_phase = last.get("phase", "").lower()
