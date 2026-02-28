@@ -536,12 +536,13 @@ class TestBackupCommands:
             set_compact_output(False)
 
     def test_backup_schedule_view(self) -> None:
-        """Test st backup schedule shows current config."""
+        """Test st backup schedule --help shows usage."""
         from cli.commands.backup import app as backup_app
 
-        result = runner.invoke(backup_app, ["schedule"])
-        # Should succeed even with no schedule configured
+        result = runner.invoke(backup_app, ["schedule", "--help"])
+        # schedule requires a source_id argument; verify help works
         assert result.exit_code == 0
+        assert "SOURCE_ID" in result.output
 
     def test_backup_status(self) -> None:
         """Test st backup status shows latest backup."""
@@ -567,7 +568,7 @@ class TestBackupCommands:
         result = runner.invoke(backup_app, ["restore", "--help"])
         assert result.exit_code == 0
         assert "--dry-run" in result.output
-        assert "--yes" in result.output
+        assert "--source" in result.output
 
 
 class TestVerifyPlanGates:

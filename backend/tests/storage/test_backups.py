@@ -27,11 +27,20 @@ def cleanup_project(conn: Any) -> Generator[str]:
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO projects (id, name, base_url)
-            VALUES (%s, %s, %s)
+            INSERT INTO projects (id, name, base_url, root_path)
+            VALUES (%s, %s, %s, %s)
             ON CONFLICT (id) DO NOTHING
             """,
-            (project_id, "Test Backup Project", "http://localhost"),
+            (project_id, "Test Backup Project", "http://localhost", "/tmp/test-backup-project"),
+        )
+        # Create a backup source so that backups can reference it via source_id FK
+        cur.execute(
+            """
+            INSERT INTO backup_sources (id, name, path, source_type, project_id)
+            VALUES (%s, %s, %s, 'project', %s)
+            ON CONFLICT (id) DO NOTHING
+            """,
+            (project_id, "Test Backup Project", "/tmp/test-backup-project", project_id),
         )
         conn.commit()
 
@@ -39,7 +48,7 @@ def cleanup_project(conn: Any) -> Generator[str]:
 
     with conn.cursor() as cur:
         cur.execute("DELETE FROM backups WHERE project_id = %s", (project_id,))
-        cur.execute("DELETE FROM backup_schedules WHERE project_id = %s", (project_id,))
+        cur.execute("DELETE FROM backup_sources WHERE id = %s", (project_id,))
         cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
         conn.commit()
 
@@ -155,72 +164,64 @@ class TestBackupCRUD:
         assert result is False
 
 
-class TestScheduleCRUD:
-    """Tests for schedule CRUD operations."""
+class TestSourceCRUD:
+    """Tests for backup source CRUD operations."""
 
-    def test_get_schedule_not_found(self, cleanup_project: str) -> None:
-        """Get schedule returns None when not set."""
-        result = backups.get_schedule(cleanup_project)
+    def test_get_source_not_found(self) -> None:
+        """Get source returns None when not found."""
+        result = backups.get_source("nonexistent-source")
         assert result is None
 
-    def test_upsert_schedule_create(self, cleanup_project: str) -> None:
-        """Upsert creates new schedule."""
-        schedule = backups.upsert_schedule(
-            project_id=cleanup_project,
+    def test_get_source(self, cleanup_project: str) -> None:
+        """Get source returns existing source (created by fixture)."""
+        source = backups.get_source(cleanup_project)
+        assert source is not None
+        assert source["id"] == cleanup_project
+        assert source["source_type"] == "project"
+
+    def test_update_source(self, cleanup_project: str) -> None:
+        """Update source updates allowed fields."""
+        updated = backups.update_source(
+            cleanup_project,
             enabled=True,
-            frequency="daily",
-            retention_days=7,
-        )
-
-        assert schedule["project_id"] == cleanup_project
-        assert schedule["enabled"] is True
-        assert schedule["frequency"] == "daily"
-        assert schedule["retention_days"] == 7
-
-    def test_upsert_schedule_update(self, cleanup_project: str) -> None:
-        """Upsert updates existing schedule."""
-        backups.upsert_schedule(cleanup_project, True, "daily", 5)
-
-        updated = backups.upsert_schedule(
-            project_id=cleanup_project,
-            enabled=False,
             frequency="weekly",
             retention_days=10,
         )
 
-        assert updated["enabled"] is False
+        assert updated is not None
+        assert updated["enabled"] is True
         assert updated["frequency"] == "weekly"
         assert updated["retention_days"] == 10
 
-    def test_update_schedule_last_run(self, cleanup_project: str) -> None:
-        """Update schedule last run updates timestamps."""
+    def test_update_source_last_run(self, cleanup_project: str) -> None:
+        """Update source last run updates timestamps."""
         from datetime import datetime, timedelta
 
-        backups.upsert_schedule(cleanup_project, True, "daily")
         next_run = datetime.now(UTC) + timedelta(days=1)
 
-        result = backups.update_schedule_last_run(cleanup_project, next_run)
+        result = backups.update_source_last_run(cleanup_project, next_run)
         assert result is True
 
-        schedule = backups.get_schedule(cleanup_project)
-        assert schedule is not None
-        assert schedule["last_run_at"] is not None
-        assert schedule["next_run_at"] is not None
+        source = backups.get_source(cleanup_project)
+        assert source is not None
+        assert source["last_run_at"] is not None
+        assert source["next_run_at"] is not None
 
-    def test_list_due_schedules(self, conn: Any, cleanup_project: str) -> None:
-        """List due schedules returns schedules ready to run."""
-        backups.upsert_schedule(cleanup_project, True, "daily")
+    def test_list_due_sources(self, conn: Any, cleanup_project: str) -> None:
+        """List due sources returns sources ready to run."""
+        # Enable the source so it qualifies as due
+        backups.update_source(cleanup_project, enabled=True)
 
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE backup_schedules SET next_run_at = NOW() - INTERVAL '1 hour' WHERE project_id = %s",
+                "UPDATE backup_sources SET next_run_at = NOW() - INTERVAL '1 hour' WHERE id = %s",
                 (cleanup_project,),
             )
             conn.commit()
 
-        due = backups.list_due_schedules()
-        project_ids = [s["project_id"] for s in due]
-        assert cleanup_project in project_ids
+        due = backups.list_due_sources()
+        source_ids = [s["id"] for s in due]
+        assert cleanup_project in source_ids
 
 
 class TestStorageSummary:
@@ -287,7 +288,7 @@ class TestCleanupExpiredRecords:
             conn.commit()
 
         # Cleanup with retention_days=14, min_keep=3
-        deleted = backups.cleanup_expired_backup_records(retention_days=14, min_keep=3)
+        deleted = backups.cleanup_expired_backup_records(default_retention_days=14, min_keep=3)
 
         # Window keeps 3 newest (1 recent + 2 old), deletes remaining 2 old
         assert deleted == 2
@@ -315,7 +316,7 @@ class TestCleanupExpiredRecords:
             conn.commit()
 
         # Cleanup with min_keep=3 — should delete nothing
-        deleted = backups.cleanup_expired_backup_records(retention_days=14, min_keep=3)
+        deleted = backups.cleanup_expired_backup_records(default_retention_days=14, min_keep=3)
         assert deleted == 0
 
     def test_cleanup_expired_ignores_non_completed(self, conn: Any, cleanup_project: str) -> None:
@@ -332,7 +333,7 @@ class TestCleanupExpiredRecords:
             )
             conn.commit()
 
-        deleted = backups.cleanup_expired_backup_records(retention_days=14, min_keep=3)
+        deleted = backups.cleanup_expired_backup_records(default_retention_days=14, min_keep=3)
         assert deleted == 0
 
         # Both records should still exist

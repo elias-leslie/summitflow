@@ -39,13 +39,22 @@ def cleanup_project(conn: Any) -> Generator[str]:
             """,
             (project_id, "Test Backup Task Project", "http://localhost", "/tmp/test-project"),
         )
+        # Create a backup source so that backups can reference it via source_id FK
+        cur.execute(
+            """
+            INSERT INTO backup_sources (id, name, path, source_type, project_id)
+            VALUES (%s, %s, %s, 'project', %s)
+            ON CONFLICT (id) DO NOTHING
+            """,
+            (project_id, "Test Backup Task Project", "/tmp/test-project", project_id),
+        )
         conn.commit()
 
     yield project_id
 
     with conn.cursor() as cur:
         cur.execute("DELETE FROM backups WHERE project_id = %s", (project_id,))
-        cur.execute("DELETE FROM backup_schedules WHERE project_id = %s", (project_id,))
+        cur.execute("DELETE FROM backup_sources WHERE id = %s", (project_id,))
         cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
         conn.commit()
 
@@ -192,12 +201,12 @@ class TestScheduledBackups:
         """Run scheduled backups triggers backup for due projects."""
         from app.tasks.backup import run_scheduled_backups
 
-        # Create a schedule that is due
-        backup_store.upsert_schedule(cleanup_project, True, "daily")
+        # Enable the source and make it due for a backup
+        backup_store.update_source(cleanup_project, enabled=True)
 
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE backup_schedules SET next_run_at = NOW() - INTERVAL '1 hour' WHERE project_id = %s",
+                "UPDATE backup_sources SET next_run_at = NOW() - INTERVAL '1 hour' WHERE id = %s",
                 (cleanup_project,),
             )
             conn.commit()
@@ -214,8 +223,8 @@ class TestScheduledBackups:
         # Verify create_backup was called
         mock_create.assert_called()
 
-        # Verify schedule was updated
-        schedule = backup_store.get_schedule(cleanup_project)
-        assert schedule is not None
-        assert schedule["last_run_at"] is not None
-        assert schedule["next_run_at"] is not None
+        # Verify source was updated
+        source = backup_store.get_source(cleanup_project)
+        assert source is not None
+        assert source["last_run_at"] is not None
+        assert source["next_run_at"] is not None

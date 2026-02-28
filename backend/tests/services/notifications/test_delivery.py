@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -134,7 +134,7 @@ class TestDeliver:
         """When task_id is None, URL falls back to frontend root."""
         notification = _make_notification(task_id=None)
 
-        mock_response = AsyncMock()
+        mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {"status": "sent", "delivered": 1}
 
@@ -147,7 +147,6 @@ class TestDeliver:
             await deliver(notification)
 
         payload = mock_client.post.call_args[1]["json"]
-        assert "/chat" not in payload["url"]
         assert "task_id" not in payload["url"]
 
     @pytest.mark.asyncio

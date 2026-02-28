@@ -1273,3 +1273,317 @@ class TestAutoRollbackE2E:
 
         assert result["status"] == "blocked"
         assert result["reason"] == "task_still_running"
+
+
+@pytest.mark.e2e
+class TestIntentOnlyAcceptanceE2E:
+    """End-to-end tests for intent-only task acceptance path.
+
+    Intent-only tasks have an objective but empty/missing done_when.
+    They should trivially pass the intent check and complete normally.
+    """
+
+    def test_intent_only_completes_without_done_when(
+        self, test_project_id: str, cleanup_tasks: list[str]
+    ) -> None:
+        """Intent-only task (objective set, done_when=[]) completes through quality gate."""
+        task = task_store.create_task(
+            project_id=test_project_id,
+            title="Build login form",
+            description="Build a login form with email and password fields",
+            task_type="feature",
+        )
+        task_id = task["id"]
+        cleanup_tasks.append(task_id)
+
+        create_task_spirit(
+            task_id=task_id,
+            objective="Build a login form with email and password",
+            constraints=[],
+            done_when=[],
+        )
+
+        create_subtask(
+            task_id=task_id,
+            subtask_id="1.1",
+            description="Create login form component",
+            display_order=0,
+            phase="frontend",
+            steps=[{"description": "Add email and password inputs"}],
+        )
+
+        task_store.update_task_status(task_id, "queue")
+
+        mock_response = create_mock_agent_response("Created login form component successfully")
+
+        with (
+            patch(
+                "app.tasks.autonomous.exec_modules.agent_execution.get_sync_client"
+            ) as mock_client,
+            patch(
+                "app.tasks.autonomous.exec_modules.orchestrator.setup_worktree",
+                return_value="/tmp/e2e-test",
+            ),
+            patch(
+                "app.tasks.autonomous.exec_modules.orchestrator.validate_pristine_codebase",
+                return_value=True,
+            ),
+            patch(
+                "app.tasks.autonomous.exec_modules.orchestrator.check_main_repo_leakage",
+            ),
+            patch(
+                "app.tasks.autonomous.exec_modules.completion_handler.run_quality_gate_with_autofix",
+                return_value=True,
+            ),
+            patch(
+                "app.tasks.autonomous.exec_modules.completion_handler.wake_persona",
+            ),
+            patch(
+                "app.storage.agent_configs.get_require_review",
+                return_value=False,
+            ),
+        ):
+            mock_client.return_value.complete.return_value = mock_response
+            result = start_execution(task_id, test_project_id)
+
+        assert result["status"] == "executed"
+        assert len(result["subtask_results"]) == 1
+        assert result["subtask_results"][0]["status"] == "passed"
+
+        updated_task = task_store.get_task(task_id)
+        assert updated_task is not None
+        assert updated_task["status"] == "completed"
+
+        vr = updated_task.get("verification_result") or {}
+        assert vr.get("execution_clean") is True
+
+        assert not task_events_contain(task_id, "Intent check failed")
+
+    def test_intent_only_no_spirit_skips_check(
+        self, test_project_id: str, cleanup_tasks: list[str]
+    ) -> None:
+        """Task with no task_spirit skips intent check and completes normally."""
+        task = task_store.create_task(
+            project_id=test_project_id,
+            title="Fix null pointer in user service",
+            description="Resolve NPE when user has no profile",
+            task_type="bug",
+        )
+        task_id = task["id"]
+        cleanup_tasks.append(task_id)
+
+        # No task_spirit created — intent check returns trivial pass ("No spirit data")
+        create_subtask(
+            task_id=task_id,
+            subtask_id="1.1",
+            description="Guard against null user profile",
+            display_order=0,
+            phase="backend",
+            steps=[{"description": "Add null check before profile access"}],
+        )
+
+        task_store.update_task_status(task_id, "queue")
+
+        mock_response = create_mock_agent_response("Added null check for user profile")
+
+        with (
+            patch(
+                "app.tasks.autonomous.exec_modules.agent_execution.get_sync_client"
+            ) as mock_client,
+            patch(
+                "app.tasks.autonomous.exec_modules.orchestrator.setup_worktree",
+                return_value="/tmp/e2e-test",
+            ),
+            patch(
+                "app.tasks.autonomous.exec_modules.orchestrator.validate_pristine_codebase",
+                return_value=True,
+            ),
+            patch(
+                "app.tasks.autonomous.exec_modules.orchestrator.check_main_repo_leakage",
+            ),
+            patch(
+                "app.tasks.autonomous.exec_modules.completion_handler.run_quality_gate_with_autofix",
+                return_value=True,
+            ),
+            patch(
+                "app.tasks.autonomous.exec_modules.completion_handler.wake_persona",
+            ),
+            patch(
+                "app.storage.agent_configs.get_require_review",
+                return_value=False,
+            ),
+        ):
+            mock_client.return_value.complete.return_value = mock_response
+            result = start_execution(task_id, test_project_id)
+
+        assert result["status"] == "executed"
+        assert result["subtask_results"][0]["status"] == "passed"
+
+        updated_task = task_store.get_task(task_id)
+        assert updated_task is not None
+        assert updated_task["status"] == "completed"
+
+        assert not task_events_contain(task_id, "Intent check failed")
+
+    def test_intent_only_routes_to_review_when_enabled(
+        self, test_project_id: str, cleanup_tasks: list[str]
+    ) -> None:
+        """Intent-only task routes to ai_reviewing when require_review=True."""
+        task = task_store.create_task(
+            project_id=test_project_id,
+            title="Add dark mode toggle",
+            description="Add theme toggle to settings page",
+            task_type="feature",
+        )
+        task_id = task["id"]
+        cleanup_tasks.append(task_id)
+
+        create_task_spirit(
+            task_id=task_id,
+            objective="Add dark mode toggle to settings",
+            constraints=[],
+            done_when=[],
+        )
+
+        create_subtask(
+            task_id=task_id,
+            subtask_id="1.1",
+            description="Implement theme toggle",
+            display_order=0,
+            phase="frontend",
+            steps=[{"description": "Add toggle switch to settings page"}],
+        )
+
+        task_store.update_task_status(task_id, "queue")
+
+        mock_response = create_mock_agent_response("Added dark mode toggle")
+
+        with (
+            patch(
+                "app.tasks.autonomous.exec_modules.agent_execution.get_sync_client"
+            ) as mock_client,
+            patch(
+                "app.tasks.autonomous.exec_modules.orchestrator.setup_worktree",
+                return_value="/tmp/e2e-test",
+            ),
+            patch(
+                "app.tasks.autonomous.exec_modules.orchestrator.validate_pristine_codebase",
+                return_value=True,
+            ),
+            patch(
+                "app.tasks.autonomous.exec_modules.orchestrator.check_main_repo_leakage",
+            ),
+            patch(
+                "app.tasks.autonomous.exec_modules.completion_handler.run_quality_gate_with_autofix",
+                return_value=True,
+            ),
+            patch(
+                "app.tasks.autonomous.exec_modules.completion_handler.wake_persona",
+            ),
+            patch(
+                "app.storage.agent_configs.get_require_review",
+                return_value=True,
+            ),
+        ):
+            mock_client.return_value.complete.return_value = mock_response
+            result = start_execution(task_id, test_project_id)
+
+        assert result["status"] == "executed"
+        assert result["subtask_results"][0]["status"] == "passed"
+
+        updated_task = task_store.get_task(task_id)
+        assert updated_task is not None
+        assert updated_task["status"] == "ai_reviewing"
+
+        assert not task_events_contain(task_id, "Intent check failed")
+
+    def test_intent_only_with_done_when_calls_reviewer(
+        self, test_project_id: str, cleanup_tasks: list[str]
+    ) -> None:
+        """Control: task WITH done_when triggers full intent evaluation via reviewer agent."""
+        task = task_store.create_task(
+            project_id=test_project_id,
+            title="Add API health endpoint",
+            description="Create GET /api/health returning 200",
+            task_type="feature",
+        )
+        task_id = task["id"]
+        cleanup_tasks.append(task_id)
+
+        create_task_spirit(
+            task_id=task_id,
+            objective="Create health check endpoint",
+            constraints=[],
+            done_when=["API returns 200 on GET /api/health"],
+        )
+
+        create_subtask(
+            task_id=task_id,
+            subtask_id="1.1",
+            description="Implement health check endpoint",
+            display_order=0,
+            phase="backend",
+            steps=[{"description": "Add GET /api/health route"}],
+        )
+
+        task_store.update_task_status(task_id, "queue")
+
+        agent_exec_response = create_mock_agent_response("Created health endpoint successfully")
+
+        # Reviewer response with PASS verdict for the done_when criterion
+        reviewer_pass_content = (
+            "DONE_WHEN_1: PASS - Health endpoint created and returns 200\n"
+            "OBJECTIVE_MET: YES\n"
+            "SPIRIT_VIOLATED: NO\n"
+            "SUMMARY: Health endpoint implementation complete\n"
+        )
+        reviewer_response = create_mock_agent_response(reviewer_pass_content)
+
+        mock_reviewer_client = MagicMock()
+        mock_reviewer_client.complete.return_value = reviewer_response
+
+        with (
+            patch(
+                "app.tasks.autonomous.exec_modules.agent_execution.get_sync_client"
+            ) as mock_exec_client,
+            patch(
+                "app.tasks.autonomous.exec_modules.orchestrator.setup_worktree",
+                return_value="/tmp/e2e-test",
+            ),
+            patch(
+                "app.tasks.autonomous.exec_modules.orchestrator.validate_pristine_codebase",
+                return_value=True,
+            ),
+            patch(
+                "app.tasks.autonomous.exec_modules.orchestrator.check_main_repo_leakage",
+            ),
+            patch(
+                "app.tasks.autonomous.exec_modules.completion_handler.run_quality_gate_with_autofix",
+                return_value=True,
+            ),
+            patch(
+                "app.tasks.autonomous.exec_modules.completion_handler.wake_persona",
+            ),
+            patch(
+                "app.storage.agent_configs.get_require_review",
+                return_value=False,
+            ),
+            patch(
+                "app.services.agent_hub_client.get_sync_client",
+                return_value=mock_reviewer_client,
+            ),
+        ):
+            mock_exec_client.return_value.complete.return_value = agent_exec_response
+            result = start_execution(task_id, test_project_id)
+
+        assert result["status"] == "executed"
+        assert result["subtask_results"][0]["status"] == "passed"
+
+        # Reviewer was called exactly once (done_when triggered full evaluation)
+        mock_reviewer_client.complete.assert_called_once()
+
+        updated_task = task_store.get_task(task_id)
+        assert updated_task is not None
+        assert updated_task["status"] == "completed"
+
+        assert not task_events_contain(task_id, "Intent check failed")
