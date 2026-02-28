@@ -134,6 +134,24 @@
         "fallback_global": true,
         "pass_path": true
       }
+    },
+    {
+      "name": "coderabbit",
+      "component_id": "sf.dt",
+      "redirect_patterns": [
+        "coderabbit\\s+review\\b",
+        "\\bcr\\s+review\\b"
+      ],
+      "redirect_message": "Use 'dt coderabbit' — handles TOON output and project detection.",
+      "dt": {
+        "label": "CODERABBIT",
+        "binary": "coderabbit",
+        "args": "review --prompt-only -t committed",
+        "count_method": "wc_l",
+        "working_dir": "project_root",
+        "fallback_global": true,
+        "pass_path": false
+      }
     }
   ],
   "service_redirects": [

@@ -779,6 +779,9 @@ get_tool_working_dir() {
             [[ ! -d "$mig_dir" ]] && mig_dir="$PROJECT_DIR/migrations"
             echo "$mig_dir"
             ;;
+        project_root)
+            echo "$PROJECT_DIR"
+            ;;
         root)
             echo "$PROJECT_DIR"
             ;;
@@ -882,6 +885,8 @@ run_tool_toon() {
         fi
     elif [[ "$dir_type" == "frontend" ]]; then
         cd "$PROJECT_DIR/frontend" 2>/dev/null || cd "$PROJECT_DIR"
+    elif [[ "$dir_type" == "project_root" ]]; then
+        cd "$PROJECT_DIR"
     fi
 
     # Execute tool (EXTRA_ARGS passed as array to preserve quoted arguments like -k "expr with spaces")
@@ -948,6 +953,7 @@ show_help() {
     echo "  tsc              Run tsc with TOON output (frontend)"
     echo "  sqlfluff         Run sqlfluff lint with TOON output (migrations)"
     echo "  squawk           Run squawk migration safety with TOON output (migrations)"
+    echo "  coderabbit       Run CodeRabbit AI review with TOON output (not in --check/--quick)"
     echo ""
     echo "Options:"
     echo "  (no args)        Dashboard of all projects (default)"
