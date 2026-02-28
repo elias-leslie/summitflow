@@ -104,8 +104,9 @@ def file_to_module(project_path: str, file_path: str) -> str | None:
     # Convert path separators to dots
     module_name = file_path.replace("/", ".").replace("\\", ".")
 
-    # Skip test files and migrations
-    if "test" in module_name.lower() or "migration" in module_name.lower():
+    # Skip test files, migrations, and alembic versions
+    lower = module_name.lower()
+    if "test" in lower or "migration" in lower or "alembic" in lower:
         return None
 
     return module_name if module_name else None
