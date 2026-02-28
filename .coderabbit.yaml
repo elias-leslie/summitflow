@@ -92,3 +92,5 @@ knowledge_base:
     enabled: false
   code_guidelines:
     enabled: true
+
+early_access: true
