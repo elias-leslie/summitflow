@@ -1,5 +1,5 @@
 project: summitflow
-generated_at: 2026-02-26 14:20 UTC
+generated_at: 2026-02-28 17:43 UTC
 environment:
   python_version: '>=3.13'
   venv_path: backend/.venv
@@ -33,6 +33,7 @@ pages:
 - /projects/:id/backups (backups)
 - /projects/:id/backups/:backupId/restore (restore)
 - /projects/:id/design (design)
+- /projects/:id/files (files)
 - /projects/:id/git (git)
 - /projects/:id/settings (settings)
 - /projects/new (new)
@@ -60,6 +61,8 @@ endpoints:
 - GET /{project_id}/explorer/scan-history (get_scan_history)
 - GET /{project_id}/explorer/stats (get_stats)
 - GET /{project_id}/explorer/{entry_type}/{path:path} (get_entry)
+- GET /{project_id}/files/content (get_file_content)
+- GET /{project_id}/files/tree (get_file_tree)
 - GET /{project_id}/refactor-sessions/active (get_active_session)
 - GET /{project_id}/refactor-sessions/{task_id} (get_session)
 - PATCH /{project_id}/refactor-sessions/{task_id} (update_session)
@@ -79,6 +82,7 @@ endpoints:
 - PUT /agent-hub/preferences (update_preferences)
 tables:
 - agent_sessions
+- agent_tools
 - artifacts
 - backup_sources
 - backups
@@ -139,7 +143,7 @@ folders:
   .qna-session: 1 files
   .st: 3 files
   assets: 2 files
-  backend: 883 files - api, components, services, tests
+  backend: 896 files - api, components, services, tests
   docs: 3 files
   frontend: 466 files - api, components, services, tests
   prompts: 1 files
