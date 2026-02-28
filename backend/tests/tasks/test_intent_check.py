@@ -4,10 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from app.tasks.autonomous.exec_modules.intent_check import (
-    DoneWhenResult,
     IntentCheckResult,
     _parse_intent_response,
     check_intent,

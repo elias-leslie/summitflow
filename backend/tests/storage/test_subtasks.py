@@ -526,17 +526,6 @@ class TestSubtaskGates:
             fn: Any = subtask_store.update_subtask_passes
             fn(test_task["id"], "1.1", True, force=True)
 
-    def test_subtask_gate_rejects_empty_steps(self, test_task: dict[str, Any]) -> None:
-        """Subtask with no steps cannot be marked as passed.
-
-        This gate ensures every subtask has at least one verifiable step.
-        """
-        subtask_store.create_subtask(test_task["id"], "1.1", "No steps", 0)
-
-        # Gate blocks - no steps means unverifiable work
-        with pytest.raises(SubtaskGateError, match="subtask has no steps"):
-            subtask_store.update_subtask_passes(test_task["id"], "1.1", True)
-
     def test_subtask_gate_partial_completion_blocks(self, test_task: dict[str, Any]) -> None:
         """Subtask with some steps complete blocks remaining."""
         subtask = subtask_store.create_subtask(test_task["id"], "1.1", "Test", 0, steps=["Step 1", "Step 2", "Step 3"])

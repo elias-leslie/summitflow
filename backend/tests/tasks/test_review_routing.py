@@ -45,8 +45,12 @@ class TestRouteBasedOnVerdict:
         route_based_on_verdict("task-1", "STANDARD", result)
         mock_handler.assert_called_once_with("task-1", result)
 
-    @patch("app.tasks.autonomous.review_modules.routing._handle_plan_defect_verdict")
-    def test_plan_defect_routes_correctly(self, mock_handler: MagicMock) -> None:
+    @patch("app.tasks.autonomous.review_modules.routing.log_task_event")
+    @patch("app.tasks.autonomous.review_modules.routing.task_store")
+    @patch("app.tasks.autonomous.review_modules.routing.handle_plan_defect")
+    def test_plan_defect_routes_correctly(
+        self, mock_handler: MagicMock, mock_store: MagicMock, mock_log: MagicMock
+    ) -> None:
         result = {"verdict": "PLAN_DEFECT"}
         route_based_on_verdict("task-1", "STANDARD", result)
         mock_handler.assert_called_once_with("task-1", result)

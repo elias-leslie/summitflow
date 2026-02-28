@@ -75,7 +75,7 @@ def create_task_command(
         task, tid = import_plan_file(plan, dry_run, task_id, client)
         if not dry_run:
             complexity = task.get("complexity", "SIMPLE")
-            subtask_count = len(task.get("subtasks", []))
+            subtask_count = len(task.get("subtasks") or [])
             suffix = "intent-only" if subtask_count == 0 else f"{subtask_count} subtasks"
             typer.echo(f"IMPORT:{tid}|{complexity}|{suffix}")
         return

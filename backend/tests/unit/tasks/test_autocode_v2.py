@@ -20,9 +20,9 @@ from unittest.mock import MagicMock, patch
 class TestDetermineNextStage:
     """Tests for _determine_next_stage in pickup.py."""
 
-    @patch("app.tasks.autonomous.pickup.get_subtasks_for_task")
-    @patch("app.tasks.autonomous.pickup.get_task_spirit")
-    @patch("app.tasks.autonomous.pickup.task_store")
+    @patch("app.tasks.autonomous.pickup_queries.get_subtasks_for_task")
+    @patch("app.tasks.autonomous.pickup_queries.get_task_spirit")
+    @patch("app.tasks.autonomous.pickup_queries.task_store")
     def test_crowdsourced_no_spirit_returns_ideation(
         self, mock_store: MagicMock, mock_spirit: MagicMock, mock_subtasks: MagicMock
     ) -> None:
@@ -35,9 +35,9 @@ class TestDetermineNextStage:
 
         assert _determine_next_stage("task-1") == "ideation"
 
-    @patch("app.tasks.autonomous.pickup.get_subtasks_for_task")
-    @patch("app.tasks.autonomous.pickup.get_task_spirit")
-    @patch("app.tasks.autonomous.pickup.task_store")
+    @patch("app.tasks.autonomous.pickup_queries.get_subtasks_for_task")
+    @patch("app.tasks.autonomous.pickup_queries.get_task_spirit")
+    @patch("app.tasks.autonomous.pickup_queries.task_store")
     def test_crowdsourced_no_objective_returns_ideation(
         self, mock_store: MagicMock, mock_spirit: MagicMock, mock_subtasks: MagicMock
     ) -> None:
@@ -50,9 +50,9 @@ class TestDetermineNextStage:
 
         assert _determine_next_stage("task-1") == "ideation"
 
-    @patch("app.tasks.autonomous.pickup.get_subtasks_for_task")
-    @patch("app.tasks.autonomous.pickup.get_task_spirit")
-    @patch("app.tasks.autonomous.pickup.task_store")
+    @patch("app.tasks.autonomous.pickup_queries.get_subtasks_for_task")
+    @patch("app.tasks.autonomous.pickup_queries.get_task_spirit")
+    @patch("app.tasks.autonomous.pickup_queries.task_store")
     def test_crowdsourced_with_spirit_no_subtasks_returns_planning(
         self, mock_store: MagicMock, mock_spirit: MagicMock, mock_subtasks: MagicMock
     ) -> None:
@@ -65,9 +65,9 @@ class TestDetermineNextStage:
 
         assert _determine_next_stage("task-1") == "planning"
 
-    @patch("app.tasks.autonomous.pickup.get_subtasks_for_task")
-    @patch("app.tasks.autonomous.pickup.get_task_spirit")
-    @patch("app.tasks.autonomous.pickup.task_store")
+    @patch("app.tasks.autonomous.pickup_queries.get_subtasks_for_task")
+    @patch("app.tasks.autonomous.pickup_queries.get_task_spirit")
+    @patch("app.tasks.autonomous.pickup_queries.task_store")
     def test_no_crowdsourced_no_spirit_returns_triage(
         self, mock_store: MagicMock, mock_spirit: MagicMock, mock_subtasks: MagicMock
     ) -> None:
@@ -80,9 +80,9 @@ class TestDetermineNextStage:
 
         assert _determine_next_stage("task-1") == "triage"
 
-    @patch("app.tasks.autonomous.pickup.get_subtasks_for_task")
-    @patch("app.tasks.autonomous.pickup.get_task_spirit")
-    @patch("app.tasks.autonomous.pickup.task_store")
+    @patch("app.tasks.autonomous.pickup_queries.get_subtasks_for_task")
+    @patch("app.tasks.autonomous.pickup_queries.get_task_spirit")
+    @patch("app.tasks.autonomous.pickup_queries.task_store")
     def test_with_spirit_no_subtasks_returns_planning(
         self, mock_store: MagicMock, mock_spirit: MagicMock, mock_subtasks: MagicMock
     ) -> None:
@@ -95,9 +95,9 @@ class TestDetermineNextStage:
 
         assert _determine_next_stage("task-1") == "planning"
 
-    @patch("app.tasks.autonomous.pickup.get_subtasks_for_task")
-    @patch("app.tasks.autonomous.pickup.get_task_spirit")
-    @patch("app.tasks.autonomous.pickup.task_store")
+    @patch("app.tasks.autonomous.pickup_queries.get_subtasks_for_task")
+    @patch("app.tasks.autonomous.pickup_queries.get_task_spirit")
+    @patch("app.tasks.autonomous.pickup_queries.task_store")
     def test_with_incomplete_subtasks_returns_execution(
         self, mock_store: MagicMock, mock_spirit: MagicMock, mock_subtasks: MagicMock
     ) -> None:
@@ -113,9 +113,9 @@ class TestDetermineNextStage:
 
         assert _determine_next_stage("task-1") == "execution"
 
-    @patch("app.tasks.autonomous.pickup.get_subtasks_for_task")
-    @patch("app.tasks.autonomous.pickup.get_task_spirit")
-    @patch("app.tasks.autonomous.pickup.task_store")
+    @patch("app.tasks.autonomous.pickup_queries.get_subtasks_for_task")
+    @patch("app.tasks.autonomous.pickup_queries.get_task_spirit")
+    @patch("app.tasks.autonomous.pickup_queries.task_store")
     def test_all_subtasks_passed_returns_unknown(
         self, mock_store: MagicMock, mock_spirit: MagicMock, mock_subtasks: MagicMock
     ) -> None:

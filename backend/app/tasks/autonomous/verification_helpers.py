@@ -10,7 +10,6 @@ import subprocess
 from pathlib import Path
 
 from ...logging_config import get_logger
-from ...storage.projects import build_project_env
 
 logger = get_logger(__name__)
 

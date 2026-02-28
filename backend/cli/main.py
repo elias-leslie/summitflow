@@ -110,6 +110,8 @@ BACKUP:
   backup show <id>
   backup delete <id> [--yes]
 
+PERSONA: persona status | persona set-active <slug> | persona clear
+
 SESSIONS: sessions list [--status S] | sessions show <id>
 
 AUTONOMOUS: autonomous enable | disable | status

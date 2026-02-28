@@ -72,9 +72,8 @@ def create_architecture_subtasks(
 
     created_subtasks = bulk_create_subtasks(task_id, subtask_data)
 
-    for idx, subtask in enumerate(created_subtasks):
+    for _idx, subtask in enumerate(created_subtasks):
         subtask_full_id = cast(str, subtask["id"])
-        file = affected_files[idx] if idx < len(affected_files) else ""
         steps = [
             {"description": f"Identify {violation_type.replace('_', ' ')} issue"},
             {"description": "Implement fix following project patterns"},

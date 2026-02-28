@@ -95,10 +95,9 @@ def run_execution_quality_check(
         task_id, project_path, project_id, step_results
     )
 
-    if not all_passed:
+    if not all_passed and step_results:
         # Mark last step as failed to trigger healing loop
-        if step_results:
-            step_results[-1]["passed"] = False
-            step_results[-1]["reason"] = "smoke_test_failure"
+        step_results[-1]["passed"] = False
+        step_results[-1]["reason"] = "smoke_test_failure"
 
     return all_passed, step_results

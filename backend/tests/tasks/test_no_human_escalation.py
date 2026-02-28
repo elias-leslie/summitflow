@@ -111,38 +111,36 @@ class TestSupervisorResolveEscalation:
 class TestBlockWithRecommendation:
     """Test _block_with_recommendation in escalation.py."""
 
-    @patch("app.tasks.autonomous.escalation.log_task_event")
+    @patch("app.tasks.autonomous.escalation.add_escalation_message")
     @patch("app.tasks.autonomous.escalation.task_store")
-    @patch("app.tasks.autonomous.escalation.get_sync_client")
+    @patch("app.tasks.autonomous.escalation.call_supervisor")
     def test_sets_blocked_status(
         self,
-        mock_client: MagicMock,
+        mock_call_supervisor: MagicMock,
         mock_store: MagicMock,
         mock_log: MagicMock,
     ) -> None:
         from app.tasks.autonomous.escalation import _block_with_recommendation
 
-        mock_client.return_value.complete.return_value = MagicMock(
-            content="Recommendation: check environment config"
-        )
+        mock_call_supervisor.return_value = "Recommendation: check environment config"
         result = _block_with_recommendation(
             "task-1", "1.1", "step failed", 5, project_id="test-project"
         )
         assert result["status"] == "blocked"
         mock_store.update_task_status.assert_called_with("task-1", "blocked")
 
-    @patch("app.tasks.autonomous.escalation.log_task_event")
+    @patch("app.tasks.autonomous.escalation.add_escalation_message")
     @patch("app.tasks.autonomous.escalation.task_store")
-    @patch("app.tasks.autonomous.escalation.get_sync_client")
+    @patch("app.tasks.autonomous.escalation.call_supervisor")
     def test_exception_still_blocks(
         self,
-        mock_client: MagicMock,
+        mock_call_supervisor: MagicMock,
         mock_store: MagicMock,
         mock_log: MagicMock,
     ) -> None:
         from app.tasks.autonomous.escalation import _block_with_recommendation
 
-        mock_client.return_value.complete.side_effect = RuntimeError("API down")
+        mock_call_supervisor.return_value = None  # Supervisor unavailable → fallback message used
         result = _block_with_recommendation(
             "task-1", "1.1", "step failed", 5, project_id="test-project"
         )

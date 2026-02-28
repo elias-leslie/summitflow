@@ -165,6 +165,8 @@ class TestMergeBlockedWhenTaskRunning:
         assert result["reason"] == "task_still_running"
         mock_worktree.assert_not_called()
 
+    @patch(f"{_CLEANUP}._git")
+    @patch(f"{_CLEANUP}.update_task_fields")
     @patch(f"{_CLEANUP}.run_post_merge_validation")
     @patch(f"{_CLEANUP}.delete_task_branch")
     @patch(f"{_CLEANUP}.merge_task_branch")
@@ -183,6 +185,8 @@ class TestMergeBlockedWhenTaskRunning:
         mock_merge: MagicMock,
         mock_delete_branch: MagicMock,
         mock_validation: MagicMock,
+        mock_fields: MagicMock,
+        mock_git: MagicMock,
     ) -> None:
         """merge_and_cleanup_task_worktree proceeds when status != running."""
         from app.tasks.autonomous.cleanup import merge_and_cleanup_task_worktree
@@ -198,9 +202,10 @@ class TestMergeBlockedWhenTaskRunning:
 
         # All git operations succeed
         mock_checkout.return_value = None
-        mock_merge.return_value = None
+        mock_merge.return_value = MagicMock(success=True, merge_sha="abc123", conflicting_files=None)
         mock_delete_branch.return_value = True
         mock_validation.return_value = True
+        mock_git.return_value = MagicMock(returncode=0, stdout="")
 
         result = merge_and_cleanup_task_worktree("task-1", "test-project")
 
@@ -418,16 +423,16 @@ class TestMainRepoLeakageDetection:
 
 
 class TestZeroStepSubtask:
-    """Zero-step subtask must fail verification, not silently pass."""
+    """Zero-step subtask logs a warning but does not fail — uses smoke tests only."""
 
     @patch(f"{_SUBTASK_VALIDATION}.emit_log")
     @patch(f"{_SUBTASK_VALIDATION}.check_worktree_health")
-    def test_zero_steps_returns_failed(
+    def test_zero_steps_returns_none(
         self,
         mock_worktree_health: MagicMock,
         mock_log: MagicMock,
     ) -> None:
-        """Subtask with 0 steps returns failed with reason=zero_steps."""
+        """Subtask with 0 steps returns None (passes env check) and logs an info message."""
         from app.tasks.autonomous.exec_modules.subtask_validation import (
             validate_subtask_environment,
         )
@@ -445,7 +450,6 @@ class TestZeroStepSubtask:
             "task-1", subtask, "1.1", "/tmp/test-worktree", "test-project"
         )
 
-        assert result is not None
-        assert result["status"] == "failed"
-        assert result["reason"] == "zero_steps"
-        assert result["passed"] is False
+        # Zero steps is now valid — execution proceeds with smoke tests only
+        assert result is None
+        mock_log.assert_called_once()

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import subprocess
 from dataclasses import dataclass, field
-from typing import Any
 
 from ....logging_config import get_logger
 from ....storage.task_spirit import get_task_spirit

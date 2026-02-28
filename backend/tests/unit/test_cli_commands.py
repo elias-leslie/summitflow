@@ -482,7 +482,7 @@ class TestStepCreate:
         from cli.client import APIError
 
         mock_client = MagicMock()
-        mock_client.create_step = MagicMock(
+        mock_client.create_step_with_verification = MagicMock(
             side_effect=APIError(404, "Task not found")
         )
 
@@ -571,26 +571,23 @@ class TestBackupCommands:
 
 
 class TestVerifyPlanGates:
-    """Test st verify command validates step structure.
+    """Test st verify command validates plan structure.
 
-    These gates ensure:
-    1. Every subtask has non-empty steps array
-    2. Steps are valid objects with descriptions
-
-    Note: st verify only reads files, doesn't create tasks - no mocking needed.
+    Steps are now optional in plans (subtasks can have steps added later).
+    Verification focuses on: schema compliance, complexity requirements, dep refs.
     """
 
-    def test_verify_rejects_missing_steps(self) -> None:
-        """st verify rejects plans with subtasks missing steps array."""
+    def test_verify_accepts_subtask_without_steps(self) -> None:
+        """st verify accepts subtasks that have no steps (steps added later)."""
         plan = {
-            "title": "Test plan with missing steps array",
+            "title": "Test plan with no steps",
             "objective": "Test objective that is long enough to pass validation",
             "task_type": "task",
             "complexity": "SIMPLE",
             "subtasks": [
                 {
                     "id": "1.1",
-                    "description": "Missing steps array",
+                    "description": "Subtask without steps — valid",
                 }
             ],
         }
@@ -601,22 +598,18 @@ class TestVerifyPlanGates:
 
             result = runner.invoke(tasks_app, ["verify", f.name])
 
-            assert result.exit_code == 1
-            assert "missing required 'steps' array" in result.output.lower()
+            # Subtasks without steps are now valid
+            assert result.exit_code == 0
 
-    def test_verify_rejects_empty_steps(self) -> None:
-        """st verify rejects plans with empty steps array."""
+    def test_verify_rejects_invalid_dependency_ref(self) -> None:
+        """st verify rejects plans with depends_on referencing non-existent subtasks."""
         plan = {
-            "title": "Test plan with empty steps array",
-            "objective": "Test objective that is long enough to pass validation",
+            "title": "Test plan with bad dep",
+            "objective": "Test objective",
             "task_type": "task",
             "complexity": "SIMPLE",
             "subtasks": [
-                {
-                    "id": "1.1",
-                    "description": "Empty steps array",
-                    "steps": [],
-                }
+                {"id": "1.1", "description": "First", "depends_on": ["1.99"]},
             ],
         }
 
@@ -627,4 +620,4 @@ class TestVerifyPlanGates:
             result = runner.invoke(tasks_app, ["verify", f.name])
 
             assert result.exit_code == 1
-            assert "missing required 'steps' array" in result.output.lower()
+            assert "1.99" in result.output

@@ -177,7 +177,7 @@ async def update_step(
     verification_cwd = get_verification_cwd(project_id, task_id)
     return handle_update_step_passes(
         table_id, step_number, request.passes, verification_cwd,
-        project_id=project_id, already_verified=request.already_verified,
+        project_id=project_id,
     )
 
 
@@ -251,5 +251,5 @@ async def update_step_global(
     verification_cwd = get_verification_cwd(project_id, task_id) if project_id else None
     return handle_update_step_passes(
         table_id, step_number, request.passes, verification_cwd,
-        project_id=project_id, already_verified=request.already_verified,
+        project_id=project_id,
     )
