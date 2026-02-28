@@ -12,6 +12,52 @@ from ..verification_helpers import expand_command
 logger = get_logger(__name__)
 
 
+def _should_skip_step(step: dict[str, Any]) -> bool:
+    """Return True if the step should be skipped during preflight checks."""
+    if not step.get("verify_command"):
+        return True
+    return step.get("status") == "plan_defect"
+
+
+def _run_verify_command(
+    expanded_cmd: str,
+    step_num: int,
+    verify_cmd: str,
+    project_path: str,
+    timeout: int,
+    env: dict[str, str],
+) -> dict[str, Any] | None:
+    """Run a single verify_command and return a warning dict if it exits zero.
+
+    Returns None if the command fails (non-zero exit), times out, or errors.
+    """
+    try:
+        result = subprocess.run(
+            expanded_cmd,
+            shell=True,
+            cwd=project_path,
+            capture_output=True,
+            timeout=timeout,
+            env=env,
+        )
+        if result.returncode == 0:
+            msg = (
+                f"Step {step_num} verify_command passed BEFORE implementation "
+                "— may be tautological. Verify it tests actual changes."
+            )
+            logger.warning(
+                "preflight_tautological",
+                step_number=step_num,
+                verify_command=verify_cmd[:80],
+            )
+            return {"step_number": step_num, "warning": msg}
+    except subprocess.TimeoutExpired:
+        pass
+    except Exception:
+        logger.debug("Preflight verify_command check failed for step %s", step_num, exc_info=True)
+    return None
+
+
 def check_verify_commands_red(
     steps: list[dict[str, Any]],
     project_path: str,
@@ -33,41 +79,14 @@ def check_verify_commands_red(
     env = build_project_env(project_id, working_dir=project_path)
 
     for step in steps:
+        if _should_skip_step(step):
+            continue
         step_num = step.get("step_number", 0)
-        verify_cmd = step.get("verify_command")
-
-        if not verify_cmd:
-            continue
-
-        if step.get("status") == "plan_defect":
-            continue
-
-        expanded_cmd = expand_command(verify_cmd)
-
-        try:
-            result = subprocess.run(
-                expanded_cmd,
-                shell=True,
-                cwd=project_path,
-                capture_output=True,
-                timeout=timeout,
-                env=env,
-            )
-            if result.returncode == 0:
-                msg = (
-                    f"Step {step_num} verify_command passed BEFORE implementation "
-                    "— may be tautological. Verify it tests actual changes."
-                )
-                logger.warning(
-                    "preflight_tautological",
-                    step_number=step_num,
-                    verify_command=verify_cmd[:80],
-                )
-                warnings.append({"step_number": step_num, "warning": msg})
-        except subprocess.TimeoutExpired:
-            pass
-        except Exception:
-            logger.debug("Preflight verify_command check failed for step %s", step_num, exc_info=True)
-            pass
+        verify_cmd = step["verify_command"]
+        warning = _run_verify_command(
+            expand_command(verify_cmd), step_num, verify_cmd, project_path, timeout, env
+        )
+        if warning is not None:
+            warnings.append(warning)
 
     return warnings
