@@ -14,33 +14,23 @@ app = typer.Typer(help="Task management commands")
 @app.command()
 def create(
     title: Annotated[str | None, typer.Argument()] = None,
-    from_file: Annotated[Path | None, typer.Option("--from-file", "--from", hidden=False)] = None,
+    from_file: Annotated[Path | None, typer.Option("--from-file")] = None,
     dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
     description: Annotated[str | None, typer.Option("-d", "--description")] = None,
     priority: Annotated[int, typer.Option("-p", "--priority", min=0, max=4)] = 2,
     labels: Annotated[str | None, typer.Option("-l", "--labels")] = None,
     task_type: Annotated[str, typer.Option("-t", "--type")] = "task",
     parent: Annotated[str | None, typer.Option("--parent")] = None,
-    plan: Annotated[str | None, typer.Option("--plan", hidden=True)] = None,
+    plan: Annotated[str | None, typer.Option("--plan")] = None,
     blocked_by: Annotated[str | None, typer.Option("--blocked-by")] = None,
     autonomous: Annotated[bool, typer.Option("--autonomous")] = False,
-    objective: Annotated[str | None, typer.Option("-o", "--objective")] = None,
-    spirit_anti: Annotated[str | None, typer.Option("--spirit-anti")] = None,
-    done_when: Annotated[list[str] | None, typer.Option("-w", "--done-when")] = None,
-    complexity: Annotated[str | None, typer.Option("--complexity")] = None,
 ) -> None:
-    """Create a new task, import from plan file, or batch create from file."""
+    """Create a new task or batch create from file."""
     from .tasks_create import create_task_command
-
-    if plan:
-        import sys
-        print("Warning: --plan is deprecated, use --from with a plan.json file instead", file=sys.stderr)
 
     create_task_command(
         title, from_file, dry_run, description, priority, labels,
-        task_type, parent, plan, blocked_by, autonomous,
-        objective=objective, spirit_anti=spirit_anti,
-        done_when=done_when, complexity=complexity,
+        task_type, parent, plan, blocked_by, autonomous
     )
 
 
@@ -124,12 +114,11 @@ def bug(
     priority: Annotated[int, typer.Option("-p", "--priority", min=0, max=4)] = 2,
     labels: Annotated[str | None, typer.Option("-l", "--labels")] = None,
     from_task: Annotated[str | None, typer.Option("--from")] = None,
-    objective: Annotated[str | None, typer.Option("-o", "--objective")] = None,
 ) -> None:
     """Create a bug task (shorthand for create -t bug)."""
     from .tasks_commands import create_bug_task
 
-    create_bug_task(title, description, priority, labels, from_task, STClient(), objective=objective)
+    create_bug_task(title, description, priority, labels, from_task, STClient())
 
 
 @app.command()
@@ -158,7 +147,6 @@ def verify_plan(
 def idea(
     description: Annotated[str, typer.Argument()],
     priority: Annotated[int, typer.Option("-p", "--priority", min=0, max=4)] = 3,
-    objective: Annotated[str | None, typer.Option("-o", "--objective")] = None,
 ) -> None:
     """Submit an idea for autonomous ideation and execution.
 
@@ -182,7 +170,6 @@ def idea(
         plan=None,
         blocked_by=None,
         autonomous=True,
-        objective=objective,
     )
 
 
@@ -205,20 +192,12 @@ def import_plan(
     dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
     task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
 ) -> None:
-    """Import a plan.json file as a SummitFlow task.
-
-    Deprecated: use 'st create --from plan.json' instead.
-    """
-    import sys
-
-    print("Warning: 'st import' is deprecated, use 'st create --from plan.json' instead", file=sys.stderr)
+    """Import a plan.json file as a SummitFlow task."""
     from .tasks_import import import_plan_file
 
     task, task_id = import_plan_file(file_path, dry_run, task_id, STClient())
     complexity = task.get("complexity", "SIMPLE")
-    subtask_count = len(task.get("subtasks", []))
-    suffix = f"{subtask_count} subtasks" if subtask_count else "intent-only"
-    typer.echo(f"IMPORT:{task_id}|{complexity}|{suffix}")
+    typer.echo(f"IMPORT:{task_id}|{complexity}|{len(task.get('subtasks', []))} subtasks")
 
 
 # Error stubs for removed commands

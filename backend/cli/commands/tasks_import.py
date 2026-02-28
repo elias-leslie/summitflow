@@ -161,9 +161,9 @@ def import_plan_file(
         "complexity": complexity,
     }
 
-    # Build subtasks with step-level specs (if present)
+    # Build subtasks with step-level specs
     subtasks_data = []
-    for st in subtasks:
+    for st in plan.get("subtasks", []):
         subtask_id = st["id"]
         steps = st.get("steps", [])
 
@@ -180,8 +180,7 @@ def import_plan_file(
             subtask_data["depends_on"] = st["depends_on"]
         subtasks_data.append(subtask_data)
 
-    if subtasks_data:
-        task_data["subtasks"] = subtasks_data
+    task_data["subtasks"] = subtasks_data
 
     # Update existing task or create new
     if task_id:
@@ -215,7 +214,7 @@ def _update_task_from_plan(
             with contextlib.suppress(APIError):
                 client.delete_subtask(task_id, sub["subtask_id"])
 
-        # 4. Create new subtasks (if any)
+        # 4. Create new subtasks
         for sub in subtasks:
             phase_val = sub.get("phase")
             client.create_subtask(
@@ -230,8 +229,7 @@ def _update_task_from_plan(
         _upsert_task_spirit(task_id, plan)
 
         # 6. Handle subtask dependencies
-        if subtasks:
-            _create_subtask_dependencies(task_id, subtasks)
+        _create_subtask_dependencies(task_id, subtasks)
 
         task = client.get_task(task_id)
         return task, task_id

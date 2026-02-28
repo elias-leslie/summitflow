@@ -15,15 +15,11 @@ def create_bug_task(
     labels: str | None,
     from_task: str | None,
     client: STClient,
-    *,
-    objective: str | None = None,
 ) -> None:
     """Create a bug task with optional parent task inheritance."""
     inherited_labels = _fetch_inherited_labels(from_task, client)
     all_labels = _build_labels_list(labels, inherited_labels)
     task_data = _build_bug_task_data(title, description, priority, all_labels)
-    if objective:
-        task_data["objective"] = objective
 
     task = _create_task(task_data, client)
     task = _add_discovered_from_link(task, from_task, client)
