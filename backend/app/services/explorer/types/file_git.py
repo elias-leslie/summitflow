@@ -45,6 +45,32 @@ def _parse_commit_header(line: str) -> tuple[int, str, str] | None:
         return None
 
 
+def _process_log_line(
+    line: str,
+    current_commit: tuple[int, str, str] | None,
+    file_commits: dict[str, tuple[int, str, str]],
+) -> tuple[int, str, str] | None:
+    """Process a single git log output line, updating file_commits in place.
+
+    Returns the updated current_commit value.
+    """
+    if line.startswith("\x00"):
+        return _parse_commit_header(line)
+    path = line.strip()
+    if path and current_commit:
+        file_commits.setdefault(path, current_commit)
+    return current_commit
+
+
+def _build_file_commit_map(stdout: str) -> dict[str, tuple[int, str, str]]:
+    """Parse git log output into a mapping of file path -> commit info."""
+    file_commits: dict[str, tuple[int, str, str]] = {}
+    current_commit: tuple[int, str, str] | None = None
+    for line in stdout.split("\n"):
+        current_commit = _process_log_line(line, current_commit, file_commits)
+    return file_commits
+
+
 def get_all_last_commits(root_path: Path) -> dict[str, tuple[int, str, str]]:
     """Get last commit info for ALL files in one git call.
 
@@ -63,16 +89,7 @@ def get_all_last_commits(root_path: Path) -> dict[str, tuple[int, str, str]]:
         )
         if stdout is None:
             return {}
-
-        file_commits: dict[str, tuple[int, str, str]] = {}
-        current_commit: tuple[int, str, str] | None = None
-
-        for line in stdout.split("\n"):
-            if line.startswith("\x00"):
-                current_commit = _parse_commit_header(line)
-            elif line.strip() and current_commit:
-                file_commits.setdefault(line.strip(), current_commit)
-
+        file_commits = _build_file_commit_map(stdout)
         logger.info(f"Batch git: got last commit info for {len(file_commits)} files")
         return file_commits
 
