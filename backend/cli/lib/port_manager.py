@@ -1,17 +1,6 @@
 """Port management for worktree service isolation.
 
-Provides port allocation for isolated worktree services to avoid
-conflicts with main project services.
-
 Port configuration is loaded from .st/services.yaml via project_config.
-Default values (for SummitFlow-style projects):
-    Main services:
-        - Backend: 8001
-        - Frontend: 3001
-    Worktree services:
-        - Backend: 8100 + (task_id_hash % range)
-        - Frontend: 3100 + (task_id_hash % range)
-
 Port assignments are persisted in ~/.local/share/st/worktrees/<project-id>/<task-id>/ports.json
 """
 
@@ -27,6 +16,11 @@ from .port_calculator import (
     get_project_ports,
 )
 from .port_persistence import delete_ports_file, load_ports_dict, save_ports_dict
+
+# Constants
+_URL_TEMPLATE = "http://localhost:{}"
+_STATUS_AVAILABLE = "available"
+_STATUS_IN_USE = "in use"
 
 
 @dataclass
@@ -68,8 +62,7 @@ def get_worktree_ports(task_id: str) -> WorktreePorts | None:
 
 def calculate_ports(task_id: str, project_root: str | Path | None = None) -> tuple[int, int]:
     """Calculate deterministic ports for a task without persisting."""
-    ports_config = get_project_ports(project_root)
-    return calculate_ports_from_config(task_id, ports_config)
+    return calculate_ports_from_config(task_id, get_project_ports(project_root))
 
 
 def allocate_ports(
@@ -77,51 +70,26 @@ def allocate_ports(
 ) -> WorktreePorts:
     """Allocate and persist port assignments for a worktree.
 
-    Uses deterministic hash-based allocation by default.
-    Falls back to sequential search if hash-based ports are unavailable.
-
-    Args:
-        task_id: The task identifier.
-        project_root: Root directory of the project. If None, uses cwd.
-        force: Force reallocation even if already assigned.
-
-    Returns:
-        WorktreePorts with assigned ports.
-
-    Raises:
-        RuntimeError: If no available ports found.
+    Uses deterministic hash-based allocation, falling back to sequential search.
+    Raises RuntimeError if no available ports found.
     """
-    # Check for existing allocation
     if not force:
         existing = get_worktree_ports(task_id)
         if existing:
             return existing
 
-    # Calculate deterministic ports first
     backend_port, frontend_port = calculate_ports(task_id, project_root)
+    if not (check_port_available(backend_port) and check_port_available(frontend_port)):
+        backend_port, frontend_port = find_available_ports(get_project_ports(project_root))
 
-    # Check if hash-based ports are available
-    backend_available = check_port_available(backend_port)
-    frontend_available = check_port_available(frontend_port)
-
-    if not (backend_available and frontend_available):
-        # Fall back to sequential search for available ports
-        ports_config = get_project_ports(project_root)
-        backend_port, frontend_port = find_available_ports(ports_config)
-
-    # Create ports object
     ports = WorktreePorts(
         task_id=task_id,
         backend_port=backend_port,
         frontend_port=frontend_port,
-        api_url=f"http://localhost:{backend_port}",
-        frontend_url=f"http://localhost:{frontend_port}",
+        api_url=_URL_TEMPLATE.format(backend_port),
+        frontend_url=_URL_TEMPLATE.format(frontend_port),
     )
-
-    # Persist to worktree directory
-    ports_dict: dict[str, str | int] = ports.to_dict()
-    save_ports_dict(task_id, ports_dict)
-
+    save_ports_dict(task_id, ports.to_dict())
     return ports
 
 
@@ -140,13 +108,11 @@ def list_allocated_ports() -> list[WorktreePorts]:
 def get_port_status(project_root: str | Path | None = None) -> dict[str, list[dict[str, str | int | bool]]]:
     """Get status of all port allocations."""
     ports_config = get_project_ports(project_root)
-
     main_ports: list[dict[str, str | int | bool]] = [
         {"service": name, "port": cfg["main"], "available": check_port_available(cfg["main"])}
         for name, cfg in ports_config.items()
         if cfg.get("main", 0)
     ]
-
     worktree_ports: list[dict[str, str | int | bool]] = [
         {
             "task_id": p.task_id,
@@ -157,7 +123,6 @@ def get_port_status(project_root: str | Path | None = None) -> dict[str, list[di
         }
         for p in list_allocated_ports()
     ]
-
     return {"main": main_ports, "worktrees": worktree_ports}
 
 
@@ -165,16 +130,14 @@ def format_port_info(task_id: str, project_root: str | Path | None = None) -> st
     """Format port information for display."""
     ports = get_worktree_ports(task_id)
     if not ports:
-        backend_port, frontend_port = calculate_ports(task_id, project_root)
+        b, f = calculate_ports(task_id, project_root)
         return (
             f"Ports (not yet allocated):\n"
-            f"  Backend:  {backend_port} (would be http://localhost:{backend_port})\n"
-            f"  Frontend: {frontend_port} (would be http://localhost:{frontend_port})"
+            f"  Backend:  {b} (would be {_URL_TEMPLATE.format(b)})\n"
+            f"  Frontend: {f} (would be {_URL_TEMPLATE.format(f)})"
         )
-
-    b_status = "available" if check_port_available(ports.backend_port) else "in use"
-    f_status = "available" if check_port_available(ports.frontend_port) else "in use"
-
+    b_status = _STATUS_AVAILABLE if check_port_available(ports.backend_port) else _STATUS_IN_USE
+    f_status = _STATUS_AVAILABLE if check_port_available(ports.frontend_port) else _STATUS_IN_USE
     return (
         f"Ports for {task_id}:\n"
         f"  Backend:  {ports.backend_port} ({b_status}) - {ports.api_url}\n"
