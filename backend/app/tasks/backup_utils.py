@@ -40,28 +40,59 @@ def get_project_root(project_id: str) -> str | None:
         return row[0] if row and row[0] else None
 
 
+def _parse_backup_line(line: str, result: dict[str, Any]) -> None:
+    """Parse a single line of backup.sh output and update result in place."""
+    line = line.strip()
+
+    if line.startswith("Size:"):
+        result["total_bytes"] = parse_size(line.split(":", 1)[1].strip())
+        return
+
+    if line.startswith("DB Size:"):
+        result["db_bytes"] = parse_size(line.split(":", 1)[1].strip())
+        return
+
+    if line.startswith("Location:"):
+        result["location"] = line.split(":", 1)[1].strip()
+        return
+
+    if not line.startswith("Verification:"):
+        return
+
+    json_str = line.split(":", 1)[1].strip()
+    try:
+        result["verification"] = json.loads(json_str)
+    except (json.JSONDecodeError, ValueError):
+        logger.warning("failed_to_parse_verification_json", raw=json_str[:200])
+
+
 def parse_backup_output(output: str) -> dict[str, Any]:
     """Parse backup.sh output for size, location, and verification info."""
     result: dict[str, Any] = {}
-
     for line in output.split("\n"):
-        line = line.strip()
-        if line.startswith("Size:"):
-            size_str = line.split(":", 1)[1].strip()
-            result["total_bytes"] = parse_size(size_str)
-        elif line.startswith("DB Size:"):
-            size_str = line.split(":", 1)[1].strip()
-            result["db_bytes"] = parse_size(size_str)
-        elif line.startswith("Location:"):
-            result["location"] = line.split(":", 1)[1].strip()
-        elif line.startswith("Verification:"):
-            json_str = line.split(":", 1)[1].strip()
-            try:
-                result["verification"] = json.loads(json_str)
-            except (json.JSONDecodeError, ValueError):
-                logger.warning("failed_to_parse_verification_json", raw=json_str[:200])
-
+        _parse_backup_line(line, result)
     return result
+
+
+def _parse_bytes_literal(size_str: str) -> int | None:
+    """Parse a size string containing the word 'bytes'."""
+    try:
+        return int(size_str.replace("bytes", "").strip())
+    except ValueError:
+        return None
+
+
+def _parse_suffix_size(size_str: str) -> int | None:
+    """Parse a size string with a unit suffix like K, M, G, T."""
+    multipliers = {"K": 1024, "M": 1024**2, "G": 1024**3, "T": 1024**4}
+    for suffix, mult in multipliers.items():
+        if not size_str.endswith(suffix):
+            continue
+        try:
+            return int(float(size_str[:-1]) * mult)
+        except ValueError:
+            return None
+    return None
 
 
 def parse_size(size_str: str) -> int | None:
@@ -69,19 +100,11 @@ def parse_size(size_str: str) -> int | None:
     size_str = size_str.strip()
 
     if "bytes" in size_str:
-        try:
-            return int(size_str.replace("bytes", "").strip())
-        except ValueError:
-            return None
+        return _parse_bytes_literal(size_str)
 
-    multipliers = {"K": 1024, "M": 1024**2, "G": 1024**3, "T": 1024**4}
-
-    for suffix, mult in multipliers.items():
-        if size_str.endswith(suffix):
-            try:
-                return int(float(size_str[:-1]) * mult)
-            except ValueError:
-                return None
+    suffix_result = _parse_suffix_size(size_str)
+    if suffix_result is not None:
+        return suffix_result
 
     try:
         return int(size_str)
@@ -117,16 +140,15 @@ def build_verification_kwargs(verification: dict[str, Any]) -> dict[str, Any]:
     return vkw
 
 
+_FREQUENCY_DELTAS: dict[str, timedelta] = {
+    "daily": timedelta(days=1),
+    "weekly": timedelta(weeks=1),
+    "monthly": timedelta(days=30),
+}
+
+
 def calculate_next_run(frequency: str) -> datetime:
     """Calculate next run time based on frequency."""
     now = datetime.now(UTC)
-
-    if frequency == "daily":
-        return now + timedelta(days=1)
-    elif frequency == "weekly":
-        return now + timedelta(weeks=1)
-    elif frequency == "monthly":
-        return now + timedelta(days=30)
-    else:
-        # Default to daily
-        return now + timedelta(days=1)
+    delta = _FREQUENCY_DELTAS.get(frequency, timedelta(days=1))
+    return now + delta
