@@ -15,33 +15,26 @@ from ..output import handle_api_error, output_success
 def add_steps(
     subtask_id: str,
     descriptions: list[str] | None = None,
-    verify_command: str | None = None,
     json_input: str | None = None,
     task_id: str | None = None,
 ) -> None:
-    """Add steps to a subtask (verification required).
-
-    Each step must have a verify_command (exit 0 = pass).
+    """Add steps to a subtask.
 
     Two modes:
-    1. Positional descriptions with shared -v (all steps get same verification):
-       st step add 1.1 "Step 1" "Step 2" -v "dt pytest"
+    1. Positional descriptions:
+       st step add 1.1 "Step 1" "Step 2"
 
-    2. JSON for per-step verification:
-       st step add 1.1 --json '[{"description":"...","verify_command":"..."}]'
-
-    If no task_id is provided, uses the active context from 'st work'.
+    2. JSON for structured input:
+       st step add 1.1 --json '[{"description":"..."}]'
 
     Examples:
-        st step add 1.1 "Add endpoint" -v "rg 'def foo' api.py" -t task-abc123
-        st step add 1.1 --json '[{"description":"Run tests","verify_command":"dt pytest"}]'
+        st step add 1.1 "Add endpoint" -t task-abc123
+        st step add 1.1 --json '[{"description":"Run tests"}]'
     """
     task_id = require_task_id(task_id)
     client = STClient()
 
-    steps_to_create = _parse_step_input(
-        descriptions, verify_command, json_input
-    )
+    steps_to_create = _parse_step_input(descriptions, json_input)
 
     created_count = 0
     first_step_num = None
@@ -51,7 +44,6 @@ def add_steps(
                 task_id,
                 subtask_id,
                 step["description"],
-                step["verify_command"],
             )
             created_count += 1
             if first_step_num is None:
@@ -65,7 +57,6 @@ def add_steps(
 
 def _parse_step_input(
     descriptions: list[str] | None,
-    verify_command: str | None,
     json_input: str | None,
 ) -> list[dict[str, str]]:
     """Parse and validate step input from either JSON or positional args."""
@@ -73,7 +64,7 @@ def _parse_step_input(
         return _parse_json_input(json_input, descriptions)
 
     if descriptions:
-        return _parse_positional_input(descriptions, verify_command)
+        return [{"description": desc} for desc in descriptions]
 
     typer.echo("Error: provide step descriptions or --json input.", err=True)
     raise typer.Exit(1)
@@ -104,42 +95,9 @@ def _parse_json_input(
             typer.echo("Error: each --json element must be an object.", err=True)
             raise typer.Exit(1)
 
-        _validate_json_step(item)
-        steps.append({
-            "description": item["description"],
-            "verify_command": item["verify_command"],
-        })
+        if "description" not in item:
+            typer.echo("Error: JSON element missing key: description", err=True)
+            raise typer.Exit(1)
+        steps.append({"description": item["description"]})
 
     return steps
-
-
-def _validate_json_step(item: dict[str, Any]) -> None:
-    """Validate a single JSON step has required fields."""
-    missing = [
-        k for k in ("description", "verify_command") if k not in item
-    ]
-    if missing:
-        typer.echo(f"Error: JSON element missing keys: {', '.join(missing)}", err=True)
-        raise typer.Exit(1)
-
-
-def _parse_positional_input(
-    descriptions: list[str],
-    verify_command: str | None,
-) -> list[dict[str, str]]:
-    """Parse positional description input with shared verification."""
-    if verify_command is None:
-        typer.echo(
-            "Error: -v (verify) is required.\n"
-            "  Every step needs verification. Use --json for per-step verify commands.",
-            err=True,
-        )
-        raise typer.Exit(1)
-
-    return [
-        {
-            "description": desc,
-            "verify_command": verify_command,
-        }
-        for desc in descriptions
-    ]

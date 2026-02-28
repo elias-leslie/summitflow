@@ -185,8 +185,7 @@ class TestEnforcementTriggersDropped:
 class TestCriteriaTableDropped:
     """Verify task_acceptance_criteria table has been dropped per migration 090.
 
-    The criteria system was replaced with step-level verification.
-    Verification now happens per-step via verify_command.
+    The criteria system was replaced with step-level progress tracking.
     """
 
     def test_task_acceptance_criteria_table_dropped(self) -> None:

@@ -92,7 +92,7 @@ def _create_steps_for_subtasks(
             created_steps = bulk_create_steps(subtask_table_id, step_items)
             subtasks_with_steps[subtask_table_id] = created_steps
         except ValueError:
-            raise  # Validation errors (bad verify_command) must propagate
+            raise  # Validation errors must propagate
         except Exception as e:
             logger.error("Failed to create steps for subtask %s: %s", subtask_table_id, e)
             # Continue - subtask created, steps failed (partial success)

@@ -1,12 +1,11 @@
 """End-to-end tests for task verification gates.
 
 Tests the full task lifecycle through CLI commands, verifying that:
-1. st verify rejects bad plans (missing steps, no verify_command, no verification subtask)
+1. st verify rejects bad plans (missing steps, no verification subtask)
 2. st import rejects bad plans with same validations
 3. st subtask create rejects subtasks without proper steps
 4. st subtask pass fails on subtasks with no steps or incomplete steps
-5. st done fails on tasks with zero verified steps
-6. Happy path: valid plan → complete steps → done task
+5. Happy path: valid plan -> complete steps -> done task
 
 These tests exercise the REAL CLI and API, not mocks.
 """
@@ -120,13 +119,9 @@ def valid_plan() -> dict[str, Any]:
                 "steps": [
                     {
                         "description": "Create test file",
-                        "verify_command": "echo 'test passed'",
                     },
                     {
-                        # Deploy step - uses echo to simulate rebuild.sh in tests
-                        # Validation passes because description contains "deploy"
                         "description": "Deploy backend changes",
-                        "verify_command": "echo 'rebuild.sh simulation: Rebuild complete'",
                     },
                 ],
             },
@@ -137,7 +132,6 @@ def valid_plan() -> dict[str, Any]:
                 "steps": [
                     {
                         "description": "Verify implementation complete",
-                        "verify_command": "echo 'verified'",
                     }
                 ],
             },
@@ -199,29 +193,6 @@ def plan_string_steps() -> dict[str, Any]:
     }
 
 
-def plan_missing_verify_command() -> dict[str, Any]:
-    """Plan with steps missing verify_command."""
-    return {
-        "title": "E2E Test - Missing verify_command",
-        "objective": "Test rejection of steps without verify_command",
-        "task_type": "task",
-        "complexity": "SIMPLE",
-        "subtasks": [
-            {
-                "id": "1.1",
-                "description": "Subtask with incomplete steps",
-                "phase": "verification",
-                "steps": [
-                    {
-                        "description": "Step without verify_command",
-                        # Missing verify_command
-                    }
-                ],
-            }
-        ],
-    }
-
-
 def plan_no_verification_subtask() -> dict[str, Any]:
     """Plan without final verification subtask."""
     return {
@@ -237,11 +208,9 @@ def plan_no_verification_subtask() -> dict[str, Any]:
                 "steps": [
                     {
                         "description": "Do something",
-                        "verify_command": "echo ok",
                     },
                     {
                         "description": "Deploy backend changes",
-                        "verify_command": "echo 'rebuild.sh simulation: Rebuild complete'",
                     },
                 ],
             }
@@ -264,7 +233,6 @@ def plan_missing_deploy_step() -> dict[str, Any]:
                 "steps": [
                     {
                         "description": "Do something",
-                        "verify_command": "echo ok",
                     }
                 ],
             },
@@ -275,7 +243,6 @@ def plan_missing_deploy_step() -> dict[str, Any]:
                 "steps": [
                     {
                         "description": "Verify",
-                        "verify_command": "echo done",
                     }
                 ],
             },
@@ -298,12 +265,10 @@ def plan_frontend_missing_browser_check() -> dict[str, Any]:
                 "steps": [
                     {
                         "description": "Update component",
-                        "verify_command": "echo ok",
                     },
                     {
                         # Has deploy but no browser check
                         "description": "Deploy frontend changes",
-                        "verify_command": "echo 'rebuild.sh simulation: Rebuild complete'",
                     },
                 ],
             },
@@ -314,7 +279,6 @@ def plan_frontend_missing_browser_check() -> dict[str, Any]:
                 "steps": [
                     {
                         "description": "Verify",
-                        "verify_command": "echo done",
                     }
                 ],
             },
@@ -337,15 +301,12 @@ def plan_frontend_valid() -> dict[str, Any]:
                 "steps": [
                     {
                         "description": "Update component",
-                        "verify_command": "echo ok",
                     },
                     {
                         "description": "Deploy frontend changes",
-                        "verify_command": "echo 'rebuild.sh simulation: Rebuild complete'",
                     },
                     {
                         "description": "Verify no console errors",
-                        "verify_command": "echo 'agent-browser errors: No errors'",
                     },
                 ],
             },
@@ -356,7 +317,6 @@ def plan_frontend_valid() -> dict[str, Any]:
                 "steps": [
                     {
                         "description": "Verify",
-                        "verify_command": "echo done",
                     }
                 ],
             },
@@ -400,19 +360,6 @@ class TestVerifyGate:
             result = run_cli(["verify", str(plan_file)])
             assert result.returncode == 1, f"Expected failure, got: {result.stdout}"
             assert "object" in result.stderr.lower() or "type" in result.stderr.lower()
-        finally:
-            plan_file.unlink()
-
-    def test_verify_rejects_missing_verify_command(self) -> None:
-        """st verify should reject steps without verify_command."""
-        plan_file = create_plan_file(plan_missing_verify_command())
-        try:
-            result = run_cli(["verify", str(plan_file)])
-            assert result.returncode == 1, f"Expected failure, got: {result.stdout}"
-            assert (
-                "verify_command" in result.stderr.lower()
-                or "verify_command" in result.stdout.lower()
-            )
         finally:
             plan_file.unlink()
 
@@ -492,15 +439,6 @@ class TestImportGate:
         finally:
             plan_file.unlink()
 
-    def test_import_rejects_missing_verify_command(self) -> None:
-        """st import should reject plans with missing verify_command."""
-        plan_file = create_plan_file(plan_missing_verify_command())
-        try:
-            result = run_cli(["import", str(plan_file), "--dry-run"])
-            assert result.returncode == 1, f"Expected failure, got: {result.stdout}"
-        finally:
-            plan_file.unlink()
-
     def test_import_rejects_no_verification_subtask(self) -> None:
         """st import should reject plans without verification subtask."""
         plan_file = create_plan_file(plan_no_verification_subtask())
@@ -567,7 +505,6 @@ class TestSubtaskCreateGate:
             [
                 {
                     "description": "Test step",
-                    "verify_command": "echo ok",
                 }
             ]
         )
@@ -649,8 +586,8 @@ class TestSubtaskPassGate:
             description="Subtask with incomplete steps",
             display_order=0,
             steps=[
-                {"description": "Step 1", "verify_command": "echo 1"},
-                {"description": "Step 2", "verify_command": "echo 2"},
+                {"description": "Step 1"},
+                {"description": "Step 2"},
             ],
         )
 

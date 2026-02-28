@@ -83,14 +83,14 @@ def has_frontend_changes(task: dict[str, Any]) -> bool:
     """Check if task has frontend changes.
 
     Args:
-        task: Task dict
+        task: Task dict (needs 'id' field)
 
     Returns:
         True if frontend files were modified
     """
-    plan_content = task.get("plan_content") or {}
-    affected_files = plan_content.get("context", {}).get("affected_files", [])
+    from .ai_review_risk import get_affected_files
 
+    affected_files = get_affected_files(task)
     frontend_patterns = ["frontend/", ".tsx", ".jsx", ".css", ".scss"]
     return any(any(pattern in f for pattern in frontend_patterns) for f in affected_files)
 

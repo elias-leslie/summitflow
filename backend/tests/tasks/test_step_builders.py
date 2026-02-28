@@ -128,84 +128,66 @@ class TestGetTargetedTestCommand:
 class TestBuildRefactorSteps:
     """Tests for issue-aware build_refactor_steps."""
 
-    def test_size_issue_includes_line_count_step(self) -> None:
-        """Files with size issues get line count verification."""
+    def test_size_issue_includes_refactor_step(self) -> None:
+        """Files with size issues get a refactor step."""
         steps = build_refactor_steps(
             "backend/app/services/foo.py", "/abs/path", 400, 200, False,
             refactor_issues=["large_file", "has_long_functions"],
         )
-        assert any("wc -l" in s["verify_command"] for s in steps)
+        assert any("refactor" in s["description"].lower() for s in steps)
 
-    def test_no_size_issue_skips_line_count_step(self) -> None:
-        """Files without size issues skip line count verification."""
+    def test_no_size_issue_skips_refactor_step(self) -> None:
+        """Files without size issues skip the refactor step."""
         steps = build_refactor_steps(
             "backend/app/services/foo.py", "/abs/path", 200, 150, False,
             refactor_issues=["deep_nesting", "has_long_functions"],
         )
-        assert not any("wc -l" in s["verify_command"] for s in steps)
+        assert not any("refactor" in s["description"].lower() and "lines" in s["description"].lower() for s in steps)
 
-    def test_structural_issues_get_ast_verification(self) -> None:
-        """Structural issues generate stdlib ast-based verify commands."""
+    def test_structural_issues_get_structural_step(self) -> None:
+        """Structural issues generate a structural verification step."""
         steps = build_refactor_steps(
             "backend/app/services/foo.py", "/abs/path", 200, 150, False,
             refactor_issues=["has_long_functions", "deep_nesting"],
         )
         structural_step = [s for s in steps if "structural" in s["description"].lower()]
         assert len(structural_step) == 1
-        cmd = structural_step[0]["verify_command"]
-        assert "import ast" in cmd
-        assert "col_offset" in cmd  # nesting depth check
-        assert "end_lineno" in cmd  # function line check
 
-    def test_too_many_functions_verified(self) -> None:
-        """too_many_functions generates function count check."""
+    def test_too_many_functions_gets_structural_step(self) -> None:
+        """too_many_functions generates a structural step."""
         steps = build_refactor_steps(
             "backend/app/services/foo.py", "/abs/path", 200, 150, False,
             refactor_issues=["too_many_functions"],
         )
         structural = [s for s in steps if "structural" in s["description"].lower()]
         assert len(structural) == 1
-        cmd = structural[0]["verify_command"]
-        assert "import ast" in cmd
-        assert "<=20" in cmd
-        assert "FunctionDef" in cmd
 
-    def test_too_many_classes_verified(self) -> None:
-        """too_many_classes generates class count check."""
+    def test_too_many_classes_gets_structural_step(self) -> None:
+        """too_many_classes generates a structural step."""
         steps = build_refactor_steps(
             "backend/app/services/foo.py", "/abs/path", 200, 150, False,
             refactor_issues=["too_many_classes"],
         )
         structural = [s for s in steps if "structural" in s["description"].lower()]
         assert len(structural) == 1
-        cmd = structural[0]["verify_command"]
-        assert "import ast" in cmd
-        assert "<=5" in cmd
-        assert "ClassDef" in cmd
 
-    def test_has_large_classes_verified(self) -> None:
-        """has_large_classes generates method count check."""
+    def test_has_large_classes_gets_structural_step(self) -> None:
+        """has_large_classes generates a structural step."""
         steps = build_refactor_steps(
             "backend/app/services/foo.py", "/abs/path", 200, 150, False,
             refactor_issues=["has_large_classes"],
         )
         structural = [s for s in steps if "structural" in s["description"].lower()]
         assert len(structural) == 1
-        cmd = structural[0]["verify_command"]
-        assert "import ast" in cmd
-        assert ">10" in cmd
-        assert "ClassDef" in cmd
 
-    def test_too_many_imports_verified(self) -> None:
-        """too_many_imports generates import count check."""
+    def test_too_many_imports_gets_structural_step(self) -> None:
+        """too_many_imports generates a structural step."""
         steps = build_refactor_steps(
             "backend/app/services/foo.py", "/abs/path", 200, 150, False,
             refactor_issues=["too_many_imports"],
         )
         structural = [s for s in steps if "structural" in s["description"].lower()]
         assert len(structural) == 1
-        assert "grep" in structural[0]["verify_command"]
-        assert "30" in structural[0]["verify_command"]
 
     def test_quality_gate_always_present(self) -> None:
         """Quality gate step is always included."""
@@ -221,12 +203,12 @@ class TestBuildRefactorSteps:
             "frontend/components/Foo.tsx", "/abs/path", 400, 200, True,
             refactor_issues=["large_file"],
         )
-        assert any("agent-browser" in s["verify_command"] for s in steps)
+        assert any("browser" in s["description"].lower() or "console" in s["description"].lower() for s in steps)
 
-    def test_no_issues_falls_back_to_line_count(self) -> None:
-        """Empty issues list falls back to line count check."""
+    def test_no_issues_falls_back_to_refactor_step(self) -> None:
+        """Empty issues list falls back to refactor step."""
         steps = build_refactor_steps(
             "backend/app/services/foo.py", "/abs/path", 400, 200, False,
             refactor_issues=[],
         )
-        assert any("wc -l" in s["verify_command"] for s in steps)
+        assert any("refactor" in s["description"].lower() for s in steps)

@@ -43,6 +43,36 @@ async def _save_spirit_fields(task_id: str, task: TaskCreate) -> None:
     )
 
 
+_SIMPLE_TASK_TYPES = {"bug", "debt", "regression", "refactor"}
+
+
+def _auto_classify_complexity(task: dict) -> None:
+    """Auto-classify complexity at creation if not already set.
+
+    Rules:
+    - Already set → respect it
+    - task_type in (bug, debt, regression, refactor) → SIMPLE
+    - objective AND done_when both present → STANDARD
+    - Otherwise → None (untriaged)
+    """
+    if task.get("complexity"):
+        return
+
+    task_type = task.get("task_type", "task")
+    if task_type in _SIMPLE_TASK_TYPES:
+        task_store.update_task(task["id"], complexity="SIMPLE")
+        return
+
+    # Check if spirit fields suggest STANDARD
+    task_id = task.get("id")
+    if task_id:
+        from ...storage.task_spirit import get_task_spirit
+
+        spirit = get_task_spirit(task_id)
+        if spirit and spirit.get("objective") and spirit.get("done_when"):
+            task_store.update_task(task_id, complexity="STANDARD")
+
+
 @router.post("/projects/{project_id}/tasks", response_model=TaskResponse)
 async def create_task(project_id: str, task: TaskCreate) -> TaskResponse:
     """Create a new task. When auto_dispatch=True, queues and dispatches to Hatchet."""
@@ -62,6 +92,7 @@ async def create_task(project_id: str, task: TaskCreate) -> TaskResponse:
     )
 
     await _save_spirit_fields(created["id"], task)
+    _auto_classify_complexity(created)
 
     if task.auto_dispatch:
         await _dispatch_created_task(created["id"], project_id)

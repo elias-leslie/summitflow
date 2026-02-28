@@ -28,13 +28,11 @@ from .steps_crud_serialization import (
 from .steps_crud_serialization import (
     row_to_dict as _row_to_dict,
 )
-from .steps_crud_validation import sanitize_verify_command as _sanitize_verify_command
 
 __all__ = [
     "EXPECTED_STEP_COLUMNS",
     "STEP_COLUMNS",
     "_row_to_dict",
-    "_sanitize_verify_command",
     "append_steps",
     "bulk_create_steps",
     "create_step",
@@ -50,7 +48,6 @@ def create_step(
     step_number: int,
     description: str,
     spec: dict[str, Any] | None = None,
-    verify_command: str | None = None,
 ) -> dict[str, Any]:
     """Create a new step for a subtask.
 
@@ -59,7 +56,6 @@ def create_step(
         step_number: 1-indexed step number within subtask
         description: Step description text
         spec: Optional JSONB spec for implementation details
-        verify_command: Bash command to verify step completion (exit 0 = pass)
 
     Returns:
         The created step dict.
@@ -67,9 +63,7 @@ def create_step(
     Raises:
         Exception: If subtask_id doesn't exist (FK constraint violation)
     """
-    return execute_create_step(
-        subtask_id, step_number, description, spec, verify_command
-    )
+    return execute_create_step(subtask_id, step_number, description, spec)
 
 
 def get_steps_for_subtask(subtask_id: str) -> list[dict[str, Any]]:
@@ -108,7 +102,7 @@ def bulk_create_steps(
     Args:
         subtask_id: Parent subtask ID
         steps: List of step items - either strings (description only)
-               or dicts with {description, spec, verify_command}
+               or dicts with {description, spec}
 
     Returns:
         List of created step dicts.
@@ -131,7 +125,7 @@ def append_steps(
     Args:
         subtask_id: Parent subtask ID
         steps: List of step items - either strings (description only)
-               or dicts with {description, spec, verify_command}
+               or dicts with {description, spec}
 
     Returns:
         List of created step dicts.
@@ -159,7 +153,6 @@ def insert_step(
     position: int,
     description: str,
     spec: dict[str, Any] | None = None,
-    verify_command: str | None = None,
 ) -> dict[str, Any]:
     """Insert a step at a specific position, shifting existing steps down.
 
@@ -172,7 +165,6 @@ def insert_step(
                   position and after are shifted down.
         description: Step description text
         spec: Optional JSONB spec for implementation details
-        verify_command: Bash command to verify step completion (exit 0 = pass)
 
     Returns:
         The created step dict.
@@ -181,6 +173,4 @@ def insert_step(
         ValueError: If position < 1
         Exception: If subtask_id doesn't exist (FK constraint violation)
     """
-    return execute_insert_step(
-        subtask_id, position, description, spec, verify_command
-    )
+    return execute_insert_step(subtask_id, position, description, spec)

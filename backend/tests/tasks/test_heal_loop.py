@@ -27,7 +27,7 @@ class TestStepRereadAfterHealAttempt:
     @patch(f"{_RETRY_LOOP}.determine_fix_prompt")
     @patch(f"{_RETRY_LOOP}.handle_infrastructure_failures")
     @patch(f"{_RETRY_LOOP}.check_and_request_extension")
-    @patch(f"{_RETRY_LOOP}.verify_steps_with_smoke_tests")
+    @patch(f"{_RETRY_LOOP}.run_execution_quality_check")
     @patch(f"{_RETRY_LOOP}.check_worktree_health")
     @patch(f"{_RETRY_LOOP}.get_steps_for_subtask")
     def test_steps_reread_after_heal_attempt(
@@ -51,8 +51,8 @@ class TestStepRereadAfterHealAttempt:
         mock_worktree_health.return_value = True
 
         updated_steps = [
-            {"step_number": 1, "description": "test", "verify_command": "echo ok", "status": "plan_defect"},
-            {"step_number": 2, "description": "fix step", "verify_command": "echo OK"},
+            {"step_number": 1, "description": "test", "status": "plan_defect"},
+            {"step_number": 2, "description": "fix step"},
         ]
         mock_get_steps.return_value = updated_steps
 
@@ -68,7 +68,7 @@ class TestStepRereadAfterHealAttempt:
         mock_fix_prompt.return_value = ("fix prompt", None)
         mock_fix_attempt.return_value = ("fixed", "session-2")
 
-        original_steps = [{"step_number": 1, "description": "test", "verify_command": "echo ok"}]
+        original_steps = [{"step_number": 1, "description": "test"}]
 
         subtask = {
             "id": "sub-1",
@@ -94,7 +94,7 @@ class TestStepRereadAfterHealAttempt:
         mock_get_steps.assert_called_once_with("sub-1")
 
     @patch(f"{_RETRY_LOOP}.agent_configs")
-    @patch(f"{_RETRY_LOOP}.verify_steps_with_smoke_tests")
+    @patch(f"{_RETRY_LOOP}.run_execution_quality_check")
     @patch(f"{_RETRY_LOOP}.check_worktree_health")
     @patch(f"{_RETRY_LOOP}.get_steps_for_subtask")
     def test_steps_not_reread_on_first_attempt(
@@ -129,7 +129,7 @@ class TestStepRereadAfterHealAttempt:
             subtask_id="sub-1",
             subtask_short_id="1.1",
             subtask=subtask,
-            steps=[{"step_number": 1, "description": "test", "verify_command": "echo ok"}],
+            steps=[{"step_number": 1, "description": "test"}],
             project_path="/tmp/test-worktree",
             project_id="test-project",
             agent_slug="coder",
@@ -276,7 +276,7 @@ class TestHealLoopAbortsOnInvalidWorktree:
     """Bug #2, Layer B: Heal loop breaks immediately on worktree destruction."""
 
     @patch(f"{_RETRY_LOOP}.agent_configs")
-    @patch(f"{_RETRY_LOOP}.verify_steps_with_smoke_tests")
+    @patch(f"{_RETRY_LOOP}.run_execution_quality_check")
     @patch(f"{_RETRY_LOOP}.check_worktree_health")
     @patch(f"{_RETRY_LOOP}.get_steps_for_subtask")
     def test_heal_loop_aborts_on_invalid_worktree(

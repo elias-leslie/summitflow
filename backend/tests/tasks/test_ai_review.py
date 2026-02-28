@@ -41,63 +41,44 @@ class TestReviewResult:
 
 
 class TestHasFrontendChanges:
-    """Tests for _has_frontend_changes helper."""
+    """Tests for _has_frontend_changes helper.
 
-    def test_no_plan_content(self) -> None:
-        task: dict[str, object] = {}
+    The function now reads affected files from task_spirit via get_affected_files(task),
+    so we mock that function to control the file list.
+    """
+
+    @patch("app.tasks.ai_review_risk.get_affected_files", return_value=[])
+    def test_no_affected_files(self, mock_files: MagicMock) -> None:
+        task: dict[str, object] = {"id": "task-123"}
         assert not _has_frontend_changes(task)
 
-    def test_no_affected_files(self) -> None:
-        task: dict[str, object] = {"plan_content": {"context": {}}}
+    @patch("app.tasks.ai_review_risk.get_affected_files", return_value=[
+        "backend/app/api/tasks.py",
+        "backend/app/storage/tasks.py",
+    ])
+    def test_backend_only_changes(self, mock_files: MagicMock) -> None:
+        task: dict[str, object] = {"id": "task-123"}
         assert not _has_frontend_changes(task)
 
-    def test_backend_only_changes(self) -> None:
-        task = {
-            "plan_content": {
-                "context": {
-                    "affected_files": [
-                        "backend/app/api/tasks.py",
-                        "backend/app/storage/tasks.py",
-                    ]
-                }
-            }
-        }
-        assert not _has_frontend_changes(task)
-
-    def test_frontend_tsx_changes(self) -> None:
-        task = {
-            "plan_content": {
-                "context": {
-                    "affected_files": [
-                        "frontend/components/TaskList.tsx",
-                    ]
-                }
-            }
-        }
+    @patch("app.tasks.ai_review_risk.get_affected_files", return_value=[
+        "frontend/components/TaskList.tsx",
+    ])
+    def test_frontend_tsx_changes(self, mock_files: MagicMock) -> None:
+        task: dict[str, object] = {"id": "task-123"}
         assert _has_frontend_changes(task)
 
-    def test_frontend_directory_changes(self) -> None:
-        task = {
-            "plan_content": {
-                "context": {
-                    "affected_files": [
-                        "frontend/lib/api.ts",
-                    ]
-                }
-            }
-        }
+    @patch("app.tasks.ai_review_risk.get_affected_files", return_value=[
+        "frontend/lib/api.ts",
+    ])
+    def test_frontend_directory_changes(self, mock_files: MagicMock) -> None:
+        task: dict[str, object] = {"id": "task-123"}
         assert _has_frontend_changes(task)
 
-    def test_css_changes(self) -> None:
-        task = {
-            "plan_content": {
-                "context": {
-                    "affected_files": [
-                        "styles/main.css",
-                    ]
-                }
-            }
-        }
+    @patch("app.tasks.ai_review_risk.get_affected_files", return_value=[
+        "styles/main.css",
+    ])
+    def test_css_changes(self, mock_files: MagicMock) -> None:
+        task: dict[str, object] = {"id": "task-123"}
         assert _has_frontend_changes(task)
 
 
@@ -152,7 +133,6 @@ class TestRunTypes:
 class TestVerifyStepCompletion:
     """Tests for _verify_step_completion helper.
 
-    Verification happens at step level via verify_command.
     This function checks if all subtask steps have passed.
     """
 

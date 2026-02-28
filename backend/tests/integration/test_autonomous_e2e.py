@@ -3,7 +3,7 @@
 Tests the FULL flows with real database state and mocked Agent Hub:
 1. Triage: Idea → assess clarity → route (CLEAR → queue, NEEDS_CLARIFICATION → blocked)
 2. Planning: Queue → create subtasks → route by complexity
-3. Execution: Running → execute subtasks → verify steps → complete
+3. Execution: Running → execute subtasks → complete
 4. Review: PR Created → AI review → auto-merge (SIMPLE) or human review
 5. Escalation: Failures → supervisor guidance → human escalation
 6. Ideation: Raw idea → agent expansion → task_spirit + enriched description
@@ -246,7 +246,6 @@ class TestPlanningE2E:
                         "steps": [
                             {
                                 "description": "Add isLoading prop",
-                                "verify_command": "rg 'isLoading' components/Button.tsx",
                             }
                         ],
                     },
@@ -257,7 +256,6 @@ class TestPlanningE2E:
                         "steps": [
                             {
                                 "description": "Update form to track loading",
-                                "verify_command": "rg 'setLoading' pages/Form.tsx",
                             }
                         ],
                     },
@@ -392,7 +390,6 @@ class TestExecutionE2E:
             steps=[
                 {
                     "description": "Create test.py",
-                    "verify_command": "echo 'test passed'",
                 }
             ],
         )
@@ -433,11 +430,10 @@ class TestExecutionE2E:
     def test_execution_handles_verification_failure(
         self, test_project_id: str, cleanup_tasks: list[str]
     ) -> None:
-        """Execution should process subtasks and handle verification failures.
+        """Execution should process subtasks and handle failures.
 
         In v2, all subtasks are attempted (with retry loops) and the completion
-        handler determines the final outcome. Both subtasks fail here because
-        subtask 1.1 has an impossible verify_command and 1.2 has no verify_command.
+        handler determines the final outcome. Both subtasks fail here.
         """
         task = task_store.create_task(
             project_id=test_project_id,
@@ -453,13 +449,12 @@ class TestExecutionE2E:
         create_subtask(
             task_id=task_id,
             subtask_id="1.1",
-            description="Create file that will fail verification",
+            description="Create file that will fail",
             display_order=0,
             phase="backend",
             steps=[
                 {
                     "description": "Create nonexistent.py",
-                    "verify_command": "cat /nonexistent/path/file.py 2>/dev/null",
                 }
             ],
         )
@@ -470,7 +465,7 @@ class TestExecutionE2E:
             description="Second subtask with no verification",
             display_order=1,
             phase="backend",
-            steps=[{"description": "Should also fail (no verify_command)"}],
+            steps=[{"description": "Should also fail"}],
         )
 
         task_store.update_task_status(task_id, "queue")
@@ -750,7 +745,6 @@ class TestFullAutonomousPipeline:
                             "steps": [
                                 {
                                     "description": "Add logging statement",
-                                    "verify_command": "echo 'done'",
                                 }
                             ],
                         }

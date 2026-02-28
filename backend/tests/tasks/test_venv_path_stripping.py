@@ -1,4 +1,4 @@
-"""Tests for .venv path stripping in verify_command expansion.
+"""Tests for .venv path stripping in command expansion.
 
 Ensures all .venv/bin/X patterns are rewritten to bare X when venv is on PATH.
 This prevents exit 127 failures in worktrees where .venv doesn't exist locally.

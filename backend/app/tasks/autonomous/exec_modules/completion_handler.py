@@ -57,13 +57,25 @@ def handle_successful_completion(
     results: list[dict[str, Any]],
     dispatch: Callable[[str, str, str], None] | None = None,
 ) -> bool:
-    """Handle successful task completion with quality gate."""
+    """Handle successful task completion with quality gate + intent verification."""
     if not run_quality_gate_with_autofix(task_id, project_path, project_id):
         task_store.update_task_status(task_id, "blocked")
         emit_error(task_id, "Final quality gate failed after auto-fix attempt", project_id=project_id)
         notify_failure(task_id, project_id, "Quality gate failed after auto-fix attempt.")
         wake_persona(task_id, project_id, "quality_gate",
                      f"Task {task_id} quality gate failed after auto-fix. Investigate and advise.")
+        return False
+
+    # Intent verification: check done_when / objective / spirit_anti
+    intent_result = _run_intent_check(task_id, project_path, project_id)
+    if intent_result and not intent_result.passed:
+        task_store.update_task_status(task_id, "blocked")
+        task_store.update_task(task_id, qa_status="failed")
+        summary = intent_result.summary or "Intent check failed"
+        emit_error(task_id, f"Intent check failed: {summary}", project_id=project_id)
+        notify_failure(task_id, project_id, f"Intent verification failed: {summary}")
+        wake_persona(task_id, project_id, "intent_failed",
+                     f"Task {task_id} intent check failed: {summary}. Review done_when criteria.")
         return False
 
     try:
@@ -78,6 +90,24 @@ def handle_successful_completion(
     except Exception as e:
         handle_status_transition_error(task_id, project_id, e, {"Results": results})
         return False
+
+
+def _run_intent_check(
+    task_id: str, project_path: str, project_id: str
+) -> Any:
+    """Run intent verification, returning result or None if not applicable."""
+    try:
+        from .intent_check import check_intent
+
+        result = check_intent(task_id, project_path, project_id)
+        if result.done_when_results:
+            emit_log(task_id, "info",
+                     f"Intent check: {'PASS' if result.passed else 'FAIL'} — {result.summary}",
+                     project_id=project_id)
+        return result
+    except Exception as e:
+        logger.warning("Intent check failed, proceeding", task_id=task_id, error=str(e))
+        return None
 
 
 def _handle_partial_merge_error(

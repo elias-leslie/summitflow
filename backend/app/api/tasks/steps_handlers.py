@@ -76,7 +76,6 @@ def _raise_passes_error(e: Exception) -> None:
                 "step_number": e.step_number,
                 "output": e.output,
                 "exit_code": e.exit_code,
-                "verify_command": e.verify_command,
                 "cwd": e.cwd,
                 "verification_failed": True,
             },
@@ -90,9 +89,8 @@ def handle_update_step_passes(
     passes: bool,
     project_root: str | None = None,
     project_id: str | None = None,
-    already_verified: bool = False,
 ) -> StepResponse:
-    """Handle step passes update with verification and error handling.
+    """Handle step passes update with error handling.
 
     Raises:
         HTTPException: 400/422 for gate/verification errors, 404 if not found.
@@ -102,8 +100,7 @@ def handle_update_step_passes(
     try:
         updated = update_step_passes(
             table_id, step_number, passes,
-            project_root=project_root,
-            already_verified=already_verified, project_id=project_id,
+            project_root=project_root, project_id=project_id,
         )
     except (StepGateError, StepVerificationError) as e:
         _raise_passes_error(e)

@@ -76,17 +76,8 @@ def create_architecture_subtasks(
         subtask_full_id = cast(str, subtask["id"])
         file = affected_files[idx] if idx < len(affected_files) else ""
         steps = [
-            {
-                "description": f"Identify {violation_type.replace('_', ' ')} issue",
-                "verify_command": f"test -f {file}" if file else "",
-            },
-            {
-                "description": "Implement fix following project patterns",
-                "verify_command": "dt --quick --changed-only",
-            },
-            {
-                "description": "Verify fix with full quality gates",
-                "verify_command": "dt --check",
-            },
+            {"description": f"Identify {violation_type.replace('_', ' ')} issue"},
+            {"description": "Implement fix following project patterns"},
+            {"description": "Verify fix with full quality gates"},
         ]
         bulk_create_steps(subtask_full_id, steps)

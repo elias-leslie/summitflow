@@ -44,74 +44,33 @@ def get_violation_done_when(violation_type: str, table_name: str) -> list[str]:
 
 
 def get_violation_steps(violation_type: str, table_name: str, detail: str) -> list[dict[str, str]]:
-    """Generate verification steps for a schema violation task."""
+    """Generate steps for a schema violation task."""
     steps = {
         "missing_fk_index": [
-            {
-                "description": f"Create migration to add index on FK column in {table_name}",
-                "verify_command": f"ls backend/alembic/versions/*{table_name.lower()}*.py 2>/dev/null | head -1",
-            },
-            {
-                "description": "Apply migration",
-                "verify_command": "cd backend && alembic upgrade head",
-            },
-            {
-                "description": "Verify index exists",
-                "verify_command": f"psql $DATABASE_URL -c \"SELECT indexname FROM pg_indexes WHERE tablename = '{table_name}'\"",
-            },
+            {"description": f"Create migration to add index on FK column in {table_name}"},
+            {"description": "Apply migration"},
+            {"description": "Verify index exists"},
         ],
         "naming_violation": [
-            {
-                "description": f"Create migration to rename {table_name} or columns",
-                "verify_command": "ls backend/alembic/versions/*rename*.py 2>/dev/null | head -1",
-            },
-            {
-                "description": "Update all model references",
-                "verify_command": "dt types",
-            },
-            {
-                "description": "Apply migration",
-                "verify_command": "cd backend && alembic upgrade head",
-            },
+            {"description": f"Create migration to rename {table_name} or columns"},
+            {"description": "Update all model references"},
+            {"description": "Apply migration"},
         ],
         "missing_timestamps": [
-            {
-                "description": f"Create migration to add timestamps to {table_name}",
-                "verify_command": "ls backend/alembic/versions/*timestamp*.py 2>/dev/null | head -1",
-            },
-            {
-                "description": "Update SQLAlchemy model with timestamp columns",
-                "verify_command": f"rg 'created_at|updated_at' backend/app/models/*.py | rg -i {table_name}",
-            },
-            {
-                "description": "Apply migration",
-                "verify_command": "cd backend && alembic upgrade head",
-            },
+            {"description": f"Create migration to add timestamps to {table_name}"},
+            {"description": "Update SQLAlchemy model with timestamp columns"},
+            {"description": "Apply migration"},
         ],
         "god_table": [
-            {
-                "description": f"Analyze {table_name} for column groupings",
-                "verify_command": f"psql $DATABASE_URL -c \"SELECT column_name FROM information_schema.columns WHERE table_name = '{table_name}'\" | wc -l",
-            },
-            {
-                "description": "Create migration to extract related columns",
-                "verify_command": f"ls backend/alembic/versions/*{table_name.lower()}*.py 2>/dev/null | head -1",
-            },
-            {
-                "description": "Verify column count reduced",
-                "verify_command": f"psql $DATABASE_URL -c \"SELECT COUNT(*) FROM information_schema.columns WHERE table_name = '{table_name}'\" | tail -3 | head -1 | xargs test 20 -gt",
-            },
+            {"description": f"Analyze {table_name} for column groupings"},
+            {"description": "Create migration to extract related columns"},
+            {"description": "Verify column count reduced"},
         ],
     }
 
     return steps.get(
         violation_type,
-        [
-            {
-                "description": f"Fix schema violation in {table_name}: {detail}",
-                "verify_command": "dt types",
-            },
-        ],
+        [{"description": f"Fix schema violation in {table_name}: {detail}"}],
     )
 
 

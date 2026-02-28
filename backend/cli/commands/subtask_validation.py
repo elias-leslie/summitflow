@@ -52,13 +52,13 @@ def validate_steps_input(
         return parse_json_steps(steps_json)
     if steps:
         output_error(
-            "Warning: --step creates steps without verify_command. "
-            "Use --steps-json for proper step structure."
+            "Warning: --step creates steps as plain descriptions. "
+            "Use --steps-json for structured step objects."
         )
         return steps
 
     output_error(
-        "Steps are required. Use --steps-json with verify_command "
+        "Steps are required. Use --steps-json with description "
         "on each step."
     )
     raise typer.Exit(1)
@@ -110,6 +110,6 @@ def validate_step_object(step: Any, index: int) -> None:
     if not isinstance(step, dict):
         output_error(f"Step {index}: must be object, not {type(step).__name__}")
         raise typer.Exit(1)
-    if not step.get("verify_command"):
-        output_error(f"Step {index}: missing required 'verify_command'")
+    if not step.get("description"):
+        output_error(f"Step {index}: missing required 'description'")
         raise typer.Exit(1)

@@ -13,7 +13,7 @@ from .retry_execution import execute_fix_attempt
 from .retry_extensions import check_and_request_extension
 from .retry_infra import handle_infrastructure_failures
 from .retry_phases import determine_fix_prompt
-from .steps import verify_steps_with_smoke_tests
+from .steps import run_execution_quality_check
 from .worktree import check_worktree_health
 
 logger = get_logger(__name__)
@@ -92,7 +92,7 @@ def _healing_loop_body(
         steps = get_steps_for_subtask(subtask_id)
     if not check_worktree_health(project_path, task_id, project_id):
         return False, _WORKTREE_DESTROYED, self_fix_attempts, supervisor_guided_attempts, agent_session_id, total_max_attempts, extensions_granted, guidance, True
-    all_passed, step_results = verify_steps_with_smoke_tests(task_id, subtask_id, steps, project_path, project_id)
+    all_passed, step_results = run_execution_quality_check(task_id, subtask_id, steps, project_path, project_id)
     if all_passed:
         return True, step_results, self_fix_attempts, supervisor_guided_attempts, agent_session_id, total_max_attempts, extensions_granted, guidance, True
     if heal_attempt >= total_max_attempts:

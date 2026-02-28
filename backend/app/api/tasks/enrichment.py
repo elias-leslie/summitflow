@@ -60,16 +60,20 @@ async def _queue_async_enrichment(project_id: str, task_id: str, raw_request: st
 
 
 def _get_discussion_history(task: dict) -> list[dict[str, str]]:
-    """Extract discussion history from task plan_content."""
-    plan_content = task.get("plan_content") or {}
-    return list(plan_content.get("discussion_history", []))
+    """Extract discussion history from task metadata.
+
+    NOTE: Discussion history storage is not currently implemented.
+    Returns empty list — callers build history from request/response pairs.
+    """
+    return []
 
 
 def _save_discussion_history(task_id: str, task: dict, history: list[dict[str, str]]) -> None:
-    """Persist updated discussion history and enrichment status to storage."""
-    plan_content = dict(task.get("plan_content") or {})
-    plan_content["discussion_history"] = history
-    task_store.update_task(task_id, plan_content=plan_content)
+    """Persist updated discussion history and enrichment status to storage.
+
+    NOTE: Discussion history persistence is not currently implemented.
+    Only updates enrichment_status.
+    """
     if task.get("enrichment_status") == "review":
         task_store.update_task(task_id, enrichment_status="discussing")
 

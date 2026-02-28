@@ -51,8 +51,6 @@ def _format_subtask_lines(subtasks: list[dict[str, Any]]) -> tuple[list[str], in
             step_desc = step.get("description", "")[:60]
             status = "PASS" if step.get("passes") else "____"
             lines.append(f"  {step.get('step_number', 0)}. {status} {step_desc}")
-            if step.get("verify_command"):
-                lines.append(f"       verify: {step['verify_command']}")
     return lines, total_criteria, verified_criteria
 
 

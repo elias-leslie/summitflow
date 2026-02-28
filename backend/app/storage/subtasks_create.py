@@ -32,7 +32,7 @@ def _attach_steps(result: dict[str, object], table_id: str, steps: list[str | di
     try:
         result["steps"] = bulk_create_steps(table_id, steps)
     except ValueError:
-        raise  # Validation errors (bad verify_command) must propagate
+        raise  # Validation errors must propagate
     except Exception as e:
         logger.error("Failed to create steps for subtask %s: %s", table_id, e)
         # Continue - subtask created, steps failed (partial success)

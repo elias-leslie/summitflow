@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -180,12 +179,9 @@ class TestGetSubtasksForTask:
 class TestUpdateSubtaskPasses:
     """Tests for update_subtask_passes function."""
 
-    @patch("app.storage.steps_updates_passes.run_verify_command")
-    def test_update_passes_true(self, mock_verify: MagicMock, test_task: dict[str, Any]) -> None:
+    def test_update_passes_true(self, test_task: dict[str, Any]) -> None:
         """Test marking subtask as passing (with steps)."""
-        mock_verify.return_value = ("passed", 0, "ok")
-        steps: list[str | dict[str, Any]] = [{"description": "Step", "verify_command": "rg -q 'ok' file.py"}]
-        subtask = subtask_store.create_subtask(test_task["id"], "1.1", "Test", 0, steps=steps)
+        subtask = subtask_store.create_subtask(test_task["id"], "1.1", "Test", 0, steps=["Step"])
 
         # Complete step first
         step_store.update_step_passes(subtask["id"], 1, True)
@@ -199,12 +195,9 @@ class TestUpdateSubtaskPasses:
         assert updated["passes"] is True
         assert updated["passed_at"] is not None
 
-    @patch("app.storage.steps_updates_passes.run_verify_command")
-    def test_update_passes_false(self, mock_verify: MagicMock, test_task: dict[str, Any]) -> None:
+    def test_update_passes_false(self, test_task: dict[str, Any]) -> None:
         """Test marking subtask as not passing."""
-        mock_verify.return_value = ("passed", 0, "ok")
-        steps: list[str | dict[str, Any]] = [{"description": "Step", "verify_command": "rg -q 'ok' file.py"}]
-        subtask = subtask_store.create_subtask(test_task["id"], "1.1", "Test", 0, steps=steps)
+        subtask = subtask_store.create_subtask(test_task["id"], "1.1", "Test", 0, steps=["Step"])
 
         # Complete step and subtask
         step_store.update_step_passes(subtask["id"], 1, True)
@@ -218,12 +211,9 @@ class TestUpdateSubtaskPasses:
         assert updated["passes"] is False
         assert updated["passed_at"] is None
 
-    @patch("app.storage.steps_updates_passes.run_verify_command")
-    def test_update_passes_toggle(self, mock_verify: MagicMock, test_task: dict[str, Any]) -> None:
+    def test_update_passes_toggle(self, test_task: dict[str, Any]) -> None:
         """Test toggling pass status."""
-        mock_verify.return_value = ("passed", 0, "ok")
-        steps: list[str | dict[str, Any]] = [{"description": "Step", "verify_command": "rg -q 'ok' file.py"}]
-        subtask = subtask_store.create_subtask(test_task["id"], "1.1", "Test", 0, steps=steps)
+        subtask = subtask_store.create_subtask(test_task["id"], "1.1", "Test", 0, steps=["Step"])
 
         # Complete step
         step_store.update_step_passes(subtask["id"], 1, True)
@@ -446,15 +436,11 @@ class TestGetSubtaskSummary:
         assert summary["next_subtask_id"] == "1.1"
         assert summary["progress_percent"] == 0
 
-    @patch("app.storage.steps_updates_passes.run_verify_command")
-    def test_summary_partial(self, mock_verify: MagicMock, test_task: dict[str, Any]) -> None:
+    def test_summary_partial(self, test_task: dict[str, Any]) -> None:
         """Test summary with partial completion."""
-        mock_verify.return_value = ("passed", 0, "ok")
-        steps: list[str | dict[str, Any]] = [{"description": "Step", "verify_command": "rg -q 'ok' file.py"}]
-
-        subtask1 = subtask_store.create_subtask(test_task["id"], "1.1", "First", 0, steps=steps)
-        subtask_store.create_subtask(test_task["id"], "1.2", "Second", 1, steps=steps)
-        subtask_store.create_subtask(test_task["id"], "2.1", "Third", 2, steps=steps)
+        subtask1 = subtask_store.create_subtask(test_task["id"], "1.1", "First", 0, steps=["Step"])
+        subtask_store.create_subtask(test_task["id"], "1.2", "Second", 1, steps=["Step"])
+        subtask_store.create_subtask(test_task["id"], "2.1", "Third", 2, steps=["Step"])
 
         # Complete step and subtask for first one only
         step_store.update_step_passes(subtask1["id"], 1, True)
@@ -468,15 +454,11 @@ class TestGetSubtaskSummary:
         assert summary["next_subtask_id"] == "1.2"  # Next incomplete
         assert abs(summary["progress_percent"] - 33.3) < 0.1
 
-    @patch("app.storage.steps_updates_passes.run_verify_command")
-    def test_summary_all_complete(self, mock_verify: MagicMock, test_task: dict[str, Any]) -> None:
-        """Test summary with all complete (subtasks with steps verified)."""
-        mock_verify.return_value = ("passed", 0, "ok")
-
+    def test_summary_all_complete(self, test_task: dict[str, Any]) -> None:
+        """Test summary with all complete (subtasks with steps passed)."""
         # Create subtasks with steps (required for completion)
-        steps: list[str | dict[str, Any]] = [{"description": "Step", "verify_command": "rg -q 'ok' file.py"}]
-        subtask1 = subtask_store.create_subtask(test_task["id"], "1.1", "First", 0, steps=steps)
-        subtask2 = subtask_store.create_subtask(test_task["id"], "1.2", "Second", 1, steps=steps)
+        subtask1 = subtask_store.create_subtask(test_task["id"], "1.1", "First", 0, steps=["Step"])
+        subtask2 = subtask_store.create_subtask(test_task["id"], "1.2", "Second", 1, steps=["Step"])
 
         # Complete all steps first
         step_store.update_step_passes(subtask1["id"], 1, True)
@@ -513,16 +495,10 @@ class TestSubtaskGates:
         with pytest.raises(SubtaskGateError, match=r"steps.*are not complete"):
             subtask_store.update_subtask_passes(test_task["id"], "1.1", True)
 
-    @patch("app.storage.steps_updates_passes.run_verify_command")
-    def test_subtask_gate_allows_all_steps_complete(self, mock_verify: MagicMock, test_task: dict[str, Any]) -> None:
+    def test_subtask_gate_allows_all_steps_complete(self, test_task: dict[str, Any]) -> None:
         """Can mark subtask as passed when all steps are complete."""
-        mock_verify.return_value = ("passed", 0, "ok")
-        steps: list[str | dict[str, Any]] = [
-            {"description": "Step 1", "verify_command": "rg -q 'step1' file.py"},
-            {"description": "Step 2", "verify_command": "rg -q 'step2' file.py"},
-        ]
         subtask = subtask_store.create_subtask(
-            test_task["id"], "1.1", "Test subtask", 0, steps=steps
+            test_task["id"], "1.1", "Test subtask", 0, steps=["Step 1", "Step 2"]
         )
 
         # Complete all steps
@@ -537,16 +513,12 @@ class TestSubtaskGates:
 
     def test_subtask_gate_force_param_removed(self, test_task: dict[str, Any]) -> None:
         """Force flag has been removed - no bypass available."""
-        steps: list[str | dict[str, Any]] = [
-            {"description": "Step 1", "verify_command": "rg -q 'step1' file.py"},
-            {"description": "Step 2", "verify_command": "rg -q 'step2' file.py"},
-        ]
         subtask_store.create_subtask(
             test_task["id"],
             "1.1",
             "Test subtask",
             0,
-            steps=steps,
+            steps=["Step 1", "Step 2"],
         )
 
         # force=True should raise TypeError
@@ -565,16 +537,9 @@ class TestSubtaskGates:
         with pytest.raises(SubtaskGateError, match="subtask has no steps"):
             subtask_store.update_subtask_passes(test_task["id"], "1.1", True)
 
-    @patch("app.storage.steps_updates_passes.run_verify_command")
-    def test_subtask_gate_partial_completion_blocks(self, mock_verify: MagicMock, test_task: dict[str, Any]) -> None:
+    def test_subtask_gate_partial_completion_blocks(self, test_task: dict[str, Any]) -> None:
         """Subtask with some steps complete blocks remaining."""
-        mock_verify.return_value = ("passed", 0, "ok")
-        steps: list[str | dict[str, Any]] = [
-            {"description": "Step 1", "verify_command": "rg -q 'step1' file.py"},
-            {"description": "Step 2", "verify_command": "rg -q 'step2' file.py"},
-            {"description": "Step 3", "verify_command": "rg -q 'step3' file.py"},
-        ]
-        subtask = subtask_store.create_subtask(test_task["id"], "1.1", "Test", 0, steps=steps)
+        subtask = subtask_store.create_subtask(test_task["id"], "1.1", "Test", 0, steps=["Step 1", "Step 2", "Step 3"])
 
         # Complete only step 1
         step_store.update_step_passes(subtask["id"], 1, True)

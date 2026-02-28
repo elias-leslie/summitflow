@@ -51,7 +51,6 @@ def auto_defect_step(
             [
                 {
                     "description": f"Fix: auto-defect for step {step_number} (infrastructure failure)",
-                    "verify_command": "echo 'auto-defect fix' && true",
                 }
             ],
         )

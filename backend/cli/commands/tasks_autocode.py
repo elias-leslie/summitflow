@@ -62,15 +62,6 @@ def _validate_task_for_autocode(
     subtasks: list[dict[str, object]],
 ) -> None:
     """Validate that task can be autocoded."""
-    labels = task.get("labels")
-    is_crowdsourced = isinstance(labels, list) and "crowdsourced" in labels
-    if not subtasks and not is_crowdsourced:
-        output_error(
-            f"Task {task_id} has no subtasks. "
-            "Use 'st autocode' to generate a plan."
-        )
-        raise typer.Exit(1)
-
     current_status = task.get("status", "pending")
     if current_status in ("running", "queue"):
         output_error(f"Task {task_id} is already {current_status}.")

@@ -37,7 +37,6 @@ def _build_subtask_entry(task_id: str, st: dict[str, Any]) -> dict[str, Any]:
                 "step_number": s["step_number"],
                 "description": s["description"],
                 "spec": s.get("spec"),
-                "verify_command": s.get("verify_command"),
                 "passes": s.get("passes", False),
                 "status": s.get("status"),
             }

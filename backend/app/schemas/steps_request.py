@@ -3,10 +3,9 @@
 Covers create, update, insert, and batch-create request bodies.
 """
 
-import re
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 
 class StepInput(BaseModel):
@@ -28,10 +27,6 @@ class StepUpdate(BaseModel):
     """Request model for updating step pass status."""
 
     passes: bool = Field(description="Whether step passes/is complete")
-    already_verified: bool = Field(
-        default=False,
-        description="Skip server-side verification (caller already ran verify_command)",
-    )
 
 
 class StepInsert(BaseModel):
@@ -42,30 +37,14 @@ class StepInsert(BaseModel):
 
 
 class StepCreateWithVerification(BaseModel):
-    """Request model for creating a single step with required verification."""
+    """Request model for creating a single step."""
 
     description: str = Field(min_length=1, description="Step description")
-    verify_command: str = Field(
-        min_length=1, description="Bash command to verify completion (exit 0 = pass)"
-    )
     spec: dict[str, Any] | None = Field(default=None, description="Step implementation spec")
-
-    @field_validator("verify_command")
-    @classmethod
-    def reject_absolute_paths(cls, v: str) -> str:
-        if re.search(r"\bcd\s+/[^\s;|&]+", v):
-            raise ValueError(f"verify_command must not contain absolute cd paths: {v[:80]}")
-        if re.search(r"(?:^|\s)/(?:home|root|tmp|var|opt|usr)/\S+", v):
-            raise ValueError(f"verify_command must not contain absolute paths: {v[:80]}")
-        return v
 
 
 class StepFieldsUpdate(BaseModel):
-    """Request model for updating step fields (description only).
-
-    NOTE: verify_command is immutable after creation.
-    Only the description field can be updated.
-    """
+    """Request model for updating step fields (description only)."""
 
     description: str | None = Field(default=None, min_length=1, description="Step description")
 

@@ -1,7 +1,7 @@
-"""Step verification and step-related utilities.
+"""Step utilities and quality check orchestration.
 
-This module re-exports functions from specialized submodules and provides
-high-level verification orchestration.
+This module provides step management and quality verification
+via smoke tests and targeted tests.
 """
 
 from __future__ import annotations
@@ -16,7 +16,6 @@ from .step_defect import (
 )
 from .step_issue import compute_issue_id
 from .step_smoke_tests import run_smoke_and_targeted_tests
-from .step_verification import verify_single_step
 
 __all__ = [
     "INFRASTRUCTURE_PATTERNS",
@@ -24,8 +23,7 @@ __all__ = [
     "compute_issue_id",
     "is_infrastructure_failure",
     "reset_steps_for_rerun",
-    "verify_steps",
-    "verify_steps_with_smoke_tests",
+    "run_execution_quality_check",
 ]
 
 
@@ -46,52 +44,61 @@ def reset_steps_for_rerun(subtasks: list[dict[str, Any]]) -> None:
                 update_step_passes(subtask_table_id, step["step_number"], passes=False)
 
 
-def verify_steps(
-    task_id: str,
-    subtask_id: str,
-    steps: list[dict[str, Any]],
-    project_path: str,
-    project_id: str,
-) -> list[dict[str, Any]]:
-    """Run verify_command for each step and check exit code.
-
-    Short-circuits: once a step fails, remaining steps are skipped.
-    Steps already marked plan_defect are also skipped.
-    """
-    results: list[dict[str, Any]] = []
-    first_failed: int | None = None
-
-    for step in steps:
-        result = verify_single_step(
-            step, task_id, subtask_id, project_path, project_id, first_failed
-        )
-        results.append(result)
-
-        if not result["passed"] and first_failed is None:
-            first_failed = result["step_number"]
-
-    return results
-
-
-def verify_steps_with_smoke_tests(
+def run_execution_quality_check(
     task_id: str,
     subtask_id: str,
     steps: list[dict[str, Any]],
     project_path: str,
     project_id: str,
 ) -> tuple[bool, list[dict[str, Any]]]:
-    """Verify steps and run smoke tests on changed files.
+    """Run quality check: auto-mark steps passed, then run smoke/targeted tests.
+
+    This replaces the old verify_steps_with_smoke_tests flow. Steps are now
+    progress trackers (auto-marked passed), and smoke/targeted tests are the
+    primary verification signal.
 
     Returns:
         Tuple of (all_passed, step_results)
     """
-    step_results = verify_steps(task_id, subtask_id, steps, project_path, project_id)
-    all_passed = all(r["passed"] for r in step_results)
+    from ....storage.steps_constants import STEP_STATUS_PLAN_DEFECT
 
-    # Run smoke tests and targeted tests if explicit verification passed
-    if all_passed:
-        all_passed = run_smoke_and_targeted_tests(
-            task_id, project_path, project_id, step_results
-        )
+    step_results: list[dict[str, Any]] = []
+
+    # Auto-mark all non-defect steps as passed
+    for step in steps:
+        step_num = step.get("step_number", 0)
+        status = step.get("status", "")
+
+        if status == STEP_STATUS_PLAN_DEFECT:
+            step_results.append({
+                "step_number": step_num,
+                "passed": True,
+                "output": "plan_defect — skipped",
+                "reason": "plan_defect",
+                "returncode": 0,
+            })
+            continue
+
+        if not step.get("passes"):
+            update_step_passes(subtask_id, step_num, passes=True, project_id=project_id)
+
+        step_results.append({
+            "step_number": step_num,
+            "passed": True,
+            "output": "",
+            "reason": "auto_passed",
+            "returncode": 0,
+        })
+
+    # Run smoke tests and targeted tests as primary verification
+    all_passed = run_smoke_and_targeted_tests(
+        task_id, project_path, project_id, step_results
+    )
+
+    if not all_passed:
+        # Mark last step as failed to trigger healing loop
+        if step_results:
+            step_results[-1]["passed"] = False
+            step_results[-1]["reason"] = "smoke_test_failure"
 
     return all_passed, step_results

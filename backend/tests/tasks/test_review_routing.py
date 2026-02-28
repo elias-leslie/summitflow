@@ -468,7 +468,7 @@ class TestHandlePlanDefect:
         self, mock_create: MagicMock, mock_log: MagicMock,
     ) -> None:
         review = {
-            "recommendation": "verify_command checks wrong file",
+            "recommendation": "step checks wrong file",
             "fix_steps": ["Check correct file path"],
         }
         handle_plan_defect("task-1", review)

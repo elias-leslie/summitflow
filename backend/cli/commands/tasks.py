@@ -21,7 +21,8 @@ def create(
     labels: Annotated[str | None, typer.Option("-l", "--labels")] = None,
     task_type: Annotated[str, typer.Option("-t", "--type")] = "task",
     parent: Annotated[str | None, typer.Option("--parent")] = None,
-    plan: Annotated[str | None, typer.Option("--plan")] = None,
+    plan: Annotated[Path | None, typer.Option("--plan")] = None,
+    task_id: Annotated[str | None, typer.Option("--task")] = None,
     blocked_by: Annotated[str | None, typer.Option("--blocked-by")] = None,
     autonomous: Annotated[bool, typer.Option("--autonomous")] = False,
 ) -> None:
@@ -30,7 +31,7 @@ def create(
 
     create_task_command(
         title, from_file, dry_run, description, priority, labels,
-        task_type, parent, plan, blocked_by, autonomous
+        task_type, parent, plan, blocked_by, autonomous, task_id
     )
 
 
@@ -186,18 +187,11 @@ def autocode(
     autocode_task(require_task_id(task_id), dry_run, at, STClient(require_project=False))
 
 
-@app.command("import")
-def import_plan(
-    file_path: Annotated[Path, typer.Argument()],
-    dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
-    task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
-) -> None:
-    """Import a plan.json file as a SummitFlow task."""
-    from .tasks_import import import_plan_file
-
-    task, task_id = import_plan_file(file_path, dry_run, task_id, STClient())
-    complexity = task.get("complexity", "SIMPLE")
-    typer.echo(f"IMPORT:{task_id}|{complexity}|{len(task.get('subtasks', []))} subtasks")
+@app.command("import", hidden=True)
+def import_plan_removed() -> None:
+    """Removed: use st create --plan plan.json instead."""
+    typer.echo("Error: 'import' removed. Use 'st create --plan plan.json'", err=True)
+    raise typer.Exit(1)
 
 
 # Error stubs for removed commands

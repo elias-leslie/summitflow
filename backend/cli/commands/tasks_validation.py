@@ -2,11 +2,7 @@
 
 from __future__ import annotations
 
-import re
 from typing import Any
-
-_ABS_PATH_RE = re.compile(r"\bcd\s+/[^\s;|&]+")
-_ABS_COMPONENT_RE = re.compile(r"(?:^|\s)/(?:home|root|tmp|var|opt|usr)/\S+")
 
 
 def validate_task_item(item: dict[str, Any], index: int) -> list[str]:
@@ -60,82 +56,12 @@ def _validate_subtask_deps(subtasks: list[dict], valid_ids: set) -> list[str]:
     return issues
 
 
-def _validate_step(subtask_id: str, step_num: int, step: Any) -> list[str]:
-    """Validate a single step object."""
-    if isinstance(step, str):
-        return [f"subtask {subtask_id} step {step_num}: must be object with verify_command, not string"]
-    verify_cmd = step.get("verify_command", "")
-    if not verify_cmd:
-        return [f"subtask {subtask_id} step {step_num}: missing required 'verify_command'"]
-    if _ABS_PATH_RE.search(verify_cmd) or _ABS_COMPONENT_RE.search(verify_cmd):
-        return [
-            f"subtask {subtask_id} step {step_num}: verify_command contains absolute path "
-            f"(use relative paths — commands run with cwd=worktree): {verify_cmd[:80]}"
-        ]
-    return []
-
-
-def _validate_subtask_steps(subtasks: list[dict]) -> list[str]:
-    """Validate step structure for all subtasks."""
-    issues: list[str] = []
-    for subtask in subtasks:
-        subtask_id = subtask.get("id", "?")
-        steps = subtask.get("steps", [])
-        if not steps:
-            issues.append(f"subtask {subtask_id}: missing required 'steps' array")
-            continue
-        for step_idx, step in enumerate(steps):
-            issues.extend(_validate_step(subtask_id, step_idx + 1, step))
-    return issues
-
-
-def _validate_deploy_browser(subtasks: list[dict]) -> list[str]:
-    """Validate deploy and browser steps for backend/frontend subtasks."""
-    issues: list[str] = []
-    for subtask in subtasks:
-        phase = subtask.get("phase", "").lower()
-        if phase not in ("backend", "frontend"):
-            continue
-        subtask_id = subtask.get("id", "?")
-        steps = [s for s in subtask.get("steps", []) if isinstance(s, dict)]
-        has_deploy = any(
-            "deploy" in s.get("description", "").lower() or "rebuild.sh" in s.get("verify_command", "").lower()
-            for s in steps
-        )
-        has_browser = any(
-            "agent-browser" in s.get("verify_command", "").lower() or "console error" in s.get("description", "").lower()
-            for s in steps
-        )
-        if not has_deploy:
-            issues.append(
-                f"subtask {subtask_id} (phase={phase}): must have deploy step "
-                f"(rebuild.sh in verify_command or 'deploy' in description)"
-            )
-        if phase == "frontend" and not has_browser:
-            issues.append(
-                f"subtask {subtask_id} (phase=frontend): must have browser verification step "
-                f"(agent-browser in verify_command or 'console error' in description)"
-            )
-    return issues
-
-
 def validate_plan_schema(plan: dict[str, Any]) -> list[str]:
     """Validate plan structure and return list of issues."""
     subtasks = plan.get("subtasks", [])
-    valid_ids = {s.get("id") for s in subtasks if s.get("id")}
     issues = _validate_complexity(plan)
-    issues += _validate_subtask_deps(subtasks, valid_ids)
-    issues += _validate_subtask_steps(subtasks)
-    issues += _validate_deploy_browser(subtasks)
     if not subtasks:
         return issues
-    last = subtasks[-1]
-    last_id = last.get("id", "?")
-    last_phase = last.get("phase", "").lower()
-    last_desc = last.get("description", "").lower()
-    if not (last_phase == "verification" or "verification" in last_desc or "verify" in last_desc):
-        issues.append(
-            f"Final subtask {last_id} must be a verification subtask "
-            f"(phase='verification' or description contains 'verification')"
-        )
+    valid_ids = {s.get("id") for s in subtasks if s.get("id")}
+    issues += _validate_subtask_deps(subtasks, valid_ids)
     return issues

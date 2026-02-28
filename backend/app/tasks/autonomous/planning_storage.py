@@ -38,10 +38,7 @@ def save_plan_to_database(task_id: str, plan_data: dict[str, Any]) -> None:
             for step in steps:
                 if isinstance(step, dict):
                     formatted_steps.append(
-                        {
-                            "description": step.get("description", ""),
-                            "verify_command": step.get("verify_command"),
-                        }
+                        {"description": step.get("description", "")}
                     )
                 else:
                     formatted_steps.append({"description": str(step)})

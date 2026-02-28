@@ -25,13 +25,13 @@ def create_subtask(
     steps: Annotated[list[str] | None, typer.Option("--step")] = None,
     steps_json: Annotated[
         str | None,
-        typer.Option("--steps-json", help="JSON array of step objects with verify_command"),
+        typer.Option("--steps-json", help="JSON array of step objects"),
     ] = None,
 ) -> None:
     """Create a subtask for a task. Uses active context if no --task given.
 
-    Steps require verify_command. Use --steps-json for full step objects,
-    or --step for legacy simple descriptions.
+    Use --steps-json for structured step objects,
+    or --step for simple descriptions.
     """
     from ..context import require_task_id
 

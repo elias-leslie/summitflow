@@ -146,22 +146,18 @@ def _assemble_steps(
     if any(i in issues for i in _SIZE_ISSUES) or not issues:
         steps.append({
             "description": f"Refactor {relative_path} from {lines} to <{target_lines} lines",
-            "verify_command": f"test $(wc -l < {relative_path}) -lt {target_lines}",
         })
     structural_checks = _build_structural_checks(relative_path, issues)
     if structural_checks:
         steps.append({
             "description": "Verify structural issues resolved (function length, nesting, counts)",
-            "verify_command": " && ".join(structural_checks),
         })
     steps.append({
         "description": "Quality gate: auto-fix, lint, types, targeted tests",
-        "verify_command": f"dt --fix 2>/dev/null; {get_targeted_test_command(relative_path)} && dt --quick --changed-only",
     })
     if is_frontend:
         steps.append({
             "description": "Verify no console errors in browser",
-            "verify_command": "agent-browser open http://localhost:3001 && agent-browser wait --load networkidle",
         })
     return steps
 
@@ -188,6 +184,6 @@ def build_refactor_steps(
         refactor_issues: List of specific issue identifiers to verify
 
     Returns:
-        List of step dictionaries with description, verify_command
+        List of step dictionaries with description
     """
     return _assemble_steps(relative_path, lines, target_lines, is_frontend, refactor_issues or [])

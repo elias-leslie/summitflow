@@ -145,20 +145,8 @@ async def validate_completion_gates(task_id: str) -> None:
         )
 
     step_status = await asyncio.to_thread(get_step_verification_status, task_id)
-    if step_status["total"] == 0:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "message": "Cannot complete task with zero steps",
-                "total_steps": 0,
-                "what_to_do": [
-                    "Every task must have at least one step with verify_command",
-                    "Create subtasks with steps, or import a proper plan.json",
-                ],
-            },
-        )
-
-    if not step_status["all_verified"]:
+    # Steps are optional progress trackers — zero steps is valid for bare/intent-only tasks
+    if step_status["total"] > 0 and not step_status["all_verified"]:
         raise HTTPException(
             status_code=422,
             detail={

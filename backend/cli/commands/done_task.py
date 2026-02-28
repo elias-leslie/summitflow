@@ -26,7 +26,7 @@ from .done_validators import parse_db_error
 def _auto_commit_worktree(worktree_path: str) -> bool:
     """Auto-commit tracked changes in worktree via commit.sh.
 
-    Uses --skip-checks (st done runs its own verify_commands) and
+    Uses --skip-checks (st done runs its own quality gates) and
     --no-push (branch is ephemeral — about to be merged and deleted).
     commit.sh handles pre-commit hook retries automatically.
     """

@@ -33,9 +33,6 @@ from .exec_modules.quality import (
 from .exec_modules.steps import (
     is_infrastructure_failure as _is_infrastructure_failure,
 )
-from .exec_modules.steps import (
-    verify_steps as _verify_steps,
-)
 from .exec_modules.subtask_executor import execute_subtask as _execute_subtask
 from .exec_modules.worktree import (
     check_main_repo_leakage as _check_main_repo_leakage,
@@ -54,7 +51,6 @@ __all__ = [
     "_parse_error_count",
     "_request_extension",
     "_supervisor_circuit_breaker_triage",
-    "_verify_steps",
     "check_pristine_codebase",
     "pristine_self_heal",
     "start_execution",

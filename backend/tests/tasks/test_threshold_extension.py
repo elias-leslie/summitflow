@@ -249,7 +249,7 @@ class TestHealLoopExtension:
     @patch("app.tasks.autonomous.exec_modules.retry_loop.determine_fix_prompt")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.handle_infrastructure_failures")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.check_and_request_extension")
-    @patch("app.tasks.autonomous.exec_modules.retry_loop.verify_steps_with_smoke_tests")
+    @patch("app.tasks.autonomous.exec_modules.retry_loop.run_execution_quality_check")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.check_worktree_health")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.get_steps_for_subtask")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.agent_configs")
@@ -274,7 +274,7 @@ class TestHealLoopExtension:
 
         mock_worktree_health.return_value = True
         mock_get_steps.return_value = [
-            {"step_number": 1, "description": "test", "verify_command": "echo ok"},
+            {"step_number": 1, "description": "test"},
         ]
 
         total_normal = SELF_HEAL_MAX_ATTEMPTS + SUPERVISOR_GUIDED_MAX_ATTEMPTS
@@ -301,10 +301,10 @@ class TestHealLoopExtension:
             "id": "sub-1",
             "subtask_id": "1.1",
             "description": "test subtask",
-            "steps_from_table": [{"step_number": 1, "description": "test", "verify_command": "echo ok"}],
+            "steps_from_table": [{"step_number": 1, "description": "test"}],
         }
 
-        steps = [{"step_number": 1, "description": "test", "verify_command": "echo ok"}]
+        steps = [{"step_number": 1, "description": "test"}]
 
         all_passed, _step_results, _self_fix, _supervisor_guided, extensions_granted, _session_id = (
             run_self_healing_loop(
@@ -329,7 +329,7 @@ class TestHealLoopExtension:
     @patch("app.tasks.autonomous.exec_modules.retry_loop.determine_fix_prompt")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.handle_infrastructure_failures")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.check_and_request_extension")
-    @patch("app.tasks.autonomous.exec_modules.retry_loop.verify_steps_with_smoke_tests")
+    @patch("app.tasks.autonomous.exec_modules.retry_loop.run_execution_quality_check")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.check_worktree_health")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.get_steps_for_subtask")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.agent_configs")
@@ -352,7 +352,7 @@ class TestHealLoopExtension:
 
         mock_worktree_health.return_value = True
         mock_get_steps.return_value = [
-            {"step_number": 1, "description": "test", "verify_command": "echo ok"},
+            {"step_number": 1, "description": "test"},
         ]
 
         fail_result = [{"step_number": 1, "passed": False, "output": "error", "reason": "threshold", "returncode": 1}]
@@ -369,9 +369,9 @@ class TestHealLoopExtension:
             "id": "sub-1",
             "subtask_id": "1.1",
             "description": "test subtask",
-            "steps_from_table": [{"step_number": 1, "description": "test", "verify_command": "echo ok"}],
+            "steps_from_table": [{"step_number": 1, "description": "test"}],
         }
-        steps = [{"step_number": 1, "description": "test", "verify_command": "echo ok"}]
+        steps = [{"step_number": 1, "description": "test"}]
 
         all_passed, _step_results, _self_fix, _supervisor_guided, extensions_granted, _session_id = (
             run_self_healing_loop(
@@ -396,7 +396,7 @@ class TestHealLoopExtension:
     @patch("app.tasks.autonomous.exec_modules.retry_loop.determine_fix_prompt")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.handle_infrastructure_failures")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.check_and_request_extension")
-    @patch("app.tasks.autonomous.exec_modules.retry_loop.verify_steps_with_smoke_tests")
+    @patch("app.tasks.autonomous.exec_modules.retry_loop.run_execution_quality_check")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.check_worktree_health")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.get_steps_for_subtask")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.agent_configs")
@@ -420,7 +420,7 @@ class TestHealLoopExtension:
 
         mock_worktree_health.return_value = True
         mock_get_steps.return_value = [
-            {"step_number": 1, "description": "test", "verify_command": "echo ok"},
+            {"step_number": 1, "description": "test"},
         ]
 
         fail_result = [{"step_number": 1, "passed": False, "output": "error", "reason": "failed", "returncode": 1}]
@@ -437,9 +437,9 @@ class TestHealLoopExtension:
             "id": "sub-1",
             "subtask_id": "1.1",
             "description": "test subtask",
-            "steps_from_table": [{"step_number": 1, "description": "test", "verify_command": "echo ok"}],
+            "steps_from_table": [{"step_number": 1, "description": "test"}],
         }
-        steps = [{"step_number": 1, "description": "test", "verify_command": "echo ok"}]
+        steps = [{"step_number": 1, "description": "test"}]
 
         all_passed, _step_results, _self_fix, _supervisor_guided, extensions_granted, _session_id = (
             run_self_healing_loop(

@@ -15,7 +15,6 @@ from ...storage import log_task_event
 from ...storage import tasks as task_store
 from .planning_routing import route_based_on_complexity, supervisor_validate_plan
 from .planning_storage import save_plan_to_database
-from .planning_validation import validate_and_fix_plan
 
 logger = get_logger(__name__)
 
@@ -46,21 +45,14 @@ You MUST respond with a JSON object (no markdown, no explanation outside the JSO
             "description": "What this subtask accomplishes",
             "steps": [
                 {{
-                    "description": "Specific implementation step",
-                    "verify_command": "rg -q 'pattern' file && echo OK"
+                    "description": "Specific implementation step"
                 }}
             ],
             "depends_on": []
         }}
     ],
     "constraints": ["Any constraints or non-goals"]
-}}
-
-Rules for verify_command:
-- Use relative paths (commands run in worktree, not main repo)
-- Must exit non-zero on failure: rg -q, test -f, pytest
-- No trivial commands (echo, true, exit 0)
-- No absolute paths (/home/..., /tmp/...)"""
+}}"""
 
 
 def _fetch_task_for_planning(task_id: str) -> dict[str, Any] | None:
@@ -170,7 +162,6 @@ def _parse_plan_response(content: str) -> dict[str, Any]:
         json_match = re.search(r"\{[\s\S]*\}", content)
         if json_match:
             parsed: dict[str, Any] = json.loads(json_match.group())
-            validate_and_fix_plan(parsed)
             return parsed
     except json.JSONDecodeError as e:
         logger.warning("Failed to parse plan JSON", error=str(e))
@@ -179,7 +170,6 @@ def _parse_plan_response(content: str) -> dict[str, Any]:
 
 
 # Re-export internal functions for backward compatibility with tests
-_validate_and_fix_plan = validate_and_fix_plan
 _supervisor_validate_plan = supervisor_validate_plan
 _save_plan_to_database = save_plan_to_database
 _route_based_on_complexity = route_based_on_complexity

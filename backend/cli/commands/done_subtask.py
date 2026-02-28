@@ -98,7 +98,7 @@ def auto_close_subtasks(
     """Auto-verify steps, acknowledge citations, and close unpassed subtasks.
 
     For each subtask not yet passed:
-    1. Verify unpassed steps via API (server-side verify_command execution)
+    1. Verify unpassed steps via API (server-side pass marking)
     2. Acknowledge citations if not already done
     3. Close the subtask and merge its branch
 

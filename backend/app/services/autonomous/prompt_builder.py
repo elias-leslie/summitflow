@@ -87,21 +87,10 @@ def _add_steps_from_subtasks(lines: list[str], task_id: str) -> bool:
 
 
 def _add_steps(lines: list[str], task: dict[str, Any]) -> None:
-    """Add steps to the prompt from subtasks or plan content."""
+    """Add steps to the prompt from subtasks."""
     task_id = task.get("id")
-    if task_id and _add_steps_from_subtasks(lines, task_id):
-        return
-
-    plan = task.get("plan_content") or {}
-    if not isinstance(plan, dict):
-        return
-    tasks = plan.get("tasks", [])
-    current_id = plan.get("current_task_id")
-    cur = next((t for t in tasks if t.get("id") == current_id), None)
-    if cur is None:
-        return
-    lines.append("**Steps to complete:**")
-    lines.extend([f"1. {s}" for s in cur.get("steps", [])] + [""])
+    if task_id:
+        _add_steps_from_subtasks(lines, task_id)
 
 
 def _add_rules(lines: list[str], rules: dict[str, str]) -> None:

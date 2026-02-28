@@ -31,28 +31,9 @@ def validate_subtask_environment(
     if not steps:
         emit_log(
             task_id,
-            "error",
-            f"Subtask {subtask_short_id} has 0 steps — cannot verify",
+            "info",
+            f"Subtask {subtask_short_id} has 0 steps — will use smoke tests only",
             source="orchestrator",
-            project_id=project_id,
-        )
-        return {
-            "subtask_id": subtask_short_id,
-            "status": "failed",
-            "passed": False,
-            "reason": "zero_steps",
-            "step_results": [],
-        }
-
-    from .preflight import check_verify_commands_red
-
-    preflight_warnings = check_verify_commands_red(steps, project_path, project_id=project_id)
-    for warn in preflight_warnings:
-        emit_log(
-            task_id,
-            "warn",
-            warn["warning"],
-            source="preflight",
             project_id=project_id,
         )
 

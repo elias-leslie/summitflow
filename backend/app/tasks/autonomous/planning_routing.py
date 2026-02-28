@@ -52,48 +52,66 @@ def route_based_on_complexity(task_id: str, title: str, description: str) -> Non
         title: Task title
         description: Task description
     """
-    assessor = ComplexityAssessor()
-    result = assessor.assess_sync(title, description)
-
-    task_store.update_task(task_id, complexity=result.tier.value)
-
     task = task_store.get_task(task_id)
     project_id = task.get("project_id", "summitflow") if task else "summitflow"
 
-    if result.tier == ComplexityTier.COMPLEX:
-        approved = supervisor_validate_plan(task_id, result.reasoning, project_id)
+    # Respect existing complexity if already set (e.g. from plan import)
+    existing_complexity = task.get("complexity") if task else None
+    if existing_complexity:
+        try:
+            tier = ComplexityTier(existing_complexity)
+        except ValueError:
+            tier = None
+        if tier:
+            result_tier = tier
+            result_reasoning = f"Pre-set complexity: {existing_complexity}"
+        else:
+            assessor = ComplexityAssessor()
+            assessed = assessor.assess_sync(title, description)
+            result_tier = assessed.tier
+            result_reasoning = assessed.reasoning
+            task_store.update_task(task_id, complexity=result_tier.value)
+    else:
+        assessor = ComplexityAssessor()
+        assessed = assessor.assess_sync(title, description)
+        result_tier = assessed.tier
+        result_reasoning = assessed.reasoning
+        task_store.update_task(task_id, complexity=result_tier.value)
+
+    if result_tier == ComplexityTier.COMPLEX:
+        approved = supervisor_validate_plan(task_id, result_reasoning, project_id)
         if approved:
             task_store.update_task_status(task_id, "queue")
             log_task_event(
                 task_id,
-                f"Complexity: {result.tier.value} - Supervisor approved, queued for execution. "
-                f"Reason: {result.reasoning}",
+                f"Complexity: {result_tier.value} - Supervisor approved, queued for execution. "
+                f"Reason: {result_reasoning}",
             )
             logger.info(
                 "Complex task supervisor-approved, queued",
                 task_id=task_id,
-                complexity=result.tier.value,
+                complexity=result_tier.value,
             )
         else:
             task_store.update_task_status(task_id, "blocked")
             log_task_event(
                 task_id,
-                f"Complexity: {result.tier.value} - Supervisor blocked task. "
-                f"Reason: {result.reasoning}",
+                f"Complexity: {result_tier.value} - Supervisor blocked task. "
+                f"Reason: {result_reasoning}",
             )
             logger.info(
                 "Complex task blocked by supervisor",
                 task_id=task_id,
-                complexity=result.tier.value,
+                complexity=result_tier.value,
             )
     else:
         task_store.update_task_status(task_id, "queue")
         log_task_event(
             task_id,
-            f"Complexity: {result.tier.value} - Plan ready, queued for execution.",
+            f"Complexity: {result_tier.value} - Plan ready, queued for execution.",
         )
         logger.info(
             "Task queued for execution",
             task_id=task_id,
-            complexity=result.tier.value,
+            complexity=result_tier.value,
         )

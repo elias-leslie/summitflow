@@ -5,7 +5,7 @@ Split from monolithic tasks.py (1981 lines) into focused modules:
 - dependencies.py: Task dependency management
 - enrichment.py: AI-powered task enrichment
 - subtasks.py: Subtask management
-- steps.py: Step management within subtasks (with verify_command support)
+- steps.py: Step management within subtasks
 - logging.py: Progress logging, SSE streaming, task claiming
 - workflow.py: Task workflow automation
 """

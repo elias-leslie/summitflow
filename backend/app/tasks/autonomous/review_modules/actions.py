@@ -82,7 +82,7 @@ def create_fix_subtask(task_id: str, review_result: dict[str, object]) -> None:
     create_subtask(
         task_id=task_id, subtask_id="99.1", description=description[:500],
         display_order=99, phase="backend",
-        steps=[{"description": "Address reviewer feedback", "verify_command": None}],
+        steps=[{"description": "Address reviewer feedback"}],
     )
     logger.info("Created fix subtask from review feedback", task_id=task_id)
 
@@ -94,9 +94,9 @@ def handle_plan_defect(task_id: str, review_result: dict[str, object]) -> None:
     recommendation = review_result.get("recommendation", "Implementation correct, verification fixed")
     fix_steps = review_result.get("fix_steps", []) or []
     steps_list = [
-        {"description": fix if isinstance(fix, str) else str(fix), "verify_command": None}
+        {"description": fix if isinstance(fix, str) else str(fix)}
         for fix in fix_steps  # type: ignore[union-attr]
-    ] or [{"description": "Verify correct implementation with fixed command", "verify_command": None}]
+    ] or [{"description": "Verify correct implementation with fixed command"}]
     create_subtask(
         task_id=task_id, subtask_id="98.1",
         description=f"Plan Defect Fix: {str(recommendation)[:400]}",

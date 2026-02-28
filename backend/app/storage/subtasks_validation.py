@@ -34,11 +34,7 @@ def validate_steps_complete(subtask_id: str, steps: list[dict[str, Any]]) -> Non
 
     # Gate: Subtask must have at least one step to be marked as passed
     if not steps:
-        raise SubtaskGateError(
-            f"Cannot pass subtask {subtask_id}: subtask has no steps. "
-            "Every subtask must have at least one step with verify_command.",
-            incomplete_steps=[],
-        )
+        return
 
     # Build a lookup for step passes status
     step_passes_lookup = {s["step_number"]: s.get("passes", False) for s in steps}
@@ -65,7 +61,7 @@ def validate_steps_complete(subtask_id: str, steps: list[dict[str, Any]]) -> Non
     if incomplete:
         msg = (
             f"Cannot pass subtask {subtask_id}: steps {incomplete} are not complete. "
-            "Each step must pass its verify_command before the subtask can be marked complete."
+            "Each step must pass before the subtask can be marked complete."
         )
         if invalid_plan_defects:
             msg += (

@@ -224,7 +224,7 @@ class TestModelEscalation:
         "app.tasks.autonomous.exec_modules.retry_loop.handle_infrastructure_failures"
     )
     @patch(
-        "app.tasks.autonomous.exec_modules.retry_loop.verify_steps_with_smoke_tests"
+        "app.tasks.autonomous.exec_modules.retry_loop.run_execution_quality_check"
     )
     @patch("app.tasks.autonomous.exec_modules.retry_loop.check_worktree_health")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.get_steps_for_subtask")
@@ -240,7 +240,7 @@ class TestModelEscalation:
         """During self-heal phase (attempts < threshold), model_override is None."""
         from app.tasks.autonomous.exec_modules.retry_loop import run_self_healing_loop
 
-        steps = [{"step_number": 1, "description": "Test", "verify_command": "echo ok"}]
+        steps = [{"step_number": 1, "description": "Test"}]
         mock_get_steps.return_value = steps
         mock_health.return_value = True
         # First verify → fail, second → pass (heal succeeds on first try)
@@ -284,7 +284,7 @@ class TestModelEscalation:
         "app.tasks.autonomous.exec_modules.retry_loop.handle_infrastructure_failures"
     )
     @patch(
-        "app.tasks.autonomous.exec_modules.retry_loop.verify_steps_with_smoke_tests"
+        "app.tasks.autonomous.exec_modules.retry_loop.run_execution_quality_check"
     )
     @patch("app.tasks.autonomous.exec_modules.retry_loop.check_worktree_health")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.get_steps_for_subtask")
@@ -301,7 +301,7 @@ class TestModelEscalation:
         from app.constants import ESCALATION_MODEL, SELF_HEAL_MAX_ATTEMPTS
         from app.tasks.autonomous.exec_modules.retry_loop import run_self_healing_loop
 
-        steps = [{"step_number": 1, "description": "Test", "verify_command": "echo ok"}]
+        steps = [{"step_number": 1, "description": "Test"}]
         mock_get_steps.return_value = steps
         mock_health.return_value = True
         # Always fail verification until we've exhausted self-heal + 1 supervisor attempt

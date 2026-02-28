@@ -86,8 +86,7 @@ def update_subtask_passes(
 ) -> dict[str, object] | None:
     """Update subtask passes status.
 
-    Verification happens at the step level (via step.verify_command).
-    Subtask passes ONLY when ALL its steps have passed verification.
+    Subtask passes ONLY when ALL its steps have passed.
 
     When passes is set to True:
     1. Checks that all steps are passed (required, no bypass)

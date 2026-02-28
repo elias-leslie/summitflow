@@ -187,7 +187,6 @@ class TestContextEndpoint:
                 "steps": [
                     {
                         "description": "Step 1",
-                        "verify_command": "test -f README.md",
                     }
                 ],
             },

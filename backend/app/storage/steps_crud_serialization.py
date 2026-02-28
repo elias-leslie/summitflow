@@ -6,19 +6,19 @@ from typing import Any
 
 from psycopg.rows import TupleRow
 
-# Column list for all step SELECT/RETURNING queries (11 columns)
-STEP_COLUMNS = """id, subtask_id, step_number, description, spec, passes, passed_at, created_at, verify_command, status, fix_step_number"""
+# Column list for all step SELECT/RETURNING queries (10 columns)
+STEP_COLUMNS = """id, subtask_id, step_number, description, spec, passes, passed_at, created_at, status, fix_step_number"""
 
 # Expected column count for row validation
-EXPECTED_STEP_COLUMNS = 11
+EXPECTED_STEP_COLUMNS = 10
 
 
 def row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert a database row to a step dict.
 
-    Column order (11 columns):
+    Column order (10 columns):
         id, subtask_id, step_number, description, spec, passes, passed_at, created_at,
-        verify_command, status, fix_step_number
+        status, fix_step_number
     """
     if row is None:
         raise ValueError("Row cannot be None")
@@ -37,7 +37,6 @@ def row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
         "passes": row[5],
         "passed_at": row[6].isoformat() if row[6] else None,
         "created_at": row[7].isoformat() if row[7] else None,
-        "verify_command": row[8],
-        "status": row[9] or STEP_STATUS_PENDING,
-        "fix_step_number": row[10],
+        "status": row[8] or STEP_STATUS_PENDING,
+        "fix_step_number": row[9],
     }

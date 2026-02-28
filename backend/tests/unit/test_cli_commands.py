@@ -432,16 +432,14 @@ class TestSubtaskCreate:
         )
 
         with patch("cli.commands.subtask.STClient", return_value=mock_client):
-            # Use --steps-json with proper verify_command
+            # Use --steps-json with step descriptions
             steps_json = json.dumps(
                 [
                     {
                         "description": "First step",
-                        "verify_command": "echo ok",
                     },
                     {
                         "description": "Second step",
-                        "verify_command": "echo done",
                     },
                 ]
             )
@@ -465,40 +463,6 @@ class TestSubtaskCreate:
             assert '"success": true' in result.output
             assert '"message": "1.1"' in result.output
 
-    def test_subtask_create_legacy_steps_warning(self, mock_st_client: tuple[MagicMock, dict[str, dict[str, Any]]]) -> None:
-        """Test that using --step shows warning about missing verify_command."""
-        mock_client, _tasks_db = mock_st_client
-        task = mock_client.create_task(
-            {
-                "title": "CLI Subtask Legacy Test",
-                "task_type": "task",
-                "priority": 3,
-            }
-        )
-
-        with patch("cli.commands.subtask.STClient", return_value=mock_client):
-            # Legacy --step flag works but warns
-            result = runner.invoke(
-                subtask_app,
-                [
-                    "create",
-                    "1.1",
-                    "-d",
-                    "Test with legacy steps",
-                    "--task",
-                    task["id"],
-                    "--step",
-                    "First step",
-                    "--step",
-                    "Second step",
-                ],
-            )
-
-            # Still creates but warns about missing verify_command
-            assert "warning" in result.output.lower()
-            assert "verify_command" in result.output.lower()
-
-
 class TestStepCreate:
     """Test st step create command.
 
@@ -518,7 +482,7 @@ class TestStepCreate:
         from cli.client import APIError
 
         mock_client = MagicMock()
-        mock_client.create_step_with_verification = MagicMock(
+        mock_client.create_step = MagicMock(
             side_effect=APIError(404, "Task not found")
         )
 
@@ -529,8 +493,6 @@ class TestStepCreate:
                     "new",
                     "1.1",  # subtask_id
                     "Step one",  # description
-                    "-v",
-                    "echo ok",  # verify_command
                     "--task",
                     "task-nonexistent",
                 ],
@@ -609,12 +571,11 @@ class TestBackupCommands:
 
 
 class TestVerifyPlanGates:
-    """Test st verify command validates step structure and final verification subtask.
+    """Test st verify command validates step structure.
 
     These gates ensure:
     1. Every subtask has non-empty steps array
-    2. Every step has verify_command
-    3. Final subtask is a verification subtask
+    2. Steps are valid objects with descriptions
 
     Note: st verify only reads files, doesn't create tasks - no mocking needed.
     """
@@ -667,152 +628,3 @@ class TestVerifyPlanGates:
 
             assert result.exit_code == 1
             assert "missing required 'steps' array" in result.output.lower()
-
-    def test_verify_rejects_steps_without_verify_command(self) -> None:
-        """st verify rejects steps missing verify_command."""
-        plan = {
-            "title": "Test plan with steps missing verify_command",
-            "objective": "Test objective that is long enough to pass validation",
-            "task_type": "task",
-            "complexity": "SIMPLE",
-            "subtasks": [
-                {
-                    "id": "1.1",
-                    "description": "Step without verify_command",
-                    "steps": [
-                        {
-                            "description": "Step missing verify_command",
-                        }
-                    ],
-                }
-            ],
-        }
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(plan, f)
-            f.flush()
-
-            result = runner.invoke(tasks_app, ["verify", f.name])
-
-            assert result.exit_code == 1
-            assert "missing required 'verify_command'" in result.output.lower()
-
-    def test_verify_rejects_string_steps(self) -> None:
-        """st verify rejects legacy string steps (must be objects)."""
-        plan = {
-            "title": "Test plan with string steps",
-            "objective": "Test objective that is long enough to pass validation",
-            "task_type": "task",
-            "complexity": "SIMPLE",
-            "subtasks": [
-                {
-                    "id": "1.1",
-                    "description": "String steps",
-                    "steps": ["Step 1 as string", "Step 2 as string"],
-                }
-            ],
-        }
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(plan, f)
-            f.flush()
-
-            result = runner.invoke(tasks_app, ["verify", f.name])
-
-            assert result.exit_code == 1
-            assert "must be object with verify_command" in result.output.lower()
-
-    def test_verify_requires_final_verification_subtask(self) -> None:
-        """st verify rejects plans without a final verification subtask."""
-        plan = {
-            "title": "Test plan without verification subtask",
-            "objective": "Test objective that is long enough to pass validation",
-            "task_type": "task",
-            "complexity": "SIMPLE",
-            "subtasks": [
-                {
-                    "id": "1.1",
-                    "phase": "implementation",
-                    "description": "Implementation subtask",
-                    "steps": [
-                        {
-                            "description": "Do the work",
-                            "verify_command": "echo ok",
-                        }
-                    ],
-                }
-            ],
-        }
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(plan, f)
-            f.flush()
-
-            result = runner.invoke(tasks_app, ["verify", f.name])
-
-            assert result.exit_code == 1
-            assert "must be a verification subtask" in result.output.lower()
-
-    def test_verify_accepts_valid_plan_with_verification_subtask(self) -> None:
-        """st verify accepts plan with proper steps and verification subtask."""
-        plan = {
-            "title": "Test plan with proper structure",
-            "objective": "Test objective that is long enough to pass validation",
-            "task_type": "task",
-            "complexity": "SIMPLE",
-            "subtasks": [
-                {
-                    "id": "1.1",
-                    "phase": "implementation",
-                    "description": "Implementation subtask",
-                    "steps": [
-                        {
-                            "description": "Do the work",
-                            "verify_command": "echo ok",
-                        }
-                    ],
-                },
-                {
-                    "id": "2.1",
-                    "phase": "verification",
-                    "description": "Final verification subtask",
-                    "steps": [
-                        {
-                            "description": "Verify all is good",
-                            "verify_command": "echo 'All verified'",
-                        }
-                    ],
-                },
-            ],
-        }
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(plan, f)
-            f.flush()
-
-            result = runner.invoke(tasks_app, ["verify", f.name])
-
-            assert result.exit_code == 0
-            assert "PASS" in result.output
-
-
-class TestStepUpdateImmutableVerification:
-    """Test that verify_command is immutable after creation.
-
-    Once a step is created with verification, the verify_command
-    cannot be modified. This prevents gaming the verification system by changing
-    the verification to match incorrect implementation.
-
-    These tests are skipped as they require deep storage mocking.
-    Use integration tests for full verification of immutability.
-    """
-
-    @pytest.mark.skip(reason="Requires deep storage mocking - use integration tests")
-    def test_update_verify_immutable_command_blocked(self) -> None:
-        """st step update -v should be blocked with immutable error."""
-        pass
-
-    @pytest.mark.skip(reason="Requires deep storage mocking - use integration tests")
-    def test_step_update_description_allowed(self) -> None:
-        """st step update -d should still work (only description is mutable)."""
-        pass

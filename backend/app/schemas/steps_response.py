@@ -19,7 +19,6 @@ class StepResponse(BaseModel):
     step_number: int
     description: str
     spec: dict[str, Any] | None
-    verify_command: str | None
     passes: bool
     passed_at: datetime | None
     created_at: datetime | None

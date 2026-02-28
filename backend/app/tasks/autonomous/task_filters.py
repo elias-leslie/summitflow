@@ -33,21 +33,13 @@ EXPLORATORY_KEYWORDS = ["investigate", "explore", "understand", "research", "ana
 STANDALONE_LABELS = ["standalone", "exploratory"]
 
 
-class _PlanContext(TypedDict, total=False):
-    affected_files: list[str]
-
-
-class _PlanContent(TypedDict, total=False):
-    context: _PlanContext
-
-
 class TaskDict(TypedDict, total=False):
     """Minimal task fields used by eligibility filters."""
 
+    id: str
     task_type: str
     labels: list[str]
     capability_id: NotRequired[str | None]
-    plan_content: _PlanContent
     tier: int
     title: str
 
@@ -113,10 +105,19 @@ def count_domains(files: list[str]) -> int:
 
 
 def _get_affected_files(task: TaskDict) -> list[str]:
-    """Extract affected_files from task plan_content.context."""
-    plan_content = task.get("plan_content") or {}
-    context = plan_content.get("context") or {}
-    return context.get("affected_files") or []
+    """Extract affected files from task_spirit context."""
+    from ...storage.task_spirit import get_task_spirit
+
+    task_id = task.get("id")
+    if not task_id:
+        return []
+    spirit = get_task_spirit(task_id)
+    if not spirit:
+        return []
+    context = spirit.get("context") or {}
+    files_modify = context.get("files_to_modify") or []
+    files_create = context.get("files_to_create") or []
+    return list(files_modify) + list(files_create)
 
 
 def check_exclusion(task: TaskDict) -> str | None:

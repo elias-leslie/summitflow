@@ -14,13 +14,12 @@ class StepGateError(Exception):
 
 
 class StepVerificationError(Exception):
-    """Raised when step completion is blocked by failed verification.
+    """Raised when step completion is blocked by failed quality check.
 
     Attributes:
-        step_number: The step that failed verification
-        output: The verification command output
-        exit_code: The exit code from the verify_command
-        verify_command: The command that was executed
+        step_number: The step that failed
+        output: The command output
+        exit_code: The exit code
         cwd: The working directory used for execution
         next_steps: Guidance for what to do next
     """
@@ -28,10 +27,8 @@ class StepVerificationError(Exception):
     NEXT_STEPS_GUIDANCE = """
 Next steps:
   1. Fix your implementation to match the expected behavior
-  2. If the plan/verify_command is wrong: st step defect <subtask-id> <step#> -v "correct_cmd"
-     (creates fix step, verifies, marks defect — all in one command)
-
-Do NOT modify the verify_command directly — use st step defect for plan corrections."""
+  2. If the plan is wrong: st step defect <subtask-id> <step#>
+     (creates fix step, marks defect — all in one command)"""
 
     def __init__(
         self,
@@ -39,16 +36,13 @@ Do NOT modify the verify_command directly — use st step defect for plan correc
         step_number: int,
         output: str,
         exit_code: int = 1,
-        verify_command: str | None = None,
         cwd: str | None = None,
     ):
-        # Append guidance to message
         full_message = f"{message}\n{self.NEXT_STEPS_GUIDANCE}"
         super().__init__(full_message)
         self.step_number = step_number
         self.output = output
         self.exit_code = exit_code
-        self.verify_command = verify_command
         self.cwd = cwd
         self.next_steps = self.NEXT_STEPS_GUIDANCE
 

@@ -131,7 +131,7 @@ def import_plan_file(
         output_error(f"Schema validation failed: {path}: {e.message}")
         raise typer.Exit(1) from None
 
-    # Validate plan schema (conditional requirements and step structure)
+    # Validate plan schema (conditional requirements and dependencies)
     issues = validate_plan_schema(plan)
     if issues:
         output_error("FAIL: Plan validation failed")
@@ -159,28 +159,30 @@ def import_plan_file(
         "task_type": plan.get("task_type", "task"),
         "priority": plan.get("priority", 2),
         "complexity": complexity,
+        "autonomous": plan.get("autonomous", True),
     }
 
-    # Build subtasks with step-level specs
+    # Build subtasks with step-level specs (only if subtasks present)
     subtasks_data = []
-    for st in plan.get("subtasks", []):
-        subtask_id = st["id"]
-        steps = st.get("steps", [])
+    if subtasks:
+        for st in subtasks:
+            subtask_id = st["id"]
+            steps = st.get("steps", [])
 
-        subtask_data = {
-            "subtask_id": subtask_id,
-            "phase": st.get("phase"),
-            "description": st["description"],
-            "steps": steps,
-            "display_order": int(subtask_id.split(".")[0]) * 100 + int(subtask_id.split(".")[1])
-            if "." in subtask_id
-            else 0,
-        }
-        if st.get("depends_on"):
-            subtask_data["depends_on"] = st["depends_on"]
-        subtasks_data.append(subtask_data)
+            subtask_data: dict[str, Any] = {
+                "subtask_id": subtask_id,
+                "phase": st.get("phase"),
+                "description": st["description"],
+                "steps": steps,
+                "display_order": int(subtask_id.split(".")[0]) * 100 + int(subtask_id.split(".")[1])
+                if "." in subtask_id
+                else 0,
+            }
+            if st.get("depends_on"):
+                subtask_data["depends_on"] = st["depends_on"]
+            subtasks_data.append(subtask_data)
 
-    task_data["subtasks"] = subtasks_data
+        task_data["subtasks"] = subtasks_data
 
     # Update existing task or create new
     if task_id:
@@ -208,28 +210,29 @@ def _update_task_from_plan(
         update_fields = {k: v for k, v in task_data.items() if k != "subtasks" and v is not None}
         client.update_task(task_id, **update_fields)
 
-        # 3. Delete existing subtasks
-        existing_subtasks = client.get_subtasks(task_id).get("subtasks", [])
-        for sub in existing_subtasks:
-            with contextlib.suppress(APIError):
-                client.delete_subtask(task_id, sub["subtask_id"])
+        if subtasks:
+            # 3. Delete existing subtasks
+            existing_subtasks = client.get_subtasks(task_id).get("subtasks", [])
+            for sub in existing_subtasks:
+                with contextlib.suppress(APIError):
+                    client.delete_subtask(task_id, sub["subtask_id"])
 
-        # 4. Create new subtasks
-        for sub in subtasks:
-            phase_val = sub.get("phase")
-            client.create_subtask(
-                task_id,
-                sub["subtask_id"],
-                sub["description"],
-                phase=phase_val if phase_val else "",
-                steps=sub.get("steps", []),
-            )
+            # 4. Create new subtasks
+            for sub in subtasks:
+                phase_val = sub.get("phase")
+                client.create_subtask(
+                    task_id,
+                    sub["subtask_id"],
+                    sub["description"],
+                    phase=phase_val if phase_val else "",
+                    steps=sub.get("steps", []),
+                )
 
-        # 5. Upsert task_spirit
+            # 5. Handle subtask dependencies
+            _create_subtask_dependencies(task_id, subtasks)
+
+        # 6. Upsert task_spirit
         _upsert_task_spirit(task_id, plan)
-
-        # 6. Handle subtask dependencies
-        _create_subtask_dependencies(task_id, subtasks)
 
         task = client.get_task(task_id)
         return task, task_id

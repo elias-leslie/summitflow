@@ -18,8 +18,9 @@ def format_compact_task(task: dict[str, Any]) -> str:
     task_id = task.get("id", "unknown")
     task_type = (task.get("task_type") or "task")[:10].ljust(10)
     status = (task.get("status") or "pending")[:7].ljust(7)
-    title = truncate(task.get("title") or "", 50)
-    return f"P{priority} {task_id} {task_type} {status} {title}"
+    triage = "[TRIAGE] " if not task.get("objective") and not task.get("complexity") else ""
+    title = truncate(task.get("title") or "", 50 - len(triage))
+    return f"P{priority} {task_id} {task_type} {status} {triage}{title}"
 
 
 def format_compact_subtask(subtask: dict[str, Any]) -> str:
@@ -125,8 +126,6 @@ def format_context_subtasks(subtasks: list[dict[str, Any]]) -> str:
             step_pass = "PASS" if step.get("passes") else "____"
             step_desc = step.get("description") or ""
             lines.append(f"  {step_num}. {step_pass} {step_desc}")
-            if verify_cmd := step.get("verify_command"):
-                lines.append(f"       verify: {verify_cmd}")
     return "\n".join(lines)
 
 
@@ -211,8 +210,6 @@ def format_subtask_context_subtask(subtask: dict[str, Any]) -> str:
             step_pass = "PASS" if step.get("passes") else "____"
             step_desc = step.get("description") or ""
             lines.append(f"  {step_num}. {step_pass} {step_desc}")
-            if verify_cmd := step.get("verify_command"):
-                lines.append(f"       verify: {verify_cmd}")
     return "\n".join(lines)
 
 

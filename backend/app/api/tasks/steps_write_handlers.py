@@ -57,7 +57,6 @@ def create_with_verification_handler(
             step_number=next_number,
             description=request.description,
             spec=request.spec,
-            verify_command=request.verify_command,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
