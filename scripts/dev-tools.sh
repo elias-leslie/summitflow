@@ -824,6 +824,12 @@ count_issues() {
             count=$(echo "$output" | grep -c "lint/") || count=0
             echo "$count"
             ;;
+        coderabbit_parse)
+            # CodeRabbit: count "Type:" lines (each = one finding)
+            local count
+            count=$(echo "$output" | grep -c "^Type:") || count=0
+            echo "$count"
+            ;;
         pytest_parse)
             # For pytest, extract summary line
             echo "$output" | strip_ansi | grep -E '(passed|failed|error|skipped)' | tail -1
@@ -904,6 +910,11 @@ run_tool_toon() {
     # Determine success based on method
     local is_success=0
     case "$count_method" in
+        coderabbit_parse)
+            # CodeRabbit exits 0 even with findings; success = no findings
+            [[ "$count" == "0" ]] && is_success=1
+            ;;
+
         pytest_parse)
             # pytest uses exit code
             [[ $retval -eq 0 ]] && is_success=1

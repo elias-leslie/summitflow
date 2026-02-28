@@ -61,7 +61,7 @@
         "label": "LINT",
         "binary": "ruff",
         "args": "check --output-format=concise",
-        "count_method": "wc_l",
+        "count_method": "coderabbit_parse",
         "working_dir": "backend",
         "fallback_global": true,
         "pass_path": true
@@ -112,7 +112,7 @@
         "label": "SQLFLUFF",
         "binary": "sqlfluff",
         "args": "lint --dialect postgres",
-        "count_method": "wc_l",
+        "count_method": "coderabbit_parse",
         "working_dir": "migrations",
         "fallback_global": true,
         "pass_path": true
@@ -129,7 +129,7 @@
         "label": "SQUAWK",
         "binary": "squawk",
         "args": "",
-        "count_method": "wc_l",
+        "count_method": "coderabbit_parse",
         "working_dir": "migrations",
         "fallback_global": true,
         "pass_path": true
@@ -146,8 +146,8 @@
       "dt": {
         "label": "CODERABBIT",
         "binary": "coderabbit",
-        "args": "review --plain -t committed",
-        "count_method": "wc_l",
+        "args": "review --plain",
+        "count_method": "coderabbit_parse",
         "working_dir": "project_root",
         "fallback_global": true,
         "pass_path": false
