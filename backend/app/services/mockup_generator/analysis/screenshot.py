@@ -11,6 +11,37 @@ from ....logging_config import get_logger
 logger = get_logger(__name__)
 
 
+def _build_screenshot_command(
+    url: str,
+    output_path: Path,
+    width: int,
+    height: int,
+    full_page: bool,
+) -> str:
+    """Build the agent-browser command chain for capturing a screenshot."""
+    full_flag = "--full" if full_page else ""
+    return (
+        f"agent-browser open {shlex.quote(url)} && "
+        f"agent-browser set viewport {width} {height} && "
+        f"agent-browser wait --load networkidle && "
+        f"agent-browser screenshot {shlex.quote(str(output_path))} {full_flag} && "
+        f"agent-browser close"
+    )
+
+
+async def _close_browser_after_timeout() -> None:
+    """Attempt to close the browser after a screenshot timeout."""
+    try:
+        close_proc = await asyncio.create_subprocess_shell(
+            "agent-browser close",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        await asyncio.wait_for(close_proc.communicate(), timeout=5)
+    except Exception:
+        logger.debug("Failed to close browser after screenshot timeout", exc_info=True)
+
+
 async def capture_page_screenshot(
     url: str,
     output_path: Path,
@@ -34,16 +65,7 @@ async def capture_page_screenshot(
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     try:
-        # Build command chain for agent-browser
-        full_flag = "--full" if full_page else ""
-        cmd = (
-            f"agent-browser open {shlex.quote(url)} && "
-            f"agent-browser set viewport {width} {height} && "
-            f"agent-browser wait --load networkidle && "
-            f"agent-browser screenshot {shlex.quote(str(output_path))} {full_flag} && "
-            f"agent-browser close"
-        )
-
+        cmd = _build_screenshot_command(url, output_path, width, height, full_page)
         proc = await asyncio.create_subprocess_shell(
             cmd,
             stdout=asyncio.subprocess.PIPE,
@@ -61,17 +83,7 @@ async def capture_page_screenshot(
         return True, None
 
     except TimeoutError:
-        # Try to close browser if still open
-        try:
-            close_proc = await asyncio.create_subprocess_shell(
-                "agent-browser close",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            await asyncio.wait_for(close_proc.communicate(), timeout=5)
-        except Exception:
-            logger.debug("Failed to close browser after screenshot timeout", exc_info=True)
-            pass
+        await _close_browser_after_timeout()
         return False, "Screenshot operation timed out"
     except Exception as e:
         logger.error("screenshot_capture_failed", url=url, error=str(e))
