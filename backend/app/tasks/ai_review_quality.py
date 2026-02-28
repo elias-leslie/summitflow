@@ -17,6 +17,47 @@ from .ai_review_constants import CONFIDENCE_THRESHOLD
 logger = get_logger(__name__)
 
 
+def _build_review_result(
+    parsed: dict[str, Any],
+    low_conf_log_event: str,
+) -> dict[str, Any]:
+    """Build a standardised review result dict, applying confidence filtering."""
+    confidence = parsed.get("confidence", 0.0)
+    verdict = parsed.get("verdict")
+    issues = parsed.get("issues", [])
+    suggestions = parsed.get("suggestions", [])
+    summary = parsed.get("summary")
+
+    if confidence < CONFIDENCE_THRESHOLD:
+        logger.info(
+            low_conf_log_event,
+            confidence=confidence,
+            threshold=CONFIDENCE_THRESHOLD,
+            issues_count=len(issues),
+        )
+        return {
+            "status": "pass",
+            "verdict": verdict,
+            "summary": summary,
+            "issues": issues,
+            "suggestions": suggestions,
+            "confidence": confidence,
+            "low_confidence": True,
+            "filtered_reason": (
+                f"Review confidence {confidence:.0%} below {CONFIDENCE_THRESHOLD:.0%} threshold"
+            ),
+        }
+
+    return {
+        "status": "pass" if verdict == "APPROVE" else "fail",
+        "verdict": verdict,
+        "summary": summary,
+        "issues": issues,
+        "suggestions": suggestions,
+        "confidence": confidence,
+    }
+
+
 def run_code_quality_review(
     task: dict[str, Any],
     project_path: Path,
@@ -32,45 +73,10 @@ def run_code_quality_review(
     """
     try:
         result = opus_review(cast(Task, task), resolved_path=project_path)
-        confidence = result.get("confidence", 0.0)
-        verdict = result.get("verdict")
-        issues = result.get("issues", [])
-        suggestions = result.get("suggestions", [])
-
-        # Apply confidence filtering: low-confidence reviews don't fail
-        if confidence < CONFIDENCE_THRESHOLD:
-            logger.info(
-                "code_quality_low_confidence",
-                confidence=confidence,
-                threshold=CONFIDENCE_THRESHOLD,
-                issues_count=len(issues),
-            )
-            # Still return issues for logging, but mark as low_confidence
-            return {
-                "status": "pass",
-                "verdict": verdict,
-                "summary": result.get("summary"),
-                "issues": issues,
-                "suggestions": suggestions,
-                "confidence": confidence,
-                "low_confidence": True,
-                "filtered_reason": f"Review confidence {confidence:.0%} below {CONFIDENCE_THRESHOLD:.0%} threshold",
-            }
-
-        return {
-            "status": "pass" if verdict == "APPROVE" else "fail",
-            "verdict": verdict,
-            "summary": result.get("summary"),
-            "issues": issues,
-            "suggestions": suggestions,
-            "confidence": confidence,
-        }
+        return _build_review_result(result, "code_quality_low_confidence")
     except Exception as e:
         logger.error("code_quality_review_failed", error=str(e))
-        return {
-            "status": "error",
-            "error": str(e),
-        }
+        return {"status": "error", "error": str(e)}
 
 
 def has_frontend_changes(task: dict[str, Any]) -> bool:
@@ -118,42 +124,11 @@ Description: {task.get("description", "No description")}"""
         )
 
         json_match = re.search(r"\{.*\}", response.content, re.DOTALL)
-        if json_match:
-            parsed = json.loads(json_match.group(0))
-            confidence = parsed.get("confidence", 0.5)
-            verdict = parsed.get("verdict")
-            issues = parsed.get("issues", [])
-            suggestions = parsed.get("suggestions", [])
-
-            # Apply confidence filtering
-            if confidence < CONFIDENCE_THRESHOLD:
-                logger.info(
-                    "ui_review_low_confidence",
-                    confidence=confidence,
-                    threshold=CONFIDENCE_THRESHOLD,
-                    issues_count=len(issues),
-                )
-                return {
-                    "status": "pass",
-                    "verdict": verdict,
-                    "summary": parsed.get("summary"),
-                    "issues": issues,
-                    "suggestions": suggestions,
-                    "confidence": confidence,
-                    "low_confidence": True,
-                    "filtered_reason": f"Review confidence {confidence:.0%} below {CONFIDENCE_THRESHOLD:.0%} threshold",
-                }
-
-            return {
-                "status": "pass" if verdict == "APPROVE" else "fail",
-                "verdict": verdict,
-                "summary": parsed.get("summary"),
-                "issues": issues,
-                "suggestions": suggestions,
-                "confidence": confidence,
-            }
-        else:
+        if not json_match:
             return {"status": "error", "error": "Could not parse response"}
+
+        parsed = json.loads(json_match.group(0))
+        return _build_review_result(parsed, "ui_review_low_confidence")
 
     except Exception as e:
         logger.error("ui_review_failed", error=str(e))
