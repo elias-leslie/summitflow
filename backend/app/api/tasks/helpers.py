@@ -18,7 +18,6 @@ def _build_worktree_response(task_id: str) -> Any | None:
     """Build WorktreeResponse from worktree info, or return None if not found."""
     from ...cli.lib.worktree import get_worktree_info
     from ...schemas.tasks import WorktreeResponse
-
     worktree_info = get_worktree_info(task_id)
     if not worktree_info:
         return None
@@ -45,10 +44,7 @@ def get_step_count_for_task(task_id: str) -> int:
     subtasks = get_subtasks_for_task(task_id, include_steps=False)
     if not subtasks:
         return 0
-    total = 0
-    for subtask in subtasks:
-        total += len(get_steps_for_subtask(subtask.get("id", "")))
-    return total
+    return sum(len(get_steps_for_subtask(s.get("id", ""))) for s in subtasks)
 
 
 def get_step_counts_batch(task_ids: list[str]) -> dict[str, int]:
@@ -56,28 +52,20 @@ def get_step_counts_batch(task_ids: list[str]) -> dict[str, int]:
     return {task_id: get_step_count_for_task(task_id) for task_id in task_ids}
 
 
-def _classify_step(step: dict[str, Any], step_id: str) -> tuple[int, str | None]:
-    """Return (verified_increment, unverified_id). Plan defect steps with a fix count as verified."""
-    if step.get("passes"):
-        return 1, None
-    if step.get("status") == STEP_STATUS_PLAN_DEFECT and step.get("fix_step_number"):
-        return 1, None
-    return 0, step_id
+def _step_is_verified(step: dict[str, Any]) -> bool:
+    """Return True if step counts as verified."""
+    return bool(step.get("passes") or (step.get("status") == STEP_STATUS_PLAN_DEFECT and step.get("fix_step_number")))
 
 
 def _tally_subtask_steps(subtask_id: str) -> tuple[int, int, list[str]]:
     """Return (total, verified, unverified_ids) for all steps in a subtask."""
-    total = 0
-    verified = 0
     unverified: list[str] = []
-    for step in get_steps_for_subtask(subtask_id):
-        total += 1
-        step_id = f"{subtask_id}.{step.get('step_number', 0)}"
-        v_inc, unverified_id = _classify_step(step, step_id)
-        verified += v_inc
-        if unverified_id:
-            unverified.append(unverified_id)
-    return total, verified, unverified
+    steps = list(get_steps_for_subtask(subtask_id))
+    verified = sum(1 for s in steps if _step_is_verified(s))
+    for step in steps:
+        if not _step_is_verified(step):
+            unverified.append(f"{subtask_id}.{step.get('step_number', 0)}")
+    return len(steps), verified, unverified
 
 
 def get_step_verification_status(task_id: str) -> dict[str, Any]:
@@ -85,18 +73,13 @@ def get_step_verification_status(task_id: str) -> dict[str, Any]:
     subtasks = get_subtasks_for_task(task_id, include_steps=False)
     if not subtasks:
         return {"total": 0, "verified": 0, "unverified": [], "all_verified": True}
-
-    total = 0
-    verified = 0
-    unverified: list[str] = []
-
+    total, verified, unverified = 0, 0, []
     for subtask in subtasks:
         sub_total, sub_verified, sub_unverified = _tally_subtask_steps(subtask.get("id", ""))
         total += sub_total
         verified += sub_verified
         unverified.extend(sub_unverified)
-
-    return {"total": total, "verified": verified, "unverified": unverified, "all_verified": len(unverified) == 0}
+    return {"total": total, "verified": verified, "unverified": unverified, "all_verified": not unverified}
 
 
 def verify_task_project(task_id: str, project_id: str) -> dict[str, Any]:
@@ -120,7 +103,6 @@ def get_task_or_404(task_id: str) -> dict[str, Any]:
 async def _dispatch_queue(task_id: str, project_id: str) -> None:
     """Dispatch task execution for queue status."""
     from ...services.dispatch import dispatch_task
-
     result = await dispatch_task(task_id, project_id)
     logger.info("Dispatched autonomous execution", task_id=task_id, stage=result.get("stage"))
 
@@ -132,25 +114,24 @@ async def _dispatch_pending_idea(task_id: str, project_id: str) -> None:
         return
     from ...workflows.models import TaskInput
     from ...workflows.pipeline import triage_wf
-
     await triage_wf.aio_run_no_wait(TaskInput(task_id=task_id, project_id=project_id))
     logger.info("Dispatched idea triage", task_id=task_id)
 
 
-async def dispatch_autonomous_task(task_id: str, new_status: str, project_id: str) -> None:
-    """Dispatch autonomous execution via Hatchet workflow based on status transition.
+async def _route_dispatch(task_id: str, new_status: str, project_id: str) -> None:
+    """Route dispatch based on new_status: queue, pending, or cancelled/blocked."""
+    if new_status == "queue":
+        await _dispatch_queue(task_id, project_id)
+    elif new_status == "pending":
+        await _dispatch_pending_idea(task_id, project_id)
+    elif new_status in ("cancelled", "blocked"):
+        abort_running_task(task_id)
 
-    - pending -> Idea triage (if task_type is 'idea')
-    - queue -> Determine stage (triage/plan/execute) and dispatch
-    - cancelled/blocked (from running) -> Emergency stop
-    """
+
+async def dispatch_autonomous_task(task_id: str, new_status: str, project_id: str) -> None:
+    """Dispatch autonomous execution via Hatchet workflow based on status transition."""
     try:
-        if new_status == "queue":
-            await _dispatch_queue(task_id, project_id)
-        elif new_status == "pending":
-            await _dispatch_pending_idea(task_id, project_id)
-        elif new_status in ("cancelled", "blocked"):
-            abort_running_task(task_id)
+        await _route_dispatch(task_id, new_status, project_id)
     except ImportError:
         logger.debug("Autonomous tasks not available")
     except Exception as e:
@@ -158,9 +139,5 @@ async def dispatch_autonomous_task(task_id: str, new_status: str, project_id: st
 
 
 def abort_running_task(task_id: str) -> None:
-    """Emergency stop - signal abort for a running task.
-
-    Called when task is cancelled/blocked from running state.
-    The status update prevents further subtask execution.
-    """
+    """Emergency stop - signal abort for a running task."""
     logger.info("Task abort requested", task_id=task_id)
