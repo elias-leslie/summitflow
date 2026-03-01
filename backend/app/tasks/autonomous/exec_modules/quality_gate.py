@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
+from pathlib import Path
 
 from ....logging_config import get_logger
 from .events import emit_log
@@ -66,6 +68,21 @@ def start_coderabbit_advisory(project_path: str) -> subprocess.Popen | None:
         return None
 
 
+def _read_coderabbit_details(toon_line: str) -> str | None:
+    """Extract details file path from TOON output and read it.
+
+    dt coderabbit outputs: CODERABBIT:FAIL:N|details:<path>|hint:...
+    The actual findings are in the details file, not stdout.
+    """
+    match = re.search(r"details:([^|]+)", toon_line)
+    if not match:
+        return None
+    details_path = Path(match.group(1).strip())
+    if details_path.is_file():
+        return details_path.read_text(encoding="utf-8", errors="replace")[:8000]
+    return None
+
+
 def collect_coderabbit_advisory(
     proc: subprocess.Popen | None,
     task_id: str,
@@ -74,8 +91,11 @@ def collect_coderabbit_advisory(
 ) -> str | None:
     """Collect CodeRabbit results. Returns findings string or None.
 
-    Lets CodeRabbit run to natural completion or error — the timeout is only
-    an extreme safety net (default 10 min) to prevent infinite hangs.
+    dt coderabbit writes detailed findings to .dev-tools/coderabbit-details.txt
+    and outputs a TOON summary line to stdout. We read the details file for the
+    full findings to pass to the QA reviewer.
+
+    The timeout is only an extreme safety net (default 10 min).
     """
     if proc is None:
         return None
@@ -84,55 +104,40 @@ def collect_coderabbit_advisory(
         output = (stdout + stderr).strip()
 
         if "rate limit" in output.lower() or "429" in output:
-            emit_log(
-                task_id,
-                "info",
-                "CodeRabbit advisory skipped: rate limited",
-                source="coderabbit",
-                project_id=project_id,
-            )
+            emit_log(task_id, "info", "CodeRabbit advisory skipped: rate limited",
+                     source="coderabbit", project_id=project_id)
             return None
 
         if proc.returncode != 0 and "not found" in output.lower():
-            emit_log(
-                task_id,
-                "info",
-                "CodeRabbit advisory skipped: not installed",
-                source="coderabbit",
-                project_id=project_id,
-            )
+            emit_log(task_id, "info", "CodeRabbit advisory skipped: not installed",
+                     source="coderabbit", project_id=project_id)
             return None
 
-        if proc.returncode != 0:
-            emit_log(
-                task_id,
-                "info",
-                f"CodeRabbit advisory errored (exit {proc.returncode}):\n{output[:2000]}",
-                source="coderabbit",
-                project_id=project_id,
-            )
+        # Exit code > 1 = actual error (not just "findings present")
+        if proc.returncode > 1:
+            emit_log(task_id, "info",
+                     f"CodeRabbit advisory errored (exit {proc.returncode}):\n{output[:2000]}",
+                     source="coderabbit", project_id=project_id)
             return None
 
-        findings = output[:4000] if output else None
+        # Read detailed findings from file (dt writes to .dev-tools/coderabbit-details.txt)
+        # Exit code 0 = clean, exit code 1 = findings present
+        details = _read_coderabbit_details(output) if proc.returncode == 1 else None
+        findings = details or (output[:4000] if output else None)
+
         if findings:
-            emit_log(
-                task_id,
-                "info",
-                f"CodeRabbit advisory review:\n{findings}",
-                source="coderabbit",
-                project_id=project_id,
-            )
+            emit_log(task_id, "info",
+                     f"CodeRabbit advisory ({proc.returncode}, {len(findings)} chars):\n{findings[:2000]}",
+                     source="coderabbit", project_id=project_id)
+        else:
+            emit_log(task_id, "info", "CodeRabbit advisory: clean (no findings)",
+                     source="coderabbit", project_id=project_id)
         return findings
     except subprocess.TimeoutExpired:
         proc.kill()
         proc.wait()
-        emit_log(
-            task_id,
-            "info",
-            "CodeRabbit advisory skipped: safety timeout reached",
-            source="coderabbit",
-            project_id=project_id,
-        )
+        emit_log(task_id, "info", "CodeRabbit advisory skipped: safety timeout reached",
+                 source="coderabbit", project_id=project_id)
         return None
     except Exception as e:
         logger.debug("CodeRabbit collect failed: %s", e)
