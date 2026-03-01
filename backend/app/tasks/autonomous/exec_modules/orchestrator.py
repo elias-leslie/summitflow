@@ -19,7 +19,6 @@ from .completion_handler import (
 from .events import emit_error, emit_log, emit_progress
 from .execution_loop import execute_subtask_loop
 from .pristine_validation import validate_pristine_codebase
-from .quality_gate import start_coderabbit_advisory
 from .steps import reset_steps_for_rerun
 from .worktree import check_main_repo_leakage
 from .worktree_setup import setup_worktree
@@ -93,21 +92,13 @@ def _load_subtasks(task_id: str, project_id: str) -> tuple[dict[str, Any] | None
 def _handle_completion(
     task_id: str, project_id: str, project_path: str,
     results: list, incomplete: list, dispatch: Callable[[str, str, str], None] | None,
-    cr_proc: Any = None,
 ) -> None:
     """Route to appropriate completion handler based on results."""
     all_passed = all(r.get("status") == "passed" for r in results)
     any_passed = any(r.get("status") == "passed" for r in results)
     if all_passed and len(results) == len(incomplete):
-        handle_successful_completion(task_id, project_id, project_path, results, dispatch, cr_proc=cr_proc)
+        handle_successful_completion(task_id, project_id, project_path, results, dispatch)
     else:
-        # Kill CodeRabbit if not going to successful path — no need to wait
-        if cr_proc is not None:
-            try:
-                cr_proc.kill()
-                cr_proc.wait()
-            except Exception:
-                pass
         if any_passed:
             if not handle_partial_completion(task_id, project_id, project_path, results, dispatch):
                 handle_failed_execution(task_id, project_id, results=results)
@@ -141,14 +132,11 @@ def execute_task_locked(
 
     check_main_repo_leakage(task_id, project_id, project_path)
 
-    # Start CodeRabbit immediately — runs in background during feedback
-    cr_proc = start_coderabbit_advisory(project_path)
-
     execute_agent_feedback(
         task_id, project_path, project_id, results,
         agent_slug=agent_override or "coder",
         tier_preference=tier_preference,
     )
 
-    _handle_completion(task_id, project_id, project_path, results, incomplete, dispatch, cr_proc=cr_proc)
+    _handle_completion(task_id, project_id, project_path, results, incomplete, dispatch)
     return {"task_id": task_id, "status": "executed", "subtask_results": results}
