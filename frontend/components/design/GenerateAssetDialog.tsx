@@ -1,7 +1,8 @@
 'use client'
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Image, Loader2, X } from 'lucide-react'
+import { Image as ImageIcon, Loader2, X } from 'lucide-react'
+import NextImage from 'next/image'
 import { useState } from 'react'
 import {
   type GenerateAssetResponse,
@@ -108,7 +109,7 @@ export function GenerateAssetDialog({
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-slate-800">
           <div className="flex items-center gap-3">
-            <Image className="w-5 h-5 text-outrun-400" />
+            <ImageIcon className="w-5 h-5 text-outrun-400" />
             <h2 className="text-lg font-semibold text-white">
               Generate Game Asset
             </h2>
@@ -257,7 +258,7 @@ export function GenerateAssetDialog({
                   </>
                 ) : (
                   <>
-                    <Image className="w-4 h-4" />
+                    <ImageIcon className="w-4 h-4" />
                     Generate
                   </>
                 )}
@@ -271,18 +272,20 @@ export function GenerateAssetDialog({
               {result.success ? (
                 <div className="space-y-3">
                   <div className="flex items-center gap-2 text-phosphor-500">
-                    <Image className="w-4 h-4" />
+                    <ImageIcon className="w-4 h-4" />
                     <span className="text-sm font-medium">
                       Generated in {(result.generation_time_ms / 1000).toFixed(1)}s
                       using {result.model_used}
                     </span>
                   </div>
                   {result.mockup_id && (
-                    <div className="rounded-lg overflow-hidden border border-slate-700">
-                      <img
+                    <div className="relative rounded-lg overflow-hidden border border-slate-700 aspect-square">
+                      <NextImage
                         src={getMockupImageUrl(projectId, result.mockup_id)}
                         alt={name}
-                        className="w-full h-auto"
+                        fill
+                        className="object-contain"
+                        unoptimized
                       />
                     </div>
                   )}
