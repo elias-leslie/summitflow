@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from collections.abc import Callable
 from typing import Any
 
@@ -18,7 +19,7 @@ from .completion_status import (
 )
 from .events import emit_error, emit_log
 from .followup_tasks import create_followup_task_for_failures
-from .quality_gate import run_quality_gate_with_autofix
+from .quality_gate import collect_coderabbit_advisory, run_quality_gate_with_autofix
 
 logger = get_logger(__name__)
 
@@ -50,21 +51,37 @@ def handle_early_completion(
         return {"task_id": task_id, "status": "blocked", "message": f"Status transition failed: {e}"}
 
 
+def _kill_coderabbit(cr_proc: subprocess.Popen | None) -> None:
+    """Kill CodeRabbit subprocess if still running."""
+    if cr_proc is None:
+        return
+    try:
+        cr_proc.kill()
+        cr_proc.wait()
+    except Exception:
+        pass
+
+
 def handle_successful_completion(
     task_id: str,
     project_id: str,
     project_path: str,
     results: list[dict[str, Any]],
     dispatch: Callable[[str, str, str], None] | None = None,
+    cr_proc: subprocess.Popen | None = None,
 ) -> bool:
     """Handle successful task completion with quality gate + intent verification."""
     if not run_quality_gate_with_autofix(task_id, project_path, project_id):
+        _kill_coderabbit(cr_proc)
         task_store.update_task_status(task_id, "blocked")
         emit_error(task_id, "Final quality gate failed after auto-fix attempt", project_id=project_id)
         notify_failure(task_id, project_id, "Quality gate failed after auto-fix attempt.")
         wake_persona(task_id, project_id, "quality_gate",
                      f"Task {task_id} quality gate failed after auto-fix. Investigate and advise.")
         return False
+
+    # Collect CodeRabbit findings — by now it's had head start during feedback + quality gate
+    cr_findings = collect_coderabbit_advisory(cr_proc, task_id, project_id)
 
     # Intent verification: check done_when / objective / spirit_anti
     intent_result = _run_intent_check(task_id, project_path, project_id)
@@ -80,6 +97,8 @@ def handle_successful_completion(
 
     try:
         verification_result = build_successful_completion_verification(results)
+        if cr_findings:
+            verification_result["coderabbit_findings"] = cr_findings
         task_store.update_task(task_id, verification_result=verification_result)
         execution_clean = verification_result["execution_clean"]
         log_message = f"All subtasks passed + quality gate passed (clean={execution_clean})"

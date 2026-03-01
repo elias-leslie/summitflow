@@ -45,37 +45,43 @@ def run_quality_gate_with_autofix(
 
         final_gate_passed = run_final_quality_gate(task_id, project_path, project_id)
 
-    if final_gate_passed:
-        _run_coderabbit_advisory(task_id, project_path, project_id)
-
     return final_gate_passed
 
 
-def _run_coderabbit_advisory(
-    task_id: str,
-    project_path: str,
-    project_id: str,
-) -> None:
-    """Run CodeRabbit review as advisory (non-blocking) after quality gate passes.
-
-    Logs findings as events for the review agent to consume.
-    Skips gracefully on rate limit errors or if coderabbit is not installed.
-    """
+def start_coderabbit_advisory(project_path: str) -> subprocess.Popen | None:
+    """Start CodeRabbit as a background subprocess. Returns Popen handle or None."""
     dt_cmd = find_dev_tools()
     if not dt_cmd:
-        return
-
-    cmd = [dt_cmd, "coderabbit"]
-
+        return None
     try:
-        result = subprocess.run(
-            cmd,
+        return subprocess.Popen(
+            [dt_cmd, "coderabbit"],
             cwd=project_path,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=120,
         )
-        output = (result.stdout + result.stderr).strip()
+    except Exception as e:
+        logger.debug("CodeRabbit start failed: %s", e)
+        return None
+
+
+def collect_coderabbit_advisory(
+    proc: subprocess.Popen | None,
+    task_id: str,
+    project_id: str,
+    timeout: int = 600,
+) -> str | None:
+    """Collect CodeRabbit results. Returns findings string or None.
+
+    Lets CodeRabbit run to natural completion or error — the timeout is only
+    an extreme safety net (default 10 min) to prevent infinite hangs.
+    """
+    if proc is None:
+        return None
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+        output = (stdout + stderr).strip()
 
         if "rate limit" in output.lower() or "429" in output:
             emit_log(
@@ -85,33 +91,49 @@ def _run_coderabbit_advisory(
                 source="coderabbit",
                 project_id=project_id,
             )
-            return
+            return None
 
-        if result.returncode != 0 and "not found" in output.lower():
+        if proc.returncode != 0 and "not found" in output.lower():
             emit_log(
                 task_id,
                 "info",
-                "CodeRabbit advisory skipped: coderabbit not installed",
+                "CodeRabbit advisory skipped: not installed",
                 source="coderabbit",
                 project_id=project_id,
             )
-            return
+            return None
 
-        findings = output[:2000] if output else "No findings"
-        emit_log(
-            task_id,
-            "info",
-            f"CodeRabbit advisory review:\n{findings}",
-            source="coderabbit",
-            project_id=project_id,
-        )
+        if proc.returncode != 0:
+            emit_log(
+                task_id,
+                "info",
+                f"CodeRabbit advisory errored (exit {proc.returncode}):\n{output[:2000]}",
+                source="coderabbit",
+                project_id=project_id,
+            )
+            return None
+
+        findings = output[:4000] if output else None
+        if findings:
+            emit_log(
+                task_id,
+                "info",
+                f"CodeRabbit advisory review:\n{findings}",
+                source="coderabbit",
+                project_id=project_id,
+            )
+        return findings
     except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
         emit_log(
             task_id,
             "info",
-            "CodeRabbit advisory skipped: timed out",
+            "CodeRabbit advisory skipped: safety timeout reached",
             source="coderabbit",
             project_id=project_id,
         )
+        return None
     except Exception as e:
-        logger.debug("CodeRabbit advisory failed: %s", e)
+        logger.debug("CodeRabbit collect failed: %s", e)
+        return None

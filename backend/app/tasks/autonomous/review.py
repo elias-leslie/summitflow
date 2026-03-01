@@ -75,10 +75,22 @@ def _build_prompt(task: dict, complexity: str, git_diff: str, task_id: str) -> s
     spirit = get_task_spirit(task_id)
     done_when = spirit.get("done_when", []) if spirit else []
     done_when_text = "\n".join(f"- {c}" for c in done_when) if done_when else "(none defined)"
+
+    # Include CodeRabbit findings if available
+    verification = task.get("verification_result") or {}
+    cr_findings = verification.get("coderabbit_findings")
+    cr_section = (
+        f"\n\nCodeRabbit Review Findings:\n```\n{cr_findings}\n```\n"
+        "Consider these findings in your review — flag any that the diff does not address."
+        if cr_findings
+        else ""
+    )
+
     return (
         f"Task: {task.get('title', '')}\nComplexity: {complexity}\n\n"
         f"Success Criteria (done_when):\n{done_when_text}\n\n"
-        f"Git Diff:\n```\n{git_diff[:50000]}\n```\n\n"
+        f"Git Diff:\n```\n{git_diff[:50000]}\n```"
+        f"{cr_section}\n\n"
         "If done_when criteria are defined, verify the diff addresses each one."
     )
 
