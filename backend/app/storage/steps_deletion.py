@@ -12,6 +12,29 @@ from .steps_exceptions import StepDeletionResult, StepGateError
 logger = logging.getLogger(__name__)
 
 
+def _check_passed_gate(step_number: int, was_passed: bool, force: bool) -> None:
+    """Raise StepGateError if deleting a passed step without force."""
+    if was_passed and not force:
+        raise StepGateError(
+            f"Step {step_number} has already passed verification. "
+            "Deleting passed steps requires --force flag. "
+            "This is a safeguard against gaming the verification system.",
+            missing_steps=[step_number],
+        )
+
+
+def _execute_step_delete(subtask_id: str, step_number: int) -> bool:
+    """Delete step row from DB. Returns True if a row was deleted."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM task_subtask_steps WHERE subtask_id = %s AND step_number = %s",
+            (subtask_id, step_number),
+        )
+        deleted: bool = cur.rowcount > 0
+        conn.commit()
+    return deleted
+
+
 def delete_step(
     subtask_id: str,
     step_number: int,
@@ -21,106 +44,61 @@ def delete_step(
 ) -> StepDeletionResult:
     """Delete a single step from a subtask with audit logging.
 
-    IMPORTANT: Deleting passed steps invalidates the parent subtask's passes status.
-    This is a safeguard against gaming the verification system by deleting steps
-    that have already been verified.
+    Deleting passed steps invalidates the parent subtask's passes status —
+    a safeguard against gaming the verification system.
 
     Args:
         subtask_id: Parent subtask ID (e.g., "task-abc123-1.1")
         step_number: Step number to delete
-        force: If True, allow deletion of passed steps (required for passed steps)
-        emit_event: If True, emit audit event for the deletion
-
-    Returns:
-        StepDeletionResult with deletion status and audit info.
+        force: Allow deletion of passed steps when True
+        emit_event: Emit audit event when True
 
     Raises:
         StepGateError: If trying to delete a passed step without force=True
     """
-    # First, fetch the step to capture state before deletion
     step = get_step(subtask_id, step_number)
     if not step:
         logger.warning("Step %d not found in subtask %s", step_number, subtask_id)
         return StepDeletionResult(deleted=False)
 
     was_passed = step.get("passes", False)
+    _check_passed_gate(step_number, was_passed, force)
 
-    # Gate: Require force=True to delete passed steps
-    if was_passed and not force:
-        raise StepGateError(
-            f"Step {step_number} has already passed verification. "
-            "Deleting passed steps requires --force flag. "
-            "This is a safeguard against gaming the verification system.",
-            missing_steps=[step_number],
-        )
-
-    # Delete the step
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            "DELETE FROM task_subtask_steps WHERE subtask_id = %s AND step_number = %s",
-            (subtask_id, step_number),
-        )
-        deleted: bool = cur.rowcount > 0
-        conn.commit()
-
-    if not deleted:
+    if not _execute_step_delete(subtask_id, step_number):
         logger.warning("Step %d not found in subtask %s (race condition?)", step_number, subtask_id)
         return StepDeletionResult(deleted=False)
 
-    # If the deleted step was passed, invalidate the parent subtask's passes status
-    subtask_invalidated = False
-    if was_passed:
-        subtask_invalidated = _invalidate_subtask_passes(subtask_id)
+    subtask_invalidated = _invalidate_subtask_passes(subtask_id) if was_passed else False
 
-    # Emit audit event
     if emit_event:
         _emit_step_deletion_event(subtask_id, step_number, step, subtask_invalidated)
 
     logger.info(
         "Deleted step %d from subtask %s (was_passed=%s, subtask_invalidated=%s)",
-        step_number,
-        subtask_id,
-        was_passed,
-        subtask_invalidated,
+        step_number, subtask_id, was_passed, subtask_invalidated,
     )
-
     return StepDeletionResult(
-        deleted=True,
-        was_passed=was_passed,
-        subtask_invalidated=subtask_invalidated,
-        step_details=step,
+        deleted=True, was_passed=was_passed,
+        subtask_invalidated=subtask_invalidated, step_details=step,
     )
 
 
 def _invalidate_subtask_passes(subtask_id: str) -> bool:
     """Invalidate subtask.passes when a passed step is deleted.
 
-    Args:
-        subtask_id: Full subtask table ID (e.g., "task-abc123-1.1")
-
-    Returns:
-        True if subtask was invalidated, False if it wasn't passed or not found.
+    Returns True if the subtask was invalidated, False otherwise.
     """
     with get_connection() as conn, conn.cursor() as cur:
-        # Only update if currently passed
         cur.execute(
-            """
-            UPDATE task_subtasks
-            SET passes = FALSE, passed_at = NULL
-            WHERE id = %s AND passes = TRUE
-            RETURNING id
-            """,
+            "UPDATE task_subtasks SET passes = FALSE, passed_at = NULL"
+            " WHERE id = %s AND passes = TRUE RETURNING id",
             (subtask_id,),
         )
         invalidated = cur.fetchone() is not None
         conn.commit()
 
     if invalidated:
-        logger.warning(
-            "Subtask %s passes status invalidated due to step deletion",
-            subtask_id,
-        )
-
+        logger.warning("Subtask %s passes status invalidated due to step deletion", subtask_id)
     return invalidated
 
 
@@ -130,25 +108,16 @@ def _emit_step_deletion_event(
     step_details: dict[str, Any],
     subtask_invalidated: bool,
 ) -> None:
-    """Emit audit event for step deletion.
-
-    Args:
-        subtask_id: Full subtask table ID
-        step_number: Deleted step number
-        step_details: Step state before deletion
-        subtask_invalidated: Whether parent subtask was invalidated
-    """
+    """Emit audit event for step deletion."""
     from .events import EventLevel, log_task_event
 
     # Extract task_id from subtask_id (format: "task-abc123-1.1")
-    # The task_id is everything before the last dash-separated segment
     parts = subtask_id.rsplit("-", 1)
     if len(parts) != 2:
         logger.warning("Cannot emit event: invalid subtask_id format %s", subtask_id)
         return
 
     task_id = parts[0]
-
     was_passed = step_details.get("passes", False)
     level: EventLevel = "warning" if was_passed else "info"
 
