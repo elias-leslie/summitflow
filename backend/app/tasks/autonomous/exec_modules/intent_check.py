@@ -66,10 +66,25 @@ def check_intent(
 
 
 def _get_diff_summary(project_path: str) -> str:
-    """Get a summary of changes on the current branch."""
+    """Get a summary of changes made by this task (vs merge-base with main)."""
     try:
+        # Find merge-base with main to only see THIS task's changes
+        merge_base_result = subprocess.run(
+            ["git", "merge-base", "HEAD", "main"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if merge_base_result.returncode == 0:
+            base = merge_base_result.stdout.strip()
+            diff_range = f"{base}..HEAD"
+        else:
+            # Fallback: compare HEAD~1 (at least skip inherited commits)
+            diff_range = "HEAD~1..HEAD"
+
         result = subprocess.run(
-            ["git", "diff", "--stat", "HEAD~5..HEAD"],
+            ["git", "diff", "--stat", diff_range],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -78,7 +93,7 @@ def _get_diff_summary(project_path: str) -> str:
         stat = result.stdout.strip() if result.returncode == 0 else ""
 
         result2 = subprocess.run(
-            ["git", "log", "--oneline", "-5"],
+            ["git", "log", "--oneline", diff_range],
             cwd=project_path,
             capture_output=True,
             text=True,
