@@ -44,6 +44,41 @@ def reset_steps_for_rerun(subtasks: list[dict[str, Any]]) -> None:
                 update_step_passes(subtask_table_id, step["step_number"], passes=False)
 
 
+def _auto_mark_steps(
+    subtask_id: str,
+    steps: list[dict[str, Any]],
+    project_id: str,
+    plan_defect_status: str,
+) -> list[dict[str, Any]]:
+    """Auto-mark all steps as passed, skipping plan-defect steps.
+
+    Returns a list of step result dicts ready for smoke-test verification.
+    """
+    step_results: list[dict[str, Any]] = []
+    for step in steps:
+        step_num = step.get("step_number", 0)
+        status = step.get("status", "")
+        if status == plan_defect_status:
+            step_results.append({
+                "step_number": step_num,
+                "passed": True,
+                "output": "plan_defect — skipped",
+                "reason": "plan_defect",
+                "returncode": 0,
+            })
+            continue
+        if not step.get("passes"):
+            update_step_passes(subtask_id, step_num, passes=True, project_id=project_id)
+        step_results.append({
+            "step_number": step_num,
+            "passed": True,
+            "output": "",
+            "reason": "auto_passed",
+            "returncode": 0,
+        })
+    return step_results
+
+
 def run_execution_quality_check(
     task_id: str,
     subtask_id: str,
@@ -62,33 +97,7 @@ def run_execution_quality_check(
     """
     from ....storage.steps_constants import STEP_STATUS_PLAN_DEFECT
 
-    step_results: list[dict[str, Any]] = []
-
-    # Auto-mark all non-defect steps as passed
-    for step in steps:
-        step_num = step.get("step_number", 0)
-        status = step.get("status", "")
-
-        if status == STEP_STATUS_PLAN_DEFECT:
-            step_results.append({
-                "step_number": step_num,
-                "passed": True,
-                "output": "plan_defect — skipped",
-                "reason": "plan_defect",
-                "returncode": 0,
-            })
-            continue
-
-        if not step.get("passes"):
-            update_step_passes(subtask_id, step_num, passes=True, project_id=project_id)
-
-        step_results.append({
-            "step_number": step_num,
-            "passed": True,
-            "output": "",
-            "reason": "auto_passed",
-            "returncode": 0,
-        })
+    step_results = _auto_mark_steps(subtask_id, steps, project_id, STEP_STATUS_PLAN_DEFECT)
 
     # Run smoke tests and targeted tests as primary verification
     all_passed = run_smoke_and_targeted_tests(
