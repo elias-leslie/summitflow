@@ -1,4 +1,3 @@
-# AUTOTEST_autotest-1772329703
 """SummitFlow database storage."""
 
 from . import agent_configs, events, explorer, explorer_sub_elements
@@ -21,4 +20,3 @@ __all__ = [
     "get_events_with_filters",
     "log_task_event",
 ]
-# AutoTest done workflow marker - task-171b27c1
