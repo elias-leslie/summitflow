@@ -44,6 +44,48 @@ def _apply_blocked_by(
     return task
 
 
+def _handle_plan_import(
+    plan: Path, dry_run: bool, task_id: str | None
+) -> None:
+    client = STClient()
+    task, tid = import_plan_file(plan, dry_run, task_id, client)
+    if not dry_run:
+        complexity = task.get("complexity", "SIMPLE")
+        subtask_count = len(task.get("subtasks") or [])
+        suffix = "intent-only" if subtask_count == 0 else f"{subtask_count} subtasks"
+        typer.echo(f"IMPORT:{tid}|{complexity}|{suffix}")
+
+
+def _handle_single_task_create(
+    title: str,
+    dry_run: bool,
+    description: str | None,
+    priority: int,
+    labels: str | None,
+    task_type: str,
+    parent: str | None,
+    blocked_by: str | None,
+    autonomous: bool,
+) -> None:
+    if dry_run:
+        output_error("--dry-run only works with --from-file or --plan")
+        raise typer.Exit(1)
+
+    client = STClient()
+    data = _build_task_data(title, task_type, priority, description, labels, parent, autonomous)
+
+    try:
+        task = client.create_task(data)
+    except APIError as e:
+        handle_api_error(e)
+        return
+
+    if blocked_by:
+        task = _apply_blocked_by(client, task, blocked_by)
+
+    output_task(task)
+
+
 def create_task_command(
     title: str | None,
     from_file: Path | None,
@@ -71,13 +113,7 @@ def create_task_command(
         st create --plan plan.json --task existing-id  # Update existing task
     """
     if plan:
-        client = STClient()
-        task, tid = import_plan_file(plan, dry_run, task_id, client)
-        if not dry_run:
-            complexity = task.get("complexity", "SIMPLE")
-            subtask_count = len(task.get("subtasks") or [])
-            suffix = "intent-only" if subtask_count == 0 else f"{subtask_count} subtasks"
-            typer.echo(f"IMPORT:{tid}|{complexity}|{suffix}")
+        _handle_plan_import(plan, dry_run, task_id)
         return
 
     if from_file:
@@ -88,20 +124,6 @@ def create_task_command(
         output_error("Either provide a title or use --from-file / --plan")
         raise typer.Exit(1)
 
-    if dry_run:
-        output_error("--dry-run only works with --from-file or --plan")
-        raise typer.Exit(1)
-
-    client = STClient()
-    data = _build_task_data(title, task_type, priority, description, labels, parent, autonomous)
-
-    try:
-        task = client.create_task(data)
-    except APIError as e:
-        handle_api_error(e)
-        return
-
-    if blocked_by:
-        task = _apply_blocked_by(client, task, blocked_by)
-
-    output_task(task)
+    _handle_single_task_create(
+        title, dry_run, description, priority, labels, task_type, parent, blocked_by, autonomous
+    )
