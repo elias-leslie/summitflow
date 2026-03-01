@@ -2,12 +2,15 @@
 
 import {
   CheckSquare,
+  ChevronDown,
   Grid3X3,
+  Image,
   List,
   Palette,
   Sparkles,
   X,
 } from 'lucide-react'
+import { useRef, useState, useEffect } from 'react'
 
 export type ViewMode = 'grid' | 'list'
 
@@ -20,6 +23,7 @@ interface DesignHeaderProps {
   onSelectModeToggle: () => void
   onCancelSelectMode: () => void
   onGenerateClick: () => void
+  onGenerateAssetClick?: () => void
 }
 
 export function DesignHeader({
@@ -31,7 +35,23 @@ export function DesignHeader({
   onSelectModeToggle,
   onCancelSelectMode,
   onGenerateClick,
+  onGenerateAssetClick,
 }: DesignHeaderProps): React.ReactElement {
+  const [dropdownOpen, setDropdownOpen] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!dropdownOpen) return
+    const handleClick = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [dropdownOpen])
+
   return (
     <div className="flex items-center justify-between mb-6">
       <div className="flex items-center gap-3">
@@ -46,15 +66,42 @@ export function DesignHeader({
 
       {/* Actions */}
       <div className="flex items-center gap-4">
-        {/* Generate button */}
+        {/* Generate dropdown */}
         {!selectMode && (
-          <button
-            onClick={onGenerateClick}
-            className="btn-primary flex items-center gap-2"
-          >
-            <Sparkles className="w-4 h-4" />
-            Generate Mockup
-          </button>
+          <div className="relative" ref={dropdownRef}>
+            <button
+              onClick={() => setDropdownOpen(!dropdownOpen)}
+              className="btn-primary flex items-center gap-2"
+            >
+              <Sparkles className="w-4 h-4" />
+              Generate
+              <ChevronDown className="w-3 h-3" />
+            </button>
+            {dropdownOpen && (
+              <div className="absolute right-0 mt-2 w-56 bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-10 py-1">
+                <button
+                  onClick={() => {
+                    setDropdownOpen(false)
+                    onGenerateClick()
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-300 hover:bg-slate-700 hover:text-white"
+                >
+                  <Sparkles className="w-4 h-4 text-outrun-400" />
+                  Analyze Page Design
+                </button>
+                <button
+                  onClick={() => {
+                    setDropdownOpen(false)
+                    onGenerateAssetClick?.()
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-300 hover:bg-slate-700 hover:text-white"
+                >
+                  <Image className="w-4 h-4 text-phosphor-500" />
+                  Generate Game Asset
+                </button>
+              </div>
+            )}
+          </div>
         )}
 
         {/* Select mode toggle */}

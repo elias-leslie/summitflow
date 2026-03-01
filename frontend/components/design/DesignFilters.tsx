@@ -10,6 +10,7 @@ export type TypeFilter =
   | 'layout'
   | 'icon'
   | 'illustration'
+  | 'sprite'
 
 interface DesignFiltersProps {
   searchQuery: string
@@ -71,6 +72,7 @@ export function DesignFilters({
         <option value="layout">Layout</option>
         <option value="icon">Icon</option>
         <option value="illustration">Illustration</option>
+        <option value="sprite">Sprite</option>
       </select>
     </div>
   )
