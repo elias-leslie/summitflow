@@ -37,6 +37,40 @@ def get_affected_files(task: dict[str, Any]) -> list[str]:
     return list(files_modify) + list(files_create)
 
 
+def _match_first_pattern(file_lower: str, patterns: list[str]) -> str | None:
+    """Return the first pattern that matches file_lower, or None."""
+    for pattern in patterns:
+        if re.search(pattern, file_lower):
+            return pattern
+    return None
+
+
+def _classify_file_risk(
+    file_path: str,
+    high_risk_matches: list[str],
+) -> tuple[str | None, str | None]:
+    """Classify a single file as high-risk, medium-risk, or neither.
+
+    Returns:
+        Tuple of (high_risk_reason, medium_risk_reason) where at most one is set.
+    """
+    file_lower = file_path.lower()
+
+    high_pattern = _match_first_pattern(file_lower, HIGH_RISK_FILE_PATTERNS)
+    if high_pattern is not None:
+        return f"{file_path} matches pattern '{high_pattern}'", None
+
+    already_high = any(file_path in m for m in high_risk_matches)
+    if already_high:
+        return None, None
+
+    medium_pattern = _match_first_pattern(file_lower, MEDIUM_RISK_FILE_PATTERNS)
+    if medium_pattern is not None:
+        return None, f"{file_path} matches pattern '{medium_pattern}'"
+
+    return None, None
+
+
 def classify_risk_level(
     task: dict[str, Any],
     project_path: Path | None = None,
@@ -62,28 +96,18 @@ def classify_risk_level(
     medium_risk_matches: list[str] = []
 
     for file_path in affected_files:
-        file_lower = file_path.lower()
-
-        # Check high-risk patterns
-        for pattern in HIGH_RISK_FILE_PATTERNS:
-            if re.search(pattern, file_lower):
-                high_risk_matches.append(f"{file_path} matches pattern '{pattern}'")
-                break  # One match per file is enough
-
-        # Check medium-risk patterns (only if not already high-risk)
-        if not any(file_path in m for m in high_risk_matches):
-            for pattern in MEDIUM_RISK_FILE_PATTERNS:
-                if re.search(pattern, file_lower):
-                    medium_risk_matches.append(f"{file_path} matches pattern '{pattern}'")
-                    break
+        high_reason, medium_reason = _classify_file_risk(file_path, high_risk_matches)
+        if high_reason is not None:
+            high_risk_matches.append(high_reason)
+        elif medium_reason is not None:
+            medium_risk_matches.append(medium_reason)
 
     # Determine overall risk level
     if high_risk_matches:
         return RiskLevel.HIGH, high_risk_matches
-    elif medium_risk_matches:
+    if medium_risk_matches:
         return RiskLevel.MEDIUM, medium_risk_matches
-    else:
-        return RiskLevel.LOW, ["No sensitive file patterns detected"]
+    return RiskLevel.LOW, ["No sensitive file patterns detected"]
 
 
 def run_security_risk_classification(
