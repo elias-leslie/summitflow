@@ -9,7 +9,7 @@ Provides CRUD operations for design mockups:
 
 from fastapi import APIRouter
 
-from . import mockups_analysis, mockups_crud, mockups_task_page
+from . import mockups_analysis, mockups_crud, mockups_generation, mockups_task_page
 
 # Re-export models for backwards compatibility
 from .mockups_models import (
@@ -28,6 +28,7 @@ router = APIRouter(tags=["mockups"])
 router.include_router(mockups_crud.router)
 router.include_router(mockups_task_page.router)
 router.include_router(mockups_analysis.router)
+router.include_router(mockups_generation.router)
 
 # Re-export for backwards compatibility
 __all__ = [
