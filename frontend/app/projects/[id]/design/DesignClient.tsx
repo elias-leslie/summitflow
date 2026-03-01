@@ -7,6 +7,7 @@ import { BulkActionBar } from '@/components/design/BulkActionBar'
 import { ConfirmDeleteDialog } from '@/components/shared/ConfirmDeleteDialog'
 import { DesignFilters, type TypeFilter } from '@/components/design/DesignFilters'
 import { DesignHeader, type ViewMode } from '@/components/design/DesignHeader'
+import { GenerateAssetDialog } from '@/components/design/GenerateAssetDialog'
 import { GenerateMockupDialog } from '@/components/design/GenerateMockupDialog'
 import { MockupDetailModal } from '@/components/design/MockupDetailModal'
 import { MockupGrid } from '@/components/design/MockupGrid'
@@ -36,6 +37,7 @@ export function DesignClient(): React.ReactElement {
   const [selectedMockup, setSelectedMockup] = useState<Mockup | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false)
+  const [generateAssetDialogOpen, setGenerateAssetDialogOpen] = useState(false)
 
   // Multi-select delete state
   const [selectMode, setSelectMode] = useState(false)
@@ -155,6 +157,7 @@ export function DesignClient(): React.ReactElement {
           onSelectModeToggle={() => setSelectMode(true)}
           onCancelSelectMode={cancelSelectMode}
           onGenerateClick={() => setGenerateDialogOpen(true)}
+          onGenerateAssetClick={() => setGenerateAssetDialogOpen(true)}
         />
 
         {stats && (
@@ -215,6 +218,12 @@ export function DesignClient(): React.ReactElement {
           projectId={projectId}
           open={generateDialogOpen}
           onOpenChange={setGenerateDialogOpen}
+        />
+
+        <GenerateAssetDialog
+          projectId={projectId}
+          open={generateAssetDialogOpen}
+          onOpenChange={setGenerateAssetDialogOpen}
         />
 
         {showDeleteConfirm && (
