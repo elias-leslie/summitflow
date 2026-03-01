@@ -5,7 +5,62 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import typer
+
 logger = logging.getLogger(__name__)
+
+
+def build_subtasks_data(subtasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Convert plan subtasks into API-ready subtask dicts."""
+    result = []
+    for st in subtasks:
+        sid = st["id"]
+        parts = sid.split(".")
+        order = int(parts[0]) * 100 + int(parts[1]) if len(parts) >= 2 else 0
+        entry: dict[str, Any] = {
+            "subtask_id": sid, "phase": st.get("phase"),
+            "description": st["description"], "steps": st.get("steps", []),
+            "display_order": order,
+        }
+        if st.get("depends_on"):
+            entry["depends_on"] = st["depends_on"]
+        result.append(entry)
+    return result
+
+
+def upsert_task_spirit_from_plan(task_id: str, plan: dict[str, Any]) -> None:
+    """Upsert task_spirit record for plan data."""
+    from app.storage.task_spirit import upsert_task_spirit
+    try:
+        ctx = plan.get("context", {})
+        context_blob = {k: v for k, v in {
+            "risks": ctx.get("risks", []), "files_to_create": ctx.get("files_to_create", []),
+            "files_to_modify": ctx.get("files_to_modify", []), "references": ctx.get("references", []),
+            "testing_strategy": ctx.get("testing_strategy"),
+        }.items() if v}
+        upsert_task_spirit(
+            task_id=task_id, objective=plan["objective"], spirit_anti=plan.get("spirit_anti"),
+            decisions=plan.get("decisions"), constraints=plan.get("constraints"),
+            done_when=plan.get("done_when"), context=context_blob if context_blob else None,
+            complexity=plan.get("complexity", "SIMPLE"),
+        )
+    except Exception as e:
+        typer.echo(f"  Warning: Failed to write task_spirit: {e}")
+
+
+def create_subtask_dependencies(task_id: str, subtasks: list[dict[str, Any]]) -> None:
+    """Create subtask dependencies from plan data."""
+    from app.storage.subtask_dependencies import bulk_add_dependencies
+    deps: list[tuple[str, str]] = [
+        (f"{task_id}-{sub['subtask_id']}", f"{task_id}-{dep}")
+        for sub in subtasks if sub.get("depends_on")
+        for dep in sub["depends_on"]
+    ]
+    if deps:
+        try:
+            bulk_add_dependencies(deps)
+        except Exception as dep_err:
+            typer.echo(f"  Warning: Failed to create dependencies: {dep_err}")
 
 
 def fetch_triggered_references(task_type: str) -> list[dict[str, Any]]:
