@@ -17,6 +17,7 @@ from ..logging_config import get_logger
 from ..services.agent_hub_client import get_sync_client
 from ..services.mockup_generator.sprite_prompts import (
     build_environment_prompt,
+    build_sheet_prompt,
     build_sprite_prompt,
 )
 from ..services.mockup_generator.storage_helpers import (
@@ -44,6 +45,7 @@ _MIME_TO_EXT: dict[str, str] = {
 # Prompt builders keyed by mockup_type
 _PROMPT_BUILDERS = {
     "sprite": lambda req: build_sprite_prompt(req.prompt, req.style),
+    "sheet": lambda req: build_sheet_prompt(req.prompt, style=req.style),
     "illustration": lambda req: build_sprite_prompt(req.prompt, req.style),
     "icon": lambda req: build_sprite_prompt(req.prompt, req.style),
     "page": lambda req: build_environment_prompt(

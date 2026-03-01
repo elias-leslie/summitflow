@@ -75,7 +75,3 @@ __all__ = [
     "update_step_passes",
     "update_step_status",
 ]
-
-import   os
-import   sys
-x = os

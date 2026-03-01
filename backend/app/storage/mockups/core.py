@@ -8,7 +8,7 @@ from typing import Any
 from ..connection import get_connection
 
 # Mockup type constants
-MOCKUP_TYPES = frozenset({"component", "page", "layout", "icon", "illustration", "sprite"})
+MOCKUP_TYPES = frozenset({"component", "page", "layout", "icon", "illustration", "sprite", "sheet"})
 
 # Mockup status constants
 MOCKUP_STATUSES = frozenset(

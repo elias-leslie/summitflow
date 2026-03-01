@@ -11,6 +11,7 @@ import {
 
 const ASSET_TYPES = [
   { value: 'sprite', label: 'Sprite' },
+  { value: 'sheet', label: 'Sprite Sheet' },
   { value: 'illustration', label: 'Illustration' },
   { value: 'icon', label: 'Icon' },
 ] as const

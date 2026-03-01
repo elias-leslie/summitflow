@@ -61,7 +61,7 @@
         "label": "LINT",
         "binary": "ruff",
         "args": "check --output-format=concise",
-        "count_method": "coderabbit_parse",
+        "count_method": "wc_l",
         "working_dir": "backend",
         "fallback_global": true,
         "pass_path": true
