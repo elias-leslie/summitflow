@@ -10,6 +10,55 @@ from .token_utils import MAX_EXPLORER_TOKENS, truncate_to_tokens
 logger = logging.getLogger(__name__)
 
 
+def _collect_files(project_id: str, query_lower: str) -> str | None:
+    """Return formatted relevant-files section, or None on failure/empty."""
+    try:
+        files = get_entries(project_id, filters={"entry_type": "file"})
+        relevant = [
+            f
+            for f in files
+            if query_lower in f.get("name", "").lower()
+            or query_lower in f.get("path", "").lower()
+        ][:20]
+        if not relevant:
+            return None
+        lines = ["## Relevant Files\n"] + [f"- {f.get('path', 'unknown')}" for f in relevant]
+        return "\n".join(lines)
+    except Exception as e:
+        logger.warning("Failed to get files for %s: %s", project_id, e)
+        return None
+
+
+def _collect_endpoints(project_id: str) -> str | None:
+    """Return formatted API-endpoints section, or None on failure/empty."""
+    try:
+        endpoints = get_entries(project_id, filters={"entry_type": "endpoint"})
+        if not endpoints:
+            return None
+        lines = ["## API Endpoints\n"]
+        for ep in endpoints[:20]:
+            method = ep.get("metadata", {}).get("method", "GET")
+            path = ep.get("path", "unknown")
+            lines.append(f"- {method} {path}")
+        return "\n".join(lines)
+    except Exception as e:
+        logger.warning("Failed to get endpoints for %s: %s", project_id, e)
+        return None
+
+
+def _collect_tables(project_id: str) -> str | None:
+    """Return formatted database-tables section, or None on failure/empty."""
+    try:
+        tables = get_entries(project_id, filters={"entry_type": "table"})
+        if not tables:
+            return None
+        lines = ["## Database Tables\n"] + [f"- {t.get('name', 'unknown')}" for t in tables[:15]]
+        return "\n".join(lines)
+    except Exception as e:
+        logger.warning("Failed to get tables for %s: %s", project_id, e)
+        return None
+
+
 def gather_explorer_context(project_id: str, query: str) -> str:
     """Gather relevant explorer entries based on query.
 
@@ -20,53 +69,11 @@ def gather_explorer_context(project_id: str, query: str) -> str:
     Returns:
         Explorer context as string.
     """
-    result_parts: list[str] = []
-
-    # Query keywords for filtering
     query_lower = query.lower()
-
-    # Get files
-    try:
-        files = get_entries(project_id, filters={"entry_type": "file"})
-        relevant_files = [
-            f
-            for f in files
-            if query_lower in f.get("name", "").lower() or query_lower in f.get("path", "").lower()
-        ][:20]
-
-        if relevant_files:
-            file_lines = ["## Relevant Files\n"]
-            for f in relevant_files:
-                path = f.get("path", "unknown")
-                file_lines.append(f"- {path}")
-            result_parts.append("\n".join(file_lines))
-    except Exception as e:
-        logger.warning("Failed to get files for %s: %s", project_id, e)
-
-    # Get endpoints
-    try:
-        endpoints = get_entries(project_id, filters={"entry_type": "endpoint"})
-        if endpoints:
-            endpoint_lines = ["## API Endpoints\n"]
-            for ep in endpoints[:20]:
-                method = ep.get("metadata", {}).get("method", "GET")
-                path = ep.get("path", "unknown")
-                endpoint_lines.append(f"- {method} {path}")
-            result_parts.append("\n".join(endpoint_lines))
-    except Exception as e:
-        logger.warning("Failed to get endpoints for %s: %s", project_id, e)
-
-    # Get database tables
-    try:
-        tables = get_entries(project_id, filters={"entry_type": "table"})
-        if tables:
-            table_lines = ["## Database Tables\n"]
-            for t in tables[:15]:
-                name = t.get("name", "unknown")
-                table_lines.append(f"- {name}")
-            result_parts.append("\n".join(table_lines))
-    except Exception as e:
-        logger.warning("Failed to get tables for %s: %s", project_id, e)
-
-    combined = "\n\n".join(result_parts)
+    sections = [
+        _collect_files(project_id, query_lower),
+        _collect_endpoints(project_id),
+        _collect_tables(project_id),
+    ]
+    combined = "\n\n".join(s for s in sections if s)
     return truncate_to_tokens(combined, MAX_EXPLORER_TOKENS)
