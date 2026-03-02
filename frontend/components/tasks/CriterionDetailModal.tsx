@@ -4,7 +4,6 @@ import {
   CheckCircle2,
   Clock,
   Loader2,
-  Terminal,
   X,
 } from 'lucide-react'
 import { useState } from 'react'
@@ -120,23 +119,6 @@ export function CriterionDetailModal({
               {criterion.criterion}
             </p>
           </div>
-
-          {/* Verify Command */}
-          {criterion.verify_command && (
-            <div>
-              <div className="flex items-center gap-2 mb-1.5">
-                <Terminal className="h-3.5 w-3.5 text-slate-500" />
-                <span className="text-xs text-slate-500 uppercase tracking-wider">
-                  Verify Command
-                </span>
-              </div>
-              <div className="bg-slate-900 border-l-2 border-slate-600 rounded-r">
-                <code className="block p-3 text-xs text-slate-300 font-mono whitespace-pre-wrap break-all overflow-x-auto">
-                  {criterion.verify_command}
-                </code>
-              </div>
-            </div>
-          )}
 
           {/* Verification Method & Status */}
           <div className="flex items-center justify-between pt-2 border-t border-slate-700/50">

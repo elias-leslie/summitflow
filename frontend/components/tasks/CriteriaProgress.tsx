@@ -143,9 +143,6 @@ export function CriteriaProgress({
                       {c.verify_by}
                     </span>
                   )}
-                  {c.verify_command && (
-                    <span className="text-2xs text-slate-500">has command</span>
-                  )}
                 </div>
               </div>
             </div>

@@ -44,7 +44,6 @@ export interface TaskAcceptanceCriterion {
   category?: 'performance' | 'correctness' | 'security' | 'quality'
   measurement?: string
   threshold?: string | null
-  verify_command?: string | null
   verify_by?: 'test' | 'opus' | 'human' | 'agent'
   test_file?: string | null
   test_name?: string | null
