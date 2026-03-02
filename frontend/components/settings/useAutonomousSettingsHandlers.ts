@@ -6,6 +6,21 @@ import {
 } from '@/lib/api'
 import { TASK_TYPES } from './autonomous-utils'
 
+// Creates a handler that parses a string to int and mutates if within [min, max]
+function makeBoundedIntHandler(
+  mutate: (u: AutonomousExecutionSettingsUpdate) => void,
+  key: keyof AutonomousExecutionSettingsUpdate,
+  min: number,
+  max: number,
+) {
+  return (value: string) => {
+    const n = parseInt(value, 10)
+    if (!Number.isNaN(n) && n >= min && n <= max) {
+      mutate({ [key]: n } as AutonomousExecutionSettingsUpdate)
+    }
+  }
+}
+
 export function useAutonomousSettingsHandlers(
   projectId: string,
   settings: AutonomousExecutionSettings,
@@ -25,88 +40,47 @@ export function useAutonomousSettingsHandlers(
   const mutate = (update: AutonomousExecutionSettingsUpdate) =>
     mutation.mutate(update)
 
-  const handleConcurrencyChange = (value: string) => {
+  // --- Execution control ---
+  const handleConcurrencyChange = (value: string) =>
     mutate({ max_concurrent: parseInt(value, 10) })
-  }
 
   const handleMaxTasksPerDayChange = (value: string) => {
-    const numValue = value === '' ? null : parseInt(value, 10)
-    if (numValue === null || (numValue >= 1 && !Number.isNaN(numValue))) {
-      mutate({ max_tasks_per_day: numValue })
+    const n = value === '' ? null : parseInt(value, 10)
+    if (n === null || (n >= 1 && !Number.isNaN(n))) {
+      mutate({ max_tasks_per_day: n })
     }
   }
 
-  const handleCooldownChange = (value: string) => {
-    const numValue = parseInt(value, 10)
-    if (!Number.isNaN(numValue) && numValue >= 0) {
-      mutate({ cooldown_minutes: numValue })
-    }
-  }
+  const handleCooldownChange = makeBoundedIntHandler(mutate, 'cooldown_minutes', 0, Infinity)
+  const handleFrequencyChange = makeBoundedIntHandler(mutate, 'frequency_minutes', 5, 1440)
 
+  // --- Task filtering ---
   const handleTaskTypeToggle = (taskType: string) => {
-    const currentTypes = settings.allowed_types || TASK_TYPES.map(t => t.value)
-    const newTypes = currentTypes.includes(taskType)
-      ? currentTypes.filter(t => t !== taskType)
-      : [...currentTypes, taskType]
-    const allSelected = newTypes.length === TASK_TYPES.length
-    mutate({ allowed_types: allSelected ? null : newTypes })
+    const current = settings.allowed_types || TASK_TYPES.map(t => t.value)
+    const next = current.includes(taskType)
+      ? current.filter(t => t !== taskType)
+      : [...current, taskType]
+    mutate({ allowed_types: next.length === TASK_TYPES.length ? null : next })
   }
 
-  const handleModelTierChange = (value: string) => {
+  const handleModelTierChange = (value: string) =>
     mutate({ preferred_model_tier: value })
-  }
 
-  const handleSelfFixAttemptsChange = (value: string) => {
-    const numValue = parseInt(value, 10)
-    if (!Number.isNaN(numValue) && numValue >= 0 && numValue <= 10) {
-      mutate({ max_self_fix_attempts: numValue })
-    }
-  }
+  // --- Self-healing ---
+  const handleSelfFixAttemptsChange = makeBoundedIntHandler(mutate, 'max_self_fix_attempts', 0, 10)
+  const handleSupervisorAttemptsChange = makeBoundedIntHandler(mutate, 'max_supervisor_attempts', 0, 10)
+  const handleExtensionsChange = makeBoundedIntHandler(mutate, 'max_extensions', 0, 10)
 
-  const handleSupervisorAttemptsChange = (value: string) => {
-    const numValue = parseInt(value, 10)
-    if (!Number.isNaN(numValue) && numValue >= 0 && numValue <= 10) {
-      mutate({ max_supervisor_attempts: numValue })
-    }
-  }
+  // --- Merge / review ---
+  const handleAutoMergeToggle = () => mutate({ auto_merge_enabled: !settings.auto_merge_enabled })
+  const handleRequireReviewToggle = () => mutate({ require_review: !settings.require_review })
+  const handleAutoMergeTiersChange = (tiers: number[]) => mutate({ auto_merge_tiers: tiers })
 
-  const handleExtensionsChange = (value: string) => {
-    const numValue = parseInt(value, 10)
-    if (!Number.isNaN(numValue) && numValue >= 0 && numValue <= 10) {
-      mutate({ max_extensions: numValue })
-    }
-  }
-
-  const handleAutoMergeToggle = () => {
-    mutate({ auto_merge_enabled: !settings.auto_merge_enabled })
-  }
-
-  const handleRequireReviewToggle = () => {
-    mutate({ require_review: !settings.require_review })
-  }
-
-  const handleFrequencyChange = (value: string) => {
-    const numValue = parseInt(value, 10)
-    if (!Number.isNaN(numValue) && numValue >= 5 && numValue <= 1440) {
-      mutate({ frequency_minutes: numValue })
-    }
-  }
-
-  const handleAutoMergeTiersChange = (tiers: number[]) => {
-    mutate({ auto_merge_tiers: tiers })
-  }
-
-  const handleQualityToolsChange = (tools: string[]) => {
-    mutate({ quality_gate_tools: tools })
-  }
-
-  const handleQualityModeChange = (mode: string) => {
-    mutate({ quality_gate_mode: mode })
-  }
-
-  const handleQualityFixToggle = () => {
+  // --- Quality gate ---
+  const handleQualityToolsChange = (tools: string[]) => mutate({ quality_gate_tools: tools })
+  const handleQualityModeChange = (mode: string) => mutate({ quality_gate_mode: mode })
+  const handleQualityFixToggle = () =>
     mutate({ quality_gate_fix_enabled: !settings.quality_gate_fix_enabled })
-  }
 
   return {
     isPending: mutation.isPending,
