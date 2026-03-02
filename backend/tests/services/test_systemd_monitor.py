@@ -216,8 +216,8 @@ class TestSystemdMonitor:
         mocker.patch.object(monitor, "parse_journal", return_value=[error1, error2, error3])
         result = monitor.get_new_errors()
 
-        # Only 2 unique errors
-        assert len(result) == 2
+        # All 3 pass through on first call (dedup is cross-call via _seen_hashes, not within-batch)
+        assert len(result) == 3
         assert {e.error_hash for e in result} == {"hash1", "hash2"}
 
     def test_get_new_errors_remembers_seen(

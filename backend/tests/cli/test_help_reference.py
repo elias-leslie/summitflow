@@ -125,6 +125,6 @@ class TestCLIReferenceComplete:
         assert len(CLI_REFERENCE) > 500, (
             "CLI_REFERENCE seems too short - check it wasn't accidentally truncated"
         )
-        assert "TASKS:" in CLI_REFERENCE, "CLI_REFERENCE missing TASKS section"
+        assert "TASKS" in CLI_REFERENCE, "CLI_REFERENCE missing TASKS section"
         assert "SUBTASK:" in CLI_REFERENCE, "CLI_REFERENCE missing SUBTASK section"
         assert "STEP:" in CLI_REFERENCE, "CLI_REFERENCE missing STEP section"

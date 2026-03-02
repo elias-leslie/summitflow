@@ -194,11 +194,12 @@ class TestRequestExtension:
 
     @patch("app.tasks.autonomous.exec_modules.agent_routing.log_task_event")
     @patch("app.tasks.autonomous.exec_modules.agent_routing.get_sync_client")
-    def test_exception_returns_false(
+    def test_exception_defaults_to_approved(
         self,
         mock_client_factory: MagicMock,
         mock_log_event: MagicMock,
     ) -> None:
+        """On exception, autonomous-first policy defaults to APPROVED."""
         from app.tasks.autonomous.exec_modules.agent_routing import request_extension
 
         mock_client = MagicMock()
@@ -212,7 +213,7 @@ class TestRequestExtension:
             "task-1", "1.1", step_results, progress, project_id="test-project",
         )
 
-        assert approved is False
+        assert approved is True
         assert guidance is None
 
     @patch("app.tasks.autonomous.exec_modules.agent_routing.log_task_event")

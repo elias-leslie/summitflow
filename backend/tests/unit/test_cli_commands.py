@@ -200,6 +200,12 @@ class TestCreateFromFile:
     Uses mock_st_client to avoid hitting the real API.
     """
 
+    @pytest.fixture(autouse=True)
+    def _bypass_project_check(self) -> Generator[None]:
+        """Bypass require_explicit_project since tests invoke tasks_app directly."""
+        with patch("cli.commands.tasks_import.require_explicit_project"):
+            yield
+
     def test_from_file_valid_json(self, mock_st_client: tuple[MagicMock, dict[str, dict[str, Any]]]) -> None:
         """Test creating tasks from a valid JSON file."""
         tasks_data = {
@@ -293,6 +299,12 @@ class TestCreateFromFileErrors:
 
     These tests verify validation errors - no mocking needed since they fail before API calls.
     """
+
+    @pytest.fixture(autouse=True)
+    def _bypass_project_check(self) -> Generator[None]:
+        """Bypass require_explicit_project since tests invoke tasks_app directly."""
+        with patch("cli.commands.tasks_import.require_explicit_project"):
+            yield
 
     def test_invalid_json_syntax(self) -> None:
         """Test handling of invalid JSON syntax."""

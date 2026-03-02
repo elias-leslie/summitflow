@@ -63,11 +63,12 @@ class TestSupervisorCircuitBreakerTriage:
         assert _supervisor_circuit_breaker_triage("task-1", "abc123", 2, "test-project") is False
 
     @patch("app.tasks.autonomous.exec_modules.agent_routing.get_sync_client")
-    def test_exception_returns_false_conservative(self, mock_client: MagicMock) -> None:
+    def test_exception_defaults_to_continue(self, mock_client: MagicMock) -> None:
+        """On exception, autonomous-first policy defaults to CONTINUE."""
         from app.tasks.autonomous.execution import _supervisor_circuit_breaker_triage
 
         mock_client.return_value.complete.side_effect = RuntimeError("API down")
-        assert _supervisor_circuit_breaker_triage("task-1", "abc123", 2, "test-project") is False
+        assert _supervisor_circuit_breaker_triage("task-1", "abc123", 2, "test-project") is True
 
 
 class TestSupervisorResolveEscalation:
