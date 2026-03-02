@@ -29,49 +29,31 @@ def _compute_console_error_hash(error: str, stack: str | None) -> str:
     return hashlib.sha256(content.encode()).hexdigest()[:16]
 
 
-@router.post("/projects/{project_id}/errors/console")
-async def capture_console_error(
-    project_id: str,
-    request: ConsoleErrorRequest,
-) -> ConsoleErrorResponse:
-    """Capture a frontend console error and create a bug task.
-
-    This endpoint is called by frontend error handlers to report
-    JavaScript errors for investigation.
-
-    Deduplication: Won't create duplicate tasks for same error+stack
-    within the last 24 hours.
+def _build_error_title(error: str) -> str:
+    """Build a task title from the error message.
 
     Args:
-        project_id: Project ID
-        request: Error details from frontend
+        error: Full error message
 
     Returns:
-        ConsoleErrorResponse with task info if created
+        Formatted title with truncated error preview
     """
-    validate_project_exists(project_id)
-
-    # Build title from error message (truncate for readability)
-    error_preview = request.error[:80]
-    if len(request.error) > 80:
+    error_preview = error[:80]
+    if len(error) > 80:
         error_preview += "..."
-    title = f"Fix: [Frontend] {error_preview}"
+    return f"Fix: [Frontend] {error_preview}"
 
-    # Check for duplicate
-    if bug_task_exists_for_error(project_id, title):
-        logger.info(
-            "skipping_duplicate_console_error",
-            project_id=project_id,
-            error=request.error[:50],
-        )
-        return ConsoleErrorResponse(
-            success=True,
-            message="Duplicate error - task already exists",
-            is_duplicate=True,
-        )
 
-    # Build description with full context
-    error_hash = _compute_console_error_hash(request.error, request.stack)
+def _build_error_description(request: ConsoleErrorRequest, error_hash: str) -> str:
+    """Build a task description with full error context.
+
+    Args:
+        request: Error request data from frontend
+        error_hash: Computed hash of the error
+
+    Returns:
+        Formatted markdown description
+    """
     description_parts = [
         f"**Captured:** {request.timestamp}",
         f"**URL:** {request.url}",
@@ -105,7 +87,47 @@ async def capture_console_error(
             "This bug was auto-created from frontend console error capture.",
         ]
     )
-    description = "\n".join(description_parts)
+    return "\n".join(description_parts)
+
+
+@router.post("/projects/{project_id}/errors/console")
+async def capture_console_error(
+    project_id: str,
+    request: ConsoleErrorRequest,
+) -> ConsoleErrorResponse:
+    """Capture a frontend console error and create a bug task.
+
+    This endpoint is called by frontend error handlers to report
+    JavaScript errors for investigation.
+
+    Deduplication: Won't create duplicate tasks for same error+stack
+    within the last 24 hours.
+
+    Args:
+        project_id: Project ID
+        request: Error details from frontend
+
+    Returns:
+        ConsoleErrorResponse with task info if created
+    """
+    validate_project_exists(project_id)
+
+    title = _build_error_title(request.error)
+
+    if bug_task_exists_for_error(project_id, title):
+        logger.info(
+            "skipping_duplicate_console_error",
+            project_id=project_id,
+            error=request.error[:50],
+        )
+        return ConsoleErrorResponse(
+            success=True,
+            message="Duplicate error - task already exists",
+            is_duplicate=True,
+        )
+
+    error_hash = _compute_console_error_hash(request.error, request.stack)
+    description = _build_error_description(request, error_hash)
 
     task = create_task(
         project_id=project_id,
