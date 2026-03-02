@@ -14,6 +14,67 @@ from typing import Any
 from .connection import get_connection
 from .explorer_helpers import to_iso_string as _to_iso_string
 
+_SCAN_STATE_COLUMNS = """
+    project_id, status, current_type, types_total, types_completed,
+    started_at, completed_at, error, results, updated_at
+"""
+
+
+def _row_to_scan_state(row: tuple[Any, ...]) -> dict[str, Any]:
+    """Convert a DB row to a scan state dict.
+
+    Args:
+        row: Database row with 10 columns matching _SCAN_STATE_COLUMNS
+
+    Returns:
+        Scan state dict
+    """
+    return {
+        "project_id": row[0],
+        "status": row[1],
+        "current_type": row[2],
+        "types_total": row[3],
+        "types_completed": row[4],
+        "started_at": _to_iso_string(row[5]),
+        "completed_at": _to_iso_string(row[6]),
+        "error": row[7],
+        "results": row[8] if row[8] else {},
+        "updated_at": _to_iso_string(row[9]),
+    }
+
+
+def _build_scan_state_from_params(
+    project_id: str,
+    status: str,
+    current_type: str | None,
+    types_total: int,
+    types_completed: int,
+    started_at: datetime | None,
+    completed_at: datetime | None,
+    error: str | None,
+    results: dict[str, Any] | None,
+    updated_at: datetime,
+) -> dict[str, Any]:
+    """Build a scan state dict from individual parameters.
+
+    Used as a fallback when RETURNING clause returns no row.
+
+    Returns:
+        Scan state dict
+    """
+    return {
+        "project_id": project_id,
+        "status": status,
+        "current_type": current_type,
+        "types_total": types_total,
+        "types_completed": types_completed,
+        "started_at": _to_iso_string(started_at),
+        "completed_at": _to_iso_string(completed_at),
+        "error": error,
+        "results": results or {},
+        "updated_at": _to_iso_string(updated_at),
+    }
+
 
 def get_scan_state(project_id: str) -> dict[str, Any] | None:
     """Get the current scan state for a project.
@@ -26,9 +87,8 @@ def get_scan_state(project_id: str) -> dict[str, Any] | None:
     """
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            """
-            SELECT project_id, status, current_type, types_total, types_completed,
-                   started_at, completed_at, error, results, updated_at
+            f"""
+            SELECT {_SCAN_STATE_COLUMNS}
             FROM scan_states
             WHERE project_id = %s
             """,
@@ -39,18 +99,56 @@ def get_scan_state(project_id: str) -> dict[str, Any] | None:
         if not row:
             return None
 
-        return {
-            "project_id": row[0],
-            "status": row[1],
-            "current_type": row[2],
-            "types_total": row[3],
-            "types_completed": row[4],
-            "started_at": _to_iso_string(row[5]),
-            "completed_at": _to_iso_string(row[6]),
-            "error": row[7],
-            "results": row[8] if row[8] else {},
-            "updated_at": _to_iso_string(row[9]),
-        }
+        return _row_to_scan_state(row)
+
+
+def _upsert_scan_state_row(
+    cur: Any,
+    project_id: str,
+    status: str,
+    current_type: str | None,
+    types_total: int,
+    types_completed: int,
+    started_at: datetime | None,
+    completed_at: datetime | None,
+    error: str | None,
+    results: dict[str, Any] | None,
+    now: datetime,
+) -> tuple[Any, ...] | None:
+    """Execute the scan state upsert and return the RETURNING row."""
+    cur.execute(
+        f"""
+        INSERT INTO scan_states (
+            {_SCAN_STATE_COLUMNS}
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (project_id)
+        DO UPDATE SET
+            status = EXCLUDED.status,
+            current_type = EXCLUDED.current_type,
+            types_total = EXCLUDED.types_total,
+            types_completed = EXCLUDED.types_completed,
+            started_at = EXCLUDED.started_at,
+            completed_at = EXCLUDED.completed_at,
+            error = EXCLUDED.error,
+            results = EXCLUDED.results,
+            updated_at = EXCLUDED.updated_at
+        RETURNING {_SCAN_STATE_COLUMNS}
+        """,
+        (
+            project_id,
+            status,
+            current_type,
+            types_total,
+            types_completed,
+            started_at,
+            completed_at,
+            error,
+            json.dumps(results or {}),
+            now,
+        ),
+    )
+    return cur.fetchone()
 
 
 def update_scan_state(
@@ -66,45 +164,30 @@ def update_scan_state(
 ) -> dict[str, Any]:
     """Update (or create) the scan state for a project.
 
-    Args:
-        project_id: Project ID for scoping
-        status: Scan status ('idle', 'running', 'completed', 'failed')
-        current_type: Currently scanning type
-        types_total: Total number of types to scan
-        types_completed: Number of types completed
-        started_at: When the scan started
-        completed_at: When the scan completed
-        error: Error message if failed
-        results: Scan results (counts per type)
-
     Returns:
         Updated scan state dict
     """
     now = datetime.now(UTC)
 
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO scan_states (
-                project_id, status, current_type, types_total, types_completed,
-                started_at, completed_at, error, results, updated_at
-            )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (project_id)
-            DO UPDATE SET
-                status = EXCLUDED.status,
-                current_type = EXCLUDED.current_type,
-                types_total = EXCLUDED.types_total,
-                types_completed = EXCLUDED.types_completed,
-                started_at = EXCLUDED.started_at,
-                completed_at = EXCLUDED.completed_at,
-                error = EXCLUDED.error,
-                results = EXCLUDED.results,
-                updated_at = EXCLUDED.updated_at
-            RETURNING project_id, status, current_type, types_total, types_completed,
-                      started_at, completed_at, error, results, updated_at
-            """,
-            (
+        row = _upsert_scan_state_row(
+            cur,
+            project_id,
+            status,
+            current_type,
+            types_total,
+            types_completed,
+            started_at,
+            completed_at,
+            error,
+            results,
+            now,
+        )
+        conn.commit()
+
+        if not row:
+            # Should never happen with RETURNING, but satisfy type checker
+            return _build_scan_state_from_params(
                 project_id,
                 status,
                 current_type,
@@ -113,37 +196,8 @@ def update_scan_state(
                 started_at,
                 completed_at,
                 error,
-                json.dumps(results or {}),
+                results,
                 now,
-            ),
-        )
-        row = cur.fetchone()
-        conn.commit()
+            )
 
-        if not row:
-            # Should never happen with RETURNING, but satisfy type checker
-            return {
-                "project_id": project_id,
-                "status": status,
-                "current_type": current_type,
-                "types_total": types_total,
-                "types_completed": types_completed,
-                "started_at": _to_iso_string(started_at),
-                "completed_at": _to_iso_string(completed_at),
-                "error": error,
-                "results": results or {},
-                "updated_at": _to_iso_string(now),
-            }
-
-        return {
-            "project_id": row[0],
-            "status": row[1],
-            "current_type": row[2],
-            "types_total": row[3],
-            "types_completed": row[4],
-            "started_at": _to_iso_string(row[5]),
-            "completed_at": _to_iso_string(row[6]),
-            "error": row[7],
-            "results": row[8] if row[8] else {},
-            "updated_at": _to_iso_string(row[9]),
-        }
+        return _row_to_scan_state(row)
