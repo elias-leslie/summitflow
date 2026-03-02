@@ -40,6 +40,33 @@ class ActivityFeedResponse(BaseModel):
 
 
 # ============================================================================
+# Helpers
+# ============================================================================
+
+_VALID_TYPES = {"task", "session", "backup", "git"}
+
+
+def _parse_event_types(types: str | None) -> list[str] | None:
+    """Parse and validate comma-separated event type filter string."""
+    if not types:
+        return None
+    parsed = [t.strip() for t in types.split(",") if t.strip()]
+    valid = [t for t in parsed if t in _VALID_TYPES]
+    return valid or None
+
+
+def _to_activity_event(e: dict[str, Any]) -> ActivityEvent:
+    """Convert a raw event dict to an ActivityEvent model."""
+    return ActivityEvent(
+        type=e["type"],
+        message=e["message"],
+        timestamp=e["timestamp"],
+        project_id=e["project_id"],
+        metadata=e["metadata"],
+    )
+
+
+# ============================================================================
 # Endpoints
 # ============================================================================
 
@@ -64,33 +91,15 @@ async def get_activity_feed(
 
     Results are sorted by timestamp (newest first) and paginated.
     """
-    # Parse event types filter
-    event_types: list[str] | None = None
-    if types:
-        event_types = [t.strip() for t in types.split(",") if t.strip()]
-        valid_types = {"task", "session", "backup", "git"}
-        event_types = [t for t in event_types if t in valid_types]
-        if not event_types:
-            event_types = None
-
+    event_types = _parse_event_types(types)
     events, total = activity_store.get_aggregated_activity(
         project_id=project_id,
         limit=limit,
         offset=offset,
         event_types=event_types,
     )
-
     return ActivityFeedResponse(
-        items=[
-            ActivityEvent(
-                type=e["type"],
-                message=e["message"],
-                timestamp=e["timestamp"],
-                project_id=e["project_id"],
-                metadata=e["metadata"],
-            )
-            for e in events
-        ],
+        items=[_to_activity_event(e) for e in events],
         total=total,
         limit=limit,
         offset=offset,
