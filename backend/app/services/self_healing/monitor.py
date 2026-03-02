@@ -1,8 +1,4 @@
-"""Systemd journal monitor for detecting runtime errors.
-
-Monitors systemd journal for errors from SummitFlow services and creates
-bug tasks for detected issues.
-"""
+"""Systemd journal monitor for detecting runtime errors in SummitFlow services."""
 
 from __future__ import annotations
 
@@ -29,15 +25,18 @@ PRIORITY_WARNING = 4
 PRIORITY_NOTICE = 5
 PRIORITY_INFO = 6
 PRIORITY_DEBUG = 7
+ERROR_PRIORITY_THRESHOLD = PRIORITY_ERR  # Capture errors and above (priority <= 3)
 
-# Capture errors and above (priority <= 3)
-ERROR_PRIORITY_THRESHOLD = PRIORITY_ERR
+_JOURNAL_TIMEOUT = 30
+_MESSAGE_PREVIEW_LEN = 80
+_HASH_TRUNCATE_LEN = 200
+_HASH_DIGEST_LEN = 16
+_PRIORITY_NAMES = {PRIORITY_EMERG: "EMERGENCY", PRIORITY_ALERT: "ALERT", PRIORITY_CRIT: "CRITICAL", PRIORITY_ERR: "ERROR"}
 
 
 @dataclass
 class JournalError:
     """Represents an error extracted from systemd journal."""
-
     unit: str
     message: str
     priority: int
@@ -46,91 +45,42 @@ class JournalError:
 
 
 def compute_error_hash(unit: str, message: str) -> str:
-    """Compute a stable hash for an error for deduplication.
+    """Compute a stable 16-char deduplication hash, stripping timestamps/numbers."""
+    norm = re.sub(r"\d{4}-\d{2}-\d{2}[Tt ]\d{2}:\d{2}:\d{2}[.,]?\d*[Zz]?", "", message.lower().strip())
+    norm = re.sub(r"\s+", " ", re.sub(r"\b\d{2,}\b", "", norm)).strip()
+    return hashlib.sha256(f"{unit}|{norm[:_HASH_TRUNCATE_LEN]}".encode()).hexdigest()[:_HASH_DIGEST_LEN]
 
-    The hash is based on the unit and a normalized version of the message,
-    ignoring timestamps and specific values that vary.
 
-    Args:
-        unit: Systemd unit name
-        message: Error message
-
-    Returns:
-        Hex digest of the error hash (16 characters)
-    """
-    # Normalize: lowercase, strip whitespace
-    normalized = message.lower().strip()
-
-    # Strip timestamps (2026-02-18 07:01:13,450 / ISO / epoch patterns)
-    normalized = re.sub(r"\d{4}-\d{2}-\d{2}[Tt ]\d{2}:\d{2}:\d{2}[.,]?\d*[Zz]?", "", normalized)
-    # Strip standalone numbers that look like PIDs, line numbers, ports
-    normalized = re.sub(r"\b\d{2,}\b", "", normalized)
-    # Collapse whitespace
-    normalized = re.sub(r"\s+", " ", normalized).strip()
-
-    parts = [unit, normalized[:200]]  # Truncate long messages
-    content = "|".join(parts)
-    return hashlib.sha256(content.encode()).hexdigest()[:16]
+def _build_task_description(error: JournalError) -> str:
+    """Build the markdown description body for a bug task."""
+    priority_name = _PRIORITY_NAMES.get(error.priority, "ERROR")
+    return (
+        f"**Detected:** {error.timestamp.isoformat()}\n"
+        f"**Service:** {error.unit}\n"
+        f"**Priority:** {priority_name}\n\n"
+        f"**Error Message:**\n```\n{error.message}\n```\n\n"
+        f"**Error Hash:** {error.error_hash}\n\n"
+        "This bug was auto-created from systemd journal monitoring.\n"
+        "The error was detected at runtime and requires investigation."
+    )
 
 
 class SystemdMonitor:
-    """Monitor for systemd journal errors.
+    """Monitor systemd journal for errors from SummitFlow services."""
 
-    Parses journalctl output to detect errors from SummitFlow services
-    and provides them for bug task creation.
-    """
-
-    def __init__(
-        self,
-        unit_pattern: str = "summitflow-*",
-        since: str = "5 minutes ago",
-    ):
-        """Initialize the monitor.
-
-        Args:
-            unit_pattern: Pattern for matching systemd units
-            since: Time window for journal queries
-        """
+    def __init__(self, unit_pattern: str = "summitflow-*", since: str = "5 minutes ago") -> None:
         self.unit_pattern = unit_pattern
         self.since = since
         self._seen_hashes: set[str] = set()
 
     def parse_journal(self) -> list[JournalError]:
-        """Parse journalctl output for errors.
-
-        Runs journalctl and extracts error-level entries.
-
-        Returns:
-            List of JournalError objects
-        """
+        """Run journalctl and return error-level entries."""
         try:
             result = subprocess.run(
-                [
-                    "journalctl",
-                    "--user",
-                    "-u",
-                    self.unit_pattern,
-                    "--since",
-                    self.since,
-                    "-o",
-                    "json",
-                    "--no-pager",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=30,
+                ["journalctl", "--user", "-u", self.unit_pattern,
+                 "--since", self.since, "-o", "json", "--no-pager"],
+                capture_output=True, text=True, timeout=_JOURNAL_TIMEOUT,
             )
-
-            if result.returncode != 0:
-                logger.warning(
-                    "journalctl_failed",
-                    returncode=result.returncode,
-                    stderr=result.stderr[:200],
-                )
-                return []
-
-            return self._parse_json_output(result.stdout)
-
         except subprocess.TimeoutExpired:
             logger.warning("journalctl_timeout")
             return []
@@ -141,134 +91,63 @@ class SystemdMonitor:
             logger.error("journal_parse_error", error=str(e))
             return []
 
+        if result.returncode != 0:
+            logger.warning("journalctl_failed", returncode=result.returncode, stderr=result.stderr[:200])
+            return []
+
+        return self._parse_json_output(result.stdout)
+
     def _parse_json_output(self, output: str) -> list[JournalError]:
-        """Parse JSON output from journalctl.
-
-        Each line is a separate JSON object.
-
-        Args:
-            output: Raw journalctl output
-
-        Returns:
-            List of parsed errors
-        """
+        """Parse newline-delimited JSON output from journalctl."""
         errors: list[JournalError] = []
-
         for line in output.strip().split("\n"):
             if not line:
                 continue
-
             try:
-                entry = json.loads(line)
-                error = self._parse_entry(entry)
+                error = self._parse_entry(json.loads(line))
                 if error:
                     errors.append(error)
             except json.JSONDecodeError:
                 logger.debug("skipping_non_json_line", line=line[:50])
-                continue
-
         return errors
 
     def _parse_entry(self, entry: dict[str, str]) -> JournalError | None:
-        """Parse a single journal entry.
-
-        Args:
-            entry: JSON-decoded journal entry
-
-        Returns:
-            JournalError if entry is an error, None otherwise
-        """
-        # Get priority (defaults to INFO if not present)
-        priority_str = entry.get("PRIORITY", str(PRIORITY_INFO))
+        """Parse a single journal entry dict into a JournalError, or None."""
         try:
-            priority = int(priority_str)
+            priority = int(entry.get("PRIORITY") or PRIORITY_INFO)
         except ValueError:
             priority = PRIORITY_INFO
-
-        # Only capture errors and above
         if priority > ERROR_PRIORITY_THRESHOLD:
             return None
-
-        # Extract required fields
         unit = entry.get("_SYSTEMD_UNIT", entry.get("UNIT", "unknown"))
         message = entry.get("MESSAGE", "")
-
         if not message:
             return None
-
-        # Parse timestamp
         timestamp_us = entry.get("__REALTIME_TIMESTAMP")
-        if timestamp_us:
-            try:
-                timestamp = datetime.fromtimestamp(int(timestamp_us) / 1_000_000)
-            except (ValueError, OSError):
-                timestamp = datetime.now(UTC)
-        else:
-            timestamp = datetime.now(UTC)
-
-        error_hash = compute_error_hash(unit, message)
-
-        return JournalError(
-            unit=unit,
-            message=message,
-            priority=priority,
-            timestamp=timestamp,
-            error_hash=error_hash,
-        )
+        try:
+            ts = datetime.fromtimestamp(int(timestamp_us) / 1_000_000) if timestamp_us else datetime.now(UTC)
+        except (ValueError, OSError):
+            ts = datetime.now(UTC)
+        return JournalError(unit=unit, message=message, priority=priority, timestamp=ts,
+                            error_hash=compute_error_hash(unit, message))
 
     def get_new_errors(self) -> list[JournalError]:
-        """Get new errors that haven't been seen before.
-
-        Filters out errors that have already been processed based on
-        their error hash.
-
-        Returns:
-            List of new JournalError objects
-        """
+        """Return errors not yet seen, updating the internal seen-hash set."""
         all_errors = self.parse_journal()
-        new_errors = []
-
-        for error in all_errors:
-            if error.error_hash not in self._seen_hashes:
-                new_errors.append(error)
-                self._seen_hashes.add(error.error_hash)
-
+        new_errors = [e for e in all_errors if e.error_hash not in self._seen_hashes]
+        for e in new_errors:
+            self._seen_hashes.add(e.error_hash)
         if new_errors:
-            logger.info(
-                "new_errors_detected",
-                count=len(new_errors),
-                total_seen=len(all_errors),
-            )
-
+            logger.info("new_errors_detected", count=len(new_errors), total_seen=len(all_errors))
         return new_errors
 
     def mark_seen(self, error_hash: str) -> None:
-        """Mark an error hash as seen.
-
-        Used when loading known errors from database.
-
-        Args:
-            error_hash: Hash to mark as seen
-        """
+        """Mark an error hash as seen (used when loading known errors from DB)."""
         self._seen_hashes.add(error_hash)
 
     def clear_seen(self) -> None:
-        """Clear the set of seen error hashes.
-
-        Use with caution - may cause duplicate task creation.
-        """
+        """Clear seen hashes. Use with caution — may cause duplicate task creation."""
         self._seen_hashes.clear()
-
-
-def _get_priority_name(priority: int) -> str:
-    """Get human-readable name for priority level."""
-    names = {
-        PRIORITY_EMERG: "EMERGENCY",
-        PRIORITY_ALERT: "ALERT",
-        PRIORITY_CRIT: "CRITICAL",
-        PRIORITY_ERR: "ERROR",
-    }
-    return names.get(priority, "ERROR")
 
 
 def create_error_task(
@@ -276,68 +155,21 @@ def create_error_task(
     error: JournalError,
     skip_dedup: bool = False,
 ) -> dict[str, Any] | None:
-    """Create a bug task from a journal error.
+    """Create a bug task from a journal error; returns None if duplicate exists."""
+    preview = error.message[:_MESSAGE_PREVIEW_LEN]
+    if len(error.message) > _MESSAGE_PREVIEW_LEN:
+        preview += "..."
+    title = f"Fix: {preview}"
 
-    Args:
-        project_id: Project ID to create the task in
-        error: JournalError to create task from
-        skip_dedup: If True, skip deduplication check
-
-    Returns:
-        Created task dict, or None if task already exists
-    """
-    # Build title from error message
-    # Truncate at 80 chars for readability
-    message_preview = error.message[:80]
-    if len(error.message) > 80:
-        message_preview += "..."
-    title = f"Fix: {message_preview}"
-
-    # Check for duplicate
     if not skip_dedup and bug_task_exists_for_error(project_id, title):
-        logger.info(
-            "skipping_duplicate_error_task",
-            error_hash=error.error_hash,
-            title=title[:50],
-        )
+        logger.info("skipping_duplicate_error_task", error_hash=error.error_hash, title=title[:50])
         return None
 
-    # Build description with full context
-    priority_name = _get_priority_name(error.priority)
-    description_parts = [
-        f"**Detected:** {error.timestamp.isoformat()}",
-        f"**Service:** {error.unit}",
-        f"**Priority:** {priority_name}",
-        "",
-        "**Error Message:**",
-        "```",
-        error.message,
-        "```",
-        "",
-        f"**Error Hash:** {error.error_hash}",
-        "",
-        "This bug was auto-created from systemd journal monitoring.",
-        "The error was detected at runtime and requires investigation.",
-    ]
-    description = "\n".join(description_parts)
-
     task = create_task(
-        project_id=project_id,
-        title=title,
-        description=description,
-        priority=2,  # P2 - standard priority
-        task_type="bug",
-        complexity="STANDARD",
-        autonomous=True,  # Enable autonomous fixing
+        project_id=project_id, title=title, description=_build_task_description(error),
+        priority=2, task_type="bug", complexity="STANDARD", autonomous=True,
     )
-
-    logger.info(
-        "created_error_task",
-        task_id=task["id"],
-        error_hash=error.error_hash,
-        unit=error.unit,
-    )
-
+    logger.info("created_error_task", task_id=task["id"], error_hash=error.error_hash, unit=error.unit)
     return task
 
 
@@ -345,48 +177,21 @@ def process_journal_errors(
     project_id: str,
     monitor: SystemdMonitor | None = None,
 ) -> dict[str, int]:
-    """Process journal errors and create bug tasks.
-
-    Main entry point for the monitoring workflow.
-
-    Args:
-        project_id: Project ID for task creation
-        monitor: Optional SystemdMonitor instance
-
-    Returns:
-        Dict with counts: created, skipped, errors
-    """
+    """Process journal errors and create bug tasks; returns created/skipped/errors counts."""
     if monitor is None:
         monitor = SystemdMonitor()
-
-    results = {"created": 0, "skipped": 0, "errors": 0}
-
+    results: dict[str, int] = {"created": 0, "skipped": 0, "errors": 0}
     try:
-        new_errors = monitor.get_new_errors()
-
-        for error in new_errors:
+        for error in monitor.get_new_errors():
             try:
                 task = create_error_task(project_id, error)
-                if task:
-                    results["created"] += 1
-                else:
-                    results["skipped"] += 1
+                results["created" if task else "skipped"] += 1
             except Exception as e:
-                logger.error(
-                    "task_creation_failed",
-                    error_hash=error.error_hash,
-                    error=str(e),
-                )
+                logger.error("task_creation_failed", error_hash=error.error_hash, error=str(e))
                 results["errors"] += 1
-
     except Exception as e:
         logger.error("process_journal_errors_failed", error=str(e))
         results["errors"] += 1
-
     if results["created"] > 0:
-        logger.info(
-            "journal_processing_complete",
-            **results,
-        )
-
+        logger.info("journal_processing_complete", **results)
     return results
