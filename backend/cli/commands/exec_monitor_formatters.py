@@ -25,6 +25,53 @@ def subtask_summary(subtasks: list[dict[str, Any]]) -> str:
         return f"{passed}/{total}"
 
 
+def _format_attribute_value(key: str, value: Any) -> str | None:
+    """Return a formatted attribute line, or None if the attribute should be skipped."""
+    if key in ("elapsed_ms", "level", "message", "source"):
+        return None
+    if isinstance(value, str) and len(value) > 60:
+        value = value[:60] + "..."
+    return f"    {key}: {value}"
+
+
+def _print_debug_attributes(attributes: dict[str, Any]) -> None:
+    """Print event attributes in debug mode."""
+    elapsed = attributes.get("elapsed_ms")
+    if elapsed is not None:
+        print(f"    elapsed: {elapsed:.1f}ms")
+    for key, value in attributes.items():
+        line = _format_attribute_value(key, value)
+        if line is not None:
+            print(line)
+
+
+def _get_vis_indicator(debug: bool, visibility: str) -> str:
+    """Return visibility indicator prefix for debug mode."""
+    if not debug:
+        return ""
+    if visibility == "debug":
+        return "[D] "
+    if visibility == "internal":
+        return "[I] "
+    return ""
+
+
+def _print_event_human(
+    event: dict[str, Any], debug: bool, level_prefix: str, vis_indicator: str
+) -> None:
+    """Print a single event in human-readable format."""
+    message = event.get("message", "")
+    source = event.get("source", "")
+    timestamp = event.get("timestamp", "")[:19]
+    attributes = event.get("attributes", {})
+
+    source_str = f" [{source}]" if source else ""
+    print(f"{level_prefix} {timestamp} {vis_indicator}{message}{source_str}")
+
+    if debug and attributes:
+        _print_debug_attributes(attributes)
+
+
 def print_events(
     out: OutputContext, events: list[Any], debug: bool = False, json_output: bool = False
 ) -> None:
@@ -40,9 +87,7 @@ def print_events(
         timestamp = event.get("timestamp", "")[:19]  # Truncate to seconds
         level = event.get("level", "info")[:4].upper()
         message = event.get("message", "")
-        source = event.get("source", "")
         visibility = event.get("visibility", "user")
-        attributes = event.get("attributes", {})
 
         # Level colors for terminal
         level_prefix = {
@@ -52,31 +97,13 @@ def print_events(
             "ERRO": "X",
         }.get(level, " ")
 
-        # Debug visibility indicator
-        vis_indicator = ""
-        if debug and visibility == "debug":
-            vis_indicator = "[D] "
-        elif debug and visibility == "internal":
-            vis_indicator = "[I] "
+        vis_indicator = _get_vis_indicator(debug, visibility)
 
         if out.is_compact:
             # TOON format: timestamp|level|message
             print(f"{timestamp}|{level}|{vis_indicator}{message[:80]}")
         else:
-            # Human-readable format
-            source_str = f" [{source}]" if source else ""
-            print(f"{level_prefix} {timestamp} {vis_indicator}{message}{source_str}")
-
-            # Show attributes in debug mode
-            if debug and attributes:
-                elapsed = attributes.get("elapsed_ms")
-                if elapsed is not None:
-                    print(f"    elapsed: {elapsed:.1f}ms")
-                for key, value in attributes.items():
-                    if key not in ("elapsed_ms", "level", "message", "source"):
-                        if isinstance(value, str) and len(value) > 60:
-                            value = value[:60] + "..."
-                        print(f"    {key}: {value}")
+            _print_event_human(event, debug, level_prefix, vis_indicator)
 
 
 def print_header(
