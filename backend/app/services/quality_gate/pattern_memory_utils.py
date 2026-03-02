@@ -83,6 +83,29 @@ def get_similar_patterns(
         return []
 
 
+def _compute_fix_diff(original_content: str, fixed_content: str) -> str:
+    """Compute a simple line-by-line diff between original and fixed content.
+
+    Args:
+        original_content: Original file content
+        fixed_content: Fixed file content
+
+    Returns:
+        Diff string truncated to 20 changed lines
+    """
+    diff_lines = []
+    orig_lines = original_content.splitlines()
+    fixed_lines = fixed_content.splitlines()
+
+    # Simple line-by-line diff (not a full unified diff)
+    for orig, fixed in zip(orig_lines, fixed_lines, strict=False):
+        if orig != fixed:
+            diff_lines.append(f"- {orig}")
+            diff_lines.append(f"+ {fixed}")
+
+    return "\n".join(diff_lines[:20])  # Limit diff size
+
+
 def store_successful_pattern(
     check_type: str,
     check_name: str,
@@ -105,19 +128,7 @@ def store_successful_pattern(
         fixed_content: Fixed file content
     """
     try:
-        # Compute a simple diff for storage
-        diff_lines = []
-        orig_lines = original_content.splitlines()
-        fixed_lines = fixed_content.splitlines()
-
-        # Simple line-by-line diff (not a full unified diff)
-        for orig, fixed in zip(orig_lines, fixed_lines, strict=False):
-            if orig != fixed:
-                diff_lines.append(f"- {orig}")
-                diff_lines.append(f"+ {fixed}")
-
-        fix_diff = "\n".join(diff_lines[:20])  # Limit diff size
-
+        fix_diff = _compute_fix_diff(original_content, fixed_content)
         pattern_memory = _get_pattern_memory()
         _run_async(
             pattern_memory.store_fix_pattern(
