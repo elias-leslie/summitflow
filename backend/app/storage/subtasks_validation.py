@@ -20,6 +20,73 @@ class SubtaskGateError(Exception):
         self.incomplete_steps = incomplete_steps or []
 
 
+def _classify_plan_defect(
+    step: dict[str, Any],
+    step_passes_lookup: dict[int, bool],
+) -> str:
+    """Classify a plan_defect step as 'valid' or 'invalid'.
+
+    Returns 'valid' if the fix step exists and is passing, 'invalid' otherwise.
+    """
+    fix_step_num = step.get("fix_step_number")
+    if fix_step_num and step_passes_lookup.get(fix_step_num):
+        return "valid"
+    return "invalid"
+
+
+def _classify_steps(
+    steps: list[dict[str, Any]],
+    step_passes_lookup: dict[int, bool],
+    plan_defect_status: str,
+) -> tuple[list[int], list[int], list[tuple[int, Any]]]:
+    """Classify steps into incomplete, valid plan_defects, and invalid plan_defects.
+
+    Returns:
+        Tuple of (incomplete, plan_defects, invalid_plan_defects).
+    """
+    incomplete: list[int] = []
+    plan_defects: list[int] = []
+    invalid_plan_defects: list[tuple[int, Any]] = []
+
+    for s in steps:
+        if s.get("passes"):
+            continue
+        if s.get("status") != plan_defect_status:
+            incomplete.append(s["step_number"])
+            continue
+        kind = _classify_plan_defect(s, step_passes_lookup)
+        if kind == "valid":
+            plan_defects.append(s["step_number"])
+        else:
+            fix_step_num = s.get("fix_step_number")
+            invalid_plan_defects.append((s["step_number"], fix_step_num))
+            incomplete.append(s["step_number"])
+
+    return incomplete, plan_defects, invalid_plan_defects
+
+
+def _build_incomplete_error(
+    subtask_id: str,
+    incomplete: list[int],
+    plan_defects: list[int],
+    invalid_plan_defects: list[tuple[int, Any]],
+) -> str:
+    """Build the error message for incomplete steps."""
+    msg = (
+        f"Cannot pass subtask {subtask_id}: steps {incomplete} are not complete. "
+        "Each step must pass before the subtask can be marked complete."
+    )
+    if invalid_plan_defects:
+        bad_steps = [s for s, _ in invalid_plan_defects]
+        msg += (
+            f" Steps {bad_steps} are marked plan_defect "
+            "but their fix steps are not passing."
+        )
+    if plan_defects:
+        msg += f" (Plan defect steps {plan_defects} are allowed to be skipped.)"
+    return msg
+
+
 def validate_steps_complete(subtask_id: str, steps: list[dict[str, Any]]) -> None:
     """Validate that all steps are complete before marking subtask as passed.
 
@@ -32,44 +99,18 @@ def validate_steps_complete(subtask_id: str, steps: list[dict[str, Any]]) -> Non
     """
     from .steps import STEP_STATUS_PLAN_DEFECT
 
-    # Gate: Subtask must have at least one step to be marked as passed
     if not steps:
         return
 
-    # Build a lookup for step passes status
     step_passes_lookup = {s["step_number"]: s.get("passes", False) for s in steps}
-
-    incomplete = []
-    plan_defects = []
-    invalid_plan_defects = []
-
-    for s in steps:
-        if not s.get("passes"):
-            if s.get("status") == STEP_STATUS_PLAN_DEFECT:
-                # Validate the fix_step is still passing
-                fix_step_num = s.get("fix_step_number")
-                if fix_step_num and step_passes_lookup.get(fix_step_num):
-                    # Fix step exists and is passing - allow plan_defect to be skipped
-                    plan_defects.append(s["step_number"])
-                else:
-                    # Fix step missing or not passing - treat as incomplete
-                    invalid_plan_defects.append((s["step_number"], fix_step_num))
-                    incomplete.append(s["step_number"])
-            else:
-                incomplete.append(s["step_number"])
+    incomplete, plan_defects, invalid_plan_defects = _classify_steps(
+        steps, step_passes_lookup, STEP_STATUS_PLAN_DEFECT
+    )
 
     if incomplete:
-        msg = (
-            f"Cannot pass subtask {subtask_id}: steps {incomplete} are not complete. "
-            "Each step must pass before the subtask can be marked complete."
+        msg = _build_incomplete_error(
+            subtask_id, incomplete, plan_defects, invalid_plan_defects
         )
-        if invalid_plan_defects:
-            msg += (
-                f" Steps {[s for s, _ in invalid_plan_defects]} are marked plan_defect "
-                "but their fix steps are not passing."
-            )
-        if plan_defects:
-            msg += f" (Plan defect steps {plan_defects} are allowed to be skipped.)"
         raise SubtaskGateError(msg, incomplete_steps=incomplete)
 
     if plan_defects:
