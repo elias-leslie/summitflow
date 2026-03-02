@@ -9,6 +9,7 @@ Handles:
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
 from fastapi import APIRouter, Query
 from fastapi.responses import PlainTextResponse
@@ -21,6 +22,52 @@ from .helpers import get_step_counts_batch
 from .response import task_to_response
 
 router = APIRouter()
+
+
+def _build_filter_kwargs(
+    status: str | None,
+    task_type: str | None,
+    priority: int | None,
+    labels_list: list[str] | None,
+    orphans_only: bool,
+) -> dict[str, Any]:
+    """Build filter kwargs dict for task store queries."""
+    return dict(
+        status_filter=status,
+        task_type_filter=task_type,
+        priority_filter=priority,
+        labels_filter=labels_list,
+        orphans_only=orphans_only,
+    )
+
+
+async def _enrich_tasks_with_blockers(
+    tasks: list[dict[str, Any]], task_ids: list[str]
+) -> None:
+    """Add blockers info to each task dict (mutates tasks in-place)."""
+    blockers_map = await asyncio.to_thread(dep_store.get_blocking_tasks_batch, task_ids)
+    for task in tasks:
+        task["blockers"] = blockers_map.get(task["id"], [])
+
+
+async def _fetch_filtered_tasks(
+    project_id: str,
+    filter_kwargs: dict[str, Any],
+    limit: int,
+    offset: int,
+    include_blockers: bool,
+) -> tuple[list[dict[str, Any]], int]:
+    """Fetch tasks and total count, optionally enriching with blockers."""
+    tasks, total = await asyncio.gather(
+        asyncio.to_thread(
+            task_store.list_tasks, project_id, **filter_kwargs, limit=limit, offset=offset,
+        ),
+        asyncio.to_thread(task_store.count_tasks, project_id, **filter_kwargs),
+    )
+    if include_blockers:
+        task_ids = [t["id"] for t in tasks]
+        await _enrich_tasks_with_blockers(tasks, task_ids)
+    return tasks, total
 
 
 @router.get("/projects/{project_id}/tasks", response_model=None)
@@ -46,38 +93,17 @@ async def list_tasks(
 ) -> TaskListResponse | PlainTextResponse:
     """List tasks with filtering, pagination, and optional related data."""
     labels_list = labels.split(",") if labels else None
-    includes = include.split(",") if include else []
-    include_blockers = "blockers" in includes
+    include_blockers = "blockers" in (include.split(",") if include else [])
+    filter_kwargs = _build_filter_kwargs(status, task_type, priority, labels_list, orphans_only)
 
-    filter_kwargs = dict(
-        status_filter=status,
-        task_type_filter=task_type,
-        priority_filter=priority,
-        labels_filter=labels_list,
-        orphans_only=orphans_only,
-    )
-
-    tasks, total = await asyncio.gather(
-        asyncio.to_thread(
-            task_store.list_tasks, project_id, **filter_kwargs, limit=limit, offset=offset,
-        ),
-        asyncio.to_thread(task_store.count_tasks, project_id, **filter_kwargs),
+    tasks, total = await _fetch_filtered_tasks(
+        project_id, filter_kwargs, limit, offset, include_blockers
     )
 
     task_ids = [t["id"] for t in tasks]
-
-    # Add blockers info if requested (batch query)
-    if include_blockers:
-        blockers_map = await asyncio.to_thread(dep_store.get_blocking_tasks_batch, task_ids)
-        for task in tasks:
-            task["blockers"] = blockers_map.get(task["id"], [])
-
-    # Batch fetch criteria counts to avoid N+1 queries
     criteria_counts = await asyncio.to_thread(get_step_counts_batch, task_ids)
-
     task_responses = [task_to_response(t, criteria_counts.get(t["id"], 0)) for t in tasks]
 
-    # Return TOON format if requested
     if format == "toon":
         return PlainTextResponse(
             content=toon_format_task_list(task_responses, endpoint_type="list")
