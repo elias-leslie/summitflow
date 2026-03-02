@@ -31,6 +31,68 @@ __all__ = [
     "gather_rules_context",
 ]
 
+# Context keys used across gather and format functions
+_CONTEXT_KEYS = ("rules", "docs", "memory", "explorer", "design_standards", "gemini")
+
+# Section headers for prompt formatting
+_SECTION_HEADERS = {
+    "rules": "# Project Rules",
+    "docs": "# Project Documentation",
+    "memory": "# Recent Memory",
+    "explorer": "# Codebase Structure",
+    "capabilities": "# Existing Capabilities",
+    "gemini": "# AI Codebase Analysis",
+}
+
+_SECTION_SEPARATOR = "\n\n---\n\n"
+
+
+def _build_empty_context() -> dict[str, Any]:
+    """Return a context dict with all keys set to empty defaults."""
+    return {key: "" for key in _CONTEXT_KEYS} | {"total_tokens": 0}
+
+
+def _gather_core_context(project_id: str, raw_request: str) -> dict[str, Any]:
+    """Gather rules, docs, memory, and explorer context."""
+    return {
+        "rules": gather_rules_context(project_id),
+        "docs": gather_docs_context(project_id),
+        "memory": gather_memory_context(project_id),
+        "explorer": gather_explorer_context(project_id, raw_request),
+    }
+
+
+def _should_include_design(
+    raw_request: str,
+    include_design_standards: bool | None,
+) -> bool:
+    """Resolve whether design standards should be included."""
+    if include_design_standards is not None:
+        return include_design_standards
+    return is_frontend_task(raw_request)
+
+
+def _log_context_summary(
+    project_id: str,
+    context: dict[str, Any],
+    use_gemini: bool,
+    total: int,
+) -> None:
+    """Log a one-line summary of token counts per context source."""
+    gemini_tokens = estimate_tokens(context["gemini"]) if use_gemini else 0
+    logger.info(
+        "Gathered context for %s: rules=%d, docs=%d, memory=%d, explorer=%d,"
+        " design=%d, gemini=%d (total ~%d tokens)",
+        project_id,
+        estimate_tokens(context["rules"]),
+        estimate_tokens(context["docs"]),
+        estimate_tokens(context["memory"]),
+        estimate_tokens(context["explorer"]),
+        estimate_tokens(context["design_standards"]),
+        gemini_tokens,
+        total,
+    )
+
 
 def gather_all_context(
     project_id: str,
@@ -57,56 +119,26 @@ def gather_all_context(
             - gemini: Gemini deep search analysis (if use_gemini=True)
             - total_tokens: Estimated total token count
     """
-    context: dict[str, Any] = {
-        "rules": "",
-        "docs": "",
-        "memory": "",
-        "explorer": "",
-        "design_standards": "",
-        "gemini": "",
-        "total_tokens": 0,
-    }
+    context = _build_empty_context()
+    context.update(_gather_core_context(project_id, raw_request))
 
-    # Gather from each source
-    context["rules"] = gather_rules_context(project_id)
-    context["docs"] = gather_docs_context(project_id)
-    context["memory"] = gather_memory_context(project_id)
-    context["explorer"] = gather_explorer_context(project_id, raw_request)
-
-    # Include design standards for frontend tasks
-    should_include_design = (
-        include_design_standards
-        if include_design_standards is not None
-        else is_frontend_task(raw_request)
-    )
-    if should_include_design:
+    if _should_include_design(raw_request, include_design_standards):
         context["design_standards"] = gather_design_standards_context(project_id)
 
-    # Optionally include Gemini deep search
     if use_gemini:
         context["gemini"] = gather_gemini_context(project_id, raw_request)
 
-    # Calculate total tokens
-    context_keys = ["rules", "docs", "memory", "explorer", "design_standards", "gemini"]
-    total = sum(estimate_tokens(context[key]) for key in context_keys)
+    total = sum(estimate_tokens(context[key]) for key in _CONTEXT_KEYS)
     context["total_tokens"] = total
 
-    # Log summary
-    gemini_tokens = estimate_tokens(context["gemini"]) if use_gemini else 0
-    design_tokens = estimate_tokens(context["design_standards"])
-    logger.info(
-        "Gathered context for %s: rules=%d, docs=%d, memory=%d, explorer=%d, design=%d, gemini=%d (total ~%d tokens)",
-        project_id,
-        estimate_tokens(context["rules"]),
-        estimate_tokens(context["docs"]),
-        estimate_tokens(context["memory"]),
-        estimate_tokens(context["explorer"]),
-        design_tokens,
-        gemini_tokens,
-        total,
-    )
+    _log_context_summary(project_id, context, use_gemini, total)
 
     return context
+
+
+def _append_section(sections: list[str], header: str, content: str) -> None:
+    """Append a formatted section to sections if content is non-empty."""
+    sections.append(f"{header}\n\n{content}")
 
 
 def format_context_for_prompt(context: dict[str, Any]) -> str:
@@ -118,27 +150,19 @@ def format_context_for_prompt(context: dict[str, Any]) -> str:
     Returns:
         Formatted context string suitable for AI prompt.
     """
-    sections = []
+    sections: list[str] = []
 
-    if context.get("rules"):
-        sections.append(f"# Project Rules\n\n{context['rules']}")
-
-    if context.get("docs"):
-        sections.append(f"# Project Documentation\n\n{context['docs']}")
-
-    if context.get("memory"):
-        sections.append(f"# Recent Memory\n\n{context['memory']}")
-
-    if context.get("explorer"):
-        sections.append(f"# Codebase Structure\n\n{context['explorer']}")
+    for key in ("rules", "docs", "memory", "explorer"):
+        if context.get(key):
+            _append_section(sections, _SECTION_HEADERS[key], context[key])
 
     if context.get("design_standards"):
         sections.append(context["design_standards"])  # Already has header
 
     if context.get("capabilities"):
-        sections.append(f"# Existing Capabilities\n\n{context['capabilities']}")
+        _append_section(sections, _SECTION_HEADERS["capabilities"], context["capabilities"])
 
     if context.get("gemini"):
-        sections.append(f"# AI Codebase Analysis\n\n{context['gemini']}")
+        _append_section(sections, _SECTION_HEADERS["gemini"], context["gemini"])
 
-    return "\n\n---\n\n".join(sections)
+    return _SECTION_SEPARATOR.join(sections)
