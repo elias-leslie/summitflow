@@ -16,6 +16,38 @@ from typing import ClassVar
 import structlog
 from pythonjsonlogger import jsonlogger
 
+# Environment variable names
+_ENV_LOG_LEVEL = "LOG_LEVEL"
+_ENV_SYSTEMD_INVOCATION = "INVOCATION_ID"
+
+# Default log file settings
+_DEFAULT_LOG_DIR = "logs"
+_DEFAULT_LOG_FILE = "summitflow.log"
+
+# File rotation settings
+_FILE_ROTATION_WHEN = "midnight"
+_FILE_ROTATION_INTERVAL = 1
+_FILE_ROTATION_BACKUP_COUNT = 30
+_FILE_ENCODING = "utf-8"
+
+# Log format strings
+_JSON_FORMAT = "%(timestamp)s %(level)s %(name)s %(message)s %(pathname)s %(lineno)d"
+_CONSOLE_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# JSON field rename mapping for file handler
+_JSON_RENAME_FIELDS: dict[str, str] = {
+    "levelname": "level",
+    "name": "logger",
+    "pathname": "file",
+    "lineno": "line",
+}
+
+# Default syslog priority for unknown levels (INFO = 6)
+_SYSLOG_DEFAULT_PRIORITY = 6
+
+# Structlog timestamp format
+_TIMESTAMP_FMT = "iso"
+
 
 def _parse_log_level(level_str: str | None) -> int:
     """Parse log level string to logging constant.
@@ -78,7 +110,7 @@ class SyslogPrefixFormatter(logging.Formatter):
             Formatted string with syslog prefix: "<priority>message"
         """
         # Get syslog priority for this log level
-        priority = self.PRIORITY_MAP.get(record.levelno, 6)  # Default to INFO
+        priority = self.PRIORITY_MAP.get(record.levelno, _SYSLOG_DEFAULT_PRIORITY)
 
         # Format the actual message
         message = super().format(record)
@@ -87,8 +119,98 @@ class SyslogPrefixFormatter(logging.Formatter):
         return f"<{priority}>{message}"
 
 
+def _build_file_handler(
+    log_dir: str, log_file: str, log_level: int
+) -> logging.Handler:
+    """Create a rotating file handler with JSON formatting.
+
+    Creates the log directory if it does not exist, then configures a
+    TimedRotatingFileHandler with daily rotation and a JSON formatter.
+
+    Args:
+        log_dir: Directory for log files
+        log_file: Log file name
+        log_level: Logging level constant
+
+    Returns:
+        Configured file handler
+    """
+    log_path = Path(log_dir)
+    log_path.mkdir(exist_ok=True)
+
+    json_formatter = jsonlogger.JsonFormatter(
+        _JSON_FORMAT,
+        rename_fields=_JSON_RENAME_FIELDS,
+    )
+
+    file_handler = logging.handlers.TimedRotatingFileHandler(
+        filename=str(log_path / log_file),
+        when=_FILE_ROTATION_WHEN,
+        interval=_FILE_ROTATION_INTERVAL,
+        backupCount=_FILE_ROTATION_BACKUP_COUNT,
+        encoding=_FILE_ENCODING,
+    )
+    file_handler.setLevel(log_level)
+    file_handler.setFormatter(json_formatter)
+    return file_handler
+
+
+def _build_console_handler(log_level: int) -> logging.Handler:
+    """Create a console handler with syslog prefix formatting.
+
+    The syslog prefix allows systemd journald to parse the PRIORITY field
+    correctly instead of defaulting all stdout to INFO.
+
+    Args:
+        log_level: Logging level constant
+
+    Returns:
+        Configured console handler
+    """
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(log_level)
+    console_handler.setFormatter(SyslogPrefixFormatter(_CONSOLE_FORMAT))
+    return console_handler
+
+
+def _configure_root_logger(
+    handlers: list[logging.Handler], log_level: int
+) -> None:
+    """Apply handlers to the root logger, replacing any existing handlers.
+
+    Args:
+        handlers: List of handlers to attach
+        log_level: Logging level constant
+    """
+    root_logger = logging.getLogger()
+    root_logger.setLevel(log_level)
+    root_logger.handlers = []  # Clear existing handlers
+    for handler in handlers:
+        root_logger.addHandler(handler)
+
+
+def _configure_structlog() -> None:
+    """Configure structlog with standard processors for structured JSON output."""
+    structlog.configure(
+        processors=[
+            structlog.contextvars.merge_contextvars,
+            structlog.stdlib.filter_by_level,
+            structlog.processors.TimeStamper(fmt=_TIMESTAMP_FMT),
+            structlog.stdlib.add_logger_name,
+            structlog.stdlib.add_log_level,
+            structlog.processors.StackInfoRenderer(),
+            structlog.processors.format_exc_info,
+            structlog.processors.UnicodeDecoder(),
+            structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+        ],
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        wrapper_class=structlog.stdlib.BoundLogger,
+        cache_logger_on_first_use=True,
+    )
+
+
 def configure_logging(
-    log_dir: str = "logs", log_file: str = "summitflow.log"
+    log_dir: str = _DEFAULT_LOG_DIR, log_file: str = _DEFAULT_LOG_FILE
 ) -> None:
     """Configure structured logging with JSON output.
 
@@ -103,80 +225,22 @@ def configure_logging(
         log_dir: Directory for log files
         log_file: Log file name
     """
-    # Get log level from environment (default: INFO)
-    log_level = _parse_log_level(os.getenv("LOG_LEVEL"))
+    log_level = _parse_log_level(os.getenv(_ENV_LOG_LEVEL))
 
     # Check if running under systemd (systemd sets INVOCATION_ID)
-    running_under_systemd = bool(os.getenv("INVOCATION_ID"))
+    running_under_systemd = bool(os.getenv(_ENV_SYSTEMD_INVOCATION))
 
     handlers: list[logging.Handler] = []
 
     # Only add file handler if NOT running under systemd
     # (systemd captures stdout/stderr to journal automatically)
     if not running_under_systemd:
-        # Create logs directory if it doesn't exist
-        log_path = Path(log_dir)
-        log_path.mkdir(exist_ok=True)
+        handlers.append(_build_file_handler(log_dir, log_file, log_level))
 
-        # Configure standard library logging
-        log_file_path = log_path / log_file
+    handlers.append(_build_console_handler(log_level))
 
-        # JSON formatter for file output
-        json_formatter = jsonlogger.JsonFormatter(
-            "%(timestamp)s %(level)s %(name)s %(message)s %(pathname)s %(lineno)d",
-            rename_fields={
-                "levelname": "level",
-                "name": "logger",
-                "pathname": "file",
-                "lineno": "line",
-            },
-        )
-
-        # File handler with daily rotation (keep 30 days)
-        file_handler = logging.handlers.TimedRotatingFileHandler(
-            filename=str(log_file_path),
-            when="midnight",
-            interval=1,
-            backupCount=30,
-            encoding="utf-8",
-        )
-        file_handler.setLevel(log_level)
-        file_handler.setFormatter(json_formatter)
-        handlers.append(file_handler)
-
-    # Console handler with syslog prefixes for systemd journald
-    # Systemd will parse the "<priority>" prefix and set PRIORITY field correctly
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(log_level)
-    console_handler.setFormatter(
-        SyslogPrefixFormatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-    )
-    handlers.append(console_handler)
-
-    # Configure root logger
-    root_logger = logging.getLogger()
-    root_logger.setLevel(log_level)
-    root_logger.handlers = []  # Clear existing handlers
-    for handler in handlers:
-        root_logger.addHandler(handler)
-
-    # Configure structlog
-    structlog.configure(
-        processors=[
-            structlog.contextvars.merge_contextvars,
-            structlog.stdlib.filter_by_level,
-            structlog.processors.TimeStamper(fmt="iso"),
-            structlog.stdlib.add_logger_name,
-            structlog.stdlib.add_log_level,
-            structlog.processors.StackInfoRenderer(),
-            structlog.processors.format_exc_info,
-            structlog.processors.UnicodeDecoder(),
-            structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
-        ],
-        logger_factory=structlog.stdlib.LoggerFactory(),
-        wrapper_class=structlog.stdlib.BoundLogger,
-        cache_logger_on_first_use=True,
-    )
+    _configure_root_logger(handlers, log_level)
+    _configure_structlog()
 
 
 def get_logger(name: str) -> structlog.stdlib.BoundLogger:
