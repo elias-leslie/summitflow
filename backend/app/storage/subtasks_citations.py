@@ -37,6 +37,56 @@ def parse_citation(citation: str) -> tuple[str, str]:
     return prefix, rating
 
 
+def _build_parsed_citations(citations: list[str]) -> list[tuple[str, str]]:
+    """Convert raw citation strings to (uuid_prefix, rating) pairs.
+
+    Supports suffix notation (M:abc12345+) and plain UUID strings.
+    """
+    parsed: list[tuple[str, str]] = []
+    for c in citations:
+        if ":" in c:
+            parsed.append(parse_citation(c))
+        else:
+            parsed.append((c, "used"))
+    return parsed
+
+
+def _persist_citations(
+    subtask_table_id: str,
+    parsed: list[tuple[str, str]],
+    now: datetime,
+) -> None:
+    """Insert citation rows and stamp citations_acknowledged_at in one transaction."""
+    with get_connection() as conn, conn.cursor() as cur:
+        for uuid_prefix, rating in parsed:
+            cur.execute(
+                """
+                INSERT INTO subtask_citations (subtask_id, episode_uuid, rating)
+                VALUES (%s, %s, %s)
+                """,
+                (subtask_table_id, uuid_prefix, rating),
+            )
+        cur.execute(
+            """
+            UPDATE task_subtasks SET citations_acknowledged_at = %s WHERE id = %s
+            """,
+            (now, subtask_table_id),
+        )
+        conn.commit()
+
+
+def _send_ratings_to_hub(
+    client: Any,
+    parsed: list[tuple[str, str]],
+) -> None:
+    """Send episode ratings to Agent Hub for ACE-aligned tier optimization."""
+    for uuid_prefix, rating in parsed:
+        try:
+            client.rate_episode(uuid_prefix, rating)
+        except Exception as e:
+            logger.warning("Failed to send rating to Agent Hub: %s", e)
+
+
 def log_citations(
     subtask_table_id: str,
     citations: list[str],
@@ -59,39 +109,11 @@ def log_citations(
     if not citations:
         return 0
 
-    # Parse citations - support both suffix notation (M:abc12345+) and plain UUIDs
-    parsed: list[tuple[str, str]] = []
-    for c in citations:
-        if ":" in c:
-            parsed.append(parse_citation(c))
-        else:
-            parsed.append((c, "used"))
+    parsed = _build_parsed_citations(citations)
+    _persist_citations(subtask_table_id, parsed, datetime.now(UTC))
 
-    now = datetime.now(UTC)
-    with get_connection() as conn, conn.cursor() as cur:
-        for uuid_prefix, rating in parsed:
-            cur.execute(
-                """
-                INSERT INTO subtask_citations (subtask_id, episode_uuid, rating)
-                VALUES (%s, %s, %s)
-                """,
-                (subtask_table_id, uuid_prefix, rating),
-            )
-        cur.execute(
-            """
-            UPDATE task_subtasks SET citations_acknowledged_at = %s WHERE id = %s
-            """,
-            (now, subtask_table_id),
-        )
-        conn.commit()
-
-    # Send ratings to Agent Hub for ACE-aligned tier optimization
     if client is not None:
-        for uuid_prefix, rating in parsed:
-            try:
-                client.rate_episode(uuid_prefix, rating)
-            except Exception as e:
-                logger.warning("Failed to send rating to Agent Hub: %s", e)
+        _send_ratings_to_hub(client, parsed)
 
     logger.info("Logged %d citations for subtask %s", len(parsed), subtask_table_id)
     return len(parsed)
