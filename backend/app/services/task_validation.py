@@ -36,6 +36,56 @@ class TaskValidationResult:
 ValidationResult = TaskValidationResult
 
 
+def _check_task_exists_in_project(
+    task_id: str, project_id: str
+) -> tuple[dict[str, Any] | None, TaskValidationResult | None]:
+    """Return (task, None) when checks pass, or (None, failed_result) otherwise."""
+    task = task_store.get_task(task_id)
+    if not task:
+        return None, ValidationResult(
+            ready=False,
+            issues=[f"Task '{task_id}' not found"],
+        )
+    if task["project_id"] != project_id:
+        return None, ValidationResult(
+            ready=False,
+            issues=[f"Task '{task_id}' not found in project '{project_id}'"],
+        )
+    return task, None
+
+
+def _check_task_status(task: dict[str, Any]) -> TaskValidationResult | None:
+    """Return a failed ValidationResult if the task status prevents work.
+
+    Returns None when the status allows the task to be started.
+    """
+    status = task["status"]
+    if status == "completed":
+        return ValidationResult(
+            ready=False,
+            issues=["Task is already completed"],
+        )
+    if status == "running":
+        return ValidationResult(
+            ready=False,
+            issues=["Task is already running"],
+        )
+    return None
+
+
+def _collect_blocker_issues(
+    task_id: str,
+    issues: list[str],
+    suggestions: list[str],
+) -> None:
+    """Append blocker issues and suggestions in-place if blocking dependencies exist."""
+    blockers = dep_store.get_blocking_tasks(task_id)
+    if blockers:
+        blocker_list = ", ".join(f"{b['id']} ({b['status']})" for b in blockers)
+        issues.append(f"Task is blocked by {len(blockers)} incomplete task(s): {blocker_list}")
+        suggestions.append("Complete blocking tasks first or remove the dependencies")
+
+
 def validate_task_ready(task_id: str, project_id: str) -> TaskValidationResult:
     """Validate if a task is ready to be worked on.
 
@@ -51,49 +101,20 @@ def validate_task_ready(task_id: str, project_id: str) -> TaskValidationResult:
     Returns:
         ValidationResult with ready status, issues, and suggestions
     """
+    task, early = _check_task_exists_in_project(task_id, project_id)
+    if early is not None:
+        return early
+
+    status_result = _check_task_status(task)  # type: ignore[arg-type]
+    if status_result is not None:
+        return status_result
+
     issues: list[str] = []
     suggestions: list[str] = []
-
-    # Check task exists
-    task = task_store.get_task(task_id)
-    if not task:
-        return ValidationResult(
-            ready=False,
-            issues=[f"Task '{task_id}' not found"],
-        )
-
-    # Check task belongs to project
-    if task["project_id"] != project_id:
-        return ValidationResult(
-            ready=False,
-            issues=[f"Task '{task_id}' not found in project '{project_id}'"],
-        )
-
-    # Check task status
-    status = task["status"]
-    if status == "completed":
-        return ValidationResult(
-            ready=False,
-            issues=["Task is already completed"],
-        )
-    if status == "running":
-        return ValidationResult(
-            ready=False,
-            issues=["Task is already running"],
-        )
-
-    # Check for blocking dependencies
-    blockers = dep_store.get_blocking_tasks(task_id)
-    if blockers:
-        blocker_list = ", ".join(f"{b['id']} ({b['status']})" for b in blockers)
-        issues.append(f"Task is blocked by {len(blockers)} incomplete task(s): {blocker_list}")
-        suggestions.append("Complete blocking tasks first or remove the dependencies")
-
-    # Determine if ready
-    ready = len(issues) == 0
+    _collect_blocker_issues(task_id, issues, suggestions)
 
     return ValidationResult(
-        ready=ready,
+        ready=len(issues) == 0,
         issues=issues,
         suggestions=suggestions,
     )
