@@ -14,6 +14,24 @@ from sqlalchemy import text
 logger = logging.getLogger(__name__)
 
 
+def _get_non_null_count(table_name: str, col_name: str, conn: Any) -> int | None:
+    """Return the non-null count for a column, or None on failure."""
+    try:
+        result = conn.execute(text(f'SELECT COUNT("{col_name}") FROM "{table_name}"'))
+        row = result.fetchone()
+        return int(row[0]) if row else 0
+    except Exception:
+        logger.debug("Failed to analyze column completeness for %s.%s", table_name, col_name, exc_info=True)
+        return None
+
+
+def _classify_column(col_name: str, non_null: int, row_count: int) -> tuple[bool, bool]:
+    """Return (has_data, mostly_null) flags for a column."""
+    has_data = non_null > 0
+    mostly_null = (row_count - non_null) / row_count > 0.5
+    return has_data, mostly_null
+
+
 def analyze_column_completeness(
     table_name: str,
     column_names: list[str],
@@ -36,17 +54,14 @@ def analyze_column_completeness(
 
     if row_count > 0:
         for col_name in column_names[:20]:  # Limit for performance
-            try:
-                result = conn.execute(text(f'SELECT COUNT("{col_name}") FROM "{table_name}"'))
-                row = result.fetchone()
-                non_null = int(row[0]) if row else 0
-                if non_null > 0:
-                    columns_with_data.append(col_name)
-                if row_count > 0 and (row_count - non_null) / row_count > 0.5:
-                    columns_mostly_null.append(col_name)
-            except Exception:
-                logger.debug("Failed to analyze column completeness for %s.%s", table_name, col_name, exc_info=True)
+            non_null = _get_non_null_count(table_name, col_name, conn)
+            if non_null is None:
                 continue
+            has_data, mostly_null = _classify_column(col_name, non_null, row_count)
+            if has_data:
+                columns_with_data.append(col_name)
+            if mostly_null:
+                columns_mostly_null.append(col_name)
 
     column_count = len(column_names)
     completeness_pct = (
@@ -54,6 +69,24 @@ def analyze_column_completeness(
     )
 
     return columns_with_data, columns_mostly_null, completeness_pct
+
+
+def _query_max_date(table_name: str, date_col: str, conn: Any) -> Any | None:
+    """Query the MAX value of a date column; return None on failure."""
+    try:
+        result = conn.execute(text(f'SELECT MAX("{date_col}") FROM "{table_name}"'))
+        row = result.fetchone()
+        return row[0] if row and row[0] else None
+    except Exception:
+        logger.debug("Failed to analyze freshness for %s.%s", table_name, date_col, exc_info=True)
+        return None
+
+
+def _days_since(last_date: Any) -> int:
+    """Return the number of days between last_date and today."""
+    if hasattr(last_date, "date"):
+        last_date = last_date.date()
+    return (datetime.now(UTC).date() - last_date).days
 
 
 def analyze_table_freshness(
@@ -73,19 +106,12 @@ def analyze_table_freshness(
     """
     date_columns = ["created_at", "updated_at", "timestamp", "date"]
     for date_col in date_columns:
-        if date_col in column_names:
-            try:
-                result = conn.execute(text(f'SELECT MAX("{date_col}") FROM "{table_name}"'))
-                row = result.fetchone()
-                if row and row[0]:
-                    last_date = row[0]
-                    if hasattr(last_date, "date"):
-                        last_date = last_date.date()
-                    days: int = (datetime.now(UTC).date() - last_date).days
-                    return days
-            except Exception:
-                logger.debug("Failed to analyze freshness for %s.%s", table_name, date_col, exc_info=True)
-                continue
+        if date_col not in column_names:
+            continue
+        last_date = _query_max_date(table_name, date_col, conn)
+        if last_date is None:
+            continue
+        return _days_since(last_date)
     return None
 
 
