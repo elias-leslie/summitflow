@@ -10,6 +10,18 @@ from typing import Any
 from ..connection import get_connection
 from .core import TASK_COLUMNS, _row_to_dict
 
+_CLAIMABLE_STATUSES = {"pending", "paused", "blocked", "failed", "queue"}
+
+
+def _has_valid_lock(task: dict[str, Any], cur: Any) -> bool:
+    """Return True if the task has an unexpired claim lock."""
+    if not (task["claimed_by"] and task["lock_expires_at"]):
+        return False
+    cur.execute("SELECT NOW()")
+    now_row = cur.fetchone()
+    assert now_row is not None, "SELECT NOW() should always return a row"
+    return task["lock_expires_at"] > now_row[0]
+
 
 def claim_task(
     task_id: str,
@@ -21,53 +33,25 @@ def claim_task(
     Uses SELECT FOR UPDATE to prevent race conditions when multiple workers
     try to claim the same task.
 
-    Args:
-        task_id: Task ID to claim
-        worker_id: Identifier for the worker claiming the task
-        lock_duration_minutes: How long the claim is valid (default 30 min)
-
     Returns:
-        Claimed task dict if successful, None if:
-        - Task not found
-        - Task status not claimable (not pending/paused/failed)
-        - Task already claimed by another worker with valid lock
+        Claimed task dict if successful, None if task not found, not in a
+        claimable status, or already claimed by another worker.
     """
     with get_connection() as conn, conn.cursor() as cur:
-        # SELECT FOR UPDATE locks the row until transaction commits
         cur.execute(
-            f"""
-            SELECT {TASK_COLUMNS}
-            FROM tasks
-            WHERE id = %s
-            FOR UPDATE
-            """,
+            f"SELECT {TASK_COLUMNS} FROM tasks WHERE id = %s FOR UPDATE",
             (task_id,),
         )
         row = cur.fetchone()
-
         if not row:
             return None
 
         task = _row_to_dict(row)
-
-        # Check if task is in a claimable status
-        # Includes paused (legacy), blocked (agent workflow), queue (autonomous pipeline)
-        claimable_statuses = {"pending", "paused", "blocked", "failed", "queue"}
-        if task["status"] not in claimable_statuses:
+        if task["status"] not in _CLAIMABLE_STATUSES:
+            return None
+        if _has_valid_lock(task, cur):
             return None
 
-        # Check if already claimed with valid lock
-        if task["claimed_by"] and task["lock_expires_at"]:
-            # Check if lock is still valid
-            cur.execute("SELECT NOW()")
-            now_row = cur.fetchone()
-            assert now_row is not None, "SELECT NOW() should always return a row"
-            now = now_row[0]
-            if task["lock_expires_at"] > now:
-                # Another worker has a valid claim
-                return None
-
-        # Claim the task
         cur.execute(
             f"""
             UPDATE tasks
@@ -91,11 +75,6 @@ def claim_task(
 
 def release_task(task_id: str) -> dict[str, Any] | None:
     """Release a claimed task back to pending status.
-
-    Clears the claim fields and resets status to pending.
-
-    Args:
-        task_id: Task ID to release
 
     Returns:
         Updated task dict or None if not found.
@@ -122,14 +101,7 @@ def release_task(task_id: str) -> dict[str, Any] | None:
 
 
 def reset_expired_claims() -> int:
-    """Reset all tasks with expired claim locks.
-
-    Finds tasks where:
-    - status is 'running'
-    - lock_expires_at has passed
-    - claimed_by is set
-
-    Resets them to 'pending' with cleared claim fields.
+    """Reset all tasks with expired claim locks to pending.
 
     Returns:
         Count of tasks reset.
@@ -157,11 +129,8 @@ def reset_expired_claims() -> int:
 def count_running_tasks(project_id: str) -> int:
     """Count tasks currently running for a project.
 
-    Args:
-        project_id: Project ID
-
     Returns:
-        Number of tasks with status='running' and valid claim
+        Number of tasks with status='running' and valid claim.
     """
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
