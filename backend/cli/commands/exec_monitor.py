@@ -18,6 +18,21 @@ from .exec_monitor_follower import follow_events
 from .exec_monitor_formatters import print_events, print_header
 
 
+def _fetch_task_data(
+    client: STClient,
+    task_id: str,
+    limit: int,
+    debug: bool,
+) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
+    """Fetch task, subtasks, and events from the API."""
+    task = client.get_task(task_id)
+    project_id = task.get("project_id", "unknown")
+    subtasks_data = client.get_subtasks(task_id)
+    subtasks = subtasks_data.get("subtasks", [])
+    events = client.get_events(project_id, task_id, limit=limit, include_debug=debug)
+    return task, subtasks, events
+
+
 def exec_log_command(
     ctx: typer.Context,
     task_id: Annotated[
@@ -58,16 +73,7 @@ def exec_log_command(
     client = STClient()
 
     try:
-        # Get task info for context
-        task = client.get_task(task_id)
-        project_id = task.get("project_id", "unknown")
-
-        # Get subtask status
-        subtasks_data = client.get_subtasks(task_id)
-        subtasks = subtasks_data.get("subtasks", [])
-
-        # Get events from API
-        events = client.get_events(project_id, task_id, limit=limit, include_debug=debug)
+        task, subtasks, events = _fetch_task_data(client, task_id, limit, debug)
     except APIError as e:
         handle_api_error(e)
         return
