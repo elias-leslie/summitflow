@@ -13,6 +13,17 @@ from .types import TaskWorktreeInfo
 logger = get_logger(__name__)
 
 
+def _to_task_worktree_info(info: object, task_id: str, base_branch: str, is_active: bool) -> TaskWorktreeInfo:  # type: ignore[misc]
+    """Build a TaskWorktreeInfo from a cli worktree info object."""
+    return TaskWorktreeInfo(
+        path=info.path,  # type: ignore[union-attr]
+        branch=info.branch,  # type: ignore[union-attr]
+        task_id=task_id,
+        base_branch=base_branch,
+        is_active=is_active,
+    )
+
+
 def create_task_worktree(
     task_id: str,
     project_id: str,
@@ -22,7 +33,6 @@ def create_task_worktree(
     try:
         from cli.lib.worktree import create_worktree, get_worktree_info
 
-        # Check if worktree already exists
         existing = get_worktree_info(task_id, project_id)
         if existing:
             logger.info(
@@ -31,15 +41,7 @@ def create_task_worktree(
                 path=str(existing.path),
                 branch=existing.branch,
             )
-            return TaskWorktreeInfo(
-                path=existing.path,
-                branch=existing.branch,
-                task_id=task_id,
-                base_branch=existing.base_branch,
-                is_active=existing.is_active,
-            )
-
-        # Create new worktree
+            return _to_task_worktree_info(existing, task_id, existing.base_branch, existing.is_active)
         worktree_info = create_worktree(task_id, base_branch, project_id)
         logger.info(
             "worktree_created",
@@ -48,22 +50,13 @@ def create_task_worktree(
             branch=worktree_info.branch,
             base_branch=base_branch,
         )
-
-        # Create checkpoint metadata for unified tracking
         create_checkpoint_metadata(
             task_id=task_id,
             project_id=project_id,
             base_branch=base_branch,
             worktree_path=str(worktree_info.path),
         )
-
-        return TaskWorktreeInfo(
-            path=worktree_info.path,
-            branch=worktree_info.branch,
-            task_id=task_id,
-            base_branch=base_branch,
-            is_active=True,
-        )
+        return _to_task_worktree_info(worktree_info, task_id, base_branch, True)
 
     except ImportError as e:
         logger.warning(
@@ -86,27 +79,13 @@ def create_task_worktree(
 def get_task_worktree(
     task_id: str, project_id: str | None = None
 ) -> TaskWorktreeInfo | None:
-    """Get worktree info for a task if it exists.
-
-    Args:
-        task_id: Task identifier
-        project_id: Project identifier for per-project worktree paths
-
-    Returns:
-        TaskWorktreeInfo if worktree exists, None otherwise
-    """
+    """Return TaskWorktreeInfo for *task_id* if a worktree exists, else None."""
     try:
         from cli.lib.worktree import get_worktree_info
 
         info = get_worktree_info(task_id, project_id)
         if info:
-            return TaskWorktreeInfo(
-                path=info.path,
-                branch=info.branch,
-                task_id=task_id,
-                base_branch=info.base_branch,
-                is_active=info.is_active,
-            )
+            return _to_task_worktree_info(info, task_id, info.base_branch, info.is_active)
         return None
     except ImportError:
         return None
@@ -118,16 +97,7 @@ def get_task_worktree(
 def remove_task_worktree(
     task_id: str, delete_branch: bool = False, project_id: str | None = None
 ) -> bool:
-    """Remove a task's worktree and checkpoint metadata.
-
-    Args:
-        task_id: Task identifier
-        delete_branch: Whether to also delete the associated branch
-        project_id: Project identifier for per-project worktree paths
-
-    Returns:
-        True if worktree was removed, False otherwise
-    """
+    """Remove a task's worktree and checkpoint metadata; return True on success."""
     try:
         from cli.lib.worktree import remove_worktree
 
