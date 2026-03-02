@@ -21,6 +21,13 @@ MOCKUP_SELECT_COLUMNS = """id, project_id, mockup_id, name, description, mockup_
        task_id, page_path, version, parent_mockup_id, generator,
        generation_prompt, generation_time_ms, iteration_count, created_at, updated_at"""
 
+# Default initial mockup version and iteration count
+_DEFAULT_VERSION = 1
+_DEFAULT_ITERATION = 1
+
+# Default mockup status on creation
+_INITIAL_STATUS = "generated"
+
 
 def generate_mockup_id() -> str:
     """Generate a new mockup ID in the format mk-{uuid}."""
@@ -63,11 +70,42 @@ def get_mockup_by_db_id(db_id: int) -> dict[str, Any] | None:
             (db_id,),
         )
         row = cur.fetchone()
-
         if not row:
             return None
-
         return _row_to_mockup(row)
+
+
+def _resolve_version_and_iteration(parent_mockup_id: int | None) -> tuple[int, int]:
+    """Return (version, iteration_count) based on parent mockup, or defaults."""
+    if not parent_mockup_id:
+        return _DEFAULT_VERSION, _DEFAULT_ITERATION
+    parent = get_mockup_by_db_id(parent_mockup_id)
+    if not parent:
+        return _DEFAULT_VERSION, _DEFAULT_ITERATION
+    return parent["version"] + 1, parent["iteration_count"] + 1
+
+
+def _insert_mockup_row(params: tuple[Any, ...]) -> dict[str, Any]:
+    """Execute the INSERT for a new mockup and return the resulting row dict."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"""
+            INSERT INTO mockups (
+                project_id, mockup_id, name, description, mockup_type,
+                file_path, content, status, task_id, page_path,
+                version, parent_mockup_id, generator, generation_prompt,
+                generation_time_ms, iteration_count
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, '{_INITIAL_STATUS}', %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING {MOCKUP_SELECT_COLUMNS}
+            """,
+            params,
+        )
+        row = cur.fetchone()
+        conn.commit()
+    if not row:
+        raise RuntimeError("Failed to create mockup record")
+    return _row_to_mockup(row)
 
 
 def create_mockup(
@@ -85,73 +123,16 @@ def create_mockup(
     generation_prompt: str | None = None,
     generation_time_ms: int | None = None,
 ) -> dict[str, Any]:
-    """Create a new mockup record.
-
-    Args:
-        project_id: Project ID
-        name: Mockup name
-        description: Mockup description (optional)
-        mockup_type: Type of mockup (component, page, layout, icon, illustration)
-        file_path: Path to mockup file (optional)
-        content: Mockup content (optional, e.g., base64 image or HTML)
-        task_id: Task ID if mockup is associated with a task
-        page_path: Page path if mockup is for a specific page
-        parent_mockup_id: Parent mockup ID for iterations
-        generator: Name of the generator (e.g., "frontend-design", "gemini-2.0")
-        generation_prompt: Prompt used to generate the mockup
-        generation_time_ms: Time taken to generate the mockup
-
-    Returns:
-        Created mockup record
-    """
+    """Create a new mockup record and return it."""
     if mockup_type not in MOCKUP_TYPES:
         raise ValueError(f"Invalid mockup_type: {mockup_type}. Must be one of {MOCKUP_TYPES}")
-
     mockup_id = generate_mockup_id()
-
-    # Determine version and iteration count from parent (single query)
-    version = 1
-    iteration_count = 1
-    if parent_mockup_id:
-        parent = get_mockup_by_db_id(parent_mockup_id)
-        if parent:
-            version = parent["version"] + 1
-            iteration_count = parent["iteration_count"] + 1
-
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            f"""
-            INSERT INTO mockups (
-                project_id, mockup_id, name, description, mockup_type,
-                file_path, content, status, task_id, page_path,
-                version, parent_mockup_id, generator, generation_prompt,
-                generation_time_ms, iteration_count
-            )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, 'generated', %s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING {MOCKUP_SELECT_COLUMNS}
-            """,
-            (
-                project_id,
-                mockup_id,
-                name,
-                description,
-                mockup_type,
-                file_path,
-                content,
-                task_id,
-                page_path,
-                version,
-                parent_mockup_id,
-                generator,
-                generation_prompt,
-                generation_time_ms,
-                iteration_count,
-            ),
+    version, iteration_count = _resolve_version_and_iteration(parent_mockup_id)
+    return _insert_mockup_row(
+        (
+            project_id, mockup_id, name, description, mockup_type,
+            file_path, content, task_id, page_path,
+            version, parent_mockup_id, generator, generation_prompt,
+            generation_time_ms, iteration_count,
         )
-        row = cur.fetchone()
-        conn.commit()
-
-        if not row:
-            raise RuntimeError("Failed to create mockup record")
-
-        return _row_to_mockup(row)
+    )
