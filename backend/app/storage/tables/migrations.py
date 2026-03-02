@@ -26,9 +26,9 @@ def apply_schema_migrations(conn: psycopg.Connection, cur: psycopg.Cursor) -> No
     conn.commit()
 
 
-def _add_missing_columns(cur: psycopg.Cursor) -> None:
-    """Add columns that may be missing from older schema versions."""
-    column_additions = [
+def _project_column_additions() -> list[tuple[str, str]]:
+    """Return column additions for the projects table."""
+    return [
         ("root_path TEXT", "projects"),
         ("backend_dir TEXT", "projects"),
         ("browser_scripts_dir TEXT", "projects"),
@@ -47,6 +47,12 @@ def _add_missing_columns(cur: psycopg.Cursor) -> None:
             }'::jsonb""",
             "projects",
         ),
+    ]
+
+
+def _task_column_additions() -> list[tuple[str, str]]:
+    """Return column additions for the tasks and related tables."""
+    return [
         # Issue tracking fields for tasks (beads migration)
         ("priority INTEGER DEFAULT 2", "tasks"),
         ("task_type VARCHAR(20) DEFAULT 'task'", "tasks"),
@@ -78,6 +84,10 @@ def _add_missing_columns(cur: psycopg.Cursor) -> None:
         ("merge_sha TEXT", "tasks"),
     ]
 
+
+def _add_missing_columns(cur: psycopg.Cursor) -> None:
+    """Add columns that may be missing from older schema versions."""
+    column_additions = _project_column_additions() + _task_column_additions()
     for column, table in column_additions:
         _try_add_column(cur, table, column)
 
