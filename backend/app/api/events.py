@@ -18,6 +18,26 @@ from ..storage.events import (
 router = APIRouter()
 
 
+def _serialize_event(e: dict[str, Any], include_trace_id: bool = False) -> dict[str, Any]:
+    """Serialize a raw event row to API response format."""
+    result: dict[str, Any] = {
+        "id": e["id"],
+        "span_id": e["span_id"],
+        "parent_span_id": e["parent_span_id"],
+        "event_type": e["event_type"],
+        "name": e["name"],
+        "source": e["source"],
+        "level": e["level"],
+        "visibility": e["visibility"],
+        "message": e["message"],
+        "attributes": e["attributes"],
+        "timestamp": e["timestamp"].isoformat(),
+    }
+    if include_trace_id:
+        result["trace_id"] = e["trace_id"]
+    return result
+
+
 @router.get("/projects/{project_id}/events")
 async def get_events(
     project_id: str,
@@ -48,25 +68,8 @@ async def get_events(
         limit=limit,
         offset=offset,
     )
-
     return {
-        "events": [
-            {
-                "id": e["id"],
-                "trace_id": e["trace_id"],
-                "span_id": e["span_id"],
-                "parent_span_id": e["parent_span_id"],
-                "event_type": e["event_type"],
-                "name": e["name"],
-                "source": e["source"],
-                "level": e["level"],
-                "visibility": e["visibility"],
-                "message": e["message"],
-                "attributes": e["attributes"],
-                "timestamp": e["timestamp"].isoformat(),
-            }
-            for e in result["events"]
-        ],
+        "events": [_serialize_event(e, include_trace_id=True) for e in result["events"]],
         "total": result["total"],
         "summary": result["summary"],
         "limit": limit,
@@ -97,24 +100,8 @@ async def get_events_for_trace(
         after=after,
         limit=limit,
     )
-
     return {
         "trace_id": trace_id,
-        "events": [
-            {
-                "id": e["id"],
-                "span_id": e["span_id"],
-                "parent_span_id": e["parent_span_id"],
-                "event_type": e["event_type"],
-                "name": e["name"],
-                "source": e["source"],
-                "level": e["level"],
-                "visibility": e["visibility"],
-                "message": e["message"],
-                "attributes": e["attributes"],
-                "timestamp": e["timestamp"].isoformat(),
-            }
-            for e in events
-        ],
+        "events": [_serialize_event(e) for e in events],
         "count": len(events),
     }
