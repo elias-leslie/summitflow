@@ -10,6 +10,20 @@ from ...storage import tasks as task_store
 
 logger = get_logger(__name__)
 
+# Constants
+_DEFAULT_PROJECT_ID = "summitflow"
+_STATUS_QUEUE = "queue"
+_STATUS_BLOCKED = "blocked"
+_AGENT_SUPERVISOR = "supervisor"
+_SUPERVISOR_BLOCKED_KEYWORD = "BLOCKED"
+
+_VALIDATE_PLAN_PROMPT = (
+    "Task {task_id} was classified as COMPLEX.\n"
+    "Assessor reasoning: {reasoning}\n\n"
+    "Should this task proceed to execution? "
+    "Reply APPROVED to proceed or BLOCKED with your concern."
+)
+
 
 def supervisor_validate_plan(task_id: str, reasoning: str, project_id: str) -> bool:
     """Ask supervisor to validate a COMPLEX plan.
@@ -22,23 +36,101 @@ def supervisor_validate_plan(task_id: str, reasoning: str, project_id: str) -> b
     Returns:
         True to proceed, False to block
     """
-    prompt = (
-        f"Task {task_id} was classified as COMPLEX.\n"
-        f"Assessor reasoning: {reasoning}\n\n"
-        f"Should this task proceed to execution? "
-        f"Reply APPROVED to proceed or BLOCKED with your concern."
-    )
+    prompt = _VALIDATE_PLAN_PROMPT.format(task_id=task_id, reasoning=reasoning)
     try:
         client = get_sync_client()
         response = client.complete(
             messages=[{"role": "user", "content": prompt}],
-            agent_slug="supervisor",
+            agent_slug=_AGENT_SUPERVISOR,
             project_id=project_id,
         )
-        return "BLOCKED" not in response.content.upper()
+        return _SUPERVISOR_BLOCKED_KEYWORD not in response.content.upper()
     except Exception:
         logger.warning("Supervisor plan validation failed, defaulting to proceed", exc_info=True)
         return True
+
+
+def _resolve_complexity_tier(
+    task_id: str, title: str, description: str, existing_complexity: str | None
+) -> tuple[ComplexityTier, str]:
+    """Determine the complexity tier, either from existing value or via assessment.
+
+    Args:
+        task_id: Task ID (used when persisting a newly assessed tier)
+        title: Task title (used for fresh assessment)
+        description: Task description (used for fresh assessment)
+        existing_complexity: Pre-set complexity string, or None
+
+    Returns:
+        Tuple of (ComplexityTier, reasoning string)
+    """
+    if existing_complexity:
+        try:
+            tier = ComplexityTier(existing_complexity)
+            return tier, f"Pre-set complexity: {existing_complexity}"
+        except ValueError:
+            pass
+
+    assessor = ComplexityAssessor()
+    assessed = assessor.assess_sync(title, description)
+    task_store.update_task(task_id, complexity=assessed.tier.value)
+    return assessed.tier, assessed.reasoning
+
+
+def _apply_complex_routing(task_id: str, project_id: str, tier: ComplexityTier, reasoning: str) -> None:
+    """Handle routing for COMPLEX tasks: supervisor approval or block.
+
+    Args:
+        task_id: Task ID to route
+        project_id: Project ID for supervisor context
+        tier: Resolved complexity tier
+        reasoning: Complexity reasoning string
+    """
+    approved = supervisor_validate_plan(task_id, reasoning, project_id)
+    if approved:
+        task_store.update_task_status(task_id, _STATUS_QUEUE)
+        log_task_event(
+            task_id,
+            f"Complexity: {tier.value} - Supervisor approved, queued for execution. "
+            f"Reason: {reasoning}",
+        )
+        logger.info(
+            "Complex task supervisor-approved, queued",
+            task_id=task_id,
+            complexity=tier.value,
+        )
+    else:
+        task_store.update_task_status(task_id, _STATUS_BLOCKED)
+        log_task_event(
+            task_id,
+            f"Complexity: {tier.value} - Supervisor blocked task. "
+            f"Reason: {reasoning}",
+        )
+        logger.info(
+            "Complex task blocked by supervisor",
+            task_id=task_id,
+            complexity=tier.value,
+        )
+
+
+def _apply_simple_routing(task_id: str, tier: ComplexityTier, reasoning: str) -> None:
+    """Handle routing for SIMPLE/STANDARD tasks: queue directly.
+
+    Args:
+        task_id: Task ID to route
+        tier: Resolved complexity tier
+        reasoning: Complexity reasoning string (unused but kept for symmetry)
+    """
+    task_store.update_task_status(task_id, _STATUS_QUEUE)
+    log_task_event(
+        task_id,
+        f"Complexity: {tier.value} - Plan ready, queued for execution.",
+    )
+    logger.info(
+        "Task queued for execution",
+        task_id=task_id,
+        complexity=tier.value,
+    )
 
 
 def route_based_on_complexity(task_id: str, title: str, description: str) -> None:
@@ -53,65 +145,14 @@ def route_based_on_complexity(task_id: str, title: str, description: str) -> Non
         description: Task description
     """
     task = task_store.get_task(task_id)
-    project_id = task.get("project_id", "summitflow") if task else "summitflow"
-
-    # Respect existing complexity if already set (e.g. from plan import)
+    project_id = task.get("project_id", _DEFAULT_PROJECT_ID) if task else _DEFAULT_PROJECT_ID
     existing_complexity = task.get("complexity") if task else None
-    if existing_complexity:
-        try:
-            tier = ComplexityTier(existing_complexity)
-        except ValueError:
-            tier = None
-        if tier:
-            result_tier = tier
-            result_reasoning = f"Pre-set complexity: {existing_complexity}"
-        else:
-            assessor = ComplexityAssessor()
-            assessed = assessor.assess_sync(title, description)
-            result_tier = assessed.tier
-            result_reasoning = assessed.reasoning
-            task_store.update_task(task_id, complexity=result_tier.value)
-    else:
-        assessor = ComplexityAssessor()
-        assessed = assessor.assess_sync(title, description)
-        result_tier = assessed.tier
-        result_reasoning = assessed.reasoning
-        task_store.update_task(task_id, complexity=result_tier.value)
+
+    result_tier, result_reasoning = _resolve_complexity_tier(
+        task_id, title, description, existing_complexity
+    )
 
     if result_tier == ComplexityTier.COMPLEX:
-        approved = supervisor_validate_plan(task_id, result_reasoning, project_id)
-        if approved:
-            task_store.update_task_status(task_id, "queue")
-            log_task_event(
-                task_id,
-                f"Complexity: {result_tier.value} - Supervisor approved, queued for execution. "
-                f"Reason: {result_reasoning}",
-            )
-            logger.info(
-                "Complex task supervisor-approved, queued",
-                task_id=task_id,
-                complexity=result_tier.value,
-            )
-        else:
-            task_store.update_task_status(task_id, "blocked")
-            log_task_event(
-                task_id,
-                f"Complexity: {result_tier.value} - Supervisor blocked task. "
-                f"Reason: {result_reasoning}",
-            )
-            logger.info(
-                "Complex task blocked by supervisor",
-                task_id=task_id,
-                complexity=result_tier.value,
-            )
+        _apply_complex_routing(task_id, project_id, result_tier, result_reasoning)
     else:
-        task_store.update_task_status(task_id, "queue")
-        log_task_event(
-            task_id,
-            f"Complexity: {result_tier.value} - Plan ready, queued for execution.",
-        )
-        logger.info(
-            "Task queued for execution",
-            task_id=task_id,
-            complexity=result_tier.value,
-        )
+        _apply_simple_routing(task_id, result_tier, result_reasoning)
