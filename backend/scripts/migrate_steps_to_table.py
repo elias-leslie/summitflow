@@ -55,112 +55,52 @@ def check_existing_steps(subtask_table_id: str) -> int:
 
 
 def migrate_subtask_steps(subtask: dict[str, Any], dry_run: bool = True) -> dict[str, Any]:
-    """Migrate steps for a single subtask.
-
-    Returns:
-        Dict with migration status
-    """
-    subtask_table_id = subtask["id"]
+    """Migrate steps for a single subtask. Returns a dict with migration status."""
+    sid = subtask["id"]
     steps = subtask["steps"]
 
     if not steps or not isinstance(steps, list):
-        return {"id": subtask_table_id, "skipped": True, "reason": "No valid steps"}
+        return {"id": sid, "skipped": True, "reason": "No valid steps"}
 
-    # Filter to string steps only
     step_descriptions = [s for s in steps if isinstance(s, str) and s.strip()]
     if not step_descriptions:
-        return {"id": subtask_table_id, "skipped": True, "reason": "No string steps"}
+        return {"id": sid, "skipped": True, "reason": "No string steps"}
 
-    # Check if already migrated
-    existing_count = check_existing_steps(subtask_table_id)
+    existing_count = check_existing_steps(sid)
     if existing_count > 0:
-        return {
-            "id": subtask_table_id,
-            "skipped": True,
-            "reason": f"Already has {existing_count} steps in table",
-        }
+        return {"id": sid, "skipped": True, "reason": f"Already has {existing_count} steps in table"}
 
     if dry_run:
-        return {
-            "id": subtask_table_id,
-            "dry_run": True,
-            "steps_count": len(step_descriptions),
-            "steps": step_descriptions[:3],  # Preview first 3
-        }
+        return {"id": sid, "dry_run": True, "steps_count": len(step_descriptions), "steps": step_descriptions[:3]}
 
-    # Actually create the steps
     try:
-        created = bulk_create_steps(subtask_table_id, step_descriptions)
-        return {
-            "id": subtask_table_id,
-            "success": True,
-            "steps_created": len(created),
-        }
+        created = bulk_create_steps(sid, step_descriptions)
+        return {"id": sid, "success": True, "steps_created": len(created)}
     except Exception as e:
-        return {
-            "id": subtask_table_id,
-            "error": True,
-            "message": str(e),
-        }
+        return {"id": sid, "error": True, "message": str(e)}
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Migrate steps from JSONB to table")
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Preview migration without making changes",
-    )
-    parser.add_argument(
-        "--clear-existing",
-        action="store_true",
-        help="Clear existing steps before migrating (use with caution)",
-    )
-    args = parser.parse_args()
+def _accumulate_result(result: dict[str, Any], stats: dict[str, int], dry_run: bool) -> None:
+    """Update stats and print a line for a single migration result."""
+    if result.get("skipped"):
+        stats["skipped"] += 1
+        if dry_run:
+            print(f"  [SKIP] {result['id']}: {result['reason']}")
+    elif result.get("error"):
+        stats["errors"] += 1
+        print(f"  [ERROR] {result['id']}: {result['message']}")
+    elif result.get("dry_run"):
+        stats["migrated"] += 1
+        stats["total_steps"] += result["steps_count"]
+        print(f"  [DRY] {result['id']}: {result['steps_count']} steps - {result['steps'][:1]}...")
+    elif result.get("success"):
+        stats["migrated"] += 1
+        stats["total_steps"] += result["steps_created"]
+        print(f"  [OK] {result['id']}: {result['steps_created']} steps created")
 
-    print("=" * 60)
-    print("Steps Migration: JSONB → Table")
-    print("=" * 60)
 
-    # Get subtasks with steps
-    subtasks = get_subtasks_with_steps()
-    print(f"\nFound {len(subtasks)} subtasks with steps to migrate")
-
-    if not subtasks:
-        print("Nothing to migrate!")
-        return
-
-    # Migration stats
-    stats = {
-        "total": len(subtasks),
-        "migrated": 0,
-        "skipped": 0,
-        "errors": 0,
-        "total_steps": 0,
-    }
-
-    for subtask in subtasks:
-        result = migrate_subtask_steps(subtask, dry_run=args.dry_run)
-
-        if result.get("skipped"):
-            stats["skipped"] += 1
-            if args.dry_run:
-                print(f"  [SKIP] {result['id']}: {result['reason']}")
-        elif result.get("error"):
-            stats["errors"] += 1
-            print(f"  [ERROR] {result['id']}: {result['message']}")
-        elif result.get("dry_run"):
-            stats["migrated"] += 1
-            stats["total_steps"] += result["steps_count"]
-            print(
-                f"  [DRY] {result['id']}: {result['steps_count']} steps - {result['steps'][:1]}..."
-            )
-        elif result.get("success"):
-            stats["migrated"] += 1
-            stats["total_steps"] += result["steps_created"]
-            print(f"  [OK] {result['id']}: {result['steps_created']} steps created")
-
-    # Summary
+def _print_summary(stats: dict[str, int], dry_run: bool) -> None:
+    """Print the migration summary block."""
     print("\n" + "=" * 60)
     print("Migration Summary:")
     print("=" * 60)
@@ -169,9 +109,34 @@ def main() -> None:
     print(f"  Skipped: {stats['skipped']}")
     print(f"  Errors: {stats['errors']}")
     print(f"  Total steps: {stats['total_steps']}")
-
-    if args.dry_run:
+    if dry_run:
         print("\n[DRY RUN] No changes made. Run without --dry-run to execute.")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Migrate steps from JSONB to table")
+    parser.add_argument("--dry-run", action="store_true", help="Preview migration without making changes")
+    parser.add_argument("--clear-existing", action="store_true", help="Clear existing steps before migrating (use with caution)")
+    args = parser.parse_args()
+
+    print("=" * 60)
+    print("Steps Migration: JSONB → Table")
+    print("=" * 60)
+
+    subtasks = get_subtasks_with_steps()
+    print(f"\nFound {len(subtasks)} subtasks with steps to migrate")
+
+    if not subtasks:
+        print("Nothing to migrate!")
+        return
+
+    stats = {"total": len(subtasks), "migrated": 0, "skipped": 0, "errors": 0, "total_steps": 0}
+
+    for subtask in subtasks:
+        result = migrate_subtask_steps(subtask, dry_run=args.dry_run)
+        _accumulate_result(result, stats, dry_run=args.dry_run)
+
+    _print_summary(stats, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":
