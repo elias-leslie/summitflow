@@ -80,23 +80,42 @@ def migrate_subtask_steps(subtask: dict[str, Any], dry_run: bool = True) -> dict
         return {"id": sid, "error": True, "message": str(e)}
 
 
+def _handle_skipped(result: dict[str, Any], stats: dict[str, int], dry_run: bool) -> None:
+    stats["skipped"] += 1
+    if dry_run:
+        print(f"  [SKIP] {result['id']}: {result['reason']}")
+
+
+def _handle_error(result: dict[str, Any], stats: dict[str, int]) -> None:
+    stats["errors"] += 1
+    print(f"  [ERROR] {result['id']}: {result['message']}")
+
+
+def _handle_dry_run(result: dict[str, Any], stats: dict[str, int]) -> None:
+    stats["migrated"] += 1
+    stats["total_steps"] += result["steps_count"]
+    print(f"  [DRY] {result['id']}: {result['steps_count']} steps - {result['steps'][:1]}...")
+
+
+def _handle_success(result: dict[str, Any], stats: dict[str, int]) -> None:
+    stats["migrated"] += 1
+    stats["total_steps"] += result["steps_created"]
+    print(f"  [OK] {result['id']}: {result['steps_created']} steps created")
+
+
 def _accumulate_result(result: dict[str, Any], stats: dict[str, int], dry_run: bool) -> None:
     """Update stats and print a line for a single migration result."""
     if result.get("skipped"):
-        stats["skipped"] += 1
-        if dry_run:
-            print(f"  [SKIP] {result['id']}: {result['reason']}")
-    elif result.get("error"):
-        stats["errors"] += 1
-        print(f"  [ERROR] {result['id']}: {result['message']}")
-    elif result.get("dry_run"):
-        stats["migrated"] += 1
-        stats["total_steps"] += result["steps_count"]
-        print(f"  [DRY] {result['id']}: {result['steps_count']} steps - {result['steps'][:1]}...")
-    elif result.get("success"):
-        stats["migrated"] += 1
-        stats["total_steps"] += result["steps_created"]
-        print(f"  [OK] {result['id']}: {result['steps_created']} steps created")
+        _handle_skipped(result, stats, dry_run)
+        return
+    if result.get("error"):
+        _handle_error(result, stats)
+        return
+    if result.get("dry_run"):
+        _handle_dry_run(result, stats)
+        return
+    if result.get("success"):
+        _handle_success(result, stats)
 
 
 def _print_summary(stats: dict[str, int], dry_run: bool) -> None:
