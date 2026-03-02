@@ -65,6 +65,27 @@ def ready(
         return
 
 
+@app.command("ready-all")
+def ready_all(
+    limit: Annotated[int, typer.Option("--limit", help="Top tasks per project")] = 3,
+) -> None:
+    """Cross-project summary: ready and blocked tasks across all projects.
+
+    Shows per-project counts with top tasks prioritized by:
+    blocked first, then bugs, then by priority level.
+
+    Examples:
+        st ready-all
+        st ready-all --limit 5
+    """
+    from .tasks_ready_all import list_ready_all
+
+    try:
+        list_ready_all(limit, STClient(require_project=False))
+    except APIError:
+        return
+
+
 @app.command()
 def context(
     task_id: Annotated[str, typer.Argument()],

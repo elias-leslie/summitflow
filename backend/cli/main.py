@@ -57,7 +57,8 @@ TASKS (create/bug/idea REQUIRE -P <project>):
   bug <title> [-d desc] [-p 0-4] [-l labels] [--from id]                           # REQUIRES -P
   idea <description> [-p priority]                                                  # REQUIRES -P
   list [--status S] [--type T] [--priority P]
-  ready                                    # unblocked tasks
+  ready                                    # unblocked tasks (current project)
+  ready-all [--limit N]                    # cross-project summary: ready + blocked tasks
   context <id> [--subtask X.Y]             # full task/subtask context (TOON format)
   export <id> [-o file.json]               # full JSON export (everything)
   log <id> <message>
