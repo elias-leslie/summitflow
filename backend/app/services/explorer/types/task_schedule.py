@@ -14,6 +14,21 @@ from ....logging_config import get_logger
 logger = get_logger(__name__)
 
 
+def _fetch_beat_schedule_from_endpoint(endpoint: str) -> dict[str, Any] | None:
+    """Fetch beat schedule from HTTP endpoint. Returns None on failure."""
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            response = client.get(endpoint)
+            if response.status_code != 200:
+                return None
+            data = cast(dict[str, Any], response.json())
+            schedule = data.get("schedule", data)
+            return cast(dict[str, Any], schedule)
+    except Exception as e:
+        logger.warning(f"Beat schedule fetch failed: {e}")
+        return None
+
+
 def get_beat_schedule(
     project_id: str,
     beat_schedule_endpoint: str | None,
@@ -21,23 +36,27 @@ def get_beat_schedule(
     backend_dir: str,
 ) -> dict[str, Any]:
     """Get beat schedule from endpoint or by scanning files."""
-    # Try API endpoint first
     if beat_schedule_endpoint:
-        try:
-            with httpx.Client(timeout=10.0) as client:
-                response = client.get(beat_schedule_endpoint)
-                if response.status_code == 200:
-                    data = cast(dict[str, Any], response.json())
-                    schedule = data.get("schedule", data)
-                    return cast(dict[str, Any], schedule)
-        except Exception as e:
-            logger.warning(f"Beat schedule fetch failed: {e}")
+        result = _fetch_beat_schedule_from_endpoint(beat_schedule_endpoint)
+        if result is not None:
+            return result
 
-    # Fallback: scan files
     if not root_path:
         return {}
 
     return scan_beat_schedule_files(root_path, backend_dir)
+
+
+def _parse_celery_file(celery_file: Path, schedule: dict[str, Any]) -> None:
+    """Parse a single celery file and update the schedule dict in place."""
+    if not celery_file.exists():
+        return
+    try:
+        content = celery_file.read_text()
+        parsed = parse_beat_schedule(content)
+        schedule.update(parsed)
+    except Exception as e:
+        logger.warning(f"Failed to parse {celery_file}: {e}")
 
 
 def scan_beat_schedule_files(root_path: Path, backend_dir: str) -> dict[str, Any]:
@@ -49,52 +68,73 @@ def scan_beat_schedule_files(root_path: Path, backend_dir: str) -> dict[str, Any
         root_path / backend_dir / "app" / "celery.py",
     ]
 
-    schedule = {}
+    schedule: dict[str, Any] = {}
     for celery_file in celery_files:
-        if celery_file and celery_file.exists():
-            try:
-                content = celery_file.read_text()
-                parsed = parse_beat_schedule(content)
-                schedule.update(parsed)
-            except Exception as e:
-                logger.warning(f"Failed to parse {celery_file}: {e}")
+        _parse_celery_file(celery_file, schedule)
 
     return schedule
 
 
-def parse_beat_schedule(content: str) -> dict[str, Any]:
-    """Parse beat_schedule from file content."""
-    schedule = {}
-
-    # Pattern: "task-name": {"task": "module.path", ...}
+def _extract_task_names(content: str) -> dict[str, Any]:
+    """Extract task names and paths from content using quote patterns."""
+    schedule: dict[str, Any] = {}
     patterns = [
         r'"([^"]+)":\s*\{\s*"task":\s*"([^"]+)"',
         r"'([^']+)':\s*\{\s*'task':\s*'([^']+)'",
     ]
-
     for pattern in patterns:
         for task_name, task_path in re.findall(pattern, content):
             if task_name not in schedule:
                 schedule[task_name] = {"task": task_path}
+    return schedule
 
-    # Extract schedule values
+
+def _extract_schedule_seconds(block: str) -> float | None:
+    """Extract numeric schedule value from a task block. Returns None if not found."""
+    schedule_match = re.search(r'"schedule":\s*([\d\s\*\+\-\/\.]+)', block)
+    if not schedule_match:
+        return None
+    expr = schedule_match.group(1).strip().rstrip(",")
+    if not re.match(r"^[\d\s\*\+\-\/\.]+$", expr):
+        return None
+    result: float | None = None
+    with contextlib.suppress(Exception):
+        result = float(eval(expr))
+    return result
+
+
+def _extract_crontab(block: str) -> str | None:
+    """Extract crontab schedule from a task block. Returns None if not found."""
+    crontab_match = re.search(r'"schedule":\s*crontab\(([^)]+)\)', block)
+    if not crontab_match:
+        return None
+    return crontab_match.group(1)
+
+
+def _enrich_task_schedule(task_name: str, schedule: dict[str, Any], content: str) -> None:
+    """Enrich task entry with schedule details extracted from content."""
+    task_block_pattern = rf'"{re.escape(task_name)}":\s*\{{([^}}]+)\}}'
+    task_block_match = re.search(task_block_pattern, content, re.DOTALL)
+    if not task_block_match:
+        return
+
+    block = task_block_match.group(1)
+
+    seconds = _extract_schedule_seconds(block)
+    if seconds is not None:
+        schedule[task_name]["schedule_seconds"] = seconds
+
+    crontab = _extract_crontab(block)
+    if crontab is not None:
+        schedule[task_name]["schedule_crontab"] = crontab
+
+
+def parse_beat_schedule(content: str) -> dict[str, Any]:
+    """Parse beat_schedule from file content."""
+    schedule = _extract_task_names(content)
+
     for task_name in list(schedule.keys()):
-        task_block_pattern = rf'"{re.escape(task_name)}":\s*\{{([^}}]+)\}}'
-        task_block_match = re.search(task_block_pattern, content, re.DOTALL)
-        if task_block_match:
-            block = task_block_match.group(1)
-            # Numeric schedule - capture expressions like "60 * 60 * 6"
-            schedule_match = re.search(r'"schedule":\s*([\d\s\*\+\-\/\.]+)', block)
-            if schedule_match:
-                expr = schedule_match.group(1).strip().rstrip(",")
-                # Safely evaluate simple math expressions (only digits and operators)
-                if re.match(r"^[\d\s\*\+\-\/\.]+$", expr):
-                    with contextlib.suppress(Exception):
-                        schedule[task_name]["schedule_seconds"] = float(eval(expr))
-            # Crontab schedule
-            crontab_match = re.search(r'"schedule":\s*crontab\(([^)]+)\)', block)
-            if crontab_match:
-                schedule[task_name]["schedule_crontab"] = crontab_match.group(1)
+        _enrich_task_schedule(task_name, schedule, content)
 
     return schedule
 
