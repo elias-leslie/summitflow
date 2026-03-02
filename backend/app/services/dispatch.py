@@ -34,17 +34,19 @@ async def _trigger_workflow(stage: str, task_id: str, project_id: str) -> None:
 
     task_input = TaskInput(task_id=task_id, project_id=project_id)
 
-    if stage == "ideation":
-        await ideate_wf.aio_run_no_wait(task_input)
-    elif stage == "triage":
-        await triage_wf.aio_run_no_wait(task_input)
-    elif stage == "planning":
-        await plan_wf.aio_run_no_wait(task_input)
-    elif stage == "execution":
-        await execute_wf.aio_run_no_wait(task_input)
-    else:
+    workflow_map = {
+        "ideation": ideate_wf,
+        "triage": triage_wf,
+        "planning": plan_wf,
+        "execution": execute_wf,
+    }
+
+    workflow = workflow_map.get(stage)
+    if workflow is None:
         logger.warning("Unknown stage, dispatching to triage", task_id=task_id, stage=stage)
-        await triage_wf.aio_run_no_wait(task_input)
+        workflow = triage_wf
+
+    await workflow.aio_run_no_wait(task_input)
 
 
 async def dispatch_task(task_id: str, project_id: str) -> DispatchResult:
