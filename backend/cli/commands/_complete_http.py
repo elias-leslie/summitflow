@@ -94,7 +94,7 @@ def build_payload(
     session_id: str | None, thinking_level: str | None,
     trace_id: str | None, use_memory: bool, execute_tools: bool,
     max_turns: int, stream: bool, include_roles: list[str] | None,
-    images: list[str] | None = None,
+    images: list[str] | None = None, timeout_seconds: float | None = None,
 ) -> dict[str, Any]:
     """Build request payload for /api/complete."""
     if images:
@@ -113,6 +113,8 @@ def build_payload(
     ]:
         if val:
             payload[key] = val
+    if timeout_seconds:
+        payload["timeout_seconds"] = timeout_seconds
     if use_memory:
         payload["use_memory"] = True
     if execute_tools:
@@ -163,11 +165,23 @@ def stream_complete(
     return last_data
 
 
+def _scale_http_timeout(timeout: float, max_turns: int) -> float:
+    """Scale HTTP timeout for multi-turn sessions.
+
+    The server enforces per-turn inactivity timeouts internally — the HTTP
+    client just needs a generous ceiling so the connection doesn't drop while
+    the agent is still making progress across many turns.
+    """
+    if max_turns > 1:
+        return timeout * max_turns + 60
+    return timeout + 30
+
+
 def call_complete(
     agent_slug: str | None, message: str, project_id: str = "st-cli",
     source_client: str = "st-cli", use_memory: bool = True,
     memory_group_id: str | None = None, execute_tools: bool = False,
-    working_dir: str | None = None, timeout: float = 60.0,
+    working_dir: str | None = None, timeout: float = 300.0,
     skip_cache: bool = False, session_id: str | None = None,
     thinking_level: str | None = None, max_turns: int = 1,
     stream: bool = False, trace_id: str | None = None,
@@ -183,12 +197,13 @@ def call_complete(
     payload = build_payload(
         message, project_id, agent_slug, memory_group_id, working_dir,
         session_id, thinking_level, trace_id, use_memory, execute_tools,
-        max_turns, stream, include_roles, images,
+        max_turns, stream, include_roles, images, timeout_seconds=timeout,
     )
+    http_timeout = _scale_http_timeout(timeout, max_turns)
     try:
         if stream:
-            return stream_complete(agent_hub_url, headers, payload, timeout)
-        with httpx.Client(timeout=timeout) as client:
+            return stream_complete(agent_hub_url, headers, payload, http_timeout)
+        with httpx.Client(timeout=http_timeout) as client:
             response = client.post(f"{agent_hub_url}/api/complete", json=payload, headers=headers)
         if response.status_code >= 400:
             handle_error_response(response)
