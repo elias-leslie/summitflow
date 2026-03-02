@@ -11,6 +11,70 @@ from .session_events_client import get_session_events
 from .session_events_formatter import format_event
 
 
+def _emit_new_events(
+    events: list[dict],
+    seen_event_ids: set[str],
+    verbose: bool,
+) -> None:
+    """Print events not yet seen and track their IDs."""
+    new_events = [e for e in events if e.get("id") not in seen_event_ids]
+    for event in new_events:
+        typer.echo(format_event(event, verbose))
+        typer.echo()
+        event_id = event.get("id")
+        if event_id:
+            seen_event_ids.add(event_id)
+
+
+def _is_task_terminal(client: STClient, task_id: str) -> str:
+    """Return terminal status string if task is done, else empty string."""
+    terminal_statuses = {"completed", "cancelled", "failed", "abandoned", "needs_review"}
+    try:
+        task = client.get_task(task_id)
+        status = task.get("status", "")
+        if status in terminal_statuses:
+            return status
+    except APIError:
+        pass
+    return ""
+
+
+def _poll_task_events(
+    client: STClient,
+    task_id: str,
+    event_type: str | None,
+    page_size: int,
+    verbose: bool,
+    seen_event_ids: set[str],
+    last_max_turn: int,
+) -> tuple[bool, int]:
+    """Poll once for task events. Returns (should_break, updated_last_max_turn)."""
+    try:
+        result = client.get_task_agent_events(
+            task_id,
+            event_type=event_type,
+            page_size=page_size,
+        )
+    except APIError:
+        time.sleep(2)
+        return False, last_max_turn
+
+    events = result.get("events", [])
+    max_turn = result.get("max_turn", 0)
+
+    _emit_new_events(events, seen_event_ids, verbose)
+
+    if max_turn != last_max_turn and max_turn > 0:
+        last_max_turn = max_turn
+
+    terminal_status = _is_task_terminal(client, task_id)
+    if terminal_status:
+        typer.echo(f"\n[Task {terminal_status}]")
+        return True, last_max_turn
+
+    return False, last_max_turn
+
+
 def follow_task_events(
     task_id: str,
     event_type: str | None,
@@ -26,44 +90,36 @@ def follow_task_events(
 
     try:
         while True:
-            try:
-                result = client.get_task_agent_events(
-                    task_id,
-                    event_type=event_type,
-                    page_size=page_size,
-                )
-            except APIError:
-                time.sleep(2)
-                continue
-
-            events = result.get("events", [])
-            max_turn = result.get("max_turn", 0)
-
-            new_events = [e for e in events if e.get("id") not in seen_event_ids]
-
-            for event in new_events:
-                typer.echo(format_event(event, verbose))
-                typer.echo()
-                event_id = event.get("id")
-                if event_id:
-                    seen_event_ids.add(event_id)
-
-            if max_turn != last_max_turn and max_turn > 0:
-                last_max_turn = max_turn
-
-            try:
-                task = client.get_task(task_id)
-                status = task.get("status", "")
-                if status in ("completed", "cancelled", "failed", "abandoned", "needs_review"):
-                    typer.echo(f"\n[Task {status}]")
-                    break
-            except APIError:
-                pass
-
+            should_break, last_max_turn = _poll_task_events(
+                client, task_id, event_type, page_size, verbose, seen_event_ids, last_max_turn
+            )
+            if should_break:
+                break
             time.sleep(2)
-
     except KeyboardInterrupt:
         typer.echo("\n[Stopped]")
+
+
+def _poll_session_events(
+    session_id: str,
+    event_type: str | None,
+    page_size: int,
+    verbose: bool,
+    seen_event_ids: set[str],
+) -> None:
+    """Poll once for session events, printing any new ones."""
+    try:
+        result = get_session_events(
+            session_id,
+            event_type=event_type,
+            page_size=page_size,
+        )
+    except (typer.Exit, Exception):
+        time.sleep(2)
+        return
+
+    events = result.get("events", [])
+    _emit_new_events(events, seen_event_ids, verbose)
 
 
 def follow_session_events(
@@ -79,28 +135,7 @@ def follow_session_events(
 
     try:
         while True:
-            try:
-                result = get_session_events(
-                    session_id,
-                    event_type=event_type,
-                    page_size=page_size,
-                )
-            except (typer.Exit, Exception):
-                time.sleep(2)
-                continue
-
-            events = result.get("events", [])
-
-            new_events = [e for e in events if e.get("id") not in seen_event_ids]
-
-            for event in new_events:
-                typer.echo(format_event(event, verbose))
-                typer.echo()
-                event_id = event.get("id")
-                if event_id:
-                    seen_event_ids.add(event_id)
-
+            _poll_session_events(session_id, event_type, page_size, verbose, seen_event_ids)
             time.sleep(2)
-
     except KeyboardInterrupt:
         typer.echo("\n[Stopped]")
