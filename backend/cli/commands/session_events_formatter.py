@@ -7,6 +7,19 @@ from typing import Any
 
 import typer
 
+_TYPE_COLORS = {
+    "user_message": "\033[36m",
+    "assistant_message": "\033[32m",
+    "system_message": "\033[33m",
+    "thinking": "\033[35m",
+    "tool_use": "\033[34m",
+    "tool_result": "\033[34m",
+    "memory_inject": "\033[90m",
+    "memory_cite": "\033[90m",
+    "error": "\033[31m",
+}
+_RESET = "\033[0m"
+
 
 def summarize_tool_input(tool_name: str, tool_input: dict[str, Any]) -> str:
     """Extract human-readable summary from tool input."""
@@ -43,62 +56,101 @@ def summarize_tool_output(tool_output: dict[str, Any]) -> str:
     return f"({len(lines)} lines) {lines[0][:100]}..."
 
 
-def format_event(event: dict[str, Any], verbose: bool = False) -> str:
-    """Format a single event for display."""
+def _format_event_header(event: dict[str, Any], verbose: bool) -> str:
+    """Build the colored header line for an event."""
     event_type = event.get("event_type", "unknown")
     turn = event.get("turn", 0)
     seq = event.get("sequence", 0)
-    content = event.get("content") or ""
     tool_name = event.get("tool_name")
     tokens = event.get("tokens")
     model = event.get("model_used")
 
-    type_colors = {
-        "user_message": "\033[36m",
-        "assistant_message": "\033[32m",
-        "system_message": "\033[33m",
-        "thinking": "\033[35m",
-        "tool_use": "\033[34m",
-        "tool_result": "\033[34m",
-        "memory_inject": "\033[90m",
-        "memory_cite": "\033[90m",
-        "error": "\033[31m",
-    }
-    reset = "\033[0m"
-    color = type_colors.get(event_type, "")
-
-    header = f"{color}[{turn}.{seq}] {event_type}{reset}"
+    color = _TYPE_COLORS.get(event_type, "")
+    header = f"{color}[{turn}.{seq}] {event_type}{_RESET}"
     if tool_name:
         header += f" ({tool_name})"
     if tokens:
         header += f" [{tokens} tokens]"
     if model and verbose:
         header += f" [{model}]"
+    return header
+
+
+def _format_tool_use_content(event: dict[str, Any], verbose: bool) -> str:
+    """Extract display content for a tool_use event."""
+    tool_name = event.get("tool_name")
+    tool_input = event.get("tool_input")
+    if not tool_input:
+        return ""
+    if verbose:
+        return json.dumps(tool_input, indent=2)
+    if tool_name:
+        return summarize_tool_input(tool_name, tool_input)
+    return json.dumps(tool_input)[:120]
+
+
+def _format_tool_result_content(event: dict[str, Any], verbose: bool) -> str:
+    """Extract display content for a tool_result event."""
+    tool_output = event.get("tool_output")
+    if not tool_output:
+        return ""
+    if verbose:
+        return json.dumps(tool_output, indent=2)
+    return summarize_tool_output(tool_output)
+
+
+def format_event(event: dict[str, Any], verbose: bool = False) -> str:
+    """Format a single event for display."""
+    event_type = event.get("event_type", "unknown")
+    content = event.get("content") or ""
 
     if event_type == "tool_use":
-        tool_input = event.get("tool_input")
-        if tool_input and tool_name:
-            if verbose:
-                content = json.dumps(tool_input, indent=2)
-            else:
-                content = summarize_tool_input(tool_name, tool_input)
-        elif tool_input:
-            content = json.dumps(tool_input)[:120]
+        content = _format_tool_use_content(event, verbose)
     elif event_type == "tool_result":
-        tool_output = event.get("tool_output")
-        if tool_output:
-            if verbose:
-                content = json.dumps(tool_output, indent=2)
-            else:
-                content = summarize_tool_output(tool_output)
+        content = _format_tool_result_content(event, verbose)
 
     if content and len(content) > 200 and not verbose:
         content = content[:200] + "..."
 
+    header = _format_event_header(event, verbose)
     if content:
         indented = "  " + content.replace("\n", "\n  ")
         return f"{header}\n{indented}"
     return header
+
+
+def _display_events_header(
+    total: int,
+    max_turn: int,
+    label: str,
+    event_type: str | None,
+    turn_filter: int | None,
+    session_ids: list[str] | None,
+) -> None:
+    """Print the header block for the events display."""
+    typer.echo(f"\n {label}")
+    if session_ids:
+        typer.echo(f" Sessions: {len(session_ids)} ({', '.join(s[:8] for s in session_ids)})")
+    typer.echo(f" Events: {total} | Max turn: {max_turn}")
+    if event_type:
+        typer.echo(f" Filter: type={event_type}")
+    if turn_filter is not None:
+        typer.echo(f" Filter: turn={turn_filter}")
+    typer.echo("-" * 60)
+
+
+def _display_events_body(events: list[dict[str, Any]], verbose: bool) -> None:
+    """Print each event, emitting session separator lines as needed."""
+    current_session: str | None = None
+    session_index = 0
+    for event in events:
+        event_session = event.get("session_id")
+        if event_session and event_session != current_session:
+            session_index += 1
+            current_session = event_session
+            typer.echo(f"\033[33m--- Session {session_index}: {event_session[:8]} ---\033[0m")
+        typer.echo(format_event(event, verbose))
+        typer.echo()
 
 
 def display_events(
@@ -113,26 +165,7 @@ def display_events(
     session_ids: list[str] | None = None,
 ) -> None:
     """Display events with header and footer."""
-    typer.echo(f"\n {label}")
-    if session_ids:
-        typer.echo(f" Sessions: {len(session_ids)} ({', '.join(s[:8] for s in session_ids)})")
-    typer.echo(f" Events: {total} | Max turn: {max_turn}")
-    if event_type:
-        typer.echo(f" Filter: type={event_type}")
-    if turn_filter is not None:
-        typer.echo(f" Filter: turn={turn_filter}")
-    typer.echo("-" * 60)
-
-    current_session: str | None = None
-    session_index = 0
-    for event in events:
-        event_session = event.get("session_id")
-        if event_session and event_session != current_session:
-            session_index += 1
-            current_session = event_session
-            typer.echo(f"\033[33m--- Session {session_index}: {event_session[:8]} ---\033[0m")
-        typer.echo(format_event(event, verbose))
-        typer.echo()
-
+    _display_events_header(total, max_turn, label, event_type, turn_filter, session_ids)
+    _display_events_body(events, verbose)
     if len(events) < total:
         typer.echo(f"Showing {len(events)} of {total} events (page {page})")
