@@ -18,6 +18,7 @@ The script will:
 import logging
 import sys
 from pathlib import Path
+from typing import Any
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -26,6 +27,36 @@ from app.storage.connection import get_connection
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
+
+
+def _update_session_outcome(cur: Any, session_id: str, outcome: str) -> int:
+    """Update context_access_log entries for one session.
+
+    Returns the number of rows updated.
+    """
+    cur.execute(
+        """
+        UPDATE context_access_log
+        SET task_outcome = %s
+        WHERE session_id = %s
+          AND task_outcome IS NULL
+        """,
+        (outcome, session_id),
+    )
+    return cur.rowcount or 0
+
+
+def _process_session(cur: Any, session_id: str, outcome: str, stats: dict[str, int]) -> None:
+    """Process a single diary entry and update stats in-place."""
+    try:
+        updated = _update_session_outcome(cur, session_id, outcome)
+        if updated > 0:
+            stats["entries_updated"] += updated
+            logger.debug(f"  Session {session_id[:8]}...: {updated} entries updated")
+        stats["sessions_processed"] += 1
+    except Exception as e:
+        stats["errors"] += 1
+        logger.error(f"  Error processing session {session_id}: {e}")
 
 
 def backfill_outcomes() -> dict[str, int]:
@@ -52,28 +83,26 @@ def backfill_outcomes() -> dict[str, int]:
 
         # For each diary entry, update context_access_log
         for session_id, outcome in diary_entries:
-            try:
-                cur.execute(
-                    """
-                    UPDATE context_access_log
-                    SET task_outcome = %s
-                    WHERE session_id = %s
-                      AND task_outcome IS NULL
-                    """,
-                    (outcome, session_id),
-                )
-                updated = cur.rowcount or 0
-                if updated > 0:
-                    stats["entries_updated"] += updated
-                    logger.debug(f"  Session {session_id[:8]}...: {updated} entries updated")
-                stats["sessions_processed"] += 1
-            except Exception as e:
-                stats["errors"] += 1
-                logger.error(f"  Error processing session {session_id}: {e}")
+            _process_session(cur, session_id, outcome, stats)
 
         conn.commit()
 
     return stats
+
+
+def _get_outcome_counts(cur: Any) -> tuple[int, int]:
+    """Return (null_count, filled_count) from context_access_log."""
+    cur.execute("SELECT COUNT(*) FROM context_access_log WHERE task_outcome IS NULL")
+    null_row = cur.fetchone()
+    assert null_row is not None
+    null_count = null_row[0]
+
+    cur.execute("SELECT COUNT(*) FROM context_access_log WHERE task_outcome IS NOT NULL")
+    filled_row = cur.fetchone()
+    assert filled_row is not None
+    filled_count = filled_row[0]
+
+    return null_count, filled_count
 
 
 def main() -> int:
@@ -82,15 +111,7 @@ def main() -> int:
 
     # Check current state
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("SELECT COUNT(*) FROM context_access_log WHERE task_outcome IS NULL")
-        null_row = cur.fetchone()
-        assert null_row is not None
-        null_count = null_row[0]
-
-        cur.execute("SELECT COUNT(*) FROM context_access_log WHERE task_outcome IS NOT NULL")
-        filled_row = cur.fetchone()
-        assert filled_row is not None
-        filled_count = filled_row[0]
+        null_count, filled_count = _get_outcome_counts(cur)
 
     logger.info(f"Current state: {filled_count} with outcomes, {null_count} without")
 
