@@ -18,33 +18,36 @@ from app.tasks.autonomous.violation_handlers import (
 logger = logging.getLogger(__name__)
 
 
+def _cancel_stale_task(task: dict[str, Any], max_age_days: int) -> bool:
+    """Cancel a single stale task. Returns True if cancelled, False if skipped."""
+    task_id = task.get("id")
+    if not task_id:
+        return False
+
+    try:
+        task_store.update_task(task_id, status="cancelled")
+        log_task_event(
+            task_id,
+            f"Auto-cancelled: No activity for {max_age_days}+ days. "
+            "Stale auto-generated task archived.",
+        )
+        logger.info(f"Cancelled stale task {task_id}: {task.get('title', '')[:50]}")
+        return True
+    except Exception as task_err:
+        logger.error(f"Failed to cancel task {task_id}: {task_err}")
+        return False
+
+
 def cleanup_stale_tasks(max_age_days: int = 30) -> dict[str, Any]:
     """Archive auto-generated tasks that have been pending without activity."""
     from app.storage.tasks import get_stale_tasks
 
     try:
         stale_tasks = get_stale_tasks(max_age_days=max_age_days, limit=100)
-        cancelled = 0
-        skipped = 0
-
-        for task in stale_tasks:
-            task_id = task.get("id")
-            if not task_id:
-                skipped += 1
-                continue
-
-            try:
-                task_store.update_task(task_id, status="cancelled")
-                log_task_event(
-                    task_id,
-                    f"Auto-cancelled: No activity for {max_age_days}+ days. "
-                    "Stale auto-generated task archived.",
-                )
-                cancelled += 1
-                logger.info(f"Cancelled stale task {task_id}: {task.get('title', '')[:50]}")
-            except Exception as task_err:
-                logger.error(f"Failed to cancel task {task_id}: {task_err}")
-                skipped += 1
+        cancelled = sum(
+            1 for task in stale_tasks if _cancel_stale_task(task, max_age_days)
+        )
+        skipped = len(stale_tasks) - cancelled
 
         logger.info(f"Stale task cleanup complete: cancelled={cancelled}, skipped={skipped}")
         return {
@@ -55,6 +58,62 @@ def cleanup_stale_tasks(max_age_days: int = 30) -> dict[str, Any]:
     except Exception as e:
         logger.error(f"Error in stale task cleanup: {e}")
         return {"error": str(e), "cancelled_count": 0, "skipped_count": 0}
+
+
+def _create_schema_task_for_violation(
+    project_id: str,
+    table_name: str,
+    violation: dict[str, Any],
+    column_count: int,
+) -> bool:
+    """Create a schema task for a single violation. Returns True if created."""
+    violation_type = violation.get("type", "")
+    detail = violation.get("detail", "")
+    severity = violation.get("severity", "warning")
+    file_path = f"table:{table_name}"
+
+    if task_store.task_exists_for_file(project_id, file_path):
+        return False
+
+    tier = 2 if violation_type == "god_table" else 1
+    task_id, _ = create_schema_task(
+        project_id=project_id,
+        table_name=table_name,
+        violation_type=violation_type,
+        detail=detail,
+        severity=severity,
+        metadata={"column_count": column_count},
+        steps=get_violation_steps(violation_type, table_name, detail),
+        title=get_violation_title(violation_type, table_name),
+        objective=get_violation_objective(violation_type, table_name, detail),
+        done_when=get_violation_done_when(violation_type, table_name),
+        tier=tier,
+    )
+    return bool(task_id)
+
+
+def _process_table_violations(
+    project_id: str,
+    table: dict[str, Any],
+) -> tuple[int, int]:
+    """Process all violations for a single table. Returns (created, skipped)."""
+    metadata = table.get("metadata", {})
+    violations = metadata.get("violations", [])
+    if not violations:
+        return 0, 0
+
+    table_name = table.get("path", "")
+    column_count = metadata.get("column_count", 0)
+    created = 0
+    skipped = 0
+
+    for violation in violations:
+        if _create_schema_task_for_violation(project_id, table_name, violation, column_count):
+            created += 1
+        else:
+            skipped += 1
+
+    return created, skipped
 
 
 def generate_schema_tasks(project_id: str) -> dict[str, Any]:
@@ -68,40 +127,11 @@ def generate_schema_tasks(project_id: str) -> dict[str, Any]:
         skipped = 0
 
         for table in tables:
-            metadata = table.get("metadata", {})
-            violations = metadata.get("violations", [])
-            if not violations:
-                continue
-
-            scanned += 1
-            table_name = table.get("path", "")
-
-            for violation in violations:
-                violation_type = violation.get("type", "")
-                detail = violation.get("detail", "")
-                severity = violation.get("severity", "warning")
-                file_path = f"table:{table_name}"
-
-                if task_store.task_exists_for_file(project_id, file_path):
-                    skipped += 1
-                    continue
-
-                tier = 2 if violation_type == "god_table" else 1
-                task_id, _ = create_schema_task(
-                    project_id=project_id,
-                    table_name=table_name,
-                    violation_type=violation_type,
-                    detail=detail,
-                    severity=severity,
-                    metadata={"column_count": metadata.get("column_count", 0)},
-                    steps=get_violation_steps(violation_type, table_name, detail),
-                    title=get_violation_title(violation_type, table_name),
-                    objective=get_violation_objective(violation_type, table_name, detail),
-                    done_when=get_violation_done_when(violation_type, table_name),
-                    tier=tier,
-                )
-                if task_id:
-                    created += 1
+            table_created, table_skipped = _process_table_violations(project_id, table)
+            if table.get("metadata", {}).get("violations"):
+                scanned += 1
+            created += table_created
+            skipped += table_skipped
 
         logger.info(
             f"Schema task generation complete for {project_id}: "
