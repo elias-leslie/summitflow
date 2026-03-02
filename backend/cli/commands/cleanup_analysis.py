@@ -97,63 +97,53 @@ def analyze_worktree(worktree: WorktreeInfo, client: STClient) -> WorktreeAnalys
     )
 
 
+_ACTION_ICONS = {
+    CleanupAction.SAFE_DELETE: "[SAFE]",
+    CleanupAction.ALREADY_MERGED: "[MERGED]",
+    CleanupAction.NEEDS_MERGE: "[NEEDS_MERGE]",
+    CleanupAction.HAS_CONFLICTS: "[CONFLICT]",
+    CleanupAction.MANUAL_REVIEW: "[REVIEW]",
+    CleanupAction.TASK_ACTIVE: "[ACTIVE]",
+}
+
+
 def format_analysis(analysis: WorktreeAnalysis) -> str:
     """Format analysis for display."""
-    status_icon = {
-        CleanupAction.SAFE_DELETE: "[SAFE]",
-        CleanupAction.ALREADY_MERGED: "[MERGED]",
-        CleanupAction.NEEDS_MERGE: "[NEEDS_MERGE]",
-        CleanupAction.HAS_CONFLICTS: "[CONFLICT]",
-        CleanupAction.MANUAL_REVIEW: "[REVIEW]",
-        CleanupAction.TASK_ACTIVE: "[ACTIVE]",
-    }.get(analysis.action, "[?]")
-
+    icon = _ACTION_ICONS.get(analysis.action, "[?]")
     task_info = f"task:{analysis.task_status or 'NOT_FOUND'}"
     title = analysis.task_title[:40] if analysis.task_title else "?"
-
-    age_str = (
-        f"{analysis.last_commit_age_days}d" if analysis.last_commit_age_days is not None else "?"
-    )
+    age = analysis.last_commit_age_days
+    age_str = f"{age}d" if age is not None else "?"
     commits_str = f"+{analysis.commits_ahead}/-{analysis.commits_behind}"
-
-    flags = []
-    if analysis.has_uncommitted:
-        flags.append("dirty")
-    if analysis.has_conflicts:
-        flags.append("conflicts")
+    flags = (["dirty"] if analysis.has_uncommitted else []) + (
+        ["conflicts"] if analysis.has_conflicts else []
+    )
     flags_str = ",".join(flags) if flags else "-"
-
+    tid = analysis.worktree.task_id
     return (
-        f"{status_icon} {analysis.worktree.task_id}|{task_info}|{commits_str}|"
-        f"age:{age_str}|{flags_str}|{analysis.reason}|{title}"
+        f"{icon} {tid}|{task_info}|{commits_str}|age:{age_str}|"
+        f"{flags_str}|{analysis.reason}|{title}"
     )
 
 
 def cleanup_worktree(analysis: WorktreeAnalysis, force: bool = False) -> tuple[bool, str]:
-    """Cleanup a worktree based on analysis.
-
-    Returns (success, message).
-    """
-    task_id = analysis.worktree.task_id
-
-    # Safety checks
-    if not force:
-        if analysis.action == CleanupAction.TASK_ACTIVE:
-            return False, f"Skipped: task is {analysis.task_status}"
-        if analysis.action == CleanupAction.NEEDS_MERGE:
-            return False, f"Skipped: has {analysis.commits_ahead} unmerged commit(s)"
-        if analysis.action == CleanupAction.HAS_CONFLICTS:
-            return False, "Skipped: would conflict with main"
-        if analysis.action == CleanupAction.MANUAL_REVIEW:
-            return False, f"Skipped: {analysis.reason}"
-
-    # Remove the worktree
+    """Cleanup a worktree based on analysis. Returns (success, message)."""
+    action = analysis.action
+    if not force and action == CleanupAction.TASK_ACTIVE:
+        return False, f"Skipped: task is {analysis.task_status}"
+    if not force and action == CleanupAction.NEEDS_MERGE:
+        return False, f"Skipped: has {analysis.commits_ahead} unmerged commit(s)"
+    if not force and action == CleanupAction.HAS_CONFLICTS:
+        return False, "Skipped: would conflict with main"
+    if not force and action == CleanupAction.MANUAL_REVIEW:
+        return False, f"Skipped: {analysis.reason}"
     try:
-        project_id = analysis.worktree.project_id
-        success = remove_worktree(task_id, delete_branch=True, project_id=project_id)
-        if success:
-            return True, "Removed"
-        else:
-            return False, "Worktree not found"
+        success = remove_worktree(
+            analysis.worktree.task_id,
+            delete_branch=True,
+            project_id=analysis.worktree.project_id,
+        )
     except Exception as e:
         return False, f"Error: {e}"
+
+    return (True, "Removed") if success else (False, "Worktree not found")
