@@ -81,7 +81,7 @@ def _handle_subtask_failure(
     total_attempts = 1 + self_fix_attempts + supervisor_guided_attempts
 
     issue_id = result.get("issue_id")
-    if issue_id and issue_counts.get(issue_id, 0) >= 2:
+    if issue_id and issue_counts.get(issue_id, 0) >= 3:
         should_continue = supervisor_circuit_breaker_triage(task_id, issue_id, issue_counts[issue_id], project_id)
         if not should_continue:
             emit_log(
