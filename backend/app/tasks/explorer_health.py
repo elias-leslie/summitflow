@@ -13,182 +13,97 @@ from ..storage.connection import get_connection
 
 logger = get_logger(__name__)
 
-# Rate limit delay between health checks (seconds)
 HEALTH_CHECK_DELAY = 1
-
-# Status constants
 STATUS_HEALTHY = "healthy"
 STATUS_ERROR = "error"
 STATUS_SUCCESS = "success"
 STATUS_PARTIAL = "partial"
-
-# ba check command constants
 BA_CMD = "ba"
 BA_SUBCMD = "check"
 BA_FLAG_NO_ERRORS = "--no-errors"
-
-# Timestamp format for health check records
 TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
-
-# Default local port when none is configured
 DEFAULT_LOCAL_PORT = 3001
-
-# Substring used to detect localhost base URLs
 LOCALHOST_HOSTNAME = "localhost"
 
 
 def _get_project_info(project_id: str) -> tuple[str | None, int | None] | None:
-    """Fetch base_url and frontend_port for a project.
-
-    Returns:
-        (base_url, port) tuple, or None if project not found.
-    """
+    """Return (base_url, port) for a project, or None if not found."""
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             "SELECT base_url, frontend_port FROM projects WHERE id = %s",
             (project_id,),
         )
         row = cur.fetchone()
-        if not row:
-            return None
-        return row[0], row[1]
+        return None if not row else (row[0], row[1])
 
 
 def _build_check_base(base_url: str | None, port: int | None) -> str:
-    """Construct the base URL to use for health checks.
-
-    Args:
-        base_url: Project's configured base URL.
-        port: Project's configured frontend port.
-
-    Returns:
-        A fully-qualified base URL string.
-    """
+    """Construct the base URL to use for health checks."""
     effective_port = port or DEFAULT_LOCAL_PORT
-    if base_url and LOCALHOST_HOSTNAME in base_url:
-        return f"http://{LOCALHOST_HOSTNAME}:{effective_port}"
-    return base_url or f"http://{LOCALHOST_HOSTNAME}:{effective_port}"
+    if base_url and LOCALHOST_HOSTNAME not in base_url:
+        return base_url
+    return f"http://{LOCALHOST_HOSTNAME}:{effective_port}"
 
 
 def _now_utc() -> str:
-    """Return the current UTC time as an ISO 8601 string."""
+    """Return current UTC time as ISO 8601 string."""
     return time.strftime(TIMESTAMP_FORMAT, time.gmtime())
 
 
-def _check_single_page(
-    page: dict[str, Any], check_base: str
-) -> dict[str, Any]:
-    """Run a health check on a single page and persist the result.
-
-    Args:
-        page: Page entry dict with at least 'id' and 'path' keys.
-        check_base: Base URL to prepend to the page path.
-
-    Returns:
-        A result dict with 'path', 'status', and either 'console_errors'
-        or 'error'.
-    """
+def _check_single_page(page: dict[str, Any], check_base: str) -> dict[str, Any]:
+    """Run a health check on a single page and persist the result."""
     path = page["path"]
-    url = f"{check_base}{path}"
-
-    result = run_ba_check(url)
+    result = run_ba_check(f"{check_base}{path}")
     passed = result.get("pass")
     health_status = STATUS_HEALTHY if passed else STATUS_ERROR
     console_errors = result.get("checks", {}).get("consoleErrors", {})
-
-    health_data = {
-        "http_status": 200 if passed else 500,
-        "console_error_count": console_errors.get("count", 0),
-        "console_errors": console_errors.get("messages", [])[:5],
-        "response_time_ms": result.get("durationMs", 0),
-        "last_health_check": _now_utc(),
-    }
-
-    explorer_entries.update_health_check(page["id"], health_status, health_data)
-
-    return {
-        "path": path,
-        "status": health_status,
-        "console_errors": console_errors.get("count", 0),
-    }
+    explorer_entries.update_health_check(
+        page["id"],
+        health_status,
+        {
+            "http_status": 200 if passed else 500,
+            "console_error_count": console_errors.get("count", 0),
+            "console_errors": console_errors.get("messages", [])[:5],
+            "response_time_ms": result.get("durationMs", 0),
+            "last_health_check": _now_utc(),
+        },
+    )
+    return {"path": path, "status": health_status, "console_errors": console_errors.get("count", 0)}
 
 
 def _process_pages(
     pages: list[dict[str, Any]], check_base: str
 ) -> tuple[int, int, list[dict[str, Any]]]:
-    """Iterate over pages, run health checks, and collect results.
-
-    Args:
-        pages: List of page entry dicts.
-        check_base: Base URL to use for checks.
-
-    Returns:
-        Tuple of (checked_count, error_count, results_list).
-    """
+    """Iterate pages, run health checks, collect results."""
     checked = 0
     errors = 0
     results: list[dict[str, Any]] = []
-
     for i, page in enumerate(pages):
         if i > 0:
             time.sleep(HEALTH_CHECK_DELAY)
-
         path = page["path"]
         try:
-            entry = _check_single_page(page, check_base)
-            results.append(entry)
+            results.append(_check_single_page(page, check_base))
             checked += 1
         except Exception as e:
             errors += 1
             logger.error("page_health_check_failed", path=path, error=str(e))
             results.append({"path": path, "status": STATUS_ERROR, "error": str(e)})
-
     return checked, errors, results
 
 
 def run_page_health_checks(project_id: str) -> dict[str, Any]:
-    """Run health checks on all page entries for a project.
-
-    Uses ba check to verify each page:
-    - HTTP response status
-    - Console errors
-    - Response time
-
-    Args:
-        project_id: Project to check
-
-    Returns:
-        Summary dict with check results
-    """
+    """Run health checks on all page entries for a project."""
     logger.info("page_health_checks_started", project_id=project_id)
-
     try:
         project_info = _get_project_info(project_id)
         if project_info is None:
-            return {
-                "status": STATUS_ERROR,
-                "error": f"Project not found: {project_id}",
-            }
-        base_url, port = project_info
-
+            return {"status": STATUS_ERROR, "error": f"Project not found: {project_id}"}
         pages = explorer_entries.get_pages_for_health_check(project_id)
         if not pages:
-            return {
-                "status": STATUS_SUCCESS,
-                "message": "No pages to check",
-                "checked": 0,
-            }
-
-        check_base = _build_check_base(base_url, port)
-        checked, errors, results = _process_pages(pages, check_base)
-
-        logger.info(
-            "page_health_checks_complete",
-            project_id=project_id,
-            checked=checked,
-            errors=errors,
-        )
-
+            return {"status": STATUS_SUCCESS, "message": "No pages to check", "checked": 0}
+        checked, errors, results = _process_pages(pages, _build_check_base(*project_info))
+        logger.info("page_health_checks_complete", project_id=project_id, checked=checked, errors=errors)
         return {
             "status": STATUS_SUCCESS if errors == 0 else STATUS_PARTIAL,
             "project_id": project_id,
@@ -196,31 +111,19 @@ def run_page_health_checks(project_id: str) -> dict[str, Any]:
             "errors": errors,
             "results": results,
         }
-
     except Exception as e:
         logger.error("page_health_checks_failed", project_id=project_id, error=str(e))
         return {"status": STATUS_ERROR, "project_id": project_id, "error": str(e)}
 
 
 def run_ba_check(url: str, timeout: int = 30) -> dict[str, Any]:
-    """Run ba check command and parse JSON output.
-
-    Args:
-        url: URL to check
-        timeout: Command timeout in seconds
-
-    Returns:
-        Parsed JSON result from ba check
-    """
+    """Run ba check command and parse JSON output."""
     result = subprocess.run(
         [BA_CMD, BA_SUBCMD, url, BA_FLAG_NO_ERRORS],
         capture_output=True,
         text=True,
         timeout=timeout,
     )
-
     if result.returncode != 0 and not result.stdout:
         raise RuntimeError(f"ba check failed: {result.stderr}")
-
-    data: dict[str, Any] = json.loads(result.stdout)
-    return data
+    return json.loads(result.stdout)
