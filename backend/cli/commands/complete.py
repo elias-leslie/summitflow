@@ -250,6 +250,7 @@ def complete_default(
     ctx: typer.Context,
     message: Annotated[str | None, _Arg(help="Message to send")] = None,
     agent: Annotated[str | None, _Opt("--agent", "-a", help="Agent slug")] = None,
+    model: Annotated[str | None, _Opt("--model", "-M", help="Model override (e.g. cloudflare/qwen2.5-coder-32b). Uses @mention injection to override agent's default model.")] = None,
     project: Annotated[str, _Opt("--project", "-p", help="Project ID")] = "st-cli",
     source: Annotated[str, _Opt("--source", "-s", help="Source client")] = "st-cli",
     session_id: Annotated[str | None, _Opt("--session", "-S", help="Continue existing session")] = None,
@@ -282,6 +283,7 @@ def complete_default(
         st complete -a coder -S <session-id> "Continue from last message"
         st complete -a analyst -i /tmp/screenshot.png "Describe this image"
         st complete -a analyst -i img1.png -i img2.png "Compare these"
+        st complete -a chat -M cloudflare/qwen2.5-coder-32b "Say hello in 3 words"
     """
     if ctx.invoked_subcommand is not None:
         return
@@ -289,6 +291,8 @@ def complete_default(
     if not resolved_message:
         typer.echo(ctx.get_help())
         return
+    if model:
+        resolved_message = f"@{model} {resolved_message}"
     roles = [r.strip() for r in include_roles.split(",")] if include_roles else None
     result = _complete(
         agent, resolved_message, project, source, memory, memory_group,
