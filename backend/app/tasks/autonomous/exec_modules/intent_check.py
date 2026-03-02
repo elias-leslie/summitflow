@@ -27,6 +27,15 @@ class IntentCheckResult:
     summary: str = ""
 
 
+@dataclass
+class _ParseState:
+    done_when_results: list[DoneWhenResult] = field(default_factory=list)
+    objective_met: bool = True
+    spirit_violated: bool = False
+    summary: str = ""
+    has_fail: bool = False
+
+
 def _trivial_pass(summary: str) -> IntentCheckResult:
     return IntentCheckResult(passed=True, objective_met=True, spirit_violated=False, summary=summary)
 
@@ -119,30 +128,38 @@ def _parse_done_when_line(line: str, done_when: list[str]) -> DoneWhenResult | N
     return DoneWhenResult(text=done_when[idx], status="unclear", reason=sr.replace("UNCLEAR", "").strip().lstrip("- "))
 
 
+def _apply_line_to_state(line: str, state: _ParseState, done_when: list[str]) -> None:
+    """Update parse state with a single response line."""
+    if line.startswith("DONE_WHEN_"):
+        dw = _parse_done_when_line(line, done_when)
+        if dw:
+            state.has_fail = state.has_fail or dw.status == "fail"
+            state.done_when_results.append(dw)
+        return
+    if line.startswith("OBJECTIVE_MET:"):
+        state.objective_met = "NO" not in line.upper().split(":", 1)[1]
+        return
+    if line.startswith("SPIRIT_VIOLATED:"):
+        state.spirit_violated = "YES" in line.upper().split(":", 1)[1]
+        return
+    if line.startswith("SUMMARY:"):
+        state.summary = line.split(":", 1)[1].strip()
+
+
 def _parse_intent_response(
     content: str, done_when: list[str], objective: str, spirit_anti: str,
 ) -> IntentCheckResult:
     """Parse structured response from reviewer."""
-    done_when_results: list[DoneWhenResult] = []
-    objective_met, spirit_violated, summary, has_fail = True, False, "", False
+    state = _ParseState()
     for raw in content.strip().split("\n"):
         line = raw.strip()
-        if not line:
-            continue
-        if line.startswith("DONE_WHEN_") and (dw := _parse_done_when_line(line, done_when)):
-            has_fail = has_fail or dw.status == "fail"
-            done_when_results.append(dw)
-        elif line.startswith("OBJECTIVE_MET:"):
-            objective_met = "NO" not in line.upper().split(":", 1)[1]
-        elif line.startswith("SPIRIT_VIOLATED:"):
-            spirit_violated = "YES" in line.upper().split(":", 1)[1]
-        elif line.startswith("SUMMARY:"):
-            summary = line.split(":", 1)[1].strip()
+        if line:
+            _apply_line_to_state(line, state, done_when)
 
     return IntentCheckResult(
-        passed=not has_fail and not spirit_violated,
-        objective_met=objective_met,
-        spirit_violated=spirit_violated,
-        done_when_results=done_when_results,
-        summary=summary,
+        passed=not state.has_fail and not state.spirit_violated,
+        objective_met=state.objective_met,
+        spirit_violated=state.spirit_violated,
+        done_when_results=state.done_when_results,
+        summary=state.summary,
     )
