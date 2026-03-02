@@ -12,6 +12,31 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+def _mark_enrichment_failed(task_id: str, error: Exception) -> None:
+    """Mark a task as failed in the database after enrichment error."""
+    from ..storage.tasks import update_task
+
+    try:
+        update_task(
+            task_id,
+            enrichment_status="failed",
+            error_message=str(error),
+        )
+    except Exception as update_err:
+        logger.error("Failed to update task status: %s", update_err)
+
+
+def _build_enrichment_result(task_id: str, enriched: Any, validation: Any) -> dict[str, Any]:
+    """Build the result dict from a successful enrichment."""
+    return {
+        "task_id": task_id,
+        "status": "review",
+        "criteria_count": len(enriched.acceptance_criteria),
+        "subtask_count": len(enriched.subtasks),
+        "valid": validation.valid,
+    }
+
+
 def enrich_task_async(
     project_id: str,
     task_id: str,
@@ -37,19 +62,15 @@ def enrich_task_async(
         apply_enrichment_to_task,
         enrich_and_validate,
     )
-    from ..storage.tasks import update_task
 
     logger.info("Starting async enrichment for task %s", task_id)
 
     try:
-        # Run enrichment
         enriched, validation = enrich_and_validate(
             project_id=project_id,
             task_id=task_id,
             raw_request=raw_request,
         )
-
-        # Apply to database
         apply_enrichment_to_task(task_id, enriched)
 
         logger.info(
@@ -60,25 +81,9 @@ def enrich_task_async(
             validation.valid,
         )
 
-        return {
-            "task_id": task_id,
-            "status": "review",
-            "criteria_count": len(enriched.acceptance_criteria),
-            "subtask_count": len(enriched.subtasks),
-            "valid": validation.valid,
-        }
+        return _build_enrichment_result(task_id, enriched, validation)
 
     except Exception as e:
         logger.error("Enrichment failed for task %s: %s", task_id, e)
-
-        # Mark task as failed
-        try:
-            update_task(
-                task_id,
-                enrichment_status="failed",
-                error_message=str(e),
-            )
-        except Exception as update_err:
-            logger.error("Failed to update task status: %s", update_err)
-
+        _mark_enrichment_failed(task_id, e)
         raise  # Re-raise to trigger retry
