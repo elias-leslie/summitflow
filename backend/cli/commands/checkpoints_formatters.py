@@ -33,6 +33,28 @@ def format_age(created_at: str) -> str:
         return "unknown"
 
 
+def _format_subtask_branches(branches: list[dict[str, Any]]) -> None:
+    """Print subtask branch lines indented under a checkpoint entry."""
+    for br in branches:
+        if br["type"] == "subtask":
+            subtask_id = br["subtask_id"]
+            branch_name = br["branch"]
+            print(f"  └─ {subtask_id} {branch_name}")
+
+
+def _format_checkpoint_line(cp: dict[str, Any]) -> None:
+    """Print a single checkpoint summary line and its subtask branches."""
+    task_id = cp.get("task_id", "?")
+    age = format_age(cp.get("created_at", ""))
+    size = cp.get("size", "?")
+
+    branches = get_task_branches(task_id)
+    branch_count = len(branches)
+
+    print(f"{task_id}|{age}|{branch_count} branches|{size}")
+    _format_subtask_branches(branches)
+
+
 def format_compact_checkpoints(checkpoints: list[dict[str, Any]]) -> None:
     """Output checkpoints in TOON format."""
     if not checkpoints:
@@ -52,22 +74,7 @@ def format_compact_checkpoints(checkpoints: list[dict[str, Any]]) -> None:
 
     for _project_id, project_checkpoints in by_project.items():
         for cp in project_checkpoints:
-            task_id = cp.get("task_id", "?")
-            age = format_age(cp.get("created_at", ""))
-            size = cp.get("size", "?")
-
-            # Get branches for this task
-            branches = get_task_branches(task_id)
-            branch_count = len(branches)
-
-            print(f"{task_id}|{age}|{branch_count} branches|{size}")
-
-            # Show subtask branches indented
-            for br in branches:
-                if br["type"] == "subtask":
-                    subtask_id = br["subtask_id"]
-                    branch_name = br["branch"]
-                    print(f"  └─ {subtask_id} {branch_name}")
+            _format_checkpoint_line(cp)
 
 
 def format_details(out: OutputContext, task_id: str) -> None:
@@ -117,23 +124,30 @@ def format_cleanup_summary(cleaned_meta: int, cleaned_sql: int, cleaned_branches
         print(f"  (auto-cleaned: {', '.join(parts)})")
 
 
+def _format_review_item(item: dict[str, Any]) -> None:
+    """Print a single review item with its commits."""
+    branch = item["branch"]
+    commits = item["commits"]
+    print(f"  {branch} ({len(commits)} commit{'s' if len(commits) != 1 else ''}):")
+    for commit in commits[:5]:  # Show max 5 commits
+        print(f"    - {commit['message']} ({commit['age']})")
+    if len(commits) > 5:
+        print(f"    - ... and {len(commits) - 5} more")
+
+
 def format_review_needed(needs_review: list[dict[str, Any]]) -> None:
     """Format and print branches needing review with instructions."""
-    if needs_review:
-        print()
-        print(f"ACTION REQUIRED - Branches with unmerged commits [{len(needs_review)}]:")
-        for item in needs_review:
-            branch = item["branch"]
-            commits = item["commits"]
-            print(f"  {branch} ({len(commits)} commit{'s' if len(commits) != 1 else ''}):")
-            for commit in commits[:5]:  # Show max 5 commits
-                print(f"    - {commit['message']} ({commit['age']})")
-            if len(commits) > 5:
-                print(f"    - ... and {len(commits) - 5} more")
-        print()
-        print("INSTRUCTIONS: Review each branch above:")
-        print(
-            "  1. If commits are test artifacts or abandoned work → delete: git branch -D <branch>"
-        )
-        print("  2. If commits appear to be valuable work → ask user before deleting")
-        print("  3. If uncertain → ask user for guidance")
+    if not needs_review:
+        return
+
+    print()
+    print(f"ACTION REQUIRED - Branches with unmerged commits [{len(needs_review)}]:")
+    for item in needs_review:
+        _format_review_item(item)
+    print()
+    print("INSTRUCTIONS: Review each branch above:")
+    print(
+        "  1. If commits are test artifacts or abandoned work → delete: git branch -D <branch>"
+    )
+    print("  2. If commits appear to be valuable work → ask user before deleting")
+    print("  3. If uncertain → ask user for guidance")
