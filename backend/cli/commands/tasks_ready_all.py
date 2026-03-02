@@ -57,8 +57,10 @@ def list_ready_all(
 
         ready_tasks: list[dict[str, Any]] = []
         blocked_tasks: list[dict[str, Any]] = []
+        active_tasks: list[dict[str, Any]] = []
         ready_count = 0
         blocked_count = 0
+        active_count = 0
 
         try:
             ready_resp = client.get(
@@ -70,15 +72,45 @@ def list_ready_all(
         except APIError:
             pass
 
+        # Query tasks with status='blocked' (the actual blocked status)
         try:
             blocked_resp = client.get(
-                f"{client.base_url}/projects/{pid}/tasks/blocked"
-                f"?limit={limit_per_project}"
+                f"{client.base_url}/projects/{pid}/tasks"
+                f"?status=blocked&limit={limit_per_project}"
             )
             blocked_tasks = blocked_resp.get("tasks", [])
             blocked_count = blocked_resp.get("total", len(blocked_tasks))
         except APIError:
             pass
+
+        # Also check for pending tasks with blocking dependencies
+        try:
+            dep_blocked_resp = client.get(
+                f"{client.base_url}/projects/{pid}/tasks/blocked"
+                f"?limit={limit_per_project}"
+            )
+            dep_blocked = dep_blocked_resp.get("tasks", [])
+            # Merge, avoiding duplicates
+            seen_ids = {t.get("id") for t in blocked_tasks}
+            for t in dep_blocked:
+                if t.get("id") not in seen_ids:
+                    blocked_tasks.append(t)
+                    blocked_count += 1
+        except APIError:
+            pass
+
+        # Check for active tasks (running/queue)
+        for active_status in ("running", "queue"):
+            try:
+                active_resp = client.get(
+                    f"{client.base_url}/projects/{pid}/tasks"
+                    f"?status={active_status}&limit=5"
+                )
+                active_batch = active_resp.get("tasks", [])
+                active_tasks.extend(active_batch)
+                active_count += active_resp.get("total", len(active_batch))
+            except APIError:
+                pass
 
         total_ready += ready_count
         total_blocked += blocked_count
@@ -88,41 +120,49 @@ def list_ready_all(
             "project_name": pname,
             "ready_tasks": sorted(ready_tasks, key=_task_sort_key),
             "ready_count": ready_count,
-            "blocked_tasks": blocked_tasks,
+            "blocked_tasks": sorted(blocked_tasks, key=_task_sort_key),
             "blocked_count": blocked_count,
+            "active_tasks": active_tasks,
+            "active_count": active_count,
         })
 
-    # Sort projects: those with blocked/ready tasks first
-    results.sort(key=lambda r: (-(r["blocked_count"]), -(r["ready_count"])))
+    # Sort projects: those with blocked/active/ready tasks first
+    total_active = sum(r["active_count"] for r in results)
+    results.sort(key=lambda r: (-(r["blocked_count"]), -(r["active_count"]), -(r["ready_count"])))
 
     # Output
     project_count = len(results)
-    print(f"READY-ALL[{total_ready} ready, {total_blocked} blocked across {project_count} projects]")
+    print(
+        f"READY-ALL[{total_ready} ready, {total_blocked} blocked, "
+        f"{total_active} active across {project_count} projects]"
+    )
 
     for r in results:
         pid = r["project_id"]
         parts = [f"{r['ready_count']} ready"]
         if r["blocked_count"]:
             parts.append(f"{r['blocked_count']} blocked")
+        if r["active_count"]:
+            parts.append(f"{r['active_count']} active")
         label = ", ".join(parts)
         print(f"\n{pid} ({label})")
 
-        # Show blocked tasks first (most urgent)
+        # Show active tasks (currently running)
+        for task in r["active_tasks"][:limit_per_project]:
+            status = task.get("status", "running")
+            print(_format_task_line(task, prefix="~") + f" [{status}]")
+
+        # Show blocked tasks (need attention)
         for task in r["blocked_tasks"][:limit_per_project]:
-            blockers = task.get("blockers", [])
-            blocker_ids = ", ".join(
-                b.get("depends_on_task_id", "?")[:8] for b in blockers[:2]
-            )
-            suffix = f" (blocked by: {blocker_ids})" if blocker_ids else ""
-            print(_format_task_line(task, prefix="!") + suffix)
+            print(_format_task_line(task, prefix="!"))
 
         # Show ready tasks (bugs first, then by priority)
         for task in r["ready_tasks"][:limit_per_project]:
             prefix = "*" if task.get("task_type") == "bug" else " "
             print(_format_task_line(task, prefix=prefix))
 
-        if not r["blocked_tasks"] and not r["ready_tasks"]:
+        if not r["blocked_tasks"] and not r["ready_tasks"] and not r["active_tasks"]:
             print("  (no pending tasks)")
 
     # Footer
-    print(f"\nTOTAL: {total_ready} ready | {total_blocked} blocked")
+    print(f"\nTOTAL: {total_ready} ready | {total_blocked} blocked | {total_active} active")
