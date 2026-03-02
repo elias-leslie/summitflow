@@ -11,6 +11,54 @@ SCAN_STATUS_RUNNING = "running"
 SCAN_STATUS_COMPLETED = "completed"
 SCAN_STATUS_FAILED = "failed"
 
+# Extensions known to be binary
+BINARY_EXTENSIONS: frozenset[str] = frozenset(
+    {
+        ".pyc", ".pyo", ".so", ".dll", ".exe", ".bin",
+        ".png", ".jpg", ".jpeg", ".gif", ".ico", ".svg", ".webp",
+        ".woff", ".woff2", ".ttf", ".eot",
+        ".mp3", ".mp4", ".wav", ".ogg", ".webm",
+        ".pdf", ".zip", ".tar", ".gz", ".bz2", ".xz", ".7z",
+        ".lock", ".sqlite", ".db",
+    }
+)
+
+# Map file extensions to CodeMirror language identifiers
+EXTENSION_TO_LANGUAGE: dict[str, str] = {
+    ".py": "python",
+    ".ts": "typescript",
+    ".tsx": "typescript",
+    ".js": "javascript",
+    ".jsx": "javascript",
+    ".json": "json",
+    ".html": "html",
+    ".htm": "html",
+    ".css": "css",
+    ".scss": "css",
+    ".md": "markdown",
+    ".mdx": "markdown",
+    ".yaml": "yaml",
+    ".yml": "yaml",
+    ".sql": "sql",
+    ".rs": "rust",
+    ".go": "go",
+    ".java": "java",
+    ".cpp": "cpp",
+    ".c": "cpp",
+    ".h": "cpp",
+    ".hpp": "cpp",
+    ".xml": "xml",
+    ".php": "php",
+    ".sh": "shell",
+    ".bash": "shell",
+    ".zsh": "shell",
+    ".toml": "toml",
+    ".dockerfile": "dockerfile",
+}
+
+# Sensitive directories that should never be browsed
+FORBIDDEN_DIRS: frozenset[str] = frozenset({".git", ".env"})
+
 # Directories to skip during scanning (union of all skip patterns)
 SKIP_DIRS: frozenset[str] = frozenset(
     {
