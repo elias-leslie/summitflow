@@ -45,12 +45,22 @@ def _collect_dependencies(subtasks_data: list[dict[str, Any]]) -> list[tuple[str
 def _upsert_task_spirit(
     task_id: str, objective: str, constraints: list[Any]
 ) -> None:
-    """Create or update the task spirit record."""
+    """Create or update the task spirit record.
+
+    When updating an existing spirit (created by triage), preserves the triage
+    objective to avoid mismatches with done_when during intent checking.
+    The planner's objective is often a reworded abstraction that can diverge
+    from the concrete done_when criteria set by the triager.
+    """
     spirit = get_task_spirit(task_id)
     if not spirit:
         create_task_spirit(task_id=task_id, objective=objective, constraints=constraints)
     else:
-        update_task_spirit(task_id, objective=objective, constraints=constraints)
+        # Preserve triage objective if one exists; only update constraints
+        updates: dict[str, Any] = {"constraints": constraints}
+        if not spirit.get("objective"):
+            updates["objective"] = objective
+        update_task_spirit(task_id, **updates)
 
 
 def _create_subtasks_from_plan(
