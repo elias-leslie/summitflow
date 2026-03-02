@@ -11,6 +11,63 @@ from ..storage import qa_issues as qa_storage
 
 logger = get_logger(__name__)
 
+# Issue type constants
+ISSUE_TYPE_ERROR = "error"
+ISSUE_TYPE_COMPLEXITY = "complexity"
+ISSUE_TYPE_STALE_FILE = "stale_file"
+ISSUE_TYPE_BLOAT = "bloat"
+
+# Stale status values that indicate an active stale issue
+STALE_ACTIVE_STATUSES = ("stale", "orphan")
+
+# Bloat level values that indicate an active bloat issue
+BLOAT_ACTIVE_LEVELS = ("warning", "critical")
+
+# Complexity threshold above which a file is considered complex (tier 1)
+COMPLEXITY_THRESHOLD = 10
+
+# Resolution reason logged when a scan no longer detects the issue
+RESOLUTION_REASON_NOT_DETECTED = "Issue no longer detected in scan"
+
+# Metadata keys used in explorer entries and issue metadata
+META_COMPLEXITY_SCORE = "complexity_score"
+META_LINES_OF_CODE = "lines_of_code"
+META_TARGET_LINES = "target_lines"
+META_STALE_STATUS = "stale_status"
+META_BLOAT_LEVEL = "bloat_level"
+
+
+def _mark_and_close_issue(
+    issue: dict[str, Any],
+    scan_id: int | None,
+) -> bool:
+    """Mark an issue as resolved and close its linked task.
+
+    Args:
+        issue: Issue dict from qa_issues table
+        scan_id: Optional scan ID for tracking
+
+    Returns:
+        True if the linked task was successfully closed
+    """
+    qa_storage.mark_issue_resolved(
+        issue["id"],
+        scan_id=scan_id,
+        reason=RESOLUTION_REASON_NOT_DETECTED,
+    )
+
+    qa_issue = QAIssue(
+        id=issue["id"],
+        project_id=issue["project_id"],
+        issue_type=issue["issue_type"],
+        severity=issue["severity"],
+        title=issue["title"],
+        description=issue.get("description"),
+        file_path=issue.get("file_path"),
+        st_task_id=issue["st_task_id"],
+    )
+    return close_task_for_issue(qa_issue)
+
 
 def check_and_close_resolved_issues(project_id: str, scan_id: int | None = None) -> int:
     """Check for resolved issues and auto-close linked tasks.
@@ -45,32 +102,13 @@ def check_and_close_resolved_issues(project_id: str, scan_id: int | None = None)
 
     # Check each linked issue to see if it's still valid
     for issue in linked_issues:
-        if not issue_still_exists(project_id, issue):
-            # Issue is resolved - mark it and close the task
-            qa_storage.mark_issue_resolved(
-                issue["id"],
-                scan_id=scan_id,
-                reason="Issue no longer detected in scan",
+        if not issue_still_exists(project_id, issue) and _mark_and_close_issue(issue, scan_id):
+            closed_count += 1
+            logger.info(
+                "auto_closed_task",
+                issue_id=issue["id"],
+                task_id=issue["st_task_id"],
             )
-
-            # Close the linked task
-            qa_issue = QAIssue(
-                id=issue["id"],
-                project_id=issue["project_id"],
-                issue_type=issue["issue_type"],
-                severity=issue["severity"],
-                title=issue["title"],
-                description=issue.get("description"),
-                file_path=issue.get("file_path"),
-                st_task_id=issue["st_task_id"],
-            )
-            if close_task_for_issue(qa_issue):
-                closed_count += 1
-                logger.info(
-                    "auto_closed_task",
-                    issue_id=issue["id"],
-                    task_id=issue["st_task_id"],
-                )
 
     if closed_count > 0:
         logger.info(
@@ -80,6 +118,60 @@ def check_and_close_resolved_issues(project_id: str, scan_id: int | None = None)
         )
 
     return closed_count
+
+
+def _complexity_issue_still_exists(
+    entry: dict[str, Any],
+    issue_metadata: dict[str, Any],
+) -> bool:
+    """Check if a complexity issue still exists for a file entry.
+
+    Args:
+        entry: Explorer entry dict for the file
+        issue_metadata: Parsed metadata from the issue
+
+    Returns:
+        True if the complexity issue persists
+    """
+    entry_metadata = entry.get("metadata", {})
+    complexity = entry_metadata.get(META_COMPLEXITY_SCORE, 0)
+    lines = entry_metadata.get(META_LINES_OF_CODE, 0)
+
+    # If issue has a target_lines in metadata, use that for line count check
+    target_lines = issue_metadata.get(META_TARGET_LINES)
+    if target_lines and lines >= target_lines:
+        return True
+
+    # Fall back to complexity check (tier 1 starts at complexity > COMPLEXITY_THRESHOLD)
+    return bool(complexity >= COMPLEXITY_THRESHOLD)
+
+
+def _stale_file_issue_still_exists(entry: dict[str, Any]) -> bool:
+    """Check if a stale_file issue still exists for a file entry.
+
+    Args:
+        entry: Explorer entry dict for the file
+
+    Returns:
+        True if the file is still stale or orphaned
+    """
+    metadata = entry.get("metadata", {})
+    stale_status = metadata.get(META_STALE_STATUS)
+    return bool(stale_status in STALE_ACTIVE_STATUSES)
+
+
+def _bloat_issue_still_exists(entry: dict[str, Any]) -> bool:
+    """Check if a bloat issue still exists for a file entry.
+
+    Args:
+        entry: Explorer entry dict for the file
+
+    Returns:
+        True if the file still has a warning or critical bloat level
+    """
+    metadata = entry.get("metadata", {})
+    bloat_level = metadata.get(META_BLOAT_LEVEL)
+    return bool(bloat_level in BLOAT_ACTIVE_LEVELS)
 
 
 def issue_still_exists(project_id: str, issue: dict[str, Any]) -> bool:
@@ -103,7 +195,7 @@ def issue_still_exists(project_id: str, issue: dict[str, Any]) -> bool:
     issue_metadata = issue.get("metadata") or {}
 
     # Handle error issues separately (may not have file_path)
-    if issue_type == "error":
+    if issue_type == ISSUE_TYPE_ERROR:
         return _error_issue_still_exists(project_id, issue, issue_metadata)
 
     if not file_path:
@@ -116,33 +208,13 @@ def issue_still_exists(project_id: str, issue: dict[str, Any]) -> bool:
         # File was deleted - issue is resolved
         return False
 
-    # Check issue type-specific criteria
-    if issue_type == "complexity":
-        # Check if complexity is still above threshold OR line count still above target
-        entry_metadata = entry.get("metadata", {})
-        complexity = entry_metadata.get("complexity_score", 0)
-        lines = entry_metadata.get("lines_of_code", 0)
-
-        # If issue has a target_lines in metadata, use that for line count check
-        target_lines = issue_metadata.get("target_lines")
-        if target_lines and lines >= target_lines:
-            # File still above target line count - issue persists
-            return True
-
-        # Fall back to complexity check (threshold matches task generation: tier 1 starts at complexity > 10)
-        return bool(complexity >= 10)
-
-    elif issue_type == "stale_file":
-        # Check if file is still stale (no commits in 180+ days)
-        metadata = entry.get("metadata", {})
-        stale_status = metadata.get("stale_status")
-        return bool(stale_status in ("stale", "orphan"))
-
-    elif issue_type == "bloat":
-        # Check if file is still bloated
-        metadata = entry.get("metadata", {})
-        bloat_level = metadata.get("bloat_level")
-        return bool(bloat_level in ("warning", "critical"))
+    # Dispatch to issue type-specific check
+    if issue_type == ISSUE_TYPE_COMPLEXITY:
+        return _complexity_issue_still_exists(entry, issue_metadata)
+    elif issue_type == ISSUE_TYPE_STALE_FILE:
+        return _stale_file_issue_still_exists(entry)
+    elif issue_type == ISSUE_TYPE_BLOAT:
+        return _bloat_issue_still_exists(entry)
 
     # Default: assume issue still exists
     return True
