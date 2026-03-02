@@ -8,24 +8,11 @@ from __future__ import annotations
 
 from .review_types import DiffStats, Task
 
+_MAX_DIFF_LENGTH = 15000
 
-def build_review_prompt(
-    diff: str,
-    diff_stats: DiffStats,
-    task: Task,
-    rules: list[str],
-) -> str:
-    """Build the review prompt for Opus.
 
-    Args:
-        diff: Git diff output
-        diff_stats: Dict with files_changed, insertions, deletions
-        task: Task dict with title and description
-        rules: List of relevant rule filenames
-
-    Returns:
-        Complete prompt string with review guidelines
-    """
+def _build_header_section(task: Task, diff_stats: DiffStats) -> list[str]:
+    """Build the header, task, and change summary sections."""
     lines: list[str] = []
 
     lines.append("# Code Review Request")
@@ -48,13 +35,26 @@ def build_review_prompt(
     lines.append(f"- Lines removed: {diff_stats.get('deletions', 0)}")
     lines.append("")
 
-    if rules:
-        lines.append("## Rules to Verify")
-        lines.append("Check that changes comply with:")
-        for rule in rules:
-            lines.append(f"- {rule}")
-        lines.append("")
+    return lines
 
+
+def _build_rules_section(rules: list[str]) -> list[str]:
+    """Build the rules verification section, or empty list if no rules."""
+    if not rules:
+        return []
+
+    lines: list[str] = []
+    lines.append("## Rules to Verify")
+    lines.append("Check that changes comply with:")
+    for rule in rules:
+        lines.append(f"- {rule}")
+    lines.append("")
+    return lines
+
+
+def _build_checklist_section() -> list[str]:
+    """Build the review checklist section."""
+    lines: list[str] = []
     lines.append("## Review Checklist")
     lines.append("")
     lines.append("1. **Correctness**: Does the code do what the task requires?")
@@ -66,18 +66,28 @@ def build_review_prompt(
     lines.append("5. **Tests**: If tests were affected, do they make sense?")
     lines.append("6. **Dead Code**: Any commented-out or unused code added?")
     lines.append("")
+    return lines
 
+
+def _build_diff_section(diff: str) -> list[str]:
+    """Build the diff code block section, truncating if necessary."""
+    lines: list[str] = []
     lines.append("## Diff to Review")
     lines.append("")
     lines.append("```diff")
-    if len(diff) > 15000:
-        lines.append(diff[:15000])
+    if len(diff) > _MAX_DIFF_LENGTH:
+        lines.append(diff[:_MAX_DIFF_LENGTH])
         lines.append("\n... (truncated, diff too long)")
     else:
         lines.append(diff)
     lines.append("```")
     lines.append("")
+    return lines
 
+
+def _build_response_section() -> list[str]:
+    """Build the response format and verdict guidelines section."""
+    lines: list[str] = []
     lines.append("## Your Response")
     lines.append("")
     lines.append("Respond with a JSON object in this exact format:")
@@ -99,5 +109,30 @@ def build_review_prompt(
         "- REJECT: Critical issues (security, data loss risk, fundamentally wrong approach)"
     )
     lines.append("")
+    return lines
 
+
+def build_review_prompt(
+    diff: str,
+    diff_stats: DiffStats,
+    task: Task,
+    rules: list[str],
+) -> str:
+    """Build the review prompt for Opus.
+
+    Args:
+        diff: Git diff output
+        diff_stats: Dict with files_changed, insertions, deletions
+        task: Task dict with title and description
+        rules: List of relevant rule filenames
+
+    Returns:
+        Complete prompt string with review guidelines
+    """
+    lines: list[str] = []
+    lines.extend(_build_header_section(task, diff_stats))
+    lines.extend(_build_rules_section(rules))
+    lines.extend(_build_checklist_section())
+    lines.extend(_build_diff_section(diff))
+    lines.extend(_build_response_section())
     return "\n".join(lines)
