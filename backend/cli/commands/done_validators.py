@@ -5,17 +5,39 @@ Handles subtask ID parsing and error message processing.
 
 from __future__ import annotations
 
+# Error messages returned to the user when DB triggers block completion.
+_ERR_ZERO_STEPS = (
+    "Cannot complete: Task has no steps. Create subtasks with steps first."
+)
+_ERR_STEPS_INCOMPLETE = (
+    "Cannot complete: Some steps not verified. Run: st step pass <subtask> <step>"
+)
+_ERR_DEPENDENCIES = (
+    "Cannot complete: Blocking dependencies incomplete. Complete them first."
+)
+_ERR_QA_PENDING = "Cannot complete: QA status pending. Run: st qa pass <task-id>"
+_ERR_SUBTASKS_INCOMPLETE = (
+    "Cannot complete task: Some subtasks incomplete. Run: st subtask list <task-id>"
+)
+
 
 def is_subtask_id(id_str: str) -> bool:
     """Check if the ID looks like a subtask (e.g., 1.1, 2.3)."""
     if "." not in id_str:
         return False
-
     parts = id_str.split(".")
     if len(parts) != 2:
         return False
-
     return parts[0].isdigit() and parts[1].isdigit()
+
+
+def _extract_detail_text(detail: str | dict[str, str] | object) -> str:
+    """Extract a lowercased detail string from a str, dict, or unknown type."""
+    if isinstance(detail, str):
+        return detail.lower()
+    if isinstance(detail, dict):
+        return str(detail.get("detail", "")).lower()
+    return ""
 
 
 def parse_db_error(detail: str | dict[str, str] | object) -> str | None:
@@ -23,25 +45,21 @@ def parse_db_error(detail: str | dict[str, str] | object) -> str | None:
     if not isinstance(detail, (str, dict)):
         return None
 
-    msg = (
-        str(detail).lower()
-        if isinstance(detail, str)
-        else str(detail.get("detail", "")).lower() if isinstance(detail, dict) else ""
-    )
+    msg = _extract_detail_text(detail)
 
     if "zero steps" in msg or ("steps" in msg and "zero" in msg):
-        return "Cannot complete: Task has no steps. Create subtasks with steps first."
+        return _ERR_ZERO_STEPS
 
     if "steps" in msg and ("incomplete" in msg or "not verified" in msg):
-        return "Cannot complete: Some steps not verified. Run: st step pass <subtask> <step>"
+        return _ERR_STEPS_INCOMPLETE
 
     if "dependencies" in msg or "depends on" in msg:
-        return "Cannot complete: Blocking dependencies incomplete. Complete them first."
+        return _ERR_DEPENDENCIES
 
     if "qa" in msg and ("pending" in msg or "signoff" in msg):
-        return "Cannot complete: QA status pending. Run: st qa pass <task-id>"
+        return _ERR_QA_PENDING
 
     if "subtask" in msg and ("incomplete" in msg or "not all" in msg):
-        return "Cannot complete task: Some subtasks incomplete. Run: st subtask list <task-id>"
+        return _ERR_SUBTASKS_INCOMPLETE
 
     return None
