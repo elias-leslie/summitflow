@@ -9,6 +9,40 @@ from typing import Any
 
 from .connection import get_connection
 
+_VALID_DEPENDENCY_TYPES = {"blocks", "discovered-from"}
+
+
+def _validate_dependency(task_id: str, depends_on_task_id: str, dependency_type: str) -> None:
+    """Validate dependency arguments.
+
+    Raises:
+        ValueError: If invalid dependency type or self-reference.
+    """
+    if dependency_type not in _VALID_DEPENDENCY_TYPES:
+        raise ValueError(
+            f"Invalid dependency type '{dependency_type}'. Must be one of: {_VALID_DEPENDENCY_TYPES}"
+        )
+    if task_id == depends_on_task_id:
+        raise ValueError("Task cannot depend on itself")
+
+
+def _fetch_existing_dependency(
+    cur: Any,
+    task_id: str,
+    depends_on_task_id: str,
+    dependency_type: str,
+) -> tuple[Any, ...] | None:
+    """Fetch an existing dependency row by its three-column key."""
+    cur.execute(
+        """
+        SELECT id, task_id, depends_on_task_id, dependency_type, created_at
+        FROM task_dependencies
+        WHERE task_id = %s AND depends_on_task_id = %s AND dependency_type = %s
+        """,
+        (task_id, depends_on_task_id, dependency_type),
+    )
+    return cur.fetchone()  # type: ignore[no-any-return]
+
 
 def add_dependency(
     task_id: str,
@@ -28,14 +62,7 @@ def add_dependency(
     Raises:
         ValueError: If invalid dependency type or self-reference.
     """
-    valid_types = {"blocks", "discovered-from"}
-    if dependency_type not in valid_types:
-        raise ValueError(
-            f"Invalid dependency type '{dependency_type}'. Must be one of: {valid_types}"
-        )
-
-    if task_id == depends_on_task_id:
-        raise ValueError("Task cannot depend on itself")
+    _validate_dependency(task_id, depends_on_task_id, dependency_type)
 
     with get_connection() as conn, conn.cursor() as cur:
         try:
@@ -52,21 +79,11 @@ def add_dependency(
             conn.commit()
 
             if not row:
-                # Already exists
-                cur.execute(
-                    """
-                    SELECT id, task_id, depends_on_task_id, dependency_type, created_at
-                    FROM task_dependencies
-                    WHERE task_id = %s AND depends_on_task_id = %s AND dependency_type = %s
-                    """,
-                    (task_id, depends_on_task_id, dependency_type),
-                )
-                row = cur.fetchone()
+                row = _fetch_existing_dependency(cur, task_id, depends_on_task_id, dependency_type)
 
             return _dep_row_to_dict(row) if row else None
         except Exception as e:
             conn.rollback()
-            # Foreign key violation
             if "foreign key" in str(e).lower():
                 return None
             raise
