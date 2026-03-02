@@ -462,13 +462,14 @@ run_tests() {
 has_python_backend() {
     local project_dir="${1:-$PROJECT_DIR}"
     local backend_dir=$(get_backend_path "$PROJECT_NAME" "$project_dir")
-    
-    # Check for pyproject.toml or requirements.txt
+
+    # Check for pyproject.toml or requirements.txt in the backend dir
     if [[ -f "$backend_dir/pyproject.toml" ]] || [[ -f "$backend_dir/requirements.txt" ]]; then
         return 0
     fi
-    # Fallback: check if backend dir exists and has python files
-    if [[ -d "$backend_dir" ]]; then
+    # Only scan for .py files if backend_dir is a DEDICATED subdirectory,
+    # not the project root fallback (which catches stray utility scripts)
+    if [[ "$backend_dir" != "$project_dir" && -d "$backend_dir" ]]; then
         if find "$backend_dir" -maxdepth 2 -name "*.py" -print -quit | grep -q .; then
             return 0
         fi
