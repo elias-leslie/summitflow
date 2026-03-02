@@ -10,7 +10,6 @@ This avoids CORS issues and keeps credentials server-side.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from typing import Any
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
@@ -25,14 +24,70 @@ from ..services._agent_hub_config import (
 
 router = APIRouter()
 
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+_HEADER_CLIENT_ID = "X-Client-Id"
+_HEADER_REQUEST_SOURCE = "X-Request-Source"
+_DEFAULT_REQUEST_SOURCE = "summitflow-frontend"
+_MEDIA_TYPE_SSE = "text/event-stream"
+_ENCODING_UTF8 = "utf-8"
+
+_SSE_RESPONSE_HEADERS = {
+    "Cache-Control": "no-cache",
+    "X-Accel-Buffering": "no",
+}
+
+_TIMEOUT_DEFAULT = 10.0
+_TIMEOUT_STREAM = httpx.Timeout(600.0, connect=10.0)
+
+_ERR_AGENT_HUB = "Agent Hub error: {detail}"
+_ERR_CONNECT = "Could not connect to Agent Hub: {detail}"
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
 
 def _auth_headers() -> dict[str, str]:
     """Build authentication headers for Agent Hub requests."""
     headers: dict[str, str] = {}
     if SUMMITFLOW_CLIENT_ID:
-        headers["X-Client-Id"] = SUMMITFLOW_CLIENT_ID
-    headers["X-Request-Source"] = SUMMITFLOW_REQUEST_SOURCE or "summitflow-frontend"
+        headers[_HEADER_CLIENT_ID] = SUMMITFLOW_CLIENT_ID
+    headers[_HEADER_REQUEST_SOURCE] = SUMMITFLOW_REQUEST_SOURCE or _DEFAULT_REQUEST_SOURCE
     return headers
+
+
+def _raise_from_status_error(exc: httpx.HTTPStatusError) -> None:
+    """Raise HTTPException from an httpx HTTPStatusError."""
+    raise HTTPException(
+        status_code=exc.response.status_code,
+        detail=_ERR_AGENT_HUB.format(detail=exc.response.text),
+    ) from exc
+
+
+def _raise_from_request_error(exc: httpx.RequestError) -> None:
+    """Raise HTTPException from an httpx RequestError."""
+    raise HTTPException(
+        status_code=503,
+        detail=_ERR_CONNECT.format(detail=str(exc)),
+    ) from exc
+
+
+async def _get_json(url: str, **kwargs: object) -> object:
+    """Perform a GET request and return parsed JSON, raising HTTPException on error."""
+    async with httpx.AsyncClient(timeout=_TIMEOUT_DEFAULT) as client:
+        try:
+            response = await client.get(url, headers=_auth_headers(), **kwargs)  # type: ignore[arg-type]
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as exc:
+            _raise_from_status_error(exc)
+        except httpx.RequestError as exc:
+            _raise_from_request_error(exc)
+    return None  # pragma: no cover — unreachable, exceptions always raised above
 
 
 # ---------------------------------------------------------------------------
@@ -55,41 +110,34 @@ class CodingAgentsListResponse(BaseModel):
     agents: list[CodingAgentResponse]
 
 
+def _parse_agents(data: object) -> CodingAgentsListResponse:
+    """Parse raw Agent Hub response data into CodingAgentsListResponse."""
+    raw: list[object] = []
+    if isinstance(data, dict):
+        raw = data.get("agents", [])  # type: ignore[assignment]
+    return CodingAgentsListResponse(
+        agents=[
+            CodingAgentResponse(
+                slug=agent["slug"],  # type: ignore[index]
+                name=agent["name"],  # type: ignore[index]
+                description=agent.get("description"),  # type: ignore[union-attr]
+                is_coding_agent=agent.get("is_coding_agent", True),  # type: ignore[union-attr]
+            )
+            for agent in raw
+        ]
+    )
+
+
 @router.get("/agent-hub/agents", response_model=CodingAgentsListResponse)
 async def list_coding_agents(
     is_coding_agent: bool = True,
 ) -> CodingAgentsListResponse:
     """Proxy to Agent Hub to list coding agents."""
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        try:
-            response = await client.get(
-                f"{AGENT_HUB_URL}/api/agents",
-                params={"is_coding_agent": str(is_coding_agent).lower()},
-                headers=_auth_headers(),
-            )
-            response.raise_for_status()
-            data = response.json()
-            return CodingAgentsListResponse(
-                agents=[
-                    CodingAgentResponse(
-                        slug=agent["slug"],
-                        name=agent["name"],
-                        description=agent.get("description"),
-                        is_coding_agent=agent.get("is_coding_agent", True),
-                    )
-                    for agent in data.get("agents", [])
-                ]
-            )
-        except httpx.HTTPStatusError as e:
-            raise HTTPException(
-                status_code=e.response.status_code,
-                detail=f"Agent Hub error: {e.response.text}",
-            ) from e
-        except httpx.RequestError as e:
-            raise HTTPException(
-                status_code=503,
-                detail=f"Could not connect to Agent Hub: {e!s}",
-            ) from e
+    data = await _get_json(
+        f"{AGENT_HUB_URL}/api/agents",
+        params={"is_coding_agent": str(is_coding_agent).lower()},
+    )
+    return _parse_agents(data)
 
 
 # ---------------------------------------------------------------------------
@@ -98,26 +146,9 @@ async def list_coding_agents(
 
 
 @router.get("/agent-hub/models")
-async def list_models() -> Any:
+async def list_models() -> object:
     """Proxy to Agent Hub to list available models."""
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        try:
-            response = await client.get(
-                f"{AGENT_HUB_URL}/api/models",
-                headers=_auth_headers(),
-            )
-            response.raise_for_status()
-            return response.json()
-        except httpx.HTTPStatusError as e:
-            raise HTTPException(
-                status_code=e.response.status_code,
-                detail=f"Agent Hub error: {e.response.text}",
-            ) from e
-        except httpx.RequestError as e:
-            raise HTTPException(
-                status_code=503,
-                detail=f"Could not connect to Agent Hub: {e!s}",
-            ) from e
+    return await _get_json(f"{AGENT_HUB_URL}/api/models")
 
 
 # ---------------------------------------------------------------------------
@@ -126,33 +157,16 @@ async def list_models() -> Any:
 
 
 @router.get("/agent-hub/preferences")
-async def get_preferences() -> Any:
+async def get_preferences() -> object:
     """Proxy to Agent Hub to get user preferences."""
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        try:
-            response = await client.get(
-                f"{AGENT_HUB_URL}/api/preferences",
-                headers=_auth_headers(),
-            )
-            response.raise_for_status()
-            return response.json()
-        except httpx.HTTPStatusError as e:
-            raise HTTPException(
-                status_code=e.response.status_code,
-                detail=f"Agent Hub error: {e.response.text}",
-            ) from e
-        except httpx.RequestError as e:
-            raise HTTPException(
-                status_code=503,
-                detail=f"Could not connect to Agent Hub: {e!s}",
-            ) from e
+    return await _get_json(f"{AGENT_HUB_URL}/api/preferences")
 
 
 @router.put("/agent-hub/preferences")
-async def update_preferences(request: Request) -> Any:
+async def update_preferences(request: Request) -> object:
     """Proxy to Agent Hub to update user preferences."""
     body = await request.json()
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(timeout=_TIMEOUT_DEFAULT) as client:
         try:
             response = await client.put(
                 f"{AGENT_HUB_URL}/api/preferences",
@@ -161,16 +175,11 @@ async def update_preferences(request: Request) -> Any:
             )
             response.raise_for_status()
             return response.json()
-        except httpx.HTTPStatusError as e:
-            raise HTTPException(
-                status_code=e.response.status_code,
-                detail=f"Agent Hub error: {e.response.text}",
-            ) from e
-        except httpx.RequestError as e:
-            raise HTTPException(
-                status_code=503,
-                detail=f"Could not connect to Agent Hub: {e!s}",
-            ) from e
+        except httpx.HTTPStatusError as exc:
+            _raise_from_status_error(exc)
+        except httpx.RequestError as exc:
+            _raise_from_request_error(exc)
+    return None  # pragma: no cover — unreachable, exceptions always raised above
 
 
 # ---------------------------------------------------------------------------
@@ -179,26 +188,9 @@ async def update_preferences(request: Request) -> Any:
 
 
 @router.get("/agent-hub/sessions/{session_id}")
-async def get_session(session_id: str) -> Any:
+async def get_session(session_id: str) -> object:
     """Proxy to Agent Hub to get session data."""
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        try:
-            response = await client.get(
-                f"{AGENT_HUB_URL}/api/sessions/{session_id}",
-                headers=_auth_headers(),
-            )
-            response.raise_for_status()
-            return response.json()
-        except httpx.HTTPStatusError as e:
-            raise HTTPException(
-                status_code=e.response.status_code,
-                detail=f"Agent Hub error: {e.response.text}",
-            ) from e
-        except httpx.RequestError as e:
-            raise HTTPException(
-                status_code=503,
-                detail=f"Could not connect to Agent Hub: {e!s}",
-            ) from e
+    return await _get_json(f"{AGENT_HUB_URL}/api/sessions/{session_id}")
 
 
 # ---------------------------------------------------------------------------
@@ -206,10 +198,41 @@ async def get_session(session_id: str) -> Any:
 # ---------------------------------------------------------------------------
 
 
-async def _stream_response(response: httpx.Response) -> AsyncIterator[bytes]:
-    """Stream response bytes from httpx response."""
-    async for chunk in response.aiter_bytes():
-        yield chunk
+async def _stream_and_close(
+    response: httpx.Response,
+    client: httpx.AsyncClient,
+) -> AsyncIterator[bytes]:
+    """Stream response bytes then close response and client."""
+    try:
+        async for chunk in response.aiter_bytes():
+            yield chunk
+    finally:
+        await response.aclose()
+        await client.aclose()
+
+
+async def _handle_non_ok_stream(
+    response: httpx.Response,
+    client: httpx.AsyncClient,
+) -> None:
+    """Read error body, close resources, and raise HTTPException."""
+    content = await response.aread()
+    await response.aclose()
+    await client.aclose()
+    raise HTTPException(
+        status_code=response.status_code,
+        detail=content.decode(_ENCODING_UTF8, errors="replace"),
+    )
+
+
+def _build_stream_request(client: httpx.AsyncClient, body: object) -> httpx.Request:
+    """Build the streaming POST request to Agent Hub /api/complete."""
+    return client.build_request(
+        "POST",
+        f"{AGENT_HUB_URL}/api/complete",
+        json=body,
+        headers={**_auth_headers(), "Accept": _MEDIA_TYPE_SSE},
+    )
 
 
 @router.post("/agent-hub/complete")
@@ -219,50 +242,22 @@ async def proxy_complete(request: Request) -> StreamingResponse:
     Forwards the request body and streams the SSE response back.
     """
     body = await request.json()
-    client = httpx.AsyncClient(timeout=httpx.Timeout(600.0, connect=10.0))
+    client = httpx.AsyncClient(timeout=_TIMEOUT_STREAM)
 
     try:
-        response = await client.send(
-            client.build_request(
-                "POST",
-                f"{AGENT_HUB_URL}/api/complete",
-                json=body,
-                headers={
-                    **_auth_headers(),
-                    "Accept": "text/event-stream",
-                },
-            ),
-            stream=True,
-        )
-
-        if response.status_code != 200:
-            content = await response.aread()
-            await response.aclose()
-            await client.aclose()
-            raise HTTPException(
-                status_code=response.status_code,
-                detail=content.decode("utf-8", errors="replace"),
-            )
-
-        async def stream_and_close() -> AsyncIterator[bytes]:
-            try:
-                async for chunk in response.aiter_bytes():
-                    yield chunk
-            finally:
-                await response.aclose()
-                await client.aclose()
-
-        return StreamingResponse(
-            stream_and_close(),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "X-Accel-Buffering": "no",
-            },
-        )
-    except httpx.RequestError as e:
+        response = await client.send(_build_stream_request(client, body), stream=True)
+    except httpx.RequestError as exc:
         await client.aclose()
         raise HTTPException(
             status_code=503,
-            detail=f"Could not connect to Agent Hub: {e!s}",
-        ) from e
+            detail=_ERR_CONNECT.format(detail=str(exc)),
+        ) from exc
+
+    if response.status_code != 200:
+        await _handle_non_ok_stream(response, client)
+
+    return StreamingResponse(
+        _stream_and_close(response, client),
+        media_type=_MEDIA_TYPE_SSE,
+        headers=_SSE_RESPONSE_HEADERS,
+    )
