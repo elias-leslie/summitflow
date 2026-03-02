@@ -25,6 +25,58 @@ def get_mockup(project_id: str, mockup_id: str) -> dict[str, Any] | None:
         return _row_to_mockup(row)
 
 
+def _build_filter_clauses(
+    project_id: str,
+    *,
+    mockup_type: str | None = None,
+    status: str | None = None,
+    task_id: str | None = None,
+    page_path: str | None = None,
+    generator: str | None = None,
+    search: str | None = None,
+) -> tuple[list[str], list[Any]]:
+    """Build WHERE clauses and params list from filter arguments."""
+    where_clauses = ["project_id = %s"]
+    params: list[Any] = [project_id]
+
+    if mockup_type:
+        where_clauses.append("mockup_type = %s")
+        params.append(mockup_type)
+
+    if status:
+        where_clauses.append("status = %s")
+        params.append(status)
+
+    if task_id:
+        where_clauses.append("task_id = %s")
+        params.append(task_id)
+
+    if page_path:
+        where_clauses.append("page_path = %s")
+        params.append(page_path)
+
+    if generator:
+        where_clauses.append("generator = %s")
+        params.append(generator)
+
+    if search:
+        where_clauses.append("(name ILIKE %s OR description ILIKE %s)")
+        search_pattern = f"%{search}%"
+        params.extend([search_pattern, search_pattern])
+
+    return where_clauses, params
+
+
+def _count_mockups(cur: Any, where_sql: sql.Composed, params: list[Any]) -> int:
+    """Execute a COUNT query and return the total."""
+    cur.execute(
+        sql.SQL("SELECT COUNT(*) FROM mockups WHERE ") + where_sql,
+        params,
+    )
+    count_row = cur.fetchone()
+    return int(count_row[0]) if count_row and count_row[0] else 0
+
+
 def list_mockups(
     project_id: str,
     *,
@@ -42,57 +94,29 @@ def list_mockups(
     Returns:
         Tuple of (mockups list, total count)
     """
+    where_clauses, params = _build_filter_clauses(
+        project_id,
+        mockup_type=mockup_type,
+        status=status,
+        task_id=task_id,
+        page_path=page_path,
+        generator=generator,
+        search=search,
+    )
+    where_sql = sql.SQL(" AND ").join(sql.SQL(c) for c in where_clauses)
+
     with get_connection() as conn, conn.cursor() as cur:
-        where_clauses = ["project_id = %s"]
-        params: list[Any] = [project_id]
+        total = _count_mockups(cur, where_sql, params.copy())
 
-        if mockup_type:
-            where_clauses.append("mockup_type = %s")
-            params.append(mockup_type)
-
-        if status:
-            where_clauses.append("status = %s")
-            params.append(status)
-
-        if task_id:
-            where_clauses.append("task_id = %s")
-            params.append(task_id)
-
-        if page_path:
-            where_clauses.append("page_path = %s")
-            params.append(page_path)
-
-        if generator:
-            where_clauses.append("generator = %s")
-            params.append(generator)
-
-        if search:
-            where_clauses.append("(name ILIKE %s OR description ILIKE %s)")
-            search_pattern = f"%{search}%"
-            params.extend([search_pattern, search_pattern])
-
-        where_sql = sql.SQL(" AND ").join(sql.SQL(c) for c in where_clauses)
-
-        # Get total count
-        count_params = params.copy()
-        cur.execute(
-            sql.SQL("SELECT COUNT(*) FROM mockups WHERE ") + where_sql,
-            count_params,
-        )
-        count_row = cur.fetchone()
-        total = int(count_row[0]) if count_row and count_row[0] else 0
-
-        # Get paginated results
-        params.extend([limit, offset])
         cur.execute(
             sql.SQL(f"SELECT {MOCKUP_SELECT_COLUMNS} FROM mockups WHERE ")
             + where_sql
             + sql.SQL(" ORDER BY created_at DESC LIMIT %s OFFSET %s"),
-            params,
+            [*params, limit, offset],
         )
         rows = cur.fetchall()
 
-        return [_row_to_mockup(row) for row in rows], total
+    return [_row_to_mockup(row) for row in rows], total
 
 
 def get_mockups_for_task(
