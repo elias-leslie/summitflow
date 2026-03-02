@@ -1,7 +1,6 @@
 """Internal workflow helpers for mockup generator.
 
-Contains page design analysis workflow logic and utility helpers.
-"""
+Contains page design analysis workflow logic and utility helpers."""
 
 from __future__ import annotations
 
@@ -23,120 +22,54 @@ logger = get_logger(__name__)
 
 
 def get_design_standard(project_id: str, standards_id: str) -> dict | None:
-    """Get design standard by ID.
-
-    Args:
-        project_id: Project ID
-        standards_id: Design standard ID
-
-    Returns:
-        Design standard dict or None
-    """
+    """Get design standard by ID."""
     from ..storage.design_standards import get_base_standard, get_project_standard
 
     if standards_id == "base":
         design_standard = get_base_standard()
     else:
         design_standard = get_project_standard(project_id, standards_id)
-
     if not design_standard:
         design_standard = get_base_standard()
-
     return design_standard
 
 
 def extract_path_from_url(url: str) -> str:
-    """Extract path component from a URL.
-
-    Args:
-        url: Full URL
-
-    Returns:
-        Path component of URL
-    """
-    parsed = urlparse(url)
-    return parsed.path or "/"
+    """Extract path component from a URL."""
+    return urlparse(url).path or "/"
 
 
-async def run_analyze_page_design(
-    project_id: str,
-    page_url: str,
-    page_path: str | None = None,
+def _elapsed_ms(start: float) -> int:
+    return int((time.monotonic() - start) * 1000)
+
+
+def _try_generate_mockup(
+    screenshot_path: Path, mockup_image_path: Path, recommendations: str | None, page_url: str
+) -> Path:
+    """Attempt to generate a mockup image; returns the resulting path."""
+    if not recommendations:
+        return mockup_image_path
+    try:
+        result = generate_mockup_image(
+            screenshot_path=screenshot_path,
+            recommendations=recommendations,
+            output_path=mockup_image_path,
+            page_url=page_url,
+        )
+        if result:
+            return Path(result)
+    except Exception as e:
+        logger.warning("mockup_image_generation_failed", error=str(e))
+    return mockup_image_path
+
+
+def _store_mockup_and_build_result(
+    project_id: str, page_url: str, page_path: str,
+    screenshot_path: Path, mockup_image_path: Path,
+    recommendations: str | None, issues_count: int, generation_time_ms: int,
 ) -> DesignAnalysisResult:
-    """Analyze a page's design and generate improvement recommendations.
-
-    This is the main workflow for mockup generation:
-    1. Capture screenshot of the page
-    2. Fetch design standards for the project
-    3. Analyze screenshot against standards using vision
-    4. Store mockup record with screenshot and recommendations
-
-    Args:
-        project_id: Project ID
-        page_url: Full URL to analyze
-        page_path: Optional page path (for storage, defaults to URL path)
-
-    Returns:
-        DesignAnalysisResult with mockup details
-    """
-    start_time = time.monotonic()
-
-    if page_path is None:
-        page_path = extract_path_from_url(page_url)
-
-    # Step 1: Capture screenshot
-    screenshot_id = f"analysis-{int(time.time())}"
-    screenshot_dir = MOCKUP_BASE_DIR / project_id / screenshot_id
-    screenshot_path = screenshot_dir / "screenshot.png"
-
-    success, error = await capture_page_screenshot(page_url, screenshot_path)
-    if not success:
-        return DesignAnalysisResult(
-            success=False,
-            error=f"Screenshot capture failed: {error}",
-            generation_time_ms=int((time.monotonic() - start_time) * 1000),
-        )
-
-    # Step 2: Get design rules
-    from ..storage.design_standards import get_effective_rules
-
-    design_rules = get_effective_rules(project_id) or []
-
-    # Step 3: Analyze with vision
-    recommendations, issues_count, analysis_error = analyze_screenshot_with_vision(
-        screenshot_path,
-        design_rules,
-        page_url,
-    )
-
-    if analysis_error:
-        return DesignAnalysisResult(
-            success=False,
-            screenshot_path=str(screenshot_path),
-            error=f"Vision analysis failed: {analysis_error}",
-            generation_time_ms=int((time.monotonic() - start_time) * 1000),
-        )
-
-    # Step 4: Generate mockup image showing the improved design
-    mockup_image_path = screenshot_dir / "mockup.png"
-
-    if recommendations:
-        try:
-            mockup_image_path_str = generate_mockup_image(
-                screenshot_path=screenshot_path,
-                recommendations=recommendations,
-                output_path=mockup_image_path,
-                page_url=page_url,
-            )
-            if mockup_image_path_str:
-                mockup_image_path = Path(mockup_image_path_str)
-        except Exception as e:
-            logger.warning("mockup_image_generation_failed", error=str(e))
-
-    # Step 5: Store in mockups table
-    generation_time_ms = int((time.monotonic() - start_time) * 1000)
+    """Persist the mockup record and return the final result."""
     primary_file = str(mockup_image_path) if mockup_image_path.exists() else str(screenshot_path)
-
     mockup = mockups_storage.create_mockup(
         project_id=project_id,
         name=f"Design Analysis: {page_path}",
@@ -148,7 +81,6 @@ async def run_analyze_page_design(
         generation_prompt=recommendations,
         generation_time_ms=generation_time_ms,
     )
-
     logger.info(
         "page_design_analyzed",
         project_id=project_id,
@@ -158,7 +90,6 @@ async def run_analyze_page_design(
         generation_time_ms=generation_time_ms,
         mockup_image_generated=mockup_image_path.exists(),
     )
-
     return DesignAnalysisResult(
         success=True,
         mockup_id=mockup["mockup_id"],
@@ -167,4 +98,52 @@ async def run_analyze_page_design(
         recommendations=recommendations,
         issues_found=issues_count,
         generation_time_ms=generation_time_ms,
+    )
+
+
+async def run_analyze_page_design(
+    project_id: str,
+    page_url: str,
+    page_path: str | None = None,
+) -> DesignAnalysisResult:
+    """Analyze a page's design and generate improvement recommendations.
+
+    Workflow: capture screenshot → fetch design rules → vision analysis →
+    generate mockup image → store record.
+    """
+    start_time = time.monotonic()
+    if page_path is None:
+        page_path = extract_path_from_url(page_url)
+
+    screenshot_id = f"analysis-{int(time.time())}"
+    screenshot_dir = MOCKUP_BASE_DIR / project_id / screenshot_id
+    screenshot_path = screenshot_dir / "screenshot.png"
+
+    success, error = await capture_page_screenshot(page_url, screenshot_path)
+    if not success:
+        return DesignAnalysisResult(
+            success=False,
+            error=f"Screenshot capture failed: {error}",
+            generation_time_ms=_elapsed_ms(start_time),
+        )
+
+    from ..storage.design_standards import get_effective_rules
+    design_rules = get_effective_rules(project_id) or []
+    recommendations, issues_count, analysis_error = analyze_screenshot_with_vision(
+        screenshot_path, design_rules, page_url
+    )
+    if analysis_error:
+        return DesignAnalysisResult(
+            success=False,
+            screenshot_path=str(screenshot_path),
+            error=f"Vision analysis failed: {analysis_error}",
+            generation_time_ms=_elapsed_ms(start_time),
+        )
+
+    mockup_image_path = _try_generate_mockup(
+        screenshot_path, screenshot_dir / "mockup.png", recommendations, page_url
+    )
+    return _store_mockup_and_build_result(
+        project_id, page_url, page_path, screenshot_path,
+        mockup_image_path, recommendations, issues_count, _elapsed_ms(start_time),
     )
