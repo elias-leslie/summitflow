@@ -29,6 +29,11 @@ def check_autonomous_enabled(project_id: str) -> dict[str, Any] | None:
         data = resp.json()
         if not data.get("allowed"):
             return {"status": "disabled", "reason": data.get("reason", "not_allowed")}
+        # Autonomous execution requires write access — reject read-only projects
+        # early instead of wasting agent sessions that fail on every tool call.
+        tier = data.get("permission_tier", "")
+        if tier in ("read", "off"):
+            return {"status": "disabled", "reason": f"permission_tier_{tier}_insufficient_for_execution"}
         return None
     except Exception as e:
         return {"status": "disabled", "reason": f"agent_hub_unreachable: {e}"}
