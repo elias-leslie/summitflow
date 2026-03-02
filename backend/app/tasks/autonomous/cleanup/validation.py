@@ -12,6 +12,39 @@ from .git_operations import revert_merge_commit
 logger = logging.getLogger(__name__)
 
 
+def _log_validation_failure(task_id: str, output: str) -> None:
+    """Log a post-merge validation failure with truncated output."""
+    from app.storage import log_task_event
+
+    log_task_event(task_id, f"Post-merge validation: FAILED\n{output}")
+    logger.warning(
+        "Post-merge validation failed",
+        extra={"task_id": task_id, "output": output[:200]},
+    )
+
+
+def _run_dt_quick(project_root: str, task_id: str) -> bool:
+    """Run dt --quick and return True on success, False on failure or timeout."""
+    from app.storage import log_task_event
+
+    result = subprocess.run(
+        ["dt", "--quick"],
+        cwd=project_root,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+    if result.returncode == 0:
+        log_task_event(task_id, "Post-merge validation: PASSED")
+        logger.info("Post-merge validation passed", extra={"task_id": task_id})
+        return True
+
+    output = (result.stdout + result.stderr)[-500:]
+    _log_validation_failure(task_id, output)
+    return False
+
+
 def run_post_merge_validation(
     task_id: str,
     project_root: str,
@@ -33,31 +66,7 @@ def run_post_merge_validation(
     from app.storage import log_task_event
 
     try:
-        result = subprocess.run(
-            ["dt", "--quick"],
-            cwd=project_root,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-
-        passed = result.returncode == 0
-        if passed:
-            log_task_event(task_id, "Post-merge validation: PASSED")
-            logger.info("Post-merge validation passed", extra={"task_id": task_id})
-            return True
-
-        output = (result.stdout + result.stderr)[-500:]
-        log_task_event(
-            task_id,
-            f"Post-merge validation: FAILED\n{output}",
-        )
-        logger.warning(
-            "Post-merge validation failed",
-            extra={"task_id": task_id, "output": output[:200]},
-        )
-        return False
-
+        return _run_dt_quick(project_root, task_id)
     except subprocess.TimeoutExpired:
         log_task_event(task_id, "Post-merge validation: TIMEOUT (120s)")
         logger.warning("Post-merge validation timed out", extra={"task_id": task_id})
@@ -69,6 +78,27 @@ def run_post_merge_validation(
             extra={"task_id": task_id, "error": str(e)},
         )
         return False
+
+
+def _apply_rollback_side_effects(
+    task_id: str,
+    project_id: str,
+    task_branch: str,
+) -> None:
+    """Create fix task, update status, and save learning after a successful revert."""
+    from app.storage import log_task_event
+
+    log_task_event(
+        task_id,
+        f"Auto-rollback: Reverted merge of {task_branch} due to regression",
+    )
+    logger.info(
+        "Auto-rollback succeeded",
+        extra={"task_id": task_id, "task_branch": task_branch},
+    )
+    create_regression_fix_task(task_id, project_id, task_branch)
+    task_store.update_task_status(task_id, "blocked")
+    save_rollback_learning(task_id, project_id, task_branch)
 
 
 def auto_rollback(
@@ -97,19 +127,7 @@ def auto_rollback(
         if not revert_merge_commit(task_id, project_root):
             return False
 
-        log_task_event(
-            task_id,
-            f"Auto-rollback: Reverted merge of {task_branch} due to regression",
-        )
-        logger.info(
-            "Auto-rollback succeeded",
-            extra={"task_id": task_id, "task_branch": task_branch},
-        )
-
-        create_regression_fix_task(task_id, project_id, task_branch)
-        task_store.update_task_status(task_id, "blocked")
-        save_rollback_learning(task_id, project_id, task_branch)
-
+        _apply_rollback_side_effects(task_id, project_id, task_branch)
         return True
 
     except subprocess.TimeoutExpired:
