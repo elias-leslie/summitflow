@@ -14,6 +14,23 @@ from ..output_context import OutputContext
 app = typer.Typer(help="Tool usage metrics (Agent Hub)")
 
 
+def _parse_error_detail(response: httpx.Response) -> str:
+    """Extract error detail from an HTTP error response."""
+    try:
+        return response.json().get("detail", response.text)
+    except Exception:
+        return response.text
+
+
+def _handle_response(response: httpx.Response, agent_hub_url: str) -> dict[str, Any]:
+    """Validate and parse a successful HTTP response."""
+    if response.status_code >= 400:
+        detail = _parse_error_detail(response)
+        output_error(f"API error ({response.status_code}): {detail}")
+        raise typer.Exit(1) from None
+    return cast(dict[str, Any], response.json())
+
+
 def _api_request(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
     """Make request to Agent Hub admin API."""
     agent_hub_url = get_agent_hub_url()
@@ -23,16 +40,7 @@ def _api_request(path: str, params: dict[str, Any] | None = None) -> dict[str, A
     try:
         with httpx.Client(timeout=30.0) as client:
             response = client.get(url, params=params, headers=headers)
-
-            if response.status_code >= 400:
-                try:
-                    detail = response.json().get("detail", response.text)
-                except Exception:
-                    detail = response.text
-                output_error(f"API error ({response.status_code}): {detail}")
-                raise typer.Exit(1) from None
-
-            return cast(dict[str, Any], response.json())
+            return _handle_response(response, agent_hub_url)
     except httpx.ConnectError:
         output_error(f"Cannot connect to Agent Hub at {agent_hub_url}")
         raise typer.Exit(1) from None
