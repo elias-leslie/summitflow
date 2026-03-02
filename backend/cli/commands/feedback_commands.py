@@ -16,49 +16,17 @@ from .feedback_formatters import (
     output_feedback_voted,
     output_summary,
 )
-
-VALID_TYPES = ("friction", "idea", "improvement", "praise")
-VALID_SEVERITIES = ("low", "medium", "high")
-VALID_STATUSES = ("open", "acknowledged", "resolved", "wont_fix")
-VALID_SORTS = ("votes", "newest", "oldest")
-
-
-def _get_component_suggestions(bad_id: str) -> list[str]:
-    """Get component ID suggestions for fuzzy matching."""
-    try:
-        from app.services.memory.scorecard_component_map import get_all_component_ids
-
-        all_ids = get_all_component_ids()
-    except Exception:
-        return []
-
-    prefix = bad_id.split(".")[0] + "."
-    return [cid for cid in all_ids if cid.startswith(prefix)]
-
-
-def _validate_component_id(component_id: str) -> None:
-    """Validate component ID, show suggestions on failure."""
-    try:
-        from app.services.memory.scorecard_component_map import is_valid_component_id
-
-        if is_valid_component_id(component_id):
-            return
-    except Exception:
-        return  # Can't validate, let server handle it
-
-    suggestions = _get_component_suggestions(component_id)
-    msg = f'Unknown component "{component_id}".'
-    if suggestions:
-        msg += f' Did you mean: {", ".join(suggestions[:5])}?'
-    else:
-        try:
-            from app.services.memory.scorecard_component_map import get_all_component_ids
-            all_ids = get_all_component_ids()
-            msg += f'\nValid components: {", ".join(all_ids[:10])}...'
-        except Exception:
-            pass
-    output_error(msg)
-    raise typer.Exit(1)
+from .feedback_helpers import (
+    ALREADY_VOTED_MSG,
+    FEEDBACK_API_PATH,
+    FEEDBACK_SUMMARY_PATH,
+    STATUS_RESOLVED,
+    build_filter_params,
+    build_report_body,
+    build_summary_params,
+    build_vote_body,
+)
+from .feedback_validators import validate_component_id, validate_feedback_type, validate_severity
 
 
 def report_impl(
@@ -75,48 +43,19 @@ def report_impl(
     session_type: str | None = None,
 ) -> None:
     """Create a new feedback item."""
-    _validate_component_id(component_id)
-
-    if feedback_type not in VALID_TYPES:
-        output_error(
-            f'Invalid type "{feedback_type}". Valid types: {", ".join(VALID_TYPES)}'
-        )
-        raise typer.Exit(1)
-
-    if severity and severity not in VALID_SEVERITIES:
-        output_error(
-            f'Invalid severity "{severity}". Valid: {", ".join(VALID_SEVERITIES)}'
-        )
-        raise typer.Exit(1)
-
-    body: dict[str, Any] = {
-        "component_id": component_id,
-        "feedback_type": feedback_type,
-        "title": title,
-        "project_id": project_id,
-    }
-    if description:
-        body["description"] = description
-    if severity:
-        body["severity"] = severity
-    if session_id:
-        body["session_id"] = session_id
-    if agent_slug:
-        body["agent_slug"] = agent_slug
-    if model_used:
-        body["model_used"] = model_used
-    if session_type:
-        body["session_type"] = session_type
-
-    result = feedback_request("POST", "/api/feedback", json=body)
-
-    item = result.get("item", {})
+    validate_component_id(component_id)
+    validate_feedback_type(feedback_type)
+    validate_severity(severity)
+    body = build_report_body(
+        component_id, feedback_type, title, project_id,
+        description=description, severity=severity, session_id=session_id,
+        agent_slug=agent_slug, model_used=model_used, session_type=session_type,
+    )
+    result = feedback_request("POST", FEEDBACK_API_PATH, json=body)
     candidates = result.get("duplicate_candidates", [])
-
     if candidates:
         output_duplicate_candidates(candidates)
-
-    output_feedback_created(item)
+    output_feedback_created(result.get("item", {}))
 
 
 def search_impl(
@@ -130,20 +69,13 @@ def search_impl(
     limit: int = 20,
 ) -> None:
     """Search feedback items."""
-    params: dict[str, Any] = {"query": query, "sort": sort, "limit": limit}
-    if component_id:
-        params["component_id"] = component_id
-    if feedback_type:
-        params["feedback_type"] = feedback_type
-    if status:
-        params["status"] = status
-    if project_id:
-        params["project_id"] = project_id
-
-    result = feedback_request("GET", "/api/feedback", params=params)
+    params = build_filter_params(
+        sort, limit, query=query, component_id=component_id,
+        feedback_type=feedback_type, status=status, project_id=project_id,
+    )
+    result = feedback_request("GET", FEEDBACK_API_PATH, params=params)
     items = result.get("items", [])
-    total = result.get("total", len(items))
-    output_feedback_list(items, total)
+    output_feedback_list(items, result.get("total", len(items)))
 
 
 def list_impl(
@@ -156,26 +88,18 @@ def list_impl(
     limit: int = 50,
 ) -> None:
     """List feedback items."""
-    params: dict[str, Any] = {"sort": sort, "limit": limit}
-    if component_id:
-        params["component_id"] = component_id
-    if feedback_type:
-        params["feedback_type"] = feedback_type
-    if status:
-        params["status"] = status
-    if project_id:
-        params["project_id"] = project_id
-
-    result = feedback_request("GET", "/api/feedback", params=params)
+    params = build_filter_params(
+        sort, limit, component_id=component_id, feedback_type=feedback_type,
+        status=status, project_id=project_id,
+    )
+    result = feedback_request("GET", FEEDBACK_API_PATH, params=params)
     items = result.get("items", [])
-    total = result.get("total", len(items))
-    output_feedback_list(items, total)
+    output_feedback_list(items, result.get("total", len(items)))
 
 
 def get_impl(item_id: str) -> None:
     """Get feedback item details with votes."""
-    result = feedback_request("GET", f"/api/feedback/{item_id}")
-    output_feedback_detail(result)
+    output_feedback_detail(feedback_request("GET", f"{FEEDBACK_API_PATH}/{item_id}"))
 
 
 def vote_impl(
@@ -190,55 +114,30 @@ def vote_impl(
     if not session_id:
         output_error("--session-id is required for voting")
         raise typer.Exit(1)
-
-    body: dict[str, Any] = {"session_id": session_id}
-    if comment:
-        body["comment"] = comment
-    if agent_slug:
-        body["agent_slug"] = agent_slug
-    if model_used:
-        body["model_used"] = model_used
-
-    result = feedback_request("POST", f"/api/feedback/{item_id}/vote", json=body)
-
-    if "message" in result and result.get("message") == "Already voted":
+    body = build_vote_body(session_id, comment=comment, agent_slug=agent_slug, model_used=model_used)
+    result = feedback_request("POST", f"{FEEDBACK_API_PATH}/{item_id}/vote", json=body)
+    if result.get("message") == ALREADY_VOTED_MSG:
         print(f"VOTE:ALREADY_VOTED:{item_id[:8]}|{session_id[:8]}")
         return
-
-    # Re-fetch item for updated vote count
-    item = feedback_request("GET", f"/api/feedback/{item_id}")
-    output_feedback_voted(item)
+    output_feedback_voted(feedback_request("GET", f"{FEEDBACK_API_PATH}/{item_id}"))
 
 
-def resolve_impl(
-    item_id: str,
-    *,
-    note: str | None = None,
-) -> None:
+def resolve_impl(item_id: str, *, note: str | None = None) -> None:
     """Resolve a feedback item."""
-    body: dict[str, Any] = {"status": "resolved"}
+    body: dict[str, Any] = {"status": STATUS_RESOLVED}
     if note:
         body["resolution_note"] = note
-
-    result = feedback_request("PATCH", f"/api/feedback/{item_id}", json=body)
+    result = feedback_request("PATCH", f"{FEEDBACK_API_PATH}/{item_id}", json=body)
     print(f"FEEDBACK:RESOLVED:{result.get('id', item_id)[:8]}|{result.get('title', '')}")
 
 
 def delete_impl(item_id: str) -> None:
     """Delete a feedback item."""
-    feedback_request("DELETE", f"/api/feedback/{item_id}")
+    feedback_request("DELETE", f"{FEEDBACK_API_PATH}/{item_id}")
     print(f"FEEDBACK:DELETED:{item_id[:8]}")
 
 
-def summary_impl(
-    *,
-    project_id: str | None = None,
-    days: int = 30,
-) -> None:
+def summary_impl(*, project_id: str | None = None, days: int = 30) -> None:
     """Get feedback summary."""
-    params: dict[str, Any] = {"days": days}
-    if project_id:
-        params["project_id"] = project_id
-
-    result = feedback_request("GET", "/api/feedback/summary", params=params)
-    output_summary(result)
+    params = build_summary_params(days, project_id=project_id)
+    output_summary(feedback_request("GET", FEEDBACK_SUMMARY_PATH, params=params))
