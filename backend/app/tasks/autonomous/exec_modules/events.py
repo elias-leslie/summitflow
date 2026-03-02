@@ -115,6 +115,61 @@ def emit_error(
     )
 
 
+def _level_for_status(status: str) -> str:
+    """Map an AgentProgress status to a log level string."""
+    if status == "error":
+        return "error"
+    if status in ("thinking", "tool_use"):
+        return "debug"
+    return "info"
+
+
+def _visibility_for_entry(thinking: Any, status: str) -> EventVisibility:
+    """Determine event visibility from thinking content and status."""
+    if thinking or status == "thinking":
+        return "internal"
+    return "user"
+
+
+def _message_for_entry(
+    turn: int,
+    status: str,
+    message: str,
+    tool_calls: list[Any],
+) -> str:
+    """Build a human-readable event message for a progress log entry."""
+    if tool_calls:
+        tool_names = [tc.get("name", "?") for tc in tool_calls]
+        return f"Turn {turn}: {status} - tools: {', '.join(tool_names)}"
+    if message and message != f"Turn {turn}: sending to Gemini":
+        return f"Turn {turn}: {message}"
+    return f"Turn {turn}: {status}"
+
+
+def _emit_tool_results(
+    task_id: str,
+    tool_results: list[Any],
+    seq: int,
+    *,
+    project_id: str | None,
+) -> int:
+    """Emit each tool result as a separate debug event; return updated sequence."""
+    for result in tool_results:
+        tool_id = result.get("id", "?")
+        content_preview = str(result.get("content", ""))[:200]
+        emit_log(
+            task_id,
+            "debug",
+            f"  Tool result [{tool_id}]: {content_preview}",
+            source="agent",
+            project_id=project_id,
+            visibility="internal",
+            sequence=seq,
+        )
+        seq += 1
+    return seq
+
+
 def emit_progress_log(
     task_id: str,
     subtask_id: str,
@@ -142,26 +197,9 @@ def emit_progress_log(
         tool_results = getattr(entry, "tool_results", [])
         thinking = getattr(entry, "thinking", None)
 
-        # Map status to log level
-        level = "info"
-        if status == "error":
-            level = "error"
-        elif status in ("thinking", "tool_use"):
-            level = "debug"
-
-        # Determine visibility based on content
-        visibility: EventVisibility = "user"
-        if thinking or status == "thinking":
-            visibility = "internal"
-
-        # Build event message
-        if tool_calls:
-            tool_names = [tc.get("name", "?") for tc in tool_calls]
-            event_message = f"Turn {turn}: {status} - tools: {', '.join(tool_names)}"
-        else:
-            event_message = f"Turn {turn}: {status}"
-            if message and message != f"Turn {turn}: sending to Gemini":
-                event_message = f"Turn {turn}: {message}"
+        level = _level_for_status(status)
+        visibility = _visibility_for_entry(thinking, status)
+        event_message = _message_for_entry(turn, status, message, tool_calls)
 
         emit_log(
             task_id,
@@ -173,18 +211,4 @@ def emit_progress_log(
             sequence=seq,
         )
         seq += 1
-
-        # Emit tool results as separate events for detail
-        for result in tool_results:
-            tool_id = result.get("id", "?")
-            content_preview = str(result.get("content", ""))[:200]
-            emit_log(
-                task_id,
-                "debug",
-                f"  Tool result [{tool_id}]: {content_preview}",
-                source="agent",
-                project_id=project_id,
-                visibility="internal",
-                sequence=seq,
-            )
-            seq += 1
+        seq = _emit_tool_results(task_id, tool_results, seq, project_id=project_id)
