@@ -12,7 +12,6 @@ from .backup_utils import get_project_root, get_source_path
 
 logger = get_logger(__name__)
 
-# Default paths
 SCRIPT_DIR = Path.home() / "summitflow" / "scripts"
 RESTORE_SCRIPT = SCRIPT_DIR / "restore.sh"
 
@@ -26,17 +25,15 @@ def restore_backup(
     files_only: bool = False,
     source_id: str | None = None,
 ) -> dict[str, Any]:
-    """Restore from a backup.
-
-    Wraps the existing restore.sh script.
+    """Restore from a backup (wraps restore.sh).
 
     Args:
-        project_id: Project ID to restore (used as fallback for path resolution)
-        backup_id: Backup record ID (uses backup name from record)
+        project_id: Project ID (fallback for path resolution)
+        backup_id: Backup record ID
         backup_file: Direct path to backup archive (alternative to backup_id)
-        dry_run: If True, show what would be restored without doing it
-        db_only: If True, restore database only
-        files_only: If True, restore files only
+        dry_run: Show what would be restored without doing it
+        db_only: Restore database only
+        files_only: Restore files only
         source_id: Backup source ID (preferred for path resolution)
 
     Returns:
@@ -51,7 +48,6 @@ def restore_backup(
         dry_run=dry_run,
     )
 
-    # Resolve restore directory: try source path first, then project root
     restore_dir = get_source_path(source_id) if source_id else None
     if not restore_dir:
         restore_dir = get_project_root(project_id)
@@ -60,7 +56,6 @@ def restore_backup(
         logger.error("restore_backup_failed", error=error_msg)
         return {"status": "failed", "error": error_msg}
 
-    # Build command
     cmd = _build_restore_command(backup_id, backup_file, dry_run, db_only, files_only)
 
     try:
@@ -79,10 +74,12 @@ def restore_backup(
         return _handle_restore_failure(resolved_id, error_msg)
 
     except subprocess.TimeoutExpired:
-        return _handle_restore_timeout(resolved_id)
+        logger.error("restore_backup_timeout", source_id=resolved_id)
+        return {"status": "failed", "error": "Restore timed out after 30 minutes"}
 
     except Exception as e:
-        return _handle_restore_exception(resolved_id, str(e))
+        logger.error("restore_backup_exception", source_id=resolved_id)
+        return {"status": "failed", "error": str(e)}
 
 
 def _build_restore_command(
@@ -97,15 +94,10 @@ def _build_restore_command(
 
     if backup_file:
         cmd.extend(["--file", backup_file])
-    elif backup_id:
-        # Get backup record to find the archive name
-        backup_record = backup_store.get_backup(backup_id)
-        if not backup_record:
-            # Will fail later, but keep building command
-            pass
-        # Use latest for simplicity; script will find the archive
-        cmd.append("--latest")
     else:
+        if backup_id:
+            # Fetch record for reference; script finds archive via --latest
+            backup_store.get_backup(backup_id)
         cmd.append("--latest")
 
     if dry_run:
@@ -120,12 +112,7 @@ def _build_restore_command(
 
 def _handle_restore_success(source_id: str, dry_run: bool, stdout: str) -> dict[str, Any]:
     """Handle successful restore."""
-    logger.info(
-        "restore_backup_completed",
-        source_id=source_id,
-        dry_run=dry_run,
-    )
-
+    logger.info("restore_backup_completed", source_id=source_id, dry_run=dry_run)
     return {
         "status": "completed",
         "source_id": source_id,
@@ -136,21 +123,5 @@ def _handle_restore_success(source_id: str, dry_run: bool, stdout: str) -> dict[
 
 def _handle_restore_failure(source_id: str, error_msg: str) -> dict[str, Any]:
     """Handle restore failure."""
-    logger.error(
-        "restore_backup_failed",
-        source_id=source_id,
-        error=error_msg[:200],
-    )
-    return {"status": "failed", "error": error_msg}
-
-
-def _handle_restore_timeout(source_id: str) -> dict[str, Any]:
-    """Handle restore timeout."""
-    logger.error("restore_backup_timeout", source_id=source_id)
-    return {"status": "failed", "error": "Restore timed out after 30 minutes"}
-
-
-def _handle_restore_exception(source_id: str, error_msg: str) -> dict[str, Any]:
-    """Handle restore exception."""
-    logger.error("restore_backup_exception", source_id=source_id)
+    logger.error("restore_backup_failed", source_id=source_id, error=error_msg[:200])
     return {"status": "failed", "error": error_msg}
