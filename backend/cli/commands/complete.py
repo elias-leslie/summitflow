@@ -63,7 +63,7 @@ def complete_default(
     include_roles: Annotated[str | None, _Opt("--roles", help="Comma-separated prompt roles to include")] = None,
     image: Annotated[list[str] | None, _Opt("--image", "-i", help="Image file path(s) for multimodal input")] = None,
     file: Annotated[str | None, _Opt("--file", "-f", help="Read message from file")] = None,
-    timeout: Annotated[float, _Opt("--timeout", "-t", help="Request timeout (s)")] = 60.0,
+    timeout: Annotated[float, _Opt("--timeout", "-t", help="Per-turn inactivity timeout (s)")] = 300.0,
     raw: Annotated[bool, _Opt("--raw", help="Output raw JSON")] = False,
 ) -> None:
     """Send a completion request to Agent Hub.
