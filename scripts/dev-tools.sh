@@ -336,6 +336,11 @@ run_lint() {
             echo "OK:no_py_changes"
             return 0
         fi
+        local file_count
+        file_count=$(echo "$changed_files" | wc -l)
+        local file_names
+        file_names=$(echo "$changed_files" | xargs -I{} basename {} | tr '\n' ' ')
+        echo "SCOPE:${file_count} files:${file_names% }"
         lint_targets="$changed_files"
     fi
 
@@ -407,6 +412,11 @@ run_types() {
             echo "OK:no_py_changes"
             return 0
         fi
+        local file_count
+        file_count=$(echo "$changed_files" | wc -l)
+        local file_names
+        file_names=$(echo "$changed_files" | xargs -I{} basename {} | tr '\n' ' ')
+        echo "SCOPE:${file_count} files:${file_names% }"
         # ty doesn't support file list directly — check only app/ but it's fast enough
         output=$("$ty_bin" check --python "$python_bin" "$app_dir" 2>&1) || retval=$?
     else
