@@ -56,10 +56,10 @@ def _build_issue_aware_objective(
     if any(i in _SIZE_ISSUES for i in refactor_issues):
         parts.append(f"to reduce from {lines} to <{target_lines} lines")
 
-    structural = [i for i in refactor_issues if i not in _SIZE_ISSUES | {"high_complexity", "medium_complexity"}]
-    if structural:
-        labels = [_ISSUE_LABELS.get(i, i.replace("_", " ")) for i in structural[:4]]
-        parts.append(f"resolving: {', '.join(labels)}")
+    structural_issues = [i for i in refactor_issues if i not in _SIZE_ISSUES | {"high_complexity", "medium_complexity"}]
+    if structural_issues:
+        issue_labels = [_ISSUE_LABELS.get(i, i.replace("_", " ")) for i in structural_issues[:4]]
+        parts.append(f"resolving: {', '.join(issue_labels)}")
 
     parts.append("while preserving all existing behavior")
     return " — ".join(parts) + "."
@@ -90,6 +90,50 @@ def _build_issue_aware_done_when(
     return criteria
 
 
+def _create_base_task(
+    project_id: str,
+    title: str,
+    description: str,
+    priority: int,
+    task_type: str,
+    tier: int,
+    ai_review: bool,
+) -> str | None:
+    """Create the base task record and return its ID, or None on failure."""
+    task = task_store.create_task(
+        project_id=project_id,
+        title=title,
+        description=description,
+        priority=priority,
+        task_type=task_type,
+        tier=tier,
+        ai_review=ai_review,
+    )
+    if not task:
+        return None
+    return cast(str, task["id"])
+
+
+def _attach_spirit_and_approve(
+    task_id: str,
+    objective: str,
+    spirit_anti: str,
+    done_when: list[str],
+    complexity: str,
+    auto_approve: bool,
+) -> None:
+    """Attach a spirit to the task and optionally auto-approve the plan."""
+    create_task_spirit(
+        task_id=task_id,
+        objective=objective,
+        spirit_anti=spirit_anti,
+        done_when=done_when,
+        complexity=complexity,
+    )
+    if auto_approve:
+        approve_plan(task_id, approved_by="auto-generated")
+
+
 def create_task_with_spirit(
     project_id: str,
     title: str,
@@ -104,7 +148,7 @@ def create_task_with_spirit(
     auto_approve: bool = True,
     ai_review: bool = True,
 ) -> str | None:
-    """Create a task with spirit.
+    """Create a task with an attached spirit.
 
     Args:
         project_id: Project ID
@@ -123,32 +167,10 @@ def create_task_with_spirit(
     Returns:
         Task ID or None if creation failed
     """
-    task = task_store.create_task(
-        project_id=project_id,
-        title=title,
-        description=description,
-        priority=priority,
-        task_type=task_type,
-        tier=tier,
-        ai_review=ai_review,
-    )
-
-    if not task:
+    task_id = _create_base_task(project_id, title, description, priority, task_type, tier, ai_review)
+    if not task_id:
         return None
-
-    task_id = cast(str, task["id"])
-
-    create_task_spirit(
-        task_id=task_id,
-        objective=objective,
-        spirit_anti=spirit_anti,
-        done_when=done_when,
-        complexity=complexity,
-    )
-
-    if auto_approve:
-        approve_plan(task_id, approved_by="auto-generated")
-
+    _attach_spirit_and_approve(task_id, objective, spirit_anti, done_when, complexity, auto_approve)
     return task_id
 
 
@@ -212,8 +234,8 @@ def build_architecture_description(
         f"**Total Violations:** {violations_count}\n\n"
         f"### Files to fix:\n"
     )
-    for f in affected_files[:15]:
-        description += f"- {f}\n"
+    for affected_file in affected_files[:15]:
+        description += f"- {affected_file}\n"
     if len(affected_files) > 15:
         description += f"- ... and {len(affected_files) - 15} more files\n"
     return description
