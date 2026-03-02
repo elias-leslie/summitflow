@@ -34,63 +34,72 @@ def get_project_from_db(project_id: str) -> ProjectResponse:
     )
 
 
+def _fetch_task_counts(cur: object, project_ids: list[str]) -> dict[str, int]:
+    """Fetch non-bug active task counts per project."""
+    cur.execute(  # type: ignore[union-attr]
+        """
+        SELECT project_id, COUNT(*) as count
+        FROM tasks
+        WHERE project_id = ANY(%s)
+          AND task_type != 'bug'
+          AND status NOT IN ('completed', 'failed')
+        GROUP BY project_id
+        """,
+        (project_ids,),
+    )
+    return {row[0]: row[1] for row in cur.fetchall()}  # type: ignore[union-attr]
+
+
+def _fetch_bug_counts(cur: object, project_ids: list[str]) -> dict[str, int]:
+    """Fetch active bug counts per project."""
+    cur.execute(  # type: ignore[union-attr]
+        """
+        SELECT project_id, COUNT(*) as count
+        FROM tasks
+        WHERE project_id = ANY(%s)
+          AND task_type = 'bug'
+          AND status NOT IN ('completed', 'failed')
+        GROUP BY project_id
+        """,
+        (project_ids,),
+    )
+    return {row[0]: row[1] for row in cur.fetchall()}  # type: ignore[union-attr]
+
+
+def _fetch_blocked_counts(cur: object, project_ids: list[str]) -> dict[str, int]:
+    """Fetch blocked task counts per project."""
+    cur.execute(  # type: ignore[union-attr]
+        """
+        SELECT t.project_id, COUNT(DISTINCT t.id) as count
+        FROM tasks t
+        INNER JOIN task_dependencies td ON t.id = td.task_id
+        INNER JOIN tasks dep ON td.depends_on_task_id = dep.id
+        WHERE t.project_id = ANY(%s)
+          AND t.status NOT IN ('completed', 'failed')
+          AND td.dependency_type = 'blocks'
+          AND dep.status NOT IN ('completed', 'failed')
+        GROUP BY t.project_id
+        """,
+        (project_ids,),
+    )
+    return {row[0]: row[1] for row in cur.fetchall()}  # type: ignore[union-attr]
+
+
 def fetch_project_stats(project_ids: list[str]) -> dict[str, ProjectStats]:
     """Fetch aggregated stats for multiple projects."""
     with get_connection() as conn, conn.cursor() as cur:
-        # Get task counts per project (non-bug, active tasks only)
-        cur.execute(
-            """
-            SELECT project_id, COUNT(*) as count
-            FROM tasks
-            WHERE project_id = ANY(%s)
-              AND task_type != 'bug'
-              AND status NOT IN ('completed', 'failed')
-            GROUP BY project_id
-            """,
-            (project_ids,),
-        )
-        task_counts = {row[0]: row[1] for row in cur.fetchall()}
+        task_counts = _fetch_task_counts(cur, project_ids)
+        bug_counts = _fetch_bug_counts(cur, project_ids)
+        blocked_counts = _fetch_blocked_counts(cur, project_ids)
 
-        # Get bug counts per project (active bugs only)
-        cur.execute(
-            """
-            SELECT project_id, COUNT(*) as count
-            FROM tasks
-            WHERE project_id = ANY(%s)
-              AND task_type = 'bug'
-              AND status NOT IN ('completed', 'failed')
-            GROUP BY project_id
-            """,
-            (project_ids,),
-        )
-        bug_counts = {row[0]: row[1] for row in cur.fetchall()}
-
-        # Get blocked task counts per project
-        cur.execute(
-            """
-            SELECT t.project_id, COUNT(DISTINCT t.id) as count
-            FROM tasks t
-            INNER JOIN task_dependencies td ON t.id = td.task_id
-            INNER JOIN tasks dep ON td.depends_on_task_id = dep.id
-            WHERE t.project_id = ANY(%s)
-              AND t.status NOT IN ('completed', 'failed')
-              AND td.dependency_type = 'blocks'
-              AND dep.status NOT IN ('completed', 'failed')
-            GROUP BY t.project_id
-            """,
-            (project_ids,),
-        )
-        blocked_counts = {row[0]: row[1] for row in cur.fetchall()}
-
-    # Build stats dict
-    stats_dict = {}
-    for project_id in project_ids:
-        stats_dict[project_id] = ProjectStats(
+    return {
+        project_id: ProjectStats(
             tasks=task_counts.get(project_id, 0),
             bugs=bug_counts.get(project_id, 0),
             blocked=blocked_counts.get(project_id, 0),
         )
-    return stats_dict
+        for project_id in project_ids
+    }
 
 
 def build_project_with_stats(
