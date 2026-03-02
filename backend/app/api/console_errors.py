@@ -90,6 +90,48 @@ def _build_error_description(request: ConsoleErrorRequest, error_hash: str) -> s
     return "\n".join(description_parts)
 
 
+def _create_error_task(
+    project_id: str,
+    request: ConsoleErrorRequest,
+    title: str,
+) -> ConsoleErrorResponse:
+    """Create a bug task for a console error and return the response.
+
+    Args:
+        project_id: Project ID
+        request: Error details from frontend
+        title: Pre-built task title
+
+    Returns:
+        ConsoleErrorResponse with the created task ID
+    """
+    error_hash = _compute_console_error_hash(request.error, request.stack)
+    description = _build_error_description(request, error_hash)
+
+    task = create_task(
+        project_id=project_id,
+        title=title,
+        description=description,
+        priority=2,
+        task_type="bug",
+        complexity="STANDARD",
+        autonomous=True,
+    )
+
+    logger.info(
+        "created_console_error_task",
+        task_id=task["id"],
+        project_id=project_id,
+        error_hash=error_hash,
+    )
+
+    return ConsoleErrorResponse(
+        success=True,
+        task_id=task["id"],
+        message="Bug task created for console error",
+    )
+
+
 @router.post("/projects/{project_id}/errors/console")
 async def capture_console_error(
     project_id: str,
@@ -126,28 +168,4 @@ async def capture_console_error(
             is_duplicate=True,
         )
 
-    error_hash = _compute_console_error_hash(request.error, request.stack)
-    description = _build_error_description(request, error_hash)
-
-    task = create_task(
-        project_id=project_id,
-        title=title,
-        description=description,
-        priority=2,
-        task_type="bug",
-        complexity="STANDARD",
-        autonomous=True,
-    )
-
-    logger.info(
-        "created_console_error_task",
-        task_id=task["id"],
-        project_id=project_id,
-        error_hash=error_hash,
-    )
-
-    return ConsoleErrorResponse(
-        success=True,
-        task_id=task["id"],
-        message="Bug task created for console error",
-    )
+    return _create_error_task(project_id, request, title)
