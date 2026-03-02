@@ -100,7 +100,11 @@ def build_early_completion_verification(total_subtasks: int) -> dict[str, Any]:
     }
 
 
-def build_successful_completion_verification(results: list[dict[str, Any]]) -> dict[str, Any]:
+def build_successful_completion_verification(
+    results: list[dict[str, Any]],
+    *,
+    coderabbit_findings: str | None = None,
+) -> dict[str, Any]:
     """Build verification result when all subtasks pass."""
     execution_clean = all(
         r.get("self_fix_attempts", 0) == 0 and r.get("supervisor_guided_attempts", 0) == 0
@@ -108,7 +112,7 @@ def build_successful_completion_verification(results: list[dict[str, Any]]) -> d
     )
     total_extensions = sum(r.get("extensions_granted", 0) for r in results)
 
-    return {
+    result: dict[str, Any] = {
         "execution_clean": execution_clean,
         "subtask_count": len(results),
         "total_self_fix_attempts": sum(r.get("self_fix_attempts", 0) for r in results),
@@ -117,6 +121,9 @@ def build_successful_completion_verification(results: list[dict[str, Any]]) -> d
         ),
         "total_extensions_granted": total_extensions,
     }
+    if coderabbit_findings:
+        result["coderabbit_findings"] = coderabbit_findings
+    return result
 
 
 def build_partial_completion_verification(
