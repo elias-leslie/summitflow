@@ -17,7 +17,7 @@ tags: [skill:autocode-guidelines, autocode]
 - Follow test-first for backend: read tests, adjust tests, then implement
 - Complete the vertical slice: backend changes need UI updates
 - Use `dt` for all quality checks, never raw tools (ruff, types, etc.)
-- Track bugs immediately with `st bug "Fix: X"` when discovered
+- Track bugs immediately with `st -P <project> bug "Fix: X"` when discovered
 
 ## Post-Execution
 - Run `dt --quick` before marking any step as passed

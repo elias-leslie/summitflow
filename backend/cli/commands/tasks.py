@@ -116,9 +116,15 @@ def bug(
     labels: Annotated[str | None, typer.Option("-l", "--labels")] = None,
     from_task: Annotated[str | None, typer.Option("--from")] = None,
 ) -> None:
-    """Create a bug task (shorthand for create -t bug)."""
+    """Create a bug task (shorthand for create -t bug).
+
+    Requires explicit project: st -P <project> bug "title"
+    """
+    from ..config import get_config
+    from ..output import require_explicit_project
     from .tasks_commands import create_bug_task
 
+    require_explicit_project(get_config())
     create_bug_task(title, description, priority, labels, from_task, STClient())
 
 
@@ -151,11 +157,12 @@ def idea(
 ) -> None:
     """Submit an idea for autonomous ideation and execution.
 
+    Requires explicit project (-P flag or ST_PROJECT_ID env var).
     Shorthand for: st create "..." --labels crowdsourced --autonomous
 
     Examples:
-        st idea "Add dark mode support"
-        st idea "Refactor auth module to use JWT" -p 1
+        st -P summitflow idea "Add dark mode support"
+        st -P summitflow idea "Refactor auth module to use JWT" -p 1
     """
     from .tasks_create import create_task_command
 

@@ -8,7 +8,8 @@ from typing import Any
 import typer
 
 from ..client import APIError, STClient
-from ..output import handle_api_error, output_error, output_task
+from ..config import get_config
+from ..output import handle_api_error, output_error, output_task, require_explicit_project
 from .tasks_import import create_from_file, import_plan_file
 
 
@@ -47,6 +48,7 @@ def _apply_blocked_by(
 def _handle_plan_import(
     plan: Path, dry_run: bool, task_id: str | None
 ) -> None:
+    require_explicit_project(get_config())
     client = STClient()
     task, tid = import_plan_file(plan, dry_run, task_id, client)
     if not dry_run:
@@ -67,6 +69,8 @@ def _handle_single_task_create(
     blocked_by: str | None,
     autonomous: bool,
 ) -> None:
+    require_explicit_project(get_config())
+
     if dry_run:
         output_error("--dry-run only works with --from-file or --plan")
         raise typer.Exit(1)
@@ -102,15 +106,17 @@ def create_task_command(
 ) -> None:
     """Create a new task or batch create from file.
 
+    Requires explicit project (-P flag or ST_PROJECT_ID env var).
+
     Examples:
-        st create "Fix bug" -t bug -p 2 -l "complexity:small,domains:backend"
-        st create "Add feature" -t feature -p 1 --parent task-abc123
-        st create "Implement X" --blocked-by task-abc123
-        st create "AutoTest" --autonomous  # Enable autonomous execution
-        st create --from-file tasks.json
-        st create --from-file tasks.json --dry-run
-        st create --plan plan.json  # Import plan as task
-        st create --plan plan.json --task existing-id  # Update existing task
+        st -P summitflow create "Fix bug" -t bug -p 2 -l "complexity:small,domains:backend"
+        st -P summitflow create "Add feature" -t feature -p 1 --parent task-abc123
+        st -P summitflow create "Implement X" --blocked-by task-abc123
+        st -P summitflow create "AutoTest" --autonomous
+        st -P summitflow create --from-file tasks.json
+        st -P summitflow create --from-file tasks.json --dry-run
+        st -P summitflow create --plan plan.json
+        st -P summitflow create --plan plan.json --task existing-id
     """
     if plan:
         _handle_plan_import(plan, dry_run, task_id)

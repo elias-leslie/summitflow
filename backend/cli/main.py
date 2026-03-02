@@ -52,8 +52,10 @@ FLAGS: --compact/-c (TOON, default) | --no-compact (raw JSON) | --human (pretty 
 WORKFLOW: ready → claim <id> → context <id> → [work] → done <subtask> → done <task>
           Alternative: abandon <id> --discard to rollback
 
-TASKS:
-  create <title> [-t feature|bug|task|chore] [-p 0-4] [-d desc] [--blocked-by id]
+TASKS (create/bug/idea REQUIRE -P <project>):
+  create <title> [-t feature|bug|task|chore] [-p 0-4] [-d desc] [--blocked-by id]  # REQUIRES -P
+  bug <title> [-d desc] [-p 0-4] [-l labels] [--from id]                           # REQUIRES -P
+  idea <description> [-p priority]                                                  # REQUIRES -P
   list [--status S] [--type T] [--priority P]
   ready                                    # unblocked tasks
   context <id> [--subtask X.Y]             # full task/subtask context (TOON format)
@@ -63,7 +65,6 @@ TASKS:
   autocode <id> [--dry-run] [--at TIME]    # queue for autonomous execution (immediate or scheduled)
   verify <plan.json>                       # validate plan file against schema
   exec-log <id> [-f] [-n N] [--debug]      # view execution log (subtasks, tool calls, events)
-  idea <description> [-p priority]         # shorthand: create + crowdsourced + autonomous
 
 CHECKPOINT (claim -> done | abandon):
   claim <id> [--force]                     # claim task, create checkpoint (DB+git)
@@ -149,6 +150,9 @@ CLEANUP (worktree maintenance):
   cleanup status                           # quick worktree status overview
 
 EXAMPLES:
+  st -P summitflow create "Fix bug" -t bug -p 2  # create task (explicit project)
+  st -P agent-hub bug "Fix auth"           # create bug (explicit project)
+  st -P summitflow idea "Add dark mode"    # submit idea (explicit project)
   st ready                                 # find work (compact by default)
   st claim task-abc                        # claim task, create checkpoint
   st context task-abc                      # view full context

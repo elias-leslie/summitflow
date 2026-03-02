@@ -96,7 +96,7 @@ create_test_task() {
     local title="$1"
     local task_id
 
-    task_id=$(st create "$title" -t task -p 3 --autonomous \
+    task_id=$(st -P "$TEST_PROJECT" create "$title" -t task -p 3 --autonomous \
         -d "Worktree isolation test task" 2>&1 | grep -oE 'task-[a-f0-9]+')
 
     if [ -n "$task_id" ]; then

@@ -16,11 +16,12 @@ def format_compact_task(task: dict[str, Any]) -> str:
     """Format task as compact one-liner."""
     priority = task.get("priority", 3)
     task_id = task.get("id", "unknown")
+    project_id = task.get("project_id") or ""
     task_type = (task.get("task_type") or "task")[:10].ljust(10)
     status = (task.get("status") or "pending")[:7].ljust(7)
     triage = "[TRIAGE] " if not task.get("objective") and not task.get("complexity") else ""
     title = truncate(task.get("title") or "", 50 - len(triage))
-    return f"P{priority} {task_id} {task_type} {status} {triage}{title}"
+    return f"P{priority} {task_id} {project_id:12} {task_type} {status} {triage}{title}"
 
 
 def format_compact_subtask(subtask: dict[str, Any]) -> str:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import mimetypes
 import sys
 from pathlib import Path
 from typing import Annotated, Any, cast
@@ -69,17 +71,49 @@ def _build_headers(
     return headers
 
 
+_IMAGE_MIME_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+}
+
+
+def _encode_image(path: str) -> dict[str, Any]:
+    """Read an image file and return an Anthropic-style base64 content block."""
+    p = Path(path)
+    if not p.is_file():
+        output_error(f"Image not found: {path}")
+        raise typer.Exit(1)
+    suffix = p.suffix.lower()
+    media_type = _IMAGE_MIME_TYPES.get(suffix) or mimetypes.guess_type(path)[0] or "image/png"
+    data = base64.b64encode(p.read_bytes()).decode()
+    return {
+        "type": "image",
+        "source": {"type": "base64", "media_type": media_type, "data": data},
+    }
+
+
 def _build_payload(
     message: str, project_id: str, agent_slug: str | None,
     memory_group_id: str | None, working_dir: str | None,
     session_id: str | None, thinking_level: str | None,
     trace_id: str | None, use_memory: bool, execute_tools: bool,
     max_turns: int, stream: bool, include_roles: list[str] | None,
+    images: list[str] | None = None,
 ) -> dict[str, Any]:
     """Build request payload for /api/complete."""
+    # Build content: multimodal blocks when images provided, plain string otherwise
+    if images:
+        content: list[dict[str, Any]] = [_encode_image(img) for img in images]
+        content.append({"type": "text", "text": message})
+    else:
+        content = message  # type: ignore[assignment]
+
     payload: dict[str, Any] = {
         "project_id": project_id,
-        "messages": [{"role": "user", "content": message}],
+        "messages": [{"role": "user", "content": content}],
     }
     for key, val in [
         ("agent_slug", agent_slug), ("memory_group_id", memory_group_id),
@@ -110,6 +144,7 @@ def _complete(
     thinking_level: str | None = None, max_turns: int = 1,
     stream: bool = False, trace_id: str | None = None,
     include_roles: list[str] | None = None,
+    images: list[str] | None = None,
 ) -> dict[str, Any]:
     """Call /api/complete endpoint."""
     client_id, request_source = _load_credentials()
@@ -118,7 +153,7 @@ def _complete(
     payload = _build_payload(
         message, project_id, agent_slug, memory_group_id, working_dir,
         session_id, thinking_level, trace_id, use_memory, execute_tools,
-        max_turns, stream, include_roles,
+        max_turns, stream, include_roles, images,
     )
     try:
         if stream:
@@ -228,6 +263,7 @@ def complete_default(
     stream: Annotated[bool, _Opt("--stream", help="Stream response via SSE")] = False,
     trace_id: Annotated[str | None, _Opt("--trace", help="Trace ID for event correlation")] = None,
     include_roles: Annotated[str | None, _Opt("--roles", help="Comma-separated prompt roles to include")] = None,
+    image: Annotated[list[str] | None, _Opt("--image", "-i", help="Image file path(s) for multimodal input")] = None,
     file: Annotated[str | None, _Opt("--file", "-f", help="Read message from file")] = None,
     timeout: Annotated[float, _Opt("--timeout", "-t", help="Request timeout (s)")] = 60.0,
     raw: Annotated[bool, _Opt("--raw", help="Output raw JSON")] = False,
@@ -244,6 +280,8 @@ def complete_default(
         st complete -a analyst --thinking medium --skip-cache "Explain CAP theorem"
         st complete -a coder --stream "Write a hello world"
         st complete -a coder -S <session-id> "Continue from last message"
+        st complete -a analyst -i /tmp/screenshot.png "Describe this image"
+        st complete -a analyst -i img1.png -i img2.png "Compare these"
     """
     if ctx.invoked_subcommand is not None:
         return
@@ -255,6 +293,6 @@ def complete_default(
     result = _complete(
         agent, resolved_message, project, source, memory, memory_group,
         execute_tools, working_dir, timeout, skip_cache, session_id,
-        thinking_level, max_turns, stream, trace_id, roles,
+        thinking_level, max_turns, stream, trace_id, roles, image or None,
     )
     _output_result(result, stream, raw)

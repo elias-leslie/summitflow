@@ -102,8 +102,10 @@ def create_task_for_issue(issue: QAIssue) -> str | None:
         description_parts.append(f"File: {issue.file_path}")
     description = "\n\n".join(description_parts)
 
-    # Build st create command
+    # Build st create command (explicit -P to avoid cwd mis-detection)
     args = [
+        "-P",
+        issue.project_id,
         "create",
         title,
         "-t",

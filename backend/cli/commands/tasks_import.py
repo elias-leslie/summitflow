@@ -10,7 +10,8 @@ from typing import Any
 import typer
 
 from ..client import APIError, STClient
-from ..output import handle_api_error, output_error
+from ..config import get_config
+from ..output import handle_api_error, output_error, require_explicit_project
 from .tasks_helpers import (
     build_subtasks_data,
     create_subtask_dependencies,
@@ -33,6 +34,7 @@ def _load_json_file(file_path: Path) -> Any:
 
 def create_from_file(file_path: Path, dry_run: bool) -> None:
     """Create tasks from a JSON file."""
+    require_explicit_project(get_config())
     data = _load_json_file(file_path)
     if "tasks" not in data:
         output_error("JSON must contain a 'tasks' array")

@@ -39,6 +39,7 @@ class Config:
     api_base: str
     project_id: str
     project_root: str | None = None
+    source: str = "unknown"
 
 
 # Module-level override (set by --project flag in main.py)
@@ -116,14 +117,18 @@ def _detect_project_from_cwd(api_base: str, max_retries: int = 3) -> tuple[str |
     return _resolve_project_from_list(projects, Path.cwd().resolve())
 
 
-def _resolve_project(api_base: str) -> tuple[str | None, str | None]:
-    """Resolve (project_id, root_path) using priority: override > env > cwd detection."""
+def _resolve_project(api_base: str) -> tuple[str | None, str | None, str]:
+    """Resolve (project_id, root_path, source) using priority: override > env > cwd detection.
+
+    Source is one of: "flag", "env", "cwd", "unknown".
+    """
     if _project_override:
-        return _project_override, None
+        return _project_override, None, "flag"
     env_project = os.getenv("ST_PROJECT_ID")
     if env_project:
-        return env_project, None
-    return _detect_project_from_cwd(api_base)
+        return env_project, None, "env"
+    project_id, root_path = _detect_project_from_cwd(api_base)
+    return project_id, root_path, "cwd"
 
 
 @lru_cache
@@ -133,9 +138,9 @@ def get_config() -> Config:
     Priority: --project flag > ST_PROJECT_ID env > cwd auto-detect.
     """
     api_base = os.getenv("ST_API_BASE", _DEFAULT_API_BASE)
-    project_id, project_root = _resolve_project(api_base)
+    project_id, project_root, source = _resolve_project(api_base)
     if project_id:
-        return Config(api_base=api_base, project_id=project_id, project_root=project_root)
+        return Config(api_base=api_base, project_id=project_id, project_root=project_root, source=source)
     print(_PROJECT_NOT_FOUND_MSG, file=sys.stderr)
     sys.exit(1)
 
@@ -147,5 +152,14 @@ def get_config_optional() -> Config:
     exiting. Useful for commands that operate without project context.
     """
     api_base = os.getenv("ST_API_BASE", _DEFAULT_API_BASE)
-    project_id, project_root = _resolve_project(api_base)
-    return Config(api_base=api_base, project_id=project_id or "", project_root=project_root)
+    project_id, project_root, source = _resolve_project(api_base)
+    return Config(api_base=api_base, project_id=project_id or "", project_root=project_root, source=source)
+
+
+def get_available_projects() -> list[str]:
+    """Fetch available project IDs from the API."""
+    api_base = os.getenv("ST_API_BASE", _DEFAULT_API_BASE)
+    projects = _fetch_projects_with_retry(api_base, max_retries=2)
+    if not projects:
+        return []
+    return [p.get("id") for p in projects if isinstance(p, dict) and p.get("id")]

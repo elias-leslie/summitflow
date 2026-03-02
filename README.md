@@ -77,7 +77,7 @@ SummitFlow includes a Typer-based CLI for task management:
 
 ```bash
 st list                        # List tasks
-st create "Fix login bug"      # Create task
+st -P summitflow create "Fix login bug"  # Create task (requires -P)
 st claim <task-id>             # Claim task (creates worktree checkpoint)
 st context                     # Show current task details
 st step pass <subtask> <step>  # Mark step as passed

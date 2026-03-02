@@ -32,6 +32,7 @@ from ._output_formatters import (
 
 if TYPE_CHECKING:
     from .client import APIError
+    from .config import Config
 
 # Module-level flags for output modes
 _human_output: bool = False
@@ -67,6 +68,29 @@ def is_progress_only() -> bool:
     return _progress_only
 
 
+def require_explicit_project(config: Config) -> None:
+    """Exit with error if project was resolved from cwd (not explicit flag/env).
+
+    Task creation commands must use -P or ST_PROJECT_ID to avoid
+    silent wrong-project association.
+    """
+    if config.source not in ("cwd",):
+        return
+
+    from .config import get_available_projects
+
+    available = get_available_projects()
+    available_str = ", ".join(available) if available else "(could not fetch)"
+    print(
+        f"Error: Task creation requires explicit project.\n"
+        f"Usage: st -P <project> create \"title\"\n"
+        f"Detected: {config.project_id} (from cwd)\n"
+        f"Available: {available_str}",
+        file=sys.stderr,
+    )
+    raise typer.Exit(1)
+
+
 def output_json(data: Any) -> None:
     """Output data as JSON to stdout."""
     indent = 2 if _human_output else None
@@ -84,7 +108,7 @@ def output_task(task: dict[str, Any]) -> None:
         decisions = task.get("decisions") or []
         decisions_count = len(decisions) if isinstance(decisions, list) else 0
         print(
-            f"{task.get('id')}|{task.get('status')}|P{priority}|"
+            f"{task.get('id')}|{task.get('project_id', '')}|{task.get('status')}|P{priority}|"
             f"{task.get('task_type')}|{complexity}|{done}/{total}|"
             f"decisions:{decisions_count}|{task.get('title')}"
         )
