@@ -10,7 +10,7 @@ from ..client import APIError, STClient
 from ..config import get_config
 from ..output import handle_api_error, output_json
 from ..output_context import OutputContext
-from .backup_api import BackupAPI
+from .backup_api import BackupProjectAPI, BackupSourceAPI
 from .backup_formatters import (
     format_size,
     output_backup,
@@ -31,11 +31,17 @@ def backup_callback(ctx: typer.Context) -> None:
         ctx.obj = OutputContext()
 
 
-def _get_api() -> BackupAPI:
-    """Get configured BackupAPI instance."""
+def _get_project_api() -> BackupProjectAPI:
+    """Get configured BackupProjectAPI instance."""
     config = get_config()
     client = STClient()
-    return BackupAPI(client.base_url, config.project_id)
+    return BackupProjectAPI(client.base_url, config.project_id)
+
+
+def _get_source_api() -> BackupSourceAPI:
+    """Get configured BackupSourceAPI instance."""
+    client = STClient()
+    return BackupSourceAPI(client.base_url)
 
 
 @app.command("list")
@@ -47,11 +53,10 @@ def list_backups(
 ) -> None:
     """List backups. Use --source to filter by source ID."""
     try:
-        api = _get_api()
         if source:
-            result = api.list_source_backups(source, limit=limit, status=status)
+            result = _get_source_api().list_source_backups(source, limit=limit, status=status)
         else:
-            result = api.list_backups(limit=limit, status=status)
+            result = _get_project_api().list_backups(limit=limit, status=status)
         backups = result.get("backups", [])
         total = result.get("total", len(backups))
         output_backups(ctx.obj, backups, total)
@@ -68,11 +73,10 @@ def create_backup(
 ) -> None:
     """Create a new backup. Use --source for non-project sources."""
     try:
-        api = _get_api()
         if source:
-            result = api.create_source_backup(source, note=note, keep_local=keep_local)
+            result = _get_source_api().create_source_backup(source, note=note, keep_local=keep_local)
         else:
-            result = api.create_backup(note=note, keep_local=keep_local)
+            result = _get_project_api().create_backup(note=note, keep_local=keep_local)
         output_task_queued(ctx.obj, result.get("task_id", "?"))
     except APIError as e:
         handle_api_error(e)
@@ -86,13 +90,13 @@ def restore_backup(
     source: Annotated[str | None, typer.Option("--source", help="Source ID (for non-project restores)")] = None,
 ) -> None:
     """Restore from a backup. Use --source for non-project sources."""
-    api = _get_api()
     try:
         if source:
-            result = api.restore_source_backup(source, backup_id, dry_run=dry_run)
+            result = _get_source_api().restore_source_backup(source, backup_id, dry_run=dry_run)
         else:
-            api.get_backup(backup_id)  # validate backup exists
-            result = api.restore_backup(backup_id, dry_run=dry_run)
+            project_api = _get_project_api()
+            project_api.get_backup(backup_id)  # validate backup exists
+            result = project_api.restore_backup(backup_id, dry_run=dry_run)
         if ctx.obj.is_compact:
             print(f"{'DRY_RUN' if dry_run else 'QUEUED'} {result.get('task_id', '?')}")
         else:
@@ -114,7 +118,7 @@ def backup_status(
         raise typer.Exit(1)
 
     try:
-        result = _get_api().list_backups(limit=1)
+        result = _get_project_api().list_backups(limit=1)
         backups = result.get("backups", [])
         if not backups:
             if ctx.obj.is_compact:
@@ -140,13 +144,13 @@ def backup_schedule(
     retention_days: Annotated[int | None, typer.Option("--retention-days", "-r", help="Days to retain backups")] = None,
 ) -> None:
     """View or configure backup schedule for a source."""
-    api = _get_api()
+    source_api = _get_source_api()
     try:
         if enable is None and frequency is None and retention_days is None:
-            source = api.get_source(source_id)
+            source = source_api.get_source(source_id)
             output_source(ctx.obj, source)
         else:
-            result = api.update_source(
+            result = source_api.update_source(
                 source_id, enabled=enable, frequency=frequency, retention_days=retention_days
             )
             if ctx.obj.is_compact:
@@ -165,7 +169,7 @@ def show_backup(
 ) -> None:
     """Show details of a specific backup."""
     try:
-        output_backup(ctx.obj, _get_api().get_backup(backup_id))
+        output_backup(ctx.obj, _get_project_api().get_backup(backup_id))
     except APIError as e:
         handle_api_error(e)
 
@@ -177,7 +181,7 @@ def delete_backup(
 ) -> None:
     """Delete a backup record. Note: Only deletes DB record, not backup files."""
     try:
-        _get_api().delete_backup(backup_id)
+        _get_project_api().delete_backup(backup_id)
         output_deleted(ctx.obj, backup_id)
     except APIError as e:
         handle_api_error(e)
@@ -190,7 +194,7 @@ def list_sources(
 ) -> None:
     """List all registered backup sources."""
     try:
-        sources = _get_api().list_sources(source_type=source_type)
+        sources = _get_source_api().list_sources(source_type=source_type)
         output_sources(ctx.obj, sources)
     except APIError as e:
         handle_api_error(e)
