@@ -24,6 +24,15 @@ def build_sync_response_from_result(result: SyncResult) -> dict[str, int]:
     }
 
 
+def _classify_sync_status(status: str) -> str:
+    """Classify a sync status string into success, failed, or skipped."""
+    if status in ("up_to_date", "updated"):
+        return "success"
+    if status == "failed":
+        return "failed"
+    return "skipped"
+
+
 def aggregate_sync_results(results: list[SyncResult]) -> dict[str, int]:
     """Aggregate multiple sync results into counts.
 
@@ -33,16 +42,8 @@ def aggregate_sync_results(results: list[SyncResult]) -> dict[str, int]:
     Returns:
         Dict with success, failed, and skipped counts
     """
-    success = 0
-    failed = 0
-    skipped = 0
-
+    counts: dict[str, int] = {"success": 0, "failed": 0, "skipped": 0}
     for result in results:
-        if result.status in ["up_to_date", "updated"]:
-            success += 1
-        elif result.status == "failed":
-            failed += 1
-        elif result.status == "skipped":
-            skipped += 1
-
-    return {"success": success, "failed": failed, "skipped": skipped}
+        bucket = _classify_sync_status(result.status)
+        counts[bucket] = counts.get(bucket, 0) + 1
+    return counts
