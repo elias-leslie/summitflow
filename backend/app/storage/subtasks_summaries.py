@@ -15,6 +15,68 @@ from .connection import get_connection
 logger = logging.getLogger(__name__)
 
 
+def _row_to_summary_dict(row: tuple[Any, ...]) -> dict[str, Any]:
+    """Convert a subtask_summaries DB row to a summary dict.
+
+    Args:
+        row: Tuple of (id, subtask_id, summary, files_modified, decisions_made, created_at)
+
+    Returns:
+        Dict representation of the summary record.
+    """
+    return {
+        "id": row[0],
+        "subtask_id": row[1],
+        "summary": row[2],
+        "files_modified": row[3] or [],
+        "decisions_made": row[4] or [],
+        "created_at": row[5].isoformat() if row[5] else None,
+    }
+
+
+def _upsert_summary_row(
+    subtask_id: str,
+    summary: str,
+    files_json: str,
+    decisions_json: str,
+) -> tuple[Any, ...]:
+    """Execute the UPSERT SQL and return the resulting row.
+
+    Args:
+        subtask_id: Full subtask table ID.
+        summary: Structured summary text.
+        files_json: JSON-encoded list of modified files.
+        decisions_json: JSON-encoded list of decisions made.
+
+    Returns:
+        The raw DB row from the RETURNING clause.
+
+    Raises:
+        ValueError: If the insert/update returned no row.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO subtask_summaries (subtask_id, summary, files_modified, decisions_made)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (subtask_id) DO UPDATE SET
+                summary = EXCLUDED.summary,
+                files_modified = EXCLUDED.files_modified,
+                decisions_made = EXCLUDED.decisions_made,
+                created_at = NOW()
+            RETURNING id, subtask_id, summary, files_modified, decisions_made, created_at
+            """,
+            (subtask_id, summary, files_json, decisions_json),
+        )
+        row = cur.fetchone()
+        conn.commit()
+
+    if not row:
+        raise ValueError(f"Insert failed for subtask_id={subtask_id}")
+
+    return row
+
+
 def insert_subtask_summary(
     subtask_id: str,
     summary: str,
@@ -37,35 +99,8 @@ def insert_subtask_summary(
     """
     files_json = json.dumps(files_modified or [])
     decisions_json = json.dumps(decisions_made or [])
-
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO subtask_summaries (subtask_id, summary, files_modified, decisions_made)
-            VALUES (%s, %s, %s, %s)
-            ON CONFLICT (subtask_id) DO UPDATE SET
-                summary = EXCLUDED.summary,
-                files_modified = EXCLUDED.files_modified,
-                decisions_made = EXCLUDED.decisions_made,
-                created_at = NOW()
-            RETURNING id, subtask_id, summary, files_modified, decisions_made, created_at
-            """,
-            (subtask_id, summary, files_json, decisions_json),
-        )
-        row = cur.fetchone()
-        conn.commit()
-
-    if not row:
-        raise ValueError(f"Insert failed for subtask_id={subtask_id}")
-
-    return {
-        "id": row[0],
-        "subtask_id": row[1],
-        "summary": row[2],
-        "files_modified": row[3] or [],
-        "decisions_made": row[4] or [],
-        "created_at": row[5].isoformat() if row[5] else None,
-    }
+    row = _upsert_summary_row(subtask_id, summary, files_json, decisions_json)
+    return _row_to_summary_dict(row)
 
 
 def get_previous_summary(subtask_id: str) -> dict[str, Any] | None:
@@ -91,31 +126,18 @@ def get_previous_summary(subtask_id: str) -> dict[str, Any] | None:
     if not row:
         return None
 
-    return {
-        "id": row[0],
-        "subtask_id": row[1],
-        "summary": row[2],
-        "files_modified": row[3] or [],
-        "decisions_made": row[4] or [],
-        "created_at": row[5].isoformat() if row[5] else None,
-    }
+    return _row_to_summary_dict(row)
 
 
-def get_handoff_context(task_id: str, current_subtask_id: str) -> dict[str, Any]:
-    """Build handoff context for a subtask from all previous completed subtasks.
-
-    Returns summaries from all completed subtasks before the current one,
-    providing fresh context without accumulated conversation history.
+def _fetch_handoff_rows(task_id: str, current_subtask_id: str) -> list[tuple[Any, ...]]:
+    """Query all completed subtask summary rows preceding the current subtask.
 
     Args:
-        task_id: Parent task ID
-        current_subtask_id: The subtask about to be executed (e.g., "1.2")
+        task_id: Parent task ID.
+        current_subtask_id: The subtask about to be executed (e.g., "1.2").
 
     Returns:
-        Dict with:
-            - previous_summaries: List of summary records from completed subtasks
-            - total_files_modified: Aggregated list of all modified files
-            - key_decisions: Aggregated list of all decisions made
+        List of raw DB rows ordered by display_order.
     """
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
@@ -131,8 +153,20 @@ def get_handoff_context(task_id: str, current_subtask_id: str) -> dict[str, Any]
             """,
             (task_id, current_subtask_id),
         )
-        rows = cur.fetchall()
+        return cur.fetchall()
 
+
+def _aggregate_handoff_rows(
+    rows: list[tuple[Any, ...]],
+) -> dict[str, Any]:
+    """Aggregate raw DB rows into the handoff context structure.
+
+    Args:
+        rows: Raw DB rows from _fetch_handoff_rows.
+
+    Returns:
+        Dict with previous_summaries, total_files_modified, and key_decisions.
+    """
     summaries = []
     all_files: list[str] = []
     all_decisions: list[str] = []
@@ -159,6 +193,26 @@ def get_handoff_context(task_id: str, current_subtask_id: str) -> dict[str, Any]
         "total_files_modified": list(set(all_files)),
         "key_decisions": all_decisions,
     }
+
+
+def get_handoff_context(task_id: str, current_subtask_id: str) -> dict[str, Any]:
+    """Build handoff context for a subtask from all previous completed subtasks.
+
+    Returns summaries from all completed subtasks before the current one,
+    providing fresh context without accumulated conversation history.
+
+    Args:
+        task_id: Parent task ID
+        current_subtask_id: The subtask about to be executed (e.g., "1.2")
+
+    Returns:
+        Dict with:
+            - previous_summaries: List of summary records from completed subtasks
+            - total_files_modified: Aggregated list of all modified files
+            - key_decisions: Aggregated list of all decisions made
+    """
+    rows = _fetch_handoff_rows(task_id, current_subtask_id)
+    return _aggregate_handoff_rows(rows)
 
 
 def get_subtask_summary(task_id: str) -> dict[str, Any]:
