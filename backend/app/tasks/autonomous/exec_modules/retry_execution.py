@@ -11,6 +11,45 @@ from .git_ops import auto_commit, has_uncommitted_changes
 logger = get_logger(__name__)
 
 
+def _commit_fix_attempt(
+    project_path: str,
+    subtask_short_id: str,
+    self_fix_attempts: int,
+    supervisor_guided_attempts: int,
+) -> None:
+    """Auto-commit changes from a fix attempt if any uncommitted changes exist."""
+    if has_uncommitted_changes(project_path):
+        phase = "self-fix" if self_fix_attempts <= SELF_HEAL_MAX_ATTEMPTS else "guided"
+        attempt_num = self_fix_attempts if phase == "self-fix" else supervisor_guided_attempts
+        commit_msg = f"[{phase}] {subtask_short_id} attempt {attempt_num}"
+        auto_commit(project_path, commit_msg)
+
+
+def _handle_fix_error(
+    task_id: str,
+    subtask_short_id: str,
+    project_id: str,
+    heal_attempt: int,
+    fix_error: Exception,
+    agent_session_id: str | None,
+) -> tuple[str, str | None]:
+    """Log and emit error from a failed fix attempt, then return empty result."""
+    logger.warning(
+        "Fix attempt failed",
+        subtask_id=subtask_short_id,
+        attempt=heal_attempt + 1,
+        error=str(fix_error),
+    )
+    emit_log(
+        task_id,
+        "error",
+        f"Fix attempt error: {str(fix_error)[:100]}",
+        source="orchestrator",
+        project_id=project_id,
+    )
+    return "", agent_session_id
+
+
 def execute_fix_attempt(
     task_id: str,
     subtask_short_id: str,
@@ -43,28 +82,20 @@ def execute_fix_attempt(
             tier_preference=tier_preference,
         )
         response_content = response.content
-
-        # Auto-commit fix attempt
-        if has_uncommitted_changes(project_path):
-            phase = "self-fix" if self_fix_attempts <= SELF_HEAL_MAX_ATTEMPTS else "guided"
-            attempt_num = self_fix_attempts if phase == "self-fix" else supervisor_guided_attempts
-            commit_msg = f"[{phase}] {subtask_short_id} attempt {attempt_num}"
-            auto_commit(project_path, commit_msg)
-
+        _commit_fix_attempt(
+            project_path,
+            subtask_short_id,
+            self_fix_attempts,
+            supervisor_guided_attempts,
+        )
         return response_content, agent_session_id
 
     except Exception as fix_error:
-        logger.warning(
-            "Fix attempt failed",
-            subtask_id=subtask_short_id,
-            attempt=heal_attempt + 1,
-            error=str(fix_error),
-        )
-        emit_log(
+        return _handle_fix_error(
             task_id,
-            "error",
-            f"Fix attempt error: {str(fix_error)[:100]}",
-            source="orchestrator",
-            project_id=project_id,
+            subtask_short_id,
+            project_id,
+            heal_attempt,
+            fix_error,
+            agent_session_id,
         )
-        return "", agent_session_id
