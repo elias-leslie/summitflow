@@ -10,6 +10,24 @@ import subprocess
 from ..lib.checkpoint import get_snapshot_info
 
 
+def _classify_branch(branch: str) -> dict[str, str]:
+    """Classify a branch as task or subtask type."""
+    suffix = branch.split("/")[-1] if "/" in branch else ""
+    if suffix == "main":
+        return {"branch": branch, "subtask_id": "", "type": "task"}
+    return {"branch": branch, "subtask_id": suffix, "type": "subtask"}
+
+
+def _parse_commit_line(line: str) -> dict[str, str] | None:
+    """Parse a commit log line into a commit dict, or return None if invalid."""
+    if "|" not in line:
+        return None
+    parts = line.split("|", 2)
+    if len(parts) != 3:
+        return None
+    return {"hash": parts[0][:8], "message": parts[1], "age": parts[2]}
+
+
 def get_task_branches(task_id: str) -> list[dict[str, str]]:
     """Get all branches for a task (task branch + subtask branches)."""
     branches = []
@@ -23,13 +41,7 @@ def get_task_branches(task_id: str) -> list[dict[str, str]]:
         for line in result.stdout.splitlines():
             branch = line.strip().lstrip("* ")
             if branch:
-                # Determine if it's a subtask or task branch
-                # Task branch ends with /main, subtask branches end with /X.Y
-                suffix = branch.split("/")[-1] if "/" in branch else ""
-                if suffix == "main":
-                    branches.append({"branch": branch, "subtask_id": "", "type": "task"})
-                else:
-                    branches.append({"branch": branch, "subtask_id": suffix, "type": "subtask"})
+                branches.append(_classify_branch(branch))
     except subprocess.CalledProcessError:
         pass
     return branches
@@ -46,16 +58,9 @@ def get_branch_unmerged_commits(branch: str) -> list[dict[str, str]]:
             check=True,
         )
         for line in result.stdout.strip().splitlines():
-            if "|" in line:
-                parts = line.split("|", 2)
-                if len(parts) == 3:
-                    commits.append(
-                        {
-                            "hash": parts[0][:8],
-                            "message": parts[1],
-                            "age": parts[2],
-                        }
-                    )
+            commit = _parse_commit_line(line)
+            if commit is not None:
+                commits.append(commit)
     except subprocess.CalledProcessError:
         pass
     return commits
