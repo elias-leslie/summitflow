@@ -75,6 +75,23 @@ async def delete_task(project_id: str, task_id: str) -> dict[str, Any]:
     }
 
 
+async def _merge_step_verification(task_id: str, updated: dict[str, Any]) -> dict[str, Any] | None:
+    """Merge step-level verification into verification_result on completion.
+
+    Preserves existing keys (e.g. execution_clean from autocode pipeline).
+    """
+    step_status = await asyncio.to_thread(get_step_verification_status, task_id)
+    existing = updated.get("verification_result") or {}
+    merged = {
+        **existing,
+        "total": step_status["total"],
+        "verified": step_status["verified"],
+        "unverified": step_status["unverified"],
+        "all_verified": step_status["all_verified"],
+    }
+    return await asyncio.to_thread(task_store.update_task, task_id, verification_result=merged)
+
+
 @router.patch("/projects/{project_id}/tasks/{task_id}/status", response_model=TaskResponse)
 async def update_task_status(
     project_id: str, task_id: str, update: TaskStatusUpdate
@@ -110,21 +127,8 @@ async def update_task_status(
     # Dispatch autonomous execution tasks on status transitions
     await dispatch_autonomous_task(task_id, update.status, project_id)
 
-    # Merge step-level verification into verification_result on completion
-    # Preserves existing keys (e.g. execution_clean from autocode pipeline)
     if update.status == "completed" and updated:
-        step_status = await asyncio.to_thread(get_step_verification_status, task_id)
-        existing = updated.get("verification_result") or {}
-        merged = {
-            **existing,
-            "total": step_status["total"],
-            "verified": step_status["verified"],
-            "unverified": step_status["unverified"],
-            "all_verified": step_status["all_verified"],
-        }
-        updated = await asyncio.to_thread(
-            task_store.update_task, task_id, verification_result=merged
-        )
+        updated = await _merge_step_verification(task_id, updated)
 
     if updated is None:
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
