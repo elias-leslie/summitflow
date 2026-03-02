@@ -13,6 +13,9 @@ from typing import TypedDict
 
 logger = logging.getLogger(__name__)
 
+_FuncNode = ast.FunctionDef | ast.AsyncFunctionDef
+_NESTING_TYPES = (ast.If, ast.For, ast.While, ast.With, ast.Try)
+
 
 class FunctionEntry(TypedDict):
     """Metadata for a function or method."""
@@ -44,74 +47,63 @@ class ParseResult(TypedDict):
 
 def _count_lines(node: ast.AST) -> int:
     """Count lines spanned by an AST node."""
-    end_lineno = getattr(node, "end_lineno", None)
-    lineno = getattr(node, "lineno", None)
-    if end_lineno is not None and lineno is not None:
-        return int(end_lineno - lineno + 1)
-    return 0
+    end = getattr(node, "end_lineno", None)
+    start = getattr(node, "lineno", None)
+    return int(end - start + 1) if end is not None and start is not None else 0
 
 
-def _has_docstring(node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef) -> bool:
+def _has_docstring(node: _FuncNode | ast.ClassDef) -> bool:
     """Check if a function or class has a docstring."""
-    if (
-        node.body
-        and isinstance(node.body[0], ast.Expr)
-        and isinstance(node.body[0].value, ast.Constant)
-    ):
-        return isinstance(node.body[0].value.value, str)
-    return False
+    first = node.body[0] if node.body else None
+    return (
+        isinstance(first, ast.Expr)
+        and isinstance(first.value, ast.Constant)
+        and isinstance(first.value.value, str)
+    )
 
 
-def _get_param_names(node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
+def _get_param_names(node: _FuncNode) -> list[str]:
     """Extract parameter names from a function definition."""
-    params = []
-    for arg in node.args.args:
-        params.append(arg.arg)
-    for arg in node.args.posonlyargs:
-        params.append(arg.arg)
-    for arg in node.args.kwonlyargs:
-        params.append(arg.arg)
-    if node.args.vararg:
-        params.append(f"*{node.args.vararg.arg}")
-    if node.args.kwarg:
-        params.append(f"**{node.args.kwarg.arg}")
+    args = node.args
+    params = [a.arg for a in args.args + args.posonlyargs + args.kwonlyargs]
+    if args.vararg:
+        params.append(f"*{args.vararg.arg}")
+    if args.kwarg:
+        params.append(f"**{args.kwarg.arg}")
     return params
 
 
-class NestingVisitor(ast.NodeVisitor):
-    """Visitor to calculate maximum nesting depth."""
-
-    def __init__(self) -> None:
-        self.max_depth = 0
-        self.current_depth = 0
-
-    def visit_If(self, node: ast.If) -> None:
-        self._visit_nesting_node(node)
-
-    def visit_For(self, node: ast.For) -> None:
-        self._visit_nesting_node(node)
-
-    def visit_While(self, node: ast.While) -> None:
-        self._visit_nesting_node(node)
-
-    def visit_With(self, node: ast.With) -> None:
-        self._visit_nesting_node(node)
-
-    def visit_Try(self, node: ast.Try) -> None:
-        self._visit_nesting_node(node)
-
-    def _visit_nesting_node(self, node: ast.AST) -> None:
-        self.current_depth += 1
-        self.max_depth = max(self.max_depth, self.current_depth)
-        self.generic_visit(node)
-        self.current_depth -= 1
+def _max_nesting(tree: ast.AST, depth: int = 0) -> int:
+    """Recursively compute maximum nesting depth."""
+    if isinstance(tree, _NESTING_TYPES):
+        depth += 1
+    return max(
+        (_max_nesting(child, depth) for child in ast.iter_child_nodes(tree)),
+        default=depth,
+    )
 
 
-def _calculate_max_nesting(tree: ast.AST) -> int:
-    """Calculate maximum nesting depth in the AST."""
-    visitor = NestingVisitor()
-    visitor.visit(tree)
-    return visitor.max_depth
+def _make_function_entry(node: _FuncNode) -> FunctionEntry:
+    """Build a FunctionEntry from a function AST node."""
+    return FunctionEntry(
+        name=node.name,
+        lines=_count_lines(node),
+        start_line=node.lineno,
+        params=_get_param_names(node),
+        has_docstring=_has_docstring(node),
+    )
+
+
+def _make_class_entry(node: ast.ClassDef) -> ClassEntry:
+    """Build a ClassEntry from a class AST node."""
+    methods = [item.name for item in node.body if isinstance(item, _FuncNode)]
+    return ClassEntry(
+        name=node.name,
+        methods=methods,
+        lines=_count_lines(node),
+        start_line=node.lineno,
+        has_docstring=_has_docstring(node),
+    )
 
 
 def parse_python_file(file_path: str | Path) -> ParseResult:
@@ -135,43 +127,15 @@ def parse_python_file(file_path: str | Path) -> ParseResult:
     classes: list[ClassEntry] = []
 
     for node in ast.walk(tree):
-        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
-            # Skip methods (they're handled with classes)
-            # Check if parent is a class
+        if isinstance(node, _FuncNode):
             parent = getattr(node, "_parent", None)
-            if parent is not None and isinstance(parent, ast.ClassDef):
-                continue
-
-            functions.append(
-                FunctionEntry(
-                    name=node.name,
-                    lines=_count_lines(node),
-                    start_line=node.lineno,
-                    params=_get_param_names(node),
-                    has_docstring=_has_docstring(node),
-                )
-            )
-
+            if parent is None or not isinstance(parent, ast.ClassDef):
+                functions.append(_make_function_entry(node))
         elif isinstance(node, ast.ClassDef):
-            methods = []
-            for item in node.body:
-                if isinstance(item, ast.FunctionDef | ast.AsyncFunctionDef):
-                    methods.append(item.name)
-
-            classes.append(
-                ClassEntry(
-                    name=node.name,
-                    methods=methods,
-                    lines=_count_lines(node),
-                    start_line=node.lineno,
-                    has_docstring=_has_docstring(node),
-                )
-            )
-
-    max_nesting = _calculate_max_nesting(tree)
+            classes.append(_make_class_entry(node))
 
     return ParseResult(
         functions=functions,
         classes=classes,
-        max_nesting=max_nesting,
+        max_nesting=_max_nesting(tree),
     )
