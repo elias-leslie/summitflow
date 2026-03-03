@@ -19,7 +19,7 @@ class AcceptanceCriterion(BaseModel):
     category: Literal["performance", "correctness", "security", "quality"] = Field(
         default="correctness", description="Category of the criterion"
     )
-    measurement: str = Field(
+    measurement: Literal["test", "metric", "tool", "manual"] = Field(
         default="test", description="How to verify: test, metric, tool, manual"
     )
     threshold: str | None = Field(

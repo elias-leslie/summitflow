@@ -17,6 +17,10 @@ from app.tasks.autonomous.violation_handlers import (
 
 logger = logging.getLogger(__name__)
 
+VIOLATION_TIER_MAP: dict[str, int] = {
+    "god_table": 2,
+}
+
 
 def _cancel_stale_task(task: dict[str, Any], max_age_days: int) -> bool:
     """Cancel a single stale task. Returns True if cancelled, False if skipped."""
@@ -67,6 +71,10 @@ def _create_schema_task_for_violation(
     column_count: int,
 ) -> bool:
     """Create a schema task for a single violation. Returns True if created."""
+    if not table_name:
+        logger.warning("Skipping violation with empty table_name: %s", violation)
+        return False
+
     violation_type = violation.get("type", "")
     detail = violation.get("detail", "")
     severity = violation.get("severity", "warning")
@@ -75,7 +83,7 @@ def _create_schema_task_for_violation(
     if task_store.task_exists_for_file(project_id, file_path):
         return False
 
-    tier = 2 if violation_type == "god_table" else 1
+    tier = VIOLATION_TIER_MAP.get(violation_type, 1)
     try:
         task_id, _ = create_schema_task(
             project_id=project_id,

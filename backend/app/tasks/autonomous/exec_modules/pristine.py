@@ -5,7 +5,8 @@ from __future__ import annotations
 import subprocess
 import uuid
 from pathlib import Path
-from typing import Any
+
+from agent_hub import CompletionResponse
 
 from ....constants import PRISTINE_SELF_HEAL_MAX_ATTEMPTS
 from ....logging_config import get_logger
@@ -40,7 +41,7 @@ def _on_heal_success(task_id: str, project_id: str, repo_path: Path, attempt: in
 
 def _invoke_pristine_agent(
     task_id: str, project_id: str, repo_path: Path, output: str, attempt: int, session_id: str | None, error_count: int
-) -> tuple[str | None, Any]:
+) -> tuple[str | None, CompletionResponse]:
     """Log attempt, invoke coder agent to fix issues, emit progress; return (session_id, response)."""
     logger.info("pristine_self_heal_attempt", project_id=project_id, attempt=attempt + 1, error_count=error_count)
     _emit(task_id, "info", f"Pristine self-heal attempt {attempt + 1}/{PRISTINE_SELF_HEAL_MAX_ATTEMPTS}: {error_count} errors, invoking coder agent", project_id)

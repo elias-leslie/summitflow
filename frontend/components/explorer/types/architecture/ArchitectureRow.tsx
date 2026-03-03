@@ -52,7 +52,7 @@ export function ArchitectureRow({ entry }: ArchitectureRowProps) {
     missing_infrastructure?: number
     duplicate_utility?: number
   } | undefined
-  const filesAnalyzed = (meta.files_with_violations as number) ?? 0
+  const filesWithViolations = (meta.files_with_violations as number) ?? 0
   const healthStatus = (entry.healthStatus ?? 'unknown') as HealthStatus
 
   const summary = getViolationSummary(violationCounts || {})
@@ -125,10 +125,10 @@ export function ArchitectureRow({ entry }: ArchitectureRowProps) {
 
       {/* Files with violations */}
       <ColumnValue width="60px" align="center">
-        {filesAnalyzed > 0 ? (
+        {filesWithViolations > 0 ? (
           <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-500/15 text-slate-400 border border-slate-500/25">
             <FileCode className="w-3 h-3" />
-            <span>{filesAnalyzed}</span>
+            <span>{filesWithViolations}</span>
           </span>
         ) : (
           <span className="text-slate-600 text-[10px]">-</span>

@@ -203,7 +203,11 @@ def call_complete(
     )
     read_timeout = _scale_http_timeout(timeout, max_turns)
     if stream:
-        return stream_complete(agent_hub_url, headers, payload, read_timeout)
+        try:
+            return stream_complete(agent_hub_url, headers, payload, read_timeout)
+        except httpx.ConnectError:
+            output_error(f"Cannot connect to Agent Hub at {agent_hub_url}")
+            raise typer.Exit(1) from None
     http_timeout = httpx.Timeout(connect=5.0, read=read_timeout, write=30.0, pool=30.0)
     max_attempts = 2
     for attempt in range(1, max_attempts + 1):

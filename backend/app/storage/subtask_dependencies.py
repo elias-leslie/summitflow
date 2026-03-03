@@ -112,7 +112,7 @@ def get_blocking_dependencies(subtask_id: str) -> list[dict[str, Any]]:
 
 def is_blocked(subtask_id: str) -> bool:
     """Return True if any dependency of subtask_id is incomplete."""
-    return len(get_blocking_dependencies(subtask_id)) > 0
+    return bool(get_blocking_dependencies(subtask_id))
 
 
 def get_all_dependencies_for_task(task_id: str) -> list[dict[str, Any]]:
@@ -128,7 +128,7 @@ def get_all_dependencies_for_task(task_id: str) -> list[dict[str, Any]]:
             """,
             (task_id,),
         )
-        return [r for r in [row_to_dict(row) for row in cur.fetchall()] if r is not None]
+        return [r for row in cur.fetchall() if (r := row_to_dict(row)) is not None]
 
 
 def bulk_add_dependencies(dependencies: list[tuple[str, str]]) -> list[dict[str, Any]]:

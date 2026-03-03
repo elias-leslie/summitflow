@@ -51,7 +51,9 @@ export function GitRepoCard({ repo }: GitRepoCardProps) {
                   ? 'bg-outrun-500/10 text-outrun-400'
                   : stateColor === 'amber'
                     ? 'bg-amber-500/10 text-amber-400'
-                    : 'bg-sunset-orange/10 text-sunset-orange'
+                    : stateColor === 'sunset'
+                      ? 'bg-sunset-orange/10 text-sunset-orange'
+                      : 'bg-slate-500/10 text-slate-400'
             }
           `}
         >

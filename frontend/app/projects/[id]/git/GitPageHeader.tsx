@@ -35,6 +35,7 @@ export function GitPageHeader({
 
         {/* Sync All Button */}
         <button
+          type="button"
           onClick={onSync}
           disabled={isSyncing}
           aria-busy={isSyncing}

@@ -25,4 +25,4 @@ class CriteriaValidateResponse(BaseModel):
     """Response model for criteria validation."""
 
     valid: bool
-    failures: list[CriterionValidationResult] = Field(default_factory=list)
+    results: list[CriterionValidationResult] = Field(default_factory=list)

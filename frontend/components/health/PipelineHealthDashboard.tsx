@@ -105,24 +105,32 @@ export function PipelineHealthDashboard({ data }: PipelineHealthDashboardProps) 
             <CardTitle className="text-base">Throughput</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-500">Completed Today</span>
-              <span className="text-lg font-semibold text-phosphor-400 tabular-nums">
-                {throughput.completed_today}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-500">Completed This Week</span>
-              <span className="text-lg font-semibold text-phosphor-400 tabular-nums">
-                {throughput.completed_this_week}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-500">Avg Completion Time</span>
-              <span className="text-lg font-semibold text-slate-300 tabular-nums">
-                {formatDecimal(throughput.avg_completion_hours)}h
-              </span>
-            </div>
+            {totalTasks === 0 ? (
+              <div className="flex flex-col items-center justify-center py-4 text-center">
+                <span className="text-xs text-slate-500">No completed tasks to analyze</span>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-slate-500">Completed Today</span>
+                  <span className="text-lg font-semibold text-phosphor-400 tabular-nums">
+                    {throughput.completed_today}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-slate-500">Completed This Week</span>
+                  <span className="text-lg font-semibold text-phosphor-400 tabular-nums">
+                    {throughput.completed_this_week}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-slate-500">Avg Completion Time</span>
+                  <span className="text-lg font-semibold text-slate-300 tabular-nums">
+                    {formatDecimal(throughput.avg_completion_hours)}h
+                  </span>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
 

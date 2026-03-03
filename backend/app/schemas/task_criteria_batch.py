@@ -1,7 +1,8 @@
 """Acceptance criteria batch operation schemas."""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from .task_criteria_core import AcceptanceCriterion
 from .task_criteria_request import CreateTaskCriterionRequest
 
 
@@ -14,7 +15,7 @@ class BatchTaskCriterionCreate(CreateTaskCriterionRequest):
 class BatchTaskCriteriaRequest(BaseModel):
     """Request model for batch task criteria creation."""
 
-    items: list[BatchTaskCriterionCreate]
+    items: list[BatchTaskCriterionCreate] = Field(min_length=1, max_length=100)
 
 
 class BatchCriterionResult(BaseModel):
@@ -30,5 +31,5 @@ class BatchCriterionResult(BaseModel):
 class BatchTaskCriteriaResponse(BaseModel):
     """Response model for batch task criteria creation."""
 
-    created: list[dict[str, object]]
+    created: list[AcceptanceCriterion]
     errors: list[BatchCriterionResult]

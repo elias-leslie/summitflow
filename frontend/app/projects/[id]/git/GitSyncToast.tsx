@@ -7,6 +7,13 @@ interface GitSyncToastProps {
   results: SyncResult[]
 }
 
+const STATUS_COLORS: Record<string, string> = {
+  updated: 'text-phosphor-500',
+  up_to_date: 'text-slate-400',
+  skipped: 'text-amber-400',
+  failed: 'text-rose-400',
+}
+
 export function GitSyncToast({ results }: GitSyncToastProps) {
   return (
     <div className="fixed top-20 right-6 z-50 animate-slide-up" role="status" aria-live="polite">
@@ -23,17 +30,7 @@ export function GitSyncToast({ results }: GitSyncToastProps) {
             >
               <span className="mono text-xs text-slate-500">{result.name}</span>
               <span
-                className={
-                  result.status === 'updated'
-                    ? 'text-phosphor-500'
-                    : result.status === 'up_to_date'
-                      ? 'text-slate-400'
-                      : result.status === 'skipped'
-                        ? 'text-amber-400'
-                        : result.status === 'failed'
-                          ? 'text-rose-400'
-                          : 'text-slate-400'
-                }
+                className={STATUS_COLORS[result.status] ?? 'text-slate-400'}
               >
                 {result.status === 'up_to_date' ? 'Up to date' : result.status}
               </span>

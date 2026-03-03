@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..models.git_models import SyncResult
+
+logger = logging.getLogger(__name__)
 
 
 def build_sync_response_from_result(result: SyncResult) -> dict[str, int]:
@@ -17,10 +20,11 @@ def build_sync_response_from_result(result: SyncResult) -> dict[str, int]:
     Returns:
         Dict with success, failed, and skipped counts
     """
+    bucket = _classify_sync_status(result.status)
     return {
-        "success": 1 if result.status in ["updated", "up_to_date"] else 0,
-        "failed": 1 if result.status == "failed" else 0,
-        "skipped": 1 if result.status == "skipped" else 0,
+        "success": 1 if bucket == "success" else 0,
+        "failed": 1 if bucket == "failed" else 0,
+        "skipped": 1 if bucket == "skipped" else 0,
     }
 
 
@@ -30,6 +34,7 @@ def _classify_sync_status(status: str) -> str:
         return "success"
     if status == "failed":
         return "failed"
+    logger.warning(f"Unexpected sync status '{status}', classifying as skipped")
     return "skipped"
 
 

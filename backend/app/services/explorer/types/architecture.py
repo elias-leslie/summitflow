@@ -37,9 +37,19 @@ def _violation_to_dict(v: CodeViolation) -> dict[str, Any]:
 
 
 def _scan_scope(dir_path: str) -> str:
-    parts = {p.lower() for p in Path(dir_path).parts}
-    is_backend = bool(parts & {"backend", "app", "api"})
-    is_frontend = bool(parts & {"frontend", "components", "pages"})
+    parts = [p.lower() for p in Path(dir_path).parts]
+    if not parts:
+        return "both"
+    # Check first significant directory for unambiguous classification
+    first = parts[0]
+    if first == "backend":
+        return "backend"
+    if first == "frontend":
+        return "frontend"
+    # Fallback to set-based detection for nested paths using only unambiguous markers
+    part_set = set(parts)
+    is_backend = "backend" in part_set
+    is_frontend = "frontend" in part_set
     if is_backend and not is_frontend:
         return "backend"
     if is_frontend and not is_backend:

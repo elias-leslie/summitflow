@@ -26,15 +26,18 @@ class WorktreeInfoLike(Protocol):
 
 
 def _to_task_worktree_info(
-    info: WorktreeInfoLike, task_id: str, base_branch: str, is_active: bool
+    info: WorktreeInfoLike,
+    task_id: str,
+    base_branch: str | None = None,
+    is_active: bool | None = None,
 ) -> TaskWorktreeInfo:
     """Build a TaskWorktreeInfo from a cli worktree info object."""
     return TaskWorktreeInfo(
         path=info.path,
         branch=info.branch,
         task_id=task_id,
-        base_branch=base_branch,
-        is_active=is_active,
+        base_branch=base_branch if base_branch is not None else info.base_branch,
+        is_active=is_active if is_active is not None else info.is_active,
     )
 
 
@@ -55,7 +58,7 @@ def create_task_worktree(
                 path=str(existing.path),
                 branch=existing.branch,
             )
-            return _to_task_worktree_info(existing, task_id, existing.base_branch, existing.is_active)
+            return _to_task_worktree_info(existing, task_id)
         worktree_info = create_worktree(task_id, base_branch, project_id)
         logger.info(
             "worktree_created",
@@ -99,7 +102,7 @@ def get_task_worktree(
 
         info = get_worktree_info(task_id, project_id)
         if info:
-            return _to_task_worktree_info(info, task_id, info.base_branch, info.is_active)
+            return _to_task_worktree_info(info, task_id)
         return None
     except ImportError:
         return None

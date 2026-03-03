@@ -58,7 +58,7 @@ function getOverallStatus(
 export function InfraStatusBar() {
   const { data: systemStats } = useSystemStats()
 
-  const { data: detailed } = useQuery({
+  const { data: detailed, isError: isDetailedError } = useQuery({
     queryKey: ['health-detailed'],
     queryFn: async () => {
       const res = await fetch(buildApiUrl(API_PATHS.HEALTH_DETAILED))
@@ -82,22 +82,34 @@ export function InfraStatusBar() {
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-slate-500">DB:</span>
             <span className="text-xs text-slate-300 tabular-nums">
-              {detailed?.database.response_time_ms != null
-                ? `${detailed.database.response_time_ms.toFixed(1)}ms`
-                : '—'}
+              {isDetailedError
+                ? '✗'
+                : detailed?.database.response_time_ms != null
+                  ? `${detailed.database.response_time_ms.toFixed(1)}ms`
+                  : '—'}
             </span>
-            {detailed?.database && <StatusDot status={detailed.database.status} />}
+            {isDetailedError ? (
+              <StatusDot status="critical" />
+            ) : (
+              detailed?.database && <StatusDot status={detailed.database.status} />
+            )}
           </div>
 
           {/* Redis Latency */}
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-slate-500">Redis:</span>
             <span className="text-xs text-slate-300 tabular-nums">
-              {detailed?.cache.response_time_ms != null
-                ? `${detailed.cache.response_time_ms.toFixed(1)}ms`
-                : '—'}
+              {isDetailedError
+                ? '✗'
+                : detailed?.cache.response_time_ms != null
+                  ? `${detailed.cache.response_time_ms.toFixed(1)}ms`
+                  : '—'}
             </span>
-            {detailed?.cache && <StatusDot status={detailed.cache.status} />}
+            {isDetailedError ? (
+              <StatusDot status="critical" />
+            ) : (
+              detailed?.cache && <StatusDot status={detailed.cache.status} />
+            )}
           </div>
 
           {/* CPU */}

@@ -14,7 +14,7 @@ from typing import TypedDict
 logger = logging.getLogger(__name__)
 
 _FuncNode = ast.FunctionDef | ast.AsyncFunctionDef
-_NESTING_TYPES = (ast.If, ast.For, ast.While, ast.With, ast.Try, ast.Match)
+_NESTING_TYPES = (ast.If, ast.For, ast.While, ast.With, ast.Try, ast.Match, ast.AsyncFor, ast.AsyncWith)
 
 
 class FunctionEntry(TypedDict):
