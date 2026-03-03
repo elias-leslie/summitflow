@@ -19,6 +19,7 @@ from ..lib.checkpoint import (
 from ..output import output_error, output_warning
 from .done_git import git_stash_pop, git_stash_push, is_working_tree_clean
 from .done_memory import report_task_outcome
+from .done_qa import run_qa_gate
 from .done_subtask import auto_close_subtasks
 from .done_validators import parse_db_error
 
@@ -183,7 +184,23 @@ def _perform_completion(
             )
             raise typer.Exit(1)
 
+    # QA gate — lint + tests must pass before merge
+    raw_wt = snapshot_info.get("worktree_path")
+    wt_path = str(raw_wt) if raw_wt is not None else None
+    if wt_path:
+        passed, qa_output = run_qa_gate(wt_path)
+        if not passed:
+            output_error(f"QA gate failed:\n{qa_output}")
+            raise typer.Exit(1)
+
+    # Detect frontend changes before merge (while branch still exists)
+    has_frontend_changes = _has_frontend_changes(snapshot_info)
+
     merge_and_update_status(client, task_id, project_id)
+
+    # Post-merge: trigger async site health check if frontend changed
+    if has_frontend_changes and project_id:
+        _trigger_site_health_check(project_id, task_id)
 
     claimed_at = snapshot_info.get("created_at") if snapshot_info else None
     report_task_outcome(
@@ -194,6 +211,45 @@ def _perform_completion(
     )
 
     remove_snapshot(task_id, project_id=project_id)
+
+
+def _has_frontend_changes(snapshot_info: dict[str, str | int | None]) -> bool:
+    """Check if the task branch has frontend file changes (.tsx/.ts/.css/.js/.html)."""
+    raw_wt = snapshot_info.get("worktree_path")
+    if not raw_wt:
+        return False
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--name-only", "main...HEAD"],
+            cwd=str(raw_wt),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            return False
+        frontend_exts = (".tsx", ".ts", ".css", ".js", ".html")
+        return any(
+            line.strip().endswith(frontend_exts)
+            for line in result.stdout.splitlines()
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return False
+
+
+def _trigger_site_health_check(project_id: str, task_id: str) -> None:
+    """Fire-and-forget site health check for the affected project."""
+    try:
+        from .memory_api import agent_hub_request
+
+        agent_hub_request(
+            "POST",
+            "/api/site-health-check/trigger",
+            json={"project_id": project_id, "task_id": task_id},
+            tool_name="st done",
+        )
+    except Exception:
+        pass  # Never block completion on health check trigger failure
 
 
 def _validate_snapshot(task_id: str) -> dict[str, str | int | None]:
