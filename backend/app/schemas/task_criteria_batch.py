@@ -1,7 +1,8 @@
 """Acceptance criteria batch operation schemas."""
 
-from backend.app.schemas.task_criteria_request import CreateTaskCriterionRequest
 from pydantic import BaseModel
+
+from .task_criteria_request import CreateTaskCriterionRequest
 
 
 class BatchTaskCriterionCreate(CreateTaskCriterionRequest):
