@@ -46,7 +46,7 @@ from .task_criteria import (
     CreateTaskCriterionRequest,
     CriteriaValidateRequest,
     CriteriaValidateResponse,
-    CriterionFailure,
+    CriterionValidationResult,
     UpdateTaskCriterionRequest,
     VerifyTaskCriterionRequest,
 )
@@ -120,7 +120,7 @@ __all__ = [
     "CreateTaskCriterionRequest",
     "CriteriaValidateRequest",
     "CriteriaValidateResponse",
-    "CriterionFailure",
+    "CriterionValidationResult",
     # Dependencies
     "DependencyCreate",
     "DependencyResponse",

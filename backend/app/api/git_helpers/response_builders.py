@@ -45,5 +45,5 @@ def aggregate_sync_results(results: list[SyncResult]) -> dict[str, int]:
     counts: dict[str, int] = {"success": 0, "failed": 0, "skipped": 0}
     for result in results:
         bucket = _classify_sync_status(result.status)
-        counts[bucket] = counts.get(bucket, 0) + 1
+        counts[bucket] += 1
     return counts

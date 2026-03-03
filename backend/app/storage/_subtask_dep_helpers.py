@@ -110,9 +110,12 @@ def kahn_sort(
                 queue.append(dep)
 
     if len(result) != len(all_subtasks):
+        # Compute remaining unprocessed nodes (those still with in_degree > 0)
+        cycle_path = [s for s in all_subtasks if in_degree[s] > 0]
         raise CycleError(
             f"Cycle detected in task {task_id}: "
-            f"processed {len(result)}/{len(all_subtasks)} subtasks"
+            f"processed {len(result)}/{len(all_subtasks)} subtasks",
+            cycle_path=cycle_path
         )
 
     return result

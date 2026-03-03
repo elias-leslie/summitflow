@@ -76,19 +76,28 @@ def _create_schema_task_for_violation(
         return False
 
     tier = 2 if violation_type == "god_table" else 1
-    task_id, _ = create_schema_task(
-        project_id=project_id,
-        table_name=table_name,
-        violation_type=violation_type,
-        detail=detail,
-        severity=severity,
-        metadata={"column_count": column_count},
-        steps=get_violation_steps(violation_type, table_name, detail),
-        title=get_violation_title(violation_type, table_name),
-        objective=get_violation_objective(violation_type, table_name, detail),
-        done_when=get_violation_done_when(violation_type, table_name),
-        tier=tier,
-    )
+    try:
+        task_id, _ = create_schema_task(
+            project_id=project_id,
+            table_name=table_name,
+            violation_type=violation_type,
+            detail=detail,
+            severity=severity,
+            metadata={"column_count": column_count},
+            steps=get_violation_steps(violation_type, table_name, detail),
+            title=get_violation_title(violation_type, table_name),
+            objective=get_violation_objective(violation_type, table_name, detail),
+            done_when=get_violation_done_when(violation_type, table_name),
+            tier=tier,
+        )
+    except Exception:
+        logger.exception(
+            "Failed to create schema task for project_id=%s table_name=%s violation_type=%s",
+            project_id,
+            table_name,
+            violation_type,
+        )
+        return False
     return bool(task_id)
 
 

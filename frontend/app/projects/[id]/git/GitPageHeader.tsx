@@ -37,6 +37,7 @@ export function GitPageHeader({
         <button
           onClick={onSync}
           disabled={isSyncing}
+          aria-busy={isSyncing}
           className="relative group flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-phosphor-600 to-phosphor-500 text-slate-900 font-semibold rounded-lg transition-all hover:shadow-[0_0_30px_rgba(0,245,255,0.4)] disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden"
         >
           {/* Shimmer effect */}

@@ -6,6 +6,9 @@ Wraps the CLI worktree library for use in background tasks.
 
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Protocol
+
 from ...logging_config import get_logger
 from .checkpoint import create_checkpoint_metadata, remove_checkpoint_metadata
 from .types import TaskWorktreeInfo
@@ -13,11 +16,22 @@ from .types import TaskWorktreeInfo
 logger = get_logger(__name__)
 
 
-def _to_task_worktree_info(info: object, task_id: str, base_branch: str, is_active: bool) -> TaskWorktreeInfo:  # type: ignore[misc]
+class WorktreeInfoLike(Protocol):
+    """Protocol for worktree info objects from CLI library."""
+
+    path: Path
+    branch: str
+    base_branch: str
+    is_active: bool
+
+
+def _to_task_worktree_info(
+    info: WorktreeInfoLike, task_id: str, base_branch: str, is_active: bool
+) -> TaskWorktreeInfo:
     """Build a TaskWorktreeInfo from a cli worktree info object."""
     return TaskWorktreeInfo(
-        path=info.path,  # type: ignore[union-attr]
-        branch=info.branch,  # type: ignore[union-attr]
+        path=info.path,
+        branch=info.branch,
         task_id=task_id,
         base_branch=base_branch,
         is_active=is_active,

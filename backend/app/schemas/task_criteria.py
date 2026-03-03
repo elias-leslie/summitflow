@@ -18,7 +18,7 @@ from .task_criteria_request import (
 from .task_criteria_validate import (
     CriteriaValidateRequest,
     CriteriaValidateResponse,
-    CriterionFailure,
+    CriterionValidationResult,
 )
 
 __all__ = [
@@ -30,7 +30,7 @@ __all__ = [
     "CreateTaskCriterionRequest",
     "CriteriaValidateRequest",
     "CriteriaValidateResponse",
-    "CriterionFailure",
+    "CriterionValidationResult",
     "UpdateTaskCriterionRequest",
     "VerifyTaskCriterionRequest",
 ]

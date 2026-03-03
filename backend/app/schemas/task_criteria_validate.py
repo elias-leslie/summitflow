@@ -12,8 +12,8 @@ class CriteriaValidateRequest(BaseModel):
     criteria: list[AcceptanceCriterion] = Field(description="Criteria to validate")
 
 
-class CriterionFailure(BaseModel):
-    """Single criterion validation failure."""
+class CriterionValidationResult(BaseModel):
+    """Single criterion validation result."""
 
     criterion_id: str
     valid: bool
@@ -25,4 +25,4 @@ class CriteriaValidateResponse(BaseModel):
     """Response model for criteria validation."""
 
     valid: bool
-    failures: list[CriterionFailure] = Field(default_factory=list)
+    failures: list[CriterionValidationResult] = Field(default_factory=list)

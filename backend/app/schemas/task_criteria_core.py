@@ -11,10 +11,10 @@ class AcceptanceCriterion(BaseModel):
     """Acceptance criterion for AI agent reliability.
 
     Each criterion must be specific, measurable, and verifiable.
-    The id must match pattern ac-NNN (e.g., ac-001, ac-012).
+    The id must match pattern ac-NNN... with 3 or more digits (e.g., ac-001, ac-0001).
     """
 
-    id: str = Field(description="Unique ID in format ac-NNN")
+    id: str = Field(description="Unique ID in format ac-NNN... (3 or more digits)")
     criterion: str = Field(min_length=10, description="Specific measurable condition")
     category: Literal["performance", "correctness", "security", "quality"] = Field(
         default="correctness", description="Category of the criterion"
@@ -38,9 +38,9 @@ class AcceptanceCriterion(BaseModel):
     @field_validator("id")
     @classmethod
     def validate_id_format(cls, v: str) -> str:
-        """Validate that id matches pattern ac-NNN."""
-        if not re.match(r"^ac-\d{3}$", v):
-            raise ValueError("id must match pattern ac-NNN (e.g., ac-001)")
+        """Validate that id matches pattern ac-NNN... (3 or more digits)."""
+        if not re.match(r"^ac-\d{3,}$", v):
+            raise ValueError("id must match pattern ac-NNN... with 3 or more digits (e.g., ac-001, ac-0001)")
         return v
 
     @field_validator("criterion")

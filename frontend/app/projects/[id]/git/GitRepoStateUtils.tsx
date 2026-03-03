@@ -62,7 +62,9 @@ export function getStateHexColor(stateColor: string): string {
       return '#fbbf24'
     case 'sunset':
       return '#ff6600'
+    case 'slate':
+      return '#64748b'
     default:
-      return '#ff6600'
+      return '#64748b'
   }
 }

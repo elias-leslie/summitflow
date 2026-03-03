@@ -2,7 +2,7 @@
  * ArchitectureRow - Row content renderer for architecture entries
  *
  * Displays module name, scan scope, violation counts by type,
- * files analyzed, and health status.
+ * files with violations, and health status.
  */
 
 import { AlertTriangle, Code2, Copy, FileCode, Layers } from 'lucide-react'
@@ -123,7 +123,7 @@ export function ArchitectureRow({ entry }: ArchitectureRowProps) {
         )}
       </ColumnValue>
 
-      {/* Files analyzed */}
+      {/* Files with violations */}
       <ColumnValue width="60px" align="center">
         {filesAnalyzed > 0 ? (
           <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-500/15 text-slate-400 border border-slate-500/25">

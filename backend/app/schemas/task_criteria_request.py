@@ -10,7 +10,7 @@ class CreateTaskCriterionRequest(BaseModel):
 
     criterion: str = Field(min_length=10, description="Criterion text")
     category: Literal["performance", "correctness", "security", "quality"] = "correctness"
-    measurement: str = "test"
+    measurement: Literal["test", "metric", "tool", "manual"] = "test"
     threshold: str | None = None
     verify_by: Literal["test", "opus", "human", "agent"] = "test"
 

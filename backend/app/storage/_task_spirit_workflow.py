@@ -43,7 +43,7 @@ def approve_plan(
                 plan_status = 'approved',
                 plan_approved_at = %s,
                 plan_approved_by = %s,
-                plan_history = plan_history || %s::jsonb,
+                plan_history = COALESCE(plan_history, '[]'::jsonb) || %s::jsonb,
                 updated_at = NOW()
             WHERE task_id = %s
             RETURNING *
@@ -85,7 +85,7 @@ def reject_plan(
             """
             UPDATE task_spirit SET
                 plan_status = 'rejected',
-                plan_history = plan_history || %s::jsonb,
+                plan_history = COALESCE(plan_history, '[]'::jsonb) || %s::jsonb,
                 updated_at = NOW()
             WHERE task_id = %s
             RETURNING *

@@ -67,7 +67,7 @@ def _fallback_entry() -> ExplorerEntryCreate:
         path="architecture/root",
         name="codebase",
         health_status="healthy",
-        metadata={"scan_scope": "both", "violations": [], "violation_counts": dict(_ZERO_COUNTS), "files_with_violations": 0},
+        metadata=_build_dir_metadata("", []),
     )
 
 

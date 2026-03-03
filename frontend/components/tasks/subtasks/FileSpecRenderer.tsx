@@ -1,7 +1,7 @@
 'use client'
 
 import { FileEdit, FileMinus, FilePlus, FileText } from 'lucide-react'
-import { getSpecValue, type SpecRecord } from './SpecRendererTypes'
+import { getSpecTruthy, getSpecValue, type SpecRecord } from './SpecRendererTypes'
 
 /** Operation badge for file specs */
 function OperationBadge({ operation }: { operation: string }) {
@@ -61,9 +61,9 @@ export function FileSpecRenderer({ spec }: { spec: SpecRecord }) {
   const filePath = getSpecValue(spec, ['file', 'filepath', 'file_path', 'path', 'filename'])
   const operation =
     getSpecValue(spec, ['operation', 'action']) ||
-    (getSpecValue(spec, ['create']) ? 'create'
-      : getSpecValue(spec, ['modify']) ? 'modify'
-        : getSpecValue(spec, ['delete']) ? 'delete'
+    (getSpecTruthy(spec, ['create']) ? 'create'
+      : getSpecTruthy(spec, ['modify']) ? 'modify'
+        : getSpecTruthy(spec, ['delete']) ? 'delete'
           : '')
 
   const otherFields = Object.entries(spec).filter(

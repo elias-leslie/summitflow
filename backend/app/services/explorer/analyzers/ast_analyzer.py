@@ -14,7 +14,7 @@ from typing import TypedDict
 logger = logging.getLogger(__name__)
 
 _FuncNode = ast.FunctionDef | ast.AsyncFunctionDef
-_NESTING_TYPES = (ast.If, ast.For, ast.While, ast.With, ast.Try)
+_NESTING_TYPES = (ast.If, ast.For, ast.While, ast.With, ast.Try, ast.Match)
 
 
 class FunctionEntry(TypedDict):
@@ -65,7 +65,7 @@ def _has_docstring(node: _FuncNode | ast.ClassDef) -> bool:
 def _get_param_names(node: _FuncNode) -> list[str]:
     """Extract parameter names from a function definition."""
     args = node.args
-    params = [a.arg for a in args.args + args.posonlyargs + args.kwonlyargs]
+    params = [a.arg for a in args.posonlyargs + args.args + args.kwonlyargs]
     if args.vararg:
         params.append(f"*{args.vararg.arg}")
     if args.kwarg:

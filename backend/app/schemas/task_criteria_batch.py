@@ -1,18 +1,13 @@
 """Acceptance criteria batch operation schemas."""
 
-from typing import Any, Literal
+from backend.app.schemas.task_criteria_request import CreateTaskCriterionRequest
+from pydantic import BaseModel
 
-from pydantic import BaseModel, Field
 
-
-class BatchTaskCriterionCreate(BaseModel):
+class BatchTaskCriterionCreate(CreateTaskCriterionRequest):
     """A single criterion to create in batch for a task."""
 
-    criterion: str = Field(min_length=10, description="Criterion text")
-    category: Literal["performance", "correctness", "security", "quality"] = "correctness"
-    measurement: str = "test"
-    threshold: str | None = None
-    verify_by: Literal["test", "opus", "human", "agent"] = "test"
+    task_id: int
 
 
 class BatchTaskCriteriaRequest(BaseModel):
@@ -34,5 +29,5 @@ class BatchCriterionResult(BaseModel):
 class BatchTaskCriteriaResponse(BaseModel):
     """Response model for batch task criteria creation."""
 
-    created: list[dict[str, Any]]
+    created: list[dict[str, object]]
     errors: list[BatchCriterionResult]

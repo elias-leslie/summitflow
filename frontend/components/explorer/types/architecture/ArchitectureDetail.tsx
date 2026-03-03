@@ -102,7 +102,7 @@ export function ArchitectureDetail({ entry }: ArchitectureDetailProps) {
       <div className="grid grid-cols-3 gap-4">
         <div>
           <span className="text-xs text-slate-500 uppercase tracking-wide">
-            Files Analyzed
+            Affected Files
           </span>
           <p className="font-mono text-sm text-slate-300 mt-1">
             {filesAnalyzed}
