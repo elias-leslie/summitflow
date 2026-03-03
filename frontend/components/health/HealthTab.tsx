@@ -3,9 +3,11 @@
 import { Skeleton } from '@/components/ui/skeleton'
 import { AutonomousStatusBar } from './AutonomousStatusBar'
 import { FixPipelineCard } from './FixPipelineCard'
+import { InfraStatusBar } from './InfraStatusBar'
 import { NeedsAttentionCard } from './NeedsAttentionCard'
 import { PipelineHealthDashboard } from './PipelineHealthDashboard'
-import { ServicesStatusBar } from './ServicesStatusBar'
+import { QualityGateStatus } from './QualityGateStatus'
+import { RecentActivityCard } from './RecentActivityCard'
 import { useHealthData } from './useHealthData'
 import { usePipelineData } from './usePipelineData'
 
@@ -15,6 +17,7 @@ interface HealthTabProps {
 
 export function HealthTab({ projectId }: HealthTabProps) {
   const {
+    health,
     healthLoading,
     unfixedResults,
     metrics,
@@ -32,12 +35,18 @@ export function HealthTab({ projectId }: HealthTabProps) {
 
   return (
     <div className="space-y-6">
+      {/* Infrastructure Status Bar — system + DB/Redis health */}
+      <InfraStatusBar />
+
       {/* Autonomous Execution Status Bar */}
       {pipelineLoading ? (
         <Skeleton className="h-16 w-full" />
       ) : pipelineData ? (
         <AutonomousStatusBar autonomous={pipelineData.autonomous} />
       ) : null}
+
+      {/* Quality Gate Status — per-check pass/fail badges */}
+      <QualityGateStatus checks={health?.checks} />
 
       {/* Pipeline Health Dashboard */}
       {pipelineLoading ? (
@@ -54,7 +63,7 @@ export function HealthTab({ projectId }: HealthTabProps) {
         <PipelineHealthDashboard data={pipelineData} />
       ) : null}
 
-      {/* Quality Health Section (existing components) */}
+      {/* Quality Health Section */}
       <div className="grid grid-cols-2 gap-4">
         {/* Needs Attention */}
         <NeedsAttentionCard items={unfixedResults?.items ?? []} />
@@ -69,12 +78,8 @@ export function HealthTab({ projectId }: HealthTabProps) {
         />
       </div>
 
-      {/* Services Status Bar */}
-      {pipelineLoading ? (
-        <Skeleton className="h-12 w-full" />
-      ) : (
-        <ServicesStatusBar projectId={projectId} />
-      )}
+      {/* Recent Activity */}
+      <RecentActivityCard projectId={projectId} />
     </div>
   )
 }

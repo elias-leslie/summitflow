@@ -6,7 +6,19 @@ interface NeedsAttentionCardProps {
 }
 
 export function NeedsAttentionCard({ items }: NeedsAttentionCardProps) {
-  if (items.length === 0) return null
+  if (items.length === 0) {
+    return (
+      <div className="card rounded-xl p-4">
+        <h3 className="text-sm font-semibold text-slate-300 mb-3 flex items-center gap-2">
+          <span className="text-emerald-500">✓</span>
+          All Clear
+        </h3>
+        <p className="text-xs text-slate-500">
+          All quality checks passing — no issues need attention.
+        </p>
+      </div>
+    )
+  }
 
   return (
     <div className="card rounded-xl p-4">

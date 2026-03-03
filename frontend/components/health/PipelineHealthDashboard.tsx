@@ -49,39 +49,51 @@ export function PipelineHealthDashboard({ data }: PipelineHealthDashboardProps) 
           <CardTitle className="text-base">Task Distribution</CardTitle>
         </CardHeader>
         <CardContent>
-          {/* Horizontal stacked bar */}
-          <div className="mb-4">
-            <div className="flex h-4 rounded-full overflow-hidden bg-slate-800">
-              {taskStatuses.map((status) => {
-                if (status.count === 0 || totalTasks === 0) return null
-                const widthPercent = (status.count / totalTasks) * 100
-                return (
-                  <div
-                    key={status.label}
-                    className={status.color}
-                    style={{ width: `${widthPercent}%` }}
-                    title={`${status.label}: ${status.count}`}
-                  />
-                )
-              })}
+          {totalTasks === 0 ? (
+            <div className="flex flex-col items-center justify-center py-8 text-center">
+              <span className="text-slate-600 text-2xl mb-2">○</span>
+              <span className="text-sm text-slate-500">No tasks yet</span>
+              <span className="text-xs text-slate-600 mt-1">
+                Tasks will appear here as they are created
+              </span>
             </div>
-          </div>
-
-          {/* Status badges grid */}
-          <div className="grid grid-cols-3 gap-3">
-            {taskStatuses.map((status) => (
-              <div key={status.label} className="flex items-center justify-between">
-                <span className="text-xs text-slate-500">{status.label}</span>
-                <Badge variant={status.variant}>{status.count}</Badge>
+          ) : (
+            <>
+              {/* Horizontal stacked bar */}
+              <div className="mb-4">
+                <div className="flex h-4 rounded-full overflow-hidden bg-slate-800">
+                  {taskStatuses.map((status) => {
+                    if (status.count === 0) return null
+                    const widthPercent = (status.count / totalTasks) * 100
+                    return (
+                      <div
+                        key={status.label}
+                        className={status.color}
+                        style={{ width: `${widthPercent}%` }}
+                        title={`${status.label}: ${status.count}`}
+                      />
+                    )
+                  })}
+                </div>
               </div>
-            ))}
-          </div>
 
-          <div className="mt-3 pt-3 border-t border-slate-800 text-center">
-            <span className="text-xs text-slate-500">
-              Total: {totalTasks} tasks
-            </span>
-          </div>
+              {/* Status badges grid */}
+              <div className="grid grid-cols-3 gap-3">
+                {taskStatuses.map((status) => (
+                  <div key={status.label} className="flex items-center justify-between">
+                    <span className="text-xs text-slate-500">{status.label}</span>
+                    <Badge variant={status.variant}>{status.count}</Badge>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-3 pt-3 border-t border-slate-800 text-center">
+                <span className="text-xs text-slate-500">
+                  Total: {totalTasks} tasks
+                </span>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
 
@@ -120,40 +132,48 @@ export function PipelineHealthDashboard({ data }: PipelineHealthDashboardProps) 
             <CardTitle className="text-base">Self-Healing</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs text-slate-500">First Attempt Pass Rate</span>
-                <span className="text-sm font-semibold text-phosphor-400 tabular-nums">
-                  {formatPercent(self_healing.first_attempt_pass_rate)}
-                </span>
+            {totalTasks === 0 ? (
+              <div className="flex flex-col items-center justify-center py-4 text-center">
+                <span className="text-xs text-slate-500">No completed tasks to analyze</span>
               </div>
-              <Progress
-                value={self_healing.first_attempt_pass_rate * 100}
-                className="h-1.5"
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-500">Avg Retries</span>
-              <span className="text-sm font-semibold text-slate-300 tabular-nums">
-                {formatDecimal(self_healing.avg_self_fix_attempts)}
-              </span>
-            </div>
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs text-slate-500">Supervisor Escalation</span>
-                <span className="text-sm font-semibold text-amber-400 tabular-nums">
-                  {formatPercent(self_healing.supervisor_escalation_rate)}
-                </span>
-              </div>
-              <Progress
-                value={self_healing.supervisor_escalation_rate * 100}
-                className="h-1.5 bg-slate-800"
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-500">Model Escalations</span>
-              <Badge variant="rose">{self_healing.model_escalation_count}</Badge>
-            </div>
+            ) : (
+              <>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs text-slate-500">First Attempt Pass Rate</span>
+                    <span className="text-sm font-semibold text-phosphor-400 tabular-nums">
+                      {formatPercent(self_healing.first_attempt_pass_rate)}
+                    </span>
+                  </div>
+                  <Progress
+                    value={self_healing.first_attempt_pass_rate * 100}
+                    className="h-1.5"
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-slate-500">Avg Retries</span>
+                  <span className="text-sm font-semibold text-slate-300 tabular-nums">
+                    {formatDecimal(self_healing.avg_self_fix_attempts)}
+                  </span>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs text-slate-500">Supervisor Escalation</span>
+                    <span className="text-sm font-semibold text-amber-400 tabular-nums">
+                      {formatPercent(self_healing.supervisor_escalation_rate)}
+                    </span>
+                  </div>
+                  <Progress
+                    value={self_healing.supervisor_escalation_rate * 100}
+                    className="h-1.5 bg-slate-800"
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-slate-500">Model Escalations</span>
+                  <Badge variant="rose">{self_healing.model_escalation_count}</Badge>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
 
@@ -163,24 +183,32 @@ export function PipelineHealthDashboard({ data }: PipelineHealthDashboardProps) 
             <CardTitle className="text-base">Verification</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs text-slate-500">Step Pass Rate</span>
-                <span className="text-lg font-semibold text-phosphor-400 tabular-nums">
-                  {formatPercent(verification.step_pass_rate)}
-                </span>
+            {totalTasks === 0 ? (
+              <div className="flex flex-col items-center justify-center py-4 text-center">
+                <span className="text-xs text-slate-500">No completed tasks to analyze</span>
               </div>
-              <Progress
-                value={verification.step_pass_rate * 100}
-                className="h-1.5"
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-500">Avg Retries per Step</span>
-              <span className="text-lg font-semibold text-slate-300 tabular-nums">
-                {formatDecimal(verification.avg_retries_per_step)}
-              </span>
-            </div>
+            ) : (
+              <>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs text-slate-500">Step Pass Rate</span>
+                    <span className="text-lg font-semibold text-phosphor-400 tabular-nums">
+                      {formatPercent(verification.step_pass_rate)}
+                    </span>
+                  </div>
+                  <Progress
+                    value={verification.step_pass_rate * 100}
+                    className="h-1.5"
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-slate-500">Avg Retries per Step</span>
+                  <span className="text-lg font-semibold text-slate-300 tabular-nums">
+                    {formatDecimal(verification.avg_retries_per_step)}
+                  </span>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
 
