@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import mimetypes
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -138,7 +139,8 @@ def stream_complete(
     content_parts: list[str] = []
     last_data: dict[str, Any] = {}
     url = f"{agent_hub_url}/api/complete"
-    with httpx.Client(timeout=timeout) as client, client.stream("POST", url, json=payload, headers=headers) as response:
+    http_timeout = httpx.Timeout(connect=5.0, read=timeout, write=30.0, pool=30.0)
+    with httpx.Client(timeout=http_timeout) as client, client.stream("POST", url, json=payload, headers=headers) as response:
         if response.status_code >= 400:
             response.read()
             handle_error_response(response)
@@ -215,8 +217,6 @@ def call_complete(
         except httpx.ConnectError as e:
             last_err = e
             if attempt < max_retries:
-                import time
-
                 time.sleep(0.5 * attempt)
                 continue
             output_error(f"Cannot connect to Agent Hub at {agent_hub_url}")
