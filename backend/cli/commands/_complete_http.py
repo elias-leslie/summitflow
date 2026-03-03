@@ -199,20 +199,33 @@ def call_complete(
         session_id, thinking_level, trace_id, use_memory, execute_tools,
         max_turns, stream, include_roles, images, timeout_seconds=timeout,
     )
-    http_timeout = _scale_http_timeout(timeout, max_turns)
-    try:
-        if stream:
-            return stream_complete(agent_hub_url, headers, payload, http_timeout)
-        with httpx.Client(timeout=http_timeout) as client:
-            response = client.post(f"{agent_hub_url}/api/complete", json=payload, headers=headers)
-        if response.status_code >= 400:
-            handle_error_response(response)
-        return cast(dict[str, Any], response.json())
-    except httpx.ConnectError:
-        output_error(f"Cannot connect to Agent Hub at {agent_hub_url}")
-        raise typer.Exit(1) from None
-    except typer.Exit:
-        raise
-    except Exception as e:
-        output_error(f"Request failed: {e}")
-        raise typer.Exit(1) from None
+    read_timeout = _scale_http_timeout(timeout, max_turns)
+    http_timeout = httpx.Timeout(connect=5.0, read=read_timeout, write=30.0, pool=30.0)
+    max_retries = 2
+    last_err: Exception | None = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            if stream:
+                return stream_complete(agent_hub_url, headers, payload, read_timeout)
+            with httpx.Client(timeout=http_timeout) as client:
+                response = client.post(f"{agent_hub_url}/api/complete", json=payload, headers=headers)
+            if response.status_code >= 400:
+                handle_error_response(response)
+            return cast(dict[str, Any], response.json())
+        except httpx.ConnectError as e:
+            last_err = e
+            if attempt < max_retries:
+                import time
+
+                time.sleep(0.5 * attempt)
+                continue
+            output_error(f"Cannot connect to Agent Hub at {agent_hub_url}")
+            raise typer.Exit(1) from None
+        except typer.Exit:
+            raise
+        except Exception as e:
+            output_error(f"Request failed: {e}")
+            raise typer.Exit(1) from None
+    # Should not reach here, but handle for safety
+    output_error(f"Cannot connect to Agent Hub at {agent_hub_url}: {last_err}")
+    raise typer.Exit(1) from None
