@@ -15,11 +15,11 @@ SCAN_STATUS_FAILED = "failed"
 BINARY_EXTENSIONS: frozenset[str] = frozenset(
     {
         ".pyc", ".pyo", ".so", ".dll", ".exe", ".bin",
-        ".png", ".jpg", ".jpeg", ".gif", ".ico", ".svg", ".webp",
+        ".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp",
         ".woff", ".woff2", ".ttf", ".eot",
         ".mp3", ".mp4", ".wav", ".ogg", ".webm",
         ".pdf", ".zip", ".tar", ".gz", ".bz2", ".xz", ".7z",
-        ".lock", ".sqlite", ".db",
+        ".sqlite", ".db",
     }
 )
 
@@ -48,6 +48,7 @@ EXTENSION_TO_LANGUAGE: dict[str, str] = {
     ".h": "cpp",
     ".hpp": "cpp",
     ".xml": "xml",
+    ".svg": "xml",
     ".php": "php",
     ".sh": "shell",
     ".bash": "shell",

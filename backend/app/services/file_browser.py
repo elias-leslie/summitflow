@@ -6,7 +6,6 @@ Uses SKIP_DIRS from explorer constants for consistent directory filtering.
 
 from __future__ import annotations
 
-import mimetypes
 from pathlib import Path
 
 from .explorer.constants import (
@@ -122,15 +121,18 @@ def read_file(root_path: str, relative_path: str) -> dict:
 
 
 def _is_binary(path: Path, extension: str) -> bool:
-    """Check if a file is binary using extension, MIME type, and content sampling."""
+    """Check if a file is binary using extension and content sampling.
+
+    Two-step detection:
+    1. Known binary extensions (images, executables, archives, fonts, etc.)
+    2. Content sampling — null byte in the first 8 KB reliably indicates binary.
+
+    MIME-type heuristics were removed because Python's mimetypes module
+    returns non-text MIME types for many text formats (.sql → application/sql,
+    .yaml → application/yaml, .rb → application/x-ruby, etc.), causing
+    false positives.
+    """
     if extension in BINARY_EXTENSIONS:
-        return True
-    mime_type, _ = mimetypes.guess_type(str(path))
-    if (
-        mime_type
-        and not mime_type.startswith(("text/", "application/json", "application/xml"))
-        and mime_type not in ("application/javascript", "application/typescript")
-    ):
         return True
     try:
         with open(path, "rb") as f:
