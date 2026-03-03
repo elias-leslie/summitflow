@@ -37,10 +37,12 @@ def _violation_to_dict(v: CodeViolation) -> dict[str, Any]:
 
 
 def _scan_scope(dir_path: str) -> str:
-    d = dir_path.lower()
-    if "backend" in d or "app" in d:
+    parts = {p.lower() for p in Path(dir_path).parts}
+    is_backend = bool(parts & {"backend", "app", "api"})
+    is_frontend = bool(parts & {"frontend", "components", "pages"})
+    if is_backend and not is_frontend:
         return "backend"
-    if "frontend" in d or "src" in d or "components" in d:
+    if is_frontend and not is_backend:
         return "frontend"
     return "both"
 
@@ -56,7 +58,7 @@ def _build_dir_metadata(dir_path: str, violations: list[CodeViolation]) -> dict[
         "scan_scope": _scan_scope(dir_path),
         "violations": dicts,
         "violation_counts": counts,
-        "files_analyzed": len({v.file_path for v in violations}),
+        "files_with_violations": len({v.file_path for v in violations}),
     }
 
 
@@ -65,7 +67,7 @@ def _fallback_entry() -> ExplorerEntryCreate:
         path="architecture/root",
         name="codebase",
         health_status="healthy",
-        metadata={"scan_scope": "both", "violations": [], "violation_counts": dict(_ZERO_COUNTS), "files_analyzed": 0},
+        metadata={"scan_scope": "both", "violations": [], "violation_counts": dict(_ZERO_COUNTS), "files_with_violations": 0},
     )
 
 

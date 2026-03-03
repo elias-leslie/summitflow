@@ -52,7 +52,7 @@ export function ArchitectureRow({ entry }: ArchitectureRowProps) {
     missing_infrastructure?: number
     duplicate_utility?: number
   } | undefined
-  const filesAnalyzed = (meta.files_analyzed as number) ?? 0
+  const filesAnalyzed = (meta.files_with_violations as number) ?? 0
   const healthStatus = (entry.healthStatus ?? 'unknown') as HealthStatus
 
   const summary = getViolationSummary(violationCounts || {})

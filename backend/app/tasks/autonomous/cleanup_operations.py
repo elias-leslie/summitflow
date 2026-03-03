@@ -33,8 +33,8 @@ def _cancel_stale_task(task: dict[str, Any], max_age_days: int) -> bool:
         )
         logger.info(f"Cancelled stale task {task_id}: {task.get('title', '')[:50]}")
         return True
-    except Exception as task_err:
-        logger.error(f"Failed to cancel task {task_id}: {task_err}")
+    except Exception:
+        logger.exception("Failed to cancel task %s", task_id)
         return False
 
 

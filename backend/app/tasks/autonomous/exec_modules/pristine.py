@@ -139,7 +139,9 @@ def pristine_self_heal(task_id: str, project_id: str) -> bool:
         if previous_error_count is not None and error_count > previous_error_count:
             logger.warning("pristine_self_heal_regression", project_id=project_id, previous=previous_error_count, current=error_count)
             _emit(task_id, "warning", f"Pristine self-heal regression detected ({previous_error_count}→{error_count} errors), reverting", project_id)
-            subprocess.run(["git", "checkout", "."], cwd=str(repo_path), capture_output=True, timeout=30)
+            revert = subprocess.run(["git", "checkout", "."], cwd=str(repo_path), capture_output=True, timeout=30)
+            if revert.returncode != 0:
+                logger.warning("pristine_self_heal_revert_failed", project_id=project_id, stderr=(revert.stderr or b"")[:500])
             return False
         previous_error_count = error_count
         if attempt < PRISTINE_SELF_HEAL_MAX_ATTEMPTS - 1:

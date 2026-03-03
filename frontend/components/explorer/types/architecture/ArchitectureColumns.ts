@@ -23,7 +23,7 @@ export const architectureColumns: ExplorerColumn<ExplorerEntry>[] = [
     align: 'center',
   },
   {
-    key: 'files_analyzed',
+    key: 'files_with_violations',
     label: 'Files',
     width: '60px',
     align: 'center',

@@ -8,6 +8,16 @@ export interface SpecRecord {
   [key: string]: unknown
 }
 
+/** Case-insensitive lookup of a spec property by candidate keys. */
+export function getSpecValue(spec: SpecRecord, candidates: string[]): string {
+  const specKeys = Object.keys(spec)
+  for (const candidate of candidates) {
+    const found = specKeys.find((k) => k.toLowerCase() === candidate)
+    if (found && typeof spec[found] === 'string') return spec[found] as string
+  }
+  return ''
+}
+
 /** Check if a value looks like a file path */
 export function looksLikeFilePath(value: unknown): boolean {
   if (typeof value !== 'string') return false
@@ -33,7 +43,7 @@ export function detectSpecType(spec: SpecRecord): SpecType {
         'delete',
       ].includes(k),
     ) ||
-    (keys.includes('path') && looksLikeFilePath(spec.path || spec.Path))
+    (keys.includes('path') && looksLikeFilePath(getSpecValue(spec, ['path'])))
   ) {
     return 'file'
   }

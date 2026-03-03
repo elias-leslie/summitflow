@@ -19,12 +19,10 @@ export function GitRepoCard({ repo }: GitRepoCardProps) {
 
   return (
     <div
-      className={`
-        relative group card p-5 transition-all duration-300
-        hover:shadow-${stateColor === 'phosphor' ? '[0_0_25px_rgba(0,245,255,0.15)]' : stateColor === 'outrun' ? '[0_0_25px_rgba(255,0,102,0.15)]' : '[0_0_25px_rgba(255,102,0,0.15)]'}
-        border-l-2 border-l-${stateColor}-500
-      `}
+      className="relative group card p-5 transition-all duration-300 border-l-2"
       style={{ borderLeftColor: hexColor }}
+      onMouseEnter={(e) => { e.currentTarget.style.boxShadow = `0 0 25px ${hexColor}26` }}
+      onMouseLeave={(e) => { e.currentTarget.style.boxShadow = 'none' }}
     >
       {/* Glow orb */}
       <div

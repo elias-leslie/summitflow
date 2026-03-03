@@ -71,7 +71,7 @@ export function ArchitectureDetail({ entry }: ArchitectureDetailProps) {
     missing_infrastructure?: number
     duplicate_utility?: number
   } | undefined
-  const filesAnalyzed = (meta.files_analyzed as number) ?? 0
+  const filesAnalyzed = (meta.files_with_violations as number) ?? 0
   const scanDurationMs = (meta.last_scan_duration_ms as number) ?? 0
 
   const totalViolations =

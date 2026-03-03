@@ -126,11 +126,9 @@ def parse_python_file(file_path: str | Path) -> ParseResult:
     functions: list[FunctionEntry] = []
     classes: list[ClassEntry] = []
 
-    for node in ast.walk(tree):
+    for node in tree.body:
         if isinstance(node, _FuncNode):
-            parent = getattr(node, "_parent", None)
-            if parent is None or not isinstance(parent, ast.ClassDef):
-                functions.append(_make_function_entry(node))
+            functions.append(_make_function_entry(node))
         elif isinstance(node, ast.ClassDef):
             classes.append(_make_class_entry(node))
 

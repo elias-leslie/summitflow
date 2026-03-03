@@ -1,6 +1,7 @@
 'use client'
 
 import { useSystemStats } from '@/hooks/useSystemStats'
+import { API_PATHS, buildApiUrl } from '@/lib/api-config'
 import { useQuery } from '@tanstack/react-query'
 
 interface ComponentHealth {
@@ -60,7 +61,7 @@ export function InfraStatusBar() {
   const { data: detailed } = useQuery({
     queryKey: ['health-detailed'],
     queryFn: async () => {
-      const res = await fetch('/api/health/detailed')
+      const res = await fetch(buildApiUrl(API_PATHS.HEALTH_DETAILED))
       if (!res.ok) throw new Error('Failed to fetch detailed health')
       return res.json() as Promise<DetailedHealth>
     },

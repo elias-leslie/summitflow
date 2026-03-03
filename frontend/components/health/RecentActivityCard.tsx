@@ -43,11 +43,27 @@ function ActivityRow({ event }: { event: ActivityEvent }) {
 }
 
 export function RecentActivityCard({ projectId }: RecentActivityCardProps) {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ['activity', projectId],
     queryFn: () => fetchActivity({ project_id: projectId, limit: 8 }),
     refetchInterval: 30000,
   })
+
+  if (isError) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Recent Activity</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col items-center justify-center py-6 text-center">
+            <span className="text-amber-500 text-lg mb-1">!</span>
+            <span className="text-xs text-slate-500">Failed to load activity</span>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
 
   if (isLoading) {
     return (

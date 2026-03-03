@@ -1,7 +1,7 @@
 'use client'
 
 import { MessageSquareQuote } from 'lucide-react'
-import type { SpecRecord } from './SpecRendererTypes'
+import { getSpecValue, type SpecRecord } from './SpecRendererTypes'
 
 /** Highlight template variables in text ({{var}} or {var} patterns) */
 function HighlightTemplateVars({ text }: { text: string }) {
@@ -34,9 +34,7 @@ export function PromptSpecRenderer({ spec }: { spec: SpecRecord }) {
     'user',
     'assistant',
   ]
-  const mainPrompt = promptFields
-    .map((f) => spec[f])
-    .find((v) => typeof v === 'string') as string | undefined
+  const mainPrompt = getSpecValue(spec, promptFields) || undefined
 
   const otherFields = Object.entries(spec).filter(
     ([key]) => !promptFields.includes(key.toLowerCase()),

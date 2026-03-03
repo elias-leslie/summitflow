@@ -83,6 +83,11 @@ export function buildApiUrl(path: string): string {
   return `${getApiBaseUrl()}${path}`
 }
 
+/** Centralized API endpoint paths (relative — resolved via buildApiUrl at call site). */
+export const API_PATHS = {
+  HEALTH_DETAILED: '/api/health/detailed',
+} as const
+
 /**
  * Get Agent Hub voice WebSocket URL.
  * Returns null server-side (voice is client-only).

@@ -60,6 +60,8 @@ export function getStateHexColor(stateColor: string): string {
       return '#ff0066'
     case 'amber':
       return '#fbbf24'
+    case 'sunset':
+      return '#ff6600'
     default:
       return '#ff6600'
   }

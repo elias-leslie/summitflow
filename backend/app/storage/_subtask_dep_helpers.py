@@ -5,6 +5,7 @@ Shared types, row conversion, DB query helpers, and topological sort logic.
 
 from __future__ import annotations
 
+from collections import deque
 from typing import Any
 
 from psycopg.rows import TupleRow
@@ -97,11 +98,11 @@ def kahn_sort(
     Raises:
         CycleError: If a cycle is detected
     """
-    queue = [s for s in all_subtasks if in_degree[s] == 0]
+    queue = deque(s for s in all_subtasks if in_degree[s] == 0)
     result: list[str] = []
 
     while queue:
-        current = queue.pop(0)
+        current = queue.popleft()
         result.append(current)
         for dep in dependents[current]:
             in_degree[dep] -= 1
@@ -119,6 +120,8 @@ def kahn_sort(
 
 def fetch_inserted_deps(cur: Any, dependencies: list[tuple[str, str]]) -> list[dict[str, Any]]:
     """Fetch dependency records matching the given (subtask_id, depends_on) pairs."""
+    if not dependencies:
+        return []
     placeholders = ", ".join("(%s, %s)" for _ in dependencies)
     flat_values = [v for pair in dependencies for v in pair]
     cur.execute(

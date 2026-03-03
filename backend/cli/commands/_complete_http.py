@@ -202,21 +202,19 @@ def call_complete(
         max_turns, stream, include_roles, images, timeout_seconds=timeout,
     )
     read_timeout = _scale_http_timeout(timeout, max_turns)
+    if stream:
+        return stream_complete(agent_hub_url, headers, payload, read_timeout)
     http_timeout = httpx.Timeout(connect=5.0, read=read_timeout, write=30.0, pool=30.0)
-    max_retries = 2
-    last_err: Exception | None = None
-    for attempt in range(1, max_retries + 1):
+    max_attempts = 2
+    for attempt in range(1, max_attempts + 1):
         try:
-            if stream:
-                return stream_complete(agent_hub_url, headers, payload, read_timeout)
             with httpx.Client(timeout=http_timeout) as client:
                 response = client.post(f"{agent_hub_url}/api/complete", json=payload, headers=headers)
             if response.status_code >= 400:
                 handle_error_response(response)
             return cast(dict[str, Any], response.json())
-        except httpx.ConnectError as e:
-            last_err = e
-            if attempt < max_retries:
+        except httpx.ConnectError:
+            if attempt < max_attempts:
                 time.sleep(0.5 * attempt)
                 continue
             output_error(f"Cannot connect to Agent Hub at {agent_hub_url}")
@@ -226,6 +224,4 @@ def call_complete(
         except Exception as e:
             output_error(f"Request failed: {e}")
             raise typer.Exit(1) from None
-    # Should not reach here, but handle for safety
-    output_error(f"Cannot connect to Agent Hub at {agent_hub_url}: {last_err}")
-    raise typer.Exit(1) from None
+    raise AssertionError("unreachable")  # all loop iterations exit via return or raise
