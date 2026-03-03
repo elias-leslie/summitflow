@@ -48,14 +48,14 @@ def complete_default(
     message: Annotated[str | None, _Arg(help="Message to send")] = None,
     agent: Annotated[str | None, _Opt("--agent", "-a", help="Agent slug")] = None,
     model: Annotated[str | None, _Opt("--model", "-M", help="Model override (e.g. cloudflare/qwen2.5-coder-32b). Uses @mention injection to override agent's default model.")] = None,
-    project: Annotated[str, _Opt("--project", "-p", help="Project ID")] = "st-cli",
+    project: Annotated[str | None, _Opt("--project", "-p", help="Project ID")] = None,
     source: Annotated[str, _Opt("--source", "-s", help="Source client")] = "st-cli",
     session_id: Annotated[str | None, _Opt("--session", "-S", help="Continue existing session")] = None,
     memory: Annotated[bool, _Opt("--memory", "-m", help="Enable memory injection")] = True,
     memory_group: Annotated[str | None, _Opt("--memory-group", "-g", help="Memory group ID")] = None,
     execute_tools: Annotated[bool, _Opt("--execute-tools", "-x", help="Execute tools")] = False,
     working_dir: Annotated[str | None, _Opt("--working-dir", "-w", help="Working dir")] = None,
-    max_turns: Annotated[int, _Opt("--max-turns", "-n", help="Max agentic turns", min=1, max=50)] = 1,
+    max_turns: Annotated[int, _Opt("--max-turns", "-n", help="Max agentic turns", min=1, max=200)] = 1,
     thinking_level: Annotated[str | None, _Opt("--thinking", help="Thinking level: minimal|low|medium|high|ultrathink")] = None,
     skip_cache: Annotated[bool, _Opt("--skip-cache", help="Bypass response cache")] = False,
     stream: Annotated[bool, _Opt("--stream", help="Stream response via SSE")] = False,
@@ -86,6 +86,11 @@ def complete_default(
     if model:
         resolved_message = f"@{model} {resolved_message}"
     roles = [r.strip() for r in include_roles.split(",")] if include_roles else None
+    if not project:
+        from ..config import get_config_optional
+
+        cfg = get_config_optional()
+        project = cfg.project_id or "st-cli"
     result = call_complete(
         agent, resolved_message, project, source, memory, memory_group,
         execute_tools, working_dir, timeout, skip_cache, session_id,
