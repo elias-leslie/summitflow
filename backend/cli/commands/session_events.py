@@ -26,8 +26,6 @@ MSG_NO_SESSION_EVENTS = "No events found for this session."
 _HELP_TASK = "Task ID (auto-resolves linked Agent Hub sessions)"
 _HELP_EVENT_TYPE = "Filter by event type (tool_use, tool_result, user_message, assistant_message, thinking, memory_inject, error)"
 
-app = typer.Typer(help="Agent Hub session events (observability)")
-
 
 def _handle_task_events(
     task_id: str, event_type: str | None, turn: int | None,
@@ -74,12 +72,10 @@ def _handle_session_events(
     display_events(events, total, max_turn, f"Session: {session_id}", event_type, turn, page, verbose)
 
 
-@app.callback(invoke_without_command=True)
 def show_events(
-    ctx: typer.Context,
     session_id: Annotated[str | None, typer.Argument(help="Session ID to view")] = None,
     task: Annotated[str | None, typer.Option("--task", "-T", help=_HELP_TASK)] = None,
-    event_type: Annotated[str | None, typer.Option("-t", "--type", help=_HELP_EVENT_TYPE)] = None,
+    event_type: Annotated[str | None, typer.Option("--type", "-t", help=_HELP_EVENT_TYPE)] = None,
     turn: Annotated[int | None, typer.Option("--turn", help="Filter by turn number")] = None,
     follow: Annotated[bool, typer.Option("-f", "--follow", help="Follow events in real-time (poll every 2s)")] = False,
     page: Annotated[int, typer.Option("--page", help="Page number")] = 1,
@@ -93,13 +89,11 @@ def show_events(
     Use --task to auto-resolve sessions linked to a SummitFlow task.
     Use -f to follow events in real-time during autonomous execution.
     """
-    if ctx.invoked_subcommand is not None:
-        return
     if task:
         task_id = require_task_id(task)
         _handle_task_events(task_id, event_type, turn, follow, page, page_size, raw, verbose)
         return
     if not session_id:
-        typer.echo(ctx.get_help())
-        return
+        typer.echo("Provide a session ID or use --task/-T <task-id>.")
+        raise typer.Exit(1)
     _handle_session_events(session_id, event_type, turn, follow, page, page_size, raw, verbose)
