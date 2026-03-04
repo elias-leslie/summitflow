@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 from typing import Any, cast
 
@@ -123,11 +122,13 @@ Description: {task.get("description", "No description")}"""
             temperature=0.3,
         )
 
-        json_match = re.search(r"\{.*\}", response.content, re.DOTALL)
-        if not json_match:
+        # Use raw_decode for balanced JSON extraction (handles nested braces)
+        decoder = json.JSONDecoder()
+        brace_idx = response.content.find("{")
+        if brace_idx == -1:
             return {"status": "error", "error": "Could not parse response"}
 
-        parsed = json.loads(json_match.group(0))
+        parsed, _ = decoder.raw_decode(response.content, brace_idx)
         return _build_review_result(parsed, "ui_review_low_confidence")
 
     except Exception as e:

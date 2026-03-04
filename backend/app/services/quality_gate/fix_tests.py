@@ -184,20 +184,26 @@ def _parse_test_fix_response(response_text: str) -> dict[str, Any]:
     json_match = re.search(r"```json\s*(.*?)\s*```", response_text, re.DOTALL)
     if json_match:
         json_str = json_match.group(1)
-    else:
-        # Try to find raw JSON object
-        json_match = re.search(r"\{.*\}", response_text, re.DOTALL)
-        if json_match:
-            json_str = json_match.group(0)
-        else:
+        try:
+            parsed: dict[str, Any] = json.loads(json_str)
+            return parsed
+        except json.JSONDecodeError as e:
             return {
                 "fix_type": "cannot_fix",
-                "reason": "Could not parse response format",
+                "reason": f"JSON parse error: {e}",
             }
 
+    # Try balanced JSON extraction via raw_decode (handles nested braces)
+    decoder = json.JSONDecoder()
+    brace_idx = response_text.find("{")
+    if brace_idx == -1:
+        return {
+            "fix_type": "cannot_fix",
+            "reason": "Could not parse response format",
+        }
     try:
-        parsed: dict[str, Any] = json.loads(json_str)
-        return parsed
+        parsed, _ = decoder.raw_decode(response_text, brace_idx)
+        return parsed  # type: ignore[return-value]
     except json.JSONDecodeError as e:
         return {
             "fix_type": "cannot_fix",
