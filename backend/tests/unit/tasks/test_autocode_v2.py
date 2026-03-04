@@ -180,6 +180,16 @@ class TestCrossAgentFallback:
         assert get_agent_for_subtask("bug-fix") == "debugger"
         assert get_agent_for_subtask("ui-design") == "ux-polisher"
 
+    def test_get_agent_for_subtask_new_types(self) -> None:
+        """New subtask types route to correct specialist agents."""
+        from app.tasks.autonomous.exec_modules.agent_routing import get_agent_for_subtask
+
+        assert get_agent_for_subtask("database") == "coder"
+        assert get_agent_for_subtask("image-gen") == "image-gen"
+        assert get_agent_for_subtask("game-design") == "coder"
+        assert get_agent_for_subtask("design-review") == "designer"
+        assert get_agent_for_subtask("exploration") == "explorer"
+
     def test_get_agent_for_subtask_falls_back_to_task_type(self) -> None:
         """Unknown subtask type falls back to task_type mapping."""
         from app.tasks.autonomous.exec_modules.agent_routing import get_agent_for_subtask

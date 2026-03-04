@@ -18,6 +18,11 @@ SUBTASK_TYPE_AGENT_MAP: dict[str, str] = {
     "performance": "optimizer",
     "config": "coder",
     "devops": "coder",
+    "database": "coder",
+    "image-gen": "image-gen",
+    "game-design": "coder",
+    "design-review": "designer",
+    "exploration": "explorer",
 }
 
 VALID_SUBTASK_TYPES: set[str] = set(SUBTASK_TYPE_AGENT_MAP.keys())
@@ -34,4 +39,9 @@ CROSS_AGENT_FALLBACK_MAP: dict[str, list[str]] = {
     "refactor": ["coder"],
     "config": ["debugger"],
     "devops": ["coder"],
+    "database": ["debugger"],
+    "image-gen": ["coder"],
+    "game-design": ["debugger", "coder"],
+    "design-review": ["ux-polisher", "coder"],
+    "exploration": ["coder"],
 }

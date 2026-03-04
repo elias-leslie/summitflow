@@ -126,6 +126,15 @@
             "type": "string",
             "description": "Grouping label (backend, frontend, commands, verification)"
           },
+          "subtask_type": {
+            "type": "string",
+            "description": "Agent routing type — determines which specialist agent executes this subtask",
+            "enum": [
+              "backend", "frontend", "ui-design", "refactor", "bug-fix",
+              "test", "performance", "config", "devops",
+              "database", "image-gen", "game-design", "design-review", "exploration"
+            ]
+          },
           "description": { "type": "string" },
           "steps": {
             "type": "array",
