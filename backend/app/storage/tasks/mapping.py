@@ -13,7 +13,7 @@ from .columns import EXPECTED_TASK_COLUMNS, EXPECTED_TASK_COLUMNS_WITH_SPIRIT
 
 
 def _build_task_dict(row: tuple[Any, ...]) -> dict[str, Any]:
-    """Build a task dict from the first 42 columns of a database row."""
+    """Build a task dict from the first 38 columns of a database row."""
     return {
         "id": row[0], "project_id": row[1], "capability_id": row[2],
         "title": row[3], "description": row[4], "status": row[5],
@@ -27,18 +27,16 @@ def _build_task_dict(row: tuple[Any, ...]) -> dict[str, Any]:
         "verification_result": row[25], "raw_request": row[26],
         "enrichment_status": row[27], "enriched_by": row[28], "enriched_at": row[29],
         "complexity": row[30], "autonomous": row[31] or False,
-        "qa_status": row[32] or "pending", "qa_signoff_at": row[33],
-        "qa_signoff_by": row[34], "qa_issues": row[35] or [],
-        "agent_override": row[36], "agent_hub_session_ids": row[37] or [],
-        "labels": row[38] or [], "ai_review": row[39] if row[39] is not None else True,
-        "conflict_info": row[40], "merge_sha": row[41],
+        "agent_override": row[32], "agent_hub_session_ids": row[33] or [],
+        "labels": row[34] or [], "ai_review": row[35] if row[35] is not None else True,
+        "conflict_info": row[36], "merge_sha": row[37],
     }
 
 
 def row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert a database row to a task dict.
 
-    Column order (42 columns):
+    Column order (38 columns):
         id, project_id, capability_id, title, description, status,
         error_message, branch_name, commits,
         total_sessions, total_tokens_used, created_at, started_at, completed_at,
@@ -47,8 +45,7 @@ def row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
         current_phase, verification_result,
         raw_request, enrichment_status, enriched_by, enriched_at,
         complexity, autonomous,
-        qa_status, qa_signoff_at, qa_signoff_by, qa_issues, agent_override,
-        agent_hub_session_ids, labels, ai_review, conflict_info, merge_sha
+        agent_override, agent_hub_session_ids, labels, ai_review, conflict_info, merge_sha
     """
     if row is None:
         raise ValueError("Row cannot be None")
@@ -60,11 +57,11 @@ def row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
 def row_to_dict_with_spirit(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert a database row with spirit fields to a task dict.
 
-    Column order (48 columns):
-        First 42 columns are standard task columns (see row_to_dict).
+    Column order (44 columns):
+        First 38 columns are standard task columns (see row_to_dict).
         Then 6 spirit columns:
-        42: objective, 43: spirit_anti, 44: decisions, 45: constraints,
-        46: done_when, 47: plan_status
+        38: objective, 39: spirit_anti, 40: decisions, 41: constraints,
+        42: done_when, 43: plan_status
     """
     if row is None:
         raise ValueError("Row cannot be None")
@@ -72,12 +69,12 @@ def row_to_dict_with_spirit(row: TupleRow | tuple[Any, ...] | None) -> dict[str,
         raise ValueError(f"Expected {EXPECTED_TASK_COLUMNS_WITH_SPIRIT} columns, got {len(row)}")
 
     task = _build_task_dict(row[:EXPECTED_TASK_COLUMNS])
-    task["objective"] = row[42]
-    task["spirit_anti"] = row[43]
-    task["decisions"] = row[44] if row[44] else []
-    task["constraints"] = row[45] if row[45] else []
-    task["done_when"] = row[46] if row[46] else []
-    task["plan_status"] = row[47]
+    task["objective"] = row[38]
+    task["spirit_anti"] = row[39]
+    task["decisions"] = row[40] if row[40] else []
+    task["constraints"] = row[41] if row[41] else []
+    task["done_when"] = row[42] if row[42] else []
+    task["plan_status"] = row[43]
     return task
 
 

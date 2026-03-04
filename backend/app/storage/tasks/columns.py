@@ -21,7 +21,7 @@ TASK_COLUMNS = """id, project_id, capability_id, title, description, status,
     current_phase, verification_result,
     raw_request, enrichment_status, enriched_by, enriched_at,
     complexity, autonomous,
-    qa_status, qa_signoff_at, qa_signoff_by, qa_issues, agent_override, agent_hub_session_ids,
+    agent_override, agent_hub_session_ids,
     labels, ai_review, conflict_info, merge_sha"""
 
 # Aliased version for JOINs (prefixed with t.)
@@ -33,10 +33,10 @@ TASK_COLUMNS_ALIASED = """t.id, t.project_id, t.capability_id, t.title, t.descri
     t.current_phase, t.verification_result,
     t.raw_request, t.enrichment_status, t.enriched_by, t.enriched_at,
     t.complexity, t.autonomous,
-    t.qa_status, t.qa_signoff_at, t.qa_signoff_by, t.qa_issues, t.agent_override, t.agent_hub_session_ids,
+    t.agent_override, t.agent_hub_session_ids,
     t.labels, t.ai_review, t.conflict_info, t.merge_sha"""
 
-EXPECTED_TASK_COLUMNS = 42
+EXPECTED_TASK_COLUMNS = 38
 
 # Columns for queries that JOIN with task_spirit (46 columns total)
 # Adds 6 spirit fields: objective, spirit_anti, decisions, constraints, done_when, plan_status
@@ -48,8 +48,8 @@ TASK_COLUMNS_WITH_SPIRIT = """t.id, t.project_id, t.capability_id, t.title, t.de
     t.current_phase, t.verification_result,
     t.raw_request, t.enrichment_status, t.enriched_by, t.enriched_at,
     t.complexity, t.autonomous,
-    t.qa_status, t.qa_signoff_at, t.qa_signoff_by, t.qa_issues, t.agent_override, t.agent_hub_session_ids,
+    t.agent_override, t.agent_hub_session_ids,
     t.labels, t.ai_review, t.conflict_info, t.merge_sha,
     ts.objective, ts.spirit_anti, ts.decisions, ts.constraints, ts.done_when, ts.plan_status"""
 
-EXPECTED_TASK_COLUMNS_WITH_SPIRIT = 48
+EXPECTED_TASK_COLUMNS_WITH_SPIRIT = 44

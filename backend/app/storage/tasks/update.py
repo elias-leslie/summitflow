@@ -50,10 +50,6 @@ ALLOWED_UPDATE_FIELDS = {
     "enriched_at",
     "complexity",
     "autonomous",
-    "qa_status",
-    "qa_signoff_at",
-    "qa_signoff_by",
-    "qa_issues",
     "agent_override",
     "agent_hub_session_ids",
     "labels",
@@ -66,7 +62,7 @@ ALLOWED_UPDATE_FIELDS = {
 JSONB_DICT_FIELDS = {"review_result", "verification_result", "conflict_info"}
 
 # JSONB list fields
-JSONB_LIST_FIELDS = {"qa_issues"}
+JSONB_LIST_FIELDS: set[str] = set()
 
 
 def _build_set_clauses(

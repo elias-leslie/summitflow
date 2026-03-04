@@ -72,7 +72,6 @@ def build_export_data(
             "priority": task.get("priority", 2),
             "task_type": task.get("task_type", "task"),
             "complexity": task.get("complexity") or (spirit.get("complexity") if spirit else None),
-            "qa_status": task.get("qa_status", "pending"),
             "plan_status": spirit.get("plan_status") if spirit else "draft",
             "created_at": task["created_at"].isoformat() if task.get("created_at") else None,
         },

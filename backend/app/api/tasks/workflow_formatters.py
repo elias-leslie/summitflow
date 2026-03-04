@@ -86,10 +86,9 @@ def format_toon_context(
     ]
 
     plan_status = spirit.get("plan_status", "draft") if spirit else "draft"
-    qa_status = task.get("qa_status", "pending")
     subtask_lines, criteria_count, criteria_verified = _format_subtask_lines(subtasks)
     decisions_count = len(spirit.get("decisions", [])) if spirit else 0
-    lines.append(f"WORKFLOW:plan:{plan_status}|qa:{qa_status}|criteria:{criteria_count}|decisions:{decisions_count}")
+    lines.append(f"WORKFLOW:plan:{plan_status}|criteria:{criteria_count}|decisions:{decisions_count}")
 
     if spirit and spirit.get("objective"):
         lines.append(f"OBJECTIVE:{spirit['objective']}")
@@ -132,7 +131,6 @@ def build_context_json(
             "priority": task.get("priority", 2),
             "task_type": task.get("task_type", "task"),
             "complexity": task.get("complexity"),
-            "qa_status": task.get("qa_status", "pending"),
         },
         "spirit": spirit,
         "subtasks": subtasks,

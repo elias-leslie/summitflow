@@ -61,10 +61,6 @@ def _make_mock_task(task_id: str, **kwargs: Any) -> dict[str, Any]:
         "enriched_at": None,
         "complexity": kwargs.get("complexity"),
         "autonomous": False,
-        "qa_status": "pending",
-        "qa_signoff_at": None,
-        "qa_signoff_by": None,
-        "qa_issues": [],
         # Spirit fields
         "objective": None,
         "spirit_anti": None,

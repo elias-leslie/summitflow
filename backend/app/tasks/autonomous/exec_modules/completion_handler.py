@@ -70,7 +70,6 @@ def handle_successful_completion(
     intent_result = _run_intent_check(task_id, project_path, project_id)
     if intent_result and not intent_result.passed:
         task_store.update_task_status(task_id, "blocked")
-        task_store.update_task(task_id, qa_status="failed")
         summary = intent_result.summary or "Intent check failed"
         emit_error(task_id, f"Intent check failed: {summary}", project_id=project_id)
         notify_failure(task_id, project_id, f"Intent verification failed: {summary}")
