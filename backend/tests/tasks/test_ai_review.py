@@ -338,10 +338,10 @@ class TestSecurityEscalation:
         assert "breaking change" in ARCHITECTURE_KEYWORDS
 
 
-class TestEscalationToHumanReview:
-    """Tests for escalation to human review state."""
+class TestEscalationToSupervisorReview:
+    """Tests for escalation to supervisor review state."""
 
-    @patch("app.tasks.ai_review._notify_human_review_needed")
+    @patch("app.tasks.ai_review._notify_supervisor_review_needed")
     @patch("app.tasks.ai_review._should_escalate_for_security")
     @patch("app.tasks.ai_review._get_project_path")
     @patch("app.tasks.ai_review._run_pytest")

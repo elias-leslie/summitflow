@@ -1,6 +1,6 @@
 """Integration test for 3-2-1 escalation flow.
 
-Tests the escalation pattern: worker fails 3x -> supervisor guidance -> human escalation.
+Tests the escalation pattern: worker fails 3x -> supervisor guidance -> pipeline escalation.
 """
 
 from __future__ import annotations
@@ -36,18 +36,18 @@ class TestEscalationDetection:
         """First failures should not trigger escalation."""
         result = check_escalation_needed(failure_count=1, supervisor_attempts=0)
         assert result["escalate_to_supervisor"] is False
-        assert result["escalate_to_human"] is False
+        assert result["escalate_to_pipeline"] is False
 
     def test_escalate_to_supervisor_at_threshold(self) -> None:
         """3 worker failures should trigger supervisor escalation."""
         result = check_escalation_needed(failure_count=3, supervisor_attempts=0)
         assert result["escalate_to_supervisor"] is True
-        assert result["escalate_to_human"] is False
+        assert result["escalate_to_pipeline"] is False
 
-    def test_escalate_to_human_at_threshold(self) -> None:
-        """2 supervisor attempts should trigger human escalation."""
+    def test_escalate_to_pipeline_at_threshold(self) -> None:
+        """2 supervisor attempts should trigger pipeline escalation."""
         result = check_escalation_needed(failure_count=3, supervisor_attempts=2)
-        assert result["escalate_to_human"] is True
+        assert result["escalate_to_pipeline"] is True
 
 
 class TestSupervisorGuidance:

@@ -76,7 +76,7 @@ VALID_AGENT_MODELS = (
 # Number of worker retry attempts before escalating to supervisor
 QA_WORKER_STUCK_THRESHOLD = 3
 
-# Number of supervisor attempts before escalating to human
+# Number of supervisor attempts before full escalation
 QA_SUPERVISOR_STUCK_THRESHOLD = 2
 
 # =============================================================================
@@ -90,7 +90,7 @@ PRISTINE_SELF_HEAL_MAX_ATTEMPTS = 3
 # Number of self-fix attempts before requesting supervisor guidance
 SELF_HEAL_MAX_ATTEMPTS = 3
 
-# Number of supervisor-guided fix attempts before escalating to human
+# Number of supervisor-guided fix attempts before full escalation
 SUPERVISOR_GUIDED_MAX_ATTEMPTS = 3
 
 # Model to escalate to during supervisor-guided retry phase
@@ -99,7 +99,7 @@ ESCALATION_MODEL = CLAUDE_OPUS
 # Context window usage threshold (%) for starting a fresh session
 CONTEXT_FRESHNESS_THRESHOLD = 80
 
-# Total number of QA review attempts before escalation to human
+# Total number of QA review attempts before full escalation
 QA_ESCALATION_THRESHOLD = 5
 
 # Maximum number of QA review iterations before giving up

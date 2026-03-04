@@ -3,7 +3,7 @@
 Uses 3-2-1 escalation pattern:
 - WORKER (3 attempts): GEMINI_FLASH
 - SUPERVISOR (2 attempts): CLAUDE_SONNET with different strategy
-- HUMAN: Create blocking task for manual review
+- ESCALATE: Create blocking task for autonomous investigation
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import psycopg
 
 from ...logging_config import get_logger
 from ...storage import quality_check_results as qcr_store
-from .escalation import FixAttemptResult, FixResult, escalate_to_human, get_escalation_level
+from .escalation import FixAttemptResult, FixResult, escalate_to_supervisor, get_escalation_level
 from .fix_batch import fix_unfixed_errors  # Re-export for backward compatibility
 from .fix_execution import apply_fix, read_file_content
 from .fix_llm import execute_llm_fix, is_cannot_fix_response
@@ -93,10 +93,10 @@ def fix_lint_type_error(
 
     attempts = int(check_result.get("fix_attempts") or 0)
     level = get_escalation_level(attempts)
-    if level == "HUMAN":
-        logger.info("escalated_to_human", result_id=result_id, attempts=attempts)
-        escalate_to_human(conn, result_id)
-        return FixAttemptResult(outcome="escalated_human", cost_usd=0.0)
+    if level == "ESCALATE":
+        logger.info("escalated_to_supervisor", result_id=result_id, attempts=attempts)
+        escalate_to_supervisor(conn, result_id)
+        return FixAttemptResult(outcome="escalated_pipeline", cost_usd=0.0)
 
     file_data = _get_file_data(check_result, result_id)
     if not file_data:

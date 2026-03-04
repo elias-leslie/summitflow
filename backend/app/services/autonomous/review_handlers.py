@@ -98,11 +98,6 @@ def handle_rejection(
     merged_result = {**existing_result, **review_result}
     task_store.update_task(task_id, review_result=merged_result)
 
-    current_labels = task.get("labels", []) or []
-    if "needs-human-review" not in current_labels:
-        current_labels.append("needs-human-review")
-        task_store.update_task(task_id, labels=current_labels)
-
     error_msg = f"Rejected by Opus review: {review_result.get('summary', 'No summary')}"
     updated = task_store.update_task_status(task_id, "failed", error_message=error_msg)
 

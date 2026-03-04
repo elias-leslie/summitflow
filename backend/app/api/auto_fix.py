@@ -51,7 +51,7 @@ def _build_fix_message(results: dict) -> str:
     if total_attempts == 0:
         return "No unfixed issues to process"
     if results["escalated"] > 0:
-        return f"Fixed {results['fixed']}, {results['escalated']} escalated for human review"
+        return f"Fixed {results['fixed']}, {results['escalated']} escalated for investigation"
     if results["failed"] > 0:
         return f"Fixed {results['fixed']}, {results['failed']} still failing"
     return f"All {results['fixed']} issues fixed"

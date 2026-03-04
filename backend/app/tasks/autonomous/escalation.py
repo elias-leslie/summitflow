@@ -35,7 +35,7 @@ def check_escalation_needed(
         "escalate_to_supervisor": (
             failure_count >= WORKER_MAX_FAILURES and supervisor_attempts < SUPERVISOR_MAX_ATTEMPTS
         ),
-        "escalate_to_human": supervisor_attempts >= SUPERVISOR_MAX_ATTEMPTS,
+        "escalate_to_pipeline": supervisor_attempts >= SUPERVISOR_MAX_ATTEMPTS,
     }
 
 
@@ -73,7 +73,7 @@ def supervisor_guidance(
     Prefer get_supervisor_guidance_sync() for self-healing loop.
 
     Supervisor provides guidance, NOT implementation.
-    After 2 attempts, escalates to human review.
+    After 2 attempts, escalates to pipeline escalation.
     """
     logger.info(
         "Supervisor guidance requested",

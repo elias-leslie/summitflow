@@ -131,8 +131,6 @@ def check_exclusion(task: TaskDict) -> str | None:
 
     if "needs-tests" in labels:
         return "needs-tests label"
-    if "needs-human-review" in labels:
-        return "needs-human-review label"
     if is_standalone(task):
         return "standalone (no capability_id)"
     if has_standalone_label(task):

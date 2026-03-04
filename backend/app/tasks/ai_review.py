@@ -26,7 +26,7 @@ from .ai_review_models import ReviewResult, ReviewVerdict, RiskLevel
 from .ai_review_utils import (
     _auto_merge_pr,
     _get_project_path,
-    _notify_human_review_needed,
+    _notify_supervisor_review_needed,
     _should_escalate_for_security,
 )
 
@@ -40,7 +40,7 @@ def _handle_escalation(
     result = ReviewResult(verdict=ReviewVerdict.FAIL, summary=f"{escalation_type}: {reason}", checks=checks, issues=issues, risk_level=risk_level)
     task_store.update_task(task_id, review_result=result.to_dict())
     task_store.update_task_status(task_id, "blocked")
-    _notify_human_review_needed(task_id, reason)
+    _notify_supervisor_review_needed(task_id, reason)
     return result.to_dict()
 
 
@@ -108,7 +108,7 @@ def _apply_verdict(task_id: str, pr_url: str | None, verdict: ReviewVerdict, sum
         logger.info("review_needs_fix", task_id=task_id, issues=len(all_issues))
     else:
         task_store.update_task_status(task_id, "blocked")
-        _notify_human_review_needed(task_id, summary)
+        _notify_supervisor_review_needed(task_id, summary)
         logger.info("review_escalated", task_id=task_id)
 
 

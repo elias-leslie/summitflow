@@ -666,25 +666,24 @@ class TestEscalationE2E:
         """First failures should not trigger escalation."""
         result = check_escalation_needed(failure_count=1, supervisor_attempts=0)
         assert result["escalate_to_supervisor"] is False
-        assert result["escalate_to_human"] is False
+        assert result["escalate_to_pipeline"] is False
 
         result = check_escalation_needed(failure_count=2, supervisor_attempts=0)
         assert result["escalate_to_supervisor"] is False
-        assert result["escalate_to_human"] is False
+        assert result["escalate_to_pipeline"] is False
 
     def test_escalate_to_supervisor_at_3_failures(self) -> None:
         """3 worker failures should trigger supervisor escalation."""
         result = check_escalation_needed(failure_count=3, supervisor_attempts=0)
         assert result["escalate_to_supervisor"] is True
-        assert result["escalate_to_human"] is False
+        assert result["escalate_to_pipeline"] is False
 
-    def test_escalate_to_human_at_2_supervisor_attempts(self) -> None:
-        """2 supervisor attempts should trigger human escalation."""
+    def test_escalate_to_pipeline_at_2_supervisor_attempts(self) -> None:
+        """2 supervisor attempts should trigger pipeline escalation."""
         result = check_escalation_needed(failure_count=3, supervisor_attempts=2)
-        # Once human escalation is triggered, supervisor escalation is False
-        # (no point escalating to supervisor when human review is needed)
+        # Once pipeline escalation is triggered, supervisor escalation is False
         assert result["escalate_to_supervisor"] is False
-        assert result["escalate_to_human"] is True
+        assert result["escalate_to_pipeline"] is True
 
     def test_escalation_thresholds_match_321_pattern(self) -> None:
         """Verify 3-2-1 pattern: 3 worker, 2 supervisor, 1 human."""

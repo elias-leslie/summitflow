@@ -81,7 +81,7 @@ export function FixPipelineCard({
       </div>
       <div className="mt-3 pt-3 border-t border-slate-800 text-center">
         <span className="text-xs text-slate-500">
-          {autoFixRate}% resolved without human intervention
+          {autoFixRate}% resolved automatically
         </span>
       </div>
     </div>

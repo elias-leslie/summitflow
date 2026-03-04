@@ -53,8 +53,8 @@ def _should_escalate_for_security(
     return None
 
 
-def _notify_human_review_needed(task_id: str, reason: str) -> None:
-    """Create notification for human review needed.
+def _notify_supervisor_review_needed(task_id: str, reason: str) -> None:
+    """Create notification for supervisor review needed.
 
     Args:
         task_id: Task ID needing review
@@ -65,13 +65,13 @@ def _notify_human_review_needed(task_id: str, reason: str) -> None:
     try:
         create_notification(
             project_id="summitflow",  # Default project for now
-            notification_type="task_needs_input",  # Use existing type for human review
-            title=f"Human Review Required: {task_id}",
+            notification_type="task_needs_input",
+            title=f"Supervisor Review Required: {task_id}",
             message=reason,
             severity="warning",
             metadata={"task_id": task_id, "escalation_reason": reason},
         )
-        logger.info("human_review_notification_sent", task_id=task_id)
+        logger.info("supervisor_review_notification_sent", task_id=task_id)
     except Exception as e:
         logger.warning("notification_failed", task_id=task_id, error=str(e))
 

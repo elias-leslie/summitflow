@@ -304,9 +304,9 @@ class TestGetEscalationLevel:
             assert get_escalation_level(5, "test-project") == "SUPERVISOR"
             assert get_escalation_level(7, "test-project") == "SUPERVISOR"
 
-            # Human level (attempts >= 8, i.e., >= 5+3)
-            assert get_escalation_level(8, "test-project") == "HUMAN"
-            assert get_escalation_level(10, "test-project") == "HUMAN"
+            # Escalate level (attempts >= 8, i.e., >= 5+3)
+            assert get_escalation_level(8, "test-project") == "ESCALATE"
+            assert get_escalation_level(10, "test-project") == "ESCALATE"
 
     def test_get_escalation_level_without_project_id_uses_hardcoded_defaults(self) -> None:
         """Test get_escalation_level without project_id uses hardcoded defaults (backward compat)."""
@@ -321,9 +321,9 @@ class TestGetEscalationLevel:
         assert get_escalation_level(3) == "SUPERVISOR"
         assert get_escalation_level(4) == "SUPERVISOR"
 
-        # Human level (attempts >= 5)
-        assert get_escalation_level(5) == "HUMAN"
-        assert get_escalation_level(10) == "HUMAN"
+        # Escalate level (attempts >= 5)
+        assert get_escalation_level(5) == "ESCALATE"
+        assert get_escalation_level(10) == "ESCALATE"
 
     def test_get_escalation_level_with_project_id_custom_thresholds(self) -> None:
         """Test get_escalation_level with custom per-project thresholds."""
@@ -341,8 +341,8 @@ class TestGetEscalationLevel:
             # Supervisor level (attempts 2, i.e., < 2+1=3)
             assert get_escalation_level(2, "test-project") == "SUPERVISOR"
 
-            # Human level (attempts >= 3)
-            assert get_escalation_level(3, "test-project") == "HUMAN"
+            # Escalate level (attempts >= 3)
+            assert get_escalation_level(3, "test-project") == "ESCALATE"
 
     def test_get_escalation_level_with_zero_supervisor_attempts(self) -> None:
         """Test get_escalation_level with zero supervisor attempts."""
@@ -357,5 +357,5 @@ class TestGetEscalationLevel:
             assert get_escalation_level(0, "test-project") == "WORKER"
             assert get_escalation_level(2, "test-project") == "WORKER"
 
-            # Human level immediately after worker (attempts >= 3)
-            assert get_escalation_level(3, "test-project") == "HUMAN"
+            # Escalate level immediately after worker (attempts >= 3)
+            assert get_escalation_level(3, "test-project") == "ESCALATE"

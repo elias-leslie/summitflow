@@ -12,7 +12,7 @@ import psycopg
 
 from ...logging_config import get_logger
 from ...storage import quality_check_results as qcr_store
-from .escalation import MAX_FIX_ATTEMPTS, WORKER_ATTEMPTS, FixResult, escalate_to_human
+from .escalation import MAX_FIX_ATTEMPTS, WORKER_ATTEMPTS, FixResult, escalate_to_supervisor
 from .fix_execution import verify_fix
 from .pattern_memory_utils import store_successful_pattern
 
@@ -71,7 +71,7 @@ def get_escalation_outcome(
         escalation_level: Current escalation level
 
     Returns:
-        Outcome string: 'escalated_human', 'escalated_supervisor', or 'failed'
+        Outcome string: 'escalated_pipeline', 'escalated_supervisor', or 'failed'
     """
     updated = qcr_store.get_check_result(conn, result_id)
     if not updated:
@@ -79,8 +79,8 @@ def get_escalation_outcome(
 
     attempts = updated.get("fix_attempts", 0)
     if attempts >= MAX_FIX_ATTEMPTS:
-        escalate_to_human(conn, result_id)
-        return "escalated_human"
+        escalate_to_supervisor(conn, result_id)
+        return "escalated_pipeline"
     elif escalation_level == "WORKER" and attempts >= WORKER_ATTEMPTS:
         return "escalated_supervisor"
     return "failed"
@@ -115,7 +115,7 @@ def verify_and_process_fix(
         fixed_content: Fixed content
 
     Returns:
-        Outcome string: 'fixed', 'escalated_human', 'escalated_supervisor', or 'failed'
+        Outcome string: 'fixed', 'escalated_pipeline', 'escalated_supervisor', or 'failed'
     """
     if verify_fix(project_path, check_type, file_rel_path):
         process_successful_fix(

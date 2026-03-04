@@ -47,7 +47,7 @@ def update_results_from_fix(
     """
     results["cumulative_cost_usd"] += cost
 
-    if outcome in ("escalated_supervisor", "escalated_human"):
+    if outcome in ("escalated_supervisor", "escalated_pipeline"):
         results["escalated"] += 1
     else:
         results[outcome] += 1
