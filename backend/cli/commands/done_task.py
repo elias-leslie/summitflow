@@ -67,11 +67,6 @@ def ensure_worktree_clean(snapshot_info: dict[str, str | int | None]) -> None:
 def _output_gate_error(gate: dict[str, str]) -> None:
     """Output error message for a specific gate."""
     gate_name = gate["gate"]
-    if gate_name == "zero_steps":
-        output_error(
-            "Cannot complete: Task has no steps. Create subtasks with steps first."
-        )
-        return
     if gate_name == "subtasks":
         output_error(f"Cannot complete: Incomplete subtasks: {gate['detail']}")
         return

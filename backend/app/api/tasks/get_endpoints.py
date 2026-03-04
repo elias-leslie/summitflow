@@ -42,9 +42,7 @@ async def check_completion_readiness(task_id: str) -> dict[str, Any]:
     gates: list[dict[str, Any]] = []
     if incomplete:
         gates.append({"gate": "subtasks", "pass": False, "detail": incomplete[:5]})
-    if step_status["total"] == 0:
-        gates.append({"gate": "zero_steps", "pass": False})
-    elif not step_status["all_verified"]:
+    if step_status["total"] > 0 and not step_status["all_verified"]:
         gates.append(
             {
                 "gate": "steps",
