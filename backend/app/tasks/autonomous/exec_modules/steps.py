@@ -6,9 +6,13 @@ via smoke tests and targeted tests.
 
 from __future__ import annotations
 
+import subprocess
 from typing import Any
 
+from ....logging_config import get_logger
 from ....storage.steps import get_steps_for_subtask, update_step_passes
+
+logger = get_logger(__name__)
 from .step_defect import (
     INFRASTRUCTURE_PATTERNS,
     auto_defect_step,
@@ -79,6 +83,19 @@ def _auto_mark_steps(
     return step_results
 
 
+def _has_work_product(project_path: str) -> bool:
+    """Check if any commits exist on this branch beyond the base (main)."""
+    try:
+        result = subprocess.run(
+            ["git", "log", "--oneline", "main..HEAD"],
+            cwd=project_path, capture_output=True, text=True, timeout=10,
+        )
+        return bool(result.stdout and result.stdout.strip())
+    except (subprocess.TimeoutExpired, OSError):
+        # If we can't check, assume work product exists to avoid false negatives
+        return True
+
+
 def run_execution_quality_check(
     task_id: str,
     subtask_id: str,
@@ -88,9 +105,9 @@ def run_execution_quality_check(
 ) -> tuple[bool, list[dict[str, Any]]]:
     """Run quality check: auto-mark steps passed, then run smoke/targeted tests.
 
-    This replaces the old verify_steps_with_smoke_tests flow. Steps are now
-    progress trackers (auto-marked passed), and smoke/targeted tests are the
-    primary verification signal.
+    Steps are progress trackers (auto-marked passed), and smoke/targeted tests
+    are the primary verification signal. If no commits exist on the branch,
+    the last step is marked FAILED to prevent false completions.
 
     Returns:
         Tuple of (all_passed, step_results)
@@ -98,6 +115,16 @@ def run_execution_quality_check(
     from ....storage.steps_constants import STEP_STATUS_PLAN_DEFECT
 
     step_results = _auto_mark_steps(subtask_id, steps, project_id, STEP_STATUS_PLAN_DEFECT)
+
+    # Fail if no work product (commits) exist on the branch
+    if not _has_work_product(project_path):
+        logger.warning("No commits on branch — marking as failed",
+                        task_id=task_id, subtask_id=subtask_id)
+        if step_results:
+            step_results[-1]["passed"] = False
+            step_results[-1]["reason"] = "no_work_product"
+            step_results[-1]["output"] = "No commits found on branch beyond main"
+        return False, step_results
 
     # Run smoke tests and targeted tests as primary verification
     all_passed = run_smoke_and_targeted_tests(
