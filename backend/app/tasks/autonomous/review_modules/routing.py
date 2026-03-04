@@ -12,6 +12,7 @@ from ....storage.notifications import (
     create_task_completion_notification,
     create_task_failure_notification,
 )
+from ..ah_events import emit_review_verdict, emit_task_transition
 from .actions import auto_merge, create_fix_subtask, handle_plan_defect, run_qa_loop
 
 logger = get_logger(__name__)
@@ -72,6 +73,8 @@ def supervisor_resolve_escalation(task_id: str, review_summary: str, project_id:
 def route_based_on_verdict(task_id: str, complexity: str, review_result: dict[str, str | list[str]]) -> None:
     """Route task based on AI review verdict."""
     verdict = str(review_result.get("verdict", "")).upper()
+    concerns = [str(c) for c in review_result.get("concerns", [])]
+    emit_review_verdict(task_id, verdict, concerns or None)
     if verdict == VERDICT_APPROVED:
         _handle_approved(task_id, complexity)
     elif verdict in (VERDICT_NEEDS_FIX, "REJECT", "REJECTED"):
@@ -90,6 +93,7 @@ def _handle_approved(task_id: str, complexity: str) -> None:
     merged = _maybe_auto_merge(task_id, project_id)
     label = "Auto-merged" if merged else "Ready for manual merge"
     task_store.update_task_status(task_id, STATUS_COMPLETED)
+    emit_task_transition(task_id, STATUS_COMPLETED, f"APPROVED — {label}")
     log_task_event(task_id, f"AI Review: APPROVED - {label} ({complexity})")
     logger.info("QA approved", task_id=task_id, complexity=complexity, merged=merged)
     _send_notification(task_id, project_id, create_task_completion_notification, detail=f"{label} after QA approval.")
@@ -143,6 +147,7 @@ def _handle_escalation(task_id: str, review_result: dict[str, str | list[str]]) 
         logger.info("Escalation resolved with fix subtask", task_id=task_id)
         return
     task_store.update_task_status(task_id, STATUS_BLOCKED)
+    emit_task_transition(task_id, STATUS_BLOCKED, f"Supervisor blocked: {summary[:100]}")
     log_task_event(task_id, f"AI Review: ESCALATE - Blocked. {summary[:200]}")
     logger.info("QA escalated, blocked by supervisor", task_id=task_id)
     _send_notification(task_id, project_id, create_task_failure_notification,

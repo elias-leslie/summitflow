@@ -7,6 +7,7 @@ from typing import Any
 
 from ....logging_config import get_logger
 from ....storage import tasks as task_store
+from .ah_events import emit_task_transition
 from .completion_status import (
     build_early_completion_verification,
     build_partial_completion_verification,
@@ -60,6 +61,7 @@ def handle_successful_completion(
     """Handle successful task completion with quality gate + intent verification."""
     if not run_quality_gate_with_autofix(task_id, project_path, project_id):
         task_store.update_task_status(task_id, "blocked")
+        emit_task_transition(task_id, "blocked", "Quality gate failed after auto-fix")
         emit_error(task_id, "Final quality gate failed after auto-fix attempt", project_id=project_id)
         notify_failure(task_id, project_id, "Quality gate failed after auto-fix attempt.")
         wake_persona(task_id, project_id, "quality_gate",
@@ -167,6 +169,7 @@ def handle_failed_execution(
 
     try:
         task_store.update_task_status(task_id, "blocked")
+        emit_task_transition(task_id, "blocked", f"All subtasks failed: {blocker_summary or 'unknown'}")
         emit_log(task_id, "info", "Execution paused - subtask verification failed", project_id=project_id)
         notify_failure(task_id, project_id, "All subtasks failed verification.",
                        subtask_id=subtask_id, blocker_summary=blocker_summary)

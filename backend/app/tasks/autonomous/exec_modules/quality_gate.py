@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ....logging_config import get_logger
+from .ah_events import emit_quality_gate_result
 from .events import emit_log
 from .git_ops import auto_commit, has_uncommitted_changes
 from .quality import auto_fix_quality, run_final_quality_gate
@@ -42,4 +43,6 @@ def run_quality_gate_with_autofix(
 
         final_gate_passed = run_final_quality_gate(task_id, project_path, project_id)
 
+    detail = "passed" if final_gate_passed else "failed after auto-fix"
+    emit_quality_gate_result(task_id, final_gate_passed, detail)
     return final_gate_passed
