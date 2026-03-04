@@ -12,7 +12,7 @@ from ....storage.notifications import (
     create_task_completion_notification,
     create_task_failure_notification,
 )
-from ..ah_events import emit_review_verdict, emit_task_transition
+from ..exec_modules.ah_events import emit_review_verdict, emit_task_transition
 from .actions import auto_merge, create_fix_subtask, handle_plan_defect, run_qa_loop
 
 logger = get_logger(__name__)
