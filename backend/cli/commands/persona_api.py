@@ -63,3 +63,34 @@ def update_personality(personality: str, reason: str = "") -> dict[str, Any]:
     )
     resp.raise_for_status()
     return resp.json()
+
+
+def _heartbeat_url(path: str = "") -> str:
+    """Build heartbeat API URL."""
+    return f"{get_agent_hub_url()}/api/heartbeat{path}"
+
+
+def trigger_heartbeat() -> dict[str, Any]:
+    """POST /api/heartbeat/trigger — fire off a manual heartbeat."""
+    resp = httpx.post(_heartbeat_url("/trigger"), headers=_get_headers(), timeout=10)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def get_heartbeat_status() -> dict[str, Any]:
+    """GET /api/heartbeat/status — running state + last run info."""
+    resp = httpx.get(_heartbeat_url("/status"), headers=_get_headers(), timeout=10)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def get_activity(time_range: str = "24h", page_size: int = 10) -> dict[str, Any]:
+    """GET /api/persona/activity — paginated session history."""
+    resp = httpx.get(
+        _get_url("/activity"),
+        params={"time_range": time_range, "page_size": page_size},
+        headers=_get_headers(),
+        timeout=10,
+    )
+    resp.raise_for_status()
+    return resp.json()

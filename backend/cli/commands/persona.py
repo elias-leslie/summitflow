@@ -8,6 +8,9 @@ Commands:
   st persona personality --set TEXT  — Set personality directly
   st persona name                    — Show current name
   st persona name "NewName"          — Set new name
+  st persona heartbeat [--watch]     — Trigger heartbeat (optionally poll until done)
+  st persona activity [--hours N]    — Show recent activity sessions
+  st persona status                  — Heartbeat state + persona overview
 """
 
 from __future__ import annotations
@@ -223,3 +226,122 @@ def name(
     except Exception as e:
         output_error(f"Failed to fetch persona: {e}")
         raise typer.Exit(1) from e
+
+
+@app.command()
+def heartbeat(
+    watch: Annotated[bool, _Opt("--watch", "-w", help="Poll until heartbeat completes")] = False,
+) -> None:
+    """Trigger a heartbeat. With --watch, poll until it finishes."""
+    import time
+
+    from .persona_api import get_heartbeat_status, trigger_heartbeat
+
+    try:
+        result = trigger_heartbeat()
+        print(f"Heartbeat {result.get('status', 'dispatched')}: {result.get('message', '')}")
+    except Exception as e:
+        error_msg = str(e)
+        if "409" in error_msg:
+            print("Heartbeat already running")
+        elif "400" in error_msg:
+            output_error("Onboarding not complete")
+            raise typer.Exit(1) from e
+        elif "403" in error_msg:
+            output_error("Heartbeat permission is off")
+            raise typer.Exit(1) from e
+        else:
+            output_error(f"Trigger failed: {e}")
+            raise typer.Exit(1) from e
+
+    if not watch:
+        return
+
+    # Poll until done
+    print("Watching...", end="", flush=True)
+    while True:
+        time.sleep(10)
+        try:
+            status = get_heartbeat_status()
+            if not status.get("running"):
+                elapsed = status.get("elapsed_seconds")
+                print(f"\nHeartbeat complete (last run: {status.get('last_run', '?')})")
+                return
+            elapsed = status.get("elapsed_seconds", 0)
+            print(f"\r  Running... {elapsed}s elapsed", end="", flush=True)
+        except Exception:
+            print(".", end="", flush=True)
+
+
+@app.command()
+def activity(
+    hours: Annotated[int, _Opt("--hours", "-H", help="Lookback hours (default 24)")] = 24,
+    limit: Annotated[int, _Opt("--limit", "-n", help="Max sessions to show")] = 10,
+) -> None:
+    """Show recent persona activity sessions."""
+    from .persona_api import get_activity
+
+    # Map hours to time_range string
+    if hours <= 6:
+        time_range = "6h"
+    elif hours <= 24:
+        time_range = "24h"
+    elif hours <= 168:
+        time_range = "7d"
+    else:
+        time_range = "30d"
+
+    try:
+        data = get_activity(time_range=time_range, page_size=limit)
+    except Exception as e:
+        output_error(f"Failed to fetch activity: {e}")
+        raise typer.Exit(1) from e
+
+    sessions = data.get("sessions", [])
+    total = data.get("total", 0)
+    if not sessions:
+        print(f"No activity in last {time_range}")
+        return
+
+    print(f"Activity ({len(sessions)}/{total} sessions, {time_range}):")
+    for s in sessions:
+        ts = s.get("created_at", "?")
+        if isinstance(ts, str) and len(ts) > 19:
+            ts = ts[:19]  # Trim to YYYY-MM-DDTHH:MM:SS
+        stype = s.get("session_type", "?")
+        summary = s.get("summary_oneliner") or "(no summary)"
+        status = s.get("status", "?")
+        msgs = s.get("message_count", 0)
+        print(f"  {ts} | {stype:<11} | {status:<10} | {msgs:>3} msgs | {summary[:60]}")
+
+
+@app.command()
+def status() -> None:
+    """Show heartbeat state and persona overview."""
+    from .persona_api import get_heartbeat_status, get_persona
+
+    try:
+        hb = get_heartbeat_status()
+        persona = get_persona()
+    except Exception as e:
+        output_error(f"Failed to fetch status: {e}")
+        raise typer.Exit(1) from e
+
+    # Heartbeat line
+    running = hb.get("running", False)
+    state = "running" if running else "idle"
+    last = hb.get("last_run", "never")
+    interval = hb.get("interval_minutes", 0)
+    elapsed = hb.get("elapsed_seconds")
+
+    if running and elapsed is not None:
+        hb_line = f"Heartbeat: {state} ({elapsed}s) | Last: {last} | Interval: {interval}m"
+    else:
+        hb_line = f"Heartbeat: {state} | Last: {last} | Interval: {interval}m"
+
+    print(hb_line)
+
+    # Persona line
+    name = persona.get("name", "?")
+    onboarding = persona.get("onboarding_phase", "?")
+    print(f"Persona: {name} | Onboarding: {onboarding}")
