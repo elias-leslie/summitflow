@@ -20,7 +20,7 @@ def build_subtasks_data(subtasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
         entry: dict[str, Any] = {
             "subtask_id": sid, "phase": st.get("phase"),
             "description": st["description"], "steps": st.get("steps", []),
-            "display_order": order,
+            "display_order": order, "subtask_type": st.get("subtask_type"),
         }
         if st.get("depends_on"):
             entry["depends_on"] = st["depends_on"]

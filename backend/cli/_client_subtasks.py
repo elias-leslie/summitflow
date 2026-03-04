@@ -31,6 +31,7 @@ def create_subtask(
     phase: str = "implementation",
     steps: list[str | dict[str, Any]] | None = None,
     details: dict[str, Any] | None = None,
+    subtask_type: str | None = None,
 ) -> dict[str, Any]:
     """Create a subtask for a task."""
     data: dict[str, Any] = {
@@ -42,6 +43,8 @@ def create_subtask(
         data["steps"] = steps
     if details:
         data["details"] = details
+    if subtask_type:
+        data["subtask_type"] = subtask_type
     response = client.post(url_fn(f"/tasks/{task_id}/subtasks"), json=data)
     return cast(dict[str, Any], handle_response(response))
 

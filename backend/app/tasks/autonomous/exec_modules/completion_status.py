@@ -102,8 +102,6 @@ def build_early_completion_verification(total_subtasks: int) -> dict[str, Any]:
 
 def build_successful_completion_verification(
     results: list[dict[str, Any]],
-    *,
-    coderabbit_findings: str | None = None,
 ) -> dict[str, Any]:
     """Build verification result when all subtasks pass."""
     execution_clean = all(
@@ -121,8 +119,6 @@ def build_successful_completion_verification(
         ),
         "total_extensions_granted": total_extensions,
     }
-    if coderabbit_findings:
-        result["coderabbit_findings"] = coderabbit_findings
     return result
 
 

@@ -29,6 +29,7 @@ class SubtaskOperationsMixin:
         phase: str = "implementation",
         steps: list[str | dict[str, Any]] | None = None,
         details: dict[str, Any] | None = None,
+        subtask_type: str | None = None,
     ) -> dict[str, Any]:
         return subtasks_ops.create_subtask(
             self._client,
@@ -40,6 +41,7 @@ class SubtaskOperationsMixin:
             phase,
             steps,
             details,
+            subtask_type=subtask_type,
         )
 
     def bulk_create_subtasks(self, task_id: str, subtasks: list[dict[str, Any]]) -> dict[str, Any]:

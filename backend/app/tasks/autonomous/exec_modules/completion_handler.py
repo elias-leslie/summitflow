@@ -18,11 +18,7 @@ from .completion_status import (
 )
 from .events import emit_error, emit_log
 from .followup_tasks import create_followup_task_for_failures
-from .quality_gate import (
-    collect_coderabbit_advisory,
-    run_quality_gate_with_autofix,
-    start_coderabbit_advisory,
-)
+from .quality_gate import run_quality_gate_with_autofix
 
 logger = get_logger(__name__)
 
@@ -62,21 +58,13 @@ def handle_successful_completion(
     dispatch: Callable[[str, str, str], None] | None = None,
 ) -> bool:
     """Handle successful task completion with quality gate + intent verification."""
-    # Start CodeRabbit advisory in background (runs in parallel with quality gate)
-    cr_proc = start_coderabbit_advisory(project_path)
-
     if not run_quality_gate_with_autofix(task_id, project_path, project_id):
-        # Collect CR results even on failure (non-blocking cleanup)
-        collect_coderabbit_advisory(cr_proc, task_id, project_id)
         task_store.update_task_status(task_id, "blocked")
         emit_error(task_id, "Final quality gate failed after auto-fix attempt", project_id=project_id)
         notify_failure(task_id, project_id, "Quality gate failed after auto-fix attempt.")
         wake_persona(task_id, project_id, "quality_gate",
                      f"Task {task_id} quality gate failed after auto-fix. Investigate and advise.")
         return False
-
-    # Collect CodeRabbit findings (waits for background process)
-    cr_findings = collect_coderabbit_advisory(cr_proc, task_id, project_id)
 
     # Intent verification: check done_when / objective / spirit_anti
     intent_result = _run_intent_check(task_id, project_path, project_id)
@@ -91,9 +79,7 @@ def handle_successful_completion(
         return False
 
     try:
-        verification_result = build_successful_completion_verification(
-            results, coderabbit_findings=cr_findings,
-        )
+        verification_result = build_successful_completion_verification(results)
         task_store.update_task(task_id, verification_result=verification_result)
         execution_clean = verification_result["execution_clean"]
         log_message = f"All subtasks passed + quality gate passed (clean={execution_clean})"

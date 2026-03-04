@@ -161,6 +161,7 @@ def _replace_subtasks(task_id: str, subtasks: list[dict[str, Any]], client: STCl
         client.create_subtask(
             task_id, sub["subtask_id"], sub["description"],
             phase=phase_val if phase_val else "", steps=sub.get("steps", []),
+            subtask_type=sub.get("subtask_type"),
         )
 
 
