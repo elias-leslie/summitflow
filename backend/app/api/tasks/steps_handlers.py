@@ -6,6 +6,8 @@ for updating step status and passes, including error handling.
 
 from __future__ import annotations
 
+from typing import NoReturn
+
 from fastapi import HTTPException
 
 from ...schemas.steps import StepResponse
@@ -111,7 +113,7 @@ def handle_update_step_passes(
     return StepResponse(**updated)
 
 
-def handle_foreign_key_error(e: Exception, subtask_id: str, task_id: str) -> None:
+def handle_foreign_key_error(e: Exception, subtask_id: str, task_id: str) -> NoReturn:
     """Convert foreign key constraint errors to appropriate HTTP exceptions.
 
     Raises:

@@ -37,6 +37,7 @@ def insert_step_handler(
         raise HTTPException(status_code=400, detail=str(e)) from None
     except Exception as e:
         handle_foreign_key_error(e, subtask_id, task_id)
+        raise  # unreachable — handle_foreign_key_error always raises
     return StepResponse(**created)
 
 
@@ -62,6 +63,7 @@ def create_with_verification_handler(
         raise HTTPException(status_code=400, detail=str(e)) from None
     except Exception as e:
         handle_foreign_key_error(e, subtask_id, task_id)
+        raise  # unreachable — handle_foreign_key_error always raises
     return StepResponse(**created)
 
 

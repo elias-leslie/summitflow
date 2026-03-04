@@ -32,6 +32,7 @@ def create_batch_handler(
         raise HTTPException(status_code=400, detail=str(e)) from None
     except Exception as e:
         handle_foreign_key_error(e, subtask_id, task_id)
+        raise  # unreachable — handle_foreign_key_error always raises
     return BatchStepResponse(
         created=[StepResponse(**s) for s in created],
         count=len(created),
@@ -54,6 +55,7 @@ def append_steps_handler(
         raise HTTPException(status_code=400, detail=str(e)) from None
     except Exception as e:
         handle_foreign_key_error(e, subtask_id, task_id)
+        raise  # unreachable — handle_foreign_key_error always raises
     return BatchStepResponse(
         created=[StepResponse(**s) for s in created],
         count=len(created),
