@@ -12,16 +12,15 @@ Revises: c10104d259a0
 Create Date: 2026-03-04 20:53:58.424599
 
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 from alembic import op
 
-
 # revision identifiers, used by Alembic.
 revision: str = 'b6d76c1d3ee7'
-down_revision: Union[str, Sequence[str], None] = 'c10104d259a0'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = 'c10104d259a0'
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:

@@ -11,8 +11,6 @@ from typing import Any
 
 from ....logging_config import get_logger
 from ....storage.steps import get_steps_for_subtask, update_step_passes
-
-logger = get_logger(__name__)
 from .step_defect import (
     INFRASTRUCTURE_PATTERNS,
     auto_defect_step,
@@ -20,6 +18,8 @@ from .step_defect import (
 )
 from .step_issue import compute_issue_id
 from .step_smoke_tests import run_smoke_and_targeted_tests
+
+logger = get_logger(__name__)
 
 __all__ = [
     "INFRASTRUCTURE_PATTERNS",
