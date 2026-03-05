@@ -24,7 +24,7 @@ def _build_screenshot_command(
         f"agent-browser open {shlex.quote(url)} && "
         f"agent-browser set viewport {width} {height} && "
         f"agent-browser wait --load networkidle && "
-        f"agent-browser screenshot {shlex.quote(str(output_path))} {full_flag} && "
+        f"agent-browser screenshot {shlex.quote(str(output_path))} {full_flag} ; "
         f"agent-browser close"
     )
 
@@ -71,7 +71,12 @@ async def capture_page_screenshot(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60)
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60)
+        finally:
+            if proc.returncode is None:
+                proc.kill()
+                await proc.communicate()
 
         if proc.returncode != 0:
             error_msg = stderr.decode().strip() or stdout.decode().strip()
