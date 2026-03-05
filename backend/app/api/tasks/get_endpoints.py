@@ -136,7 +136,9 @@ Git Diff:
 {git_diff[:5000]}
 ```
 
-If done_when criteria are defined, verify the diff addresses each one."""
+If done_when criteria are defined, verify the diff addresses each one.
+
+Respond ONLY with a JSON object. No prose, no tool calls, no markdown. Required format: {{"verdict": "APPROVED" | "NEEDS_FIX" | "PLAN_DEFECT" | "ESCALATE", "concerns": [...], "recommendation": "..."}}"""
 
     client = await asyncio.to_thread(get_sync_client)
     response = await asyncio.to_thread(
