@@ -304,13 +304,38 @@ def heartbeat(
         try:
             status = get_heartbeat_status()
             if not status.get("running"):
-                elapsed = status.get("elapsed_seconds")
-                print(f"\nHeartbeat complete (last run: {status.get('last_run', '?')})")
+                print()  # newline after progress dots
+                _print_heartbeat_result(status)
                 return
             elapsed = status.get("elapsed_seconds", 0)
             print(f"\r  Running... {elapsed}s elapsed", end="", flush=True)
         except Exception:
             print(".", end="", flush=True)
+
+
+def _print_heartbeat_result(status: dict) -> None:
+    """Print heartbeat completion summary with session metrics."""
+    sid = status.get("last_session_id", "?")
+    last_run = status.get("last_run", "?")
+    turns = status.get("last_turns")
+    tool_calls = status.get("last_tool_calls")
+    fmt = status.get("last_format_compliant")
+    had_error = status.get("last_had_error")
+    auto_journal = status.get("last_auto_journaled")
+
+    print(f"Heartbeat complete | session={sid}")
+    parts = [f"last_run={last_run}"]
+    if turns is not None:
+        parts.append(f"turns={turns}")
+    if tool_calls is not None:
+        parts.append(f"tool_calls={tool_calls}")
+    if fmt is not None:
+        parts.append(f"format_ok={'yes' if fmt else 'NO'}")
+    if had_error is not None:
+        parts.append(f"errors={'YES' if had_error else 'none'}")
+    if auto_journal:
+        parts.append("auto_journaled=yes")
+    print(f"  {' | '.join(parts)}")
 
 
 @app.command()
