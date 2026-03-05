@@ -228,6 +228,46 @@ def name(
         raise typer.Exit(1) from e
 
 
+def _edit_instructions_in_editor(current: dict) -> None:
+    """Open heartbeat instructions in $EDITOR and persist changes."""
+    from .persona_api import update_persona
+    editor = os.environ.get("EDITOR", "vi")
+    with tempfile.NamedTemporaryFile(suffix=".md", mode="w", delete=False) as f:
+        f.write(current.get("heartbeat_instructions") or "")
+        tmp_path = f.name
+    try:
+        subprocess.run([editor, tmp_path], check=True)
+        new_text = Path(tmp_path).read_text()
+        if new_text.strip() == (current.get("heartbeat_instructions") or "").strip():
+            print("No changes made.")
+            return
+        result = update_persona({"heartbeat_instructions": new_text})
+        print(f"Heartbeat instructions updated (version {result.get('version', '?')})")
+    except subprocess.CalledProcessError as e:
+        output_error("Editor exited with error")
+        raise typer.Exit(1) from e
+    finally:
+        os.unlink(tmp_path)
+
+
+@app.command()
+def instructions(
+    edit: Annotated[bool, _Opt("--edit", "-e", help="Open $EDITOR to modify")] = False,
+) -> None:
+    """Print or modify heartbeat instructions."""
+    from .persona_api import get_persona
+    try:
+        persona = get_persona()
+    except Exception as e:
+        output_error(f"Failed to fetch persona: {e}")
+        raise typer.Exit(1) from e
+    if edit:
+        _edit_instructions_in_editor(persona)
+        return
+    text = persona.get("heartbeat_instructions")
+    print(text if text else "(No heartbeat instructions set)")
+
+
 @app.command()
 def heartbeat(
     watch: Annotated[bool, _Opt("--watch", "-w", help="Poll until heartbeat completes")] = False,
