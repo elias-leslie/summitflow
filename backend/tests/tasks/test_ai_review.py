@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from app.tasks.ai_review import review_pull_request
+from app.tasks.ai_review import _apply_pass_verdict, review_pull_request
 from app.tasks.ai_review_checks import (
     _has_frontend_changes,
     _run_precommit,
@@ -426,3 +426,40 @@ class TestEscalationToSupervisorReview:
         # Note: We can't easily test the retry mechanism here without
         # a full workflow test setup. This tests the error check detection.
         # The actual retry/escalation is integration-tested separately.
+
+
+class TestApplyPassVerdict:
+    """Tests for _apply_pass_verdict null-task guard."""
+
+    @patch("app.tasks.ai_review._auto_merge_pr")
+    @patch("app.tasks.ai_review.task_store")
+    def test_apply_pass_verdict_skips_merge_when_task_is_none(
+        self,
+        mock_store: MagicMock,
+        mock_auto_merge: MagicMock,
+    ) -> None:
+        """When task is None, _auto_merge_pr must not be called and no exception raised."""
+        _apply_pass_verdict("task-abc", pr_url="https://example.com/pr/1", task=None)
+
+        mock_auto_merge.assert_not_called()
+        mock_store.update_task_status.assert_called_once_with("task-abc", "completed")
+
+    @patch("app.tasks.ai_review._get_project_path")
+    @patch("app.tasks.ai_review._auto_merge_pr")
+    @patch("app.tasks.ai_review.task_store")
+    def test_apply_pass_verdict_merges_when_task_present(
+        self,
+        mock_store: MagicMock,
+        mock_auto_merge: MagicMock,
+        mock_project_path: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """When a valid task dict is provided, _auto_merge_pr is called with the resolved project path."""
+        mock_project_path.return_value = tmp_path
+        task: dict[str, object] = {"id": "task-abc", "project_id": "test-project"}
+
+        _apply_pass_verdict("task-abc", pr_url="https://example.com/pr/1", task=task)
+
+        mock_project_path.assert_called_once_with(task)
+        mock_auto_merge.assert_called_once_with("task-abc", "https://example.com/pr/1", tmp_path)
+        mock_store.update_task_status.assert_called_once_with("task-abc", "completed")
