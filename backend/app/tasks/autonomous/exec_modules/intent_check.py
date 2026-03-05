@@ -91,6 +91,7 @@ def _evaluate_intent(
             messages=[{"role": "user", "content": prompt}],
             agent_slug="reviewer",
             project_id=project_id,
+            execute_tools=False,
         )
         return _parse_intent_response(response.content, done_when, objective, spirit_anti)
     except Exception as e:

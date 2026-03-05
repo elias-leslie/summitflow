@@ -154,6 +154,7 @@ def _run_reviewer(
     )
     re_review = get_sync_client().complete(
         messages=[{"role": "user", "content": prompt}], agent_slug="reviewer", project_id=project_id,
+        execute_tools=False,
     )
     result = parse_review_response(re_review.content)
     verdict = str(result.get("verdict", "")).upper()

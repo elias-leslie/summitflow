@@ -144,6 +144,7 @@ If done_when criteria are defined, verify the diff addresses each one."""
         agent_slug="reviewer",
         messages=[{"role": "user", "content": prompt}],
         project_id=project_id,
+        execute_tools=False,
     )
     result = parse_review_response(response.content)
     return {

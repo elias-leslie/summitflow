@@ -115,6 +115,7 @@ def ai_review(
             messages=[{"role": "user", "content": prompt}],
             project_id=project_id,
             agent_slug="reviewer",
+            execute_tools=False,
         )
         review_result = parse_review_response(response.content)
         route_based_on_verdict(task_id, complexity, review_result)
