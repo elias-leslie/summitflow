@@ -93,16 +93,19 @@ def _determine_verdict(checks: dict[str, Any], all_issues: list[str]) -> tuple[R
     return ReviewVerdict.PASS, "All checks passed"
 
 
-def _apply_pass_verdict(task_id: str, pr_url: str | None) -> None:
+def _apply_pass_verdict(task_id: str, pr_url: str | None, task: dict[str, Any] | None = None) -> None:
     if pr_url:
-        _auto_merge_pr(task_id, pr_url, _get_project_path(task_store.get_task(task_id)))
+        if task is None:
+            logger.warning("apply_pass_verdict_no_task", task_id=task_id, reason="task not found; skipping auto-merge")
+        else:
+            _auto_merge_pr(task_id, pr_url, _get_project_path(task))
     task_store.update_task_status(task_id, "completed")
     logger.info("review_passed", task_id=task_id)
 
 
-def _apply_verdict(task_id: str, pr_url: str | None, verdict: ReviewVerdict, summary: str, all_issues: list[str]) -> None:
+def _apply_verdict(task_id: str, pr_url: str | None, verdict: ReviewVerdict, summary: str, all_issues: list[str], task: dict[str, Any] | None = None) -> None:
     if verdict == ReviewVerdict.PASS:
-        _apply_pass_verdict(task_id, pr_url)
+        _apply_pass_verdict(task_id, pr_url, task)
     elif verdict == ReviewVerdict.NEEDS_FIX:
         log_task_event(task_id, f"AI Review needs fixes: {', '.join(all_issues[:3])}")
         logger.info("review_needs_fix", task_id=task_id, issues=len(all_issues))
@@ -135,7 +138,7 @@ def _do_review(task_id: str, task: dict[str, Any], pr_url: str | None) -> dict[s
     verdict, summary = _determine_verdict(checks, all_issues)
     result = ReviewResult(verdict=verdict, summary=summary, checks=checks, issues=all_issues, suggestions=suggestions, risk_level=risk_level)
     task_store.update_task(task_id, review_result=result.to_dict())
-    _apply_verdict(task_id, pr_url, verdict, summary, all_issues)
+    _apply_verdict(task_id, pr_url, verdict, summary, all_issues, task)
     return result.to_dict()
 
 
