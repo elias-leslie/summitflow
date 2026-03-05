@@ -80,7 +80,10 @@ def _build_prompt(task: dict, complexity: str, git_diff: str, task_id: str) -> s
         f"Task: {task.get('title', '')}\nComplexity: {complexity}\n\n"
         f"Success Criteria (done_when):\n{done_when_text}\n\n"
         f"Git Diff:\n```\n{git_diff[:50000]}\n```\n\n"
-        "If done_when criteria are defined, verify the diff addresses each one."
+        "If done_when criteria are defined, verify the diff addresses each one.\n\n"
+        'Respond ONLY with a JSON object. No prose, no tool calls, no markdown. '
+        'Required format: {"verdict": "APPROVED" | "NEEDS_FIX" | "PLAN_DEFECT" | "ESCALATE", '
+        '"concerns": [...], "recommendation": "..."}'
     )
 
 
@@ -115,6 +118,7 @@ def ai_review(
             messages=[{"role": "user", "content": prompt}],
             project_id=project_id,
             agent_slug="reviewer",
+            execute_tools=False,
         )
         review_result = parse_review_response(response.content)
         route_based_on_verdict(task_id, complexity, review_result)
