@@ -3,8 +3,10 @@
 import { AlertTriangle, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import type { Notification } from '@/lib/api/notifications'
+import { buildProjectTaskUrl } from './chat-routing'
 
 interface BlockerBannerProps {
+  projectId: string
   taskId: string
   notification: Notification | null
 }
@@ -19,7 +21,11 @@ const severityStyles: Record<string, string> = {
   info: 'border-phosphor-500/20 bg-phosphor-500/5 text-phosphor-400 shadow-[inset_0_-1px_0_rgba(0,245,255,0.1)]',
 }
 
-export function BlockerBanner({ taskId, notification }: BlockerBannerProps) {
+export function BlockerBanner({
+  projectId,
+  taskId,
+  notification,
+}: BlockerBannerProps) {
   const title = notification?.title || `Task ${taskId}`
   const severity = notification?.severity || 'error'
   const styles = severityStyles[severity] || severityStyles.error
@@ -30,7 +36,7 @@ export function BlockerBanner({ taskId, notification }: BlockerBannerProps) {
     >
       <div className="flex items-center gap-2 sm:gap-3">
         <Link
-          href={`/projects/summitflow/tasks/${taskId}`}
+          href={buildProjectTaskUrl(projectId, taskId)}
           className="shrink-0 text-current hover:text-outrun-400 transition-colors"
           aria-label="Back to task"
         >

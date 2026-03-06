@@ -1,4 +1,8 @@
 import type { TaskType } from '@/lib/api/tasks-types'
+import {
+  DEFAULT_PROJECT_ID,
+  getProjectMemoryGroupPrefix,
+} from '@/lib/project-config'
 
 export type Complexity = 'simple' | 'standard' | 'complex'
 
@@ -63,7 +67,7 @@ export const COMPLEXITY_OPTIONS: { value: Complexity; label: string }[] = [
 ]
 
 export const AGENT_SLUG = 'ideator'
-export const MEMORY_GROUP_PREFIX = 'summitflow:'
+export const MEMORY_GROUP_PREFIX = getProjectMemoryGroupPrefix(DEFAULT_PROJECT_ID)
 export const CHAT_TITLE = 'Task Ideation'
 export const CREATE_TASK_TOOL_NAME = 'create_task'
 export const DEFAULT_PRIORITY = 2

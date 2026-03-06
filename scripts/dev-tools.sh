@@ -451,7 +451,13 @@ run_tests() {
     ensure_output_dir
     local details_file="$OUTPUT_DIR/pytest-details.1.txt"
 
-    cd "$backend"
+    # Prefer backend/ when it has tests/, otherwise run from project root.
+    # This keeps projects like terminal (tests/ at repo root) discoverable.
+    local test_dir="$backend"
+    if [[ ! -d "$backend/tests" && -d "$project_dir/tests" ]]; then
+        test_dir="$project_dir"
+    fi
+    cd "$test_dir"
     # Use pytest exit code, not text matching (avoids "6 failed, 677 passed" false positive)
     local output retval=0
     output=$("$pytest_bin" --tb=short -q 2>&1) || retval=$?

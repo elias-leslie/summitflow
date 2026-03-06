@@ -24,7 +24,6 @@ export type {
   Task,
   TaskListResponse,
   TaskDependency,
-  StartTaskResult,
 } from './tasks-types-core'
 
 // ============================================================================

@@ -11,9 +11,10 @@ import {
   Package,
   RefreshCw,
 } from 'lucide-react'
+import { DEFAULT_PROJECT_ID } from '@/lib/project-config'
 import type { TaskType } from '@/lib/api'
 
-export const SUMMITFLOW_PROJECT_ID = 'summitflow'
+export const SUMMITFLOW_PROJECT_ID = DEFAULT_PROJECT_ID
 
 export const LOGO_WIDE_WIDTH = 200
 export const LOGO_HEIGHT = 56

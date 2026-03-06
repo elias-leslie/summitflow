@@ -6,12 +6,13 @@ import subprocess
 from datetime import datetime, timedelta
 from typing import Any
 
+from app.services._agent_hub_config import AGENT_HUB_URL
 from app.storage import agent_configs
 from app.storage import tasks as task_store
 from app.storage.connection import get_connection
 
 # Constants
-_AGENT_HUB_URL = "http://localhost:8003/api/projects/{project_id}/execution-permission"
+_AGENT_HUB_URL = f"{AGENT_HUB_URL}/api/projects/{{project_id}}/execution-permission"
 _REDIS_URL = "redis://localhost:6379/1"
 _REDIS_TIMEOUT = 3
 _BACKEND_SERVICE = "summitflow-backend"

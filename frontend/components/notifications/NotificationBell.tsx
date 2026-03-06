@@ -17,6 +17,7 @@ import {
   markNotificationRead,
   type Notification,
 } from '@/lib/api'
+import { buildChatUrl, getChatProjectId } from '@/app/chat/chat-routing'
 import { PushNotificationToggle } from './PushNotificationToggle'
 
 interface NotificationBellProps {
@@ -38,11 +39,12 @@ const severityColors = {
   critical: 'text-rose-500',
 }
 
-function navigateToChat(notification: Notification) {
-  const params = new URLSearchParams()
-  if (notification.task_id) params.set('task_id', notification.task_id)
-  params.set('notification_id', notification.id)
-  window.location.href = `/chat?${params.toString()}`
+function navigateToChat(notification: Notification, projectId: string) {
+  window.location.href = buildChatUrl({
+    projectId,
+    taskId: notification.task_id,
+    notificationId: notification.id,
+  })
 }
 
 export function NotificationBell({
@@ -63,13 +65,12 @@ export function NotificationBell({
     const notificationId = params.get('notification_id')
     if (!notificationId) return
 
-    // Build /chat URL preserving task_id if present
-    const chatParams = new URLSearchParams()
-    const taskId = params.get('task_id')
-    if (taskId) chatParams.set('task_id', taskId)
-    chatParams.set('notification_id', notificationId)
-    window.location.href = `/chat?${chatParams.toString()}`
-  }, [])
+    window.location.href = buildChatUrl({
+      projectId: getChatProjectId(params),
+      taskId: params.get('task_id'),
+      notificationId,
+    })
+  }, [projectId])
 
   // Fetch pending count periodically
   useEffect(() => {
@@ -124,7 +125,7 @@ export function NotificationBell({
       }
     }
     // Navigate to persona chat with context
-    navigateToChat(notification)
+    navigateToChat(notification, projectId)
     setIsOpen(false)
   }
 

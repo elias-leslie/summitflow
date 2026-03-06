@@ -23,7 +23,6 @@ export type {
   Task,
   TaskListResponse,
   TaskDependency,
-  StartTaskResult,
   // Acceptance criteria
   TaskAcceptanceCriterion,
   CriterionVerifyRequest,

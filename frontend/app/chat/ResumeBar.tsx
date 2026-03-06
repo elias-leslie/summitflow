@@ -3,23 +3,27 @@
 import { Loader2, RotateCcw } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
-import { getApiBaseUrl } from '@/lib/api-config'
+import { buildApiUrl } from '@/lib/api-config'
 
 interface ResumeBarProps {
+  projectId: string
   taskId: string
   personaName?: string
 }
 
-export function ResumeBar({ taskId, personaName = 'Persona' }: ResumeBarProps) {
+export function ResumeBar({
+  projectId,
+  taskId,
+  personaName = 'Persona',
+}: ResumeBarProps) {
   const [isResuming, setIsResuming] = useState(false)
   const [resumed, setResumed] = useState(false)
 
   const handleResume = useCallback(async () => {
     setIsResuming(true)
     try {
-      const apiBase = getApiBaseUrl()
       const response = await fetch(
-        `${apiBase}/api/projects/summitflow/tasks/${taskId}/execute`,
+        buildApiUrl(`/api/projects/${projectId}/tasks/${taskId}/execute`),
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -42,7 +46,7 @@ export function ResumeBar({ taskId, personaName = 'Persona' }: ResumeBarProps) {
     } finally {
       setIsResuming(false)
     }
-  }, [taskId])
+  }, [projectId, taskId, personaName])
 
   return (
     <div className="flex items-center gap-2 sm:gap-3">

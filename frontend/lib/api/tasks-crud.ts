@@ -9,7 +9,6 @@ import type {
   TaskStatus,
   TaskType,
   AgentType,
-  StartTaskResult,
   DeleteTaskResponse,
 } from './tasks-types'
 
@@ -121,18 +120,16 @@ export async function fetchBlockedTasks(
 export async function startTask(
   projectId: string,
   taskId: string,
-  options: {
+  _options: {
     agent_type: AgentType
     model?: string
     allow_delegation?: boolean
   },
-): Promise<StartTaskResult> {
+): Promise<Task> {
   return fetchWithErrorHandling(
-    `${getApiBase()}/api/projects/${projectId}/tasks/${taskId}/start`,
+    `${getApiBase()}/api/projects/${projectId}/tasks/${taskId}/execute`,
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(options),
       errorMessage: 'Failed to start task',
     },
   )

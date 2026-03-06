@@ -132,8 +132,3 @@ export interface TaskDependency {
   depends_on_title?: string
   depends_on_status?: string
 }
-
-export interface StartTaskResult {
-  status: string
-  task_id: string
-}

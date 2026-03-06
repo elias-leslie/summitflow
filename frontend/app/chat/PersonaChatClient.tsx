@@ -5,18 +5,22 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ChatPanel } from '@agent-hub/chat-ui'
 import type { ChatStreamApiConfig } from '@agent-hub/chat-ui'
 import { getVoiceWsUrl, getTtsBaseUrl } from '@/lib/api-config'
+import {
+  DEFAULT_PROJECT_ID,
+  getProjectMemoryGroupPrefix,
+} from '@/lib/project-config'
 import { getAgentHubProxyBase } from '@/components/tasks/useTaskIdeation'
 import { fetchNotification, type Notification } from '@/lib/api/notifications'
 import { usePersonaName } from '@/hooks/usePersonaName'
+import { getChatProjectId } from './chat-routing'
 import { BlockerBanner } from './BlockerBanner'
 import { ResumeBar } from './ResumeBar'
 
-const PROJECT_ID = 'summitflow'
 const AGENT_SLUG = 'persona'
-const MEMORY_GROUP_PREFIX = 'summitflow:'
 
 export function PersonaChatClient() {
   const searchParams = useSearchParams()
+  const projectId = getChatProjectId(searchParams)
   const taskId = searchParams.get('task_id')
   const notificationId = searchParams.get('notification_id')
   const personaName = usePersonaName()
@@ -27,10 +31,10 @@ export function PersonaChatClient() {
   // Fetch notification context if linked from a push notification
   useEffect(() => {
     if (!notificationId) return
-    fetchNotification(PROJECT_ID, notificationId)
+    fetchNotification(projectId, notificationId)
       .then(setNotification)
       .catch(() => {}) // Non-critical — chat works without it
-  }, [notificationId])
+  }, [notificationId, projectId])
 
   const apiConfig: ChatStreamApiConfig = useMemo(() => {
     const proxyBase = getAgentHubProxyBase()
@@ -38,10 +42,10 @@ export function PersonaChatClient() {
       completeEndpoint: `${proxyBase}/complete`,
       sessionsEndpoint: `${proxyBase}/sessions`,
       preferencesEndpoint: `${proxyBase}/preferences`,
-      projectId: PROJECT_ID,
-      memoryGroupPrefix: MEMORY_GROUP_PREFIX,
+      projectId,
+      memoryGroupPrefix: getProjectMemoryGroupPrefix(projectId),
     }
-  }, [])
+  }, [projectId])
 
   const voiceWsUrl = useMemo(() => getVoiceWsUrl(), [])
   const ttsBaseUrl = useMemo(() => getTtsBaseUrl(), [])
@@ -65,6 +69,7 @@ export function PersonaChatClient() {
             taskId
               ? () => (
                   <BlockerBanner
+                    projectId={projectId}
                     taskId={taskId}
                     notification={notification}
                   />
@@ -76,7 +81,11 @@ export function PersonaChatClient() {
       </div>
       {taskId && sessionId && (
         <div className="px-3 sm:px-4 py-2 border-t border-slate-800 bg-slate-950/80 backdrop-blur-sm flex-shrink-0">
-          <ResumeBar taskId={taskId} personaName={personaName} />
+          <ResumeBar
+            projectId={projectId || DEFAULT_PROJECT_ID}
+            taskId={taskId}
+            personaName={personaName}
+          />
         </div>
       )}
     </div>
