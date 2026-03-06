@@ -25,9 +25,11 @@ _VALIDATE_PLAN_PROMPT = (
 )
 
 
-def _get_project_id(task_id: str) -> str:
+def _get_project_id(task_id: str, task: dict[str, object] | None = None) -> str:
     """Resolve project scope from the task, falling back only if missing."""
-    return resolve_task_project_id(task_store.get_task(task_id))
+    if task is None:
+        task = task_store.get_task(task_id)
+    return resolve_task_project_id(task)
 
 
 def supervisor_validate_plan(task_id: str, reasoning: str, project_id: str) -> bool:
@@ -150,7 +152,7 @@ def route_based_on_complexity(task_id: str, title: str, description: str) -> Non
         description: Task description
     """
     task = task_store.get_task(task_id)
-    project_id = _get_project_id(task_id)
+    project_id = _get_project_id(task_id, task=task)
     existing_complexity = task.get("complexity") if task else None
 
     result_tier, result_reasoning = _resolve_complexity_tier(

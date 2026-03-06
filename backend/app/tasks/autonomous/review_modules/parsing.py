@@ -7,6 +7,41 @@ import re
 from typing import Any
 
 
+def _extract_balanced_braces(text: str, start: int) -> str | None:
+    """Extract a balanced JSON object starting at the given '{' position.
+
+    Returns the substring from the opening '{' to its matching '}',
+    correctly handling arbitrary nesting depth.  Returns ``None`` if
+    ``text[start]`` is not '{' or no matching '}' is found.
+    """
+    if start >= len(text) or text[start] != "{":
+        return None
+    depth = 0
+    in_string = False
+    escape = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if escape:
+            escape = False
+            continue
+        if ch == "\\":
+            if in_string:
+                escape = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
+    return None
+
+
 def _strip_tool_call_artifacts(content: str) -> str:
     """Remove tool call/result artifacts that LLMs occasionally hallucinate.
 
@@ -19,13 +54,17 @@ def _strip_tool_call_artifacts(content: str) -> str:
     cleaned = re.sub(r"<tool_call>[\s\S]*?</tool_call>", "", content)
     cleaned = re.sub(r"<tool_result>[\s\S]*?</tool_result>", "", cleaned)
 
-    # Strip {"type": "tool_use", ...} JSON objects — match balanced braces
-    # Use a pattern that targets the tool_use type marker specifically
-    cleaned = re.sub(
-        r'\{\s*"type"\s*:\s*"tool_use"[^}]*(?:\{[^}]*\}[^}]*)?\}',
-        "",
-        cleaned,
-    )
+    # Strip {"type": "tool_use", ...} JSON objects using balanced brace matching
+    # to correctly handle arbitrarily nested structures.
+    tool_use_pattern = re.compile(r'\{\s*"type"\s*:\s*"tool_use"')
+    while True:
+        m = tool_use_pattern.search(cleaned)
+        if not m:
+            break
+        obj = _extract_balanced_braces(cleaned, m.start())
+        if obj is None:
+            break
+        cleaned = cleaned[: m.start()] + cleaned[m.start() + len(obj) :]
 
     return cleaned.strip()
 
@@ -71,7 +110,20 @@ def parse_review_response(content: str) -> dict[str, Any]:
             pass
 
     # Strategy 4: Any JSON object in cleaned content — walk subkeys for verdict
-    for json_match in re.finditer(r"\{[\s\S]*?\}", cleaned):
+    # Use balanced brace extraction so nested objects are captured correctly.
+    _s4_candidates: list[str] = []
+    _s4_offset = 0
+    while _s4_offset < len(cleaned):
+        _s4_pos = cleaned.find("{", _s4_offset)
+        if _s4_pos == -1:
+            break
+        _s4_obj = _extract_balanced_braces(cleaned, _s4_pos)
+        if _s4_obj is None:
+            _s4_offset = _s4_pos + 1
+            continue
+        _s4_candidates.append(_s4_obj)
+        _s4_offset = _s4_pos + len(_s4_obj)
+    for json_text in _s4_candidates:
         try:
             parsed = json.loads(json_match.group())
             if "verdict" in parsed:

@@ -46,10 +46,15 @@ async def list_backup_sources(
 
 
 @router.get("/backup-sources/{source_id}", response_model=BackupSourceResponse)
-async def get_backup_source(source_id: str) -> BackupSourceResponse:
+async def get_backup_source(
+    source_id: str,
+    project_id: str | None = None,
+) -> BackupSourceResponse:
     """Get a backup source by ID."""
     source = backup_store.get_source(source_id)
     if not source:
+        raise HTTPException(status_code=404, detail=f"Source {source_id} not found")
+    if project_id and str(source.get("project_id", "")) != project_id:
         raise HTTPException(status_code=404, detail=f"Source {source_id} not found")
     return _source_to_response(source)
 
@@ -71,10 +76,13 @@ async def create_backup_source(request: BackupSourceCreate) -> BackupSourceRespo
 async def update_backup_source(
     source_id: str,
     request: BackupSourceUpdate,
+    project_id: str | None = None,
 ) -> BackupSourceResponse:
     """Update a backup source (name, schedule config)."""
     existing = backup_store.get_source(source_id)
     if not existing:
+        raise HTTPException(status_code=404, detail=f"Source {source_id} not found")
+    if project_id and str(existing.get("project_id", "")) != project_id:
         raise HTTPException(status_code=404, detail=f"Source {source_id} not found")
 
     fields = request.model_dump(exclude_unset=True)
@@ -91,8 +99,16 @@ async def update_backup_source(
 
 
 @router.delete("/backup-sources/{source_id}")
-async def delete_backup_source(source_id: str) -> dict[str, object]:
+async def delete_backup_source(
+    source_id: str,
+    project_id: str | None = None,
+) -> dict[str, object]:
     """Delete a backup source."""
+    source = backup_store.get_source(source_id)
+    if not source:
+        raise HTTPException(status_code=404, detail=f"Source {source_id} not found")
+    if project_id and str(source.get("project_id", "")) != project_id:
+        raise HTTPException(status_code=404, detail=f"Source {source_id} not found")
     deleted = backup_store.delete_source(source_id)
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Source {source_id} not found")

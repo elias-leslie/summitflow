@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import NoReturn
+
 import httpx
 import typer
 
@@ -24,7 +26,7 @@ def _extract_root_error_message(error: BaseException) -> str:
     return message or current.__class__.__name__
 
 
-def raise_connect_error(service_name: str, url: str, error: httpx.ConnectError) -> None:
+def raise_connect_error(service_name: str, url: str, error: httpx.ConnectError) -> NoReturn:
     """Emit a detailed connect error and exit."""
     detail = _extract_root_error_message(error)
     output_error(f"Cannot connect to {service_name} at {url}: {detail}")
@@ -32,7 +34,7 @@ def raise_connect_error(service_name: str, url: str, error: httpx.ConnectError) 
     raise typer.Exit(1) from None
 
 
-def raise_timeout_error(service_name: str, url: str, timeout: float, error: httpx.TimeoutException) -> None:
+def raise_timeout_error(service_name: str, url: str, timeout: float, error: httpx.TimeoutException) -> NoReturn:
     """Emit a detailed timeout error and exit."""
     detail = _extract_root_error_message(error)
     output_error(f"Request to {service_name} at {url} timed out after {timeout:.0f}s: {detail}")

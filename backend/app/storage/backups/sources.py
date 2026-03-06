@@ -91,9 +91,11 @@ def update_source(source_id: str, **fields: Any) -> dict[str, Any] | None:
     updates = []
     params: list[Any] = []
 
+    unknown = fields.keys() - allowed
+    if unknown:
+        raise ValueError(f"Unknown fields: {', '.join(sorted(unknown))}")
+
     for key, value in fields.items():
-        if key not in allowed:
-            continue
         updates.append(f"{key} = %s")
         params.append(value)
 

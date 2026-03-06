@@ -75,7 +75,19 @@ def _resolve_update_content(content: str | None, content_file: str | None) -> st
     if content_file == "-":
         return sys.stdin.read()
 
-    return Path(content_file).read_text(encoding="utf-8")
+    path = Path(content_file)
+    try:
+        return path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        from ..output import output_error
+
+        output_error(f"Content file not found: {content_file}")
+        raise typer.Exit(1) from None
+    except PermissionError:
+        from ..output import output_error
+
+        output_error(f"Permission denied reading content file: {content_file}")
+        raise typer.Exit(1) from None
 
 
 @app.callback(invoke_without_command=True)

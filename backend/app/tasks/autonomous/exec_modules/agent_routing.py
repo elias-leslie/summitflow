@@ -131,7 +131,9 @@ def _build_extension_prompt(
 
 def _get_project_id(task_id: str, project_id: str | None = None) -> str:
     """Resolve project scope from explicit input or task context."""
-    return resolve_task_project_id(task_store.get_task(task_id), project_id)
+    if project_id:
+        return project_id
+    return resolve_task_project_id(task_store.get_task(task_id))
 
 
 def request_extension(

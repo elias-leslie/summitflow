@@ -30,28 +30,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Recreate the trigger (requires qa_status column to exist)."""
-    op.execute("""
-        CREATE OR REPLACE FUNCTION enforce_subtasks_complete_before_qa_pass()
-        RETURNS trigger LANGUAGE plpgsql AS $function$
-        DECLARE
-            incomplete_count INTEGER;
-        BEGIN
-            IF NEW.qa_status = 'passed' AND (OLD.qa_status IS NULL OR OLD.qa_status != 'passed') THEN
-                SELECT COUNT(*) INTO incomplete_count
-                FROM task_subtasks
-                WHERE task_id = NEW.id AND passes = FALSE;
-                IF incomplete_count > 0 THEN
-                    RAISE EXCEPTION 'Cannot pass QA with % incomplete subtasks.', incomplete_count;
-                END IF;
-            END IF;
-            RETURN NEW;
-        END;
-        $function$
-    """)
-    op.execute("""
-        CREATE TRIGGER enforce_subtasks_complete_before_qa_pass
-        BEFORE UPDATE ON tasks
-        FOR EACH ROW
-        EXECUTE FUNCTION enforce_subtasks_complete_before_qa_pass()
-    """)
+    """No-op: the trigger referenced qa_status which was removed in a prior
+    migration, so recreating it would break all task UPDATEs."""
+    pass

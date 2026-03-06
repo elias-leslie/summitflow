@@ -88,6 +88,11 @@ async def deliver(notification: dict[str, Any]) -> None:
                         notification.get("id"),
                         delivered,
                     )
+                else:
+                    logger.warning(
+                        "Notification %s accepted by Agent Hub but delivered to 0 devices",
+                        notification.get("id"),
+                    )
             else:
                 logger.warning(
                     "Agent Hub push send failed: %s %s",

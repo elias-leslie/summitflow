@@ -12,6 +12,8 @@ from ..config import get_agent_hub_url
 from ..output import output_error
 from ._http_errors import raise_connect_error, raise_timeout_error
 
+_HTTP_TIMEOUT_READ = 90.0
+
 
 def load_credentials() -> tuple[str, str]:
     """Load credentials from ~/.env.local."""
@@ -87,7 +89,7 @@ def agent_hub_request(
     agent_hub_url = get_agent_hub_url()
     url = f"{agent_hub_url}{path}"
     # Graphiti embedding + Neo4j writes can take 30-60s; generous timeout prevents partial ops.
-    timeout = httpx.Timeout(connect=5.0, read=90.0, write=30.0, pool=30.0)
+    timeout = httpx.Timeout(connect=5.0, read=_HTTP_TIMEOUT_READ, write=30.0, pool=30.0)
     try:
         with httpx.Client(timeout=timeout) as client:
             response = _dispatch(client, method, url, params=params, json=json, headers=headers)
@@ -95,7 +97,7 @@ def agent_hub_request(
     except httpx.ConnectError as e:
         raise_connect_error("Agent Hub", agent_hub_url, e)
     except httpx.TimeoutException as e:
-        raise_timeout_error("Agent Hub", agent_hub_url, 90.0, e)
+        raise_timeout_error("Agent Hub", agent_hub_url, _HTTP_TIMEOUT_READ, e)
     except typer.Exit:
         raise
     except Exception as e:

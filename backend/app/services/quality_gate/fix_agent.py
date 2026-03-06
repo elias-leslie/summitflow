@@ -123,6 +123,10 @@ def fix_lint_type_error(
         logger.error("llm_failed", error=str(e))
         return FixAttemptResult(outcome="failed", cost_usd=0.0)
 
+    if not new_content:
+        logger.warning("empty_llm_response", result_id=result_id)
+        return FixAttemptResult(outcome="failed", cost_usd=cost_usd)
+
     is_cannot_fix, reason = is_cannot_fix_response(new_content)
     if is_cannot_fix:
         logger.info("cannot_fix", result_id=result_id, reason=reason)

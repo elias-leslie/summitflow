@@ -28,7 +28,10 @@ DECISION_APPROVE = "approve"
 DECISION_FIX = "fix"
 
 
-def _get_project_id(task_id: str) -> str:
+def _get_project_id(task_id: str, project_id: str | None = None) -> str:
+    """Resolve project scope, skipping DB fetch when project_id is provided."""
+    if project_id:
+        return project_id
     return resolve_task_project_id(task_store.get_task(task_id))
 
 

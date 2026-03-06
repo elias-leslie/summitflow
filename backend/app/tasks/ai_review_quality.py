@@ -72,6 +72,14 @@ def run_code_quality_review(
     """
     try:
         result = opus_review(cast(Task, task), resolved_path=project_path)
+        # opus_review returns error results (verdict=REQUEST_FIX, confidence=0)
+        # for pre-review failures (missing SHA, diff errors, etc.).
+        # Propagate these as errors instead of feeding them into
+        # _build_review_result where low confidence would mask the failure.
+        if result.get("confidence", 0.0) == 0.0 and result.get("verdict") == "REQUEST_FIX":
+            error_msg = result.get("summary", "Review pre-check failed")
+            logger.error("code_quality_review_pre_check_failed", error=error_msg)
+            return {"status": "error", "error": error_msg}
         return _build_review_result(result, "code_quality_low_confidence")
     except Exception as e:
         logger.error("code_quality_review_failed", error=str(e))

@@ -59,6 +59,7 @@ def get_similar_patterns(
         check_type: Type of check (ruff, types, etc.)
         error_code: Error code (F401, etc.)
         error_message: Error message
+        project_id: Optional project ID for scoped pattern lookup
 
     Returns:
         List of similar patterns, empty if retrieval fails
@@ -131,6 +132,7 @@ def store_successful_pattern(
         file_path: File that was fixed
         original_content: Original file content
         fixed_content: Fixed file content
+        project_id: Optional project ID for scoped pattern storage
     """
     try:
         fix_diff = _compute_fix_diff(original_content, fixed_content)
