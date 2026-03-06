@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import inspect
 import logging
-import os
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -16,13 +15,13 @@ import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from .._agent_hub_config import (
+    AGENT_HUB_URL,
     SUMMITFLOW_CLIENT_ID,
     SUMMITFLOW_REQUEST_SOURCE,
 )
 
 logger = logging.getLogger(__name__)
 
-AGENT_HUB_BASE_URL = os.getenv("AGENT_HUB_URL", "http://localhost:8003")
 DEFAULT_TIMEOUT = 10.0
 
 
@@ -51,7 +50,7 @@ class SearchResult:
 class MemoryClient:
     """Client for interacting with Agent Hub's memory API."""
 
-    def __init__(self, base_url: str = AGENT_HUB_BASE_URL, timeout: float = DEFAULT_TIMEOUT):
+    def __init__(self, base_url: str = AGENT_HUB_URL, timeout: float = DEFAULT_TIMEOUT):
         """Initialize the memory client.
 
         Args:

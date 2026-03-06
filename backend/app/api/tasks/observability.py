@@ -15,13 +15,13 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from ...logging_config import get_logger
+from ...services._agent_hub_config import AGENT_HUB_URL, SUMMITFLOW_REQUEST_SOURCE
 from ...storage.tasks.core import get_agent_hub_sessions
 
 logger = get_logger(__name__)
 router = APIRouter()
 
 # Constants
-DEFAULT_AGENT_HUB_URL = "http://localhost:8003"
 DEFAULT_REQUEST_SOURCE = "summitflow-observability"
 HTTP_TIMEOUT = 30.0
 EMPTY_SESSION_RESULT: dict[str, Any] = {"events": [], "total": 0, "max_turn": 0}
@@ -73,7 +73,7 @@ def _load_credentials() -> tuple[str, str]:
     )
     if not client_id:
         raise HTTPException(status_code=500, detail="Missing SUMMITFLOW_CLIENT_ID credential for Agent Hub")
-    return client_id, os.getenv("SUMMITFLOW_REQUEST_SOURCE", DEFAULT_REQUEST_SOURCE)
+    return client_id, os.getenv("SUMMITFLOW_REQUEST_SOURCE", SUMMITFLOW_REQUEST_SOURCE or DEFAULT_REQUEST_SOURCE)
 
 
 def _fetch_session_events(
@@ -91,7 +91,7 @@ def _fetch_session_events(
         params["event_type"] = event_type
     if turn is not None:
         params["turn"] = turn
-    agent_hub_url = os.getenv("AGENT_HUB_URL", DEFAULT_AGENT_HUB_URL)
+    agent_hub_url = AGENT_HUB_URL
     url = f"{agent_hub_url}/api/sessions/{session_id}/events"
     try:
         with httpx.Client(timeout=HTTP_TIMEOUT) as client:

@@ -39,12 +39,20 @@ const severityColors = {
   critical: 'text-rose-500',
 }
 
+export const browserNavigator = {
+  go(url: string): void {
+    window.location.href = url
+  },
+}
+
 function navigateToChat(notification: Notification, projectId: string) {
-  window.location.href = buildChatUrl({
-    projectId,
-    taskId: notification.task_id,
-    notificationId: notification.id,
-  })
+  browserNavigator.go(
+    buildChatUrl({
+      projectId,
+      taskId: notification.task_id,
+      notificationId: notification.id,
+    }),
+  )
 }
 
 export function NotificationBell({
@@ -65,11 +73,13 @@ export function NotificationBell({
     const notificationId = params.get('notification_id')
     if (!notificationId) return
 
-    window.location.href = buildChatUrl({
-      projectId: getChatProjectId(params),
-      taskId: params.get('task_id'),
-      notificationId,
-    })
+    browserNavigator.go(
+      buildChatUrl({
+        projectId: getChatProjectId(params),
+        taskId: params.get('task_id'),
+        notificationId,
+      }),
+    )
   }, [projectId])
 
   // Fetch pending count periodically
