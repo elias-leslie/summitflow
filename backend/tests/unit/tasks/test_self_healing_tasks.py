@@ -275,6 +275,7 @@ class TestMonitorBrowserErrors:
         mock_monitor_cls: MagicMock,
         mock_create: MagicMock,
     ) -> None:
+        """Missing project_id falls back to DEFAULT_PROJECT_ID."""
         mock_monitor = MagicMock()
         mock_monitor.get_new_errors.return_value = []
         mock_monitor_cls.return_value = mock_monitor
