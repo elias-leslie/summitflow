@@ -854,6 +854,50 @@ count_issues() {
     esac
 }
 
+NORMALIZED_TOOL_ARGS=()
+
+normalize_tool_args() {
+    local tool_name="$1"
+    local dir_type="$2"
+    shift 2
+
+    NORMALIZED_TOOL_ARGS=()
+
+    for arg in "$@"; do
+        local normalized="$arg"
+
+        # pytest runs from backend/ when backend/tests exists, so explicit paths
+        # like backend/tests/foo.py must be rewritten to tests/foo.py first.
+        if [[ "$tool_name" == "pytest" && "$dir_type" == "test" && "$PWD" == "$BACKEND_PATH" ]]; then
+            local path_part="$arg"
+            local suffix=""
+
+            if [[ "$arg" != -* ]]; then
+                if [[ "$arg" == *"::"* ]]; then
+                    path_part="${arg%%::*}"
+                    suffix="::${arg#*::}"
+                fi
+
+                if [[ "$path_part" == */* || "$path_part" == *.py || "$path_part" == /* ]]; then
+                    normalized="$path_part"
+
+                    if [[ "$normalized" == "$PROJECT_DIR/"* ]]; then
+                        normalized="${normalized#$PROJECT_DIR/}"
+                    fi
+
+                    if [[ "$normalized" == backend/* ]]; then
+                        normalized="${normalized#backend/}"
+                    fi
+
+                    normalized="${normalized}${suffix}"
+                fi
+            fi
+        fi
+
+        NORMALIZED_TOOL_ARGS+=("$normalized")
+    done
+}
+
 # Generic TOON wrapper - runs any tool defined in TOOL_DEFS
 run_tool_toon() {
     local tool_name="$1"
@@ -912,12 +956,14 @@ run_tool_toon() {
         cd "$PROJECT_DIR"
     fi
 
+    normalize_tool_args "$tool_name" "$dir_type" "${EXTRA_ARGS[@]}"
+
     # Execute tool (EXTRA_ARGS passed as array to preserve quoted arguments like -k "expr with spaces")
     local output retval=0
     if [[ "$pass_path" == "1" ]]; then
-        output=$("$tool_bin" $args "${EXTRA_ARGS[@]}" "$work_dir" 2>&1) || retval=$?
+        output=$("$tool_bin" $args "${NORMALIZED_TOOL_ARGS[@]}" "$work_dir" 2>&1) || retval=$?
     else
-        output=$("$tool_bin" $args "${EXTRA_ARGS[@]}" 2>&1) || retval=$?
+        output=$("$tool_bin" $args "${NORMALIZED_TOOL_ARGS[@]}" 2>&1) || retval=$?
     fi
 
     # Count issues
