@@ -11,6 +11,7 @@ import typer
 from ..client import APIError, STClient
 from ..config import get_agent_hub_url
 from ..output import handle_api_error, output_error
+from ._http_errors import raise_connect_error, raise_timeout_error
 
 # Credential keys
 _ENV_FILE = ".env.local"
@@ -103,9 +104,10 @@ def get_session_events(
         with httpx.Client(timeout=_HTTP_TIMEOUT) as client:
             response = client.get(url, headers=headers, params=params)
         return _check_response(response)
-    except httpx.ConnectError:
-        output_error(f"Cannot connect to Agent Hub at {agent_hub_url}")
-        raise typer.Exit(1) from None
+    except httpx.ConnectError as e:
+        raise_connect_error("Agent Hub", agent_hub_url, e)
+    except httpx.TimeoutException as e:
+        raise_timeout_error("Agent Hub", agent_hub_url, _HTTP_TIMEOUT, e)
     except typer.Exit:
         raise
     except Exception as e:

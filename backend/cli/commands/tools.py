@@ -10,6 +10,7 @@ import typer
 from ..config import get_agent_hub_url
 from ..output import output_error, output_json
 from ..output_context import OutputContext
+from ._http_errors import raise_connect_error, raise_timeout_error
 
 app = typer.Typer(help="Tool usage metrics (Agent Hub)")
 
@@ -41,9 +42,10 @@ def _api_request(path: str, params: dict[str, Any] | None = None) -> dict[str, A
         with httpx.Client(timeout=30.0) as client:
             response = client.get(url, params=params, headers=headers)
             return _handle_response(response, agent_hub_url)
-    except httpx.ConnectError:
-        output_error(f"Cannot connect to Agent Hub at {agent_hub_url}")
-        raise typer.Exit(1) from None
+    except httpx.ConnectError as e:
+        raise_connect_error("Agent Hub", agent_hub_url, e)
+    except httpx.TimeoutException as e:
+        raise_timeout_error("Agent Hub", agent_hub_url, 30.0, e)
     except typer.Exit:
         raise
     except Exception as e:

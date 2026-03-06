@@ -14,6 +14,7 @@ import typer
 
 from ..config import get_agent_hub_url
 from ..output import output_error
+from ._http_errors import raise_connect_error, raise_timeout_error
 
 _IMAGE_MIME_TYPES = {
     ".png": "image/png",
@@ -205,9 +206,10 @@ def call_complete(
     if stream:
         try:
             return stream_complete(agent_hub_url, headers, payload, read_timeout)
-        except httpx.ConnectError:
-            output_error(f"Cannot connect to Agent Hub at {agent_hub_url}")
-            raise typer.Exit(1) from None
+        except httpx.ConnectError as e:
+            raise_connect_error("Agent Hub", agent_hub_url, e)
+        except httpx.TimeoutException as e:
+            raise_timeout_error("Agent Hub", agent_hub_url, read_timeout, e)
     http_timeout = httpx.Timeout(connect=5.0, read=read_timeout, write=30.0, pool=30.0)
     max_attempts = 2
     for attempt in range(1, max_attempts + 1):
@@ -217,12 +219,13 @@ def call_complete(
             if response.status_code >= 400:
                 handle_error_response(response)
             return cast(dict[str, Any], response.json())
-        except httpx.ConnectError:
+        except httpx.ConnectError as e:
             if attempt < max_attempts:
                 time.sleep(0.5 * attempt)
                 continue
-            output_error(f"Cannot connect to Agent Hub at {agent_hub_url}")
-            raise typer.Exit(1) from None
+            raise_connect_error("Agent Hub", agent_hub_url, e)
+        except httpx.TimeoutException as e:
+            raise_timeout_error("Agent Hub", agent_hub_url, read_timeout, e)
         except typer.Exit:
             raise
         except Exception as e:

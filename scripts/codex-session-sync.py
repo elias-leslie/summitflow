@@ -202,6 +202,7 @@ def post_json(
 
 def sync_transcript(
     info: TranscriptInfo,
+    state: dict[str, Any],
     api_url: str,
     client_id: str,
     client_secret: str,
@@ -218,26 +219,62 @@ def sync_transcript(
         "provider": "codex",
         "model": f"codex/{info.model}",
         "session_type": "agent",
+        "cwd": str(info.cwd),
+        "current_branch": project["branch"],
+        "provider_metadata": {"transcript_path": str(info.path)},
     }
-    status, payload = post_json(api_url, "/sessions", create_body, client_id, client_secret)
-    if status not in (200, 201):
-        return False, f"session create failed status={status} body={payload[:300]}"
+    status, payload = post_json(
+        api_url,
+        "/session-ingestion/sessions/upsert",
+        create_body,
+        client_id,
+        client_secret,
+    )
+    if status != 200:
+        return False, f"session upsert failed status={status} body={payload[:300]}"
 
-    analyze_body = {
+    transcript_state = state.get("transcripts", {}).get(str(info.path), {})
+    ingest_body = {
+        "provider": "codex",
         "transcript_path": str(info.path),
+        "checkpoint": transcript_state.get("checkpoint"),
+    }
+    status, payload = post_json(
+        api_url,
+        f"/session-ingestion/sessions/{info.session_id}/transcript-events",
+        ingest_body,
+        client_id,
+        client_secret,
+    )
+    if status != 200:
+        return False, f"transcript ingest failed status={status} body={payload[:300]}"
+
+    ingest_data = json.loads(payload)
+    update_state_entry(
+        state,
+        info,
+        "synced",
+        (
+            f"appended={ingest_data.get('events_appended', 0)} "
+            f"skipped={ingest_data.get('events_skipped', 0)}"
+        ),
+        checkpoint=ingest_data.get("next_checkpoint"),
+    )
+
+    finalize_body = {
         "branch": project["branch"],
         "git_context": project["git_context"],
         "is_worktree": project["is_worktree"],
     }
     status, payload = post_json(
         api_url,
-        f"/memory/sessions/{info.session_id}/analyze",
-        analyze_body,
+        f"/session-ingestion/sessions/{info.session_id}/finalize",
+        finalize_body,
         client_id,
         client_secret,
     )
     if status != 200:
-        return False, f"analysis failed status={status} body={payload[:300]}"
+        return False, f"finalize failed status={status} body={payload[:300]}"
 
     if close_session:
         status, payload = post_json(
@@ -268,7 +305,13 @@ def should_sync(info: TranscriptInfo, state: dict[str, Any], force: bool) -> boo
     return entry.get("mtime") != info.mtime or entry.get("size") != info.size
 
 
-def update_state_entry(state: dict[str, Any], info: TranscriptInfo, status: str, detail: str) -> None:
+def update_state_entry(
+    state: dict[str, Any],
+    info: TranscriptInfo,
+    status: str,
+    detail: str,
+    checkpoint: str | None = None,
+) -> None:
     transcripts = state.setdefault("transcripts", {})
     transcripts[str(info.path)] = {
         "session_id": info.session_id,
@@ -276,6 +319,7 @@ def update_state_entry(state: dict[str, Any], info: TranscriptInfo, status: str,
         "size": info.size,
         "status": status,
         "detail": detail,
+        "checkpoint": checkpoint,
         "updated_at": datetime.now(UTC).isoformat(),
     }
 
@@ -315,14 +359,15 @@ def main(argv: list[str]) -> int:
             continue
         ok, detail = sync_transcript(
             info=info,
+            state=state,
             api_url=DEFAULT_API,
             client_id=client_id,
             client_secret=client_secret,
             close_session=args.close,
             verbose=args.verbose,
         )
-        update_state_entry(state, info, "synced" if ok else "error", detail)
         if not ok:
+            update_state_entry(state, info, "error", detail)
             log(f"[WARN] Failed sync for {info.path}: {detail}")
 
     save_state(state)

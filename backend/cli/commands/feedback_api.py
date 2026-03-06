@@ -9,6 +9,7 @@ import typer
 
 from ..config import get_agent_hub_url
 from ..output import output_error
+from ._http_errors import raise_connect_error, raise_timeout_error
 from .memory_api import load_credentials
 
 
@@ -72,9 +73,10 @@ def feedback_request(
             raise typer.Exit(1) from None
 
         return cast(dict[str, Any], response.json())
-    except httpx.ConnectError:
-        output_error(f"Cannot connect to Agent Hub at {agent_hub_url}")
-        raise typer.Exit(1) from None
+    except httpx.ConnectError as e:
+        raise_connect_error("Agent Hub", agent_hub_url, e)
+    except httpx.TimeoutException as e:
+        raise_timeout_error("Agent Hub", agent_hub_url, 30.0, e)
     except typer.Exit:
         raise
     except Exception as e:

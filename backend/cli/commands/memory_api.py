@@ -10,6 +10,7 @@ import typer
 
 from ..config import get_agent_hub_url
 from ..output import output_error
+from ._http_errors import raise_connect_error, raise_timeout_error
 
 
 def load_credentials() -> tuple[str, str]:
@@ -91,9 +92,10 @@ def agent_hub_request(
         with httpx.Client(timeout=timeout) as client:
             response = _dispatch(client, method, url, params=params, json=json, headers=headers)
             return _check_response(response, agent_hub_url)
-    except httpx.ConnectError:
-        output_error(f"Cannot connect to Agent Hub at {agent_hub_url}")
-        raise typer.Exit(1) from None
+    except httpx.ConnectError as e:
+        raise_connect_error("Agent Hub", agent_hub_url, e)
+    except httpx.TimeoutException as e:
+        raise_timeout_error("Agent Hub", agent_hub_url, 90.0, e)
     except typer.Exit:
         raise
     except Exception as e:

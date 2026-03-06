@@ -163,7 +163,6 @@ EXAMPLES:
   st done task-abc                         # complete task, remove checkpoint
   st abandon task-abc --force              # rollback everything
   st checkpoints                           # show active checkpoints
-  st checkpoints                           # show active checkpoints
 
 SESSION EVENTS (Agent Hub observability):
   session-events <session-id>              # view events by session ID
