@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import httpx
 import pytest
-from click.exceptions import Exit
+from typer import Exit
 
 from cli.commands._http_errors import raise_connect_error, raise_timeout_error
 

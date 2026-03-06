@@ -258,10 +258,8 @@ class TestParseReviewResponseDefault:
         assert result["verdict"] == "NEEDS_FIX"
 
     def test_malformed_json_defaults_to_needs_fix(self) -> None:
-        result = parse_review_response("{verdict: APPROVED}")  # missing quotes
-        # No keyword either so should be NEEDS_FIX; but content has "APPROVED" text
-        # keyword scan will pick it up — that's acceptable fallback behaviour.
-        assert result["verdict"] in {"APPROVED", "NEEDS_FIX"}
+        result = parse_review_response("{verdict: }")  # malformed, no keyword
+        assert result["verdict"] == "NEEDS_FIX"
 
     def test_result_always_contains_verdict_key(self) -> None:
         """Guarantee: parse_review_response always returns a dict with 'verdict'."""

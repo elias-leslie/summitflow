@@ -137,5 +137,5 @@ class TestCLIReferenceComplete:
         result = runner.invoke(app, ["--help"])
 
         assert result.exit_code == 0
-        assert "[work]" in result.stdout
-        assert "projects [list|current|get|create|update|delete]" in result.stdout
+        assert "[work]" in result.output
+        assert "projects [list|current|get|create|update|delete]" in result.output
