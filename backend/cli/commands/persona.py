@@ -40,13 +40,13 @@ def _read_file(path: str) -> str:
     return p.read_text()
 
 
-def _field_status(persona: dict, field: str) -> str:
+def _field_status(persona: dict[str, Any], field: str) -> str:
     """Return 'set (N chars)' or 'unset' for a persona field."""
     val = persona.get(field)
     return f"set ({len(val)} chars)" if val else "unset"
 
 
-def _print_persona(persona: dict) -> None:
+def _print_persona(persona: dict[str, Any]) -> None:
     """Print persona overview in compact format."""
     preview = ""
     if persona.get("personality"):
@@ -250,9 +250,18 @@ def _edit_instructions_in_editor(current: dict[str, Any]) -> None:
 @app.command()
 def instructions(
     edit: Annotated[bool, _Opt("--edit", "-e", help="Open $EDITOR to modify")] = False,
+    set_text: Annotated[str | None, _Opt("--set", "-s", help="Set heartbeat instructions directly")] = None,
 ) -> None:
     """Print or modify heartbeat instructions."""
-    from .persona_api import get_persona
+    from .persona_api import get_persona, update_persona
+    if set_text is not None:
+        try:
+            result = update_persona({"heartbeat_instructions": set_text})
+            print(f"Heartbeat instructions updated (version {result.get('version', '?')})")
+        except Exception as e:
+            output_error(f"Failed to update heartbeat instructions: {e}")
+            raise typer.Exit(1) from e
+        return
     try:
         persona = get_persona()
     except Exception as e:

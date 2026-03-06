@@ -24,14 +24,11 @@ class TestMemoryUpdateContentInput:
             result = runner.invoke(app, ["update", "abc12345", "--content-file", str(content_file)])
 
         assert result.exit_code == 0
-        mock_update_impl.assert_called_once_with(
-            "abc12345",
-            "Use /commit_it when available.\n",
-            None,
-            None,
-            None,
-            None,
-        )
+        mock_update_impl.assert_called_once()
+        args = mock_update_impl.call_args
+        assert args[0][0] == "abc12345"
+        assert args[0][1] == "Use /commit_it when available.\n"
+        assert args[0][2:] == (None, None, None, None)
 
     def test_update_accepts_content_from_stdin(self) -> None:
         """`--content-file -` should read content from stdin."""
@@ -43,14 +40,11 @@ class TestMemoryUpdateContentInput:
             )
 
         assert result.exit_code == 0
-        mock_update_impl.assert_called_once_with(
-            "abc12345",
-            "Literal [work] and `backticks` should survive.\n",
-            None,
-            None,
-            None,
-            None,
-        )
+        mock_update_impl.assert_called_once()
+        args = mock_update_impl.call_args
+        assert args[0][0] == "abc12345"
+        assert args[0][1] == "Literal [work] and `backticks` should survive.\n"
+        assert args[0][2:] == (None, None, None, None)
 
     def test_update_rejects_inline_and_file_content_together(self, tmp_path: Path) -> None:
         """`--content` and `--content-file` together should error clearly."""

@@ -154,13 +154,9 @@ class TestParseReviewResponseToolUseHallucinations:
 
     def test_tool_call_xml_only_no_verdict_falls_back_to_keyword(self) -> None:
         """No JSON at all — only XML tool calls — but text has APPROVED keyword."""
-        content = "<tool_call>bash(echo APPROVED)</tool_call>"
+        content = "<tool_call>bash(echo ok)</tool_call> The change is APPROVED."
         result = parse_review_response(content)
-        # Keyword fallback picks up APPROVED from the stripped content's
-        # surrounding text — or the overall content.  Either way we get a
-        # usable result; exact verdict may be APPROVED or NEEDS_FIX depending
-        # on whether stripping removes the keyword.
-        assert "verdict" in result
+        assert result["verdict"] == "APPROVED"
 
     def test_nested_tool_use_wrapping_verdict_in_input_key(self) -> None:
         """Verdict JSON is the value of 'input' inside a tool_use wrapper."""
