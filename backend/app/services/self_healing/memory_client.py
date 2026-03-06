@@ -16,13 +16,15 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 from .._agent_hub_config import (
     AGENT_HUB_URL,
-    SUMMITFLOW_CLIENT_ID,
-    SUMMITFLOW_REQUEST_SOURCE,
+    build_agent_hub_headers,
 )
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT = 10.0
+SOURCE_CLIENT = "summitflow"
+HEADER_SOURCE_CLIENT = "X-Source-Client"
+HEADER_SOURCE_PATH = "X-Source-Path"
 
 
 @dataclass
@@ -59,13 +61,9 @@ class MemoryClient:
         """
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
-        self._auth_headers: dict[str, str] = {
-            "X-Source-Client": "summitflow",
-        }
-        if SUMMITFLOW_CLIENT_ID:
-            self._auth_headers["X-Client-Id"] = SUMMITFLOW_CLIENT_ID
-        if SUMMITFLOW_REQUEST_SOURCE:
-            self._auth_headers["X-Request-Source"] = SUMMITFLOW_REQUEST_SOURCE
+        self._auth_headers = build_agent_hub_headers(
+            extra_headers={HEADER_SOURCE_CLIENT: SOURCE_CLIENT},
+        )
 
     def _headers_with_source_path(self) -> dict[str, str]:
         """Return auth headers with X-Source-Path from caller."""
@@ -75,7 +73,7 @@ class MemoryClient:
         # the decorator frame instead. Acceptable — the path still identifies
         # the module even if the line number points to tenacity internals.
         frame = inspect.stack()[2]
-        headers["X-Source-Path"] = f"{frame.filename}:{frame.lineno}"
+        headers[HEADER_SOURCE_PATH] = f"{frame.filename}:{frame.lineno}"
         return headers
 
     async def health_check(self) -> dict[str, Any]:
@@ -256,7 +254,3 @@ class MemoryClient:
             )
             response.raise_for_status()
             return cast(dict[str, Any], response.json())
-
-
-# Backward-compatible alias (deprecated, use MemoryClient)
-GraphitiClient = MemoryClient

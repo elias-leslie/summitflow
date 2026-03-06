@@ -18,6 +18,7 @@ from fastapi.responses import PlainTextResponse
 from ...schemas.tasks import TaskResponse
 from ...storage import tasks as task_store
 from ...storage.subtasks import get_subtasks_for_task
+from ...tasks.autonomous._project_resolution import resolve_task_project_id
 from .formatting import toon_format_task
 from .helpers import (
     get_step_verification_status,
@@ -114,7 +115,7 @@ async def review_task(task_id: str) -> dict[str, Any]:
     from ...tasks.autonomous.review_modules.parsing import parse_review_response
 
     task = get_task_or_404(task_id)
-    project_id = task.get("project_id", "summitflow")
+    project_id = resolve_task_project_id(task)
 
     git_diff = await asyncio.to_thread(get_git_diff, task_id, project_id)
     if not git_diff or git_diff.strip() in ("(no changes)", ""):

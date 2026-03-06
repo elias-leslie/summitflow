@@ -5,16 +5,12 @@ from __future__ import annotations
 import httpx
 
 from ....logging_config import get_logger
+from ....services._agent_hub_config import build_agent_hub_headers
 
 logger = get_logger(__name__)
 
 # Prompt cache for process lifetime
 _prompt_cache: dict[str, str] = {}
-
-# HTTP header names
-_HEADER_CLIENT_ID = "X-Client-Id"
-_HEADER_REQUEST_SOURCE = "X-Request-Source"
-_DEFAULT_REQUEST_SOURCE = "summitflow"
 
 
 def get_prompt_template(slug: str) -> str:
@@ -29,17 +25,10 @@ def get_prompt_template(slug: str) -> str:
 
     from ....services.agent_hub_client import (
         AGENT_HUB_URL,
-        SUMMITFLOW_CLIENT_ID,
-        SUMMITFLOW_REQUEST_SOURCE,
     )
 
     url = f"{AGENT_HUB_URL}/api/prompts/{slug}"
-    headers: dict[str, str] = {}
-    if SUMMITFLOW_CLIENT_ID:
-        headers = {
-            _HEADER_CLIENT_ID: SUMMITFLOW_CLIENT_ID,
-            _HEADER_REQUEST_SOURCE: SUMMITFLOW_REQUEST_SOURCE or _DEFAULT_REQUEST_SOURCE,
-        }
+    headers = build_agent_hub_headers()
     try:
         response = httpx.get(url, headers=headers, timeout=5.0)
     except httpx.HTTPError as e:

@@ -242,6 +242,62 @@ class TestRequestExtension:
         logged_msg = mock_log_event.call_args[0][1]
         assert "approved" in logged_msg.lower()
 
+    @patch("app.tasks.autonomous.exec_modules.agent_routing.log_task_event")
+    @patch("app.tasks.autonomous.exec_modules.agent_routing.task_store")
+    @patch("app.tasks.autonomous.exec_modules.agent_routing.get_sync_client")
+    def test_uses_task_project_when_project_id_not_passed(
+        self,
+        mock_client_factory: MagicMock,
+        mock_task_store: MagicMock,
+        mock_log_event: MagicMock,
+    ) -> None:
+        from app.tasks.autonomous.exec_modules.agent_routing import request_extension
+
+        mock_task_store.get_task.return_value = {"id": "task-1", "project_id": "agent-hub"}
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.content = "APPROVED. Try a different approach."
+        mock_client.complete.return_value = mock_response
+        mock_client_factory.return_value = mock_client
+
+        approved, guidance = request_extension(
+            "task-1",
+            "1.1",
+            [{"step_number": 1, "passed": False, "reason": "failed"}],
+            {"steps_passed": "1/2"},
+        )
+
+        assert approved is True
+        assert guidance is not None
+        assert mock_client.complete.call_args.kwargs["project_id"] == "agent-hub"
+
+    @patch("app.tasks.autonomous.exec_modules.agent_routing.log_task_event")
+    @patch("app.tasks.autonomous.exec_modules.agent_routing.task_store")
+    @patch("app.tasks.autonomous.exec_modules.agent_routing.get_sync_client")
+    def test_falls_back_to_default_project_when_task_missing(
+        self,
+        mock_client_factory: MagicMock,
+        mock_task_store: MagicMock,
+        mock_log_event: MagicMock,
+    ) -> None:
+        from app.tasks.autonomous.exec_modules.agent_routing import request_extension
+
+        mock_task_store.get_task.return_value = None
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.content = "APPROVED. Continue."
+        mock_client.complete.return_value = mock_response
+        mock_client_factory.return_value = mock_client
+
+        request_extension(
+            "task-1",
+            "1.1",
+            [{"step_number": 1, "passed": False, "reason": "failed"}],
+            {"steps_passed": "1/2"},
+        )
+
+        assert mock_client.complete.call_args.kwargs["project_id"] == "summitflow"
+
 
 class TestHealLoopExtension:
     """Heal loop grants extension when supervisor approves and progress detected."""

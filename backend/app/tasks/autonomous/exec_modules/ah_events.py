@@ -13,7 +13,7 @@ import httpx
 
 from ....services._agent_hub_config import (
     AGENT_HUB_URL,
-    SUMMITFLOW_CLIENT_ID,
+    build_agent_hub_headers,
 )
 
 logger = logging.getLogger(__name__)
@@ -23,11 +23,10 @@ _TIMEOUT = 5  # seconds — don't block pipeline on slow Agent Hub
 
 def _get_headers() -> dict[str, str]:
     """Headers for Agent Hub API calls."""
-    return {
-        "X-Client-Id": SUMMITFLOW_CLIENT_ID or "summitflow",
-        "X-Request-Source": "sf-pipeline",
-        "Content-Type": "application/json",
-    }
+    return build_agent_hub_headers(
+        request_source="sf-pipeline",
+        extra_headers={"Content-Type": "application/json"},
+    )
 
 
 def _get_session_ids(task_id: str) -> list[str]:

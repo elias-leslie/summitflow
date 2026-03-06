@@ -29,6 +29,11 @@ logger = get_logger(__name__)
 __all__ = ["fix_lint_type_error", "fix_unfixed_errors"]
 
 
+def _get_check_result_project_id(check_result: dict[str, object]) -> str:
+    """Return the required project scope for a quality-check result."""
+    return str(check_result["project_id"])
+
+
 def _get_file_data(
     check_result: dict[str, object], result_id: int
 ) -> tuple[Path, Path, str, str] | None:
@@ -51,7 +56,8 @@ def _build_prompt(
     check_type = str(check_result["check_type"])
     check_name = str(check_result.get("check_name") or "")
     error_message = str(check_result.get("error_message") or "")
-    similar = get_similar_patterns(check_type, check_name, error_message)
+    project_id = _get_check_result_project_id(check_result)
+    similar = get_similar_patterns(check_type, check_name, error_message, project_id)
     prompt = build_fix_prompt(check_result, file_content, project_path, similar)
     return enhance_prompt_for_supervisor(prompt) if level == "SUPERVISOR" else prompt
 
@@ -71,8 +77,9 @@ def _apply_and_verify(
     """Apply the fix to disk and run verification; return the outcome."""
     if not apply_fix(file_path, new_content):
         return "failed"
+    project_id = _get_check_result_project_id(check_result)
     return verify_and_process_fix(
-        conn, result_id, project_path,
+        conn, result_id, project_id, project_path,
         str(check_result["check_type"]), file_rel_path, agent_slug, level,
         str(check_result.get("check_name") or ""),
         str(check_result.get("error_message") or ""),

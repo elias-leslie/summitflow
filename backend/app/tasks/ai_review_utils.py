@@ -8,6 +8,8 @@ from typing import Any
 
 from app.logging_config import get_logger
 from app.storage import log_task_event
+from app.storage import tasks as task_store
+from app.storage.notifications import create_notification
 
 from .ai_review_constants import ARCHITECTURE_KEYWORDS, SECURITY_KEYWORDS
 
@@ -60,11 +62,13 @@ def _notify_supervisor_review_needed(task_id: str, reason: str) -> None:
         task_id: Task ID needing review
         reason: Reason for escalation
     """
-    from app.storage.notifications import create_notification
-
     try:
+        task = task_store.get_task(task_id)
+        project_id = str(task.get("project_id")) if task and task.get("project_id") else None
+        if not project_id:
+            raise ValueError(f"Task {task_id} missing project_id")
         create_notification(
-            project_id="summitflow",  # Default project for now
+            project_id=project_id,
             notification_type="task_needs_input",
             title=f"Supervisor Review Required: {task_id}",
             message=reason,

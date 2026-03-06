@@ -20,8 +20,6 @@ _MEDIA_TYPE_PNG = "image/png"
 _MEDIA_TYPE_JPEG = "image/jpeg"
 _MEDIA_TYPE_WEBP = "image/webp"
 
-# Agent Hub call constants
-_PROJECT_ID = "summitflow"
 _PURPOSE = "design_analysis"
 _TEMPERATURE = 0.3
 _ROLE_USER = "user"
@@ -63,13 +61,13 @@ def _build_message(image_base64: str, media_type: str, prompt: str) -> MessageIn
     )
 
 
-def _call_vision_model(message: MessageInput) -> str:
+def _call_vision_model(project_id: str, message: MessageInput) -> str:
     """Send a message to Gemini Pro vision and return the response text."""
     client = get_sync_client()
     response = client.complete(
         model=GEMINI_PRO,
         messages=[message],
-        project_id=_PROJECT_ID,
+        project_id=project_id,
         purpose=_PURPOSE,
         temperature=_TEMPERATURE,
     )
@@ -85,6 +83,7 @@ def _count_issues(recommendations: str) -> int:
 
 
 def analyze_screenshot_with_vision(
+    project_id: str,
     screenshot_path: Path,
     design_rules: list[dict[str, Any]],
     page_url: str,
@@ -103,7 +102,7 @@ def analyze_screenshot_with_vision(
         image_base64, media_type = _encode_image(screenshot_path)
         prompt = build_design_analysis_prompt(design_rules, page_url)
         message = _build_message(image_base64, media_type, prompt)
-        recommendations = _call_vision_model(message)
+        recommendations = _call_vision_model(project_id, message)
         issues_count = _count_issues(recommendations)
         return recommendations, issues_count, None
 

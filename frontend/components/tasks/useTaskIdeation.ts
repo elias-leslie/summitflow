@@ -1,14 +1,14 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import type { ChatMessage, ChatStreamApiConfig } from '@agent-hub/chat-ui'
+import type { ChatMessage } from '@agent-hub/chat-ui'
+import { buildAgentHubChatApiConfig } from '@/lib/agent-hub-chat-config'
 import { getApiBaseUrl } from '@/lib/api-config'
 import {
   CREATE_TASK_TOOL_NAME,
   DEFAULT_COMPLEXITY,
   DEFAULT_PRIORITY,
   DEFAULT_TASK_TYPE,
-  MEMORY_GROUP_PREFIX,
 } from './taskIdeationTypes'
 import type { Complexity, IdeationTaskData, IdeationTaskResponse } from './taskIdeationTypes'
 import type { TaskType } from '@/lib/api/tasks-types'
@@ -60,16 +60,14 @@ export function useTaskIdeation(projectId: string, onOpenChange: (open: boolean)
   const [error, setError] = useState<string | null>(null)
   const messagesRef = useRef<ChatMessage[]>([])
 
-  const apiConfig: ChatStreamApiConfig = useMemo(() => {
-    const proxyBase = getAgentHubProxyBase()
-    return {
-      completeEndpoint: `${proxyBase}/complete`,
-      sessionsEndpoint: `${proxyBase}/sessions`,
-      preferencesEndpoint: `${proxyBase}/preferences`,
-      projectId,
-      memoryGroupPrefix: MEMORY_GROUP_PREFIX,
-    }
-  }, [projectId])
+  const apiConfig = useMemo(
+    () =>
+      buildAgentHubChatApiConfig({
+        proxyBase: getAgentHubProxyBase(),
+        projectId,
+      }),
+    [projectId],
+  )
 
   const handleMessagesChange = useCallback((messages: ChatMessage[]) => {
     messagesRef.current = messages

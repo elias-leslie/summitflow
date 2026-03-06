@@ -15,7 +15,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from ...logging_config import get_logger
-from ...services._agent_hub_config import AGENT_HUB_URL, SUMMITFLOW_REQUEST_SOURCE
+from ...services._agent_hub_config import AGENT_HUB_URL, build_agent_hub_headers
 from ...storage.tasks.core import get_agent_hub_sessions
 
 logger = get_logger(__name__)
@@ -57,8 +57,8 @@ class AgentHubEventsResponse(BaseModel):
     max_turn: int
 
 
-def _load_credentials() -> tuple[str, str]:
-    """Load Agent Hub credentials from ~/.env.local."""
+def _load_client_id() -> str:
+    """Load Agent Hub client ID from ~/.env.local."""
     env_file = Path.home() / ".env.local"
     creds: dict[str, str] = {}
     if env_file.exists():
@@ -73,7 +73,7 @@ def _load_credentials() -> tuple[str, str]:
     )
     if not client_id:
         raise HTTPException(status_code=500, detail="Missing SUMMITFLOW_CLIENT_ID credential for Agent Hub")
-    return client_id, os.getenv("SUMMITFLOW_REQUEST_SOURCE", SUMMITFLOW_REQUEST_SOURCE or DEFAULT_REQUEST_SOURCE)
+    return client_id
 
 
 def _fetch_session_events(
@@ -84,8 +84,11 @@ def _fetch_session_events(
     page_size: int = 500,
 ) -> dict[str, Any]:
     """Fetch events from Agent Hub for a single session."""
-    client_id, request_source = _load_credentials()
-    headers = {"X-Client-Id": client_id, "X-Request-Source": request_source}
+    client_id = _load_client_id()
+    headers = build_agent_hub_headers(
+        client_id=client_id,
+        default_request_source=DEFAULT_REQUEST_SOURCE,
+    )
     params: dict[str, Any] = {"page": page, "page_size": page_size}
     if event_type:
         params["event_type"] = event_type

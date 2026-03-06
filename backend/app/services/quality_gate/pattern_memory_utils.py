@@ -10,19 +10,22 @@ from typing import Any
 
 from ...logging_config import get_logger
 from ...services.self_healing import PatternMemoryService, StoredPattern
+from ...workflows._model_constants import DEFAULT_PROJECT_ID
 
 logger = get_logger(__name__)
 
-# Global pattern memory service (lazy initialized)
-_pattern_memory: PatternMemoryService | None = None
+# Project-scoped pattern memory services (lazy initialized)
+_pattern_memory_by_project: dict[str, PatternMemoryService] = {}
 
 
-def _get_pattern_memory() -> PatternMemoryService:
-    """Get or create the pattern memory service."""
-    global _pattern_memory
-    if _pattern_memory is None:
-        _pattern_memory = PatternMemoryService()
-    return _pattern_memory
+def _get_pattern_memory(project_id: str | None = None) -> PatternMemoryService:
+    """Get or create the pattern memory service for a project."""
+    effective_project_id = project_id or DEFAULT_PROJECT_ID
+    if effective_project_id not in _pattern_memory_by_project:
+        _pattern_memory_by_project[effective_project_id] = PatternMemoryService(
+            project_id=effective_project_id,
+        )
+    return _pattern_memory_by_project[effective_project_id]
 
 
 def _run_async(coro: Any) -> Any:
@@ -48,6 +51,7 @@ def get_similar_patterns(
     check_type: str,
     error_code: str,
     error_message: str,
+    project_id: str | None = None,
 ) -> list[StoredPattern]:
     """Retrieve similar fix patterns from memory.
 
@@ -60,7 +64,7 @@ def get_similar_patterns(
         List of similar patterns, empty if retrieval fails
     """
     try:
-        pattern_memory = _get_pattern_memory()
+        pattern_memory = _get_pattern_memory(project_id)
         patterns: list[StoredPattern] = _run_async(
             pattern_memory.get_similar_patterns(
                 check_type=check_type,
@@ -113,6 +117,7 @@ def store_successful_pattern(
     file_path: str | None,
     original_content: str,
     fixed_content: str,
+    project_id: str | None = None,
 ) -> None:
     """Store a successful fix pattern in memory.
 
@@ -129,7 +134,7 @@ def store_successful_pattern(
     """
     try:
         fix_diff = _compute_fix_diff(original_content, fixed_content)
-        pattern_memory = _get_pattern_memory()
+        pattern_memory = _get_pattern_memory(project_id)
         _run_async(
             pattern_memory.store_fix_pattern(
                 check_type=check_type,

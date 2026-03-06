@@ -92,11 +92,13 @@ def _run_backup(
         error_msg = build_script_error_message(result)
         logger.error("create_backup_script_failed", backup_id=backup_id,
                      returncode=result.returncode, error=error_msg[:200])
-        return _handle_backup_failure(backup_id, error_msg)
+        return _handle_backup_failure(backup_id, error_msg, project_id)
     except subprocess.TimeoutExpired:
-        return _handle_backup_failure(backup_id, f"Backup timed out after {BACKUP_TIMEOUT // 60} minutes")
+        return _handle_backup_failure(
+            backup_id, f"Backup timed out after {BACKUP_TIMEOUT // 60} minutes", project_id
+        )
     except Exception as e:
-        return _handle_backup_failure(backup_id, str(e))
+        return _handle_backup_failure(backup_id, str(e), project_id)
 
 
 def _handle_backup_success(backup_id: str, project_id: str, stdout: str) -> dict[str, object]:
@@ -120,15 +122,16 @@ def _handle_backup_success(backup_id: str, project_id: str, stdout: str) -> dict
     return {"status": "completed", "backup_id": backup_id, "project_id": project_id, **size_info}
 
 
-def _handle_backup_failure(backup_id: str, error_msg: str) -> dict[str, object]:
+def _handle_backup_failure(backup_id: str, error_msg: str, project_id: str) -> dict[str, object]:
     """Handle backup failure, timeout, or exception."""
     backup_store.update_backup_status(backup_id, "failed", error_message=error_msg)
     logger.error("create_backup_failed", backup_id=backup_id, error=error_msg[:200])
     try:
         backup = backup_store.get_backup(backup_id)
         source_id = backup["source_id"] if backup else "unknown"
+        notification_project_id = str(backup.get("project_id") or project_id) if backup else project_id
         create_notification(
-            project_id="summitflow",
+            project_id=notification_project_id,
             notification_type="system",
             title=f"Backup failed: {source_id}",
             message=error_msg[:500],

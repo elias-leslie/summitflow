@@ -17,6 +17,7 @@ from ._agent_hub_config import (
     SUMMITFLOW_REQUEST_SOURCE,
     get_async_client,
     get_sync_client,
+    resolve_agent_hub_request_source,
     response_to_llm_response,
 )
 from ._agent_hub_types import LLMClient, LLMResponse
@@ -64,7 +65,7 @@ class AgentHubLLMClient(LLMClient):
                 timeout=DEFAULT_TIMEOUT,
                 client_name=DEFAULT_CLIENT_NAME,
                 client_id=SUMMITFLOW_CLIENT_ID,
-                request_source=SUMMITFLOW_REQUEST_SOURCE,
+                request_source=resolve_agent_hub_request_source(),
             )
         return self._client
 

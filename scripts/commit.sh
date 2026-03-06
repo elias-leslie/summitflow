@@ -27,7 +27,7 @@ FALLBACK_FILE="$HOME/.claude/config/managed-repos.txt"
 MAIN_BRANCHES=("main" "master")
 QUALITY_GATE_STATE="${QUALITY_GATE_STATE:-$HOME/.claude/hooks/.quality-gate-state.json}"
 
-PUSH=true
+PUSH=false
 FORCE=false
 SKIP_CHECKS=false
 SYNC_ONLY=false

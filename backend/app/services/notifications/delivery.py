@@ -8,13 +8,13 @@ from __future__ import annotations
 import logging
 import os
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 
 from app.services._agent_hub_config import (
     AGENT_HUB_URL,
-    SUMMITFLOW_CLIENT_ID,
-    SUMMITFLOW_REQUEST_SOURCE,
+    build_agent_hub_headers,
 )
 
 logger = logging.getLogger(__name__)
@@ -23,25 +23,29 @@ FRONTEND_URL = os.getenv("SUMMITFLOW_FRONTEND_URL", "https://dev.summitflow.dev"
 
 _PUSH_SEVERITIES = {"critical", "error", "warning"}
 _DEFAULT_TITLE = "SummitFlow"
-_PROJECT_ID = "summitflow"
 _PUSH_ENDPOINT = "/api/push/send"
 _HTTP_TIMEOUT = 10.0
 _HTTP_OK = 200
 _LOG_TEXT_LIMIT = 200
+_DEFAULT_PROJECT_ID = "summitflow"
 
 
 def _build_task_url(notification: dict[str, Any]) -> str:
     """Build deep-link URL that opens Johnny chat with notification context."""
-    params = []
+    params: dict[str, str] = {}
+    project_id = notification.get("project_id")
+    if project_id:
+        params["project_id"] = str(project_id)
     if notification.get("task_id"):
-        params.append(f"task_id={notification['task_id']}")
+        params["task_id"] = str(notification["task_id"])
     if notification.get("id"):
-        params.append(f"notification_id={notification['id']}")
-    return f"{FRONTEND_URL}/chat?{'&'.join(params)}" if params else FRONTEND_URL
+        params["notification_id"] = str(notification["id"])
+    return f"{FRONTEND_URL}/chat?{urlencode(params)}" if params else FRONTEND_URL
 
 
 def _build_payload(notification: dict[str, Any]) -> dict[str, Any]:
     """Build the push payload dict for Agent Hub delivery."""
+    project_id = notification.get("project_id", _DEFAULT_PROJECT_ID)
     return {
         "title": notification.get("title", _DEFAULT_TITLE),
         "body": notification.get("message", ""),
@@ -50,7 +54,7 @@ def _build_payload(notification: dict[str, Any]) -> dict[str, Any]:
         "severity": notification.get("severity", "info"),
         "task_id": notification.get("task_id"),
         "notification_id": notification.get("id"),
-        "project_id": _PROJECT_ID,
+        "project_id": project_id,
     }
 
 
@@ -68,7 +72,7 @@ async def deliver(notification: dict[str, Any]) -> None:
     if notification.get("severity", "info") not in _PUSH_SEVERITIES:
         return
 
-    headers = {"X-Client-Id": SUMMITFLOW_CLIENT_ID or "", "X-Request-Source": SUMMITFLOW_REQUEST_SOURCE}
+    headers = build_agent_hub_headers()
     try:
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
             resp = await client.post(

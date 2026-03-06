@@ -22,6 +22,7 @@ logger = get_logger(__name__)
 def process_successful_fix(
     conn: psycopg.Connection[Any],
     result_id: int,
+    project_id: str,
     agent_slug: str,
     check_type: str,
     check_name: str,
@@ -55,6 +56,7 @@ def process_successful_fix(
         file_path=file_rel_path,
         original_content=original_content,
         fixed_content=fixed_content,
+        project_id=project_id,
     )
 
 
@@ -89,6 +91,7 @@ def get_escalation_outcome(
 def verify_and_process_fix(
     conn: psycopg.Connection[Any],
     result_id: int,
+    project_id: str,
     project_path: Path,
     check_type: str,
     file_rel_path: str,
@@ -121,6 +124,7 @@ def verify_and_process_fix(
         process_successful_fix(
             conn,
             result_id,
+            project_id,
             agent_slug,
             check_type,
             check_name,

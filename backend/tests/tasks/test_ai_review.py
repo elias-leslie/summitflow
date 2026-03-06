@@ -15,7 +15,10 @@ from app.tasks.ai_review_checks import (
 )
 from app.tasks.ai_review_constants import ARCHITECTURE_KEYWORDS, SECURITY_KEYWORDS
 from app.tasks.ai_review_models import ReviewResult, ReviewVerdict
-from app.tasks.ai_review_utils import _should_escalate_for_security
+from app.tasks.ai_review_utils import (
+    _notify_supervisor_review_needed,
+    _should_escalate_for_security,
+)
 
 # Silence linter about unused imports - they're used in TestSecurityEscalation
 _ = ARCHITECTURE_KEYWORDS, SECURITY_KEYWORDS, _should_escalate_for_security
@@ -258,6 +261,36 @@ class TestReviewPullRequest:
         assert result["verdict"] == "NEEDS_FIX"
         assert "pytest" in result["summary"]
         assert "pytest: Tests failed" in result["issues"]
+
+
+class TestSupervisorReviewNotification:
+    """Tests for supervisor-review notification routing."""
+
+    @patch("app.tasks.ai_review_utils.create_notification")
+    @patch("app.tasks.ai_review_utils.task_store")
+    def test_uses_task_project_id_when_notifying(
+        self,
+        mock_task_store: MagicMock,
+        mock_create_notification: MagicMock,
+    ) -> None:
+        mock_task_store.get_task.return_value = {
+            "id": "task-123",
+            "project_id": "agent-hub",
+        }
+
+        _notify_supervisor_review_needed("task-123", "Need supervisor input")
+
+        mock_create_notification.assert_called_once_with(
+            project_id="agent-hub",
+            notification_type="task_needs_input",
+            title="Supervisor Review Required: task-123",
+            message="Need supervisor input",
+            severity="warning",
+            metadata={
+                "task_id": "task-123",
+                "escalation_reason": "Need supervisor input",
+            },
+        )
 
 
 class TestSecurityEscalation:

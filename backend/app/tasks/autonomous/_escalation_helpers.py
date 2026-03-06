@@ -8,12 +8,12 @@ from __future__ import annotations
 from ...logging_config import get_logger
 from ...services.agent_hub_client import get_sync_client
 from ...storage import log_task_event
+from ...workflows._model_constants import DEFAULT_PROJECT_ID
 
 logger = get_logger(__name__)
 
 # Agent and project defaults — single source of truth for magic strings
 SUPERVISOR_AGENT_SLUG: str = "supervisor"
-DEFAULT_PROJECT_ID: str = "summitflow"
 _STEP_OUTPUT_TRUNCATE: int = 300
 _GUIDANCE_LOG_TRUNCATE: int = 500
 

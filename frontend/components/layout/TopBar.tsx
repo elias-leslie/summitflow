@@ -2,16 +2,28 @@
 
 import { Info, MessageSquare } from 'lucide-react'
 import Link from 'next/link'
+import { useParams, usePathname } from 'next/navigation'
+import { useMemo } from 'react'
 import { NotificationBell } from '@/components/notifications'
 import { usePersonaName } from '@/hooks/usePersonaName'
+import { DEFAULT_PROJECT_ID, getProjectIdOrDefault } from '@/lib/project-config'
 
 import { AnimatedLogo } from './topbar/AnimatedLogo'
 import { Navigation } from './topbar/Navigation'
 import { TaskSearch } from './topbar/TaskSearch'
-import { SUMMITFLOW_PROJECT_ID } from './topbar/constants'
 
 export function TopBar() {
+  const pathname = usePathname()
+  const params = useParams<{ id?: string }>()
   const personaName = usePersonaName()
+  const notificationProjectId = useMemo(() => {
+    if (pathname?.startsWith('/projects/')) {
+      return getProjectIdOrDefault(params.id)
+    }
+
+    return DEFAULT_PROJECT_ID
+  }, [params.id, pathname])
+
   return (
     <>
       <header className="h-16 flex-shrink-0 bg-slate-900 border-b border-slate-700/50 flex items-center px-6 gap-4">
@@ -35,7 +47,7 @@ export function TopBar() {
           >
             <Info className="w-5 h-5" />
           </Link>
-          <NotificationBell projectId={SUMMITFLOW_PROJECT_ID} />
+          <NotificationBell projectId={notificationProjectId} />
         </div>
       </header>
       <div className="chrome-line" />

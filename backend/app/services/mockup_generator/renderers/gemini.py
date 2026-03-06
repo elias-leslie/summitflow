@@ -21,7 +21,6 @@ logger = get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 _GENERATOR_NAME = "gemini"
-_AGENT_HUB_PROJECT = "summitflow"
 _GENERATION_PURPOSE = "mockup_generation"
 _IMAGE_SIZE = "1920x1080"
 _MOCKUP_TYPE = "page"
@@ -48,12 +47,12 @@ def _get_image_extension(mime_type: str) -> str:
     return _MIME_TO_EXT.get(mime_type, _DEFAULT_IMAGE_EXT)
 
 
-def _call_image_api(prompt: str) -> Any:
+def _call_image_api(project_id: str, prompt: str) -> Any:
     """Call Agent Hub image generation and return the response."""
     client = get_sync_client()
     return client.generate_image(
         prompt=prompt,
-        project_id=_AGENT_HUB_PROJECT,
+        project_id=project_id,
         purpose=_GENERATION_PURPOSE,
         model=GEMINI_IMAGE,
         size=_IMAGE_SIZE,
@@ -171,7 +170,7 @@ def generate_mockup_gemini(
 
     try:
         prompt = build_mockup_prompt(page_info, design_standard, design_direction)
-        response = _call_image_api(prompt)
+        response = _call_image_api(project_id, prompt)
 
         image_bytes = base64.b64decode(response.image_base64)
         ext = _get_image_extension(response.mime_type)

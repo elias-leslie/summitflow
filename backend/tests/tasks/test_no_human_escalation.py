@@ -40,6 +40,34 @@ class TestSupervisorValidatePlan:
         mock_client.return_value.complete.side_effect = RuntimeError("API down")
         assert _supervisor_validate_plan("task-1", "reasoning", "test-project") is True
 
+    @patch("app.tasks.autonomous.planning_routing._apply_complex_routing")
+    @patch("app.tasks.autonomous.planning_routing._resolve_complexity_tier")
+    @patch("app.tasks.autonomous.planning_routing.task_store")
+    def test_route_based_on_complexity_uses_task_project_id(
+        self,
+        mock_task_store: MagicMock,
+        mock_resolve_complexity: MagicMock,
+        mock_apply_complex: MagicMock,
+    ) -> None:
+        from app.services.complexity_assessor import ComplexityTier
+        from app.tasks.autonomous.planning_routing import route_based_on_complexity
+
+        mock_task_store.get_task.return_value = {
+            "id": "task-1",
+            "project_id": "agent-hub",
+            "complexity": None,
+        }
+        mock_resolve_complexity.return_value = (ComplexityTier.COMPLEX, "reasoning")
+
+        route_based_on_complexity("task-1", "Title", "Description")
+
+        mock_apply_complex.assert_called_once_with(
+            "task-1",
+            "agent-hub",
+            ComplexityTier.COMPLEX,
+            "reasoning",
+        )
+
 
 class TestSupervisorCircuitBreakerTriage:
     """Test _supervisor_circuit_breaker_triage in execution.py."""

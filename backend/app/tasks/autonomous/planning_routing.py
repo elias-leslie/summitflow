@@ -7,11 +7,11 @@ from ...services.agent_hub_client import get_sync_client
 from ...services.complexity_assessor import ComplexityAssessor, ComplexityTier
 from ...storage import log_task_event
 from ...storage import tasks as task_store
+from ._project_resolution import resolve_task_project_id
 
 logger = get_logger(__name__)
 
 # Constants
-_DEFAULT_PROJECT_ID = "summitflow"
 _STATUS_QUEUE = "queue"
 _STATUS_BLOCKED = "blocked"
 _AGENT_SUPERVISOR = "supervisor"
@@ -23,6 +23,11 @@ _VALIDATE_PLAN_PROMPT = (
     "Should this task proceed to execution? "
     "Reply APPROVED to proceed or BLOCKED with your concern."
 )
+
+
+def _get_project_id(task_id: str) -> str:
+    """Resolve project scope from the task, falling back only if missing."""
+    return resolve_task_project_id(task_store.get_task(task_id))
 
 
 def supervisor_validate_plan(task_id: str, reasoning: str, project_id: str) -> bool:
@@ -145,7 +150,7 @@ def route_based_on_complexity(task_id: str, title: str, description: str) -> Non
         description: Task description
     """
     task = task_store.get_task(task_id)
-    project_id = task.get("project_id", _DEFAULT_PROJECT_ID) if task else _DEFAULT_PROJECT_ID
+    project_id = _get_project_id(task_id)
     existing_complexity = task.get("complexity") if task else None
 
     result_tier, result_reasoning = _resolve_complexity_tier(

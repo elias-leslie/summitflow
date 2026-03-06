@@ -14,6 +14,7 @@ from ..services.self_healing.monitor import (
     create_error_task,
 )
 from ..storage.connection import get_connection
+from ..workflows._model_constants import DEFAULT_PROJECT_ID
 
 logger = get_logger(__name__)
 
@@ -24,6 +25,11 @@ ResultDict = dict[str, int]
 OrchestrateResult = dict[str, int | str | bool]
 
 _ZERO_ORCHESTRATE: OrchestrateResult = {"enabled": True, "projects_processed": 0, "total_fixed": 0, "total_failed": 0, "total_escalated": 0}
+
+
+def _resolve_project_id(project_id: str | None = None) -> str:
+    """Resolve project scope for self-healing task entry points."""
+    return project_id or DEFAULT_PROJECT_ID
 
 
 def _process_error_batch(
@@ -56,22 +62,23 @@ def _process_error_batch(
 
 
 def monitor_browser_errors(
-    project_id: str = "summitflow",
+    project_id: str | None = None,
     max_tasks: int = MAX_TASKS_PER_RUN,
 ) -> ResultDict:
     """Monitor browser console errors and create bug tasks."""
-    logger.info("starting_browser_error_monitoring", project_id=project_id, max_tasks=max_tasks)
+    resolved_project_id = _resolve_project_id(project_id)
+    logger.info("starting_browser_error_monitoring", project_id=resolved_project_id, max_tasks=max_tasks)
     results: ResultDict = {"created": 0, "skipped": 0, "errors": 0}
 
     try:
-        new_errors = BrowserErrorMonitor(project_id).get_new_errors()
+        new_errors = BrowserErrorMonitor(resolved_project_id).get_new_errors()
         if not new_errors:
             logger.debug("no_new_browser_errors_detected")
             return results
 
         logger.info("new_browser_errors_found", count=len(new_errors))
         results = _process_error_batch(
-            new_errors, max_tasks, create_browser_error_task, project_id,
+            new_errors, max_tasks, create_browser_error_task, resolved_project_id,
             "created_browser_error_task", "page_path",
         )
     except Exception as exc:
@@ -83,12 +90,13 @@ def monitor_browser_errors(
 
 
 def monitor_systemd_errors(
-    project_id: str = "summitflow",
+    project_id: str | None = None,
     since: str = "5 minutes ago",
     max_tasks: int = MAX_TASKS_PER_RUN,
 ) -> ResultDict:
     """Monitor systemd journal for errors and create bug tasks."""
-    logger.info("starting_systemd_monitoring", project_id=project_id, since=since, max_tasks=max_tasks)
+    resolved_project_id = _resolve_project_id(project_id)
+    logger.info("starting_systemd_monitoring", project_id=resolved_project_id, since=since, max_tasks=max_tasks)
     results: ResultDict = {"created": 0, "skipped": 0, "errors": 0}
 
     try:
@@ -99,7 +107,7 @@ def monitor_systemd_errors(
 
         logger.info("new_errors_found", count=len(new_errors))
         results = _process_error_batch(
-            new_errors, max_tasks, create_error_task, project_id,
+            new_errors, max_tasks, create_error_task, resolved_project_id,
             "created_task", "unit",
         )
     except Exception as exc:

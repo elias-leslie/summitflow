@@ -66,7 +66,7 @@ class TestDeliver:
         payload = call_args[1]["json"]
         assert payload["title"] == "Test Notification"
         assert payload["body"] == "Something happened"
-        assert payload["project_id"] == "summitflow"
+        assert payload["project_id"] == "test-project"
 
     @pytest.mark.asyncio
     async def test_deliver_warning_calls_agent_hub(self) -> None:
@@ -89,7 +89,7 @@ class TestDeliver:
 
     @pytest.mark.asyncio
     async def test_deliver_payload_deep_links_to_chat(self) -> None:
-        """Push payload URL deep-links to /chat with task_id and notification_id."""
+        """Push payload URL deep-links to /chat with full routing context."""
         notification = _make_notification(task_id="t-test-789", notification_id="notif-test-456")
 
         mock_response = AsyncMock()
@@ -106,6 +106,7 @@ class TestDeliver:
 
         payload = mock_client.post.call_args[1]["json"]
         assert "/chat?" in payload["url"]
+        assert "project_id=test-project" in payload["url"]
         assert "task_id=t-test-789" in payload["url"]
         assert "notification_id=notif-test-456" in payload["url"]
 

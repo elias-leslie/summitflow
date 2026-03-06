@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 
 class TestTaskLifecycleEndpoints:
@@ -129,3 +129,29 @@ class TestTaskLifecycleEndpoints:
         assert release_response.status_code == 400
         body = release_response.json()
         assert "not currently claimed" in body["message"]
+
+    def test_global_review_uses_task_project_id(
+        self,
+        client: Any,
+        mocker: Any,
+    ) -> None:
+        task = {"id": "task-1", "project_id": "agent-hub", "title": "Review target"}
+        mocker.patch("app.api.tasks.get_endpoints.get_task_or_404", return_value=task)
+        mocker.patch(
+            "app.tasks.autonomous.review_modules.diff.get_git_diff",
+            return_value="diff --git a/test.py b/test.py",
+        )
+        mocker.patch("app.storage.task_spirit.get_task_spirit", return_value=None)
+        mocker.patch(
+            "app.tasks.autonomous.review_modules.parsing.parse_review_response",
+            return_value={"verdict": "APPROVED", "concerns": [], "summary": "ok"},
+        )
+        mock_client = MagicMock()
+        mock_client.complete.return_value = SimpleNamespace(content='{"verdict":"APPROVED"}')
+        mocker.patch("app.services.agent_hub_client.get_sync_client", return_value=mock_client)
+
+        response = client.post("/api/tasks/task-1/review")
+
+        assert response.status_code == 200
+        assert response.json()["verdict"] == "APPROVED"
+        assert mock_client.complete.call_args.kwargs["project_id"] == "agent-hub"

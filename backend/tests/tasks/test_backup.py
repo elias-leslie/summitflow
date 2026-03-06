@@ -184,6 +184,26 @@ class TestCreateBackupTask:
         assert result["status"] == "completed"
         assert result["location"] == "pending_upload"
 
+    @patch("app.tasks.backup_executor.create_notification")
+    def test_create_backup_failure_notification_uses_backup_project(
+        self,
+        mock_create_notification: MagicMock,
+        cleanup_project: str,
+    ) -> None:
+        """Backup failure notification stays scoped to the failed backup's project."""
+        with patch("app.tasks.backup_executor.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=1,
+                stdout="",
+                stderr="Disk full",
+            )
+
+            result = create_backup(project_id=cleanup_project)
+
+        assert result["status"] == "failed"
+        mock_create_notification.assert_called_once()
+        assert mock_create_notification.call_args.kwargs["project_id"] == cleanup_project
+
 
 class TestScheduledBackups:
     """Tests for scheduled backup functionality."""

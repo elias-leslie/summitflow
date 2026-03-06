@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 from app.services.self_healing.monitor import PRIORITY_ERR, JournalError
 from app.tasks.self_healing import (
     MAX_TASKS_PER_RUN,
+    monitor_browser_errors,
     monitor_systemd_errors,
 )
 
@@ -194,6 +195,31 @@ class TestMonitorSystemdErrors:
         call_args = mock_create.call_args[0]
         assert call_args[0] == "my-project"
 
+    @patch("app.tasks.self_healing.create_error_task")
+    @patch("app.tasks.self_healing.SystemdMonitor")
+    def test_defaults_project_id_from_workflow_constant(
+        self,
+        mock_monitor_cls: MagicMock,
+        mock_create: MagicMock,
+    ) -> None:
+        """Missing project_id resolves through the shared workflow default."""
+        mock_monitor = MagicMock()
+        mock_monitor.get_new_errors.return_value = [
+            JournalError(
+                unit="test.service",
+                message="Error",
+                priority=PRIORITY_ERR,
+                timestamp=datetime.now(UTC),
+                error_hash="hash1",
+            ),
+        ]
+        mock_monitor_cls.return_value = mock_monitor
+        mock_create.return_value = {"id": "task-123"}
+
+        monitor_systemd_errors()
+
+        assert mock_create.call_args[0][0] == "summitflow"
+
     @patch("app.tasks.self_healing.SystemdMonitor")
     def test_handles_monitor_exception(
         self,
@@ -215,3 +241,44 @@ class TestConstants:
     def test_max_tasks_per_run(self) -> None:
         """MAX_TASKS_PER_RUN is reasonable default."""
         assert MAX_TASKS_PER_RUN == 10
+
+
+class TestMonitorBrowserErrors:
+    """Tests for the monitor_browser_errors task."""
+
+    @patch("app.tasks.self_healing.create_browser_error_task")
+    @patch("app.tasks.self_healing.BrowserErrorMonitor")
+    def test_uses_custom_project_id(
+        self,
+        mock_monitor_cls: MagicMock,
+        mock_create: MagicMock,
+    ) -> None:
+        mock_monitor = MagicMock()
+        mock_monitor.get_new_errors.return_value = [
+            MagicMock(page_path="/test", error_hash="hash1"),
+        ]
+        mock_monitor_cls.return_value = mock_monitor
+        mock_create.return_value = {"id": "task-123"}
+
+        result = monitor_browser_errors(project_id="agent-hub")
+
+        assert result["created"] == 1
+        mock_monitor_cls.assert_called_once_with("agent-hub")
+        assert mock_create.call_args[0][0] == "agent-hub"
+
+    @patch("app.tasks.self_healing.create_browser_error_task")
+    @patch("app.tasks.self_healing.BrowserErrorMonitor")
+    def test_defaults_project_id_from_workflow_constant(
+        self,
+        mock_monitor_cls: MagicMock,
+        mock_create: MagicMock,
+    ) -> None:
+        mock_monitor = MagicMock()
+        mock_monitor.get_new_errors.return_value = []
+        mock_monitor_cls.return_value = mock_monitor
+
+        result = monitor_browser_errors()
+
+        assert result == {"created": 0, "skipped": 0, "errors": 0}
+        mock_monitor_cls.assert_called_once_with("summitflow")
+        mock_create.assert_not_called()

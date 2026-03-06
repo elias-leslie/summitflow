@@ -143,7 +143,7 @@ async def generate_asset(
         client = get_sync_client()
         response = client.generate_image(
             prompt=merged_prompt,
-            project_id="summitflow",
+            project_id=project_id,
             purpose="asset_generation",
             model=model,
             size=request.size,

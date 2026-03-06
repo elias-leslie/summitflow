@@ -64,14 +64,14 @@ class PatternMemoryService:
 
     def __init__(
         self,
+        project_id: str,
         client: MemoryClient | None = None,
-        project_id: str = "summitflow",
     ):
         """Initialize the pattern memory service.
 
         Args:
-            client: MemoryClient instance (created if not provided)
             project_id: Project ID for scoping patterns
+            client: MemoryClient instance (created if not provided)
         """
         self.client = client or MemoryClient()
         self.project_id = project_id

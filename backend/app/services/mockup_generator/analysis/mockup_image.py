@@ -14,6 +14,7 @@ logger = get_logger(__name__)
 
 
 def generate_mockup_image(
+    project_id: str,
     screenshot_path: Path,
     recommendations: str,
     output_path: Path,
@@ -40,7 +41,7 @@ def generate_mockup_image(
         client = get_sync_client()
         response = client.generate_image(
             prompt=prompt,
-            project_id="summitflow",
+            project_id=project_id,
             purpose="mockup_generation",
             model=GEMINI_IMAGE,
             size="1920x1080",

@@ -18,8 +18,7 @@ from pydantic import BaseModel
 
 from ..services._agent_hub_config import (
     AGENT_HUB_URL,
-    SUMMITFLOW_CLIENT_ID,
-    SUMMITFLOW_REQUEST_SOURCE,
+    build_agent_hub_headers,
 )
 
 router = APIRouter()
@@ -28,8 +27,6 @@ router = APIRouter()
 # Constants
 # ---------------------------------------------------------------------------
 
-_HEADER_CLIENT_ID = "X-Client-Id"
-_HEADER_REQUEST_SOURCE = "X-Request-Source"
 _DEFAULT_REQUEST_SOURCE = "summitflow-frontend"
 _MEDIA_TYPE_SSE = "text/event-stream"
 _ENCODING_UTF8 = "utf-8"
@@ -53,11 +50,7 @@ _ERR_CONNECT = "Could not connect to Agent Hub: {detail}"
 
 def _auth_headers() -> dict[str, str]:
     """Build authentication headers for Agent Hub requests."""
-    headers: dict[str, str] = {}
-    if SUMMITFLOW_CLIENT_ID:
-        headers[_HEADER_CLIENT_ID] = SUMMITFLOW_CLIENT_ID
-    headers[_HEADER_REQUEST_SOURCE] = SUMMITFLOW_REQUEST_SOURCE or _DEFAULT_REQUEST_SOURCE
-    return headers
+    return build_agent_hub_headers(default_request_source=_DEFAULT_REQUEST_SOURCE)
 
 
 def _raise_from_status_error(exc: httpx.HTTPStatusError) -> None:

@@ -3,12 +3,8 @@
 import { useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ChatPanel } from '@agent-hub/chat-ui'
-import type { ChatStreamApiConfig } from '@agent-hub/chat-ui'
 import { getVoiceWsUrl, getTtsBaseUrl } from '@/lib/api-config'
-import {
-  DEFAULT_PROJECT_ID,
-  getProjectMemoryGroupPrefix,
-} from '@/lib/project-config'
+import { buildAgentHubChatApiConfig } from '@/lib/agent-hub-chat-config'
 import { getAgentHubProxyBase } from '@/components/tasks/useTaskIdeation'
 import { fetchNotification, type Notification } from '@/lib/api/notifications'
 import { usePersonaName } from '@/hooks/usePersonaName'
@@ -36,16 +32,14 @@ export function PersonaChatClient() {
       .catch(() => {}) // Non-critical — chat works without it
   }, [notificationId, projectId])
 
-  const apiConfig: ChatStreamApiConfig = useMemo(() => {
-    const proxyBase = getAgentHubProxyBase()
-    return {
-      completeEndpoint: `${proxyBase}/complete`,
-      sessionsEndpoint: `${proxyBase}/sessions`,
-      preferencesEndpoint: `${proxyBase}/preferences`,
-      projectId,
-      memoryGroupPrefix: getProjectMemoryGroupPrefix(projectId),
-    }
-  }, [projectId])
+  const apiConfig = useMemo(
+    () =>
+      buildAgentHubChatApiConfig({
+        proxyBase: getAgentHubProxyBase(),
+        projectId,
+      }),
+    [projectId],
+  )
 
   const voiceWsUrl = useMemo(() => getVoiceWsUrl(), [])
   const ttsBaseUrl = useMemo(() => getTtsBaseUrl(), [])
@@ -82,7 +76,7 @@ export function PersonaChatClient() {
       {taskId && sessionId && (
         <div className="px-3 sm:px-4 py-2 border-t border-slate-800 bg-slate-950/80 backdrop-blur-sm flex-shrink-0">
           <ResumeBar
-            projectId={projectId || DEFAULT_PROJECT_ID}
+            projectId={projectId}
             taskId={taskId}
             personaName={personaName}
           />

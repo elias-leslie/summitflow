@@ -44,13 +44,18 @@ def _elapsed_ms(start: float) -> int:
 
 
 def _try_generate_mockup(
-    screenshot_path: Path, mockup_image_path: Path, recommendations: str | None, page_url: str
+    project_id: str,
+    screenshot_path: Path,
+    mockup_image_path: Path,
+    recommendations: str | None,
+    page_url: str,
 ) -> Path:
     """Attempt to generate a mockup image; returns the resulting path."""
     if not recommendations:
         return mockup_image_path
     try:
         result = generate_mockup_image(
+            project_id=project_id,
             screenshot_path=screenshot_path,
             recommendations=recommendations,
             output_path=mockup_image_path,
@@ -130,7 +135,7 @@ async def run_analyze_page_design(
     from ..storage.design_standards import get_effective_rules
     design_rules = get_effective_rules(project_id) or []
     recommendations, issues_count, analysis_error = analyze_screenshot_with_vision(
-        screenshot_path, design_rules, page_url
+        project_id, screenshot_path, design_rules, page_url
     )
     if analysis_error:
         return DesignAnalysisResult(
@@ -141,7 +146,7 @@ async def run_analyze_page_design(
         )
 
     mockup_image_path = _try_generate_mockup(
-        screenshot_path, screenshot_dir / "mockup.png", recommendations, page_url
+        project_id, screenshot_path, screenshot_dir / "mockup.png", recommendations, page_url
     )
     return _store_mockup_and_build_result(
         project_id, page_url, page_path, screenshot_path,

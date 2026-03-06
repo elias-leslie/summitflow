@@ -6,6 +6,7 @@ Internal module - import from agent_hub_client instead.
 from __future__ import annotations
 
 import os
+from typing import Final
 
 from agent_hub import AgentHubClient, AsyncAgentHubClient, CompletionResponse
 
@@ -18,6 +19,36 @@ AGENT_HUB_API_KEY = os.getenv("AGENT_HUB_API_KEY")
 # SummitFlow client credentials for Agent Hub authentication
 SUMMITFLOW_CLIENT_ID = os.getenv("SUMMITFLOW_CLIENT_ID")
 SUMMITFLOW_REQUEST_SOURCE = os.getenv("SUMMITFLOW_REQUEST_SOURCE", "summitflow")
+HEADER_CLIENT_ID: Final = "X-Client-Id"
+HEADER_REQUEST_SOURCE: Final = "X-Request-Source"
+DEFAULT_REQUEST_SOURCE: Final = "summitflow"
+
+
+def resolve_agent_hub_request_source(
+    default_request_source: str = DEFAULT_REQUEST_SOURCE,
+) -> str:
+    """Return the configured Agent Hub request source with an optional fallback."""
+    return SUMMITFLOW_REQUEST_SOURCE or default_request_source
+
+
+def build_agent_hub_headers(
+    *,
+    client_id: str | None = None,
+    request_source: str | None = None,
+    default_request_source: str = DEFAULT_REQUEST_SOURCE,
+    extra_headers: dict[str, str] | None = None,
+) -> dict[str, str]:
+    """Build standard Agent Hub headers for direct HTTP calls."""
+    headers: dict[str, str] = {
+        HEADER_REQUEST_SOURCE: request_source
+        or resolve_agent_hub_request_source(default_request_source),
+    }
+    effective_client_id = SUMMITFLOW_CLIENT_ID if client_id is None else client_id
+    if effective_client_id:
+        headers[HEADER_CLIENT_ID] = effective_client_id
+    if extra_headers:
+        headers.update(extra_headers)
+    return headers
 
 
 def get_sync_client(
@@ -43,7 +74,7 @@ def get_sync_client(
         timeout=timeout,
         client_name=client_name,
         client_id=SUMMITFLOW_CLIENT_ID,
-        request_source=SUMMITFLOW_REQUEST_SOURCE,
+        request_source=resolve_agent_hub_request_source(),
     )
 
 
@@ -70,7 +101,7 @@ def get_async_client(
         timeout=timeout,
         client_name=client_name,
         client_id=SUMMITFLOW_CLIENT_ID,
-        request_source=SUMMITFLOW_REQUEST_SOURCE,
+        request_source=resolve_agent_hub_request_source(),
     )
 
 
@@ -97,9 +128,14 @@ def response_to_llm_response(response: CompletionResponse) -> LLMResponse:
 __all__ = [
     "AGENT_HUB_API_KEY",
     "AGENT_HUB_URL",
+    "DEFAULT_REQUEST_SOURCE",
+    "HEADER_CLIENT_ID",
+    "HEADER_REQUEST_SOURCE",
     "SUMMITFLOW_CLIENT_ID",
     "SUMMITFLOW_REQUEST_SOURCE",
+    "build_agent_hub_headers",
     "get_async_client",
     "get_sync_client",
+    "resolve_agent_hub_request_source",
     "response_to_llm_response",
 ]

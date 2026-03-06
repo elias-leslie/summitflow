@@ -9,6 +9,8 @@ from typing import Any
 from ....logging_config import get_logger
 from ....services.agent_hub_client import get_sync_client
 from ....storage import log_task_event
+from ....storage import tasks as task_store
+from .._project_resolution import resolve_task_project_id
 from ._routing_maps import (
     CROSS_AGENT_FALLBACK_MAP,
     SUBTASK_TYPE_AGENT_MAP,
@@ -22,7 +24,6 @@ VALID_SUBTASK_TYPES: set[str] = set(SUBTASK_TYPE_AGENT_MAP.keys())
 DEFAULT_AGENT = "coder"
 EXTENSION_ATTEMPTS = 4
 SUPERVISOR_AGENT_SLUG = "supervisor"
-DEFAULT_PROJECT_ID = "summitflow"
 CONTINUE_KEYWORD = "CONTINUE"
 APPROVED_KEYWORD = "APPROVED"
 DIFF_SUMMARY_MAX_LEN = 200
@@ -128,6 +129,11 @@ def _build_extension_prompt(
     )
 
 
+def _get_project_id(task_id: str, project_id: str | None = None) -> str:
+    """Resolve project scope from explicit input or task context."""
+    return resolve_task_project_id(task_store.get_task(task_id), project_id)
+
+
 def request_extension(
     task_id: str,
     subtask_id: str,
@@ -138,12 +144,13 @@ def request_extension(
 ) -> tuple[bool, str | None]:
     """Ask supervisor whether to grant more attempts. Returns (approved, guidance)."""
     prompt = _build_extension_prompt(task_id, subtask_id, step_results, progress, prior_extensions)
+    resolved_project_id = _get_project_id(task_id, project_id)
     try:
         client = get_sync_client()
         response = client.complete(
             messages=[{"role": "user", "content": prompt}],
             agent_slug=SUPERVISOR_AGENT_SLUG,
-            project_id=project_id or DEFAULT_PROJECT_ID,
+            project_id=resolved_project_id,
         )
         approved = APPROVED_KEYWORD in response.content.upper()
         log_task_event(

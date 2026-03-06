@@ -12,12 +12,11 @@ from ....storage.notifications import (
     create_task_completion_notification,
     create_task_failure_notification,
 )
+from .._project_resolution import resolve_task_project_id
 from ..exec_modules.ah_events import emit_review_verdict, emit_task_transition
 from .actions import auto_merge, create_fix_subtask, handle_plan_defect, run_qa_loop
 
 logger = get_logger(__name__)
-
-DEFAULT_PROJECT_ID = "summitflow"
 STATUS_COMPLETED = "completed"
 STATUS_RUNNING = "running"
 STATUS_BLOCKED = "blocked"
@@ -30,8 +29,7 @@ DECISION_FIX = "fix"
 
 
 def _get_project_id(task_id: str) -> str:
-    task = task_store.get_task(task_id)
-    return task.get("project_id", DEFAULT_PROJECT_ID) if task else DEFAULT_PROJECT_ID
+    return resolve_task_project_id(task_store.get_task(task_id))
 
 
 def _maybe_auto_merge(task_id: str, project_id: str) -> bool:

@@ -1,4 +1,4 @@
-import { DEFAULT_PROJECT_ID } from '@/lib/project-config'
+import { DEFAULT_PROJECT_ID, getProjectIdOrDefault } from '@/lib/project-config'
 
 interface SearchParamsLike {
   get(name: string): string | null
@@ -11,7 +11,7 @@ interface ChatUrlOptions {
 }
 
 export function getChatProjectId(searchParams: SearchParamsLike): string {
-  return searchParams.get('project_id')?.trim() || DEFAULT_PROJECT_ID
+  return getProjectIdOrDefault(searchParams.get('project_id'))
 }
 
 export function buildChatUrl({
