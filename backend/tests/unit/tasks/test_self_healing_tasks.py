@@ -254,6 +254,7 @@ class TestMonitorBrowserErrors:
         mock_monitor_cls: MagicMock,
         mock_create: MagicMock,
     ) -> None:
+        """Custom project_id is forwarded to monitor and task creation."""
         mock_monitor = MagicMock()
         mock_monitor.get_new_errors.return_value = [
             MagicMock(page_path="/test", error_hash="hash1"),

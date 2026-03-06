@@ -958,7 +958,7 @@ run_tool_toon() {
 
     normalize_tool_args "$tool_name" "$dir_type" "${EXTRA_ARGS[@]}"
 
-    # Execute tool (EXTRA_ARGS passed as array to preserve quoted arguments like -k "expr with spaces")
+    # Execute tool (NORMALIZED_TOOL_ARGS passed as array to preserve quoted arguments like -k "expr with spaces")
     local output retval=0
     if [[ "$pass_path" == "1" ]]; then
         output=$("$tool_bin" $args "${NORMALIZED_TOOL_ARGS[@]}" "$work_dir" 2>&1) || retval=$?
