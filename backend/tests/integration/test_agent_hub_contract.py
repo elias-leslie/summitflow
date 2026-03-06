@@ -17,7 +17,6 @@ Usage:
 from __future__ import annotations
 
 import os
-from collections.abc import Generator
 from dataclasses import dataclass
 from typing import Any, ClassVar
 from unittest.mock import MagicMock, patch
@@ -191,12 +190,9 @@ def create_mock_session_response(
 
 
 @pytest.fixture
-def mock_agent_hub_client() -> Generator[MagicMock]:
-    """Create a mock AgentHubClient for testing."""
-    with patch("agent_hub.AgentHubClient") as mock_class:
-        mock_client = MagicMock()
-        mock_class.return_value = mock_client
-        yield mock_client
+def mock_agent_hub_client() -> MagicMock:
+    """Create a mock Agent Hub client for tests that patch get_sync_client."""
+    return MagicMock()
 
 
 @pytest.fixture
@@ -230,7 +226,7 @@ class TestCompletionContract:
         mock_agent_hub_client.complete.return_value = create_mock_completion_response()
 
         with patch(
-            "app.services.agent_hub_client.AgentHubClient",
+            "app.services.agent_hub_client.get_sync_client",
             return_value=mock_agent_hub_client,
         ):
             client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
@@ -262,7 +258,7 @@ class TestCompletionContract:
         mock_agent_hub_client.complete.return_value = create_mock_completion_response()
 
         with patch(
-            "app.services.agent_hub_client.AgentHubClient",
+            "app.services.agent_hub_client.get_sync_client",
             return_value=mock_agent_hub_client,
         ):
             client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
@@ -288,7 +284,7 @@ class TestCompletionContract:
         mock_agent_hub_client.complete.return_value = mock_response
 
         with patch(
-            "app.services.agent_hub_client.AgentHubClient",
+            "app.services.agent_hub_client.get_sync_client",
             return_value=mock_agent_hub_client,
         ):
             client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
@@ -318,7 +314,7 @@ class TestCompletionContract:
         mock_agent_hub_client.complete.return_value = create_mock_completion_response()
 
         with patch(
-            "app.services.agent_hub_client.AgentHubClient",
+            "app.services.agent_hub_client.get_sync_client",
             return_value=mock_agent_hub_client,
         ):
             client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
@@ -334,7 +330,7 @@ class TestCompletionContract:
         mock_agent_hub_client.complete.return_value = create_mock_completion_response()
 
         with patch(
-            "app.services.agent_hub_client.AgentHubClient",
+            "app.services.agent_hub_client.get_sync_client",
             return_value=mock_agent_hub_client,
         ):
             client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
@@ -354,7 +350,7 @@ class TestErrorHandlingContract:
         mock_agent_hub_client.complete.side_effect = AuthenticationError("Invalid credentials")
 
         with patch(
-            "app.services.agent_hub_client.AgentHubClient",
+            "app.services.agent_hub_client.get_sync_client",
             return_value=mock_agent_hub_client,
         ):
             client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
@@ -370,7 +366,7 @@ class TestErrorHandlingContract:
         mock_agent_hub_client.complete.side_effect = error
 
         with patch(
-            "app.services.agent_hub_client.AgentHubClient",
+            "app.services.agent_hub_client.get_sync_client",
             return_value=mock_agent_hub_client,
         ):
             client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
@@ -384,7 +380,7 @@ class TestErrorHandlingContract:
         mock_agent_hub_client.complete.side_effect = ValidationError("Invalid request format")
 
         with patch(
-            "app.services.agent_hub_client.AgentHubClient",
+            "app.services.agent_hub_client.get_sync_client",
             return_value=mock_agent_hub_client,
         ):
             client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
@@ -398,7 +394,7 @@ class TestErrorHandlingContract:
         mock_agent_hub_client.complete.side_effect = ServerError("Internal server error")
 
         with patch(
-            "app.services.agent_hub_client.AgentHubClient",
+            "app.services.agent_hub_client.get_sync_client",
             return_value=mock_agent_hub_client,
         ):
             client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
@@ -414,7 +410,7 @@ class TestErrorHandlingContract:
         )
 
         with patch(
-            "app.services.agent_hub_client.AgentHubClient",
+            "app.services.agent_hub_client.get_sync_client",
             return_value=mock_agent_hub_client,
         ):
             client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
@@ -428,12 +424,36 @@ class TestErrorHandlingContract:
         mock_agent_hub_client.complete.side_effect = AgentHubError("Unknown error")
 
         with patch(
-            "app.services.agent_hub_client.AgentHubClient",
+            "app.services.agent_hub_client.get_sync_client",
             return_value=mock_agent_hub_client,
         ):
             client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
             with pytest.raises(RuntimeError, match="Agent Hub request failed"):
                 client.generate(prompt="Hello")
+
+    def test_wrapper_uses_shared_sync_client_configuration(self) -> None:
+        """Verify AgentHubLLMClient delegates transport creation to get_sync_client."""
+        from app.services.agent_hub_client import AgentHubLLMClient
+
+        mock_client = MagicMock()
+
+        with patch(
+            "app.services.agent_hub_client.get_sync_client",
+            return_value=mock_client,
+        ) as mock_factory:
+            client = AgentHubLLMClient(
+                agent_slug="claude-sonnet-4-5",
+                base_url="http://test:8003",
+                api_key="test-key",
+            )
+            assert client._get_client() is mock_client
+
+        mock_factory.assert_called_once_with(
+            base_url="http://test:8003",
+            api_key="test-key",
+            timeout=600.0,
+            client_name="summitflow",
+        )
 
 
 class TestClientConfigurationContract:
@@ -441,8 +461,7 @@ class TestClientConfigurationContract:
 
     def test_sync_client_configuration(self) -> None:
         """Verify get_sync_client passes correct configuration."""
-        # Must patch where it's imported, not where it's defined
-        with patch("app.services.agent_hub_client.AgentHubClient") as mock_class:
+        with patch("app.services._agent_hub_config.AgentHubClient") as mock_class:
             from app.services.agent_hub_client import get_sync_client
 
             get_sync_client(
@@ -461,8 +480,7 @@ class TestClientConfigurationContract:
 
     def test_async_client_configuration(self) -> None:
         """Verify get_async_client passes correct configuration."""
-        # Must patch where it's imported, not where it's defined
-        with patch("app.services.agent_hub_client.AsyncAgentHubClient") as mock_class:
+        with patch("app.services._agent_hub_config.AsyncAgentHubClient") as mock_class:
             from app.services.agent_hub_client import get_async_client
 
             get_async_client(
@@ -481,14 +499,10 @@ class TestClientConfigurationContract:
 
     def test_client_credentials_injected(self) -> None:
         """Verify client credentials are injected from environment."""
-        # Test that get_sync_client uses module-level credential constants
-        # by checking the call args include the expected credential fields
-        agent_hub_module = __import__("app.services.agent_hub_client", fromlist=[""])
-
         with (
-            patch("app.services.agent_hub_client.AgentHubClient") as mock_class,
-            patch.object(agent_hub_module, "SUMMITFLOW_CLIENT_ID", "test-client-id"),
-            patch.object(agent_hub_module, "SUMMITFLOW_REQUEST_SOURCE", "test-source"),
+            patch("app.services._agent_hub_config.AgentHubClient") as mock_class,
+            patch("app.services._agent_hub_config.SUMMITFLOW_CLIENT_ID", "test-client-id"),
+            patch("app.services._agent_hub_config.SUMMITFLOW_REQUEST_SOURCE", "test-source"),
         ):
             from app.services.agent_hub_client import get_sync_client
 
@@ -509,7 +523,7 @@ class TestSessionContract:
         mock_agent_hub_client.list_sessions.return_value = MagicMock()
 
         with patch(
-            "app.services.agent_hub_client.AgentHubClient",
+            "app.services.agent_hub_client.get_sync_client",
             return_value=mock_agent_hub_client,
         ):
             client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
@@ -525,7 +539,7 @@ class TestSessionContract:
         mock_agent_hub_client.list_sessions.side_effect = Exception("Connection refused")
 
         with patch(
-            "app.services.agent_hub_client.AgentHubClient",
+            "app.services.agent_hub_client.get_sync_client",
             return_value=mock_agent_hub_client,
         ):
             client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")

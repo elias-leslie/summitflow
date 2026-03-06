@@ -13,11 +13,8 @@ from ..logging_config import get_logger
 from ._agent_hub_config import (
     AGENT_HUB_API_KEY,
     AGENT_HUB_URL,
-    SUMMITFLOW_CLIENT_ID,
-    SUMMITFLOW_REQUEST_SOURCE,
     get_async_client,
     get_sync_client,
-    resolve_agent_hub_request_source,
     response_to_llm_response,
 )
 from ._agent_hub_types import LLMClient, LLMResponse
@@ -59,13 +56,11 @@ class AgentHubLLMClient(LLMClient):
     def _get_client(self) -> AgentHubClient:
         """Get or create Agent Hub client."""
         if self._client is None:
-            self._client = AgentHubClient(
+            self._client = get_sync_client(
                 base_url=self.base_url,
                 api_key=self.api_key,
                 timeout=DEFAULT_TIMEOUT,
                 client_name=DEFAULT_CLIENT_NAME,
-                client_id=SUMMITFLOW_CLIENT_ID,
-                request_source=resolve_agent_hub_request_source(),
             )
         return self._client
 
@@ -135,8 +130,6 @@ def get_agent(agent_slug: str) -> AgentHubLLMClient:
 __all__ = [
     "AGENT_HUB_API_KEY",
     "AGENT_HUB_URL",
-    "SUMMITFLOW_CLIENT_ID",
-    "SUMMITFLOW_REQUEST_SOURCE",
     "AgentHubLLMClient",
     "LLMClient",
     "LLMResponse",
