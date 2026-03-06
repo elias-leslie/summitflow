@@ -153,26 +153,34 @@ def update(
         raise typer.Exit(1) from e
 
 
-def _edit_personality_in_editor(current: dict) -> None:
-    """Open personality in $EDITOR and persist changes."""
-    from .persona_api import update_personality
+def _edit_text_in_editor(current_text: str, suffix: str = ".md") -> str | None:
+    """Open text in $EDITOR via a temp file; return new text or None if unchanged."""
     editor = os.environ.get("EDITOR", "vi")
-    with tempfile.NamedTemporaryFile(suffix=".md", mode="w", delete=False) as f:
-        f.write(current.get("personality") or "")
+    with tempfile.NamedTemporaryFile(suffix=suffix, mode="w", encoding="utf-8", delete=False) as f:
+        f.write(current_text)
         tmp_path = f.name
     try:
         subprocess.run([editor, tmp_path], check=True)
-        new_text = Path(tmp_path).read_text()
-        if new_text.strip() == (current.get("personality") or "").strip():
-            print("No changes made.")
-            return
-        result = update_personality(new_text, reason="Edited via st persona personality --edit")
-        print(f"Personality updated (version {result.get('version', '?')})")
+        new_text = Path(tmp_path).read_text(encoding="utf-8")
+        if new_text.strip() == current_text.strip():
+            return None
+        return new_text
     except subprocess.CalledProcessError as e:
         output_error("Editor exited with error")
         raise typer.Exit(1) from e
     finally:
         os.unlink(tmp_path)
+
+
+def _edit_personality_in_editor(current: dict[str, Any]) -> None:
+    """Open personality in $EDITOR and persist changes."""
+    from .persona_api import update_personality
+    new_text = _edit_text_in_editor(current.get("personality") or "")
+    if new_text is None:
+        print("No changes made.")
+        return
+    result = update_personality(new_text, reason="Edited via st persona personality --edit")
+    print(f"Personality updated (version {result.get('version', '?')})")
 
 
 @app.command()
@@ -228,26 +236,15 @@ def name(
         raise typer.Exit(1) from e
 
 
-def _edit_instructions_in_editor(current: dict) -> None:
+def _edit_instructions_in_editor(current: dict[str, Any]) -> None:
     """Open heartbeat instructions in $EDITOR and persist changes."""
     from .persona_api import update_persona
-    editor = os.environ.get("EDITOR", "vi")
-    with tempfile.NamedTemporaryFile(suffix=".md", mode="w", delete=False) as f:
-        f.write(current.get("heartbeat_instructions") or "")
-        tmp_path = f.name
-    try:
-        subprocess.run([editor, tmp_path], check=True)
-        new_text = Path(tmp_path).read_text()
-        if new_text.strip() == (current.get("heartbeat_instructions") or "").strip():
-            print("No changes made.")
-            return
-        result = update_persona({"heartbeat_instructions": new_text})
-        print(f"Heartbeat instructions updated (version {result.get('version', '?')})")
-    except subprocess.CalledProcessError as e:
-        output_error("Editor exited with error")
-        raise typer.Exit(1) from e
-    finally:
-        os.unlink(tmp_path)
+    new_text = _edit_text_in_editor(current.get("heartbeat_instructions") or "")
+    if new_text is None:
+        print("No changes made.")
+        return
+    result = update_persona({"heartbeat_instructions": new_text})
+    print(f"Heartbeat instructions updated (version {result.get('version', '?')})")
 
 
 @app.command()

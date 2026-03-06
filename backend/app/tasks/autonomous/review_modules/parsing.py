@@ -125,7 +125,7 @@ def parse_review_response(content: str) -> dict[str, Any]:
         _s4_offset = _s4_pos + len(_s4_obj)
     for json_text in _s4_candidates:
         try:
-            parsed = json.loads(json_match.group())
+            parsed = json.loads(json_text)
             if "verdict" in parsed:
                 return parsed
             # Check common wrapper subkeys
