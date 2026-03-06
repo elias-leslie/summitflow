@@ -42,6 +42,14 @@ ContentOpt = Annotated[
     typer.Option("--content", "-c", help="New content for the episode"),
 ]
 
+ContentFileOpt = Annotated[
+    str | None,
+    typer.Option(
+        "--content-file",
+        help="Read new content from a file path or '-' for stdin",
+    ),
+]
+
 SummaryOpt = Annotated[
     str,
     typer.Option(

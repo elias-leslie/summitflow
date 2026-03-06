@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Annotated
 
@@ -25,6 +26,7 @@ from .memory_options import (
     BatchTierOpt,
     ConfidenceOpt,
     ContentArg,
+    ContentFileOpt,
     ContentOpt,
     ContextOpt,
     CursorOpt,
@@ -60,6 +62,20 @@ from .memory_options import (
 )
 
 app = typer.Typer(help="Memory system commands (Agent Hub)")
+
+
+def _resolve_update_content(content: str | None, content_file: str | None) -> str | None:
+    """Resolve update content from inline text or file/stdin."""
+    if content and content_file:
+        raise typer.BadParameter("Specify only one of --content or --content-file")
+
+    if content_file is None:
+        return content
+
+    if content_file == "-":
+        return sys.stdin.read()
+
+    return Path(content_file).read_text(encoding="utf-8")
 
 
 @app.callback(invoke_without_command=True)
@@ -140,13 +156,15 @@ def delete(uuids: UUIDsDeleteArg) -> None:
 def update(
     uuid: UUIDArg,
     content: ContentOpt = None,
+    content_file: ContentFileOpt = None,
     tier: TierUpdateOpt = None,
     summary: SummaryUpdateOpt = None,
     trigger_types: TriggerTypesUpdateOpt = None,
     pinned: PinnedUpdateOpt = None,
 ) -> None:
     """Update an episode (delete + recreate for content/tier, PATCH for properties)."""
-    update_impl(uuid, content, tier, summary, trigger_types, pinned)
+    resolved_content = _resolve_update_content(content, content_file)
+    update_impl(uuid, resolved_content, tier, summary, trigger_types, pinned)
 
 
 @app.command("batch-tier")

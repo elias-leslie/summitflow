@@ -7,11 +7,14 @@ the CLI_REFERENCE help text is also updated. Prevents --help from becoming stale
 from __future__ import annotations
 
 import pytest
+from typer.testing import CliRunner
 
 try:
     from cli.main import CLI_REFERENCE, app
 except ImportError as e:
     pytest.skip(f"Cannot import cli.main (missing dependency: {e})", allow_module_level=True)
+
+runner = CliRunner()
 
 
 def get_all_command_names() -> set[str]:
@@ -128,3 +131,11 @@ class TestCLIReferenceComplete:
         assert "TASKS" in CLI_REFERENCE, "CLI_REFERENCE missing TASKS section"
         assert "SUBTASK:" in CLI_REFERENCE, "CLI_REFERENCE missing SUBTASK section"
         assert "STEP:" in CLI_REFERENCE, "CLI_REFERENCE missing STEP section"
+
+    def test_rendered_help_preserves_literal_bracketed_tokens(self) -> None:
+        """Rendered help should show literal bracketed placeholders, not eat them as Rich markup."""
+        result = runner.invoke(app, ["--help"])
+
+        assert result.exit_code == 0
+        assert "[work]" in result.stdout
+        assert "projects [list|current|get|create|update|delete]" in result.stdout

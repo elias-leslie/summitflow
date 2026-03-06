@@ -176,6 +176,7 @@ app = typer.Typer(
     name="st",
     help=CLI_REFERENCE,
     no_args_is_help=True,
+    rich_markup_mode=None,
 )
 
 # Register task commands at root level
