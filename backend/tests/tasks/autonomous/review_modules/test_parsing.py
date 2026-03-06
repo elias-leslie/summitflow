@@ -176,6 +176,13 @@ class TestParseReviewResponseToolUseHallucinations:
         result = parse_review_response(content)
         assert result["verdict"] == "NEEDS_FIX"
 
+    def test_deeply_nested_verdict_json(self) -> None:
+        """Verdict buried inside multiple layers of nesting is still extracted."""
+        nested = {"response": {"data": {"verdict": "APPROVED"}}}
+        content = json.dumps(nested)
+        result = parse_review_response(content)
+        assert result["verdict"] == "APPROVED"
+
     def test_tool_use_followed_by_verdict_in_fenced_block(self) -> None:
         """Hallucinated tool_use JSON then verdict in a fenced code block."""
         content = (

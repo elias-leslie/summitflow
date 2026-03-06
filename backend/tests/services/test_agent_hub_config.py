@@ -36,6 +36,17 @@ def test_build_agent_hub_headers_supports_overrides_and_extra_headers() -> None:
         }
 
 
+def test_build_agent_hub_headers_empty_string_client_id_omits_header() -> None:
+    """Explicit empty string client_id should behave the same as None (no X-Client-Id header)."""
+    with (
+        patch.object(config, "SUMMITFLOW_CLIENT_ID", None),
+        patch.object(config, "SUMMITFLOW_REQUEST_SOURCE", "source-abc"),
+    ):
+        headers = config.build_agent_hub_headers(client_id="")
+        assert "X-Client-Id" not in headers
+        assert headers == {"X-Request-Source": "source-abc"}
+
+
 def test_build_agent_hub_headers_uses_default_request_source_when_config_missing() -> None:
     """Empty request-source config should fall back to the caller default."""
     with (

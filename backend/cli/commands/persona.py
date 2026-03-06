@@ -319,7 +319,7 @@ def heartbeat(
             print(".", end="", flush=True)
 
 
-def _print_heartbeat_result(status: dict) -> None:
+def _print_heartbeat_result(status: dict[str, Any]) -> None:
     """Print heartbeat completion summary with session metrics."""
     sid = status.get("last_session_id", "?")
     last_run = status.get("last_run", "?")
