@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 from app.services.self_healing.monitor import PRIORITY_ERR, JournalError
+from app.workflows._model_constants import DEFAULT_PROJECT_ID
 from app.tasks.self_healing import (
     MAX_TASKS_PER_RUN,
     monitor_browser_errors,
@@ -218,7 +219,7 @@ class TestMonitorSystemdErrors:
 
         monitor_systemd_errors()
 
-        assert mock_create.call_args[0][0] == "summitflow"
+        assert mock_create.call_args[0][0] == DEFAULT_PROJECT_ID
 
     @patch("app.tasks.self_healing.SystemdMonitor")
     def test_handles_monitor_exception(

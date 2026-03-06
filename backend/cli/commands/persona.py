@@ -37,7 +37,7 @@ def _read_file(path: str) -> str:
     if not p.is_file():
         output_error(f"File not found: {path}")
         raise typer.Exit(1)
-    return p.read_text()
+    return p.read_text(encoding="utf-8")
 
 
 def _field_status(persona: dict[str, Any], field: str) -> str:
@@ -82,7 +82,7 @@ def show() -> None:
 
 
 def _apply_file_and_scalar_fields(
-    fields: dict,
+    fields: dict[str, Any],
     heartbeat_instructions: str | None,
     user_context: str | None,
     voice_enabled: bool | None,
@@ -125,7 +125,7 @@ def update(
 ) -> None:
     """Update persona fields. Text fields accept file paths."""
     from .persona_api import update_persona
-    fields: dict = {}
+    fields: dict[str, Any] = {}
     _apply_file_and_scalar_fields(
         fields, heartbeat_instructions, user_context, voice_enabled, voice_id,
         heartbeat_interval, session_reset_mode, session_reset_hour, greeting,

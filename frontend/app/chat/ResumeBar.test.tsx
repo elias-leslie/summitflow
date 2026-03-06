@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { getApiBaseUrl } from '@/lib/api-config'
 import { ResumeBar } from './ResumeBar'
 
 const sonnerMocks = vi.hoisted(() => ({
@@ -33,7 +34,7 @@ describe('ResumeBar', () => {
 
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledWith(
-        'http://localhost:8001/api/projects/agent-hub/tasks/task-123/execute',
+        `${getApiBaseUrl()}/api/projects/agent-hub/tasks/task-123/execute`,
         expect.objectContaining({
           method: 'POST',
         }),

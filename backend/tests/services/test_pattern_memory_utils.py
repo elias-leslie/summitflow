@@ -43,6 +43,20 @@ class TestPatternMemoryUtils:
         mock_get.assert_called_once_with("agent-hub")
         pattern_service.get_similar_patterns.assert_awaited_once()
 
+    def test_get_pattern_memory_defaults_to_default_project_id_when_none(self) -> None:
+        """When project_id is None, _get_pattern_memory should use DEFAULT_PROJECT_ID."""
+        with (
+            patch.object(pmu, "PatternMemoryService") as mock_service,
+            patch.object(pmu, "DEFAULT_PROJECT_ID", "default-project"),
+        ):
+            instance = MagicMock(name="default-instance")
+            mock_service.return_value = instance
+
+            result = pmu._get_pattern_memory(None)
+
+        assert result is instance
+        mock_service.assert_called_once_with(project_id="default-project")
+
     def test_store_successful_pattern_uses_requested_project_scope(self) -> None:
         pattern_service = MagicMock()
         pattern_service.store_fix_pattern = AsyncMock(return_value={"success": True})

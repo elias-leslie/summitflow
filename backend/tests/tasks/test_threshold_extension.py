@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+from app.workflows._model_constants import DEFAULT_PROJECT_ID
+
 
 class TestDetectProgress:
     """detect_progress returns evidence dict when agent made measurable progress."""
@@ -296,7 +298,7 @@ class TestRequestExtension:
             {"steps_passed": "1/2"},
         )
 
-        assert mock_client.complete.call_args.kwargs["project_id"] == "summitflow"
+        assert mock_client.complete.call_args.kwargs["project_id"] == DEFAULT_PROJECT_ID
 
 
 class TestHealLoopExtension:
