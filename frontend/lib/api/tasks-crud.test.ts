@@ -1,7 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { startTask } from './tasks-crud'
 
 describe('tasks-crud startTask', () => {
+  const originalFetch = global.fetch
+
   beforeEach(() => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -11,6 +13,10 @@ describe('tasks-crud startTask', () => {
         status: 'queue',
       }),
     }) as unknown as typeof fetch
+  })
+
+  afterEach(() => {
+    global.fetch = originalFetch
   })
 
   it('uses the execute endpoint exposed by the backend', async () => {
