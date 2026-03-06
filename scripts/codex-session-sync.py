@@ -47,9 +47,11 @@ def load_env_credentials() -> tuple[str, str]:
 
     for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
         if line.startswith("SUMMITFLOW_CLIENT_ID="):
-            client_id = line.split("=", 1)[1]
+            value = line.split("=", 1)[1].split("#")[0].strip().strip("'\"")
+            client_id = value
         elif line.startswith("SUMMITFLOW_CLIENT_SECRET="):
-            client_secret = line.split("=", 1)[1]
+            value = line.split("=", 1)[1].split("#")[0].strip().strip("'\"")
+            client_secret = value
     return client_id, client_secret
 
 

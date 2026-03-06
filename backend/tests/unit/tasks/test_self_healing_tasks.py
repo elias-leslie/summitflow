@@ -281,5 +281,5 @@ class TestMonitorBrowserErrors:
         result = monitor_browser_errors()
 
         assert result == {"created": 0, "skipped": 0, "errors": 0}
-        mock_monitor_cls.assert_called_once_with("summitflow")
+        mock_monitor_cls.assert_called_once_with(DEFAULT_PROJECT_ID)
         mock_create.assert_not_called()
