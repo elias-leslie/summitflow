@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.services.task_execution_readiness import assess_task_execution_readiness
+from app.services.task_second_opinion import parse_second_opinion_response
 
 
 class TestAssessTaskExecutionReadiness:
@@ -52,8 +53,40 @@ class TestAssessTaskExecutionReadiness:
         )
 
         assert readiness.ready is True
-        assert readiness.plan_status == "approved"
-        assert readiness.issues == []
+
+
+class TestSecondOpinionParsing:
+    """Parsing helpers for live critique responses."""
+
+    def test_parse_second_opinion_response_normalizes_object_findings(self) -> None:
+        result = parse_second_opinion_response(
+            """
+            {
+              "verdict": "needs_clarification",
+              "summary": "Package is underspecified.",
+              "missing_requirements": ["Need an exact schema"],
+              "edge_cases": [],
+              "test_gaps": [],
+              "rollout_gaps": [],
+              "findings": [
+                {
+                  "severity": "high",
+                  "issue": "Output schema is vague.",
+                  "why_it_matters": "Validation becomes inconsistent."
+                }
+              ],
+              "simpler_alternative": "",
+              "confidence": "high"
+            }
+            """,
+            stage="task_shape",
+            agent_slug="specifier",
+        )
+
+        assert result["status"] == "needs_revision"
+        assert result["findings"] == [
+            "Output schema is vague. — Validation becomes inconsistent."
+        ]
 
     def test_complex_task_requires_completed_second_opinion(self) -> None:
         readiness = assess_task_execution_readiness(

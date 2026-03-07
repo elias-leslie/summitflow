@@ -133,15 +133,32 @@ def _parse_json_object(content: str) -> dict[str, Any]:
     return json.loads(match.group(0))
 
 
+def _normalize_text_list(items: Any) -> list[str]:
+    """Normalize string-or-object lists from agent responses into plain text lines."""
+    normalized: list[str] = []
+    for item in items or []:
+        if isinstance(item, str):
+            text = item.strip()
+        elif isinstance(item, dict):
+            issue = str(item.get("issue") or item.get("summary") or "").strip()
+            why = str(item.get("why_it_matters") or item.get("impact") or "").strip()
+            text = f"{issue} — {why}".strip(" —")
+        else:
+            text = str(item).strip()
+        if text:
+            normalized.append(text)
+    return normalized
+
+
 def parse_second_opinion_response(content: str, *, stage: str, agent_slug: str) -> dict[str, Any]:
     """Parse a task-critic response into persisted context shape."""
     parsed = _parse_json_object(content)
     verdict = str(parsed.get("verdict") or "NEEDS_REVISION").upper()
-    findings = [str(item).strip() for item in parsed.get("findings") or [] if str(item).strip()]
-    test_gaps = [str(item).strip() for item in parsed.get("test_gaps") or [] if str(item).strip()]
-    rollout_gaps = [str(item).strip() for item in parsed.get("rollout_gaps") or [] if str(item).strip()]
-    missing = [str(item).strip() for item in parsed.get("missing_requirements") or [] if str(item).strip()]
-    edge_cases = [str(item).strip() for item in parsed.get("edge_cases") or [] if str(item).strip()]
+    findings = _normalize_text_list(parsed.get("findings"))
+    test_gaps = _normalize_text_list(parsed.get("test_gaps"))
+    rollout_gaps = _normalize_text_list(parsed.get("rollout_gaps"))
+    missing = _normalize_text_list(parsed.get("missing_requirements"))
+    edge_cases = _normalize_text_list(parsed.get("edge_cases"))
 
     summary = str(parsed.get("summary") or "").strip()
     if not summary:
@@ -181,4 +198,3 @@ def persist_second_opinion(
 
     objective = str(second_opinion.get("summary") or "Record second opinion").strip()
     return upsert_task_spirit(task_id=task_id, objective=objective, context={_SECOND_OPINION_CONTEXT_KEY: second_opinion})
-
