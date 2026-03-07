@@ -9,7 +9,8 @@ from typing import Any
 # Service name to systemd unit mapping
 # User services (run with --user flag)
 USER_SERVICES = {
-    "portfolio-ai": "portfolio-dev-companion.service",
+    "portfolio-ai": "portfolio-backend.service",
+    "portfolio-companion": "portfolio-dev-companion.service",
     "summitflow": "summitflow-backend.service",
     "sf-frontend": "summitflow-frontend.service",
     "sf-worker": "summitflow-hatchet-worker.service",
