@@ -16,6 +16,7 @@ Endpoints:
 """
 
 import logging
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
@@ -88,6 +89,53 @@ async def get_children(
     validate_project_exists(project_id)
     helpers.validate_entry_type(type)
     return explorer.get_children(project_id, type, path)
+
+
+@router.get("/{project_id}/explorer/symbols/search")
+async def search_symbols(
+    project_id: str,
+    q: str = Query(..., min_length=1, description="Search query"),
+    language: str | None = Query(None, description="Optional language filter"),
+    kind: str | None = Query(None, description="Optional kind filter"),
+    limit: int = Query(20, ge=1, le=100, description="Maximum results"),
+) -> dict[str, Any]:
+    """Search project symbols by name, signature, or summary."""
+    validate_project_exists(project_id)
+    rows = explorer_storage.search_symbols(
+        project_id,
+        q,
+        language=language,
+        kind=kind,
+        limit=limit,
+    )
+    return {
+        "query": q,
+        "count": len(rows),
+        "items": rows,
+    }
+
+
+@router.get("/{project_id}/explorer/symbols/detail")
+async def get_symbol_detail(
+    project_id: str,
+    symbol_id: str = Query(..., min_length=1, description="Stable symbol id"),
+    context_lines: int = Query(0, ge=0, le=20, description="Extra lines before/after symbol"),
+) -> dict[str, Any]:
+    """Get symbol metadata plus source and linked file entry."""
+    validate_project_exists(project_id)
+    symbol = explorer_storage.get_symbol(project_id, symbol_id)
+    if not symbol:
+        raise HTTPException(status_code=404, detail="Symbol not found")
+
+    source = _read_symbol_source(project_id, symbol, context_lines)
+    file_entry = explorer_storage.get_entry(project_id, "file", symbol["file_path"])
+    related_entries = explorer_storage.list_related_entries_for_file(project_id, symbol["file_path"])
+    return {
+        "symbol": symbol,
+        "source": source,
+        "file_entry": file_entry,
+        "related_entries": related_entries,
+    }
 
 
 @router.post("/{project_id}/explorer/scan")
@@ -178,6 +226,28 @@ async def get_entry_by_id(project_id: str, entry_id: int) -> dict[str, Any]:
     if entry.get("project_id") != project_id:
         raise HTTPException(status_code=404, detail=f"Entry {entry_id} not found in project")
     return entry
+
+
+def _read_symbol_source(symbol_project_id: str, symbol: dict[str, Any], context_lines: int) -> str:
+    """Read symbol source from disk using stored offsets, with optional surrounding lines."""
+    root_path = explorer.get_project_root(symbol_project_id)
+    if not root_path:
+        raise HTTPException(status_code=400, detail="Project has no root_path configured")
+
+    file_path = Path(root_path) / symbol["file_path"]
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Symbol source file not found")
+
+    if context_lines == 0:
+        with file_path.open("rb") as handle:
+            handle.seek(int(symbol["byte_offset"]))
+            source_bytes = handle.read(int(symbol["byte_length"]))
+        return source_bytes.decode("utf-8", errors="replace")
+
+    lines = file_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    start = max(0, int(symbol["start_line"]) - 1 - context_lines)
+    end = min(len(lines), int(symbol["end_line"]) + context_lines)
+    return "\n".join(lines[start:end])
 
 
 @router.get("/{project_id}/explorer/refactor-targets")

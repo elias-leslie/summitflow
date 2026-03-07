@@ -21,6 +21,7 @@ from .explorer_analysis_helpers import (
     build_summary,
     row_to_target,
 )
+from .explorer_symbols import summarize_symbols_for_file
 
 # Extensions for code files that can be refactored
 REFACTORABLE_EXTENSIONS = {".py", ".ts", ".tsx", ".js", ".mjs"}
@@ -128,6 +129,9 @@ def get_refactor_targets(
             summary_params,
         )
         summary = build_summary(cur.fetchall())
+
+    for target in targets:
+        target["top_symbols"] = summarize_symbols_for_file(project_id, target["path"])
 
     return {"targets": targets, "summary": summary}
 

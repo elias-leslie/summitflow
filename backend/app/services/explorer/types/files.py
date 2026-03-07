@@ -11,12 +11,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from ....logging_config import get_logger
+from ....storage import explorer as explorer_storage
+from ..analyzers import extract_symbols
+from ..analyzers.symbol_extractor import SymbolRecord
 from ..base import BaseScanner, get_project_root
 from ..constants import SKIP_DIRS
 from ..health import calculate_health_for_entry
 from ..models import ExplorerEntryCreate
 from .file_analysis import calculate_basic_metrics, calculate_bloat, read_file_content
-from .file_constants import SKIP_EXTENSIONS
+from .file_constants import SKIP_EXTENSIONS, SYMBOL_INDEX_EXTENSIONS
 from .file_detection import compute_health_flags, detect_compat_cruft, detect_magic_strings
 from .file_git import apply_git_info_to_entry, get_all_commit_counts_90d, get_all_last_commits
 from .file_scan_helpers import (
@@ -37,6 +40,8 @@ class FileScanner(BaseScanner):
     def __init__(self, project_id: str, config: dict[str, object] | None = None) -> None:
         super().__init__(project_id, config)
         self.root_path: Path | None = None
+        self._symbol_snapshots: dict[str, list[SymbolRecord]] = {}
+        self._indexed_symbol_paths: set[str] = set()
 
     def scan(self) -> list[ExplorerEntryCreate]:
         """Scan codebase and return file entries."""
@@ -102,6 +107,8 @@ class FileScanner(BaseScanner):
             magic_strings = detect_magic_strings(rel_path, content)
             compat_cruft = detect_compat_cruft(rel_path, content)
             health_flags = compute_health_flags(file_path, ext, function_count, class_count, import_count)
+            symbols = self._extract_file_symbols(file_path, rel_path, ext)
+            symbol_kinds = _count_symbol_kinds(symbols)
             refactor_priority, refactor_issues = compute_refactor_fields(
                 complexity, lines, health_flags, bloat_level, magic_strings, compat_cruft
             )
@@ -114,6 +121,8 @@ class FileScanner(BaseScanner):
                     function_count, class_count, import_count,
                     complexity, refactor_priority, refactor_issues,
                     magic_strings, compat_cruft, health_flags,
+                    symbol_count=len(symbols),
+                    symbol_kinds=symbol_kinds,
                 ),
             )
         except Exception:
@@ -142,3 +151,35 @@ class FileScanner(BaseScanner):
     def get_health_status(self, entry: ExplorerEntryCreate) -> str:
         """Determine health status for a file entry."""
         return calculate_health_for_entry(self.entry_type, entry.metadata)
+
+    def post_save_cleanup(self, current_paths: set[str]) -> None:
+        """Refresh symbol rows after a successful full file scan."""
+        del current_paths
+        explorer_storage.cleanup_stale_symbols(self.project_id, self._indexed_symbol_paths)
+        for file_path, symbols in self._symbol_snapshots.items():
+            explorer_storage.replace_file_symbols(self.project_id, file_path, symbols)
+
+    def _extract_file_symbols(
+        self,
+        file_path: Path,
+        rel_path: str,
+        ext: str,
+    ) -> list[SymbolRecord]:
+        """Extract supported symbol metadata for a file."""
+        if ext not in SYMBOL_INDEX_EXTENSIONS:
+            return []
+        symbols = extract_symbols(file_path, rel_path)
+        self._symbol_snapshots[rel_path] = symbols
+        self._indexed_symbol_paths.add(rel_path)
+        return symbols
+
+
+def _count_symbol_kinds(symbols: list[dict[str, object]]) -> dict[str, int] | None:
+    """Count symbol kinds for file metadata."""
+    if not symbols:
+        return None
+    counts: dict[str, int] = {}
+    for symbol in symbols:
+        kind = str(symbol["kind"])
+        counts[kind] = counts.get(kind, 0) + 1
+    return counts

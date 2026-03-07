@@ -15,6 +15,7 @@ interface FileDetailProps {
 export function FileDetail({ entry }: FileDetailProps) {
   const meta = entry.metadata
   const isDir = meta.is_directory
+  const symbolKinds = Object.entries(meta.symbol_kinds ?? {})
 
   return (
     <div className="space-y-4">
@@ -73,6 +74,17 @@ export function FileDetail({ entry }: FileDetailProps) {
             </p>
           </div>
         )}
+
+        {!isDir && typeof meta.symbol_count === 'number' && (
+          <div>
+            <span className="text-xs text-slate-500 uppercase tracking-wide">
+              Symbols
+            </span>
+            <p className="font-mono text-sm text-slate-200 mt-1">
+              {formatNumber(meta.symbol_count)}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Status badges */}
@@ -110,6 +122,24 @@ export function FileDetail({ entry }: FileDetailProps) {
           </span>
         )}
       </div>
+
+      {!isDir && symbolKinds.length > 0 && (
+        <div className="pt-2 border-t border-slate-700/50">
+          <span className="text-xs text-slate-500 uppercase tracking-wide">
+            Indexed Kinds
+          </span>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {symbolKinds.map(([kind, count]) => (
+              <span
+                key={kind}
+                className="rounded-full border border-cyan-500/20 bg-cyan-500/10 px-2.5 py-1 text-xs text-cyan-200"
+              >
+                {kind} {formatNumber(count)}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Last commit info */}
       {meta.last_commit_hash && (

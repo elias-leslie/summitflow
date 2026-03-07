@@ -14,6 +14,7 @@ import type { ExplorerEntry } from '@/lib/api/explorer'
 import { DataList } from './DataList'
 import { DataRow } from './DataRow'
 import { ExplorerShell } from './ExplorerShell'
+import { SymbolSearchPanel } from './SymbolSearchPanel'
 import {
   useDedupedDependencies,
   useExplorerData,
@@ -142,16 +143,21 @@ function ExplorerContent({
   }
 
   return (
-    <DataList
-      items={entries}
-      columns={columns}
-      sortField={sortField}
-      sortDir={sortDir}
-      onSort={onSort}
-      renderRow={renderRow}
-      isLoading={isLoading}
-      emptyMessage={`No ${typeConfig.label.toLowerCase()} found`}
-    />
+    <div className="flex h-full flex-col">
+      {type === 'files' ? <SymbolSearchPanel projectId={projectId} /> : null}
+      <div className="min-h-0 flex-1">
+        <DataList
+          items={entries}
+          columns={columns}
+          sortField={sortField}
+          sortDir={sortDir}
+          onSort={onSort}
+          renderRow={renderRow}
+          isLoading={isLoading}
+          emptyMessage={`No ${typeConfig.label.toLowerCase()} found`}
+        />
+      </div>
+    </div>
   )
 }
 

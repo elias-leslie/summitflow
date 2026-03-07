@@ -14,6 +14,7 @@ from .tables import (
     create_agent_tables,
     create_core_tables,
     create_design_tables,
+    create_explorer_tables,
     create_notifications_tables,
 )
 
@@ -61,6 +62,7 @@ def _do_init_schema(conn: psycopg.Connection, cur: psycopg.Cursor) -> None:
     create_agent_tables(cur)
     create_notifications_tables(cur)
     create_design_tables(cur)
+    create_explorer_tables(cur)
 
     # Apply backward compatibility migrations
     apply_schema_migrations(conn, cur)

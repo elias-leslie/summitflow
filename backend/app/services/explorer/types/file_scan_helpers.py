@@ -82,6 +82,8 @@ def build_file_metadata(
     magic_strings: list[str] | None,
     compat_cruft: list[str] | None,
     health_flags: list[str] | None,
+    symbol_count: int = 0,
+    symbol_kinds: dict[str, int] | None = None,
 ) -> dict[str, object]:
     """Build the metadata dict for a file entry."""
     return {
@@ -104,4 +106,6 @@ def build_file_metadata(
         "magic_strings": magic_strings or None,
         "compat_cruft": compat_cruft or None,
         "health_flags": health_flags or None,
+        "symbol_count": symbol_count,
+        "symbol_kinds": symbol_kinds or None,
     }

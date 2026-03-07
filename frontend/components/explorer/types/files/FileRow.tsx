@@ -42,6 +42,7 @@ export function FileRow({ entry }: FileRowProps) {
   const size = entry.metadata.size_bytes ?? 0
   const bloatLevel = entry.metadata.bloat_level
   const commentDensity = entry.metadata.comment_density as number | undefined
+  const symbolCount = entry.metadata.symbol_count as number | undefined
   const healthStatus = (entry.healthStatus ?? 'unknown') as HealthStatus
 
   return (
@@ -69,6 +70,11 @@ export function FileRow({ entry }: FileRowProps) {
       >
         <span className="truncate">{entry.name}</span>
         <CommentDensityBadge density={commentDensity} />
+        {!isDir && symbolCount ? (
+          <span className="shrink-0 rounded bg-cyan-500/10 px-1.5 py-0.5 text-[10px] text-cyan-300">
+            {formatNumber(symbolCount)} sym
+          </span>
+        ) : null}
       </ColumnValue>
 
       {/* LOC */}

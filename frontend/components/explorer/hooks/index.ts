@@ -18,4 +18,9 @@ export {
   useExplorerData,
 } from './useExplorerData'
 export { useExplorerFilters } from './useExplorerFilters'
+export {
+  explorerSymbolKeys,
+  useExplorerSymbolDetail,
+  useExplorerSymbolSearch,
+} from './useExplorerSymbolSearch'
 export { useExplorerState } from './useExplorerState'

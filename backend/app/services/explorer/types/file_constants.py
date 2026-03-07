@@ -51,8 +51,10 @@ BLOAT_THRESHOLDS: dict[str, tuple[int, int]] = {
 STALE_THRESHOLD_DAYS = 90
 
 # Schema version for metadata - increment when adding new fields
-# v3: Added cyclomatic_complexity_avg, cyclomatic_complexity_max, complexity_method
-METADATA_SCHEMA_VERSION = 3
+# v4: Added symbol_count and symbol_kinds to file metadata
+METADATA_SCHEMA_VERSION = 4
+
+SYMBOL_INDEX_EXTENSIONS = {".py", ".ts", ".tsx"}
 
 # Regex patterns for complexity metrics
 FUNCTION_PATTERNS: dict[str, re.Pattern[str]] = {
