@@ -41,6 +41,28 @@ def task_exists_for_file(project_id: str, file_path: str) -> bool:
         return bool(result[0]) if result else False
 
 
+def list_active_tasks_for_file(
+    project_id: str,
+    file_path: str,
+    *,
+    task_type: str | None = None,
+) -> list[str]:
+    """Return active task IDs whose title/description target a specific file path."""
+    query = (
+        "SELECT id FROM tasks WHERE project_id = %s"
+        f" AND status IN {_ACTIVE_Q}"
+        " AND (description LIKE %s OR title LIKE %s)"
+    )
+    params: list[Any] = [project_id, f"%{file_path}%", f"%{file_path}%"]
+    if task_type:
+        query += " AND task_type = %s"
+        params.append(task_type)
+    query += " ORDER BY id"
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(query, params)
+        return [str(row[0]) for row in cur.fetchall()]
+
+
 def _normalize_error_pattern(error_title: str) -> tuple[str, set[str]]:
     """Return (normalized_pattern, keyword_set) for an error title."""
     s = error_title.lower().strip()

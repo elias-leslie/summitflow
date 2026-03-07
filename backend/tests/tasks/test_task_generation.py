@@ -32,12 +32,16 @@ class TestGenerateTasksFromScan:
         assert result["skipped_count"] == 0
 
     @patch("app.tasks.autonomous.refactor_generation.get_refactor_targets")
+    @patch("app.tasks.autonomous.refactor_generation.qa_storage")
     @patch("app.tasks.autonomous.refactor_generation.task_store")
+    @patch("app.tasks.autonomous.refactor_generation.create_refactor_issue")
     @patch("app.tasks.autonomous.refactor_generation.create_refactor_task")
     def test_creates_refactor_task_type(
         self,
         mock_create_task: MagicMock,
+        mock_create_issue: MagicMock,
         mock_store: MagicMock,
+        mock_qa_storage: MagicMock,
         mock_get_targets: MagicMock,
     ) -> None:
         """Test that refactor tasks are created from scan targets."""
@@ -53,6 +57,9 @@ class TestGenerateTasksFromScan:
             ]
         }
         mock_store.task_exists_for_file.return_value = False
+        mock_store.list_active_tasks_for_file.return_value = []
+        mock_create_issue.return_value = 17
+        mock_qa_storage.get_issue.return_value = {"id": 17, "st_task_id": None}
         mock_create_task.return_value = ("task-123", "issue-123")  # (task_id, issue_id)
 
         result = generate_tasks_from_scan("test-project")
@@ -94,12 +101,16 @@ class TestGenerateTasksFromScan:
     @patch("app.tasks.autonomous.refactor_generation.scan")
     @patch("app.tasks.autonomous.refactor_generation.check_and_close_resolved_issues")
     @patch("app.tasks.autonomous.refactor_generation.get_refactor_targets")
+    @patch("app.tasks.autonomous.refactor_generation.qa_storage")
     @patch("app.tasks.autonomous.refactor_generation.task_store")
+    @patch("app.tasks.autonomous.refactor_generation.create_refactor_issue")
     @patch("app.tasks.autonomous.refactor_generation.create_refactor_task")
     def test_regenerate_sync_closes_resolved_and_only_creates_missing_tasks(
         self,
         mock_create_task: MagicMock,
+        mock_create_issue: MagicMock,
         mock_store: MagicMock,
+        mock_qa_storage: MagicMock,
         mock_get_targets: MagicMock,
         mock_close_resolved: MagicMock,
         mock_scan: MagicMock,
@@ -119,14 +130,101 @@ class TestGenerateTasksFromScan:
             ]
         }
         mock_store.task_exists_for_file.return_value = False
+        mock_store.list_active_tasks_for_file.return_value = []
+        mock_create_issue.return_value = 17
+        mock_qa_storage.get_issue.return_value = {"id": 17, "st_task_id": None}
         mock_create_task.return_value = ("task-123", "issue-123")
 
         result = regenerate_refactor_tasks_sync("test-project")
 
         assert result["closed_count"] == 2
         assert result["created_count"] == 1
+        assert result["retired_count"] == 0
         mock_scan.assert_called_once_with("test-project", "file")
         mock_close_resolved.assert_called_once_with("test-project")
+
+    @patch("app.tasks.autonomous.refactor_generation.get_refactor_targets")
+    @patch("app.tasks.autonomous.refactor_generation.qa_storage")
+    @patch("app.tasks.autonomous.refactor_generation.task_store")
+    @patch("app.tasks.autonomous.refactor_generation.create_refactor_issue")
+    @patch("app.tasks.autonomous.refactor_generation.create_refactor_task")
+    @patch("app.tasks.autonomous.refactor_generation.log_task_event")
+    def test_reuses_linked_canonical_task_and_cancels_duplicate_refactor_tasks(
+        self,
+        mock_log_task_event: MagicMock,
+        mock_create_task: MagicMock,
+        mock_create_issue: MagicMock,
+        mock_store: MagicMock,
+        mock_qa_storage: MagicMock,
+        mock_get_targets: MagicMock,
+    ) -> None:
+        mock_get_targets.return_value = {
+            "targets": [
+                {
+                    "path": "backend/app/services/foo.py",
+                    "priority": "high",
+                    "reason": "High cyclomatic complexity",
+                    "complexity_score": 20.0,
+                    "lines_of_code": 400,
+                }
+            ]
+        }
+        mock_store.task_exists_for_file.return_value = False
+        mock_create_issue.return_value = 17
+        mock_qa_storage.get_issue.return_value = {"id": 17, "st_task_id": "task-keep"}
+        mock_store.get_task.return_value = {"id": "task-keep", "status": "pending"}
+        mock_store.list_active_tasks_for_file.return_value = ["task-dup", "task-keep"]
+
+        result = generate_tasks_from_scan("test-project")
+
+        assert result["created_count"] == 0
+        assert result["retired_count"] == 1
+        mock_create_task.assert_not_called()
+        mock_store.update_task.assert_called_once_with("task-dup", status="cancelled")
+        mock_log_task_event.assert_called_once()
+
+    @patch("app.tasks.autonomous.refactor_generation.get_refactor_targets")
+    @patch("app.tasks.autonomous.refactor_generation.qa_storage")
+    @patch("app.tasks.autonomous.refactor_generation.link_issue_to_task")
+    @patch("app.tasks.autonomous.refactor_generation.task_store")
+    @patch("app.tasks.autonomous.refactor_generation.create_refactor_issue")
+    @patch("app.tasks.autonomous.refactor_generation.create_refactor_task")
+    @patch("app.tasks.autonomous.refactor_generation.log_task_event")
+    def test_relinks_issue_to_existing_active_refactor_task_before_creating_new_one(
+        self,
+        mock_log_task_event: MagicMock,
+        mock_create_task: MagicMock,
+        mock_create_issue: MagicMock,
+        mock_store: MagicMock,
+        mock_link_task_to_issue: MagicMock,
+        mock_qa_storage: MagicMock,
+        mock_get_targets: MagicMock,
+    ) -> None:
+        mock_get_targets.return_value = {
+            "targets": [
+                {
+                    "path": "backend/app/services/foo.py",
+                    "priority": "high",
+                    "reason": "High cyclomatic complexity",
+                    "complexity_score": 20.0,
+                    "lines_of_code": 400,
+                }
+            ]
+        }
+        mock_store.task_exists_for_file.return_value = False
+        mock_create_issue.return_value = 17
+        mock_qa_storage.get_issue.return_value = {"id": 17, "st_task_id": None}
+        mock_store.list_active_tasks_for_file.return_value = ["task-b", "task-a"]
+        mock_store.update_task.return_value = {"id": "task-b", "status": "cancelled"}
+
+        result = generate_tasks_from_scan("test-project")
+
+        assert result["created_count"] == 0
+        assert result["retired_count"] == 1
+        mock_link_task_to_issue.assert_called_once_with(17, "task-a")
+        mock_create_task.assert_not_called()
+        mock_store.update_task.assert_called_once_with("task-b", status="cancelled")
+        assert mock_log_task_event.call_count == 1
 
 
 class TestCleanupStaleTasks:

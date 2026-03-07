@@ -6,9 +6,13 @@ import logging
 from typing import Any
 
 from app.services.explorer import scan
+from app.services.task_issue_mapper import link_issue_to_task
+from app.storage import qa_issues as qa_storage
 from app.storage import tasks as task_store
+from app.storage.events import log_task_event
 from app.storage.explorer_analysis import get_refactor_targets
 from app.storage.projects import get_project_root_path
+from app.tasks.autonomous._issue_builder import create_refactor_issue
 from app.tasks.autonomous.step_builders import build_refactor_steps, calculate_target_lines
 from app.tasks.autonomous.task_builders import create_refactor_task
 from app.tasks.explorer_resolution import check_and_close_resolved_issues
@@ -62,7 +66,7 @@ def _check_skip(
 def process_refactor_target(
     project_id: str, target: dict[str, Any],
     project_root: str | None = None, skip_existing: bool = True,
-) -> bool:
+) -> tuple[bool, int]:
     """Process a single refactor target and create task if needed."""
     relative_path = target.get("path", "")
     lines = target.get("lines_of_code", 0)
@@ -70,10 +74,29 @@ def process_refactor_target(
     target_lines = calculate_target_lines(lines)
 
     if _check_skip(project_id, relative_path, lines, target_lines, refactor_issues, skip_existing):
-        return False
+        return False, 0
 
     complexity = target.get("complexity_score", 0)
     file_path = f"{project_root}/{relative_path}" if project_root else relative_path
+    issue_id = create_refactor_issue(
+        project_id,
+        relative_path,
+        complexity,
+        lines,
+        target_lines,
+        target.get("reason", "High complexity"),
+    )
+    canonical_task_id = _get_canonical_refactor_task_id(project_id, relative_path, issue_id)
+    retired_count = 0
+    if canonical_task_id:
+        retired_count = _retire_duplicate_refactor_tasks(project_id, relative_path, canonical_task_id)
+        logger.info(
+            "Skipping %s: canonical refactor task %s already exists",
+            relative_path,
+            canonical_task_id,
+        )
+        return False, retired_count
+
     steps = build_refactor_steps(
         relative_path, file_path, lines, target_lines,
         relative_path.startswith("frontend/"), refactor_issues=refactor_issues,
@@ -83,11 +106,51 @@ def process_refactor_target(
         reason=target.get("reason", "High complexity"), complexity=complexity,
         lines=lines, target_lines=target_lines, priority=target.get("priority", "medium"),
         tier=calculate_task_tier(complexity, lines), steps=steps, refactor_issues=refactor_issues,
+        issue_id=issue_id,
     )
     if task_id:
+        retired_count += _retire_duplicate_refactor_tasks(project_id, relative_path, task_id)
         logger.info(f"Created task {task_id} with spirit+criteria, linked to issue {issue_id}")
-        return True
-    return False
+        return True, retired_count
+    return False, retired_count
+
+
+def _get_canonical_refactor_task_id(project_id: str, relative_path: str, issue_id: int) -> str | None:
+    """Return the canonical active refactor task for an issue/file, relinking when needed."""
+    issue = qa_storage.get_issue(issue_id)
+    linked_task_id = issue.get("st_task_id") if issue else None
+    if isinstance(linked_task_id, str):
+        linked_task = task_store.get_task(linked_task_id)
+        if linked_task and linked_task.get("status") in {"pending", "running", "paused", "blocked", "ai_reviewing"}:
+            return linked_task_id
+
+    active_task_ids = task_store.list_active_tasks_for_file(project_id, relative_path, task_type="refactor")
+    if not active_task_ids:
+        return None
+    canonical_task_id = sorted(active_task_ids)[0]
+    link_issue_to_task(issue_id, canonical_task_id)
+    return canonical_task_id
+
+
+def _retire_duplicate_refactor_tasks(project_id: str, relative_path: str, canonical_task_id: str) -> int:
+    """Cancel extra active refactor tasks for the same file path."""
+    retired_count = 0
+    duplicate_task_ids = task_store.list_active_tasks_for_file(
+        project_id,
+        relative_path,
+        task_type="refactor",
+    )
+    for duplicate_task_id in duplicate_task_ids:
+        if duplicate_task_id == canonical_task_id:
+            continue
+        task_store.update_task(duplicate_task_id, status="cancelled")
+        log_task_event(
+            duplicate_task_id,
+            f"Auto-cancelled duplicate refactor task for {relative_path}; canonical task is {canonical_task_id}",
+            source="refactor_sync",
+        )
+        retired_count += 1
+    return retired_count
 
 
 def generate_refactor_tasks_internal(
@@ -95,10 +158,23 @@ def generate_refactor_tasks_internal(
 ) -> dict[str, Any]:
     """Generate refactoring tasks from Explorer scan results."""
     targets = get_refactor_targets(project_id, limit=15).get("targets", [])
-    created = sum(
-        1 for t in targets if process_refactor_target(project_id, t, project_root, skip_existing)
-    )
-    return {"created_count": created, "scanned_count": len(targets), "skipped_count": len(targets) - created}
+    created = 0
+    retired = 0
+    for target in targets:
+        was_created, retired_count = process_refactor_target(
+            project_id,
+            target,
+            project_root,
+            skip_existing,
+        )
+        created += 1 if was_created else 0
+        retired += retired_count
+    return {
+        "created_count": created,
+        "retired_count": retired,
+        "scanned_count": len(targets),
+        "skipped_count": len(targets) - created,
+    }
 
 
 def regenerate_refactor_tasks_impl(project_id: str) -> dict[str, Any]:
@@ -119,6 +195,7 @@ def regenerate_refactor_tasks_impl(project_id: str) -> dict[str, Any]:
     logger.info(
         f"Refactor task sync complete for {project_id}: "
         f"closed={closed_count}, created={result['created_count']}, "
+        f"retired={result['retired_count']}, "
         f"scanned={result['scanned_count']}, skipped={result['skipped_count']}"
     )
     return {"closed_count": closed_count, **result}
