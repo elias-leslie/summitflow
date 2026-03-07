@@ -141,10 +141,10 @@ def list_ready_all(
                 for task in active_batch:
                     if task.get("id") in live_lane_task_ids:
                         active_tasks.append(task)
+                        active_count += 1
                     else:
                         stale_tasks.append(task)
-                active_count += len([task for task in active_batch if task.get("id") in live_lane_task_ids])
-                stale_count += len([task for task in active_batch if task.get("id") not in live_lane_task_ids])
+                        stale_count += 1
             except APIError:
                 pass
 
