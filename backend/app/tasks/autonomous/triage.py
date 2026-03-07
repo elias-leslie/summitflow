@@ -9,6 +9,7 @@ from typing import Any
 from ...constants import AGENT_TRIAGER
 from ...logging_config import get_logger
 from ...services.agent_hub_client import get_sync_client
+from ...services.task_second_opinion import ensure_second_opinion_tracking
 from ...storage import log_task_event
 from ...storage import tasks as task_store
 from ...storage.task_spirit import upsert_task_spirit
@@ -77,6 +78,10 @@ def _handle_ready(task_id: str, result: dict[str, Any]) -> None:
             done_when=requirements if requirements else None,
         )
         logger.info("Created task spirit", task_id=task_id, objective=objective[:50])
+
+    task = task_store.get_task(task_id)
+    if task:
+        ensure_second_opinion_tracking(task_id, task, source="triage")
 
     task_store.update_task_status(task_id, "queue")
     log_task_event(task_id, f"Triage complete: CLEAR - Complexity: {complexity}. Moving to queue.")

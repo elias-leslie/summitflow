@@ -28,9 +28,11 @@ def build_subtasks_data(subtasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return result
 
 
-def upsert_task_spirit_from_plan(task_id: str, plan: dict[str, Any]) -> None:
+def upsert_task_spirit_from_plan(task_id: str, plan: dict[str, Any]) -> dict[str, Any] | None:
     """Upsert task_spirit record for plan data."""
     from app.services.task_execution_readiness import sync_task_execution_readiness
+    from app.services.task_second_opinion import ensure_second_opinion_tracking
+    from app.storage import tasks as task_store
     from app.storage.task_spirit import upsert_task_spirit
     try:
         ctx = plan.get("context", {})
@@ -46,9 +48,16 @@ def upsert_task_spirit_from_plan(task_id: str, plan: dict[str, Any]) -> None:
             done_when=plan.get("done_when"), context=context_blob if context_blob else None,
             complexity=plan.get("complexity", "SIMPLE"),
         )
+        task = task_store.get_task(task_id)
+        second_opinion = (
+            ensure_second_opinion_tracking(task_id, task, source="plan-import")
+            if task else None
+        )
         sync_task_execution_readiness(task_id, approved_by="plan-import")
+        return second_opinion
     except Exception as e:
         typer.echo(f"  Warning: Failed to write task_spirit: {e}")
+        return None
 
 
 def create_subtask_dependencies(task_id: str, subtasks: list[dict[str, Any]]) -> None:

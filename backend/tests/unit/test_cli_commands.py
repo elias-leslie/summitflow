@@ -370,12 +370,43 @@ class TestTaskCliErgonomics:
             "subtasks": [{"subtask_id": "1.1", "description": "Implement", "steps": ["Do thing"]}]
         }
 
-        with patch("cli.commands.tasks_import.upsert_task_spirit_from_plan"):
+        with patch(
+            "cli.commands.tasks_import.upsert_task_spirit_from_plan",
+            return_value={"required": True, "stage": "task_shape", "status": "pending"},
+        ):
             task, task_id = import_plan_file(plan_path, False, None, mock_client)
 
         assert task_id == "task-mock-1"
         assert len(task["subtasks"]) == 1
         assert task["subtasks"][0]["subtask_id"] == "1.1"
+        assert task["context"]["second_opinion"]["status"] == "pending"
+
+    def test_plan_import_output_surfaces_pending_second_opinion(self) -> None:
+        with (
+            patch("cli.commands.tasks_create.require_explicit_project"),
+            patch("cli.commands.tasks_create.STClient"),
+            patch(
+                "cli.commands.tasks_create.import_plan_file",
+                return_value=(
+                    {
+                        "complexity": "COMPLEX",
+                        "subtasks": [{"subtask_id": "1.1"}],
+                        "context": {
+                            "second_opinion": {
+                                "required": True,
+                                "stage": "task_shape",
+                                "status": "pending",
+                            }
+                        },
+                    },
+                    "task-mock-1",
+                ),
+            ),
+        ):
+            result = runner.invoke(tasks_app, ["create", "--plan", "plan.json"])
+
+        assert result.exit_code == 0
+        assert "IMPORT:task-mock-1|COMPLEX|1 subtasks|2nd:task_shape:pending" in result.output
 
     def test_critique_command_records_second_opinion(self) -> None:
         task = _make_mock_task(
@@ -449,6 +480,35 @@ class TestPlanSchemaConsistency:
         }
 
         jsonschema.validate(plan, schema)
+
+    def test_complex_plan_validation_surfaces_decisions_requirement(self) -> None:
+        schema_path = Path(__file__).resolve().parents[2] / "app" / "schemas" / "plan.schema.json"
+        mock_client = MagicMock()
+        mock_client.base_url = "http://test"
+        mock_client.get.return_value = json.loads(schema_path.read_text())
+
+        plan_path = Path(tempfile.mkdtemp()) / "complex-plan.json"
+        plan_path.write_text(
+            json.dumps(
+                {
+                    "title": "Complex schema smoke",
+                    "objective": "Validate authoring guidance",
+                    "complexity": "COMPLEX",
+                    "spirit_anti": "Do not hide missing decisions guidance.",
+                    "done_when": ["Validation fails clearly"],
+                    "subtasks": [{"id": "1.1", "description": "Implement", "steps": ["Do thing"]}],
+                }
+            )
+        )
+
+        with (
+            patch("cli.commands.tasks_create.require_explicit_project"),
+            patch("cli.commands.tasks_create.STClient", return_value=mock_client),
+        ):
+            result = runner.invoke(tasks_app, ["create", "--plan", str(plan_path)])
+
+        assert result.exit_code == 1
+        assert "COMPLEX plans require a non-empty decisions list" in result.output
 
     def test_plan_schema_accepts_second_opinion_context(self) -> None:
         schema_path = Path(__file__).resolve().parents[2] / "app" / "schemas" / "plan.schema.json"

@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from ...logging_config import get_logger
+from ...services.task_second_opinion import ensure_second_opinion_tracking
+from ...storage import tasks as task_store
 from ...storage.subtasks import bulk_add_subtask_dependencies, bulk_create_subtasks
 from ...storage.task_spirit import create_task_spirit, get_task_spirit, update_task_spirit
 
@@ -98,3 +100,7 @@ def save_plan_to_database(task_id: str, plan_data: dict[str, Any]) -> None:
 
     if subtasks_data:
         _create_subtasks_from_plan(task_id, subtasks_data)
+
+    task = task_store.get_task(task_id)
+    if task:
+        ensure_second_opinion_tracking(task_id, task, source="planning")

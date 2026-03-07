@@ -92,7 +92,14 @@ def _validate_plan(plan: Any, client: STClient) -> None:
         js.validate(plan, schema)
     except js.ValidationError as e:
         path = ".".join(str(p) for p in e.absolute_path) if e.absolute_path else "root"
-        output_error(f"Schema validation failed: {path}: {e.message}")
+        detail = f"{path}: {e.message}"
+        if (
+            path == "root"
+            and "decisions" in e.message
+            and str(plan.get("complexity") or "").upper() == "COMPLEX"
+        ):
+            detail += " (COMPLEX plans require a non-empty decisions list.)"
+        output_error(f"Schema validation failed: {detail}")
         raise typer.Exit(1) from None
     issues = validate_plan_schema(plan)
     if issues:
@@ -102,12 +109,19 @@ def _validate_plan(plan: Any, client: STClient) -> None:
         raise typer.Exit(1)
 
 
-def _refresh_imported_task(task_id: str, client: STClient) -> dict[str, Any]:
+def _refresh_imported_task(
+    task_id: str,
+    client: STClient,
+    second_opinion: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Fetch the current task snapshot and attach subtasks for import reporting."""
     task = client.get_task(task_id)
     subtasks = client.get_subtasks(task_id).get("subtasks", [])
     if subtasks:
         task["subtasks"] = subtasks
+    if second_opinion:
+        context = task.get("context") if isinstance(task.get("context"), dict) else {}
+        task["context"] = {**context, "second_opinion": second_opinion}
     return task
 
 
@@ -153,8 +167,8 @@ def _update_task_from_plan(
         if subtasks:
             _replace_subtasks(task_id, subtasks, client)
             create_subtask_dependencies(task_id, subtasks)
-        upsert_task_spirit_from_plan(task_id, plan)
-        return _refresh_imported_task(task_id, client), task_id
+        second_opinion = upsert_task_spirit_from_plan(task_id, plan)
+        return _refresh_imported_task(task_id, client, second_opinion), task_id
     except APIError as e:
         handle_api_error(e)
         raise typer.Exit(1) from None
@@ -193,5 +207,5 @@ def _create_task_from_plan(
         output_error("No task created")
         raise typer.Exit(1)
     task = created[0]
-    upsert_task_spirit_from_plan(task["id"], plan)
-    return _refresh_imported_task(task["id"], client), task["id"]
+    second_opinion = upsert_task_spirit_from_plan(task["id"], plan)
+    return _refresh_imported_task(task["id"], client, second_opinion), task["id"]

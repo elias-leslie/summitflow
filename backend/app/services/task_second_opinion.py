@@ -93,6 +93,57 @@ def merge_second_opinion_into_context(
     return merged
 
 
+def build_second_opinion_entry(
+    task: dict[str, Any],
+    spirit: dict[str, Any] | None = None,
+    *,
+    source: str = "system",
+) -> dict[str, Any] | None:
+    """Return the desired second-opinion context entry for this task, if required."""
+    spirit = spirit or {}
+    requirement = get_second_opinion_requirement(task, spirit)
+    if not requirement.required:
+        return None
+
+    existing = get_second_opinion_entry(spirit)
+    entry = dict(existing)
+    entry["required"] = True
+    entry["stage"] = str(entry.get("stage") or requirement.recommended_stage)
+    entry["status"] = str(entry.get("status") or "pending")
+    entry["reasons"] = requirement.reasons
+    entry.setdefault("requested_by", source)
+    entry.setdefault("requested_at", datetime.now(UTC).isoformat())
+    return entry
+
+
+def ensure_second_opinion_tracking(
+    task_id: str,
+    task: dict[str, Any],
+    spirit: dict[str, Any] | None = None,
+    *,
+    source: str = "system",
+) -> dict[str, Any] | None:
+    """Persist pending second-opinion tracking for qualifying tasks when absent."""
+    spirit = spirit if spirit is not None else get_task_spirit(task_id)
+    entry = build_second_opinion_entry(task, spirit, source=source)
+    if entry is None:
+        return None
+
+    existing = get_second_opinion_entry(spirit)
+    if existing == entry:
+        return entry
+
+    context = merge_second_opinion_into_context((spirit or {}).get("context"), entry)
+    if spirit:
+        updated = update_task_spirit(task_id, context=context)
+        if updated is not None:
+            return entry
+        raise ValueError(f"Failed to update task_spirit for {task_id}")
+
+    upsert_task_spirit(task_id=task_id, objective="", context={_SECOND_OPINION_CONTEXT_KEY: entry})
+    return entry
+
+
 def assess_second_opinion_readiness(
     task: dict[str, Any],
     spirit: dict[str, Any] | None = None,
@@ -119,7 +170,7 @@ def assess_second_opinion_readiness(
         "Run `st critique <task-id>` to record a task-shape critique before autonomous execution"
     ]
     missing_fields = ["second_opinion"]
-    if entry and not summary:
+    if entry and status in (_COMPLETED_STATUSES | {"needs_revision"}) and not summary:
         issues.append("Second-opinion entry is present but missing a summary")
     elif entry and stage not in {"task_shape", "both"}:
         issues.append(f"Second-opinion stage must include task_shape (found: {stage})")

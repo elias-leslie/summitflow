@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from app.services.task_execution_readiness import assess_task_execution_readiness
-from app.services.task_second_opinion import parse_second_opinion_response
+from app.services.task_second_opinion import (
+    build_second_opinion_entry,
+    parse_second_opinion_response,
+)
 
 
 class TestAssessTaskExecutionReadiness:
@@ -88,6 +91,52 @@ class TestSecondOpinionParsing:
             "Output schema is vague. — Validation becomes inconsistent."
         ]
 
+    def test_build_second_opinion_entry_marks_required_task_pending(self) -> None:
+        entry = build_second_opinion_entry(
+            {
+                "task_type": "feature",
+                "complexity": "COMPLEX",
+                "priority": 1,
+                "labels": ["auth"],
+            },
+            {"objective": "Ship auth migration safely"},
+            source="plan-import",
+        )
+
+        assert entry is not None
+        assert entry["required"] is True
+        assert entry["stage"] == "task_shape"
+        assert entry["status"] == "pending"
+        assert "complexity=COMPLEX" in entry["reasons"]
+        assert entry["requested_by"] == "plan-import"
+
+    def test_build_second_opinion_entry_preserves_completed_review(self) -> None:
+        entry = build_second_opinion_entry(
+            {
+                "task_type": "feature",
+                "complexity": "COMPLEX",
+                "priority": 1,
+                "labels": ["auth"],
+            },
+            {
+                "context": {
+                    "second_opinion": {
+                        "required": True,
+                        "stage": "task_shape",
+                        "status": "completed",
+                        "summary": "Already reviewed.",
+                        "reviewed_by_agent": "specifier",
+                    }
+                }
+            },
+            source="task-update",
+        )
+
+        assert entry is not None
+        assert entry["status"] == "completed"
+        assert entry["summary"] == "Already reviewed."
+        assert entry["reviewed_by_agent"] == "specifier"
+
     def test_complex_task_requires_completed_second_opinion(self) -> None:
         readiness = assess_task_execution_readiness(
             {
@@ -116,6 +165,41 @@ class TestSecondOpinionParsing:
         assert readiness.ready is False
         assert "second_opinion" in readiness.missing_fields
         assert any("second opinion" in issue.lower() for issue in readiness.issues)
+
+    def test_pending_second_opinion_tracks_requirement_without_missing_summary_noise(self) -> None:
+        readiness = assess_task_execution_readiness(
+            {
+                "task_type": "feature",
+                "complexity": "COMPLEX",
+                "description": "Migrate critical auth flow",
+                "priority": 1,
+                "labels": ["auth", "backend"],
+            },
+            {
+                "objective": "Ship auth migration safely",
+                "done_when": ["Migration works", "Tests pass"],
+                "spirit_anti": "Do not break login",
+                "decisions": [{"id": "d1", "title": "Keep API stable", "outcome": "compat shim"}],
+                "context": {
+                    "files_to_modify": ["backend/app/auth.py"],
+                    "second_opinion": {
+                        "required": True,
+                        "stage": "task_shape",
+                        "status": "pending",
+                    },
+                },
+            },
+            [
+                {
+                    "subtask_id": "1.1",
+                    "description": "Implement migration",
+                    "steps_from_table": [{"step_number": 1, "description": "Update flow"}],
+                }
+            ],
+        )
+
+        assert readiness.ready is False
+        assert sum("second opinion" in issue.lower() for issue in readiness.issues) == 1
 
     def test_completed_second_opinion_satisfies_complex_task_gate(self) -> None:
         readiness = assess_task_execution_readiness(

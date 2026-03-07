@@ -15,6 +15,7 @@ from fastapi import HTTPException
 from ...logging_config import get_logger
 from ...schemas.tasks import BatchTaskRequest, BatchTaskResponse, BatchTaskResult, TaskResponse
 from ...services.task_execution_readiness import sync_task_execution_readiness
+from ...services.task_second_opinion import ensure_second_opinion_tracking
 from ...storage import tasks as task_store
 from ...storage.subtasks import get_subtasks_for_task
 from .helpers import get_step_verification_status
@@ -112,6 +113,16 @@ async def _create_single_task(project_id: str, item: object) -> TaskResponse:
     created_subs = await _create_subtasks_with_deps(task["id"], item)
     if created_subs:
         task["subtasks"] = created_subs
+    refreshed = await asyncio.to_thread(task_store.get_task, task["id"])
+    if refreshed:
+        task = refreshed
+    await asyncio.to_thread(
+        ensure_second_opinion_tracking,
+        task["id"],
+        task,
+        None,
+        source="batch-create",
+    )
     await asyncio.to_thread(sync_task_execution_readiness, task["id"], "batch-create")
     refreshed = await asyncio.to_thread(task_store.get_task, task["id"])
     if refreshed:

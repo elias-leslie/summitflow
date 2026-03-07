@@ -14,6 +14,7 @@ from typing import Any
 
 from ...logging_config import get_logger
 from ...services.agent_hub_client import get_sync_client
+from ...services.task_second_opinion import ensure_second_opinion_tracking
 from ...storage import log_task_event
 from ...storage import tasks as task_store
 from ...storage.task_spirit import upsert_task_spirit
@@ -63,6 +64,9 @@ def _apply_ideation_result(
         updates["complexity"] = result["complexity"]
 
     task_store.update_task(task_id, **updates)
+    updated_task = task_store.get_task(task_id)
+    if updated_task:
+        ensure_second_opinion_tracking(task_id, updated_task, source="ideation")
 
     log_task_event(
         task_id,

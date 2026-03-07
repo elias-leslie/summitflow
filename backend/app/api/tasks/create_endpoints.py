@@ -19,6 +19,7 @@ from ...schemas.tasks import (
     TaskResponse,
 )
 from ...services.task_execution_readiness import sync_task_execution_readiness
+from ...services.task_second_opinion import ensure_second_opinion_tracking
 from ...storage import tasks as task_store
 from ...storage.tasks.execution_mode import EXECUTION_MODE_AUTONOMOUS, normalize_execution_fields
 from .response import task_to_response
@@ -105,6 +106,16 @@ async def create_task(project_id: str, task: TaskCreate) -> TaskResponse:
 
     await _save_spirit_fields(created["id"], task)
     _auto_classify_complexity(created)
+    current = await asyncio.to_thread(task_store.get_task, created["id"])
+    if current:
+        created = current
+    await asyncio.to_thread(
+        ensure_second_opinion_tracking,
+        created["id"],
+        created,
+        None,
+        source="task-create",
+    )
     await asyncio.to_thread(sync_task_execution_readiness, created["id"], "task-create")
 
     if task.auto_dispatch:
@@ -135,6 +146,13 @@ async def create_task_from_ideation(
     )
 
     task_id = created["id"]
+    await asyncio.to_thread(
+        ensure_second_opinion_tracking,
+        task_id,
+        created,
+        None,
+        source="ideation-create",
+    )
     await asyncio.to_thread(sync_task_execution_readiness, task_id, "ideation-create")
     dispatched = False
     dispatch_stage: str | None = None

@@ -61,7 +61,13 @@ def _handle_plan_import(
         complexity = task.get("complexity", "SIMPLE")
         subtask_count = len(task.get("subtasks") or [])
         suffix = "intent-only" if subtask_count == 0 else f"{subtask_count} subtasks"
-        typer.echo(f"IMPORT:{tid}|{complexity}|{suffix}")
+        second_opinion = ((task.get("context") or {}).get("second_opinion") or {})
+        second_opinion_suffix = ""
+        if isinstance(second_opinion, dict) and second_opinion.get("required"):
+            stage = second_opinion.get("stage", "task_shape")
+            status = second_opinion.get("status", "pending")
+            second_opinion_suffix = f"|2nd:{stage}:{status}"
+        typer.echo(f"IMPORT:{tid}|{complexity}|{suffix}{second_opinion_suffix}")
 
 
 def _handle_single_task_create(
