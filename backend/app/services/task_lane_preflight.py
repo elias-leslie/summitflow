@@ -165,7 +165,7 @@ def _load_task_scope(task_id: str) -> _TaskScope | None:
         for raw in values:
             normalized = _normalize_scope_entry(raw)
             if normalized is None:
-                return None
+                continue
             merged.add(normalized)
 
     if not saw_list or not merged:
