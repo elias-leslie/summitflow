@@ -938,6 +938,41 @@ normalize_tool_args() {
     done
 }
 
+is_frontend_pytest_target() {
+    local arg="$1"
+    local path_part="$arg"
+
+    [[ "$arg" == -* ]] && return 1
+
+    if [[ "$arg" == *"::"* ]]; then
+        path_part="${arg%%::*}"
+    fi
+
+    [[ -z "$path_part" ]] && return 1
+
+    if [[ "$path_part" == "$PROJECT_DIR/"* ]]; then
+        path_part="${path_part#$PROJECT_DIR/}"
+    fi
+
+    if [[ "$path_part" == frontend/* ]]; then
+        return 0
+    fi
+
+    if [[ ! -d "$PROJECT_DIR/frontend" ]]; then
+        return 1
+    fi
+
+    case "$path_part" in
+        src/*|./src/*|__tests__/*|./__tests__/*)
+            case "$path_part" in
+                *.ts|*.tsx|*.js|*.jsx) return 0 ;;
+            esac
+            ;;
+    esac
+
+    return 1
+}
+
 # Generic TOON wrapper - runs any tool defined in TOOL_DEFS
 run_tool_toon() {
     local tool_name="$1"
@@ -1000,7 +1035,27 @@ run_tool_toon() {
 
     # Execute tool (NORMALIZED_TOOL_ARGS passed as array to preserve quoted arguments like -k "expr with spaces")
     local output retval=0
-    if [[ "$count_method" == "coderabbit_parse" ]]; then
+    if [[ "$tool_name" == "pytest" ]]; then
+        local frontend_target=""
+        for arg in "${NORMALIZED_TOOL_ARGS[@]}"; do
+            if is_frontend_pytest_target "$arg"; then
+                frontend_target="$arg"
+                break
+            fi
+        done
+        if [[ -n "$frontend_target" ]]; then
+            output=$(
+                cat <<EOF
+dt pytest only runs Python tests and cannot execute frontend test target: $frontend_target
+Run the frontend test from the frontend package instead, for example:
+  cd frontend && npm test -- --run ${frontend_target#frontend/}
+EOF
+            )
+            retval=2
+        else
+            output=$("$tool_bin" $args "${NORMALIZED_TOOL_ARGS[@]}" 2>&1) || retval=$?
+        fi
+    elif [[ "$count_method" == "coderabbit_parse" ]]; then
         output=$(run_coderabbit_with_progress "$tool_bin" $args "${NORMALIZED_TOOL_ARGS[@]}") || retval=$?
     elif [[ "$pass_path" == "1" ]]; then
         output=$("$tool_bin" $args "${NORMALIZED_TOOL_ARGS[@]}" "$work_dir" 2>&1) || retval=$?
