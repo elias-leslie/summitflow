@@ -168,8 +168,12 @@ def build_context_json(
     spirit: dict[str, Any] | None,
     subtasks: list[dict[str, Any]],
     blockers: list[dict[str, Any]],
+    lane_check: TaskLaneConflictCheck | dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build JSON context response."""
+    lane_payload: dict[str, Any] | None = None
+    if lane_check is not None:
+        lane_payload = lane_check.to_dict() if isinstance(lane_check, TaskLaneConflictCheck) else lane_check
     return {
         "task": {
             "id": task["id"],
@@ -184,6 +188,7 @@ def build_context_json(
         "spirit": spirit,
         "subtasks": subtasks,
         "blockers": blockers,
+        "lane_preflight": lane_payload,
     }
 
 

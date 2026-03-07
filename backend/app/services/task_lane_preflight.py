@@ -172,21 +172,21 @@ def _load_task_scope(task_id: str) -> _TaskScope | None:
         return None
 
     merged: set[str] = set()
-    saw_list = False
+    saw_scope_field = False
     for scope_field in ("files_to_modify", "files_to_create"):
         values = context.get(scope_field)
         if values is None:
             continue
+        saw_scope_field = True
         if not isinstance(values, list):
-            return None
-        saw_list = True
+            continue
         for raw in values:
             normalized = _normalize_scope_entry(raw)
             if normalized is None:
                 continue
             merged.add(normalized)
 
-    if not saw_list or not merged:
+    if not saw_scope_field or not merged:
         return None
     return _TaskScope(task_id=task_id, paths=frozenset(sorted(merged)))
 

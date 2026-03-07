@@ -127,6 +127,46 @@ class TestTaskLifecycleEndpoints:
         assert "objective" in body_text
         assert "done_when" in body_text
 
+    def test_execute_rejects_lane_overlap_from_validation(
+        self,
+        client: Any,
+        test_project_id: str,
+        cleanup_task: Callable[[str], None],
+        mocker: Any,
+    ) -> None:
+        response = client.post(
+            f"/api/projects/{test_project_id}/tasks",
+            json={
+                "title": "Lane overlap execution target",
+                "task_type": "task",
+                "priority": 1,
+                "complexity": "STANDARD",
+                "objective": "Queue only when no exact file overlap exists.",
+                "spirit_anti": "Do not run when another active lane owns the same file.",
+                "done_when": ["Execution is blocked when overlap exists"],
+            },
+        )
+        assert response.status_code == 200
+        task_id = response.json()["id"]
+        cleanup_task(task_id)
+
+        mocker.patch(
+            "app.api.tasks.update_endpoints.validate_task_ready",
+            return_value=SimpleNamespace(
+                ready=False,
+                issues=["Another active coding lane overlaps exact files in project summitflow: task-999 (backend/app/foo.py)"],
+                suggestions=["Exact-file overlap with task-999: backend/app/foo.py. Finish or retire the active lane before dispatching another coding task."],
+            ),
+        )
+
+        response = client.post(f"/api/projects/{test_project_id}/tasks/{task_id}/execute")
+
+        assert response.status_code == 422
+        body = response.json()
+        body_text = str(body)
+        assert "execution-ready" in body_text or "HTTP Error" in body_text
+        assert "overlaps exact files" in body_text
+
     def test_claim_and_release_round_trip(
         self,
         client: Any,

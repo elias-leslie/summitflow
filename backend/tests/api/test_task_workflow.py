@@ -199,6 +199,58 @@ class TestContextEndpoint:
         assert "spirit" in data
         assert "subtasks" in data
         assert "blockers" in data
+        assert data["lane_preflight"] == {
+            "issues": [],
+            "suggestions": [],
+            "conflicting_tasks": [],
+            "overlap_kind": None,
+            "overlap_paths": [],
+            "shared_plumbing": False,
+        }
+
+    @patch("app.api.tasks.workflow.check_task_lane_conflicts")
+    def test_context_json_includes_lane_overlap_payload_when_present(
+        self,
+        mock_lane_check: Any,
+        client: Any,
+        test_project_id: str,
+        cleanup_task: Callable[[str], None],
+    ) -> None:
+        mock_lane_check.return_value = TaskLaneConflictCheck(
+            issues=["Another active coding lane overlaps exact files"],
+            suggestions=["Finish the active lane first"],
+            conflicting_tasks=["task-999"],
+            overlap_kind="exact_file",
+            overlap_paths=["backend/app/foo.py"],
+            shared_plumbing=False,
+        )
+
+        response = client.post(
+            f"/api/projects/{test_project_id}/tasks",
+            json={
+                "title": "Test task for context JSON overlap",
+                "description": "Testing JSON overlap surfacing",
+                "task_type": "task",
+                "priority": 2,
+            },
+        )
+        assert response.status_code == 200
+        task_id = response.json()["id"]
+        cleanup_task(task_id)
+
+        response = client.get(
+            f"/api/projects/{test_project_id}/tasks/{task_id}/context",
+            params={"format": "json"},
+        )
+        assert response.status_code == 200
+        assert response.json()["lane_preflight"] == {
+            "issues": ["Another active coding lane overlaps exact files"],
+            "suggestions": ["Finish the active lane first"],
+            "conflicting_tasks": ["task-999"],
+            "overlap_kind": "exact_file",
+            "overlap_paths": ["backend/app/foo.py"],
+            "shared_plumbing": False,
+        }
 
     def test_context_includes_subtasks(
         self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]

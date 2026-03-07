@@ -95,17 +95,18 @@ async def get_task_context(
     # Get blockers
     blockers = dep_store.get_blocking_tasks(task_id)
 
+    lane_check = check_task_lane_conflicts(task_id, project_id)
+
     if format == "json":
         # Add steps to subtasks for JSON response
         subtasks_with_steps = []
         for st in subtasks:
             steps = get_steps_for_subtask(st["id"])
             subtasks_with_steps.append({**st, "steps": steps})
-        return build_context_json(task, spirit, subtasks_with_steps, blockers)
+        return build_context_json(task, spirit, subtasks_with_steps, blockers, lane_check)
 
     # Default: TOON format
     readiness = assess_task_execution_readiness(task, spirit, get_subtasks_for_task(task_id, include_steps=True))
-    lane_check = check_task_lane_conflicts(task_id, project_id)
     return PlainTextResponse(content=format_toon_context(task, spirit, subtasks, blockers, readiness, lane_check))
 
 
