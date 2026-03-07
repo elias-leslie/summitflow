@@ -39,6 +39,10 @@ class TaskLaneConflictCheck:
     overlap_kind: str | None = None
     overlap_paths: list[str] = field(default_factory=list)
     shared_plumbing: bool = False
+    disposition: str = "allow"
+    owner_session_id: str | None = None
+    owner_branch: str | None = None
+    owner_location: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -48,6 +52,10 @@ class TaskLaneConflictCheck:
             "overlap_kind": self.overlap_kind,
             "overlap_paths": self.overlap_paths,
             "shared_plumbing": self.shared_plumbing,
+            "disposition": self.disposition,
+            "owner_session_id": self.owner_session_id,
+            "owner_branch": self.owner_branch,
+            "owner_location": self.owner_location,
         }
 
 
@@ -277,11 +285,19 @@ def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflict
     overlap_kind: str | None = None
     overlap_paths: list[str] = []
     shared_plumbing = False
+    disposition = "allow"
+    owner_session_id: str | None = None
+    owner_branch: str | None = None
+    owner_location: str | None = None
 
     if same_task_sessions:
         session = same_task_sessions[0]
+        owner_session_id = str(session.get("id") or "")
+        owner_branch = session.get("current_branch") if isinstance(session.get("current_branch"), str) else None
+        owner_location = _lane_location(session)
         if _is_stale_lane_session(session):
             overlap_kind = "stale_same_task"
+            disposition = "reconcile"
             issues.append(f"Task already has a likely stale active lane: {_lane_summary(session)}")
             suggestions.append(
                 f"Inspect the lane with `st sessions list --status active --project {project_id}` "
@@ -289,6 +305,7 @@ def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflict
             )
         else:
             overlap_kind = "same_task"
+            disposition = "block"
             issues.append(f"Task already has an active lane: {_lane_summary(session)}")
             suggestions.append("Wait for the active lane to finish or reconcile it before queueing another execution.")
 
@@ -306,11 +323,20 @@ def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflict
 
         if stale_present:
             overlap_kind = "stale_lane"
+            disposition = "reconcile"
             conflicting_tasks = [
                 lane_task_id
                 for session in lane_sessions
                 if _is_stale_lane_session(session) and (lane_task_id := _lane_task_id(session))
             ]
+            stale_session = next(session for session in lane_sessions if _is_stale_lane_session(session))
+            owner_session_id = str(stale_session.get("id") or "")
+            owner_branch = (
+                stale_session.get("current_branch")
+                if isinstance(stale_session.get("current_branch"), str)
+                else None
+            )
+            owner_location = _lane_location(stale_session)
             preview = ", ".join(conflicting_tasks[:3])
             lane_preview = "; ".join(_lane_summary(session) for session in lane_sessions[:2])
             issues.append(f"Another likely stale active coding lane exists in project {project_id}: {preview}")
@@ -324,9 +350,17 @@ def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflict
             if target_scope is None:
                 chosen_session = lane_sessions[0]
                 chosen_task_id = _lane_task_id(chosen_session)
+                owner_session_id = str(chosen_session.get("id") or "")
+                owner_branch = (
+                    chosen_session.get("current_branch")
+                    if isinstance(chosen_session.get("current_branch"), str)
+                    else None
+                )
+                owner_location = _lane_location(chosen_session)
                 lane_preview = "; ".join(_lane_summary(session) for session in lane_sessions[:2])
                 conflicting_tasks = [chosen_task_id] if chosen_task_id else []
                 overlap_kind = "unscoped_target"
+                disposition = "warn"
                 issues.append(
                     f"Another active coding lane exists in project {project_id} but lacks usable file scope: "
                     f"{task_id}"
@@ -367,9 +401,20 @@ def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflict
                             break
 
                 if exact_overlap_task_id:
+                    winning_session = next(
+                        session for session in lane_sessions if _lane_task_id(session) == exact_overlap_task_id
+                    )
                     conflicting_tasks = [exact_overlap_task_id]
                     overlap_kind = "exact_file"
                     overlap_paths = exact_overlaps
+                    disposition = "block"
+                    owner_session_id = str(winning_session.get("id") or "")
+                    owner_branch = (
+                        winning_session.get("current_branch")
+                        if isinstance(winning_session.get("current_branch"), str)
+                        else None
+                    )
+                    owner_location = _lane_location(winning_session)
                     overlap_preview = ", ".join(exact_overlaps[:3])
                     if _shared_plumbing_paths(frozenset(exact_overlaps)):
                         overlap_kind = "shared_plumbing"
@@ -388,10 +433,21 @@ def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflict
                         "Finish or retire the active lane before dispatching another coding task."
                     )
                 elif shared_plumbing_task_id:
+                    winning_session = next(
+                        session for session in lane_sessions if _lane_task_id(session) == shared_plumbing_task_id
+                    )
                     conflicting_tasks = [shared_plumbing_task_id]
                     overlap_kind = "shared_plumbing"
                     overlap_paths = shared_plumbing_overlaps
                     shared_plumbing = True
+                    disposition = "block"
+                    owner_session_id = str(winning_session.get("id") or "")
+                    owner_branch = (
+                        winning_session.get("current_branch")
+                        if isinstance(winning_session.get("current_branch"), str)
+                        else None
+                    )
+                    owner_location = _lane_location(winning_session)
                     overlap_preview = ", ".join(shared_plumbing_overlaps[:3])
                     issues.append(
                         f"Another active coding lane is already modifying shared plumbing in project {project_id}: "
@@ -407,8 +463,21 @@ def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflict
                     pass
                 elif unscoped_lane_task_ids:
                     chosen_task_id = sorted(unscoped_lane_task_ids)[0]
+                    chosen_session = next(
+                        session
+                        for session in lane_sessions
+                        if (_lane_task_id(session) or "unknown task") == chosen_task_id
+                    )
                     conflicting_tasks = [chosen_task_id]
                     overlap_kind = "unscoped_lane"
+                    disposition = "warn"
+                    owner_session_id = str(chosen_session.get("id") or "")
+                    owner_branch = (
+                        chosen_session.get("current_branch")
+                        if isinstance(chosen_session.get("current_branch"), str)
+                        else None
+                    )
+                    owner_location = _lane_location(chosen_session)
                     lane_preview = "; ".join(_lane_summary(session) for session in lane_sessions[:2])
                     issues.append(
                         f"Another active coding lane exists in project {project_id} but lacks usable file scope: "
@@ -428,4 +497,8 @@ def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflict
         overlap_kind=overlap_kind,
         overlap_paths=overlap_paths,
         shared_plumbing=shared_plumbing,
+        disposition=disposition,
+        owner_session_id=owner_session_id,
+        owner_branch=owner_branch,
+        owner_location=owner_location,
     )

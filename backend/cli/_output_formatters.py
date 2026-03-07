@@ -105,11 +105,15 @@ def format_context_task(task: dict[str, Any]) -> str:
     lane_preflight = task.get("lane_preflight") or {}
     if isinstance(lane_preflight, dict) and lane_preflight.get("issues"):
         parts = []
+        if disposition := lane_preflight.get("disposition"):
+            parts.append(f"disp:{disposition}")
         if overlap_kind := lane_preflight.get("overlap_kind"):
             parts.append(f"kind:{overlap_kind}")
         conflicting_tasks = lane_preflight.get("conflicting_tasks") or []
         if conflicting_tasks:
             parts.append(f"tasks:{','.join(conflicting_tasks[:3])}")
+        if owner_location := lane_preflight.get("owner_location"):
+            parts.append(f"owner:{owner_location}")
         overlap_paths = lane_preflight.get("overlap_paths") or []
         if overlap_paths:
             parts.append(f"paths:{','.join(overlap_paths[:3])}")

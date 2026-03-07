@@ -51,8 +51,10 @@ class TestFormatContextTask:
             "title": "Coordinate shared plumbing edit",
             "lane_preflight": {
                 "issues": ["Another active coding lane is already modifying shared plumbing"],
+                "disposition": "block",
                 "overlap_kind": "shared_plumbing",
                 "conflicting_tasks": ["task-999"],
+                "owner_location": "worktree /tmp/worktrees/task-999",
                 "overlap_paths": [
                     "backend/app/services/tools/catalog.py",
                     "backend/app/services/tools/tool_handler.py",
@@ -64,7 +66,7 @@ class TestFormatContextTask:
         output = format_context_task(task)
 
         assert (
-            "LANE:kind:shared_plumbing | tasks:task-999 | "
+            "LANE:disp:block | kind:shared_plumbing | tasks:task-999 | owner:worktree /tmp/worktrees/task-999 | "
             "paths:backend/app/services/tools/catalog.py,backend/app/services/tools/tool_handler.py | shared:yes"
             in output
         )

@@ -46,12 +46,18 @@ def _format_lane_line(lane_check: TaskLaneConflictCheck | dict[str, Any] | None)
     if not issues:
         return []
     parts: list[str] = []
+    disposition = data.get("disposition")
+    if disposition:
+        parts.append(f"disp:{disposition}")
     overlap_kind = data.get("overlap_kind")
     if overlap_kind:
         parts.append(f"kind:{overlap_kind}")
     conflicting_tasks = data.get("conflicting_tasks") or []
     if conflicting_tasks:
         parts.append(f"tasks:{','.join(conflicting_tasks[:3])}")
+    owner_location = data.get("owner_location")
+    if owner_location:
+        parts.append(f"owner:{owner_location}")
     overlap_paths = data.get("overlap_paths") or []
     if overlap_paths:
         parts.append(f"paths:{','.join(overlap_paths[:3])}")

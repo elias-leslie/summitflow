@@ -147,6 +147,8 @@ class TestContextEndpoint:
             overlap_kind="shared_plumbing",
             overlap_paths=["backend/app/services/tools/catalog.py"],
             shared_plumbing=True,
+            disposition="block",
+            owner_location="worktree /tmp/worktrees/task-999",
         )
 
         response = client.post(
@@ -165,7 +167,12 @@ class TestContextEndpoint:
 
         response = client.get(f"/api/projects/{test_project_id}/tasks/{task_id}/context")
         assert response.status_code == 200
-        assert "LANE:kind:shared_plumbing | tasks:task-999 | paths:backend/app/services/tools/catalog.py | shared:yes" in response.text
+        assert (
+            "LANE:disp:block | kind:shared_plumbing | tasks:task-999 | "
+            "owner:worktree /tmp/worktrees/task-999 | "
+            "paths:backend/app/services/tools/catalog.py | shared:yes"
+            in response.text
+        )
 
     def test_context_returns_json_when_requested(
         self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
@@ -206,6 +213,10 @@ class TestContextEndpoint:
             "overlap_kind": None,
             "overlap_paths": [],
             "shared_plumbing": False,
+            "disposition": "allow",
+            "owner_session_id": None,
+            "owner_branch": None,
+            "owner_location": None,
         }
 
     @patch("app.api.tasks.workflow.check_task_lane_conflicts")
@@ -223,6 +234,10 @@ class TestContextEndpoint:
             overlap_kind="exact_file",
             overlap_paths=["backend/app/foo.py"],
             shared_plumbing=False,
+            disposition="block",
+            owner_session_id="sess-123",
+            owner_branch="task-999/main",
+            owner_location="repo /home/kasadis/summitflow",
         )
 
         response = client.post(
@@ -250,6 +265,10 @@ class TestContextEndpoint:
             "overlap_kind": "exact_file",
             "overlap_paths": ["backend/app/foo.py"],
             "shared_plumbing": False,
+            "disposition": "block",
+            "owner_session_id": "sess-123",
+            "owner_branch": "task-999/main",
+            "owner_location": "repo /home/kasadis/summitflow",
         }
 
     def test_context_includes_subtasks(
