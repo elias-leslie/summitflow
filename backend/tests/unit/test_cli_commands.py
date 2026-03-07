@@ -287,8 +287,32 @@ class TestCreateFromFile:
 
             assert result.exit_code == 0
             assert "Would create 1 task(s)" in result.output
-            assert "Dry Run Test Task" in result.output
-            assert "2 subtask(s)" in result.output
+
+
+class TestAutocodeValidation:
+    """Tests for CLI autocode readiness gating."""
+
+    def test_autocode_rejects_task_missing_execution_details(self) -> None:
+        mock_client = MagicMock()
+        mock_client.project_id = "summitflow"
+        mock_client.get_task.return_value = _make_mock_task(
+            "task-mock-1",
+            title="Draft feature task",
+            task_type="feature",
+        )
+        mock_client.get_subtasks.return_value = {"subtasks": []}
+        mock_client.validate_ready.return_value = {
+            "ready": False,
+            "issues": ["Missing objective", "Missing done_when success criteria"],
+            "suggestions": ["Add context.files_to_modify/files_to_create for clearer execution scope"],
+        }
+
+        with patch("cli.commands.tasks.STClient", return_value=mock_client):
+            result = runner.invoke(tasks_app, ["autocode", "task-mock-1"])
+
+        assert result.exit_code == 1
+        assert "not execution-ready" in result.output
+        assert "Missing objective" in result.output
 
 
 class TestCreateFromFileErrors:

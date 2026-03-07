@@ -65,8 +65,12 @@ def format_context_task(task: dict[str, Any]) -> str:
     if description := task.get("description"):
         lines.append(f"DESCRIPTION:{description}")
     decisions_count = len(task.get("decisions") or [])
-    if decisions_count > 0:
-        lines.append(f"WORKFLOW:decisions:{decisions_count}")
+    readiness = task.get("execution_readiness")
+    plan_status = task.get("plan_status") or "draft"
+    if decisions_count > 0 or readiness is not None or plan_status != "draft":
+        ready_flag = "yes" if readiness and readiness.ready else "no"
+        issues = len(readiness.issues) if readiness else 0
+        lines.append(f"WORKFLOW:plan:{plan_status}|ready:{ready_flag}|issues:{issues}|decisions:{decisions_count}")
     if objective := task.get("objective"):
         lines.append(f"OBJECTIVE:{objective}")
     if spirit_anti := task.get("spirit_anti"):
@@ -77,6 +81,8 @@ def format_context_task(task: dict[str, Any]) -> str:
     done_when = task.get("done_when") or []
     if done_when:
         lines.append(f"DONE_WHEN[{len(done_when)}]:{' | '.join(done_when)}")
+    if readiness and readiness.missing_fields:
+        lines.append(f"READINESS:missing:{','.join(readiness.missing_fields)}")
     context = task.get("context") or {}
     if context and isinstance(context, dict):
         parts = []

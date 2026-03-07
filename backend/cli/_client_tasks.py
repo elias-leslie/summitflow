@@ -138,3 +138,11 @@ def append_log(
     data = {"entry": entry}
     response = client.post(global_url_fn(f"/tasks/{task_id}/log"), json=data)
     return cast(dict[str, Any], handle_response(response))
+
+
+def validate_ready(
+    client: httpx.Client, url_fn: Any, handle_response: Any, task_id: str
+) -> dict[str, Any]:
+    """Validate task execution readiness."""
+    response = client.post(url_fn(f"/tasks/{task_id}/validate-ready"))
+    return cast(dict[str, Any], handle_response(response))

@@ -17,7 +17,7 @@ import logging
 from typing import Any
 
 from ._task_spirit_helpers import EXPECTED_COLUMNS, _row_to_dict
-from ._task_spirit_workflow import approve_plan, reject_plan
+from ._task_spirit_workflow import approve_plan, reject_plan, set_plan_status
 from ._task_spirit_write import create_task_spirit, delete_task_spirit, upsert_task_spirit
 from .connection import get_connection
 
@@ -29,6 +29,7 @@ __all__ = [
     "delete_task_spirit",
     "get_task_spirit",
     "reject_plan",
+    "set_plan_status",
     "update_task_spirit",
     "upsert_task_spirit",
 ]

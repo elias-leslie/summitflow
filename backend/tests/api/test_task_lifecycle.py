@@ -54,7 +54,14 @@ class TestTaskLifecycleEndpoints:
     ) -> None:
         response = client.post(
             f"/api/projects/{test_project_id}/tasks",
-            json={"title": "Execution target", "task_type": "task", "priority": 2},
+            json={
+                "title": "Execution target",
+                "task_type": "bug",
+                "priority": 2,
+                "complexity": "SIMPLE",
+                "objective": "Restore healthy response",
+                "done_when": ["GET /health returns 200", "Relevant tests pass"],
+            },
         )
         assert response.status_code == 200
         task = response.json()
@@ -97,6 +104,28 @@ class TestTaskLifecycleEndpoints:
 
         assert response.status_code == 400
         assert "manual" in response.json()["message"].lower()
+
+    def test_execute_rejects_task_missing_execution_details(
+        self,
+        client: Any,
+        test_project_id: str,
+        cleanup_task: Callable[[str], None],
+    ) -> None:
+        response = client.post(
+            f"/api/projects/{test_project_id}/tasks",
+            json={"title": "Draft execution target", "task_type": "feature", "priority": 2},
+        )
+        assert response.status_code == 200
+        task_id = response.json()["id"]
+        cleanup_task(task_id)
+
+        response = client.post(f"/api/projects/{test_project_id}/tasks/{task_id}/execute")
+
+        assert response.status_code == 422
+        body = response.json()
+        body_text = str(body)
+        assert "objective" in body_text
+        assert "done_when" in body_text
 
     def test_claim_and_release_round_trip(
         self,

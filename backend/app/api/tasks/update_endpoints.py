@@ -16,6 +16,10 @@ from fastapi import APIRouter, HTTPException
 
 from ...logging_config import get_logger
 from ...schemas.tasks import TaskResponse, TaskStatusUpdate, TaskUpdate
+from ...services.task_execution_readiness import (
+    load_task_execution_readiness,
+    sync_task_execution_readiness,
+)
 from ...storage import log_task_event
 from ...storage import tasks as task_store
 from ...storage.tasks.execution_mode import is_manual_only_mode
@@ -56,6 +60,10 @@ async def update_task(project_id: str, task_id: str, update: TaskUpdate) -> Task
     # Update task_spirit table
     if spirit_updates:
         await asyncio.to_thread(update_task_spirit, task_id, **spirit_updates)
+    await asyncio.to_thread(sync_task_execution_readiness, task_id, "task-update")
+    refreshed = await asyncio.to_thread(task_store.get_task, task_id)
+    if refreshed:
+        updated = refreshed
 
     return task_to_response(updated)
 
@@ -145,6 +153,17 @@ async def execute_task(project_id: str, task_id: str) -> TaskResponse:
         raise HTTPException(
             status_code=400,
             detail="Task is manual-only and cannot be queued for autonomous execution",
+        )
+    readiness = await asyncio.to_thread(load_task_execution_readiness, task_id)
+    if not readiness.ready:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "Task is not execution-ready for autonomous work",
+                "issues": readiness.issues,
+                "suggestions": readiness.suggestions,
+                "missing_fields": readiness.missing_fields,
+            },
         )
 
     try:

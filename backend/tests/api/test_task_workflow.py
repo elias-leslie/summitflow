@@ -127,7 +127,8 @@ class TestContextEndpoint:
         assert task_id in content
         assert "TITLE:Test task for context" in content
         assert "DESCRIPTION:Testing context endpoint" in content
-        assert "WORKFLOW:plan:draft|criteria:0|decisions:0" not in content
+        assert "WORKFLOW:plan:draft|ready:no|issues:" in content
+        assert "READINESS:missing:objective,done_when,spirit_anti,subtasks" in content
         assert "CRITERIA[0]:0/0" not in content
 
     def test_context_returns_json_when_requested(

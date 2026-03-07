@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ...services.task_execution_readiness import TaskExecutionReadiness
 from ...storage.events import get_events_by_trace
 from ...storage.steps import get_steps_for_subtask
 
@@ -74,6 +75,7 @@ def format_toon_context(
     spirit: dict[str, Any] | None,
     subtasks: list[dict[str, Any]],
     blockers: list[dict[str, Any]],
+    readiness: TaskExecutionReadiness | None = None,
 ) -> str:
     """Format task context as TOON (Token-Optimized Output Notation).
 
@@ -94,8 +96,14 @@ def format_toon_context(
     plan_status = spirit.get("plan_status", "draft") if spirit else "draft"
     subtask_lines, criteria_count, criteria_verified = _format_subtask_lines(subtasks)
     decisions_count = len(spirit.get("decisions", [])) if spirit else 0
-    if plan_status != "draft" or criteria_count > 0 or decisions_count > 0:
-        lines.append(f"WORKFLOW:plan:{plan_status}|criteria:{criteria_count}|decisions:{decisions_count}")
+    if plan_status != "draft" or criteria_count > 0 or decisions_count > 0 or readiness is not None:
+        ready_flag = "yes" if readiness and readiness.ready else "no"
+        issue_count = len(readiness.issues) if readiness else 0
+        lines.append(
+            f"WORKFLOW:plan:{plan_status}|ready:{ready_flag}|issues:{issue_count}|criteria:{criteria_count}|decisions:{decisions_count}"
+        )
+    if readiness and readiness.issues:
+        lines.append(f"READINESS:missing:{','.join(readiness.missing_fields)}")
 
     if spirit and spirit.get("objective"):
         lines.append(f"OBJECTIVE:{spirit['objective']}")

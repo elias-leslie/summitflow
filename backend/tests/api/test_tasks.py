@@ -218,3 +218,41 @@ class TestTaskUpdates:
         updated = response.json()
         assert updated["execution_mode"] == "manual"
         assert updated["autonomous"] is False
+
+    def test_create_simple_task_auto_approves_when_execution_ready(
+        self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
+    ) -> None:
+        response = client.post(
+            f"/api/projects/{test_project_id}/tasks",
+            json={
+                "title": "Ready bug task",
+                "description": "Fix failing health endpoint",
+                "task_type": "bug",
+                "complexity": "SIMPLE",
+                "objective": "Restore 200 on /health",
+                "done_when": ["GET /health returns 200", "Relevant tests pass"],
+            },
+        )
+        assert response.status_code == 200
+        task = response.json()
+        cleanup_task(task["id"])
+
+        assert task["plan_status"] == "approved"
+
+    def test_create_task_stays_draft_when_execution_details_missing(
+        self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
+    ) -> None:
+        response = client.post(
+            f"/api/projects/{test_project_id}/tasks",
+            json={
+                "title": "Draft feature task",
+                "description": "Implement health endpoint",
+                "task_type": "feature",
+                "complexity": "STANDARD",
+            },
+        )
+        assert response.status_code == 200
+        task = response.json()
+        cleanup_task(task["id"])
+
+        assert task["plan_status"] in (None, "draft")

@@ -14,6 +14,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 
+from ...services.task_execution_readiness import assess_task_execution_readiness
 from ...storage import task_dependencies as dep_store
 from ...storage.events import get_events_by_trace
 from ...storage.steps import get_steps_for_subtask
@@ -102,7 +103,8 @@ async def get_task_context(
         return build_context_json(task, spirit, subtasks_with_steps, blockers)
 
     # Default: TOON format
-    return PlainTextResponse(content=format_toon_context(task, spirit, subtasks, blockers))
+    readiness = assess_task_execution_readiness(task, spirit, get_subtasks_for_task(task_id, include_steps=True))
+    return PlainTextResponse(content=format_toon_context(task, spirit, subtasks, blockers, readiness))
 
 
 @router.get("/projects/{project_id}/tasks/{task_id}/export")

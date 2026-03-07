@@ -7,6 +7,8 @@ from typing import Any
 
 import typer
 
+from app.services.task_execution_readiness import assess_task_execution_readiness
+
 from ..client import APIError, STClient
 from ..lib.worktree import get_worktree_info
 from ..output import handle_api_error, output_context, output_subtask_context
@@ -119,6 +121,7 @@ def _handle_task_context(
     blockers = _get_blockers(task_id, task_deps, client)
     task_type = task.get("task_type", "")
     task_refs = fetch_triggered_references(task_type) if task_type else []
+    task["execution_readiness"] = assess_task_execution_readiness(task, task, subtasks)
     output_context(task, subtasks, blockers, task_refs)
 
 

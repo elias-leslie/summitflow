@@ -1,4 +1,4 @@
-"""Internal plan workflow operations for task_spirit storage - approve, reject."""
+"""Internal plan workflow operations for task_spirit storage - approve, reject, status sync."""
 
 from __future__ import annotations
 
@@ -96,4 +96,40 @@ def reject_plan(
         conn.commit()
     if row:
         logger.info(f"Rejected plan for task {task_id} by {rejected_by}: {reason}")
+    return _row_to_dict(row)
+
+
+def set_plan_status(
+    task_id: str,
+    plan_status: str,
+    notes: str | None = None,
+    actor: str = "system",
+) -> dict[str, Any] | None:
+    """Set plan status directly and reset approval metadata unless approved elsewhere."""
+    now = datetime.now(UTC)
+    history_entry = {
+        "status": plan_status,
+        "timestamp": now.isoformat(),
+        "actor": actor,
+        "notes": notes,
+    }
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE task_spirit SET
+                plan_status = %s,
+                plan_approved_at = CASE WHEN %s = 'approved' THEN COALESCE(plan_approved_at, %s) ELSE NULL END,
+                plan_approved_by = CASE WHEN %s = 'approved' THEN COALESCE(plan_approved_by, %s) ELSE NULL END,
+                plan_history = COALESCE(plan_history, '[]'::jsonb) || %s::jsonb,
+                updated_at = NOW()
+            WHERE task_id = %s
+            RETURNING *
+            """,
+            (plan_status, plan_status, now, plan_status, actor, json.dumps([history_entry]), task_id),
+        )
+        row = cur.fetchone()
+        conn.commit()
+    if row:
+        logger.info("Set plan status for task %s to %s", task_id, plan_status)
     return _row_to_dict(row)

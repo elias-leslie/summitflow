@@ -120,6 +120,14 @@ class TaskOperationsMixin:
             entry,
         )
 
+    def validate_ready(self, task_id: str) -> dict[str, Any]:
+        return tasks_ops.validate_ready(
+            self._client,
+            self._url,
+            self._handle_response,
+            task_id,
+        )
+
 
 class DependencyOperationsMixin:
     """Mixin providing dependency operations."""

@@ -18,7 +18,7 @@ def autocode_task(
     task = _fetch_task(task_id, client)
     client = _get_task_client(task, client)
     subtasks = _fetch_subtasks(task_id, client)
-    _validate_task_for_autocode(task_id, task, subtasks)
+    _validate_task_for_autocode(task_id, task, subtasks, client)
     schedule = _parse_schedule(at)
 
     if dry_run:
@@ -60,6 +60,7 @@ def _validate_task_for_autocode(
     task_id: str,
     task: dict[str, object],
     subtasks: list[dict[str, object]],
+    client: STClient,
 ) -> None:
     """Validate that task can be autocoded."""
     current_status = task.get("status", "pending")
@@ -68,6 +69,14 @@ def _validate_task_for_autocode(
         raise typer.Exit(1)
     if current_status in ("completed", "merged"):
         output_error(f"Task {task_id} is already {current_status}.")
+        raise typer.Exit(1)
+    readiness = client.validate_ready(task_id)
+    if not readiness.get("ready", False):
+        output_error(f"Task {task_id} is not execution-ready for autocode.")
+        for issue in readiness.get("issues", [])[:8]:
+            output_error(f"  - {issue}")
+        for suggestion in readiness.get("suggestions", [])[:5]:
+            output_error(f"  hint: {suggestion}")
         raise typer.Exit(1)
 
 
