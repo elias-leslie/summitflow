@@ -26,6 +26,7 @@ from .cleanup_handlers import (
     print_cleanup_results,
     print_worktree_summary,
 )
+from .cleanup_paths import cleanup_paths_command
 
 # Re-export for backward compatibility
 __all__ = [
@@ -33,6 +34,7 @@ __all__ = [
     "WorktreeAnalysis",
     "analyze_worktree",
     "app",
+    "cleanup_path",
     "cleanup_status",
     "cleanup_worktree",
     "cleanup_worktrees",
@@ -141,3 +143,19 @@ def cleanup_status(
     }
 
     output_json(result)
+
+
+@app.command("path")
+def cleanup_path(
+    paths: Annotated[list[str], typer.Argument(help="Literal repo-relative path(s) to remove")],
+    recursive: Annotated[
+        bool,
+        typer.Option("--recursive", help="Allow directory deletion"),
+    ] = False,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Show what would be deleted without deleting it"),
+    ] = False,
+) -> None:
+    """Safely remove repo-local paths with guardrails."""
+    cleanup_paths_command(paths, recursive=recursive, dry_run=dry_run)

@@ -153,6 +153,9 @@ CLEANUP (worktree maintenance):
   cleanup worktrees --force                # cleanup all worktrees (with confirmation)
   cleanup worktrees --stale-days N         # configure stale threshold (default: 7)
   cleanup status                           # quick worktree status overview
+  cleanup path <path> [<path>...]          # safe repo-local file cleanup
+  cleanup path <dir> --recursive           # safe repo-local directory cleanup
+  cleanup path <path> --dry-run            # preview cleanup without deleting
 
 EXAMPLES:
   st -P summitflow create "Fix bug" -t bug -p 2  # create task (explicit project)

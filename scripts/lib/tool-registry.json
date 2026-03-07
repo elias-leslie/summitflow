@@ -189,6 +189,11 @@
       "pattern": "psql\\b",
       "message": "Use 'db' CLI instead of raw psql. Commands: db tables [--counts], db schema <table>, db sample <table> [n], db query \"SELECT...\", db exec \"UPDATE/DELETE...\", db ddl \"CREATE INDEX...\", db count <table>. Use db -P <project> to target a specific project (summitflow, agent-hub, portfolio-ai, hatchet).",
       "component_id": "sf.storage"
+    },
+    {
+      "pattern": "\\brm\\s+-[-A-Za-z]*r[-A-Za-z]*\\b|\\brmdir\\b|\\bfind\\b[^\\n]*\\s-delete\\b",
+      "message": "Use 'st cleanup path <literal-path> [<literal-path>...] --recursive' for repo-local deletions. It validates repo root, blocks protected directories (.git, .st, node_modules), and supports --dry-run.",
+      "component_id": "sf.cli"
     }
   ]
 }
