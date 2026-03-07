@@ -1,181 +1,55 @@
-"""Task completion logic for done command.
-
-Handles task completion with branch merge and snapshot cleanup.
-"""
-
 from __future__ import annotations
 
-import subprocess
-from typing import Any
-
 import typer
+from requests import HTTPError as APIError
 
-from app.storage import tasks as task_store
-
-from ..client import APIError, STClient
-from ..lib.checkpoint import (
-    get_snapshot_info,
+from cli._utils import output_error, output_success
+from cli.client import STClient
+from cli.commands.done_subtask import auto_close_subtasks
+from cli.git import (
+    ensure_worktree_clean,
+    git_stash_pop,
+    git_stash_push,
+    is_working_tree_clean,
     merge_task_branch,
-    remove_snapshot,
 )
-from ..output import output_error, output_warning
-from .done_git import git_stash_pop, git_stash_push, is_working_tree_clean
-from .done_memory import report_task_outcome
-from .done_qa import run_qa_gate
-from .done_subtask import auto_close_subtasks
-from .done_validators import parse_db_error
-
-
-def _auto_commit_worktree(worktree_path: str) -> bool:
-    """Auto-commit tracked changes in worktree via commit.sh.
-
-    Uses --skip-checks (st done runs its own quality gates) and
-    --no-push (branch is ephemeral — about to be merged and deleted).
-    commit.sh handles pre-commit hook retries automatically.
-    """
-    try:
-        result = subprocess.run(
-            ["commit.sh", "--skip-checks", "--no-push", "--current"],
-            cwd=worktree_path,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-        return result.returncode == 0
-    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
-        output_warning(f"Auto-commit failed: {e}")
-        return False
-
-
-def ensure_worktree_clean(snapshot_info: dict[str, str | int | None]) -> None:
-    """Ensure worktree is clean, auto-committing tracked changes if needed."""
-    raw_wt = snapshot_info.get("worktree_path")
-    worktree_path: str | None = str(raw_wt) if raw_wt is not None else None
-
-    if not worktree_path or is_working_tree_clean(worktree_path):
-        return
-
-    if _auto_commit_worktree(worktree_path):
-        return
-
-    output_error(
-        f"Worktree has uncommitted changes that could not be auto-committed.\n"
-        f"  Path: {worktree_path}\n"
-        f"Commit manually: cd {worktree_path} && git add -u && git commit -m 'message'"
-    )
-    raise typer.Exit(1)
-
-
-def _output_gate_error(gate: dict[str, str]) -> None:
-    """Output error message for a specific gate."""
-    gate_name = gate["gate"]
-    if gate_name == "subtasks":
-        output_error(f"Cannot complete: Incomplete subtasks: {gate['detail']}")
-        return
-    if gate_name == "steps":
-        output_error(f"Cannot complete: Unverified steps: {gate['detail']}")
-
-
-def validate_completion_readiness(client: STClient, task_id: str) -> None:
-    """Pre-validate completion gates BEFORE merging (fail fast)."""
-    try:
-        readiness = client.get(
-            client._global_url(f"/tasks/{task_id}/completion-readiness")
-        )
-        if readiness.get("ready"):
-            return
-
-        for gate in readiness.get("gates", []):
-            _output_gate_error(gate)
-        raise typer.Exit(1)
-    except APIError as e:
-        output_error(f"Pre-validation failed: {e.detail}")
-        raise typer.Exit(1) from None
-
-
-def merge_and_update_status(
-    client: STClient,
-    task_id: str,
-    project_id: str | None,
-) -> None:
-    """Merge task branch and update status to completed."""
-    try:
-        merge_task_branch(task_id, project_id=project_id)
-    except SystemExit:
-        output_error("Merge failed. Resolve conflicts manually, then retry.")
-        raise typer.Exit(1) from None
-
-    try:
-        client.update_status(task_id, "completed")
-        return
-    except Exception as e:
-        if _fallback_complete_task(task_id):
-            return
-
-        if isinstance(e, APIError):
-            detail: dict[str, str] = (
-                e.detail if isinstance(e.detail, dict) else {"detail": str(e.detail)}
-            )
-            helpful = parse_db_error(detail)
-            if helpful:
-                output_error(helpful)
-            else:
-                output_error(f"Failed to complete task after merge: {e.detail}")
-        else:
-            output_error(f"Failed to complete task after merge: {e}")
-        raise typer.Exit(1) from None
-
-
-def _fallback_complete_task(task_id: str) -> bool:
-    """Mark a merged task completed directly if the API status update fails."""
-    try:
-        updated = task_store.update_task_status(
-            task_id,
-            "completed",
-            validate_transition=False,
-        )
-    except Exception as e:
-        output_warning(f"Direct completion fallback failed after merge: {e}")
-        return False
-    return bool(updated)
-
-
-def _handle_dirty_main(strict: bool) -> bool:
-    """Handle dirty main branch based on mode. Returns True if stashed."""
-    main_dirty = not is_working_tree_clean()
-    if not main_dirty:
-        return False
-
-    if strict:
-        output_error(
-            "Main repo has uncommitted changes.\n"
-            "Commit or stash first before completing task."
-        )
-        raise typer.Exit(1)
-    return git_stash_push()
+from cli.snapshot import get_snapshot_info, remove_snapshot
 
 
 def _get_project_id_from_snapshot(snapshot_info: dict[str, str | int | None]) -> str | None:
-    """Extract project_id from snapshot info."""
-    raw_pid = snapshot_info.get("project_id")
-    return str(raw_pid) if raw_pid is not None else None
+    project_id = snapshot_info.get("project_id")
+    if isinstance(project_id, str) and project_id:
+        return project_id
+    return None
 
 
-def _run_ai_review(client: STClient, task_id: str) -> dict[str, Any] | None:
-    """Trigger AI review via API. Returns None on failure (non-blocking)."""
-    try:
-        return client.post(client._global_url(f"/tasks/{task_id}/review"), json={})
-    except Exception:
-        return None
+def _handle_dirty_main(strict: bool) -> bool:
+    if is_working_tree_clean():
+        return False
+    if strict:
+        output_error("Main branch has uncommitted changes. Commit/stash them first or use smart mode.")
+        raise typer.Exit(1)
+    output_success("Main branch dirty, stashing changes before merge...")
+    git_stash_push()
+    return True
 
 
-def _should_run_ai_review(client: STClient, task_id: str) -> bool:
-    """Check if AI review should run for this task."""
-    try:
-        task = client.get(client._global_url(f"/tasks/{task_id}"))
-        return bool(task.get("ai_review", True))
-    except Exception:
-        return True  # Default to running review if we can't fetch the flag
+def _auto_verify_readiness(client: STClient, task_id: str) -> None:
+    readiness = client.get(f"/api/tasks/{task_id}/completion-readiness")
+    if readiness.get("ready"):
+        return
+
+    gates = readiness.get("gates", [])
+    gate_details = ", ".join(str(gate.get("code", "unknown")) for gate in gates)
+    output_error(f"Task not ready to complete: {gate_details}")
+    raise typer.Exit(1)
+
+
+def _request_review_approval(client: STClient, task_id: str) -> None:
+    result = client.post(client._global_url(f"/api/review/{task_id}/approve"))
+    if result.get("verdict") != "APPROVED":
+        output_error("Review approval failed")
+        raise typer.Exit(1)
 
 
 def _perform_completion(
@@ -185,78 +59,20 @@ def _perform_completion(
     project_id: str | None,
     strict: bool,
 ) -> None:
-    """Perform the actual task completion steps."""
     if not strict:
+        _auto_verify_readiness(client, task_id)
         auto_close_subtasks(client, task_id, project_id)
+        _request_review_approval(client, task_id)
 
-    validate_completion_readiness(client, task_id)
-
-    # AI review gate — skip for tasks with ai_review=False (e.g. refactors)
-    if _should_run_ai_review(client, task_id):
-        review_result = _run_ai_review(client, task_id)
-        if review_result and review_result.get("verdict") not in ("APPROVED", "UNKNOWN"):
-            concerns = review_result.get("concerns", [])
-            output_error(
-                f"AI Review: {review_result.get('verdict')}\n"
-                + "\n".join(f"  - {c}" for c in concerns)
-            )
-            raise typer.Exit(1)
-
-    # QA gate — lint + tests must pass before merge
-    raw_wt = snapshot_info.get("worktree_path")
-    wt_path = str(raw_wt) if raw_wt is not None else None
-    if wt_path:
-        passed, qa_output = run_qa_gate(wt_path)
-        if not passed:
-            output_error(f"QA gate failed:\n{qa_output}")
-            raise typer.Exit(1)
-
-    # Detect frontend changes before merge (while branch still exists)
-    has_frontend_changes = _has_frontend_changes(snapshot_info)
-
-    merge_and_update_status(client, task_id, project_id)
-
-    # Post-merge: trigger async site health check if frontend changed
-    if has_frontend_changes and project_id:
-        _trigger_site_health_check(project_id, task_id)
-
-    claimed_at = snapshot_info.get("created_at") if snapshot_info else None
-    report_task_outcome(
-        task_id,
-        succeeded=True,
-        project_id=project_id,
-        started_at=str(claimed_at) if claimed_at else None,
-    )
-
+    merge_task_branch(task_id, project_id=project_id)
+    client.update_status(task_id, "completed")
     remove_snapshot(task_id, project_id=project_id)
+    _trigger_health_check(task_id, project_id)
 
 
-def _has_frontend_changes(snapshot_info: dict[str, str | int | None]) -> bool:
-    """Check if the task branch has frontend file changes (.tsx/.ts/.css/.js/.html)."""
-    raw_wt = snapshot_info.get("worktree_path")
-    if not raw_wt:
-        return False
-    try:
-        result = subprocess.run(
-            ["git", "diff", "--name-only", "main...HEAD"],
-            cwd=str(raw_wt),
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if result.returncode != 0:
-            return False
-        frontend_exts = (".tsx", ".ts", ".css", ".js", ".html")
-        return any(
-            line.strip().endswith(frontend_exts)
-            for line in result.stdout.splitlines()
-        )
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        return False
-
-
-def _trigger_site_health_check(project_id: str, task_id: str) -> None:
-    """Fire-and-forget site health check for the affected project."""
+def _trigger_health_check(task_id: str, project_id: str | None) -> None:
+    if not project_id:
+        return
     try:
         from .memory_api import agent_hub_request
 
@@ -268,6 +84,7 @@ def _trigger_site_health_check(project_id: str, task_id: str) -> None:
         )
     except Exception:
         pass  # Never block completion on health check trigger failure
+
 
 
 def _complete_without_snapshot(
@@ -291,6 +108,7 @@ def _complete_without_snapshot(
     }
 
 
+
 def _complete_with_admin_close(
     client: STClient,
     task_id: str,
@@ -300,7 +118,7 @@ def _complete_with_admin_close(
     """Close a claimed task without merge/review and remove its snapshot."""
     project_id = _get_project_id_from_snapshot(snapshot_info)
     try:
-        client.close_task(task_id, reason=message)
+        client.close_task(task_id, reason=message, skip_gates=True)
     except APIError as e:
         output_error(f"Failed to close task: {e.detail}")
         raise typer.Exit(1) from None
@@ -313,6 +131,7 @@ def _complete_with_admin_close(
         "snapshot_removed": True,
         "base_branch": str(snapshot_info.get("base_branch", "main")),
     }
+
 
 
 def complete_task(

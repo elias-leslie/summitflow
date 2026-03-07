@@ -113,6 +113,7 @@ async def update_task_status(
             task_id,
             update.status,
             error_message=update.error_message,
+            validate_transition=not (update.status == "completed" and update.skip_gates),
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e

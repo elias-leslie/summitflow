@@ -12,6 +12,8 @@ from pathlib import Path
 
 import httpx
 
+from .lib.execution_context import canonical_repo_root
+
 logger = logging.getLogger(__name__)
 
 _DEFAULT_API_BASE = "http://localhost:8001/api"
@@ -114,7 +116,18 @@ def _detect_project_from_cwd(api_base: str, max_retries: int = 3) -> tuple[str |
     projects = _fetch_projects_with_retry(api_base, max_retries)
     if projects is None:
         return None, None
-    return _resolve_project_from_list(projects, Path.cwd().resolve())
+    cwd = Path.cwd().resolve()
+    project_id, root_path = _resolve_project_from_list(projects, cwd)
+    if project_id:
+        return project_id, root_path
+
+    canonical_root = canonical_repo_root(cwd)
+    if canonical_root and canonical_root != cwd:
+        project_id, root_path = _resolve_project_from_list(projects, canonical_root)
+        if project_id:
+            return project_id, root_path
+
+    return None, None
 
 
 def _resolve_project(api_base: str) -> tuple[str | None, str | None, str]:

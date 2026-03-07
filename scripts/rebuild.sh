@@ -99,6 +99,16 @@ main() {
         exit 0
     fi
 
+    if [ "$IS_WORKTREE" = true ]; then
+        log_error "rebuild.sh targets shared project services, not task worktree services."
+        echo ""
+        echo "Use the isolated worktree service manager instead:"
+        echo "  worktree-services.sh start ${WORKTREE_TASK_ID} --project ${PROJECT_NAME}"
+        echo "  worktree-services.sh status ${WORKTREE_TASK_ID} --project ${PROJECT_NAME}"
+        echo ""
+        exit 1
+    fi
+
     echo ""
     echo "========================================"
     echo "$PROJECT_NAME Rebuild"

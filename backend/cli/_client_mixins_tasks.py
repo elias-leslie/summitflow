@@ -11,7 +11,6 @@ from . import _client_tasks as tasks_ops
 class TaskOperationsMixin:
     """Mixin providing task-related operations."""
 
-    # Implemented by BaseHTTPClient
     _client: Any
     _url: Any
     _global_url: Any
@@ -21,7 +20,12 @@ class TaskOperationsMixin:
         return tasks_ops.create_task(self._client, self._url, self._handle_response, data)
 
     def batch_create_tasks(self, items: list[dict[str, Any]]) -> dict[str, Any]:
-        return tasks_ops.batch_create_tasks(self._client, self._url, self._handle_response, items)
+        return tasks_ops.batch_create_tasks(
+            self._client,
+            self._url,
+            self._handle_response,
+            items,
+        )
 
     def get_task(self, task_id: str) -> dict[str, Any]:
         return tasks_ops.get_task(self._client, self._global_url, self._handle_response, task_id)
@@ -52,7 +56,11 @@ class TaskOperationsMixin:
 
     def update_task(self, task_id: str, **updates: Any) -> dict[str, Any]:
         return tasks_ops.update_task(
-            self._client, self._url, self._handle_response, task_id, **updates
+            self._client,
+            self._url,
+            self._handle_response,
+            task_id,
+            **updates,
         )
 
     def update_status(
@@ -87,7 +95,12 @@ class TaskOperationsMixin:
         self, task_id: str, lock_minutes: int = 30, worker_id: str | None = None
     ) -> dict[str, Any]:
         return tasks_ops.claim_task(
-            self._client, self._url, self._handle_response, task_id, lock_minutes, worker_id
+            self._client,
+            self._url,
+            self._handle_response,
+            task_id,
+            lock_minutes,
+            worker_id,
         )
 
     def release_task(self, task_id: str) -> dict[str, Any]:
@@ -95,7 +108,11 @@ class TaskOperationsMixin:
 
     def append_log(self, task_id: str, entry: str) -> dict[str, Any]:
         return tasks_ops.append_log(
-            self._client, self._global_url, self._handle_response, task_id, entry
+            self._client,
+            self._global_url,
+            self._handle_response,
+            task_id,
+            entry,
         )
 
 
@@ -111,17 +128,30 @@ class DependencyOperationsMixin:
         self, task_id: str, depends_on: str, dep_type: str = "blocks"
     ) -> dict[str, Any]:
         return deps_ops.add_dependency(
-            self._client, self._url, self._handle_response, task_id, depends_on, dep_type
+            self._client,
+            self._url,
+            self._handle_response,
+            task_id,
+            depends_on,
+            dep_type,
         )
 
     def list_dependencies(self, task_id: str) -> list[dict[str, Any]]:
         return deps_ops.list_dependencies(
-            self._client, self._global_url, self._handle_response, task_id
+            self._client,
+            self._global_url,
+            self._handle_response,
+            task_id,
         )
 
     def remove_dependency(
         self, task_id: str, depends_on: str, dep_type: str | None = None
     ) -> dict[str, Any]:
         return deps_ops.remove_dependency(
-            self._client, self._url, self._handle_response, task_id, depends_on, dep_type
+            self._client,
+            self._url,
+            self._handle_response,
+            task_id,
+            depends_on,
+            dep_type,
         )

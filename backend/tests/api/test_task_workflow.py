@@ -309,3 +309,34 @@ class TestExportEndpoint:
         """Exporting a nonexistent task should return 404."""
         response = client.get(f"/api/projects/{test_project_id}/tasks/task-nonexistent/export")
         assert response.status_code == 404
+
+
+class TestTaskStatusEndpoint:
+    """Test PATCH /status behavior for admin-like closes."""
+
+    def test_completed_with_skip_gates_allows_pending_task(
+        self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
+    ) -> None:
+        """skip_gates should allow pending planning/meta tasks to close cleanly."""
+        response = client.post(
+            f"/api/projects/{test_project_id}/tasks",
+            json={
+                "title": "Pending meta task",
+                "description": "Can close without claim",
+                "task_type": "task",
+                "priority": 2,
+            },
+        )
+        assert response.status_code == 200
+        task = response.json()
+        task_id = task["id"]
+        cleanup_task(task_id)
+
+        response = client.patch(
+            f"/api/projects/{test_project_id}/tasks/{task_id}/status",
+            json={"status": "completed", "skip_gates": True, "reason": "meta shipped"},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "completed"

@@ -155,6 +155,20 @@ class TestUpdateTaskStatus:
         assert result["status"] == "abandoned"
         assert result["completed_at"] is not None
 
+    def test_status_pending_to_completed_allowed_when_transition_validation_skipped(
+        self, test_task: dict[str, Any]
+    ) -> None:
+        """Admin closes should be able to complete pending tasks without claiming."""
+        result = task_store.update_task_status(
+            test_task["id"],
+            "completed",
+            validate_transition=False,
+        )
+
+        assert result is not None
+        assert result["status"] == "completed"
+        assert result["completed_at"] is not None
+
     def test_status_queue_to_abandoned(self, test_task: dict[str, Any]) -> None:
         """Test transition from queue to abandoned."""
         task_store.update_task_status(test_task["id"], "queue")

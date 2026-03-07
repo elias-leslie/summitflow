@@ -62,14 +62,19 @@ class SnapshotMeta:
         )
 
 
-def get_snapshots_dir(project_root: str | Path | None = None) -> Path:
-    """Get the .st/snapshots directory, creating if needed."""
-    base = Path(project_root) if project_root else Path.cwd()
+def _global_checkpoints_base() -> Path:
+    """Return the global checkpoint metadata base directory."""
+    base = Path.home() / ".local" / "share" / "st" / "checkpoints"
+    base.mkdir(parents=True, exist_ok=True)
+    return base
 
+
+def _legacy_snapshots_dir(project_root: str | Path | None = None) -> Path:
+    """Return the legacy checkout-local snapshots directory."""
+    base = Path(project_root) if project_root else Path.cwd()
     snapshots_dir = base / ".st" / "snapshots"
     snapshots_dir.mkdir(parents=True, exist_ok=True)
 
-    # Ensure .st/.gitignore ignores snapshots
     gitignore = base / ".st" / ".gitignore"
     if not gitignore.exists():
         gitignore.write_text("snapshots/\n")
@@ -80,9 +85,40 @@ def get_snapshots_dir(project_root: str | Path | None = None) -> Path:
     return snapshots_dir
 
 
-def get_meta_path(task_id: str, project_root: str | Path | None = None) -> Path:
+def get_snapshots_dir(
+    project_id: str | None = None,
+    project_root: str | Path | None = None,
+) -> Path:
+    """Get the checkpoint metadata directory.
+
+    New storage is global and project-scoped. Legacy checkout-local paths are
+    still available for backwards-compatible reads.
+    """
+    if project_id:
+        target = _global_checkpoints_base() / project_id
+        target.mkdir(parents=True, exist_ok=True)
+        return target
+    return _legacy_snapshots_dir(project_root)
+
+
+def get_meta_path(
+    task_id: str,
+    project_root: str | Path | None = None,
+    project_id: str | None = None,
+) -> Path:
     """Get path for task snapshot metadata file."""
-    return get_snapshots_dir(project_root) / f"{task_id}.meta.json"
+    return get_snapshots_dir(project_id=project_id, project_root=project_root) / f"{task_id}.meta.json"
+
+
+def _find_global_meta_path(task_id: str, project_id: str | None = None) -> Path | None:
+    """Search global checkpoint storage for a task metadata file."""
+    if project_id:
+        candidate = get_meta_path(task_id, project_id=project_id)
+        return candidate if candidate.exists() else None
+
+    for meta_path in _global_checkpoints_base().glob(f"*/{task_id}.meta.json"):
+        return meta_path
+    return None
 
 
 def load_snapshot_meta(task_id: str, project_root: str | Path | None = None) -> SnapshotMeta | None:
@@ -95,17 +131,18 @@ def load_snapshot_meta(task_id: str, project_root: str | Path | None = None) -> 
     Returns:
         SnapshotMeta if found, None otherwise
     """
-    meta_path = get_meta_path(task_id, project_root)
-    if not meta_path.exists():
-        # Fallback to CWD-based lookup for backwards compatibility
-        if project_root is not None:
-            fallback_path = get_meta_path(task_id, None)
-            if fallback_path.exists():
-                meta_path = fallback_path
+    meta_path = _find_global_meta_path(task_id)
+    if meta_path is None:
+        meta_path = get_meta_path(task_id, project_root=project_root)
+        if not meta_path.exists():
+            if project_root is not None:
+                fallback_path = get_meta_path(task_id)
+                if fallback_path.exists():
+                    meta_path = fallback_path
+                else:
+                    return None
             else:
                 return None
-        else:
-            return None
 
     try:
         return SnapshotMeta.from_dict(json.loads(meta_path.read_text()))
@@ -119,7 +156,7 @@ def save_snapshot_meta(meta: SnapshotMeta) -> None:
     Args:
         meta: SnapshotMeta to save
     """
-    meta_path = get_meta_path(meta.task_id)
+    meta_path = get_meta_path(meta.task_id, project_id=meta.project_id)
     meta_path.write_text(json.dumps(meta.to_dict(), indent=2))
 
 

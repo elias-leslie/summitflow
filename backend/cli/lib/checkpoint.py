@@ -10,7 +10,6 @@ import contextlib
 import json
 import sys
 from datetime import UTC, datetime
-from pathlib import Path
 
 from .checkpoint_branches import (
     create_subtask_branch,
@@ -22,9 +21,11 @@ from .checkpoint_branches import (
 from .checkpoint_helpers import create_legacy_branch, create_worktree_resources
 from .checkpoint_metadata import (
     SnapshotMeta,
+    _global_checkpoints_base,
     get_claimed_by,
     get_current_branch,
     get_meta_path,
+    get_snapshots_dir,
     load_snapshot_meta,
     save_snapshot_meta,
 )
@@ -42,7 +43,7 @@ __all__ = [
 
 def create_task_snapshot(task_id: str, project_id: str, use_worktree: bool = True) -> SnapshotMeta:
     """Create worktree checkpoint for task. Raises SystemExit on git errors."""
-    meta_path = get_meta_path(task_id)
+    meta_path = get_meta_path(task_id, project_id=project_id)
     base_branch = get_current_branch()
 
     if meta_path.exists():
@@ -76,11 +77,11 @@ def remove_snapshot(
     """Delete checkpoint metadata and optionally the worktree."""
     from .worktree import remove_worktree as rm_worktree
 
-    meta_path = get_meta_path(task_id)
     if project_id is None:
         meta = load_snapshot_meta(task_id)
         if meta:
             project_id = meta.project_id
+    meta_path = get_meta_path(task_id, project_id=project_id)
 
     if remove_worktree:
         with contextlib.suppress(Exception):
@@ -92,12 +93,13 @@ def remove_snapshot(
 
 def get_active_checkpoints(project_id: str | None = None) -> list[SnapshotMeta]:
     """List active checkpoints, optionally filtered by project, newest first."""
-    snapshots_dir = Path.cwd() / ".st" / "snapshots"
+    snapshots_dir = get_snapshots_dir(project_id=project_id) if project_id else _global_checkpoints_base()
     if not snapshots_dir.exists():
         return []
 
     checkpoints = []
-    for meta_file in snapshots_dir.glob("*.meta.json"):
+    pattern = "*.meta.json" if project_id else "*/*.meta.json"
+    for meta_file in snapshots_dir.glob(pattern):
         try:
             meta = SnapshotMeta.from_dict(json.loads(meta_file.read_text()))
             if project_id is None or meta.project_id == project_id:
