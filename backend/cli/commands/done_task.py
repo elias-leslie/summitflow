@@ -291,6 +291,30 @@ def _complete_without_snapshot(
     }
 
 
+def _complete_with_admin_close(
+    client: STClient,
+    task_id: str,
+    snapshot_info: dict[str, str | int | None],
+    message: str | None = None,
+) -> dict[str, str | bool]:
+    """Close a claimed task without merge/review and remove its snapshot."""
+    project_id = _get_project_id_from_snapshot(snapshot_info)
+    try:
+        client.close_task(task_id, reason=message)
+    except APIError as e:
+        output_error(f"Failed to close task: {e.detail}")
+        raise typer.Exit(1) from None
+
+    remove_snapshot(task_id, project_id=project_id)
+    return {
+        "task_id": task_id,
+        "action": "completed",
+        "merged": False,
+        "snapshot_removed": True,
+        "base_branch": str(snapshot_info.get("base_branch", "main")),
+    }
+
+
 def complete_task(
     client: STClient,
     task_id: str,
@@ -309,6 +333,9 @@ def complete_task(
             return _complete_without_snapshot(client, task_id, message)
         output_error(f"No checkpoint found for {task_id}. Was it claimed?")
         raise typer.Exit(1)
+
+    if admin:
+        return _complete_with_admin_close(client, task_id, snapshot_info, message)
 
     ensure_worktree_clean(snapshot_info)
     project_id = _get_project_id_from_snapshot(snapshot_info)

@@ -246,6 +246,36 @@ class TestCompleteTaskSmart:
     @patch("cli.commands.done_task.merge_task_branch")
     @patch("cli.commands.done_task.auto_close_subtasks")
     @patch("cli.commands.done_task.is_working_tree_clean", return_value=True)
+    def test_admin_mode_closes_claimed_task_without_merge(
+        self,
+        mock_clean: MagicMock,
+        mock_auto: MagicMock,
+        mock_merge: MagicMock,
+        mock_remove: MagicMock,
+        mock_snapshot: MagicMock,
+    ) -> None:
+        """Admin mode should close stale claimed tasks without merge/review gates."""
+        mock_snapshot.return_value = {
+            "worktree_path": "/tmp/task-123",
+            "project_id": "test",
+            "base_branch": "main",
+        }
+        client = self._setup_mocks()
+
+        result = _complete_task(client, "task-123", strict=False, admin=True, message="stale state")
+
+        assert result["merged"] is False
+        assert result["snapshot_removed"] is True
+        client.close_task.assert_called_once_with("task-123", reason="stale state")
+        mock_remove.assert_called_once_with("task-123", project_id="test")
+        mock_merge.assert_not_called()
+        client.post.assert_not_called()
+
+    @patch("cli.commands.done_task.get_snapshot_info")
+    @patch("cli.commands.done_task.remove_snapshot")
+    @patch("cli.commands.done_task.merge_task_branch")
+    @patch("cli.commands.done_task.auto_close_subtasks")
+    @patch("cli.commands.done_task.is_working_tree_clean", return_value=True)
     def test_strict_skips_auto_close(
         self, mock_clean: MagicMock, mock_auto: MagicMock, mock_merge: MagicMock,
         mock_remove: MagicMock, mock_snapshot: MagicMock
