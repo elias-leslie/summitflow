@@ -81,7 +81,7 @@ def dummy_client() -> _DummyClient:
     return client
 
 
-def test_ready_all_separates_live_and_stale_running_tasks(
+def test_ready_all_running_tasks_classifies_as_active_or_stale(
     dummy_client: _DummyClient,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
