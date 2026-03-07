@@ -44,9 +44,11 @@ from .explorer_symbols import (
     cleanup_stale_symbols,
     delete_symbols_for_file,
     get_symbol,
+    list_related_entries_for_file,
     list_symbols_for_file,
     replace_file_symbols,
     search_symbols,
+    summarize_symbols_for_file,
 )
 
 __all__ = [
@@ -68,9 +70,11 @@ __all__ = [
     "get_scan_state",
     "get_stats",
     "get_symbol",
+    "list_related_entries_for_file",
     "list_symbols_for_file",
     "replace_file_symbols",
     "search_symbols",
+    "summarize_symbols_for_file",
     "update_scan_state",
     "upsert_entries",
 ]

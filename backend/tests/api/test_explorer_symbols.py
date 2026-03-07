@@ -8,7 +8,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from app.services.explorer.types.endpoints import EndpointScanner
 from app.services.explorer.types.files import FileScanner
+from app.services.explorer.types.pages import PageScanner
 from app.storage.connection import get_connection
 
 
@@ -27,10 +29,24 @@ def symbol_api_project(
 
     (backend_dir / "files.py").write_text(
         '''
+from fastapi import APIRouter
+
+router = APIRouter(prefix="/files")
+
+
+@router.get("/tree")
 def get_file_tree(path: str) -> dict[str, str]:
     """List directory entries for file tree navigation."""
     return {"path": path}
 ''',
+        encoding="utf-8",
+    )
+    (frontend_dir / "page.tsx").write_text(
+        """
+export default function FilesPage(): React.ReactElement {
+  return <FilesClient />
+}
+""",
         encoding="utf-8",
     )
     (frontend_dir / "FilesClient.tsx").write_text(
@@ -55,6 +71,8 @@ export function FilesClient(): React.ReactElement {
 
     result = FileScanner(project_id).run()
     assert result.success is True
+    assert EndpointScanner(project_id).run().success is True
+    assert PageScanner(project_id).run().success is True
 
     yield project_id
 
@@ -126,6 +144,7 @@ class TestExplorerSymbolDetailEndpoint:
         assert "def get_file_tree" in data["source"]
         assert data["file_entry"]["path"] == "backend/app/api/files.py"
         assert data["file_entry"]["metadata"]["symbol_count"] == 1
+        assert [entry["path"] for entry in data["related_entries"]] == ["GET /files/tree"]
 
     def test_get_symbol_detail_returns_404_for_missing_symbol(
         self,

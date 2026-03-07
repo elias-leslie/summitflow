@@ -122,6 +122,44 @@ def get_symbol(project_id: str, symbol_id: str) -> dict[str, Any] | None:
         return _row_to_symbol(row) if row else None
 
 
+def list_related_entries_for_file(project_id: str, file_path: str) -> list[dict[str, Any]]:
+    """List page and endpoint entries whose source file matches the symbol file."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, project_id, entry_type, path, name, health_status,
+                   metadata, last_scanned_at, created_at, updated_at
+            FROM explorer_entries
+            WHERE project_id = %s
+              AND entry_type = ANY(%s)
+              AND metadata->>'source_file' = %s
+            ORDER BY entry_type ASC, path ASC
+            """,
+            (project_id, ["endpoint", "page"], file_path),
+        )
+        rows = cur.fetchall()
+
+    from .explorer_entries import _row_to_entry
+
+    return [_row_to_entry(row) for row in rows]
+
+
+def summarize_symbols_for_file(project_id: str, file_path: str, *, limit: int = 5) -> list[dict[str, Any]]:
+    """Return a concise top-symbol summary for a file."""
+    rows = list_symbols_for_file(project_id, file_path)[: max(1, limit)]
+    return [
+        {
+            "symbol_id": row["symbol_id"],
+            "name": row["name"],
+            "kind": row["kind"],
+            "qualified_name": row["qualified_name"],
+            "start_line": row["start_line"],
+            "end_line": row["end_line"],
+        }
+        for row in rows
+    ]
+
+
 def search_symbols(
     project_id: str,
     query: str,

@@ -129,10 +129,12 @@ async def get_symbol_detail(
 
     source = _read_symbol_source(project_id, symbol, context_lines)
     file_entry = explorer_storage.get_entry(project_id, "file", symbol["file_path"])
+    related_entries = explorer_storage.list_related_entries_for_file(project_id, symbol["file_path"])
     return {
         "symbol": symbol,
         "source": source,
         "file_entry": file_entry,
+        "related_entries": related_entries,
     }
 
 
