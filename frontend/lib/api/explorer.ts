@@ -32,6 +32,8 @@ export interface ExplorerEntryMetadata {
   size_bytes?: number
   lines_of_code?: number
   file_count?: number
+  symbol_count?: number
+  symbol_kinds?: Record<string, number> | null
   bloat_level?: 'warning' | 'critical' | null
   stale_status?: 'fresh' | 'stale' | 'orphan' | 'untracked' | null
   last_commit_days?: number
@@ -133,6 +135,40 @@ export interface StatsResponse {
   byHealth: Record<ExplorerHealthStatus, number>
   total: number
   lastScanned: string | null
+}
+
+export interface ExplorerSymbol {
+  id: number
+  project_id: string
+  file_path: string
+  symbol_id: string
+  qualified_name: string
+  name: string
+  kind: string
+  signature: string
+  language: string
+  start_line: number
+  end_line: number
+  byte_offset: number
+  byte_length: number
+  content_hash: string
+  summary: string | null
+  keywords: string[]
+  created_at: string
+  updated_at: string
+}
+
+export interface ExplorerSymbolSearchResponse {
+  query: string
+  count: number
+  items: ExplorerSymbol[]
+}
+
+export interface ExplorerSymbolDetailResponse {
+  symbol: ExplorerSymbol
+  source: string
+  file_entry: ExplorerEntry | null
+  related_entries: ExplorerEntry[]
 }
 
 // ============================================================================
@@ -244,5 +280,43 @@ export async function fetchExplorerChildren(
   return fetchWithErrorHandling<ExplorerEntry[]>(
     `/api/projects/${projectId}/explorer/children${query}`,
     { errorMessage: 'Failed to fetch explorer children' },
+  )
+}
+
+export async function searchExplorerSymbols(
+  projectId: string,
+  params: {
+    q: string
+    language?: string
+    kind?: string
+    limit?: number
+  },
+): Promise<ExplorerSymbolSearchResponse> {
+  const query = buildQueryString({
+    q: params.q,
+    language: params.language,
+    kind: params.kind,
+    limit: params.limit,
+  })
+  return fetchWithErrorHandling<ExplorerSymbolSearchResponse>(
+    `/api/projects/${projectId}/explorer/symbols/search${query}`,
+    { errorMessage: 'Failed to search explorer symbols' },
+  )
+}
+
+export async function fetchExplorerSymbolDetail(
+  projectId: string,
+  params: {
+    symbolId: string
+    contextLines?: number
+  },
+): Promise<ExplorerSymbolDetailResponse> {
+  const query = buildQueryString({
+    symbol_id: params.symbolId,
+    context_lines: params.contextLines,
+  })
+  return fetchWithErrorHandling<ExplorerSymbolDetailResponse>(
+    `/api/projects/${projectId}/explorer/symbols/detail${query}`,
+    { errorMessage: 'Failed to fetch symbol detail' },
   )
 }
