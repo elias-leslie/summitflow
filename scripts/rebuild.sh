@@ -105,6 +105,9 @@ main() {
         echo "Use the isolated worktree service manager instead:"
         echo "  worktree-services.sh start ${WORKTREE_TASK_ID} --project ${PROJECT_NAME}"
         echo "  worktree-services.sh status ${WORKTREE_TASK_ID} --project ${PROJECT_NAME}"
+        echo "  worktree-services.sh ports ${WORKTREE_TASK_ID} --project ${PROJECT_NAME}"
+        echo ""
+        echo "The 'ports' command prints the local preview URLs for that worktree."
         echo ""
         exit 1
     fi
