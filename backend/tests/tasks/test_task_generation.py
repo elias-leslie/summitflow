@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, patch
 from app.tasks.autonomous.task_generation import (
     cleanup_stale_tasks,
     generate_tasks_from_scan,
+    regenerate_refactor_tasks_sync,
 )
 
 
@@ -88,6 +89,44 @@ class TestGenerateTasksFromScan:
         assert result["scanned_count"] == 1
         assert result["skipped_count"] == 1
         mock_store.create_task.assert_not_called()
+
+    @patch("app.tasks.autonomous.refactor_generation.get_project_root_path")
+    @patch("app.tasks.autonomous.refactor_generation.scan")
+    @patch("app.tasks.autonomous.refactor_generation.check_and_close_resolved_issues")
+    @patch("app.tasks.autonomous.refactor_generation.get_refactor_targets")
+    @patch("app.tasks.autonomous.refactor_generation.task_store")
+    @patch("app.tasks.autonomous.refactor_generation.create_refactor_task")
+    def test_regenerate_sync_closes_resolved_and_only_creates_missing_tasks(
+        self,
+        mock_create_task: MagicMock,
+        mock_store: MagicMock,
+        mock_get_targets: MagicMock,
+        mock_close_resolved: MagicMock,
+        mock_scan: MagicMock,
+        mock_get_project_root: MagicMock,
+    ) -> None:
+        mock_get_project_root.return_value = "/tmp/project"
+        mock_close_resolved.return_value = 2
+        mock_get_targets.return_value = {
+            "targets": [
+                {
+                    "path": "backend/app/services/foo.py",
+                    "priority": "high",
+                    "reason": "High cyclomatic complexity",
+                    "complexity_score": 20.0,
+                    "lines_of_code": 400,
+                }
+            ]
+        }
+        mock_store.task_exists_for_file.return_value = False
+        mock_create_task.return_value = ("task-123", "issue-123")
+
+        result = regenerate_refactor_tasks_sync("test-project")
+
+        assert result["closed_count"] == 2
+        assert result["created_count"] == 1
+        mock_scan.assert_called_once_with("test-project", "file")
+        mock_close_resolved.assert_called_once_with("test-project")
 
 
 class TestCleanupStaleTasks:

@@ -53,9 +53,8 @@ def create_refactor_task(
 ) -> tuple[str | None, int | None]:
     """Create refactor task with spirit, subtasks, and steps."""
     issues = refactor_issues or []
-    file_name = relative_path.split("/")[-1]
     category = "backend" if relative_path.endswith(".py") else "frontend"
-    title = f"Refactor: {reason} in {file_name}"
+    title = f"Refactor: {relative_path} ({reason})"
     description = build_refactor_description(relative_path, lines, target_lines, complexity, priority)
     issue_id = create_refactor_issue(project_id, relative_path, complexity, lines, target_lines, reason)
 
@@ -75,6 +74,7 @@ def create_refactor_task(
     create_single_subtask_with_steps(
         task_id=task_id, subtask_id="1.1", phase=category,
         description=f"Refactor {relative_path} - reduce to <{target_lines} lines", steps=steps,
+        subtask_type="refactor",
     )
     logger.info(f"Created refactor task {task_id} with line verification: {title}")
     return task_id, issue_id

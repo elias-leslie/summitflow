@@ -9,32 +9,13 @@ from app.services.explorer import scan
 from app.storage import tasks as task_store
 from app.storage.explorer_analysis import get_refactor_targets
 from app.storage.projects import get_project_root_path
-from app.storage.tasks import delete_task
-from app.storage.tasks.queries import list_tasks
 from app.tasks.autonomous.step_builders import build_refactor_steps, calculate_target_lines
 from app.tasks.autonomous.task_builders import create_refactor_task
+from app.tasks.explorer_resolution import check_and_close_resolved_issues
 
 logger = logging.getLogger(__name__)
 
 _SIZE_ISSUES = {"oversized", "large_file", "bloat_critical", "bloat_warning"}
-
-
-def delete_existing_refactor_tasks(project_id: str) -> int:
-    """Delete all existing refactor tasks for a project."""
-    deleted = 0
-    for task in list_tasks(project_id=project_id, task_type_filter="refactor", limit=500):
-        task_id = task.get("id")
-        if not task_id:
-            continue
-        try:
-            if delete_task(task_id):
-                deleted += 1
-                logger.info(f"Deleted refactor task {task_id}: {task.get('title', '')[:50]}")
-        except Exception as e:
-            logger.warning(f"Failed to delete task {task_id}: {e}")
-    if deleted > 0:
-        logger.info(f"Refactor task cleanup for {project_id}: deleted={deleted}")
-    return deleted
 
 
 def should_skip_refactor_target(
@@ -121,18 +102,23 @@ def generate_refactor_tasks_internal(
 
 
 def regenerate_refactor_tasks_impl(project_id: str) -> dict[str, Any]:
-    """Delete all existing refactor tasks and regenerate from current scan."""
+    """Scan, close resolved refactor tasks, and create only newly needed tasks."""
     project_root = get_project_root_path(project_id)
     if not project_root:
         logger.error(f"Project {project_id} not found or has no root_path")
-        return {"error": f"Project {project_id} not found", "deleted_count": 0, "created_count": 0, "scanned_count": 0}
+        return {
+            "error": f"Project {project_id} not found",
+            "closed_count": 0,
+            "created_count": 0,
+            "scanned_count": 0,
+        }
 
-    deleted_count = delete_existing_refactor_tasks(project_id)
     scan(project_id, "file")
-    result = generate_refactor_tasks_internal(project_id, skip_existing=False, project_root=project_root)
+    closed_count = check_and_close_resolved_issues(project_id)
+    result = generate_refactor_tasks_internal(project_id, skip_existing=True, project_root=project_root)
     logger.info(
-        f"Refactor task regeneration complete for {project_id}: "
-        f"deleted={deleted_count}, created={result['created_count']}, "
+        f"Refactor task sync complete for {project_id}: "
+        f"closed={closed_count}, created={result['created_count']}, "
         f"scanned={result['scanned_count']}, skipped={result['skipped_count']}"
     )
-    return {"deleted_count": deleted_count, **result}
+    return {"closed_count": closed_count, **result}

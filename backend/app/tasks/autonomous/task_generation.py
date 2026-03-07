@@ -48,12 +48,12 @@ def generate_tasks_from_scan(project_id: str) -> dict[str, Any]:
 
 
 def regenerate_refactor_tasks_sync(project_id: str) -> dict[str, Any]:
-    """Delete all existing refactor tasks and regenerate from current scan (sync)."""
+    """Synchronize refactor tasks with the latest scan results (sync)."""
     return regenerate_refactor_tasks_impl(project_id)
 
 
 def regenerate_refactor_tasks(project_id: str) -> dict[str, Any]:
-    """Delete all existing refactor tasks and regenerate from current scan."""
+    """Synchronize refactor tasks with the latest scan results."""
     try:
         return regenerate_refactor_tasks_sync(project_id)
     except Exception as e:

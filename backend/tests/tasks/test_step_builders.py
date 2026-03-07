@@ -152,6 +152,7 @@ class TestBuildRefactorSteps:
         )
         structural_step = [s for s in steps if "structural" in s["description"].lower()]
         assert len(structural_step) == 1
+        assert "python3 -c" in structural_step[0]["description"]
 
     def test_too_many_functions_gets_structural_step(self) -> None:
         """too_many_functions generates a structural step."""
@@ -195,7 +196,9 @@ class TestBuildRefactorSteps:
             "backend/app/services/foo.py", "/abs/path", 200, 150, False,
             refactor_issues=["deep_nesting"],
         )
-        assert any("quality gate" in s["description"].lower() for s in steps)
+        quality_step = next(s for s in steps if "quality gate" in s["description"].lower())
+        assert "dt --quick" in quality_step["description"]
+        assert "dt pytest" in quality_step["description"] or "python3 -c" in quality_step["description"]
 
     def test_frontend_browser_check(self) -> None:
         """Frontend files get browser verification step."""

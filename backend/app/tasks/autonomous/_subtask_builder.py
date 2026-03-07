@@ -14,6 +14,7 @@ def create_single_subtask_with_steps(
     phase: str,
     description: str,
     steps: list[dict[str, str]],
+    subtask_type: str | None = None,
 ) -> str | None:
     """Create a single subtask with its steps.
 
@@ -32,6 +33,7 @@ def create_single_subtask_with_steps(
             "subtask_id": subtask_id,
             "phase": phase,
             "description": description,
+            "subtask_type": subtask_type,
         }
     ]
     created_subtasks = bulk_create_subtasks(task_id, subtask_data)
@@ -64,6 +66,7 @@ def create_architecture_subtasks(
                 "subtask_id": f"1.{i}",
                 "phase": "backend" if file_path.endswith(".py") else "frontend",
                 "description": f"Fix {violation_type.replace('_', ' ')} in {file_path.split('/')[-1]}",
+                "subtask_type": "refactor",
             }
         )
 

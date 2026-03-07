@@ -197,6 +197,20 @@ class TestCrossAgentFallback:
         result = get_agent_for_subtask("unknown", task_type="bug")
         assert result == "debugger"
 
+    def test_get_agent_for_subtask_routes_generic_bug_work_to_debugger(self) -> None:
+        """Bug tasks with generic implementation subtasks should use maintenance agents."""
+        from app.tasks.autonomous.exec_modules.agent_routing import get_agent_for_subtask
+
+        assert get_agent_for_subtask("backend", task_type="bug") == "debugger"
+        assert get_agent_for_subtask("frontend", task_type="regression") == "debugger"
+
+    def test_get_agent_for_subtask_routes_generic_refactor_work_to_refactor(self) -> None:
+        """Refactor/debt tasks with generic subtasks should prefer the refactor agent."""
+        from app.tasks.autonomous.exec_modules.agent_routing import get_agent_for_subtask
+
+        assert get_agent_for_subtask("backend", task_type="refactor") == "refactor"
+        assert get_agent_for_subtask("database", task_type="debt") == "refactor"
+
     def test_get_agent_for_subtask_default_agent(self) -> None:
         """Unknown subtask + task type → default agent (coder)."""
         from app.tasks.autonomous.exec_modules.agent_routing import (
@@ -236,12 +250,14 @@ class TestModelEscalation:
     @patch(
         "app.tasks.autonomous.exec_modules.retry_loop.run_execution_quality_check"
     )
+    @patch("app.tasks.autonomous.exec_modules.retry_loop.assert_task_runnable")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.check_worktree_health")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.get_steps_for_subtask")
     def test_model_override_none_during_self_heal(
         self,
         mock_get_steps: MagicMock,
         mock_health: MagicMock,
+        mock_assert_runnable: MagicMock,
         mock_verify: MagicMock,
         mock_infra: MagicMock,
         mock_prompt: MagicMock,
@@ -253,6 +269,7 @@ class TestModelEscalation:
         steps = [{"step_number": 1, "description": "Test"}]
         mock_get_steps.return_value = steps
         mock_health.return_value = True
+        mock_assert_runnable.return_value = None
         # First verify → fail, second → pass (heal succeeds on first try)
         mock_verify.side_effect = [
             (False, [{"step_number": 1, "passed": False, "reason": "err"}]),
@@ -296,12 +313,14 @@ class TestModelEscalation:
     @patch(
         "app.tasks.autonomous.exec_modules.retry_loop.run_execution_quality_check"
     )
+    @patch("app.tasks.autonomous.exec_modules.retry_loop.assert_task_runnable")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.check_worktree_health")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.get_steps_for_subtask")
     def test_model_override_escalation_after_threshold(
         self,
         mock_get_steps: MagicMock,
         mock_health: MagicMock,
+        mock_assert_runnable: MagicMock,
         mock_verify: MagicMock,
         mock_infra: MagicMock,
         mock_prompt: MagicMock,
@@ -314,6 +333,7 @@ class TestModelEscalation:
         steps = [{"step_number": 1, "description": "Test"}]
         mock_get_steps.return_value = steps
         mock_health.return_value = True
+        mock_assert_runnable.return_value = None
         # Always fail verification until we've exhausted self-heal + 1 supervisor attempt
         fail_result = (
             False,

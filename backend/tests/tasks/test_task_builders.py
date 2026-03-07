@@ -7,9 +7,12 @@ Covers:
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
+
 from app.tasks.autonomous.task_builders import (
     _build_issue_aware_done_when,
     _build_issue_aware_objective,
+    create_refactor_task,
 )
 
 
@@ -108,3 +111,41 @@ class TestBuildIssueAwareDoneWhen:
         assert any("50 lines" in c for c in criteria)  # long functions
         assert any("3 levels" in c for c in criteria)  # nesting
         assert any("20" in c for c in criteria)  # function count
+
+
+class TestCreateRefactorTask:
+    """Tests for create_refactor_task wiring."""
+
+    @patch("app.tasks.autonomous.task_builders.create_single_subtask_with_steps")
+    @patch("app.tasks.autonomous.task_builders.link_task_to_issue")
+    @patch("app.tasks.autonomous.task_builders.create_task_with_spirit")
+    @patch("app.tasks.autonomous.task_builders.create_refactor_issue")
+    def test_uses_full_relative_path_and_refactor_subtask_type(
+        self,
+        mock_issue: MagicMock,
+        mock_create_task: MagicMock,
+        mock_link: MagicMock,
+        mock_create_subtask: MagicMock,
+    ) -> None:
+        mock_issue.return_value = 42
+        mock_create_task.return_value = "task-123"
+
+        task_id, issue_id = create_refactor_task(
+            project_id="summitflow",
+            relative_path="backend/app/tasks/autonomous/task_generation.py",
+            file_path="/home/kasadis/summitflow/backend/app/tasks/autonomous/task_generation.py",
+            reason="High complexity score",
+            complexity=18.0,
+            lines=420,
+            target_lines=200,
+            priority="high",
+            tier=2,
+            steps=[{"description": "step"}],
+            refactor_issues=["large_file"],
+        )
+
+        assert task_id == "task-123"
+        assert issue_id == 42
+        assert "backend/app/tasks/autonomous/task_generation.py" in mock_create_task.call_args.kwargs["title"]
+        assert mock_create_subtask.call_args.kwargs["subtask_type"] == "refactor"
+        mock_link.assert_called_once_with("task-123", 42)

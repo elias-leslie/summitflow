@@ -27,6 +27,13 @@ SUPERVISOR_AGENT_SLUG = "supervisor"
 CONTINUE_KEYWORD = "CONTINUE"
 APPROVED_KEYWORD = "APPROVED"
 DIFF_SUMMARY_MAX_LEN = 200
+_GENERIC_IMPLEMENTATION_TYPES = {"backend", "frontend", "config", "devops", "database"}
+_MAINTENANCE_TASK_AGENT_MAP = {
+    "bug": "debugger",
+    "debt": "refactor",
+    "refactor": "refactor",
+    "regression": "debugger",
+}
 
 
 def get_fallback_agents(subtask_type: str | None, current_agent: str) -> list[str]:
@@ -38,6 +45,8 @@ def get_fallback_agents(subtask_type: str | None, current_agent: str) -> list[st
 
 def get_agent_for_subtask(subtask_type: str | None, task_type: str | None = None) -> str:
     """Get agent slug: subtask_type mapping > task_type mapping > default."""
+    if subtask_type in _GENERIC_IMPLEMENTATION_TYPES and task_type in _MAINTENANCE_TASK_AGENT_MAP:
+        return _MAINTENANCE_TASK_AGENT_MAP[task_type]
     if subtask_type and subtask_type in SUBTASK_TYPE_AGENT_MAP:
         return SUBTASK_TYPE_AGENT_MAP[subtask_type]
     if task_type and task_type in TASK_TYPE_AGENT_MAP:

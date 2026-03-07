@@ -18,7 +18,7 @@ def regenerate(
         bool, typer.Option("--json", help="Output raw JSON for programmatic use")
     ] = False,
 ) -> None:
-    """Delete existing refactor tasks and regenerate from current scan.
+    """Synchronize refactor tasks with the current Explorer scan.
 
     Runs synchronously — blocks until complete, then reports results.
 
@@ -38,7 +38,7 @@ def regenerate(
     if json_output:
         output_json(result)
     else:
-        deleted = result.get("deleted_count", 0)
+        closed = result.get("closed_count", 0)
         created = result.get("created_count", 0)
         scanned = result.get("scanned_count", 0)
-        typer.echo(f"REGENERATE: deleted={deleted} created={created} scanned={scanned}")
+        typer.echo(f"REFACTOR_SYNC: closed={closed} created={created} scanned={scanned}")

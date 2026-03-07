@@ -150,10 +150,17 @@ def _assemble_steps(
     structural_checks = _build_structural_checks(relative_path, issues)
     if structural_checks:
         steps.append({
-            "description": "Verify structural issues resolved (function length, nesting, counts)",
+            "description": (
+                "Verify structural issues resolved with targeted checks: "
+                + "; ".join(structural_checks[:3])
+            ),
         })
+    targeted_test = get_targeted_test_command(relative_path)
     steps.append({
-        "description": "Quality gate: auto-fix, lint, types, targeted tests",
+        "description": (
+            "Quality gate: run dt --fix, dt --quick, then targeted verification: "
+            f"{targeted_test}"
+        ),
     })
     if is_frontend:
         steps.append({

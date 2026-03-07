@@ -342,7 +342,7 @@ async def regenerate_refactor_tasks(
     background_tasks: BackgroundTasks,
     sync: bool = Query(False, description="Run synchronously instead of via background workflow"),
 ) -> dict[str, Any]:
-    """Delete existing refactor tasks and regenerate from current scan."""
+    """Synchronize refactor tasks with the latest scan results."""
     validate_project_exists(project_id)
     if sync:
         from ..tasks.autonomous.task_generation import regenerate_refactor_tasks_sync
