@@ -30,15 +30,24 @@ class TestCheckIntent:
 
     @patch("app.tasks.autonomous.exec_modules.intent_check._evaluate_intent")
     @patch("app.tasks.autonomous.exec_modules.intent_check._get_diff_summary")
+    @patch("app.tasks.autonomous.exec_modules.intent_check.subtask_store.get_subtasks_for_task")
+    @patch("app.tasks.autonomous.exec_modules.intent_check.task_store.get_task")
     @patch("app.tasks.autonomous.exec_modules.intent_check.get_task_spirit")
     def test_with_done_when_calls_evaluate(
-        self, mock_spirit: MagicMock, mock_diff: MagicMock, mock_eval: MagicMock
+        self,
+        mock_spirit: MagicMock,
+        mock_get_task: MagicMock,
+        mock_get_subtasks: MagicMock,
+        mock_diff: MagicMock,
+        mock_eval: MagicMock,
     ) -> None:
         mock_spirit.return_value = {
             "objective": "Build X",
             "spirit_anti": "",
             "done_when": ["API endpoint exists"],
         }
+        mock_get_task.return_value = {"id": "task-1", "task_type": "task"}
+        mock_get_subtasks.return_value = []
         mock_diff.return_value = "some diff"
         mock_eval.return_value = IntentCheckResult(
             passed=True, objective_met=True, spirit_violated=False,
@@ -46,6 +55,89 @@ class TestCheckIntent:
         )
         result = check_intent("task-1", "/tmp/project", "summitflow")
         assert result.passed is True
+        mock_eval.assert_called_once()
+
+    @patch("app.tasks.autonomous.exec_modules.intent_check._evaluate_intent")
+    @patch("app.tasks.autonomous.exec_modules.intent_check.subtask_store.get_subtasks_for_task")
+    @patch("app.tasks.autonomous.exec_modules.intent_check.task_store.get_task")
+    @patch("app.tasks.autonomous.exec_modules.intent_check.get_task_spirit")
+    def test_refactor_with_passed_steps_skips_llm_review(
+        self,
+        mock_spirit: MagicMock,
+        mock_get_task: MagicMock,
+        mock_get_subtasks: MagicMock,
+        mock_eval: MagicMock,
+    ) -> None:
+        mock_spirit.return_value = {
+            "objective": "Refactor panes.py",
+            "spirit_anti": "Do not change behavior",
+            "done_when": [
+                "All quality gates pass (ruff, types, pytest)",
+                "No functions exceed 50 lines",
+                "No regressions - all existing tests pass",
+            ],
+        }
+        mock_get_task.return_value = {"id": "task-1", "task_type": "refactor"}
+        mock_get_subtasks.return_value = [
+            {
+                "id": "task-1-1.1",
+                "passes": True,
+                "steps_from_table": [
+                    {"step_number": 1, "passes": True},
+                    {"step_number": 2, "passes": True},
+                ],
+            }
+        ]
+
+        result = check_intent("task-1", "/tmp/project", "summitflow")
+
+        assert result.passed is True
+        assert result.summary == "Passed using refactor step verification evidence"
+        mock_eval.assert_not_called()
+
+    @patch("app.tasks.autonomous.exec_modules.intent_check._evaluate_intent")
+    @patch("app.tasks.autonomous.exec_modules.intent_check._get_diff_summary")
+    @patch("app.tasks.autonomous.exec_modules.intent_check.subtask_store.get_subtasks_for_task")
+    @patch("app.tasks.autonomous.exec_modules.intent_check.task_store.get_task")
+    @patch("app.tasks.autonomous.exec_modules.intent_check.get_task_spirit")
+    def test_refactor_with_unpassed_step_falls_back_to_llm_review(
+        self,
+        mock_spirit: MagicMock,
+        mock_get_task: MagicMock,
+        mock_get_subtasks: MagicMock,
+        mock_diff: MagicMock,
+        mock_eval: MagicMock,
+    ) -> None:
+        mock_spirit.return_value = {
+            "objective": "Refactor panes.py",
+            "spirit_anti": "Do not change behavior",
+            "done_when": [
+                "All quality gates pass (ruff, types, pytest)",
+                "No functions exceed 50 lines",
+                "No regressions - all existing tests pass",
+            ],
+        }
+        mock_get_task.return_value = {"id": "task-1", "task_type": "refactor"}
+        mock_get_subtasks.return_value = [
+            {
+                "id": "task-1-1.1",
+                "passes": True,
+                "steps_from_table": [
+                    {"step_number": 1, "passes": False},
+                ],
+            }
+        ]
+        mock_diff.return_value = "some diff"
+        mock_eval.return_value = IntentCheckResult(
+            passed=True,
+            objective_met=True,
+            spirit_violated=False,
+            summary="LLM reviewed",
+        )
+
+        result = check_intent("task-1", "/tmp/project", "summitflow")
+
+        assert result.summary == "LLM reviewed"
         mock_eval.assert_called_once()
 
 

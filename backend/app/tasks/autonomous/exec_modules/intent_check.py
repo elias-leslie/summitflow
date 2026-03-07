@@ -6,9 +6,28 @@ import subprocess
 from dataclasses import dataclass, field
 
 from ....logging_config import get_logger
+from ....storage import subtasks as subtask_store
+from ....storage import tasks as task_store
 from ....storage.task_spirit import get_task_spirit
 
 logger = get_logger(__name__)
+
+_GENERIC_DONE_WHEN = {
+    "All quality gates pass (ruff, types, pytest)",
+    "No regressions - all existing tests pass",
+    "No console errors in browser",
+}
+
+_STRUCTURAL_DONE_WHEN_PREFIXES = (
+    "No functions exceed ",
+    "No nesting deeper than ",
+    "Functions per file reduced to <=",
+    "Classes per file reduced to <=",
+    "No class has more than ",
+    "Magic strings extracted ",
+    "Imports reduced to <=",
+    "File structure is meaningfully simplified, with size reduced toward the guideline target",
+)
 
 
 @dataclass
@@ -48,12 +67,54 @@ def check_intent(task_id: str, project_path: str, project_id: str) -> IntentChec
     done_when = spirit.get("done_when") or []
     if not done_when:
         return _trivial_pass("No done_when criteria — skipping intent check")
+    deterministic = _deterministic_refactor_pass(task_id, done_when)
+    if deterministic is not None:
+        return deterministic
     diff_summary = _get_diff_summary(project_path)
     return _evaluate_intent(
         task_id, project_id,
         spirit.get("objective") or "",
         spirit.get("spirit_anti") or "",
         done_when, diff_summary,
+    )
+
+
+def _is_supported_refactor_done_when(item: str) -> bool:
+    return item in _GENERIC_DONE_WHEN or item.startswith(_STRUCTURAL_DONE_WHEN_PREFIXES)
+
+
+def _deterministic_refactor_pass(
+    task_id: str,
+    done_when: list[str],
+) -> IntentCheckResult | None:
+    """Use passed subtask/step verification as authoritative evidence for refactors."""
+    task = task_store.get_task(task_id)
+    if not task or task.get("task_type") != "refactor":
+        return None
+    if not done_when or not all(_is_supported_refactor_done_when(item) for item in done_when):
+        return None
+
+    subtasks = subtask_store.get_subtasks_for_task(task_id, include_steps=True)
+    if not subtasks:
+        return None
+    if any(not subtask.get("passes") for subtask in subtasks):
+        return None
+
+    for subtask in subtasks:
+        steps = subtask.get("steps_from_table", [])
+        if any(not step.get("passes") for step in steps):
+            return None
+
+    results = [
+        DoneWhenResult(text=item, status="pass", reason="Verified by passed refactor steps and quality gates")
+        for item in done_when
+    ]
+    return IntentCheckResult(
+        passed=True,
+        objective_met=True,
+        spirit_violated=False,
+        done_when_results=results,
+        summary="Passed using refactor step verification evidence",
     )
 
 
