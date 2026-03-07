@@ -83,12 +83,16 @@ def _handle_task_completion(
     id: str,
     message: str | None,
     strict: bool,
+    admin: bool,
 ) -> None:
     """Handle task completion."""
-    result = complete_task(client, id, message, strict=strict)
-    base_branch = result.get("base_branch", "main")
-    output_success(f"Task {id} completed. Checkpoint removed.")
-    typer.echo(f"  Merged to: {base_branch}")
+    result = complete_task(client, id, message, strict=strict, admin=admin)
+    if result.get("merged"):
+        base_branch = result.get("base_branch", "main")
+        output_success(f"Task {id} completed. Checkpoint removed.")
+        typer.echo(f"  Merged to: {base_branch}")
+    else:
+        output_success(f"Task {id} completed without checkpoint merge.")
     typer.echo("💡 Any feedback? st feedback report <component> \"title\" --type friction|idea|improvement|praise", err=True)
 
 
@@ -107,6 +111,13 @@ def done_command(
         bool,
         typer.Option("--strict", help="Strict mode: fail on unpassed gates (old behavior)"),
     ] = False,
+    admin: Annotated[
+        bool,
+        typer.Option(
+            "--admin",
+            help="Close task without checkpoint merge requirements (for meta/planning tasks)",
+        ),
+    ] = False,
 ) -> None:
     """Complete a task or subtask.
 
@@ -118,4 +129,4 @@ def done_command(
     if is_subtask_id(id):
         _handle_subtask_completion(client, id, task_id, message)
     else:
-        _handle_task_completion(client, id, message, strict)
+        _handle_task_completion(client, id, message, strict, admin)

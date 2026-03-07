@@ -203,58 +203,77 @@ class TestCompleteTaskSmart:
         client.get.return_value = {"ready": True, "gates": []}
         client.post.return_value = {"verdict": "APPROVED"}
         client.update_status.return_value = {"status": "completed"}
+        client.close_task.return_value = {"status": "completed"}
         return client
 
+    @patch("cli.commands.done_task.get_snapshot_info")
     @patch("cli.commands.done_task.remove_snapshot")
     @patch("cli.commands.done_task.merge_task_branch")
     @patch("cli.commands.done_task.auto_close_subtasks")
     @patch("cli.commands.done_task.is_working_tree_clean", return_value=True)
-    @patch("cli.commands.done_task._validate_snapshot")
     def test_calls_auto_close_by_default(
-        self, mock_snap: MagicMock, mock_clean: MagicMock, mock_auto: MagicMock,
-        mock_merge: MagicMock, mock_remove: MagicMock
+        self, mock_clean: MagicMock, mock_auto: MagicMock, mock_merge: MagicMock,
+        mock_remove: MagicMock, mock_snapshot: MagicMock
     ) -> None:
         """Smart mode calls _auto_close_subtasks by default."""
-        mock_snap.return_value = {"worktree_path": None, "project_id": "test"}
+        mock_snapshot.return_value = {"worktree_path": None, "project_id": "test"}
         client = self._setup_mocks()
 
         _complete_task(client, "task-123")
 
         mock_auto.assert_called_once_with(client, "task-123", "test")
 
+    @patch("cli.commands.done_task.get_snapshot_info", return_value=None)
+    def test_admin_mode_closes_task_without_snapshot(self, mock_snapshot: MagicMock) -> None:
+        """Admin mode should allow closing non-code tasks without a checkpoint."""
+        client = self._setup_mocks()
+
+        _complete_task(client, "task-123", strict=False, admin=True, message="phase shipped")
+
+        client.close_task.assert_called_once_with("task-123", reason="phase shipped")
+        client.update_status.assert_not_called()
+
+    @patch("cli.commands.done_task.get_snapshot_info", return_value=None)
+    def test_missing_snapshot_without_admin_still_fails(self, mock_snapshot: MagicMock) -> None:
+        """Normal mode should still require a checkpoint."""
+        client = self._setup_mocks()
+
+        with pytest.raises(typer.Exit):
+            _complete_task(client, "task-123")
+
+    @patch("cli.commands.done_task.get_snapshot_info")
     @patch("cli.commands.done_task.remove_snapshot")
     @patch("cli.commands.done_task.merge_task_branch")
     @patch("cli.commands.done_task.auto_close_subtasks")
     @patch("cli.commands.done_task.is_working_tree_clean", return_value=True)
-    @patch("cli.commands.done_task._validate_snapshot")
     def test_strict_skips_auto_close(
-        self, mock_snap: MagicMock, mock_clean: MagicMock, mock_auto: MagicMock,
-        mock_merge: MagicMock, mock_remove: MagicMock
+        self, mock_clean: MagicMock, mock_auto: MagicMock, mock_merge: MagicMock,
+        mock_remove: MagicMock, mock_snapshot: MagicMock
     ) -> None:
         """Strict mode does NOT call _auto_close_subtasks."""
-        mock_snap.return_value = {"worktree_path": None, "project_id": "test"}
+        mock_snapshot.return_value = {"worktree_path": None, "project_id": "test"}
         client = self._setup_mocks()
 
         _complete_task(client, "task-123", strict=True)
 
         mock_auto.assert_not_called()
 
+    @patch("cli.commands.done_task.get_snapshot_info")
     @patch("cli.commands.done_task.remove_snapshot")
     @patch("cli.commands.done_task.merge_task_branch")
     @patch("cli.commands.done_task.auto_close_subtasks")
     @patch("cli.commands.done_task.git_stash_pop")
     @patch("cli.commands.done_task.git_stash_push", return_value=True)
     @patch("cli.commands.done_task.is_working_tree_clean")
-    @patch("cli.commands.done_task._validate_snapshot")
     def test_stash_merge_pop_on_dirty_main(
-        self, mock_snap: MagicMock, mock_clean: MagicMock, mock_stash_push: MagicMock,
+        self, mock_clean: MagicMock, mock_stash_push: MagicMock,
         mock_stash_pop: MagicMock, mock_auto: MagicMock, mock_merge: MagicMock,
-        mock_remove: MagicMock
+        mock_remove: MagicMock, mock_snapshot: MagicMock
     ) -> None:
         """Dirty main gets stashed before merge, popped after."""
         # worktree_path=None means worktree clean check is skipped,
         # only main dirty check runs (returns False = dirty)
-        mock_snap.return_value = {"worktree_path": None, "project_id": "test"}
+        mock_snapshot.return_value = {"worktree_path": None, "project_id": "test"}
         mock_clean.return_value = False
         client = self._setup_mocks()
 
@@ -263,8 +282,8 @@ class TestCompleteTaskSmart:
         mock_stash_push.assert_called_once()
         mock_stash_pop.assert_called_once()
 
-    @patch("cli.commands.done._is_working_tree_clean")
-    @patch("cli.commands.done.get_snapshot_info")
+    @patch("cli.commands.done_task.get_snapshot_info")
+    @patch("cli.commands.done_task.is_working_tree_clean")
     def test_strict_errors_on_dirty_main(
         self, mock_snap: MagicMock, mock_clean: MagicMock
     ) -> None:
@@ -277,21 +296,21 @@ class TestCompleteTaskSmart:
         with pytest.raises(typer.Exit):
             _complete_task(client, "task-123", strict=True)
 
+    @patch("cli.commands.done_task.get_snapshot_info")
     @patch("cli.commands.done_task.remove_snapshot")
     @patch("cli.commands.done_task.merge_task_branch")
     @patch("cli.commands.done_task.auto_close_subtasks")
     @patch("cli.commands.done_task.git_stash_pop")
     @patch("cli.commands.done_task.git_stash_push", return_value=True)
     @patch("cli.commands.done_task.is_working_tree_clean")
-    @patch("cli.commands.done_task._validate_snapshot")
     def test_stash_popped_on_failure(
-        self, mock_snap: MagicMock, mock_clean: MagicMock, mock_stash_push: MagicMock,
+        self, mock_clean: MagicMock, mock_stash_push: MagicMock,
         mock_stash_pop: MagicMock, mock_auto: MagicMock, mock_merge: MagicMock,
-        mock_remove: MagicMock
+        mock_remove: MagicMock, mock_snapshot: MagicMock
     ) -> None:
         """Stash is popped even when merge fails (via finally block)."""
         # worktree_path=None skips worktree check, main check returns False (dirty)
-        mock_snap.return_value = {"worktree_path": None, "project_id": "test"}
+        mock_snapshot.return_value = {"worktree_path": None, "project_id": "test"}
         mock_clean.return_value = False
         mock_merge.side_effect = SystemExit(1)
         client = self._setup_mocks()
@@ -302,17 +321,17 @@ class TestCompleteTaskSmart:
         # Stash should still be popped despite failure
         mock_stash_pop.assert_called_once()
 
+    @patch("cli.commands.done_task.get_snapshot_info")
     @patch("cli.commands.done_task.remove_snapshot")
     @patch("cli.commands.done_task.merge_task_branch")
     @patch("cli.commands.done_task.auto_close_subtasks")
     @patch("cli.commands.done_task.is_working_tree_clean", return_value=True)
-    @patch("cli.commands.done_task._validate_snapshot")
     def test_no_stash_when_main_clean(
-        self, mock_snap: MagicMock, mock_clean: MagicMock, mock_auto: MagicMock,
-        mock_merge: MagicMock, mock_remove: MagicMock
+        self, mock_clean: MagicMock, mock_auto: MagicMock, mock_merge: MagicMock,
+        mock_remove: MagicMock, mock_snapshot: MagicMock
     ) -> None:
         """Clean main does not trigger stash."""
-        mock_snap.return_value = {"worktree_path": None, "project_id": "test"}
+        mock_snapshot.return_value = {"worktree_path": None, "project_id": "test"}
         client = self._setup_mocks()
 
         with patch("cli.commands.done_task.git_stash_push") as mock_push:

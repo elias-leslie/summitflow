@@ -10,6 +10,8 @@ from typing import Any
 
 import typer
 
+from app.storage import tasks as task_store
+
 from ..client import APIError, STClient
 from ..lib.checkpoint import (
     get_snapshot_info,
@@ -105,16 +107,37 @@ def merge_and_update_status(
 
     try:
         client.update_status(task_id, "completed")
-    except APIError as e:
-        detail: dict[str, str] = (
-            e.detail if isinstance(e.detail, dict) else {"detail": str(e.detail)}
-        )
-        helpful = parse_db_error(detail)
-        if helpful:
-            output_error(helpful)
+        return
+    except Exception as e:
+        if _fallback_complete_task(task_id):
+            return
+
+        if isinstance(e, APIError):
+            detail: dict[str, str] = (
+                e.detail if isinstance(e.detail, dict) else {"detail": str(e.detail)}
+            )
+            helpful = parse_db_error(detail)
+            if helpful:
+                output_error(helpful)
+            else:
+                output_error(f"Failed to complete task after merge: {e.detail}")
         else:
-            output_error(f"Failed to complete task: {e.detail}")
+            output_error(f"Failed to complete task after merge: {e}")
         raise typer.Exit(1) from None
+
+
+def _fallback_complete_task(task_id: str) -> bool:
+    """Mark a merged task completed directly if the API status update fails."""
+    try:
+        updated = task_store.update_task_status(
+            task_id,
+            "completed",
+            validate_transition=False,
+        )
+    except Exception as e:
+        output_warning(f"Direct completion fallback failed after merge: {e}")
+        return False
+    return bool(updated)
 
 
 def _handle_dirty_main(strict: bool) -> bool:
@@ -247,13 +270,25 @@ def _trigger_site_health_check(project_id: str, task_id: str) -> None:
         pass  # Never block completion on health check trigger failure
 
 
-def _validate_snapshot(task_id: str) -> dict[str, str | int | None]:
-    """Validate snapshot exists and return it."""
-    snapshot_info = get_snapshot_info(task_id)
-    if not snapshot_info:
-        output_error(f"No checkpoint found for {task_id}. Was it claimed?")
-        raise typer.Exit(1)
-    return snapshot_info
+def _complete_without_snapshot(
+    client: STClient,
+    task_id: str,
+    message: str | None = None,
+) -> dict[str, str | bool]:
+    """Close a non-code/admin task without merge or checkpoint requirements."""
+    try:
+        client.close_task(task_id, reason=message)
+    except APIError as e:
+        output_error(f"Failed to close task: {e.detail}")
+        raise typer.Exit(1) from None
+
+    return {
+        "task_id": task_id,
+        "action": "completed",
+        "merged": False,
+        "snapshot_removed": False,
+        "base_branch": "main",
+    }
 
 
 def complete_task(
@@ -261,13 +296,20 @@ def complete_task(
     task_id: str,
     message: str | None = None,
     strict: bool = False,
+    admin: bool = False,
 ) -> dict[str, str | bool]:
     """Complete a task with branch merge and snapshot cleanup.
 
     Smart mode (default): auto-verifies steps, auto-closes subtasks, stashes dirty main.
     Strict mode: fails if gates not pre-passed or main dirty.
     """
-    snapshot_info = _validate_snapshot(task_id)
+    snapshot_info = get_snapshot_info(task_id)
+    if not snapshot_info:
+        if admin:
+            return _complete_without_snapshot(client, task_id, message)
+        output_error(f"No checkpoint found for {task_id}. Was it claimed?")
+        raise typer.Exit(1)
+
     ensure_worktree_clean(snapshot_info)
     project_id = _get_project_id_from_snapshot(snapshot_info)
     base_branch = str(snapshot_info.get("base_branch", "main"))

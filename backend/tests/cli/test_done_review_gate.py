@@ -148,3 +148,57 @@ class TestPerformCompletionReviewGate:
         _perform_completion(client, "task-1", snapshot, "test", strict=False)
 
         mock_merge.assert_called_once()
+
+    @patch("cli.commands.done_task.remove_snapshot")
+    @patch("cli.commands.done_task.report_task_outcome")
+    @patch("cli.commands.done_task.task_store")
+    @patch("cli.commands.done_task.merge_task_branch")
+    @patch("cli.commands.done_task._run_ai_review", return_value={"verdict": "APPROVED", "concerns": []})
+    @patch("cli.commands.done_task.auto_close_subtasks")
+    def test_status_update_falls_back_to_direct_storage_after_merge(
+        self,
+        mock_auto: MagicMock,
+        mock_review: MagicMock,
+        mock_merge: MagicMock,
+        mock_task_store: MagicMock,
+        mock_outcome: MagicMock,
+        mock_remove: MagicMock,
+    ) -> None:
+        """Merged tasks should still be completed if the API status call fails."""
+        client = self._make_client()
+        client.update_status.side_effect = Exception("api unavailable")
+        mock_task_store.update_task_status.return_value = {"status": "completed"}
+        snapshot: dict[str, Any] = {"project_id": "test", "created_at": None}
+
+        from cli.commands.done_task import _perform_completion
+
+        _perform_completion(client, "task-1", snapshot, "test", strict=False)
+
+        mock_merge.assert_called_once()
+        mock_task_store.update_task_status.assert_called_once_with(
+            "task-1",
+            "completed",
+            validate_transition=False,
+        )
+
+    @patch("cli.commands.done_task.task_store")
+    @patch("cli.commands.done_task.merge_task_branch")
+    @patch("cli.commands.done_task._run_ai_review", return_value={"verdict": "APPROVED", "concerns": []})
+    @patch("cli.commands.done_task.auto_close_subtasks")
+    def test_status_update_failure_after_merge_raises_if_fallback_fails(
+        self,
+        mock_auto: MagicMock,
+        mock_review: MagicMock,
+        mock_merge: MagicMock,
+        mock_task_store: MagicMock,
+    ) -> None:
+        """If both API and direct storage completion fail after merge, exit loudly."""
+        client = self._make_client()
+        client.update_status.side_effect = Exception("api unavailable")
+        mock_task_store.update_task_status.side_effect = RuntimeError("db unavailable")
+        snapshot: dict[str, Any] = {"project_id": "test", "created_at": None}
+
+        from cli.commands.done_task import _perform_completion
+
+        with pytest.raises(typer.Exit):
+            _perform_completion(client, "task-1", snapshot, "test", strict=False)
