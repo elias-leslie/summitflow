@@ -43,6 +43,21 @@ def _is_live_lane_session(session: dict[str, Any]) -> bool:
     return bool(session.get("external_id") or session.get("current_branch"))
 
 
+def _lane_task_id(session: dict[str, Any]) -> str | None:
+    """Infer the task id associated with a live lane session."""
+    external_id = session.get("external_id")
+    if isinstance(external_id, str) and external_id.startswith("task-"):
+        return external_id
+
+    branch = session.get("current_branch")
+    if not isinstance(branch, str):
+        return None
+    branch_prefix = branch.split("/", 1)[0]
+    if branch_prefix.startswith("task-"):
+        return branch_prefix
+    return None
+
+
 def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflictCheck:
     """Check whether active Agent Hub lanes conflict with autonomous dispatch."""
     try:
@@ -56,11 +71,11 @@ def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflict
     for session in sessions:
         if not _is_live_lane_session(session):
             continue
-        external_id = session.get("external_id")
-        if external_id == task_id:
+        lane_task_id = _lane_task_id(session)
+        if lane_task_id == task_id:
             same_task_sessions.append(session)
             continue
-        if isinstance(external_id, str) and external_id.startswith("task-"):
+        if lane_task_id:
             other_lane_sessions.append(session)
 
     issues: list[str] = []
@@ -76,9 +91,9 @@ def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflict
 
     if other_lane_sessions:
         conflicting_tasks = [
-            str(session.get("external_id"))
+            lane_task_id
             for session in other_lane_sessions
-            if isinstance(session.get("external_id"), str)
+            if (lane_task_id := _lane_task_id(session))
         ]
         preview = ", ".join(conflicting_tasks[:3])
         issues.append(f"Another active coding lane exists in project {project_id}: {preview}")

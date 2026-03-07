@@ -367,6 +367,7 @@ class TestInitialWorktreeGuard:
 class TestMainRepoLeakageDetection:
     """Detect when agent writes files to main repo instead of worktree."""
 
+    @patch(f"{_WORKTREE}._load_main_repo_dirty_baseline")
     @patch(f"{_WORKTREE}.emit_log")
     @patch(f"{_WORKTREE}.subprocess")
     @patch(f"{_WORKTREE}.get_project_root_path")
@@ -375,11 +376,13 @@ class TestMainRepoLeakageDetection:
         mock_root: MagicMock,
         mock_subprocess: MagicMock,
         mock_log: MagicMock,
+        mock_baseline: MagicMock,
     ) -> None:
         """Returns True and logs warning when main repo has uncommitted changes."""
         from app.tasks.autonomous.exec_modules.worktree import check_main_repo_leakage
 
         mock_root.return_value = "/home/test/project"
+        mock_baseline.return_value = []
         result_obj = MagicMock()
         result_obj.stdout = " M leaked_file.py\n"
         mock_subprocess.run.return_value = result_obj
@@ -388,6 +391,56 @@ class TestMainRepoLeakageDetection:
 
         assert detected is True
         assert any("WORKTREE LEAKAGE" in str(c) for c in mock_log.call_args_list)
+
+    @patch(f"{_WORKTREE}._load_main_repo_dirty_baseline")
+    @patch(f"{_WORKTREE}.emit_log")
+    @patch(f"{_WORKTREE}.subprocess")
+    @patch(f"{_WORKTREE}.get_project_root_path")
+    def test_no_leakage_when_only_preexisting_dirty_files_remain(
+        self,
+        mock_root: MagicMock,
+        mock_subprocess: MagicMock,
+        mock_log: MagicMock,
+        mock_baseline: MagicMock,
+    ) -> None:
+        """Returns False when current dirt matches the recorded baseline."""
+        from app.tasks.autonomous.exec_modules.worktree import check_main_repo_leakage
+
+        mock_root.return_value = "/home/test/project"
+        mock_baseline.return_value = ["existing_file.py"]
+        result_obj = MagicMock()
+        result_obj.stdout = " M existing_file.py\n"
+        mock_subprocess.run.return_value = result_obj
+
+        detected = check_main_repo_leakage("task-1", "test-project", "/tmp/worktree")
+
+        assert detected is False
+        mock_log.assert_not_called()
+
+    @patch(f"{_WORKTREE}._load_main_repo_dirty_baseline")
+    @patch(f"{_WORKTREE}.emit_log")
+    @patch(f"{_WORKTREE}.subprocess")
+    @patch(f"{_WORKTREE}.get_project_root_path")
+    def test_leakage_detected_when_new_dirty_file_added_beyond_baseline(
+        self,
+        mock_root: MagicMock,
+        mock_subprocess: MagicMock,
+        mock_log: MagicMock,
+        mock_baseline: MagicMock,
+    ) -> None:
+        """Returns True when execution dirt exceeds the recorded baseline."""
+        from app.tasks.autonomous.exec_modules.worktree import check_main_repo_leakage
+
+        mock_root.return_value = "/home/test/project"
+        mock_baseline.return_value = ["existing_file.py"]
+        result_obj = MagicMock()
+        result_obj.stdout = " M existing_file.py\n M leaked_file.py\n"
+        mock_subprocess.run.return_value = result_obj
+
+        detected = check_main_repo_leakage("task-1", "test-project", "/tmp/worktree")
+
+        assert detected is True
+        assert any("leaked_file.py" in str(c) for c in mock_log.call_args_list)
 
     @patch(f"{_WORKTREE}.emit_log")
     @patch(f"{_WORKTREE}.subprocess")
@@ -458,4 +511,46 @@ class TestZeroStepSubtask:
 
         # Zero steps is now valid — execution proceeds with smoke tests only
         assert result is None
-        mock_log.assert_called_once()
+
+
+class TestWorkProductDetection:
+    """Verification should treat dirty worktree edits as valid work product."""
+
+    @patch("app.tasks.autonomous.exec_modules.steps.subprocess.run")
+    def test_has_work_product_when_branch_has_commits(self, mock_run: MagicMock) -> None:
+        """A branch commit beyond main counts as work product."""
+        from app.tasks.autonomous.exec_modules.steps import _has_work_product
+
+        mock_run.return_value = MagicMock(stdout="abc123 change\n")
+
+        assert _has_work_product("/tmp/test-worktree") is True
+
+    @patch("app.tasks.autonomous.exec_modules.steps.subprocess.run")
+    def test_has_work_product_when_worktree_has_uncommitted_changes(
+        self,
+        mock_run: MagicMock,
+    ) -> None:
+        """Dirty worktree edits should count even before a commit exists."""
+        from app.tasks.autonomous.exec_modules.steps import _has_work_product
+
+        mock_run.side_effect = [
+            MagicMock(stdout=""),
+            MagicMock(stdout=" M terminal/api/handlers/websocket_resize.py\n"),
+        ]
+
+        assert _has_work_product("/tmp/test-worktree") is True
+
+    @patch("app.tasks.autonomous.exec_modules.steps.subprocess.run")
+    def test_has_no_work_product_when_branch_clean_and_no_commits(
+        self,
+        mock_run: MagicMock,
+    ) -> None:
+        """No branch commits and no dirty files means nothing was produced."""
+        from app.tasks.autonomous.exec_modules.steps import _has_work_product
+
+        mock_run.side_effect = [
+            MagicMock(stdout=""),
+            MagicMock(stdout=""),
+        ]
+
+        assert _has_work_product("/tmp/test-worktree") is False

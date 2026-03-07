@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+from json import JSONDecodeError, loads
 from pathlib import Path
 
 from ....logging_config import get_logger
@@ -11,6 +12,44 @@ from ....storage.projects import get_project_root_path
 from .events import emit_log
 
 logger = get_logger(__name__)
+
+
+def _parse_dirty_paths(status_output: str) -> list[str]:
+    """Parse `git status --porcelain` output into file paths."""
+    paths: list[str] = []
+    for raw_line in status_output.splitlines():
+        line = raw_line.rstrip()
+        if len(line) < 4:
+            continue
+        path_field = line[3:]
+        if " -> " in path_field:
+            path_field = path_field.split(" -> ", 1)[1]
+        if path_field:
+            paths.append(path_field)
+    return paths
+
+
+def _load_main_repo_dirty_baseline(task_id: str, project_id: str, main_root: str) -> list[str]:
+    """Load the dirty-file baseline captured when the worktree was created."""
+    meta_path = Path(main_root) / ".st" / "snapshots" / f"{task_id}.meta.json"
+    if not meta_path.exists():
+        return []
+    try:
+        meta = loads(meta_path.read_text())
+    except (OSError, JSONDecodeError) as e:
+        logger.warning(
+            "main_repo_dirty_baseline_load_failed",
+            task_id=task_id,
+            project_id=project_id,
+            path=str(meta_path),
+            error=str(e),
+        )
+        return []
+
+    baseline = meta.get("main_repo_dirty_paths")
+    if not isinstance(baseline, list):
+        return []
+    return [str(path) for path in baseline if str(path)]
 
 
 def get_project_path(project_id: str, task_id: str | None = None) -> str:
@@ -79,13 +118,16 @@ def check_main_repo_leakage(
             text=True,
             timeout=30,
         )
-        dirty_files = result.stdout.strip()
-        if dirty_files:
+        baseline_paths = set(_load_main_repo_dirty_baseline(task_id, project_id, main_root))
+        dirty_paths = _parse_dirty_paths(result.stdout)
+        leaked_paths = [path for path in dirty_paths if path not in baseline_paths]
+        if leaked_paths:
+            leaked_preview = "\n".join(f" M {path}" for path in leaked_paths[:10])
             emit_log(
                 task_id,
                 "warn",
                 f"WORKTREE LEAKAGE: Agent modified main repo. "
-                f"Files: {dirty_files[:200]}",
+                f"Files: {leaked_preview[:200]}",
                 source="orchestrator",
                 project_id=project_id,
             )

@@ -16,6 +16,13 @@ app = typer.Typer(
 )
 
 
+def _normalize_status_filter(status_filter: str | None) -> str | None:
+    """Normalize CLI-friendly session status aliases to Agent Hub values."""
+    if status_filter == "running":
+        return "active"
+    return status_filter
+
+
 def _render_session_list(
     status_filter: str | None,
     limit: int,
@@ -24,10 +31,11 @@ def _render_session_list(
     include_unassigned: bool = True,
 ) -> None:
     client = STClient()
+    normalized_status = _normalize_status_filter(status_filter)
 
     try:
         sessions = client.list_sessions(
-            status=status_filter,
+            status=normalized_status,
             limit=limit,
             page=1,
             agent_slug=agent_slug,
@@ -76,7 +84,7 @@ def list_sessions(
     Examples:
         st sessions
         st sessions list
-        st sessions list --status running
+        st sessions list --status active
     """
     _render_session_list(
         status_filter,

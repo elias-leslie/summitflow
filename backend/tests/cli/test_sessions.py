@@ -142,6 +142,22 @@ class TestSessionsListCommand:
             parent_session_id="parent-123",
         )
 
+    def test_list_normalizes_running_status_to_active(self) -> None:
+        mock_client = MagicMock()
+        mock_client.list_sessions.return_value = []
+
+        with patch("cli.commands.sessions.STClient", return_value=mock_client):
+            result = runner.invoke(app, ["sessions", "list", "--status", "running"])
+
+        assert result.exit_code == 0
+        mock_client.list_sessions.assert_called_once_with(
+            status="active",
+            limit=20,
+            page=1,
+            agent_slug=None,
+            parent_session_id=None,
+        )
+
 
 class TestSessionsCommandAliases:
     """Tests for root-level `st sessions` aliases."""
@@ -174,7 +190,7 @@ class TestSessionsCommandAliases:
 
         assert result.exit_code == 0
         mock_client.list_sessions.assert_called_once_with(
-            status="running",
+            status="active",
             limit=7,
             page=1,
             agent_slug=None,

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -20,6 +21,38 @@ logger = get_logger(__name__)
 def _get_claimed_by() -> str:
     """Get the claimer identity from env or default."""
     return os.getenv("AGENT_ID", "autonomous")
+
+
+def _get_main_repo_dirty_paths(project_root: str) -> list[str]:
+    """Capture the current dirty file paths in the main repo.
+
+    This becomes the baseline for detecting later writes that leaked out of a
+    task worktree into the main checkout.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except Exception as e:
+        logger.warning("checkpoint_dirty_baseline_failed", project_root=project_root, error=str(e))
+        return []
+
+    paths: list[str] = []
+    for raw_line in result.stdout.splitlines():
+        line = raw_line.rstrip()
+        if len(line) < 4:
+            continue
+        path_field = line[3:]
+        if " -> " in path_field:
+            path_field = path_field.split(" -> ", 1)[1]
+        if path_field:
+            paths.append(path_field)
+    return paths
 
 
 def _get_snapshots_dir(project_root: str) -> Path:
@@ -75,6 +108,7 @@ def create_checkpoint_metadata(
             "worktree_path": worktree_path,
             "backend_port": None,
             "frontend_port": None,
+            "main_repo_dirty_paths": _get_main_repo_dirty_paths(project_root),
         }
 
         meta_path.write_text(json.dumps(metadata, indent=2))

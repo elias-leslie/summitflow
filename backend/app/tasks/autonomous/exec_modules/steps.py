@@ -84,13 +84,25 @@ def _auto_mark_steps(
 
 
 def _has_work_product(project_path: str) -> bool:
-    """Check if any commits exist on this branch beyond the base (main)."""
+    """Check if the worktree contains branch-local work to verify.
+
+    Agents typically edit first and validate before anything is committed, so
+    uncommitted tracked changes in the task worktree count as legitimate work
+    product alongside branch-local commits.
+    """
     try:
-        result = subprocess.run(
+        commits = subprocess.run(
             ["git", "log", "--oneline", "main..HEAD"],
             cwd=project_path, capture_output=True, text=True, timeout=10,
         )
-        return bool(result.stdout and result.stdout.strip())
+        if commits.stdout and commits.stdout.strip():
+            return True
+
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=project_path, capture_output=True, text=True, timeout=10,
+        )
+        return bool(status.stdout and status.stdout.strip())
     except (subprocess.TimeoutExpired, OSError):
         # If we can't check, assume work product exists to avoid false negatives
         return True

@@ -30,3 +30,16 @@ class TestBuildStepsBlock:
         block = build_steps_block(steps)
 
         assert block == "Steps to complete:\n1. Refactor the module"
+
+    def test_ignores_null_spec(self) -> None:
+        steps = [
+            {
+                "step_number": 1,
+                "description": "Verify structural issues resolved",
+                "spec": None,
+            }
+        ]
+
+        block = build_steps_block(steps)
+
+        assert block == "Steps to complete:\n1. Verify structural issues resolved"

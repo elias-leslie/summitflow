@@ -24,6 +24,13 @@ def _format_datetime(val: Any) -> str | None:
     return val.isoformat() if hasattr(val, "isoformat") else str(val)
 
 
+def _none_if_blank(value: Any) -> Any:
+    """Normalize empty strings in task spirit fields to null API values."""
+    if isinstance(value, str) and not value.strip():
+        return None
+    return value
+
+
 def _parse_criterion(crit: dict[str, Any]) -> AcceptanceCriterion:
     return AcceptanceCriterion(
         id=crit.get("id", "ac-000"),
@@ -122,12 +129,12 @@ def task_to_response(task: dict[str, Any], criteria_count: int | None = None) ->
         labels=task.get("labels") or [],
         task_type=task.get("task_type", "task"),
         parent_task_id=task.get("parent_task_id"),
-        objective=task.get("objective"),
+        objective=_none_if_blank(task.get("objective")),
         acceptance_criteria=_parse_task_criteria(task),
         criteria_count=criteria_count if criteria_count is not None else get_step_count_for_task(task["id"]),
         current_phase=task.get("current_phase"),
         verification_result=task.get("verification_result"),
-        spirit_anti=task.get("spirit_anti"),
+        spirit_anti=_none_if_blank(task.get("spirit_anti")),
         decisions=task.get("decisions"),
         constraints=task.get("constraints"),
         done_when=task.get("done_when"),

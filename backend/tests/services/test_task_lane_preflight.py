@@ -44,6 +44,19 @@ class TestTaskLanePreflight:
         assert result.conflicting_tasks == ["task-999"]
 
     @patch("app.services.task_lane_preflight.httpx.Client")
+    def test_branch_named_lane_blocks_when_external_id_missing(self, mock_client_cls: MagicMock) -> None:
+        mock_client = MagicMock()
+        mock_client.get.return_value = _mock_response(
+            {"sessions": [{"id": "sess-4", "external_id": None, "current_branch": "task-999/main"}]}
+        )
+        mock_client_cls.return_value.__enter__.return_value = mock_client
+
+        result = check_task_lane_conflicts("task-123", "summitflow")
+
+        assert result.issues
+        assert result.conflicting_tasks == ["task-999"]
+
+    @patch("app.services.task_lane_preflight.httpx.Client")
     def test_retired_workstream_does_not_block_dispatch(self, mock_client_cls: MagicMock) -> None:
         mock_client = MagicMock()
         mock_client.get.return_value = _mock_response(
