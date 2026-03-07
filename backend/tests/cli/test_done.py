@@ -11,30 +11,27 @@ from unittest.mock import MagicMock, patch
 import pytest
 import typer
 
-from cli.commands.done import (
-    _auto_close_subtasks,
-    _complete_task,
-    _git_stash_pop,
-    _git_stash_push,
-    _is_subtask_id,
-)
+from cli.commands.done_git import git_stash_pop, git_stash_push
+from cli.commands.done_subtask import auto_close_subtasks
+from cli.commands.done_task import complete_task
+from cli.commands.done_validators import is_subtask_id
 
 
 class TestIsSubtaskId:
     def test_valid_subtask_ids(self) -> None:
-        assert _is_subtask_id("1.1") is True
-        assert _is_subtask_id("2.3") is True
-        assert _is_subtask_id("10.20") is True
+        assert is_subtask_id("1.1") is True
+        assert is_subtask_id("2.3") is True
+        assert is_subtask_id("10.20") is True
 
     def test_invalid_subtask_ids(self) -> None:
-        assert _is_subtask_id("task-abc") is False
-        assert _is_subtask_id("1.2.3") is False
-        assert _is_subtask_id("abc") is False
-        assert _is_subtask_id("a.b") is False
+        assert is_subtask_id("task-abc") is False
+        assert is_subtask_id("1.2.3") is False
+        assert is_subtask_id("abc") is False
+        assert is_subtask_id("a.b") is False
 
 
 class TestAutoCloseSubtasks:
-    """Tests for _auto_close_subtasks smart closure logic."""
+    """Tests for auto_close_subtasks smart closure logic."""
 
     def _make_client(self) -> MagicMock:
         client = MagicMock()
@@ -50,7 +47,7 @@ class TestAutoCloseSubtasks:
             ]
         }
 
-        _auto_close_subtasks(client, "task-123", None)
+        auto_close_subtasks(client, "task-123", None)
 
         # Should NOT call update_step, update_subtask, or merge for passed subtasks
         client.update_step.assert_not_called()
@@ -74,8 +71,8 @@ class TestAutoCloseSubtasks:
         client.update_step.return_value = {"passes": True}
         client.update_subtask.return_value = {"passes": True}
 
-        with patch("cli.commands.done.merge_subtask_branch"):
-            _auto_close_subtasks(client, "task-123", None)
+        with patch("cli.commands.done_subtask.merge_subtask_branch"):
+            auto_close_subtasks(client, "task-123", None)
 
         # Only step 1 should be verified (step 2 already passed)
         client.update_step.assert_called_once_with("task-123", "1.1", 1, passes=True)
@@ -99,8 +96,8 @@ class TestAutoCloseSubtasks:
         }
         client.update_subtask.return_value = {"passes": True}
 
-        with patch("cli.commands.done.merge_subtask_branch"):
-            _auto_close_subtasks(client, "task-123", None)
+        with patch("cli.commands.done_subtask.merge_subtask_branch"):
+            auto_close_subtasks(client, "task-123", None)
 
         # Step 2 (plan_defect) should NOT be verified
         client.update_step.assert_not_called()
@@ -122,7 +119,7 @@ class TestAutoCloseSubtasks:
         client.update_step.return_value = {"passes": False}
 
         with pytest.raises(typer.Exit):
-            _auto_close_subtasks(client, "task-123", None)
+            auto_close_subtasks(client, "task-123", None)
 
         # Subtask should NOT be closed
         client.update_subtask.assert_not_called()
@@ -144,8 +141,8 @@ class TestAutoCloseSubtasks:
         }
         client.update_subtask.return_value = {"passes": True}
 
-        with patch("cli.commands.done.merge_subtask_branch"):
-            _auto_close_subtasks(client, "task-123", None)
+        with patch("cli.commands.done_subtask.merge_subtask_branch"):
+            auto_close_subtasks(client, "task-123", None)
 
         client.acknowledge_no_citations.assert_called_once_with("task-123", "1.1")
 
@@ -166,8 +163,8 @@ class TestAutoCloseSubtasks:
         }
         client.update_subtask.return_value = {"passes": True}
 
-        with patch("cli.commands.done.merge_subtask_branch"):
-            _auto_close_subtasks(client, "task-123", None)
+        with patch("cli.commands.done_subtask.merge_subtask_branch"):
+            auto_close_subtasks(client, "task-123", None)
 
         client.acknowledge_no_citations.assert_not_called()
 
@@ -188,16 +185,16 @@ class TestAutoCloseSubtasks:
         client.update_subtask.return_value = {"passes": True}
 
         with patch("cli.commands.done_subtask.merge_subtask_branch") as mock_merge:
-            _auto_close_subtasks(client, "task-123", "test-project")
+            auto_close_subtasks(client, "task-123", "test-project")
 
         mock_merge.assert_called_once_with("task-123", "1.1", project_id="test-project")
 
 
 class TestCompleteTaskSmart:
-    """Tests for _complete_task smart default behavior."""
+    """Tests for complete_task smart default behavior."""
 
     def _setup_mocks(self) -> MagicMock:
-        """Set up common mocks for _complete_task tests."""
+        """Set up common mocks for complete_task tests."""
         client = MagicMock()
         client._global_url = MagicMock(side_effect=lambda p: f"http://test{p}")
         client.get.return_value = {"ready": True, "gates": []}
@@ -215,11 +212,11 @@ class TestCompleteTaskSmart:
         self, mock_clean: MagicMock, mock_auto: MagicMock, mock_merge: MagicMock,
         mock_remove: MagicMock, mock_snapshot: MagicMock
     ) -> None:
-        """Smart mode calls _auto_close_subtasks by default."""
+        """Smart mode calls auto_close_subtasks by default."""
         mock_snapshot.return_value = {"worktree_path": None, "project_id": "test"}
         client = self._setup_mocks()
 
-        _complete_task(client, "task-123")
+        complete_task(client, "task-123")
 
         mock_auto.assert_called_once_with(client, "task-123", "test")
 
@@ -228,7 +225,7 @@ class TestCompleteTaskSmart:
         """Admin mode should allow closing non-code tasks without a checkpoint."""
         client = self._setup_mocks()
 
-        _complete_task(client, "task-123", strict=False, admin=True, message="phase shipped")
+        complete_task(client, "task-123", strict=False, admin=True, message="phase shipped")
 
         client.close_task.assert_called_once_with("task-123", reason="phase shipped", skip_gates=True)
         client.update_status.assert_not_called()
@@ -239,7 +236,7 @@ class TestCompleteTaskSmart:
         client = self._setup_mocks()
 
         with pytest.raises(typer.Exit):
-            _complete_task(client, "task-123")
+            complete_task(client, "task-123")
 
     @patch("cli.commands.done_task.get_snapshot_info")
     @patch("cli.commands.done_task.remove_snapshot")
@@ -262,7 +259,7 @@ class TestCompleteTaskSmart:
         }
         client = self._setup_mocks()
 
-        result = _complete_task(client, "task-123", strict=False, admin=True, message="stale state")
+        result = complete_task(client, "task-123", strict=False, admin=True, message="stale state")
 
         assert result["merged"] is False
         assert result["snapshot_removed"] is True
@@ -280,11 +277,11 @@ class TestCompleteTaskSmart:
         self, mock_clean: MagicMock, mock_auto: MagicMock, mock_merge: MagicMock,
         mock_remove: MagicMock, mock_snapshot: MagicMock
     ) -> None:
-        """Strict mode does NOT call _auto_close_subtasks."""
+        """Strict mode does NOT call auto_close_subtasks."""
         mock_snapshot.return_value = {"worktree_path": None, "project_id": "test"}
         client = self._setup_mocks()
 
-        _complete_task(client, "task-123", strict=True)
+        complete_task(client, "task-123", strict=True)
 
         mock_auto.assert_not_called()
 
@@ -307,7 +304,7 @@ class TestCompleteTaskSmart:
         mock_clean.return_value = False
         client = self._setup_mocks()
 
-        _complete_task(client, "task-123")
+        complete_task(client, "task-123")
 
         mock_stash_push.assert_called_once()
         mock_stash_pop.assert_called_once()
@@ -324,7 +321,7 @@ class TestCompleteTaskSmart:
         client = self._setup_mocks()
 
         with pytest.raises(typer.Exit):
-            _complete_task(client, "task-123", strict=True)
+            complete_task(client, "task-123", strict=True)
 
     @patch("cli.commands.done_task.get_snapshot_info")
     @patch("cli.commands.done_task.remove_snapshot")
@@ -346,7 +343,7 @@ class TestCompleteTaskSmart:
         client = self._setup_mocks()
 
         with pytest.raises(typer.Exit):
-            _complete_task(client, "task-123")
+            complete_task(client, "task-123")
 
         # Stash should still be popped despite failure
         mock_stash_pop.assert_called_once()
@@ -365,12 +362,39 @@ class TestCompleteTaskSmart:
         client = self._setup_mocks()
 
         with patch("cli.commands.done_task.git_stash_push") as mock_push:
-            _complete_task(client, "task-123")
+            complete_task(client, "task-123")
             mock_push.assert_not_called()
 
 
+    @patch("cli.commands.done_task.get_snapshot_info")
+    @patch("cli.commands.done_task.remove_snapshot")
+    @patch("cli.commands.done_task.merge_task_branch")
+    @patch("cli.commands.done_task.auto_close_subtasks")
+    @patch("cli.commands.done_task.is_working_tree_clean", return_value=True)
+    @patch("cli.commands.done_task.output_warning")
+    def test_status_update_failure_after_merge_warns_and_continues(
+        self, mock_warning: MagicMock, mock_clean: MagicMock, mock_auto: MagicMock,
+        mock_merge: MagicMock, mock_remove: MagicMock, mock_snapshot: MagicMock
+    ) -> None:
+        """If status update fails after merge, warn user and still clean up snapshot."""
+        from cli._client_base import APIError
+
+        mock_snapshot.return_value = {"worktree_path": None, "project_id": "test"}
+        client = self._setup_mocks()
+        client.update_status.side_effect = APIError(500, "server error")
+
+        result = complete_task(client, "task-123")
+
+        mock_merge.assert_called_once()
+        mock_warning.assert_called_once()
+        assert "status update failed" in mock_warning.call_args.args[0]
+        assert "st done task-123 --admin" in mock_warning.call_args.args[0]
+        mock_remove.assert_called_once()
+        assert result["merged"] is True
+
+
 class TestGitStashHelpers:
-    """Tests for _git_stash_push and _git_stash_pop."""
+    """Tests for git_stash_push and git_stash_pop."""
 
     @patch("subprocess.run")
     def test_stash_push_returns_true_on_new_entry(self, mock_run: MagicMock) -> None:
@@ -381,7 +405,7 @@ class TestGitStashHelpers:
             MagicMock(stdout="", returncode=0),
             MagicMock(stdout="stash@{0}: WIP on main: st-done-auto\n", returncode=0),
         ]
-        assert _git_stash_push() is True
+        assert git_stash_push() is True
 
     @patch("subprocess.run")
     def test_stash_push_returns_false_on_nothing_to_stash(self, mock_run: MagicMock) -> None:
@@ -391,7 +415,7 @@ class TestGitStashHelpers:
             MagicMock(stdout="", returncode=0),
             MagicMock(stdout="", returncode=0),
         ]
-        assert _git_stash_push() is False
+        assert git_stash_push() is False
 
     @patch("subprocess.run")
     def test_stash_pop_handles_failure_gracefully(self, mock_run: MagicMock) -> None:
@@ -400,4 +424,4 @@ class TestGitStashHelpers:
         mock_run.side_effect = sp.CalledProcessError(1, "git", stderr="conflict")
 
         # Should not raise
-        _git_stash_pop()
+        git_stash_pop()

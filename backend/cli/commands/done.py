@@ -14,54 +14,12 @@ from typing import Annotated
 import typer
 
 from ..client import STClient
-from ..lib.checkpoint import (
-    get_snapshot_info,
-    merge_subtask_branch,
-    merge_task_branch,
-    remove_snapshot,
-)
 from ..output import output_success
-
-# Re-export for backward compatibility with tests
-from .done_git import (
-    git_stash_pop as _git_stash_pop,
-)
-from .done_git import (
-    git_stash_push as _git_stash_push,
-)
-from .done_git import (
-    is_working_tree_clean as _is_working_tree_clean,
-)
-from .done_subtask import auto_close_subtasks as _auto_close_subtasks
 from .done_subtask import complete_subtask
 from .done_task import complete_task
-from .done_task import complete_task as _complete_task
 from .done_validators import is_subtask_id
 
-__all__ = [
-    "_auto_close_subtasks",
-    "_complete_task",
-    "_git_stash_pop",
-    "_git_stash_push",
-    "_is_subtask_id",
-    "_is_working_tree_clean",
-    "app",
-    "done_command",
-    "get_snapshot_info",
-    "merge_subtask_branch",
-    "merge_task_branch",
-    "remove_snapshot",
-]
-
 app = typer.Typer(help="Complete task or subtask work")
-
-
-def _is_subtask_id(id_str: str) -> bool:
-    """Check if the ID looks like a subtask (e.g., 1.1, 2.3).
-
-    Wrapper for backward compatibility with tests.
-    """
-    return is_subtask_id(id_str)
 
 
 def _handle_subtask_completion(

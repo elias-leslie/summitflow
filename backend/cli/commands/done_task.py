@@ -6,7 +6,7 @@ from .._client_base import APIError
 from ..client import STClient
 from ..lib.checkpoint import get_snapshot_info, remove_snapshot
 from ..lib.checkpoint_branches import merge_task_branch
-from ..output import output_error, output_success
+from ..output import output_error, output_success, output_warning
 from .done_git import git_stash_pop, git_stash_push, is_working_tree_clean
 from .done_subtask import auto_close_subtasks
 
@@ -75,7 +75,13 @@ def _perform_completion(
         _request_review_approval(client, task_id)
 
     merge_task_branch(task_id, project_id=project_id)
-    client.update_status(task_id, "completed")
+    try:
+        client.update_status(task_id, "completed")
+    except APIError as e:
+        output_warning(
+            f"Code merged but status update failed: {e.detail}\n"
+            f"  Recovery: st done {task_id} --admin"
+        )
     remove_snapshot(task_id, project_id=project_id)
     _trigger_health_check(task_id, project_id)
 
