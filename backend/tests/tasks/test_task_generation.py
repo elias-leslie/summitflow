@@ -196,7 +196,7 @@ class TestGenerateTasksFromScan:
         mock_create_task: MagicMock,
         mock_create_issue: MagicMock,
         mock_store: MagicMock,
-        mock_link_task_to_issue: MagicMock,
+        mock_link_issue_to_task: MagicMock,
         mock_qa_storage: MagicMock,
         mock_get_targets: MagicMock,
     ) -> None:
