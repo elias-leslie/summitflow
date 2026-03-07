@@ -165,14 +165,14 @@ async def execute_task(project_id: str, task_id: str) -> TaskResponse:
         )
     readiness = await asyncio.to_thread(validate_task_ready, task_id, project_id)
     if not readiness.ready:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "message": "Task is not execution-ready for autonomous work",
-                "issues": readiness.issues,
-                "suggestions": readiness.suggestions,
-            },
-        )
+        detail: dict[str, Any] = {
+            "message": "Task is not execution-ready for autonomous work",
+            "issues": readiness.issues,
+            "suggestions": readiness.suggestions,
+        }
+        if readiness.lane_conflict is not None:
+            detail["lane_conflict"] = readiness.lane_conflict
+        raise HTTPException(status_code=422, detail=detail)
 
     try:
         updated = await asyncio.to_thread(task_store.update_task_status, task_id, "queue")

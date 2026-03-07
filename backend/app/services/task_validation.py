@@ -24,14 +24,18 @@ class TaskValidationResult:
     ready: bool
     issues: list[str] = field(default_factory=list)
     suggestions: list[str] = field(default_factory=list)
+    lane_conflict: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for API response."""
-        return {
+        result: dict[str, Any] = {
             "ready": self.ready,
             "issues": self.issues,
             "suggestions": self.suggestions,
         }
+        if self.lane_conflict is not None:
+            result["lane_conflict"] = self.lane_conflict
+        return result
 
 
 # Alias for backward compatibility
@@ -121,8 +125,19 @@ def validate_task_ready(task_id: str, project_id: str) -> TaskValidationResult:
     issues.extend(readiness.issues)
     suggestions.extend(readiness.suggestions)
 
+    lane_conflict = None
+    if lane_check.disposition != "allow":
+        lane_conflict = {
+            "overlap_kind": lane_check.overlap_kind,
+            "disposition": lane_check.disposition,
+            "overlap_paths": lane_check.overlap_paths,
+            "shared_plumbing": lane_check.shared_plumbing,
+            "conflicting_tasks": lane_check.conflicting_tasks,
+        }
+
     return ValidationResult(
         ready=len(issues) == 0,
         issues=issues,
         suggestions=suggestions,
+        lane_conflict=lane_conflict,
     )

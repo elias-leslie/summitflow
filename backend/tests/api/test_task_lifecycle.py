@@ -156,6 +156,13 @@ class TestTaskLifecycleEndpoints:
                 ready=False,
                 issues=["Another active coding lane overlaps exact files in project summitflow: task-999 (backend/app/foo.py)"],
                 suggestions=["Exact-file overlap with task-999: backend/app/foo.py. Finish or retire the active lane before dispatching another coding task."],
+                lane_conflict={
+                    "overlap_kind": "exact_file",
+                    "disposition": "block",
+                    "overlap_paths": ["backend/app/foo.py"],
+                    "shared_plumbing": False,
+                    "conflicting_tasks": ["task-999"],
+                },
             ),
         )
 
@@ -166,6 +173,12 @@ class TestTaskLifecycleEndpoints:
         body_text = str(body)
         assert "execution-ready" in body_text or "HTTP Error" in body_text
         assert "overlaps exact files" in body_text
+        # Custom error handler wraps detail in details[] array
+        details_list = body.get("details", [body.get("detail", body)])
+        lane_info = details_list[0]["lane_conflict"]
+        assert lane_info["overlap_kind"] == "exact_file"
+        assert lane_info["disposition"] == "block"
+        assert "backend/app/foo.py" in lane_info["overlap_paths"]
 
     def test_claim_and_release_round_trip(
         self,
