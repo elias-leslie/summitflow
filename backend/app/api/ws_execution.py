@@ -99,14 +99,17 @@ async def _handle_stop_signal(task_id: str) -> None:
         handler()
     task = task_store.get_task(task_id)
     if task and task.get("status") == "running":
-        task_store.update_task_status(task_id, "paused")
-        log_task_event(
-            task_id,
-            "User requested stop via execution timeline",
-            source="timeline",
-            event_type="stop_signal",
-            attributes={"requested_by": "websocket"},
-        )
+        try:
+            task_store.update_task_status(task_id, "paused")
+            log_task_event(
+                task_id,
+                "User requested stop via execution timeline",
+                source="timeline",
+                event_type="stop_signal",
+                attributes={"requested_by": "websocket"},
+            )
+        except Exception:
+            logger.exception("Failed to persist stop-signal state for task %s", task_id)
     await manager.broadcast(task_id, Message(type=MessageType.STOP_SIGNAL, task_id=task_id, data={"source": "user"}))
 
 

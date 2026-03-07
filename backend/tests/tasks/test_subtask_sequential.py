@@ -198,6 +198,9 @@ def test_subtask_execution_winds_down_when_task_is_paused() -> None:
     ), patch(
         "app.tasks.autonomous.exec_modules.execution_loop.has_uncommitted_changes",
         return_value=False,
+    ), patch(
+        "app.tasks.autonomous.exec_modules.execution_loop._check_health_or_wait",
+        return_value=True,
     ):
         results, completed_count = execute_subtask_loop(
             task_id=task_id,

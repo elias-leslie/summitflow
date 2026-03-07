@@ -233,7 +233,13 @@ class TestHelperFunctions:
 
         mock_get_task.assert_called_once_with("task-1")
         mock_update_task_status.assert_called_once_with("task-1", "paused")
-        mock_log_task_event.assert_called_once()
+        mock_log_task_event.assert_called_once_with(
+            "task-1",
+            "User requested stop via execution timeline",
+            source="timeline",
+            event_type="stop_signal",
+            attributes={"requested_by": "websocket"},
+        )
         mock_broadcast.assert_called_once()
 
 

@@ -190,6 +190,9 @@ def personality(
 ) -> None:
     """Print or modify the personality document."""
     from .persona_api import get_personality, update_personality
+    if edit and set_text is not None:
+        output_error("--edit and --set are mutually exclusive")
+        raise typer.Exit(1)
     if set_text is not None:
         try:
             result = update_personality(set_text, reason="Set via st persona personality --set")
@@ -254,6 +257,9 @@ def instructions(
 ) -> None:
     """Print or modify heartbeat instructions."""
     from .persona_api import get_persona, update_persona
+    if edit and set_text is not None:
+        output_error("--edit and --set are mutually exclusive")
+        raise typer.Exit(1)
     if set_text is not None:
         try:
             result = update_persona({"heartbeat_instructions": set_text})

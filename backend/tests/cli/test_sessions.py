@@ -183,7 +183,7 @@ class TestSessionsCommandAliases:
 class TestSessionCommands:
     """Tests for helper behavior in session listing."""
 
-    def test_list_command_hides_unassigned_sessions_by_default(self, monkeypatch) -> None:
+    def test_list_command_hides_unassigned_sessions_by_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from cli.commands import sessions as sessions_cmd
 
         captured: dict[str, object] = {}
@@ -208,7 +208,7 @@ class TestSessionCommands:
             {"id": "sess-1", "status": "completed", "agent_slug": "coder"}
         ]
 
-    def test_list_command_can_include_unassigned_sessions(self, monkeypatch) -> None:
+    def test_list_command_can_include_unassigned_sessions(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from cli.commands import sessions as sessions_cmd
 
         captured: dict[str, object] = {}

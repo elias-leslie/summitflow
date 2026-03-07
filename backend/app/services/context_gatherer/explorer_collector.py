@@ -37,17 +37,23 @@ def _collect_symbols(project_id: str, query: str) -> str | None:
         if not symbols:
             return None
 
+        # Batch-fetch related entries to avoid N+1 queries
+        unique_paths = {str(s["file_path"]) for s in symbols}
+        related_map: dict[str, list[dict[str, object]]] = {}
+        for file_path in unique_paths:
+            related_map[file_path] = list_related_entries_for_file(project_id, file_path)
+
         lines = ["## Relevant Symbols\n"]
         for symbol in symbols:
             summary = symbol.get("summary") or symbol.get("signature") or ""
+            file_path = str(symbol["file_path"])
             line = (
-                f"- `{symbol['name']}` ({symbol['kind']}) in {symbol['file_path']}"
+                f"- `{symbol['name']}` ({symbol['kind']}) in {file_path}"
                 f": {summary}"
             )
             lines.append(line)
 
-            related = list_related_entries_for_file(project_id, str(symbol["file_path"]))
-            for entry in related[:2]:
+            for entry in related_map.get(file_path, [])[:2]:
                 formatted = _format_symbol_related(entry)
                 if formatted:
                     lines.append(f"  related: {formatted}")

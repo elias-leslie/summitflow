@@ -38,7 +38,7 @@ export function ExecutionTimeline({
   const scrollRef = useRef<HTMLDivElement>(null)
   const seenSequences = useRef<Set<number>>(new Set())
 
-  const getEventKey = useCallback((message: TimelineMessage, fallbackIndex: number) => {
+  const getEventKey = useCallback((message: TimelineMessage) => {
     const eventId =
       message.event_id ||
       (typeof message.data?.event_id === 'string' ? message.data.event_id : undefined)
@@ -48,7 +48,7 @@ export function ExecutionTimeline({
 
     const msg = typeof message.data?.message === 'string' ? message.data.message : ''
     const src = typeof message.data?.source === 'string' ? message.data.source : ''
-    return `${message.type}:${message.timestamp}:${message.sequence}:${src}:${msg}:${fallbackIndex}`
+    return `${message.type}:${message.timestamp}:${message.sequence}:${src}:${msg}`
   }, [])
 
   // Auto-scroll to bottom when new messages arrive
@@ -114,8 +114,8 @@ export function ExecutionTimeline({
 
     // Deduplicate using persisted event ids when available.
     const seen = new Set<string>()
-    return combined.filter((event, idx) => {
-      const key = getEventKey(event, idx)
+    return combined.filter((event) => {
+      const key = getEventKey(event)
       if (seen.has(key)) return false
       seen.add(key)
       return true
@@ -166,7 +166,7 @@ export function ExecutionTimeline({
           <div className="py-2">
             {allEvents.map((message, idx) => (
               <TimelineEvent
-                key={getEventKey(message, idx)}
+                key={`${getEventKey(message)}-${idx}`}
                 message={message}
               />
             ))}

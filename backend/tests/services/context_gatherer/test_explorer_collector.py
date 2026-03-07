@@ -44,6 +44,7 @@ def test_gather_explorer_context_includes_symbol_matches() -> None:
 
         context = gather_explorer_context("project-1", "get_file_tree")
 
+    assert mock_entries.call_count == 3
     assert "## Relevant Symbols" in context
     assert "`get_file_tree`" in context
     assert "GET /files/tree" in context

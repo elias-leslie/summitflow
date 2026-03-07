@@ -54,7 +54,7 @@ def sessions_callback(
     """List agent sessions when no subcommand is provided."""
     if ctx.invoked_subcommand is not None:
         return
-    _render_session_list(status_filter, limit, agent_slug, parent_session_id)
+    _render_session_list(status_filter, limit, agent_slug, parent_session_id, include_unassigned=False)
 
 
 @app.command("list")

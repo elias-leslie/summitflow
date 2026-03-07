@@ -318,7 +318,7 @@ class TestExportEndpoint:
 class TestTaskStatusEndpoint:
     """Test PATCH /status behavior for admin-like closes."""
 
-    def test_completed_with_skip_gates_allows_pending_task(
+    def test_status_patch_skip_gates_completes_pending_task(
         self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
     ) -> None:
         """skip_gates should allow pending planning/meta tasks to close cleanly."""

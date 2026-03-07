@@ -41,6 +41,11 @@ class TestFormatContextTask:
 
         assert "WORKFLOW:decisions:0" not in output
 
+
+
+class TestFormatContextSubtasks:
+    """Tests for compact subtask context formatting."""
+
     def test_omits_empty_subtasks_marker(self) -> None:
         output = format_context_subtasks([])
 

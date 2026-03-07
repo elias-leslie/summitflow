@@ -202,3 +202,5 @@ class TestPerformCompletionReviewGate:
 
         with pytest.raises(typer.Exit):
             _perform_completion(client, "task-1", snapshot, "test", strict=False)
+
+        mock_merge.assert_called_once()

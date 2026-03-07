@@ -39,8 +39,8 @@ export function useTimelineHistory({
           message: event.message,
           level: event.level,
           source: event.source,
-          event_id: event.id,
           ...attributes,
+          event_id: event.id,
         },
         timestamp: event.timestamp,
         sequence:
@@ -62,9 +62,10 @@ export function useTimelineHistory({
       try {
         const events: Event[] = []
         const pageSize = 1000
+        const maxPages = 100
         let after: string | undefined
 
-        while (true) {
+        for (let pageNum = 0; pageNum < maxPages; pageNum++) {
           const page = await getEventsForTrace(projectId, taskId, {
             visibility: 'user',
             after,
@@ -82,7 +83,10 @@ export function useTimelineHistory({
 
         const converted = events.map(eventToTimelineMessage)
         setHistoricalEvents(converted)
-        onLastSequenceRef.current?.(0)
+        const lastSeq = converted.length > 0
+          ? Math.max(...converted.map((e) => e.sequence))
+          : 0
+        onLastSequenceRef.current?.(lastSeq)
       } catch (err) {
         console.error('Failed to fetch historical events:', err)
       } finally {

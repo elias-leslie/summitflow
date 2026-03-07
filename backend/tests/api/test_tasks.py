@@ -167,7 +167,7 @@ class TestTaskSpiritJoin:
 class TestTaskUpdates:
     """Regression tests for task update behavior."""
 
-    def test_update_task_persists_labels(
+    def test_task_update_labels_persists(
         self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
     ) -> None:
         """Labels should update through the project task PATCH endpoint."""

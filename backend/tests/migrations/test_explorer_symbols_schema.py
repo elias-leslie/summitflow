@@ -45,6 +45,24 @@ class TestExplorerSymbolsTable:
             assert row is not None
             assert row[0] is True
 
+    def test_explorer_symbols_project_fk_cascades_on_delete(self, db_schema_initialized: None) -> None:
+        """explorer_symbols FK on project_id should CASCADE on delete."""
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT rc.delete_rule
+                FROM information_schema.referential_constraints rc
+                JOIN information_schema.key_column_usage kcu
+                  ON rc.constraint_name = kcu.constraint_name
+                 AND rc.constraint_schema = kcu.constraint_schema
+                WHERE kcu.table_name = 'explorer_symbols'
+                  AND kcu.column_name = 'project_id'
+                """
+            )
+            row = cur.fetchone()
+            assert row is not None
+            assert row[0] == "CASCADE"
+
     def test_explorer_symbols_has_unique_project_symbol_id(self, db_schema_initialized: None) -> None:
         """explorer_symbols should enforce stable symbol ids per project."""
         with get_connection() as conn, conn.cursor() as cur:

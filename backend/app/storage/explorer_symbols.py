@@ -146,18 +146,29 @@ def list_related_entries_for_file(project_id: str, file_path: str) -> list[dict[
 
 def summarize_symbols_for_file(project_id: str, file_path: str, *, limit: int = 5) -> list[dict[str, Any]]:
     """Return a concise top-symbol summary for a file."""
-    rows = list_symbols_for_file(project_id, file_path)[: max(1, limit)]
-    return [
-        {
-            "symbol_id": row["symbol_id"],
-            "name": row["name"],
-            "kind": row["kind"],
-            "qualified_name": row["qualified_name"],
-            "start_line": row["start_line"],
-            "end_line": row["end_line"],
-        }
-        for row in rows
-    ]
+    capped = max(1, limit)
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT symbol_id, name, kind, qualified_name, start_line, end_line
+            FROM explorer_symbols
+            WHERE project_id = %s AND file_path = %s
+            ORDER BY start_line, end_line, name
+            LIMIT %s
+            """,
+            (project_id, file_path, capped),
+        )
+        return [
+            {
+                "symbol_id": row[0],
+                "name": row[1],
+                "kind": row[2],
+                "qualified_name": row[3],
+                "start_line": row[4],
+                "end_line": row[5],
+            }
+            for row in cur.fetchall()
+        ]
 
 
 def search_symbols(

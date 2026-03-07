@@ -96,7 +96,6 @@ def _trigger_health_check(task_id: str, project_id: str | None) -> None:
         pass  # Never block completion on health check trigger failure
 
 
-
 def _complete_without_snapshot(
     client: STClient,
     task_id: str,
@@ -116,7 +115,6 @@ def _complete_without_snapshot(
         "snapshot_removed": False,
         "base_branch": "main",
     }
-
 
 
 def _complete_with_admin_close(
@@ -141,7 +139,6 @@ def _complete_with_admin_close(
         "snapshot_removed": True,
         "base_branch": str(snapshot_info.get("base_branch", "main")),
     }
-
 
 
 def complete_task(

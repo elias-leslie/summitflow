@@ -107,14 +107,18 @@ def publish_ws_event(
                 message=message,
                 attributes=attributes,
             )
-            if isinstance(event.get("data"), dict):
-                event["data"] = {
-                    **event["data"],
-                    "event_id": created_event["id"],
-                    "persisted_at": created_event["timestamp"].isoformat(),
-                }
         except Exception as e:
             logger.warning("Failed to persist event to DB", task_id=task_id, error=str(e))
+        else:
+            try:
+                if isinstance(event.get("data"), dict):
+                    event["data"] = {
+                        **event["data"],
+                        "event_id": created_event["id"],
+                        "persisted_at": created_event["timestamp"].isoformat(),
+                    }
+            except Exception as e:
+                logger.warning("Failed to augment event with DB metadata", task_id=task_id, error=str(e))
 
     try:
         r = redis.Redis(connection_pool=_get_sync_pool())

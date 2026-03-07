@@ -134,15 +134,10 @@ def load_snapshot_meta(task_id: str, project_root: str | Path | None = None) -> 
     meta_path = _find_global_meta_path(task_id)
     if meta_path is None:
         meta_path = get_meta_path(task_id, project_root=project_root)
-        if not meta_path.exists():
-            if project_root is not None:
-                fallback_path = get_meta_path(task_id)
-                if fallback_path.exists():
-                    meta_path = fallback_path
-                else:
-                    return None
-            else:
-                return None
+    if not meta_path.exists() and project_root is not None:
+        meta_path = get_meta_path(task_id)
+    if not meta_path.exists():
+        return None
 
     try:
         return SnapshotMeta.from_dict(json.loads(meta_path.read_text()))

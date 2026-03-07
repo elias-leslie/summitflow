@@ -43,6 +43,7 @@ def parse_worktree_context(path: Path | None = None) -> tuple[str | None, str | 
     """Return (project_id, task_id) for SummitFlow-style worktree paths."""
     target = (path or Path.cwd()).resolve()
     try:
+        # Expected layout: ~/.local/share/st/worktrees/<project_id>/<task_id>/...
         relative = target.relative_to(WORKTREES_MARKER)
     except ValueError:
         return None, None

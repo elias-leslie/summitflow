@@ -47,7 +47,7 @@ export function useExplorerSymbolSearch(
       trimmedQuery,
       options.language,
       options.kind,
-      options.limit,
+      options.limit ?? 12,
     ),
     queryFn: () =>
       searchExplorerSymbols(projectId, {

@@ -51,7 +51,9 @@ def list_sessions(
     data = handle_response(response)
     if isinstance(data, list):
         return cast(list[dict[str, Any]], data)
-    return cast(list[dict[str, Any]], cast(dict[str, Any], data).get("sessions", []))
+    if isinstance(data, dict):
+        return cast(list[dict[str, Any]], data.get("sessions", []))
+    return []
 
 
 def get_session(

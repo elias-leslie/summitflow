@@ -127,40 +127,6 @@ class TestCapturePageScreenshot:
         assert error_msg == "Screenshot operation timed out"
         proc.kill.assert_called_once()
 
-    async def test_timeout_returns_timeout_error_message(
-        self, tmp_path: Path
-    ) -> None:
-        """Timeout path returns (False, 'Screenshot operation timed out')."""
-        output = tmp_path / "shot.png"
-        proc = self._make_proc()
-        proc.returncode = None
-        proc.communicate = AsyncMock(return_value=(b"", b""))
-
-        close_proc = MagicMock()
-        close_proc.communicate = AsyncMock(return_value=(b"", b""))
-
-        with (
-            patch(
-                "app.services.mockup_generator.analysis.screenshot.asyncio.create_subprocess_shell",
-                new=AsyncMock(side_effect=[proc, close_proc]),
-            ),
-            patch(
-                "app.services.mockup_generator.analysis.screenshot.asyncio.wait_for",
-                new=AsyncMock(side_effect=TimeoutError()),
-            ),
-        ):
-            from app.services.mockup_generator.analysis.screenshot import (
-                capture_page_screenshot,
-            )
-
-            success, msg = await capture_page_screenshot(
-                url="http://localhost:3001",
-                output_path=output,
-            )
-
-        assert success is False
-        assert msg == "Screenshot operation timed out"
-
     async def test_timeout_close_failure_does_not_propagate(
         self, tmp_path: Path
     ) -> None:
@@ -209,10 +175,6 @@ class TestCapturePageScreenshot:
         proc = self._make_proc(returncode=1)
         proc.communicate = AsyncMock(return_value=(b"", stderr_bytes))
         proc.returncode = 1
-
-        async def fake_wait_for(coro: object, timeout: float) -> tuple[bytes, bytes]:
-            # Actually await the coroutine to avoid ResourceWarning
-            return await proc.communicate.return_value if False else (b"", stderr_bytes)
 
         with (
             patch(

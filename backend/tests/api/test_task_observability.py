@@ -10,7 +10,7 @@ from unittest.mock import patch
 class TestTaskObservability:
     """Project scoping and event aggregation regressions."""
 
-    def test_agent_events_requires_correct_project(
+    def test_get_agent_events_wrong_project_returns_404(
         self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
     ) -> None:
         """Observability routes must respect the task's owning project."""
@@ -28,7 +28,7 @@ class TestTaskObservability:
         response = client.get(f"/api/projects/wrong-project/tasks/{task_id}/agent-sessions")
         assert response.status_code == 404
 
-    def test_agent_events_returns_linked_sessions_for_task_project(
+    def test_get_agent_events_owning_project_returns_sessions(
         self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
     ) -> None:
         """Linked Agent Hub sessions should be returned only for the owning project."""

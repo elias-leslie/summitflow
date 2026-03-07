@@ -14,7 +14,7 @@ from cli.commands.claim import _claim_task
 class TestClaimTask:
     """Tests for task claiming with checkpoint creation."""
 
-    def test_claim_task_uses_api_claim_before_checkpoint(self) -> None:
+    def test_claim_task_success_claims_before_snapshot(self) -> None:
         """Task claim should acquire the backend claim lock before snapshot creation."""
         client = MagicMock()
         client.get_task.return_value = {"id": "task-1", "project_id": "summitflow"}
@@ -45,7 +45,7 @@ class TestClaimTask:
         assert result["action"] == "claimed"
         assert result["worktree_path"] == "/tmp/task-1"
 
-    def test_claim_task_releases_lock_when_snapshot_creation_fails(self) -> None:
+    def test_claim_task_snapshot_failure_releases_lock(self) -> None:
         """A failed snapshot/worktree creation should release the claimed task lock."""
         client = MagicMock()
         client.get_task.return_value = {"id": "task-1", "project_id": "summitflow"}
@@ -77,7 +77,7 @@ class TestClaimTask:
         )
         mock_warning.assert_not_called()
 
-    def test_claim_task_warns_if_release_after_failure_also_fails(self) -> None:
+    def test_claim_task_release_failure_warns_user(self) -> None:
         """Release failure after snapshot error should be surfaced as a warning."""
         client = MagicMock()
         client.get_task.return_value = {"id": "task-1", "project_id": "summitflow"}
@@ -97,9 +97,10 @@ class TestClaimTask:
             ),
             patch("cli.commands.claim.remove_snapshot"),
             patch("cli.commands.claim.output_warning") as mock_warning,
-            pytest.raises(typer.Exit),
+            pytest.raises(typer.Exit) as exc_info,
         ):
             _claim_task(client, "task-1")
 
+        assert exc_info.value.exit_code == 1
         mock_warning.assert_called_once()
         assert "release failed" in mock_warning.call_args.args[0]

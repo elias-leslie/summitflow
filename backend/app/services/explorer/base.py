@@ -69,8 +69,7 @@ class BaseScanner(ABC):
 
     def post_save_cleanup(self, current_paths: set[str]) -> None:
         """Hook for scanner-specific cleanup after entries are saved."""
-        del current_paths
-        return None
+        _ = current_paths
 
     def _run_scan_success(self, start_time: float) -> ScanResult:
         """Execute scan, save results, clean up stale entries, return ScanResult."""

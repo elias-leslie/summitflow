@@ -3,6 +3,7 @@
 import {
   AlertCircle,
   Ban,
+  OctagonX,
   CheckCircle2,
   Clock,
   DollarSign,
@@ -68,7 +69,7 @@ const statusIcons: Record<
     bg: 'bg-red-500/20',
   },
   conflicted: {
-    icon: <AlertCircle className="h-3 w-3" />,
+    icon: <OctagonX className="h-3 w-3" />,
     color: 'text-rose-400',
     bg: 'bg-rose-500/20',
   },

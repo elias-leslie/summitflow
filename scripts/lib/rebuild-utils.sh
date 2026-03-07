@@ -9,6 +9,8 @@ if [ -z "$PROJECT_DIR" ]; then
         # Extract actual project name from worktree path
         PROJECT_NAME=$(echo "$PROJECT_DIR" | sed -E 's|.*/worktrees/([^/]+)/.*|\1|')
         WORKTREE_TASK_ID=$(echo "$PROJECT_DIR" | sed -E 's|.*/worktrees/[^/]+/([^/]+).*|\1|')
+        # Guard against sed returning original input on malformed paths
+        [ "$WORKTREE_TASK_ID" = "$PROJECT_DIR" ] && WORKTREE_TASK_ID=""
     else
         PROJECT_NAME=$(basename "$PROJECT_DIR")
     fi

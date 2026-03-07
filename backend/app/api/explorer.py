@@ -234,7 +234,10 @@ def _read_symbol_source(symbol_project_id: str, symbol: dict[str, Any], context_
     if not root_path:
         raise HTTPException(status_code=400, detail="Project has no root_path configured")
 
-    file_path = Path(root_path) / symbol["file_path"]
+    root = Path(root_path).resolve()
+    file_path = (root / symbol["file_path"]).resolve()
+    if not file_path.is_relative_to(root):
+        raise HTTPException(status_code=400, detail="Invalid file path")
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Symbol source file not found")
 

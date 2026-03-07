@@ -154,7 +154,7 @@ class FileScanner(BaseScanner):
 
     def post_save_cleanup(self, current_paths: set[str]) -> None:
         """Refresh symbol rows after a successful full file scan."""
-        del current_paths
+        _ = current_paths
         explorer_storage.cleanup_stale_symbols(self.project_id, self._indexed_symbol_paths)
         for file_path, symbols in self._symbol_snapshots.items():
             explorer_storage.replace_file_symbols(self.project_id, file_path, symbols)

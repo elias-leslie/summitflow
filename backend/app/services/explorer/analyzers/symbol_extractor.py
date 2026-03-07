@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import re
 from pathlib import Path
 from typing import TypedDict, cast
@@ -45,10 +46,13 @@ def extract_symbols(file_path: Path, rel_path: str) -> list[SymbolRecord]:
     if ext not in {".py", ".ts", ".tsx"}:
         return []
 
-    source = file_path.read_text(encoding="utf-8")
-    if ext == ".py":
-        return _extract_python_symbols(source, rel_path)
-    return _extract_typescript_symbols(source, rel_path, "tsx" if ext == ".tsx" else "typescript")
+    try:
+        source = file_path.read_text(encoding="utf-8")
+        if ext == ".py":
+            return _extract_python_symbols(source, rel_path)
+        return _extract_typescript_symbols(source, rel_path, "tsx" if ext == ".tsx" else "typescript")
+    except (OSError, UnicodeDecodeError, SyntaxError):
+        return []
 
 
 def _extract_python_symbols(source: str, rel_path: str) -> list[SymbolRecord]:
@@ -95,7 +99,7 @@ def _python_symbol(
         "signature": signature,
         "language": "python",
         "start_line": node.lineno,
-        "end_line": node.end_lineno,
+        "end_line": node.end_lineno or node.lineno,
         "byte_offset": start,
         "byte_length": max(0, end - start),
         "content_hash": _content_hash(segment),
@@ -221,8 +225,6 @@ def _byte_index(offsets: list[int], lineno: int | None, col_offset: int | None) 
 
 
 def _content_hash(content: str) -> str:
-    import hashlib
-
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 

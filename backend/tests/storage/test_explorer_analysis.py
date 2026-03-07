@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
+import pytest
+
 from app.storage import explorer_analysis, explorer_entries, explorer_symbols
 from app.storage.connection import get_connection
 
@@ -56,10 +60,9 @@ def _make_symbol(
     }
 
 
-def test_get_refactor_targets_includes_top_symbols(
-    db_schema_initialized: None,
-) -> None:
-    """Refactor targets should surface the leading indexed symbols for each file."""
+@pytest.fixture
+def refactor_project(db_schema_initialized: None) -> Iterator[str]:
+    """Create and clean up a project for refactor-target tests."""
     project_id = "explorer-analysis-project"
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
@@ -71,6 +74,21 @@ def test_get_refactor_targets_includes_top_symbols(
             (project_id, "Explorer Analysis Project", "http://localhost:3001", "/tmp/analysis"),
         )
         conn.commit()
+
+    yield project_id
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM explorer_symbols WHERE project_id = %s", (project_id,))
+        cur.execute("DELETE FROM explorer_entries WHERE project_id = %s", (project_id,))
+        cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
+        conn.commit()
+
+
+def test_get_refactor_targets_includes_top_symbols(
+    refactor_project: str,
+) -> None:
+    """Refactor targets should surface the leading indexed symbols for each file."""
+    project_id = refactor_project
 
     file_path = "backend/app/services/heavy_service.py"
     explorer_entries.upsert_entries(project_id, "file", [_make_file_entry(file_path)])
@@ -111,9 +129,3 @@ def test_get_refactor_targets_includes_top_symbols(
             "end_line": 38,
         },
     ]
-
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("DELETE FROM explorer_symbols WHERE project_id = %s", (project_id,))
-        cur.execute("DELETE FROM explorer_entries WHERE project_id = %s", (project_id,))
-        cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
-        conn.commit()

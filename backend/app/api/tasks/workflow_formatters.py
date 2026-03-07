@@ -89,7 +89,7 @@ def format_toon_context(
         lines.append(f"TITLE:{title}")
     description = str(task.get("description") or "").strip()
     if description:
-        lines.append(f"DESCRIPTION:{description}")
+        lines.append(f"DESCRIPTION:{description[:200]}{'...' if len(description) > 200 else ''}")
 
     plan_status = spirit.get("plan_status", "draft") if spirit else "draft"
     subtask_lines, criteria_count, criteria_verified = _format_subtask_lines(subtasks)

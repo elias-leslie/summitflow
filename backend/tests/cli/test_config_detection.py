@@ -9,7 +9,7 @@ from cli import config as config_mod
 
 
 class TestProjectDetection:
-    def test_detect_project_from_detached_worktree_common_dir(self) -> None:
+    def test_detect_project_from_cwd_detached_worktree_returns_canonical_root(self) -> None:
         """Detached helper worktrees should resolve to the canonical project root."""
         projects = [
             {
@@ -33,7 +33,7 @@ class TestProjectDetection:
         assert project_id == "summitflow"
         assert root_path == "/home/kasadis/summitflow"
 
-    def test_detect_project_prefers_direct_cwd_match(self) -> None:
+    def test_detect_project_from_cwd_direct_match_returns_checkout_path(self) -> None:
         """Normal repo-root detection should keep using the current checkout path."""
         projects = [
             {

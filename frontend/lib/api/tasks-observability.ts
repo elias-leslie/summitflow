@@ -79,10 +79,6 @@ export async function fetchTaskAgentEvents(
     page += 1
   }
 
-  if (!latestResponse) {
-    throw new Error('Failed to fetch agent events')
-  }
-
   return {
     ...latestResponse,
     events: allEvents,

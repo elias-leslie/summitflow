@@ -14,14 +14,8 @@ from app.services.explorer.types.pages import PageScanner
 from app.storage.connection import get_connection
 
 
-@pytest.fixture
-def symbol_api_project(
-    db_schema_initialized: None,
-    tmp_path: Path,
-) -> Generator[str]:
-    """Create a project rooted at a temporary repo-like directory with scanned symbols."""
-    project_id = "symbol-api-project"
-    root = tmp_path / "repo"
+def _create_test_repo(root: Path) -> None:
+    """Populate *root* with a minimal backend + frontend file tree."""
     backend_dir = root / "backend" / "app" / "api"
     frontend_dir = root / "frontend" / "app" / "projects" / "[id]" / "files"
     backend_dir.mkdir(parents=True)
@@ -58,6 +52,27 @@ export function FilesClient(): React.ReactElement {
         encoding="utf-8",
     )
 
+
+def _cleanup_test_project(project_id: str) -> None:
+    """Remove all DB rows created by the *symbol_api_project* fixture."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM explorer_symbols WHERE project_id = %s", (project_id,))
+        cur.execute("DELETE FROM explorer_entries WHERE project_id = %s", (project_id,))
+        cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
+        conn.commit()
+
+
+@pytest.fixture
+def symbol_api_project(
+    db_schema_initialized: None,
+    tmp_path: Path,
+) -> Generator[str]:
+    """Create a project rooted at a temporary repo-like directory with scanned symbols."""
+    project_id = "symbol-api-project"
+    root = tmp_path / "repo"
+
+    _create_test_repo(root)
+
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
@@ -76,11 +91,7 @@ export function FilesClient(): React.ReactElement {
 
     yield project_id
 
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("DELETE FROM explorer_symbols WHERE project_id = %s", (project_id,))
-        cur.execute("DELETE FROM explorer_entries WHERE project_id = %s", (project_id,))
-        cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
-        conn.commit()
+    _cleanup_test_project(project_id)
 
 
 class TestExplorerSymbolSearchEndpoint:

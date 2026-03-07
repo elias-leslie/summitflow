@@ -158,7 +158,7 @@ class TestUpdateTaskStatus:
     def test_status_pending_to_completed_allowed_when_transition_validation_skipped(
         self, test_task: dict[str, Any]
     ) -> None:
-        """Admin closes should be able to complete pending tasks without claiming."""
+        """Admin should be able to complete pending tasks without claiming."""
         result = task_store.update_task_status(
             test_task["id"],
             "completed",
