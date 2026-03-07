@@ -173,6 +173,8 @@ def complete_task(
 
     try:
         _perform_completion(client, task_id, snapshot_info, project_id, strict)
+    except SystemExit as exc:
+        raise typer.Exit(exc.code) from None
     finally:
         if stashed:
             git_stash_pop()

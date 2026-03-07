@@ -21,7 +21,11 @@ class TestProjectDetection:
 
         with (
             patch.object(config_mod, "_fetch_projects_with_retry", return_value=projects),
-            patch.object(config_mod, "_resolve_git_common_dir", return_value=Path("/home/kasadis/summitflow/.git")),
+            patch.object(
+                config_mod,
+                "canonical_repo_root",
+                return_value=Path("/home/kasadis/summitflow"),
+            ),
             patch("cli.config.Path.cwd", return_value=cwd),
         ):
             project_id, root_path = config_mod._detect_project_from_cwd("http://localhost:8001/api")
@@ -41,7 +45,7 @@ class TestProjectDetection:
 
         with (
             patch.object(config_mod, "_fetch_projects_with_retry", return_value=projects),
-            patch.object(config_mod, "_resolve_git_common_dir", return_value=None),
+            patch.object(config_mod, "canonical_repo_root", return_value=None),
             patch("cli.config.Path.cwd", return_value=cwd),
         ):
             project_id, root_path = config_mod._detect_project_from_cwd("http://localhost:8001/api")
