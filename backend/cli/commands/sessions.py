@@ -21,6 +21,7 @@ def _render_session_list(
     limit: int,
     agent_slug: str | None,
     parent_session_id: str | None,
+    include_unassigned: bool = True,
 ) -> None:
     client = STClient()
 
@@ -35,6 +36,9 @@ def _render_session_list(
     except APIError as e:
         handle_api_error(e)
         return
+
+    if not include_unassigned:
+        sessions = [session for session in sessions if session.get("agent_slug")]
 
     output_json(sessions)
 
@@ -56,6 +60,13 @@ def sessions_callback(
 @app.command("list")
 def list_sessions(
     status_filter: Annotated[str | None, typer.Option("-s", "--status")] = None,
+    include_unassigned: Annotated[
+        bool,
+        typer.Option(
+            "--include-unassigned",
+            help="Include imported/unassigned sessions without an agent slug",
+        ),
+    ] = False,
     limit: Annotated[int, typer.Option("--limit")] = 20,
     agent_slug: Annotated[str | None, typer.Option("--agent")] = None,
     parent_session_id: Annotated[str | None, typer.Option("--parent-session")] = None,
@@ -67,7 +78,13 @@ def list_sessions(
         st sessions list
         st sessions list --status running
     """
-    _render_session_list(status_filter, limit, agent_slug, parent_session_id)
+    _render_session_list(
+        status_filter,
+        limit,
+        agent_slug,
+        parent_session_id,
+        include_unassigned=include_unassigned,
+    )
 
 
 @app.command("show")

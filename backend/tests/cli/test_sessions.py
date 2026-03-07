@@ -178,3 +178,58 @@ class TestSessionsCommandAliases:
             agent_slug=None,
             parent_session_id=None,
         )
+
+
+class TestSessionCommands:
+    """Tests for helper behavior in session listing."""
+
+    def test_list_command_hides_unassigned_sessions_by_default(self, monkeypatch) -> None:
+        from cli.commands import sessions as sessions_cmd
+
+        captured: dict[str, object] = {}
+
+        class _DummyClient:
+            def list_sessions(self, **_: object) -> list[dict[str, object]]:
+                return [
+                    {"id": "sess-1", "status": "completed", "agent_slug": "coder"},
+                    {"id": "sess-2", "status": "active", "agent_slug": None},
+                ]
+
+        monkeypatch.setattr(sessions_cmd, "STClient", _DummyClient)
+        monkeypatch.setattr(
+            sessions_cmd,
+            "output_json",
+            lambda payload: captured.setdefault("payload", payload),
+        )
+
+        sessions_cmd.list_sessions(limit=10)
+
+        assert captured["payload"] == [
+            {"id": "sess-1", "status": "completed", "agent_slug": "coder"}
+        ]
+
+    def test_list_command_can_include_unassigned_sessions(self, monkeypatch) -> None:
+        from cli.commands import sessions as sessions_cmd
+
+        captured: dict[str, object] = {}
+
+        class _DummyClient:
+            def list_sessions(self, **_: object) -> list[dict[str, object]]:
+                return [
+                    {"id": "sess-1", "status": "completed", "agent_slug": "coder"},
+                    {"id": "sess-2", "status": "active", "agent_slug": None},
+                ]
+
+        monkeypatch.setattr(sessions_cmd, "STClient", _DummyClient)
+        monkeypatch.setattr(
+            sessions_cmd,
+            "output_json",
+            lambda payload: captured.setdefault("payload", payload),
+        )
+
+        sessions_cmd.list_sessions(limit=10, include_unassigned=True)
+
+        assert captured["payload"] == [
+            {"id": "sess-1", "status": "completed", "agent_slug": "coder"},
+            {"id": "sess-2", "status": "active", "agent_slug": None},
+        ]
