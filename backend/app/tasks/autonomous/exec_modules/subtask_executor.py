@@ -8,6 +8,7 @@ from typing import Any
 from ....logging_config import get_logger
 from .agent_execution import execute_agent_initial
 from .agent_routing import get_agent_for_subtask
+from .interruption import ExecutionInterrupted
 from .prompts import build_subtask_prompt
 from .result_processing import process_final_result
 from .retry_loop import run_self_healing_loop
@@ -170,6 +171,8 @@ def execute_subtask(
             issue_counts, subtask_type=subtask_type,
         )
 
+    except ExecutionInterrupted:
+        raise
     except Exception as e:
         return handle_execution_error(task_id, subtask_short_id, project_id, e, issue_counts)
 

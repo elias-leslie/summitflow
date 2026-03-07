@@ -67,6 +67,11 @@ const statusIcons: Record<
     color: 'text-red-400',
     bg: 'bg-red-500/20',
   },
+  conflicted: {
+    icon: <AlertCircle className="h-3 w-3" />,
+    color: 'text-rose-400',
+    bg: 'bg-rose-500/20',
+  },
   ai_reviewing: {
     icon: <Eye className="h-3 w-3 animate-pulse" />,
     color: 'text-cyan-400',

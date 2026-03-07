@@ -25,6 +25,7 @@ export interface TimelineMessage {
   data: Record<string, unknown>
   timestamp: string
   sequence: number
+  event_id?: string
   trace_id?: string
   span_id?: string | null
   visibility?: EventVisibility

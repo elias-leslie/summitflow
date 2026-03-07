@@ -50,7 +50,8 @@ _UPDATE_SQL = f"""
         current_phase = CASE WHEN %s = 'completed' THEN 'complete' ELSE current_phase END,
         claimed_by = CASE WHEN %s IN ('completed','failed','cancelled','abandoned') THEN NULL ELSE claimed_by END,
         claimed_at = CASE WHEN %s IN ('completed','failed','cancelled','abandoned') THEN NULL ELSE claimed_at END,
-        lock_expires_at = CASE WHEN %s IN ('completed','failed','cancelled','abandoned') THEN NULL ELSE lock_expires_at END
+        lock_expires_at = CASE WHEN %s IN ('completed','failed','cancelled','abandoned') THEN NULL ELSE lock_expires_at END,
+        updated_at = NOW()
     WHERE id = %s RETURNING {TASK_COLUMNS}
 """
 

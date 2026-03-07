@@ -97,7 +97,7 @@ def publish_ws_event(
     if project_id is not None:
         event_type, message, attributes = _extract_event_fields(event)
         try:
-            create_event(
+            created_event = create_event(
                 project_id=project_id,
                 trace_id=trace_id,
                 event_type=event_type,
@@ -107,6 +107,12 @@ def publish_ws_event(
                 message=message,
                 attributes=attributes,
             )
+            if isinstance(event.get("data"), dict):
+                event["data"] = {
+                    **event["data"],
+                    "event_id": created_event.id,
+                    "persisted_at": created_event.timestamp.isoformat(),
+                }
         except Exception as e:
             logger.warning("Failed to persist event to DB", task_id=task_id, error=str(e))
 

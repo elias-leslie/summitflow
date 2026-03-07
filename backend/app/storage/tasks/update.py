@@ -56,6 +56,7 @@ ALLOWED_UPDATE_FIELDS = {
     "ai_review",
     "conflict_info",
     "merge_sha",
+    "updated_at",
 }
 
 # JSONB dict fields
@@ -80,6 +81,9 @@ def _build_set_clauses(
     params: list[Any] = []
 
     for field, value in fields.items():
+        if isinstance(value, sql.Composable):
+            set_clauses.append(sql.SQL("{} = {}").format(sql.Identifier(field), value))
+            continue
         if field in ("commits", "labels", "agent_hub_session_ids") and isinstance(value, list):
             set_clauses.append(sql.SQL("{} = %s").format(sql.Identifier(field)))
             params.append(value)
@@ -114,6 +118,9 @@ def update_task_fields(task_id: str, **fields: Any) -> dict[str, Any] | None:
     invalid = set(fields.keys()) - ALLOWED_UPDATE_FIELDS
     if invalid:
         raise ValueError(f"Invalid fields: {invalid}")
+
+    if "updated_at" not in fields:
+        fields["updated_at"] = sql.SQL("NOW()")
 
     set_clauses, params = _build_set_clauses(fields)
     params.append(task_id)

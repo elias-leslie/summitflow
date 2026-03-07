@@ -9,6 +9,7 @@ from ....logging_config import get_logger
 from ....storage import agent_configs
 from ....storage.steps import get_steps_for_subtask
 from .agent_routing import EXTENSION_ATTEMPTS
+from .interruption import assert_task_runnable
 from .retry_execution import execute_fix_attempt
 from .retry_extensions import check_and_request_extension
 from .retry_infra import handle_infrastructure_failures
@@ -88,6 +89,7 @@ def _healing_loop_body(
     guidance: str | None, tier_preference: str | None,
 ) -> tuple[bool, list[dict[str, Any]], int, int, str | None, int, int, str | None, bool]:
     """One iteration of the healing loop; returns updated state plus should_break flag."""
+    assert_task_runnable(task_id, project_id, f"self_heal_attempt_{heal_attempt}")
     if heal_attempt > 0:
         steps = get_steps_for_subtask(subtask_id)
     if not check_worktree_health(project_path, task_id, project_id):

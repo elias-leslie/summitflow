@@ -44,17 +44,47 @@ export async function fetchTaskAgentEvents(
     page_size?: number
   },
 ): Promise<AgentHubEventsResponse> {
-  const query = buildQueryString({
-    event_type: options?.event_type,
-    turn: options?.turn,
-    page: options?.page,
-    page_size: options?.page_size,
-  })
+  const pageSize = options?.page_size ?? 500
+  let page = options?.page ?? 1
+  let allEvents: AgentHubEventsResponse['events'] = []
+  let latestResponse: AgentHubEventsResponse | null = null
 
-  return fetchWithErrorHandling(
-    `/api/projects/${projectId}/tasks/${taskId}/agent-events${query}`,
-    {
-      errorMessage: 'Failed to fetch agent events',
-    },
-  )
+  while (true) {
+    const query = buildQueryString({
+      event_type: options?.event_type,
+      turn: options?.turn,
+      page,
+      page_size: pageSize,
+    })
+
+    latestResponse = await fetchWithErrorHandling(
+      `/api/projects/${projectId}/tasks/${taskId}/agent-events${query}`,
+      {
+        errorMessage: 'Failed to fetch agent events',
+      },
+    )
+
+    if (!latestResponse) {
+      throw new Error('Failed to fetch agent events')
+    }
+
+    const responsePage = latestResponse
+    allEvents = allEvents.concat(responsePage.events)
+    if (
+      responsePage.events.length < pageSize ||
+      allEvents.length >= responsePage.total
+    ) {
+      break
+    }
+    page += 1
+  }
+
+  if (!latestResponse) {
+    throw new Error('Failed to fetch agent events')
+  }
+
+  return {
+    ...latestResponse,
+    events: allEvents,
+  }
 }

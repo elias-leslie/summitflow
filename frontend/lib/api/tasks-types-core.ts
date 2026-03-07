@@ -12,6 +12,7 @@ export type TaskStatus =
   | 'running'
   | 'paused'
   | 'blocked'
+  | 'conflicted'
   | 'ai_reviewing'
   | 'completed'
   | 'failed'

@@ -60,8 +60,13 @@ def format_context_task(task: dict[str, Any]) -> str:
     task_type = task.get("task_type", "task")
     complexity = task.get("complexity") or "SIMPLE"
     lines.append(f"TASK:{task_id}|{status}|P{priority}|{task_type}|{complexity}")
+    if title := task.get("title"):
+        lines.append(f"TITLE:{title}")
+    if description := task.get("description"):
+        lines.append(f"DESCRIPTION:{description}")
     decisions_count = len(task.get("decisions") or [])
-    lines.append(f"WORKFLOW:decisions:{decisions_count}")
+    if decisions_count > 0:
+        lines.append(f"WORKFLOW:decisions:{decisions_count}")
     if objective := task.get("objective"):
         lines.append(f"OBJECTIVE:{objective}")
     if spirit_anti := task.get("spirit_anti"):
@@ -106,7 +111,7 @@ def format_context_decisions(decisions: list[dict[str, Any]]) -> str:
 def format_context_subtasks(subtasks: list[dict[str, Any]]) -> str:
     """Format subtasks with steps inline for context output."""
     if not subtasks:
-        return "SUBTASKS[0]:0/0:0%"
+        return ""
     done = sum(1 for s in subtasks if s.get("passes"))
     total = len(subtasks)
     pct = (done / total * 100) if total > 0 else 0

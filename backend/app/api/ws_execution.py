@@ -91,9 +91,22 @@ async def _forward_redis_events(task_id: str) -> None:
 
 async def _handle_stop_signal(task_id: str) -> None:
     """Handle stop signal from client."""
+    from ..storage import log_task_event
+    from ..storage import tasks as task_store
+
     handler = get_stop_handler(task_id)
     if handler:
         handler()
+    task = task_store.get_task(task_id)
+    if task and task.get("status") == "running":
+        task_store.update_task_status(task_id, "paused")
+        log_task_event(
+            task_id,
+            "User requested stop via execution timeline",
+            source="timeline",
+            event_type="stop_signal",
+            attributes={"requested_by": "websocket"},
+        )
     await manager.broadcast(task_id, Message(type=MessageType.STOP_SIGNAL, task_id=task_id, data={"source": "user"}))
 
 

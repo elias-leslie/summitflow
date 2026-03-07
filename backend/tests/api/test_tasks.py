@@ -162,3 +162,36 @@ class TestTaskSpiritJoin:
         # Verify spirit fields are null on task without spirit
         assert task2_data["objective"] is None
         assert task2_data["spirit_anti"] is None
+
+
+class TestTaskUpdates:
+    """Regression tests for task update behavior."""
+
+    def test_update_task_persists_labels(
+        self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
+    ) -> None:
+        """Labels should update through the project task PATCH endpoint."""
+        response = client.post(
+            f"/api/projects/{test_project_id}/tasks",
+            json={
+                "title": "Task with labels",
+                "task_type": "task",
+                "labels": ["initial"],
+            },
+        )
+        assert response.status_code == 200
+        task_id = response.json()["id"]
+        cleanup_task(task_id)
+
+        response = client.patch(
+            f"/api/projects/{test_project_id}/tasks/{task_id}",
+            json={"labels": ["updated", "autonomous"]},
+        )
+        assert response.status_code == 200
+
+        updated = response.json()
+        assert updated["labels"] == ["updated", "autonomous"]
+
+        response = client.get(f"/api/projects/{test_project_id}/tasks/{task_id}")
+        assert response.status_code == 200
+        assert response.json()["labels"] == ["updated", "autonomous"]

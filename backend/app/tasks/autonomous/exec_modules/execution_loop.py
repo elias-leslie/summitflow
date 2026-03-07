@@ -11,6 +11,7 @@ from ..pickup_guards import check_system_health
 from .agent_routing import supervisor_circuit_breaker_triage
 from .events import emit_log, emit_progress
 from .git_ops import auto_commit, has_uncommitted_changes, smart_commit
+from .interruption import ExecutionInterrupted, assert_task_runnable
 from .session import wind_down
 from .subtask_executor import MAX_ITERATIONS, execute_subtask
 
@@ -132,7 +133,24 @@ def execute_subtask_loop(
             wind_down(task_id, results, incomplete_subtasks, "system_unhealthy")
             break
 
-        result = execute_subtask(task_id, subtask, project_id, issue_counts, task_type, agent_override, tier_preference=tier_preference)
+        try:
+            assert_task_runnable(
+                task_id,
+                project_id,
+                f"before_subtask_{subtask.get('subtask_id', iteration)}",
+            )
+            result = execute_subtask(
+                task_id,
+                subtask,
+                project_id,
+                issue_counts,
+                task_type,
+                agent_override,
+                tier_preference=tier_preference,
+            )
+        except ExecutionInterrupted as exc:
+            wind_down(task_id, results, incomplete_subtasks, exc.reason)
+            break
         results.append(result)
         completed += 1
         status = "passed" if result.get("status") == "passed" else "failed"

@@ -38,6 +38,19 @@ export function ExecutionTimeline({
   const scrollRef = useRef<HTMLDivElement>(null)
   const seenSequences = useRef<Set<number>>(new Set())
 
+  const getEventKey = useCallback((message: TimelineMessage, fallbackIndex: number) => {
+    const eventId =
+      message.event_id ||
+      (typeof message.data?.event_id === 'string' ? message.data.event_id : undefined)
+    if (eventId) {
+      return `event:${eventId}`
+    }
+
+    const msg = typeof message.data?.message === 'string' ? message.data.message : ''
+    const src = typeof message.data?.source === 'string' ? message.data.source : ''
+    return `${message.type}:${message.timestamp}:${message.sequence}:${src}:${msg}:${fallbackIndex}`
+  }, [])
+
   // Auto-scroll to bottom when new messages arrive
   const scrollToBottom = useCallback(() => {
     if (scrollRef.current) {
@@ -53,10 +66,12 @@ export function ExecutionTimeline({
   // Handle new WebSocket message with deduplication
   const handleMessage = useCallback((message: TimelineMessage) => {
     // Deduplicate by sequence number
-    if (seenSequences.current.has(message.sequence)) {
+    if (message.sequence > 0 && seenSequences.current.has(message.sequence)) {
       return
     }
-    seenSequences.current.add(message.sequence)
+    if (message.sequence > 0) {
+      seenSequences.current.add(message.sequence)
+    }
     setMessages((prev) => [...prev, message])
   }, [])
 
@@ -97,17 +112,15 @@ export function ExecutionTimeline({
       return a.sequence - b.sequence
     })
 
-    // Deduplicate by content: timestamp + message + source
+    // Deduplicate using persisted event ids when available.
     const seen = new Set<string>()
-    return combined.filter((event) => {
-      const msg = typeof event.data?.message === 'string' ? event.data.message : ''
-      const src = typeof event.data?.source === 'string' ? event.data.source : ''
-      const key = `${event.timestamp}-${msg}-${src}`
+    return combined.filter((event, idx) => {
+      const key = getEventKey(event, idx)
       if (seen.has(key)) return false
       seen.add(key)
       return true
     })
-  }, [historicalEvents, messages])
+  }, [historicalEvents, messages, getEventKey])
 
   // Track height style
   const heightStyle = maxHeight === 'none'
@@ -153,7 +166,7 @@ export function ExecutionTimeline({
           <div className="py-2">
             {allEvents.map((message, idx) => (
               <TimelineEvent
-                key={`${message.sequence}-${idx}`}
+                key={getEventKey(message, idx)}
                 message={message}
               />
             ))}

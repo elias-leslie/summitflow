@@ -106,3 +106,32 @@ export async function getEventsByTask(
   })
   return result.events
 }
+
+export async function getEventsForTrace(
+  projectId: string,
+  traceId: string,
+  options: {
+    visibility?: EventVisibility
+    level?: EventLevel
+    after?: string
+    limit?: number
+  } = {},
+): Promise<Event[]> {
+  const query = buildQueryString({
+    visibility: options.visibility,
+    level: options.level,
+    after: options.after,
+    limit: options.limit,
+  })
+
+  const res = await fetch(`/api/projects/${projectId}/events/by-trace/${traceId}${query}`)
+  if (!res.ok) {
+    const error = await res
+      .json()
+      .catch(() => ({ detail: 'Failed to fetch trace events' }))
+    throw new Error(error.detail || 'Failed to fetch trace events')
+  }
+
+  const result = (await res.json()) as { events: Event[] }
+  return result.events
+}

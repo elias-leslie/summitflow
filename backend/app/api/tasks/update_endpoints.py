@@ -38,7 +38,7 @@ async def update_task(project_id: str, task_id: str, update: TaskUpdate) -> Task
         return task_to_response(existing)
 
     # Split into task fields and spirit fields
-    spirit_fields = {"objective", "spirit_anti", "decisions", "constraints", "done_when", "labels"}
+    spirit_fields = {"objective", "spirit_anti", "decisions", "constraints", "done_when"}
     task_updates = {k: v for k, v in update_fields.items() if k not in spirit_fields}
     spirit_updates = {
         k: v for k, v in update_fields.items() if k in spirit_fields and k != "labels"

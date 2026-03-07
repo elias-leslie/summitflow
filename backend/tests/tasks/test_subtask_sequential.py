@@ -10,6 +10,7 @@ import pytest
 from app.storage.subtasks import create_subtask, get_subtasks_for_task
 from app.storage.tasks import create_task
 from app.tasks.autonomous.exec_modules.execution_loop import execute_subtask_loop
+from app.tasks.autonomous.exec_modules.interruption import ExecutionInterrupted
 from app.tasks.autonomous.exec_modules.orchestrator import start_execution
 
 
@@ -46,6 +47,7 @@ def test_subtask_execution_order_sequential() -> None:
 
     # Patch dependencies to avoid real side effects
     with patch("app.tasks.autonomous.exec_modules.execution_loop.execute_subtask", side_effect=mock_execute), \
+         patch("app.tasks.autonomous.exec_modules.execution_loop.assert_task_runnable"), \
          patch("app.tasks.autonomous.exec_modules.execution_loop.emit_progress"), \
          patch("app.tasks.autonomous.exec_modules.execution_loop.emit_log"), \
          patch("app.tasks.autonomous.exec_modules.execution_loop.has_uncommitted_changes", return_value=False):
@@ -98,6 +100,7 @@ def test_subtask_execution_stops_on_failure_when_orchestrator_decides() -> None:
 
     # We need to patch the internal _handle_subtask_failure in execution_loop module
     with patch("app.tasks.autonomous.exec_modules.execution_loop.execute_subtask", side_effect=mock_execute), \
+         patch("app.tasks.autonomous.exec_modules.execution_loop.assert_task_runnable"), \
          patch("app.tasks.autonomous.exec_modules.execution_loop.emit_progress"), \
          patch("app.tasks.autonomous.exec_modules.execution_loop.emit_log"), \
          patch("app.tasks.autonomous.exec_modules.execution_loop.has_uncommitted_changes", return_value=False), \
@@ -150,6 +153,7 @@ def test_subtask_execution_continues_on_failure_when_orchestrator_decides() -> N
 
     # We need to patch the internal _handle_subtask_failure in execution_loop module
     with patch("app.tasks.autonomous.exec_modules.execution_loop.execute_subtask", side_effect=mock_execute), \
+         patch("app.tasks.autonomous.exec_modules.execution_loop.assert_task_runnable"), \
          patch("app.tasks.autonomous.exec_modules.execution_loop.emit_progress"), \
          patch("app.tasks.autonomous.exec_modules.execution_loop.emit_log"), \
          patch("app.tasks.autonomous.exec_modules.execution_loop.has_uncommitted_changes", return_value=False), \
@@ -171,6 +175,49 @@ def test_subtask_execution_continues_on_failure_when_orchestrator_decides() -> N
     assert len(results) == 3
     assert results[1]["status"] == "failed"
     assert results[2]["status"] == "passed"
+
+
+def test_subtask_execution_winds_down_when_task_is_paused() -> None:
+    """Execution loop should stop cleanly when the task is externally paused."""
+    task_id = "test-paused-task"
+    project_id = "test-project"
+    project_path = "/tmp/test-project"
+
+    subtasks = [
+        {"subtask_id": "1.1", "description": "First"},
+        {"subtask_id": "1.2", "description": "Second"},
+    ]
+
+    with patch(
+        "app.tasks.autonomous.exec_modules.execution_loop.assert_task_runnable",
+        side_effect=ExecutionInterrupted("paused", "task_status=paused"),
+    ), patch(
+        "app.tasks.autonomous.exec_modules.execution_loop.wind_down"
+    ) as mock_wind_down, patch(
+        "app.tasks.autonomous.exec_modules.execution_loop.emit_log"
+    ), patch(
+        "app.tasks.autonomous.exec_modules.execution_loop.has_uncommitted_changes",
+        return_value=False,
+    ):
+        results, completed_count = execute_subtask_loop(
+            task_id=task_id,
+            project_id=project_id,
+            project_path=project_path,
+            incomplete_subtasks=subtasks,
+            total_subtasks=len(subtasks),
+            completed_count=0,
+            task_type=None,
+            agent_override=None,
+        )
+
+    assert results == []
+    assert completed_count == 0
+    mock_wind_down.assert_called_once_with(
+        task_id,
+        [],
+        subtasks,
+        "task_status=paused",
+    )
 
 
 @patch("app.tasks.autonomous.exec_modules.orchestrator.task_store")

@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from ...logging_config import get_logger
 from ...services._agent_hub_config import AGENT_HUB_URL, build_agent_hub_headers
 from ...storage.tasks.core import get_agent_hub_sessions
+from .helpers import verify_task_project
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -159,6 +160,7 @@ async def get_task_agent_events(
     thinking blocks, tool calls, memory injections, and errors. Events are combined
     from all Agent Hub sessions linked to this task, ordered by (session, turn, sequence).
     """
+    verify_task_project(task_id, project_id)
     session_ids = get_agent_hub_sessions(task_id)
     if not session_ids:
         return AgentHubEventsResponse(task_id=task_id, session_ids=[], events=[], total=0, max_turn=0)
@@ -169,5 +171,6 @@ async def get_task_agent_events(
 @router.get("/projects/{project_id}/tasks/{task_id}/agent-sessions")
 async def get_task_agent_sessions(project_id: str, task_id: str) -> dict[str, Any]:
     """Get Agent Hub session IDs linked to a task."""
+    verify_task_project(task_id, project_id)
     session_ids = get_agent_hub_sessions(task_id)
     return {"task_id": task_id, "session_ids": session_ids, "count": len(session_ids)}

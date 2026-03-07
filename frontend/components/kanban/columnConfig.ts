@@ -70,6 +70,7 @@ export const statusToColumn: Record<TaskStatus, TaskKanbanColumn> = {
   ai_reviewing: 'active',
   // Blocked column
   blocked: 'blocked',
+  conflicted: 'blocked',
   // Done column
   completed: 'done',
   failed: 'done',

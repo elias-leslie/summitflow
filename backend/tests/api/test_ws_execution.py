@@ -20,6 +20,7 @@ from app.api.ws_execution import (
     ConnectionManager,
     Message,
     MessageType,
+    _handle_stop_signal,
     manager,
     register_stop_handler,
     send_error,
@@ -219,6 +220,21 @@ class TestHelperFunctions:
         assert msg.type == MessageType.ERROR
         assert msg.data["error"] == "Something failed"
         assert msg.data["recoverable"] is False
+
+    @pytest.mark.asyncio
+    async def test_stop_signal_pauses_running_task(self, mocker: MockerFixture) -> None:
+        """Timeline stop requests should persist a paused task state."""
+        mock_broadcast = mocker.patch.object(manager, "broadcast", new_callable=AsyncMock)
+        mock_get_task = mocker.patch("app.storage.tasks.get_task", return_value={"status": "running"})
+        mock_update_task_status = mocker.patch("app.storage.tasks.update_task_status")
+        mock_log_task_event = mocker.patch("app.storage.log_task_event")
+
+        await _handle_stop_signal("task-1")
+
+        mock_get_task.assert_called_once_with("task-1")
+        mock_update_task_status.assert_called_once_with("task-1", "paused")
+        mock_log_task_event.assert_called_once()
+        mock_broadcast.assert_called_once()
 
 
 class TestWebSocketEndpoint:

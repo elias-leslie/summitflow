@@ -125,6 +125,10 @@ class TestContextEndpoint:
         content = response.text
         assert content.startswith("TASK:")
         assert task_id in content
+        assert "TITLE:Test task for context" in content
+        assert "DESCRIPTION:Testing context endpoint" in content
+        assert "WORKFLOW:plan:draft|criteria:0|decisions:0" not in content
+        assert "CRITERIA[0]:0/0" not in content
 
     def test_context_returns_json_when_requested(
         self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]

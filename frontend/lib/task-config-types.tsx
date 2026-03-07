@@ -142,6 +142,11 @@ export const taskStatusCardConfig: Record<TaskStatus, TaskStatusCardConfig> = {
     className: 'text-orange-400',
     title: 'Task blocked',
   },
+  conflicted: {
+    icon: <OctagonX className="h-3.5 w-3.5" />,
+    className: 'text-rose-400',
+    title: 'Merge conflicted',
+  },
   ai_reviewing: {
     icon: <Bot className="h-3.5 w-3.5 animate-pulse" />,
     className: 'text-amber-400',
@@ -247,6 +252,11 @@ export const statusIconConfig: Record<
     icon: OctagonX,
     className: 'text-orange-400',
     label: 'Blocked',
+  },
+  conflicted: {
+    icon: OctagonX,
+    className: 'text-rose-400',
+    label: 'Conflicted',
   },
   ai_reviewing: {
     icon: Bot,

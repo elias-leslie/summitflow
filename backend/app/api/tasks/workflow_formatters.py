@@ -84,11 +84,18 @@ def format_toon_context(
     lines: list[str] = [
         f"TASK:{task['id']}|{task['status']}|{priority}|{task.get('task_type', 'task')}|{complexity}"
     ]
+    title = str(task.get("title") or "").strip()
+    if title:
+        lines.append(f"TITLE:{title}")
+    description = str(task.get("description") or "").strip()
+    if description:
+        lines.append(f"DESCRIPTION:{description}")
 
     plan_status = spirit.get("plan_status", "draft") if spirit else "draft"
     subtask_lines, criteria_count, criteria_verified = _format_subtask_lines(subtasks)
     decisions_count = len(spirit.get("decisions", [])) if spirit else 0
-    lines.append(f"WORKFLOW:plan:{plan_status}|criteria:{criteria_count}|decisions:{decisions_count}")
+    if plan_status != "draft" or criteria_count > 0 or decisions_count > 0:
+        lines.append(f"WORKFLOW:plan:{plan_status}|criteria:{criteria_count}|decisions:{decisions_count}")
 
     if spirit and spirit.get("objective"):
         lines.append(f"OBJECTIVE:{spirit['objective']}")
@@ -110,7 +117,8 @@ def format_toon_context(
             lines.append(f"  {b['id']}|{b['status']}|{b['title'][:50]}")
 
     lines.extend(_format_event_log_lines(task["id"]))
-    lines.append(f"CRITERIA[{criteria_verified}]:{criteria_verified}/{criteria_count}")
+    if criteria_count > 0:
+        lines.append(f"CRITERIA[{criteria_verified}]:{criteria_verified}/{criteria_count}")
     return "\n".join(lines)
 
 

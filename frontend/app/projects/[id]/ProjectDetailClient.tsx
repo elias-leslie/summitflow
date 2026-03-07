@@ -52,6 +52,7 @@ export function ProjectDetailClient() {
       'all',
       'active',
       'blocked',
+      'conflicted',
       'pending',
       'running',
       'completed',

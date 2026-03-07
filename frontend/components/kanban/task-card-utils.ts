@@ -16,6 +16,7 @@ export function getPhaseFromStatus(status: TaskStatus): ExecutionPhase | null {
       return 'Triage'
     case 'paused':
     case 'blocked':
+    case 'conflicted':
       return 'Plan'
     case 'queue':
       return 'Queue'
