@@ -134,7 +134,9 @@ class TestBuildRefactorSteps:
             "backend/app/services/foo.py", "/abs/path", 400, 200, False,
             refactor_issues=["large_file", "has_long_functions"],
         )
-        assert any("refactor" in s["description"].lower() for s in steps)
+        refactor_step = next(s for s in steps if "refactor" in s["description"].lower())
+        assert "guideline" in refactor_step["description"].lower()
+        assert "aim for <200" in refactor_step["description"].lower()
 
     def test_no_size_issue_skips_refactor_step(self) -> None:
         """Files without size issues skip the refactor step."""

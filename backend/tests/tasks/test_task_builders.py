@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, patch
 from app.tasks.autonomous.task_builders import (
     _build_issue_aware_done_when,
     _build_issue_aware_objective,
+    build_refactor_description,
     create_refactor_task,
 )
 
@@ -23,6 +24,7 @@ class TestBuildIssueAwareObjective:
         obj = _build_issue_aware_objective("foo.py", 400, 200, ["large_file"])
         assert "400" in obj
         assert "200" in obj
+        assert "aim" in obj.lower()
 
     def test_structural_issue_describes_problems(self) -> None:
         obj = _build_issue_aware_objective("foo.py", 200, 150, ["deep_nesting", "has_long_functions"])
@@ -59,6 +61,7 @@ class TestBuildIssueAwareDoneWhen:
     def test_size_issue_includes_line_count_criterion(self) -> None:
         criteria = _build_issue_aware_done_when(400, 200, ["large_file"], False)
         assert any("200" in c for c in criteria)
+        assert any("guideline target" in c.lower() for c in criteria)
 
     def test_no_size_issue_omits_line_count_criterion(self) -> None:
         criteria = _build_issue_aware_done_when(200, 150, ["deep_nesting"], False)
@@ -113,6 +116,16 @@ class TestBuildIssueAwareDoneWhen:
         assert any("20" in c for c in criteria)  # function count
 
 
+class TestBuildRefactorDescription:
+    """Tests for the human-facing refactor description."""
+
+    def test_line_target_is_guidance_not_hard_requirement(self) -> None:
+        description = build_refactor_description("backend/app/foo.py", 400, 200, 12.0, "medium")
+        assert "Lines: 400" in description
+        assert "guideline" in description.lower()
+        assert "200" in description
+
+
 class TestCreateRefactorTask:
     """Tests for create_refactor_task wiring."""
 
@@ -148,4 +161,5 @@ class TestCreateRefactorTask:
         assert issue_id == 42
         assert "backend/app/tasks/autonomous/task_generation.py" in mock_create_task.call_args.kwargs["title"]
         assert mock_create_subtask.call_args.kwargs["subtask_type"] == "refactor"
+        assert "aim for <200 lines" in mock_create_subtask.call_args.kwargs["description"]
         mock_link.assert_called_once_with("task-123", 42)

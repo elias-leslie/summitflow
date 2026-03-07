@@ -153,7 +153,7 @@ def _assemble_steps(
     steps: list[dict[str, object]] = []
     if any(i in issues for i in _SIZE_ISSUES) or not issues:
         steps.append(_step(
-            f"Refactor {relative_path} from {lines} to <{target_lines} lines",
+            f"Refactor {relative_path} to simplify structure and reduce size where it helps (guideline: aim for <{target_lines} lines from {lines})",
         ))
     structural_checks = _build_structural_checks(relative_path, issues)
     if structural_checks:

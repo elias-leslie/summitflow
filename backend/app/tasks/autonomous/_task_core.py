@@ -54,7 +54,7 @@ def _build_issue_aware_objective(
     parts = [f"Refactor {relative_path}"]
 
     if any(i in _SIZE_ISSUES for i in refactor_issues):
-        parts.append(f"to reduce from {lines} to <{target_lines} lines")
+        parts.append(f"to simplify and reduce size from {lines} lines (aim for <{target_lines} where it helps)")
 
     structural_issues = [i for i in refactor_issues if i not in _SIZE_ISSUES | {"high_complexity", "medium_complexity"}]
     if structural_issues:
@@ -75,7 +75,9 @@ def _build_issue_aware_done_when(
     criteria = ["All quality gates pass (ruff, types, pytest)"]
 
     if any(i in _SIZE_ISSUES for i in refactor_issues):
-        criteria.append(f"File line count reduced to <{target_lines} lines (current: {lines})")
+        criteria.append(
+            f"File structure is meaningfully simplified, with size reduced toward the guideline target of <{target_lines} lines from {lines} where appropriate"
+        )
 
     criteria.extend(
         criterion
@@ -206,7 +208,7 @@ def build_refactor_description(
     return (
         f"Auto-generated from Explorer scan.\n\n"
         f"File: {relative_path}\n"
-        f"Lines: {lines} → target <{target_lines}\n"
+        f"Lines: {lines} (guideline: aim for <{target_lines} if the refactor stays clean)\n"
         f"Complexity: {complexity:.1f}\n"
         f"Priority: {priority}"
     )
