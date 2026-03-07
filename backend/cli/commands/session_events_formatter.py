@@ -21,6 +21,12 @@ _TYPE_COLORS = {
 _RESET = "\033[0m"
 
 
+def _session_key(event: dict[str, Any], fallback: str = "_default") -> str:
+    """Resolve the session key used for memory summary tracking."""
+    session_id = event.get("session_id")
+    return str(session_id) if session_id else fallback
+
+
 def _summarize_memory_inject(tool_input: dict[str, Any]) -> str:
     """Summarize selected vs passive reference injection details."""
     total = int(tool_input.get("count") or 0)
@@ -171,6 +177,104 @@ def _selected_refs_from_memory_inject(event: dict[str, Any]) -> set[str]:
     return {str(uuid) for uuid in uuids if uuid}
 
 
+def build_memory_effectiveness_summary(
+    events: list[dict[str, Any]],
+) -> dict[str, dict[str, int | str]]:
+    """Aggregate selected/index/cited reference metrics per session key."""
+    summary: dict[str, dict[str, int | str]] = {}
+    selected_refs_by_session: dict[str, set[str]] = {}
+
+    for event in events:
+        session_key = _session_key(event)
+        session_summary = summary.setdefault(
+            session_key,
+            {
+                "selected": 0,
+                "indexed": 0,
+                "selected_cited": 0,
+                "total_cited": 0,
+                "session_label": session_key[:8],
+            },
+        )
+        tool_input = event.get("tool_input") or {}
+        event_type = event.get("event_type")
+
+        if event_type == "memory_inject":
+            selected_count = int(tool_input.get("reference_selected_count") or 0)
+            indexed_count = int(tool_input.get("reference_index_count") or 0)
+            session_summary["selected"] = int(session_summary["selected"]) + selected_count
+            session_summary["indexed"] = int(session_summary["indexed"]) + indexed_count
+            selected_refs_by_session[session_key] = _selected_refs_from_memory_inject(event)
+            continue
+
+        if event_type == "memory_cite":
+            cited_uuids = [str(uuid) for uuid in (tool_input.get("uuids") or []) if uuid]
+            selected_uuids = selected_refs_by_session.get(session_key, set())
+            session_summary["total_cited"] = int(session_summary["total_cited"]) + len(cited_uuids)
+            session_summary["selected_cited"] = int(session_summary["selected_cited"]) + sum(
+                1 for uuid in cited_uuids if uuid in selected_uuids
+            )
+
+    return {
+        key: value
+        for key, value in summary.items()
+        if int(value["selected"]) > 0
+        or int(value["indexed"]) > 0
+        or int(value["selected_cited"]) > 0
+        or int(value["total_cited"]) > 0
+    }
+
+
+def _render_memory_effectiveness_summary(
+    events: list[dict[str, Any]],
+    session_ids: list[str] | None,
+) -> list[str]:
+    """Render compact memory summary lines for the header block."""
+    summary = build_memory_effectiveness_summary(events)
+    if not summary:
+        return []
+
+    lines = [" Memory:"]
+    ordered_keys: list[str]
+    if session_ids:
+        ordered_keys = [session_id for session_id in session_ids if session_id in summary]
+    else:
+        ordered_keys = list(summary.keys())
+
+    if len(ordered_keys) == 1:
+        item = summary[ordered_keys[0]]
+        selected = int(item["selected"])
+        indexed = int(item["indexed"])
+        selected_cited = int(item["selected_cited"])
+        rate = f"{round((selected_cited / selected) * 100):d}%" if selected > 0 else "0%"
+        lines.append(
+            f" refs selected={selected} | index={indexed} | selected cited={selected_cited}/{selected} ({rate})"
+        )
+        return lines
+
+    total_selected = sum(int(summary[key]["selected"]) for key in ordered_keys)
+    total_indexed = sum(int(summary[key]["indexed"]) for key in ordered_keys)
+    total_selected_cited = sum(int(summary[key]["selected_cited"]) for key in ordered_keys)
+    total_rate = (
+        f"{round((total_selected_cited / total_selected) * 100):d}%"
+        if total_selected > 0
+        else "0%"
+    )
+    lines.append(
+        f" total selected={total_selected} | index={total_indexed} | selected cited={total_selected_cited}/{total_selected} ({total_rate})"
+    )
+    for key in ordered_keys:
+        item = summary[key]
+        selected = int(item["selected"])
+        indexed = int(item["indexed"])
+        selected_cited = int(item["selected_cited"])
+        rate = f"{round((selected_cited / selected) * 100):d}%" if selected > 0 else "0%"
+        lines.append(
+            f" {item['session_label']!s}: refs={selected} | index={indexed} | selected cited={selected_cited}/{selected} ({rate})"
+        )
+    return lines
+
+
 def _display_events_header(
     total: int,
     max_turn: int,
@@ -178,12 +282,15 @@ def _display_events_header(
     event_type: str | None,
     turn_filter: int | None,
     session_ids: list[str] | None,
+    events: list[dict[str, Any]],
 ) -> None:
     """Print the header block for the events display."""
     typer.echo(f"\n {label}")
     if session_ids:
         typer.echo(f" Sessions: {len(session_ids)} ({', '.join(s[:8] for s in session_ids)})")
     typer.echo(f" Events: {total} | Max turn: {max_turn}")
+    for line in _render_memory_effectiveness_summary(events, session_ids):
+        typer.echo(line)
     if event_type:
         typer.echo(f" Filter: type={event_type}")
     if turn_filter is not None:
@@ -231,7 +338,7 @@ def display_events(
     session_ids: list[str] | None = None,
 ) -> None:
     """Display events with header and footer."""
-    _display_events_header(total, max_turn, label, event_type, turn_filter, session_ids)
+    _display_events_header(total, max_turn, label, event_type, turn_filter, session_ids, events)
     _display_events_body(events, verbose)
     if len(events) < total:
         typer.echo(f"Showing {len(events)} of {total} events (page {page})")
