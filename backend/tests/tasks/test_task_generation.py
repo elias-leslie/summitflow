@@ -221,7 +221,7 @@ class TestGenerateTasksFromScan:
 
         assert result["created_count"] == 0
         assert result["retired_count"] == 1
-        mock_link_task_to_issue.assert_called_once_with(17, "task-a")
+        mock_link_issue_to_task.assert_called_once_with(17, "task-a")
         mock_create_task.assert_not_called()
         mock_store.update_task.assert_called_once_with("task-b", status="cancelled")
         assert mock_log_task_event.call_count == 1
