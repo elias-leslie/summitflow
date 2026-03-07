@@ -124,6 +124,15 @@ class TestGetTargetedTestCommand:
         assert "backend/tests/test_models.py" in cmd
         assert "pytest" in cmd
 
+    def test_package_internal_module_uses_nearby_test_search_before_import_fallback(self) -> None:
+        """Package-private modules should search nearby tests before import-only fallback."""
+        cmd = get_targeted_test_command("backend/app/services/enrichment_service/_storage.py")
+        assert "rg --files backend/tests" in cmd
+        assert "enrichment_service" in cmd
+        assert "storage" in cmd
+        assert "dt pytest" in cmd
+        assert "from backend.app.services.enrichment_service._storage import *" in cmd
+
 
 class TestBuildRefactorSteps:
     """Tests for issue-aware build_refactor_steps."""

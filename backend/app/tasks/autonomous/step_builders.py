@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import shlex
 
 _SIZE_ISSUES = ("oversized", "large_file", "bloat_critical", "bloat_warning")
 
@@ -65,17 +66,52 @@ def get_targeted_test_command(relative_path: str) -> str:
         Pytest command targeting specific tests, or import check as fallback
     """
     test_path = find_test_file(relative_path)
+    nearby_test = _build_nearby_test_search_command(relative_path)
     if test_path:
         path_match = re.match(r"^backend/(app|cli)/(.+?)(?:/([^/]+))?\.py$", relative_path)
         if path_match:
             rest = relative_path[len("backend/") : -len(".py")].replace("/", ".")
-            return f"test -f {test_path} && dt pytest {test_path} -q --tb=short || python3 -c 'from {rest} import *'"
+            fallback = nearby_test or f"python3 -c 'from {rest} import *'"
+            return f"test -f {test_path} && dt pytest {test_path} -q --tb=short || {fallback}"
     # Frontend files - just check import/build
     if relative_path.startswith("frontend/"):
         return "cd frontend && npm run build --quiet"
+    if nearby_test:
+        return nearby_test
     # Fallback: simple import check using python
     module_path = relative_path.replace("/", ".").replace(".py", "")
     return f"python3 -c 'import {module_path}' 2>/dev/null || echo 'Import check skipped'"
+
+
+def _build_nearby_test_search_command(relative_path: str) -> str | None:
+    """Build a bounded nearby-test search command for modules without exact test mapping."""
+    if not relative_path.startswith("backend/") or not relative_path.endswith(".py"):
+        return None
+
+    parts = [p for p in relative_path[:-3].split("/") if p not in {"backend", "app", "cli"}]
+    if not parts:
+        return None
+
+    stem = parts[-1].lstrip("_")
+    parent = parts[-2] if len(parts) >= 2 else ""
+    grandparent = parts[-3] if len(parts) >= 3 else ""
+    keywords = [p for p in (stem, parent, grandparent) if p]
+    if not keywords:
+        return None
+
+    module_path = relative_path.replace("/", ".").replace(".py", "")
+    pattern = "|".join(re.escape(keyword) for keyword in dict.fromkeys(keywords))
+    pattern_q = shlex.quote(pattern)
+    import_q = shlex.quote(f"from {module_path} import *")
+    script = (
+        f"tests=$(rg --files backend/tests | rg -i {pattern_q} | head -n 3); "
+        'if [ -n "$tests" ]; then '
+        'dt pytest $tests -q --tb=short; '
+        "else "
+        f"python3 -c {import_q}; "
+        "fi"
+    )
+    return f"bash -lc {shlex.quote(script)}"
 
 
 def _ast_check(path: str, body: str) -> str:
