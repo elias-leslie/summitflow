@@ -152,6 +152,29 @@ get_worktree_port() {
     echo $((port_base + offset))
 }
 
+find_venv_python() {
+    local py
+    for py in python3.13 python3.12 python3; do
+        if ! command -v "$py" >/dev/null 2>&1; then
+            continue
+        fi
+        if ! "$py" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)' >/dev/null 2>&1; then
+            continue
+        fi
+        if ! "$py" -c 'import ensurepip' >/dev/null 2>&1; then
+            continue
+        fi
+        echo "$py"
+        return 0
+    done
+    return 1
+}
+
+venv_is_usable() {
+    local service_dir="$1"
+    [[ -x "${service_dir}/.venv/bin/python" && -f "${service_dir}/.venv/bin/activate" ]]
+}
+
 # Check if a port is in use
 check_port() {
     local port="$1"
@@ -229,9 +252,15 @@ start_service() {
 
     # Handle Python venv setup for backend-like services
     if [[ "$command" == *"uvicorn"* ]] || [[ "$command" == *"python"* ]]; then
-        if [ ! -d "${service_dir}/.venv" ]; then
+        if ! venv_is_usable "$service_dir"; then
             echo -e "${YELLOW}Creating venv...${NC}"
-            (cd "$service_dir" && python3 -m venv .venv && .venv/bin/pip install -e ".[dev]")
+            rm -rf "${service_dir}/.venv"
+            local venv_python
+            venv_python=$(find_venv_python) || {
+                echo -e "${RED}Failed: no Python 3.12+ interpreter with ensurepip is available for worktree venv creation${NC}"
+                return 1
+            }
+            (cd "$service_dir" && "$venv_python" -m venv .venv && .venv/bin/pip install -e ".[dev]")
         fi
     fi
 
@@ -272,7 +301,7 @@ start_service() {
         cd "$service_dir"
 
         # Activate venv if it exists (for Python services)
-        if [ -d ".venv" ]; then
+        if venv_is_usable "$service_dir"; then
             # shellcheck disable=SC1091
             source .venv/bin/activate
         fi
