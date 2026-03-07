@@ -27,6 +27,12 @@ def _session_key(event: dict[str, Any], fallback: str = "_default") -> str:
     return str(session_id) if session_id else fallback
 
 
+def _session_label(session_key: str) -> str:
+    """Build a compact session label for aggregate headers."""
+    normalized = session_key.removeprefix("session-")
+    return normalized[:8]
+
+
 def _summarize_memory_inject(tool_input: dict[str, Any]) -> str:
     """Summarize selected vs passive reference injection details."""
     total = int(tool_input.get("count") or 0)
@@ -193,7 +199,7 @@ def build_memory_effectiveness_summary(
                 "indexed": 0,
                 "selected_cited": 0,
                 "total_cited": 0,
-                "session_label": session_key[:8],
+                "session_label": _session_label(session_key),
             },
         )
         tool_input = event.get("tool_input") or {}
