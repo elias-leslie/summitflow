@@ -180,8 +180,8 @@ async def update_preferences(request: Request) -> object:
 # ---------------------------------------------------------------------------
 
 
-@router.get("/agent-hub/sessions")
-async def list_sessions(
+@router.get("/agent-hub/sessions", name="agent_hub_list_sessions")
+async def list_agent_hub_sessions(
     project_id: str | None = Query(default=None),
     status: str | None = Query(default=None),
     agent_slug: str | None = Query(default=None),
