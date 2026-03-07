@@ -71,6 +71,32 @@ class TestFormatContextTask:
             in output
         )
 
+    def test_includes_active_specialist_summary_when_present(self) -> None:
+        task = {
+            "id": "task-790",
+            "status": "pending",
+            "priority": 2,
+            "task_type": "task",
+            "complexity": "STANDARD",
+            "title": "Coordinate specialist follow-through",
+            "lane_preflight": {
+                "issues": [],
+                "active_specialists": [
+                    {
+                        "agent_slug": "reviewer",
+                        "count": 2,
+                        "request_sources": ["dispatch"],
+                        "newest_age_minutes": 1,
+                        "oldest_age_minutes": 4,
+                    }
+                ],
+            },
+        }
+
+        output = format_context_task(task)
+
+        assert "SPECIALISTS:reviewer:2:1-4m:dispatch" in output
+
 
 
 class TestFormatContextSubtasks:

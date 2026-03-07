@@ -120,6 +120,25 @@ def format_context_task(task: dict[str, Any]) -> str:
         if lane_preflight.get("shared_plumbing"):
             parts.append("shared:yes")
         lines.append(f"LANE:{' | '.join(parts) if parts else 'conflict'}")
+    if isinstance(lane_preflight, dict):
+        specialist_groups = lane_preflight.get("active_specialists") or []
+        if isinstance(specialist_groups, list) and specialist_groups:
+            parts = []
+            for group in specialist_groups[:3]:
+                if not isinstance(group, dict):
+                    continue
+                agent_slug = str(group.get("agent_slug") or "unknown")
+                count = int(group.get("count") or 0)
+                newest = int(group.get("newest_age_minutes") or 0)
+                oldest = int(group.get("oldest_age_minutes") or 0)
+                age_label = f"{newest}-{oldest}m" if newest != oldest else f"{oldest}m"
+                segment = f"{agent_slug}:{count}:{age_label}"
+                request_sources = group.get("request_sources") or []
+                if isinstance(request_sources, list) and request_sources:
+                    segment += f":{','.join(str(source) for source in request_sources[:2])}"
+                parts.append(segment)
+            if parts:
+                lines.append(f"SPECIALISTS:{' | '.join(parts)}")
     return "\n".join(lines)
 
 

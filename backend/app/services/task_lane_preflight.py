@@ -43,6 +43,7 @@ class TaskLaneConflictCheck:
     owner_session_id: str | None = None
     owner_branch: str | None = None
     owner_location: str | None = None
+    active_specialists: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -56,6 +57,7 @@ class TaskLaneConflictCheck:
             "owner_session_id": self.owner_session_id,
             "owner_branch": self.owner_branch,
             "owner_location": self.owner_location,
+            "active_specialists": self.active_specialists,
         }
 
 
@@ -65,16 +67,18 @@ class _TaskScope:
     paths: frozenset[str]
 
 
-def _fetch_active_project_sessions(project_id: str) -> list[dict[str, Any]]:
+def _fetch_live_project_inventory(
+    project_id: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     headers = build_agent_hub_headers(default_request_source="summitflow-task-lane-preflight")
     with httpx.Client(timeout=_LIST_SESSIONS_TIMEOUT) as client:
         ownership_response = client.get(
             f"{AGENT_HUB_URL}{_LIVE_OWNERSHIP_PATH.format(project_id=project_id)}",
             headers=headers,
         )
-        sessions = _decode_live_lane_payload(ownership_response)
-        if sessions is not None:
-            return sessions
+        inventory = _decode_live_lane_payload(ownership_response)
+        if inventory is not None:
+            return inventory
 
         legacy_response = client.get(
             f"{AGENT_HUB_URL}{_LEGACY_SESSIONS_PATH}",
@@ -84,10 +88,12 @@ def _fetch_active_project_sessions(project_id: str) -> list[dict[str, Any]]:
     legacy_response.raise_for_status()
     payload = legacy_response.json()
     sessions = payload.get("sessions", [])
-    return sessions if isinstance(sessions, list) else []
+    return (sessions if isinstance(sessions, list) else [], [])
 
 
-def _decode_live_lane_payload(response: httpx.Response) -> list[dict[str, Any]] | None:
+def _decode_live_lane_payload(
+    response: httpx.Response,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]] | None:
     status_code = getattr(response, "status_code", None)
     if status_code == 404:
         return None
@@ -95,13 +101,16 @@ def _decode_live_lane_payload(response: httpx.Response) -> list[dict[str, Any]] 
     response.raise_for_status()
     payload = response.json()
     owners = payload.get("active_owners")
+    specialists = payload.get("active_specialists")
     if isinstance(owners, list):
-        return [_owner_to_session(owner) for owner in owners if isinstance(owner, dict)]
+        owner_sessions = [_owner_to_session(owner) for owner in owners if isinstance(owner, dict)]
+        specialist_rows = [row for row in specialists if isinstance(row, dict)] if isinstance(specialists, list) else []
+        return owner_sessions, specialist_rows
 
     sessions = payload.get("sessions")
     if isinstance(sessions, list):
-        return sessions
-    return []
+        return sessions, []
+    return [], []
 
 
 def _owner_to_session(owner: dict[str, Any]) -> dict[str, Any]:
@@ -119,6 +128,46 @@ def _owner_to_session(owner: dict[str, Any]) -> dict[str, Any]:
         "created_at": owner.get("created_at"),
         "updated_at": owner.get("updated_at"),
     }
+
+
+def _summarize_active_specialists(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Group live specialist sessions for context surfaces without changing blockers."""
+    grouped: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        agent_slug = str(row.get("agent_slug") or "unknown")
+        age_minutes = int(row.get("age_minutes") or 0)
+        summary = grouped.setdefault(
+            agent_slug,
+            {
+                "agent_slug": agent_slug,
+                "count": 0,
+                "request_sources": set(),
+                "session_ids": [],
+                "newest_age_minutes": age_minutes,
+                "oldest_age_minutes": age_minutes,
+            },
+        )
+        summary["count"] += 1
+        if row.get("request_source"):
+            summary["request_sources"].add(str(row["request_source"]))
+        if row.get("session_id"):
+            summary["session_ids"].append(str(row["session_id"]))
+        summary["newest_age_minutes"] = min(summary["newest_age_minutes"], age_minutes)
+        summary["oldest_age_minutes"] = max(summary["oldest_age_minutes"], age_minutes)
+
+    result: list[dict[str, Any]] = []
+    for agent_slug, summary in grouped.items():
+        result.append(
+            {
+                "agent_slug": agent_slug,
+                "count": summary["count"],
+                "request_sources": sorted(summary["request_sources"]),
+                "session_ids": summary["session_ids"][:3],
+                "newest_age_minutes": summary["newest_age_minutes"],
+                "oldest_age_minutes": summary["oldest_age_minutes"],
+            }
+        )
+    return sorted(result, key=lambda row: (-int(row["count"]), str(row["agent_slug"])))
 
 
 def _is_live_lane_session(session: dict[str, Any]) -> bool:
@@ -260,7 +309,7 @@ def _shared_plumbing_paths(paths: frozenset[str]) -> list[str]:
 def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflictCheck:
     """Check whether active Agent Hub lanes conflict with autonomous dispatch."""
     try:
-        sessions = _fetch_active_project_sessions(project_id)
+        sessions, specialists = _fetch_live_project_inventory(project_id)
     except Exception as e:
         logger.warning("task_lane_preflight_failed", task_id=task_id, project_id=project_id, error=str(e))
         return TaskLaneConflictCheck()
@@ -289,6 +338,8 @@ def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflict
     owner_session_id: str | None = None
     owner_branch: str | None = None
     owner_location: str | None = None
+
+    active_specialists = _summarize_active_specialists(specialists)
 
     if same_task_sessions:
         session = same_task_sessions[0]
@@ -501,4 +552,5 @@ def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflict
         owner_session_id=owner_session_id,
         owner_branch=owner_branch,
         owner_location=owner_location,
+        active_specialists=active_specialists,
     )

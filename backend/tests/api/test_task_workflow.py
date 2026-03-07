@@ -217,6 +217,7 @@ class TestContextEndpoint:
             "owner_session_id": None,
             "owner_branch": None,
             "owner_location": None,
+            "active_specialists": [],
         }
 
     @patch("app.api.tasks.workflow.check_task_lane_conflicts")
@@ -269,6 +270,7 @@ class TestContextEndpoint:
             "owner_session_id": "sess-123",
             "owner_branch": "task-999/main",
             "owner_location": "repo /home/kasadis/summitflow",
+            "active_specialists": [],
         }
 
     def test_context_includes_subtasks(

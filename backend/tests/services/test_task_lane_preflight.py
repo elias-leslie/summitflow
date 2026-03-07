@@ -53,6 +53,52 @@ class TestTaskLanePreflight:
         assert result.issues
         assert result.conflicting_tasks == ["task-999"]
         assert "worktree /tmp/worktrees/task-999" in result.suggestions[0]
+        assert result.active_specialists == []
+
+    @patch("app.services.task_lane_preflight.httpx.Client")
+    def test_ownership_inventory_payload_summarizes_active_specialists(
+        self,
+        mock_client_cls: MagicMock,
+    ) -> None:
+        mock_client = MagicMock()
+        mock_client.get.return_value = _mock_response(
+            {
+                "project_id": "summitflow",
+                "generated_at": "2026-03-07T18:00:00Z",
+                "active_owners": [],
+                "active_specialists": [
+                    {
+                        "session_id": "spec-1",
+                        "agent_slug": "reviewer",
+                        "project_id": "summitflow",
+                        "request_source": "dispatch",
+                        "age_minutes": 2,
+                    },
+                    {
+                        "session_id": "spec-2",
+                        "agent_slug": "reviewer",
+                        "project_id": "summitflow",
+                        "request_source": "dispatch",
+                        "age_minutes": 5,
+                    },
+                ],
+            }
+        )
+        mock_client_cls.return_value.__enter__.return_value = mock_client
+
+        result = check_task_lane_conflicts("task-123", "summitflow")
+
+        assert result.issues == []
+        assert result.active_specialists == [
+            {
+                "agent_slug": "reviewer",
+                "count": 2,
+                "request_sources": ["dispatch"],
+                "session_ids": ["spec-1", "spec-2"],
+                "newest_age_minutes": 2,
+                "oldest_age_minutes": 5,
+            }
+        ]
 
     @patch("app.services.task_lane_preflight.task_store.get_task")
     @patch("app.services.task_lane_preflight.httpx.Client")
