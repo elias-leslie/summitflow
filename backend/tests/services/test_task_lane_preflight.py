@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 from app.services.task_lane_preflight import check_task_lane_conflicts
@@ -136,3 +137,66 @@ class TestTaskLanePreflight:
         result = check_task_lane_conflicts("task-123", "summitflow")
 
         assert result.issues == []
+
+    @patch("app.services.task_lane_preflight.task_store.get_task")
+    @patch("app.services.task_lane_preflight.httpx.Client")
+    def test_same_task_stale_lane_points_to_reconcile_guidance(
+        self,
+        mock_client_cls: MagicMock,
+        mock_get_task: MagicMock,
+    ) -> None:
+        mock_get_task.return_value = {"id": "task-123", "status": "running"}
+        stale_time = (datetime.now(UTC) - timedelta(hours=5)).isoformat()
+        mock_client = MagicMock()
+        mock_client.get.return_value = _mock_response(
+            {
+                "sessions": [
+                    {
+                        "id": "sess-stale",
+                        "external_id": "task-123",
+                        "current_branch": "task-123/main",
+                        "working_dir": "/tmp/worktrees/task-123",
+                        "is_worktree": True,
+                        "updated_at": stale_time,
+                    }
+                ]
+            }
+        )
+        mock_client_cls.return_value.__enter__.return_value = mock_client
+
+        result = check_task_lane_conflicts("task-123", "summitflow")
+
+        assert "likely stale active lane" in result.issues[0]
+        assert "st sessions list --status active --project summitflow" in result.suggestions[0]
+
+    @patch("app.services.task_lane_preflight.task_store.get_task")
+    @patch("app.services.task_lane_preflight.httpx.Client")
+    def test_other_task_stale_lane_updates_project_guidance(
+        self,
+        mock_client_cls: MagicMock,
+        mock_get_task: MagicMock,
+    ) -> None:
+        mock_get_task.return_value = {"id": "task-999", "status": "running"}
+        stale_time = (datetime.now(UTC) - timedelta(hours=5)).isoformat()
+        mock_client = MagicMock()
+        mock_client.get.return_value = _mock_response(
+            {
+                "sessions": [
+                    {
+                        "id": "sess-stale-other",
+                        "external_id": "task-999",
+                        "current_branch": "task-999/main",
+                        "working_dir": "/tmp/worktrees/task-999",
+                        "is_worktree": True,
+                        "updated_at": stale_time,
+                    }
+                ]
+            }
+        )
+        mock_client_cls.return_value.__enter__.return_value = mock_client
+
+        result = check_task_lane_conflicts("task-123", "summitflow")
+
+        assert "likely stale active coding lane" in result.issues[0]
+        assert result.conflicting_tasks == ["task-999"]
+        assert "retire or reconcile it" in result.suggestions[1]

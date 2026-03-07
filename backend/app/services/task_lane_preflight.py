@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -16,6 +17,7 @@ logger = get_logger(__name__)
 _RETIRED_WORKSTREAMS = {"retired", "superseded"}
 _TERMINAL_TASK_STATUSES = {"blocked", "completed", "cancelled", "abandoned", "failed"}
 _LIST_SESSIONS_TIMEOUT = 10.0
+_STALE_ACTIVE_MINUTES = 4 * 60
 
 
 @dataclass
@@ -87,6 +89,33 @@ def _lane_summary(session: dict[str, Any]) -> str:
     return f"{session_id} in {_lane_location(session)}{branch_suffix}"
 
 
+def _parse_session_timestamp(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    normalized = value.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def _lane_age_minutes(session: dict[str, Any]) -> int | None:
+    timestamp = _parse_session_timestamp(session.get("updated_at")) or _parse_session_timestamp(
+        session.get("created_at")
+    )
+    if timestamp is None:
+        return None
+    return int((datetime.now(UTC) - timestamp).total_seconds() / 60)
+
+
+def _is_stale_lane_session(session: dict[str, Any]) -> bool:
+    age_minutes = _lane_age_minutes(session)
+    return age_minutes is not None and age_minutes >= _STALE_ACTIVE_MINUTES
+
+
 def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflictCheck:
     """Check whether active Agent Hub lanes conflict with autonomous dispatch."""
     try:
@@ -115,10 +144,15 @@ def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflict
 
     if same_task_sessions:
         session = same_task_sessions[0]
-        issues.append(
-            f"Task already has an active lane: {_lane_summary(session)}"
-        )
-        suggestions.append("Wait for the active lane to finish or reconcile it before queueing another execution.")
+        if _is_stale_lane_session(session):
+            issues.append(f"Task already has a likely stale active lane: {_lane_summary(session)}")
+            suggestions.append(
+                f"Inspect the lane with `st sessions list --status active --project {project_id}` "
+                "and reconcile or retire it before queueing another execution."
+            )
+        else:
+            issues.append(f"Task already has an active lane: {_lane_summary(session)}")
+            suggestions.append("Wait for the active lane to finish or reconcile it before queueing another execution.")
 
     if other_lane_sessions:
         conflicting_tasks = [
@@ -128,10 +162,19 @@ def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflict
         ]
         preview = ", ".join(conflicting_tasks[:3])
         lane_preview = "; ".join(_lane_summary(session) for session in other_lane_sessions[:2])
-        issues.append(f"Another active coding lane exists in project {project_id}: {preview}")
+        if any(_is_stale_lane_session(session) for session in other_lane_sessions):
+            issues.append(f"Another likely stale active coding lane exists in project {project_id}: {preview}")
+        else:
+            issues.append(f"Another active coding lane exists in project {project_id}: {preview}")
         if lane_preview:
             suggestions.append(f"Active lane details: {lane_preview}")
-        suggestions.append("Finish or retire the active lane before dispatching another coding task in this project.")
+        if any(_is_stale_lane_session(session) for session in other_lane_sessions):
+            suggestions.append(
+                f"Inspect the lane with `st sessions list --status active --project {project_id}` "
+                "and retire or reconcile it if the session is no longer truly live."
+            )
+        else:
+            suggestions.append("Finish or retire the active lane before dispatching another coding task in this project.")
 
     return TaskLaneConflictCheck(
         issues=issues,
