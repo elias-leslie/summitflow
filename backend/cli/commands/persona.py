@@ -20,7 +20,7 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any, Annotated
+from typing import Annotated, Any
 
 import typer
 

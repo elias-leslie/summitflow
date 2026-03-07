@@ -9,12 +9,12 @@ from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 from app.services.self_healing.monitor import PRIORITY_ERR, JournalError
-from app.workflows._model_constants import DEFAULT_PROJECT_ID
 from app.tasks.self_healing import (
     MAX_TASKS_PER_RUN,
     monitor_browser_errors,
     monitor_systemd_errors,
 )
+from app.workflows._model_constants import DEFAULT_PROJECT_ID
 
 
 class TestMonitorSystemdErrors:
