@@ -8,6 +8,7 @@ from typing import Any
 import typer
 
 from app.services.task_execution_readiness import assess_task_execution_readiness
+from app.services.task_lane_preflight import check_task_lane_conflicts
 
 from ..client import APIError, STClient
 from ..lib.worktree import get_worktree_info
@@ -122,6 +123,7 @@ def _handle_task_context(
     task_type = task.get("task_type", "")
     task_refs = fetch_triggered_references(task_type) if task_type else []
     task["execution_readiness"] = assess_task_execution_readiness(task, task, subtasks)
+    task["lane_preflight"] = check_task_lane_conflicts(task_id, task["project_id"]).to_dict()
     output_context(task, subtasks, blockers, task_refs)
 
 

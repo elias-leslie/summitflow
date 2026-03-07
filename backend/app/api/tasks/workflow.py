@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 
 from ...services.task_execution_readiness import assess_task_execution_readiness
+from ...services.task_lane_preflight import check_task_lane_conflicts
 from ...storage import task_dependencies as dep_store
 from ...storage.events import get_events_by_trace
 from ...storage.steps import get_steps_for_subtask
@@ -104,7 +105,8 @@ async def get_task_context(
 
     # Default: TOON format
     readiness = assess_task_execution_readiness(task, spirit, get_subtasks_for_task(task_id, include_steps=True))
-    return PlainTextResponse(content=format_toon_context(task, spirit, subtasks, blockers, readiness))
+    lane_check = check_task_lane_conflicts(task_id, project_id)
+    return PlainTextResponse(content=format_toon_context(task, spirit, subtasks, blockers, readiness, lane_check))
 
 
 @router.get("/projects/{project_id}/tasks/{task_id}/export")

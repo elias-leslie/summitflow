@@ -102,6 +102,20 @@ def format_context_task(task: dict[str, Any]) -> str:
             parts.append(f"2nd:{stage}:{status}")
         if parts:
             lines.append(f"CONTEXT:{' | '.join(parts)}")
+    lane_preflight = task.get("lane_preflight") or {}
+    if isinstance(lane_preflight, dict) and lane_preflight.get("issues"):
+        parts = []
+        if overlap_kind := lane_preflight.get("overlap_kind"):
+            parts.append(f"kind:{overlap_kind}")
+        conflicting_tasks = lane_preflight.get("conflicting_tasks") or []
+        if conflicting_tasks:
+            parts.append(f"tasks:{','.join(conflicting_tasks[:3])}")
+        overlap_paths = lane_preflight.get("overlap_paths") or []
+        if overlap_paths:
+            parts.append(f"paths:{','.join(overlap_paths[:3])}")
+        if lane_preflight.get("shared_plumbing"):
+            parts.append("shared:yes")
+        lines.append(f"LANE:{' | '.join(parts) if parts else 'conflict'}")
     return "\n".join(lines)
 
 

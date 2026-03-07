@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Any
 
 from ...services.task_execution_readiness import TaskExecutionReadiness
+from ...services.task_lane_preflight import TaskLaneConflictCheck
 from ...storage.events import get_events_by_trace
 from ...storage.steps import get_steps_for_subtask
 
@@ -34,6 +35,29 @@ def _format_context_lines(spirit: dict[str, Any]) -> list[str]:
             f"{second_opinion.get('status', 'pending')}"
         )
     return [f"CONTEXT:{' | '.join(parts)}"] if parts else []
+
+
+def _format_lane_line(lane_check: TaskLaneConflictCheck | dict[str, Any] | None) -> list[str]:
+    """Return a compact lane-overlap line when active ownership matters."""
+    if lane_check is None:
+        return []
+    data = lane_check.to_dict() if isinstance(lane_check, TaskLaneConflictCheck) else lane_check
+    issues = data.get("issues") or []
+    if not issues:
+        return []
+    parts: list[str] = []
+    overlap_kind = data.get("overlap_kind")
+    if overlap_kind:
+        parts.append(f"kind:{overlap_kind}")
+    conflicting_tasks = data.get("conflicting_tasks") or []
+    if conflicting_tasks:
+        parts.append(f"tasks:{','.join(conflicting_tasks[:3])}")
+    overlap_paths = data.get("overlap_paths") or []
+    if overlap_paths:
+        parts.append(f"paths:{','.join(overlap_paths[:3])}")
+    if data.get("shared_plumbing"):
+        parts.append("shared:yes")
+    return [f"LANE:{' | '.join(parts)}"] if parts else ["LANE:conflict"]
 
 
 def _format_subtask_lines(subtasks: list[dict[str, Any]]) -> tuple[list[str], int, int]:
@@ -83,6 +107,7 @@ def format_toon_context(
     subtasks: list[dict[str, Any]],
     blockers: list[dict[str, Any]],
     readiness: TaskExecutionReadiness | None = None,
+    lane_check: TaskLaneConflictCheck | dict[str, Any] | None = None,
 ) -> str:
     """Format task context as TOON (Token-Optimized Output Notation).
 
@@ -123,6 +148,7 @@ def format_toon_context(
             strs = [str(d) for d in done_when_list]
             lines.append(f"DONE_WHEN[{len(strs)}]:{' | '.join(strs)}")
         lines.extend(_format_context_lines(spirit))
+    lines.extend(_format_lane_line(lane_check))
 
     lines.extend(subtask_lines)
 

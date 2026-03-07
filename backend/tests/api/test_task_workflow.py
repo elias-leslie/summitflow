@@ -11,7 +11,9 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from typing import Any
+from unittest.mock import patch
 
+from app.services.task_lane_preflight import TaskLaneConflictCheck
 from app.storage.connection import get_connection
 
 
@@ -130,6 +132,40 @@ class TestContextEndpoint:
         assert "WORKFLOW:plan:draft|ready:no|issues:" in content
         assert "READINESS:missing:objective,done_when,spirit_anti,subtasks" in content
         assert "CRITERIA[0]:0/0" not in content
+
+    @patch("app.api.tasks.workflow.check_task_lane_conflicts")
+    def test_context_includes_lane_overlap_summary_when_present(
+        self,
+        mock_lane_check: Any,
+        client: Any,
+        test_project_id: str,
+        cleanup_task: Callable[[str], None],
+    ) -> None:
+        mock_lane_check.return_value = TaskLaneConflictCheck(
+            issues=["Another active coding lane is already modifying shared plumbing"],
+            conflicting_tasks=["task-999"],
+            overlap_kind="shared_plumbing",
+            overlap_paths=["backend/app/services/tools/catalog.py"],
+            shared_plumbing=True,
+        )
+
+        response = client.post(
+            f"/api/projects/{test_project_id}/tasks",
+            json={
+                "title": "Test task for lane summary",
+                "description": "Testing context overlap surfacing",
+                "task_type": "task",
+                "priority": 2,
+            },
+        )
+        assert response.status_code == 200
+        task = response.json()
+        task_id = task["id"]
+        cleanup_task(task_id)
+
+        response = client.get(f"/api/projects/{test_project_id}/tasks/{task_id}/context")
+        assert response.status_code == 200
+        assert "LANE:kind:shared_plumbing | tasks:task-999 | paths:backend/app/services/tools/catalog.py | shared:yes" in response.text
 
     def test_context_returns_json_when_requested(
         self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
