@@ -211,6 +211,12 @@ async def get_session(session_id: str) -> object:
     return await _get_json(f"{AGENT_HUB_URL}/api/sessions/{session_id}")
 
 
+@router.get("/agent-hub/ownership/projects/{project_id}/live")
+async def get_project_live_ownership(project_id: str) -> object:
+    """Proxy to Agent Hub live ownership inventory for a project."""
+    return await _get_json(f"{AGENT_HUB_URL}/api/ownership/projects/{project_id}/live")
+
+
 # ---------------------------------------------------------------------------
 # Complete (streaming SSE proxy)
 # ---------------------------------------------------------------------------

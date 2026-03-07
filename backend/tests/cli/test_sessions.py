@@ -258,3 +258,61 @@ class TestSessionCommands:
             {"id": "sess-1", "status": "completed", "agent_slug": "coder"},
             {"id": "sess-2", "status": "active", "agent_slug": None},
         ]
+
+
+class TestOwnershipCommand:
+    """Tests for `st sessions ownership`."""
+
+    def test_ownership_lists_cross_project_rows_in_compact_mode(self) -> None:
+        mock_client = MagicMock()
+        mock_client.get.side_effect = [
+            [{"id": "summitflow"}, {"id": "agent-hub"}],
+            {
+                "active_owners": [
+                    {
+                        "task_id": "task-1",
+                        "session_id": "sess-1",
+                        "agent_slug": "coder",
+                        "ownership_kind": "scoped",
+                        "branch": "task-1/main",
+                        "worktree_path": "/tmp/task-1",
+                        "scope_paths": ["backend/app/foo.py"],
+                        "is_stale": False,
+                    }
+                ]
+            },
+            {"active_owners": []},
+        ]
+
+        with patch("cli.commands.sessions.STClient", return_value=mock_client):
+            result = runner.invoke(app, ["sessions", "ownership"])
+
+        assert result.exit_code == 0
+        assert "OWNERSHIP[1]" in result.output
+        assert "OWN summitflow | task-1 | coder | sess-1 | kind=scoped" in result.output
+        assert "branch=task-1/main" in result.output
+        assert "cwd=/tmp/task-1" in result.output
+        assert "paths=backend/app/foo.py" in result.output
+
+    def test_ownership_outputs_json_when_not_compact(self) -> None:
+        mock_client = MagicMock()
+        mock_client.get.side_effect = [
+            {
+                "active_owners": [
+                    {
+                        "task_id": "task-2",
+                        "session_id": "sess-2",
+                        "agent_slug": "reviewer",
+                        "ownership_kind": "unscoped",
+                    }
+                ]
+            }
+        ]
+
+        with patch("cli.commands.sessions.STClient", return_value=mock_client):
+            result = runner.invoke(app, ["--no-compact", "sessions", "ownership", "--project", "agent-hub"])
+
+        assert result.exit_code == 0
+        assert '"total": 1' in result.output
+        assert '"project_id": "agent-hub"' in result.output
+        assert '"task_id": "task-2"' in result.output

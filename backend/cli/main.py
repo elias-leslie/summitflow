@@ -118,7 +118,7 @@ PERSONA: persona status | persona set-active <slug> | persona clear
 
 AGENTS: agents list | get <slug> | update <slug> [--primary-model M] [--memory-config-file path.json]
 
-SESSIONS: sessions list [--status S] | sessions show <id>
+SESSIONS: sessions list [--status S] | sessions show <id> | sessions ownership [--project P]
 
 AUTONOMOUS: autonomous enable | disable | status
 
