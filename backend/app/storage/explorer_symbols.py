@@ -201,3 +201,22 @@ def delete_symbols_for_file(project_id: str, file_path: str) -> int:
         deleted = cur.rowcount or 0
         conn.commit()
         return deleted
+
+
+def cleanup_stale_symbols(project_id: str, current_paths: set[str]) -> int:
+    """Delete symbol rows for files missing from the current file scan snapshot."""
+    with get_connection() as conn, conn.cursor() as cur:
+        if current_paths:
+            cur.execute(
+                """
+                DELETE FROM explorer_symbols
+                WHERE project_id = %s
+                  AND file_path <> ALL(%s)
+                """,
+                (project_id, sorted(current_paths)),
+            )
+        else:
+            cur.execute("DELETE FROM explorer_symbols WHERE project_id = %s", (project_id,))
+        deleted = cur.rowcount or 0
+        conn.commit()
+        return deleted

@@ -41,6 +41,7 @@ from .explorer_scan_state import (
     update_scan_state,
 )
 from .explorer_symbols import (
+    cleanup_stale_symbols,
     delete_symbols_for_file,
     get_symbol,
     list_symbols_for_file,
@@ -54,6 +55,7 @@ __all__ = [
     "_ALLOWED_SORT_FIELDS",
     "_ENTRY_COLUMNS",
     "cleanup_stale_entries",
+    "cleanup_stale_symbols",
     "count_stale_metadata_entries",
     "delete_entries",
     "delete_symbols_for_file",

@@ -67,6 +67,11 @@ class BaseScanner(ABC):
         """Determine health status for an entry. Returns entry's current status."""
         return entry.health_status
 
+    def post_save_cleanup(self, current_paths: set[str]) -> None:
+        """Hook for scanner-specific cleanup after entries are saved."""
+        del current_paths
+        return None
+
     def _run_scan_success(self, start_time: float) -> ScanResult:
         """Execute scan, save results, clean up stale entries, return ScanResult."""
         entries = self.scan()
@@ -83,6 +88,7 @@ class BaseScanner(ABC):
                 f"Cleaned up {deleted_count} stale {self.entry_type} entries "
                 f"for {self.project_id}"
             )
+        self.post_save_cleanup(current_paths)
 
         duration_ms = int((time.time() - start_time) * 1000)
         logger.info(
