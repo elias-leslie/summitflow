@@ -7,6 +7,7 @@ from typing import Annotated
 import typer
 
 from ..client import APIError, STClient
+from ..output import set_compact_output
 
 app = typer.Typer(help="Task management commands")
 
@@ -46,10 +47,13 @@ def list_tasks(
     labels: Annotated[str | None, typer.Option("-l", "--labels")] = None,
     limit: Annotated[int, typer.Option("--limit")] = 50,
     json_output: Annotated[bool, typer.Option("--json")] = False,
+    compact: Annotated[bool | None, typer.Option("--compact/--no-compact")] = None,
 ) -> None:
     """List tasks with optional filters."""
     from .tasks_list import list_tasks_command
 
+    if compact is not None:
+        set_compact_output(compact)
     list_tasks_command(status, task_type, priority, tier, labels, limit, json_output)
 
 
@@ -92,10 +96,13 @@ def ready_all(
 def context(
     task_id: Annotated[str, typer.Argument()],
     subtask: Annotated[str | None, typer.Option("--subtask", "-s")] = None,
+    compact: Annotated[bool | None, typer.Option("--compact/--no-compact")] = None,
 ) -> None:
     """Get task or subtask context in a single call."""
     from .tasks_context import get_task_context
 
+    if compact is not None:
+        set_compact_output(compact)
     get_task_context(task_id, subtask, STClient(require_project=False))
 
 
@@ -154,13 +161,17 @@ def bug(
 @app.command()
 def log(
     message: str,
+    task_id_arg: Annotated[str | None, typer.Argument(help="Task ID (optional trailing form)")] = None,
     task_id: Annotated[str | None, typer.Option("-t", "--task", help="Task ID")] = None,
 ) -> None:
     """Append a log entry to a task's progress log."""
-    from ..context import require_task_id
     from .tasks_commands import append_task_log
 
-    append_task_log(message, require_task_id(task_id), STClient())
+    resolved_task_id = task_id or task_id_arg
+    if not resolved_task_id:
+        typer.echo("Error: task id required via trailing argument or --task", err=True)
+        raise typer.Exit(1)
+    append_task_log(message, resolved_task_id, STClient())
 
 
 @app.command("verify")

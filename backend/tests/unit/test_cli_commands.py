@@ -12,15 +12,18 @@ import json
 import tempfile
 from collections.abc import Generator
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import jsonschema
 import pytest
 from typer.testing import CliRunner
 
 from cli.commands.step import app as step_app
 from cli.commands.subtask import app as subtask_app
 from cli.commands.tasks import app as tasks_app
+from cli.commands.tasks_import import import_plan_file
 
 runner = CliRunner()
 
@@ -313,6 +316,86 @@ class TestAutocodeValidation:
         assert result.exit_code == 1
         assert "not execution-ready" in result.output
         assert "Missing objective" in result.output
+
+
+class TestTaskCliErgonomics:
+    """Tests for task CLI friction fixes."""
+
+    def test_list_accepts_local_compact_flag(self) -> None:
+        with patch("cli.commands.tasks_list.list_tasks_command") as mock_list:
+            result = runner.invoke(tasks_app, ["list", "--compact"])
+
+        assert result.exit_code == 0
+        mock_list.assert_called_once()
+
+    def test_context_accepts_local_compact_flag(self) -> None:
+        with patch("cli.commands.tasks_context.get_task_context") as mock_get:
+            result = runner.invoke(tasks_app, ["context", "task-123", "--compact"])
+
+        assert result.exit_code == 0
+        mock_get.assert_called_once()
+
+    def test_log_accepts_trailing_task_id(self) -> None:
+        with patch("cli.commands.tasks_commands.append_task_log") as mock_append:
+            result = runner.invoke(tasks_app, ["log", "hello world", "task-123"])
+
+        assert result.exit_code == 0
+        mock_append.assert_called_once()
+
+    def test_import_plan_refreshes_subtasks_before_reporting(self) -> None:
+        schema_path = Path(__file__).resolve().parents[2] / "app" / "schemas" / "plan.schema.json"
+        plan_path = Path(tempfile.mkdtemp()) / "plan.json"
+        plan_path.write_text(
+            json.dumps(
+                {
+                    "title": "Import refresh smoke",
+                    "objective": "Ensure imported tasks report real subtask counts.",
+                    "complexity": "STANDARD",
+                    "spirit_anti": "Do not use stale task snapshots after import.",
+                    "done_when": ["Import reports one subtask"],
+                    "subtasks": [{"id": "1.1", "description": "Implement", "steps": ["Do thing"]}],
+                }
+            )
+        )
+
+        mock_client = MagicMock()
+        mock_client.base_url = "http://test"
+        mock_client.get.return_value = json.loads(schema_path.read_text())
+        mock_client.batch_create_tasks.return_value = {
+            "created": [_make_mock_task("task-mock-1", complexity="STANDARD")],
+            "errors": [],
+        }
+        mock_client.get_task.return_value = _make_mock_task("task-mock-1", complexity="STANDARD")
+        mock_client.get_subtasks.return_value = {
+            "subtasks": [{"subtask_id": "1.1", "description": "Implement", "steps": ["Do thing"]}]
+        }
+
+        with patch("cli.commands.tasks_import.upsert_task_spirit_from_plan"):
+            task, task_id = import_plan_file(plan_path, False, None, mock_client)
+
+        assert task_id == "task-mock-1"
+        assert len(task["subtasks"]) == 1
+        assert task["subtasks"][0]["subtask_id"] == "1.1"
+
+
+class TestPlanSchemaConsistency:
+    """Tests for plan schema and import ergonomics."""
+
+    def test_plan_schema_allows_string_steps(self) -> None:
+        schema_path = Path(__file__).resolve().parents[2] / "app" / "schemas" / "plan.schema.json"
+        schema = json.loads(schema_path.read_text())
+        plan = {
+            "title": "Schema smoke task",
+            "objective": "Validate that string steps are accepted in plan subtasks.",
+            "complexity": "STANDARD",
+            "spirit_anti": "Do not reject valid string steps.",
+            "done_when": ["Schema validation passes"],
+            "subtasks": [
+                {"id": "1.1", "description": "Implement", "steps": ["Do thing", {"description": "Verify thing"}]}
+            ],
+        }
+
+        jsonschema.validate(plan, schema)
 
 
 class TestCreateFromFileErrors:

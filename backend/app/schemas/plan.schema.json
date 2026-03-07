@@ -140,16 +140,21 @@
             "type": "array",
             "description": "Specific implementation actions.",
             "items": {
-              "type": "object",
-              "required": ["description"],
-              "properties": {
-                "description": { "type": "string" },
-                "spec": {
+              "anyOf": [
+                { "type": "string" },
+                {
                   "type": "object",
-                  "description": "Free-form implementation details stored in task_subtask_steps.spec"
+                  "required": ["description"],
+                  "properties": {
+                    "description": { "type": "string" },
+                    "spec": {
+                      "type": "object",
+                      "description": "Free-form implementation details stored in task_subtask_steps.spec"
+                    }
+                  },
+                  "additionalProperties": false
                 }
-              },
-              "additionalProperties": false
+              ]
             }
           },
           "depends_on": {

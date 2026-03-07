@@ -102,6 +102,15 @@ def _validate_plan(plan: Any, client: STClient) -> None:
         raise typer.Exit(1)
 
 
+def _refresh_imported_task(task_id: str, client: STClient) -> dict[str, Any]:
+    """Fetch the current task snapshot and attach subtasks for import reporting."""
+    task = client.get_task(task_id)
+    subtasks = client.get_subtasks(task_id).get("subtasks", [])
+    if subtasks:
+        task["subtasks"] = subtasks
+    return task
+
+
 def import_plan_file(
     file_path: Path, dry_run: bool, task_id: str | None, client: STClient
 ) -> tuple[dict[str, Any], str]:
@@ -145,7 +154,7 @@ def _update_task_from_plan(
             _replace_subtasks(task_id, subtasks, client)
             create_subtask_dependencies(task_id, subtasks)
         upsert_task_spirit_from_plan(task_id, plan)
-        return client.get_task(task_id), task_id
+        return _refresh_imported_task(task_id, client), task_id
     except APIError as e:
         handle_api_error(e)
         raise typer.Exit(1) from None
@@ -185,4 +194,4 @@ def _create_task_from_plan(
         raise typer.Exit(1)
     task = created[0]
     upsert_task_spirit_from_plan(task["id"], plan)
-    return task, task["id"]
+    return _refresh_imported_task(task["id"], client), task["id"]
