@@ -14,8 +14,9 @@ from ..lib.checkpoint import (
     create_subtask_branch,
     create_task_snapshot,
     get_snapshot_info,
+    remove_snapshot,
 )
-from ..output import output_error, output_success
+from ..output import output_error, output_success, output_warning
 from .claim_helpers import (
     handle_existing_checkpoint,
     is_subtask_id,
@@ -44,12 +45,22 @@ def _claim_task(
         return handle_existing_checkpoint(task_id, existing)
 
     require_clean_tree()
-    meta = create_task_snapshot(task_id, project_id)
 
     try:
-        client.update_status(task_id, "running")
+        client.claim_task(task_id)
     except APIError as e:
-        output_error(f"Failed to set status: {e.detail}")
+        output_error(f"Failed to claim task: {e.detail}")
+        raise typer.Exit(1) from None
+
+    try:
+        meta = create_task_snapshot(task_id, project_id)
+    except Exception as e:
+        remove_snapshot(task_id, remove_worktree=True, project_id=project_id)
+        try:
+            client.release_task(task_id)
+        except Exception as release_error:
+            output_warning(f"Failed to release task claim after snapshot error: {release_error}")
+        output_error(f"Failed to create checkpoint: {e}")
         raise typer.Exit(1) from None
 
     return {
