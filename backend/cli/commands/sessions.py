@@ -28,6 +28,7 @@ def _render_session_list(
     limit: int,
     agent_slug: str | None,
     parent_session_id: str | None,
+    project_id: str | None,
     include_unassigned: bool = True,
 ) -> None:
     client = STClient()
@@ -40,6 +41,7 @@ def _render_session_list(
             page=1,
             agent_slug=agent_slug,
             parent_session_id=parent_session_id,
+            project_id=project_id,
         )
     except APIError as e:
         handle_api_error(e)
@@ -58,11 +60,19 @@ def sessions_callback(
     limit: Annotated[int, typer.Option("--limit")] = 20,
     agent_slug: Annotated[str | None, typer.Option("--agent")] = None,
     parent_session_id: Annotated[str | None, typer.Option("--parent-session")] = None,
+    project_id: Annotated[str | None, typer.Option("--project")] = None,
 ) -> None:
     """List agent sessions when no subcommand is provided."""
     if ctx.invoked_subcommand is not None:
         return
-    _render_session_list(status_filter, limit, agent_slug, parent_session_id, include_unassigned=False)
+    _render_session_list(
+        status_filter,
+        limit,
+        agent_slug,
+        parent_session_id,
+        project_id,
+        include_unassigned=False,
+    )
 
 
 @app.command("list")
@@ -78,6 +88,7 @@ def list_sessions(
     limit: Annotated[int, typer.Option("--limit")] = 20,
     agent_slug: Annotated[str | None, typer.Option("--agent")] = None,
     parent_session_id: Annotated[str | None, typer.Option("--parent-session")] = None,
+    project_id: Annotated[str | None, typer.Option("--project")] = None,
 ) -> None:
     """List agent sessions.
 
@@ -91,6 +102,7 @@ def list_sessions(
         limit,
         agent_slug,
         parent_session_id,
+        project_id,
         include_unassigned=include_unassigned,
     )
 

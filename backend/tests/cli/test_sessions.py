@@ -110,6 +110,7 @@ class TestSessionsListCommand:
             page=1,
             agent_slug=None,
             parent_session_id=None,
+            project_id=None,
         )
 
     def test_list_passes_filters_to_client(self) -> None:
@@ -130,6 +131,8 @@ class TestSessionsListCommand:
                     "debugger",
                     "--parent-session",
                     "parent-123",
+                    "--project",
+                    "summitflow",
                 ],
             )
 
@@ -140,6 +143,7 @@ class TestSessionsListCommand:
             page=1,
             agent_slug="debugger",
             parent_session_id="parent-123",
+            project_id="summitflow",
         )
 
     def test_list_normalizes_running_status_to_active(self) -> None:
@@ -156,6 +160,7 @@ class TestSessionsListCommand:
             page=1,
             agent_slug=None,
             parent_session_id=None,
+            project_id=None,
         )
 
 
@@ -179,6 +184,7 @@ class TestSessionsCommandAliases:
             page=1,
             agent_slug=None,
             parent_session_id=None,
+            project_id=None,
         )
 
     def test_sessions_root_forwards_list_filters(self) -> None:
@@ -195,6 +201,7 @@ class TestSessionsCommandAliases:
             page=1,
             agent_slug=None,
             parent_session_id=None,
+            project_id=None,
         )
 
 
