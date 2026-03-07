@@ -41,11 +41,33 @@ class ExecutionOperationsMixin:
             self._client, self._url, self._handle_response, **updates
         )
 
-    def list_sessions(self) -> list[dict[str, Any]]:
-        return exec_ops.list_sessions(self._client, self._url, self._handle_response)
+    def list_sessions(
+        self,
+        *,
+        status: str | None = None,
+        limit: int = 20,
+        page: int = 1,
+        agent_slug: str | None = None,
+        parent_session_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        return exec_ops.list_sessions(
+            self._client,
+            lambda path: self._global_url(f"/agent-hub{path}"),
+            self._handle_response,
+            status=status,
+            limit=limit,
+            page=page,
+            agent_slug=agent_slug,
+            parent_session_id=parent_session_id,
+        )
 
     def get_session(self, session_id: str) -> dict[str, Any]:
-        return exec_ops.get_session(self._client, self._url, self._handle_response, session_id)
+        return exec_ops.get_session(
+            self._client,
+            lambda path: self._global_url(f"/agent-hub{path}"),
+            self._handle_response,
+            session_id,
+        )
 
     def get_task_agent_events(
         self,

@@ -16,6 +16,8 @@ app = typer.Typer(help="Agent session management")
 def list_sessions(
     status_filter: Annotated[str | None, typer.Option("-s", "--status")] = None,
     limit: Annotated[int, typer.Option("--limit")] = 20,
+    agent_slug: Annotated[str | None, typer.Option("--agent")] = None,
+    parent_session_id: Annotated[str | None, typer.Option("--parent-session")] = None,
 ) -> None:
     """List agent sessions.
 
@@ -26,17 +28,16 @@ def list_sessions(
     client = STClient()
 
     try:
-        sessions = client.list_sessions()
+        sessions = client.list_sessions(
+            status=status_filter,
+            limit=limit,
+            page=1,
+            agent_slug=agent_slug,
+            parent_session_id=parent_session_id,
+        )
     except APIError as e:
         handle_api_error(e)
         return
-
-    # Filter by status if specified
-    if status_filter:
-        sessions = [s for s in sessions if s.get("status") == status_filter]
-
-    # Limit results
-    sessions = sessions[:limit]
 
     output_json(sessions)
 

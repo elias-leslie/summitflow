@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -178,6 +178,31 @@ async def update_preferences(request: Request) -> object:
 # ---------------------------------------------------------------------------
 # Sessions
 # ---------------------------------------------------------------------------
+
+
+@router.get("/agent-hub/sessions")
+async def list_sessions(
+    project_id: str | None = Query(default=None),
+    status: str | None = Query(default=None),
+    agent_slug: str | None = Query(default=None),
+    parent_session_id: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+) -> object:
+    """Proxy to Agent Hub to list sessions with filtering."""
+    params: dict[str, object] = {
+        "page": page,
+        "page_size": page_size,
+    }
+    if project_id:
+        params["project_id"] = project_id
+    if status:
+        params["status"] = status
+    if agent_slug:
+        params["agent_slug"] = agent_slug
+    if parent_session_id:
+        params["parent_session_id"] = parent_session_id
+    return await _get_json(f"{AGENT_HUB_URL}/api/sessions", params=params)
 
 
 @router.get("/agent-hub/sessions/{session_id}")

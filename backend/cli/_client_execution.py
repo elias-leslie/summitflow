@@ -24,10 +24,34 @@ def update_autonomous_settings(
     return cast(dict[str, Any], handle_response(response))
 
 
-def list_sessions(client: httpx.Client, url_fn: Any, handle_response: Any) -> list[dict[str, Any]]:
+def list_sessions(
+    client: httpx.Client,
+    url_fn: Any,
+    handle_response: Any,
+    *,
+    status: str | None = None,
+    limit: int = 20,
+    page: int = 1,
+    agent_slug: str | None = None,
+    parent_session_id: str | None = None,
+) -> list[dict[str, Any]]:
     """List agent sessions for the project."""
-    response = client.get(url_fn("/sessions"))
-    return cast(list[dict[str, Any]], handle_response(response))
+    params: dict[str, Any] = {
+        "page": page,
+        "page_size": limit,
+    }
+    if status:
+        params["status"] = status
+    if agent_slug:
+        params["agent_slug"] = agent_slug
+    if parent_session_id:
+        params["parent_session_id"] = parent_session_id
+
+    response = client.get(url_fn("/sessions"), params=params)
+    data = handle_response(response)
+    if isinstance(data, list):
+        return cast(list[dict[str, Any]], data)
+    return cast(list[dict[str, Any]], cast(dict[str, Any], data).get("sessions", []))
 
 
 def get_session(
