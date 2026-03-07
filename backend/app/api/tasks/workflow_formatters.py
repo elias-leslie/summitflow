@@ -26,6 +26,13 @@ def _format_context_lines(spirit: dict[str, Any]) -> list[str]:
         parts.append(f"refs:{len(ctx['references'])}")
     if ctx.get("testing_strategy"):
         parts.append(f"testing:{ctx['testing_strategy'][:80]}")
+    second_opinion = ctx.get("second_opinion")
+    if isinstance(second_opinion, dict):
+        parts.append(
+            "2nd:"
+            f"{second_opinion.get('stage', 'task_shape')}:"
+            f"{second_opinion.get('status', 'pending')}"
+        )
     return [f"CONTEXT:{' | '.join(parts)}"] if parts else []
 
 

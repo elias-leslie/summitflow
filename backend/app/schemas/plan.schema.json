@@ -197,6 +197,49 @@
           },
           "description": "External docs, specs, examples"
         },
+        "second_opinion": {
+          "type": "object",
+          "description": "Structured task-shape or pre-close critique metadata for high-risk work",
+          "required": ["required", "stage", "status", "summary"],
+          "properties": {
+            "required": { "type": "boolean" },
+            "stage": {
+              "type": "string",
+              "enum": ["task_shape", "pre_close", "both"]
+            },
+            "status": {
+              "type": "string",
+              "enum": ["pending", "completed", "waived", "needs_revision"]
+            },
+            "summary": { "type": "string" },
+            "reviewed_by_agent": { "type": "string" },
+            "reviewed_at": { "type": "string", "format": "date-time" },
+            "verdict": { "type": "string" },
+            "confidence": { "type": "string" },
+            "findings": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "missing_requirements": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "edge_cases": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "test_gaps": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "rollout_gaps": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "simpler_alternative": { "type": "string" }
+          },
+          "additionalProperties": true
+        },
         "testing_strategy": {
           "type": "string",
           "description": "How to test/verify the implementation"

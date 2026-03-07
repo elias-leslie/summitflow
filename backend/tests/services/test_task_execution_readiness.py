@@ -54,3 +54,67 @@ class TestAssessTaskExecutionReadiness:
         assert readiness.ready is True
         assert readiness.plan_status == "approved"
         assert readiness.issues == []
+
+    def test_complex_task_requires_completed_second_opinion(self) -> None:
+        readiness = assess_task_execution_readiness(
+            {
+                "task_type": "feature",
+                "complexity": "COMPLEX",
+                "description": "Migrate critical auth flow",
+                "priority": 1,
+                "labels": ["auth", "backend"],
+            },
+            {
+                "objective": "Ship auth migration safely",
+                "done_when": ["Migration works", "Tests pass"],
+                "spirit_anti": "Do not break login",
+                "decisions": [{"id": "d1", "title": "Keep API stable", "outcome": "compat shim"}],
+                "context": {"files_to_modify": ["backend/app/auth.py"]},
+            },
+            [
+                {
+                    "subtask_id": "1.1",
+                    "description": "Implement migration",
+                    "steps_from_table": [{"step_number": 1, "description": "Update flow"}],
+                }
+            ],
+        )
+
+        assert readiness.ready is False
+        assert "second_opinion" in readiness.missing_fields
+        assert any("second opinion" in issue.lower() for issue in readiness.issues)
+
+    def test_completed_second_opinion_satisfies_complex_task_gate(self) -> None:
+        readiness = assess_task_execution_readiness(
+            {
+                "task_type": "feature",
+                "complexity": "COMPLEX",
+                "description": "Migrate critical auth flow",
+                "priority": 1,
+                "labels": ["auth", "backend"],
+            },
+            {
+                "objective": "Ship auth migration safely",
+                "done_when": ["Migration works", "Tests pass"],
+                "spirit_anti": "Do not break login",
+                "decisions": [{"id": "d1", "title": "Keep API stable", "outcome": "compat shim"}],
+                "context": {
+                    "files_to_modify": ["backend/app/auth.py"],
+                    "second_opinion": {
+                        "required": True,
+                        "stage": "task_shape",
+                        "status": "completed",
+                        "summary": "Plan covers migration and rollback risks.",
+                    },
+                },
+            },
+            [
+                {
+                    "subtask_id": "1.1",
+                    "description": "Implement migration",
+                    "steps_from_table": [{"step_number": 1, "description": "Update flow"}],
+                }
+            ],
+        )
+
+        assert readiness.ready is True

@@ -229,6 +229,28 @@ def autocode(
     autocode_task(require_task_id(task_id), dry_run, at, STClient(require_project=False))
 
 
+@app.command("critique")
+def critique(
+    task_id: Annotated[str, typer.Argument()],
+    stage: Annotated[
+        str,
+        typer.Option("--stage", help="Critique stage: task_shape, pre_close, or both"),
+    ] = "task_shape",
+    agent: Annotated[
+        str,
+        typer.Option("--agent", help="Agent Hub agent slug to use for the critique"),
+    ] = "specifier",
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Run even when the task does not currently require a second opinion"),
+    ] = False,
+) -> None:
+    """Request and store a second-opinion critique for a task."""
+    from .tasks_critique import critique_task_command
+
+    critique_task_command(task_id, stage, agent, force)
+
+
 @app.command("import", hidden=True)
 def import_plan_removed() -> None:
     """Removed: use st create --plan plan.json instead."""

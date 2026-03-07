@@ -377,6 +377,59 @@ class TestTaskCliErgonomics:
         assert len(task["subtasks"]) == 1
         assert task["subtasks"][0]["subtask_id"] == "1.1"
 
+    def test_critique_command_records_second_opinion(self) -> None:
+        task = _make_mock_task(
+            "task-mock-1",
+            title="Critical auth migration",
+            task_type="feature",
+            complexity="COMPLEX",
+            priority=1,
+        )
+        task["labels"] = ["auth", "backend"]
+
+        mock_client = MagicMock()
+        mock_client.complete.return_value = MagicMock(
+            content=json.dumps(
+                {
+                    "verdict": "APPROVED",
+                    "summary": "Task definition covers the core auth migration risks.",
+                    "missing_requirements": [],
+                    "edge_cases": ["Session invalidation during rollout"],
+                    "test_gaps": ["Add migration rollback test"],
+                    "rollout_gaps": [],
+                    "findings": [],
+                    "simpler_alternative": "",
+                    "confidence": "high",
+                }
+            )
+        )
+
+        with (
+            patch("cli.commands.tasks_critique.task_store.get_task", return_value=task),
+            patch(
+                "cli.commands.tasks_critique.get_task_spirit",
+                return_value={
+                    "objective": "Ship auth migration safely",
+                    "spirit_anti": "Do not break login",
+                    "decisions": [{"id": "d1", "title": "Keep routes stable", "outcome": "compat shim"}],
+                    "done_when": ["Migration works", "Tests pass"],
+                    "context": {"files_to_modify": ["backend/app/auth.py"]},
+                },
+            ),
+            patch("cli.commands.tasks_critique.get_subtasks_for_task", return_value=[]),
+            patch("cli.commands.tasks_critique.get_sync_client", return_value=mock_client),
+            patch("cli.commands.tasks_critique.persist_second_opinion") as mock_persist,
+            patch("cli.commands.tasks_critique.sync_task_execution_readiness"),
+            patch("cli.commands.tasks_critique.log_task_event"),
+        ):
+            result = runner.invoke(tasks_app, ["critique", "task-mock-1"])
+
+        assert result.exit_code == 0
+        assert '"verdict": "APPROVED"' in result.output
+        persisted = mock_persist.call_args.args[1]
+        assert persisted["status"] == "completed"
+        assert persisted["stage"] == "task_shape"
+
 
 class TestPlanSchemaConsistency:
     """Tests for plan schema and import ergonomics."""
@@ -393,6 +446,29 @@ class TestPlanSchemaConsistency:
             "subtasks": [
                 {"id": "1.1", "description": "Implement", "steps": ["Do thing", {"description": "Verify thing"}]}
             ],
+        }
+
+        jsonschema.validate(plan, schema)
+
+    def test_plan_schema_accepts_second_opinion_context(self) -> None:
+        schema_path = Path(__file__).resolve().parents[2] / "app" / "schemas" / "plan.schema.json"
+        schema = json.loads(schema_path.read_text())
+        plan = {
+            "title": "Second opinion schema smoke",
+            "objective": "Validate second-opinion metadata in task plans.",
+            "complexity": "COMPLEX",
+            "spirit_anti": "Do not omit critique metadata for high-risk work.",
+            "done_when": ["Schema validation passes"],
+            "decisions": [{"id": "d1", "title": "Require task-shape critique", "outcome": "yes"}],
+            "context": {
+                "second_opinion": {
+                    "required": True,
+                    "stage": "task_shape",
+                    "status": "completed",
+                    "summary": "Independent critique reviewed the plan.",
+                    "confidence": "high",
+                }
+            },
         }
 
         jsonschema.validate(plan, schema)

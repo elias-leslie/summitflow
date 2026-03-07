@@ -38,6 +38,7 @@ def upsert_task_spirit_from_plan(task_id: str, plan: dict[str, Any]) -> None:
             "risks": ctx.get("risks", []), "files_to_create": ctx.get("files_to_create", []),
             "files_to_modify": ctx.get("files_to_modify", []), "references": ctx.get("references", []),
             "testing_strategy": ctx.get("testing_strategy"),
+            "second_opinion": ctx.get("second_opinion"),
         }.items() if v}
         upsert_task_spirit(
             task_id=task_id, objective=plan["objective"], spirit_anti=plan.get("spirit_anti"),

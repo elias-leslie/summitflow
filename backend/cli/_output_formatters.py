@@ -96,6 +96,10 @@ def format_context_task(task: dict[str, Any]) -> str:
             parts.append(f"refs:{len(refs)}")
         if testing := context.get("testing_strategy"):
             parts.append(f"testing:{testing[:50]}")
+        if isinstance(second_opinion := context.get("second_opinion"), dict):
+            stage = second_opinion.get("stage", "task_shape")
+            status = second_opinion.get("status", "pending")
+            parts.append(f"2nd:{stage}:{status}")
         if parts:
             lines.append(f"CONTEXT:{' | '.join(parts)}")
     return "\n".join(lines)
