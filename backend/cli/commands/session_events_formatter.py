@@ -21,6 +21,32 @@ _TYPE_COLORS = {
 _RESET = "\033[0m"
 
 
+def _summarize_memory_inject(tool_input: dict[str, Any]) -> str:
+    """Summarize selected vs passive reference injection details."""
+    total = int(tool_input.get("count") or 0)
+    selected = int(tool_input.get("reference_selected_count") or 0)
+    indexed = int(tool_input.get("reference_index_count") or 0)
+    return f"loaded={total} refs:selected={selected} index={indexed}"
+
+
+def _summarize_memory_cite(
+    tool_input: dict[str, Any],
+    selected_reference_uuids: set[str] | None = None,
+) -> str:
+    """Summarize citation effectiveness against selected references."""
+    cited_uuids = [str(uuid) for uuid in (tool_input.get("uuids") or []) if uuid]
+    total_cited = len(cited_uuids)
+    selected_hits = 0
+    selected_total = len(selected_reference_uuids or set())
+    if selected_reference_uuids:
+        selected_hits = sum(1 for uuid in cited_uuids if uuid in selected_reference_uuids)
+    if selected_total > 0:
+        return (
+            f"cited={total_cited} selected_cited={selected_hits}/{selected_total}"
+        )
+    return f"cited={total_cited}"
+
+
 def summarize_tool_input(tool_name: str, tool_input: dict[str, Any]) -> str:
     """Extract human-readable summary from tool input."""
     if tool_name == "bash":
@@ -119,6 +145,32 @@ def format_event(event: dict[str, Any], verbose: bool = False) -> str:
     return header
 
 
+def _format_memory_event_content(
+    event: dict[str, Any],
+    verbose: bool,
+    selected_reference_uuids: set[str] | None = None,
+) -> str:
+    """Extract display content for memory events."""
+    tool_input = event.get("tool_input")
+    if not tool_input:
+        return event.get("content") or ""
+    if verbose:
+        return json.dumps(tool_input, indent=2)
+    event_type = event.get("event_type")
+    if event_type == "memory_inject":
+        return _summarize_memory_inject(tool_input)
+    if event_type == "memory_cite":
+        return _summarize_memory_cite(tool_input, selected_reference_uuids)
+    return event.get("content") or ""
+
+
+def _selected_refs_from_memory_inject(event: dict[str, Any]) -> set[str]:
+    """Extract selected reference UUIDs from a memory injection event."""
+    tool_input = event.get("tool_input") or {}
+    uuids = tool_input.get("reference_selected_uuids") or []
+    return {str(uuid) for uuid in uuids if uuid}
+
+
 def _display_events_header(
     total: int,
     max_turn: int,
@@ -143,13 +195,27 @@ def _display_events_body(events: list[dict[str, Any]], verbose: bool) -> None:
     """Print each event, emitting session separator lines as needed."""
     current_session: str | None = None
     session_index = 0
+    selected_refs_by_session: dict[str, set[str]] = {}
     for event in events:
         event_session = event.get("session_id")
         if event_session and event_session != current_session:
             session_index += 1
             current_session = event_session
             typer.echo(f"\033[33m--- Session {session_index}: {event_session[:8]} ---\033[0m")
-        typer.echo(format_event(event, verbose))
+        session_key = event_session or current_session or "_default"
+        if event.get("event_type") == "memory_inject":
+            selected_refs_by_session[session_key] = _selected_refs_from_memory_inject(event)
+
+        if event.get("event_type") in {"memory_inject", "memory_cite"}:
+            event_for_display = dict(event)
+            event_for_display["content"] = _format_memory_event_content(
+                event,
+                verbose,
+                selected_refs_by_session.get(session_key),
+            )
+            typer.echo(format_event(event_for_display, verbose))
+        else:
+            typer.echo(format_event(event, verbose))
         typer.echo()
 
 

@@ -24,7 +24,7 @@ MSG_NO_SESSION_EVENTS = "No events found for this session."
 
 # Help strings for long option descriptions
 _HELP_TASK = "Task ID (auto-resolves linked Agent Hub sessions)"
-_HELP_EVENT_TYPE = "Filter by event type (tool_use, tool_result, user_message, assistant_message, thinking, memory_inject, error)"
+_HELP_EVENT_TYPE = "Filter by event type (tool_use, tool_result, user_message, assistant_message, thinking, memory_inject, memory_cite, error)"
 
 
 def _handle_task_events(
