@@ -16,10 +16,8 @@ from fastapi import APIRouter, HTTPException
 
 from ...logging_config import get_logger
 from ...schemas.tasks import TaskResponse, TaskStatusUpdate, TaskUpdate
-from ...services.task_execution_readiness import (
-    load_task_execution_readiness,
-    sync_task_execution_readiness,
-)
+from ...services.task_execution_readiness import sync_task_execution_readiness
+from ...services.task_validation import validate_task_ready
 from ...storage import log_task_event
 from ...storage import tasks as task_store
 from ...storage.tasks.execution_mode import is_manual_only_mode
@@ -154,7 +152,7 @@ async def execute_task(project_id: str, task_id: str) -> TaskResponse:
             status_code=400,
             detail="Task is manual-only and cannot be queued for autonomous execution",
         )
-    readiness = await asyncio.to_thread(load_task_execution_readiness, task_id)
+    readiness = await asyncio.to_thread(validate_task_ready, task_id, project_id)
     if not readiness.ready:
         raise HTTPException(
             status_code=422,
@@ -162,7 +160,6 @@ async def execute_task(project_id: str, task_id: str) -> TaskResponse:
                 "message": "Task is not execution-ready for autonomous work",
                 "issues": readiness.issues,
                 "suggestions": readiness.suggestions,
-                "missing_fields": readiness.missing_fields,
             },
         )
 

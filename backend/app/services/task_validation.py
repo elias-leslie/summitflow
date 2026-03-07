@@ -11,6 +11,7 @@ from typing import Any
 from ..storage import task_dependencies as dep_store
 from ..storage import tasks as task_store
 from .task_execution_readiness import load_task_execution_readiness
+from .task_lane_preflight import check_task_lane_conflicts
 
 
 @dataclass
@@ -113,6 +114,9 @@ def validate_task_ready(task_id: str, project_id: str) -> TaskValidationResult:
     issues: list[str] = []
     suggestions: list[str] = []
     _collect_blocker_issues(task_id, issues, suggestions)
+    lane_check = check_task_lane_conflicts(task_id, project_id)
+    issues.extend(lane_check.issues)
+    suggestions.extend(lane_check.suggestions)
     readiness = load_task_execution_readiness(task_id)
     issues.extend(readiness.issues)
     suggestions.extend(readiness.suggestions)
