@@ -20,6 +20,75 @@ class TestTaskLanePreflight:
 
     @patch("app.services.task_lane_preflight.task_store.get_task")
     @patch("app.services.task_lane_preflight.httpx.Client")
+    def test_ownership_inventory_payload_maps_to_live_lane_sessions(
+        self,
+        mock_client_cls: MagicMock,
+        mock_get_task: MagicMock,
+    ) -> None:
+        mock_get_task.return_value = {"id": "task-999", "status": "running"}
+        mock_client = MagicMock()
+        mock_client.get.return_value = _mock_response(
+            {
+                "project_id": "summitflow",
+                "generated_at": "2026-03-07T18:00:00Z",
+                "active_owners": [
+                    {
+                        "task_id": "task-999",
+                        "session_id": "sess-ownership",
+                        "branch": "task-999/main",
+                        "worktree_path": "/tmp/worktrees/task-999",
+                        "is_worktree": True,
+                        "session_status": "active",
+                        "workstream_status": "authoritative",
+                        "ownership_kind": "scoped",
+                        "scope_paths": ["backend/app/foo.py"],
+                    }
+                ],
+            }
+        )
+        mock_client_cls.return_value.__enter__.return_value = mock_client
+
+        result = check_task_lane_conflicts("task-123", "summitflow")
+
+        assert result.issues
+        assert result.conflicting_tasks == ["task-999"]
+        assert "worktree /tmp/worktrees/task-999" in result.suggestions[0]
+
+    @patch("app.services.task_lane_preflight.task_store.get_task")
+    @patch("app.services.task_lane_preflight.httpx.Client")
+    def test_ownership_endpoint_404_falls_back_to_legacy_sessions(
+        self,
+        mock_client_cls: MagicMock,
+        mock_get_task: MagicMock,
+    ) -> None:
+        mock_get_task.return_value = {"id": "task-999", "status": "running"}
+        mock_client = MagicMock()
+        not_found = _mock_response({})
+        not_found.status_code = 404
+        legacy = _mock_response(
+            {
+                "sessions": [
+                    {
+                        "id": "sess-legacy",
+                        "external_id": "task-999",
+                        "current_branch": "task-999/main",
+                        "working_dir": "/home/kasadis/summitflow",
+                        "is_worktree": False,
+                    }
+                ]
+            }
+        )
+        mock_client.get.side_effect = [not_found, legacy]
+        mock_client_cls.return_value.__enter__.return_value = mock_client
+
+        result = check_task_lane_conflicts("task-123", "summitflow")
+
+        assert result.issues
+        assert result.conflicting_tasks == ["task-999"]
+        assert "repo /home/kasadis/summitflow" in result.suggestions[0]
+
+    @patch("app.services.task_lane_preflight.task_store.get_task")
+    @patch("app.services.task_lane_preflight.httpx.Client")
     def test_same_task_active_lane_blocks_dispatch(
         self,
         mock_client_cls: MagicMock,

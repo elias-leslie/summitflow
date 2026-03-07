@@ -20,6 +20,8 @@ _RETIRED_WORKSTREAMS = {"retired", "superseded"}
 _TERMINAL_TASK_STATUSES = {"blocked", "completed", "cancelled", "abandoned", "failed"}
 _LIST_SESSIONS_TIMEOUT = 10.0
 _STALE_ACTIVE_MINUTES = 4 * 60
+_LIVE_OWNERSHIP_PATH = "/api/ownership/projects/{project_id}/live"
+_LEGACY_SESSIONS_PATH = "/api/sessions"
 _SHARED_PLUMBING_PREFIXES = (
     "backend/app/adapters/",
     "backend/app/api/complete/",
@@ -57,14 +59,58 @@ class _TaskScope:
 
 def _fetch_active_project_sessions(project_id: str) -> list[dict[str, Any]]:
     headers = build_agent_hub_headers(default_request_source="summitflow-task-lane-preflight")
-    params = {"project_id": project_id, "status": "active", "page_size": 100}
-    url = f"{AGENT_HUB_URL}/api/sessions"
     with httpx.Client(timeout=_LIST_SESSIONS_TIMEOUT) as client:
-        response = client.get(url, headers=headers, params=params)
-    response.raise_for_status()
-    payload = response.json()
+        ownership_response = client.get(
+            f"{AGENT_HUB_URL}{_LIVE_OWNERSHIP_PATH.format(project_id=project_id)}",
+            headers=headers,
+        )
+        sessions = _decode_live_lane_payload(ownership_response)
+        if sessions is not None:
+            return sessions
+
+        legacy_response = client.get(
+            f"{AGENT_HUB_URL}{_LEGACY_SESSIONS_PATH}",
+            headers=headers,
+            params={"project_id": project_id, "status": "active", "page_size": 100},
+        )
+    legacy_response.raise_for_status()
+    payload = legacy_response.json()
     sessions = payload.get("sessions", [])
     return sessions if isinstance(sessions, list) else []
+
+
+def _decode_live_lane_payload(response: httpx.Response) -> list[dict[str, Any]] | None:
+    status_code = getattr(response, "status_code", None)
+    if status_code == 404:
+        return None
+
+    response.raise_for_status()
+    payload = response.json()
+    owners = payload.get("active_owners")
+    if isinstance(owners, list):
+        return [_owner_to_session(owner) for owner in owners if isinstance(owner, dict)]
+
+    sessions = payload.get("sessions")
+    if isinstance(sessions, list):
+        return sessions
+    return []
+
+
+def _owner_to_session(owner: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": owner.get("session_id"),
+        "external_id": owner.get("task_id"),
+        "current_branch": owner.get("branch"),
+        "working_dir": owner.get("worktree_path"),
+        "is_worktree": bool(owner.get("is_worktree")),
+        "status": owner.get("session_status"),
+        "workstream_status": owner.get("workstream_status"),
+        "workstream_note": owner.get("workstream_note"),
+        "ownership_kind": owner.get("ownership_kind"),
+        "scope_paths": owner.get("scope_paths") if isinstance(owner.get("scope_paths"), list) else [],
+        "created_at": owner.get("created_at"),
+        "updated_at": owner.get("updated_at"),
+    }
 
 
 def _is_live_lane_session(session: dict[str, Any]) -> bool:
@@ -75,6 +121,10 @@ def _is_live_lane_session(session: dict[str, Any]) -> bool:
 
 def _lane_task_id(session: dict[str, Any]) -> str | None:
     """Infer the task id associated with a live lane session."""
+    task_id = session.get("task_id")
+    if isinstance(task_id, str) and task_id.startswith("task-"):
+        return task_id
+
     external_id = session.get("external_id")
     if isinstance(external_id, str) and external_id.startswith("task-"):
         return external_id
@@ -138,6 +188,8 @@ def _lane_age_minutes(session: dict[str, Any]) -> int | None:
 
 
 def _is_stale_lane_session(session: dict[str, Any]) -> bool:
+    if session.get("ownership_kind") == "stale":
+        return True
     age_minutes = _lane_age_minutes(session)
     return age_minutes is not None and age_minutes >= _STALE_ACTIVE_MINUTES
 
