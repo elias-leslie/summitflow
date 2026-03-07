@@ -17,8 +17,14 @@ def _mock_response(payload: dict[str, object]) -> MagicMock:
 class TestTaskLanePreflight:
     """Lane conflict detection."""
 
+    @patch("app.services.task_lane_preflight.task_store.get_task")
     @patch("app.services.task_lane_preflight.httpx.Client")
-    def test_same_task_active_lane_blocks_dispatch(self, mock_client_cls: MagicMock) -> None:
+    def test_same_task_active_lane_blocks_dispatch(
+        self,
+        mock_client_cls: MagicMock,
+        mock_get_task: MagicMock,
+    ) -> None:
+        mock_get_task.return_value = {"id": "task-123", "status": "running"}
         mock_client = MagicMock()
         mock_client.get.return_value = _mock_response(
             {"sessions": [{"id": "sess-1", "external_id": "task-123", "current_branch": "task-123/main"}]}
@@ -30,8 +36,14 @@ class TestTaskLanePreflight:
         assert result.issues
         assert "active lane" in result.issues[0]
 
+    @patch("app.services.task_lane_preflight.task_store.get_task")
     @patch("app.services.task_lane_preflight.httpx.Client")
-    def test_other_task_active_lane_blocks_parallel_dispatch(self, mock_client_cls: MagicMock) -> None:
+    def test_other_task_active_lane_blocks_parallel_dispatch(
+        self,
+        mock_client_cls: MagicMock,
+        mock_get_task: MagicMock,
+    ) -> None:
+        mock_get_task.return_value = {"id": "task-999", "status": "running"}
         mock_client = MagicMock()
         mock_client.get.return_value = _mock_response(
             {"sessions": [{"id": "sess-2", "external_id": "task-999", "current_branch": "task-999/main"}]}
@@ -43,8 +55,14 @@ class TestTaskLanePreflight:
         assert result.issues
         assert result.conflicting_tasks == ["task-999"]
 
+    @patch("app.services.task_lane_preflight.task_store.get_task")
     @patch("app.services.task_lane_preflight.httpx.Client")
-    def test_branch_named_lane_blocks_when_external_id_missing(self, mock_client_cls: MagicMock) -> None:
+    def test_branch_named_lane_blocks_when_external_id_missing(
+        self,
+        mock_client_cls: MagicMock,
+        mock_get_task: MagicMock,
+    ) -> None:
+        mock_get_task.return_value = {"id": "task-999", "status": "running"}
         mock_client = MagicMock()
         mock_client.get.return_value = _mock_response(
             {"sessions": [{"id": "sess-4", "external_id": None, "current_branch": "task-999/main"}]}
@@ -61,6 +79,24 @@ class TestTaskLanePreflight:
         mock_client = MagicMock()
         mock_client.get.return_value = _mock_response(
             {"sessions": [{"id": "sess-3", "external_id": "task-999", "workstream_status": "retired"}]}
+        )
+        mock_client_cls.return_value.__enter__.return_value = mock_client
+
+        result = check_task_lane_conflicts("task-123", "summitflow")
+
+        assert result.issues == []
+
+    @patch("app.services.task_lane_preflight.task_store.get_task")
+    @patch("app.services.task_lane_preflight.httpx.Client")
+    def test_terminal_task_lane_is_ignored_even_if_session_is_active(
+        self,
+        mock_client_cls: MagicMock,
+        mock_get_task: MagicMock,
+    ) -> None:
+        mock_get_task.return_value = {"id": "task-999", "status": "blocked"}
+        mock_client = MagicMock()
+        mock_client.get.return_value = _mock_response(
+            {"sessions": [{"id": "sess-5", "external_id": "task-999", "current_branch": "task-999/main"}]}
         )
         mock_client_cls.return_value.__enter__.return_value = mock_client
 

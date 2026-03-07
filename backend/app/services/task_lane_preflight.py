@@ -8,11 +8,13 @@ from typing import Any
 import httpx
 
 from ..logging_config import get_logger
+from ..storage import tasks as task_store
 from ._agent_hub_config import AGENT_HUB_URL, build_agent_hub_headers
 
 logger = get_logger(__name__)
 
 _RETIRED_WORKSTREAMS = {"retired", "superseded"}
+_TERMINAL_TASK_STATUSES = {"blocked", "completed", "cancelled", "abandoned", "failed"}
 _LIST_SESSIONS_TIMEOUT = 10.0
 
 
@@ -58,6 +60,15 @@ def _lane_task_id(session: dict[str, Any]) -> str | None:
     return None
 
 
+def _is_terminal_task_lane(task_id: str | None) -> bool:
+    if not task_id:
+        return False
+    task = task_store.get_task(task_id)
+    if not task:
+        return False
+    return str(task.get("status") or "").lower() in _TERMINAL_TASK_STATUSES
+
+
 def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflictCheck:
     """Check whether active Agent Hub lanes conflict with autonomous dispatch."""
     try:
@@ -72,6 +83,8 @@ def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflict
         if not _is_live_lane_session(session):
             continue
         lane_task_id = _lane_task_id(session)
+        if _is_terminal_task_lane(lane_task_id):
+            continue
         if lane_task_id == task_id:
             same_task_sessions.append(session)
             continue
