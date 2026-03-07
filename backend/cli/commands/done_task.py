@@ -1,19 +1,29 @@
 from __future__ import annotations
 
 import typer
-from requests import HTTPError as APIError
 
-from cli._utils import output_error, output_success
-from cli.client import STClient
-from cli.commands.done_subtask import auto_close_subtasks
-from cli.git import (
-    ensure_worktree_clean,
-    git_stash_pop,
-    git_stash_push,
-    is_working_tree_clean,
-    merge_task_branch,
-)
-from cli.snapshot import get_snapshot_info, remove_snapshot
+from .._client_base import APIError
+from ..client import STClient
+from ..lib.checkpoint import get_snapshot_info, remove_snapshot
+from ..lib.checkpoint_branches import merge_task_branch
+from ..output import output_error, output_success
+from .done_git import git_stash_pop, git_stash_push, is_working_tree_clean
+from .done_subtask import auto_close_subtasks
+
+
+def ensure_worktree_clean(snapshot_info: dict[str, str | int | None]) -> None:
+    """Fail fast when the claimed worktree still has uncommitted changes."""
+    raw_wt = snapshot_info.get("worktree_path")
+    worktree_path = str(raw_wt) if raw_wt is not None else None
+    if not worktree_path or is_working_tree_clean(worktree_path):
+        return
+
+    output_error(
+        "Claimed worktree has uncommitted changes.\n"
+        f"  Path: {worktree_path}\n"
+        f"Commit or stash there before running st done."
+    )
+    raise typer.Exit(1)
 
 
 def _get_project_id_from_snapshot(snapshot_info: dict[str, str | int | None]) -> str | None:
@@ -118,7 +128,7 @@ def _complete_with_admin_close(
     """Close a claimed task without merge/review and remove its snapshot."""
     project_id = _get_project_id_from_snapshot(snapshot_info)
     try:
-        client.close_task(task_id, reason=message, skip_gates=True)
+        client.close_task(task_id, reason=message)
     except APIError as e:
         output_error(f"Failed to close task: {e.detail}")
         raise typer.Exit(1) from None

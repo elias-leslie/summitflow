@@ -82,8 +82,13 @@ class TaskOperationsMixin:
             skip_gates,
         )
 
-    def close_task(self, task_id: str, reason: str | None = None) -> dict[str, Any]:
-        return self.update_status(task_id, "completed", reason=reason, skip_gates=True)
+    def close_task(
+        self,
+        task_id: str,
+        reason: str | None = None,
+        skip_gates: bool = False,
+    ) -> dict[str, Any]:
+        return self.update_status(task_id, "completed", reason=reason, skip_gates=skip_gates)
 
     def cancel_task(self, task_id: str) -> dict[str, Any]:
         return self.update_status(task_id, "cancelled")
