@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from cli.commands.session_events_formatter import format_event
 from cli.commands.session_events_formatter import (
     _format_memory_event_content,
     _selected_refs_from_memory_inject,
+    format_event,
 )
 
 
