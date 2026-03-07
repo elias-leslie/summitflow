@@ -64,7 +64,10 @@ def validate_cleanup_target(raw_path: str, repo_root: Path, recursive: bool) -> 
         raise typer.Exit(1)
 
     candidate = Path(cleaned)
-    target = (repo_root / candidate).resolve(strict=False) if not candidate.is_absolute() else candidate.resolve(strict=False)
+    if candidate.is_absolute():
+        target = candidate.resolve(strict=False)
+    else:
+        target = (repo_root / candidate).resolve(strict=False)
 
     try:
         relative = target.relative_to(repo_root)
@@ -134,6 +137,6 @@ def cleanup_paths_command(paths: list[str], recursive: bool, dry_run: bool) -> N
             "recursive": recursive,
             "targets": results,
             "total_targets": len(results),
-            "total_entries": sum(int(item["entries"]) for item in results),
+            "total_entries": sum(item["entries"] for item in results),
         }
     )

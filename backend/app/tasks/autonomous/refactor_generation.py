@@ -127,6 +127,11 @@ def _get_canonical_refactor_task_id(project_id: str, relative_path: str, issue_i
     active_task_ids = task_store.list_active_tasks_for_file(project_id, relative_path, task_type="refactor")
     if not active_task_ids:
         return None
+    # Select the lexicographically smallest task ID as canonical for determinism.
+    # sorted(active_task_ids)[0] yields a stable tie-breaker across runs based on
+    # ID string ordering (typically alphabetical). This is acceptable as a
+    # deterministic fallback until a more explicit criterion (e.g., creation time)
+    # is available.
     canonical_task_id = sorted(active_task_ids)[0]
     link_issue_to_task(issue_id, canonical_task_id)
     return canonical_task_id
