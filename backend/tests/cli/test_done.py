@@ -196,12 +196,30 @@ class TestCompleteTaskSmart:
     def _setup_mocks(self) -> MagicMock:
         """Set up common mocks for complete_task tests."""
         client = MagicMock()
-        client._global_url = MagicMock(side_effect=lambda p: f"http://test{p}")
-        client.get.return_value = {"ready": True, "gates": []}
+        client.get_task_completion_readiness.return_value = {"ready": True, "gates": []}
         client.post.return_value = {"verdict": "APPROVED"}
         client.update_status.return_value = {"status": "completed"}
         client.close_task.return_value = {"status": "completed"}
         return client
+
+    @patch("cli.commands.done_task.output_error")
+    def test_readiness_uses_task_completion_client_helper(self, mock_error: MagicMock) -> None:
+        """Completion readiness should use the task client helper instead of global URL."""
+        client = self._setup_mocks()
+
+        complete_task(client, "task-123", strict=False, admin=True, message="skip")
+        client.get_task_completion_readiness.assert_not_called()
+
+        mock_snapshot = {"worktree_path": None, "project_id": "test"}
+        with patch("cli.commands.done_task.get_snapshot_info", return_value=mock_snapshot), \
+             patch("cli.commands.done_task.remove_snapshot"), \
+             patch("cli.commands.done_task.merge_task_branch"), \
+             patch("cli.commands.done_task.auto_close_subtasks"), \
+             patch("cli.commands.done_task.is_working_tree_clean", return_value=True):
+            complete_task(client, "task-123")
+
+        client.get_task_completion_readiness.assert_called_once_with("task-123")
+        mock_error.assert_not_called()
 
     @patch("cli.commands.done_task.get_snapshot_info")
     @patch("cli.commands.done_task.remove_snapshot")

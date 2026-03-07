@@ -45,7 +45,7 @@ def _handle_dirty_main(strict: bool) -> bool:
 
 
 def _auto_verify_readiness(client: STClient, task_id: str) -> None:
-    readiness = client.get(client._global_url(f"/api/tasks/{task_id}/completion-readiness"))
+    readiness = client.get_task_completion_readiness(task_id)
     if readiness.get("ready"):
         return
 
