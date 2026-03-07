@@ -137,6 +137,7 @@ class TestCheckIntent:
 
         result = check_intent("task-1", "/tmp/project", "summitflow")
 
+        assert result.passed is True
         assert result.summary == "LLM reviewed"
         mock_eval.assert_called_once()
 

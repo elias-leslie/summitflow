@@ -85,10 +85,10 @@ def _fetch_live_project_inventory(
             headers=headers,
             params={"project_id": project_id, "status": "active", "page_size": 100},
         )
-    legacy_response.raise_for_status()
-    payload = legacy_response.json()
-    sessions = payload.get("sessions", [])
-    return (sessions if isinstance(sessions, list) else [], [])
+        legacy_response.raise_for_status()
+        payload = legacy_response.json()
+        sessions = payload.get("sessions", [])
+        return (sessions if isinstance(sessions, list) else [], [])
 
 
 def _decode_live_lane_payload(
@@ -380,7 +380,8 @@ def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflict
                 for session in lane_sessions
                 if _is_stale_lane_session(session) and (lane_task_id := _lane_task_id(session))
             ]
-            stale_session = next(session for session in lane_sessions if _is_stale_lane_session(session))
+            stale_session = next((session for session in lane_sessions if _is_stale_lane_session(session)), None)
+            assert stale_session is not None, "stale_present guarantees at least one stale session"
             owner_session_id = str(stale_session.get("id") or "")
             owner_branch = (
                 stale_session.get("current_branch")
@@ -453,8 +454,10 @@ def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflict
 
                 if exact_overlap_task_id:
                     winning_session = next(
-                        session for session in lane_sessions if _lane_task_id(session) == exact_overlap_task_id
+                        (session for session in lane_sessions if _lane_task_id(session) == exact_overlap_task_id),
+                        None,
                     )
+                    assert winning_session is not None, "exact_overlap_task_id was found in lane_sessions"
                     conflicting_tasks = [exact_overlap_task_id]
                     overlap_kind = "exact_file"
                     overlap_paths = exact_overlaps
@@ -485,8 +488,10 @@ def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflict
                     )
                 elif shared_plumbing_task_id:
                     winning_session = next(
-                        session for session in lane_sessions if _lane_task_id(session) == shared_plumbing_task_id
+                        (session for session in lane_sessions if _lane_task_id(session) == shared_plumbing_task_id),
+                        None,
                     )
+                    assert winning_session is not None, "shared_plumbing_task_id was found in lane_sessions"
                     conflicting_tasks = [shared_plumbing_task_id]
                     overlap_kind = "shared_plumbing"
                     overlap_paths = shared_plumbing_overlaps
@@ -515,10 +520,14 @@ def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflict
                 elif unscoped_lane_task_ids:
                     chosen_task_id = sorted(unscoped_lane_task_ids)[0]
                     chosen_session = next(
-                        session
-                        for session in lane_sessions
-                        if (_lane_task_id(session) or "unknown task") == chosen_task_id
+                        (
+                            session
+                            for session in lane_sessions
+                            if (_lane_task_id(session) or "unknown task") == chosen_task_id
+                        ),
+                        None,
                     )
+                    assert chosen_session is not None, "chosen_task_id was derived from lane_sessions"
                     conflicting_tasks = [chosen_task_id]
                     overlap_kind = "unscoped_lane"
                     disposition = "warn"

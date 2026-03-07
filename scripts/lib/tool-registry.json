@@ -191,7 +191,7 @@
       "component_id": "sf.storage"
     },
     {
-      "pattern": "\\brm\\s+-[-A-Za-z]*r[-A-Za-z]*\\b|\\brmdir\\b|\\bfind\\b[^\\n]*\\s-delete\\b",
+      "pattern": "\\brm\\s+(-[-A-Za-z]*[rR][-A-Za-z]*|--recursive)\\b|\\brmdir\\b|\\bfind\\b[^\\n]*\\s-delete\\b",
       "message": "Use 'st cleanup path <literal-path> [<literal-path>...] --recursive' for repo-local deletions. It validates repo root, blocks protected directories (.git, .st, node_modules), and supports --dry-run.",
       "component_id": "sf.cli"
     }

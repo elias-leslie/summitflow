@@ -28,7 +28,12 @@ def _resolve_projects(client: STClient, project_id: str | None) -> list[str]:
     if project_id:
         return [project_id]
     payload = client.get(client._global_url("/projects"))
-    projects = payload if isinstance(payload, list) else payload.get("projects", [])
+    if isinstance(payload, list):
+        projects = payload
+    elif isinstance(payload, dict):
+        projects = payload.get("projects", [])
+    else:
+        projects = []
     return [
         project.get("id") or project.get("project_id")
         for project in projects

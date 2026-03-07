@@ -12,6 +12,13 @@ def truncate(s: str, length: int) -> str:
     return s[: length - 3] + "..."
 
 
+def _safe_int(value: Any) -> int:
+    """Convert value to int safely; returns 0 for non-numeric or invalid values."""
+    if isinstance(value, (int, float)):
+        return int(value)
+    return 0
+
+
 def format_compact_task(task: dict[str, Any]) -> str:
     """Format task as compact one-liner."""
     priority = task.get("priority", 3)
@@ -128,14 +135,14 @@ def format_context_task(task: dict[str, Any]) -> str:
                 if not isinstance(group, dict):
                     continue
                 agent_slug = str(group.get("agent_slug") or "unknown")
-                count = int(group.get("count") or 0)
-                newest = int(group.get("newest_age_minutes") or 0)
-                oldest = int(group.get("oldest_age_minutes") or 0)
+                count = _safe_int(group.get("count"))
+                newest = _safe_int(group.get("newest_age_minutes"))
+                oldest = _safe_int(group.get("oldest_age_minutes"))
                 age_label = f"{newest}-{oldest}m" if newest != oldest else f"{oldest}m"
                 segment = f"{agent_slug}:{count}:{age_label}"
-                request_sources = group.get("request_sources") or []
+                request_sources = group.get("request_sources")
                 if isinstance(request_sources, list) and request_sources:
-                    segment += f":{','.join(str(source) for source in request_sources[:2])}"
+                    segment += f":{','.join(str(s) for s in request_sources[:2])}"
                 parts.append(segment)
             if parts:
                 lines.append(f"SPECIALISTS:{' | '.join(parts)}")
