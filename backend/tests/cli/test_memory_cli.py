@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
+import typer
 from typer.testing import CliRunner
 
 from cli.commands.memory import app
+from cli.commands.memory_crud import save_impl, update_impl
 
 runner = CliRunner()
 
@@ -28,7 +31,7 @@ class TestMemoryUpdateContentInput:
         args = mock_update_impl.call_args.args
         assert args[0] == "abc12345"
         assert args[1] == "Use /commit_it when available.\n"
-        assert args[2:] == (None, None, None, None)
+        assert args[2:] == (None, None, None, None, None, False)
 
     def test_update_accepts_content_from_stdin(self) -> None:
         """`--content-file -` should read content from stdin."""
@@ -44,7 +47,7 @@ class TestMemoryUpdateContentInput:
         args = mock_update_impl.call_args.args
         assert args[0] == "abc12345"
         assert args[1] == "Literal [work] and `backticks` should survive.\n"
-        assert args[2:] == (None, None, None, None)
+        assert args[2:] == (None, None, None, None, None, False)
 
     def test_update_rejects_inline_and_file_content_together(self, tmp_path: Path) -> None:
         """`--content` and `--content-file` together should error clearly."""
@@ -67,3 +70,106 @@ class TestMemoryUpdateContentInput:
         assert result.exit_code == 2
         assert "Specify only one of --content or --content-file" in result.output
         mock_update_impl.assert_not_called()
+
+
+class TestMemoryTagOptions:
+    """Tests for tag-aware save/update CLI plumbing."""
+
+    def test_save_forwards_tags_to_impl(self) -> None:
+        """`st memory save --tags` should wire tags through the public CLI."""
+        with patch("cli.commands.memory.save_impl") as mock_save_impl:
+            result = runner.invoke(
+                app,
+                [
+                    "save",
+                    "**Topic**: Tag finance memories.",
+                    "--summary",
+                    "Tag finance memory",
+                    "--tags",
+                    "finance-relevant,portfolio",
+                ],
+            )
+
+        assert result.exit_code == 0
+        args = mock_save_impl.call_args.args
+        assert args[1:] == (
+            "**Topic**: Tag finance memories.",
+            "Tag finance memory",
+            "reference",
+            80,
+            None,
+            False,
+            None,
+            "finance-relevant,portfolio",
+            "global",
+            None,
+        )
+
+    def test_update_forwards_tags_to_impl(self) -> None:
+        """`st memory update --tags` should wire tag replacement through the CLI."""
+        with patch("cli.commands.memory.update_impl") as mock_update_impl:
+            result = runner.invoke(
+                app,
+                [
+                    "update",
+                    "abc12345",
+                    "--tags",
+                    "finance-relevant",
+                ],
+            )
+
+        assert result.exit_code == 0
+        args = mock_update_impl.call_args.args
+        assert args == ("abc12345", None, None, None, None, None, "finance-relevant", False)
+
+    def test_update_impl_rejects_tags_and_clear_tags_together(self) -> None:
+        """Tag replacement and clearing are mutually exclusive."""
+        with patch("cli.commands.memory_crud.typer.echo") as mock_echo:
+            try:
+                update_impl("abc12345", None, None, None, None, None, "finance-relevant", True)
+            except typer.Exit as exc:
+                assert exc.exit_code == 1
+            else:
+                raise AssertionError("Expected typer.Exit when both --tags and --clear-tags are provided")
+
+        mock_echo.assert_called_once_with("Error: Specify only one of --tags or --clear-tags")
+
+    def test_save_impl_applies_tags_after_learning_is_saved(self) -> None:
+        """Save should apply requested tags using the memory tags endpoint."""
+        out = SimpleNamespace(is_compact=True)
+        with (
+            patch("cli.commands.memory_crud.validate_save_inputs", return_value="Tag finance memory"),
+            patch("cli.commands.memory_crud.validate_content_format"),
+            patch("cli.commands.memory_crud.agent_hub_request", return_value={"uuid": "abc12345", "status": "provisional"}),
+            patch("cli.commands.memory_crud.replace_episode_tags") as mock_replace_tags,
+            patch("cli.commands.memory_crud.format_save_compact"),
+        ):
+            save_impl(
+                out,
+                "**Topic**: Tag finance memories.",
+                "Tag finance memory",
+                "reference",
+                80,
+                None,
+                False,
+                None,
+                "finance-relevant,portfolio",
+                "project",
+                "portfolio-ai",
+            )
+
+        mock_replace_tags.assert_called_once_with("abc12345", ["finance-relevant", "portfolio"])
+
+    def test_update_impl_preserves_existing_tags_when_replacing_episode(self) -> None:
+        """Content/tier replacements should carry tags forward onto the new episode."""
+        with (
+            patch("cli.commands.memory_crud.fetch_existing_episode", return_value={"uuid": "abc12345", "content": "old", "summary": "Old", "injection_tier": "reference"}),
+            patch("cli.commands.memory_crud.fetch_episode_tags", return_value=["finance-relevant"]),
+            patch("cli.commands.memory_crud.replace_episode", return_value="def67890"),
+            patch("cli.commands.memory_crud.replace_episode_tags") as mock_replace_tags,
+            patch("cli.commands.memory_crud.validate_content_format"),
+            patch("cli.commands.memory_crud.typer.echo"),
+        ):
+            update_impl("abc12345", "new content", None, None, None, None, None, False)
+
+        mock_replace_tags.assert_called_once_with("def67890", ["finance-relevant"])

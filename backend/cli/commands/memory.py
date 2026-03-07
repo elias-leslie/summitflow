@@ -24,6 +24,7 @@ from .memory_commands import (
 )
 from .memory_options import (
     BatchTierOpt,
+    ClearTagsOpt,
     ConfidenceOpt,
     ContentArg,
     ContentFileOpt,
@@ -48,6 +49,8 @@ from .memory_options import (
     StaleOpt,
     SummaryOpt,
     SummaryUpdateOpt,
+    TagsOpt,
+    TagsUpdateOpt,
     TierFilterOpt,
     TierOpt,
     TierUpdateOpt,
@@ -117,12 +120,13 @@ def save(
     context: ContextOpt = None,
     pinned: PinnedOpt = False,
     trigger_types: TriggerTypesOpt = None,
+    tags: TagsOpt = None,
     scope: ScopeOpt = "global",
     scope_id: ScopeIdOpt = None,
 ) -> None:
     """Save a learning to the memory system."""
     save_impl(
-        ctx.obj, content, summary, tier, confidence, context, pinned, trigger_types, scope, scope_id
+        ctx.obj, content, summary, tier, confidence, context, pinned, trigger_types, tags, scope, scope_id
     )
 
 
@@ -173,10 +177,12 @@ def update(
     summary: SummaryUpdateOpt = None,
     trigger_types: TriggerTypesUpdateOpt = None,
     pinned: PinnedUpdateOpt = None,
+    tags: TagsUpdateOpt = None,
+    clear_tags: ClearTagsOpt = False,
 ) -> None:
     """Update an episode (delete + recreate for content/tier, PATCH for properties)."""
     resolved_content = _resolve_update_content(content, content_file)
-    update_impl(uuid, resolved_content, tier, summary, trigger_types, pinned)
+    update_impl(uuid, resolved_content, tier, summary, trigger_types, pinned, tags, clear_tags)
 
 
 @app.command("batch-tier")

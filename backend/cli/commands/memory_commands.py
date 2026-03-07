@@ -60,12 +60,13 @@ def save(
     context: str | None,
     pinned: bool,
     trigger_types: str | None,
+    tags: str | None,
     scope: str,
     scope_id: str | None,
 ) -> None:
     """Save a new memory episode."""
     save_impl(
-        out, content, summary, tier, confidence, context, pinned, trigger_types, scope, scope_id
+        out, content, summary, tier, confidence, context, pinned, trigger_types, tags, scope, scope_id
     )
 
 
@@ -110,9 +111,11 @@ def update(
     summary: str | None,
     trigger_types: str | None,
     pinned: bool | None,
+    tags: str | None,
+    clear_tags: bool,
 ) -> None:
     """Update a memory episode."""
-    update_impl(uuid, content, tier, summary, trigger_types, pinned)
+    update_impl(uuid, content, tier, summary, trigger_types, pinned, tags, clear_tags)
 
 
 def batch_tier(

@@ -33,6 +33,14 @@ def build_save_payload(
     return payload
 
 
+def parse_tags_csv(tags: str | None) -> list[str] | None:
+    """Parse comma-separated tags into a deduplicated sorted list."""
+    if tags is None:
+        return None
+    parsed = sorted({tag.strip() for tag in tags.split(",") if tag.strip()})
+    return parsed
+
+
 def validate_save_inputs(tier: str, confidence: int, summary: str) -> str:
     """Validate save inputs and return stripped summary, raise on error."""
     from ..output import output_error
@@ -58,6 +66,12 @@ def fetch_existing_episode(uuid: str) -> dict[str, object]:
         typer.echo(f"Error: {existing['detail']}")
         raise typer.Exit(1)
     return existing
+
+
+def fetch_episode_tags(uuid: str) -> list[str]:
+    """Fetch current tags for an episode."""
+    result = agent_hub_request("GET", f"/api/memory/episodes/{uuid}/tags", tool_name="st memory update")
+    return [str(tag) for tag in result.get("tags", [])]
 
 
 def replace_episode(
@@ -144,3 +158,17 @@ def patch_episode_properties(
         typer.echo(f"  Trigger types: {props['trigger_task_types']}")
     if pinned is not None:
         typer.echo(f"  Pinned: {pinned}")
+
+
+def replace_episode_tags(target_uuid: str, tags: list[str]) -> None:
+    """Replace tags on an episode."""
+    result = agent_hub_request(
+        "PUT",
+        f"/api/memory/episodes/{target_uuid}/tags",
+        json={"tags": tags},
+        tool_name="st memory update",
+    )
+    if result.get("tags") != tags:
+        typer.echo(f"Warning: Failed to update tags on {target_uuid[:8]}")
+        return
+    typer.echo(f"  Tags: {', '.join(tags) if tags else '(cleared)'}")

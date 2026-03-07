@@ -8,9 +8,12 @@ from ..output import output_error, output_json
 from ..output_context import OutputContext
 from ._memory_crud_helpers import (
     build_save_payload,
+    fetch_episode_tags,
     fetch_existing_episode,
+    parse_tags_csv,
     patch_episode_properties,
     replace_episode,
+    replace_episode_tags,
     validate_save_inputs,
 )
 from .memory_api import agent_hub_request
@@ -44,6 +47,7 @@ def save_impl(
     context: str | None,
     pinned: bool,
     trigger_types: str | None,
+    tags: str | None,
     scope: str,
     scope_id: str | None,
 ) -> None:
@@ -54,6 +58,9 @@ def save_impl(
         "POST", "/api/memory/save-learning", json=payload,
         scope=scope, scope_id=scope_id, tool_name="st memory save",
     )
+    parsed_tags = parse_tags_csv(tags)
+    if parsed_tags is not None and result.get("uuid"):
+        replace_episode_tags(str(result["uuid"]), parsed_tags)
     if out.is_compact:
         format_save_compact(result)
     else:
@@ -158,10 +165,16 @@ def update_impl(
     summary: str | None,
     trigger_types: str | None,
     pinned: bool | None,
+    tags: str | None,
+    clear_tags: bool,
 ) -> None:
-    if not any([content, tier, summary, trigger_types, pinned is not None]):
+    if tags and clear_tags:
+        typer.echo("Error: Specify only one of --tags or --clear-tags")
+        raise typer.Exit(1)
+
+    if not any([content, tier, summary, trigger_types, pinned is not None, tags is not None, clear_tags]):
         typer.echo(
-            "Error: Must specify at least one of: --content, --tier, --summary, --trigger-types, --pinned"
+            "Error: Must specify at least one of: --content, --tier, --summary, --trigger-types, --pinned, --tags, --clear-tags"
         )
         raise typer.Exit(1)
 
@@ -169,8 +182,11 @@ def update_impl(
         validate_summary_length(summary)
 
     existing = fetch_existing_episode(uuid)
+    existing_tags = fetch_episode_tags(uuid)
+    replacement_tags = [] if clear_tags else parse_tags_csv(tags)
     content_or_tier_changed = bool(content or tier)
     properties_changed = bool(summary or trigger_types or pinned is not None)
+    tags_changed = replacement_tags is not None or clear_tags
 
     if content:
         validate_content_format(content, summary or str(existing.get("summary", "")))
@@ -184,9 +200,13 @@ def update_impl(
         typer.echo(f"Updated: {uuid[:8]} -> {target_uuid[:8]}")
         if tier:
             typer.echo(f"  Tier: {new_tier}")
+        replace_episode_tags(target_uuid, replacement_tags if replacement_tags is not None else existing_tags)
 
     if properties_changed:
         patch_episode_properties(target_uuid, summary, trigger_types, pinned)
 
-    if not content_or_tier_changed and not properties_changed:
+    if not content_or_tier_changed and tags_changed:
+        replace_episode_tags(target_uuid, replacement_tags or [])
+
+    if not content_or_tier_changed and not properties_changed and not tags_changed:
         typer.echo("No changes made.")

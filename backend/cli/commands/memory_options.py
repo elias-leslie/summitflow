@@ -98,6 +98,30 @@ TriggerTypesUpdateOpt = Annotated[
     ),
 ]
 
+TagsOpt = Annotated[
+    str | None,
+    typer.Option(
+        "--tags",
+        help="Comma-separated memory tags (e.g., finance-relevant,portfolio)",
+    ),
+]
+
+TagsUpdateOpt = Annotated[
+    str | None,
+    typer.Option(
+        "--tags",
+        help="Replace episode tags with a comma-separated list",
+    ),
+]
+
+ClearTagsOpt = Annotated[
+    bool,
+    typer.Option(
+        "--clear-tags",
+        help="Remove all tags from the episode",
+    ),
+]
+
 # Query and search options
 QueryArg = Annotated[str, typer.Argument(help="Search query")]
 
