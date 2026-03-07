@@ -110,8 +110,8 @@ def publish_ws_event(
             if isinstance(event.get("data"), dict):
                 event["data"] = {
                     **event["data"],
-                    "event_id": created_event.id,
-                    "persisted_at": created_event.timestamp.isoformat(),
+                    "event_id": created_event["id"],
+                    "persisted_at": created_event["timestamp"].isoformat(),
                 }
         except Exception as e:
             logger.warning("Failed to persist event to DB", task_id=task_id, error=str(e))
