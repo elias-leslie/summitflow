@@ -39,6 +39,7 @@ def build_complete_kwargs(
     kwargs: dict[str, Any] = {
         "messages": [{"role": "user", "content": prompt}],
         "agent_slug": agent_slug,
+        "external_id": task_id,
         "working_dir": project_path,
         "max_turns": max_turns,
         "execute_tools": True,
