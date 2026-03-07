@@ -6,6 +6,7 @@ Internal module - import from agent_hub_client instead.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Final
 
 from agent_hub import AgentHubClient, AsyncAgentHubClient, CompletionResponse
@@ -16,9 +17,34 @@ from ._agent_hub_types import LLMResponse
 AGENT_HUB_URL = os.getenv("AGENT_HUB_URL", "http://localhost:8003")
 AGENT_HUB_API_KEY = os.getenv("AGENT_HUB_API_KEY")
 
+
+def _load_env_local_credentials() -> dict[str, str]:
+    """Load Agent Hub client credentials from ~/.env.local when process env is empty."""
+    env_file = Path.home() / ".env.local"
+    if not env_file.exists():
+        return {}
+    creds: dict[str, str] = {}
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        if "=" not in line or line.startswith("#"):
+            continue
+        key, val = line.split("=", 1)
+        key = key.strip()
+        value = val.strip()
+        if key and value:
+            creds[key] = value
+    return creds
+
+
+_ENV_LOCAL_CREDENTIALS = _load_env_local_credentials()
+
 # SummitFlow client credentials for Agent Hub authentication
-SUMMITFLOW_CLIENT_ID = os.getenv("SUMMITFLOW_CLIENT_ID")
-SUMMITFLOW_REQUEST_SOURCE = os.getenv("SUMMITFLOW_REQUEST_SOURCE", "summitflow")
+SUMMITFLOW_CLIENT_ID = os.getenv("SUMMITFLOW_CLIENT_ID") or _ENV_LOCAL_CREDENTIALS.get(
+    "SUMMITFLOW_CLIENT_ID"
+)
+SUMMITFLOW_REQUEST_SOURCE = os.getenv("SUMMITFLOW_REQUEST_SOURCE") or _ENV_LOCAL_CREDENTIALS.get(
+    "SUMMITFLOW_REQUEST_SOURCE",
+    "summitflow",
+)
 HEADER_CLIENT_ID: Final = "X-Client-Id"
 HEADER_REQUEST_SOURCE: Final = "X-Request-Source"
 DEFAULT_REQUEST_SOURCE: Final = "summitflow"

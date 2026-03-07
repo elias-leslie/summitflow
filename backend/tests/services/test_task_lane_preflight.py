@@ -200,3 +200,127 @@ class TestTaskLanePreflight:
         assert "likely stale active coding lane" in result.issues[0]
         assert result.conflicting_tasks == ["task-999"]
         assert "retire or reconcile it" in result.suggestions[1]
+
+    @patch("app.services.task_lane_preflight.get_task_spirit")
+    @patch("app.services.task_lane_preflight.task_store.get_task")
+    @patch("app.services.task_lane_preflight.httpx.Client")
+    def test_disjoint_scoped_lanes_can_proceed(
+        self,
+        mock_client_cls: MagicMock,
+        mock_get_task: MagicMock,
+        mock_get_spirit: MagicMock,
+    ) -> None:
+        mock_get_task.return_value = {"id": "task-999", "status": "running"}
+        mock_client = MagicMock()
+        mock_client.get.return_value = _mock_response(
+            {"sessions": [{"id": "sess-6", "external_id": "task-999", "current_branch": "task-999/main"}]}
+        )
+        mock_client_cls.return_value.__enter__.return_value = mock_client
+
+        def _spirit(task_id: str) -> dict[str, object]:
+            if task_id == "task-123":
+                return {"context": {"files_to_modify": ["backend/app/foo.py"]}}
+            if task_id == "task-999":
+                return {"context": {"files_to_modify": ["backend/app/bar.py"]}}
+            return {}
+
+        mock_get_spirit.side_effect = _spirit
+
+        result = check_task_lane_conflicts("task-123", "summitflow")
+
+        assert result.issues == []
+        assert result.suggestions == []
+        assert result.conflicting_tasks == []
+
+    @patch("app.services.task_lane_preflight.get_task_spirit")
+    @patch("app.services.task_lane_preflight.task_store.get_task")
+    @patch("app.services.task_lane_preflight.httpx.Client")
+    def test_exact_file_overlap_blocks_scoped_parallel_dispatch(
+        self,
+        mock_client_cls: MagicMock,
+        mock_get_task: MagicMock,
+        mock_get_spirit: MagicMock,
+    ) -> None:
+        mock_get_task.return_value = {"id": "task-999", "status": "running"}
+        mock_client = MagicMock()
+        mock_client.get.return_value = _mock_response(
+            {"sessions": [{"id": "sess-7", "external_id": "task-999", "current_branch": "task-999/main"}]}
+        )
+        mock_client_cls.return_value.__enter__.return_value = mock_client
+
+        def _spirit(task_id: str) -> dict[str, object]:
+            if task_id == "task-123":
+                return {"context": {"files_to_modify": [" ./backend/app/foo.py "]}}
+            if task_id == "task-999":
+                return {"context": {"files_to_create": ["backend/app/foo.py"]}}
+            return {}
+
+        mock_get_spirit.side_effect = _spirit
+
+        result = check_task_lane_conflicts("task-123", "summitflow")
+
+        assert result.issues == [
+            "Another active coding lane overlaps exact files in project summitflow: task-999 (backend/app/foo.py)"
+        ]
+        assert result.conflicting_tasks == ["task-999"]
+        assert "backend/app/foo.py" in result.suggestions[0]
+
+    @patch("app.services.task_lane_preflight.get_task_spirit")
+    @patch("app.services.task_lane_preflight.task_store.get_task")
+    @patch("app.services.task_lane_preflight.httpx.Client")
+    def test_unscoped_active_lane_falls_back_to_project_block(
+        self,
+        mock_client_cls: MagicMock,
+        mock_get_task: MagicMock,
+        mock_get_spirit: MagicMock,
+    ) -> None:
+        mock_get_task.return_value = {"id": "task-999", "status": "running"}
+        mock_client = MagicMock()
+        mock_client.get.return_value = _mock_response(
+            {"sessions": [{"id": "sess-8", "external_id": "task-999", "current_branch": "task-999/main"}]}
+        )
+        mock_client_cls.return_value.__enter__.return_value = mock_client
+        mock_get_spirit.side_effect = [
+            {"context": {"files_to_modify": ["backend/app/foo.py"]}},
+            None,
+        ]
+
+        result = check_task_lane_conflicts("task-123", "summitflow")
+
+        assert result.issues == [
+            "Another active coding lane exists in project summitflow but lacks usable file scope: task-999"
+        ]
+        assert result.conflicting_tasks == ["task-999"]
+        assert any("scope unavailable" in suggestion for suggestion in result.suggestions)
+
+    @patch("app.services.task_lane_preflight.get_task_spirit")
+    @patch("app.services.task_lane_preflight.task_store.get_task")
+    @patch("app.services.task_lane_preflight.httpx.Client")
+    def test_malformed_scope_falls_back_to_project_block(
+        self,
+        mock_client_cls: MagicMock,
+        mock_get_task: MagicMock,
+        mock_get_spirit: MagicMock,
+    ) -> None:
+        mock_get_task.return_value = {"id": "task-999", "status": "running"}
+        mock_client = MagicMock()
+        mock_client.get.return_value = _mock_response(
+            {"sessions": [{"id": "sess-9", "external_id": "task-999", "current_branch": "task-999/main"}]}
+        )
+        mock_client_cls.return_value.__enter__.return_value = mock_client
+
+        def _spirit(task_id: str) -> dict[str, object]:
+            if task_id == "task-123":
+                return {"context": {"files_to_modify": ["backend/app/foo.py"]}}
+            if task_id == "task-999":
+                return {"context": {"files_to_modify": ["backend//app/bar.py"]}}
+            return {}
+
+        mock_get_spirit.side_effect = _spirit
+
+        result = check_task_lane_conflicts("task-123", "summitflow")
+
+        assert result.issues == [
+            "Another active coding lane exists in project summitflow but lacks usable file scope: task-999"
+        ]
+        assert result.conflicting_tasks == ["task-999"]

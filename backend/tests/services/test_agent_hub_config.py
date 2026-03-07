@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import patch
 
 from app.services import _agent_hub_config as config
@@ -58,3 +59,21 @@ def test_build_agent_hub_headers_uses_default_request_source_when_config_missing
         ) == {
             "X-Request-Source": "summitflow-observability",
         }
+
+
+def test_load_env_local_credentials_reads_home_env_file(tmp_path: Path) -> None:
+    """Credential helper should read SummitFlow client headers from ~/.env.local."""
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / ".env.local").write_text(
+        "SUMMITFLOW_CLIENT_ID=file-client\nSUMMITFLOW_REQUEST_SOURCE=file-source\n",
+        encoding="utf-8",
+    )
+
+    with patch.object(config.Path, "home", return_value=home):
+        creds = config._load_env_local_credentials()
+
+    assert creds == {
+        "SUMMITFLOW_CLIENT_ID": "file-client",
+        "SUMMITFLOW_REQUEST_SOURCE": "file-source",
+    }

@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import PurePosixPath
 from typing import Any
 
 import httpx
 
 from ..logging_config import get_logger
 from ..storage import tasks as task_store
+from ..storage.task_spirit import get_task_spirit
 from ._agent_hub_config import AGENT_HUB_URL, build_agent_hub_headers
 
 logger = get_logger(__name__)
@@ -27,6 +29,12 @@ class TaskLaneConflictCheck:
     issues: list[str] = field(default_factory=list)
     suggestions: list[str] = field(default_factory=list)
     conflicting_tasks: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class _TaskScope:
+    task_id: str
+    paths: frozenset[str]
 
 
 def _fetch_active_project_sessions(project_id: str) -> list[dict[str, Any]]:
@@ -116,6 +124,55 @@ def _is_stale_lane_session(session: dict[str, Any]) -> bool:
     return age_minutes is not None and age_minutes >= _STALE_ACTIVE_MINUTES
 
 
+def _normalize_scope_entry(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    path = value.strip()
+    if not path:
+        return None
+    while path.startswith("./"):
+        path = path[2:]
+    if not path or path.startswith("/"):
+        return None
+    if "\\" in path or "//" in path or path.endswith("/"):
+        return None
+    parts = path.split("/")
+    if any(part in {"", ".", ".."} for part in parts):
+        return None
+    normalized = str(PurePosixPath(path))
+    if normalized == "." or normalized.endswith("/"):
+        return None
+    return normalized
+
+
+def _load_task_scope(task_id: str) -> _TaskScope | None:
+    spirit = get_task_spirit(task_id)
+    if not spirit:
+        return None
+    context = spirit.get("context")
+    if not isinstance(context, dict):
+        return None
+
+    merged: set[str] = set()
+    saw_list = False
+    for scope_field in ("files_to_modify", "files_to_create"):
+        values = context.get(scope_field)
+        if values is None:
+            continue
+        if not isinstance(values, list):
+            return None
+        saw_list = True
+        for raw in values:
+            normalized = _normalize_scope_entry(raw)
+            if normalized is None:
+                return None
+            merged.add(normalized)
+
+    if not saw_list or not merged:
+        return None
+    return _TaskScope(task_id=task_id, paths=frozenset(sorted(merged)))
+
+
 def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflictCheck:
     """Check whether active Agent Hub lanes conflict with autonomous dispatch."""
     try:
@@ -155,26 +212,88 @@ def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflict
             suggestions.append("Wait for the active lane to finish or reconcile it before queueing another execution.")
 
     if other_lane_sessions:
-        conflicting_tasks = [
-            lane_task_id
-            for session in other_lane_sessions
-            if (lane_task_id := _lane_task_id(session))
-        ]
-        preview = ", ".join(conflicting_tasks[:3])
-        lane_preview = "; ".join(_lane_summary(session) for session in other_lane_sessions[:2])
-        if any(_is_stale_lane_session(session) for session in other_lane_sessions):
+        target_scope = _load_task_scope(task_id)
+        lane_sessions = sorted(
+            other_lane_sessions,
+            key=lambda session: (
+                _is_stale_lane_session(session),
+                str(_lane_task_id(session) or ""),
+                str(session.get("id") or ""),
+            ),
+        )
+        stale_present = any(_is_stale_lane_session(session) for session in lane_sessions)
+
+        if stale_present:
+            conflicting_tasks = [
+                lane_task_id
+                for session in lane_sessions
+                if _is_stale_lane_session(session) and (lane_task_id := _lane_task_id(session))
+            ]
+            preview = ", ".join(conflicting_tasks[:3])
+            lane_preview = "; ".join(_lane_summary(session) for session in lane_sessions[:2])
             issues.append(f"Another likely stale active coding lane exists in project {project_id}: {preview}")
-        else:
-            issues.append(f"Another active coding lane exists in project {project_id}: {preview}")
-        if lane_preview:
-            suggestions.append(f"Active lane details: {lane_preview}")
-        if any(_is_stale_lane_session(session) for session in other_lane_sessions):
+            if lane_preview:
+                suggestions.append(f"Active lane details: {lane_preview}")
             suggestions.append(
                 f"Inspect the lane with `st sessions list --status active --project {project_id}` "
                 "and retire or reconcile it if the session is no longer truly live."
             )
         else:
-            suggestions.append("Finish or retire the active lane before dispatching another coding task in this project.")
+            if target_scope is None:
+                chosen_session = lane_sessions[0]
+                chosen_task_id = _lane_task_id(chosen_session)
+                lane_preview = "; ".join(_lane_summary(session) for session in lane_sessions[:2])
+                conflicting_tasks = [chosen_task_id] if chosen_task_id else []
+                issues.append(
+                    f"Another active coding lane exists in project {project_id} but lacks usable file scope: "
+                    f"{task_id}"
+                )
+                if lane_preview:
+                    suggestions.append(f"Active lane details: {lane_preview}")
+                suggestions.append(
+                    "Target task scope unavailable; keep the current project-level guard and finish, retire, "
+                    "or scope the active lane before dispatching another coding task."
+                )
+            else:
+                scope_unavailable_task_id: str | None = None
+                exact_overlap_task_id: str | None = None
+                exact_overlaps: list[str] = []
+                for session in lane_sessions:
+                    lane_task_id = _lane_task_id(session)
+                    active_scope = _load_task_scope(lane_task_id) if lane_task_id else None
+                    if active_scope is None:
+                        scope_unavailable_task_id = lane_task_id or "unknown task"
+                        break
+                    overlaps = sorted(target_scope.paths & active_scope.paths)
+                    if overlaps:
+                        exact_overlap_task_id = lane_task_id
+                        exact_overlaps = overlaps
+                        break
+
+                if scope_unavailable_task_id:
+                    conflicting_tasks = [scope_unavailable_task_id]
+                    lane_preview = "; ".join(_lane_summary(session) for session in lane_sessions[:2])
+                    issues.append(
+                        f"Another active coding lane exists in project {project_id} but lacks usable file scope: "
+                        f"{scope_unavailable_task_id}"
+                    )
+                    if lane_preview:
+                        suggestions.append(f"Active lane details: {lane_preview}")
+                    suggestions.append(
+                        "Active lane scope unavailable; keep the current project-level guard and finish, retire, "
+                        "or scope the active lane before dispatching another coding task."
+                    )
+                elif exact_overlap_task_id:
+                    conflicting_tasks = [exact_overlap_task_id]
+                    overlap_preview = ", ".join(exact_overlaps[:3])
+                    issues.append(
+                        f"Another active coding lane overlaps exact files in project {project_id}: "
+                        f"{exact_overlap_task_id} ({overlap_preview})"
+                    )
+                    suggestions.append(
+                        f"Exact-file overlap with {exact_overlap_task_id}: {overlap_preview}. "
+                        "Finish or retire the active lane before dispatching another coding task."
+                    )
 
     return TaskLaneConflictCheck(
         issues=issues,
