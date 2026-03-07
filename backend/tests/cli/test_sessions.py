@@ -60,7 +60,7 @@ class TestSessionClientContract:
 
         dummy = _Dummy()
 
-        with patch("cli._client_mixins_execution.exec_ops.list_sessions", return_value=[] ) as mock_list:
+        with patch("cli._client_mixins_execution.exec_ops.list_sessions", return_value=[]) as mock_list:
             dummy.list_sessions(status="active", limit=5, parent_session_id="parent-1")
 
         assert mock_list.call_args.args[1]("/sessions") == "http://test/agent-hub/sessions"
@@ -140,4 +140,41 @@ class TestSessionsListCommand:
             page=1,
             agent_slug="debugger",
             parent_session_id="parent-123",
+        )
+
+
+class TestSessionsCommandAliases:
+    """Tests for root-level `st sessions` aliases."""
+
+    def test_sessions_root_aliases_to_list(self) -> None:
+        mock_client = MagicMock()
+        mock_client.list_sessions.return_value = [{"id": "sess-root", "status": "running"}]
+
+        with patch("cli.commands.sessions.STClient", return_value=mock_client):
+            result = runner.invoke(app, ["sessions"])
+
+        assert result.exit_code == 0
+        assert "sess-root" in result.output
+        mock_client.list_sessions.assert_called_once_with(
+            status=None,
+            limit=20,
+            page=1,
+            agent_slug=None,
+            parent_session_id=None,
+        )
+
+    def test_sessions_root_forwards_list_filters(self) -> None:
+        mock_client = MagicMock()
+        mock_client.list_sessions.return_value = []
+
+        with patch("cli.commands.sessions.STClient", return_value=mock_client):
+            result = runner.invoke(app, ["sessions", "--status", "running", "--limit", "7"])
+
+        assert result.exit_code == 0
+        mock_client.list_sessions.assert_called_once_with(
+            status="running",
+            limit=7,
+            page=1,
+            agent_slug=None,
+            parent_session_id=None,
         )

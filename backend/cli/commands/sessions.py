@@ -9,22 +9,19 @@ import typer
 from ..client import APIError, STClient
 from ..output import handle_api_error, output_json
 
-app = typer.Typer(help="Agent session management")
+app = typer.Typer(
+    help="Agent session management",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
 
 
-@app.command("list")
-def list_sessions(
-    status_filter: Annotated[str | None, typer.Option("-s", "--status")] = None,
-    limit: Annotated[int, typer.Option("--limit")] = 20,
-    agent_slug: Annotated[str | None, typer.Option("--agent")] = None,
-    parent_session_id: Annotated[str | None, typer.Option("--parent-session")] = None,
+def _render_session_list(
+    status_filter: str | None,
+    limit: int,
+    agent_slug: str | None,
+    parent_session_id: str | None,
 ) -> None:
-    """List agent sessions.
-
-    Examples:
-        st sessions list
-        st sessions list --status running
-    """
     client = STClient()
 
     try:
@@ -40,6 +37,37 @@ def list_sessions(
         return
 
     output_json(sessions)
+
+
+@app.callback()
+def sessions_callback(
+    ctx: typer.Context,
+    status_filter: Annotated[str | None, typer.Option("-s", "--status")] = None,
+    limit: Annotated[int, typer.Option("--limit")] = 20,
+    agent_slug: Annotated[str | None, typer.Option("--agent")] = None,
+    parent_session_id: Annotated[str | None, typer.Option("--parent-session")] = None,
+) -> None:
+    """List agent sessions when no subcommand is provided."""
+    if ctx.invoked_subcommand is not None:
+        return
+    _render_session_list(status_filter, limit, agent_slug, parent_session_id)
+
+
+@app.command("list")
+def list_sessions(
+    status_filter: Annotated[str | None, typer.Option("-s", "--status")] = None,
+    limit: Annotated[int, typer.Option("--limit")] = 20,
+    agent_slug: Annotated[str | None, typer.Option("--agent")] = None,
+    parent_session_id: Annotated[str | None, typer.Option("--parent-session")] = None,
+) -> None:
+    """List agent sessions.
+
+    Examples:
+        st sessions
+        st sessions list
+        st sessions list --status running
+    """
+    _render_session_list(status_filter, limit, agent_slug, parent_session_id)
 
 
 @app.command("show")
