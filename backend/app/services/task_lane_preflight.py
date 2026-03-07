@@ -69,6 +69,24 @@ def _is_terminal_task_lane(task_id: str | None) -> bool:
     return str(task.get("status") or "").lower() in _TERMINAL_TASK_STATUSES
 
 
+def _lane_location(session: dict[str, Any]) -> str:
+    working_dir = session.get("working_dir")
+    if isinstance(working_dir, str) and working_dir:
+        lane_kind = "worktree" if bool(session.get("is_worktree")) else "repo"
+        return f"{lane_kind} {working_dir}"
+    branch = session.get("current_branch")
+    if isinstance(branch, str) and branch:
+        return f"branch {branch}"
+    return f"session {session.get('id') or 'unknown'}"
+
+
+def _lane_summary(session: dict[str, Any]) -> str:
+    session_id = str(session.get("id") or "unknown session")
+    branch = session.get("current_branch")
+    branch_suffix = f" on {branch}" if isinstance(branch, str) and branch else ""
+    return f"{session_id} in {_lane_location(session)}{branch_suffix}"
+
+
 def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflictCheck:
     """Check whether active Agent Hub lanes conflict with autonomous dispatch."""
     try:
@@ -98,7 +116,7 @@ def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflict
     if same_task_sessions:
         session = same_task_sessions[0]
         issues.append(
-            f"Task already has an active lane: {session.get('id')} on {session.get('current_branch') or 'unknown branch'}"
+            f"Task already has an active lane: {_lane_summary(session)}"
         )
         suggestions.append("Wait for the active lane to finish or reconcile it before queueing another execution.")
 
@@ -109,7 +127,10 @@ def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflict
             if (lane_task_id := _lane_task_id(session))
         ]
         preview = ", ".join(conflicting_tasks[:3])
+        lane_preview = "; ".join(_lane_summary(session) for session in other_lane_sessions[:2])
         issues.append(f"Another active coding lane exists in project {project_id}: {preview}")
+        if lane_preview:
+            suggestions.append(f"Active lane details: {lane_preview}")
         suggestions.append("Finish or retire the active lane before dispatching another coding task in this project.")
 
     return TaskLaneConflictCheck(

@@ -9,6 +9,7 @@ from app.storage.connection import close_pool
 
 from .commands import (
     abandon,
+    agents,
     autonomous,
     backup,
     checkpoints,
@@ -115,6 +116,8 @@ BACKUP:
 
 PERSONA: persona status | persona set-active <slug> | persona clear
 
+AGENTS: agents list | get <slug> | update <slug> [--primary-model M] [--memory-config-file path.json]
+
 SESSIONS: sessions list [--status S] | sessions show <id>
 
 AUTONOMOUS: autonomous enable | disable | status
@@ -208,6 +211,7 @@ app.add_typer(prompt.app, name="prompt")
 app.add_typer(refactor.app, name="refactor")
 app.add_typer(feedback.app, name="feedback")
 app.add_typer(persona.app, name="persona")
+app.add_typer(agents.app, name="agents")
 app.command("exec-log")(exec_monitor.exec_log_command)
 app.command("exec-monitor", hidden=True)(exec_monitor.exec_monitor_command)  # alias
 

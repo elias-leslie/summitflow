@@ -27,7 +27,17 @@ class TestTaskLanePreflight:
         mock_get_task.return_value = {"id": "task-123", "status": "running"}
         mock_client = MagicMock()
         mock_client.get.return_value = _mock_response(
-            {"sessions": [{"id": "sess-1", "external_id": "task-123", "current_branch": "task-123/main"}]}
+            {
+                "sessions": [
+                    {
+                        "id": "sess-1",
+                        "external_id": "task-123",
+                        "current_branch": "task-123/main",
+                        "working_dir": "/tmp/worktrees/task-123",
+                        "is_worktree": True,
+                    }
+                ]
+            }
         )
         mock_client_cls.return_value.__enter__.return_value = mock_client
 
@@ -35,6 +45,7 @@ class TestTaskLanePreflight:
 
         assert result.issues
         assert "active lane" in result.issues[0]
+        assert "/tmp/worktrees/task-123" in result.issues[0]
 
     @patch("app.services.task_lane_preflight.task_store.get_task")
     @patch("app.services.task_lane_preflight.httpx.Client")
@@ -46,7 +57,17 @@ class TestTaskLanePreflight:
         mock_get_task.return_value = {"id": "task-999", "status": "running"}
         mock_client = MagicMock()
         mock_client.get.return_value = _mock_response(
-            {"sessions": [{"id": "sess-2", "external_id": "task-999", "current_branch": "task-999/main"}]}
+            {
+                "sessions": [
+                    {
+                        "id": "sess-2",
+                        "external_id": "task-999",
+                        "current_branch": "task-999/main",
+                        "working_dir": "/home/kasadis/summitflow",
+                        "is_worktree": False,
+                    }
+                ]
+            }
         )
         mock_client_cls.return_value.__enter__.return_value = mock_client
 
@@ -54,6 +75,7 @@ class TestTaskLanePreflight:
 
         assert result.issues
         assert result.conflicting_tasks == ["task-999"]
+        assert "repo /home/kasadis/summitflow" in result.suggestions[0]
 
     @patch("app.services.task_lane_preflight.task_store.get_task")
     @patch("app.services.task_lane_preflight.httpx.Client")
@@ -65,7 +87,17 @@ class TestTaskLanePreflight:
         mock_get_task.return_value = {"id": "task-999", "status": "running"}
         mock_client = MagicMock()
         mock_client.get.return_value = _mock_response(
-            {"sessions": [{"id": "sess-4", "external_id": None, "current_branch": "task-999/main"}]}
+            {
+                "sessions": [
+                    {
+                        "id": "sess-4",
+                        "external_id": None,
+                        "current_branch": "task-999/main",
+                        "working_dir": "/tmp/worktrees/task-999",
+                        "is_worktree": True,
+                    }
+                ]
+            }
         )
         mock_client_cls.return_value.__enter__.return_value = mock_client
 
@@ -73,6 +105,7 @@ class TestTaskLanePreflight:
 
         assert result.issues
         assert result.conflicting_tasks == ["task-999"]
+        assert "worktree /tmp/worktrees/task-999" in result.suggestions[0]
 
     @patch("app.services.task_lane_preflight.httpx.Client")
     def test_retired_workstream_does_not_block_dispatch(self, mock_client_cls: MagicMock) -> None:
