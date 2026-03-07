@@ -294,6 +294,14 @@ class TestOwnershipCommand:
         assert "cwd=/tmp/task-1" in result.output
         assert "paths=backend/app/foo.py" in result.output
 
+        assert mock_client.get.call_count == 3
+        global_url_paths = [call.args[0] for call in mock_client._global_url.call_args_list]
+        assert global_url_paths == [
+            "/projects",
+            "/agent-hub/ownership/projects/summitflow/live",
+            "/agent-hub/ownership/projects/agent-hub/live",
+        ]
+
     def test_ownership_outputs_json_when_not_compact(self) -> None:
         mock_client = MagicMock()
         mock_client.get.side_effect = [
