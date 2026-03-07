@@ -103,7 +103,7 @@ def _complete_without_snapshot(
 ) -> dict[str, str | bool]:
     """Close a non-code/admin task without merge or checkpoint requirements."""
     try:
-        client.close_task(task_id, reason=message)
+        client.close_task(task_id, reason=message, skip_gates=True)
     except APIError as e:
         output_error(f"Failed to close task: {e.detail}")
         raise typer.Exit(1) from None
@@ -126,7 +126,7 @@ def _complete_with_admin_close(
     """Close a claimed task without merge/review and remove its snapshot."""
     project_id = _get_project_id_from_snapshot(snapshot_info)
     try:
-        client.close_task(task_id, reason=message)
+        client.close_task(task_id, reason=message, skip_gates=True)
     except APIError as e:
         output_error(f"Failed to close task: {e.detail}")
         raise typer.Exit(1) from None

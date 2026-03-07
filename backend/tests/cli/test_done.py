@@ -230,7 +230,7 @@ class TestCompleteTaskSmart:
 
         _complete_task(client, "task-123", strict=False, admin=True, message="phase shipped")
 
-        client.close_task.assert_called_once_with("task-123", reason="phase shipped")
+        client.close_task.assert_called_once_with("task-123", reason="phase shipped", skip_gates=True)
         client.update_status.assert_not_called()
 
     @patch("cli.commands.done_task.get_snapshot_info", return_value=None)
@@ -266,7 +266,7 @@ class TestCompleteTaskSmart:
 
         assert result["merged"] is False
         assert result["snapshot_removed"] is True
-        client.close_task.assert_called_once_with("task-123", reason="stale state")
+        client.close_task.assert_called_once_with("task-123", reason="stale state", skip_gates=True)
         mock_remove.assert_called_once_with("task-123", project_id="test")
         mock_merge.assert_not_called()
         client.post.assert_not_called()
