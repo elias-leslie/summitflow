@@ -49,6 +49,7 @@ ALLOWED_UPDATE_FIELDS = {
     "enriched_by",
     "enriched_at",
     "complexity",
+    "execution_mode",
     "autonomous",
     "agent_override",
     "agent_hub_session_ids",

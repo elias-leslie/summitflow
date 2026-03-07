@@ -66,3 +66,18 @@ class TestTaskToResponse:
         task = _minimal_task(autonomous=True)
         response = task_to_response(task)
         assert response.autonomous is True
+
+    @patch("app.api.tasks.response.get_step_count_for_task", return_value=0)
+    def test_execution_mode_propagated(self, _mock: object) -> None:
+        """execution_mode is the source-of-truth task execution control."""
+        task = _minimal_task(execution_mode="manual")
+        response = task_to_response(task)
+        assert response.execution_mode == "manual"
+        assert response.autonomous is False
+
+    @patch("app.api.tasks.response.get_step_count_for_task", return_value=0)
+    def test_execution_mode_autonomous_sets_compat_flag(self, _mock: object) -> None:
+        task = _minimal_task(execution_mode="autonomous", autonomous=False)
+        response = task_to_response(task)
+        assert response.execution_mode == "autonomous"
+        assert response.autonomous is True

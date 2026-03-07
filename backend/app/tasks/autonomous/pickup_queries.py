@@ -57,7 +57,7 @@ def get_queued_autonomous_tasks(project_id: str, limit: int = 10) -> list[dict[s
             FROM tasks
             WHERE project_id = %s
               AND status = 'queue'
-              AND autonomous = TRUE
+              AND execution_mode = 'autonomous'
               AND (claimed_by IS NULL OR lock_expires_at < NOW())
             ORDER BY priority ASC, created_at ASC
             LIMIT %s

@@ -854,6 +854,46 @@ count_issues() {
     esac
 }
 
+run_coderabbit_with_progress() {
+    local tool_bin="$1"
+    shift
+
+    local output_file
+    output_file=$(mktemp)
+    local progress_interval=10
+    local start_ts
+    start_ts=$(date +%s)
+    local last_stage="starting"
+
+    "$tool_bin" "$@" >"$output_file" 2>&1 &
+    local cmd_pid=$!
+
+    echo "CODERABBIT:RUNNING:0s|stage:${last_stage}" >&2
+
+    while kill -0 "$cmd_pid" 2>/dev/null; do
+        sleep "$progress_interval"
+        if ! kill -0 "$cmd_pid" 2>/dev/null; then
+            break
+        fi
+
+        local elapsed
+        elapsed=$(( $(date +%s) - start_ts ))
+        local stage
+        stage=$(grep -v '^[[:space:]]*$' "$output_file" | tail -1 | cut -c1-120)
+        if [[ -z "$stage" ]]; then
+            stage="$last_stage"
+        fi
+        last_stage="$stage"
+        echo "CODERABBIT:RUNNING:${elapsed}s|stage:${stage}" >&2
+    done
+
+    wait "$cmd_pid"
+    local retval=$?
+    cat "$output_file"
+    rm -f "$output_file"
+    return "$retval"
+}
+
 NORMALIZED_TOOL_ARGS=()
 
 normalize_tool_args() {
@@ -960,7 +1000,9 @@ run_tool_toon() {
 
     # Execute tool (NORMALIZED_TOOL_ARGS passed as array to preserve quoted arguments like -k "expr with spaces")
     local output retval=0
-    if [[ "$pass_path" == "1" ]]; then
+    if [[ "$count_method" == "coderabbit_parse" ]]; then
+        output=$(run_coderabbit_with_progress "$tool_bin" $args "${NORMALIZED_TOOL_ARGS[@]}") || retval=$?
+    elif [[ "$pass_path" == "1" ]]; then
         output=$("$tool_bin" $args "${NORMALIZED_TOOL_ARGS[@]}" "$work_dir" 2>&1) || retval=$?
     else
         output=$("$tool_bin" $args "${NORMALIZED_TOOL_ARGS[@]}" 2>&1) || retval=$?

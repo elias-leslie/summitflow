@@ -18,6 +18,7 @@ from ...logging_config import get_logger
 from ...schemas.tasks import TaskResponse, TaskStatusUpdate, TaskUpdate
 from ...storage import log_task_event
 from ...storage import tasks as task_store
+from ...storage.tasks.execution_mode import is_manual_only_mode
 from .helpers import dispatch_autonomous_task, get_step_verification_status, verify_task_project
 from .response import task_to_response
 
@@ -139,7 +140,12 @@ async def update_task_status(
 @router.post("/projects/{project_id}/tasks/{task_id}/execute", response_model=TaskResponse)
 async def execute_task(project_id: str, task_id: str) -> TaskResponse:
     """Queue task for autonomous execution."""
-    await asyncio.to_thread(verify_task_project, task_id, project_id)
+    existing = await asyncio.to_thread(verify_task_project, task_id, project_id)
+    if is_manual_only_mode(existing.get("execution_mode")):
+        raise HTTPException(
+            status_code=400,
+            detail="Task is manual-only and cannot be queued for autonomous execution",
+        )
 
     try:
         updated = await asyncio.to_thread(task_store.update_task_status, task_id, "queue")

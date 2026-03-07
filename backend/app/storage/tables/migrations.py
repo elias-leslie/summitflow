@@ -22,6 +22,8 @@ def apply_schema_migrations(conn: psycopg.Connection, cur: psycopg.Cursor) -> No
     to be run on databases that were created before these columns were added.
     """
     _add_missing_columns(cur)
+    _backfill_execution_mode(cur)
+    _ensure_execution_mode_constraint(cur)
     _create_migration_indexes(cur)
     conn.commit()
 
@@ -77,6 +79,10 @@ def _task_column_additions() -> list[tuple[str, str]]:
         ("subtask_type TEXT", "task_subtasks"),
         # Labels array for task categorization
         ("labels TEXT[] DEFAULT '{}'::text[]", "tasks"),
+        (
+            "execution_mode VARCHAR(20) DEFAULT 'manual' CHECK (execution_mode IN ('manual', 'autonomous', 'manual_only'))",
+            "tasks",
+        ),
         # AI review results
         ("ai_review JSONB", "tasks"),
         # Git conflict handling (migration 52bde0e4709d)
@@ -128,5 +134,44 @@ def _create_migration_indexes(cur: psycopg.Cursor) -> None:
             CREATE INDEX IF NOT EXISTS idx_qcr_escalation_task_id
             ON quality_check_results(escalation_task_id)
             WHERE escalation_task_id IS NOT NULL
+            """
+        )
+
+
+def _backfill_execution_mode(cur: psycopg.Cursor) -> None:
+    """Align execution_mode with the legacy autonomous flag when bootstrapping old DBs."""
+    with contextlib.suppress(psycopg.errors.UndefinedColumn):
+        cur.execute(
+            """
+            UPDATE tasks
+            SET execution_mode = CASE
+                WHEN autonomous IS TRUE THEN 'autonomous'
+                ELSE 'manual'
+            END
+            WHERE execution_mode IS NULL
+            """
+        )
+
+
+def _ensure_execution_mode_constraint(cur: psycopg.Cursor) -> None:
+    """Expand legacy execution_mode checks to include manual_only."""
+    with contextlib.suppress(psycopg.errors.UndefinedTable):
+        cur.execute(
+            """
+            ALTER TABLE tasks
+            DROP CONSTRAINT IF EXISTS tasks_execution_mode_check
+            """
+        )
+        cur.execute(
+            """
+            ALTER TABLE tasks
+            DROP CONSTRAINT IF EXISTS ck_tasks_execution_mode
+            """
+        )
+        cur.execute(
+            """
+            ALTER TABLE tasks
+            ADD CONSTRAINT ck_tasks_execution_mode
+            CHECK (execution_mode IN ('manual', 'autonomous', 'manual_only'))
             """
         )

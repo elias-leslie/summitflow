@@ -60,7 +60,8 @@ def _make_mock_task(task_id: str, **kwargs: Any) -> dict[str, Any]:
         "enriched_by": None,
         "enriched_at": None,
         "complexity": kwargs.get("complexity"),
-        "autonomous": False,
+        "execution_mode": kwargs.get("execution_mode", "manual"),
+        "autonomous": kwargs.get("execution_mode") == "autonomous" or kwargs.get("autonomous", False),
         # Spirit fields
         "objective": None,
         "spirit_anti": None,

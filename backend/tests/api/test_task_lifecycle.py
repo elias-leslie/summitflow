@@ -74,6 +74,30 @@ class TestTaskLifecycleEndpoints:
         assert data["status"] == "queue"
         mock_dispatch.assert_awaited_once_with(task_id, "queue", test_project_id)
 
+    def test_execute_rejects_manual_only_task(
+        self,
+        client: Any,
+        test_project_id: str,
+        cleanup_task: Callable[[str], None],
+    ) -> None:
+        response = client.post(
+            f"/api/projects/{test_project_id}/tasks",
+            json={
+                "title": "Manual-only target",
+                "task_type": "task",
+                "priority": 2,
+                "execution_mode": "manual_only",
+            },
+        )
+        assert response.status_code == 200
+        task_id = response.json()["id"]
+        cleanup_task(task_id)
+
+        response = client.post(f"/api/projects/{test_project_id}/tasks/{task_id}/execute")
+
+        assert response.status_code == 400
+        assert "manual" in response.json()["message"].lower()
+
     def test_claim_and_release_round_trip(
         self,
         client: Any,

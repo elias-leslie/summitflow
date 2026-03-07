@@ -77,6 +77,19 @@ is_project_repo() {
     [[ -d "$repo/backend" ]] || [[ -f "$repo/pyproject.toml" ]] || [[ -d "$repo/frontend" ]]
 }
 
+resolve_repo_name() {
+    local repo=$1
+    if [[ "$repo" == *"/worktrees/"* ]]; then
+        local derived
+        derived=$(echo "$repo" | sed -E 's|.*/worktrees/([^/]+)/.*|\1|')
+        if [[ -n "$derived" && "$derived" != "$repo" ]]; then
+            echo "$derived"
+            return
+        fi
+    fi
+    basename "$repo"
+}
+
 safe_pull() {
     local repo_name=$1
     local branch=$2
@@ -153,7 +166,7 @@ generate_simple_message() {
     local type="chore"
     local scope=""
     local repo_name
-    repo_name=$(basename "$(pwd)")
+    repo_name=$(resolve_repo_name "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
 
     if [[ "$repo_name" == ".claude" ]]; then
         if echo "$changed" | grep -q "^skills/"; then
@@ -379,7 +392,7 @@ emit_json_summary() {
 commit_project_repo() {
     local repo=$1
     local repo_name
-    repo_name=$(basename "$repo")
+    repo_name=$(resolve_repo_name "$repo")
 
     cd "$repo" || return 1
 
@@ -490,7 +503,7 @@ commit_project_repo() {
 commit_config_repo() {
     local repo=$1
     local repo_name
-    repo_name=$(basename "$repo")
+    repo_name=$(resolve_repo_name "$repo")
 
     cd "$repo" || return 1
 
@@ -593,7 +606,7 @@ handle_push_only() {
 sync_repo() {
     local repo=$1
     local repo_name
-    repo_name=$(basename "$repo")
+    repo_name=$(resolve_repo_name "$repo")
 
     cd "$repo" || { emit_result "ERROR" "$repo_name" "" "" "false" "" "cd_failed"; return 1; }
 

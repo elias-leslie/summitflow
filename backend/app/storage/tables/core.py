@@ -121,6 +121,8 @@ def _create_tasks_table(cur: psycopg.Cursor) -> None:
             enriched_by TEXT,
             enriched_at TIMESTAMPTZ,
             -- Autonomous execution mode
+            execution_mode VARCHAR(20) DEFAULT 'manual'
+                CHECK (execution_mode IN ('manual', 'autonomous', 'manual_only')),
             autonomous BOOLEAN DEFAULT FALSE,
             agent_override VARCHAR(50),
             agent_hub_session_ids TEXT[] DEFAULT '{}',

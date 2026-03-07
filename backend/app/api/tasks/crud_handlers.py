@@ -100,7 +100,7 @@ async def _create_single_task(project_id: str, item: object) -> TaskResponse:
         **item.model_dump(  # type: ignore[attr-defined]
             include={
                 "title", "description", "capability_id", "priority",
-                "task_type", "parent_task_id", "complexity", "autonomous",
+                "task_type", "parent_task_id", "complexity", "execution_mode", "autonomous",
                 "labels",
             }
         ),

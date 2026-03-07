@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, Field
 
+from .task_create_update import ExecutionModeLiteral
 from .task_subtasks import SubtaskCreate
 
 if TYPE_CHECKING:
@@ -29,12 +30,13 @@ class BatchTaskCreate(BaseModel):
     constraints: list[str] | None = None
     done_when: list[str] | None = None
     complexity: Literal["SIMPLE", "STANDARD", "COMPLEX"] | None = None
+    execution_mode: ExecutionModeLiteral | None = None
     subtasks: list[SubtaskCreate] | None = Field(
         default=None, description="Nested subtasks to create with the task"
     )
     autonomous: bool = Field(
         default=False,
-        description="Enable autonomous execution for this task",
+        description="Compatibility shorthand for execution_mode='autonomous'",
     )
 
 

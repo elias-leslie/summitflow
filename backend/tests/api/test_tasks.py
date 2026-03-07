@@ -195,3 +195,26 @@ class TestTaskUpdates:
         response = client.get(f"/api/projects/{test_project_id}/tasks/{task_id}")
         assert response.status_code == 200
         assert response.json()["labels"] == ["updated", "autonomous"]
+
+    def test_task_update_execution_mode_persists(
+        self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
+    ) -> None:
+        response = client.post(
+            f"/api/projects/{test_project_id}/tasks",
+            json={
+                "title": "Task with execution mode",
+                "task_type": "task",
+            },
+        )
+        assert response.status_code == 200
+        task_id = response.json()["id"]
+        cleanup_task(task_id)
+
+        response = client.patch(
+            f"/api/projects/{test_project_id}/tasks/{task_id}",
+            json={"execution_mode": "manual"},
+        )
+        assert response.status_code == 200
+        updated = response.json()
+        assert updated["execution_mode"] == "manual"
+        assert updated["autonomous"] is False

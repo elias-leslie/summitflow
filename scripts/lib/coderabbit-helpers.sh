@@ -34,7 +34,9 @@ cr-update-sha() {
 cr-review-since-last() {
     local project_path="${1:?Usage: cr-review-since-last <project-path>}"
     local last_sha
+    local current_head
     last_sha=$(cr-last-sha "$project_path")
+    current_head=$(git -C "$project_path" rev-parse HEAD)
 
     if [[ "$last_sha" == "none" ]]; then
         # First run — review last 5 commits
@@ -42,8 +44,13 @@ cr-review-since-last() {
     fi
 
     echo "Reviewing $project_path since $last_sha..."
-    coderabbit review --plain --type committed --base-commit "$last_sha" 2>&1 || true
+    if coderabbit review --plain --type committed --base-commit "$last_sha" 2>&1; then
+        # Only advance the marker after a successful review.
+        mkdir -p "$project_path/.dev-tools"
+        printf '%s\n' "$current_head" > "$project_path/$_CR_MARKER"
+        return 0
+    fi
 
-    # Update marker to current HEAD after review
-    cr-update-sha "$project_path"
+    echo "CodeRabbit review failed; leaving marker at $last_sha" >&2
+    return 1
 }

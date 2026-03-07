@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .task_create_update import ExecutionModeLiteral
 from .task_criteria import AcceptanceCriterion
 
 if TYPE_CHECKING:
@@ -80,6 +81,7 @@ class TaskResponse(BaseModel):
     blocked_by_incomplete: bool | None = None
     # Subtask summary (when include=subtasks or from list_ready_tasks)
     subtask_summary: SubtaskSummary | None = None
+    execution_mode: ExecutionModeLiteral = "manual"
     # Autonomous execution flag
     autonomous: bool = False
     # AI review gate

@@ -148,7 +148,9 @@ class TestSessionsCommandAliases:
 
     def test_sessions_root_aliases_to_list(self) -> None:
         mock_client = MagicMock()
-        mock_client.list_sessions.return_value = [{"id": "sess-root", "status": "running"}]
+        mock_client.list_sessions.return_value = [
+            {"id": "sess-root", "status": "running", "agent_slug": "debugger"}
+        ]
 
         with patch("cli.commands.sessions.STClient", return_value=mock_client):
             result = runner.invoke(app, ["sessions"])

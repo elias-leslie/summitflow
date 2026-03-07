@@ -24,12 +24,13 @@ def output_task(task: dict[str, Any]) -> None:
         total = subtask_summary.get("total", 0)
         priority = task.get("priority", 3)
         complexity = task.get("complexity") or "SIMPLE"
+        execution_mode = task.get("execution_mode") or "manual"
         decisions = task.get("decisions") or []
         decisions_count = len(decisions) if isinstance(decisions, list) else 0
         print(
             f"{task.get('id')}|{task.get('project_id', '')}|{task.get('status')}|P{priority}|"
             f"{task.get('task_type')}|{complexity}|{done}/{total}|"
-            f"decisions:{decisions_count}|{task.get('title')}"
+            f"{execution_mode}|decisions:{decisions_count}|{task.get('title')}"
         )
     else:
         output_json(task)

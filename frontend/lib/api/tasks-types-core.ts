@@ -28,6 +28,7 @@ export type TaskType =
   | 'regression'
 
 export type AgentType = 'claude' | 'gemini'
+export type TaskExecutionMode = 'manual' | 'autonomous' | 'manual_only'
 
 export type EnrichmentStatus =
   | 'none'
@@ -109,6 +110,7 @@ export interface Task {
   enrichment_status?: EnrichmentStatus | null
   enriched_by?: string | null
   enriched_at?: string | null
+  execution_mode?: TaskExecutionMode
   // Autonomous execution flag
   autonomous?: boolean
   // Agent override for autonomous execution

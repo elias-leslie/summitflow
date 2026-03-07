@@ -152,7 +152,8 @@ class TestBuildRefactorSteps:
         )
         structural_step = [s for s in steps if "structural" in s["description"].lower()]
         assert len(structural_step) == 1
-        assert "python3 -c" in structural_step[0]["description"]
+        assert structural_step[0]["spec"]["verify_commands"]
+        assert any("python3 -c" in cmd for cmd in structural_step[0]["spec"]["verify_commands"])
 
     def test_too_many_functions_gets_structural_step(self) -> None:
         """too_many_functions generates a structural step."""
@@ -197,8 +198,10 @@ class TestBuildRefactorSteps:
             refactor_issues=["deep_nesting"],
         )
         quality_step = next(s for s in steps if "quality gate" in s["description"].lower())
-        assert "dt --quick" in quality_step["description"]
-        assert "dt pytest" in quality_step["description"] or "python3 -c" in quality_step["description"]
+        verify_commands = quality_step["spec"]["verify_commands"]
+        assert "dt --quick" in verify_commands
+        assert "dt --fix" in verify_commands
+        assert any("dt pytest" in cmd or "python3 -c" in cmd for cmd in verify_commands)
 
     def test_frontend_browser_check(self) -> None:
         """Frontend files get browser verification step."""
@@ -206,7 +209,10 @@ class TestBuildRefactorSteps:
             "frontend/components/Foo.tsx", "/abs/path", 400, 200, True,
             refactor_issues=["large_file"],
         )
-        assert any("browser" in s["description"].lower() or "console" in s["description"].lower() for s in steps)
+        browser_step = next(
+            s for s in steps if "browser" in s["description"].lower() or "console" in s["description"].lower()
+        )
+        assert browser_step["spec"]["verify_commands"] == ["~/.local/bin/agent-browser console"]
 
     def test_no_issues_falls_back_to_refactor_step(self) -> None:
         """Empty issues list falls back to refactor step."""
@@ -215,3 +221,17 @@ class TestBuildRefactorSteps:
             refactor_issues=[],
         )
         assert any("refactor" in s["description"].lower() for s in steps)
+
+    def test_step_specs_store_verify_commands_separately_from_descriptions(self) -> None:
+        """Generated steps should persist executable verification in spec."""
+        steps = build_refactor_steps(
+            "backend/app/services/foo.py", "/abs/path", 400, 200, False,
+            refactor_issues=["large_file", "deep_nesting"],
+        )
+
+        quality_step = next(s for s in steps if "quality gate" in s["description"].lower())
+        verify_commands = quality_step["spec"]["verify_commands"]
+
+        assert "dt --quick" not in quality_step["description"]
+        assert verify_commands[:2] == ["dt --fix", "dt --quick"]
+        assert len(verify_commands) == 3

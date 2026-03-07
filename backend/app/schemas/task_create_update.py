@@ -8,6 +8,8 @@ from pydantic import BaseModel, Field
 
 from .task_criteria import AcceptanceCriterion
 
+ExecutionModeLiteral = Literal["manual", "autonomous", "manual_only"]
+
 
 class TaskCreate(BaseModel):
     """Request model for creating a new task."""
@@ -43,9 +45,13 @@ class TaskCreate(BaseModel):
     complexity: Literal["SIMPLE", "STANDARD", "COMPLEX"] | None = Field(
         default=None, description="Task complexity tier"
     )
+    execution_mode: ExecutionModeLiteral | None = Field(
+        default=None,
+        description="How the task may be picked up: manual or autonomous",
+    )
     autonomous: bool = Field(
         default=False,
-        description="Enable autonomous execution (Flash/Opus pipeline) vs manual",
+        description="Compatibility shorthand for execution_mode='autonomous'",
     )
     ai_review: bool = Field(
         default=True,
@@ -81,6 +87,7 @@ class TaskUpdate(BaseModel):
     constraints: list[str] | None = None
     done_when: list[str] | None = None
     complexity: Literal["SIMPLE", "STANDARD", "COMPLEX"] | None = None
+    execution_mode: ExecutionModeLiteral | None = None
     autonomous: bool | None = None
     ai_review: bool | None = None
     # Agent override for autonomous execution

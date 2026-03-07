@@ -20,6 +20,8 @@ def _build_task_data(
     description: str | None,
     labels: str | None,
     parent: str | None,
+    execution_mode: str | None,
+    manual_only: bool,
     autonomous: bool,
 ) -> dict[str, Any]:
     data: dict[str, Any] = {"title": title, "task_type": task_type, "priority": priority}
@@ -29,6 +31,10 @@ def _build_task_data(
         data["labels"] = labels.split(",")
     if parent:
         data["parent_task_id"] = parent
+    if manual_only:
+        data["execution_mode"] = "manual_only"
+    elif execution_mode:
+        data["execution_mode"] = execution_mode
     if autonomous:
         data["autonomous"] = True
     return data
@@ -67,6 +73,8 @@ def _handle_single_task_create(
     task_type: str,
     parent: str | None,
     blocked_by: str | None,
+    execution_mode: str | None,
+    manual_only: bool,
     autonomous: bool,
 ) -> None:
     require_explicit_project(get_config())
@@ -76,7 +84,12 @@ def _handle_single_task_create(
         raise typer.Exit(1)
 
     client = STClient()
-    data = _build_task_data(title, task_type, priority, description, labels, parent, autonomous)
+    if manual_only and autonomous:
+        output_error("--manual-only conflicts with --autonomous")
+        raise typer.Exit(1)
+    data = _build_task_data(
+        title, task_type, priority, description, labels, parent, execution_mode, manual_only, autonomous
+    )
 
     try:
         task = client.create_task(data)
@@ -101,6 +114,8 @@ def create_task_command(
     parent: str | None,
     plan: Path | None,
     blocked_by: str | None,
+    execution_mode: str | None,
+    manual_only: bool,
     autonomous: bool,
     task_id: str | None = None,
 ) -> None:
@@ -113,6 +128,7 @@ def create_task_command(
         st -P summitflow create "Add feature" -t feature -p 1 --parent task-abc123
         st -P summitflow create "Implement X" --blocked-by task-abc123
         st -P summitflow create "AutoTest" --autonomous
+        st -P summitflow create "Reserved lane" --manual-only
         st -P summitflow create --from-file tasks.json
         st -P summitflow create --from-file tasks.json --dry-run
         st -P summitflow create --plan plan.json
@@ -131,5 +147,15 @@ def create_task_command(
         raise typer.Exit(1)
 
     _handle_single_task_create(
-        title, dry_run, description, priority, labels, task_type, parent, blocked_by, autonomous
+        title,
+        dry_run,
+        description,
+        priority,
+        labels,
+        task_type,
+        parent,
+        blocked_by,
+        execution_mode,
+        manual_only,
+        autonomous,
     )

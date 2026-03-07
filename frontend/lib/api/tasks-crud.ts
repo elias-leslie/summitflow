@@ -26,6 +26,8 @@ export async function createTask(
     labels?: string[]
     task_type?: TaskType
     parent_task_id?: string
+    execution_mode?: 'manual' | 'autonomous' | 'manual_only'
+    autonomous?: boolean
   },
 ): Promise<Task> {
   return fetchWithErrorHandling(`/api/projects/${projectId}/tasks`, {
@@ -46,6 +48,7 @@ export async function updateTask(
     labels?: string[]
     task_type?: TaskType
     parent_task_id?: string
+    execution_mode?: 'manual' | 'autonomous' | 'manual_only'
     autonomous?: boolean
     agent_override?: string | null
   },

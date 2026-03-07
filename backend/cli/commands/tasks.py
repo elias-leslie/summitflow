@@ -24,6 +24,8 @@ def create(
     plan: Annotated[Path | None, typer.Option("--plan")] = None,
     task_id: Annotated[str | None, typer.Option("--task")] = None,
     blocked_by: Annotated[str | None, typer.Option("--blocked-by")] = None,
+    execution_mode: Annotated[str | None, typer.Option("--execution-mode")] = None,
+    manual_only: Annotated[bool, typer.Option("--manual-only")] = False,
     autonomous: Annotated[bool, typer.Option("--autonomous")] = False,
 ) -> None:
     """Create a new task or batch create from file."""
@@ -31,7 +33,7 @@ def create(
 
     create_task_command(
         title, from_file, dry_run, description, priority, labels,
-        task_type, parent, plan, blocked_by, autonomous, task_id
+        task_type, parent, plan, blocked_by, execution_mode, manual_only, autonomous, task_id
     )
 
 
@@ -198,6 +200,7 @@ def idea(
         parent=None,
         plan=None,
         blocked_by=None,
+        execution_mode="autonomous",
         autonomous=True,
     )
 

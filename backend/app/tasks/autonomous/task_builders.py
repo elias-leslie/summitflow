@@ -48,7 +48,7 @@ def create_refactor_task(
     target_lines: int,
     priority: str,
     tier: int,
-    steps: list[dict[str, str]],
+    steps: list[dict[str, object]],
     refactor_issues: list[str] | None = None,
 ) -> tuple[str | None, int | None]:
     """Create refactor task with spirit, subtasks, and steps."""
@@ -87,7 +87,7 @@ def create_schema_task(
     detail: str,
     severity: str,
     metadata: dict[str, Any],
-    steps: list[dict[str, str]],
+    steps: list[dict[str, object]],
     title: str,
     objective: str,
     done_when: list[str],

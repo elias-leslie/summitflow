@@ -13,7 +13,7 @@ def create_single_subtask_with_steps(
     subtask_id: str,
     phase: str,
     description: str,
-    steps: list[dict[str, str]],
+    steps: list[dict[str, object]],
     subtask_type: str | None = None,
 ) -> str | None:
     """Create a single subtask with its steps.

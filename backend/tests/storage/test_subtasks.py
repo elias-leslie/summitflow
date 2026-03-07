@@ -330,6 +330,29 @@ class TestBulkCreateSubtasks:
         assert created[1]["steps_from_table"][0]["description"] == "Step X"
         assert created[1]["steps_from_table"][1]["description"] == "Step Y"
 
+    def test_bulk_create_preserves_step_specs(self, test_task: dict[str, Any]) -> None:
+        """Structured step specs should persist when subtasks create normalized step rows."""
+        subtasks_data: list[dict[str, Any]] = [
+            {
+                "subtask_id": "1.1",
+                "description": "Verification subtask",
+                "steps": [
+                    {
+                        "description": "Quality gate",
+                        "spec": {"verify_commands": ["dt --quick", "dt pytest backend/tests/storage/test_steps.py -q"]},
+                    }
+                ],
+            }
+        ]
+
+        created = subtask_store.bulk_create_subtasks(test_task["id"], subtasks_data)
+
+        step = created[0]["steps_from_table"][0]
+        assert step["description"] == "Quality gate"
+        assert step["spec"] == {
+            "verify_commands": ["dt --quick", "dt pytest backend/tests/storage/test_steps.py -q"],
+        }
+
     def test_bulk_create_without_steps(self, test_task: dict[str, Any]) -> None:
         """Test bulk creating subtasks without steps still works."""
         subtasks_data: list[dict[str, Any]] = [

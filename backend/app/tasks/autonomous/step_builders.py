@@ -138,34 +138,39 @@ def _build_structural_checks(relative_path: str, issues: list[str]) -> list[str]
     return _build_function_checks(relative_path, issues) + _build_class_checks(relative_path, issues)
 
 
+def _step(description: str, verify_commands: list[str] | None = None) -> dict[str, object]:
+    """Build a step payload, storing executable verification in spec."""
+    step: dict[str, object] = {"description": description}
+    if verify_commands:
+        step["spec"] = {"verify_commands": verify_commands}
+    return step
+
+
 def _assemble_steps(
     relative_path: str, lines: int, target_lines: int, is_frontend: bool, issues: list[str],
-) -> list[dict[str, str]]:
+) -> list[dict[str, object]]:
     """Assemble the ordered list of verification steps."""
-    steps: list[dict[str, str]] = []
+    steps: list[dict[str, object]] = []
     if any(i in issues for i in _SIZE_ISSUES) or not issues:
-        steps.append({
-            "description": f"Refactor {relative_path} from {lines} to <{target_lines} lines",
-        })
+        steps.append(_step(
+            f"Refactor {relative_path} from {lines} to <{target_lines} lines",
+        ))
     structural_checks = _build_structural_checks(relative_path, issues)
     if structural_checks:
-        steps.append({
-            "description": (
-                "Verify structural issues resolved with targeted checks: "
-                + "; ".join(structural_checks[:3])
-            ),
-        })
+        steps.append(_step(
+            "Verify structural issues resolved with targeted checks",
+            structural_checks,
+        ))
     targeted_test = get_targeted_test_command(relative_path)
-    steps.append({
-        "description": (
-            "Quality gate: run dt --fix, dt --quick, then targeted verification: "
-            f"{targeted_test}"
-        ),
-    })
+    steps.append(_step(
+        "Quality gate: run fix, fast checks, then targeted verification",
+        ["dt --fix", "dt --quick", targeted_test],
+    ))
     if is_frontend:
-        steps.append({
-            "description": "Verify no console errors in browser",
-        })
+        steps.append(_step(
+            "Verify no console errors in browser",
+            ["~/.local/bin/agent-browser console"],
+        ))
     return steps
 
 
@@ -176,7 +181,7 @@ def build_refactor_steps(
     target_lines: int,
     is_frontend: bool,
     refactor_issues: list[str] | None = None,
-) -> list[dict[str, str]]:
+) -> list[dict[str, object]]:
     """Build verification steps for a refactor task.
 
     Generates issue-specific verify commands so each detected problem
@@ -191,6 +196,6 @@ def build_refactor_steps(
         refactor_issues: List of specific issue identifiers to verify
 
     Returns:
-        List of step dictionaries with description
+        List of step dictionaries with description and optional spec.verify_commands
     """
     return _assemble_steps(relative_path, lines, target_lines, is_frontend, refactor_issues or [])

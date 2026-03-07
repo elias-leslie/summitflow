@@ -23,7 +23,8 @@ def _format_task_line(task: dict[str, Any], prefix: str = " ") -> str:
     task_type = (task.get("task_type") or "task")[:8]
     title = truncate(task.get("title") or "", 55)
     task_id = task.get("id", "?")
-    return f"  {prefix} {task_id} P{priority} {task_type:8} {title}"
+    mode = "A" if task.get("execution_mode") == "autonomous" else "M"
+    return f"  {prefix} {task_id} P{priority} {task_type:8} [{mode}] {title}"
 
 
 def list_ready_all(

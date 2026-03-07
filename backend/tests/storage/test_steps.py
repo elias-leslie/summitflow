@@ -56,6 +56,19 @@ class TestCreateStep:
         assert step2["step_number"] == 2
         assert step3["step_number"] == 3
 
+    def test_create_step_persists_verify_commands_in_spec(self, test_subtask: dict[str, Any]) -> None:
+        """Structured verify commands should persist through the step storage layer."""
+        step = step_store.create_step(
+            subtask_id=test_subtask["id"],
+            step_number=1,
+            description="Quality gate",
+            spec={"verify_commands": ["dt --quick", "dt pytest backend/tests/test_models.py -q"]},
+        )
+
+        assert step["spec"] == {
+            "verify_commands": ["dt --quick", "dt pytest backend/tests/test_models.py -q"],
+        }
+
 
 class TestGetStepsForSubtask:
     """Tests for get_steps_for_subtask function."""
@@ -391,5 +404,4 @@ class TestInsertStep:
         """Position < 1 raises ValueError."""
         with pytest.raises(ValueError, match="Position must be >= 1"):
             step_store.insert_step(test_subtask["id"], 0, "Invalid")
-
 

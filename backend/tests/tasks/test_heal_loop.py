@@ -30,8 +30,10 @@ class TestStepRereadAfterHealAttempt:
     @patch(f"{_RETRY_LOOP}.run_execution_quality_check")
     @patch(f"{_RETRY_LOOP}.check_worktree_health")
     @patch(f"{_RETRY_LOOP}.get_steps_for_subtask")
+    @patch(f"{_RETRY_LOOP}.assert_task_runnable")
     def test_steps_reread_after_heal_attempt(
         self,
+        mock_assert_task_runnable: MagicMock,
         mock_get_steps: MagicMock,
         mock_worktree_health: MagicMock,
         mock_verify: MagicMock,
@@ -97,8 +99,10 @@ class TestStepRereadAfterHealAttempt:
     @patch(f"{_RETRY_LOOP}.run_execution_quality_check")
     @patch(f"{_RETRY_LOOP}.check_worktree_health")
     @patch(f"{_RETRY_LOOP}.get_steps_for_subtask")
+    @patch(f"{_RETRY_LOOP}.assert_task_runnable")
     def test_steps_not_reread_on_first_attempt(
         self,
+        mock_assert_task_runnable: MagicMock,
         mock_get_steps: MagicMock,
         mock_worktree_health: MagicMock,
         mock_verify: MagicMock,
@@ -284,8 +288,10 @@ class TestHealLoopAbortsOnInvalidWorktree:
     @patch(f"{_RETRY_LOOP}.run_execution_quality_check")
     @patch(f"{_RETRY_LOOP}.check_worktree_health")
     @patch(f"{_RETRY_LOOP}.get_steps_for_subtask")
+    @patch(f"{_RETRY_LOOP}.assert_task_runnable")
     def test_heal_loop_aborts_on_invalid_worktree(
         self,
+        mock_assert_task_runnable: MagicMock,
         mock_get_steps: MagicMock,
         mock_worktree_health: MagicMock,
         mock_verify: MagicMock,

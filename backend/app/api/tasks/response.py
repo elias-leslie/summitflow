@@ -12,6 +12,7 @@ from ...schemas.tasks import (
     SubtaskSummary,
     TaskResponse,
 )
+from ...storage.tasks.execution_mode import is_autonomous_mode
 from .helpers import get_step_count_for_task
 
 
@@ -101,6 +102,7 @@ def _parse_task_criteria(task: dict[str, Any]) -> list[AcceptanceCriterion] | No
 
 def task_to_response(task: dict[str, Any], criteria_count: int | None = None) -> TaskResponse:
     blockers, blocked_by_incomplete = _parse_blockers(task)
+    execution_mode = task.get("execution_mode") or ("autonomous" if task.get("autonomous") else "manual")
     return TaskResponse(
         id=task["id"],
         project_id=task["project_id"],
@@ -135,8 +137,10 @@ def task_to_response(task: dict[str, Any], criteria_count: int | None = None) ->
         blocked_by_incomplete=blocked_by_incomplete,
         subtask_summary=_parse_subtask_summary(task),
         subtasks=_parse_subtasks(task),
-        autonomous=task.get("autonomous", False),
+        execution_mode=execution_mode,
+        autonomous=is_autonomous_mode(execution_mode),
         ai_review=task.get("ai_review", True),
+        agent_override=task.get("agent_override"),
         plan_status=task.get("plan_status"),
         plan_approved_at=task.get("plan_approved_at"),
         plan_approved_by=task.get("plan_approved_by"),

@@ -3,7 +3,7 @@
 This module defines the column lists used in task queries.
 """
 
-# Column list for all task SELECT/RETURNING queries (40 columns)
+# Column list for all task SELECT/RETURNING queries (39 columns)
 # Order must match _row_to_dict index mapping
 # Note: Migration 072 dropped: plan_content, objective, spirit_anti,
 #       decisions, constraints, done_when (moved to task_spirit)
@@ -20,7 +20,7 @@ TASK_COLUMNS = """id, project_id, capability_id, title, description, status,
     claimed_by, claimed_at, lock_expires_at, tier, pre_merge_sha, review_result,
     current_phase, verification_result,
     raw_request, enrichment_status, enriched_by, enriched_at,
-    complexity, autonomous,
+    complexity, execution_mode, autonomous,
     agent_override, agent_hub_session_ids,
     labels, ai_review, conflict_info, merge_sha"""
 
@@ -32,13 +32,13 @@ TASK_COLUMNS_ALIASED = """t.id, t.project_id, t.capability_id, t.title, t.descri
     t.claimed_by, t.claimed_at, t.lock_expires_at, t.tier, t.pre_merge_sha, t.review_result,
     t.current_phase, t.verification_result,
     t.raw_request, t.enrichment_status, t.enriched_by, t.enriched_at,
-    t.complexity, t.autonomous,
+    t.complexity, t.execution_mode, t.autonomous,
     t.agent_override, t.agent_hub_session_ids,
     t.labels, t.ai_review, t.conflict_info, t.merge_sha"""
 
-EXPECTED_TASK_COLUMNS = 38
+EXPECTED_TASK_COLUMNS = 39
 
-# Columns for queries that JOIN with task_spirit (46 columns total)
+# Columns for queries that JOIN with task_spirit (45 columns total)
 # Adds 6 spirit fields: objective, spirit_anti, decisions, constraints, done_when, plan_status
 TASK_COLUMNS_WITH_SPIRIT = """t.id, t.project_id, t.capability_id, t.title, t.description, t.status,
     t.error_message, t.branch_name, t.commits,
@@ -47,9 +47,9 @@ TASK_COLUMNS_WITH_SPIRIT = """t.id, t.project_id, t.capability_id, t.title, t.de
     t.claimed_by, t.claimed_at, t.lock_expires_at, t.tier, t.pre_merge_sha, t.review_result,
     t.current_phase, t.verification_result,
     t.raw_request, t.enrichment_status, t.enriched_by, t.enriched_at,
-    t.complexity, t.autonomous,
+    t.complexity, t.execution_mode, t.autonomous,
     t.agent_override, t.agent_hub_session_ids,
     t.labels, t.ai_review, t.conflict_info, t.merge_sha,
     ts.objective, ts.spirit_anti, ts.decisions, ts.constraints, ts.done_when, ts.plan_status"""
 
-EXPECTED_TASK_COLUMNS_WITH_SPIRIT = 44
+EXPECTED_TASK_COLUMNS_WITH_SPIRIT = 45

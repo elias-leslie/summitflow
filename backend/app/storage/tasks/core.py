@@ -9,20 +9,14 @@ from typing import Any
 
 from ..connection import generate_prefixed_id, get_connection
 from .columns import TASK_COLUMNS, TASK_COLUMNS_WITH_SPIRIT
+from .execution_mode import normalize_execution_fields
 from .mapping import row_to_dict, row_to_dict_with_spirit
 from .update import update_task_fields
-
-_AUTONOMOUS_TYPES = ("refactor", "debt", "regression")
 
 
 def _generate_task_id() -> str:
     """Generate a unique task ID."""
     return generate_prefixed_id("task")
-
-
-def _resolve_autonomous(autonomous: bool, task_type: str) -> bool:
-    """Auto-enable autonomous for mechanical task types."""
-    return True if (not autonomous and task_type in _AUTONOMOUS_TYPES) else autonomous
 
 
 def _insert_task(params: tuple[Any, ...]) -> dict[str, Any]:
@@ -33,8 +27,8 @@ def _insert_task(params: tuple[Any, ...]) -> dict[str, Any]:
             INSERT INTO tasks (id, project_id, capability_id, title, description,
                                priority, task_type, parent_task_id, tier,
                                current_phase, raw_request, enrichment_status,
-                               complexity, autonomous, labels, ai_review)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                               complexity, execution_mode, autonomous, labels, ai_review)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING {TASK_COLUMNS}
             """,
             params,
@@ -58,6 +52,7 @@ def create_task(
     raw_request: str | None = None,
     enrichment_status: str = "none",
     complexity: str | None = None,
+    execution_mode: str | None = None,
     autonomous: bool = False,
     labels: list[str] | None = None,
     ai_review: bool = True,
@@ -69,12 +64,17 @@ def create_task(
     """
     if task_id is None:
         task_id = _generate_task_id()
-    autonomous = _resolve_autonomous(autonomous, task_type)
+    execution_fields = normalize_execution_fields(
+        task_type=task_type,
+        execution_mode=execution_mode,
+        autonomous=autonomous,
+    )
     params = (
         task_id, project_id, capability_id, title, description,
         priority, task_type, parent_task_id, tier,
         current_phase, raw_request, enrichment_status,
-        complexity, autonomous, labels or [], ai_review,
+        complexity, execution_fields["execution_mode"], execution_fields["autonomous"],
+        labels or [], ai_review,
     )
     return _insert_task(params)
 
@@ -104,6 +104,17 @@ def update_task(task_id: str, **fields: Any) -> dict[str, Any] | None:
     Raises:
         ValueError: If no fields provided or invalid field name.
     """
+    if "execution_mode" in fields or "autonomous" in fields or "task_type" in fields:
+        existing = get_task(task_id)
+        if existing is None:
+            return None
+        execution_fields = normalize_execution_fields(
+            task_type=str(fields.get("task_type", existing.get("task_type", "task"))),
+            execution_mode=fields.get("execution_mode", existing.get("execution_mode")),
+            autonomous=fields.get("autonomous", existing.get("autonomous")),
+        )
+        fields["execution_mode"] = execution_fields["execution_mode"]
+        fields["autonomous"] = execution_fields["autonomous"]
     return update_task_fields(task_id, **fields)
 
 

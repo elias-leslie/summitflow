@@ -19,6 +19,7 @@ from ...schemas.tasks import (
     TaskResponse,
 )
 from ...storage import tasks as task_store
+from ...storage.tasks.execution_mode import EXECUTION_MODE_AUTONOMOUS, normalize_execution_fields
 from .response import task_to_response
 
 router = APIRouter()
@@ -76,6 +77,15 @@ def _auto_classify_complexity(task: dict) -> None:
 @router.post("/projects/{project_id}/tasks", response_model=TaskResponse)
 async def create_task(project_id: str, task: TaskCreate) -> TaskResponse:
     """Create a new task. When auto_dispatch=True, queues and dispatches to Hatchet."""
+    execution_fields = normalize_execution_fields(
+        task_type=task.task_type,
+        execution_mode=(
+            EXECUTION_MODE_AUTONOMOUS
+            if task.auto_dispatch
+            else task.execution_mode
+        ),
+        autonomous=task.autonomous or task.auto_dispatch,
+    )
     created = await asyncio.to_thread(
         task_store.create_task,
         project_id=project_id,
@@ -86,7 +96,8 @@ async def create_task(project_id: str, task: TaskCreate) -> TaskResponse:
         task_type=task.task_type,
         parent_task_id=task.parent_task_id,
         complexity=task.complexity,
-        autonomous=task.autonomous or task.auto_dispatch,
+        execution_mode=execution_fields["execution_mode"],
+        autonomous=execution_fields["autonomous"],
         labels=task.labels,
         ai_review=task.ai_review,
     )
@@ -116,6 +127,7 @@ async def create_task_from_ideation(
         priority=body.priority,
         task_type=body.task_type,
         complexity=body.to_db_complexity(),
+        execution_mode=EXECUTION_MODE_AUTONOMOUS if body.auto_dispatch else None,
         autonomous=body.auto_dispatch,
         labels=body.labels,
     )

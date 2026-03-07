@@ -311,10 +311,12 @@ class TestHealLoopExtension:
     @patch("app.tasks.autonomous.exec_modules.retry_loop.run_execution_quality_check")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.check_worktree_health")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.get_steps_for_subtask")
+    @patch("app.tasks.autonomous.exec_modules.retry_loop.assert_task_runnable")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.agent_configs")
     def test_extension_granted_adds_attempts(
         self,
         mock_agent_configs: MagicMock,
+        mock_assert_task_runnable: MagicMock,
         mock_get_steps: MagicMock,
         mock_worktree_health: MagicMock,
         mock_verify: MagicMock,
@@ -391,10 +393,12 @@ class TestHealLoopExtension:
     @patch("app.tasks.autonomous.exec_modules.retry_loop.run_execution_quality_check")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.check_worktree_health")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.get_steps_for_subtask")
+    @patch("app.tasks.autonomous.exec_modules.retry_loop.assert_task_runnable")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.agent_configs")
     def test_extension_denied_fails_subtask(
         self,
         mock_agent_configs: MagicMock,
+        mock_assert_task_runnable: MagicMock,
         mock_get_steps: MagicMock,
         mock_worktree_health: MagicMock,
         mock_verify: MagicMock,
@@ -458,10 +462,12 @@ class TestHealLoopExtension:
     @patch("app.tasks.autonomous.exec_modules.retry_loop.run_execution_quality_check")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.check_worktree_health")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.get_steps_for_subtask")
+    @patch("app.tasks.autonomous.exec_modules.retry_loop.assert_task_runnable")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.agent_configs")
     def test_no_progress_skips_extension_request(
         self,
         mock_agent_configs: MagicMock,
+        mock_assert_task_runnable: MagicMock,
         mock_get_steps: MagicMock,
         mock_worktree_health: MagicMock,
         mock_verify: MagicMock,
