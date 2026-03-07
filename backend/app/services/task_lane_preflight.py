@@ -255,35 +255,26 @@ def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflict
                     "or scope the active lane before dispatching another coding task."
                 )
             else:
-                scope_unavailable_task_id: str | None = None
+                scoped_lane_entries: list[tuple[str, _TaskScope]] = []
+                unscoped_lane_task_ids: list[str] = []
                 exact_overlap_task_id: str | None = None
                 exact_overlaps: list[str] = []
                 for session in lane_sessions:
                     lane_task_id = _lane_task_id(session)
                     active_scope = _load_task_scope(lane_task_id) if lane_task_id else None
                     if active_scope is None:
-                        scope_unavailable_task_id = lane_task_id or "unknown task"
-                        break
+                        unscoped_lane_task_ids.append(lane_task_id or "unknown task")
+                        continue
+                    scoped_lane_entries.append((lane_task_id or "unknown task", active_scope))
+
+                for lane_task_id, active_scope in scoped_lane_entries:
                     overlaps = sorted(target_scope.paths & active_scope.paths)
                     if overlaps:
                         exact_overlap_task_id = lane_task_id
                         exact_overlaps = overlaps
                         break
 
-                if scope_unavailable_task_id:
-                    conflicting_tasks = [scope_unavailable_task_id]
-                    lane_preview = "; ".join(_lane_summary(session) for session in lane_sessions[:2])
-                    issues.append(
-                        f"Another active coding lane exists in project {project_id} but lacks usable file scope: "
-                        f"{scope_unavailable_task_id}"
-                    )
-                    if lane_preview:
-                        suggestions.append(f"Active lane details: {lane_preview}")
-                    suggestions.append(
-                        "Active lane scope unavailable; keep the current project-level guard and finish, retire, "
-                        "or scope the active lane before dispatching another coding task."
-                    )
-                elif exact_overlap_task_id:
+                if exact_overlap_task_id:
                     conflicting_tasks = [exact_overlap_task_id]
                     overlap_preview = ", ".join(exact_overlaps[:3])
                     issues.append(
@@ -293,6 +284,23 @@ def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflict
                     suggestions.append(
                         f"Exact-file overlap with {exact_overlap_task_id}: {overlap_preview}. "
                         "Finish or retire the active lane before dispatching another coding task."
+                    )
+                elif scoped_lane_entries:
+                    # At least one active lane is safely scoped and disjoint; ignore noisier unscoped lanes for phase 1.
+                    pass
+                elif unscoped_lane_task_ids:
+                    chosen_task_id = sorted(unscoped_lane_task_ids)[0]
+                    conflicting_tasks = [chosen_task_id]
+                    lane_preview = "; ".join(_lane_summary(session) for session in lane_sessions[:2])
+                    issues.append(
+                        f"Another active coding lane exists in project {project_id} but lacks usable file scope: "
+                        f"{chosen_task_id}"
+                    )
+                    if lane_preview:
+                        suggestions.append(f"Active lane details: {lane_preview}")
+                    suggestions.append(
+                        "Active lane scope unavailable; keep the current project-level guard and finish, retire, "
+                        "or scope the active lane before dispatching another coding task."
                     )
 
     return TaskLaneConflictCheck(
