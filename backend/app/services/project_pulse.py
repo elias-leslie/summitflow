@@ -14,6 +14,7 @@ from app.storage.tasks.queries import list_tasks
 _TIMEOUT = 10.0
 _TASK_LIMIT = 8
 _SESSION_LIMIT = 25
+_OBSERVER_FRESH_MINUTES = 90
 
 
 async def _agent_hub_get(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -24,6 +25,22 @@ async def _agent_hub_get(path: str, params: dict[str, Any] | None = None) -> dic
         response.raise_for_status()
         payload = response.json()
         return payload if isinstance(payload, dict) else {}
+
+
+def _parse_iso_timestamp(value: Any) -> datetime | None:
+    """Parse an ISO timestamp from Agent Hub session payloads."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    raw = value.strip()
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _normalize_active_session(session: dict[str, Any], owner_session_ids: set[str], specialist_session_ids: set[str]) -> dict[str, Any]:
@@ -54,6 +71,18 @@ def _normalize_active_session(session: dict[str, Any], owner_session_ids: set[st
         "updated_at": session.get("updated_at"),
         "live_activity": session.get("live_activity"),
     }
+
+
+def _include_active_session(session: dict[str, Any]) -> bool:
+    """Keep only sessions that are plausibly live enough for coordination."""
+    live_activity = session.get("live_activity")
+    if isinstance(live_activity, dict):
+        return True
+    updated_at = _parse_iso_timestamp(session.get("updated_at"))
+    if updated_at is None:
+        return False
+    age_minutes = (datetime.now(UTC) - updated_at).total_seconds() / 60
+    return age_minutes <= _OBSERVER_FRESH_MINUTES
 
 
 def _normalize_running_task(task: dict[str, Any]) -> dict[str, Any]:
@@ -93,7 +122,7 @@ async def build_project_pulse(project_id: str) -> dict[str, Any]:
     active_sessions = [
         _normalize_active_session(session, owner_session_ids, specialist_session_ids)
         for session in raw_sessions
-        if isinstance(session, dict)
+        if isinstance(session, dict) and _include_active_session(session)
     ]
     running_tasks = [
         _normalize_running_task(task)
