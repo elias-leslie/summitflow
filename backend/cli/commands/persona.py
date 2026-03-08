@@ -288,6 +288,7 @@ def heartbeat(
     """Trigger a heartbeat. With --watch, poll until it finishes."""
     import time
 
+    from ..client import STClient
     from .persona_api import get_heartbeat_status, trigger_heartbeat
 
     try:
@@ -311,6 +312,8 @@ def heartbeat(
         return
 
     # Poll until done
+    pulse_client = STClient(require_project=False) if project else None
+    reported_dispatch = False
     print("Watching...", end="", flush=True)
     while True:
         time.sleep(10)
@@ -320,6 +323,11 @@ def heartbeat(
                 print()  # newline after progress dots
                 _print_heartbeat_result(status)
                 return
+            if pulse_client and not reported_dispatch:
+                dispatch_hint = _get_dispatch_hint(pulse_client, project)
+                if dispatch_hint:
+                    print(f"\n  {dispatch_hint}", end="", flush=True)
+                    reported_dispatch = True
             elapsed = status.get("elapsed_seconds", 0)
             print(f"\r  Running... {elapsed}s elapsed", end="", flush=True)
         except Exception:
@@ -349,6 +357,28 @@ def _print_heartbeat_result(status: dict[str, Any]) -> None:
     if auto_journal:
         parts.append("auto_journaled=yes")
     print(f"  {' | '.join(parts)}")
+
+
+def _get_dispatch_hint(client: Any, project_id: str | None) -> str | None:
+    """Return a one-line dispatch hint from the canonical project pulse."""
+    if not project_id:
+        return None
+
+    payload = client.get(client._global_url(f"/projects/{project_id}/pulse"))
+    running_tasks = payload.get("running_tasks", []) if isinstance(payload, dict) else []
+    active_owners = payload.get("active_owners", []) if isinstance(payload, dict) else []
+    active_sessions = payload.get("active_sessions", []) if isinstance(payload, dict) else []
+    if not running_tasks:
+        return None
+
+    task = running_tasks[0] if isinstance(running_tasks[0], dict) else {}
+    owner = active_owners[0] if active_owners and isinstance(active_owners[0], dict) else {}
+    session = active_sessions[0] if active_sessions and isinstance(active_sessions[0], dict) else {}
+    task_id = task.get("id") or "?"
+    title = str(task.get("title") or "")[:70]
+    agent_slug = owner.get("agent_slug") or session.get("agent_slug") or "agent"
+    session_id = str(owner.get("session_id") or session.get("id") or "")[:8]
+    return f"Dispatch detected: {task_id} | {agent_slug} | {session_id} | {title}"
 
 
 @app.command()

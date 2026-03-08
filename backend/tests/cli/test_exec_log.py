@@ -171,7 +171,7 @@ class TestExecLogCommand:
             assert "EXEC:task-test123" in result.output
             assert "running" in result.output
             assert "1/2(1W)" in result.output  # subtask summary
-            assert "AH:claude-sonnet-4-6:active/reading_file" in result.output
+            assert "AH:agent:claude-sonnet-4-6:active/reading_file" in result.output
             assert "|AH|sess-1|[1.1] assistant_message" in result.output
 
     def test_exec_log_compact_includes_recent_agent_activity(self, mock_client: MagicMock) -> None:
@@ -309,7 +309,7 @@ class TestExecLogCommand:
             result = runner.invoke(app, ["exec-log", "task-test123"])
 
         assert result.exit_code == 0
-        assert "|hist=1" in result.output
+        assert "AH:refactor:claude-sonnet-4-6:completed/completed,coder:gpt-5.4:completed/completed|hist=1" in result.output
         assert "sess-old" not in result.output
         assert "Old retry attempt" not in result.output
         assert "Old attempt started" not in result.output

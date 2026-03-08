@@ -163,6 +163,7 @@ def print_header(
 
     def _session_label(session: dict[str, Any]) -> str:
         live = session.get("live_activity") if isinstance(session, dict) else None
+        role = str(session.get("agent_slug") or session.get("lane_role") or "agent")
         model = (
             session.get("effective_model")
             or session.get("requested_model")
@@ -171,8 +172,8 @@ def print_header(
         )
         short_model = str(model).split("/")[-1]
         if isinstance(live, dict):
-            return f"{short_model}:{live.get('health', 'unknown')}/{live.get('phase', 'unknown')}"
-        return f"{short_model}:{session.get('status', 'unknown')}"
+            return f"{role}:{short_model}:{live.get('health', 'unknown')}/{live.get('phase', 'unknown')}"
+        return f"{role}:{short_model}:{session.get('status', 'unknown')}"
 
     if out.is_compact:
         session_summary = ",".join(_session_label(session) for session in sessions[:2])
