@@ -1,11 +1,9 @@
 import { Filter } from 'lucide-react'
-import type { AutonomousExecutionSettings } from '@/lib/api'
 import { Label } from '../ui/label'
 import { Checkbox } from '../ui/checkbox'
 import { TASK_TYPES } from './autonomous-utils'
 
 interface TaskFilteringSectionProps {
-  settings: AutonomousExecutionSettings
   selectedTypes: string[]
   isPending: boolean
   onTaskTypeToggle: (taskType: string) => void
