@@ -19,6 +19,8 @@ VALID_IMAGE_MODELS = frozenset(
         "gemini-3-pro-image-preview",
         "gemini-2.5-flash-image",
         "gemini-3.1-flash-image-preview",
+        "nvidia/flux.1-kontext-dev",
+        "nvidia/flux.1-dev",
     }
 )
 _MIME_TO_EXT = {
@@ -121,6 +123,8 @@ def generate_asset_image(
     animation_labels: list[str] | None = None,
     tags: list[str] | None = None,
     metadata: dict[str, Any] | None = None,
+    reference_image: str | None = None,
+    reference_mime_type: str | None = None,
 ) -> dict[str, Any]:
     """Generate an image and persist a design asset."""
     normalized_type = normalize_asset_type(asset_type)
@@ -149,6 +153,8 @@ def generate_asset_image(
         model=resolved_model,
         size=f"{width}x{height}",
         style=style_prompt,
+        reference_image=reference_image,
+        reference_mime_type=reference_mime_type,
     )
     image_bytes = base64.b64decode(response.image_base64)
     ext = _MIME_TO_EXT.get(response.mime_type, "png")

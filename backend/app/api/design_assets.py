@@ -127,6 +127,8 @@ async def generate_design_assets(
                     animation_labels=request.animation_labels,
                     tags=request.tags,
                     metadata={"variant_index": index + 1, "variant_count": request.variant_count},
+                    reference_image=request.reference_image,
+                    reference_mime_type=request.reference_mime_type,
                 )
             )
     except ValueError as exc:

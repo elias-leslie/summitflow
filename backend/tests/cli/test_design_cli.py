@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from typer.testing import CliRunner
@@ -89,6 +90,39 @@ def test_design_asset_generate_posts_to_design_assets_endpoint() -> None:
     assert called_url.endswith("/design-assets/generate")
     assert called_json["asset_type"] == "sprite_sheet"
     assert called_json["tags"] == ["kiki", "combat"]
+
+
+def test_build_asset_payload_includes_reference_image_options(tmp_path: Path) -> None:
+    """Reference image options should be passed through to the API payload."""
+    ref_path = tmp_path / "coco-ref.png"
+    ref_path.write_bytes(b"ref-image")
+
+    payload = _build_asset_payload(
+        name="Coco Reference Sheet",
+        prompt="Gorilla fighter turnaround",
+        description=None,
+        asset_type="sprite_sheet",
+        workflow="production",
+        size="1024x1024",
+        model="nvidia/flux.1-kontext-dev",
+        style_prompt="pixel art",
+        negative_prompt=None,
+        background="transparent",
+        variant_count=1,
+        tags=None,
+        sheet_columns=4,
+        sheet_rows=2,
+        frame_width=128,
+        frame_height=128,
+        animation_labels="idle,run",
+        source_asset_id=None,
+        reference_image_path=str(ref_path),
+        reference_mime_type="image/png",
+    )
+
+    assert payload["reference_image_path"] == str(ref_path)
+    assert payload["reference_image"] == "cmVmLWltYWdl"
+    assert payload["reference_mime_type"] == "image/png"
 
 
 def test_design_ui_analyze_posts_to_mockups_endpoint() -> None:

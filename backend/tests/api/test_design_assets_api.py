@@ -147,3 +147,76 @@ def test_export_sprite_frames_creates_manifest(
     body = response.json()
     assert body["export_type"] == "sprite_frames"
     assert mock_export.call_count == 2
+
+
+@patch("app.services.design_asset_pipeline.design_assets.create_asset")
+@patch("app.services.design_asset_pipeline.get_sync_client")
+def test_generate_design_asset_passes_reference_image_to_image_client(
+    mock_get_client: MagicMock,
+    mock_create_asset: MagicMock,
+    client: Any,
+    ensure_test_project: str,
+) -> None:
+    """Reference image fields should flow through the design asset pipeline."""
+    mock_client = MagicMock()
+    mock_client.generate_image.return_value = SimpleNamespace(
+        image_base64="aGVsbG8=",
+        mime_type="image/png",
+    )
+    mock_get_client.return_value = mock_client
+    mock_create_asset.return_value = {
+        "id": 1,
+        "project_id": ensure_test_project,
+        "asset_id": "asset-123",
+        "name": "Hero Sprite",
+        "description": None,
+        "asset_type": "sprite_sheet",
+        "workflow": "production",
+        "status": "generated",
+        "prompt": "prompt",
+        "negative_prompt": None,
+        "style_prompt": None,
+        "background": "transparent",
+        "width": 512,
+        "height": 512,
+        "transparent_background": True,
+        "model": "nvidia/flux.1-kontext-dev",
+        "generator": "gemini-image",
+        "file_path": "/tmp/asset.png",
+        "source_asset_id": None,
+        "sheet_columns": 4,
+        "sheet_rows": 2,
+        "frame_width": 128,
+        "frame_height": 128,
+        "animation_labels": ["idle", "run"],
+        "tags": [],
+        "metadata": {},
+        "approved_at": None,
+        "approved_by": None,
+        "created_at": None,
+        "updated_at": None,
+    }
+
+    response = client.post(
+        f"/api/projects/{ensure_test_project}/design-assets/generate",
+        json={
+            "name": "Hero Sprite",
+            "prompt": "Single sprite for main character",
+            "asset_type": "sprite_sheet",
+            "size": "512x512",
+            "model": "nvidia/flux.1-kontext-dev",
+            "reference_image": "aGVsbG8=",
+            "reference_mime_type": "image/png",
+            "sheet_columns": 4,
+            "sheet_rows": 2,
+            "frame_width": 128,
+            "frame_height": 128,
+            "animation_labels": ["idle", "run"],
+        },
+    )
+
+    assert response.status_code == 200
+    kwargs = mock_client.generate_image.call_args.kwargs
+    assert kwargs["model"] == "nvidia/flux.1-kontext-dev"
+    assert kwargs["reference_image"] == "aGVsbG8="
+    assert kwargs["reference_mime_type"] == "image/png"

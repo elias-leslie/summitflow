@@ -30,6 +30,14 @@ class TaskOperationsMixin:
     def get_task(self, task_id: str) -> dict[str, Any]:
         return tasks_ops.get_task(self._client, self._global_url, self._handle_response, task_id)
 
+    def get_task_completion_readiness(self, task_id: str) -> dict[str, Any]:
+        return tasks_ops.get_task_completion_readiness(
+            self._client,
+            self._global_url,
+            self._handle_response,
+            task_id,
+        )
+
     def list_tasks(
         self,
         status: str | None = None,

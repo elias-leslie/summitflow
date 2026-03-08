@@ -93,6 +93,9 @@ class GenerateDesignAssetRequest(BaseModel):
     frame_height: int | None = Field(default=None, ge=1)
     animation_labels: list[str] = Field(default_factory=list)
     source_asset_id: int | None = None
+    reference_image: str | None = None
+    reference_mime_type: str | None = "image/png"
+    reference_image_path: str | None = None
 
 
 class GenerateDesignAssetResponse(BaseModel):

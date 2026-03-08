@@ -29,6 +29,16 @@ export const IMAGE_MODELS = [
     hint: 'Best quality',
   },
   {
+    id: 'nvidia/flux.1-kontext-dev',
+    name: 'Flux Kontext',
+    hint: 'Best for sprites',
+  },
+  {
+    id: 'nvidia/flux.1-dev',
+    name: 'Flux Dev',
+    hint: 'Good fallback',
+  },
+  {
     id: 'gemini-2.5-flash-image',
     name: 'Nano Banana',
     hint: 'Fast',

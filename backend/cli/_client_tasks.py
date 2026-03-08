@@ -33,6 +33,14 @@ def get_task(
     return cast(dict[str, Any], handle_response(response))
 
 
+def get_task_completion_readiness(
+    client: httpx.Client, global_url_fn: Any, handle_response: Any, task_id: str
+) -> dict[str, Any]:
+    """Get completion-readiness gates for a task."""
+    response = client.get(global_url_fn(f"/tasks/{task_id}/completion-readiness"))
+    return cast(dict[str, Any], handle_response(response))
+
+
 def list_tasks(
     client: httpx.Client,
     url_fn: Any,

@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import typer
 
+from cli.client import STClient
 from cli.commands.done_git import git_stash_pop, git_stash_push
 from cli.commands.done_subtask import auto_close_subtasks
 from cli.commands.done_task import complete_task
@@ -383,7 +384,6 @@ class TestCompleteTaskSmart:
             complete_task(client, "task-123")
             mock_push.assert_not_called()
 
-
     @patch("cli.commands.done_task.get_snapshot_info")
     @patch("cli.commands.done_task.remove_snapshot")
     @patch("cli.commands.done_task.merge_task_branch")
@@ -409,6 +409,13 @@ class TestCompleteTaskSmart:
         assert "st done task-123 --admin" in mock_warning.call_args.args[0]
         mock_remove.assert_called_once()
         assert result["merged"] is True
+
+
+class TestSTClientTaskHelpers:
+    def test_exposes_completion_readiness_helper(self) -> None:
+        client = STClient(base_url="http://localhost:8001", project_id="summitflow")
+
+        assert hasattr(client, "get_task_completion_readiness")
 
 
 class TestGitStashHelpers:

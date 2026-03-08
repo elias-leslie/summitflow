@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+from pathlib import Path
 from typing import Annotated, Any
 
 import typer
@@ -94,6 +96,17 @@ def generate_asset(
         int | None,
         typer.Option("--source-asset-id", help="Source asset DB id for variant derivation"),
     ] = None,
+    reference_image_path: Annotated[
+        str | None,
+        typer.Option(
+            "--reference-image-path",
+            help="Path to a PNG/JPEG/WebP reference image for sprite consistency",
+        ),
+    ] = None,
+    reference_mime_type: Annotated[
+        str | None,
+        typer.Option("--reference-mime-type", help="Reference image MIME type override"),
+    ] = None,
 ) -> None:
     """Generate a Design Ops asset in Asset Studio for the active project.
 
@@ -121,6 +134,8 @@ def generate_asset(
         frame_height=frame_height,
         animation_labels=animation_labels,
         source_asset_id=source_asset_id,
+        reference_image_path=reference_image_path,
+        reference_mime_type=reference_mime_type,
     )
 
     try:
@@ -206,6 +221,8 @@ def _build_asset_payload(
     frame_height: int | None,
     animation_labels: str | None,
     source_asset_id: int | None,
+    reference_image_path: str | None = None,
+    reference_mime_type: str | None = None,
 ) -> dict[str, Any]:
     """Build the asset generation payload."""
     payload: dict[str, Any] = {
@@ -229,6 +246,11 @@ def _build_asset_payload(
         payload["negative_prompt"] = negative_prompt
     if source_asset_id is not None:
         payload["source_asset_id"] = source_asset_id
+    if reference_image_path:
+        image_path = Path(reference_image_path)
+        payload["reference_image_path"] = str(image_path)
+        payload["reference_image"] = base64.b64encode(image_path.read_bytes()).decode("utf-8")
+        payload["reference_mime_type"] = reference_mime_type or _guess_mime_type(image_path)
 
     parsed_tags = _split_csv(tags)
     if parsed_tags:
@@ -257,6 +279,16 @@ def _split_csv(value: str | None) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
+def _guess_mime_type(path: Path) -> str:
+    """Infer MIME type from a reference image file extension."""
+    suffix = path.suffix.lower()
+    if suffix in {".jpg", ".jpeg"}:
+        return "image/jpeg"
+    if suffix == ".webp":
+        return "image/webp"
+    return "image/png"
+
+
 def _resolve_asset_export_path(asset_id: str, export_type: str) -> str:
     """Map CLI export type to API path."""
     export_type_key = export_type.strip().lower()
@@ -267,4 +299,3 @@ def _resolve_asset_export_path(asset_id: str, export_type: str) -> str:
 
 app.add_typer(asset_app, name="asset")
 app.add_typer(ui_app, name="ui")
-
