@@ -50,7 +50,10 @@ def _auto_verify_readiness(client: STClient, task_id: str) -> None:
         return
 
     gates = readiness.get("gates", [])
-    gate_details = ", ".join(str(gate.get("code", "unknown")) for gate in gates)
+    gate_details = ", ".join(
+        str(gate.get("gate") or gate.get("code") or "unknown")
+        for gate in gates
+    )
     output_error(f"Task not ready to complete: {gate_details}")
     raise typer.Exit(1)
 

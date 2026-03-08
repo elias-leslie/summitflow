@@ -14,7 +14,7 @@ import typer
 from cli.client import STClient
 from cli.commands.done_git import git_stash_pop, git_stash_push
 from cli.commands.done_subtask import auto_close_subtasks
-from cli.commands.done_task import complete_task
+from cli.commands.done_task import _auto_verify_readiness, complete_task
 from cli.commands.done_validators import is_subtask_id
 
 
@@ -286,6 +286,19 @@ class TestCompleteTaskSmart:
         mock_remove.assert_called_once_with("task-123", project_id="test")
         mock_merge.assert_not_called()
         client.post.assert_not_called()
+
+    @patch("cli.commands.done_task.output_error")
+    def test_readiness_surfaces_gate_names(self, mock_error: MagicMock) -> None:
+        client = self._setup_mocks()
+        client.get_task_completion_readiness.return_value = {
+            "ready": False,
+            "gates": [{"gate": "subtasks"}, {"gate": "steps"}],
+        }
+
+        with pytest.raises(typer.Exit):
+            _auto_verify_readiness(client, "task-123")
+
+        mock_error.assert_called_once_with("Task not ready to complete: subtasks, steps")
 
     @patch("cli.commands.done_task.get_snapshot_info")
     @patch("cli.commands.done_task.remove_snapshot")

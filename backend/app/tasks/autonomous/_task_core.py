@@ -122,6 +122,7 @@ def _attach_spirit_and_approve(
     spirit_anti: str,
     done_when: list[str],
     complexity: str,
+    context: dict[str, object] | None,
     auto_approve: bool,
 ) -> None:
     """Attach a spirit to the task and optionally auto-approve the plan."""
@@ -130,6 +131,7 @@ def _attach_spirit_and_approve(
         objective=objective,
         spirit_anti=spirit_anti,
         done_when=done_when,
+        context=context,
         complexity=complexity,
     )
     if auto_approve:
@@ -147,6 +149,7 @@ def create_task_with_spirit(
     spirit_anti: str,
     done_when: list[str],
     complexity: str,
+    context: dict[str, object] | None = None,
     auto_approve: bool = True,
     ai_review: bool = True,
 ) -> str | None:
@@ -172,7 +175,15 @@ def create_task_with_spirit(
     task_id = _create_base_task(project_id, title, description, priority, task_type, tier, ai_review)
     if not task_id:
         return None
-    _attach_spirit_and_approve(task_id, objective, spirit_anti, done_when, complexity, auto_approve)
+    _attach_spirit_and_approve(
+        task_id,
+        objective,
+        spirit_anti,
+        done_when,
+        complexity,
+        context,
+        auto_approve,
+    )
     return task_id
 
 

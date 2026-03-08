@@ -160,6 +160,9 @@ class TestCreateRefactorTask:
         assert task_id == "task-123"
         assert issue_id == 42
         assert "backend/app/tasks/autonomous/task_generation.py" in mock_create_task.call_args.kwargs["title"]
+        assert mock_create_task.call_args.kwargs["context"] == {
+            "files_to_modify": ["backend/app/tasks/autonomous/task_generation.py"]
+        }
         assert mock_create_subtask.call_args.kwargs["subtask_type"] == "refactor"
         assert "aim for <200 lines" in mock_create_subtask.call_args.kwargs["description"]
         mock_link.assert_called_once_with("task-123", 42)

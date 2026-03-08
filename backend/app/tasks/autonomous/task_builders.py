@@ -72,6 +72,7 @@ def create_refactor_task(
         objective=_build_issue_aware_objective(relative_path, lines, target_lines, issues),
         spirit_anti=_REFACTOR_ANTI,
         done_when=_build_issue_aware_done_when(lines, target_lines, issues, is_frontend=(category == "frontend")),
+        context={"files_to_modify": [relative_path]},
         complexity="SIMPLE", auto_approve=True, ai_review=False,
     )
 
