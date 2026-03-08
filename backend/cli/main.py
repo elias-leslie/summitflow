@@ -17,6 +17,7 @@ from .commands import (
     cleanup,
     complete,
     deps,
+    design,
     done,
     exec_monitor,
     feedback,
@@ -99,6 +100,13 @@ DEP:
 
 PROJECTS: projects [list|current|get|create|update|delete]
 
+DESIGN:
+  design ui analyze <page-url> [--page-path /foo]                                  # REQUIRES -P
+  design asset generate <name> <prompt> [--type sprite_sheet] [--workflow production] [--variants N]
+                      [--size 1024x1024] [--background transparent|solid|scene]
+                      [--style "..."] [--negative "..."] [--tags a,b]              # REQUIRES -P
+  design asset export <asset-id> [--type sprite-frames]                            # REQUIRES -P
+
 TEST: test list [--type T] | import --framework pytest|vitest
 
 GIT: git status | git sync
@@ -161,6 +169,8 @@ EXAMPLES:
   st -P summitflow create "Fix bug" -t bug -p 2  # create task (explicit project)
   st -P agent-hub bug "Fix auth"           # create bug (explicit project)
   st -P summitflow idea "Add dark mode"    # submit idea (explicit project)
+  st -P monkey-fight design ui analyze http://localhost:4001
+  st -P monkey-fight design asset generate "Kiki attack sheet" "Capuchin fighter combo sheet" --type sprite_sheet --workflow production --sheet-columns 4 --sheet-rows 2 --frame-width 128 --frame-height 128 --animations idle,attack
   st ready                                 # find work (compact by default)
   st claim task-abc                        # claim task, create checkpoint
   st context task-abc                      # view full context
@@ -195,6 +205,7 @@ app.add_typer(tasks.app, name="task", hidden=True)
 
 # Register subcommand groups (hidden from main help - reference above is complete)
 app.add_typer(deps.app, name="dep")
+app.add_typer(design.app, name="design")
 app.add_typer(tests.app, name="test")
 app.add_typer(subtask.app, name="subtask")
 app.add_typer(step.app, name="step")
