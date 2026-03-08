@@ -5,6 +5,10 @@ from __future__ import annotations
 import subprocess
 from typing import Any
 
+# Keep Agent Hub's per-turn inactivity behavior explicit for autonomous runs so
+# the SDK scales the outer HTTP timeout to match multi-turn specialist work.
+AUTONOMOUS_TURN_TIMEOUT_SECONDS = 300.0
+
 
 def _detect_git_branch(project_path: str) -> str | None:
     """Detect current git branch from project path."""
@@ -46,6 +50,7 @@ def build_complete_kwargs(
         "use_memory": True,
         "memory_group_id": f"project:{project_id}",
         "trace_id": task_id,
+        "timeout_seconds": AUTONOMOUS_TURN_TIMEOUT_SECONDS,
         "include_roles": include_roles or [],
         "session_id": session_id,
     }
