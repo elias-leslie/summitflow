@@ -238,6 +238,7 @@ class TestCompleteTaskSmart:
         complete_task(client, "task-123")
 
         mock_auto.assert_called_once_with(client, "task-123", "test")
+        client.post.assert_not_called()
 
     @patch("cli.commands.done_task.get_snapshot_info", return_value=None)
     def test_admin_mode_closes_task_without_snapshot(self, mock_snapshot: MagicMock) -> None:
@@ -316,6 +317,7 @@ class TestCompleteTaskSmart:
         complete_task(client, "task-123", strict=True)
 
         mock_auto.assert_not_called()
+        client.post.assert_not_called()
 
     @patch("cli.commands.done_task.get_snapshot_info")
     @patch("cli.commands.done_task.remove_snapshot")
@@ -422,6 +424,26 @@ class TestCompleteTaskSmart:
         assert "st done task-123 --admin" in mock_warning.call_args.args[0]
         mock_remove.assert_called_once()
         assert result["merged"] is True
+
+    @patch("cli.commands.done_task.get_snapshot_info")
+    @patch("cli.commands.done_task.remove_snapshot")
+    @patch("cli.commands.done_task.merge_task_branch")
+    @patch("cli.commands.done_task.auto_close_subtasks")
+    @patch("cli.commands.done_task.is_working_tree_clean", return_value=True)
+    def test_completion_does_not_call_removed_review_approval_endpoint(
+        self,
+        mock_clean: MagicMock,
+        mock_auto: MagicMock,
+        mock_merge: MagicMock,
+        mock_remove: MagicMock,
+        mock_snapshot: MagicMock,
+    ) -> None:
+        mock_snapshot.return_value = {"worktree_path": None, "project_id": "test"}
+        client = self._setup_mocks()
+
+        complete_task(client, "task-123")
+
+        client.post.assert_not_called()
 
 
 class TestSTClientTaskHelpers:

@@ -58,13 +58,6 @@ def _auto_verify_readiness(client: STClient, task_id: str) -> None:
     raise typer.Exit(1)
 
 
-def _request_review_approval(client: STClient, task_id: str) -> None:
-    result = client.post(client._global_url(f"/api/review/{task_id}/approve"))
-    if result.get("verdict") != "APPROVED":
-        output_error("Review approval failed")
-        raise typer.Exit(1)
-
-
 def _perform_completion(
     client: STClient,
     task_id: str,
@@ -75,7 +68,6 @@ def _perform_completion(
     if not strict:
         _auto_verify_readiness(client, task_id)
         auto_close_subtasks(client, task_id, project_id)
-        _request_review_approval(client, task_id)
 
     merge_task_branch(task_id, project_id=project_id)
     try:
