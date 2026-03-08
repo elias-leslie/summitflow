@@ -138,10 +138,10 @@ async def list_ready_tasks(
             break
 
     # Batch fetch criteria counts to avoid N+1 queries
-    task_ids = [t["id"] for t in ready_tasks]
+    task_ids = [str(t["id"]) for t in ready_tasks]
     criteria_counts = await asyncio.to_thread(get_step_counts_batch, task_ids)
 
-    task_responses = [task_to_response(t, criteria_counts.get(t["id"], 0)) for t in ready_tasks]
+    task_responses = [task_to_response(t, criteria_counts.get(str(t["id"]), 0)) for t in ready_tasks]
 
     # Return TOON format if requested
     if format == "toon":

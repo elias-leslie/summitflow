@@ -7,6 +7,7 @@ from typing import Any
 
 from ....core.debug import debug_section
 from ....logging_config import get_logger
+from ....services.task_lane_preflight import check_task_lane_conflicts
 from ....storage import tasks as task_store
 from ....storage.subtasks import get_subtasks_for_task
 from .agent_execution import execute_agent_feedback
@@ -26,6 +27,34 @@ from .worktree_setup import setup_worktree
 logger = get_logger(__name__)
 
 
+def _guard_existing_same_task_lane(task_id: str, project_id: str) -> dict[str, Any] | None:
+    """Avoid replaying the same task when an active live lane already exists."""
+    lane_check = check_task_lane_conflicts(task_id, project_id)
+    if lane_check.overlap_kind != "same_task" or lane_check.disposition != "block":
+        return None
+
+    owner = lane_check.owner_session_id or "unknown"
+    emit_log(
+        task_id,
+        "info",
+        f"Execution skipped: active task lane already owned by session {owner}",
+        project_id=project_id,
+    )
+    logger.info(
+        "Skipping duplicate autonomous execution for active task lane",
+        task_id=task_id,
+        project_id=project_id,
+        owner_session_id=lane_check.owner_session_id,
+        owner_location=lane_check.owner_location,
+    )
+    return {
+        "task_id": task_id,
+        "status": "already_running",
+        "message": "Active task lane already exists",
+        "owner_session_id": lane_check.owner_session_id,
+    }
+
+
 def start_execution(
     task_id: str,
     project_id: str,
@@ -40,6 +69,9 @@ def start_execution(
     debug_section("Autonomous Execution", task_id=task_id, project_id=project_id)
     logger.info("Starting autonomous execution", task_id=task_id, project_id=project_id)
     emit_log(task_id, "info", "Starting autonomous execution", project_id=project_id)
+    duplicate = _guard_existing_same_task_lane(task_id, project_id)
+    if duplicate:
+        return duplicate
     return execute_task_locked(task_id, project_id, dispatch=dispatch)
 
 
@@ -50,7 +82,7 @@ def _prepare_execution(
     task = task_store.get_task(task_id)
     if not task:
         emit_error(task_id, "Task not found", recoverable=False, project_id=project_id)
-        return {"task_id": task_id, "status": "error", "message": "Task not found"}, None, None, None, None
+        return {"task_id": task_id, "status": "error", "message": "Task not found"}, None, None, None
 
     task_type = task.get("task_type")
     agent_override = task.get("agent_override")

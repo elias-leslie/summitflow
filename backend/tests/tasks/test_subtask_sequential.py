@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from app.services.task_lane_preflight import TaskLaneConflictCheck
 from app.storage.subtasks import create_subtask, get_subtasks_for_task
 from app.storage.tasks import create_task
 from app.tasks.autonomous.exec_modules.execution_loop import execute_subtask_loop
@@ -270,6 +271,36 @@ def test_start_execution_orchestration_flow(
 
     # Verify task status was updated to running
     mock_task_store.update_task_status.assert_called_with(task_id, "running")
+
+
+@patch("app.tasks.autonomous.exec_modules.orchestrator.emit_log")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.execute_task_locked")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.check_task_lane_conflicts")
+def test_start_execution_skips_duplicate_same_task_lane(
+    mock_lane_conflicts: MagicMock,
+    mock_execute_locked: MagicMock,
+    mock_emit_log: MagicMock,
+) -> None:
+    """Worker replays should not relaunch a second specialist session for the same task."""
+    mock_lane_conflicts.return_value = TaskLaneConflictCheck(
+        overlap_kind="same_task",
+        disposition="block",
+        owner_session_id="sess-existing",
+        owner_location="worktree /tmp/task-123",
+    )
+
+    result = start_execution("task-123", "agent-hub")
+
+    mock_execute_locked.assert_not_called()
+    assert result == {
+        "task_id": "task-123",
+        "status": "already_running",
+        "message": "Active task lane already exists",
+        "owner_session_id": "sess-existing",
+    }
+    assert mock_emit_log.call_args_list[-1].args[2] == (
+        "Execution skipped: active task lane already owned by session sess-existing"
+    )
 
 
 @pytest.mark.integration
