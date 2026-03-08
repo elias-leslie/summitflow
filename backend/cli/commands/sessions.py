@@ -200,6 +200,22 @@ def show_session(
     output_json(session)
 
 
+@app.command("close")
+def close_session(
+    session_id: str,
+) -> None:
+    """Close an active session."""
+    client = STClient()
+
+    try:
+        result = client.close_session(session_id)
+    except APIError as e:
+        handle_api_error(e)
+        return
+
+    output_json(result)
+
+
 @app.command("ownership")
 def list_ownership(
     project_id: Annotated[str | None, typer.Option("--project")] = None,

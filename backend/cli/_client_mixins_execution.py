@@ -71,6 +71,10 @@ class ExecutionOperationsMixin:
             session_id,
         )
 
+    def close_session(self, session_id: str) -> dict[str, Any]:
+        response = self._client.post(self._global_url(f"/agent-hub/sessions/{session_id}/close"))
+        return self._handle_response(response)
+
     def get_task_agent_events(
         self,
         task_id: str,

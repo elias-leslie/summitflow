@@ -211,6 +211,24 @@ async def get_session(session_id: str) -> object:
     return await _get_json(f"{AGENT_HUB_URL}/api/sessions/{session_id}")
 
 
+@router.post("/agent-hub/sessions/{session_id}/close")
+async def close_session(session_id: str) -> object:
+    """Proxy to Agent Hub to close a session."""
+    async with httpx.AsyncClient(timeout=_TIMEOUT_DEFAULT) as client:
+        try:
+            response = await client.post(
+                f"{AGENT_HUB_URL}/api/sessions/{session_id}/close",
+                headers=_auth_headers(),
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as exc:
+            _raise_from_status_error(exc)
+        except httpx.RequestError as exc:
+            _raise_from_request_error(exc)
+    return None  # pragma: no cover — unreachable
+
+
 @router.get("/agent-hub/ownership/projects/{project_id}/live")
 async def get_project_live_ownership(project_id: str) -> object:
     """Proxy to Agent Hub live ownership inventory for a project."""
