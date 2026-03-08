@@ -143,7 +143,7 @@ class TestTaskLaneConflicts:
         mock_httpx_client: MagicMock,
     ) -> None:
         mock_get_task.return_value = {"id": "task-123", "status": "running"}
-        stale_time = (datetime.now(UTC) - timedelta(hours=5)).isoformat()
+        stale_time = (datetime.now(UTC) - timedelta(minutes=31)).isoformat()
         mock_httpx_client.get.return_value = _mock_response(
             {
                 "sessions": [
@@ -171,7 +171,7 @@ class TestTaskLaneConflicts:
         mock_httpx_client: MagicMock,
     ) -> None:
         mock_get_task.return_value = {"id": "task-999", "status": "running"}
-        stale_time = (datetime.now(UTC) - timedelta(hours=5)).isoformat()
+        stale_time = (datetime.now(UTC) - timedelta(minutes=31)).isoformat()
         mock_httpx_client.get.return_value = _mock_response(
             {
                 "sessions": [
