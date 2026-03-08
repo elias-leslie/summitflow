@@ -236,6 +236,7 @@ class TestExecLogCommand:
                 {
                     "id": "sess-old",
                     "status": "completed",
+                    "agent_slug": "refactor",
                     "effective_model": "claude-sonnet-4-6",
                     "updated_at": "2026-01-26T11:00:00+00:00",
                     "live_activity": {
@@ -246,6 +247,7 @@ class TestExecLogCommand:
                 {
                     "id": "sess-new",
                     "status": "completed",
+                    "agent_slug": "refactor",
                     "effective_model": "claude-sonnet-4-6",
                     "updated_at": "2026-01-26T12:00:00+00:00",
                     "live_activity": {
@@ -256,6 +258,7 @@ class TestExecLogCommand:
                 {
                     "id": "sess-feedback",
                     "status": "completed",
+                    "agent_slug": "coder",
                     "effective_model": "codex/gpt-5.4",
                     "updated_at": "2026-01-26T12:03:00+00:00",
                     "live_activity": {

@@ -6,7 +6,7 @@ Shows task ID, subtask status, tool calls with timestamps, and agent responses.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Annotated, Any
 
 import typer
@@ -17,8 +17,6 @@ from ..output import handle_api_error
 from ..output_context import OutputContext
 from .exec_monitor_follower import follow_events
 from .exec_monitor_formatters import print_events, print_header
-
-_ATTEMPT_CLUSTER_WINDOW = timedelta(minutes=10)
 
 
 def _parse_iso_timestamp(value: Any) -> datetime | None:
@@ -55,32 +53,29 @@ def _select_current_attempt(
 
     active_sessions = [s for s in sessions if s.get("status") == "active"]
     if active_sessions:
-        selected_ids = {str(s.get("id")) for s in active_sessions if s.get("id")}
+        active_ids = {str(s.get("id")) for s in active_sessions if s.get("id")}
+        first_active_index = next(
+            (idx for idx, session in enumerate(sessions) if str(session.get("id")) in active_ids),
+            len(sessions) - 1,
+        )
+        selected_sessions = sessions[first_active_index:]
     else:
-        dated_sessions = [
-            (_parse_iso_timestamp(s.get("updated_at")), s)
-            for s in sessions
-        ]
-        dated_sessions = [(ts, s) for ts, s in dated_sessions if ts is not None]
-        if not dated_sessions:
-            filtered_events = [
-                event for event in agent_events if str(event.get("session_id")) == str(sessions[0].get("id"))
-            ]
-            attempt_start = min(
-                (
-                    _parse_iso_timestamp(event.get("created_at"))
-                    for event in filtered_events
-                ),
-                default=None,
-            )
-            return sessions[:1], filtered_events, max(len(sessions) - 1, 0), attempt_start
-        latest_ts = max(ts for ts, _ in dated_sessions)
-        selected_ids = {
-            str(s.get("id"))
-            for ts, s in dated_sessions
-            if latest_ts - ts <= _ATTEMPT_CLUSTER_WINDOW and s.get("id")
-        }
+        primary_slug = str(sessions[-1].get("agent_slug") or "")
+        if len(sessions) >= 2:
+            previous_slug = str(sessions[-2].get("agent_slug") or "")
+            if previous_slug and previous_slug != primary_slug:
+                primary_slug = previous_slug
+        start_index = next(
+            (
+                idx
+                for idx in range(len(sessions) - 1, -1, -1)
+                if str(sessions[idx].get("agent_slug") or "") == primary_slug
+            ),
+            len(sessions) - 1,
+        )
+        selected_sessions = sessions[start_index:]
 
+    selected_ids = {str(s.get("id")) for s in selected_sessions if s.get("id")}
     filtered_sessions = [s for s in sessions if str(s.get("id")) in selected_ids]
     filtered_events = [
         event
