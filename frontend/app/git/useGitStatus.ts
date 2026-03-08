@@ -6,6 +6,7 @@ export function useGitStatus() {
     queryKey: ['git-status'],
     queryFn: fetchGitStatus,
     staleTime: 30000,
-    refetchInterval: 60000,
+    refetchInterval: 15000,
+    refetchIntervalInBackground: true,
   })
 }

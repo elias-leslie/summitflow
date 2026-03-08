@@ -10,6 +10,7 @@ from ...services import explorer
 from ...storage.connection import get_connection
 from ..projects_services import get_project_services
 from . import agents
+from .pulse import router as pulse_router
 
 # Re-export get_connection for backwards compatibility with tests
 __all__ = [
@@ -47,6 +48,7 @@ router = APIRouter()
 
 # Include sub-routers for agent configuration
 router.include_router(agents.router, tags=["projects"])
+router.include_router(pulse_router, tags=["projects"])
 
 
 @router.post("", response_model=ProjectResponse)

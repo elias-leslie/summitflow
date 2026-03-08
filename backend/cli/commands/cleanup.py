@@ -5,13 +5,19 @@ Provides worktree cleanup and stale detection for orphaned worktrees.
 
 from __future__ import annotations
 
-from typing import Annotated
+from pathlib import Path
+from typing import Annotated, Any
 
 import typer
 
+from app.utils.git_helpers import build_repo_workspace_summary
+
 from ..client import STClient
+from ..config import get_config_optional
 from ..lib.worktree import get_active_worktrees
 from ..output import output_json, output_success
+from ..output_context import OutputContext
+from ._git_helpers import _get_managed_repos
 from .cleanup_analysis import (
     CleanupAction,
     WorktreeAnalysis,
@@ -19,6 +25,7 @@ from .cleanup_analysis import (
     cleanup_worktree,
     format_analysis,
 )
+from .cleanup_git import has_uncommitted_changes
 from .cleanup_handlers import (
     categorize_worktrees,
     confirm_force_cleanup,
@@ -49,13 +56,122 @@ _DRY_RUN_MSG = "DRY RUN - No changes will be made:"
 _ABORTED_MSG = "Aborted"
 
 
+@app.callback()
+def cleanup_callback(ctx: typer.Context) -> None:
+    """Initialize context when the cleanup sub-app is invoked directly."""
+    if ctx.obj is None:
+        ctx.obj = OutputContext()
+
+
 def get_project_id(all_projects: bool) -> str | None:
     """Get project ID based on --all flag."""
     if all_projects:
         return None
-    from ..config import get_config_optional
 
     return get_config_optional().project_id or None
+
+
+def _iter_target_repos(all_projects: bool) -> list[Path]:
+    """Return managed repositories relevant to the cleanup status request."""
+    repos = [repo for repo in _get_managed_repos() if not repo.name.startswith(".")]
+    if all_projects:
+        return repos
+
+    project_id = get_project_id(False)
+    if project_id:
+        return [repo for repo in repos if repo.name == project_id]
+    return repos[:1] if repos else []
+
+
+def _build_repo_cleanup_entry(repo_path: Path) -> dict[str, Any]:
+    """Build cleanup counters for one managed repository."""
+    project_id = repo_path.name
+    workspace_summary = build_repo_workspace_summary(repo_path)
+    active_worktrees = get_active_worktrees(project_id)
+    dirty_worktrees = sum(
+        1 for worktree in active_worktrees if has_uncommitted_changes(worktree.path)
+    )
+    needs_cleanup = any(
+        (
+            dirty_worktrees,
+            workspace_summary.orphan_branches,
+            workspace_summary.prunable_branches,
+        )
+    )
+    return {
+        "project_id": project_id,
+        "path": str(repo_path),
+        "active_worktrees": workspace_summary.active_worktrees,
+        "dirty_worktrees": dirty_worktrees,
+        "orphan_task_branches": workspace_summary.orphan_branches,
+        "prunable_task_branches": workspace_summary.prunable_branches,
+        "worktree_task_ids": workspace_summary.worktree_task_ids,
+        "needs_cleanup": needs_cleanup,
+    }
+
+
+def build_cleanup_status_payload(all_projects: bool) -> dict[str, Any]:
+    """Build the canonical cross-repo cleanup summary payload."""
+    project_id = get_project_id(all_projects)
+    worktrees = get_active_worktrees(project_id)
+    repositories = [_build_repo_cleanup_entry(repo_path) for repo_path in _iter_target_repos(all_projects)]
+
+    summary = {
+        "repos": len(repositories),
+        "repos_needing_cleanup": sum(1 for repo in repositories if repo["needs_cleanup"]),
+        "active_worktrees": sum(repo["active_worktrees"] for repo in repositories),
+        "dirty_worktrees": sum(repo["dirty_worktrees"] for repo in repositories),
+        "orphan_task_branches": sum(repo["orphan_task_branches"] for repo in repositories),
+        "prunable_task_branches": sum(repo["prunable_task_branches"] for repo in repositories),
+    }
+
+    return {
+        "summary": summary,
+        "repositories": repositories,
+        "worktrees": [
+            {
+                "task_id": wt.task_id,
+                "path": str(wt.path),
+                "branch": wt.branch,
+                "base_branch": wt.base_branch,
+                "project_id": wt.project_id,
+            }
+            for wt in worktrees
+        ],
+        "total": len(worktrees),
+    }
+
+
+def format_cleanup_status_compact(data: dict[str, Any], all_projects: bool) -> None:
+    """Emit TOON summary for cleanup status."""
+    summary = data["summary"]
+    scope = "all" if all_projects else "current"
+    print(
+        "CLEANUP[{scope}]:repos={repos} needs_cleanup={needs} worktrees={worktrees} "
+        "dirty={dirty} orphan={orphan} prunable={prunable}".format(
+            scope=scope,
+            repos=summary["repos"],
+            needs=summary["repos_needing_cleanup"],
+            worktrees=summary["active_worktrees"],
+            dirty=summary["dirty_worktrees"],
+            orphan=summary["orphan_task_branches"],
+            prunable=summary["prunable_task_branches"],
+        )
+    )
+    for repo in data["repositories"]:
+        preview = (
+            f" tasks:{','.join(repo['worktree_task_ids'])}"
+            if repo["worktree_task_ids"]
+            else ""
+        )
+        if repo["needs_cleanup"] or repo["active_worktrees"]:
+            print(
+                f"{repo['project_id']} worktrees:{repo['active_worktrees']} "
+                f"dirty:{repo['dirty_worktrees']} orphan:{repo['orphan_task_branches']} "
+                f"prunable:{repo['prunable_task_branches']}{preview}"
+            )
+        else:
+            print(f"{repo['project_id']} clean")
 
 
 def _analyze_and_display(worktrees: list, client: STClient, stale_days: int) -> tuple:
@@ -116,33 +232,19 @@ def cleanup_worktrees(
 
 @app.command("status")
 def cleanup_status(
+    ctx: typer.Context,
     all_projects: Annotated[
         bool,
         typer.Option("--all", help="Show all projects (default: current project only)"),
     ] = False,
 ) -> None:
     """Show summary of worktrees and their cleanup status."""
-    project_id = get_project_id(all_projects)
-    worktrees = get_active_worktrees(project_id)
+    result = build_cleanup_status_payload(all_projects)
 
-    if not worktrees:
-        output_json({"worktrees": [], "total": 0})
-        return
-
-    result = {
-        "worktrees": [
-            {
-                "task_id": wt.task_id,
-                "path": str(wt.path),
-                "branch": wt.branch,
-                "base_branch": wt.base_branch,
-            }
-            for wt in worktrees
-        ],
-        "total": len(worktrees),
-    }
-
-    output_json(result)
+    if ctx.obj.is_compact:
+        format_cleanup_status_compact(result, all_projects)
+    else:
+        output_json(result)
 
 
 @app.command("path")

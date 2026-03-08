@@ -7,8 +7,8 @@ from ..models.git_models import WorktreeInfo
 
 
 def collect_worktrees() -> list[WorktreeInfo]:
-    """Collect worktree info from the base directory, enriched with project_id."""
-    from ....cli.lib.worktree import get_active_worktrees
+    """Collect worktree info from the CLI worktree registry."""
+    from cli.lib.worktree import get_active_worktrees
 
     return [
         WorktreeInfo(

@@ -4,6 +4,15 @@
 
 import { fetchWithErrorHandling, getApiBase } from './utils'
 
+export interface RepoWorkspaceSummary {
+  active_worktrees: number
+  branches_with_worktrees: number
+  task_branches: number
+  orphan_branches: number
+  prunable_branches: number
+  worktree_task_ids: string[]
+}
+
 export interface RepoStatus {
   path: string
   name: string
@@ -12,6 +21,7 @@ export interface RepoStatus {
   ahead: number
   behind: number
   state: 'clean' | 'dirty' | 'behind' | 'ahead'
+  workspace_summary?: RepoWorkspaceSummary | null
 }
 
 export interface GitStatusResponse {

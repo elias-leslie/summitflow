@@ -18,8 +18,11 @@ class TestGitStatus:
 
     def test_git_status_returns_repos(self, mocker: MockerFixture) -> None:
         """Test that git status returns repository information."""
-        from app.api.models.git_models import RepoStatus
+        from pathlib import Path
 
+        from app.api.models.git_models import RepoStatus, RepoWorkspaceSummary
+
+        mocker.patch("app.api.git.get_managed_repos", return_value=[Path("/test/repo")])
         mock_status = mocker.patch("app.api.git.get_repo_status")
         mock_status.return_value = RepoStatus(
             path="/test/repo",
@@ -29,6 +32,14 @@ class TestGitStatus:
             ahead=0,
             behind=0,
             state="clean",
+            workspace_summary=RepoWorkspaceSummary(
+                active_worktrees=1,
+                branches_with_worktrees=1,
+                task_branches=2,
+                orphan_branches=1,
+                prunable_branches=1,
+                worktree_task_ids=["task-123"],
+            ),
         )
 
         response = client.get("/api/git/status")
@@ -37,6 +48,7 @@ class TestGitStatus:
         assert "repositories" in data
         assert "total" in data
         assert isinstance(data["repositories"], list)
+        assert data["repositories"][0]["workspace_summary"]["active_worktrees"] == 1
 
 
 class TestGitSync:

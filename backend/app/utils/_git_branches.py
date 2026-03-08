@@ -37,7 +37,7 @@ def _get_repo_project_id(repo_path: Path) -> str | None:
 
 def _get_active_worktrees(project_id: str | None = None) -> list:
     """Load active worktrees from the CLI source of truth."""
-    from ...cli.lib.worktree import get_active_worktrees
+    from cli.lib.worktree import get_active_worktrees
 
     return get_active_worktrees(project_id)
 
@@ -130,7 +130,8 @@ def build_repo_workspace_summary(repo_path: Path) -> RepoWorkspaceSummary:
 
 def get_worktree_info(task_id: str) -> WorktreeInfo | None:
     """Get information about an existing worktree."""
-    from ...cli.lib.worktree import get_active_worktrees
+    from cli.lib.worktree import get_active_worktrees
+
     from ..api.models.git_models import WorktreeInfo
 
     for worktree in get_active_worktrees():

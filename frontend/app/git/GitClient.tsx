@@ -1,13 +1,51 @@
 'use client'
 
 import clsx from 'clsx'
-import { GitBranch, RefreshCw, XCircle } from 'lucide-react'
+import { GitBranch, Layers, RefreshCw, Scissors, Unplug, XCircle } from 'lucide-react'
 import { ConflictAlerts } from '@/components/git/ConflictAlerts'
 import { ProjectRow } from '@/components/git/ProjectRow'
 import { useGitStatus } from './useGitStatus'
 
+function SummaryCard({
+  icon: Icon,
+  label,
+  value,
+  tone,
+}: {
+  icon: typeof GitBranch
+  label: string
+  value: number
+  tone: string
+}) {
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-900/50 px-4 py-3">
+      <div className={clsx('mb-2 flex items-center gap-2 text-xs uppercase tracking-[0.2em]', tone)}>
+        <Icon className="h-4 w-4" />
+        {label}
+      </div>
+      <div className="text-2xl font-semibold text-white">{value}</div>
+    </div>
+  )
+}
+
 export function GitClient() {
   const { data: gitStatus, isLoading, isError, refetch } = useGitStatus()
+  const repos = gitStatus?.repositories ?? []
+  const reposNeedingCleanup = repos.filter(
+    (repo) => (repo.workspace_summary?.orphan_branches ?? 0) > 0 || (repo.workspace_summary?.prunable_branches ?? 0) > 0,
+  ).length
+  const activeWorktrees = repos.reduce(
+    (sum, repo) => sum + (repo.workspace_summary?.active_worktrees ?? 0),
+    0,
+  )
+  const orphanBranches = repos.reduce(
+    (sum, repo) => sum + (repo.workspace_summary?.orphan_branches ?? 0),
+    0,
+  )
+  const prunableBranches = repos.reduce(
+    (sum, repo) => sum + (repo.workspace_summary?.prunable_branches ?? 0),
+    0,
+  )
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
@@ -36,6 +74,15 @@ export function GitClient() {
 
       {/* Conflict Alerts — highest urgency, top of page */}
       <ConflictAlerts />
+
+      {gitStatus && !isLoading && (
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <SummaryCard icon={GitBranch} label="Repos To Check" value={reposNeedingCleanup} tone="text-rose-300" />
+          <SummaryCard icon={Layers} label="Active Worktrees" value={activeWorktrees} tone="text-cyan-300" />
+          <SummaryCard icon={Unplug} label="Orphan Branches" value={orphanBranches} tone="text-amber-300" />
+          <SummaryCard icon={Scissors} label="Prunable Branches" value={prunableBranches} tone="text-pink-300" />
+        </section>
+      )}
 
       {/* Project Rows */}
       {gitStatus && !isLoading && (

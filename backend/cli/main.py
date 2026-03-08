@@ -28,6 +28,7 @@ from .commands import (
     persona,
     projects,
     prompt,
+    pulse,
     refactor,
     session_events,
     sessions,
@@ -161,6 +162,7 @@ CLEANUP (worktree maintenance):
   cleanup worktrees --force                # cleanup all worktrees (with confirmation)
   cleanup worktrees --stale-days N         # configure stale threshold (default: 7)
   cleanup status                           # quick worktree status overview
+  pulse                                    # canonical live coordination summary
   cleanup path <path> [<path>...]          # safe repo-local file cleanup
   cleanup path <dir> --recursive           # safe repo-local directory cleanup
   cleanup path <path> --dry-run            # preview cleanup without deleting
@@ -226,6 +228,7 @@ app.add_typer(refactor.app, name="refactor")
 app.add_typer(feedback.app, name="feedback")
 app.add_typer(persona.app, name="persona")
 app.add_typer(agents.app, name="agents")
+app.command("pulse")(pulse.pulse)
 app.command("exec-log")(exec_monitor.exec_log_command)
 
 # Register checkpoint-aware commands (override old claim from tasks.py)

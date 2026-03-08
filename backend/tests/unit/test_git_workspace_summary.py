@@ -52,7 +52,7 @@ class TestCollectWorktrees:
 
     def test_uses_cli_worktree_source_of_truth(self, mocker) -> None:
         mocker.patch(
-            "app.cli.lib.worktree.get_active_worktrees",
+            "cli.lib.worktree.get_active_worktrees",
             return_value=[
                 SimpleNamespace(
                     task_id="task-123",
