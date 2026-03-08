@@ -206,6 +206,17 @@ def _is_terminal_task_lane(task_id: str | None) -> bool:
     return str(task.get("status") or "").lower() in _TERMINAL_TASK_STATUSES
 
 
+def _task_status(task_id: str | None) -> str | None:
+    """Return normalized task status when the task exists."""
+    if not task_id:
+        return None
+    task = task_store.get_task(task_id)
+    if not task:
+        return None
+    status = task.get("status")
+    return str(status).lower() if status is not None else None
+
+
 def _lane_location(session: dict[str, Any]) -> str:
     working_dir = session.get("working_dir")
     if isinstance(working_dir, str) and working_dir:
@@ -318,14 +329,15 @@ def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflict
 
     same_task_sessions: list[dict[str, Any]] = []
     other_lane_sessions: list[dict[str, Any]] = []
+    target_task_status = _task_status(task_id)
     for session in sessions:
         if not _is_live_lane_session(session):
             continue
         lane_task_id = _lane_task_id(session)
-        if _is_terminal_task_lane(lane_task_id):
-            continue
         if lane_task_id == task_id:
             same_task_sessions.append(session)
+            continue
+        if _is_terminal_task_lane(lane_task_id):
             continue
         if lane_task_id:
             other_lane_sessions.append(session)
@@ -348,7 +360,18 @@ def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflict
         owner_session_id = str(session.get("id") or "")
         owner_branch = session.get("current_branch") if isinstance(session.get("current_branch"), str) else None
         owner_location = _lane_location(session)
-        if _is_stale_lane_session(session):
+        if target_task_status in _TERMINAL_TASK_STATUSES:
+            overlap_kind = "stale_same_task"
+            disposition = "reconcile"
+            issues.append(
+                f"Task status is {target_task_status} but it still has a leftover live lane: "
+                f"{_lane_summary(session)}"
+            )
+            suggestions.append(
+                "Reconcile or retire the leftover same-task lane before redispatching or treating "
+                "the task as cleanly closed."
+            )
+        elif _is_stale_lane_session(session):
             overlap_kind = "stale_same_task"
             disposition = "reconcile"
             issues.append(f"Task already has a likely stale active lane: {_lane_summary(session)}")

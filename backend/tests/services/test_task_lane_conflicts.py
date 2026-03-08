@@ -165,6 +165,34 @@ class TestTaskLaneConflicts:
         assert "st sessions list --status active --project summitflow" in result.suggestions[0]
 
     @patch("app.services.task_lane_preflight.task_store.get_task")
+    def test_same_task_terminal_status_surfaces_leftover_lane_for_reconcile(
+        self,
+        mock_get_task: MagicMock,
+        mock_httpx_client: MagicMock,
+    ) -> None:
+        mock_get_task.return_value = {"id": "task-123", "status": "blocked"}
+        mock_httpx_client.get.return_value = _mock_response(
+            {
+                "sessions": [
+                    {
+                        "id": "sess-leftover",
+                        "external_id": "task-123",
+                        "current_branch": "task-123/main",
+                        "working_dir": "/tmp/worktrees/task-123",
+                        "is_worktree": True,
+                    }
+                ]
+            }
+        )
+
+        result = check_task_lane_conflicts("task-123", "summitflow")
+
+        assert result.overlap_kind == "stale_same_task"
+        assert result.disposition == "reconcile"
+        assert "Task status is blocked but it still has a leftover live lane" in result.issues[0]
+        assert "Reconcile or retire the leftover same-task lane" in result.suggestions[0]
+
+    @patch("app.services.task_lane_preflight.task_store.get_task")
     def test_other_task_stale_lane_updates_project_guidance(
         self,
         mock_get_task: MagicMock,
