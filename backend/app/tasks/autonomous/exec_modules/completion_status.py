@@ -174,6 +174,8 @@ def _do_review_transition(
 
 def _do_complete_transition(task_id: str, project_id: str, log_message: str) -> str:
     """Set task to completed and send a completion notification."""
+    from ....tasks.autonomous.cleanup.worktree_cleanup import cleanup_task_worktree
+
     task_store.update_task_status(task_id, "completed")
     emit_log(
         task_id,
@@ -182,6 +184,33 @@ def _do_complete_transition(task_id: str, project_id: str, log_message: str) -> 
         project_id=project_id,
     )
     _notify_completion(task_id, project_id)
+    if agent_configs.get_auto_merge_enabled(project_id):
+        emit_log(task_id, "info", "Dispatching merge-cleanup for completed task", project_id=project_id)
+        return "completed"
+
+    cleanup_result = cleanup_task_worktree(task_id, delete_branch=False, project_id=project_id)
+    if cleanup_result.get("status") == "cleaned":
+        worktree_path = str(cleanup_result.get("worktree_path") or "unknown")
+        emit_log(
+            task_id,
+            "info",
+            f"Cleaned task worktree: {worktree_path}",
+            project_id=project_id,
+        )
+    else:
+        reason = str(cleanup_result.get("reason") or cleanup_result.get("error") or "unknown")
+        emit_log(
+            task_id,
+            "warning",
+            f"Completed task needs cleanup review: {reason}",
+            project_id=project_id,
+        )
+        wake_persona(
+            task_id,
+            project_id,
+            "cleanup_needed",
+            f"Completed task {task_id} needs cleanup review: {reason}. Reconcile lingering worktree/branch state.",
+        )
     return "completed"
 
 
@@ -197,7 +226,10 @@ def transition_to_review_or_complete(
     """
     if _resolve_require_review(task_id, project_id):
         return _do_review_transition(task_id, project_id, log_message, dispatch)
-    return _do_complete_transition(task_id, project_id, log_message)
+    final_status = _do_complete_transition(task_id, project_id, log_message)
+    if final_status == "completed" and dispatch and agent_configs.get_auto_merge_enabled(project_id):
+        dispatch("merge-cleanup", task_id, project_id)
+    return final_status
 
 
 def handle_status_transition_error(

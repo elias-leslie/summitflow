@@ -6,6 +6,7 @@ import logging
 from typing import Literal, TypedDict
 
 from app.services.worktree import get_task_worktree, remove_task_worktree
+from cli.commands.cleanup_git import has_uncommitted_changes
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,7 @@ WorktreeCleanupResult = (
 def cleanup_task_worktree(
     task_id: str,
     delete_branch: bool = False,
+    project_id: str | None = None,
 ) -> WorktreeCleanupResult:
     """Clean up worktree for a completed or cancelled task.
 
@@ -60,7 +62,7 @@ def cleanup_task_worktree(
         Dict with cleanup result
     """
     try:
-        worktree = get_task_worktree(task_id)
+        worktree = get_task_worktree(task_id, project_id)
         if not worktree:
             return {
                 "task_id": task_id,
@@ -68,10 +70,21 @@ def cleanup_task_worktree(
                 "reason": "no_worktree",
             }
 
+        if has_uncommitted_changes(str(worktree.path)):
+            return {
+                "task_id": task_id,
+                "status": "skipped",
+                "reason": "dirty_worktree",
+            }
+
         worktree_path = str(worktree.path)
         branch = worktree.branch
 
-        removed = remove_task_worktree(task_id, delete_branch=delete_branch)
+        removed = remove_task_worktree(
+            task_id,
+            delete_branch=delete_branch,
+            project_id=project_id,
+        )
 
         if not removed:
             return {

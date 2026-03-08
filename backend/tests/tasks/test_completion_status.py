@@ -30,27 +30,34 @@ class TestTransitionToReviewOrComplete:
         mock_store.update_task_status.assert_called_with("t-1", "ai_reviewing")
         dispatch.assert_called_once_with("review", "t-1", "proj")
 
+    @patch("app.tasks.autonomous.cleanup.worktree_cleanup.cleanup_task_worktree")
     @patch(f"{MODULE}.agent_configs")
     @patch(f"{MODULE}.task_store")
     def test_review_disabled_completes(
-        self, mock_store: MagicMock, mock_configs: MagicMock
+        self, mock_store: MagicMock, mock_configs: MagicMock, mock_cleanup: MagicMock
     ) -> None:
         """When project does not require review, complete immediately."""
         mock_configs.get_require_review.return_value = False
+        mock_configs.get_auto_merge_enabled.return_value = False
+        mock_cleanup.return_value = {"status": "cleaned", "worktree_path": "/tmp/wt"}
 
         result = transition_to_review_or_complete("t-1", "proj", "test")
 
         assert result == "completed"
         mock_store.update_task_status.assert_called_with("t-1", "completed")
+        mock_cleanup.assert_called_once_with("t-1", delete_branch=False, project_id="proj")
 
+    @patch("app.tasks.autonomous.cleanup.worktree_cleanup.cleanup_task_worktree")
     @patch(f"{MODULE}.agent_configs")
     @patch(f"{MODULE}.task_store")
     def test_task_ai_review_false_skips_review(
-        self, mock_store: MagicMock, mock_configs: MagicMock
+        self, mock_store: MagicMock, mock_configs: MagicMock, mock_cleanup: MagicMock
     ) -> None:
         """Task-level ai_review=False overrides project-level require_review=True."""
         mock_configs.get_require_review.return_value = True
+        mock_configs.get_auto_merge_enabled.return_value = False
         mock_store.get_task.return_value = {"id": "t-1", "ai_review": False}
+        mock_cleanup.return_value = {"status": "cleaned", "worktree_path": "/tmp/wt"}
         dispatch = MagicMock()
 
         result = transition_to_review_or_complete("t-1", "proj", "test", dispatch)
@@ -58,6 +65,23 @@ class TestTransitionToReviewOrComplete:
         assert result == "completed"
         mock_store.update_task_status.assert_called_with("t-1", "completed")
         dispatch.assert_not_called()
+        mock_cleanup.assert_called_once_with("t-1", delete_branch=False, project_id="proj")
+
+    @patch("app.tasks.autonomous.cleanup.worktree_cleanup.cleanup_task_worktree")
+    @patch(f"{MODULE}.agent_configs")
+    @patch(f"{MODULE}.task_store")
+    def test_review_disabled_dispatches_merge_cleanup_when_auto_merge_enabled(
+        self, mock_store: MagicMock, mock_configs: MagicMock, mock_cleanup: MagicMock
+    ) -> None:
+        mock_configs.get_require_review.return_value = False
+        mock_configs.get_auto_merge_enabled.return_value = True
+        dispatch = MagicMock()
+
+        result = transition_to_review_or_complete("t-1", "proj", "test", dispatch)
+
+        assert result == "completed"
+        dispatch.assert_called_once_with("merge-cleanup", "t-1", "proj")
+        mock_cleanup.assert_not_called()
 
     @patch(f"{MODULE}.agent_configs")
     @patch(f"{MODULE}.task_store")
