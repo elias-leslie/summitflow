@@ -206,6 +206,28 @@ class TestExecLogCommand:
 
     def test_exec_log_hides_older_attempts_from_header_and_recent_activity(self, mock_client: MagicMock) -> None:
         """Retried tasks should default to the newest attempt cluster."""
+        mock_client.get_events.return_value = {
+            "events": [
+                {
+                    "id": "evt-task-old",
+                    "timestamp": "2026-01-26T11:00:00+00:00",
+                    "level": "info",
+                    "message": "Old attempt started",
+                    "source": "agent",
+                    "visibility": "user",
+                    "attributes": {},
+                },
+                {
+                    "id": "evt-task-new",
+                    "timestamp": "2026-01-26T12:01:00+00:00",
+                    "level": "info",
+                    "message": "Newest attempt started",
+                    "source": "agent",
+                    "visibility": "user",
+                    "attributes": {},
+                },
+            ]
+        }
         mock_client.get_task_agent_sessions.return_value = {
             "task_id": "task-test123",
             "session_ids": ["sess-old", "sess-new", "sess-feedback"],
@@ -287,6 +309,8 @@ class TestExecLogCommand:
         assert "|hist=1" in result.output
         assert "sess-old" not in result.output
         assert "Old retry attempt" not in result.output
+        assert "Old attempt started" not in result.output
+        assert "Newest attempt started" in result.output
         assert "sess-new" in result.output
         assert "Feedback collection" in result.output
 
@@ -300,8 +324,8 @@ class TestExecLogCommand:
 
             assert result.exit_code == 0
             # JSON output should contain event data
-            assert '"timestamp"' in result.output
-            assert '"message"' in result.output
+            assert '"created_at"' in result.output
+            assert '"event_type"' in result.output
 
     def test_exec_log_invalid_task_id(self) -> None:
         """Test exec-log with invalid task ID shows error."""

@@ -35,7 +35,7 @@ def _parse_iso_timestamp(value: Any) -> datetime | None:
 def _select_current_attempt(
     sessions: list[dict[str, Any]],
     agent_events: list[dict[str, Any]],
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int, datetime | None]:
     """Keep only the current task attempt cluster for exec-log output.
 
     Priority:
@@ -44,7 +44,14 @@ def _select_current_attempt(
     This keeps current refactor + feedback sessions together while hiding old retries.
     """
     if len(sessions) <= 1:
-        return sessions, agent_events, 0
+        attempt_start = min(
+            (
+                _parse_iso_timestamp(event.get("created_at"))
+                for event in agent_events
+            ),
+            default=None,
+        )
+        return sessions, agent_events, 0, attempt_start
 
     active_sessions = [s for s in sessions if s.get("status") == "active"]
     if active_sessions:
@@ -56,7 +63,17 @@ def _select_current_attempt(
         ]
         dated_sessions = [(ts, s) for ts, s in dated_sessions if ts is not None]
         if not dated_sessions:
-            return sessions[:1], agent_events, max(len(sessions) - 1, 0)
+            filtered_events = [
+                event for event in agent_events if str(event.get("session_id")) == str(sessions[0].get("id"))
+            ]
+            attempt_start = min(
+                (
+                    _parse_iso_timestamp(event.get("created_at"))
+                    for event in filtered_events
+                ),
+                default=None,
+            )
+            return sessions[:1], filtered_events, max(len(sessions) - 1, 0), attempt_start
         latest_ts = max(ts for ts, _ in dated_sessions)
         selected_ids = {
             str(s.get("id"))
@@ -70,8 +87,15 @@ def _select_current_attempt(
         for event in agent_events
         if str(event.get("session_id")) in selected_ids
     ]
+    attempt_start = min(
+        (
+            _parse_iso_timestamp(event.get("created_at"))
+            for event in filtered_events
+        ),
+        default=None,
+    )
     hidden_count = max(len(sessions) - len(filtered_sessions), 0)
-    return filtered_sessions, filtered_events, hidden_count
+    return filtered_sessions, filtered_events, hidden_count, attempt_start
 
 
 def _fetch_task_data(
@@ -169,11 +193,18 @@ def _display_events(
     status = task.get("status", "unknown")
     session_list = agent_sessions.get("sessions", []) if isinstance(agent_sessions, dict) else []
     agent_event_list = agent_events.get("events", []) if isinstance(agent_events, dict) else []
-    session_list, agent_event_list, hidden_attempts = _select_current_attempt(
+    session_list, agent_event_list, hidden_attempts, attempt_start = _select_current_attempt(
         session_list,
         agent_event_list,
     )
     filtered_agent_sessions = {**agent_sessions, "sessions": session_list} if isinstance(agent_sessions, dict) else agent_sessions
+    events_list = events.get("events", []) if isinstance(events, dict) else events
+    if attempt_start is not None:
+        events_list = [
+            event
+            for event in events_list
+            if (_parse_iso_timestamp(event.get("timestamp")) or attempt_start) >= attempt_start
+        ]
 
     # Header
     print_header(out, task, subtasks, filtered_agent_sessions, debug, json_output, hidden_attempts=hidden_attempts)
@@ -188,7 +219,6 @@ def _display_events(
     )
 
     # Initial events
-    events_list = events.get("events", []) if isinstance(events, dict) else events
     print_events(out, events_list, debug, json_output)
 
     if not follow:
