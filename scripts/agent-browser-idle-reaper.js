@@ -386,8 +386,14 @@ function runIdleCleanup(options = {}) {
 
   for (const sessionName of listSessions(env)) {
     const pid = readDaemonPid(sessionName, env);
+    const lastActivityMs = getSessionLastActivityMs(sessionName, env);
+    const idleForMs = lastActivityMs > 0 ? nowMs - lastActivityMs : timeoutMs + 1;
 
     if (!pid || !processExists(pid) || !isAgentBrowserDaemon(pid)) {
+      if (idleForMs < timeoutMs) {
+        summary.skippedRecent.push(sessionName);
+        continue;
+      }
       cleanupRuntimeFiles(sessionName, env);
       summary.cleanedStale.push(sessionName);
       continue;
@@ -406,8 +412,6 @@ function runIdleCleanup(options = {}) {
       continue;
     }
 
-    const lastActivityMs = getSessionLastActivityMs(sessionName, env);
-    const idleForMs = lastActivityMs > 0 ? nowMs - lastActivityMs : timeoutMs + 1;
     if (idleForMs < timeoutMs) {
       summary.skippedRecent.push(sessionName);
       continue;
