@@ -6,8 +6,9 @@ automatic task generation. This module keeps that policy in one place.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
-from typing import Any, Mapping
+from typing import Any
 
 _SIZE_ISSUES = frozenset({"oversized", "large_file", "bloat_critical", "bloat_warning"})
 _STRONG_STRUCTURAL_ISSUES = frozenset(
