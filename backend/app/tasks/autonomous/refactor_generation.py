@@ -43,6 +43,16 @@ def _ensure_refactor_scope(task_id: str, relative_path: str) -> None:
     update_task_spirit(task_id, context={**context, "files_to_modify": merged_paths})
 
 
+def _backfill_existing_refactor_scopes(project_id: str, relative_path: str) -> None:
+    """Repair legacy active refactor tasks that were created without scope."""
+    for task_id in task_store.list_active_tasks_for_file(
+        project_id,
+        relative_path,
+        task_type="refactor",
+    ):
+        _ensure_refactor_scope(task_id, relative_path)
+
+
 def should_skip_refactor_target(
     project_id: str, relative_path: str, lines: int, target_lines: int, skip_existing: bool
 ) -> tuple[bool, str]:
@@ -76,9 +86,12 @@ def _check_skip(
             project_id, relative_path, lines, target_lines, skip_existing
         )
         if should_skip:
+            if skip_existing and "task already exists" in reason:
+                _backfill_existing_refactor_scopes(project_id, relative_path)
             logger.info(reason)
             return True
     elif skip_existing and task_store.task_exists_for_file(project_id, relative_path):
+        _backfill_existing_refactor_scopes(project_id, relative_path)
         logger.info(f"Skipping {relative_path}: task already exists")
         return True
     return False

@@ -80,8 +80,12 @@ class TestGenerateTasksFromScan:
 
     @patch("app.tasks.autonomous.refactor_generation.get_refactor_targets")
     @patch("app.tasks.autonomous.refactor_generation.task_store")
+    @patch("app.tasks.autonomous.refactor_generation.update_task_spirit")
+    @patch("app.tasks.autonomous.refactor_generation.get_task_spirit")
     def test_skips_existing_tasks(
         self,
+        mock_get_spirit: MagicMock,
+        mock_update_spirit: MagicMock,
         mock_store: MagicMock,
         mock_get_targets: MagicMock,
     ) -> None:
@@ -98,12 +102,18 @@ class TestGenerateTasksFromScan:
             ]
         }
         mock_store.task_exists_for_file.return_value = True
+        mock_store.list_active_tasks_for_file.return_value = ["task-existing"]
+        mock_get_spirit.return_value = {"context": {}}
 
         result = generate_tasks_from_scan("test-project")
 
         assert result["created_count"] == 0
         assert result["scanned_count"] == 1
         assert result["skipped_count"] == 1
+        mock_update_spirit.assert_called_once_with(
+            "task-existing",
+            context={"files_to_modify": ["backend/app/services/foo.py"]},
+        )
         mock_store.create_task.assert_not_called()
 
     @patch("app.tasks.autonomous.refactor_generation.get_project_root_path")
