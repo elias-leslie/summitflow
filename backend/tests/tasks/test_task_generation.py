@@ -34,12 +34,16 @@ class TestGenerateTasksFromScan:
     @patch("app.tasks.autonomous.refactor_generation.get_refactor_targets")
     @patch("app.tasks.autonomous.refactor_generation.qa_storage")
     @patch("app.tasks.autonomous.refactor_generation.task_store")
+    @patch("app.tasks.autonomous.refactor_generation.update_task_spirit")
+    @patch("app.tasks.autonomous.refactor_generation.get_task_spirit")
     @patch("app.tasks.autonomous.refactor_generation.create_refactor_issue")
     @patch("app.tasks.autonomous.refactor_generation.create_refactor_task")
     def test_creates_refactor_task_type(
         self,
         mock_create_task: MagicMock,
         mock_create_issue: MagicMock,
+        mock_get_spirit: MagicMock,
+        mock_update_spirit: MagicMock,
         mock_store: MagicMock,
         mock_qa_storage: MagicMock,
         mock_get_targets: MagicMock,
@@ -61,11 +65,16 @@ class TestGenerateTasksFromScan:
         mock_create_issue.return_value = 17
         mock_qa_storage.get_issue.return_value = {"id": 17, "st_task_id": None}
         mock_create_task.return_value = ("task-123", "issue-123")  # (task_id, issue_id)
+        mock_get_spirit.return_value = {"context": {}}
 
         result = generate_tasks_from_scan("test-project")
 
         # Verify create_refactor_task was called
         mock_create_task.assert_called_once()
+        mock_update_spirit.assert_called_once_with(
+            "task-123",
+            context={"files_to_modify": ["backend/app/services/foo.py"]},
+        )
         # Verify task creation was counted
         assert result["created_count"] == 1
 
@@ -146,6 +155,8 @@ class TestGenerateTasksFromScan:
     @patch("app.tasks.autonomous.refactor_generation.get_refactor_targets")
     @patch("app.tasks.autonomous.refactor_generation.qa_storage")
     @patch("app.tasks.autonomous.refactor_generation.task_store")
+    @patch("app.tasks.autonomous.refactor_generation.update_task_spirit")
+    @patch("app.tasks.autonomous.refactor_generation.get_task_spirit")
     @patch("app.tasks.autonomous.refactor_generation.create_refactor_issue")
     @patch("app.tasks.autonomous.refactor_generation.create_refactor_task")
     @patch("app.tasks.autonomous.refactor_generation.log_task_event")
@@ -154,6 +165,8 @@ class TestGenerateTasksFromScan:
         mock_log_task_event: MagicMock,
         mock_create_task: MagicMock,
         mock_create_issue: MagicMock,
+        mock_get_spirit: MagicMock,
+        mock_update_spirit: MagicMock,
         mock_store: MagicMock,
         mock_qa_storage: MagicMock,
         mock_get_targets: MagicMock,
@@ -174,11 +187,16 @@ class TestGenerateTasksFromScan:
         mock_qa_storage.get_issue.return_value = {"id": 17, "st_task_id": "task-keep"}
         mock_store.get_task.return_value = {"id": "task-keep", "status": "pending"}
         mock_store.list_active_tasks_for_file.return_value = ["task-dup", "task-keep"]
+        mock_get_spirit.return_value = {"context": {}}
 
         result = generate_tasks_from_scan("test-project")
 
         assert result["created_count"] == 0
         assert result["retired_count"] == 1
+        mock_update_spirit.assert_called_once_with(
+            "task-keep",
+            context={"files_to_modify": ["backend/app/services/foo.py"]},
+        )
         mock_create_task.assert_not_called()
         mock_store.update_task.assert_called_once_with("task-dup", status="cancelled")
         mock_log_task_event.assert_called_once()
@@ -187,6 +205,8 @@ class TestGenerateTasksFromScan:
     @patch("app.tasks.autonomous.refactor_generation.qa_storage")
     @patch("app.tasks.autonomous.refactor_generation.link_issue_to_task")
     @patch("app.tasks.autonomous.refactor_generation.task_store")
+    @patch("app.tasks.autonomous.refactor_generation.update_task_spirit")
+    @patch("app.tasks.autonomous.refactor_generation.get_task_spirit")
     @patch("app.tasks.autonomous.refactor_generation.create_refactor_issue")
     @patch("app.tasks.autonomous.refactor_generation.create_refactor_task")
     @patch("app.tasks.autonomous.refactor_generation.log_task_event")
@@ -195,6 +215,8 @@ class TestGenerateTasksFromScan:
         mock_log_task_event: MagicMock,
         mock_create_task: MagicMock,
         mock_create_issue: MagicMock,
+        mock_get_spirit: MagicMock,
+        mock_update_spirit: MagicMock,
         mock_store: MagicMock,
         mock_link_issue_to_task: MagicMock,
         mock_qa_storage: MagicMock,
@@ -216,11 +238,16 @@ class TestGenerateTasksFromScan:
         mock_qa_storage.get_issue.return_value = {"id": 17, "st_task_id": None}
         mock_store.list_active_tasks_for_file.return_value = ["task-b", "task-a"]
         mock_store.update_task.return_value = {"id": "task-b", "status": "cancelled"}
+        mock_get_spirit.return_value = {"context": {}}
 
         result = generate_tasks_from_scan("test-project")
 
         assert result["created_count"] == 0
         assert result["retired_count"] == 1
+        mock_update_spirit.assert_called_once_with(
+            "task-a",
+            context={"files_to_modify": ["backend/app/services/foo.py"]},
+        )
         mock_link_issue_to_task.assert_called_once_with(17, "task-a")
         mock_create_task.assert_not_called()
         mock_store.update_task.assert_called_once_with("task-b", status="cancelled")

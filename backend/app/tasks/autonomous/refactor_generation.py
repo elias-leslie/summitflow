@@ -12,6 +12,7 @@ from app.storage import tasks as task_store
 from app.storage.events import log_task_event
 from app.storage.explorer_analysis import get_refactor_targets
 from app.storage.projects import get_project_root_path
+from app.storage.task_spirit import get_task_spirit, update_task_spirit
 from app.tasks.autonomous._issue_builder import create_refactor_issue
 from app.tasks.autonomous.step_builders import build_refactor_steps, calculate_target_lines
 from app.tasks.autonomous.task_builders import create_refactor_task
@@ -20,6 +21,26 @@ from app.tasks.explorer_resolution import check_and_close_resolved_issues
 logger = logging.getLogger(__name__)
 
 _SIZE_ISSUES = {"oversized", "large_file", "bloat_critical", "bloat_warning"}
+
+
+def _ensure_refactor_scope(task_id: str, relative_path: str) -> None:
+    """Backfill missing file scope on legacy/generated refactor tasks."""
+    spirit = get_task_spirit(task_id) or {}
+    context = spirit.get("context") if isinstance(spirit, dict) else {}
+    if not isinstance(context, dict):
+        context = {}
+    existing_paths = context.get("files_to_modify")
+    if isinstance(existing_paths, list) and relative_path in existing_paths:
+        return
+
+    merged_paths = [relative_path]
+    if isinstance(existing_paths, list):
+        merged_paths.extend(
+            path
+            for path in existing_paths
+            if isinstance(path, str) and path and path != relative_path
+        )
+    update_task_spirit(task_id, context={**context, "files_to_modify": merged_paths})
 
 
 def should_skip_refactor_target(
@@ -89,6 +110,7 @@ def process_refactor_target(
     canonical_task_id = _get_canonical_refactor_task_id(project_id, relative_path, issue_id)
     retired_count = 0
     if canonical_task_id:
+        _ensure_refactor_scope(canonical_task_id, relative_path)
         retired_count = _retire_duplicate_refactor_tasks(project_id, relative_path, canonical_task_id)
         logger.info(
             "Skipping %s: canonical refactor task %s already exists",
@@ -109,6 +131,7 @@ def process_refactor_target(
         issue_id=issue_id,
     )
     if task_id:
+        _ensure_refactor_scope(task_id, relative_path)
         retired_count += _retire_duplicate_refactor_tasks(project_id, relative_path, task_id)
         logger.info(f"Created task {task_id} with spirit+criteria, linked to issue {issue_id}")
         return True, retired_count
