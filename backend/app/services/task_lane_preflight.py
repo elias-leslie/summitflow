@@ -21,7 +21,7 @@ _TERMINAL_TASK_STATUSES = {"blocked", "completed", "cancelled", "abandoned", "fa
 _LIST_SESSIONS_TIMEOUT = 10.0
 # Align stale-lane detection with Agent Hub completion-session cleanup so SummitFlow
 # can reconcile abandoned task lanes shortly after Agent Hub would auto-complete them.
-_STALE_ACTIVE_MINUTES = 30
+_STALE_ACTIVE_MINUTES = 10
 _LIVE_OWNERSHIP_PATH = "/api/ownership/projects/{project_id}/live"
 _LEGACY_SESSIONS_PATH = "/api/sessions"
 _SHARED_PLUMBING_PREFIXES = (
