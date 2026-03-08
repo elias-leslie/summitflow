@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..output_context import OutputContext
+from .session_events_formatter import format_event as format_agent_event
 
 
 def subtask_summary(subtasks: list[dict[str, Any]]) -> str:
@@ -73,7 +74,12 @@ def _print_event_human(
 
 
 def print_events(
-    out: OutputContext, events: list[Any], debug: bool = False, json_output: bool = False
+    out: OutputContext,
+    events: list[Any],
+    debug: bool = False,
+    json_output: bool = False,
+    *,
+    agent_event_mode: bool = False,
 ) -> None:
     """Print a list of events."""
     import json
@@ -82,6 +88,10 @@ def print_events(
         if json_output:
             # One JSON object per line for agent parsing
             print(json.dumps(event))
+            continue
+
+        if agent_event_mode:
+            _print_agent_event(out, event, debug)
             continue
 
         timestamp = event.get("timestamp", "")[:19]  # Truncate to seconds
@@ -104,6 +114,31 @@ def print_events(
             print(f"{timestamp}|{level}|{vis_indicator}{message[:80]}")
         else:
             _print_event_human(event, debug, level_prefix, vis_indicator)
+
+
+def _print_agent_event(out: OutputContext, event: dict[str, Any], debug: bool) -> None:
+    """Print a task-linked Agent Hub event inside exec-log output."""
+    timestamp = str(event.get("created_at", ""))[:19]
+    session_id = str(event.get("session_id", ""))
+    session_label = session_id[:8] if session_id else "agent"
+    rendered = format_agent_event(event, verbose=debug)
+    rendered = rendered.replace("\033[36m", "").replace("\033[32m", "").replace("\033[33m", "")
+    rendered = rendered.replace("\033[35m", "").replace("\033[34m", "").replace("\033[90m", "")
+    rendered = rendered.replace("\033[31m", "").replace("\033[0m", "")
+
+    lines = rendered.splitlines()
+    if out.is_compact:
+        if not lines:
+            return
+        first = lines[0][:120]
+        print(f"{timestamp}|AH|{session_label}|{first}")
+        for line in lines[1:3]:
+            print(f"{timestamp}|AH|{session_label}|{line[:120]}")
+        return
+
+    print(f"> {timestamp} Agent[{session_label}]")
+    for line in lines:
+        print(f"  {line}")
 
 
 def print_header(

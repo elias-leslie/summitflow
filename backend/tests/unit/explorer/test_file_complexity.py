@@ -35,11 +35,11 @@ class TestCalculateRefactorPriority:
 
     # --- Health flags promote priority ---
 
-    def test_single_health_flag_promotes_to_medium(self) -> None:
+    def test_single_health_flag_no_longer_promotes_by_itself(self) -> None:
         flags = {"deep_nesting": True}
-        assert calculate_refactor_priority(5.0, 100, health_flags=flags) == "medium"
+        assert calculate_refactor_priority(5.0, 100, health_flags=flags) == "none"
 
-    def test_two_health_flags_still_medium(self) -> None:
+    def test_two_health_flags_promotes_to_medium(self) -> None:
         flags = {"deep_nesting": True, "has_long_functions": True}
         assert calculate_refactor_priority(5.0, 100, health_flags=flags) == "medium"
 
@@ -68,8 +68,8 @@ class TestCalculateRefactorPriority:
 
     def test_health_flags_and_bloat_combined(self) -> None:
         flags = {"deep_nesting": True}
-        # bloat_warning alone = medium, one flag alone = medium
-        # combined should still be medium (not high) since neither individually reaches high
+        # bloat_warning alone = medium, single flag alone = none
+        # combined should still be medium
         assert calculate_refactor_priority(5.0, 100, health_flags=flags, bloat_level="warning") == "medium"
 
     def test_complexity_threshold_exact_boundary(self) -> None:

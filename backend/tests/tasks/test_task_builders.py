@@ -125,6 +125,20 @@ class TestBuildRefactorDescription:
         assert "guideline" in description.lower()
         assert "200" in description
 
+    def test_includes_promotion_evidence_when_provided(self) -> None:
+        description = build_refactor_description(
+            "backend/app/foo.py",
+            400,
+            200,
+            12.0,
+            "medium",
+            promotion_reasons=["High hotspot score (160)", "Nearby test coverage is missing"],
+            promotion_confidence="high",
+        )
+        assert "Promotion confidence: high" in description
+        assert "Promotion evidence" in description
+        assert "High hotspot score" in description
+
 
 class TestCreateRefactorTask:
     """Tests for create_refactor_task wiring."""
@@ -155,6 +169,8 @@ class TestCreateRefactorTask:
             tier=2,
             steps=[{"description": "step"}],
             refactor_issues=["large_file"],
+            promotion_reasons=["High hotspot score (180)"],
+            promotion_confidence="high",
         )
 
         assert task_id == "task-123"
@@ -165,4 +181,5 @@ class TestCreateRefactorTask:
         }
         assert mock_create_subtask.call_args.kwargs["subtask_type"] == "refactor"
         assert "aim for <200 lines" in mock_create_subtask.call_args.kwargs["description"]
+        assert "Promotion evidence" in mock_create_task.call_args.kwargs["description"]
         mock_link.assert_called_once_with("task-123", 42)

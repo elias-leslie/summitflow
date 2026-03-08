@@ -23,7 +23,7 @@ def _fetch_task_data(
     task_id: str,
     limit: int,
     debug: bool,
-) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any], dict[str, Any]]:
+) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any], dict[str, Any], dict[str, Any]]:
     """Fetch task, subtasks, and events from the API."""
     task = client.get_task(task_id)
     project_id = task.get("project_id", "unknown")
@@ -31,7 +31,8 @@ def _fetch_task_data(
     subtasks = subtasks_data.get("subtasks", [])
     events = client.get_events(project_id, task_id, limit=limit, include_debug=debug)
     agent_sessions = client.get_task_agent_sessions(task_id)
-    return task, subtasks, events, agent_sessions
+    agent_events = client.get_task_agent_events(task_id, page_size=min(max(limit, 20), 100))
+    return task, subtasks, events, agent_sessions, agent_events
 
 
 def exec_log_command(
@@ -74,7 +75,7 @@ def exec_log_command(
     client = STClient()
 
     try:
-        task, subtasks, events, agent_sessions = _fetch_task_data(client, task_id, limit, debug)
+        task, subtasks, events, agent_sessions, agent_events = _fetch_task_data(client, task_id, limit, debug)
     except APIError as e:
         handle_api_error(e)
         return
@@ -85,6 +86,7 @@ def exec_log_command(
         subtasks,
         events,
         agent_sessions,
+        agent_events,
         follow,
         client,
         limit,
@@ -98,6 +100,7 @@ def _display_events(
     subtasks: list[dict[str, Any]],
     events: dict[str, Any],
     agent_sessions: dict[str, Any],
+    agent_events: dict[str, Any],
     follow: bool,
     client: STClient,
     limit: int,
@@ -111,6 +114,16 @@ def _display_events(
 
     # Header
     print_header(out, task, subtasks, agent_sessions, debug, json_output)
+    agent_event_list = agent_events.get("events", []) if isinstance(agent_events, dict) else []
+    if agent_event_list and not json_output and not out.is_compact:
+        print("Recent Agent Activity:")
+    print_events(
+        out,
+        agent_event_list[-12:],
+        debug,
+        json_output,
+        agent_event_mode=True,
+    )
 
     # Initial events
     events_list = events.get("events", []) if isinstance(events, dict) else events

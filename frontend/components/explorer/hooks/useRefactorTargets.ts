@@ -63,6 +63,9 @@ export function useRefactorTargets(projectId: string) {
   const mediumCount = data?.summary.medium_priority_count ?? 0
   const totalComplexity = data?.summary.total_complexity ?? 0
   const totalTargets = highCount + mediumCount
+  const actionableCount = data?.targets.filter((target) => target.should_create_task).length ?? 0
+  const observeOnlyCount =
+    data?.targets.filter((target) => !target.should_create_task && target.recommended_action === 'keep_in_explorer').length ?? 0
 
   return {
     // Data
@@ -76,6 +79,8 @@ export function useRefactorTargets(projectId: string) {
     mediumCount,
     totalComplexity,
     totalTargets,
+    actionableCount,
+    observeOnlyCount,
 
     // Filter state
     priorityFilter,

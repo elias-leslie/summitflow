@@ -20,17 +20,26 @@ from app.tasks.autonomous.task_generation import (
 class TestGenerateTasksFromScan:
     """Tests for generate_tasks_from_scan task."""
 
-    @patch("app.tasks.autonomous.refactor_generation.get_refactor_targets")
-    def test_empty_targets_returns_zero_counts(self, mock_get_targets: MagicMock) -> None:
-        """Test that empty targets returns zero counts."""
-        mock_get_targets.return_value = {"targets": []}
+    @patch("app.tasks.autonomous.task_generation.regenerate_refactor_tasks_impl")
+    def test_delegates_to_canonical_sync(self, mock_regenerate: MagicMock) -> None:
+        """Scheduled generation should use the same full sync path as manual regenerate."""
+        mock_regenerate.return_value = {
+            "closed_count": 2,
+            "created_count": 1,
+            "retired_count": 0,
+            "scanned_count": 3,
+            "skipped_count": 2,
+        }
 
         result = generate_tasks_from_scan("test-project")
 
-        assert result["created_count"] == 0
-        assert result["scanned_count"] == 0
-        assert result["skipped_count"] == 0
+        assert result["closed_count"] == 2
+        assert result["created_count"] == 1
+        mock_regenerate.assert_called_once_with("test-project")
 
+    @patch("app.tasks.autonomous.refactor_generation.get_project_root_path", return_value="/tmp/project")
+    @patch("app.tasks.autonomous.refactor_generation.scan")
+    @patch("app.tasks.autonomous.refactor_generation.check_and_close_resolved_issues", return_value=0)
     @patch("app.tasks.autonomous.refactor_generation.get_refactor_targets")
     @patch("app.tasks.autonomous.refactor_generation.qa_storage")
     @patch("app.tasks.autonomous.refactor_generation.task_store")
@@ -47,6 +56,9 @@ class TestGenerateTasksFromScan:
         mock_store: MagicMock,
         mock_qa_storage: MagicMock,
         mock_get_targets: MagicMock,
+        _mock_close_resolved: MagicMock,
+        _mock_scan: MagicMock,
+        _mock_get_project_root: MagicMock,
     ) -> None:
         """Test that refactor tasks are created from scan targets."""
         mock_get_targets.return_value = {
@@ -57,6 +69,10 @@ class TestGenerateTasksFromScan:
                     "reason": "High cyclomatic complexity",
                     "complexity_score": 20.0,
                     "lines_of_code": 400,
+                    "hotspot_score": 180.0,
+                    "commit_count_90d": 6,
+                    "test_file_exists": False,
+                    "refactor_issues": ["high_complexity", "deep_nesting"],
                 }
             ]
         }
@@ -67,7 +83,7 @@ class TestGenerateTasksFromScan:
         mock_create_task.return_value = ("task-123", "issue-123")  # (task_id, issue_id)
         mock_get_spirit.return_value = {"context": {}}
 
-        result = generate_tasks_from_scan("test-project")
+        result = regenerate_refactor_tasks_sync("test-project")
 
         # Verify create_refactor_task was called
         mock_create_task.assert_called_once()
@@ -78,6 +94,9 @@ class TestGenerateTasksFromScan:
         # Verify task creation was counted
         assert result["created_count"] == 1
 
+    @patch("app.tasks.autonomous.refactor_generation.get_project_root_path", return_value="/tmp/project")
+    @patch("app.tasks.autonomous.refactor_generation.scan")
+    @patch("app.tasks.autonomous.refactor_generation.check_and_close_resolved_issues", return_value=0)
     @patch("app.tasks.autonomous.refactor_generation.get_refactor_targets")
     @patch("app.tasks.autonomous.refactor_generation.task_store")
     @patch("app.tasks.autonomous.refactor_generation.update_task_spirit")
@@ -88,6 +107,9 @@ class TestGenerateTasksFromScan:
         mock_update_spirit: MagicMock,
         mock_store: MagicMock,
         mock_get_targets: MagicMock,
+        _mock_close_resolved: MagicMock,
+        _mock_scan: MagicMock,
+        _mock_get_project_root: MagicMock,
     ) -> None:
         """Test that existing tasks are skipped."""
         mock_get_targets.return_value = {
@@ -96,8 +118,12 @@ class TestGenerateTasksFromScan:
                     "path": "backend/app/services/foo.py",
                     "priority": "medium",
                     "reason": "Complex method",
-                    "complexity_score": 12.0,
+                    "complexity_score": 16.0,
                     "lines_of_code": 200,
+                    "hotspot_score": 140.0,
+                    "commit_count_90d": 4,
+                    "test_file_exists": False,
+                    "refactor_issues": ["high_complexity"],
                 }
             ]
         }
@@ -105,7 +131,7 @@ class TestGenerateTasksFromScan:
         mock_store.list_active_tasks_for_file.return_value = ["task-existing"]
         mock_get_spirit.return_value = {"context": {}}
 
-        result = generate_tasks_from_scan("test-project")
+        result = regenerate_refactor_tasks_sync("test-project")
 
         assert result["created_count"] == 0
         assert result["scanned_count"] == 1
@@ -116,9 +142,9 @@ class TestGenerateTasksFromScan:
         )
         mock_store.create_task.assert_not_called()
 
-    @patch("app.tasks.autonomous.refactor_generation.get_project_root_path")
+    @patch("app.tasks.autonomous.refactor_generation.get_project_root_path", return_value="/tmp/project")
     @patch("app.tasks.autonomous.refactor_generation.scan")
-    @patch("app.tasks.autonomous.refactor_generation.check_and_close_resolved_issues")
+    @patch("app.tasks.autonomous.refactor_generation.check_and_close_resolved_issues", return_value=0)
     @patch("app.tasks.autonomous.refactor_generation.get_refactor_targets")
     @patch("app.tasks.autonomous.refactor_generation.qa_storage")
     @patch("app.tasks.autonomous.refactor_generation.task_store")
@@ -145,6 +171,10 @@ class TestGenerateTasksFromScan:
                     "reason": "High cyclomatic complexity",
                     "complexity_score": 20.0,
                     "lines_of_code": 400,
+                    "hotspot_score": 180.0,
+                    "commit_count_90d": 6,
+                    "test_file_exists": False,
+                    "refactor_issues": ["high_complexity", "deep_nesting"],
                 }
             ]
         }
@@ -162,6 +192,9 @@ class TestGenerateTasksFromScan:
         mock_scan.assert_called_once_with("test-project", "file")
         mock_close_resolved.assert_called_once_with("test-project")
 
+    @patch("app.tasks.autonomous.refactor_generation.get_project_root_path", return_value="/tmp/project")
+    @patch("app.tasks.autonomous.refactor_generation.scan")
+    @patch("app.tasks.autonomous.refactor_generation.check_and_close_resolved_issues", return_value=0)
     @patch("app.tasks.autonomous.refactor_generation.get_refactor_targets")
     @patch("app.tasks.autonomous.refactor_generation.qa_storage")
     @patch("app.tasks.autonomous.refactor_generation.task_store")
@@ -180,6 +213,9 @@ class TestGenerateTasksFromScan:
         mock_store: MagicMock,
         mock_qa_storage: MagicMock,
         mock_get_targets: MagicMock,
+        _mock_close_resolved: MagicMock,
+        _mock_scan: MagicMock,
+        _mock_get_project_root: MagicMock,
     ) -> None:
         mock_get_targets.return_value = {
             "targets": [
@@ -189,6 +225,10 @@ class TestGenerateTasksFromScan:
                     "reason": "High cyclomatic complexity",
                     "complexity_score": 20.0,
                     "lines_of_code": 400,
+                    "hotspot_score": 180.0,
+                    "commit_count_90d": 6,
+                    "test_file_exists": False,
+                    "refactor_issues": ["high_complexity", "deep_nesting"],
                 }
             ]
         }
@@ -199,7 +239,7 @@ class TestGenerateTasksFromScan:
         mock_store.list_active_tasks_for_file.return_value = ["task-dup", "task-keep"]
         mock_get_spirit.return_value = {"context": {}}
 
-        result = generate_tasks_from_scan("test-project")
+        result = regenerate_refactor_tasks_sync("test-project")
 
         assert result["created_count"] == 0
         assert result["retired_count"] == 1
@@ -211,6 +251,9 @@ class TestGenerateTasksFromScan:
         mock_store.update_task.assert_called_once_with("task-dup", status="cancelled")
         mock_log_task_event.assert_called_once()
 
+    @patch("app.tasks.autonomous.refactor_generation.get_project_root_path", return_value="/tmp/project")
+    @patch("app.tasks.autonomous.refactor_generation.scan")
+    @patch("app.tasks.autonomous.refactor_generation.check_and_close_resolved_issues", return_value=0)
     @patch("app.tasks.autonomous.refactor_generation.get_refactor_targets")
     @patch("app.tasks.autonomous.refactor_generation.qa_storage")
     @patch("app.tasks.autonomous.refactor_generation.link_issue_to_task")
@@ -231,6 +274,9 @@ class TestGenerateTasksFromScan:
         mock_link_issue_to_task: MagicMock,
         mock_qa_storage: MagicMock,
         mock_get_targets: MagicMock,
+        _mock_close_resolved: MagicMock,
+        _mock_scan: MagicMock,
+        _mock_get_project_root: MagicMock,
     ) -> None:
         mock_get_targets.return_value = {
             "targets": [
@@ -240,6 +286,10 @@ class TestGenerateTasksFromScan:
                     "reason": "High cyclomatic complexity",
                     "complexity_score": 20.0,
                     "lines_of_code": 400,
+                    "hotspot_score": 180.0,
+                    "commit_count_90d": 6,
+                    "test_file_exists": False,
+                    "refactor_issues": ["high_complexity", "deep_nesting"],
                 }
             ]
         }
@@ -250,7 +300,7 @@ class TestGenerateTasksFromScan:
         mock_store.update_task.return_value = {"id": "task-b", "status": "cancelled"}
         mock_get_spirit.return_value = {"context": {}}
 
-        result = generate_tasks_from_scan("test-project")
+        result = regenerate_refactor_tasks_sync("test-project")
 
         assert result["created_count"] == 0
         assert result["retired_count"] == 1
@@ -263,12 +313,18 @@ class TestGenerateTasksFromScan:
         mock_store.update_task.assert_called_once_with("task-b", status="cancelled")
         assert mock_log_task_event.call_count == 1
 
+    @patch("app.tasks.autonomous.refactor_generation.get_project_root_path", return_value="/tmp/project")
+    @patch("app.tasks.autonomous.refactor_generation.scan")
+    @patch("app.tasks.autonomous.refactor_generation.check_and_close_resolved_issues", return_value=0)
     @patch("app.tasks.autonomous.refactor_generation.get_refactor_targets")
     @patch("app.tasks.autonomous.refactor_generation.task_store")
     def test_skips_low_complexity_size_only_targets(
         self,
         mock_store: MagicMock,
         mock_get_targets: MagicMock,
+        _mock_close_resolved: MagicMock,
+        _mock_scan: MagicMock,
+        _mock_get_project_root: MagicMock,
     ) -> None:
         mock_get_targets.return_value = {
             "targets": [
@@ -283,7 +339,7 @@ class TestGenerateTasksFromScan:
             ]
         }
 
-        result = generate_tasks_from_scan("test-project")
+        result = regenerate_refactor_tasks_sync("test-project")
 
         assert result["created_count"] == 0
         assert result["scanned_count"] == 1

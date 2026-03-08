@@ -6,6 +6,7 @@ import logging
 from typing import Any
 
 from app.services.explorer import scan
+from app.services.refactor_promotion import assess_refactor_target
 from app.services.task_issue_mapper import link_issue_to_task
 from app.storage import qa_issues as qa_storage
 from app.storage import tasks as task_store
@@ -21,7 +22,6 @@ from app.tasks.explorer_resolution import check_and_close_resolved_issues
 logger = logging.getLogger(__name__)
 
 _SIZE_ISSUES = {"oversized", "large_file", "bloat_critical", "bloat_warning"}
-_LOW_VALUE_SIZE_ONLY_COMPLEXITY = 1.0
 
 
 def _ensure_refactor_scope(task_id: str, relative_path: str) -> None:
@@ -68,20 +68,6 @@ def should_skip_refactor_target(
     return False, ""
 
 
-def _is_low_value_size_only_target(complexity: float, refactor_issues: list[str]) -> bool:
-    """Return True when a candidate is large but structurally trivial.
-
-    Oversized data registries and constant tables often trip the line-count
-    threshold without presenting meaningful structural refactor work. Those
-    should not be auto-dispatched into Jenny's specialist lanes.
-    """
-    if complexity >= _LOW_VALUE_SIZE_ONLY_COMPLEXITY:
-        return False
-    if not refactor_issues:
-        return True
-    return all(issue in _SIZE_ISSUES for issue in refactor_issues)
-
-
 def calculate_task_tier(complexity: float, lines: int) -> int:
     """Calculate task tier based on complexity and line count."""
     if complexity > 15 or lines > 500:
@@ -94,12 +80,16 @@ def calculate_task_tier(complexity: float, lines: int) -> int:
 def _check_skip(
     project_id: str, relative_path: str, lines: int, target_lines: int,
     refactor_issues: list[str], skip_existing: bool, complexity: float,
+    target: dict[str, Any],
 ) -> bool:
     """Return True if this target should be skipped."""
-    if _is_low_value_size_only_target(complexity, refactor_issues):
+    assessment = assess_refactor_target(target)
+    if not assessment.should_create_task:
+        reason = "; ".join(assessment.suppression_reasons or ["insufficient evidence"])
         logger.info(
-            "Skipping %s: low-complexity size-only target is not a meaningful refactor candidate",
+            "Skipping %s: %s",
             relative_path,
+            reason,
         )
         return True
     if any(i in _SIZE_ISSUES for i in refactor_issues) or not refactor_issues:
@@ -137,6 +127,7 @@ def process_refactor_target(
         refactor_issues,
         skip_existing,
         complexity,
+        target,
     ):
         return False, 0
 
@@ -170,6 +161,8 @@ def process_refactor_target(
         reason=target.get("reason", "High complexity"), complexity=complexity,
         lines=lines, target_lines=target_lines, priority=target.get("priority", "medium"),
         tier=calculate_task_tier(complexity, lines), steps=steps, refactor_issues=refactor_issues,
+        promotion_reasons=target.get("promotion_reasons"),
+        promotion_confidence=target.get("confidence"),
         issue_id=issue_id,
     )
     if task_id:

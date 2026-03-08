@@ -133,6 +133,21 @@ class TestExecLogCommand:
                 }
             ],
         }
+        mock.get_task_agent_events.return_value = {
+            "task_id": "task-test123",
+            "session_ids": ["sess-1"],
+            "events": [
+                {
+                    "id": "evt-ah-1",
+                    "session_id": "sess-1",
+                    "turn": 1,
+                    "sequence": 1,
+                    "event_type": "assistant_message",
+                    "content": "Planning the refactor",
+                    "created_at": "2026-01-26T12:00:06-05:00",
+                }
+            ],
+        }
         return mock
 
     def test_exec_log_help(self) -> None:
@@ -157,6 +172,19 @@ class TestExecLogCommand:
             assert "running" in result.output
             assert "1/2(1W)" in result.output  # subtask summary
             assert "AH:claude-sonnet-4-6:active/reading_file" in result.output
+            assert "|AH|sess-1|[1.1] assistant_message" in result.output
+
+    def test_exec_log_compact_includes_recent_agent_activity(self, mock_client: MagicMock) -> None:
+        """Compact exec-log includes recent task-linked Agent Hub events."""
+        with (
+            patch("cli.commands.exec_monitor.STClient", return_value=mock_client),
+            patch("cli.commands.exec_monitor.require_task_id", return_value="task-test123"),
+        ):
+            result = runner.invoke(app, ["exec-log", "task-test123"])
+
+            assert result.exit_code == 0
+            assert "|AH|sess-1|[1.1] assistant_message" in result.output
+            assert "|AH|sess-1|  Planning the refactor" in result.output
 
     def test_exec_log_human_readable(self, mock_client: MagicMock) -> None:
         """Test exec-log human-readable format."""
@@ -171,6 +199,7 @@ class TestExecLogCommand:
             assert "Status: running" in result.output
             assert "Agent Sessions:" in result.output
             assert "Reading ActivityTimeline.tsx" in result.output
+            assert "Recent Agent Activity:" in result.output
             assert "Subtasks:" in result.output
             assert "1.1:" in result.output
             assert "1.2:" in result.output

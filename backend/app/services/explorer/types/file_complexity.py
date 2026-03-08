@@ -111,12 +111,14 @@ def calculate_refactor_priority(
     ):
         return "high"
 
-    # Medium: moderate complexity/LOC, warning bloat, or any health flags
+    # Medium: moderate complexity/LOC, warning bloat, or multiple health flags.
+    # A single flag is usually diagnostic context, not enough by itself to
+    # create recurring refactor work.
     if (
         complexity_score > REFACTOR_MEDIUM_COMPLEXITY
         or lines > REFACTOR_MEDIUM_LINES
         or bloat_level == "warning"
-        or flag_count >= 1
+        or flag_count >= 2
     ):
         return "medium"
 

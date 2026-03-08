@@ -47,6 +47,8 @@ export function CodeHealthPanel({
     mediumCount,
     totalComplexity,
     totalTargets,
+    actionableCount,
+    observeOnlyCount,
     priorityFilter,
     setPriorityFilter,
     sortField,
@@ -99,6 +101,22 @@ export function CodeHealthPanel({
 
         {/* Triage counts in header */}
         <div className="flex items-center gap-4 text-xs">
+          {actionableCount > 0 && (
+            <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-emerald-950/50 border border-emerald-500/30">
+              <div className="w-2 h-2 rounded-full bg-emerald-500" />
+              <span className="text-emerald-400 font-medium">
+                {actionableCount} ACTIONABLE
+              </span>
+            </div>
+          )}
+          {observeOnlyCount > 0 && (
+            <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-slate-900/70 border border-slate-700/50">
+              <div className="w-2 h-2 rounded-full bg-slate-500" />
+              <span className="text-slate-300 font-medium">
+                {observeOnlyCount} WATCHLIST
+              </span>
+            </div>
+          )}
           {highCount > 0 && (
             <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-red-950/50 border border-red-500/30">
               <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />

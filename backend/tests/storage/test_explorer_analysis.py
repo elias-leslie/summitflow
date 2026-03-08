@@ -26,8 +26,8 @@ def _make_file_entry(path: str, *, priority: str = "high") -> dict[str, object]:
             "commit_count_90d": 6,
             "test_file_exists": False,
             "complexity_method": "heuristic",
-            "health_flags": {"bloat": True},
-            "refactor_issues": ["High complexity"],
+            "health_flags": {"deep_nesting": True, "has_long_functions": True},
+            "refactor_issues": ["high_complexity", "deep_nesting", "has_long_functions"],
         },
     }
 
@@ -129,3 +129,6 @@ def test_get_refactor_targets_includes_top_symbols(
             "end_line": 38,
         },
     ]
+    assert result["targets"][0]["should_create_task"] is True
+    assert result["targets"][0]["recommended_action"] == "create_task"
+    assert result["targets"][0]["promotion_reasons"]

@@ -50,13 +50,23 @@ def create_refactor_task(
     tier: int,
     steps: list[dict[str, object]],
     refactor_issues: list[str] | None = None,
+    promotion_reasons: list[str] | None = None,
+    promotion_confidence: str | None = None,
     issue_id: int | None = None,
 ) -> tuple[str | None, int | None]:
     """Create refactor task with spirit, subtasks, and steps."""
     issues = refactor_issues or []
     category = "backend" if relative_path.endswith(".py") else "frontend"
     title = f"Refactor: {relative_path} ({reason})"
-    description = build_refactor_description(relative_path, lines, target_lines, complexity, priority)
+    description = build_refactor_description(
+        relative_path,
+        lines,
+        target_lines,
+        complexity,
+        priority,
+        promotion_reasons=promotion_reasons,
+        promotion_confidence=promotion_confidence,
+    )
     issue_id = issue_id or create_refactor_issue(
         project_id,
         relative_path,

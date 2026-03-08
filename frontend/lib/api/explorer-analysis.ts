@@ -39,6 +39,14 @@ export interface RefactorTarget {
   complexity_method: 'radon' | 'heuristic'
   health_flags: string[]
   refactor_issues: string[]
+  should_create_task: boolean
+  confidence: 'high' | 'medium' | 'low'
+  structural_signals: number
+  impact_signals: number
+  promotion_score: number
+  recommended_action: 'create_task' | 'keep_in_explorer' | 'review_manually'
+  promotion_reasons: string[]
+  suppression_reasons: string[]
 }
 
 export interface RefactorTargetsResponse {

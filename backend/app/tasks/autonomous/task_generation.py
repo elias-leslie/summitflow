@@ -15,7 +15,6 @@ from app.tasks.autonomous.cleanup_operations import (
     generate_schema_tasks,
 )
 from app.tasks.autonomous.refactor_generation import (
-    generate_refactor_tasks_internal,
     regenerate_refactor_tasks_impl,
 )
 
@@ -33,18 +32,28 @@ __all__ = [
 
 
 def generate_tasks_from_scan(project_id: str) -> dict[str, Any]:
-    """Generate refactoring tasks from Explorer scan results (skips existing)."""
+    """Synchronize refactor tasks from the latest Explorer scan.
+
+    Scheduled automation and manual sync should follow the same path so we do
+    not drift between "background" and "operator-triggered" queue quality.
+    """
     try:
-        result = generate_refactor_tasks_internal(project_id, skip_existing=True)
+        result = regenerate_refactor_tasks_impl(project_id)
         logger.info(
             f"Task generation complete for {project_id}: "
-            f"created={result['created_count']}, scanned={result['scanned_count']}, "
-            f"skipped={result['skipped_count']}"
+            f"closed={result['closed_count']}, created={result['created_count']}, "
+            f"scanned={result['scanned_count']}, skipped={result['skipped_count']}"
         )
         return result
     except Exception as e:
         logger.error(f"Error generating tasks from scan: {e}")
-        return {"error": str(e), "created_count": 0, "scanned_count": 0, "skipped_count": 0}
+        return {
+            "error": str(e),
+            "closed_count": 0,
+            "created_count": 0,
+            "scanned_count": 0,
+            "skipped_count": 0,
+        }
 
 
 def regenerate_refactor_tasks_sync(project_id: str) -> dict[str, Any]:

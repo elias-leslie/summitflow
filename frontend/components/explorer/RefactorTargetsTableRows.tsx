@@ -11,6 +11,9 @@ import {
   ChevronRight,
   ExternalLink,
   Flame,
+  ShieldAlert,
+  Sparkles,
+  TimerReset,
   XCircle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -79,6 +82,24 @@ export function TargetRow({
       : target.hotspot_score >= 100
         ? 'text-amber-400'
         : 'text-slate-400'
+  const actionBadge = target.should_create_task
+    ? {
+        icon: Sparkles,
+        label: `AUTO TASK ${target.confidence.toUpperCase()}`,
+        className: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
+      }
+    : target.recommended_action === 'review_manually'
+      ? {
+          icon: ShieldAlert,
+          label: 'REVIEW MANUALLY',
+          className: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
+        }
+      : {
+          icon: TimerReset,
+          label: 'EXPLORER ONLY',
+          className: 'border-slate-700/60 bg-slate-800/70 text-slate-300',
+        }
+  const ActionIcon = actionBadge.icon
 
   return (
     <div className={cn('border-b border-slate-700/30', style.bg)}>
@@ -161,6 +182,18 @@ export function TargetRow({
                 <span className="text-slate-500">Reason:</span>
                 <span className={cn('ml-2', style.text)}>{target.reason}</span>
               </div>
+              <div className="flex items-center gap-2">
+                <span className="text-slate-500">Automation:</span>
+                <span
+                  className={cn(
+                    'inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] uppercase tracking-wide',
+                    actionBadge.className,
+                  )}
+                >
+                  <ActionIcon className="h-3 w-3" />
+                  {actionBadge.label}
+                </span>
+              </div>
               <div>
                 <span className="text-slate-500">Complexity Method:</span>
                 <span className="ml-2 text-slate-300">
@@ -199,6 +232,18 @@ export function TargetRow({
                   )}
                 </span>
               </div>
+              <div className="flex gap-4">
+                <span>
+                  <span className="text-slate-500">Signals:</span>
+                  <span className="ml-2 text-slate-300">
+                    {target.structural_signals} structural / {target.impact_signals} impact
+                  </span>
+                </span>
+                <span>
+                  <span className="text-slate-500">Score:</span>
+                  <span className="ml-2 text-slate-300">{target.promotion_score}</span>
+                </span>
+              </div>
               {target.refactor_issues.length > 0 && (
                 <div>
                   <span className="text-slate-500 block mb-1">Issues:</span>
@@ -215,6 +260,26 @@ export function TargetRow({
                       )
                     })}
                   </div>
+                </div>
+              )}
+              {target.promotion_reasons.length > 0 && (
+                <div>
+                  <span className="text-slate-500 block mb-1">Promotion Evidence:</span>
+                  <ul className="space-y-1 text-slate-300">
+                    {target.promotion_reasons.map((reason) => (
+                      <li key={reason}>- {reason}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {target.suppression_reasons.length > 0 && (
+                <div>
+                  <span className="text-slate-500 block mb-1">Held Back Because:</span>
+                  <ul className="space-y-1 text-slate-300">
+                    {target.suppression_reasons.map((reason) => (
+                      <li key={reason}>- {reason}</li>
+                    ))}
+                  </ul>
                 </div>
               )}
               {onFileSelect && (

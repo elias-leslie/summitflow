@@ -12,6 +12,8 @@ from typing import Any
 
 from psycopg import sql
 
+from app.services.refactor_promotion import assess_refactor_target
+
 from .connection import get_connection
 from .explorer_analysis_helpers import (
     REFACTOR_SUMMARY_SQL,
@@ -132,6 +134,7 @@ def get_refactor_targets(
 
     for target in targets:
         target["top_symbols"] = summarize_symbols_for_file(project_id, target["path"])
+        target.update(assess_refactor_target(target).to_dict())
 
     return {"targets": targets, "summary": summary}
 

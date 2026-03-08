@@ -203,6 +203,8 @@ def build_refactor_description(
     target_lines: int,
     complexity: float,
     priority: str,
+    promotion_reasons: list[str] | None = None,
+    promotion_confidence: str | None = None,
 ) -> str:
     """Build description for refactor task.
 
@@ -216,13 +218,22 @@ def build_refactor_description(
     Returns:
         Task description
     """
-    return (
+    description = (
         f"Auto-generated from Explorer scan.\n\n"
         f"File: {relative_path}\n"
         f"Lines: {lines} (guideline: aim for <{target_lines} if the refactor stays clean)\n"
         f"Complexity: {complexity:.1f}\n"
         f"Priority: {priority}"
     )
+    reasons = [str(reason) for reason in (promotion_reasons or []) if reason]
+    if reasons:
+        description += (
+            "\n"
+            f"Promotion confidence: {promotion_confidence or 'medium'}\n"
+            "Promotion evidence:\n- "
+            + "\n- ".join(reasons[:4])
+        )
+    return description
 
 
 def build_architecture_description(

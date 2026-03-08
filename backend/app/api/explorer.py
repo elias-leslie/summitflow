@@ -357,5 +357,5 @@ async def regenerate_refactor_tasks(
     return await helpers.dispatch_hatchet_workflow(
         "summitflow.regenerate_refactor_tasks",
         project_id,
-        "Refactor task regeneration started. Existing tasks will be deleted and new ones created.",
+        "Refactor task sync started. Existing findings will be rescored, resolved tasks closed, and only strong candidates promoted.",
     )
