@@ -61,3 +61,44 @@ def test_pulse_compact_renders_canonical_summary() -> None:
     assert "RUN task-1 | running | P2 | Refactor timeline" in result.output
     assert "OWN task-1 | refactor | sess-own | kind=scoped | paths=frontend/src/app.tsx" in result.output
     assert "SES owner | refactor | sess-own | claude-sonnet-4-6 | active/reading_file" in result.output
+
+
+def test_pulse_compact_labels_task_worktree_owner_more_usefully() -> None:
+    mock_client = MagicMock()
+    mock_client.get.return_value = {
+        "project_id": "agent-hub",
+        "summary": {
+            "running_tasks": 1,
+            "active_owners": 1,
+            "active_specialists": 0,
+            "active_sessions": 1,
+        },
+        "cleanup": {
+            "active_worktrees": 1,
+            "dirty_worktrees": 0,
+            "needs_cleanup": False,
+        },
+        "running_tasks": [
+            {"id": "task-2", "status": "running", "priority": 3, "title": "Refactor image endpoint"}
+        ],
+        "active_owners": [
+            {
+                "task_id": "task-2",
+                "agent_slug": "refactor",
+                "session_id": "sess-owner",
+                "ownership_kind": "unscoped",
+                "scope_paths": [],
+                "is_worktree": True,
+            }
+        ],
+        "active_sessions": [],
+    }
+
+    with patch("cli.commands.pulse.STClient", return_value=mock_client), patch(
+        "cli.commands.pulse.get_config_optional",
+        return_value=MagicMock(project_id="agent-hub"),
+    ):
+        result = runner.invoke(app, ["pulse"])
+
+    assert result.exit_code == 0
+    assert "OWN task-2 | refactor | sess-own | kind=task_worktree" in result.output

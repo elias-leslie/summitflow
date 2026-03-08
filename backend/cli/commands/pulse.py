@@ -35,11 +35,14 @@ def _resolve_project_ids(client: STClient, all_projects: bool) -> list[str]:
 def _format_owner(owner: dict[str, Any]) -> str:
     scope = owner.get("scope_paths") or []
     scope_preview = ",".join(str(path) for path in scope[:3]) if isinstance(scope, list) else ""
+    kind = str(owner.get("ownership_kind") or "unknown")
+    if kind == "unscoped" and owner.get("task_id") and owner.get("is_worktree"):
+        kind = "task_worktree"
     details = [
         str(owner.get("task_id") or "-"),
         str(owner.get("agent_slug") or "?"),
         str(owner.get("session_id") or "?")[:8],
-        f"kind={owner.get('ownership_kind') or 'unknown'}",
+        f"kind={kind}",
     ]
     if scope_preview:
         details.append(f"paths={scope_preview}")
