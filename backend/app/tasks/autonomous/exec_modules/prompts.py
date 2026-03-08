@@ -17,12 +17,47 @@ from ._prompt_blocks import (
     build_steps_block,
     classify_events,
 )
-from ._prompt_fetch import get_prompt_template
+from ._prompt_fetch import PromptFetchError, TransientPromptFetchError, get_prompt_template
 
 logger = get_logger(__name__)
 
 _SLUG_AUTOCODE_SUBTASK = "autocode-subtask"
 _SLUG_AUTOCODE_FIX = "autocode-fix"
+_TRANSIENT_SUBTASK_TEMPLATE = """# Task Objective
+{objective}{spirit_anti_block}{handoff_block}
+
+# Subtask {subtask_id}
+{description}
+
+# Steps
+{steps_block}
+
+# Working Directory
+{project_path}
+
+Preserve existing behavior. Keep the scope tight to this subtask and run the relevant verification before finishing."""
+_TRANSIENT_FIX_TEMPLATE = """The previous attempt did not satisfy verification for subtask {subtask_id}: {description}
+
+{failures_block}{supervisor_block}
+
+# Steps
+{steps_block}
+
+Revise the implementation in place. Address the failed steps directly without broadening scope, then rerun the relevant verification before finishing."""
+
+
+def _get_template_with_transient_fallback(slug: str, fallback_template: str) -> str:
+    try:
+        return get_prompt_template(slug)
+    except TransientPromptFetchError as e:
+        logger.warning(
+            "prompt_template_fallback",
+            slug=slug,
+            error=str(e),
+        )
+        return fallback_template
+    except PromptFetchError:
+        raise
 
 
 def build_health_context(project_id: str) -> str:
@@ -98,7 +133,10 @@ def build_subtask_prompt(
     subtask_short_id = subtask.get("subtask_id", "")
     handoff = get_handoff_context(task_id, subtask_short_id)
 
-    template = get_prompt_template(_SLUG_AUTOCODE_SUBTASK)
+    template = _get_template_with_transient_fallback(
+        _SLUG_AUTOCODE_SUBTASK,
+        _TRANSIENT_SUBTASK_TEMPLATE,
+    )
     prompt = template.format_map({
         "objective": objective,
         "spirit_anti_block": _build_spirit_block(spirit_anti),
@@ -137,7 +175,10 @@ def build_fix_prompt(
 ) -> str:
     """Build a fix prompt with error context for self-healing."""
     supervisor_block = f"\n## Supervisor Guidance\n{supervisor_guidance}" if supervisor_guidance else ""
-    template = get_prompt_template(_SLUG_AUTOCODE_FIX)
+    template = _get_template_with_transient_fallback(
+        _SLUG_AUTOCODE_FIX,
+        _TRANSIENT_FIX_TEMPLATE,
+    )
     return template.format_map({
         "subtask_id": subtask.get("subtask_id", ""),
         "description": subtask.get("description", ""),

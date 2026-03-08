@@ -123,10 +123,15 @@ def check_main_repo_leakage(
         leaked_paths = [path for path in dirty_paths if path not in baseline_paths]
         if leaked_paths:
             leaked_preview = "\n".join(f" M {path}" for path in leaked_paths[:10])
+            cause_hint = (
+                "new dirty paths appeared beyond the starting baseline"
+                if baseline_paths else
+                "dirty paths appeared while no starting baseline was recorded"
+            )
             emit_log(
                 task_id,
                 "warn",
-                f"WORKTREE LEAKAGE: Agent modified main repo. "
+                f"WORKTREE LEAKAGE: Main repo dirt changed during worktree execution; {cause_hint}. "
                 f"Files: {leaked_preview[:200]}",
                 source="orchestrator",
                 project_id=project_id,
