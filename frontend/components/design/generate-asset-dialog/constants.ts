@@ -39,6 +39,16 @@ export const IMAGE_MODELS = [
     hint: 'Good fallback',
   },
   {
+    id: 'cloudflare/flux-2-dev',
+    name: 'CF Flux 2',
+    hint: 'Best fallback',
+  },
+  {
+    id: 'cloudflare/flux-1-schnell',
+    name: 'CF Schnell',
+    hint: 'Fast fallback',
+  },
+  {
     id: 'gemini-2.5-flash-image',
     name: 'Nano Banana',
     hint: 'Fast',

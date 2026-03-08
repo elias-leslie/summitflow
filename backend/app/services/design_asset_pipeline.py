@@ -21,12 +21,24 @@ VALID_IMAGE_MODELS = frozenset(
         "gemini-3.1-flash-image-preview",
         "nvidia/flux.1-kontext-dev",
         "nvidia/flux.1-dev",
+        "nvidia/flux.1-schnell",
+        "cloudflare/flux-2-dev",
+        "cloudflare/flux-1-schnell",
+        "cloudflare/sd-xl-lightning",
     }
 )
 _MIME_TO_EXT = {
     "image/jpeg": "jpg",
     "image/webp": "webp",
 }
+_SPRITE_FALLBACK_MODELS = (
+    "cloudflare/flux-2-dev",
+    "cloudflare/flux-1-schnell",
+    "nvidia/flux.1-dev",
+    "nvidia/flux.1-schnell",
+    "gemini-3.1-flash-image-preview",
+    "gemini-2.5-flash-image",
+)
 
 
 def parse_size(size: str) -> tuple[int, int]:
@@ -100,6 +112,34 @@ def _resolve_model(model: str | None) -> str:
     return GEMINI_IMAGE
 
 
+def _candidate_models(
+    requested_model: str,
+    *,
+    asset_type: str,
+    reference_image: str | None,
+) -> list[str]:
+    """Build an ordered image-model chain for this asset generation."""
+    candidates = [requested_model]
+    if asset_type == "sprite_sheet" or reference_image:
+        candidates.extend(_SPRITE_FALLBACK_MODELS)
+    else:
+        candidates.extend(
+            (
+                "gemini-3.1-flash-image-preview",
+                "gemini-2.5-flash-image",
+            )
+        )
+
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for model_id in candidates:
+        if model_id in seen:
+            continue
+        seen.add(model_id)
+        ordered.append(model_id)
+    return ordered
+
+
 def generate_asset_image(
     *,
     project_id: str,
@@ -146,16 +186,31 @@ def generate_asset_image(
     )
     resolved_model = _resolve_model(model)
     client = get_sync_client()
-    response = client.generate_image(
-        prompt=merged_prompt,
-        project_id=project_id,
-        purpose="design_asset_generation",
-        model=resolved_model,
-        size=f"{width}x{height}",
-        style=style_prompt,
+    response = None
+    last_error: Exception | None = None
+    for try_model in _candidate_models(
+        resolved_model,
+        asset_type=normalized_type,
         reference_image=reference_image,
-        reference_mime_type=reference_mime_type,
-    )
+    ):
+        try:
+            response = client.generate_image(
+                prompt=merged_prompt,
+                project_id=project_id,
+                purpose="design_asset_generation",
+                model=try_model,
+                size=f"{width}x{height}",
+                style=style_prompt,
+                reference_image=reference_image,
+                reference_mime_type=reference_mime_type,
+            )
+            break
+        except Exception as exc:
+            last_error = exc
+
+    if response is None:
+        raise last_error or RuntimeError("Asset generation failed without a provider response")
+
     image_bytes = base64.b64decode(response.image_base64)
     ext = _MIME_TO_EXT.get(response.mime_type, "png")
 
@@ -179,7 +234,7 @@ def generate_asset_image(
         width=width,
         height=height,
         transparent_background=transparent_background,
-        model=resolved_model,
+        model=response.model,
         generator=generator,
         file_path=str(image_path),
         source_asset_id=source_asset_id,
@@ -189,7 +244,12 @@ def generate_asset_image(
         frame_height=frame_height,
         animation_labels=animation_labels,
         tags=tags,
-        metadata=metadata,
+        metadata={
+            **(metadata or {}),
+            "requested_model": resolved_model,
+            "served_model": response.model,
+            "served_provider": response.provider,
+        },
     )
 
 

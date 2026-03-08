@@ -23,6 +23,8 @@ def test_generate_design_asset_uses_project_scope(
     mock_client.generate_image.return_value = SimpleNamespace(
         image_base64="aGVsbG8=",
         mime_type="image/png",
+        model="gemini-3-pro-image-preview",
+        provider="gemini",
     )
     mock_get_client.return_value = mock_client
     mock_create_asset.return_value = {
@@ -162,6 +164,8 @@ def test_generate_design_asset_passes_reference_image_to_image_client(
     mock_client.generate_image.return_value = SimpleNamespace(
         image_base64="aGVsbG8=",
         mime_type="image/png",
+        model="nvidia/flux.1-kontext-dev",
+        provider="nvidia",
     )
     mock_get_client.return_value = mock_client
     mock_create_asset.return_value = {
@@ -220,3 +224,84 @@ def test_generate_design_asset_passes_reference_image_to_image_client(
     assert kwargs["model"] == "nvidia/flux.1-kontext-dev"
     assert kwargs["reference_image"] == "aGVsbG8="
     assert kwargs["reference_mime_type"] == "image/png"
+
+
+@patch("app.services.design_asset_pipeline.design_assets.create_asset")
+@patch("app.services.design_asset_pipeline.get_sync_client")
+def test_generate_design_asset_falls_back_to_next_model_on_provider_failure(
+    mock_get_client: MagicMock,
+    mock_create_asset: MagicMock,
+    client: Any,
+    ensure_test_project: str,
+) -> None:
+    """Sprite sheet generation should continue through the fallback chain."""
+    mock_client = MagicMock()
+    mock_client.generate_image.side_effect = [
+        RuntimeError("nvidia failed"),
+        SimpleNamespace(
+            image_base64="aGVsbG8=",
+            mime_type="image/png",
+            model="cloudflare/flux-2-dev",
+            provider="cloudflare",
+        ),
+    ]
+    mock_get_client.return_value = mock_client
+    mock_create_asset.return_value = {
+        "id": 1,
+        "project_id": ensure_test_project,
+        "asset_id": "asset-fallback",
+        "name": "Hero Sprite",
+        "description": None,
+        "asset_type": "sprite_sheet",
+        "workflow": "production",
+        "status": "generated",
+        "prompt": "prompt",
+        "negative_prompt": None,
+        "style_prompt": None,
+        "background": "transparent",
+        "width": 512,
+        "height": 512,
+        "transparent_background": True,
+        "model": "cloudflare/flux-2-dev",
+        "generator": "gemini-image",
+        "file_path": "/tmp/asset.png",
+        "source_asset_id": None,
+        "sheet_columns": 4,
+        "sheet_rows": 2,
+        "frame_width": 128,
+        "frame_height": 128,
+        "animation_labels": ["idle", "run"],
+        "tags": [],
+        "metadata": {
+            "requested_model": "nvidia/flux.1-kontext-dev",
+            "served_model": "cloudflare/flux-2-dev",
+            "served_provider": "cloudflare",
+        },
+        "approved_at": None,
+        "approved_by": None,
+        "created_at": None,
+        "updated_at": None,
+    }
+
+    response = client.post(
+        f"/api/projects/{ensure_test_project}/design-assets/generate",
+        json={
+            "name": "Hero Sprite",
+            "prompt": "Single sprite for main character",
+            "asset_type": "sprite_sheet",
+            "size": "512x512",
+            "model": "nvidia/flux.1-kontext-dev",
+            "sheet_columns": 4,
+            "sheet_rows": 2,
+            "frame_width": 128,
+            "frame_height": 128,
+            "animation_labels": ["idle", "run"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert mock_client.generate_image.call_count == 2
+    first_call = mock_client.generate_image.call_args_list[0].kwargs
+    second_call = mock_client.generate_image.call_args_list[1].kwargs
+    assert first_call["model"] == "nvidia/flux.1-kontext-dev"
+    assert second_call["model"] == "cloudflare/flux-2-dev"
