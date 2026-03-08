@@ -263,6 +263,33 @@ class TestGenerateTasksFromScan:
         mock_store.update_task.assert_called_once_with("task-b", status="cancelled")
         assert mock_log_task_event.call_count == 1
 
+    @patch("app.tasks.autonomous.refactor_generation.get_refactor_targets")
+    @patch("app.tasks.autonomous.refactor_generation.task_store")
+    def test_skips_low_complexity_size_only_targets(
+        self,
+        mock_store: MagicMock,
+        mock_get_targets: MagicMock,
+    ) -> None:
+        mock_get_targets.return_value = {
+            "targets": [
+                {
+                    "path": "backend/app/constants/catalog_entries.py",
+                    "priority": "high",
+                    "reason": "High line count",
+                    "complexity_score": 0.0,
+                    "lines_of_code": 536,
+                    "refactor_issues": ["large_file"],
+                }
+            ]
+        }
+
+        result = generate_tasks_from_scan("test-project")
+
+        assert result["created_count"] == 0
+        assert result["scanned_count"] == 1
+        assert result["skipped_count"] == 1
+        mock_store.create_task.assert_not_called()
+
 
 class TestCleanupStaleTasks:
     """Tests for cleanup_stale_tasks task."""

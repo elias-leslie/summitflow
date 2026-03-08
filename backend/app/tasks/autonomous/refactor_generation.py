@@ -21,6 +21,7 @@ from app.tasks.explorer_resolution import check_and_close_resolved_issues
 logger = logging.getLogger(__name__)
 
 _SIZE_ISSUES = {"oversized", "large_file", "bloat_critical", "bloat_warning"}
+_LOW_VALUE_SIZE_ONLY_COMPLEXITY = 1.0
 
 
 def _ensure_refactor_scope(task_id: str, relative_path: str) -> None:
@@ -67,6 +68,20 @@ def should_skip_refactor_target(
     return False, ""
 
 
+def _is_low_value_size_only_target(complexity: float, refactor_issues: list[str]) -> bool:
+    """Return True when a candidate is large but structurally trivial.
+
+    Oversized data registries and constant tables often trip the line-count
+    threshold without presenting meaningful structural refactor work. Those
+    should not be auto-dispatched into Jenny's specialist lanes.
+    """
+    if complexity >= _LOW_VALUE_SIZE_ONLY_COMPLEXITY:
+        return False
+    if not refactor_issues:
+        return True
+    return all(issue in _SIZE_ISSUES for issue in refactor_issues)
+
+
 def calculate_task_tier(complexity: float, lines: int) -> int:
     """Calculate task tier based on complexity and line count."""
     if complexity > 15 or lines > 500:
@@ -78,9 +93,15 @@ def calculate_task_tier(complexity: float, lines: int) -> int:
 
 def _check_skip(
     project_id: str, relative_path: str, lines: int, target_lines: int,
-    refactor_issues: list[str], skip_existing: bool,
+    refactor_issues: list[str], skip_existing: bool, complexity: float,
 ) -> bool:
     """Return True if this target should be skipped."""
+    if _is_low_value_size_only_target(complexity, refactor_issues):
+        logger.info(
+            "Skipping %s: low-complexity size-only target is not a meaningful refactor candidate",
+            relative_path,
+        )
+        return True
     if any(i in _SIZE_ISSUES for i in refactor_issues) or not refactor_issues:
         should_skip, reason = should_skip_refactor_target(
             project_id, relative_path, lines, target_lines, skip_existing
@@ -104,13 +125,21 @@ def process_refactor_target(
     """Process a single refactor target and create task if needed."""
     relative_path = target.get("path", "")
     lines = target.get("lines_of_code", 0)
+    complexity = target.get("complexity_score", 0)
     refactor_issues: list[str] = target.get("refactor_issues", [])
     target_lines = calculate_target_lines(lines)
 
-    if _check_skip(project_id, relative_path, lines, target_lines, refactor_issues, skip_existing):
+    if _check_skip(
+        project_id,
+        relative_path,
+        lines,
+        target_lines,
+        refactor_issues,
+        skip_existing,
+        complexity,
+    ):
         return False, 0
 
-    complexity = target.get("complexity_score", 0)
     file_path = f"{project_root}/{relative_path}" if project_root else relative_path
     issue_id = create_refactor_issue(
         project_id,
