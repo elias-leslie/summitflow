@@ -1,30 +1,20 @@
-import { Cpu, Filter } from 'lucide-react'
+import { Filter } from 'lucide-react'
 import type { AutonomousExecutionSettings } from '@/lib/api'
 import { Label } from '../ui/label'
 import { Checkbox } from '../ui/checkbox'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../ui/select'
-import { MODEL_TIERS, TASK_TYPES } from './autonomous-utils'
+import { TASK_TYPES } from './autonomous-utils'
 
 interface TaskFilteringSectionProps {
   settings: AutonomousExecutionSettings
   selectedTypes: string[]
   isPending: boolean
   onTaskTypeToggle: (taskType: string) => void
-  onModelTierChange: (value: string) => void
 }
 
 export function TaskFilteringSection({
-  settings,
   selectedTypes,
   isPending,
   onTaskTypeToggle,
-  onModelTierChange,
 }: TaskFilteringSectionProps) {
   return (
     <div className="p-6 bg-slate-800/50 rounded-lg border border-slate-700 space-y-6">
@@ -62,35 +52,6 @@ export function TaskFilteringSection({
         )}
       </div>
 
-      {/* Model Tier Preference */}
-      <div>
-        <Label className="text-slate-200 mb-2 flex items-center gap-2">
-          <Cpu className="w-4 h-4 text-slate-400" />
-          Model Tier Preference
-        </Label>
-        <p className="text-xs text-slate-400 mb-3">
-          Choose the AI model tier for autonomous execution
-        </p>
-        <Select
-          value={settings.preferred_model_tier}
-          onValueChange={onModelTierChange}
-          disabled={isPending}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {MODEL_TIERS.map((tier) => (
-              <SelectItem key={tier.value} value={tier.value}>
-                <div>
-                  <div className="font-medium">{tier.label}</div>
-                  <div className="text-xs text-slate-400">{tier.description}</div>
-                </div>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
     </div>
   )
 }

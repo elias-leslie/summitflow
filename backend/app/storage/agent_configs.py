@@ -145,7 +145,6 @@ from .agent_configs_autonomous import (  # noqa: E402
     get_max_self_fix_attempts,
     get_max_supervisor_attempts,
     get_max_tasks_per_day,
-    get_preferred_model_tier,
     get_require_review,
 )
 from .agent_configs_components import (  # noqa: E402
@@ -176,7 +175,6 @@ __all__ = [
     "get_max_self_fix_attempts",
     "get_max_supervisor_attempts",
     "get_max_tasks_per_day",
-    "get_preferred_model_tier",
     "get_quality_gate_fix_enabled",
     "get_quality_gate_mode",
     "get_quality_gate_tools",

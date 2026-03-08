@@ -1,152 +1,98 @@
 'use client'
 
-import {
-  CheckSquare,
-  ChevronDown,
-  Grid3X3,
-  Image,
-  List,
-  Palette,
-  Sparkles,
-  X,
-} from 'lucide-react'
-import { useRef, useState, useEffect } from 'react'
+import { CheckSquare, Grid3X3, List, Palette, Sparkles, X } from 'lucide-react'
 
 export type ViewMode = 'grid' | 'list'
 
 interface DesignHeaderProps {
-  totalMockups: number | undefined
+  title: string
+  subtitle?: string
+  totalLabel?: string
+  primaryActionLabel: string
   viewMode: ViewMode
   selectMode: boolean
-  hasMockups: boolean
+  hasItems: boolean
   onViewModeChange: (mode: ViewMode) => void
   onSelectModeToggle: () => void
   onCancelSelectMode: () => void
-  onGenerateClick: () => void
-  onGenerateAssetClick?: () => void
+  onPrimaryAction: () => void
 }
 
 export function DesignHeader({
-  totalMockups,
+  title,
+  subtitle,
+  totalLabel,
+  primaryActionLabel,
   viewMode,
   selectMode,
-  hasMockups,
+  hasItems,
   onViewModeChange,
   onSelectModeToggle,
   onCancelSelectMode,
-  onGenerateClick,
-  onGenerateAssetClick,
+  onPrimaryAction,
 }: DesignHeaderProps): React.ReactElement {
-  const [dropdownOpen, setDropdownOpen] = useState(false)
-  const dropdownRef = useRef<HTMLDivElement>(null)
-
-  // Close dropdown on outside click
-  useEffect(() => {
-    if (!dropdownOpen) return
-    const handleClick = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setDropdownOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [dropdownOpen])
-
   return (
-    <div className="flex items-center justify-between mb-6">
-      <div className="flex items-center gap-3">
-        <Palette className="w-6 h-6 text-outrun-500" />
-        <h1 className="display text-xl font-semibold text-white">Design</h1>
-        {totalMockups !== undefined && (
-          <span className="text-slate-400 text-sm">
-            {totalMockups} mockups
-          </span>
-        )}
-      </div>
-
-      {/* Actions */}
-      <div className="flex items-center gap-4">
-        {/* Generate dropdown */}
-        {!selectMode && (
-          <div className="relative" ref={dropdownRef}>
-            <button
-              onClick={() => setDropdownOpen(!dropdownOpen)}
-              className="btn-primary flex items-center gap-2"
-            >
-              <Sparkles className="w-4 h-4" />
-              Generate
-              <ChevronDown className="w-3 h-3" />
-            </button>
-            {dropdownOpen && (
-              <div className="absolute right-0 mt-2 w-56 bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-10 py-1">
-                <button
-                  onClick={() => {
-                    setDropdownOpen(false)
-                    onGenerateClick()
-                  }}
-                  className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-300 hover:bg-slate-700 hover:text-white"
-                >
-                  <Sparkles className="w-4 h-4 text-outrun-400" />
-                  Analyze Page Design
-                </button>
-                <button
-                  onClick={() => {
-                    setDropdownOpen(false)
-                    onGenerateAssetClick?.()
-                  }}
-                  className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-300 hover:bg-slate-700 hover:text-white"
-                >
-                  <Image className="w-4 h-4 text-phosphor-500" />
-                  Generate Game Asset
-                </button>
-              </div>
+    <div className="mb-6 flex items-start justify-between gap-4">
+      <div className="flex items-start gap-3">
+        <div className="rounded-2xl bg-cyan-500/10 p-3 ring-1 ring-cyan-400/20">
+          <Palette className="h-6 w-6 text-cyan-300" />
+        </div>
+        <div>
+          <div className="flex items-center gap-3">
+            <h2 className="text-2xl font-semibold text-white">{title}</h2>
+            {totalLabel && (
+              <span className="rounded-full bg-slate-900 px-3 py-1 text-xs uppercase tracking-[0.18em] text-slate-400">
+                {totalLabel}
+              </span>
             )}
           </div>
+          {subtitle && <p className="mt-2 max-w-2xl text-sm text-slate-400">{subtitle}</p>}
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3">
+        {!selectMode && (
+          <button onClick={onPrimaryAction} className="btn-primary flex items-center gap-2">
+            <Sparkles className="h-4 w-4" />
+            {primaryActionLabel}
+          </button>
         )}
 
-        {/* Select mode toggle */}
-        {hasMockups && (
+        {hasItems && (
           <button
-            onClick={() =>
-              selectMode ? onCancelSelectMode() : onSelectModeToggle()
-            }
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all ${
+            onClick={() => (selectMode ? onCancelSelectMode() : onSelectModeToggle())}
+            className={`flex items-center gap-2 rounded-lg border px-3 py-2 transition ${
               selectMode
-                ? 'bg-outrun-500/20 text-outrun-400 border border-outrun-500/50'
-                : 'bg-slate-800 text-slate-300 hover:text-white border border-slate-700'
+                ? 'border-cyan-400/40 bg-cyan-500/10 text-cyan-200'
+                : 'border-slate-700 bg-slate-900 text-slate-300 hover:text-white'
             }`}
           >
-            {selectMode ? (
-              <X className="w-4 h-4" />
-            ) : (
-              <CheckSquare className="w-4 h-4" />
-            )}
+            {selectMode ? <X className="h-4 w-4" /> : <CheckSquare className="h-4 w-4" />}
             {selectMode ? 'Cancel' : 'Select'}
           </button>
         )}
 
-        {/* View toggle */}
         {!selectMode && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/80 p-1">
             <button
               onClick={() => onViewModeChange('grid')}
-              className={`p-2 rounded ${
+              className={`rounded-lg p-2 ${
                 viewMode === 'grid'
-                  ? 'bg-outrun-500/20 text-outrun-400'
-                  : 'text-slate-400 hover:text-white'
+                  ? 'bg-cyan-500/10 text-cyan-300'
+                  : 'text-slate-500 hover:text-white'
               }`}
             >
-              <Grid3X3 className="w-4 h-4" />
+              <Grid3X3 className="h-4 w-4" />
             </button>
             <button
               onClick={() => onViewModeChange('list')}
-              className={`p-2 rounded ${
+              className={`rounded-lg p-2 ${
                 viewMode === 'list'
-                  ? 'bg-outrun-500/20 text-outrun-400'
-                  : 'text-slate-400 hover:text-white'
+                  ? 'bg-cyan-500/10 text-cyan-300'
+                  : 'text-slate-500 hover:text-white'
               }`}
             >
-              <List className="w-4 h-4" />
+              <List className="h-4 w-4" />
             </button>
           </div>
         )}

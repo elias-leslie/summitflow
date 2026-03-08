@@ -62,10 +62,6 @@ export function useAutonomousSettingsHandlers(
       : [...current, taskType]
     mutate({ allowed_types: next.length === TASK_TYPES.length ? null : next })
   }
-
-  const handleModelTierChange = (value: string) =>
-    mutate({ preferred_model_tier: value })
-
   // --- Self-healing ---
   const handleSelfFixAttemptsChange = makeBoundedIntHandler(mutate, 'max_self_fix_attempts', 0, 10)
   const handleSupervisorAttemptsChange = makeBoundedIntHandler(mutate, 'max_supervisor_attempts', 0, 10)
@@ -88,7 +84,6 @@ export function useAutonomousSettingsHandlers(
     handleMaxTasksPerDayChange,
     handleCooldownChange,
     handleTaskTypeToggle,
-    handleModelTierChange,
     handleSelfFixAttemptsChange,
     handleSupervisorAttemptsChange,
     handleExtensionsChange,

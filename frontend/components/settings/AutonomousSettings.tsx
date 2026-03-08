@@ -78,11 +78,9 @@ export function AutonomousSettingsPanel({
       />
 
       <TaskFilteringSection
-        settings={settings}
         selectedTypes={selectedTypes}
         isPending={handlers.isPending}
         onTaskTypeToggle={handlers.handleTaskTypeToggle}
-        onModelTierChange={handlers.handleModelTierChange}
       />
 
       <QualityGateSection

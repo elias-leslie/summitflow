@@ -37,7 +37,6 @@ def test_subtask_execution_order_sequential() -> None:
         issue_counts: dict[str, int],
         task_type: str | None = None,
         agent_override: str | None = None,
-        tier_preference: str | None = None,
     ) -> dict[str, Any]:
         executed_ids.append(subtask["subtask_id"])
         return {
@@ -91,7 +90,6 @@ def test_subtask_execution_stops_on_failure_when_orchestrator_decides() -> None:
         issue_counts: dict[str, int],
         task_type: str | None = None,
         agent_override: str | None = None,
-        tier_preference: str | None = None,
     ) -> dict[str, Any]:
         executed_ids.append(subtask["subtask_id"])
         if "fails" in subtask["description"]:
@@ -144,7 +142,6 @@ def test_subtask_execution_continues_on_failure_when_orchestrator_decides() -> N
         issue_counts: dict[str, int],
         task_type: str | None = None,
         agent_override: str | None = None,
-        tier_preference: str | None = None,
     ) -> dict[str, Any]:
         executed_ids.append(subtask["subtask_id"])
         if "fails" in subtask["description"]:

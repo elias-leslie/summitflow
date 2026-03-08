@@ -3,7 +3,11 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Image as ImageIcon, X } from 'lucide-react'
 import { useState } from 'react'
-import { type GenerateAssetResponse, generateAsset } from '@/lib/api/mockups'
+import {
+  generateDesignAssets,
+  type DesignAsset,
+  type GenerateDesignAssetResponse,
+} from '@/lib/api/design-assets'
 import { AssetFormFields } from './generate-asset-dialog/AssetFormFields'
 import { AssetSubmitButtons } from './generate-asset-dialog/AssetSubmitButtons'
 import { GenerateResult } from './generate-asset-dialog/GenerateResult'
@@ -17,37 +21,75 @@ interface GenerateAssetDialogProps {
   projectId: string
   open: boolean
   onOpenChange: (open: boolean) => void
+  onGenerated?: (assets: DesignAsset[]) => void | Promise<void>
 }
 
 export function GenerateAssetDialog({
   projectId,
   open,
   onOpenChange,
+  onGenerated,
 }: GenerateAssetDialogProps) {
   const [prompt, setPrompt] = useState('')
   const [name, setName] = useState('')
   const [mockupType, setMockupType] = useState(DEFAULT_MOCKUP_TYPE)
+  const [workflow, setWorkflow] = useState('concept')
   const [model, setModel] = useState<string>(DEFAULT_MODEL_ID)
   const [size, setSize] = useState<string>(DEFAULT_SIZE)
   const [style, setStyle] = useState('')
-  const [result, setResult] = useState<GenerateAssetResponse | null>(null)
+  const [negativePrompt, setNegativePrompt] = useState('')
+  const [variantCount, setVariantCount] = useState(1)
+  const [background, setBackground] = useState('transparent')
+  const [tags, setTags] = useState('')
+  const [sheetColumns, setSheetColumns] = useState('4')
+  const [sheetRows, setSheetRows] = useState('2')
+  const [frameWidth, setFrameWidth] = useState('128')
+  const [frameHeight, setFrameHeight] = useState('128')
+  const [animationLabels, setAnimationLabels] = useState('idle,walk,attack,hit')
+  const [result, setResult] = useState<GenerateDesignAssetResponse | null>(null)
   const queryClient = useQueryClient()
 
   const mutation = useMutation({
     mutationFn: () =>
-      generateAsset(projectId, {
+      generateDesignAssets(projectId, {
         prompt,
         name,
-        mockup_type: mockupType,
+        asset_type: mockupType,
+        workflow,
         model,
         size,
-        style: style || undefined,
+        style_prompt: style || undefined,
+        negative_prompt: negativePrompt || undefined,
+        background,
+        transparent_background: background === 'transparent',
+        variant_count: variantCount,
+        tags: tags
+          .split(',')
+          .map((tag) => tag.trim())
+          .filter(Boolean),
+        sheet_columns:
+          mockupType === 'sprite_sheet' ? Number(sheetColumns) : undefined,
+        sheet_rows: mockupType === 'sprite_sheet' ? Number(sheetRows) : undefined,
+        frame_width:
+          mockupType === 'sprite_sheet' ? Number(frameWidth) : undefined,
+        frame_height:
+          mockupType === 'sprite_sheet' ? Number(frameHeight) : undefined,
+        animation_labels:
+          mockupType === 'sprite_sheet'
+            ? animationLabels
+                .split(',')
+                .map((label) => label.trim())
+                .filter(Boolean)
+            : undefined,
       }),
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       setResult(data)
       if (data.success) {
-        queryClient.invalidateQueries({ queryKey: ['mockups', projectId] })
-        queryClient.invalidateQueries({ queryKey: ['mockup-stats', projectId] })
+        queryClient.invalidateQueries({ queryKey: ['design-assets', projectId] })
+        queryClient.invalidateQueries({
+          queryKey: ['design-assets-stats', projectId],
+        })
+        await onGenerated?.(data.assets)
       }
     },
   })
@@ -63,9 +105,19 @@ export function GenerateAssetDialog({
     setPrompt('')
     setName('')
     setMockupType(DEFAULT_MOCKUP_TYPE)
+    setWorkflow('concept')
     setModel(DEFAULT_MODEL_ID)
     setSize(DEFAULT_SIZE)
     setStyle('')
+    setNegativePrompt('')
+    setVariantCount(1)
+    setBackground('transparent')
+    setTags('')
+    setSheetColumns('4')
+    setSheetRows('2')
+    setFrameWidth('128')
+    setFrameHeight('128')
+    setAnimationLabels('idle,walk,attack,hit')
     setResult(null)
     mutation.reset()
     onOpenChange(false)
@@ -99,16 +151,36 @@ export function GenerateAssetDialog({
               prompt={prompt}
               name={name}
               mockupType={mockupType}
+              workflow={workflow}
               model={model}
               size={size}
               style={style}
+              negativePrompt={negativePrompt}
+              variantCount={variantCount}
+              background={background}
+              tags={tags}
+              sheetColumns={sheetColumns}
+              sheetRows={sheetRows}
+              frameWidth={frameWidth}
+              frameHeight={frameHeight}
+              animationLabels={animationLabels}
               isPending={mutation.isPending}
               onPromptChange={setPrompt}
               onNameChange={setName}
               onMockupTypeChange={setMockupType}
+              onWorkflowChange={setWorkflow}
               onModelChange={setModel}
               onSizeChange={setSize}
               onStyleChange={setStyle}
+              onNegativePromptChange={setNegativePrompt}
+              onVariantCountChange={setVariantCount}
+              onBackgroundChange={setBackground}
+              onTagsChange={setTags}
+              onSheetColumnsChange={setSheetColumns}
+              onSheetRowsChange={setSheetRows}
+              onFrameWidthChange={setFrameWidth}
+              onFrameHeightChange={setFrameHeight}
+              onAnimationLabelsChange={setAnimationLabels}
             />
             <AssetSubmitButtons
               isPending={mutation.isPending}

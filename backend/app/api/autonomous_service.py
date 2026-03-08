@@ -35,7 +35,6 @@ def _parse_core_settings(config: dict[str, Any]) -> dict[str, Any]:
         "max_tasks_per_day": max_tasks_per_day,
         "cooldown_minutes": int(str(config.get("autonomous_cooldown_minutes", 0))),
         "allowed_types": allowed_types,
-        "preferred_model_tier": str(config.get("autonomous_preferred_model_tier", "standard")),
     }
 
 
@@ -78,8 +77,6 @@ def _build_updates(settings: AutonomousSettingsUpdate) -> dict[str, Any]:
         updates["autonomous_cooldown_minutes"] = settings.cooldown_minutes
     if settings.allowed_types is not None:
         updates["autonomous_allowed_types"] = settings.allowed_types
-    if settings.preferred_model_tier is not None:
-        updates["autonomous_preferred_model_tier"] = settings.preferred_model_tier
     if settings.max_self_fix_attempts is not None:
         updates["autonomous_max_self_fix_attempts"] = settings.max_self_fix_attempts
     if settings.max_supervisor_attempts is not None:

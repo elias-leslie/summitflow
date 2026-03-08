@@ -59,19 +59,6 @@ def get_allowed_task_types(project_id: str) -> list[str] | None:
     return None
 
 
-def get_preferred_model_tier(project_id: str) -> str:
-    """Get preferred model tier for autonomous execution.
-
-    Args:
-        project_id: Project ID
-
-    Returns:
-        Model tier ("standard", "advanced", or "economy")
-    """
-    config = get_agent_config(project_id)
-    return str(config.get("autonomous_preferred_model_tier", "standard"))
-
-
 def get_max_self_fix_attempts(project_id: str) -> int:
     """Get max self-fix attempts before supervisor escalation.
 

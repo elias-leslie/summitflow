@@ -1,246 +1,61 @@
 'use client'
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'next/navigation'
 import { useState } from 'react'
-import { BulkActionBar } from '@/components/design/BulkActionBar'
-import { ConfirmDeleteDialog } from '@/components/shared/ConfirmDeleteDialog'
-import { DesignFilters, type TypeFilter } from '@/components/design/DesignFilters'
-import { DesignHeader, type ViewMode } from '@/components/design/DesignHeader'
-import { GenerateAssetDialog } from '@/components/design/GenerateAssetDialog'
-import { GenerateMockupDialog } from '@/components/design/GenerateMockupDialog'
-import { MockupDetailModal } from '@/components/design/MockupDetailModal'
-import { MockupGrid } from '@/components/design/MockupGrid'
-import { MockupStatsGrid, type StatusFilter } from '@/components/design/MockupStatsGrid'
-import { EmptyState, ErrorState, LoadingState } from '@/components/design/MockupStates'
-import { DesignStandardsPanel } from '@/components/explorer/design-standards'
-import {
-  deleteMockup,
-  fetchMockupStats,
-  fetchMockups,
-  type Mockup,
-} from '@/lib/api/mockups'
+import { AssetStudioWorkspace } from '@/components/design/AssetStudioWorkspace'
+import { UiDesignWorkspace } from '@/components/design/UiDesignWorkspace'
+
+type DesignView = 'ui-design' | 'asset-studio'
 
 export function DesignClient(): React.ReactElement {
   const params = useParams()
   const projectId = params.id as string
-
-  // View and filter state
-  const [viewMode, setViewMode] = useState<ViewMode>('grid')
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
-  const [searchQuery, setSearchQuery] = useState('')
-  const [page, setPage] = useState(0)
-  const pageSize = 24
-
-  // Modal state
-  const [selectedMockup, setSelectedMockup] = useState<Mockup | null>(null)
-  const [modalOpen, setModalOpen] = useState(false)
-  const [generateDialogOpen, setGenerateDialogOpen] = useState(false)
-  const [generateAssetDialogOpen, setGenerateAssetDialogOpen] = useState(false)
-
-  // Multi-select delete state
-  const [selectMode, setSelectMode] = useState(false)
-  const [selectedMockups, setSelectedMockups] = useState<Set<string>>(new Set())
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
-
-  const queryClient = useQueryClient()
-
-  // Fetch mockups
-  const {
-    data: mockupsData,
-    isLoading,
-    error,
-    refetch,
-  } = useQuery({
-    queryKey: [
-      'mockups',
-      projectId,
-      statusFilter,
-      typeFilter,
-      searchQuery,
-      page,
-    ],
-    queryFn: () =>
-      fetchMockups(projectId, {
-        limit: pageSize,
-        offset: page * pageSize,
-        status: statusFilter === 'all' ? undefined : statusFilter,
-        mockup_type: typeFilter === 'all' ? undefined : typeFilter,
-        search: searchQuery || undefined,
-      }),
-  })
-
-  // Fetch stats
-  const { data: stats } = useQuery({
-    queryKey: ['mockup-stats', projectId],
-    queryFn: () => fetchMockupStats(projectId),
-  })
-
-  const mockups = mockupsData?.items ?? []
-  const totalCount = mockupsData?.total ?? 0
-
-  // Delete mutation
-  const deleteMutation = useMutation({
-    mutationFn: async (mockupIds: string[]) => {
-      await Promise.all(mockupIds.map((id) => deleteMockup(projectId, id)))
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['mockups', projectId] })
-      queryClient.invalidateQueries({ queryKey: ['mockup-stats', projectId] })
-      setSelectedMockups(new Set())
-      setSelectMode(false)
-      setShowDeleteConfirm(false)
-    },
-  })
-
-  const handleMockupClick = (mockup: Mockup): void => {
-    if (selectMode) {
-      toggleMockupSelection(mockup.mockup_id)
-    } else {
-      setSelectedMockup(mockup)
-      setModalOpen(true)
-    }
-  }
-
-  const toggleMockupSelection = (mockupId: string): void => {
-    setSelectedMockups((prev) => {
-      const newSet = new Set(prev)
-      if (newSet.has(mockupId)) {
-        newSet.delete(mockupId)
-      } else {
-        newSet.add(mockupId)
-      }
-      return newSet
-    })
-  }
-
-  const handleBulkDelete = (): void => {
-    if (selectedMockups.size === 0) return
-    setShowDeleteConfirm(true)
-  }
-
-  const confirmDelete = (): void => {
-    deleteMutation.mutate(Array.from(selectedMockups))
-  }
-
-  const cancelSelectMode = (): void => {
-    setSelectMode(false)
-    setSelectedMockups(new Set())
-  }
-
-  const handleSearchChange = (query: string): void => {
-    setSearchQuery(query)
-    setPage(0)
-  }
-
-  const handleStatusFilterChange = (status: StatusFilter): void => {
-    setStatusFilter(status)
-    setPage(0)
-  }
-
-  const handleTypeFilterChange = (type: TypeFilter): void => {
-    setTypeFilter(type)
-    setPage(0)
-  }
+  const [activeView, setActiveView] = useState<DesignView>('ui-design')
 
   return (
-    <div className="h-full flex gap-4 p-4">
-      {/* Main content */}
-      <div className="flex-1 flex flex-col min-w-0">
-        <DesignHeader
-          totalMockups={stats?.total}
-          viewMode={viewMode}
-          selectMode={selectMode}
-          hasMockups={mockups.length > 0}
-          onViewModeChange={setViewMode}
-          onSelectModeToggle={() => setSelectMode(true)}
-          onCancelSelectMode={cancelSelectMode}
-          onGenerateClick={() => setGenerateDialogOpen(true)}
-          onGenerateAssetClick={() => setGenerateAssetDialogOpen(true)}
-        />
+    <div className="flex h-full flex-col p-4">
+      <section className="mb-6 rounded-[28px] border border-slate-800 bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.18),_transparent_30%),radial-gradient(circle_at_80%_20%,_rgba(251,146,60,0.16),_transparent_24%),linear-gradient(180deg,#020617,#0f172a)] p-6 shadow-[0_20px_80px_rgba(2,6,23,0.35)]">
+        <p className="text-xs uppercase tracking-[0.24em] text-cyan-300">Design Ops</p>
+        <div className="mt-4 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-3xl">
+            <h1 className="text-3xl font-semibold tracking-tight text-white">
+              A design workspace for UI review and asset production
+            </h1>
+            <p className="mt-3 text-sm leading-6 text-slate-300">
+              Shift between page-level UI analysis and a production-oriented asset studio for sprites,
+              mockups, environments, iconography, and exportable sheets.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setActiveView('ui-design')}
+              className={`rounded-full px-4 py-2 text-sm transition ${
+                activeView === 'ui-design'
+                  ? 'bg-white text-slate-950'
+                  : 'bg-slate-950/70 text-slate-300 hover:text-white'
+              }`}
+            >
+              UI Design
+            </button>
+            <button
+              onClick={() => setActiveView('asset-studio')}
+              className={`rounded-full px-4 py-2 text-sm transition ${
+                activeView === 'asset-studio'
+                  ? 'bg-white text-slate-950'
+                  : 'bg-slate-950/70 text-slate-300 hover:text-white'
+              }`}
+            >
+              Asset Studio
+            </button>
+          </div>
+        </div>
+      </section>
 
-        {stats && (
-          <MockupStatsGrid
-            byStatus={stats.by_status}
-            onStatusClick={handleStatusFilterChange}
-          />
-        )}
-
-        <DesignFilters
-          searchQuery={searchQuery}
-          statusFilter={statusFilter}
-          typeFilter={typeFilter}
-          onSearchChange={handleSearchChange}
-          onStatusFilterChange={handleStatusFilterChange}
-          onTypeFilterChange={handleTypeFilterChange}
-        />
-
-        {selectMode && selectedMockups.size > 0 && (
-          <BulkActionBar
-            selectedCount={selectedMockups.size}
-            isDeleting={deleteMutation.isPending}
-            onDelete={handleBulkDelete}
-          />
-        )}
-
-        {isLoading && <LoadingState />}
-
-        {error && <ErrorState error={error} onRetry={() => refetch()} />}
-
-        {!isLoading && !error && mockups.length === 0 && <EmptyState />}
-
-        {!isLoading && !error && mockups.length > 0 && (
-          <MockupGrid
-            mockups={mockups}
-            viewMode={viewMode}
-            selectMode={selectMode}
-            selectedMockups={selectedMockups}
-            totalCount={totalCount}
-            pageSize={pageSize}
-            page={page}
-            onMockupClick={handleMockupClick}
-            onPageChange={setPage}
-          />
-        )}
-
-        {selectedMockup && (
-          <MockupDetailModal
-            mockup={selectedMockup}
-            projectId={projectId}
-            open={modalOpen}
-            onOpenChange={setModalOpen}
-            onStatusChange={() => refetch()}
-          />
-        )}
-
-        <GenerateMockupDialog
-          projectId={projectId}
-          open={generateDialogOpen}
-          onOpenChange={setGenerateDialogOpen}
-        />
-
-        <GenerateAssetDialog
-          projectId={projectId}
-          open={generateAssetDialogOpen}
-          onOpenChange={setGenerateAssetDialogOpen}
-        />
-
-        {showDeleteConfirm && (
-          <ConfirmDeleteDialog
-            entityType="mockups"
-            count={selectedMockups.size}
-            isDeleting={deleteMutation.isPending}
-            onConfirm={confirmDelete}
-            onCancel={() => setShowDeleteConfirm(false)}
-          />
-        )}
-      </div>
-
-      {/* Design Standards Sidebar */}
-      <div className="w-80 flex-shrink-0 hidden xl:block">
-        <DesignStandardsPanel projectId={projectId} />
-      </div>
+      {activeView === 'ui-design' ? (
+        <UiDesignWorkspace projectId={projectId} />
+      ) : (
+        <AssetStudioWorkspace projectId={projectId} />
+      )}
     </div>
   )
 }

@@ -128,7 +128,6 @@ def critique_task_command(
             purpose="task-second-opinion",
             use_memory=True,
             memory_group_id=f"project:{task['project_id']}",
-            tier_preference="advanced",
         )
         critique = parse_second_opinion_response(
             response.content, stage=stage, agent_slug=agent_slug
@@ -164,4 +163,3 @@ def critique_task_command(
             "agent_slug": agent_slug,
         }
     )
-

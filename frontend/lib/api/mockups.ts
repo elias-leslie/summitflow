@@ -205,48 +205,6 @@ export function hasScreenshot(mockup: Mockup): boolean {
 }
 
 /**
- * Generate asset request
- */
-export interface GenerateAssetRequest {
-  prompt: string
-  name: string
-  mockup_type?: string
-  model?: string
-  size?: string
-  style?: string
-}
-
-/**
- * Generate asset response
- */
-export interface GenerateAssetResponse {
-  success: boolean
-  mockup_id: string | null
-  file_path: string | null
-  error: string | null
-  generation_time_ms: number
-  model_used: string | null
-}
-
-/**
- * Generate a game asset image
- */
-export async function generateAsset(
-  projectId: string,
-  data: GenerateAssetRequest,
-): Promise<GenerateAssetResponse> {
-  return fetchWithErrorHandling<GenerateAssetResponse>(
-    `/api/projects/${projectId}/mockups/generate-asset`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-      errorMessage: 'Failed to generate asset',
-    },
-  )
-}
-
-/**
  * Analyze page design response
  */
 export interface AnalyzePageResponse {

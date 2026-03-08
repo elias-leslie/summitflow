@@ -8,7 +8,6 @@ behavior settings only.
 from pydantic import BaseModel, Field
 
 VALID_TASK_TYPES = ["refactor", "bug", "feature", "chore", "docs"]
-VALID_MODEL_TIERS = ["standard", "advanced", "economy"]
 
 
 class AutonomousSettings(BaseModel):
@@ -43,11 +42,6 @@ class AutonomousSettings(BaseModel):
     # Allowed task types
     allowed_types: list[str] | None = Field(
         default=None, description="Task types allowed for autonomous execution (null = all types)"
-    )
-
-    # Model tier preference
-    preferred_model_tier: str = Field(
-        default="standard", description="Model tier for autonomous execution"
     )
 
     # Self-healing configuration
@@ -99,9 +93,6 @@ class AutonomousSettingsUpdate(BaseModel):
 
     # Allowed task types
     allowed_types: list[str] | None = None
-
-    # Model tier preference
-    preferred_model_tier: str | None = None
 
     # Self-healing configuration
     max_self_fix_attempts: int | None = Field(default=None, ge=0, le=10)

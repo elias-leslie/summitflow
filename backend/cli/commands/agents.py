@@ -89,7 +89,6 @@ def update_agent(
     name: Annotated[str | None, typer.Option("--name")] = None,
     description: Annotated[str | None, typer.Option("--description")] = None,
     primary_model: Annotated[str | None, typer.Option("--primary-model")] = None,
-    premium_model: Annotated[str | None, typer.Option("--premium-model")] = None,
     temperature: Annotated[float | None, typer.Option("--temperature", min=0.0, max=2.0)] = None,
     thinking_level: Annotated[str | None, typer.Option("--thinking-level")] = None,
     active: Annotated[bool | None, typer.Option("--active/--inactive")] = None,
@@ -108,8 +107,6 @@ def update_agent(
         payload["description"] = description
     if primary_model is not None:
         payload["primary_model_id"] = primary_model
-    if premium_model is not None:
-        payload["premium_model_id"] = premium_model
     if temperature is not None:
         payload["temperature"] = temperature
     if thinking_level is not None:

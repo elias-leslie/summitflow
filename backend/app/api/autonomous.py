@@ -3,7 +3,6 @@
 from fastapi import APIRouter, HTTPException
 
 from .autonomous_models import (
-    VALID_MODEL_TIERS,
     VALID_QUALITY_GATE_MODES,
     VALID_QUALITY_GATE_TOOLS,
     VALID_TASK_TYPES,
@@ -42,12 +41,6 @@ def _validate_update(update: AutonomousSettingsUpdate) -> None:
                     status_code=400,
                     detail=f"Invalid task type '{task_type}'. Must be one of: {', '.join(VALID_TASK_TYPES)}",
                 )
-
-    if update.preferred_model_tier is not None and update.preferred_model_tier not in VALID_MODEL_TIERS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid model tier '{update.preferred_model_tier}'. Must be one of: {', '.join(VALID_MODEL_TIERS)}",
-        )
 
     if update.max_tasks_per_day is not None and update.max_tasks_per_day < 1:
         raise HTTPException(status_code=400, detail="max_tasks_per_day must be at least 1 (or null for unlimited)")
