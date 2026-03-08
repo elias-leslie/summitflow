@@ -1,6 +1,13 @@
 """SummitFlow database storage."""
 
-from . import agent_configs, events, explorer, explorer_sub_elements, explorer_symbols
+from . import (
+    agent_configs,
+    design_assets,
+    events,
+    explorer,
+    explorer_sub_elements,
+    explorer_symbols,
+)
 from .connection import get_connection
 from .events import (
     create_event,
@@ -12,6 +19,7 @@ from .events import (
 __all__ = [
     "agent_configs",
     "create_event",
+    "design_assets",
     "events",
     "explorer",
     "explorer_sub_elements",

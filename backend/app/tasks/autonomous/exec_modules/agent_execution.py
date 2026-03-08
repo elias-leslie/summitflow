@@ -29,7 +29,6 @@ def execute_agent_initial(
     agent_slug: str,
     project_path: str,
     project_id: str,
-    tier_preference: str | None = None,
 ) -> tuple[CompletionResponse, str | None]:
     """Execute initial agent call for subtask.
 
@@ -54,7 +53,7 @@ def execute_agent_initial(
     response = call_complete(
         client, prompt, agent_slug, project_path, project_id,
         task_id, agent_session_id, max_turns=50,
-        include_roles=AUTOCODE_ROLES, tier_preference=tier_preference,
+        include_roles=AUTOCODE_ROLES,
     )
     agent_session_id = update_session_if_changed(
         task_id, response.session_id, agent_session_id
@@ -72,7 +71,6 @@ def execute_agent_fix(
     project_id: str,
     agent_session_id: str | None,
     model_override: str | None = None,
-    tier_preference: str | None = None,
 ) -> tuple[CompletionResponse, str | None]:
     """Execute agent fix attempt.
 
@@ -97,7 +95,7 @@ def execute_agent_fix(
     response = call_complete(
         client, fix_prompt, agent_slug, project_path, project_id,
         task_id, agent_session_id, max_turns=25, include_roles=AUTOCODE_ROLES,
-        tier_preference=tier_preference, model_override=model_override,
+        model_override=model_override,
     )
     agent_session_id = update_session_if_changed(
         task_id, response.session_id, agent_session_id
@@ -114,7 +112,6 @@ def execute_agent_feedback(
     project_id: str,
     results: list[dict[str, Any]],
     agent_slug: str = "coder",
-    tier_preference: str | None = None,
 ) -> None:
     """Collect feedback from agent after task execution.
 
@@ -135,7 +132,7 @@ def execute_agent_feedback(
         call_complete(
             client, prompt, agent_slug, project_path, project_id,
             task_id, feedback_session_id, max_turns=3,
-            include_roles=AUTOCODE_ROLES, tier_preference=tier_preference,
+            include_roles=AUTOCODE_ROLES,
         )
         emit_log(
             task_id, "info", "Agent feedback collection completed",

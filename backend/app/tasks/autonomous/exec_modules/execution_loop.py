@@ -115,7 +115,6 @@ def execute_subtask_loop(
     completed_count: int,
     task_type: str | None,
     agent_override: str | None,
-    tier_preference: str | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """Execute incomplete subtasks in order; returns (results, final completed count)."""
     results: list[dict[str, Any]] = []
@@ -146,7 +145,6 @@ def execute_subtask_loop(
                 issue_counts,
                 task_type,
                 agent_override,
-                tier_preference=tier_preference,
             )
         except ExecutionInterrupted as exc:
             wind_down(task_id, results, incomplete_subtasks, exc.reason)

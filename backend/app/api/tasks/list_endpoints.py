@@ -125,13 +125,23 @@ async def list_ready_tasks(
     ),
 ) -> TaskListResponse | PlainTextResponse:
     """List tasks ready to work on (not blocked by dependencies)."""
-    tasks = await asyncio.to_thread(task_store.list_ready_tasks, project_id, limit=limit)
+    from ...services.task_execution_readiness import sync_task_execution_readiness
+
+    candidate_limit = min(limit * 5, 500)
+    tasks = await asyncio.to_thread(task_store.list_ready_tasks, project_id, limit=candidate_limit)
+    ready_tasks: list[dict[str, object]] = []
+    for task in tasks:
+        readiness = await asyncio.to_thread(sync_task_execution_readiness, task["id"])
+        if readiness.ready:
+            ready_tasks.append(task)
+        if len(ready_tasks) >= limit:
+            break
 
     # Batch fetch criteria counts to avoid N+1 queries
-    task_ids = [t["id"] for t in tasks]
+    task_ids = [t["id"] for t in ready_tasks]
     criteria_counts = await asyncio.to_thread(get_step_counts_batch, task_ids)
 
-    task_responses = [task_to_response(t, criteria_counts.get(t["id"], 0)) for t in tasks]
+    task_responses = [task_to_response(t, criteria_counts.get(t["id"], 0)) for t in ready_tasks]
 
     # Return TOON format if requested
     if format == "toon":
@@ -141,7 +151,7 @@ async def list_ready_tasks(
 
     return TaskListResponse(
         tasks=task_responses,
-        total=len(tasks),
+        total=len(ready_tasks),
         hints=get_hints(task_responses, project_id, endpoint_type="ready"),
     )
 

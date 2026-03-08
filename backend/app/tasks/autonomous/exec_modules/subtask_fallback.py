@@ -25,7 +25,6 @@ def try_fallback_agent(
     original_agent: str,
     original_prompt: str,
     attempts_made: int,
-    tier_preference: str | None,
 ) -> tuple[bool, list[dict[str, Any]], int, int, int]:
     """Try executing subtask with a fallback agent."""
     emit_log(
@@ -40,13 +39,11 @@ def try_fallback_agent(
     response, session = execute_agent_initial(
         task_id, subtask_short_id, fallback_prompt,
         fallback_slug, project_path, project_id,
-        tier_preference=tier_preference,
     )
     all_passed, step_results, fb_self, fb_super, fb_ext, _ = run_self_healing_loop(
         task_id, subtask_id, subtask_short_id, subtask,
         steps, project_path, project_id,
         fallback_slug, session, response.content,
-        tier_preference=tier_preference,
     )
     if all_passed:
         emit_log(
@@ -74,7 +71,6 @@ def execute_with_fallbacks(
     supervisor_guided_attempts: int,
     extensions_granted: int,
     agent_override: str | None,
-    tier_preference: str | None,
 ) -> tuple[bool, list[dict[str, Any]], str, int, int, int]:
     """Execute fallback agents if primary agent failed."""
     if all_passed or agent_override:
@@ -88,7 +84,6 @@ def execute_with_fallbacks(
                 steps, project_path, project_id, fallback_slug,
                 agent_slug, prompt,
                 self_fix_attempts + supervisor_guided_attempts,
-                tier_preference,
             )
             if fb_passed:
                 return (

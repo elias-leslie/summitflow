@@ -70,9 +70,12 @@ def _heartbeat_url(path: str = "") -> str:
     return f"{get_agent_hub_url()}/api/heartbeat{path}"
 
 
-def trigger_heartbeat() -> dict[str, Any]:
+def trigger_heartbeat(target_project_id: str | None = None) -> dict[str, Any]:
     """POST /api/heartbeat/trigger — fire off a manual heartbeat."""
-    resp = httpx.post(_heartbeat_url("/trigger"), headers=_get_headers(), timeout=10)
+    payload: dict[str, Any] | None = None
+    if target_project_id:
+        payload = {"target_project_id": target_project_id}
+    resp = httpx.post(_heartbeat_url("/trigger"), json=payload, headers=_get_headers(), timeout=10)
     resp.raise_for_status()
     return resp.json()
 

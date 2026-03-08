@@ -283,6 +283,7 @@ def instructions(
 @app.command()
 def heartbeat(
     watch: Annotated[bool, _Opt("--watch", "-w", help="Poll until heartbeat completes")] = False,
+    project: Annotated[str | None, _Opt("--project", "-P", help="Target project for this manual heartbeat")] = None,
 ) -> None:
     """Trigger a heartbeat. With --watch, poll until it finishes."""
     import time
@@ -290,7 +291,7 @@ def heartbeat(
     from .persona_api import get_heartbeat_status, trigger_heartbeat
 
     try:
-        result = trigger_heartbeat()
+        result = trigger_heartbeat(project)
         print(f"Heartbeat {result.get('status', 'dispatched')}: {result.get('message', '')}")
     except Exception as e:
         error_msg = str(e)

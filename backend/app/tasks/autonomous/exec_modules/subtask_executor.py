@@ -52,7 +52,6 @@ def _run_initial_agent(
     prompt: str,
     project_path: str,
     project_id: str,
-    tier_preference: str | None,
 ) -> tuple[bool, list[Any], int, int, int, str, str | None]:
     """Execute the agent and run the self-healing loop.
 
@@ -72,7 +71,6 @@ def _run_initial_agent(
 
     response, agent_session_id = execute_agent_initial(
         task_id, subtask_short_id, prompt, agent_slug, project_path, project_id,
-        tier_preference=tier_preference,
     )
 
     all_passed, step_results, self_fix_attempts, supervisor_guided_attempts, extensions_granted, _ = (
@@ -80,7 +78,6 @@ def _run_initial_agent(
             task_id, subtask_id, subtask_short_id, subtask,
             steps, project_path, project_id,
             agent_slug, agent_session_id, response.content,
-            tier_preference=tier_preference,
         )
     )
 
@@ -102,7 +99,6 @@ def _apply_fallbacks(
     project_path: str,
     project_id: str,
     agent_override: str | None,
-    tier_preference: str | None,
     all_passed: bool,
     step_results: list[Any],
     self_fix_attempts: int,
@@ -119,7 +115,7 @@ def _apply_fallbacks(
         task_id, subtask_id, subtask_short_id, subtask, subtask_type,
         steps, project_path, project_id, agent_slug, prompt,
         all_passed, step_results, self_fix_attempts, supervisor_guided_attempts,
-        extensions_granted, agent_override, tier_preference,
+        extensions_granted, agent_override,
     )
 
 
@@ -130,7 +126,6 @@ def execute_subtask(
     issue_counts: dict[str, int],
     task_type: str | None = None,
     agent_override: str | None = None,
-    tier_preference: str | None = None,
 ) -> dict[str, Any]:
     """Execute a single subtask with fresh context and self-healing retry loop."""
     start_time = time.time()
@@ -149,7 +144,7 @@ def execute_subtask(
         all_passed, step_results, self_fix_attempts, supervisor_guided_attempts, extensions_granted, initial_content, _ = (
             _run_initial_agent(
                 task_id, subtask_id, subtask_short_id, subtask,
-                agent_slug, prompt, project_path, project_id, tier_preference,
+                agent_slug, prompt, project_path, project_id,
             )
         )
 
@@ -157,7 +152,7 @@ def execute_subtask(
             _apply_fallbacks(
                 task_id, subtask_id, subtask_short_id, subtask, subtask_type,
                 agent_slug, prompt, project_path, project_id,
-                agent_override, tier_preference,
+                agent_override,
                 all_passed, step_results, self_fix_attempts,
                 supervisor_guided_attempts, extensions_granted,
             )

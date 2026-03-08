@@ -30,7 +30,6 @@ def build_complete_kwargs(
     task_id: str,
     session_id: str,
     max_turns: int,
-    tier_preference: str | None = None,
     model_override: str | None = None,
     include_roles: list[str] | None = None,
 ) -> dict[str, Any]:
@@ -54,6 +53,4 @@ def build_complete_kwargs(
         kwargs["current_branch"] = current_branch
     if model_override:
         kwargs["model"] = model_override
-    if tier_preference:
-        kwargs["tier_preference"] = tier_preference
     return kwargs

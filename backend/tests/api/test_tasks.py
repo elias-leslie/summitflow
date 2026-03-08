@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from typing import Any
+from unittest.mock import patch
 
 from app.storage.connection import get_connection
 
@@ -238,6 +239,98 @@ class TestTaskUpdates:
         cleanup_task(task["id"])
 
         assert task["plan_status"] == "approved"
+
+
+class TestReadyEndpoint:
+    """Execution-ready filtering for /tasks/ready."""
+
+    def test_ready_endpoint_filters_out_execution_unready_tasks(
+        self, client: Any, test_project_id: str
+    ) -> None:
+        draft_task = {
+            "id": "task-draft",
+            "project_id": test_project_id,
+            "capability_id": None,
+            "title": "Draft refactor task",
+            "description": "Needs planning before execution",
+            "status": "pending",
+            "error_message": None,
+            "branch_name": None,
+            "commits": [],
+            "total_sessions": 0,
+            "total_tokens_used": 0,
+            "created_at": None,
+            "started_at": None,
+            "completed_at": None,
+            "priority": 2,
+            "labels": [],
+            "task_type": "refactor",
+            "parent_task_id": None,
+            "objective": None,
+            "acceptance_criteria": None,
+            "current_phase": None,
+            "verification_result": None,
+            "spirit_anti": None,
+            "decisions": [],
+            "constraints": [],
+            "done_when": [],
+            "complexity": "STANDARD",
+            "raw_request": None,
+            "enrichment_status": "none",
+            "enriched_by": None,
+            "enriched_at": None,
+            "subtask_summary": {"total": 0, "completed": 0, "progress_percent": 0.0},
+            "execution_mode": "manual",
+            "autonomous": False,
+            "ai_review": True,
+            "agent_override": None,
+            "plan_status": "draft",
+            "plan_approved_at": None,
+            "plan_approved_by": None,
+            "context": None,
+            "worktree": None,
+        }
+        ready_task = {
+            **draft_task,
+            "id": "task-ready",
+            "title": "Ready bug task",
+            "task_type": "bug",
+            "priority": 1,
+            "objective": "Restore 200 on /health",
+            "done_when": ["GET /health returns 200", "Relevant tests pass"],
+            "complexity": "SIMPLE",
+            "plan_status": "approved",
+        }
+
+        def _fake_sync(task_id: str):
+            class _Readiness:
+                def __init__(self, ready: bool):
+                    self.ready = ready
+
+            return _Readiness(task_id == "task-ready")
+
+        with (
+            patch(
+                "app.api.tasks.list_endpoints.task_store.list_ready_tasks",
+                return_value=[draft_task, ready_task],
+            ),
+            patch(
+                "app.services.task_execution_readiness.sync_task_execution_readiness",
+                side_effect=_fake_sync,
+            ),
+            patch(
+                "app.api.tasks.list_endpoints.get_step_counts_batch",
+                return_value={"task-ready": 0},
+            ),
+        ):
+            response = client.get(f"/api/projects/{test_project_id}/tasks/ready?limit=20")
+
+        assert response.status_code == 200
+        tasks = response.json()["tasks"]
+        task_ids = {task["id"] for task in tasks}
+
+        assert "task-ready" in task_ids
+        assert "task-draft" not in task_ids
 
     def test_create_task_stays_draft_when_execution_details_missing(
         self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]

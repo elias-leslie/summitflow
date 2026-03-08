@@ -54,7 +54,7 @@ def _run_fix_attempt(
     failed_steps: list[dict[str, Any]], response_content: str,
     self_fix_attempts: int, supervisor_guided_attempts: int, max_self_fix: int,
     guidance: str | None, agent_slug: str, project_path: str, project_id: str,
-    agent_session_id: str | None, heal_attempt: int, tier_preference: str | None,
+    agent_session_id: str | None, heal_attempt: int,
 ) -> tuple[str, str | None, int, int, str | None]:
     """Determine fix prompt, update counters, and execute one fix attempt."""
     fix_prompt, guidance = determine_fix_prompt(
@@ -69,7 +69,7 @@ def _run_fix_attempt(
     response_content, agent_session_id = execute_fix_attempt(
         task_id, subtask_short_id, fix_prompt, agent_slug, project_path, project_id,
         agent_session_id, self_fix_attempts, supervisor_guided_attempts, heal_attempt,
-        model_override=model_override, tier_preference=tier_preference,
+        model_override=model_override,
     )
     return response_content, agent_session_id, self_fix_attempts, supervisor_guided_attempts, guidance
 
@@ -86,7 +86,7 @@ def _healing_loop_body(
     project_id: str, agent_slug: str, agent_session_id: str | None,
     response_content: str, self_fix_attempts: int, supervisor_guided_attempts: int,
     max_self_fix: int, total_max_attempts: int, extensions_granted: int,
-    guidance: str | None, tier_preference: str | None,
+    guidance: str | None,
 ) -> tuple[bool, list[dict[str, Any]], int, int, str | None, int, int, str | None, bool]:
     """One iteration of the healing loop; returns updated state plus should_break flag."""
     assert_task_runnable(task_id, project_id, f"self_heal_attempt_{heal_attempt}")
@@ -110,7 +110,7 @@ def _healing_loop_body(
     response_content, agent_session_id, self_fix_attempts, supervisor_guided_attempts, guidance = _run_fix_attempt(
         task_id, subtask, subtask_short_id, failed_steps, response_content,
         self_fix_attempts, supervisor_guided_attempts, max_self_fix, guidance,
-        agent_slug, project_path, project_id, agent_session_id, heal_attempt, tier_preference,
+        agent_slug, project_path, project_id, agent_session_id, heal_attempt,
     )
     return False, step_results, self_fix_attempts, supervisor_guided_attempts, agent_session_id, total_max_attempts, extensions_granted, guidance, False
 
@@ -119,7 +119,6 @@ def run_self_healing_loop(
     task_id: str, subtask_id: str, subtask_short_id: str, subtask: dict[str, Any],
     steps: list[dict[str, Any]], project_path: str, project_id: str, agent_slug: str,
     agent_session_id: str | None, initial_response_content: str,
-    tier_preference: str | None = None,
 ) -> tuple[bool, list[dict[str, Any]], int, int, int, str | None]:
     """Run self-healing retry loop until success or exhaustion.
 
@@ -142,7 +141,7 @@ def run_self_healing_loop(
             heal_attempt, task_id, subtask_id, subtask_short_id, subtask, steps,
             project_path, project_id, agent_slug, agent_session_id, response_content,
             self_fix_attempts, supervisor_guided_attempts, max_self_fix,
-            total_max_attempts, extensions_granted, guidance, tier_preference,
+            total_max_attempts, extensions_granted, guidance,
         )
         if should_break:
             break

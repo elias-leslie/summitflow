@@ -45,8 +45,8 @@ def start_execution(
 
 def _prepare_execution(
     task_id: str, project_id: str,
-) -> tuple[dict[str, Any] | None, str | None, str | None, str | None, str | None]:
-    """Validate task and set up worktree. Returns (error, path, task_type, agent_override, tier)."""
+) -> tuple[dict[str, Any] | None, str | None, str | None, str | None]:
+    """Validate task and set up worktree. Returns (error, path, task_type, agent_override)."""
     task = task_store.get_task(task_id)
     if not task:
         emit_error(task_id, "Task not found", recoverable=False, project_id=project_id)
@@ -55,23 +55,20 @@ def _prepare_execution(
     task_type = task.get("task_type")
     agent_override = task.get("agent_override")
 
-    from ....storage.agent_configs_autonomous import get_preferred_model_tier
-    tier_preference = get_preferred_model_tier(project_id)
-
     if not validate_pristine_codebase(task_id, project_id):
         return (
             {"task_id": task_id, "status": "blocked", "error": "Pristine validation failed", "reason": "pristine_self_heal_failed"},
-            None, None, None, None,
+            None, None, None,
         )
 
     project_path = setup_worktree(task_id, project_id)
     if not project_path:
         return (
             {"task_id": task_id, "status": "blocked", "error": "Worktree creation failed", "reason": "worktree_creation_failed"},
-            None, None, None, None,
+            None, None, None,
         )
 
-    return None, project_path, task_type, agent_override, tier_preference
+    return None, project_path, task_type, agent_override
 
 
 def _load_subtasks(task_id: str, project_id: str) -> tuple[dict[str, Any] | None, list, int, int]:
@@ -112,7 +109,7 @@ def execute_task_locked(
     dispatch: Callable[[str, str, str], None] | None = None,
 ) -> dict[str, Any]:
     """Inner execution body. Concurrency handled by Hatchet."""
-    error, project_path, task_type, agent_override, tier_preference = _prepare_execution(task_id, project_id)
+    error, project_path, task_type, agent_override = _prepare_execution(task_id, project_id)
     if error:
         return error
 
@@ -127,7 +124,7 @@ def execute_task_locked(
 
     results, completed = execute_subtask_loop(
         task_id, project_id, project_path, incomplete, total, completed,
-        task_type, agent_override, tier_preference=tier_preference,
+        task_type, agent_override,
     )
 
     check_main_repo_leakage(task_id, project_id, project_path)
@@ -135,7 +132,6 @@ def execute_task_locked(
     execute_agent_feedback(
         task_id, project_path, project_id, results,
         agent_slug=agent_override or "coder",
-        tier_preference=tier_preference,
     )
 
     _handle_completion(task_id, project_id, project_path, results, incomplete, dispatch)
