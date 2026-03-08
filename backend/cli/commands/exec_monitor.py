@@ -6,6 +6,7 @@ Shows task ID, subtask status, tool calls with timestamps, and agent responses.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from typing import Annotated, Any
 
 import typer
@@ -16,6 +17,61 @@ from ..output import handle_api_error
 from ..output_context import OutputContext
 from .exec_monitor_follower import follow_events
 from .exec_monitor_formatters import print_events, print_header
+
+_ATTEMPT_CLUSTER_WINDOW = timedelta(minutes=10)
+
+
+def _parse_iso_timestamp(value: Any) -> datetime | None:
+    """Parse an ISO timestamp from API payloads."""
+    if not isinstance(value, str) or not value:
+        return None
+    normalized = value.replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+
+
+def _select_current_attempt(
+    sessions: list[dict[str, Any]],
+    agent_events: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
+    """Keep only the current task attempt cluster for exec-log output.
+
+    Priority:
+    1. Any active sessions.
+    2. Otherwise, sessions updated within a short window of the newest session.
+    This keeps current refactor + feedback sessions together while hiding old retries.
+    """
+    if len(sessions) <= 1:
+        return sessions, agent_events, 0
+
+    active_sessions = [s for s in sessions if s.get("status") == "active"]
+    if active_sessions:
+        selected_ids = {str(s.get("id")) for s in active_sessions if s.get("id")}
+    else:
+        dated_sessions = [
+            (_parse_iso_timestamp(s.get("updated_at")), s)
+            for s in sessions
+        ]
+        dated_sessions = [(ts, s) for ts, s in dated_sessions if ts is not None]
+        if not dated_sessions:
+            return sessions[:1], agent_events, max(len(sessions) - 1, 0)
+        latest_ts = max(ts for ts, _ in dated_sessions)
+        selected_ids = {
+            str(s.get("id"))
+            for ts, s in dated_sessions
+            if latest_ts - ts <= _ATTEMPT_CLUSTER_WINDOW and s.get("id")
+        }
+
+    filtered_sessions = [s for s in sessions if str(s.get("id")) in selected_ids]
+    filtered_events = [
+        event
+        for event in agent_events
+        if str(event.get("session_id")) in selected_ids
+    ]
+    hidden_count = max(len(sessions) - len(filtered_sessions), 0)
+    return filtered_sessions, filtered_events, hidden_count
 
 
 def _fetch_task_data(
@@ -111,10 +167,16 @@ def _display_events(
     task_id = task.get("id", "unknown")
     project_id = task.get("project_id", "unknown")
     status = task.get("status", "unknown")
+    session_list = agent_sessions.get("sessions", []) if isinstance(agent_sessions, dict) else []
+    agent_event_list = agent_events.get("events", []) if isinstance(agent_events, dict) else []
+    session_list, agent_event_list, hidden_attempts = _select_current_attempt(
+        session_list,
+        agent_event_list,
+    )
+    filtered_agent_sessions = {**agent_sessions, "sessions": session_list} if isinstance(agent_sessions, dict) else agent_sessions
 
     # Header
-    print_header(out, task, subtasks, agent_sessions, debug, json_output)
-    agent_event_list = agent_events.get("events", []) if isinstance(agent_events, dict) else []
+    print_header(out, task, subtasks, filtered_agent_sessions, debug, json_output, hidden_attempts=hidden_attempts)
     if agent_event_list and not json_output and not out.is_compact:
         print("Recent Agent Activity:")
     print_events(

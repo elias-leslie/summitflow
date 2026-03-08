@@ -148,6 +148,8 @@ def print_header(
     agent_sessions: dict[str, Any],
     debug: bool = False,
     json_output: bool = False,
+    *,
+    hidden_attempts: int = 0,
 ) -> None:
     """Print task header with status and subtasks."""
     if json_output:
@@ -175,11 +177,15 @@ def print_header(
     if out.is_compact:
         session_summary = ",".join(_session_label(session) for session in sessions[:2])
         suffix = f"|AH:{session_summary}" if session_summary else ""
+        if hidden_attempts:
+            suffix += f"|hist={hidden_attempts}"
         print(f"EXEC:{task_id}|{status}|{summary}|{title}{suffix}")
     else:
         print(f"Task: {task_id}")
         print(f"Title: {title}")
         print(f"Status: {status}")
+        if hidden_attempts:
+            print(f"History: {hidden_attempts} older session(s) hidden; use st session-events --task {task_id} for full history")
         if sessions:
             print("Agent Sessions:")
             for session in sessions:

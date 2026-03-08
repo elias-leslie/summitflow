@@ -204,6 +204,92 @@ class TestExecLogCommand:
             assert "1.1:" in result.output
             assert "1.2:" in result.output
 
+    def test_exec_log_hides_older_attempts_from_header_and_recent_activity(self, mock_client: MagicMock) -> None:
+        """Retried tasks should default to the newest attempt cluster."""
+        mock_client.get_task_agent_sessions.return_value = {
+            "task_id": "task-test123",
+            "session_ids": ["sess-old", "sess-new", "sess-feedback"],
+            "count": 3,
+            "sessions": [
+                {
+                    "id": "sess-old",
+                    "status": "completed",
+                    "effective_model": "claude-sonnet-4-6",
+                    "updated_at": "2026-01-26T11:00:00+00:00",
+                    "live_activity": {
+                        "health": "completed",
+                        "phase": "completed",
+                    },
+                },
+                {
+                    "id": "sess-new",
+                    "status": "completed",
+                    "effective_model": "claude-sonnet-4-6",
+                    "updated_at": "2026-01-26T12:00:00+00:00",
+                    "live_activity": {
+                        "health": "completed",
+                        "phase": "completed",
+                    },
+                },
+                {
+                    "id": "sess-feedback",
+                    "status": "completed",
+                    "effective_model": "codex/gpt-5.4",
+                    "updated_at": "2026-01-26T12:03:00+00:00",
+                    "live_activity": {
+                        "health": "completed",
+                        "phase": "completed",
+                    },
+                },
+            ],
+        }
+        mock_client.get_task_agent_events.return_value = {
+            "task_id": "task-test123",
+            "session_ids": ["sess-old", "sess-new", "sess-feedback"],
+            "events": [
+                {
+                    "id": "evt-old-1",
+                    "session_id": "sess-old",
+                    "turn": 1,
+                    "sequence": 1,
+                    "event_type": "assistant_message",
+                    "content": "Old retry attempt",
+                    "created_at": "2026-01-26T11:00:05+00:00",
+                },
+                {
+                    "id": "evt-new-1",
+                    "session_id": "sess-new",
+                    "turn": 1,
+                    "sequence": 1,
+                    "event_type": "assistant_message",
+                    "content": "Newest refactor attempt",
+                    "created_at": "2026-01-26T12:00:05+00:00",
+                },
+                {
+                    "id": "evt-feedback-1",
+                    "session_id": "sess-feedback",
+                    "turn": 1,
+                    "sequence": 1,
+                    "event_type": "assistant_message",
+                    "content": "Feedback collection",
+                    "created_at": "2026-01-26T12:03:05+00:00",
+                },
+            ],
+        }
+
+        with (
+            patch("cli.commands.exec_monitor.STClient", return_value=mock_client),
+            patch("cli.commands.exec_monitor.require_task_id", return_value="task-test123"),
+        ):
+            result = runner.invoke(app, ["exec-log", "task-test123"])
+
+        assert result.exit_code == 0
+        assert "|hist=1" in result.output
+        assert "sess-old" not in result.output
+        assert "Old retry attempt" not in result.output
+        assert "sess-new" in result.output
+        assert "Feedback collection" in result.output
+
     def test_exec_log_json_output(self, mock_client: MagicMock) -> None:
         """Test exec-log --json outputs JSON lines."""
         with (
