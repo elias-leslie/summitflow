@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from app.api.models.git_models import BranchInfo
 from app.api.git_helpers.worktree_helpers import collect_worktrees
+from app.api.models.git_models import BranchInfo
 from app.utils._git_branches import build_repo_workspace_summary
 
 
@@ -52,7 +52,7 @@ class TestCollectWorktrees:
 
     def test_uses_cli_worktree_source_of_truth(self, mocker) -> None:
         mocker.patch(
-            "app.api.git_helpers.worktree_helpers.get_active_worktrees",
+            "app.cli.lib.worktree.get_active_worktrees",
             return_value=[
                 SimpleNamespace(
                     task_id="task-123",
