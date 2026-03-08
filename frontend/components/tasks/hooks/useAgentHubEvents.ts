@@ -5,6 +5,7 @@ import {
   type AgentEventType,
   type AgentHubEvent,
   type AgentHubEventsResponse,
+  type AgentHubSessionSummary,
   fetchTaskAgentEvents,
 } from '@/lib/api/tasks'
 
@@ -20,6 +21,7 @@ interface UseAgentHubEventsOptions {
 interface UseAgentHubEventsReturn {
   events: AgentHubEvent[]
   sessionIds: string[]
+  sessions: AgentHubSessionSummary[]
   total: number
   maxTurn: number
   isLoading: boolean
@@ -104,6 +106,7 @@ export function useAgentHubEvents({
   return {
     events: data?.events ?? [],
     sessionIds: data?.session_ids ?? [],
+    sessions: data?.sessions ?? [],
     total: data?.total ?? 0,
     maxTurn: data?.max_turn ?? 0,
     isLoading,

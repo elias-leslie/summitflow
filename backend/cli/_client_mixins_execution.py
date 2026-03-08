@@ -93,6 +93,17 @@ class ExecutionOperationsMixin:
             page_size,
         )
 
+    def get_task_agent_sessions(self, task_id: str) -> dict[str, Any]:
+        task = self.get_task(task_id)
+        project_id = task.get("project_id", "")
+        return exec_ops.get_task_agent_sessions(
+            self._client,
+            self.base_url,
+            self._handle_response,
+            project_id,
+            task_id,
+        )
+
     def get_events(
         self, project_id: str, task_id: str, limit: int = 50, include_debug: bool = False
     ) -> dict[str, Any]:

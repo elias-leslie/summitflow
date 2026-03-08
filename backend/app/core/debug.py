@@ -1,6 +1,6 @@
 """Debug logging module that emits to the event system with visibility=debug.
 
-Events emitted here are only visible when using `st exec-monitor --debug`.
+Events emitted here are only visible when using `st exec-log --debug`.
 Zero overhead when DEBUG is not set - all functions early-return before doing work.
 
 Environment variables:

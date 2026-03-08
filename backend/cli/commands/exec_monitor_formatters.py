@@ -110,6 +110,7 @@ def print_header(
     out: OutputContext,
     task: dict[str, Any],
     subtasks: list[dict[str, Any]],
+    agent_sessions: dict[str, Any],
     debug: bool = False,
     json_output: bool = False,
 ) -> None:
@@ -121,13 +122,37 @@ def print_header(
     title = task.get("title", "Unknown")[:50]
     status = task.get("status", "unknown")
     summary = subtask_summary(subtasks)
+    sessions = agent_sessions.get("sessions", []) if isinstance(agent_sessions, dict) else []
+
+    def _session_label(session: dict[str, Any]) -> str:
+        live = session.get("live_activity") if isinstance(session, dict) else None
+        model = (
+            session.get("effective_model")
+            or session.get("requested_model")
+            or session.get("id")
+            or "unknown"
+        )
+        short_model = str(model).split("/")[-1]
+        if isinstance(live, dict):
+            return f"{short_model}:{live.get('health', 'unknown')}/{live.get('phase', 'unknown')}"
+        return f"{short_model}:{session.get('status', 'unknown')}"
 
     if out.is_compact:
-        print(f"EXEC:{task_id}|{status}|{summary}|{title}")
+        session_summary = ",".join(_session_label(session) for session in sessions[:2])
+        suffix = f"|AH:{session_summary}" if session_summary else ""
+        print(f"EXEC:{task_id}|{status}|{summary}|{title}{suffix}")
     else:
         print(f"Task: {task_id}")
         print(f"Title: {title}")
         print(f"Status: {status}")
+        if sessions:
+            print("Agent Sessions:")
+            for session in sessions:
+                label = _session_label(session)
+                live = session.get("live_activity") if isinstance(session, dict) else None
+                print(f"  {session.get('id', '?')[:8]}: {label}")
+                if isinstance(live, dict) and live.get("summary"):
+                    print(f"    {live['summary']}")
         if subtasks:
             print(f"Subtasks: {summary}")
             for s in subtasks:

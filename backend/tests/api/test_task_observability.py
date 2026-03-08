@@ -44,6 +44,24 @@ class TestTaskObservability:
             "app.api.tasks.observability.get_agent_hub_sessions",
             return_value=["sess-1"],
         ), patch(
+            "app.api.tasks.observability._fetch_session_summary",
+            return_value={
+                "id": "sess-1",
+                "status": "active",
+                "effective_model": "claude-sonnet-4-6",
+                "updated_at": "2026-03-07T00:00:00Z",
+                "live_activity": {
+                    "phase": "reading_file",
+                    "status": "active",
+                    "summary": "Reading file",
+                    "health": "active",
+                    "stalled": False,
+                    "files_touched": [],
+                    "outstanding_tool_calls": 1,
+                    "tool_calls_count": 1,
+                },
+            },
+        ), patch(
             "app.api.tasks.observability._fetch_session_events",
             return_value={
                 "events": [
@@ -65,5 +83,7 @@ class TestTaskObservability:
         assert response.status_code == 200
         body = response.json()
         assert body["session_ids"] == ["sess-1"]
+        assert body["sessions"][0]["id"] == "sess-1"
+        assert body["sessions"][0]["live_activity"]["phase"] == "reading_file"
         assert body["total"] == 1
         assert body["events"][0]["id"] == "evt-1"

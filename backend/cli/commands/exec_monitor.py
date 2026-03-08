@@ -23,14 +23,15 @@ def _fetch_task_data(
     task_id: str,
     limit: int,
     debug: bool,
-) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
+) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any], dict[str, Any]]:
     """Fetch task, subtasks, and events from the API."""
     task = client.get_task(task_id)
     project_id = task.get("project_id", "unknown")
     subtasks_data = client.get_subtasks(task_id)
     subtasks = subtasks_data.get("subtasks", [])
     events = client.get_events(project_id, task_id, limit=limit, include_debug=debug)
-    return task, subtasks, events
+    agent_sessions = client.get_task_agent_sessions(task_id)
+    return task, subtasks, events, agent_sessions
 
 
 def exec_log_command(
@@ -73,23 +74,30 @@ def exec_log_command(
     client = STClient()
 
     try:
-        task, subtasks, events = _fetch_task_data(client, task_id, limit, debug)
+        task, subtasks, events, agent_sessions = _fetch_task_data(client, task_id, limit, debug)
     except APIError as e:
         handle_api_error(e)
         return
 
-    _display_events(ctx.obj, task, subtasks, events, follow, client, limit, debug, json_output)
-
-
-# Alias for backward compatibility
-exec_monitor_command = exec_log_command
-
+    _display_events(
+        ctx.obj,
+        task,
+        subtasks,
+        events,
+        agent_sessions,
+        follow,
+        client,
+        limit,
+        debug,
+        json_output,
+    )
 
 def _display_events(
     out: OutputContext,
     task: dict[str, Any],
     subtasks: list[dict[str, Any]],
     events: dict[str, Any],
+    agent_sessions: dict[str, Any],
     follow: bool,
     client: STClient,
     limit: int,
@@ -102,7 +110,7 @@ def _display_events(
     status = task.get("status", "unknown")
 
     # Header
-    print_header(out, task, subtasks, debug, json_output)
+    print_header(out, task, subtasks, agent_sessions, debug, json_output)
 
     # Initial events
     events_list = events.get("events", []) if isinstance(events, dict) else events

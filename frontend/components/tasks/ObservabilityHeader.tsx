@@ -1,12 +1,14 @@
 'use client'
 
 import { GitBranch, List, Play, Radio, RefreshCw } from 'lucide-react'
+import type { AgentHubSessionSummary } from '@/lib/api/tasks'
 
 type ViewMode = 'timeline' | 'spans' | 'replay'
 
 interface ObservabilityHeaderProps {
   viewMode: ViewMode
   sessionIds: string[]
+  sessions: AgentHubSessionSummary[]
   isLive: boolean
   isLoading: boolean
   onViewModeChange: (mode: ViewMode) => void
@@ -16,6 +18,7 @@ interface ObservabilityHeaderProps {
 export function ObservabilityHeader({
   viewMode,
   sessionIds,
+  sessions,
   isLive,
   isLoading,
   onViewModeChange,
@@ -33,6 +36,21 @@ export function ObservabilityHeader({
             {sessionIds.length} session{sessionIds.length !== 1 ? 's' : ''}
           </span>
         )}
+        {sessions.slice(0, 2).map((session) => {
+          const live = session.live_activity
+          const label = live
+            ? `${live.health} · ${live.phase}`
+            : session.status
+          return (
+            <span
+              key={session.id}
+              className="text-2xs px-1.5 py-0.5 bg-slate-800 text-slate-400 rounded font-mono"
+              title={live?.summary || session.effective_model || session.id}
+            >
+              {(session.effective_model || session.requested_model || session.id).split('/').pop()} {label}
+            </span>
+          )
+        })}
       </div>
 
       <div className="flex items-center gap-2">

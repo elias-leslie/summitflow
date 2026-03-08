@@ -227,7 +227,6 @@ app.add_typer(feedback.app, name="feedback")
 app.add_typer(persona.app, name="persona")
 app.add_typer(agents.app, name="agents")
 app.command("exec-log")(exec_monitor.exec_log_command)
-app.command("exec-monitor", hidden=True)(exec_monitor.exec_monitor_command)  # alias
 
 # Register checkpoint-aware commands (override old claim from tasks.py)
 # These are defined with @app.command() in their modules, so access via module.app

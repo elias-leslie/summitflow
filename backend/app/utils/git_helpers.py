@@ -10,6 +10,7 @@ Implementation is split across:
 from __future__ import annotations
 
 from ._git_branches import (
+    build_repo_workspace_summary,
     extract_task_id_from_branch,
     get_all_branches,
     get_branch_commit_info,
@@ -38,6 +39,7 @@ from ._git_diff import (
 __all__ = [
     "CONFIG_REPOS",
     "WORKTREES_BASE_DIR",
+    "build_repo_workspace_summary",
     "extract_task_id_from_branch",
     "fetch_repository",
     "get_all_branches",

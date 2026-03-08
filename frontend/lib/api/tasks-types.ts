@@ -65,5 +65,7 @@ export type {
   CodingAgentsResponse,
   AgentEventType,
   AgentHubEvent,
+  AgentHubLiveActivity,
+  AgentHubSessionSummary,
   AgentHubEventsResponse,
 } from './tasks-types-agenthub'

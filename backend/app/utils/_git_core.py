@@ -152,6 +152,7 @@ def _classify_state(uncommitted: int, behind: int, ahead: int) -> str:
 def get_repo_status(repo_path: Path) -> RepoStatus | None:
     """Get status information for a git repository."""
     from ..api.models.git_models import RepoStatus
+    from ._git_branches import build_repo_workspace_summary
 
     if not is_valid_git_repo(repo_path):
         return None
@@ -172,6 +173,7 @@ def get_repo_status(repo_path: Path) -> RepoStatus | None:
         ahead=ahead,
         behind=behind,
         state=state,
+        workspace_summary=build_repo_workspace_summary(repo_path),
     )
 
 

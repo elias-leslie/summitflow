@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class RepoStatus(BaseModel):
@@ -15,6 +15,18 @@ class RepoStatus(BaseModel):
     ahead: int
     behind: int
     state: str  # clean, dirty, behind, ahead
+    workspace_summary: RepoWorkspaceSummary | None = None
+
+
+class RepoWorkspaceSummary(BaseModel):
+    """At-a-glance branch/worktree cleanup summary for one repository."""
+
+    active_worktrees: int = 0
+    branches_with_worktrees: int = 0
+    task_branches: int = 0
+    orphan_branches: int = 0
+    prunable_branches: int = 0
+    worktree_task_ids: list[str] = Field(default_factory=list)
 
 
 class GitStatusResponse(BaseModel):

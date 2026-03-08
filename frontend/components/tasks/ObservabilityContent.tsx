@@ -2,7 +2,7 @@
 
 import { AlertCircle, Loader2 } from 'lucide-react'
 import type { RefObject } from 'react'
-import type { AgentHubEvent } from '@/lib/api/tasks'
+import type { AgentHubEvent, AgentHubSessionSummary } from '@/lib/api/tasks'
 import { AgentTimelineEvent } from './AgentTimelineEvent'
 import { SpanTree } from './SpanTree'
 import { TurnGroup } from './TurnGroup'
@@ -24,6 +24,7 @@ interface ObservabilityContentProps {
   filteredEvents: AgentHubEvent[]
   eventsByTurn: EventsByTurn[]
   sessionIds: string[]
+  sessions: AgentHubSessionSummary[]
   searchTerm: string
   filterEventTypes: string[] | undefined
   groupByTurn: boolean
@@ -44,6 +45,7 @@ export function ObservabilityContent({
   filteredEvents,
   eventsByTurn,
   sessionIds,
+  sessions,
   searchTerm,
   filterEventTypes,
   groupByTurn,
@@ -91,7 +93,21 @@ export function ObservabilityContent({
           ) : sessionIds.length === 0 ? (
             <span className="text-sm">No Agent Hub sessions linked to this task</span>
           ) : (
-            <span className="text-sm">No events recorded yet</span>
+            <div className="text-center space-y-2">
+              <span className="text-sm block">No events recorded yet</span>
+              {sessions.length > 0 && (
+                <div className="text-xs text-slate-500 font-mono">
+                  {sessions.map((session) => {
+                    const live = session.live_activity
+                    return (
+                      <div key={session.id}>
+                        {(session.effective_model || session.requested_model || session.id).split('/').pop()} · {live ? `${live.health}/${live.phase}` : session.status}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
           )}
         </div>
       ) : viewMode === 'replay' ? (

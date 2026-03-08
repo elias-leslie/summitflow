@@ -116,6 +116,23 @@ class TestExecLogCommand:
                 },
             ]
         }
+        mock.get_task_agent_sessions.return_value = {
+            "task_id": "task-test123",
+            "session_ids": ["sess-1"],
+            "count": 1,
+            "sessions": [
+                {
+                    "id": "sess-1",
+                    "status": "active",
+                    "effective_model": "claude-sonnet-4-6",
+                    "live_activity": {
+                        "health": "active",
+                        "phase": "reading_file",
+                        "summary": "Reading ActivityTimeline.tsx",
+                    },
+                }
+            ],
+        }
         return mock
 
     def test_exec_log_help(self) -> None:
@@ -139,6 +156,7 @@ class TestExecLogCommand:
             assert "EXEC:task-test123" in result.output
             assert "running" in result.output
             assert "1/2(1W)" in result.output  # subtask summary
+            assert "AH:claude-sonnet-4-6:active/reading_file" in result.output
 
     def test_exec_log_human_readable(self, mock_client: MagicMock) -> None:
         """Test exec-log human-readable format."""
@@ -151,6 +169,8 @@ class TestExecLogCommand:
             assert result.exit_code == 0
             assert "Task: task-test123" in result.output
             assert "Status: running" in result.output
+            assert "Agent Sessions:" in result.output
+            assert "Reading ActivityTimeline.tsx" in result.output
             assert "Subtasks:" in result.output
             assert "1.1:" in result.output
             assert "1.2:" in result.output
@@ -210,34 +230,3 @@ class TestExecLogCommand:
             mock_client.get_events.assert_called_once()
             call_kwargs = mock_client.get_events.call_args
             assert call_kwargs[1]["include_debug"] is True or call_kwargs[0][3] is True
-
-
-class TestExecMonitorAlias:
-    """Test that exec-monitor alias works."""
-
-    def test_exec_monitor_alias_exists(self) -> None:
-        """Test exec-monitor command exists as alias."""
-        result = runner.invoke(app, ["exec-monitor", "--help"])
-        assert result.exit_code == 0
-        assert "View execution progress" in result.output
-
-    def test_exec_monitor_same_as_exec_log(self) -> None:
-        """Test exec-monitor produces same output as exec-log."""
-        mock = MagicMock()
-        mock.get_task.return_value = {
-            "id": "task-alias-test",
-            "project_id": "summitflow",
-            "title": "Alias Test",
-            "status": "pending",
-        }
-        mock.get_subtasks.return_value = {"subtasks": []}
-        mock.get_events.return_value = {"events": []}
-
-        with (
-            patch("cli.commands.exec_monitor.STClient", return_value=mock),
-            patch("cli.commands.exec_monitor.require_task_id", return_value="task-alias-test"),
-        ):
-            log_result = runner.invoke(app, ["exec-log", "task-alias-test"])
-            monitor_result = runner.invoke(app, ["exec-monitor", "task-alias-test"])
-
-            assert log_result.output == monitor_result.output

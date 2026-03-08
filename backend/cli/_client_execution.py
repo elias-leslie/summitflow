@@ -91,6 +91,18 @@ def get_task_agent_events(
     return cast(dict[str, Any], handle_response(response))
 
 
+def get_task_agent_sessions(
+    client: httpx.Client,
+    base_url: str,
+    handle_response: Any,
+    project_id: str,
+    task_id: str,
+) -> dict[str, Any]:
+    """Get Agent Hub sessions linked to a task."""
+    response = client.get(f"{base_url}/projects/{project_id}/tasks/{task_id}/agent-sessions")
+    return cast(dict[str, Any], handle_response(response))
+
+
 def get_events(
     client: httpx.Client,
     base_url: str,

@@ -38,7 +38,7 @@ export function AgentObservabilityTimeline({
   const [searchTerm, setSearchTerm] = useState('')
   const [replayIndex, setReplayIndex] = useState(0)
 
-  const { events, sessionIds, total, maxTurn, isLoading, error, refetch } =
+  const { events, sessionIds, sessions, total, maxTurn, isLoading, error, refetch } =
     useAgentHubEvents({
       taskId,
       projectId,
@@ -85,6 +85,7 @@ export function AgentObservabilityTimeline({
       <ObservabilityHeader
         viewMode={viewMode}
         sessionIds={sessionIds}
+        sessions={sessions}
         isLive={isLive}
         isLoading={isLoading}
         onViewModeChange={setViewMode}
@@ -111,6 +112,7 @@ export function AgentObservabilityTimeline({
         filteredEvents={filteredEvents}
         eventsByTurn={eventsByTurn}
         sessionIds={sessionIds}
+        sessions={sessions}
         searchTerm={searchTerm}
         filterEventTypes={filterEventTypes}
         groupByTurn={groupByTurn}

@@ -12,7 +12,7 @@ from typing import Any
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ...logging_config import get_logger
 from ...services._agent_hub_config import AGENT_HUB_URL, build_agent_hub_headers
@@ -49,10 +49,50 @@ class AgentHubEvent(BaseModel):
     created_at: str
 
 
+class AgentHubLiveActivity(BaseModel):
+    """Live execution state mirrored from Agent Hub session responses."""
+
+    phase: str
+    status: str
+    summary: str | None = None
+    health: str
+    stalled: bool = False
+    stall_reason: str | None = None
+    quiet_for_seconds: int | None = None
+    current_tool_name: str | None = None
+    last_tool_name: str | None = None
+    last_read_path: str | None = None
+    last_write_path: str | None = None
+    last_command: str | None = None
+    last_validation_command: str | None = None
+    last_command_exit_code: int | None = None
+    outstanding_tool_calls: int = 0
+    tool_calls_count: int = 0
+    termination_reason: str | None = None
+    files_touched: list[str] = Field(default_factory=list)
+
+
+class AgentHubSessionSummary(BaseModel):
+    """Task-linked Agent Hub session summary."""
+
+    id: str
+    status: str
+    agent_slug: str | None = None
+    requested_model: str | None = None
+    effective_model: str | None = None
+    requested_provider: str | None = None
+    effective_provider: str | None = None
+    fallback_used: bool = False
+    fallback_reason: str | None = None
+    updated_at: str
+    live_activity: AgentHubLiveActivity | None = None
+
+
 class AgentHubEventsResponse(BaseModel):
     """Response containing Agent Hub events for a task."""
     task_id: str
     session_ids: list[str]
+    sessions: list[AgentHubSessionSummary]
     events: list[AgentHubEvent]
     total: int
     max_turn: int
@@ -114,6 +154,37 @@ def _fetch_session_events(
         return EMPTY_SESSION_RESULT
 
 
+def _fetch_session_summary(session_id: str) -> dict[str, Any] | None:
+    """Fetch a single Agent Hub session summary."""
+    client_id = _load_client_id()
+    headers = build_agent_hub_headers(
+        client_id=client_id,
+        default_request_source=DEFAULT_REQUEST_SOURCE,
+    )
+    agent_hub_url = AGENT_HUB_URL
+    url = f"{agent_hub_url}/api/sessions/{session_id}"
+    try:
+        with httpx.Client(timeout=HTTP_TIMEOUT) as client:
+            response = client.get(url, headers=headers)
+        if response.status_code == 404:
+            return None
+        if response.status_code >= 400:
+            logger.warning(
+                "Agent Hub session API error",
+                session_id=session_id,
+                status=response.status_code,
+                detail=response.text[:200],
+            )
+            return None
+        return dict(response.json())
+    except httpx.ConnectError:
+        logger.warning("Cannot connect to Agent Hub", url=agent_hub_url)
+        return None
+    except Exception as e:
+        logger.error("Failed to fetch Agent Hub session summary", error=str(e))
+        return None
+
+
 def _build_agent_event(event: dict[str, Any], session_id: str, session_idx: int) -> AgentHubEvent:
     """Build an AgentHubEvent from a raw event dict."""
     return AgentHubEvent(
@@ -125,6 +196,24 @@ def _build_agent_event(event: dict[str, Any], session_id: str, session_idx: int)
         tokens=event.get("tokens"), duration_ms=event.get("duration_ms"),
         model_used=event.get("model_used"), agent_id=event.get("agent_id"),
         agent_name=event.get("agent_name"), created_at=event.get("created_at", ""),
+    )
+
+
+def _build_session_summary(session: dict[str, Any]) -> AgentHubSessionSummary:
+    """Build a normalized session summary from Agent Hub session JSON."""
+    live_activity = session.get("live_activity")
+    return AgentHubSessionSummary(
+        id=session.get("id", ""),
+        status=session.get("status", "unknown"),
+        agent_slug=session.get("agent_slug"),
+        requested_model=session.get("requested_model"),
+        effective_model=session.get("effective_model") or session.get("model"),
+        requested_provider=session.get("requested_provider"),
+        effective_provider=session.get("effective_provider") or session.get("provider"),
+        fallback_used=bool(session.get("fallback_used")),
+        fallback_reason=session.get("fallback_reason"),
+        updated_at=session.get("updated_at", ""),
+        live_activity=AgentHubLiveActivity(**live_activity) if isinstance(live_activity, dict) else None,
     )
 
 
@@ -145,6 +234,16 @@ def _collect_session_events(
     return all_events, total, max_turn
 
 
+def _collect_session_summaries(session_ids: list[str]) -> list[AgentHubSessionSummary]:
+    """Fetch task-linked session summaries from Agent Hub."""
+    summaries: list[AgentHubSessionSummary] = []
+    for session_id in session_ids:
+        payload = _fetch_session_summary(session_id)
+        if isinstance(payload, dict):
+            summaries.append(_build_session_summary(payload))
+    return summaries
+
+
 @router.get("/projects/{project_id}/tasks/{task_id}/agent-events", response_model=AgentHubEventsResponse)
 async def get_task_agent_events(
     project_id: str,
@@ -163,9 +262,24 @@ async def get_task_agent_events(
     verify_task_project(task_id, project_id)
     session_ids = get_agent_hub_sessions(task_id)
     if not session_ids:
-        return AgentHubEventsResponse(task_id=task_id, session_ids=[], events=[], total=0, max_turn=0)
+        return AgentHubEventsResponse(
+            task_id=task_id,
+            session_ids=[],
+            sessions=[],
+            events=[],
+            total=0,
+            max_turn=0,
+        )
+    sessions = _collect_session_summaries(session_ids)
     events, total, max_turn = _collect_session_events(session_ids, event_type, turn, page, page_size)
-    return AgentHubEventsResponse(task_id=task_id, session_ids=session_ids, events=events, total=total, max_turn=max_turn)
+    return AgentHubEventsResponse(
+        task_id=task_id,
+        session_ids=session_ids,
+        sessions=sessions,
+        events=events,
+        total=total,
+        max_turn=max_turn,
+    )
 
 
 @router.get("/projects/{project_id}/tasks/{task_id}/agent-sessions")
@@ -173,4 +287,5 @@ async def get_task_agent_sessions(project_id: str, task_id: str) -> dict[str, An
     """Get Agent Hub session IDs linked to a task."""
     verify_task_project(task_id, project_id)
     session_ids = get_agent_hub_sessions(task_id)
-    return {"task_id": task_id, "session_ids": session_ids, "count": len(session_ids)}
+    sessions = [summary.model_dump() for summary in _collect_session_summaries(session_ids)]
+    return {"task_id": task_id, "session_ids": session_ids, "count": len(session_ids), "sessions": sessions}
