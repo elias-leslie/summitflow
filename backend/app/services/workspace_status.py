@@ -7,7 +7,6 @@ from typing import Any
 
 from app.storage.projects import get_project_root_path
 from app.utils._git_branches import build_repo_workspace_summary
-
 from cli.commands.cleanup_git import has_uncommitted_changes
 from cli.lib.worktree import get_active_worktrees
 
