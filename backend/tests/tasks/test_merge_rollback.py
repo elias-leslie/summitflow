@@ -307,3 +307,49 @@ class TestMergeAndCleanup:
 
         assert result["status"] == "blocked"
         assert result["reason"] == "task_still_running"
+
+    @patch("app.tasks.autonomous.cleanup.merge_operations._git")
+    @patch("app.tasks.autonomous.cleanup.merge_operations.update_task_fields")
+    @patch("app.tasks.autonomous.cleanup.merge_operations.run_post_merge_validation")
+    @patch("app.tasks.autonomous.cleanup.merge_operations.delete_task_branch")
+    @patch("app.tasks.autonomous.cleanup.merge_operations.remove_task_worktree")
+    @patch("app.tasks.autonomous.cleanup.merge_operations.merge_task_branch")
+    @patch("app.tasks.autonomous.cleanup.merge_operations.checkout_base_branch")
+    @patch("app.tasks.autonomous.cleanup.merge_operations.get_project_root_path")
+    @patch("app.tasks.autonomous.cleanup.merge_operations.get_task_worktree")
+    @patch("app.tasks.autonomous.cleanup.merge_operations.update_task_status")
+    @patch("app.tasks.autonomous.cleanup.merge_operations.task_store")
+    def test_successful_merge_from_blocked_task_forces_completed_transition(
+        self,
+        mock_store: MagicMock,
+        mock_update_status: MagicMock,
+        mock_worktree: MagicMock,
+        mock_root: MagicMock,
+        mock_checkout: MagicMock,
+        mock_merge: MagicMock,
+        mock_remove: MagicMock,
+        mock_delete: MagicMock,
+        mock_validate: MagicMock,
+        mock_fields: MagicMock,
+        mock_git: MagicMock,
+    ) -> None:
+        from app.tasks.autonomous.cleanup.merge_operations import (
+            merge_and_cleanup_task_worktree,
+        )
+
+        mock_store.get_task.return_value = {"status": "blocked"}
+        wt = MagicMock()
+        wt.branch = "task-1/main"
+        wt.base_branch = "main"
+        mock_worktree.return_value = wt
+        mock_root.return_value = "/tmp/project"
+        mock_checkout.return_value = None
+        mock_merge.return_value = MagicMock(success=True, merge_sha="abc123", conflicting_files=None)
+        mock_delete.return_value = True
+        mock_validate.return_value = True
+        mock_git.return_value = MagicMock(returncode=0, stdout="")
+
+        result = merge_and_cleanup_task_worktree("task-1", "test-project")
+
+        assert result["status"] == "merged"
+        mock_update_status.assert_any_call("task-1", "completed", validate_transition=False)

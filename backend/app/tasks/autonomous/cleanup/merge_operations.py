@@ -32,7 +32,7 @@ def _finalize_task_status(task_id: str, result: MergeResult) -> MergeResult:
     """Persist authoritative task status from merge outcome."""
     status = result.get("status")
     if status in {"merged", "skipped"}:
-        update_task_status(task_id, "completed")
+        update_task_status(task_id, "completed", validate_transition=False)
         return result
     if status == "rolled_back":
         update_task_status(
