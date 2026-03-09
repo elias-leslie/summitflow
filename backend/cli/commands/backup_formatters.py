@@ -92,6 +92,42 @@ def output_task_queued(out: OutputContext, task_id: str) -> None:
         output_json({"task_id": task_id})
 
 
+def output_backup_queue(
+    out: OutputContext,
+    *,
+    status: str,
+    message: str,
+    backup_id: str | None = None,
+    source_id: str | None = None,
+    project_id: str | None = None,
+    dry_run: bool = False,
+) -> None:
+    """Output queued backup work without assuming a workflow task id exists."""
+    if out.is_compact:
+        parts = [status.upper()]
+        if dry_run:
+            parts.append("dry-run")
+        if backup_id:
+            parts.append(f"backup:{backup_id}")
+        if source_id:
+            parts.append(f"source:{source_id}")
+        elif project_id:
+            parts.append(f"project:{project_id}")
+        parts.append(message)
+        print(" | ".join(parts))
+    else:
+        output_json(
+            {
+                "status": status,
+                "message": message,
+                "backup_id": backup_id,
+                "source_id": source_id,
+                "project_id": project_id,
+                "dry_run": dry_run,
+            }
+        )
+
+
 def output_deleted(out: OutputContext, backup_id: str) -> None:
     """Output backup deleted message."""
     if out.is_compact:

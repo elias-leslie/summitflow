@@ -14,6 +14,7 @@ from .backup_api import BackupProjectAPI, BackupSourceAPI
 from .backup_formatters import (
     format_size,
     output_backup,
+    output_backup_queue,
     output_backups,
     output_deleted,
     output_source,
@@ -77,7 +78,17 @@ def create_backup(
             result = _get_source_api().create_source_backup(source, note=note, keep_local=keep_local)
         else:
             result = _get_project_api().create_backup(note=note, keep_local=keep_local)
-        output_task_queued(ctx.obj, result.get("task_id", "?"))
+        task_id = result.get("task_id")
+        if task_id:
+            output_task_queued(ctx.obj, task_id)
+        else:
+            output_backup_queue(
+                ctx.obj,
+                status=str(result.get("status", "queued")),
+                message=str(result.get("message", "Backup queued")),
+                source_id=source,
+                project_id=None if source else get_config().project_id,
+            )
     except APIError as e:
         handle_api_error(e)
 
@@ -97,10 +108,22 @@ def restore_backup(
             project_api = _get_project_api()
             project_api.get_backup(backup_id)  # validate backup exists
             result = project_api.restore_backup(backup_id, dry_run=dry_run)
-        if ctx.obj.is_compact:
-            print(f"{'DRY_RUN' if dry_run else 'QUEUED'} {result.get('task_id', '?')}")
+        task_id = result.get("task_id")
+        if task_id:
+            if ctx.obj.is_compact:
+                print(f"{'DRY_RUN' if dry_run else 'QUEUED'} {task_id}")
+            else:
+                output_json(result)
         else:
-            output_json(result)
+            output_backup_queue(
+                ctx.obj,
+                status=str(result.get("status", "queued")),
+                message=str(result.get("message", "Restore queued")),
+                backup_id=backup_id,
+                source_id=source,
+                project_id=None if source else get_config().project_id,
+                dry_run=dry_run,
+            )
     except APIError as e:
         handle_api_error(e)
 
