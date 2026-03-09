@@ -43,9 +43,9 @@ def build_project_cleanup_status(project_id: str) -> dict[str, Any]:
         "project_id": project_id,
         "path": str(repo_path),
         "active_worktrees": workspace_summary.active_worktrees,
-        "dirty_worktrees": dirty_worktrees,
+        "dirty_worktrees": workspace_summary.dirty_worktrees or dirty_worktrees,
         "orphan_task_branches": workspace_summary.orphan_branches,
         "prunable_task_branches": workspace_summary.prunable_branches,
         "worktree_task_ids": workspace_summary.worktree_task_ids,
-        "needs_cleanup": needs_cleanup,
+        "needs_cleanup": workspace_summary.needs_cleanup or needs_cleanup,
     }

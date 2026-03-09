@@ -1,7 +1,7 @@
 'use client'
 
 import clsx from 'clsx'
-import { GitBranch, Layers, RefreshCw, Scissors, Unplug, XCircle } from 'lucide-react'
+import { AlertTriangle, GitBranch, Layers, RefreshCw, Scissors, Unplug, XCircle } from 'lucide-react'
 import { ConflictAlerts } from '@/components/git/ConflictAlerts'
 import { ProjectRow } from '@/components/git/ProjectRow'
 import { useGitStatus } from './useGitStatus'
@@ -31,18 +31,29 @@ function SummaryCard({
 export function GitClient() {
   const { data: gitStatus, isLoading, isError, refetch } = useGitStatus()
   const repos = gitStatus?.repositories ?? []
-  const reposNeedingCleanup = repos.filter(
-    (repo) => (repo.workspace_summary?.orphan_branches ?? 0) > 0 || (repo.workspace_summary?.prunable_branches ?? 0) > 0,
+  const projectRepos = repos.filter((repo) => repo.name !== '.claude')
+  const needsAttention = (repo: (typeof repos)[number]) =>
+    repo.state !== 'clean' ||
+    (repo.workspace_summary?.dirty_worktrees ?? 0) > 0 ||
+    (repo.workspace_summary?.orphan_branches ?? 0) > 0 ||
+    (repo.workspace_summary?.prunable_branches ?? 0) > 0
+  const reposNeedingCleanup = projectRepos.filter(
+    (repo) => needsAttention(repo),
   ).length
-  const activeWorktrees = repos.reduce(
+  const dirtyRepos = projectRepos.filter((repo) => repo.state === 'dirty' || repo.state === 'ahead').length
+  const activeWorktrees = projectRepos.reduce(
     (sum, repo) => sum + (repo.workspace_summary?.active_worktrees ?? 0),
     0,
   )
-  const orphanBranches = repos.reduce(
+  const dirtyWorktrees = projectRepos.reduce(
+    (sum, repo) => sum + (repo.workspace_summary?.dirty_worktrees ?? 0),
+    0,
+  )
+  const orphanBranches = projectRepos.reduce(
     (sum, repo) => sum + (repo.workspace_summary?.orphan_branches ?? 0),
     0,
   )
-  const prunableBranches = repos.reduce(
+  const prunableBranches = projectRepos.reduce(
     (sum, repo) => sum + (repo.workspace_summary?.prunable_branches ?? 0),
     0,
   )
@@ -76,9 +87,11 @@ export function GitClient() {
       <ConflictAlerts />
 
       {gitStatus && !isLoading && (
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
           <SummaryCard icon={GitBranch} label="Repos To Check" value={reposNeedingCleanup} tone="text-rose-300" />
+          <SummaryCard icon={AlertTriangle} label="Dirty Repos" value={dirtyRepos} tone="text-orange-300" />
           <SummaryCard icon={Layers} label="Active Worktrees" value={activeWorktrees} tone="text-cyan-300" />
+          <SummaryCard icon={AlertTriangle} label="Dirty Worktrees" value={dirtyWorktrees} tone="text-orange-300" />
           <SummaryCard icon={Unplug} label="Orphan Branches" value={orphanBranches} tone="text-amber-300" />
           <SummaryCard icon={Scissors} label="Prunable Branches" value={prunableBranches} tone="text-pink-300" />
         </section>

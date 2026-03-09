@@ -52,7 +52,7 @@ def format_list_compact(result: dict[str, Any]) -> None:
 
     for ep in episodes:
         uuid = ep.get("uuid", "?")[:8]
-        tier = ep.get("injection_tier", "?")
+        tier = ep.get("category") or ep.get("injection_tier", "?")
         summary = ep.get("summary", "")
         content = ep.get("content", "")
         print(f"  {uuid} [{tier}] summary={summary}")

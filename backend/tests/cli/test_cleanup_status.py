@@ -365,3 +365,110 @@ def test_inspect_orphans_reports_salvage_candidates() -> None:
     assert "ORPHAN-REVIEW[all]:total=1 salvage=1 review=0" in result.output
     assert "summitflow task-24310aaf" in result.output
     assert "resolution:salvage" in result.output
+
+
+def test_cleanup_salvage_recovers_missing_task_orphan_branch() -> None:
+    with (
+        patch("cli.commands.cleanup._iter_target_repos", return_value=[Path("/repos/summitflow")]),
+        patch(
+            "cli.commands.cleanup.assess_orphan_task_branches",
+            return_value=[
+                SimpleNamespace(
+                    branch_name="task-24310aaf/main",
+                    task_id="task-24310aaf",
+                    resolution="salvage",
+                    task_status=None,
+                    commits_ahead=1,
+                    files_changed=1,
+                    has_node_modules_artifact=True,
+                ),
+            ],
+        ),
+        patch("cli.commands.cleanup._get_branch_subject", return_value="Refactor storage helper"),
+        patch(
+            "cli.commands.cleanup.task_store.create_task",
+            return_value={"id": "task-24310aaf"},
+        ) as mock_create_task,
+        patch("cli.commands.cleanup.task_store.update_task") as mock_update_task,
+        patch(
+            "cli.commands.cleanup.create_worktree",
+            return_value=SimpleNamespace(path=Path("/wt/task-24310aaf")),
+        ) as mock_create_worktree,
+    ):
+        result = runner.invoke(app, ["salvage", "task-24310aaf", "--all"])
+
+    assert result.exit_code == 0
+    mock_create_task.assert_called_once_with(
+        project_id="summitflow",
+        title="Refactor storage helper",
+        description=(
+            "Recovered from orphan branch task-24310aaf/main in summitflow. "
+            "Latest commit: Refactor storage helper. Resume review, salvage, or discard from the restored lane."
+        ),
+        task_id="task-24310aaf",
+        labels=["cleanup:salvaged"],
+    )
+    mock_update_task.assert_called_once_with("task-24310aaf", branch_name="task-24310aaf/main")
+    mock_create_worktree.assert_called_once_with("task-24310aaf", project_id="summitflow")
+    assert "Recovered orphan branch task-24310aaf/main into task task-24310aaf" in result.output
+    assert "note: branch includes node_modules artifact changes" in result.output
+
+
+def test_cleanup_salvage_rejects_non_missing_task_candidates() -> None:
+    with (
+        patch("cli.commands.cleanup._iter_target_repos", return_value=[Path("/repos/summitflow")]),
+        patch(
+            "cli.commands.cleanup.assess_orphan_task_branches",
+            return_value=[
+                SimpleNamespace(
+                    branch_name="task-24310aaf/main",
+                    task_id="task-24310aaf",
+                    resolution="review",
+                    task_status="blocked",
+                    commits_ahead=1,
+                    files_changed=1,
+                    has_node_modules_artifact=False,
+                ),
+            ],
+        ),
+    ):
+        result = runner.invoke(app, ["salvage", "task-24310aaf", "--all"])
+
+    assert result.exit_code == 1
+    assert "not a missing-task salvage candidate" in result.output
+
+
+def test_cleanup_salvage_rolls_back_task_if_worktree_creation_fails() -> None:
+    with (
+        patch("cli.commands.cleanup._iter_target_repos", return_value=[Path("/repos/summitflow")]),
+        patch(
+            "cli.commands.cleanup.assess_orphan_task_branches",
+            return_value=[
+                SimpleNamespace(
+                    branch_name="task-24310aaf/main",
+                    task_id="task-24310aaf",
+                    resolution="salvage",
+                    task_status=None,
+                    commits_ahead=1,
+                    files_changed=1,
+                    has_node_modules_artifact=False,
+                ),
+            ],
+        ),
+        patch("cli.commands.cleanup._get_branch_subject", return_value="Refactor storage helper"),
+        patch(
+            "cli.commands.cleanup.task_store.create_task",
+            return_value={"id": "task-24310aaf"},
+        ),
+        patch("cli.commands.cleanup.task_store.update_task"),
+        patch(
+            "cli.commands.cleanup.create_worktree",
+            side_effect=RuntimeError("worktree add failed"),
+        ),
+        patch("cli.commands.cleanup.task_store.delete_task") as mock_delete_task,
+    ):
+        result = runner.invoke(app, ["salvage", "task-24310aaf", "--all"])
+
+    assert result.exit_code == 1
+    mock_delete_task.assert_called_once_with("task-24310aaf")
+    assert "failed to create worktree" in result.output

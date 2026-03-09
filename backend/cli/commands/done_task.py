@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import json
+import subprocess
+from pathlib import Path
+
 import typer
 
 from .._client_base import APIError
@@ -97,6 +101,63 @@ def _trigger_health_check(task_id: str, project_id: str | None) -> None:
         pass  # Never block completion on health check trigger failure
 
 
+def _publish_completed_work(task_id: str, project_id: str | None) -> None:
+    """Publish merged main-branch work so completed tasks do not leave repos ahead/dirty."""
+    if not project_id:
+        return
+
+    try:
+        from app.storage.projects import get_project_root_path
+    except Exception:
+        return
+
+    project_root = get_project_root_path(project_id)
+    if not project_root:
+        output_warning(f"Task merged but publish skipped: unknown project root for {project_id}")
+        return
+
+    command = [
+        str(Path.home() / "summitflow" / "scripts" / "commit.sh"),
+        "--current",
+        "--push",
+        "--task",
+        task_id,
+        "--json",
+    ]
+    try:
+        result = subprocess.run(
+            command,
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=600,
+        )
+    except (subprocess.SubprocessError, OSError) as exc:
+        output_warning(f"Task merged but publish failed to start: {exc}")
+        return
+
+    stdout = result.stdout.strip()
+    stderr = result.stderr.strip()
+    try:
+        payload = json.loads(stdout) if stdout else {}
+    except json.JSONDecodeError:
+        detail = stderr or stdout[:200] or "unknown commit.sh output"
+        output_warning(f"Task merged but publish status was unreadable: {detail}")
+        return
+
+    repo_result = payload.get("repos", [{}])[0] if payload.get("repos") else {}
+    status = str(repo_result.get("status", payload.get("status", "UNKNOWN")))
+    reason = str(repo_result.get("reason", "") or "")
+
+    if result.returncode == 0 and status in {"SUCCESS", "SKIP"}:
+        return
+
+    detail = reason or stderr or stdout[:200] or "unknown publish failure"
+    output_warning(f"Task merged but publish did not complete cleanly: {status} ({detail})")
+
+
+
 def _complete_without_snapshot(
     client: STClient,
     task_id: str,
@@ -176,6 +237,8 @@ def complete_task(
     finally:
         if stashed:
             git_stash_pop()
+
+    _publish_completed_work(task_id, project_id)
 
     return {
         "task_id": task_id,

@@ -14,7 +14,7 @@ import typer
 from cli.client import STClient
 from cli.commands.done_git import git_stash_pop, git_stash_push
 from cli.commands.done_subtask import auto_close_subtasks
-from cli.commands.done_task import _auto_verify_readiness, complete_task
+from cli.commands.done_task import _auto_verify_readiness, _publish_completed_work, complete_task
 from cli.commands.done_validators import is_subtask_id
 
 
@@ -227,8 +227,9 @@ class TestCompleteTaskSmart:
     @patch("cli.commands.done_task.merge_task_branch")
     @patch("cli.commands.done_task.auto_close_subtasks")
     @patch("cli.commands.done_task.is_working_tree_clean", return_value=True)
+    @patch("cli.commands.done_task._publish_completed_work")
     def test_calls_auto_close_by_default(
-        self, mock_clean: MagicMock, mock_auto: MagicMock, mock_merge: MagicMock,
+        self, mock_publish: MagicMock, mock_clean: MagicMock, mock_auto: MagicMock, mock_merge: MagicMock,
         mock_remove: MagicMock, mock_snapshot: MagicMock
     ) -> None:
         """Smart mode calls auto_close_subtasks by default."""
@@ -238,10 +239,16 @@ class TestCompleteTaskSmart:
         complete_task(client, "task-123")
 
         mock_auto.assert_called_once_with(client, "task-123", "test")
+        mock_publish.assert_called_once_with("task-123", "test")
         client.post.assert_not_called()
 
     @patch("cli.commands.done_task.get_snapshot_info", return_value=None)
-    def test_admin_mode_closes_task_without_snapshot(self, mock_snapshot: MagicMock) -> None:
+    @patch("cli.commands.done_task._publish_completed_work")
+    def test_admin_mode_closes_task_without_snapshot(
+        self,
+        mock_publish: MagicMock,
+        mock_snapshot: MagicMock,
+    ) -> None:
         """Admin mode should allow closing non-code tasks without a checkpoint."""
         client = self._setup_mocks()
 
@@ -249,6 +256,7 @@ class TestCompleteTaskSmart:
 
         client.close_task.assert_called_once_with("task-123", reason="phase shipped", skip_gates=True)
         client.update_status.assert_not_called()
+        mock_publish.assert_not_called()
 
     @patch("cli.commands.done_task.get_snapshot_info", return_value=None)
     def test_missing_snapshot_without_admin_still_fails(self, mock_snapshot: MagicMock) -> None:
@@ -263,8 +271,10 @@ class TestCompleteTaskSmart:
     @patch("cli.commands.done_task.merge_task_branch")
     @patch("cli.commands.done_task.auto_close_subtasks")
     @patch("cli.commands.done_task.is_working_tree_clean", return_value=True)
+    @patch("cli.commands.done_task._publish_completed_work")
     def test_admin_mode_closes_claimed_task_without_merge(
         self,
+        mock_publish: MagicMock,
         mock_clean: MagicMock,
         mock_auto: MagicMock,
         mock_merge: MagicMock,
@@ -286,6 +296,7 @@ class TestCompleteTaskSmart:
         client.close_task.assert_called_once_with("task-123", reason="stale state", skip_gates=True)
         mock_remove.assert_called_once_with("task-123", project_id="test")
         mock_merge.assert_not_called()
+        mock_publish.assert_not_called()
         client.post.assert_not_called()
 
     @patch("cli.commands.done_task.output_error")
@@ -306,8 +317,9 @@ class TestCompleteTaskSmart:
     @patch("cli.commands.done_task.merge_task_branch")
     @patch("cli.commands.done_task.auto_close_subtasks")
     @patch("cli.commands.done_task.is_working_tree_clean", return_value=True)
+    @patch("cli.commands.done_task._publish_completed_work")
     def test_strict_skips_auto_close(
-        self, mock_clean: MagicMock, mock_auto: MagicMock, mock_merge: MagicMock,
+        self, mock_publish: MagicMock, mock_clean: MagicMock, mock_auto: MagicMock, mock_merge: MagicMock,
         mock_remove: MagicMock, mock_snapshot: MagicMock
     ) -> None:
         """Strict mode does NOT call auto_close_subtasks."""
@@ -317,6 +329,7 @@ class TestCompleteTaskSmart:
         complete_task(client, "task-123", strict=True)
 
         mock_auto.assert_not_called()
+        mock_publish.assert_called_once_with("task-123", "test")
         client.post.assert_not_called()
 
     @patch("cli.commands.done_task.get_snapshot_info")
@@ -326,8 +339,9 @@ class TestCompleteTaskSmart:
     @patch("cli.commands.done_task.git_stash_pop")
     @patch("cli.commands.done_task.git_stash_push", return_value=True)
     @patch("cli.commands.done_task.is_working_tree_clean")
+    @patch("cli.commands.done_task._publish_completed_work")
     def test_stash_merge_pop_on_dirty_main(
-        self, mock_clean: MagicMock, mock_stash_push: MagicMock,
+        self, mock_publish: MagicMock, mock_clean: MagicMock, mock_stash_push: MagicMock,
         mock_stash_pop: MagicMock, mock_auto: MagicMock, mock_merge: MagicMock,
         mock_remove: MagicMock, mock_snapshot: MagicMock
     ) -> None:
@@ -342,6 +356,7 @@ class TestCompleteTaskSmart:
 
         mock_stash_push.assert_called_once()
         mock_stash_pop.assert_called_once()
+        mock_publish.assert_called_once_with("task-123", "test")
 
     @patch("cli.commands.done_task.get_snapshot_info")
     @patch("cli.commands.done_task.is_working_tree_clean")
@@ -387,8 +402,9 @@ class TestCompleteTaskSmart:
     @patch("cli.commands.done_task.merge_task_branch")
     @patch("cli.commands.done_task.auto_close_subtasks")
     @patch("cli.commands.done_task.is_working_tree_clean", return_value=True)
+    @patch("cli.commands.done_task._publish_completed_work")
     def test_no_stash_when_main_clean(
-        self, mock_clean: MagicMock, mock_auto: MagicMock, mock_merge: MagicMock,
+        self, mock_publish: MagicMock, mock_clean: MagicMock, mock_auto: MagicMock, mock_merge: MagicMock,
         mock_remove: MagicMock, mock_snapshot: MagicMock
     ) -> None:
         """Clean main does not trigger stash."""
@@ -398,6 +414,7 @@ class TestCompleteTaskSmart:
         with patch("cli.commands.done_task.git_stash_push") as mock_push:
             complete_task(client, "task-123")
             mock_push.assert_not_called()
+        mock_publish.assert_called_once_with("task-123", "test")
 
     @patch("cli.commands.done_task.get_snapshot_info")
     @patch("cli.commands.done_task.remove_snapshot")
@@ -405,8 +422,9 @@ class TestCompleteTaskSmart:
     @patch("cli.commands.done_task.auto_close_subtasks")
     @patch("cli.commands.done_task.is_working_tree_clean", return_value=True)
     @patch("cli.commands.done_task.output_warning")
+    @patch("cli.commands.done_task._publish_completed_work")
     def test_status_update_failure_after_merge_warns_and_continues(
-        self, mock_warning: MagicMock, mock_clean: MagicMock, mock_auto: MagicMock,
+        self, mock_publish: MagicMock, mock_warning: MagicMock, mock_clean: MagicMock, mock_auto: MagicMock,
         mock_merge: MagicMock, mock_remove: MagicMock, mock_snapshot: MagicMock
     ) -> None:
         """If status update fails after merge, warn user and still clean up snapshot."""
@@ -423,6 +441,7 @@ class TestCompleteTaskSmart:
         assert "status update failed" in mock_warning.call_args.args[0]
         assert "st done task-123 --admin" in mock_warning.call_args.args[0]
         mock_remove.assert_called_once()
+        mock_publish.assert_called_once_with("task-123", "test")
         assert result["merged"] is True
 
     @patch("cli.commands.done_task.get_snapshot_info")
@@ -430,8 +449,10 @@ class TestCompleteTaskSmart:
     @patch("cli.commands.done_task.merge_task_branch")
     @patch("cli.commands.done_task.auto_close_subtasks")
     @patch("cli.commands.done_task.is_working_tree_clean", return_value=True)
+    @patch("cli.commands.done_task._publish_completed_work")
     def test_completion_does_not_call_removed_review_approval_endpoint(
         self,
+        mock_publish: MagicMock,
         mock_clean: MagicMock,
         mock_auto: MagicMock,
         mock_merge: MagicMock,
@@ -443,7 +464,55 @@ class TestCompleteTaskSmart:
 
         complete_task(client, "task-123")
 
+        mock_publish.assert_called_once_with("task-123", "test")
         client.post.assert_not_called()
+
+
+class TestPublishCompletedWork:
+    @patch("cli.commands.done_task.output_warning")
+    @patch("subprocess.run")
+    def test_publish_warns_when_commit_flow_fails(
+        self,
+        mock_run: MagicMock,
+        mock_warning: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(
+            "app.storage.projects.get_project_root_path",
+            lambda project_id: "/repos/summitflow",
+        )
+        mock_run.return_value = MagicMock(
+            returncode=1,
+            stdout='{"status":"FAILED","repos":[{"status":"ERROR","reason":"push_failed"}]}',
+            stderr="",
+        )
+
+        _publish_completed_work("task-123", "summitflow")
+
+        mock_warning.assert_called_once()
+        assert "push_failed" in mock_warning.call_args.args[0]
+
+    @patch("cli.commands.done_task.output_warning")
+    @patch("subprocess.run")
+    def test_publish_skips_warning_on_success(
+        self,
+        mock_run: MagicMock,
+        mock_warning: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(
+            "app.storage.projects.get_project_root_path",
+            lambda project_id: "/repos/summitflow",
+        )
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout='{"status":"SUCCESS","repos":[{"status":"SUCCESS","pushed":true,"reason":""}]}',
+            stderr="",
+        )
+
+        _publish_completed_work("task-123", "summitflow")
+
+        mock_warning.assert_not_called()
 
 
 class TestSTClientTaskHelpers:

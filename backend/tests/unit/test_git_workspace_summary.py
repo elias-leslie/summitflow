@@ -35,6 +35,10 @@ class TestBuildRepoWorkspaceSummary:
                 SimpleNamespace(task_id="task-999", branch="task-999/main", path=Path("/wt/task-999")),
             ],
         )
+        mocker.patch(
+            "cli.commands.cleanup_git.has_uncommitted_changes",
+            side_effect=[False, True],
+        )
         mocker.patch("app.utils._git_branches._detect_base_branch", return_value="main")
         mocker.patch(
             "app.utils._git_branches._get_merged_branches",
@@ -63,10 +67,12 @@ class TestBuildRepoWorkspaceSummary:
         summary = build_repo_workspace_summary(repo_path)
 
         assert summary.active_worktrees == 2
+        assert summary.dirty_worktrees == 1
         assert summary.branches_with_worktrees == 1
         assert summary.task_branches == 3
         assert summary.orphan_branches == 2
         assert summary.prunable_branches == 1
+        assert summary.needs_cleanup is True
         assert summary.worktree_task_ids == ["task-123", "task-999"]
         assert summary.salvage_task_ids == []
         assert summary.review_orphan_task_ids == ["task-789"]

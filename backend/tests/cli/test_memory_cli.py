@@ -11,6 +11,7 @@ from typer.testing import CliRunner
 
 from cli.commands.memory import app
 from cli.commands.memory_crud import save_impl, update_impl
+from cli.commands.memory_formatters import format_list_compact
 
 runner = CliRunner()
 
@@ -173,3 +174,26 @@ class TestMemoryTagOptions:
             update_impl("abc12345", "new content", None, None, None, None, None, False)
 
         mock_replace_tags.assert_called_once_with("def67890", ["finance-relevant"])
+
+
+class TestMemoryListFormatting:
+    """Tests for TOON formatting of memory list output."""
+
+    def test_list_formatter_falls_back_to_category(self, capsys) -> None:
+        """List output should show tier from API category field when injection_tier is absent."""
+        format_list_compact(
+            {
+                "episodes": [
+                    {
+                        "uuid": "abc12345-dead-beef-cafe-1234567890ab",
+                        "category": "mandate",
+                        "summary": "Use dt",
+                        "content": "**DT CLI**: Prefer dt.",
+                    }
+                ],
+                "cursor": None,
+            }
+        )
+
+        out = capsys.readouterr().out
+        assert "abc12345 [mandate] summary=Use dt" in out

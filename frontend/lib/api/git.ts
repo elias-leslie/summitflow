@@ -6,10 +6,12 @@ import { fetchWithErrorHandling, getApiBase } from './utils'
 
 export interface RepoWorkspaceSummary {
   active_worktrees: number
+  dirty_worktrees: number
   branches_with_worktrees: number
   task_branches: number
   orphan_branches: number
   prunable_branches: number
+  needs_cleanup: boolean
   worktree_task_ids: string[]
   orphan_branch_names?: string[]
   prunable_branch_names?: string[]

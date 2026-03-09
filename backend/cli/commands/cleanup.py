@@ -1,6 +1,6 @@
 """Cleanup commands for st CLI.
 
-Provides worktree cleanup and stale detection for orphaned worktrees.
+Provides worktree cleanup, orphan inspection, and minimal salvage recovery.
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ from typing import Annotated, Any
 
 import typer
 
+from app.storage import tasks as task_store
 from app.utils._git_branches import (
     assess_orphan_task_branches,
     prune_closed_orphan_task_branches,
@@ -17,12 +18,13 @@ from app.utils._git_branches import (
     prune_prunable_task_branches,
     prune_worktree_registrations,
 )
+from app.utils._git_core import run_git
 from app.utils.git_helpers import build_repo_workspace_summary
 
 from ..client import STClient
 from ..config import get_config_optional
-from ..lib.worktree import get_active_worktrees
-from ..output import output_json, output_success
+from ..lib.worktree import create_worktree, get_active_worktrees
+from ..output import output_error, output_json, output_success
 from ..output_context import OutputContext
 from ._git_helpers import _get_managed_repos
 from .cleanup_analysis import (
@@ -267,6 +269,33 @@ def _cleanup_safe_git_residue(repos: list[Path], dry_run: bool) -> tuple[int, in
     )
 
 
+def _get_orphan_assessment(repo_path: Path, task_id: str) -> Any | None:
+    """Return orphan assessment for task_id in repo_path, if any."""
+    for item in assess_orphan_task_branches(repo_path):
+        if item.task_id == task_id:
+            return item
+    return None
+
+
+def _get_branch_subject(repo_path: Path, branch_name: str) -> str | None:
+    """Return the latest commit subject for a branch."""
+    result = run_git(["log", "-1", "--format=%s", branch_name], repo_path)
+    if result.returncode != 0:
+        return None
+    subject = result.stdout.strip()
+    return subject or None
+
+
+def _build_salvage_description(task_id: str, branch_name: str, repo_path: Path) -> str:
+    """Build a compact description for a recovered orphan branch task."""
+    subject = _get_branch_subject(repo_path, branch_name)
+    detail = f"Latest commit: {subject}." if subject else "Latest commit subject unavailable."
+    return (
+        f"Recovered from orphan branch {branch_name} in {repo_path.name}. "
+        f"{detail} Resume review, salvage, or discard from the restored lane."
+    )
+
+
 @app.command("worktrees")
 def cleanup_worktrees(
     auto: Annotated[bool, typer.Option("--auto", help="Auto-cleanup safe cases (merged, no commits ahead)")] = False,
@@ -354,6 +383,64 @@ def inspect_orphans(
     typer.echo(f"ORPHAN-REVIEW[{scope}]:total={len(lines)} salvage={salvage_count} review={review_count}")
     for line in lines:
         typer.echo(line)
+
+
+@app.command("salvage")
+def salvage_orphan(
+    task_id: Annotated[str, typer.Argument(help="Missing-task orphan branch to recover")],
+    all_projects: Annotated[
+        bool,
+        typer.Option("--all", help="Search all managed projects instead of current project only"),
+    ] = False,
+) -> None:
+    """Recover a missing-task orphan branch into a normal task lane."""
+    repos = _iter_target_repos(all_projects)
+    match: tuple[Path, Any] | None = None
+    for repo_path in repos:
+        item = _get_orphan_assessment(repo_path, task_id)
+        if item is not None:
+            match = (repo_path, item)
+            break
+
+    if match is None:
+        output_error(
+            f"No unresolved orphan branch found for {task_id}. "
+            "Use `st cleanup inspect-orphans` to find salvage candidates."
+        )
+        raise typer.Exit(1)
+
+    repo_path, item = match
+    if item.resolution != "salvage" or item.task_status is not None:
+        output_error(
+            f"{task_id} is not a missing-task salvage candidate. "
+            "This command only restores orphan branches whose task record is gone."
+        )
+        raise typer.Exit(1)
+
+    title = _get_branch_subject(repo_path, item.branch_name) or f"Recover orphan branch {task_id}"
+    description = _build_salvage_description(task_id, item.branch_name, repo_path)
+    created = task_store.create_task(
+        project_id=repo_path.name,
+        title=title,
+        description=description,
+        task_id=task_id,
+        labels=["cleanup:salvaged"],
+    )
+    task_store.update_task(task_id, branch_name=item.branch_name)
+
+    try:
+        worktree = create_worktree(task_id, project_id=repo_path.name)
+    except Exception as exc:
+        task_store.delete_task(task_id)
+        output_error(f"Recovered task record for {task_id}, but failed to create worktree: {exc}")
+        raise typer.Exit(1) from exc
+
+    output_success(f"Recovered orphan branch {item.branch_name} into task {created['id']}")
+    typer.echo(f"  project: {repo_path.name}")
+    typer.echo(f"  title: {title}")
+    typer.echo(f"  worktree: {worktree.path}")
+    if item.has_node_modules_artifact:
+        typer.echo("  note: branch includes node_modules artifact changes; inspect before merge")
 
 
 @app.command("status")

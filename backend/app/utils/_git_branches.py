@@ -275,11 +275,14 @@ def assess_orphan_task_branches(repo_path: Path) -> list[OrphanBranchAssessment]
 
 def build_repo_workspace_summary(repo_path: Path) -> RepoWorkspaceSummary:
     """Build per-repository branch/worktree cleanup counters."""
+    from cli.commands.cleanup_git import has_uncommitted_changes
+
     from ..api.models.git_models import RepoWorkspaceSummary
 
     project_id = _get_repo_project_id(repo_path)
     branches = get_all_branches(repo_path)
     active_worktrees = _get_active_worktrees(project_id) if project_id else []
+    dirty_worktrees = sum(1 for worktree in active_worktrees if has_uncommitted_changes(worktree.path))
     task_branches = [branch for branch in branches if branch.task_id]
     orphan_branches = [branch for branch in task_branches if not branch.has_worktree]
     prunable_branch_names = set(list_prunable_task_branches(repo_path))
@@ -290,10 +293,12 @@ def build_repo_workspace_summary(repo_path: Path) -> RepoWorkspaceSummary:
 
     return RepoWorkspaceSummary(
         active_worktrees=len(active_worktrees),
+        dirty_worktrees=dirty_worktrees,
         branches_with_worktrees=sum(1 for branch in task_branches if branch.has_worktree),
         task_branches=len(task_branches),
         orphan_branches=len(orphan_branches),
         prunable_branches=len(prunable_branches),
+        needs_cleanup=bool(dirty_worktrees or orphan_branches or prunable_branches),
         worktree_task_ids=[worktree.task_id for worktree in active_worktrees[:2]],
         orphan_branch_names=[branch.name for branch in orphan_branches[:5]],
         prunable_branch_names=[branch.name for branch in prunable_branches[:5]],

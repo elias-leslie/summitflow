@@ -34,10 +34,12 @@ class TestGitStatus:
             state="clean",
             workspace_summary=RepoWorkspaceSummary(
                 active_worktrees=1,
+                dirty_worktrees=1,
                 branches_with_worktrees=1,
                 task_branches=2,
                 orphan_branches=1,
                 prunable_branches=1,
+                needs_cleanup=True,
                 worktree_task_ids=["task-123"],
             ),
         )
@@ -49,6 +51,7 @@ class TestGitStatus:
         assert "total" in data
         assert isinstance(data["repositories"], list)
         assert data["repositories"][0]["workspace_summary"]["active_worktrees"] == 1
+        assert data["repositories"][0]["workspace_summary"]["dirty_worktrees"] == 1
 
 
 class TestGitSync:

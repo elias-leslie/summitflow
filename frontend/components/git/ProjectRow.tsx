@@ -3,6 +3,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import {
+  AlertTriangle,
   ArrowDown,
   ArrowUp,
   ChevronDown,
@@ -131,6 +132,15 @@ export function ProjectRow({ repo, isConfigRepo = false }: ProjectRowProps) {
             icon={Layers}
             label={`${workspaceSummary.active_worktrees} worktree${workspaceSummary.active_worktrees === 1 ? '' : 's'}`}
             title={`Active worktrees${worktreePreview}`}
+          />
+        )}
+
+        {!isConfigRepo && workspaceSummary && workspaceSummary.dirty_worktrees > 0 && (
+          <WorkspaceBadge
+            tone="rose"
+            icon={AlertTriangle}
+            label={`${workspaceSummary.dirty_worktrees} dirty wt`}
+            title={`${workspaceSummary.dirty_worktrees} worktree${workspaceSummary.dirty_worktrees === 1 ? '' : 's'} with uncommitted changes`}
           />
         )}
 
