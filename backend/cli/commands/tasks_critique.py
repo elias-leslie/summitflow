@@ -93,6 +93,73 @@ def _build_prompt(packet: dict[str, Any], *, stage: str) -> str:
     )
 
 
+def _call_agent(
+    task: dict[str, Any],
+    task_id: str,
+    stage: str,
+    agent_slug: str,
+) -> dict[str, Any]:
+    """Call the agent hub and return the parsed critique dict."""
+    spirit = get_task_spirit(task_id)
+    subtasks = get_subtasks_for_task(task_id, include_steps=True)
+    packet = _build_review_packet(task, spirit, subtasks)
+    prompt = _build_prompt(packet, stage=stage)
+
+    client = get_sync_client()
+    try:
+        response = client.complete(
+            agent_slug=agent_slug,
+            messages=[{"role": "user", "content": prompt}],
+            project_id=task["project_id"],
+            external_id=task_id,
+            purpose="task-second-opinion",
+            use_memory=True,
+            memory_group_id=f"project:{task['project_id']}",
+        )
+        return parse_second_opinion_response(
+            response.content, stage=stage, agent_slug=agent_slug
+        )
+    except Exception as exc:
+        logger.exception("Task critique failed", task_id=task_id)
+        output_error(f"Failed to obtain critique: {exc}")
+        raise typer.Exit(1) from exc
+
+
+def _persist_critique(
+    task_id: str,
+    stage: str,
+    agent_slug: str,
+    critique: dict[str, Any],
+    requirement: Any,
+) -> None:
+    """Persist, sync readiness, log event, and emit JSON output."""
+    persist_second_opinion(task_id, critique)
+    sync_task_execution_readiness(task_id, approved_by="task-critique")
+    log_task_event(
+        task_id,
+        f"Second opinion ({stage}) via {agent_slug}: {critique['verdict']} - {critique['summary']}",
+    )
+    output_json(
+        {
+            "task_id": task_id,
+            "stage": stage,
+            "required": requirement.required,
+            "requirement_reasons": requirement.reasons,
+            "status": critique["status"],
+            "verdict": critique["verdict"],
+            "summary": critique["summary"],
+            "findings": critique["findings"],
+            "missing_requirements": critique["missing_requirements"],
+            "edge_cases": critique["edge_cases"],
+            "test_gaps": critique["test_gaps"],
+            "rollout_gaps": critique["rollout_gaps"],
+            "simpler_alternative": critique["simpler_alternative"],
+            "confidence": critique["confidence"],
+            "agent_slug": agent_slug,
+        }
+    )
+
+
 def critique_task_command(
     task_id: str,
     stage: str = "task_shape",
@@ -114,52 +181,5 @@ def critique_task_command(
         )
         raise typer.Exit(1)
 
-    subtasks = get_subtasks_for_task(task_id, include_steps=True)
-    packet = _build_review_packet(task, spirit, subtasks)
-    prompt = _build_prompt(packet, stage=stage)
-
-    client = get_sync_client()
-    try:
-        response = client.complete(
-            agent_slug=agent_slug,
-            messages=[{"role": "user", "content": prompt}],
-            project_id=task["project_id"],
-            external_id=task_id,
-            purpose="task-second-opinion",
-            use_memory=True,
-            memory_group_id=f"project:{task['project_id']}",
-        )
-        critique = parse_second_opinion_response(
-            response.content, stage=stage, agent_slug=agent_slug
-        )
-    except Exception as exc:
-        logger.exception("Task critique failed", task_id=task_id)
-        output_error(f"Failed to obtain critique: {exc}")
-        raise typer.Exit(1) from exc
-
-    persist_second_opinion(task_id, critique)
-    sync_task_execution_readiness(task_id, approved_by="task-critique")
-    log_task_event(
-        task_id,
-        f"Second opinion ({stage}) via {agent_slug}: {critique['verdict']} - {critique['summary']}",
-    )
-
-    output_json(
-        {
-            "task_id": task_id,
-            "stage": stage,
-            "required": requirement.required,
-            "requirement_reasons": requirement.reasons,
-            "status": critique["status"],
-            "verdict": critique["verdict"],
-            "summary": critique["summary"],
-            "findings": critique["findings"],
-            "missing_requirements": critique["missing_requirements"],
-            "edge_cases": critique["edge_cases"],
-            "test_gaps": critique["test_gaps"],
-            "rollout_gaps": critique["rollout_gaps"],
-            "simpler_alternative": critique["simpler_alternative"],
-            "confidence": critique["confidence"],
-            "agent_slug": agent_slug,
-        }
-    )
+    critique = _call_agent(task, task_id, stage, agent_slug)
+    _persist_critique(task_id, stage, agent_slug, critique, requirement)
