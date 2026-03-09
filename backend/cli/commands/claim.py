@@ -22,7 +22,7 @@ from .claim_helpers import (
     is_subtask_id,
     print_claimed,
     print_resumed,
-    require_clean_tree,
+    require_claim_safe_tree,
 )
 
 app = typer.Typer(help="Claim task or subtask to start work")
@@ -44,7 +44,7 @@ def _claim_task(
     if existing and not force:
         return handle_existing_checkpoint(task_id, existing)
 
-    require_clean_tree()
+    require_claim_safe_tree()
 
     try:
         client.claim_task(task_id)
@@ -93,7 +93,7 @@ def _claim_subtask(
         )
         raise typer.Exit(1)
 
-    require_clean_tree()
+    require_claim_safe_tree()
     branch_name = create_subtask_branch(task_id, subtask_id)
 
     return {

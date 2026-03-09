@@ -7,11 +7,20 @@ from __future__ import annotations
 
 import subprocess
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import typer
 
-from ..output import output_error, output_success
+from ..output import output_error, output_success, output_warning
+
+_UNMERGED_PREFIXES = {"DD", "AU", "UD", "UA", "DU", "AA", "UU"}
+_IN_PROGRESS_FILES = (
+    "MERGE_HEAD",
+    "REBASE_HEAD",
+    "CHERRY_PICK_HEAD",
+    "BISECT_LOG",
+)
 
 
 def is_subtask_id(id_str: str) -> bool:
@@ -22,8 +31,8 @@ def is_subtask_id(id_str: str) -> bool:
     return len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit()
 
 
-def is_working_tree_clean() -> bool:
-    """Check if git working tree is clean."""
+def _git_status_lines() -> list[str]:
+    """Return porcelain status lines, or an empty list on git failure."""
     try:
         result = subprocess.run(
             ["git", "status", "--porcelain"],
@@ -31,19 +40,48 @@ def is_working_tree_clean() -> bool:
             text=True,
             check=True,
         )
-        return len(result.stdout.strip()) == 0
+        return [line for line in result.stdout.splitlines() if line.strip()]
     except subprocess.CalledProcessError:
-        return False
+        return []
+
+
+def _find_claim_hazards() -> list[str]:
+    """Return concrete hazards that should block st claim."""
+    hazards: list[str] = []
+    for line in _git_status_lines():
+        status_code = line[:2]
+        if status_code in _UNMERGED_PREFIXES:
+            hazards.append("unresolved merge conflicts")
+            break
+
+    git_dir = Path(".git")
+    if git_dir.is_dir():
+        for marker in _IN_PROGRESS_FILES:
+            if (git_dir / marker).exists():
+                readable = marker.lower().replace("_head", "").replace("_", " ")
+                hazards.append(f"{readable} in progress")
+    return list(dict.fromkeys(hazards))
+
+
+def require_claim_safe_tree() -> None:
+    """Block claim only when the working tree is hazardous, not merely dirty."""
+    hazards = _find_claim_hazards()
+    if hazards:
+        output_error(
+            "Working tree is not safe for st claim.\n"
+            f"Resolve first: {', '.join(hazards)}"
+        )
+        raise typer.Exit(1)
+    if _git_status_lines():
+        output_warning(
+            "Working tree has uncommitted changes, but no claim-blocking hazards were found. "
+            "Proceeding with checkpoint baseline capture."
+        )
 
 
 def require_clean_tree() -> None:
-    """Exit with error if working tree has uncommitted changes."""
-    if not is_working_tree_clean():
-        output_error(
-            "Working tree has uncommitted changes.\n"
-            "Commit or stash first: git stash or git commit"
-        )
-        raise typer.Exit(1)
+    """Backward-compatible alias for older claim command imports."""
+    require_claim_safe_tree()
 
 
 def _format_age(created_at: str) -> str:

@@ -1,4 +1,4 @@
-"""Task lifecycle management commands (cancel, delete)."""
+"""Task lifecycle management commands (cancel, reopen, delete)."""
 
 from __future__ import annotations
 
@@ -55,3 +55,29 @@ def delete_task_command(
         return
 
     output_success(f"Deleted task {task_id}")
+
+
+def reopen_task_command(
+    task_id: str | None,
+    reason: str,
+) -> None:
+    """Reopen a task by moving it back to pending.
+
+    Use this when a task was closed incorrectly or needs another execution pass.
+
+    Examples:
+        st reopen task-abc123 -r "False completion during reconcile"
+        st reopen task-abc123
+    """
+    task_id = require_task_id(task_id)
+    client = STClient()
+
+    try:
+        task = client.reopen_task(task_id, reason=reason or None)
+    except APIError as e:
+        handle_api_error(e)
+        return
+
+    if reason:
+        task["reopen_reason"] = reason
+    output_task(task)

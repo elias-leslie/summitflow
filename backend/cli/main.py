@@ -66,6 +66,7 @@ TASKS (create/bug/idea REQUIRE -P <project>):
   export <id> [-o file.json]               # full JSON export (everything)
   log <id> <message>
   cancel <id> [-r reason]                  # cancel a task (from any state)
+  reopen <id> [-r reason]                  # reopen a task (move back to pending)
   autocode <id> [--dry-run] [--at TIME]    # queue for autonomous execution (immediate or scheduled)
   critique <id> [--stage task_shape]       # request/store a second-opinion critique
   verify <plan.json>                       # validate plan file against schema

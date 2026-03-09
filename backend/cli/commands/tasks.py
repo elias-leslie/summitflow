@@ -129,6 +129,17 @@ def cancel(
 
 
 @app.command()
+def reopen(
+    task_id: Annotated[str | None, typer.Argument()] = None,
+    reason: Annotated[str, typer.Option("-r", "--reason")] = "",
+) -> None:
+    """Reopen a task (move it back to pending)."""
+    from .tasks_lifecycle import reopen_task_command
+
+    reopen_task_command(task_id, reason)
+
+
+@app.command()
 def delete(
     task_id: Annotated[str | None, typer.Argument()] = None,
 ) -> None:

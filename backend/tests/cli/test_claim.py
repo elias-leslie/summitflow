@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -9,6 +10,7 @@ import pytest
 import typer
 
 from cli.commands.claim import _claim_task
+from cli.commands.claim_helpers import require_claim_safe_tree
 
 
 class TestClaimTask:
@@ -26,7 +28,7 @@ class TestClaimTask:
 
         with (
             patch("cli.commands.claim.get_snapshot_info", return_value=None),
-            patch("cli.commands.claim.require_clean_tree"),
+            patch("cli.commands.claim.require_claim_safe_tree"),
             patch(
                 "cli.commands.claim.create_task_snapshot",
                 return_value=SimpleNamespace(
@@ -57,7 +59,7 @@ class TestClaimTask:
 
         with (
             patch("cli.commands.claim.get_snapshot_info", return_value=None),
-            patch("cli.commands.claim.require_clean_tree"),
+            patch("cli.commands.claim.require_claim_safe_tree"),
             patch(
                 "cli.commands.claim.create_task_snapshot",
                 side_effect=RuntimeError("worktree failed"),
@@ -90,7 +92,7 @@ class TestClaimTask:
 
         with (
             patch("cli.commands.claim.get_snapshot_info", return_value=None),
-            patch("cli.commands.claim.require_clean_tree"),
+            patch("cli.commands.claim.require_claim_safe_tree"),
             patch(
                 "cli.commands.claim.create_task_snapshot",
                 side_effect=RuntimeError("worktree failed"),
@@ -104,3 +106,41 @@ class TestClaimTask:
         assert exc_info.value.exit_code == 1
         mock_warning.assert_called_once()
         assert "release failed" in mock_warning.call_args.args[0]
+
+
+class TestClaimTreeSafety:
+    def test_require_claim_safe_tree_allows_dirty_without_hazards(self) -> None:
+        with (
+            patch("cli.commands.claim_helpers._git_status_lines", return_value=[" M backend/app/main.py"]),
+            patch("cli.commands.claim_helpers.output_warning") as mock_warning,
+        ):
+            require_claim_safe_tree()
+
+        mock_warning.assert_called_once()
+
+    def test_require_claim_safe_tree_blocks_unmerged_conflicts(self) -> None:
+        with (
+            patch("cli.commands.claim_helpers._git_status_lines", return_value=["UU backend/app/main.py"]),
+            patch("cli.commands.claim_helpers.output_error") as mock_error,
+            pytest.raises(typer.Exit) as exc_info,
+        ):
+            require_claim_safe_tree()
+
+        assert exc_info.value.exit_code == 1
+        assert "unresolved merge conflicts" in mock_error.call_args.args[0]
+
+    def test_require_claim_safe_tree_blocks_merge_in_progress(self, tmp_path: Path) -> None:
+        git_dir = tmp_path / ".git"
+        git_dir.mkdir()
+        (git_dir / "MERGE_HEAD").write_text("merge", encoding="utf-8")
+
+        with (
+            patch("cli.commands.claim_helpers._git_status_lines", return_value=[]),
+            patch("cli.commands.claim_helpers.Path", return_value=git_dir),
+            patch("cli.commands.claim_helpers.output_error") as mock_error,
+            pytest.raises(typer.Exit) as exc_info,
+        ):
+            require_claim_safe_tree()
+
+        assert exc_info.value.exit_code == 1
+        assert "merge in progress" in mock_error.call_args.args[0]

@@ -63,9 +63,13 @@ def requires_backend() -> None:
 
 @pytest.fixture
 def requires_clean_git() -> None:
-    """Skip test if git working tree has uncommitted changes."""
+    """Skip test if git working tree has uncommitted changes.
+
+    The E2E suite still requires a clean tree because cleanup paths use
+    destructive rollback commands during teardown.
+    """
     if not _git_clean():
-        pytest.skip("Git working tree has uncommitted changes (st claim requires clean tree)")
+        pytest.skip("Git working tree has uncommitted changes (checkpoint E2E requires clean tree)")
 
 
 @pytest.fixture

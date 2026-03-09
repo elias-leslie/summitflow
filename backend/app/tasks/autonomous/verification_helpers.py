@@ -109,6 +109,11 @@ def file_to_module(project_path: str, file_path: str) -> str | None:
     if "test" in lower or "migration" in lower or "alembic" in lower:
         return None
 
+    # Skip files with hyphens — not valid Python identifiers; `import a-b`
+    # is always a SyntaxError (parsed as subtraction).
+    if "-" in module_name:
+        return None
+
     return module_name if module_name else None
 
 

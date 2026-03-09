@@ -101,6 +101,9 @@ class TaskOperationsMixin:
     def cancel_task(self, task_id: str) -> dict[str, Any]:
         return self.update_status(task_id, "cancelled")
 
+    def reopen_task(self, task_id: str, reason: str | None = None) -> dict[str, Any]:
+        return self.update_status(task_id, "pending", reason=reason)
+
     def delete_task(self, task_id: str) -> dict[str, Any]:
         return tasks_ops.delete_task(self._client, self._url, self._handle_response, task_id)
 
