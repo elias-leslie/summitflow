@@ -88,14 +88,34 @@ def _build_repo_cleanup_entry(repo_path: Path) -> dict[str, Any]:
     project_id = repo_path.name
     workspace_summary = build_repo_workspace_summary(repo_path)
     active_worktrees = get_active_worktrees(project_id)
+    client = STClient(require_project=False)
+    analyses = [analyze_worktree(worktree, client) for worktree in active_worktrees]
     dirty_worktrees = sum(
         1 for worktree in active_worktrees if has_uncommitted_changes(worktree.path)
     )
+    needs_merge_tasks = [
+        analysis.worktree.task_id
+        for analysis in analyses
+        if analysis.action == CleanupAction.NEEDS_MERGE
+    ]
+    conflict_tasks = [
+        analysis.worktree.task_id
+        for analysis in analyses
+        if analysis.action == CleanupAction.HAS_CONFLICTS
+    ]
+    review_tasks = [
+        analysis.worktree.task_id
+        for analysis in analyses
+        if analysis.action == CleanupAction.MANUAL_REVIEW
+    ]
     needs_cleanup = any(
         (
             dirty_worktrees,
             workspace_summary.orphan_branches,
             workspace_summary.prunable_branches,
+            needs_merge_tasks,
+            conflict_tasks,
+            review_tasks,
         )
     )
     return {
@@ -106,6 +126,12 @@ def _build_repo_cleanup_entry(repo_path: Path) -> dict[str, Any]:
         "orphan_task_branches": workspace_summary.orphan_branches,
         "prunable_task_branches": workspace_summary.prunable_branches,
         "worktree_task_ids": workspace_summary.worktree_task_ids,
+        "needs_merge_count": len(needs_merge_tasks),
+        "conflict_count": len(conflict_tasks),
+        "review_count": len(review_tasks),
+        "needs_merge_tasks": needs_merge_tasks[:3],
+        "conflict_tasks": conflict_tasks[:3],
+        "review_tasks": review_tasks[:3],
         "needs_cleanup": needs_cleanup,
     }
 
@@ -165,10 +191,24 @@ def format_cleanup_status_compact(data: dict[str, Any], all_projects: bool) -> N
             else ""
         )
         if repo["needs_cleanup"] or repo["active_worktrees"]:
+            attention_parts: list[str] = []
+            if repo["needs_merge_tasks"]:
+                attention_parts.append(
+                    f"finalize:{','.join(repo['needs_merge_tasks'])}"
+                )
+            if repo["conflict_tasks"]:
+                attention_parts.append(
+                    f"conflicts:{','.join(repo['conflict_tasks'])}"
+                )
+            if repo["review_tasks"]:
+                attention_parts.append(
+                    f"review:{','.join(repo['review_tasks'])}"
+                )
+            attention = f" {' '.join(attention_parts)}" if attention_parts else ""
             print(
                 f"{repo['project_id']} worktrees:{repo['active_worktrees']} "
                 f"dirty:{repo['dirty_worktrees']} orphan:{repo['orphan_task_branches']} "
-                f"prunable:{repo['prunable_task_branches']}{preview}"
+                f"prunable:{repo['prunable_task_branches']}{preview}{attention}"
             )
         else:
             print(f"{repo['project_id']} clean")

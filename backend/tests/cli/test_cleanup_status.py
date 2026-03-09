@@ -9,12 +9,17 @@ from unittest.mock import patch
 from typer.testing import CliRunner
 
 from cli.commands.cleanup import app, build_cleanup_status_payload
+from cli.commands.cleanup_analysis import CleanupAction
 
 runner = CliRunner()
 
 
 def test_build_cleanup_status_payload_aggregates_repo_hygiene() -> None:
     repo_paths = [Path("/repos/summitflow"), Path("/repos/agent-hub")]
+    summitflow_worktrees = [
+        SimpleNamespace(task_id="task-1", path=Path("/wt/1"), branch="task-1/main", base_branch="main", project_id="summitflow"),
+        SimpleNamespace(task_id="task-2", path=Path("/wt/2"), branch="task-2/main", base_branch="main", project_id="summitflow"),
+    ]
 
     with (
         patch("cli.commands.cleanup._get_managed_repos", return_value=repo_paths),
@@ -39,20 +44,21 @@ def test_build_cleanup_status_payload_aggregates_repo_hygiene() -> None:
         patch(
             "cli.commands.cleanup.get_active_worktrees",
             side_effect=[
-                [
-                    SimpleNamespace(task_id="task-1", path=Path("/wt/1"), branch="task-1/main", base_branch="main", project_id="summitflow"),
-                    SimpleNamespace(task_id="task-2", path=Path("/wt/2"), branch="task-2/main", base_branch="main", project_id="summitflow"),
-                ],
-                [
-                    SimpleNamespace(task_id="task-1", path=Path("/wt/1"), branch="task-1/main", base_branch="main", project_id="summitflow"),
-                    SimpleNamespace(task_id="task-2", path=Path("/wt/2"), branch="task-2/main", base_branch="main", project_id="summitflow"),
-                ],
+                summitflow_worktrees,
+                summitflow_worktrees,
                 [],
             ],
         ),
         patch(
             "cli.commands.cleanup.has_uncommitted_changes",
             side_effect=[True, False],
+        ),
+        patch(
+            "cli.commands.cleanup.analyze_worktree",
+            side_effect=[
+                SimpleNamespace(worktree=summitflow_worktrees[0], action=CleanupAction.NEEDS_MERGE),
+                SimpleNamespace(worktree=summitflow_worktrees[1], action=CleanupAction.MANUAL_REVIEW),
+            ],
         ),
     ):
         payload = build_cleanup_status_payload(all_projects=True)
@@ -67,6 +73,8 @@ def test_build_cleanup_status_payload_aggregates_repo_hygiene() -> None:
     }
     assert payload["repositories"][0]["project_id"] == "summitflow"
     assert payload["repositories"][0]["needs_cleanup"] is True
+    assert payload["repositories"][0]["needs_merge_tasks"] == ["task-1"]
+    assert payload["repositories"][0]["review_tasks"] == ["task-2"]
     assert payload["repositories"][1]["project_id"] == "agent-hub"
     assert payload["repositories"][1]["needs_cleanup"] is False
     assert payload["total"] == 2
@@ -74,6 +82,9 @@ def test_build_cleanup_status_payload_aggregates_repo_hygiene() -> None:
 
 def test_cleanup_status_compact_reports_cross_repo_summary() -> None:
     repo_paths = [Path("/repos/summitflow"), Path("/repos/agent-hub")]
+    summitflow_worktrees = [
+        SimpleNamespace(task_id="task-1", path=Path("/wt/1"), branch="task-1/main", base_branch="main", project_id="summitflow"),
+    ]
 
     with (
         patch("cli.commands.cleanup._get_managed_repos", return_value=repo_paths),
@@ -98,20 +109,20 @@ def test_cleanup_status_compact_reports_cross_repo_summary() -> None:
         patch(
             "cli.commands.cleanup.get_active_worktrees",
             side_effect=[
-                [
-                    SimpleNamespace(task_id="task-1", path=Path("/wt/1"), branch="task-1/main", base_branch="main", project_id="summitflow"),
-                ],
-                [
-                    SimpleNamespace(task_id="task-1", path=Path("/wt/1"), branch="task-1/main", base_branch="main", project_id="summitflow"),
-                ],
+                summitflow_worktrees,
+                summitflow_worktrees,
                 [],
             ],
         ),
         patch("cli.commands.cleanup.has_uncommitted_changes", return_value=False),
+        patch(
+            "cli.commands.cleanup.analyze_worktree",
+            return_value=SimpleNamespace(worktree=summitflow_worktrees[0], action=CleanupAction.NEEDS_MERGE),
+        ),
     ):
         result = runner.invoke(app, ["status", "--all"])
 
     assert result.exit_code == 0
     assert "CLEANUP[all]:repos=2 needs_cleanup=1 worktrees=1 dirty=0 orphan=1 prunable=0" in result.output
-    assert "summitflow worktrees:1 dirty:0 orphan:1 prunable:0 tasks:task-1" in result.output
+    assert "summitflow worktrees:1 dirty:0 orphan:1 prunable:0 tasks:task-1 finalize:task-1" in result.output
     assert "agent-hub clean" in result.output
