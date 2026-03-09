@@ -108,36 +108,15 @@ def _check_skip(
     return False
 
 
-def process_refactor_target(
+def _build_and_create_task(
     project_id: str, target: dict[str, Any],
-    project_root: str | None = None, skip_existing: bool = True,
+    relative_path: str, lines: int, complexity: float,
+    target_lines: int, refactor_issues: list[str], project_root: str | None,
 ) -> tuple[bool, int]:
-    """Process a single refactor target and create task if needed."""
-    relative_path = target.get("path", "")
-    lines = target.get("lines_of_code", 0)
-    complexity = target.get("complexity_score", 0)
-    refactor_issues: list[str] = target.get("refactor_issues", [])
-    target_lines = calculate_target_lines(lines)
-
-    if _check_skip(
-        project_id,
-        relative_path,
-        lines,
-        target_lines,
-        refactor_issues,
-        skip_existing,
-        complexity,
-        target,
-    ):
-        return False, 0
-
+    """Create a refactor issue + task, deduplicating against any existing canonical task."""
     file_path = f"{project_root}/{relative_path}" if project_root else relative_path
     issue_id = create_refactor_issue(
-        project_id,
-        relative_path,
-        complexity,
-        lines,
-        target_lines,
+        project_id, relative_path, complexity, lines, target_lines,
         target.get("reason", "High complexity"),
     )
     canonical_task_id = _get_canonical_refactor_task_id(project_id, relative_path, issue_id)
@@ -147,8 +126,7 @@ def process_refactor_target(
         retired_count = _retire_duplicate_refactor_tasks(project_id, relative_path, canonical_task_id)
         logger.info(
             "Skipping %s: canonical refactor task %s already exists",
-            relative_path,
-            canonical_task_id,
+            relative_path, canonical_task_id,
         )
         return False, retired_count
 
@@ -171,6 +149,29 @@ def process_refactor_target(
         logger.info(f"Created task {task_id} with spirit+criteria, linked to issue {issue_id}")
         return True, retired_count
     return False, retired_count
+
+
+def process_refactor_target(
+    project_id: str, target: dict[str, Any],
+    project_root: str | None = None, skip_existing: bool = True,
+) -> tuple[bool, int]:
+    """Process a single refactor target and create task if needed."""
+    relative_path = target.get("path", "")
+    lines = target.get("lines_of_code", 0)
+    complexity = target.get("complexity_score", 0)
+    refactor_issues: list[str] = target.get("refactor_issues", [])
+    target_lines = calculate_target_lines(lines)
+
+    if _check_skip(
+        project_id, relative_path, lines, target_lines,
+        refactor_issues, skip_existing, complexity, target,
+    ):
+        return False, 0
+
+    return _build_and_create_task(
+        project_id, target, relative_path, lines, complexity,
+        target_lines, refactor_issues, project_root,
+    )
 
 
 def _get_canonical_refactor_task_id(project_id: str, relative_path: str, issue_id: int) -> str | None:
