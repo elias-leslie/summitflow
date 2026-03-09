@@ -6,6 +6,7 @@ import json
 import logging
 from typing import Any
 
+from ..context_gatherer import collect_precision_code_search_context
 from .models import DiscussionResponse
 from .parsers import load_prompt, parse_enrichment_response
 
@@ -55,6 +56,7 @@ def _build_discussion_prompt(
     task_json: str,
     conversation: str,
     message: str,
+    precision_context: str = "",
 ) -> str:
     """Assemble the full discussion prompt sent to the LLM.
 
@@ -68,6 +70,11 @@ def _build_discussion_prompt(
         Complete prompt string
     """
     conversation_section = conversation if conversation else "(No previous messages)"
+    precision_block = (
+        f"\n## Precision Code Search\n\n{precision_context}\n"
+        if precision_context
+        else ""
+    )
     return f"""{discussion_prompt}
 
 ## Current Task State
@@ -75,6 +82,7 @@ def _build_discussion_prompt(
 ```json
 {task_json}
 ```
+{precision_block}
 
 ## Conversation History
 
@@ -142,7 +150,22 @@ def discuss_task(
 
     conversation = _build_conversation_string(history or [])
     task_json = json.dumps(current_task, indent=2, default=str)
-    prompt = _build_discussion_prompt(discussion_prompt, task_json, conversation, message)
+    precision_context = collect_precision_code_search_context(
+        project_id,
+        [
+            message,
+            str(current_task.get("title", "")),
+            str(current_task.get("description", "")),
+        ],
+        budget_tokens=1200,
+    ).prompt_context
+    prompt = _build_discussion_prompt(
+        discussion_prompt,
+        task_json,
+        conversation,
+        message,
+        precision_context,
+    )
 
     try:
         data = _call_llm_for_discussion(prompt)

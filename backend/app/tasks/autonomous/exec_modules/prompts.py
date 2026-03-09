@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from ....logging_config import get_logger
+from ....services.context_gatherer import collect_precision_code_search_context
 from ....storage import tasks as task_store
 from ....storage.events import get_events_by_trace
 from ....storage.subtasks import get_handoff_context
@@ -152,6 +153,27 @@ def _build_handoff_block(handoff: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _build_precision_code_search_block(
+    project_id: str,
+    objective: str,
+    subtask: dict[str, Any],
+) -> str:
+    steps = subtask.get("steps_from_table", [])
+    queries = [
+        objective,
+        str(subtask.get("description", "")),
+        *(str(step.get("description", "")) for step in steps),
+    ]
+    result = collect_precision_code_search_context(
+        project_id,
+        queries,
+        budget_tokens=1500,
+    )
+    if not result.prompt_context:
+        return ""
+    return f"\n# Precision Code Search\n{result.prompt_context}"
+
+
 def build_subtask_prompt(
     task_id: str,
     subtask: dict[str, Any],
@@ -178,6 +200,9 @@ def build_subtask_prompt(
         "steps_block": build_steps_block(subtask.get("steps_from_table", [])),
         "project_path": project_path,
     })
+    precision_block = _build_precision_code_search_block(project_id, objective, subtask)
+    if precision_block:
+        prompt += precision_block
 
     resume_block = build_resume_context(task_id)
     if resume_block:

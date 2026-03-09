@@ -61,6 +61,7 @@ class TestPromptTemplateFallbacks:
     @patch(f"{_PROMPTS}.build_health_context", return_value="")
     @patch(f"{_PROMPTS}.build_conflict_context", return_value="")
     @patch(f"{_PROMPTS}.build_resume_context", return_value="")
+    @patch(f"{_PROMPTS}._build_precision_code_search_block", return_value="\n# Precision Code Search\nPrecision Code Search: symbol-first")
     @patch(f"{_PROMPTS}.get_handoff_context", return_value={})
     @patch(f"{_PROMPTS}.get_task_spirit")
     @patch(f"{_PROMPTS}.logger")
@@ -71,6 +72,7 @@ class TestPromptTemplateFallbacks:
         mock_logger: MagicMock,
         mock_get_task_spirit: MagicMock,
         _mock_handoff: MagicMock,
+        _mock_precision: MagicMock,
         _mock_resume: MagicMock,
         _mock_conflict: MagicMock,
         _mock_health: MagicMock,
@@ -99,6 +101,7 @@ class TestPromptTemplateFallbacks:
         assert "Do not change UI behavior" in prompt
         assert "Extract reusable ActivityTimeline helpers" in prompt
         assert "/tmp/worktree" in prompt
+        assert "Precision Code Search: symbol-first" in prompt
         mock_logger.warning.assert_called_once()
 
     @patch(f"{_PROMPTS}.task_store")
