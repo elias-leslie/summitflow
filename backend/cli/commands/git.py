@@ -95,3 +95,15 @@ def resolve_conflict(task_id: str) -> None:
         output_error(f"Failed to prepare conflict resolution: {e.detail}")
         raise typer.Exit(1) from None
     output_json(result)
+
+
+@app.command("smart-sync")
+def smart_sync(project_id: str) -> None:
+    """Run Smart Sync for one managed project."""
+    client = STClient(require_project=False)
+    try:
+        result = client.smart_sync_project(project_id)
+    except APIError as e:
+        output_error(f"Failed to smart sync project: {e.detail}")
+        raise typer.Exit(1) from None
+    output_json(result)

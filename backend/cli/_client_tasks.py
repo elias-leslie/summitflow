@@ -170,3 +170,11 @@ def resolve_task_conflict(
     """Reopen a residue task for conflict-resolution execution."""
     response = client.post(global_url_fn(f"/git/tasks/{task_id}/resolve-conflict"))
     return cast(dict[str, Any], handle_response(response))
+
+
+def smart_sync_project(
+    client: httpx.Client, global_url_fn: Any, handle_response: Any, project_id: str
+) -> dict[str, Any]:
+    """Run Smart Sync for one managed project."""
+    response = client.post(global_url_fn(f"/projects/{project_id}/git/smart-sync"))
+    return cast(dict[str, Any], handle_response(response))

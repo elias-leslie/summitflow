@@ -126,6 +126,25 @@ class TestResolveConflict:
         assert '"status": "dispatched_for_conflict_resolution"' in result.stdout
 
 
+class TestSmartSync:
+    """Tests for st git smart-sync."""
+
+    @patch("cli.commands.git.STClient")
+    def test_smart_sync_calls_client(self, mock_client_cls: MagicMock) -> None:
+        mock_client = MagicMock()
+        mock_client.smart_sync_project.return_value = {
+            "status": "success",
+            "project_id": "agent-hub",
+        }
+        mock_client_cls.return_value = mock_client
+
+        result = runner.invoke(app, ["smart-sync", "agent-hub"], obj=OutputContext(compact=False))
+
+        assert result.exit_code == 0
+        mock_client.smart_sync_project.assert_called_once_with("agent-hub")
+        assert '"status": "success"' in result.stdout
+
+
 class TestFormatCompactRepo:
     """Tests for TOON format helper."""
 
