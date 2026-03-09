@@ -18,6 +18,11 @@ _Opt = typer.Option
 _Arg = typer.Argument
 
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
 def _read_file(path: str) -> str:
     """Read content from a file, exiting on missing file."""
     p = Path(path)
@@ -27,14 +32,21 @@ def _read_file(path: str) -> str:
     return p.read_text(encoding="utf-8")
 
 
+def _api(fn: Any, msg: str) -> Any:
+    """Call fn(); on exception print msg and exit."""
+    try:
+        return fn()
+    except Exception as e:
+        output_error(f"{msg}: {e}")
+        raise typer.Exit(1) from e
+
+
 def _field_status(persona: dict[str, Any], field: str) -> str:
-    """Return 'set (N chars)' or 'unset' for a persona field."""
     val = persona.get(field)
     return f"set ({len(val)} chars)" if val else "unset"
 
 
 def _print_persona(persona: dict[str, Any]) -> None:
-    """Print persona overview in compact format."""
     preview = ""
     if persona.get("personality"):
         lines = persona["personality"].strip().splitlines()
@@ -57,15 +69,73 @@ def _print_persona(persona: dict[str, Any]) -> None:
         print(f"  onboarding_phase: {persona['onboarding_phase']}")
 
 
-@app.command()
-def show() -> None:
-    """Show full persona configuration."""
-    from .persona_api import get_persona
+def _edit_text_in_editor(current_text: str, suffix: str = ".md") -> str | None:
+    """Open text in $EDITOR via a temp file; return new text or None if unchanged."""
+    editor = os.environ.get("EDITOR", "vi")
+    with tempfile.NamedTemporaryFile(suffix=suffix, mode="w", encoding="utf-8", delete=False) as f:
+        f.write(current_text)
+        tmp_path = f.name
     try:
-        _print_persona(get_persona())
-    except Exception as e:
-        output_error(f"Failed to fetch persona: {e}")
+        subprocess.run([editor, tmp_path], check=True)
+        new_text = Path(tmp_path).read_text(encoding="utf-8")
+        return None if new_text.strip() == current_text.strip() else new_text
+    except subprocess.CalledProcessError as e:
+        output_error("Editor exited with error")
         raise typer.Exit(1) from e
+    finally:
+        os.unlink(tmp_path)
+
+
+def _print_heartbeat_result(status: dict[str, Any]) -> None:
+    """Print heartbeat completion summary with session metrics."""
+    sid = status.get("last_session_id", "?")
+    last_run = status.get("last_run", "?")
+    parts = [f"last_run={last_run}"]
+    if status.get("last_turns") is not None:
+        parts.append(f"turns={status['last_turns']}")
+    if status.get("last_tool_calls") is not None:
+        parts.append(f"tool_calls={status['last_tool_calls']}")
+    fmt = status.get("last_format_compliant")
+    had_error = status.get("last_had_error")
+    if fmt is not None:
+        parts.append(f"format_ok={'yes' if fmt else 'NO'}")
+    if had_error is not None:
+        parts.append(f"errors={'YES' if had_error else 'none'}")
+    if status.get("last_auto_journaled"):
+        parts.append("auto_journaled=yes")
+    print(f"Heartbeat complete | session={sid}")
+    print(f"  {' | '.join(parts)}")
+
+
+def _get_dispatch_hint(client: Any, project_id: str | None) -> str | None:
+    """Return a one-line dispatch hint from the canonical project pulse."""
+    if not project_id:
+        return None
+    payload = client.get(client._global_url(f"/projects/{project_id}/pulse"))
+    running_tasks = payload.get("running_tasks", []) if isinstance(payload, dict) else []
+    if not running_tasks:
+        return None
+    active_owners = payload.get("active_owners", []) if isinstance(payload, dict) else []
+    active_sessions = payload.get("active_sessions", []) if isinstance(payload, dict) else []
+    task = running_tasks[0] if isinstance(running_tasks[0], dict) else {}
+    owner = active_owners[0] if active_owners and isinstance(active_owners[0], dict) else {}
+    session = active_sessions[0] if active_sessions and isinstance(active_sessions[0], dict) else {}
+    task_id = task.get("id") or "?"
+    title = str(task.get("title") or "")[:70]
+    agent_slug = owner.get("agent_slug") or session.get("agent_slug") or "agent"
+    session_id = str(owner.get("session_id") or session.get("id") or "")[:8]
+    return f"Dispatch detected: {task_id} | {agent_slug} | {session_id} | {title}"
+
+
+def _maybe_report_dispatch(client: Any, project: str | None, reported: bool) -> bool:
+    """Show dispatch hint once; return updated reported flag."""
+    if reported or not client:
+        return reported
+    hint = _get_dispatch_hint(client, project)
+    if hint:
+        print(f"\n  {hint}", end="", flush=True)
+        return True
+    return reported
 
 
 def _apply_file_and_scalar_fields(
@@ -98,6 +168,19 @@ def _apply_file_and_scalar_fields(
         fields["greeting"] = greeting
 
 
+# ---------------------------------------------------------------------------
+# Commands
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def show() -> None:
+    """Show full persona configuration."""
+    from .persona_api import get_persona
+
+    _print_persona(_api(get_persona, "Failed to fetch persona"))
+
+
 @app.command()
 def update(
     heartbeat_instructions: Annotated[str | None, _Opt("--heartbeat-instructions", "-H", help="File with heartbeat instructions")] = None,
@@ -112,6 +195,7 @@ def update(
 ) -> None:
     """Update persona fields. Text fields accept file paths."""
     from .persona_api import update_persona
+
     fields: dict[str, Any] = {}
     _apply_file_and_scalar_fields(
         fields, heartbeat_instructions, user_context, voice_enabled, voice_id,
@@ -127,60 +211,13 @@ def update(
     if not fields:
         output_error("No fields specified. Use --help to see available flags.")
         raise typer.Exit(1)
-    try:
-        result = update_persona(fields)
-        print(f"Persona updated (version {result.get('version', '?')})")
-        for key, val in fields.items():
-            if isinstance(val, str) and len(val) > 50:
-                print(f"  {key}: set ({len(val)} chars)")
-            else:
-                print(f"  {key}: {val}")
-    except Exception as e:
-        output_error(f"Failed to update persona: {e}")
-        raise typer.Exit(1) from e
-
-
-def _edit_text_in_editor(current_text: str, suffix: str = ".md") -> str | None:
-    """Open text in $EDITOR via a temp file; return new text or None if unchanged."""
-    editor = os.environ.get("EDITOR", "vi")
-    with tempfile.NamedTemporaryFile(suffix=suffix, mode="w", encoding="utf-8", delete=False) as f:
-        f.write(current_text)
-        tmp_path = f.name
-    try:
-        subprocess.run([editor, tmp_path], check=True)
-        new_text = Path(tmp_path).read_text(encoding="utf-8")
-        if new_text.strip() == current_text.strip():
-            return None
-        return new_text
-    except subprocess.CalledProcessError as e:
-        output_error("Editor exited with error")
-        raise typer.Exit(1) from e
-    finally:
-        os.unlink(tmp_path)
-
-
-def _edit_personality_in_editor(current: dict[str, Any]) -> None:
-    """Open personality in $EDITOR and persist changes."""
-    from .persona_api import update_personality
-    new_text = _edit_text_in_editor(current.get("personality") or "")
-    if new_text is None:
-        print("No changes made.")
-        return
-    result = update_personality(new_text, reason="Edited via st persona personality --edit")
-    print(f"Personality updated (version {result.get('version', '?')})")
-
-
-def _maybe_report_dispatch(
-    client: Any, project: str | None, reported: bool
-) -> bool:
-    """Show dispatch hint once; return updated reported flag."""
-    if reported or not client:
-        return reported
-    hint = _get_dispatch_hint(client, project)
-    if hint:
-        print(f"\n  {hint}", end="", flush=True)
-        return True
-    return reported
+    result = _api(lambda: update_persona(fields), "Failed to update persona")
+    print(f"Persona updated (version {result.get('version', '?')})")
+    for key, val in fields.items():
+        if isinstance(val, str) and len(val) > 50:
+            print(f"  {key}: set ({len(val)} chars)")
+        else:
+            print(f"  {key}: {val}")
 
 
 @app.command()
@@ -190,31 +227,30 @@ def personality(
 ) -> None:
     """Print or modify the personality document."""
     from .persona_api import get_personality, update_personality
+
     if edit and set_text is not None:
         output_error("--edit and --set are mutually exclusive")
         raise typer.Exit(1)
     if set_text is not None:
-        try:
-            result = update_personality(set_text, reason="Set via st persona personality --set")
-            print(f"Personality updated (version {result.get('version', '?')})")
-        except Exception as e:
-            output_error(f"Failed to update personality: {e}")
-            raise typer.Exit(1) from e
+        result = _api(
+            lambda: update_personality(set_text, reason="Set via st persona personality --set"),
+            "Failed to update personality",
+        )
+        print(f"Personality updated (version {result.get('version', '?')})")
         return
+    current = _api(get_personality, "Failed to fetch personality")
     if edit:
-        try:
-            current = get_personality()
-        except Exception as e:
-            output_error(f"Failed to fetch personality: {e}")
-            raise typer.Exit(1) from e
-        _edit_personality_in_editor(current)
+        new_text = _edit_text_in_editor(current.get("personality") or "")
+        if new_text is None:
+            print("No changes made.")
+            return
+        result = _api(
+            lambda: update_personality(new_text, reason="Edited via st persona personality --edit"),
+            "Failed to update personality",
+        )
+        print(f"Personality updated (version {result.get('version', '?')})")
         return
-    try:
-        data = get_personality()
-    except Exception as e:
-        output_error(f"Failed to fetch personality: {e}")
-        raise typer.Exit(1) from e
-    print(data["personality"] if data.get("personality") else "(No personality document set)")
+    print(current["personality"] if current.get("personality") else "(No personality document set)")
 
 
 @app.command()
@@ -223,31 +259,13 @@ def name(
 ) -> None:
     """Show or set the persona's display name."""
     from .persona_api import get_persona, update_persona
+
     if new_name is not None:
-        try:
-            result = update_persona({"name": new_name})
-            print(f"Name updated: {result.get('name', new_name)}")
-        except Exception as e:
-            output_error(f"Failed to update name: {e}")
-            raise typer.Exit(1) from e
+        result = _api(lambda: update_persona({"name": new_name}), "Failed to update name")
+        print(f"Name updated: {result.get('name', new_name)}")
         return
-    try:
-        persona = get_persona()
-        print(persona.get("name", "Unknown"))
-    except Exception as e:
-        output_error(f"Failed to fetch persona: {e}")
-        raise typer.Exit(1) from e
-
-
-def _edit_instructions_in_editor(current: dict[str, Any]) -> None:
-    """Open heartbeat instructions in $EDITOR and persist changes."""
-    from .persona_api import update_persona
-    new_text = _edit_text_in_editor(current.get("heartbeat_instructions") or "")
-    if new_text is None:
-        print("No changes made.")
-        return
-    result = update_persona({"heartbeat_instructions": new_text})
-    print(f"Heartbeat instructions updated (version {result.get('version', '?')})")
+    persona = _api(get_persona, "Failed to fetch persona")
+    print(persona.get("name", "Unknown"))
 
 
 @app.command()
@@ -257,24 +275,28 @@ def instructions(
 ) -> None:
     """Print or modify heartbeat instructions."""
     from .persona_api import get_persona, update_persona
+
     if edit and set_text is not None:
         output_error("--edit and --set are mutually exclusive")
         raise typer.Exit(1)
     if set_text is not None:
-        try:
-            result = update_persona({"heartbeat_instructions": set_text})
-            print(f"Heartbeat instructions updated (version {result.get('version', '?')})")
-        except Exception as e:
-            output_error(f"Failed to update heartbeat instructions: {e}")
-            raise typer.Exit(1) from e
+        result = _api(
+            lambda: update_persona({"heartbeat_instructions": set_text}),
+            "Failed to update heartbeat instructions",
+        )
+        print(f"Heartbeat instructions updated (version {result.get('version', '?')})")
         return
-    try:
-        persona = get_persona()
-    except Exception as e:
-        output_error(f"Failed to fetch persona: {e}")
-        raise typer.Exit(1) from e
+    persona = _api(get_persona, "Failed to fetch persona")
     if edit:
-        _edit_instructions_in_editor(persona)
+        new_text = _edit_text_in_editor(persona.get("heartbeat_instructions") or "")
+        if new_text is None:
+            print("No changes made.")
+            return
+        result = _api(
+            lambda: update_persona({"heartbeat_instructions": new_text}),
+            "Failed to update heartbeat instructions",
+        )
+        print(f"Heartbeat instructions updated (version {result.get('version', '?')})")
         return
     text = persona.get("heartbeat_instructions")
     print(text if text else "(No heartbeat instructions set)")
@@ -311,7 +333,6 @@ def heartbeat(
     if not watch:
         return
 
-    # Poll until done
     pulse_client = STClient(require_project=False) if project else None
     reported_dispatch = False
     print("Watching...", end="", flush=True)
@@ -330,53 +351,6 @@ def heartbeat(
             print(".", end="", flush=True)
 
 
-def _print_heartbeat_result(status: dict[str, Any]) -> None:
-    """Print heartbeat completion summary with session metrics."""
-    sid = status.get("last_session_id", "?")
-    last_run = status.get("last_run", "?")
-    turns = status.get("last_turns")
-    tool_calls = status.get("last_tool_calls")
-    fmt = status.get("last_format_compliant")
-    had_error = status.get("last_had_error")
-    auto_journal = status.get("last_auto_journaled")
-
-    print(f"Heartbeat complete | session={sid}")
-    parts = [f"last_run={last_run}"]
-    if turns is not None:
-        parts.append(f"turns={turns}")
-    if tool_calls is not None:
-        parts.append(f"tool_calls={tool_calls}")
-    if fmt is not None:
-        parts.append(f"format_ok={'yes' if fmt else 'NO'}")
-    if had_error is not None:
-        parts.append(f"errors={'YES' if had_error else 'none'}")
-    if auto_journal:
-        parts.append("auto_journaled=yes")
-    print(f"  {' | '.join(parts)}")
-
-
-def _get_dispatch_hint(client: Any, project_id: str | None) -> str | None:
-    """Return a one-line dispatch hint from the canonical project pulse."""
-    if not project_id:
-        return None
-
-    payload = client.get(client._global_url(f"/projects/{project_id}/pulse"))
-    running_tasks = payload.get("running_tasks", []) if isinstance(payload, dict) else []
-    active_owners = payload.get("active_owners", []) if isinstance(payload, dict) else []
-    active_sessions = payload.get("active_sessions", []) if isinstance(payload, dict) else []
-    if not running_tasks:
-        return None
-
-    task = running_tasks[0] if isinstance(running_tasks[0], dict) else {}
-    owner = active_owners[0] if active_owners and isinstance(active_owners[0], dict) else {}
-    session = active_sessions[0] if active_sessions and isinstance(active_sessions[0], dict) else {}
-    task_id = task.get("id") or "?"
-    title = str(task.get("title") or "")[:70]
-    agent_slug = owner.get("agent_slug") or session.get("agent_slug") or "agent"
-    session_id = str(owner.get("session_id") or session.get("id") or "")[:8]
-    return f"Dispatch detected: {task_id} | {agent_slug} | {session_id} | {title}"
-
-
 @app.command()
 def activity(
     hours: Annotated[int, _Opt("--hours", "-H", help="Lookback hours (default 24)")] = 24,
@@ -385,7 +359,6 @@ def activity(
     """Show recent persona activity sessions."""
     from .persona_api import get_activity
 
-    # Map hours to time_range string
     if hours <= 6:
         time_range = "6h"
     elif hours <= 24:
@@ -395,12 +368,7 @@ def activity(
     else:
         time_range = "30d"
 
-    try:
-        data = get_activity(time_range=time_range, page_size=limit)
-    except Exception as e:
-        output_error(f"Failed to fetch activity: {e}")
-        raise typer.Exit(1) from e
-
+    data = _api(lambda: get_activity(time_range=time_range, page_size=limit), "Failed to fetch activity")
     sessions = data.get("sessions", [])
     total = data.get("total", 0)
     if not sessions:
@@ -431,7 +399,6 @@ def status() -> None:
         output_error(f"Failed to fetch status: {e}")
         raise typer.Exit(1) from e
 
-    # Heartbeat line
     running = hb.get("running", False)
     state = "running" if running else "idle"
     last = hb.get("last_run", "never")
@@ -442,10 +409,5 @@ def status() -> None:
         hb_line = f"Heartbeat: {state} ({elapsed}s) | Last: {last} | Interval: {interval}m"
     else:
         hb_line = f"Heartbeat: {state} | Last: {last} | Interval: {interval}m"
-
     print(hb_line)
-
-    # Persona line
-    name = persona.get("name", "?")
-    onboarding = persona.get("onboarding_phase", "?")
-    print(f"Persona: {name} | Onboarding: {onboarding}")
+    print(f"Persona: {persona.get('name', '?')} | Onboarding: {persona.get('onboarding_phase', '?')}")
