@@ -176,20 +176,29 @@ async def retry_merge(task_id: str) -> dict[str, object]:
 
 @router.post("/git/tasks/{task_id}/resolve-conflict", tags=["git"])
 async def resolve_conflict(task_id: str) -> dict[str, object]:
-    """Reopen a residue task so autocode can resolve its merge conflict in the task worktree."""
+    """Reopen a residue task and dispatch execution to resolve its merge conflict."""
     from app.services.worktree import create_task_worktree, get_task_worktree
+    from app.storage.tasks.claims import claim_task
+    from app.workflows.models import TaskInput
+    from app.workflows.pipeline import execute_wf
 
     task = task_store.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
     status = str(task.get("status") or "")
-    conflict_info = task.get("conflict_info") or {}
     if status not in {"conflicted", "blocked"}:
         raise HTTPException(
             status_code=400,
             detail=f"Task status {status!r} is not eligible for conflict resolution",
         )
+    conflict_info = task.get("conflict_info") or {}
+    if (not isinstance(conflict_info, dict) or not conflict_info) and status == "blocked":
+        merge_result: dict[str, object] = merge_and_cleanup_task_worktree(task_id, str(task["project_id"]))  # type: ignore[assignment]
+        if str(merge_result.get("status") or "") != "conflicted":
+            return merge_result
+        task = task_store.get_task(task_id) or task
+        conflict_info = task.get("conflict_info") or {}
     if not isinstance(conflict_info, dict) or not conflict_info:
         raise HTTPException(
             status_code=400,
@@ -213,9 +222,21 @@ async def resolve_conflict(task_id: str) -> dict[str, object]:
         validate_transition=False,
     )
     log_task_event(task_id, f"Conflict resolution reopened for autocode: {message}")
+    worker_id = f"resolve-conflict-{project_id}"
+    if not claim_task(task_id, worker_id, lock_duration_minutes=60):
+        return {
+            "task_id": task_id,
+            "status": "already_claimed",
+            "project_id": project_id,
+            "worktree_path": str(worktree.path),
+            "task_branch": worktree.branch,
+            "base_branch": worktree.base_branch,
+            "conflicting_files": files,
+        }
+    await execute_wf.aio_run_no_wait(TaskInput(task_id=task_id, project_id=project_id))
     return {
         "task_id": task_id,
-        "status": "ready_for_conflict_resolution",
+        "status": "dispatched_for_conflict_resolution",
         "project_id": project_id,
         "worktree_path": str(worktree.path),
         "task_branch": worktree.branch,

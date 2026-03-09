@@ -114,7 +114,7 @@ class TestResolveConflict:
     def test_resolve_conflict_calls_client(self, mock_client_cls: MagicMock) -> None:
         mock_client = MagicMock()
         mock_client.resolve_task_conflict.return_value = {
-            "status": "ready_for_conflict_resolution",
+            "status": "dispatched_for_conflict_resolution",
             "task_id": "task-1",
         }
         mock_client_cls.return_value = mock_client
@@ -123,7 +123,7 @@ class TestResolveConflict:
 
         assert result.exit_code == 0
         mock_client.resolve_task_conflict.assert_called_once_with("task-1")
-        assert '"status": "ready_for_conflict_resolution"' in result.stdout
+        assert '"status": "dispatched_for_conflict_resolution"' in result.stdout
 
 
 class TestFormatCompactRepo:
