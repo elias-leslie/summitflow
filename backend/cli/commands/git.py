@@ -83,3 +83,15 @@ def finalize_task(task_id: str) -> None:
         output_error(f"Failed to finalize task merge: {e.detail}")
         raise typer.Exit(1) from None
     output_json(result)
+
+
+@app.command("resolve-conflict")
+def resolve_conflict(task_id: str) -> None:
+    """Reopen a residue task for conflict-resolution autocode in its task worktree."""
+    client = STClient(require_project=False)
+    try:
+        result = client.resolve_task_conflict(task_id)
+    except APIError as e:
+        output_error(f"Failed to prepare conflict resolution: {e.detail}")
+        raise typer.Exit(1) from None
+    output_json(result)

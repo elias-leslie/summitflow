@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from ....logging_config import get_logger
+from ....storage import tasks as task_store
 from ....storage.events import get_events_by_trace
 from ....storage.subtasks import get_handoff_context
 from ....storage.task_spirit import get_task_spirit
@@ -105,6 +106,37 @@ def build_resume_context(task_id: str) -> str:
         return ""
 
 
+def build_conflict_context(task_id: str) -> str:
+    """Build merge-conflict context for reopened residue tasks."""
+    try:
+        task = task_store.get_task(task_id)
+        if not task:
+            return ""
+        conflict_info = task.get("conflict_info")
+        if not isinstance(conflict_info, dict) or not conflict_info:
+            return ""
+        files = conflict_info.get("conflicting_files") or []
+        lines = [
+            "\n# Merge Conflict Context",
+            "This task previously passed verification but failed to merge cleanly into the current main branch.",
+            "Resolve the conflict in this existing task worktree, preserve the task intent, and rerun the relevant verification.",
+        ]
+        if files:
+            lines.append("Conflicting files:")
+            lines.extend(f"- {path}" for path in files[:10])
+        task_branch = conflict_info.get("task_branch")
+        base_branch = conflict_info.get("base_branch")
+        if task_branch or base_branch:
+            lines.append(f"Branch: {task_branch or 'task branch'} -> {base_branch or 'main'}")
+        error_output = str(conflict_info.get("error_output") or "").strip()
+        if error_output:
+            lines.append(f"Git reported: {error_output[:300]}")
+        return "\n".join(lines)
+    except Exception as e:
+        logger.debug("Failed to build conflict context", error=str(e))
+        return ""
+
+
 def _build_spirit_block(spirit_anti: str) -> str:
     if not spirit_anti:
         return ""
@@ -150,6 +182,9 @@ def build_subtask_prompt(
     resume_block = build_resume_context(task_id)
     if resume_block:
         prompt += resume_block
+    conflict_block = build_conflict_context(task_id)
+    if conflict_block:
+        prompt += conflict_block
     health_block = build_health_context(project_id)
     if health_block:
         prompt += f"\n\n{health_block}"

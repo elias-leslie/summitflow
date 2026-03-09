@@ -9,7 +9,7 @@ from ....core.debug import debug_section
 from ....logging_config import get_logger
 from ....services.task_lane_preflight import check_task_lane_conflicts
 from ....storage import tasks as task_store
-from ....storage.subtasks import get_subtasks_for_task
+from ....storage.subtasks import get_subtasks_for_task, update_subtask_passes
 from .agent_execution import execute_agent_feedback
 from .completion_handler import (
     handle_early_completion,
@@ -77,12 +77,12 @@ def start_execution(
 
 def _prepare_execution(
     task_id: str, project_id: str,
-) -> tuple[dict[str, Any] | None, str | None, str | None, str | None]:
-    """Validate task and set up worktree. Returns (error, path, task_type, agent_override)."""
+) -> tuple[dict[str, Any] | None, str | None, str | None, str | None, dict[str, Any] | None]:
+    """Validate task and set up worktree. Returns (error, path, task_type, agent_override, task)."""
     task = task_store.get_task(task_id)
     if not task:
         emit_error(task_id, "Task not found", recoverable=False, project_id=project_id)
-        return {"task_id": task_id, "status": "error", "message": "Task not found"}, None, None, None
+        return {"task_id": task_id, "status": "error", "message": "Task not found"}, None, None, None, None
 
     task_type = task.get("task_type")
     agent_override = task.get("agent_override")
@@ -90,24 +90,56 @@ def _prepare_execution(
     if not validate_pristine_codebase(task_id, project_id):
         return (
             {"task_id": task_id, "status": "blocked", "error": "Pristine validation failed", "reason": "pristine_self_heal_failed"},
-            None, None, None,
+            None, None, None, task,
         )
 
     project_path = setup_worktree(task_id, project_id)
     if not project_path:
         return (
             {"task_id": task_id, "status": "blocked", "error": "Worktree creation failed", "reason": "worktree_creation_failed"},
-            None, None, None,
+            None, None, None, task,
         )
 
-    return None, project_path, task_type, agent_override
+    return None, project_path, task_type, agent_override, task
 
 
-def _load_subtasks(task_id: str, project_id: str) -> tuple[dict[str, Any] | None, list, int, int]:
+def _should_rerun_for_conflict_resolution(task: dict[str, Any] | None) -> bool:
+    """Return True when this execution is explicitly reopening merge-conflict residue."""
+    if not task:
+        return False
+    if not isinstance(task.get("conflict_info"), dict) or not task.get("conflict_info"):
+        return False
+    return str(task.get("status") or "") in {"blocked", "conflicted"}
+
+
+def _reset_subtask_passes_for_conflict_resolution(task_id: str, subtasks: list[dict[str, Any]]) -> None:
+    """Reopen passed subtasks so autocode can resolve merge-conflict residue in-place."""
+    for subtask in subtasks:
+        short_id = str(subtask.get("subtask_id") or "")
+        if short_id and subtask.get("passes"):
+            update_subtask_passes(task_id, short_id, passes=False)
+            subtask["passes"] = False
+
+
+def _load_subtasks(
+    task_id: str,
+    project_id: str,
+    task: dict[str, Any] | None,
+) -> tuple[dict[str, Any] | None, list, int, int]:
     """Load subtasks. Returns (error, incomplete, total, completed)."""
     subtasks = get_subtasks_for_task(task_id, include_steps=True)
     reset_steps_for_rerun(subtasks)
     incomplete = [s for s in subtasks if not s.get("passes")]
+    if not incomplete and _should_rerun_for_conflict_resolution(task):
+        _reset_subtask_passes_for_conflict_resolution(task_id, subtasks)
+        incomplete = [s for s in subtasks if not s.get("passes")]
+        if incomplete:
+            emit_log(
+                task_id,
+                "info",
+                "Reopened passed subtasks to resolve merge-conflict residue",
+                project_id=project_id,
+            )
     total = len(subtasks)
     completed = total - len(incomplete)
     emit_progress(task_id, total_subtasks=total, completed_subtasks=completed, project_id=project_id)
@@ -141,13 +173,13 @@ def execute_task_locked(
     dispatch: Callable[[str, str, str], None] | None = None,
 ) -> dict[str, Any]:
     """Inner execution body. Concurrency handled by Hatchet."""
-    error, project_path, task_type, agent_override = _prepare_execution(task_id, project_id)
+    error, project_path, task_type, agent_override, task = _prepare_execution(task_id, project_id)
     if error:
         return error
 
     task_store.update_task_status(task_id, "running")
 
-    error, incomplete, total, completed = _load_subtasks(task_id, project_id)
+    error, incomplete, total, completed = _load_subtasks(task_id, project_id, task)
     if error:
         return error
 

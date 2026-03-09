@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 
+from ..storage import log_task_event
 from ..storage import tasks as task_store
+from ..storage.tasks.status import update_task_status
 from ..storage.tasks.update import update_task_fields
 from ..tasks.autonomous.cleanup.merge_operations import merge_and_cleanup_task_worktree
 from ..utils.git_helpers import (
@@ -170,6 +172,56 @@ async def retry_merge(task_id: str) -> dict[str, object]:
     update_task_fields(task_id, conflict_info=None)
     result: dict[str, object] = merge_and_cleanup_task_worktree(task_id, task["project_id"])  # type: ignore[assignment]
     return result
+
+
+@router.post("/git/tasks/{task_id}/resolve-conflict", tags=["git"])
+async def resolve_conflict(task_id: str) -> dict[str, object]:
+    """Reopen a residue task so autocode can resolve its merge conflict in the task worktree."""
+    from app.services.worktree import create_task_worktree, get_task_worktree
+
+    task = task_store.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    status = str(task.get("status") or "")
+    conflict_info = task.get("conflict_info") or {}
+    if status not in {"conflicted", "blocked"}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Task status {status!r} is not eligible for conflict resolution",
+        )
+    if not isinstance(conflict_info, dict) or not conflict_info:
+        raise HTTPException(
+            status_code=400,
+            detail="Task does not have conflict metadata to resolve",
+        )
+
+    project_id = str(task["project_id"])
+    worktree = get_task_worktree(task_id, project_id) or create_task_worktree(task_id, project_id)
+    if not worktree:
+        raise HTTPException(status_code=500, detail="Unable to prepare task worktree for conflict resolution")
+
+    files = conflict_info.get("conflicting_files") or []
+    message = (
+        "Resolve merge conflict against current main"
+        + (f" in {', '.join(files[:5])}" if files else "")
+    )
+    update_task_status(
+        task_id,
+        "blocked",
+        error_message=message,
+        validate_transition=False,
+    )
+    log_task_event(task_id, f"Conflict resolution reopened for autocode: {message}")
+    return {
+        "task_id": task_id,
+        "status": "ready_for_conflict_resolution",
+        "project_id": project_id,
+        "worktree_path": str(worktree.path),
+        "task_branch": worktree.branch,
+        "base_branch": worktree.base_branch,
+        "conflicting_files": files,
+    }
 
 
 @router.post("/git/tasks/{task_id}/finalize", tags=["git"])

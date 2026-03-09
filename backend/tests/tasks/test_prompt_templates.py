@@ -59,6 +59,7 @@ class TestPromptTemplateFallbacks:
             )
 
     @patch(f"{_PROMPTS}.build_health_context", return_value="")
+    @patch(f"{_PROMPTS}.build_conflict_context", return_value="")
     @patch(f"{_PROMPTS}.build_resume_context", return_value="")
     @patch(f"{_PROMPTS}.get_handoff_context", return_value={})
     @patch(f"{_PROMPTS}.get_task_spirit")
@@ -71,6 +72,7 @@ class TestPromptTemplateFallbacks:
         mock_get_task_spirit: MagicMock,
         _mock_handoff: MagicMock,
         _mock_resume: MagicMock,
+        _mock_conflict: MagicMock,
         _mock_health: MagicMock,
     ) -> None:
         from app.tasks.autonomous.exec_modules._prompt_fetch import TransientPromptFetchError
@@ -98,3 +100,26 @@ class TestPromptTemplateFallbacks:
         assert "Extract reusable ActivityTimeline helpers" in prompt
         assert "/tmp/worktree" in prompt
         mock_logger.warning.assert_called_once()
+
+    @patch(f"{_PROMPTS}.task_store")
+    def test_build_conflict_context_includes_conflicting_files(
+        self,
+        mock_task_store: MagicMock,
+    ) -> None:
+        from app.tasks.autonomous.exec_modules.prompts import build_conflict_context
+
+        mock_task_store.get_task.return_value = {
+            "id": "task-1",
+            "conflict_info": {
+                "conflicting_files": ["backend/app/services/tools/tool_handler.py"],
+                "task_branch": "task-1/main",
+                "base_branch": "main",
+                "error_output": "CONFLICT (content): Merge conflict in backend/app/services/tools/tool_handler.py",
+            },
+        }
+
+        prompt = build_conflict_context("task-1")
+
+        assert "Merge Conflict Context" in prompt
+        assert "backend/app/services/tools/tool_handler.py" in prompt
+        assert "task-1/main" in prompt

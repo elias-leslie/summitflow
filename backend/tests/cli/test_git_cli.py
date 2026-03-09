@@ -107,6 +107,25 @@ class TestFinalizeTask:
         assert '"status": "merged"' in result.stdout
 
 
+class TestResolveConflict:
+    """Tests for st git resolve-conflict."""
+
+    @patch("cli.commands.git.STClient")
+    def test_resolve_conflict_calls_client(self, mock_client_cls: MagicMock) -> None:
+        mock_client = MagicMock()
+        mock_client.resolve_task_conflict.return_value = {
+            "status": "ready_for_conflict_resolution",
+            "task_id": "task-1",
+        }
+        mock_client_cls.return_value = mock_client
+
+        result = runner.invoke(app, ["resolve-conflict", "task-1"], obj=OutputContext(compact=False))
+
+        assert result.exit_code == 0
+        mock_client.resolve_task_conflict.assert_called_once_with("task-1")
+        assert '"status": "ready_for_conflict_resolution"' in result.stdout
+
+
 class TestFormatCompactRepo:
     """Tests for TOON format helper."""
 
