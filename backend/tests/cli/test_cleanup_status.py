@@ -34,6 +34,8 @@ def test_build_cleanup_status_payload_aggregates_repo_hygiene() -> None:
                     worktree_task_ids=["task-1", "task-2"],
                     orphan_branch_names=["task-3/main"],
                     prunable_branch_names=["task-4/main"],
+                    salvage_task_ids=["task-3"],
+                    review_orphan_task_ids=[],
                 ),
                 SimpleNamespace(
                     active_worktrees=0,
@@ -42,6 +44,8 @@ def test_build_cleanup_status_payload_aggregates_repo_hygiene() -> None:
                     worktree_task_ids=[],
                     orphan_branch_names=[],
                     prunable_branch_names=[],
+                    salvage_task_ids=[],
+                    review_orphan_task_ids=[],
                 ),
             ],
         ),
@@ -89,6 +93,7 @@ def test_build_cleanup_status_payload_aggregates_repo_hygiene() -> None:
     assert payload["repositories"][0]["review_tasks"] == ["task-2"]
     assert payload["repositories"][0]["orphan_branch_names"] == ["task-3/main"]
     assert payload["repositories"][0]["prunable_branch_names"] == ["task-4/main"]
+    assert payload["repositories"][0]["salvage_task_ids"] == ["task-3"]
     assert payload["repositories"][1]["project_id"] == "agent-hub"
     assert payload["repositories"][1]["needs_cleanup"] is False
     assert payload["total"] == 2
@@ -113,6 +118,8 @@ def test_cleanup_status_compact_reports_cross_repo_summary() -> None:
                     worktree_task_ids=["task-1"],
                     orphan_branch_names=["task-3/main"],
                     prunable_branch_names=[],
+                    salvage_task_ids=["task-3"],
+                    review_orphan_task_ids=[],
                 ),
                 SimpleNamespace(
                     active_worktrees=0,
@@ -121,6 +128,8 @@ def test_cleanup_status_compact_reports_cross_repo_summary() -> None:
                     worktree_task_ids=[],
                     orphan_branch_names=[],
                     prunable_branch_names=[],
+                    salvage_task_ids=[],
+                    review_orphan_task_ids=[],
                 ),
             ],
         ),
@@ -148,7 +157,7 @@ def test_cleanup_status_compact_reports_cross_repo_summary() -> None:
     assert "CLEANUP[all]:repos=2 needs_cleanup=1 worktrees=1 dirty=0 orphan=1 prunable=0" in result.output
     assert (
         "summitflow worktrees:1 dirty:0 orphan:1 prunable:0 tasks:task-1 "
-        "finalize:task-1 orphan_branches:task-3/main"
+        "finalize:task-1 salvage:task-3 orphan_branches:task-3/main"
     ) in result.output
     assert "agent-hub clean" in result.output
 
@@ -175,6 +184,8 @@ def test_cleanup_status_routes_missing_task_merge_candidates_to_review() -> None
                 worktree_task_ids=["task-missing"],
                 orphan_branch_names=[],
                 prunable_branch_names=[],
+                salvage_task_ids=[],
+                review_orphan_task_ids=[],
             ),
         ),
         patch(
@@ -220,6 +231,7 @@ def test_cleanup_worktrees_auto_prunes_git_residue() -> None:
         patch("cli.commands.cleanup.execute_cleanup") as mock_execute,
         patch("cli.commands.cleanup.prune_worktree_registrations") as mock_prune_worktrees,
         patch("cli.commands.cleanup.prune_prunable_task_branches", return_value=["task-1/main", "task-2/main"]) as mock_prune_branches,
+        patch("cli.commands.cleanup.prune_equivalent_orphan_task_branches", return_value=["task-3/main"]) as mock_prune_equivalent,
         patch("cli.commands.cleanup.prune_closed_orphan_task_branches", return_value=["task-3/main"]) as mock_prune_closed,
     ):
         mock_execute.return_value = SimpleNamespace(cleaned=1, skipped=0, errors=0)
@@ -228,9 +240,11 @@ def test_cleanup_worktrees_auto_prunes_git_residue() -> None:
     assert result.exit_code == 0
     mock_prune_worktrees.assert_called_once_with(Path("/repos/agent-hub"))
     mock_prune_branches.assert_called_once_with(Path("/repos/agent-hub"))
+    mock_prune_equivalent.assert_called_once_with(Path("/repos/agent-hub"))
     mock_prune_closed.assert_called_once_with(Path("/repos/agent-hub"))
     assert "Pruned git worktree registrations in 1 repo(s)" in result.output
     assert "Pruned merged orphan task branches: 2" in result.output
+    assert "Pruned equivalent orphan task branches: 1" in result.output
     assert "Pruned closed orphan task branches: 1" in result.output
 
 
@@ -241,6 +255,7 @@ def test_cleanup_worktrees_auto_prunes_git_residue_without_worktrees() -> None:
         patch("cli.commands.cleanup.get_active_worktrees", return_value=[]),
         patch("cli.commands.cleanup.prune_worktree_registrations") as mock_prune_regs,
         patch("cli.commands.cleanup.prune_prunable_task_branches", return_value=["task-1/main", "task-2/main"]),
+        patch("cli.commands.cleanup.prune_equivalent_orphan_task_branches", return_value=["task-3/main"]),
         patch("cli.commands.cleanup.prune_closed_orphan_task_branches", return_value=["task-3/main"]),
     ):
         result = runner.invoke(app, ["worktrees", "--auto"])
@@ -250,6 +265,7 @@ def test_cleanup_worktrees_auto_prunes_git_residue_without_worktrees() -> None:
     assert "No worktrees found" in result.output
     assert "Pruned git worktree registrations in 1 repo(s)" in result.output
     assert "Pruned merged orphan task branches: 2" in result.output
+    assert "Pruned equivalent orphan task branches: 1" in result.output
     assert "Pruned closed orphan task branches: 1" in result.output
 
 
@@ -323,3 +339,29 @@ def test_analyze_worktree_routes_blocked_unmerged_worktree_to_review(tmp_path: P
     assert analysis.action == CleanupAction.MANUAL_REVIEW
     assert analysis.task_status == "blocked"
     assert analysis.reason == "Blocked task has unmerged commits and requires review before cleanup"
+
+
+def test_inspect_orphans_reports_salvage_candidates() -> None:
+    with (
+        patch("cli.commands.cleanup._iter_target_repos", return_value=[Path("/repos/summitflow")]),
+        patch(
+            "cli.commands.cleanup.assess_orphan_task_branches",
+            return_value=[
+                SimpleNamespace(
+                    branch_name="task-24310aaf/main",
+                    task_id="task-24310aaf",
+                    resolution="salvage",
+                    task_status=None,
+                    commits_ahead=1,
+                    files_changed=1,
+                    has_node_modules_artifact=False,
+                ),
+            ],
+        ),
+    ):
+        result = runner.invoke(app, ["inspect-orphans", "--all"])
+
+    assert result.exit_code == 0
+    assert "ORPHAN-REVIEW[all]:total=1 salvage=1 review=0" in result.output
+    assert "summitflow task-24310aaf" in result.output
+    assert "resolution:salvage" in result.output

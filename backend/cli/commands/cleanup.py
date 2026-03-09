@@ -11,7 +11,9 @@ from typing import Annotated, Any
 import typer
 
 from app.utils._git_branches import (
+    assess_orphan_task_branches,
     prune_closed_orphan_task_branches,
+    prune_equivalent_orphan_task_branches,
     prune_prunable_task_branches,
     prune_worktree_registrations,
 )
@@ -126,6 +128,8 @@ def _build_repo_cleanup_entry(repo_path: Path) -> dict[str, Any]:
         "worktree_task_ids": workspace_summary.worktree_task_ids,
         "orphan_branch_names": workspace_summary.orphan_branch_names,
         "prunable_branch_names": workspace_summary.prunable_branch_names,
+        "salvage_task_ids": workspace_summary.salvage_task_ids,
+        "review_orphan_task_ids": workspace_summary.review_orphan_task_ids,
         "needs_merge_count": len(needs_merge_tasks),
         "conflict_count": len(conflict_tasks),
         "review_count": len(review_tasks),
@@ -181,6 +185,10 @@ def _print_repo_compact(repo: dict[str, Any]) -> None:
         attention_parts.append(f"conflicts:{','.join(repo['conflict_tasks'])}")
     if repo["review_tasks"]:
         attention_parts.append(f"review:{','.join(repo['review_tasks'])}")
+    if repo["salvage_task_ids"]:
+        attention_parts.append(f"salvage:{','.join(repo['salvage_task_ids'])}")
+    if repo["review_orphan_task_ids"]:
+        attention_parts.append(f"review_orphans:{','.join(repo['review_orphan_task_ids'])}")
     attention = f" {' '.join(attention_parts)}" if attention_parts else ""
     branch_parts: list[str] = []
     if repo["prunable_branch_names"]:
@@ -235,21 +243,28 @@ def _run_cleanup(analyses: list, categorization, force: bool, dry_run: bool) -> 
     print_cleanup_results(results, dry_run)
 
 
-def _cleanup_safe_git_residue(repos: list[Path], dry_run: bool) -> tuple[int, int, int]:
+def _cleanup_safe_git_residue(repos: list[Path], dry_run: bool) -> tuple[int, int, int, int]:
     """Prune stale worktree registrations and safe orphan task branches."""
     if dry_run:
-        return (0, 0, 0)
+        return (0, 0, 0, 0)
 
     pruned_worktree_registrations = 0
     pruned_task_branches = 0
+    pruned_equivalent_task_branches = 0
     pruned_closed_task_branches = 0
     for repo_path in repos:
         prune_worktree_registrations(repo_path)
         pruned_worktree_registrations += 1
         pruned_task_branches += len(prune_prunable_task_branches(repo_path))
+        pruned_equivalent_task_branches += len(prune_equivalent_orphan_task_branches(repo_path))
         pruned_closed_task_branches += len(prune_closed_orphan_task_branches(repo_path))
 
-    return pruned_worktree_registrations, pruned_task_branches, pruned_closed_task_branches
+    return (
+        pruned_worktree_registrations,
+        pruned_task_branches,
+        pruned_equivalent_task_branches,
+        pruned_closed_task_branches,
+    )
 
 
 @app.command("worktrees")
@@ -270,7 +285,7 @@ def cleanup_worktrees(
 
     if not worktrees:
         if auto:
-            pruned_worktree_registrations, pruned_task_branches, pruned_closed_task_branches = _cleanup_safe_git_residue(
+            pruned_worktree_registrations, pruned_task_branches, pruned_equivalent_task_branches, pruned_closed_task_branches = _cleanup_safe_git_residue(
                 _iter_target_repos(all_projects),
                 dry_run=dry_run,
             )
@@ -279,6 +294,7 @@ def cleanup_worktrees(
             output_success("No worktrees found")
             typer.echo(f"  Pruned git worktree registrations in {pruned_worktree_registrations} repo(s)")
             typer.echo(f"  Pruned merged orphan task branches: {pruned_task_branches}")
+            typer.echo(f"  Pruned equivalent orphan task branches: {pruned_equivalent_task_branches}")
             typer.echo(f"  Pruned closed orphan task branches: {pruned_closed_task_branches}")
             return
         output_success("No worktrees found")
@@ -298,14 +314,46 @@ def cleanup_worktrees(
         return
 
     _run_cleanup(analyses, categorization, force=force, dry_run=dry_run)
-    pruned_worktree_registrations, pruned_task_branches, pruned_closed_task_branches = _cleanup_safe_git_residue(
+    pruned_worktree_registrations, pruned_task_branches, pruned_equivalent_task_branches, pruned_closed_task_branches = _cleanup_safe_git_residue(
         _iter_target_repos(all_projects),
         dry_run=dry_run,
     )
     if auto and not dry_run:
         typer.echo(f"  Pruned git worktree registrations in {pruned_worktree_registrations} repo(s)")
         typer.echo(f"  Pruned merged orphan task branches: {pruned_task_branches}")
+        typer.echo(f"  Pruned equivalent orphan task branches: {pruned_equivalent_task_branches}")
         typer.echo(f"  Pruned closed orphan task branches: {pruned_closed_task_branches}")
+
+
+@app.command("inspect-orphans")
+def inspect_orphans(
+    all_projects: Annotated[bool, typer.Option("--all", help="Inspect all managed projects")] = False,
+) -> None:
+    """Inspect unresolved orphan task branches that need salvage or review."""
+    lines: list[str] = []
+    salvage_count = 0
+    review_count = 0
+    for repo_path in _iter_target_repos(all_projects):
+        for item in assess_orphan_task_branches(repo_path):
+            if item.resolution == "salvage":
+                salvage_count += 1
+            else:
+                review_count += 1
+            flags = []
+            if item.task_status is None:
+                flags.append("task_missing")
+            if item.has_node_modules_artifact:
+                flags.append("node_modules_artifact")
+            flag_text = ",".join(flags) if flags else "-"
+            lines.append(
+                f"{repo_path.name} {item.task_id} branch:{item.branch_name} "
+                f"resolution:{item.resolution} task:{item.task_status or 'missing'} "
+                f"ahead:{item.commits_ahead} files:{item.files_changed} flags:{flag_text}"
+            )
+    scope = "all" if all_projects else "current"
+    typer.echo(f"ORPHAN-REVIEW[{scope}]:total={len(lines)} salvage={salvage_count} review={review_count}")
+    for line in lines:
+        typer.echo(line)
 
 
 @app.command("status")

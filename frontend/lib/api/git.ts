@@ -11,6 +11,10 @@ export interface RepoWorkspaceSummary {
   orphan_branches: number
   prunable_branches: number
   worktree_task_ids: string[]
+  orphan_branch_names?: string[]
+  prunable_branch_names?: string[]
+  salvage_task_ids?: string[]
+  review_orphan_task_ids?: string[]
 }
 
 export interface RepoStatus {

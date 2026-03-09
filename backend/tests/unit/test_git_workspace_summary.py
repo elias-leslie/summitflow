@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from app.api.git_helpers.worktree_helpers import collect_worktrees
 from app.api.models.git_models import BranchInfo
 from app.utils._git_branches import (
+    assess_orphan_task_branches,
     build_repo_workspace_summary,
     prune_closed_orphan_task_branches,
 )
@@ -39,6 +40,25 @@ class TestBuildRepoWorkspaceSummary:
             "app.utils._git_branches._get_merged_branches",
             return_value={"main", "task-456/main"},
         )
+        mocker.patch(
+            "app.utils._git_branches.list_equivalent_orphan_task_branches",
+            return_value=[],
+        )
+        mocker.patch(
+            "app.storage.tasks.get_task",
+            return_value={"id": "task-789", "status": "running"},
+        )
+        mocker.patch(
+            "app.utils._git_branches._branch_diff_paths",
+            side_effect=[
+                ["backend/app/example.py"],
+                ["backend/app/other.py"],
+            ],
+        )
+        mocker.patch(
+            "app.utils._git_branches._branch_commits_ahead",
+            side_effect=[1, 2],
+        )
 
         summary = build_repo_workspace_summary(repo_path)
 
@@ -48,6 +68,8 @@ class TestBuildRepoWorkspaceSummary:
         assert summary.orphan_branches == 2
         assert summary.prunable_branches == 1
         assert summary.worktree_task_ids == ["task-123", "task-999"]
+        assert summary.salvage_task_ids == []
+        assert summary.review_orphan_task_ids == ["task-789"]
 
 
 class TestCollectWorktrees:
@@ -108,3 +130,32 @@ class TestPruneClosedOrphanTaskBranches:
 
         assert removed == ["task-done/main"]
         assert mock_run_git.call_args_list[1].args[0] == ["branch", "-D", "task-done/main"]
+
+
+class TestAssessOrphanTaskBranches:
+    """Tests for orphan branch resolution classification."""
+
+    def test_marks_missing_task_branches_as_salvage_and_flags_node_modules(self, mocker) -> None:
+        repo_path = Path("/repos/monkey-fight")
+        mocker.patch(
+            "app.utils._git_branches.get_all_branches",
+            return_value=[
+                BranchInfo(name="task-missing/main", is_current=False, has_worktree=False, task_id="task-missing"),
+            ],
+        )
+        mocker.patch("app.utils._git_branches._detect_base_branch", return_value="main")
+        mocker.patch("app.utils._git_branches._get_merged_branches", return_value={"main"})
+        mocker.patch("app.utils._git_branches.list_equivalent_orphan_task_branches", return_value=[])
+        mocker.patch("app.storage.tasks.get_task", return_value=None)
+        mocker.patch(
+            "app.utils._git_branches._branch_diff_paths",
+            return_value=["node_modules", "src/scenes/game/BiomeRevealCard.ts"],
+        )
+        mocker.patch("app.utils._git_branches._branch_commits_ahead", return_value=2)
+
+        items = assess_orphan_task_branches(repo_path)
+
+        assert len(items) == 1
+        assert items[0].resolution == "salvage"
+        assert items[0].task_status is None
+        assert items[0].has_node_modules_artifact is True

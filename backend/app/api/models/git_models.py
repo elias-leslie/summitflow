@@ -29,6 +29,8 @@ class RepoWorkspaceSummary(BaseModel):
     worktree_task_ids: list[str] = Field(default_factory=list)
     orphan_branch_names: list[str] = Field(default_factory=list)
     prunable_branch_names: list[str] = Field(default_factory=list)
+    salvage_task_ids: list[str] = Field(default_factory=list)
+    review_orphan_task_ids: list[str] = Field(default_factory=list)
 
 
 class GitStatusResponse(BaseModel):
