@@ -21,6 +21,14 @@ LOG_PATH = Path.home() / ".codex" / "hooks" / "codex-session-sync.log"
 TRANSCRIPTS_ROOT = Path.home() / ".codex" / "sessions"
 ENV_FILE = Path.home() / ".env.local"
 
+PROVIDER = "codex"
+SESSION_TYPE = "agent"
+DEFAULT_MODEL = "gpt-5.4"
+GIT_LOG_WINDOW = "12 hours ago"
+REQUEST_SOURCE = "codex-transcript-sync"
+ENV_CLIENT_ID = "SUMMITFLOW_CLIENT_ID="
+ENV_CLIENT_SECRET = "SUMMITFLOW_CLIENT_SECRET="
+
 
 @dataclass(frozen=True)
 class TranscriptInfo:
@@ -39,27 +47,23 @@ def log(message: str) -> None:
         handle.write(f"[{timestamp}] {message}\n")
 
 
+def _parse_env_value(raw: str) -> str:
+    stripped = raw.rstrip()
+    if len(stripped) >= 2 and stripped[0] in ("'", '"') and stripped.endswith(stripped[0]):
+        return stripped[1:-1]
+    return raw.split("#")[0].strip()
+
+
 def load_env_credentials() -> tuple[str, str]:
+    if not ENV_FILE.exists():
+        return "", ""
     client_id = ""
     client_secret = ""
-    if not ENV_FILE.exists():
-        return client_id, client_secret
-
     for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
-        if line.startswith("SUMMITFLOW_CLIENT_ID="):
-            raw_value = line.split("=", 1)[1]
-            if len(raw_value) >= 2 and raw_value[0] in ("'", '"') and raw_value.rstrip().endswith(raw_value[0]):
-                value = raw_value.rstrip()[1:-1]
-            else:
-                value = raw_value.split("#")[0].strip()
-            client_id = value
-        elif line.startswith("SUMMITFLOW_CLIENT_SECRET="):
-            raw_value = line.split("=", 1)[1]
-            if len(raw_value) >= 2 and raw_value[0] in ("'", '"') and raw_value.rstrip().endswith(raw_value[0]):
-                value = raw_value.rstrip()[1:-1]
-            else:
-                value = raw_value.split("#")[0].strip()
-            client_secret = value
+        if line.startswith(ENV_CLIENT_ID):
+            client_id = _parse_env_value(line.split("=", 1)[1])
+        elif line.startswith(ENV_CLIENT_SECRET):
+            client_secret = _parse_env_value(line.split("=", 1)[1])
     return client_id, client_secret
 
 
@@ -81,36 +85,33 @@ def read_transcript_info(path: Path) -> TranscriptInfo | None:
     session_id = ""
     cwd = ""
     model = ""
-
     try:
-        with path.open(encoding="utf-8") as handle:
-            for line in handle:
-                try:
-                    obj = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                obj_type = obj.get("type")
-                payload = obj.get("payload") or {}
-                if obj_type == "session_meta":
-                    session_id = payload.get("id") or session_id
-                    cwd = payload.get("cwd") or cwd
-                elif obj_type == "turn_context" and not model:
-                    model = payload.get("model") or model
-                if session_id and cwd and model:
-                    break
+        lines = path.read_text(encoding="utf-8").splitlines()
     except OSError as exc:
         log(f"[WARN] Failed to read transcript {path}: {exc}")
         return None
-
+    for line in lines:
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        obj_type = obj.get("type")
+        payload = obj.get("payload") or {}
+        if obj_type == "session_meta":
+            session_id = payload.get("id") or session_id
+            cwd = payload.get("cwd") or cwd
+        elif obj_type == "turn_context" and not model:
+            model = payload.get("model") or model
+        if session_id and cwd and model:
+            break
     if not session_id or not cwd:
         return None
-
     stat = path.stat()
     return TranscriptInfo(
         path=path,
         session_id=session_id,
         cwd=Path(cwd),
-        model=model or "gpt-5.4",
+        model=model or DEFAULT_MODEL,
         mtime=stat.st_mtime,
         size=stat.st_size,
     )
@@ -119,7 +120,6 @@ def read_transcript_info(path: Path) -> TranscriptInfo | None:
 def iter_recent_transcripts(recent_hours: int) -> list[TranscriptInfo]:
     if not TRANSCRIPTS_ROOT.exists():
         return []
-
     cutoff = datetime.now(UTC) - timedelta(hours=recent_hours)
     transcripts: list[TranscriptInfo] = []
     for path in TRANSCRIPTS_ROOT.rglob("*.jsonl"):
@@ -145,40 +145,24 @@ def build_project_context(cwd: Path) -> dict[str, Any] | None:
         ).strip()
     except subprocess.CalledProcessError:
         return None
-
     project_path = Path(project_dir)
-    project_id = project_path.name
-    current_branch = subprocess.run(
+    branch = subprocess.run(
         ["git", "-C", str(project_path), "rev-parse", "--abbrev-ref", "HEAD"],
-        capture_output=True,
-        text=True,
-        check=False,
+        capture_output=True, text=True, check=False,
     ).stdout.strip()
-    git_context = subprocess.run(
-        [
-            "git",
-            "-C",
-            str(project_path),
-            "log",
-            "--oneline",
-            '--since=12 hours ago',
-            "--no-merges",
-            "--format=%h %s",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
+    raw_log = subprocess.run(
+        ["git", "-C", str(project_path), "log", "--oneline",
+         f"--since={GIT_LOG_WINDOW}", "--no-merges", "--format=%h %s"],
+        capture_output=True, text=True, check=False,
     ).stdout
     git_lines = [
-        line
-        for line in git_context.splitlines()
-        if not line.startswith(" chore: auto-fix")
-        and "chore(.index" not in line
+        ln for ln in raw_log.splitlines()
+        if not ln.startswith(" chore: auto-fix") and "chore(.index" not in ln
     ]
     return {
         "project_dir": project_path,
-        "project_id": project_id,
-        "branch": current_branch,
+        "project_id": project_path.name,
+        "branch": branch,
         "is_worktree": (project_path / ".git").is_file(),
         "git_context": "\n".join(git_lines[:10]),
     }
@@ -195,19 +179,71 @@ def post_json(
         "Content-Type": "application/json",
         "X-Client-Id": client_id,
         "X-Client-Secret": client_secret,
-        "X-Request-Source": "codex-transcript-sync",
+        "X-Request-Source": REQUEST_SOURCE,
     }
     data = json.dumps(body).encode("utf-8") if body is not None else None
-    req = request.Request(f"{api_url.rstrip('/')}/{endpoint.lstrip('/')}", data=data, headers=headers, method="POST")
+    req = request.Request(
+        f"{api_url.rstrip('/')}/{endpoint.lstrip('/')}",
+        data=data, headers=headers, method="POST",
+    )
     try:
         with request.urlopen(req, timeout=20) as resp:
-            payload = resp.read().decode("utf-8")
-            return resp.status, payload
+            return resp.status, resp.read().decode("utf-8")
     except error.HTTPError as exc:
-        payload = exc.read().decode("utf-8")
-        return exc.code, payload
+        return exc.code, exc.read().decode("utf-8")
     except Exception as exc:  # noqa: BLE001
         return None, str(exc)
+
+
+def _api_post(
+    api_url: str, endpoint: str, body: dict[str, Any] | None,
+    client_id: str, client_secret: str, label: str,
+) -> tuple[bool, str, str]:
+    """POST to endpoint; return (ok, error_detail, raw_payload)."""
+    status, payload = post_json(api_url, endpoint, body, client_id, client_secret)
+    if status != 200:
+        return False, f"{label} failed status={status} body={payload[:300]}", ""
+    return True, "", payload
+
+
+def _upsert_session(
+    info: TranscriptInfo, project: dict[str, Any],
+    api_url: str, client_id: str, client_secret: str,
+) -> tuple[bool, str]:
+    ok, detail, _ = _api_post(api_url, "/session-ingestion/sessions/upsert", {
+        "session_id": info.session_id, "project_id": project["project_id"],
+        "provider": PROVIDER, "model": f"{PROVIDER}/{info.model}",
+        "session_type": SESSION_TYPE, "cwd": str(info.cwd),
+        "current_branch": project["branch"],
+        "provider_metadata": {"transcript_path": str(info.path)},
+    }, client_id, client_secret, "session upsert")
+    return ok, detail
+
+
+def _ingest_events(
+    info: TranscriptInfo, state: dict[str, Any],
+    api_url: str, client_id: str, client_secret: str,
+) -> tuple[bool, str, dict[str, Any]]:
+    checkpoint = state.get("transcripts", {}).get(str(info.path), {}).get("checkpoint")
+    ok, detail, payload = _api_post(
+        api_url, f"/session-ingestion/sessions/{info.session_id}/transcript-events",
+        {"provider": PROVIDER, "transcript_path": str(info.path), "checkpoint": checkpoint},
+        client_id, client_secret, "transcript ingest",
+    )
+    return (ok, detail, json.loads(payload)) if ok else (False, detail, {})
+
+
+def _finalize_session(
+    session_id: str, project: dict[str, Any],
+    api_url: str, client_id: str, client_secret: str,
+) -> tuple[bool, str]:
+    ok, detail, _ = _api_post(
+        api_url, f"/session-ingestion/sessions/{session_id}/finalize",
+        {"branch": project["branch"], "git_context": project["git_context"],
+         "is_worktree": project["is_worktree"]},
+        client_id, client_secret, "finalize",
+    )
+    return ok, detail
 
 
 def sync_transcript(
@@ -223,86 +259,32 @@ def sync_transcript(
     if project is None:
         return False, f"skip non-git cwd={info.cwd}"
 
-    create_body = {
-        "session_id": info.session_id,
-        "project_id": project["project_id"],
-        "provider": "codex",
-        "model": f"codex/{info.model}",
-        "session_type": "agent",
-        "cwd": str(info.cwd),
-        "current_branch": project["branch"],
-        "provider_metadata": {"transcript_path": str(info.path)},
-    }
-    status, payload = post_json(
-        api_url,
-        "/session-ingestion/sessions/upsert",
-        create_body,
-        client_id,
-        client_secret,
-    )
-    if status != 200:
-        return False, f"session upsert failed status={status} body={payload[:300]}"
+    ok, detail = _upsert_session(info, project, api_url, client_id, client_secret)
+    if not ok:
+        return False, detail
 
-    transcript_state = state.get("transcripts", {}).get(str(info.path), {})
-    ingest_body = {
-        "provider": "codex",
-        "transcript_path": str(info.path),
-        "checkpoint": transcript_state.get("checkpoint"),
-    }
-    status, payload = post_json(
-        api_url,
-        f"/session-ingestion/sessions/{info.session_id}/transcript-events",
-        ingest_body,
-        client_id,
-        client_secret,
-    )
-    if status != 200:
-        return False, f"transcript ingest failed status={status} body={payload[:300]}"
-
-    ingest_data = json.loads(payload)
+    ok, detail, ingest_data = _ingest_events(info, state, api_url, client_id, client_secret)
+    if not ok:
+        return False, detail
     update_state_entry(
-        state,
-        info,
-        "synced",
-        (
-            f"appended={ingest_data.get('events_appended', 0)} "
-            f"skipped={ingest_data.get('events_skipped', 0)}"
-        ),
+        state, info, "synced",
+        f"appended={ingest_data.get('events_appended', 0)} skipped={ingest_data.get('events_skipped', 0)}",
         checkpoint=ingest_data.get("next_checkpoint"),
     )
 
-    finalize_body = {
-        "branch": project["branch"],
-        "git_context": project["git_context"],
-        "is_worktree": project["is_worktree"],
-    }
-    status, payload = post_json(
-        api_url,
-        f"/session-ingestion/sessions/{info.session_id}/finalize",
-        finalize_body,
-        client_id,
-        client_secret,
-    )
-    if status != 200:
-        return False, f"finalize failed status={status} body={payload[:300]}"
+    ok, detail = _finalize_session(info.session_id, project, api_url, client_id, client_secret)
+    if not ok:
+        return False, detail
 
     if close_session:
-        status, payload = post_json(
-            api_url,
-            f"/sessions/{info.session_id}/close",
-            None,
-            client_id,
-            client_secret,
-        )
-        if status != 200:
-            return False, f"close failed status={status} body={payload[:300]}"
+        ok, detail, _ = _api_post(api_url, f"/sessions/{info.session_id}/close",
+                                   None, client_id, client_secret, "close")
+        if not ok:
+            return False, detail
 
     if verbose:
-        log(
-            "[INFO] Synced "
-            f"session={info.session_id} project={project['project_id']} "
-            f"transcript={info.path} close={close_session}"
-        )
+        log(f"[INFO] Synced session={info.session_id} project={project['project_id']} "
+            f"transcript={info.path} close={close_session}")
     return True, "ok"
 
 
@@ -322,8 +304,7 @@ def update_state_entry(
     detail: str,
     checkpoint: str | None = None,
 ) -> None:
-    transcripts = state.setdefault("transcripts", {})
-    transcripts[str(info.path)] = {
+    state.setdefault("transcripts", {})[str(info.path)] = {
         "session_id": info.session_id,
         "mtime": info.mtime,
         "size": info.size,
@@ -357,10 +338,8 @@ def main(argv: list[str]) -> int:
 
     state = load_state()
     if args.transcript is not None:
-        infos = []
         info = read_transcript_info(args.transcript)
-        if info is not None:
-            infos.append(info)
+        infos = [info] if info is not None else []
     else:
         infos = iter_recent_transcripts(args.recent_hours)
 
@@ -368,13 +347,9 @@ def main(argv: list[str]) -> int:
         if not should_sync(info, state, args.force):
             continue
         ok, detail = sync_transcript(
-            info=info,
-            state=state,
-            api_url=DEFAULT_API,
-            client_id=client_id,
-            client_secret=client_secret,
-            close_session=args.close,
-            verbose=args.verbose,
+            info=info, state=state, api_url=DEFAULT_API,
+            client_id=client_id, client_secret=client_secret,
+            close_session=args.close, verbose=args.verbose,
         )
         if not ok:
             update_state_entry(state, info, "error", detail)

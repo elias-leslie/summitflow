@@ -109,6 +109,12 @@ def file_to_module(project_path: str, file_path: str) -> str | None:
     if "test" in lower or "migration" in lower or "alembic" in lower:
         return None
 
+    # Skip files whose path components aren't valid Python identifiers
+    # (e.g. scripts/codex-session-sync.py → "scripts.codex-session-sync" causes
+    # SyntaxError on `import` because hyphens are not valid in identifiers)
+    if not all(part.isidentifier() for part in module_name.split(".")):
+        return None
+
     return module_name if module_name else None
 
 
