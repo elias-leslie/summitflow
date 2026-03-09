@@ -1,17 +1,4 @@
-"""Persona CLI — manage the first-class persona identity.
-
-Commands:
-  st persona show                    — Full persona overview
-  st persona update --field FILE     — Update any persona field from a file
-  st persona personality             — Print personality document
-  st persona personality --edit      — Open $EDITOR to modify personality
-  st persona personality --set TEXT  — Set personality directly
-  st persona name                    — Show current name
-  st persona name "NewName"          — Set new name
-  st persona heartbeat [--watch]     — Trigger heartbeat (optionally poll until done)
-  st persona activity [--hours N]    — Show recent activity sessions
-  st persona status                  — Heartbeat state + persona overview
-"""
+"""Persona CLI — manage the first-class persona identity."""
 
 from __future__ import annotations
 
@@ -183,6 +170,19 @@ def _edit_personality_in_editor(current: dict[str, Any]) -> None:
     print(f"Personality updated (version {result.get('version', '?')})")
 
 
+def _maybe_report_dispatch(
+    client: Any, project: str | None, reported: bool
+) -> bool:
+    """Show dispatch hint once; return updated reported flag."""
+    if reported or not client:
+        return reported
+    hint = _get_dispatch_hint(client, project)
+    if hint:
+        print(f"\n  {hint}", end="", flush=True)
+        return True
+    return reported
+
+
 @app.command()
 def personality(
     edit: Annotated[bool, _Opt("--edit", "-e", help="Open $EDITOR to modify personality")] = False,
@@ -323,11 +323,7 @@ def heartbeat(
                 print()  # newline after progress dots
                 _print_heartbeat_result(status)
                 return
-            if pulse_client and not reported_dispatch:
-                dispatch_hint = _get_dispatch_hint(pulse_client, project)
-                if dispatch_hint:
-                    print(f"\n  {dispatch_hint}", end="", flush=True)
-                    reported_dispatch = True
+            reported_dispatch = _maybe_report_dispatch(pulse_client, project, reported_dispatch)
             elapsed = status.get("elapsed_seconds", 0)
             print(f"\r  Running... {elapsed}s elapsed", end="", flush=True)
         except Exception:
