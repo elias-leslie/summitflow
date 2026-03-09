@@ -10,6 +10,14 @@ from dataclasses import dataclass
 logger = logging.getLogger(__name__)
 
 
+def _format_merge_error(result: subprocess.CompletedProcess[str], task_branch: str) -> str:
+    """Build a useful merge error message even when git leaves stderr empty."""
+    detail = (result.stderr or "").strip() or (result.stdout or "").strip()
+    if not detail:
+        detail = f"git merge exited with code {result.returncode}"
+    return f"Failed to merge {task_branch}: {detail}"
+
+
 @dataclass
 class MergeOutcome:
     """Result of a merge attempt with structured conflict info."""
@@ -57,6 +65,19 @@ def merge_task_branch(
     Returns:
         MergeOutcome with success/failure details and merge SHA.
     """
+    branch_check = subprocess.run(
+        ["git", "show-ref", "--verify", f"refs/heads/{task_branch}"],
+        cwd=project_root,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    if branch_check.returncode != 0:
+        return MergeOutcome(
+            success=False,
+            error=f"Failed to merge {task_branch}: branch not found",
+        )
+
     result = subprocess.run(
         ["git", "merge", "--no-ff", task_branch, "-m", f"Merge task {task_id}"],
         cwd=project_root,
@@ -75,7 +96,7 @@ def merge_task_branch(
         )
         return MergeOutcome(
             success=False,
-            error=f"Failed to merge {task_branch}: {stderr}",
+            error=_format_merge_error(result, task_branch),
             conflicting_files=conflicting if conflicting else None,
         )
 

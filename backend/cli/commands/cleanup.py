@@ -10,6 +10,10 @@ from typing import Annotated, Any
 
 import typer
 
+from app.utils._git_branches import (
+    prune_prunable_task_branches,
+    prune_worktree_registrations,
+)
 from app.utils.git_helpers import build_repo_workspace_summary
 
 from ..client import STClient
@@ -96,7 +100,7 @@ def _build_repo_cleanup_entry(repo_path: Path) -> dict[str, Any]:
     needs_merge_tasks = [
         analysis.worktree.task_id
         for analysis in analyses
-        if analysis.action == CleanupAction.NEEDS_MERGE
+        if analysis.action == CleanupAction.NEEDS_MERGE and analysis.task_status is not None
     ]
     conflict_tasks = [
         analysis.worktree.task_id
@@ -107,6 +111,7 @@ def _build_repo_cleanup_entry(repo_path: Path) -> dict[str, Any]:
         analysis.worktree.task_id
         for analysis in analyses
         if analysis.action == CleanupAction.MANUAL_REVIEW
+        or (analysis.action == CleanupAction.NEEDS_MERGE and analysis.task_status is None)
     ]
     needs_cleanup = any(
         (
@@ -234,6 +239,21 @@ def _run_cleanup(analyses: list, categorization, force: bool, dry_run: bool) -> 
     print_cleanup_results(results, dry_run)
 
 
+def _cleanup_safe_git_residue(repos: list[Path], dry_run: bool) -> tuple[int, int]:
+    """Prune stale worktree registrations and merged orphan task branches."""
+    if dry_run:
+        return (0, 0)
+
+    pruned_worktree_registrations = 0
+    pruned_task_branches = 0
+    for repo_path in repos:
+        prune_worktree_registrations(repo_path)
+        pruned_worktree_registrations += 1
+        pruned_task_branches += len(prune_prunable_task_branches(repo_path))
+
+    return pruned_worktree_registrations, pruned_task_branches
+
+
 @app.command("worktrees")
 def cleanup_worktrees(
     auto: Annotated[bool, typer.Option("--auto", help="Auto-cleanup safe cases (merged, no commits ahead)")] = False,
@@ -268,6 +288,13 @@ def cleanup_worktrees(
         return
 
     _run_cleanup(analyses, categorization, force=force, dry_run=dry_run)
+    pruned_worktree_registrations, pruned_task_branches = _cleanup_safe_git_residue(
+        _iter_target_repos(all_projects),
+        dry_run=dry_run,
+    )
+    if auto and not dry_run:
+        typer.echo(f"  Pruned git worktree registrations in {pruned_worktree_registrations} repo(s)")
+        typer.echo(f"  Pruned merged orphan task branches: {pruned_task_branches}")
 
 
 @app.command("status")

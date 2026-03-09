@@ -56,8 +56,16 @@ def test_build_cleanup_status_payload_aggregates_repo_hygiene() -> None:
         patch(
             "cli.commands.cleanup.analyze_worktree",
             side_effect=[
-                SimpleNamespace(worktree=summitflow_worktrees[0], action=CleanupAction.NEEDS_MERGE),
-                SimpleNamespace(worktree=summitflow_worktrees[1], action=CleanupAction.MANUAL_REVIEW),
+                SimpleNamespace(
+                    worktree=summitflow_worktrees[0],
+                    action=CleanupAction.NEEDS_MERGE,
+                    task_status="completed",
+                ),
+                SimpleNamespace(
+                    worktree=summitflow_worktrees[1],
+                    action=CleanupAction.MANUAL_REVIEW,
+                    task_status="blocked",
+                ),
             ],
         ),
     ):
@@ -117,7 +125,11 @@ def test_cleanup_status_compact_reports_cross_repo_summary() -> None:
         patch("cli.commands.cleanup.has_uncommitted_changes", return_value=False),
         patch(
             "cli.commands.cleanup.analyze_worktree",
-            return_value=SimpleNamespace(worktree=summitflow_worktrees[0], action=CleanupAction.NEEDS_MERGE),
+            return_value=SimpleNamespace(
+                worktree=summitflow_worktrees[0],
+                action=CleanupAction.NEEDS_MERGE,
+                task_status="completed",
+            ),
         ),
     ):
         result = runner.invoke(app, ["status", "--all"])
@@ -126,3 +138,79 @@ def test_cleanup_status_compact_reports_cross_repo_summary() -> None:
     assert "CLEANUP[all]:repos=2 needs_cleanup=1 worktrees=1 dirty=0 orphan=1 prunable=0" in result.output
     assert "summitflow worktrees:1 dirty:0 orphan:1 prunable:0 tasks:task-1 finalize:task-1" in result.output
     assert "agent-hub clean" in result.output
+
+
+def test_cleanup_status_routes_missing_task_merge_candidates_to_review() -> None:
+    repo_paths = [Path("/repos/agent-hub")]
+    worktree = SimpleNamespace(
+        task_id="task-missing",
+        path=Path("/wt/missing"),
+        branch="task-missing/main",
+        base_branch="main",
+        project_id="agent-hub",
+    )
+
+    with (
+        patch("cli.commands.cleanup._get_managed_repos", return_value=repo_paths),
+        patch("cli.commands.cleanup.get_project_id", return_value="agent-hub"),
+        patch(
+            "cli.commands.cleanup.build_repo_workspace_summary",
+            return_value=SimpleNamespace(
+                active_worktrees=1,
+                orphan_branches=0,
+                prunable_branches=0,
+                worktree_task_ids=["task-missing"],
+            ),
+        ),
+        patch(
+            "cli.commands.cleanup.get_active_worktrees",
+            side_effect=[[worktree], [worktree]],
+        ),
+        patch("cli.commands.cleanup.has_uncommitted_changes", return_value=False),
+        patch(
+            "cli.commands.cleanup.analyze_worktree",
+            return_value=SimpleNamespace(
+                worktree=worktree,
+                action=CleanupAction.NEEDS_MERGE,
+                task_status=None,
+            ),
+        ),
+    ):
+        payload = build_cleanup_status_payload(all_projects=False)
+
+    assert payload["repositories"][0]["needs_merge_tasks"] == []
+    assert payload["repositories"][0]["review_tasks"] == ["task-missing"]
+
+
+def test_cleanup_worktrees_auto_prunes_git_residue() -> None:
+    worktree = SimpleNamespace(
+        task_id="task-1",
+        path=Path("/wt/1"),
+        branch="task-1/main",
+        base_branch="main",
+        project_id="agent-hub",
+    )
+    analysis = SimpleNamespace(
+        worktree=worktree,
+        action=CleanupAction.ALREADY_MERGED,
+        task_status="completed",
+        last_commit_age_days=1,
+    )
+
+    with (
+        patch("cli.commands.cleanup.get_project_id", return_value="agent-hub"),
+        patch("cli.commands.cleanup._iter_target_repos", return_value=[Path("/repos/agent-hub")]),
+        patch("cli.commands.cleanup.get_active_worktrees", return_value=[worktree]),
+        patch("cli.commands.cleanup._analyze_and_display", return_value=([analysis], SimpleNamespace(needs_merge=[], safe_to_delete=[analysis]))),
+        patch("cli.commands.cleanup.execute_cleanup") as mock_execute,
+        patch("cli.commands.cleanup.prune_worktree_registrations") as mock_prune_worktrees,
+        patch("cli.commands.cleanup.prune_prunable_task_branches", return_value=["task-1/main", "task-2/main"]) as mock_prune_branches,
+    ):
+        mock_execute.return_value = SimpleNamespace(cleaned=1, skipped=0, errors=0)
+        result = runner.invoke(app, ["worktrees", "--auto"])
+
+    assert result.exit_code == 0
+    mock_prune_worktrees.assert_called_once_with(Path("/repos/agent-hub"))
+    mock_prune_branches.assert_called_once_with(Path("/repos/agent-hub"))
+    assert "Pruned git worktree registrations in 1 repo(s)" in result.output
+    assert "Pruned merged orphan task branches: 2" in result.output

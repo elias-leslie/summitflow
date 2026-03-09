@@ -106,6 +106,30 @@ def _get_merged_branches(repo_path: Path, base_branch: str) -> set[str]:
     return {line.strip() for line in result.stdout.splitlines() if line.strip()}
 
 
+def prune_worktree_registrations(repo_path: Path) -> None:
+    """Prune stale git worktree registrations for a repository."""
+    run_git(["worktree", "prune"], repo_path)
+
+
+def list_prunable_task_branches(repo_path: Path) -> list[str]:
+    """Return orphan task branches that are already merged into the base branch."""
+    branches = get_all_branches(repo_path)
+    task_branches = [branch for branch in branches if branch.task_id]
+    orphan_branches = [branch for branch in task_branches if not branch.has_worktree]
+    merged_branches = _get_merged_branches(repo_path, _detect_base_branch(repo_path))
+    return [branch.name for branch in orphan_branches if branch.name in merged_branches]
+
+
+def prune_prunable_task_branches(repo_path: Path) -> list[str]:
+    """Delete merged orphan task branches and return the ones removed."""
+    removed: list[str] = []
+    for branch_name in list_prunable_task_branches(repo_path):
+        result = run_git(["branch", "-d", branch_name], repo_path)
+        if result.returncode == 0:
+            removed.append(branch_name)
+    return removed
+
+
 def build_repo_workspace_summary(repo_path: Path) -> RepoWorkspaceSummary:
     """Build per-repository branch/worktree cleanup counters."""
     from ..api.models.git_models import RepoWorkspaceSummary
@@ -115,8 +139,10 @@ def build_repo_workspace_summary(repo_path: Path) -> RepoWorkspaceSummary:
     active_worktrees = _get_active_worktrees(project_id) if project_id else []
     task_branches = [branch for branch in branches if branch.task_id]
     orphan_branches = [branch for branch in task_branches if not branch.has_worktree]
-    merged_branches = _get_merged_branches(repo_path, _detect_base_branch(repo_path))
-    prunable_branches = [branch for branch in orphan_branches if branch.name in merged_branches]
+    prunable_branch_names = set(list_prunable_task_branches(repo_path))
+    prunable_branches = [
+        branch for branch in orphan_branches if branch.name in prunable_branch_names
+    ]
 
     return RepoWorkspaceSummary(
         active_worktrees=len(active_worktrees),
