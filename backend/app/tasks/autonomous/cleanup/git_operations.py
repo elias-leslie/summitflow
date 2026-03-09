@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 def _format_merge_error(result: subprocess.CompletedProcess[str], task_branch: str) -> str:
     """Build a useful merge error message even when git leaves stderr empty."""
-    detail = (result.stderr or "").strip() or (result.stdout or "").strip()
+    detail = ((result.stderr or "").strip() or (result.stdout or "").strip())
     if not detail:
         detail = f"git merge exited with code {result.returncode}"
     return f"Failed to merge {task_branch}: {detail}"
@@ -86,8 +86,10 @@ def merge_task_branch(
         timeout=60,
     )
     if result.returncode != 0:
-        stderr = result.stderr
-        conflicting = extract_conflicting_files(stderr)
+        merge_output = "\n".join(
+            part.strip() for part in (result.stderr or "", result.stdout or "") if part.strip()
+        )
+        conflicting = extract_conflicting_files(merge_output)
         subprocess.run(
             ["git", "merge", "--abort"],
             cwd=project_root,
