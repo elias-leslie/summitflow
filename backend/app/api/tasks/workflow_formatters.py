@@ -107,6 +107,41 @@ def _format_event_log_lines(task_id: str) -> list[str]:
     return lines
 
 
+def _format_workflow_readiness_lines(
+    plan_status: str,
+    criteria_count: int,
+    decisions_count: int,
+    readiness: TaskExecutionReadiness | None,
+) -> list[str]:
+    """Return WORKFLOW and READINESS lines when relevant."""
+    lines: list[str] = []
+    if plan_status != "draft" or criteria_count > 0 or decisions_count > 0 or readiness is not None:
+        ready_flag = "yes" if readiness and readiness.ready else "no"
+        issue_count = len(readiness.issues) if readiness else 0
+        lines.append(
+            f"WORKFLOW:plan:{plan_status}|ready:{ready_flag}|issues:{issue_count}"
+            f"|criteria:{criteria_count}|decisions:{decisions_count}"
+        )
+    if readiness and readiness.issues:
+        lines.append(f"READINESS:missing:{','.join(readiness.missing_fields)}")
+    return lines
+
+
+def _format_spirit_section_lines(spirit: dict[str, Any]) -> list[str]:
+    """Return OBJECTIVE, SPIRIT_ANTI, DONE_WHEN, and CONTEXT lines from spirit."""
+    lines: list[str] = []
+    if spirit.get("objective"):
+        lines.append(f"OBJECTIVE:{spirit['objective']}")
+    if spirit.get("spirit_anti"):
+        lines.append(f"SPIRIT_ANTI:{spirit['spirit_anti']}")
+    done_when_list = spirit.get("done_when") or []
+    if done_when_list:
+        strs = [str(d) for d in done_when_list]
+        lines.append(f"DONE_WHEN[{len(strs)}]:{' | '.join(strs)}")
+    lines.extend(_format_context_lines(spirit))
+    return lines
+
+
 def format_toon_context(
     task: dict[str, Any],
     spirit: dict[str, Any] | None,
@@ -134,28 +169,11 @@ def format_toon_context(
     plan_status = spirit.get("plan_status", "draft") if spirit else "draft"
     subtask_lines, criteria_count, criteria_verified = _format_subtask_lines(subtasks)
     decisions_count = len(spirit.get("decisions", [])) if spirit else 0
-    if plan_status != "draft" or criteria_count > 0 or decisions_count > 0 or readiness is not None:
-        ready_flag = "yes" if readiness and readiness.ready else "no"
-        issue_count = len(readiness.issues) if readiness else 0
-        lines.append(
-            f"WORKFLOW:plan:{plan_status}|ready:{ready_flag}|issues:{issue_count}|criteria:{criteria_count}|decisions:{decisions_count}"
-        )
-    if readiness and readiness.issues:
-        lines.append(f"READINESS:missing:{','.join(readiness.missing_fields)}")
-
-    if spirit and spirit.get("objective"):
-        lines.append(f"OBJECTIVE:{spirit['objective']}")
-    if spirit and spirit.get("spirit_anti"):
-        lines.append(f"SPIRIT_ANTI:{spirit['spirit_anti']}")
+    lines.extend(_format_workflow_readiness_lines(plan_status, criteria_count, decisions_count, readiness))
 
     if spirit:
-        done_when_list = spirit.get("done_when") or []
-        if done_when_list:
-            strs = [str(d) for d in done_when_list]
-            lines.append(f"DONE_WHEN[{len(strs)}]:{' | '.join(strs)}")
-        lines.extend(_format_context_lines(spirit))
+        lines.extend(_format_spirit_section_lines(spirit))
     lines.extend(_format_lane_line(lane_check))
-
     lines.extend(subtask_lines)
 
     if blockers:
