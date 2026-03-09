@@ -69,6 +69,110 @@ def _strip_tool_call_artifacts(content: str) -> str:
     return cleaned.strip()
 
 
+def _extract_json_candidates(text: str) -> list[str]:
+    """Return all balanced JSON objects found in *text*, in order."""
+    candidates: list[str] = []
+    offset = 0
+    while offset < len(text):
+        pos = text.find("{", offset)
+        if pos == -1:
+            break
+        obj = _extract_balanced_braces(text, pos)
+        if obj is None:
+            offset = pos + 1
+            continue
+        candidates.append(obj)
+        offset = pos + len(obj)
+    return candidates
+
+
+def _verdict_from_str(value: str) -> dict[str, Any] | None:
+    """Parse *value* as JSON and return it if it contains 'verdict'."""
+    try:
+        inner = json.loads(value)
+        if isinstance(inner, dict) and "verdict" in inner:
+            return inner
+    except json.JSONDecodeError:
+        pass
+    return None
+
+
+def _check_nested_verdict(parsed: dict[str, Any]) -> dict[str, Any] | None:
+    """Return a verdict dict buried under a common wrapper subkey, or None."""
+    for subkey in ("input", "result", "output", "content"):
+        sub = parsed.get(subkey)
+        if isinstance(sub, dict) and "verdict" in sub:
+            return sub
+        if isinstance(sub, str):
+            result = _verdict_from_str(sub)
+            if result is not None:
+                return result
+    return None
+
+
+def _try_flat_verdict(cleaned: str) -> dict[str, Any] | None:
+    """Strategy 2: flat JSON object with a 'verdict' key."""
+    m = re.search(r'\{[^{}]*"verdict"[^{}]*\}', cleaned, re.DOTALL)
+    if m:
+        try:
+            parsed: dict[str, Any] = json.loads(m.group())
+            if "verdict" in parsed:
+                return parsed
+        except json.JSONDecodeError:
+            pass
+    return None
+
+
+def _try_fenced_code(cleaned: str) -> dict[str, Any] | None:
+    """Strategy 3: fenced code block containing JSON."""
+    m = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", cleaned)
+    if m:
+        try:
+            parsed = json.loads(m.group(1))
+            if "verdict" in parsed:
+                return parsed
+        except json.JSONDecodeError:
+            pass
+    return None
+
+
+def _try_nested_json(cleaned: str) -> dict[str, Any] | None:
+    """Strategy 4: scan all balanced JSON objects and walk subkeys."""
+    for json_text in _extract_json_candidates(cleaned):
+        try:
+            parsed = json.loads(json_text)
+        except json.JSONDecodeError:
+            continue
+        if "verdict" in parsed:
+            return parsed
+        result = _check_nested_verdict(parsed)
+        if result is not None:
+            return result
+    return None
+
+
+def _try_greedy_json(content: str) -> dict[str, Any] | None:
+    """Strategy 5: greedy match on the original content (pre-strip fallback)."""
+    try:
+        m = re.search(r"\{[\s\S]*\}", content)
+        if m:
+            parsed = json.loads(m.group())
+            if "verdict" in parsed:
+                return parsed
+    except json.JSONDecodeError:
+        pass
+    return None
+
+
+def _try_keywords(content: str) -> dict[str, Any] | None:
+    """Strategy 6: keyword-based text fallback."""
+    upper = content.upper()
+    for keyword in ("APPROVED", "PLAN_DEFECT", "ESCALATE"):
+        if keyword in upper:
+            return {"verdict": keyword, "summary": content}
+    return None
+
+
 def parse_review_response(content: str) -> dict[str, Any]:
     """Parse the reviewer agent's response.
 
@@ -86,82 +190,12 @@ def parse_review_response(content: str) -> dict[str, Any]:
     Returns:
         Parsed review result with verdict and details
     """
-    # Strategy 1: Strip tool call artifacts and search for verdict JSON
     cleaned = _strip_tool_call_artifacts(content)
-
-    # Strategy 2: Flat pattern — JSON object with a "verdict" key (no nesting)
-    verdict_match = re.search(r'\{[^{}]*"verdict"[^{}]*\}', cleaned, re.DOTALL)
-    if verdict_match:
-        try:
-            parsed: dict[str, Any] = json.loads(verdict_match.group())
-            if "verdict" in parsed:
-                return parsed
-        except json.JSONDecodeError:
-            pass
-
-    # Strategy 3: Fenced code block
-    fence_match = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", cleaned)
-    if fence_match:
-        try:
-            parsed = json.loads(fence_match.group(1))
-            if "verdict" in parsed:
-                return parsed
-        except json.JSONDecodeError:
-            pass
-
-    # Strategy 4: Any JSON object in cleaned content — walk subkeys for verdict
-    # Use balanced brace extraction so nested objects are captured correctly.
-    _s4_candidates: list[str] = []
-    _s4_offset = 0
-    while _s4_offset < len(cleaned):
-        _s4_pos = cleaned.find("{", _s4_offset)
-        if _s4_pos == -1:
-            break
-        _s4_obj = _extract_balanced_braces(cleaned, _s4_pos)
-        if _s4_obj is None:
-            _s4_offset = _s4_pos + 1
-            continue
-        _s4_candidates.append(_s4_obj)
-        _s4_offset = _s4_pos + len(_s4_obj)
-    for json_text in _s4_candidates:
-        try:
-            parsed = json.loads(json_text)
-            if "verdict" in parsed:
-                return parsed
-            # Check common wrapper subkeys
-            for subkey in ("input", "result", "output", "content"):
-                sub = parsed.get(subkey)
-                if isinstance(sub, dict) and "verdict" in sub:
-                    return sub
-                if isinstance(sub, str):
-                    try:
-                        inner = json.loads(sub)
-                        if isinstance(inner, dict) and "verdict" in inner:
-                            return inner
-                    except json.JSONDecodeError:
-                        pass
-        except json.JSONDecodeError:
-            continue
-
-    # Strategy 5: Try parsing the original (unstripped) content with greedy match
-    # in case stripping was too aggressive
-    try:
-        greedy_match = re.search(r"\{[\s\S]*\}", content)
-        if greedy_match:
-            parsed = json.loads(greedy_match.group())
-            if "verdict" in parsed:
-                return parsed
-    except json.JSONDecodeError:
-        pass
-
-    # Strategy 6: Keyword-based text fallback
-    content_upper = content.upper()
-    if "APPROVED" in content_upper:
-        return {"verdict": "APPROVED", "summary": content}
-    if "PLAN_DEFECT" in content_upper:
-        return {"verdict": "PLAN_DEFECT", "summary": content}
-    if "ESCALATE" in content_upper:
-        return {"verdict": "ESCALATE", "summary": content}
-
-    # Default: nothing parseable
-    return {"verdict": "NEEDS_FIX", "summary": content}
+    result = (
+        _try_flat_verdict(cleaned)
+        or _try_fenced_code(cleaned)
+        or _try_nested_json(cleaned)
+        or _try_greedy_json(content)
+        or _try_keywords(content)
+    )
+    return result if result is not None else {"verdict": "NEEDS_FIX", "summary": content}
