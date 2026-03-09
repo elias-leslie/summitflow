@@ -54,6 +54,44 @@ def _finalize_task_status(task_id: str, result: MergeResult) -> MergeResult:
     return result
 
 
+def _safe_finalize_branch_without_worktree(task_id: str, project_id: str) -> MergeResult:
+    """Best-effort branch cleanup when the worktree is already gone.
+
+    This closes the common leak where a task branch is safely deletable but the
+    worktree disappeared before finalize-task ran.
+    """
+    task = task_store.get_task(task_id) or {}
+    project_root = get_project_root_path(project_id)
+    if not project_root:
+        return {"task_id": task_id, "status": "skipped", "reason": "no_worktree"}
+
+    task_branch = str(task.get("branch_name") or f"{task_id}/main")
+    base_branch = "main"
+    checkout_error = checkout_base_branch(project_root, base_branch)
+    if checkout_error:
+        return _err(task_id, checkout_error)
+
+    branch_deleted = delete_task_branch(project_root, task_branch, task_id)
+    if branch_deleted:
+        logger.info(
+            "branch_deleted_without_worktree",
+            extra={"task_id": task_id, "task_branch": task_branch},
+        )
+        return {
+            "task_id": task_id,
+            "status": "merged",
+            "task_branch": task_branch,
+            "base_branch": base_branch,
+            "branch_deleted": True,
+            "post_merge_valid": True,
+        }
+    return {
+        "task_id": task_id,
+        "status": "skipped",
+        "reason": "no_worktree",
+    }
+
+
 def merge_and_cleanup_task_worktree(task_id: str, project_id: str) -> MergeResult:
     """Merge task branch to main and clean up worktree (auto-approved SIMPLE tasks)."""
     try:
@@ -66,7 +104,7 @@ def merge_and_cleanup_task_worktree(task_id: str, project_id: str) -> MergeResul
         if not worktree:
             return _finalize_task_status(
                 task_id,
-                {"task_id": task_id, "status": "skipped", "reason": "no_worktree"},
+                _safe_finalize_branch_without_worktree(task_id, project_id),
             )
         project_root = get_project_root_path(project_id)
         if not project_root:
