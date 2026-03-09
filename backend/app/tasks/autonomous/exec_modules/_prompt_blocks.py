@@ -26,6 +26,8 @@ Then report:
 
 Components: sf.cli, sf.dt, sf.quality, sf.worktree, sf.api, ah.memory, ah.sessions, ah.hooks, xc.tool_registry, xc.error_handling
 
+If this session is read-only or cannot execute `st` commands, do not pretend feedback was filed. Summarize the friction or praise plainly in your final response instead.
+
 If nothing to report, say "no feedback".
 
 Task summary: {task_summary}"""
