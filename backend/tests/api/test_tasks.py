@@ -332,6 +332,107 @@ class TestReadyEndpoint:
         assert "task-ready" in task_ids
         assert "task-draft" not in task_ids
 
+    def test_ready_endpoint_scans_beyond_small_limit_candidate_window(
+        self, client: Any, test_project_id: str
+    ) -> None:
+        template = {
+            "project_id": test_project_id,
+            "capability_id": None,
+            "description": "Generated refactor task",
+            "status": "pending",
+            "error_message": None,
+            "branch_name": None,
+            "commits": [],
+            "total_sessions": 0,
+            "total_tokens_used": 0,
+            "created_at": None,
+            "started_at": None,
+            "completed_at": None,
+            "priority": 2,
+            "labels": [],
+            "task_type": "refactor",
+            "parent_task_id": None,
+            "objective": "Refactor safely",
+            "acceptance_criteria": None,
+            "current_phase": None,
+            "verification_result": None,
+            "spirit_anti": None,
+            "decisions": [],
+            "constraints": [],
+            "done_when": ["Tests pass"],
+            "complexity": "STANDARD",
+            "raw_request": None,
+            "enrichment_status": "none",
+            "enriched_by": None,
+            "enriched_at": None,
+            "subtask_summary": {"total": 0, "completed": 0, "progress_percent": 0.0},
+            "execution_mode": "autonomous",
+            "autonomous": True,
+            "ai_review": True,
+            "agent_override": None,
+            "plan_status": "approved",
+            "plan_approved_at": None,
+            "plan_approved_by": None,
+            "context": None,
+            "worktree": None,
+        }
+        first_batch = [
+            {
+                **template,
+                "id": f"task-unready-{idx}",
+                "title": f"Unready task {idx}",
+            }
+            for idx in range(25)
+        ]
+        second_batch = [
+            {
+                **template,
+                "id": f"task-ready-{idx}",
+                "title": f"Ready task {idx}",
+                "priority": 1,
+            }
+            for idx in range(4)
+        ]
+
+        def _fake_list_ready_tasks(project_id: str, limit: int = 50, offset: int = 0):
+            assert project_id == test_project_id
+            assert limit == 30
+            if offset == 0:
+                return first_batch + second_batch[:5]
+            return []
+
+        def _fake_sync(task_id: str):
+            class _Readiness:
+                def __init__(self, ready: bool):
+                    self.ready = ready
+
+            return _Readiness(task_id.startswith("task-ready-"))
+
+        with (
+            patch(
+                "app.api.tasks.list_endpoints.task_store.list_ready_tasks",
+                side_effect=_fake_list_ready_tasks,
+            ),
+            patch(
+                "app.services.task_execution_readiness.sync_task_execution_readiness",
+                side_effect=_fake_sync,
+            ),
+            patch(
+                "app.api.tasks.list_endpoints.get_step_counts_batch",
+                return_value={f"task-ready-{idx}": 0 for idx in range(4)},
+            ),
+        ):
+            response = client.get(f"/api/projects/{test_project_id}/tasks/ready?limit=3")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["total"] == 4
+        assert [task["id"] for task in payload["tasks"]] == [
+            "task-ready-0",
+            "task-ready-1",
+            "task-ready-2",
+        ]
+
     def test_create_task_stays_draft_when_execution_details_missing(
         self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
     ) -> None:

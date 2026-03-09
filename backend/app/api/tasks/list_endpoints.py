@@ -127,15 +127,32 @@ async def list_ready_tasks(
     """List tasks ready to work on (not blocked by dependencies)."""
     from ...services.task_execution_readiness import sync_task_execution_readiness
 
-    candidate_limit = min(limit * 5, 500)
-    tasks = await asyncio.to_thread(task_store.list_ready_tasks, project_id, limit=candidate_limit)
+    scan_batch_size = min(max(limit * 10, 25), 100)
+    scan_offset = 0
     ready_tasks: list[dict[str, object]] = []
-    for task in tasks:
-        readiness = await asyncio.to_thread(sync_task_execution_readiness, task["id"])
-        if readiness.ready:
-            ready_tasks.append(task)
-        if len(ready_tasks) >= limit:
+    total_ready = 0
+
+    while scan_offset < 500:
+        tasks = await asyncio.to_thread(
+            task_store.list_ready_tasks,
+            project_id,
+            limit=scan_batch_size,
+            offset=scan_offset,
+        )
+        if not tasks:
             break
+
+        for task in tasks:
+            readiness = await asyncio.to_thread(sync_task_execution_readiness, task["id"])
+            if not readiness.ready:
+                continue
+            total_ready += 1
+            if len(ready_tasks) < limit:
+                ready_tasks.append(task)
+
+        if len(tasks) < scan_batch_size:
+            break
+        scan_offset += scan_batch_size
 
     # Batch fetch criteria counts to avoid N+1 queries
     task_ids = [str(t["id"]) for t in ready_tasks]
@@ -151,7 +168,7 @@ async def list_ready_tasks(
 
     return TaskListResponse(
         tasks=task_responses,
-        total=len(ready_tasks),
+        total=total_ready,
         hints=get_hints(task_responses, project_id, endpoint_type="ready"),
     )
 

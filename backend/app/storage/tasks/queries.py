@@ -113,7 +113,7 @@ def get_tasks_by_enrichment_status(
     return [row_to_dict(row) for row in rows]
 
 
-def list_ready_tasks(project_id: str, limit: int = 50) -> list[dict[str, Any]]:
+def list_ready_tasks(project_id: str, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
     """List pending tasks with no incomplete blocking dependencies.
 
     Returns tasks with spirit fields and subtask_summary, ordered by priority then creation date.
@@ -138,9 +138,9 @@ def list_ready_tasks(project_id: str, limit: int = 50) -> list[dict[str, Any]]:
                 FROM task_subtasks GROUP BY task_id
             ) sub ON t.id = sub.task_id
             WHERE t.project_id = %s AND t.status = 'pending' AND {_not_blocked}
-            ORDER BY t.priority ASC, t.created_at ASC LIMIT %s
+            ORDER BY t.priority ASC, t.created_at ASC LIMIT %s OFFSET %s
             """,
-            (project_id, limit),
+            (project_id, limit, offset),
         )
         rows = cur.fetchall()
     return [row_to_dict_with_subtask_summary(row) for row in rows]
