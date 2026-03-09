@@ -154,3 +154,11 @@ def validate_ready(
     """Validate task execution readiness."""
     response = client.post(url_fn(f"/tasks/{task_id}/validate-ready"))
     return cast(dict[str, Any], handle_response(response))
+
+
+def finalize_task_merge(
+    client: httpx.Client, global_url_fn: Any, handle_response: Any, task_id: str
+) -> dict[str, Any]:
+    """Finalize merge/cleanup for a non-active task residue lane."""
+    response = client.post(global_url_fn(f"/git/tasks/{task_id}/finalize"))
+    return cast(dict[str, Any], handle_response(response))

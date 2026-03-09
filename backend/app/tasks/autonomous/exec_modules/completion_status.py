@@ -174,7 +174,26 @@ def _do_review_transition(
 
 def _do_complete_transition(task_id: str, project_id: str, log_message: str) -> str:
     """Set task to completed and send a completion notification."""
+    from ....tasks.autonomous.cleanup.merge_operations import merge_and_cleanup_task_worktree
     from ....tasks.autonomous.cleanup.worktree_cleanup import cleanup_task_worktree
+
+    if agent_configs.get_auto_merge_enabled(project_id):
+        merge_result = merge_and_cleanup_task_worktree(task_id, project_id)
+        merge_status = str(merge_result.get("status") or "blocked")
+        emit_log(
+            task_id,
+            "info",
+            f"{log_message}, skipping review (require_review=false); merge-cleanup status={merge_status}",
+            project_id=project_id,
+        )
+        if merge_status in {"merged", "skipped"}:
+            _notify_completion(task_id, project_id)
+            return "completed"
+        if merge_status == "conflicted":
+            return "conflicted"
+        if merge_status == "rolled_back":
+            return "failed"
+        return "blocked"
 
     task_store.update_task_status(task_id, "completed")
     emit_log(
@@ -184,9 +203,6 @@ def _do_complete_transition(task_id: str, project_id: str, log_message: str) -> 
         project_id=project_id,
     )
     _notify_completion(task_id, project_id)
-    if agent_configs.get_auto_merge_enabled(project_id):
-        emit_log(task_id, "info", "Dispatching merge-cleanup for completed task", project_id=project_id)
-        return "completed"
 
     cleanup_result = cleanup_task_worktree(task_id, delete_branch=False, project_id=project_id)
     if cleanup_result.get("status") == "cleaned":
@@ -220,16 +236,13 @@ def transition_to_review_or_complete(
     log_message: str,
     dispatch: Callable[[str, str, str], None] | None = None,
 ) -> str:
-    """Transition task to ai_reviewing or completed based on require_review setting.
+    """Transition task to ai_reviewing or a merge-derived terminal state.
 
-    Returns the final status: "ai_reviewing" or "completed".
+    Returns the final status: "ai_reviewing", "completed", "conflicted", "failed", or "blocked".
     """
     if _resolve_require_review(task_id, project_id):
         return _do_review_transition(task_id, project_id, log_message, dispatch)
-    final_status = _do_complete_transition(task_id, project_id, log_message)
-    if final_status == "completed" and dispatch and agent_configs.get_auto_merge_enabled(project_id):
-        dispatch("merge-cleanup", task_id, project_id)
-    return final_status
+    return _do_complete_transition(task_id, project_id, log_message)
 
 
 def handle_status_transition_error(

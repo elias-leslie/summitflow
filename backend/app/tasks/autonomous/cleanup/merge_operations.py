@@ -28,40 +28,78 @@ def _git(args: list[str], cwd: str, text: bool = True) -> subprocess.CompletedPr
     return subprocess.run(args, cwd=cwd, capture_output=True, text=text, timeout=10)
 
 
+def _finalize_task_status(task_id: str, result: MergeResult) -> MergeResult:
+    """Persist authoritative task status from merge outcome."""
+    status = result.get("status")
+    if status in {"merged", "skipped"}:
+        update_task_status(task_id, "completed")
+        return result
+    if status == "rolled_back":
+        update_task_status(
+            task_id,
+            "failed",
+            error_message=str(result.get("reason") or "post_merge_validation_failed"),
+            validate_transition=False,
+        )
+        return result
+    if status == "conflicted":
+        return result
+    if status in {"blocked", "error"}:
+        update_task_status(
+            task_id,
+            "blocked",
+            error_message=str(result.get("reason") or result.get("error") or "merge_cleanup_failed"),
+            validate_transition=False,
+        )
+    return result
+
+
 def merge_and_cleanup_task_worktree(task_id: str, project_id: str) -> MergeResult:
     """Merge task branch to main and clean up worktree (auto-approved SIMPLE tasks)."""
     try:
         if is_task_running(task_id):
-            return {"task_id": task_id, "status": "blocked", "reason": "task_still_running"}
+            return _finalize_task_status(
+                task_id,
+                {"task_id": task_id, "status": "blocked", "reason": "task_still_running"},
+            )
         worktree = get_task_worktree(task_id, project_id)
         if not worktree:
-            return {"task_id": task_id, "status": "skipped", "reason": "no_worktree"}
+            return _finalize_task_status(
+                task_id,
+                {"task_id": task_id, "status": "skipped", "reason": "no_worktree"},
+            )
         project_root = get_project_root_path(project_id)
         if not project_root:
-            return _err(task_id, f"No root path for project {project_id}")
+            return _finalize_task_status(task_id, _err(task_id, f"No root path for project {project_id}"))
 
         task_branch = worktree.branch
         base_branch = worktree.base_branch or "main"
         checkout_error = checkout_base_branch(project_root, base_branch)
         if checkout_error:
-            return _err(task_id, checkout_error)
+            return _finalize_task_status(task_id, _err(task_id, checkout_error))
 
         _capture_pre_merge_snapshot(task_id, project_root)
         merge_outcome = merge_task_branch(project_root, task_branch, task_id)
         if not merge_outcome.success:
-            return _build_merge_failure_result(task_id, task_branch, base_branch, merge_outcome)
+            return _finalize_task_status(
+                task_id,
+                _build_merge_failure_result(task_id, task_branch, base_branch, merge_outcome),
+            )
 
         if merge_outcome.merge_sha:
             update_task_fields(task_id, merge_sha=merge_outcome.merge_sha)
         logger.info(f"Merged {task_branch} into {base_branch}", extra={"task_id": task_id})
-        return _finalize_merge(task_id, project_root, project_id, task_branch, base_branch)
+        return _finalize_task_status(
+            task_id,
+            _finalize_merge(task_id, project_root, project_id, task_branch, base_branch),
+        )
 
     except subprocess.TimeoutExpired:
         logger.error(f"Timeout during merge/cleanup for task {task_id}")
-        return _err(task_id, "Git operation timed out")
+        return _finalize_task_status(task_id, _err(task_id, "Git operation timed out"))
     except Exception as e:
         logger.error(f"Error merging/cleaning up task {task_id}: {e}")
-        return _err(task_id, str(e))
+        return _finalize_task_status(task_id, _err(task_id, str(e)))
 
 
 def _capture_pre_merge_snapshot(task_id: str, project_root: str) -> None:

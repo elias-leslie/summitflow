@@ -13,6 +13,7 @@ from ....storage.notifications import (
     create_task_failure_notification,
 )
 from .._project_resolution import resolve_task_project_id
+from ..cleanup.merge_types import MergeResult
 from ..exec_modules.ah_events import emit_review_verdict, emit_task_transition
 from .actions import auto_merge, create_fix_subtask, handle_plan_defect, run_qa_loop
 
@@ -35,11 +36,32 @@ def _get_project_id(task_id: str, project_id: str | None = None) -> str:
     return resolve_task_project_id(task_store.get_task(task_id))
 
 
-def _maybe_auto_merge(task_id: str, project_id: str) -> bool:
+def _maybe_auto_merge(task_id: str, project_id: str) -> MergeResult | None:
     if not agent_configs.get_auto_merge_enabled(project_id):
-        return False
-    auto_merge(task_id)
-    return True
+        return None
+    return auto_merge(task_id)
+
+
+def _task_status(task_id: str) -> str | None:
+    task = task_store.get_task(task_id)
+    if not task:
+        return None
+    return str(task.get("status") or "")
+
+
+def _apply_auto_merge_status(task_id: str, merge_result: dict[str, object] | None) -> str:
+    if merge_result is None:
+        task_store.update_task_status(task_id, STATUS_COMPLETED)
+        return "ready for manual merge"
+
+    merge_status = str(merge_result.get("status") or "blocked")
+    if merge_status in {"merged", "skipped"}:
+        return "auto-merged"
+    if merge_status == "conflicted":
+        return "merge conflicted"
+    if merge_status == "rolled_back":
+        return "auto-merge rolled back"
+    return "auto-merge failed"
 
 
 def _send_notification(task_id: str, project_id: str, fn: Callable[..., None], **kwargs: str) -> None:
@@ -94,10 +116,10 @@ def _handle_approved(task_id: str, complexity: str) -> None:
     from ..exec_modules.completion_status import wake_persona
 
     project_id = _get_project_id(task_id)
-    merged = _maybe_auto_merge(task_id, project_id)
-    label = "Auto-merged" if merged else "Ready for manual merge"
-    task_store.update_task_status(task_id, STATUS_COMPLETED)
-    if not merged:
+    merge_result = _maybe_auto_merge(task_id, project_id)
+    label = _apply_auto_merge_status(task_id, merge_result)
+    current_status = _task_status(task_id) or STATUS_COMPLETED
+    if merge_result is None:
         cleanup_result = cleanup_task_worktree(task_id, delete_branch=False, project_id=project_id)
         if cleanup_result.get("status") == "cleaned":
             label = "Ready for manual merge (worktree cleaned)"
@@ -110,10 +132,12 @@ def _handle_approved(task_id: str, complexity: str) -> None:
                 "cleanup_needed",
                 f"Approved task {task_id} needs cleanup review: {reason}. Branch is kept for manual merge.",
             )
-    emit_task_transition(task_id, STATUS_COMPLETED, f"APPROVED — {label}")
+        current_status = STATUS_COMPLETED
+    emit_task_transition(task_id, current_status, f"APPROVED — {label}")
     log_task_event(task_id, f"AI Review: APPROVED - {label} ({complexity})")
-    logger.info("QA approved", task_id=task_id, complexity=complexity, merged=merged)
-    _send_notification(task_id, project_id, create_task_completion_notification, detail=f"{label} after QA approval.")
+    logger.info("QA approved", task_id=task_id, complexity=complexity, merge_status=label)
+    if _task_status(task_id) == STATUS_COMPLETED:
+        _send_notification(task_id, project_id, create_task_completion_notification, detail=f"{label} after QA approval.")
 
 
 def _handle_needs_fix(task_id: str, review_result: dict[str, str | list[str]]) -> None:
@@ -125,9 +149,9 @@ def _handle_needs_fix(task_id: str, review_result: dict[str, str | list[str]]) -
     project_id = _get_project_id(task_id)
     if not concerns:
         log_task_event(task_id, f"AI Review: {verdict} with no concerns - treating as APPROVED")
-        merged = _maybe_auto_merge(task_id, project_id)
-        task_store.update_task_status(task_id, STATUS_COMPLETED)
-        if not merged:
+        merge_result = _maybe_auto_merge(task_id, project_id)
+        merge_label = _apply_auto_merge_status(task_id, merge_result)
+        if merge_result is None:
             cleanup_result = cleanup_task_worktree(task_id, delete_branch=False, project_id=project_id)
             if cleanup_result.get("status") != "cleaned":
                 reason = str(cleanup_result.get("reason") or cleanup_result.get("error") or "unknown")
@@ -138,8 +162,9 @@ def _handle_needs_fix(task_id: str, review_result: dict[str, str | list[str]]) -
                     "cleanup_needed",
                     f"Approved task {task_id} needs cleanup review: {reason}. Branch is kept for manual merge.",
                 )
-        logger.info("QA no concerns", task_id=task_id, merged=merged)
-        _send_notification(task_id, project_id, create_task_completion_notification, detail="QA passed with no concerns.")
+        logger.info("QA no concerns", task_id=task_id, merge_status=(merge_result or {}).get("status"))
+        if _task_status(task_id) == STATUS_COMPLETED:
+            _send_notification(task_id, project_id, create_task_completion_notification, detail=f"QA passed with no concerns ({merge_label}).")
         return
     from app.services.worktree import get_task_worktree
     worktree = get_task_worktree(task_id, project_id)
@@ -164,12 +189,12 @@ def _handle_escalation(task_id: str, review_result: dict[str, str | list[str]]) 
     summary = str(review_result.get("summary", "Unknown issue"))
     decision = supervisor_resolve_escalation(task_id, summary, project_id)
     if decision == DECISION_APPROVE:
-        merged = _maybe_auto_merge(task_id, project_id)
-        merge_label = "auto-merged" if merged else "ready for manual merge"
-        task_store.update_task_status(task_id, STATUS_COMPLETED)
+        merge_result = _maybe_auto_merge(task_id, project_id)
+        merge_label = _apply_auto_merge_status(task_id, merge_result)
         log_task_event(task_id, f"AI Review: ESCALATE - Supervisor approved, {merge_label}")
-        logger.info("Escalation overridden by supervisor", task_id=task_id, merged=merged)
-        _send_notification(task_id, project_id, create_task_completion_notification, detail="Supervisor override — approved.")
+        logger.info("Escalation overridden by supervisor", task_id=task_id, merge_status=merge_label)
+        if _task_status(task_id) == STATUS_COMPLETED:
+            _send_notification(task_id, project_id, create_task_completion_notification, detail="Supervisor override — approved.")
         return
     if decision == DECISION_FIX:
         create_fix_subtask(task_id, {"concerns": [summary[:500]], "recommendation": summary[:500]})

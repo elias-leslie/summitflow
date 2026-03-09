@@ -6,7 +6,9 @@ from typing import Annotated, Any
 
 import typer
 
-from ..output import output_json
+from .._client_base import APIError
+from ..client import STClient
+from ..output import output_error, output_json
 from ..output_context import OutputContext
 from ._git_helpers import (
     _format_compact_repo,
@@ -69,3 +71,15 @@ def sync(
         _print_sync_compact(results)
     else:
         output_json({"results": results, "total": len(results)})
+
+
+@app.command("finalize-task")
+def finalize_task(task_id: str) -> None:
+    """Finalize merge/cleanup for a completed or conflicted residue task lane."""
+    client = STClient(require_project=False)
+    try:
+        result = client.finalize_task_merge(task_id)
+    except APIError as e:
+        output_error(f"Failed to finalize task merge: {e.detail}")
+        raise typer.Exit(1) from None
+    output_json(result)

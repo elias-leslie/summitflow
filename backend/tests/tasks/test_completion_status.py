@@ -67,21 +67,37 @@ class TestTransitionToReviewOrComplete:
         dispatch.assert_not_called()
         mock_cleanup.assert_called_once_with("t-1", delete_branch=False, project_id="proj")
 
-    @patch("app.tasks.autonomous.cleanup.worktree_cleanup.cleanup_task_worktree")
+    @patch("app.tasks.autonomous.cleanup.merge_operations.merge_and_cleanup_task_worktree")
     @patch(f"{MODULE}.agent_configs")
     @patch(f"{MODULE}.task_store")
     def test_review_disabled_dispatches_merge_cleanup_when_auto_merge_enabled(
-        self, mock_store: MagicMock, mock_configs: MagicMock, mock_cleanup: MagicMock
+        self, mock_store: MagicMock, mock_configs: MagicMock, mock_merge_cleanup: MagicMock
     ) -> None:
         mock_configs.get_require_review.return_value = False
         mock_configs.get_auto_merge_enabled.return_value = True
+        mock_merge_cleanup.return_value = {"status": "merged"}
         dispatch = MagicMock()
 
         result = transition_to_review_or_complete("t-1", "proj", "test", dispatch)
 
         assert result == "completed"
-        dispatch.assert_called_once_with("merge-cleanup", "t-1", "proj")
-        mock_cleanup.assert_not_called()
+        dispatch.assert_not_called()
+        mock_store.update_task_status.assert_not_called()
+        mock_merge_cleanup.assert_called_once_with("t-1", "proj")
+
+    @patch("app.tasks.autonomous.cleanup.merge_operations.merge_and_cleanup_task_worktree")
+    @patch(f"{MODULE}.agent_configs")
+    @patch(f"{MODULE}.task_store")
+    def test_review_disabled_auto_merge_conflict_returns_conflicted(
+        self, mock_store: MagicMock, mock_configs: MagicMock, mock_merge_cleanup: MagicMock
+    ) -> None:
+        mock_configs.get_require_review.return_value = False
+        mock_configs.get_auto_merge_enabled.return_value = True
+        mock_merge_cleanup.return_value = {"status": "conflicted"}
+
+        result = transition_to_review_or_complete("t-1", "proj", "test")
+
+        assert result == "conflicted"
 
     @patch(f"{MODULE}.agent_configs")
     @patch(f"{MODULE}.task_store")

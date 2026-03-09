@@ -76,23 +76,22 @@ class TestRouteBasedOnVerdict:
 class TestHandleApproved:
     """Tests for APPROVED verdict handling."""
 
-    @patch("app.tasks.autonomous.cleanup.worktree_cleanup.cleanup_task_worktree")
     @patch("app.tasks.autonomous.review_modules.routing.log_task_event")
     @patch("app.tasks.autonomous.review_modules.routing.auto_merge")
     @patch("app.tasks.autonomous.review_modules.routing.agent_configs")
     @patch("app.tasks.autonomous.review_modules.routing.task_store")
     def test_auto_merge_when_enabled(
         self, mock_store: MagicMock, mock_configs: MagicMock,
-        mock_merge: MagicMock, mock_log: MagicMock, mock_cleanup: MagicMock,
+        mock_merge: MagicMock, mock_log: MagicMock,
     ) -> None:
         mock_store.get_task.return_value = {"project_id": "test-project"}
         mock_configs.get_auto_merge_enabled.return_value = True
+        mock_merge.return_value = {"status": "merged", "post_merge_valid": True}
 
         _handle_approved("task-1", "SIMPLE")
 
         mock_merge.assert_called_once_with("task-1")
-        mock_store.update_task_status.assert_called_once_with("task-1", "completed")
-        mock_cleanup.assert_not_called()
+        mock_store.update_task_status.assert_not_called()
 
     @patch("app.tasks.autonomous.cleanup.worktree_cleanup.cleanup_task_worktree")
     @patch("app.tasks.autonomous.review_modules.routing.log_task_event")
@@ -113,6 +112,22 @@ class TestHandleApproved:
         mock_store.update_task_status.assert_called_once_with("task-1", "completed")
         mock_cleanup.assert_called_once_with("task-1", delete_branch=False, project_id="test-project")
 
+    @patch("app.tasks.autonomous.review_modules.routing.log_task_event")
+    @patch("app.tasks.autonomous.review_modules.routing.auto_merge")
+    @patch("app.tasks.autonomous.review_modules.routing.agent_configs")
+    @patch("app.tasks.autonomous.review_modules.routing.task_store")
+    def test_auto_merge_conflict_marks_task_conflicted(
+        self, mock_store: MagicMock, mock_configs: MagicMock,
+        mock_merge: MagicMock, mock_log: MagicMock,
+    ) -> None:
+        mock_store.get_task.return_value = {"project_id": "test-project"}
+        mock_configs.get_auto_merge_enabled.return_value = True
+        mock_merge.return_value = {"status": "conflicted"}
+
+        _handle_approved("task-1", "SIMPLE")
+
+        mock_store.update_task_status.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # _handle_needs_fix
@@ -122,23 +137,22 @@ class TestHandleApproved:
 class TestHandleNeedsFix:
     """Tests for NEEDS_FIX verdict handling."""
 
-    @patch("app.tasks.autonomous.cleanup.worktree_cleanup.cleanup_task_worktree")
     @patch("app.tasks.autonomous.review_modules.routing.log_task_event")
     @patch("app.tasks.autonomous.review_modules.routing.auto_merge")
     @patch("app.tasks.autonomous.review_modules.routing.agent_configs")
     @patch("app.tasks.autonomous.review_modules.routing.task_store")
     def test_no_concerns_treats_as_approved(
         self, mock_store: MagicMock, mock_configs: MagicMock,
-        mock_merge: MagicMock, mock_log: MagicMock, mock_cleanup: MagicMock,
+        mock_merge: MagicMock, mock_log: MagicMock,
     ) -> None:
         mock_store.get_task.return_value = {"project_id": "test-project"}
         mock_configs.get_auto_merge_enabled.return_value = True
+        mock_merge.return_value = {"status": "merged", "post_merge_valid": True}
 
         _handle_needs_fix("task-1", {"verdict": "NEEDS_FIX", "concerns": []})
 
         mock_merge.assert_called_once_with("task-1")
-        mock_store.update_task_status.assert_called_once_with("task-1", "completed")
-        mock_cleanup.assert_not_called()
+        mock_store.update_task_status.assert_not_called()
 
     @patch("app.tasks.autonomous.review_modules.routing.log_task_event")
     @patch("app.tasks.autonomous.review_modules.routing.create_fix_subtask")
@@ -523,11 +537,12 @@ class TestHandleEscalation:
         mock_store.get_task.return_value = {"project_id": "test-project"}
         mock_resolve.return_value = "approve"
         mock_configs.get_auto_merge_enabled.return_value = True
+        mock_merge.return_value = {"status": "merged", "post_merge_valid": True}
 
         _handle_escalation("task-1", {"summary": "minor issue"})
 
         mock_merge.assert_called_once_with("task-1")
-        mock_store.update_task_status.assert_called_once_with("task-1", "completed")
+        mock_store.update_task_status.assert_not_called()
 
     @patch("app.tasks.autonomous.review_modules.routing.log_task_event")
     @patch("app.tasks.autonomous.review_modules.routing.create_fix_subtask")

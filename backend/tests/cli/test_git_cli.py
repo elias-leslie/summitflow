@@ -91,6 +91,22 @@ class TestGitSync:
         assert "skipped" in result.stdout.lower() or "uncommitted" in result.stdout.lower()
 
 
+class TestFinalizeTask:
+    """Tests for st git finalize-task."""
+
+    @patch("cli.commands.git.STClient")
+    def test_finalize_task_calls_client(self, mock_client_cls: MagicMock) -> None:
+        mock_client = MagicMock()
+        mock_client.finalize_task_merge.return_value = {"status": "merged", "task_id": "task-1"}
+        mock_client_cls.return_value = mock_client
+
+        result = runner.invoke(app, ["finalize-task", "task-1"], obj=OutputContext(compact=False))
+
+        assert result.exit_code == 0
+        mock_client.finalize_task_merge.assert_called_once_with("task-1")
+        assert '"status": "merged"' in result.stdout
+
+
 class TestFormatCompactRepo:
     """Tests for TOON format helper."""
 

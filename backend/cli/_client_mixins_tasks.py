@@ -136,6 +136,14 @@ class TaskOperationsMixin:
             task_id,
         )
 
+    def finalize_task_merge(self, task_id: str) -> dict[str, Any]:
+        return tasks_ops.finalize_task_merge(
+            self._client,
+            self._global_url,
+            self._handle_response,
+            task_id,
+        )
+
 
 class DependencyOperationsMixin:
     """Mixin providing dependency operations."""

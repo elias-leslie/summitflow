@@ -172,6 +172,33 @@ async def retry_merge(task_id: str) -> dict[str, object]:
     return result
 
 
+@router.post("/git/tasks/{task_id}/finalize", tags=["git"])
+async def finalize_task_merge(task_id: str) -> dict[str, object]:
+    """Finalize merge/cleanup for a residue task lane that is no longer actively executing."""
+    task = task_store.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    status = str(task.get("status") or "")
+    if status in {"running", "pending", "queue", "paused", "ai_reviewing"}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Task is still active ({status}); use the normal execution/done path instead",
+        )
+
+    if status not in {"completed", "conflicted", "blocked", "failed"}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Task status {status!r} is not eligible for finalize",
+        )
+
+    if status == "conflicted":
+        update_task_fields(task_id, conflict_info=None)
+
+    result: dict[str, object] = merge_and_cleanup_task_worktree(task_id, task["project_id"])  # type: ignore[assignment]
+    return result
+
+
 @router.post("/git/tasks/{task_id}/dismiss-conflict", tags=["git"])
 async def dismiss_conflict(task_id: str) -> dict[str, str]:
     """Dismiss a merge conflict, moving the task back to failed."""

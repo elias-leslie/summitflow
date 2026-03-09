@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from typing import cast
 
 from ....logging_config import get_logger
 from ....services.agent_hub_client import get_sync_client
@@ -11,6 +12,7 @@ from ....services.smoke_test import PROD_HEALTH_URLS
 from ....storage import log_task_event
 from ....storage import tasks as task_store
 from ....storage.projects import get_project_root_path
+from ..cleanup.merge_types import MergeResult
 from ..exec_modules.memory_writes import save_qa_fix_pattern
 from .parsing import parse_review_response
 
@@ -20,22 +22,23 @@ MAX_QA_LOOP_ITERATIONS = 7
 RECURRING_ISSUE_ESCALATION_THRESHOLD = 3
 
 
-def auto_merge(task_id: str) -> None:
-    """Auto-merge changes to main branch."""
+def auto_merge(task_id: str) -> MergeResult:
+    """Auto-merge changes to main branch and return merge result."""
     from ..cleanup import merge_and_cleanup_task_worktree
 
     task = task_store.get_task(task_id)
     if not task:
         logger.warning("Cannot auto-merge: task not found", task_id=task_id)
-        return
+        return cast(MergeResult, {"task_id": task_id, "status": "error", "error": "task_not_found"})
     project_id = task.get("project_id")
     if not project_id:
         logger.warning("Cannot auto-merge: no project_id", task_id=task_id)
-        return
+        return cast(MergeResult, {"task_id": task_id, "status": "error", "error": "missing_project_id"})
     logger.info("Triggering auto-merge", task_id=task_id, project_id=project_id)
     merge_result = merge_and_cleanup_task_worktree(task_id, project_id)
     if merge_result.get("status") == "merged" and merge_result.get("post_merge_valid"):
         _deploy_and_verify(task_id, project_id)
+    return merge_result
 
 
 def _deploy_and_verify(task_id: str, project_id: str) -> None:
@@ -168,7 +171,7 @@ def run_qa_loop(
     """Run tight QA loop: fixer fixes issues, reviewer re-reviews until APPROVED or exhausted."""
     issue_tracker: dict[str, int] = {}
     for iteration in range(1, MAX_QA_LOOP_ITERATIONS + 1):
-        concerns = list(review_result.get("concerns", []))  # type: ignore[arg-type]
+        concerns = list(review_result.get("concerns", []))
         recommendation = review_result.get("recommendation", "Address reviewer concerns")
 
         if _check_recurring_issues(task_id, concerns, issue_tracker):

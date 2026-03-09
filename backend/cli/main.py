@@ -110,7 +110,7 @@ DESIGN:
 
 TEST: test list [--type T] | import --framework pytest|vitest
 
-GIT: git status | git sync
+GIT: git status | git sync | git finalize-task <task-id>
 
 REFACTOR: refactor regenerate [--json]
 
