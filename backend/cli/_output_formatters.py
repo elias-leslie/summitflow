@@ -58,70 +58,6 @@ def format_compact_dep(dep: dict[str, Any]) -> str:
     return f"{from_id} {dep_type} {to_id}"
 
 
-def _format_context_section_parts(context: dict[str, Any]) -> list[str]:
-    """Build parts list for the CONTEXT line from a task context dict."""
-    parts = []
-    if files_mod := context.get("files_to_modify"):
-        parts.append(f"modify:{','.join(files_mod)}")
-    if files_create := context.get("files_to_create"):
-        parts.append(f"create:{','.join(files_create)}")
-    if risks := context.get("risks"):
-        parts.append(f"risks:{len(risks)}")
-    if refs := context.get("references"):
-        parts.append(f"refs:{len(refs)}")
-    if testing := context.get("testing_strategy"):
-        parts.append(f"testing:{testing[:50]}")
-    if isinstance(second_opinion := context.get("second_opinion"), dict):
-        stage = second_opinion.get("stage", "task_shape")
-        status = second_opinion.get("status", "pending")
-        parts.append(f"2nd:{stage}:{status}")
-    return parts
-
-
-def _format_specialist_group(group: dict[str, Any]) -> str | None:
-    """Format one specialist group entry; returns None for non-dict values."""
-    if not isinstance(group, dict):
-        return None
-    agent_slug = str(group.get("agent_slug") or "unknown")
-    count = _safe_int(group.get("count"))
-    newest = _safe_int(group.get("newest_age_minutes"))
-    oldest = _safe_int(group.get("oldest_age_minutes"))
-    age_label = f"{newest}-{oldest}m" if newest != oldest else f"{oldest}m"
-    segment = f"{agent_slug}:{count}:{age_label}"
-    request_sources = group.get("request_sources")
-    if isinstance(request_sources, list) and request_sources:
-        segment += f":{','.join(str(s) for s in request_sources[:2])}"
-    return segment
-
-
-def _format_lane_preflight_lines(lane_preflight: dict[str, Any]) -> list[str]:
-    """Format LANE and SPECIALISTS lines from a lane_preflight dict."""
-    lines = []
-    if lane_preflight.get("issues"):
-        parts = []
-        if disposition := lane_preflight.get("disposition"):
-            parts.append(f"disp:{disposition}")
-        if overlap_kind := lane_preflight.get("overlap_kind"):
-            parts.append(f"kind:{overlap_kind}")
-        conflicting_tasks = lane_preflight.get("conflicting_tasks") or []
-        if conflicting_tasks:
-            parts.append(f"tasks:{','.join(conflicting_tasks[:3])}")
-        if owner_location := lane_preflight.get("owner_location"):
-            parts.append(f"owner:{owner_location}")
-        overlap_paths = lane_preflight.get("overlap_paths") or []
-        if overlap_paths:
-            parts.append(f"paths:{','.join(overlap_paths[:3])}")
-        if lane_preflight.get("shared_plumbing"):
-            parts.append("shared:yes")
-        lines.append(f"LANE:{' | '.join(parts) if parts else 'conflict'}")
-    specialist_groups = lane_preflight.get("active_specialists") or []
-    if isinstance(specialist_groups, list) and specialist_groups:
-        parts = [seg for g in specialist_groups[:3] if (seg := _format_specialist_group(g)) is not None]
-        if parts:
-            lines.append(f"SPECIALISTS:{' | '.join(parts)}")
-    return lines
-
-
 def format_context_task(task: dict[str, Any]) -> str:
     """Format task header for context output."""
     lines = []
@@ -156,11 +92,60 @@ def format_context_task(task: dict[str, Any]) -> str:
         lines.append(f"READINESS:missing:{','.join(readiness.missing_fields)}")
     context = task.get("context") or {}
     if context and isinstance(context, dict):
-        if parts := _format_context_section_parts(context):
+        parts = []
+        if files_mod := context.get("files_to_modify"):
+            parts.append(f"modify:{','.join(files_mod)}")
+        if files_create := context.get("files_to_create"):
+            parts.append(f"create:{','.join(files_create)}")
+        if risks := context.get("risks"):
+            parts.append(f"risks:{len(risks)}")
+        if refs := context.get("references"):
+            parts.append(f"refs:{len(refs)}")
+        if testing := context.get("testing_strategy"):
+            parts.append(f"testing:{testing[:50]}")
+        if isinstance(second_opinion := context.get("second_opinion"), dict):
+            stage = second_opinion.get("stage", "task_shape")
+            status = second_opinion.get("status", "pending")
+            parts.append(f"2nd:{stage}:{status}")
+        if parts:
             lines.append(f"CONTEXT:{' | '.join(parts)}")
     lane_preflight = task.get("lane_preflight") or {}
+    if isinstance(lane_preflight, dict) and lane_preflight.get("issues"):
+        parts = []
+        if disposition := lane_preflight.get("disposition"):
+            parts.append(f"disp:{disposition}")
+        if overlap_kind := lane_preflight.get("overlap_kind"):
+            parts.append(f"kind:{overlap_kind}")
+        conflicting_tasks = lane_preflight.get("conflicting_tasks") or []
+        if conflicting_tasks:
+            parts.append(f"tasks:{','.join(conflicting_tasks[:3])}")
+        if owner_location := lane_preflight.get("owner_location"):
+            parts.append(f"owner:{owner_location}")
+        overlap_paths = lane_preflight.get("overlap_paths") or []
+        if overlap_paths:
+            parts.append(f"paths:{','.join(overlap_paths[:3])}")
+        if lane_preflight.get("shared_plumbing"):
+            parts.append("shared:yes")
+        lines.append(f"LANE:{' | '.join(parts) if parts else 'conflict'}")
     if isinstance(lane_preflight, dict):
-        lines.extend(_format_lane_preflight_lines(lane_preflight))
+        specialist_groups = lane_preflight.get("active_specialists") or []
+        if isinstance(specialist_groups, list) and specialist_groups:
+            parts = []
+            for group in specialist_groups[:3]:
+                if not isinstance(group, dict):
+                    continue
+                agent_slug = str(group.get("agent_slug") or "unknown")
+                count = _safe_int(group.get("count"))
+                newest = _safe_int(group.get("newest_age_minutes"))
+                oldest = _safe_int(group.get("oldest_age_minutes"))
+                age_label = f"{newest}-{oldest}m" if newest != oldest else f"{oldest}m"
+                segment = f"{agent_slug}:{count}:{age_label}"
+                request_sources = group.get("request_sources")
+                if isinstance(request_sources, list) and request_sources:
+                    segment += f":{','.join(str(s) for s in request_sources[:2])}"
+                parts.append(segment)
+            if parts:
+                lines.append(f"SPECIALISTS:{' | '.join(parts)}")
     return "\n".join(lines)
 
 
