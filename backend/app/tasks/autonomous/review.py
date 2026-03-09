@@ -14,6 +14,7 @@ from typing import Any
 
 from ...logging_config import get_logger
 from ...services.agent_hub_client import get_sync_client
+from ...services.context_gatherer import collect_precision_code_search_context
 from ...storage import log_task_event
 from ...storage import tasks as task_store
 from ...storage.notifications import create_task_failure_notification
@@ -31,6 +32,25 @@ from .review_modules.routing import (
 )
 
 logger = get_logger(__name__)
+
+
+def _build_precision_context(task: dict[str, Any], task_id: str, project_id: str) -> str:
+    """Build shared Precision Code Search context for reviewer prompts."""
+    spirit = get_task_spirit(task_id)
+    done_when = spirit.get("done_when", []) if spirit else []
+    queries = [
+        str(task.get("title", "")),
+        str(task.get("description", "")),
+        *(str(item) for item in done_when),
+    ]
+    result = collect_precision_code_search_context(
+        project_id,
+        queries,
+        budget_tokens=1200,
+    )
+    if not result.prompt_context:
+        return ""
+    return f"Precision Code Search:\n{result.prompt_context}\n\n"
 
 
 def _notify_failure(project_id: str, task_id: str, task: dict, error_message: str) -> None:
@@ -75,9 +95,11 @@ def _build_prompt(task: dict, complexity: str, git_diff: str, task_id: str) -> s
     spirit = get_task_spirit(task_id)
     done_when = spirit.get("done_when", []) if spirit else []
     done_when_text = "\n".join(f"- {c}" for c in done_when) if done_when else "(none defined)"
+    precision_context = _build_precision_context(task, task_id, task.get("project_id", ""))
 
     return (
         f"Task: {task.get('title', '')}\nComplexity: {complexity}\n\n"
+        f"{precision_context}"
         f"Success Criteria (done_when):\n{done_when_text}\n\n"
         f"Git Diff:\n```\n{git_diff[:50000]}\n```\n\n"
         "If done_when criteria are defined, verify the diff addresses each one.\n\n"

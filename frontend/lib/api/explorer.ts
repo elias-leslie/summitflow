@@ -171,6 +171,35 @@ export interface ExplorerSymbolDetailResponse {
   related_entries: ExplorerEntry[]
 }
 
+interface RawExplorerEntry {
+  id: number
+  entry_type: ExplorerEntryType
+  path: string
+  name: string
+  health_status: ExplorerHealthStatus
+  last_scanned_at: string | null
+  metadata: ExplorerEntryMetadata
+  evidence_count?: number
+  last_evidence_at?: string | null
+}
+
+function normalizeExplorerEntry(entry: RawExplorerEntry | ExplorerEntry): ExplorerEntry {
+  if ('entryType' in entry) {
+    return entry
+  }
+  return {
+    id: entry.id,
+    entryType: entry.entry_type,
+    path: entry.path,
+    name: entry.name,
+    healthStatus: entry.health_status,
+    lastScannedAt: entry.last_scanned_at,
+    metadata: entry.metadata ?? {},
+    evidenceCount: entry.evidence_count,
+    lastEvidenceAt: entry.last_evidence_at,
+  }
+}
+
 // ============================================================================
 // Filter Types
 // ============================================================================
@@ -315,8 +344,16 @@ export async function fetchExplorerSymbolDetail(
     symbol_id: params.symbolId,
     context_lines: params.contextLines,
   })
-  return fetchWithErrorHandling<ExplorerSymbolDetailResponse>(
+  const response = await fetchWithErrorHandling<ExplorerSymbolDetailResponse & {
+    file_entry: RawExplorerEntry | ExplorerEntry | null
+    related_entries: Array<RawExplorerEntry | ExplorerEntry>
+  }>(
     `/api/projects/${projectId}/explorer/symbols/detail${query}`,
     { errorMessage: 'Failed to fetch symbol detail' },
   )
+  return {
+    ...response,
+    file_entry: response.file_entry ? normalizeExplorerEntry(response.file_entry) : null,
+    related_entries: response.related_entries.map(normalizeExplorerEntry),
+  }
 }

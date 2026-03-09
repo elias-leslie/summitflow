@@ -11,6 +11,7 @@ from typing import Any
 
 from ...logging_config import get_logger
 from ...services.agent_hub_client import get_sync_client
+from ...services.context_gatherer import collect_precision_code_search_context
 from ...storage import log_task_event
 from ...storage import tasks as task_store
 from .planning_routing import route_based_on_complexity, supervisor_validate_plan
@@ -19,7 +20,7 @@ from .planning_storage import save_plan_to_database
 logger = get_logger(__name__)
 
 
-def _build_planning_prompt(title: str, description: str) -> str:
+def _build_planning_prompt(title: str, description: str, precision_context: str = "") -> str:
     """Build the prompt for the planner agent.
 
     Args:
@@ -29,10 +30,16 @@ def _build_planning_prompt(title: str, description: str) -> str:
     Returns:
         Formatted prompt string
     """
+    precision_block = (
+        f"\n## Precision Code Search\n\n{precision_context}\n"
+        if precision_context
+        else ""
+    )
     return f"""Create an implementation plan for this task.
 
 Title: {title}
 Description: {description or "(no description)"}
+{precision_block}
 
 You MUST respond with a JSON object (no markdown, no explanation outside the JSON):
 {{
@@ -129,7 +136,12 @@ def create_plan(task_id: str, project_id: str) -> dict[str, Any]:
 
     title = task.get("title", "")
     description = task.get("description", "")
-    prompt = _build_planning_prompt(title, description)
+    precision_context = collect_precision_code_search_context(
+        project_id,
+        [title, description],
+        budget_tokens=1200,
+    ).prompt_context
+    prompt = _build_planning_prompt(title, description, precision_context)
 
     try:
         client = get_sync_client()
