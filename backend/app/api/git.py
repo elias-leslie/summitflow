@@ -4,18 +4,13 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 
-from ..storage import log_task_event
 from ..storage import tasks as task_store
-from ..storage.subtasks import get_subtasks_for_task, update_subtask_passes
-from ..storage.tasks.status import update_task_status
 from ..storage.tasks.update import update_task_fields
 from ..tasks.autonomous.cleanup.merge_operations import merge_and_cleanup_task_worktree
 from ..utils.git_helpers import (
     get_all_branches,
     get_managed_repos,
-    get_recent_commits,
     get_repo_status,
-    list_snapshots,
     pull_repository,
     push_repository,
     sync_repository,
@@ -31,13 +26,17 @@ from .git_helpers.endpoints import (
     build_project_dashboard,
     build_recent_merges_response,
     build_task_diff_response,
+    collect_recent_commits,
+    collect_snapshots,
     execute_smart_sync,
     find_repo_for_sha,
     handle_dismiss_conflict,
+    handle_finalize_task_merge,
+    handle_resolve_conflict,
     handle_revert_snapshot,
 )
 from .git_helpers.response_builders import aggregate_sync_results, build_sync_response_from_result
-from .git_helpers.worktree_helpers import collect_worktrees, enrich_snapshots
+from .git_helpers.worktree_helpers import collect_worktrees
 from .models.git_models import (
     BranchesResponse,
     ConflictsResponse,
@@ -178,76 +177,7 @@ async def retry_merge(task_id: str) -> dict[str, object]:
 @router.post("/git/tasks/{task_id}/resolve-conflict", tags=["git"])
 async def resolve_conflict(task_id: str) -> dict[str, object]:
     """Reopen a residue task and dispatch execution to resolve its merge conflict."""
-    from app.services.worktree import create_task_worktree, get_task_worktree
-    from app.storage.tasks.claims import claim_task
-    from app.workflows.models import TaskInput
-    from app.workflows.pipeline import execute_wf
-
-    task = task_store.get_task(task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-
-    status = str(task.get("status") or "")
-    if status not in {"conflicted", "blocked"}:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Task status {status!r} is not eligible for conflict resolution",
-        )
-    conflict_info = task.get("conflict_info") or {}
-    if (not isinstance(conflict_info, dict) or not conflict_info) and status == "blocked":
-        merge_result: dict[str, object] = merge_and_cleanup_task_worktree(task_id, str(task["project_id"]))  # type: ignore[assignment]
-        if str(merge_result.get("status") or "") != "conflicted":
-            return merge_result
-        task = task_store.get_task(task_id) or task
-        conflict_info = task.get("conflict_info") or {}
-    if not isinstance(conflict_info, dict) or not conflict_info:
-        raise HTTPException(
-            status_code=400,
-            detail="Task does not have conflict metadata to resolve",
-        )
-
-    project_id = str(task["project_id"])
-    worktree = get_task_worktree(task_id, project_id) or create_task_worktree(task_id, project_id)
-    if not worktree:
-        raise HTTPException(status_code=500, detail="Unable to prepare task worktree for conflict resolution")
-
-    files = conflict_info.get("conflicting_files") or []
-    message = (
-        "Resolve merge conflict against current main"
-        + (f" in {', '.join(files[:5])}" if files else "")
-    )
-    update_task_status(
-        task_id,
-        "blocked",
-        error_message=message,
-        validate_transition=False,
-    )
-    for subtask in get_subtasks_for_task(task_id):
-        short_id = str(subtask.get("subtask_id") or "")
-        if short_id and subtask.get("passes"):
-            update_subtask_passes(task_id, short_id, False)
-    log_task_event(task_id, f"Conflict resolution reopened for autocode: {message}")
-    worker_id = f"resolve-conflict-{project_id}"
-    if not claim_task(task_id, worker_id, lock_duration_minutes=60):
-        return {
-            "task_id": task_id,
-            "status": "already_claimed",
-            "project_id": project_id,
-            "worktree_path": str(worktree.path),
-            "task_branch": worktree.branch,
-            "base_branch": worktree.base_branch,
-            "conflicting_files": files,
-        }
-    await execute_wf.aio_run_no_wait(TaskInput(task_id=task_id, project_id=project_id))
-    return {
-        "task_id": task_id,
-        "status": "dispatched_for_conflict_resolution",
-        "project_id": project_id,
-        "worktree_path": str(worktree.path),
-        "task_branch": worktree.branch,
-        "base_branch": worktree.base_branch,
-        "conflicting_files": files,
-    }
+    return await handle_resolve_conflict(task_id)
 
 
 @router.post("/git/tasks/{task_id}/finalize", tags=["git"])
@@ -256,25 +186,7 @@ async def finalize_task_merge(task_id: str) -> dict[str, object]:
     task = task_store.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-
-    status = str(task.get("status") or "")
-    if status in {"running", "pending", "queue", "paused", "ai_reviewing"}:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Task is still active ({status}); use the normal execution/done path instead",
-        )
-
-    if status not in {"completed", "conflicted"}:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Task status {status!r} is not eligible for finalize",
-        )
-
-    if status == "conflicted":
-        update_task_fields(task_id, conflict_info=None)
-
-    result: dict[str, object] = merge_and_cleanup_task_worktree(task_id, task["project_id"])  # type: ignore[assignment]
-    return result
+    return handle_finalize_task_merge(task_id, task)
 
 
 @router.post("/git/tasks/{task_id}/dismiss-conflict", tags=["git"])
@@ -334,18 +246,8 @@ async def get_recent_commits_endpoint(
     project_id: str | None = Query(default=None),
 ) -> RecentCommitsResponse:
     """Get recent commits across all managed repos (or a specific project)."""
-    if project_id:
-        try:
-            all_commits = get_recent_commits(get_project_path(project_id), limit=limit)
-        except HTTPException:
-            all_commits = []
-    else:
-        all_commits = []
-        for repo_path in get_managed_repos():
-            all_commits.extend(get_recent_commits(repo_path, limit=limit))
-        all_commits.sort(key=lambda c: c.date, reverse=True)
-        all_commits = all_commits[:limit]
-    return RecentCommitsResponse(commits=all_commits, count=len(all_commits))
+    commits = collect_recent_commits(limit, project_id)
+    return RecentCommitsResponse(commits=commits, count=len(commits))
 
 
 # --- Snapshot Endpoints ---
@@ -356,18 +258,8 @@ async def get_snapshots(
     project_id: str | None = Query(default=None),
 ) -> SnapshotsResponse:
     """Get pre-merge snapshots across managed repos."""
-    all_snapshots = []
-    if project_id:
-        try:
-            all_snapshots = list_snapshots(get_project_path(project_id))
-            enrich_snapshots(all_snapshots, project_id)
-        except HTTPException:
-            pass
-    else:
-        for repo_path in get_managed_repos():
-            all_snapshots.extend(list_snapshots(repo_path))
-        enrich_snapshots(all_snapshots)
-    return SnapshotsResponse(snapshots=all_snapshots, count=len(all_snapshots))
+    snapshots = collect_snapshots(project_id)
+    return SnapshotsResponse(snapshots=snapshots, count=len(snapshots))
 
 
 @router.post("/git/snapshots/{task_id}/revert", tags=["git"])
