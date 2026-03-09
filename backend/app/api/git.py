@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from ..storage import log_task_event
 from ..storage import tasks as task_store
+from ..storage.subtasks import get_subtasks_for_task, update_subtask_passes
 from ..storage.tasks.status import update_task_status
 from ..storage.tasks.update import update_task_fields
 from ..tasks.autonomous.cleanup.merge_operations import merge_and_cleanup_task_worktree
@@ -221,6 +222,10 @@ async def resolve_conflict(task_id: str) -> dict[str, object]:
         error_message=message,
         validate_transition=False,
     )
+    for subtask in get_subtasks_for_task(task_id):
+        short_id = str(subtask.get("subtask_id") or "")
+        if short_id and subtask.get("passes"):
+            update_subtask_passes(task_id, short_id, False)
     log_task_event(task_id, f"Conflict resolution reopened for autocode: {message}")
     worker_id = f"resolve-conflict-{project_id}"
     if not claim_task(task_id, worker_id, lock_duration_minutes=60):

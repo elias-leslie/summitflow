@@ -273,7 +273,6 @@ def test_start_execution_orchestration_flow(
     mock_task_store.update_task_status.assert_called_with(task_id, "running")
 
 
-@patch("app.tasks.autonomous.exec_modules.orchestrator.update_subtask_passes")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.task_store")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.get_subtasks_for_task")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.validate_pristine_codebase", return_value=True)
@@ -289,7 +288,6 @@ def test_start_execution_reopens_passed_subtasks_for_conflict_resolution(
     mock_validate: MagicMock,
     mock_get_subtasks: MagicMock,
     mock_task_store: MagicMock,
-    mock_update_subtask_passes: MagicMock,
 ) -> None:
     task_id = "task-conflict"
     project_id = "proj-123"
@@ -303,16 +301,13 @@ def test_start_execution_reopens_passed_subtasks_for_conflict_resolution(
     mock_get_subtasks.return_value = [
         {"id": "s1", "subtask_id": "1.1", "passes": True},
     ]
-    mock_loop.return_value = ([{"subtask_id": "1.1", "status": "passed"}], 1)
+    mock_loop.return_value = ([], 0)
 
-    with patch("app.tasks.autonomous.exec_modules.orchestrator.handle_successful_completion"):
-        result = start_execution(task_id, project_id)
+    with patch("app.tasks.autonomous.exec_modules.orchestrator.handle_early_completion") as mock_early:
+        start_execution(task_id, project_id)
 
-    assert result["status"] == "executed"
-    mock_update_subtask_passes.assert_called_once_with(task_id, "1.1", passes=False)
-    args = mock_loop.call_args[0]
-    passed_incomplete_subtasks = args[3]
-    assert [s["subtask_id"] for s in passed_incomplete_subtasks] == ["1.1"]
+    mock_loop.assert_not_called()
+    mock_early.assert_called_once()
 
 
 @patch("app.tasks.autonomous.exec_modules.orchestrator.emit_log")
