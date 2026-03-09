@@ -131,6 +131,8 @@ def _build_repo_cleanup_entry(repo_path: Path) -> dict[str, Any]:
         "orphan_task_branches": workspace_summary.orphan_branches,
         "prunable_task_branches": workspace_summary.prunable_branches,
         "worktree_task_ids": workspace_summary.worktree_task_ids,
+        "orphan_branch_names": workspace_summary.orphan_branch_names,
+        "prunable_branch_names": workspace_summary.prunable_branch_names,
         "needs_merge_count": len(needs_merge_tasks),
         "conflict_count": len(conflict_tasks),
         "review_count": len(review_tasks),
@@ -210,10 +212,20 @@ def format_cleanup_status_compact(data: dict[str, Any], all_projects: bool) -> N
                     f"review:{','.join(repo['review_tasks'])}"
                 )
             attention = f" {' '.join(attention_parts)}" if attention_parts else ""
+            branch_preview_parts: list[str] = []
+            if repo["prunable_branch_names"]:
+                branch_preview_parts.append(
+                    f"prune_branches:{','.join(repo['prunable_branch_names'])}"
+                )
+            if repo["orphan_branch_names"]:
+                branch_preview_parts.append(
+                    f"orphan_branches:{','.join(repo['orphan_branch_names'])}"
+                )
+            branch_preview = f" {' '.join(branch_preview_parts)}" if branch_preview_parts else ""
             print(
                 f"{repo['project_id']} worktrees:{repo['active_worktrees']} "
                 f"dirty:{repo['dirty_worktrees']} orphan:{repo['orphan_task_branches']} "
-                f"prunable:{repo['prunable_task_branches']}{preview}{attention}"
+                f"prunable:{repo['prunable_task_branches']}{preview}{attention}{branch_preview}"
             )
         else:
             print(f"{repo['project_id']} clean")

@@ -32,12 +32,16 @@ def test_build_cleanup_status_payload_aggregates_repo_hygiene() -> None:
                     orphan_branches=1,
                     prunable_branches=1,
                     worktree_task_ids=["task-1", "task-2"],
+                    orphan_branch_names=["task-3/main"],
+                    prunable_branch_names=["task-4/main"],
                 ),
                 SimpleNamespace(
                     active_worktrees=0,
                     orphan_branches=0,
                     prunable_branches=0,
                     worktree_task_ids=[],
+                    orphan_branch_names=[],
+                    prunable_branch_names=[],
                 ),
             ],
         ),
@@ -83,6 +87,8 @@ def test_build_cleanup_status_payload_aggregates_repo_hygiene() -> None:
     assert payload["repositories"][0]["needs_cleanup"] is True
     assert payload["repositories"][0]["needs_merge_tasks"] == ["task-1"]
     assert payload["repositories"][0]["review_tasks"] == ["task-2"]
+    assert payload["repositories"][0]["orphan_branch_names"] == ["task-3/main"]
+    assert payload["repositories"][0]["prunable_branch_names"] == ["task-4/main"]
     assert payload["repositories"][1]["project_id"] == "agent-hub"
     assert payload["repositories"][1]["needs_cleanup"] is False
     assert payload["total"] == 2
@@ -105,12 +111,16 @@ def test_cleanup_status_compact_reports_cross_repo_summary() -> None:
                     orphan_branches=1,
                     prunable_branches=0,
                     worktree_task_ids=["task-1"],
+                    orphan_branch_names=["task-3/main"],
+                    prunable_branch_names=[],
                 ),
                 SimpleNamespace(
                     active_worktrees=0,
                     orphan_branches=0,
                     prunable_branches=0,
                     worktree_task_ids=[],
+                    orphan_branch_names=[],
+                    prunable_branch_names=[],
                 ),
             ],
         ),
@@ -136,7 +146,10 @@ def test_cleanup_status_compact_reports_cross_repo_summary() -> None:
 
     assert result.exit_code == 0
     assert "CLEANUP[all]:repos=2 needs_cleanup=1 worktrees=1 dirty=0 orphan=1 prunable=0" in result.output
-    assert "summitflow worktrees:1 dirty:0 orphan:1 prunable:0 tasks:task-1 finalize:task-1" in result.output
+    assert (
+        "summitflow worktrees:1 dirty:0 orphan:1 prunable:0 tasks:task-1 "
+        "finalize:task-1 orphan_branches:task-3/main"
+    ) in result.output
     assert "agent-hub clean" in result.output
 
 
@@ -160,6 +173,8 @@ def test_cleanup_status_routes_missing_task_merge_candidates_to_review() -> None
                 orphan_branches=0,
                 prunable_branches=0,
                 worktree_task_ids=["task-missing"],
+                orphan_branch_names=[],
+                prunable_branch_names=[],
             ),
         ),
         patch(

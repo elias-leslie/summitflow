@@ -151,6 +151,8 @@ def build_repo_workspace_summary(repo_path: Path) -> RepoWorkspaceSummary:
         orphan_branches=len(orphan_branches),
         prunable_branches=len(prunable_branches),
         worktree_task_ids=[worktree.task_id for worktree in active_worktrees[:2]],
+        orphan_branch_names=[branch.name for branch in orphan_branches[:5]],
+        prunable_branch_names=[branch.name for branch in prunable_branches[:5]],
     )
 
 
