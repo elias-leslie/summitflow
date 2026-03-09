@@ -7,9 +7,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .. import explorer as explorer_service
 from ...storage.explorer import get_symbol, list_related_entries_for_file, search_symbols
 from ...storage.explorer_entries import get_entries
+from .. import explorer as explorer_service
 from .token_utils import MAX_EXPLORER_TOKENS, estimate_tokens, truncate_to_tokens
 
 logger = logging.getLogger(__name__)
