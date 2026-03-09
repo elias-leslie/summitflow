@@ -124,18 +124,19 @@ def _load_subtasks(
 def _handle_completion(
     task_id: str, project_id: str, project_path: str,
     results: list, incomplete: list, dispatch: Callable[[str, str, str], None] | None,
-) -> None:
+) -> str | None:
     """Route to appropriate completion handler based on results."""
     all_passed = all(r.get("status") == "passed" for r in results)
     any_passed = any(r.get("status") == "passed" for r in results)
     if all_passed and len(results) == len(incomplete):
-        handle_successful_completion(task_id, project_id, project_path, results, dispatch)
-    else:
-        if any_passed:
-            if not handle_partial_completion(task_id, project_id, project_path, results, dispatch):
-                handle_failed_execution(task_id, project_id, results=results)
-        else:
-            handle_failed_execution(task_id, project_id, results=results)
+        return "passed" if handle_successful_completion(task_id, project_id, project_path, results, dispatch) else "failed"
+    if any_passed:
+        if handle_partial_completion(task_id, project_id, project_path, results, dispatch):
+            return "partial"
+        handle_failed_execution(task_id, project_id, results=results)
+        return "failed"
+    handle_failed_execution(task_id, project_id, results=results)
+    return "failed"
 
 
 def execute_task_locked(
@@ -164,10 +165,19 @@ def execute_task_locked(
 
     check_main_repo_leakage(task_id, project_id, project_path)
 
-    execute_agent_feedback(
-        task_id, project_path, project_id, results,
-        agent_slug=agent_override or "coder",
-    )
-
-    _handle_completion(task_id, project_id, project_path, results, incomplete, dispatch)
+    completion_outcome = _handle_completion(task_id, project_id, project_path, results, incomplete, dispatch)
+    if completion_outcome in {"passed", "partial"}:
+        try:
+            execute_agent_feedback(
+                task_id, project_path, project_id, results,
+                agent_slug=agent_override or "coder",
+            )
+        except Exception as e:
+            emit_log(
+                task_id,
+                "warning",
+                f"Agent feedback collection failed after completion routing: {type(e).__name__}: {e}",
+                source="orchestrator",
+                project_id=project_id,
+            )
     return {"task_id": task_id, "status": "executed", "subtask_results": results}

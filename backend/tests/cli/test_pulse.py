@@ -20,6 +20,7 @@ def test_pulse_compact_renders_canonical_summary() -> None:
             "active_owners": 1,
             "active_specialists": 0,
             "active_sessions": 2,
+            "stranded_tasks": 0,
         },
         "cleanup": {
             "active_worktrees": 1,
@@ -48,6 +49,7 @@ def test_pulse_compact_renders_canonical_summary() -> None:
                 "live_activity": {"health": "active", "phase": "reading_file", "files_touched": []},
             }
         ],
+        "stranded_tasks": [],
     }
 
     with patch("cli.commands.pulse.STClient", return_value=mock_client), patch(
@@ -57,7 +59,7 @@ def test_pulse_compact_renders_canonical_summary() -> None:
         result = runner.invoke(app, ["pulse"])
 
     assert result.exit_code == 0
-    assert "PULSE:agent-hub|tasks=1|owners=1|specialists=0|sessions=2|worktrees=1|dirty=0|cleanup=no" in result.output
+    assert "PULSE:agent-hub|tasks=1|owners=1|specialists=0|sessions=2|worktrees=1|dirty=0|cleanup=no|stranded=0" in result.output
     assert "RUN task-1 | running | P2 | Refactor timeline" in result.output
     assert "OWN task-1 | refactor | sess-own | kind=scoped | paths=frontend/src/app.tsx" in result.output
     assert "SES owner | refactor | sess-own | claude-sonnet-4-6 | active/reading_file" in result.output
@@ -72,6 +74,7 @@ def test_pulse_compact_labels_task_worktree_owner_more_usefully() -> None:
             "active_owners": 1,
             "active_specialists": 0,
             "active_sessions": 1,
+            "stranded_tasks": 0,
         },
         "cleanup": {
             "active_worktrees": 1,
@@ -92,6 +95,7 @@ def test_pulse_compact_labels_task_worktree_owner_more_usefully() -> None:
             }
         ],
         "active_sessions": [],
+        "stranded_tasks": [],
     }
 
     with patch("cli.commands.pulse.STClient", return_value=mock_client), patch(
@@ -102,3 +106,40 @@ def test_pulse_compact_labels_task_worktree_owner_more_usefully() -> None:
 
     assert result.exit_code == 0
     assert "OWN task-2 | refactor | sess-own | kind=task_worktree" in result.output
+
+
+def test_pulse_compact_surfaces_stranded_running_tasks() -> None:
+    mock_client = MagicMock()
+    mock_client.get.return_value = {
+        "project_id": "agent-hub",
+        "summary": {
+            "running_tasks": 1,
+            "active_owners": 0,
+            "active_specialists": 0,
+            "active_sessions": 0,
+            "stranded_tasks": 1,
+        },
+        "cleanup": {
+            "active_worktrees": 1,
+            "dirty_worktrees": 1,
+            "needs_cleanup": True,
+        },
+        "running_tasks": [
+            {"id": "task-3", "status": "running", "priority": 2, "title": "Refactor tool handlers"}
+        ],
+        "active_owners": [],
+        "active_sessions": [],
+        "stranded_tasks": [
+            {"id": "task-3", "status": "running", "priority": 2, "title": "Refactor tool handlers"}
+        ],
+    }
+
+    with patch("cli.commands.pulse.STClient", return_value=mock_client), patch(
+        "cli.commands.pulse.get_config_optional",
+        return_value=MagicMock(project_id="agent-hub"),
+    ):
+        result = runner.invoke(app, ["pulse"])
+
+    assert result.exit_code == 0
+    assert "PULSE:agent-hub|tasks=1|owners=0|specialists=0|sessions=0|worktrees=1|dirty=1|cleanup=yes|stranded=1" in result.output
+    assert "STRANDED task-3 | running | no_owner_session | Refactor tool handlers" in result.output

@@ -79,6 +79,17 @@ def _format_task(task: dict[str, Any]) -> str:
     )
 
 
+def _format_stranded_task(task: dict[str, Any]) -> str:
+    return "STRANDED " + " | ".join(
+        [
+            str(task.get("id") or "?"),
+            str(task.get("status") or "?"),
+            "no_owner_session",
+            str(task.get("title") or "")[:80],
+        ]
+    )
+
+
 def _print_compact(payloads: list[dict[str, Any]]) -> None:
     for payload in payloads:
         summary = payload.get("summary", {})
@@ -86,7 +97,7 @@ def _print_compact(payloads: list[dict[str, Any]]) -> None:
         project_id = payload.get("project_id", "?")
         print(
             "PULSE:{project}|tasks={tasks}|owners={owners}|specialists={specialists}|"
-            "sessions={sessions}|worktrees={worktrees}|dirty={dirty}|cleanup={cleanup_needed}".format(
+            "sessions={sessions}|worktrees={worktrees}|dirty={dirty}|cleanup={cleanup_needed}|stranded={stranded}".format(
                 project=project_id,
                 tasks=summary.get("running_tasks", 0),
                 owners=summary.get("active_owners", 0),
@@ -95,11 +106,15 @@ def _print_compact(payloads: list[dict[str, Any]]) -> None:
                 worktrees=cleanup.get("active_worktrees", 0),
                 dirty=cleanup.get("dirty_worktrees", 0),
                 cleanup_needed="yes" if cleanup.get("needs_cleanup") else "no",
+                stranded=summary.get("stranded_tasks", 0),
             )
         )
         for task in payload.get("running_tasks", [])[:4]:
             if isinstance(task, dict):
                 print(_format_task(task))
+        for task in payload.get("stranded_tasks", [])[:4]:
+            if isinstance(task, dict):
+                print(_format_stranded_task(task))
         for owner in payload.get("active_owners", [])[:4]:
             if isinstance(owner, dict):
                 print(_format_owner(owner))

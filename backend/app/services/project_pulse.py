@@ -15,6 +15,7 @@ _TIMEOUT = 10.0
 _TASK_LIMIT = 8
 _SESSION_LIMIT = 25
 _OBSERVER_FRESH_MINUTES = 90
+_STRANDED_TASK_MINUTES = 2
 
 
 async def _agent_hub_get(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -97,6 +98,20 @@ def _normalize_running_task(task: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _task_is_stranded(task: dict[str, Any], owner_task_ids: set[str], specialist_task_ids: set[str]) -> bool:
+    """Return True when a running task appears to have lost its live execution lane."""
+    task_id = str(task.get("id") or "")
+    if not task_id:
+        return False
+    if task_id in owner_task_ids or task_id in specialist_task_ids:
+        return False
+    updated_at = _parse_iso_timestamp(task.get("updated_at"))
+    if updated_at is None:
+        return True
+    age_minutes = (datetime.now(UTC) - updated_at).total_seconds() / 60
+    return age_minutes >= _STRANDED_TASK_MINUTES
+
+
 async def build_project_pulse(project_id: str) -> dict[str, Any]:
     """Return the canonical live coordination payload for one project."""
     ownership = await _agent_hub_get(f"/api/ownership/projects/{project_id}/live")
@@ -113,10 +128,20 @@ async def build_project_pulse(project_id: str) -> dict[str, Any]:
         for owner in active_owners
         if isinstance(owner, dict)
     }
+    owner_task_ids = {
+        str(owner.get("task_id") or "")
+        for owner in active_owners
+        if isinstance(owner, dict) and owner.get("task_id")
+    }
     specialist_session_ids = {
         str(session.get("session_id") or "")
         for session in active_specialists
         if isinstance(session, dict)
+    }
+    specialist_task_ids = {
+        str(session.get("task_id") or "")
+        for session in active_specialists
+        if isinstance(session, dict) and session.get("task_id")
     }
 
     active_sessions = [
@@ -127,6 +152,10 @@ async def build_project_pulse(project_id: str) -> dict[str, Any]:
     running_tasks = [
         _normalize_running_task(task)
         for task in list_tasks(project_id, status_filter="running", limit=_TASK_LIMIT)
+    ]
+    stranded_tasks = [
+        task for task in running_tasks
+        if _task_is_stranded(task, owner_task_ids, specialist_task_ids)
     ]
     cleanup = build_project_cleanup_status(project_id)
 
@@ -141,8 +170,10 @@ async def build_project_pulse(project_id: str) -> dict[str, Any]:
             "active_worktrees": cleanup["active_worktrees"],
             "dirty_worktrees": cleanup["dirty_worktrees"],
             "needs_cleanup": cleanup["needs_cleanup"],
+            "stranded_tasks": len(stranded_tasks),
         },
         "running_tasks": running_tasks,
+        "stranded_tasks": stranded_tasks,
         "active_owners": active_owners,
         "active_specialists": active_specialists,
         "active_sessions": active_sessions,

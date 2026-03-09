@@ -540,6 +540,44 @@ class TestWorkProductDetection:
 
         assert _has_work_product("/tmp/test-worktree") is True
 
+    @patch("app.tasks.autonomous.exec_modules.git_work_product.emit_log")
+    @patch("app.tasks.autonomous.exec_modules.git_work_product.subprocess.run")
+    def test_ensure_committed_work_product_commits_dirty_changes(
+        self,
+        mock_run: MagicMock,
+        mock_emit_log: MagicMock,
+    ) -> None:
+        from app.tasks.autonomous.exec_modules.git_work_product import ensure_committed_work_product
+
+        mock_run.side_effect = [
+            MagicMock(stdout="", returncode=0),  # git log main..HEAD
+            MagicMock(stdout=" M backend/app/file.py\n", returncode=0),  # git status --porcelain
+            MagicMock(stdout="", stderr="", returncode=0),  # git add -A
+            MagicMock(stdout="[task-1/main abc123] message", stderr="", returncode=0),  # git commit
+            MagicMock(stdout="abc123 change\n", returncode=0),  # git log main..HEAD after commit
+        ]
+
+        result = ensure_committed_work_product("task-1", "1.1", "/tmp/test-worktree", "agent-hub")
+
+        assert result is None
+        mock_emit_log.assert_called_once()
+
+    @patch("app.tasks.autonomous.exec_modules.git_work_product.subprocess.run")
+    def test_ensure_committed_work_product_fails_when_nothing_to_merge(
+        self,
+        mock_run: MagicMock,
+    ) -> None:
+        from app.tasks.autonomous.exec_modules.git_work_product import ensure_committed_work_product
+
+        mock_run.side_effect = [
+            MagicMock(stdout="", returncode=0),  # git log main..HEAD
+            MagicMock(stdout="", returncode=0),  # git status --porcelain
+        ]
+
+        result = ensure_committed_work_product("task-1", "1.1", "/tmp/test-worktree", "agent-hub")
+
+        assert result == "No committed or dirty work product remains to merge"
+
     @patch("app.tasks.autonomous.exec_modules.steps.subprocess.run")
     def test_has_no_work_product_when_branch_clean_and_no_commits(
         self,

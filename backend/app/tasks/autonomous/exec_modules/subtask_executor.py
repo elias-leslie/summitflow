@@ -8,6 +8,7 @@ from typing import Any
 from ....logging_config import get_logger
 from .agent_execution import execute_agent_initial
 from .agent_routing import get_agent_for_subtask
+from .git_work_product import ensure_committed_work_product
 from .interruption import ExecutionInterrupted
 from .prompts import build_subtask_prompt
 from .result_processing import process_final_result
@@ -18,6 +19,37 @@ from .subtask_validation import validate_subtask_environment
 from .worktree import get_project_path
 
 logger = get_logger(__name__)
+
+
+def _ensure_mergeable_work_product(
+    task_id: str,
+    subtask_short_id: str,
+    project_path: str,
+    project_id: str,
+    all_passed: bool,
+    step_results: list[dict[str, Any]],
+) -> tuple[bool, list[dict[str, Any]]]:
+    """Commit verified work so canonical task closure can merge it."""
+    if not all_passed:
+        return all_passed, step_results
+
+    commit_error = ensure_committed_work_product(
+        task_id=task_id,
+        subtask_short_id=subtask_short_id,
+        project_path=project_path,
+        project_id=project_id,
+    )
+    if not commit_error:
+        return all_passed, step_results
+
+    failed_result = {
+        "step_number": 0,
+        "passed": False,
+        "output": commit_error,
+        "reason": "commit_failed",
+        "returncode": 1,
+    }
+    return False, [*step_results, failed_result]
 
 
 def _setup_subtask(
@@ -156,6 +188,15 @@ def execute_subtask(
                 all_passed, step_results, self_fix_attempts,
                 supervisor_guided_attempts, extensions_granted,
             )
+        )
+
+        all_passed, step_results = _ensure_mergeable_work_product(
+            task_id=task_id,
+            subtask_short_id=subtask_short_id,
+            project_path=project_path,
+            project_id=project_id,
+            all_passed=all_passed,
+            step_results=step_results,
         )
 
         return process_final_result(
