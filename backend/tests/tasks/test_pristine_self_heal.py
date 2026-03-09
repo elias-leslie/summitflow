@@ -158,14 +158,19 @@ class TestPristineSelfHeal:
 
         with patch(f"{_PRISTINE}.has_uncommitted_changes") as mock_changes:
             mock_changes.return_value = True
-            with patch(f"{_PRISTINE}.auto_commit") as mock_commit:
+            with patch(f"{_PRISTINE}.smart_commit") as mock_commit:
                 mock_commit.return_value = True
 
                 result = pristine_self_heal("task-123", "test-project")
 
         assert result is True
         mock_agent_client.complete.assert_called_once()
-        mock_commit.assert_called()
+        mock_commit.assert_called_once_with(
+            "/test/project",
+            "[pristine] Auto-fix quality issues before task-123",
+            task_id="task-123",
+            push=True,
+        )
 
     def test_pristine_error_count_regression_reverts(
         self,

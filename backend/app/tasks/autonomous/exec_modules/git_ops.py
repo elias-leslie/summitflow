@@ -59,7 +59,27 @@ def auto_commit(project_path: str, message: str) -> bool:
         return False
 
 
-def smart_commit(project_path: str, message: str, task_id: str = "") -> bool:
+def _raw_push(project_path: str) -> bool:
+    """Push current branch when commit.sh is unavailable."""
+    try:
+        result = subprocess.run(
+            ["git", "push"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if result.returncode == 0:
+            logger.info("raw_push_success")
+            return True
+        logger.warning("raw_push_failed", error=result.stderr[:200])
+        return False
+    except Exception as e:
+        logger.warning("raw_push_exception", error=str(e))
+        return False
+
+
+def smart_commit(project_path: str, message: str, task_id: str = "", push: bool = False) -> bool:
     """Commit using commit.sh which runs quality gates.
 
     Falls back to auto_commit if commit.sh is not available.
@@ -68,17 +88,21 @@ def smart_commit(project_path: str, message: str, task_id: str = "") -> bool:
         project_path: Path to the project/worktree
         message: Commit message
         task_id: Optional task ID to tag the commit
+        push: Push immediately after commit when the change belongs on main
 
     Returns:
         True if commit was made, False otherwise
     """
     commit_sh = shutil.which("commit.sh")
     if not commit_sh:
-        return auto_commit(project_path, message)
+        committed = auto_commit(project_path, message)
+        return committed and (not push or _raw_push(project_path))
 
     args = [commit_sh, "--json", "--msg", message]
     if task_id:
         args.extend(["--task", task_id])
+    if push:
+        args.append("--push")
 
     try:
         result = subprocess.run(
@@ -93,10 +117,13 @@ def smart_commit(project_path: str, message: str, task_id: str = "") -> bool:
             returncode=result.returncode,
             stderr=result.stderr[:200],
         )
-        return auto_commit(project_path, message)
+        committed = auto_commit(project_path, message)
+        return committed and (not push or _raw_push(project_path))
     except subprocess.TimeoutExpired:
         logger.warning("smart_commit_timeout")
-        return auto_commit(project_path, message)
+        committed = auto_commit(project_path, message)
+        return committed and (not push or _raw_push(project_path))
     except Exception as e:
         logger.warning("smart_commit_exception", error=str(e))
-        return auto_commit(project_path, message)
+        committed = auto_commit(project_path, message)
+        return committed and (not push or _raw_push(project_path))

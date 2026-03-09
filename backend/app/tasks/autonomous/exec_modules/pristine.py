@@ -15,7 +15,7 @@ from ....storage.agent_configs_quality import build_dt_command
 from ....storage.projects import get_project_root_path
 from ....storage.tasks.core import add_agent_hub_session
 from .events import emit_log, emit_progress_log
-from .git_ops import auto_commit, has_uncommitted_changes
+from .git_ops import has_uncommitted_changes, smart_commit
 from .prompts import get_prompt_template
 from .quality_utils import find_dev_tools, parse_error_count
 
@@ -34,7 +34,12 @@ def _emit(task_id: str, level: str, msg: str, project_id: str) -> None:
 def _on_heal_success(task_id: str, project_id: str, repo_path: Path, attempt: int) -> None:
     """Commit any fixes and log success after a non-zero attempt heals the codebase."""
     if has_uncommitted_changes(str(repo_path)):
-        auto_commit(str(repo_path), f"[pristine] Auto-fix quality issues before {task_id}")
+        smart_commit(
+            str(repo_path),
+            f"[pristine] Auto-fix quality issues before {task_id}",
+            task_id=task_id,
+            push=True,
+        )
     logger.info("pristine_self_heal_success", project_id=project_id, attempts=attempt + 1)
     _emit(task_id, "info", f"Pristine self-heal succeeded after {attempt + 1} attempt(s)", project_id)
 
