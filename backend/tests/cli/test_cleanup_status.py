@@ -9,7 +9,7 @@ from unittest.mock import patch
 from typer.testing import CliRunner
 
 from cli.commands.cleanup import app, build_cleanup_status_payload
-from cli.commands.cleanup_analysis import CleanupAction
+from cli.commands.cleanup_analysis import CleanupAction, analyze_worktree
 
 runner = CliRunner()
 
@@ -214,3 +214,48 @@ def test_cleanup_worktrees_auto_prunes_git_residue() -> None:
     mock_prune_branches.assert_called_once_with(Path("/repos/agent-hub"))
     assert "Pruned git worktree registrations in 1 repo(s)" in result.output
     assert "Pruned merged orphan task branches: 2" in result.output
+
+
+def test_analyze_worktree_treats_clean_cancelled_conflict_as_safe_delete(tmp_path: Path) -> None:
+    worktree_path = tmp_path / "task-cancelled"
+    worktree_path.mkdir()
+    (worktree_path / ".git").mkdir()
+    worktree = SimpleNamespace(
+        task_id="task-cancelled",
+        path=worktree_path,
+        branch="task-cancelled/main",
+        base_branch="main",
+        project_id="agent-hub",
+    )
+
+    with (
+        patch("cli.commands.cleanup_analysis.get_task_info", return_value=("cancelled", "Cancelled task")),
+        patch("cli.commands.cleanup_analysis.get_commits_ahead_behind", return_value=(2, 0)),
+        patch("cli.commands.cleanup_analysis.has_uncommitted_changes", return_value=False),
+        patch("cli.commands.cleanup_analysis.has_merge_conflicts", return_value=True),
+        patch("cli.commands.cleanup_analysis.get_last_commit_age_days", return_value=3),
+        patch("cli.commands.cleanup_analysis.is_already_merged", return_value=False),
+    ):
+        analysis = analyze_worktree(worktree, client=SimpleNamespace())
+
+    assert analysis.action == CleanupAction.SAFE_DELETE
+    assert analysis.task_status == "cancelled"
+    assert analysis.has_conflicts is True
+    assert "can be discarded" in analysis.reason
+
+
+def test_analyze_worktree_treats_missing_path_as_safe_delete() -> None:
+    worktree = SimpleNamespace(
+        task_id="task-missing-path",
+        path=Path("/wt/missing-path"),
+        branch="task-missing-path/main",
+        base_branch="main",
+        project_id="agent-hub",
+    )
+
+    with patch("cli.commands.cleanup_analysis.get_task_info", return_value=("completed", "Missing path")):
+        analysis = analyze_worktree(worktree, client=SimpleNamespace())
+
+    assert analysis.action == CleanupAction.SAFE_DELETE
+    assert analysis.commits_ahead == 0
+    assert analysis.reason == "Worktree path already removed; prune stale registration"

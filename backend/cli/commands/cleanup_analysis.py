@@ -56,6 +56,20 @@ def analyze_worktree(worktree: WorktreeInfo, client: STClient) -> WorktreeAnalys
     """Analyze a worktree and recommend cleanup action."""
     task_status, task_title = get_task_info(client, worktree.task_id)
 
+    if not worktree.path.exists() or not (worktree.path / ".git").exists():
+        return WorktreeAnalysis(
+            worktree=worktree,
+            task_status=task_status,
+            task_title=task_title,
+            commits_ahead=0,
+            commits_behind=0,
+            has_conflicts=False,
+            has_uncommitted=False,
+            last_commit_age_days=None,
+            action=CleanupAction.SAFE_DELETE,
+            reason="Worktree path already removed; prune stale registration",
+        )
+
     # Get git state
     commits_ahead, commits_behind = get_commits_ahead_behind(worktree.path, worktree.base_branch)
     has_uncommitted = has_uncommitted_changes(worktree.path)
@@ -70,6 +84,14 @@ def analyze_worktree(worktree: WorktreeInfo, client: STClient) -> WorktreeAnalys
     elif has_uncommitted:
         action = CleanupAction.MANUAL_REVIEW
         reason = "Has uncommitted changes"
+    elif task_status == "cancelled":
+        action = CleanupAction.SAFE_DELETE
+        if is_merged or commits_ahead == 0:
+            reason = "Cancelled task can be discarded"
+        elif has_conflicts:
+            reason = "Cancelled task branch conflicts with main and can be discarded"
+        else:
+            reason = f"Cancelled task has {commits_ahead} unmerged commit(s) and can be discarded"
     elif has_conflicts:
         action = CleanupAction.HAS_CONFLICTS
         reason = "Would conflict with main"
@@ -129,6 +151,8 @@ def format_analysis(analysis: WorktreeAnalysis) -> str:
 def cleanup_worktree(analysis: WorktreeAnalysis, force: bool = False) -> tuple[bool, str]:
     """Cleanup a worktree based on analysis. Returns (success, message)."""
     action = analysis.action
+    if not analysis.worktree.path.exists():
+        return True, "Already removed"
     if not force and action == CleanupAction.TASK_ACTIVE:
         return False, f"Skipped: task is {analysis.task_status}"
     if not force and action == CleanupAction.NEEDS_MERGE:
