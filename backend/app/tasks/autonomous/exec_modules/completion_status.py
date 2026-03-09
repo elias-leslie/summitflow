@@ -178,6 +178,9 @@ def _do_complete_transition(task_id: str, project_id: str, log_message: str) -> 
     from ....tasks.autonomous.cleanup.worktree_cleanup import cleanup_task_worktree
 
     if agent_configs.get_auto_merge_enabled(project_id):
+        # Move out of running before merge orchestration so merge cleanup does not
+        # self-block on the task's pre-merge status.
+        task_store.update_task_status(task_id, "completed", validate_transition=False)
         merge_result = merge_and_cleanup_task_worktree(task_id, project_id)
         merge_status = str(merge_result.get("status") or "blocked")
         emit_log(
