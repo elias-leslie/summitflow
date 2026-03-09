@@ -20,7 +20,7 @@ import redis.asyncio as aioredis
 
 from ..config import REDIS_URL
 from ..logging_config import get_logger
-from ..storage.events import EventLevel, EventVisibility, create_event
+from ..storage.events import Event, EventLevel, EventVisibility, create_event
 
 logger = get_logger(__name__)
 
@@ -74,6 +74,47 @@ def _parse_message(raw: object) -> dict[str, object] | None:
         return None
 
 
+def _augment_event_with_db_meta(event: dict[str, object], created_event: Event) -> None:
+    """Augment event data dict in-place with DB-assigned metadata."""
+    if isinstance(event.get("data"), dict):
+        event["data"] = {
+            **event["data"],
+            "event_id": created_event["id"],
+            "persisted_at": created_event["timestamp"].isoformat(),
+        }
+
+
+def _persist_and_augment(
+    task_id: str,
+    project_id: str,
+    trace_id: str,
+    event: dict[str, object],
+    source: str,
+    level: EventLevel,
+    visibility: EventVisibility,
+) -> None:
+    """Persist event to DB and augment it in-place with DB metadata."""
+    event_type, message, attributes = _extract_event_fields(event)
+    try:
+        created_event = create_event(
+            project_id=project_id,
+            trace_id=trace_id,
+            event_type=event_type,
+            source=source,
+            level=level,
+            visibility=visibility,
+            message=message,
+            attributes=attributes,
+        )
+    except Exception as e:
+        logger.warning("Failed to persist event to DB", task_id=task_id, error=str(e))
+        return
+    try:
+        _augment_event_with_db_meta(event, created_event)
+    except Exception as e:
+        logger.warning("Failed to augment event with DB metadata", task_id=task_id, error=str(e))
+
+
 def publish_ws_event(
     task_id: str,
     event: dict[str, object],
@@ -93,33 +134,8 @@ def publish_ws_event(
     """
     if trace_id is None:
         trace_id = task_id
-
     if project_id is not None:
-        event_type, message, attributes = _extract_event_fields(event)
-        try:
-            created_event = create_event(
-                project_id=project_id,
-                trace_id=trace_id,
-                event_type=event_type,
-                source=source,
-                level=level,
-                visibility=visibility,
-                message=message,
-                attributes=attributes,
-            )
-        except Exception as e:
-            logger.warning("Failed to persist event to DB", task_id=task_id, error=str(e))
-        else:
-            try:
-                if isinstance(event.get("data"), dict):
-                    event["data"] = {
-                        **event["data"],
-                        "event_id": created_event["id"],
-                        "persisted_at": created_event["timestamp"].isoformat(),
-                    }
-            except Exception as e:
-                logger.warning("Failed to augment event with DB metadata", task_id=task_id, error=str(e))
-
+        _persist_and_augment(task_id, project_id, trace_id, event, source, level, visibility)
     try:
         r = redis.Redis(connection_pool=_get_sync_pool())
         r.publish(get_channel_name(task_id), json.dumps(event))
