@@ -52,6 +52,44 @@ def get_task_info(client: STClient, task_id: str) -> tuple[str | None, str | Non
         return None, None
 
 
+def _determine_action(
+    task_status: str | None,
+    commits_ahead: int,
+    is_merged: bool,
+    has_uncommitted: bool,
+    has_conflicts: bool,
+) -> tuple[CleanupAction, str]:
+    """Determine cleanup action and reason from git/task state."""
+    if task_status in ("running", "pending", "queue"):
+        return CleanupAction.TASK_ACTIVE, f"Task is {task_status}"
+    if has_uncommitted:
+        return CleanupAction.MANUAL_REVIEW, "Has uncommitted changes"
+    if task_status == "cancelled":
+        if is_merged or commits_ahead == 0:
+            reason = "Cancelled task can be discarded"
+        elif has_conflicts:
+            reason = "Cancelled task branch conflicts with main and can be discarded"
+        else:
+            reason = f"Cancelled task has {commits_ahead} unmerged commit(s) and can be discarded"
+        return CleanupAction.SAFE_DELETE, reason
+    if task_status in {"blocked", "failed"}:
+        if is_merged or commits_ahead == 0:
+            action = CleanupAction.ALREADY_MERGED if is_merged else CleanupAction.SAFE_DELETE
+            reason = "Already merged" if is_merged else f"{task_status.capitalize()} task has no commits ahead of main"
+        else:
+            action = CleanupAction.MANUAL_REVIEW
+            reason = f"{task_status.capitalize()} task has unmerged commits and requires review before cleanup"
+        return action, reason
+    if has_conflicts:
+        return CleanupAction.HAS_CONFLICTS, "Would conflict with main"
+    if is_merged or commits_ahead == 0:
+        action = CleanupAction.ALREADY_MERGED if is_merged else CleanupAction.SAFE_DELETE
+        return action, "Already merged" if is_merged else "No commits ahead of main"
+    if commits_ahead > 0:
+        return CleanupAction.NEEDS_MERGE, f"{commits_ahead} commit(s) not in main"
+    return CleanupAction.MANUAL_REVIEW, "Complex state"
+
+
 def analyze_worktree(worktree: WorktreeInfo, client: STClient) -> WorktreeAnalysis:
     """Analyze a worktree and recommend cleanup action."""
     task_status, task_title = get_task_info(client, worktree.task_id)
@@ -70,47 +108,13 @@ def analyze_worktree(worktree: WorktreeInfo, client: STClient) -> WorktreeAnalys
             reason="Worktree path already removed; prune stale registration",
         )
 
-    # Get git state
     commits_ahead, commits_behind = get_commits_ahead_behind(worktree.path, worktree.base_branch)
     has_uncommitted = has_uncommitted_changes(worktree.path)
     has_conflicts = has_merge_conflicts(worktree.path, worktree.base_branch)
     last_commit_age = get_last_commit_age_days(worktree.path)
     is_merged = is_already_merged(worktree.path, worktree.base_branch)
 
-    # Determine action
-    if task_status in ("running", "pending", "queue"):
-        action = CleanupAction.TASK_ACTIVE
-        reason = f"Task is {task_status}"
-    elif has_uncommitted:
-        action = CleanupAction.MANUAL_REVIEW
-        reason = "Has uncommitted changes"
-    elif task_status == "cancelled":
-        action = CleanupAction.SAFE_DELETE
-        if is_merged or commits_ahead == 0:
-            reason = "Cancelled task can be discarded"
-        elif has_conflicts:
-            reason = "Cancelled task branch conflicts with main and can be discarded"
-        else:
-            reason = f"Cancelled task has {commits_ahead} unmerged commit(s) and can be discarded"
-    elif task_status in {"blocked", "failed"}:
-        if is_merged or commits_ahead == 0:
-            action = CleanupAction.SAFE_DELETE if not is_merged else CleanupAction.ALREADY_MERGED
-            reason = "Already merged" if is_merged else f"{task_status.capitalize()} task has no commits ahead of main"
-        else:
-            action = CleanupAction.MANUAL_REVIEW
-            reason = f"{task_status.capitalize()} task has unmerged commits and requires review before cleanup"
-    elif has_conflicts:
-        action = CleanupAction.HAS_CONFLICTS
-        reason = "Would conflict with main"
-    elif is_merged or commits_ahead == 0:
-        action = CleanupAction.SAFE_DELETE if not is_merged else CleanupAction.ALREADY_MERGED
-        reason = "Already merged" if is_merged else "No commits ahead of main"
-    elif commits_ahead > 0:
-        action = CleanupAction.NEEDS_MERGE
-        reason = f"{commits_ahead} commit(s) not in main"
-    else:
-        action = CleanupAction.MANUAL_REVIEW
-        reason = "Complex state"
+    action, reason = _determine_action(task_status, commits_ahead, is_merged, has_uncommitted, has_conflicts)
 
     return WorktreeAnalysis(
         worktree=worktree,
