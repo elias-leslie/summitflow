@@ -283,6 +283,17 @@ def cleanup_worktrees(
     worktrees = get_active_worktrees(project_id)
 
     if not worktrees:
+        if auto:
+            pruned_worktree_registrations, pruned_task_branches = _cleanup_safe_git_residue(
+                _iter_target_repos(all_projects),
+                dry_run=dry_run,
+            )
+            if dry_run:
+                typer.echo(_DRY_RUN_MSG)
+            output_success("No worktrees found")
+            typer.echo(f"  Pruned git worktree registrations in {pruned_worktree_registrations} repo(s)")
+            typer.echo(f"  Pruned merged orphan task branches: {pruned_task_branches}")
+            return
         output_success("No worktrees found")
         return
 

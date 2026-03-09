@@ -231,6 +231,23 @@ def test_cleanup_worktrees_auto_prunes_git_residue() -> None:
     assert "Pruned merged orphan task branches: 2" in result.output
 
 
+def test_cleanup_worktrees_auto_prunes_git_residue_without_worktrees() -> None:
+    with (
+        patch("cli.commands.cleanup.get_project_id", return_value="agent-hub"),
+        patch("cli.commands.cleanup._iter_target_repos", return_value=[Path("/repos/agent-hub")]),
+        patch("cli.commands.cleanup.get_active_worktrees", return_value=[]),
+        patch("cli.commands.cleanup.prune_worktree_registrations") as mock_prune_regs,
+        patch("cli.commands.cleanup.prune_prunable_task_branches", return_value=["task-1/main", "task-2/main"]),
+    ):
+        result = runner.invoke(app, ["worktrees", "--auto"])
+
+    assert result.exit_code == 0
+    mock_prune_regs.assert_called_once_with(Path("/repos/agent-hub"))
+    assert "No worktrees found" in result.output
+    assert "Pruned git worktree registrations in 1 repo(s)" in result.output
+    assert "Pruned merged orphan task branches: 2" in result.output
+
+
 def test_analyze_worktree_treats_clean_cancelled_conflict_as_safe_delete(tmp_path: Path) -> None:
     worktree_path = tmp_path / "task-cancelled"
     worktree_path.mkdir()
