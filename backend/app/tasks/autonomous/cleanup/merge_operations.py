@@ -184,6 +184,7 @@ def _finalize_merge(
 ) -> MergeResult:
     """Remove worktree, delete branch, run post-merge validation, clean up snapshots."""
     remove_task_worktree(task_id, delete_branch=False, project_id=project_id)
+    _git(["git", "worktree", "prune"], project_root)
     branch_deleted = delete_task_branch(project_root, task_branch, task_id)
     validation_passed = run_post_merge_validation(task_id, project_root, project_id)
     if not validation_passed and auto_rollback(task_id, project_root, project_id, task_branch):
