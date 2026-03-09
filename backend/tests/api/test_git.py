@@ -98,7 +98,7 @@ class TestFinalizeTaskEndpoint:
             "app.api.git.task_store.get_task",
             return_value={"id": "task-1", "project_id": "agent-hub", "status": "completed"},
         )
-        merge = mocker.patch("app.api.git.merge_and_cleanup_task_worktree")
+        merge = mocker.patch("app.api.git_helpers.endpoints.merge_and_cleanup_task_worktree")
         merge.return_value = {"task_id": "task-1", "status": "merged"}
 
         response = client.post("/api/git/tasks/task-1/finalize")
