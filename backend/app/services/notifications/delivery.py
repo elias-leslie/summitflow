@@ -28,6 +28,30 @@ _HTTP_TIMEOUT = 10.0
 _HTTP_OK = 200
 _LOG_TEXT_LIMIT = 200
 _DEFAULT_PROJECT_ID = "summitflow"
+_PUSH_DELIVERED_KEY = "delivered"
+
+
+def _log_push_response(resp: httpx.Response, notification_id: Any) -> None:
+    """Log outcome of an Agent Hub push response."""
+    if resp.status_code != _HTTP_OK:
+        logger.warning(
+            "Agent Hub push send failed: %s %s",
+            resp.status_code,
+            resp.text[:_LOG_TEXT_LIMIT],
+        )
+        return
+    delivered = resp.json().get(_PUSH_DELIVERED_KEY, 0)
+    if delivered > 0:
+        logger.debug(
+            "Delivered notification %s via Agent Hub push (%d devices)",
+            notification_id,
+            delivered,
+        )
+    else:
+        logger.warning(
+            "Notification %s accepted by Agent Hub but delivered to 0 devices",
+            notification_id,
+        )
 
 
 def _build_task_url(notification: dict[str, Any]) -> str:
@@ -80,24 +104,6 @@ async def deliver(notification: dict[str, Any]) -> None:
                 json=_build_payload(notification),
                 headers=headers,
             )
-            if resp.status_code == _HTTP_OK:
-                delivered = resp.json().get("delivered", 0)
-                if delivered > 0:
-                    logger.debug(
-                        "Delivered notification %s via Agent Hub push (%d devices)",
-                        notification.get("id"),
-                        delivered,
-                    )
-                else:
-                    logger.warning(
-                        "Notification %s accepted by Agent Hub but delivered to 0 devices",
-                        notification.get("id"),
-                    )
-            else:
-                logger.warning(
-                    "Agent Hub push send failed: %s %s",
-                    resp.status_code,
-                    resp.text[:_LOG_TEXT_LIMIT],
-                )
+        _log_push_response(resp, notification.get("id"))
     except Exception:
         logger.exception("Failed to deliver notification via Agent Hub push")
