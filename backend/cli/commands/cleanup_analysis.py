@@ -92,6 +92,13 @@ def analyze_worktree(worktree: WorktreeInfo, client: STClient) -> WorktreeAnalys
             reason = "Cancelled task branch conflicts with main and can be discarded"
         else:
             reason = f"Cancelled task has {commits_ahead} unmerged commit(s) and can be discarded"
+    elif task_status in {"blocked", "failed"}:
+        if is_merged or commits_ahead == 0:
+            action = CleanupAction.SAFE_DELETE if not is_merged else CleanupAction.ALREADY_MERGED
+            reason = "Already merged" if is_merged else f"{task_status.capitalize()} task has no commits ahead of main"
+        else:
+            action = CleanupAction.MANUAL_REVIEW
+            reason = f"{task_status.capitalize()} task has unmerged commits and requires review before cleanup"
     elif has_conflicts:
         action = CleanupAction.HAS_CONFLICTS
         reason = "Would conflict with main"

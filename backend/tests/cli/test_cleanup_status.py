@@ -259,3 +259,30 @@ def test_analyze_worktree_treats_missing_path_as_safe_delete() -> None:
     assert analysis.action == CleanupAction.SAFE_DELETE
     assert analysis.commits_ahead == 0
     assert analysis.reason == "Worktree path already removed; prune stale registration"
+
+
+def test_analyze_worktree_routes_blocked_unmerged_worktree_to_review(tmp_path: Path) -> None:
+    worktree_path = tmp_path / "task-blocked"
+    worktree_path.mkdir()
+    (worktree_path / ".git").mkdir()
+    worktree = SimpleNamespace(
+        task_id="task-blocked",
+        path=worktree_path,
+        branch="task-blocked/main",
+        base_branch="main",
+        project_id="agent-hub",
+    )
+
+    with (
+        patch("cli.commands.cleanup_analysis.get_task_info", return_value=("blocked", "Blocked task")),
+        patch("cli.commands.cleanup_analysis.get_commits_ahead_behind", return_value=(2, 0)),
+        patch("cli.commands.cleanup_analysis.has_uncommitted_changes", return_value=False),
+        patch("cli.commands.cleanup_analysis.has_merge_conflicts", return_value=False),
+        patch("cli.commands.cleanup_analysis.get_last_commit_age_days", return_value=1),
+        patch("cli.commands.cleanup_analysis.is_already_merged", return_value=False),
+    ):
+        analysis = analyze_worktree(worktree, client=SimpleNamespace())
+
+    assert analysis.action == CleanupAction.MANUAL_REVIEW
+    assert analysis.task_status == "blocked"
+    assert analysis.reason == "Blocked task has unmerged commits and requires review before cleanup"
