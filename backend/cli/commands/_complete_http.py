@@ -180,6 +180,36 @@ def _scale_http_timeout(timeout: float, max_turns: int) -> float:
     return timeout + 30
 
 
+def _post_with_retry(
+    url: str, headers: dict[str, str], payload: dict[str, Any],
+    read_timeout: float, max_attempts: int = 2,
+) -> dict[str, Any]:
+    """POST to *url* with simple retry on transient connect errors."""
+    from typing import cast
+
+    http_timeout = httpx.Timeout(connect=5.0, read=read_timeout, write=30.0, pool=30.0)
+    for attempt in range(1, max_attempts + 1):
+        try:
+            with httpx.Client(timeout=http_timeout) as client:
+                response = client.post(url, json=payload, headers=headers)
+            if response.status_code >= 400:
+                handle_error_response(response)
+            return cast(dict[str, Any], response.json())
+        except httpx.ConnectError as e:
+            if attempt < max_attempts:
+                time.sleep(0.5 * attempt)
+                continue
+            raise_connect_error("Agent Hub", url, e)
+        except httpx.TimeoutException as e:
+            raise_timeout_error("Agent Hub", url, read_timeout, e)
+        except typer.Exit:
+            raise
+        except Exception as e:
+            output_error(f"Request failed: {e}")
+            raise typer.Exit(1) from None
+    raise AssertionError("unreachable")  # all loop iterations exit via return or raise
+
+
 def call_complete(
     agent_slug: str | None, message: str, project_id: str = "st-cli",
     source_client: str = "st-cli", use_memory: bool = True,
@@ -192,8 +222,6 @@ def call_complete(
     images: list[str] | None = None,
 ) -> dict[str, Any]:
     """Call /api/complete endpoint."""
-    from typing import cast
-
     client_id, request_source = load_credentials()
     agent_hub_url = get_agent_hub_url()
     headers = build_headers(client_id, request_source, source_client, skip_cache)
@@ -210,25 +238,4 @@ def call_complete(
             raise_connect_error("Agent Hub", agent_hub_url, e)
         except httpx.TimeoutException as e:
             raise_timeout_error("Agent Hub", agent_hub_url, read_timeout, e)
-    http_timeout = httpx.Timeout(connect=5.0, read=read_timeout, write=30.0, pool=30.0)
-    max_attempts = 2
-    for attempt in range(1, max_attempts + 1):
-        try:
-            with httpx.Client(timeout=http_timeout) as client:
-                response = client.post(f"{agent_hub_url}/api/complete", json=payload, headers=headers)
-            if response.status_code >= 400:
-                handle_error_response(response)
-            return cast(dict[str, Any], response.json())
-        except httpx.ConnectError as e:
-            if attempt < max_attempts:
-                time.sleep(0.5 * attempt)
-                continue
-            raise_connect_error("Agent Hub", agent_hub_url, e)
-        except httpx.TimeoutException as e:
-            raise_timeout_error("Agent Hub", agent_hub_url, read_timeout, e)
-        except typer.Exit:
-            raise
-        except Exception as e:
-            output_error(f"Request failed: {e}")
-            raise typer.Exit(1) from None
-    raise AssertionError("unreachable")  # all loop iterations exit via return or raise
+    return _post_with_retry(f"{agent_hub_url}/api/complete", headers, payload, read_timeout)
