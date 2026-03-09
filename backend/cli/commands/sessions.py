@@ -60,20 +60,21 @@ def _format_ownership_line(project_id: str, owner: dict[str, object]) -> str:
     return "OWN " + " | ".join(parts)
 
 
+def _collect_project_owners(client: STClient, pid: str) -> list[dict[str, object]]:
+    payload = client.get(client._global_url(f"/agent-hub/ownership/projects/{pid}/live"))
+    owners = payload.get("active_owners", []) if isinstance(payload, dict) else []
+    if not isinstance(owners, list):
+        return []
+    return [{"project_id": pid, **owner} for owner in owners if isinstance(owner, dict)]
+
+
 def _render_ownership_list(project_id: str | None) -> None:
     client = STClient(require_project=False)
     rows: list[dict[str, object]] = []
 
     try:
         for pid in _resolve_projects(client, project_id):
-            payload = client.get(client._global_url(f"/agent-hub/ownership/projects/{pid}/live"))
-            owners = payload.get("active_owners", []) if isinstance(payload, dict) else []
-            if not isinstance(owners, list):
-                continue
-            for owner in owners:
-                if not isinstance(owner, dict):
-                    continue
-                rows.append({"project_id": pid, **owner})
+            rows.extend(_collect_project_owners(client, pid))
     except APIError as e:
         handle_api_error(e)
         return
