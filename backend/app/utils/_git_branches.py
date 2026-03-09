@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 from ._git_core import run_git
 
 _BASE_BRANCH_CANDIDATES = ["main", "master", "develop"]
+_CLOSED_TASK_STATUSES = frozenset({"completed", "cancelled", "abandoned"})
 
 
 def extract_task_id_from_branch(branch_name: str) -> str | None:
@@ -125,6 +126,40 @@ def prune_prunable_task_branches(repo_path: Path) -> list[str]:
     removed: list[str] = []
     for branch_name in list_prunable_task_branches(repo_path):
         result = run_git(["branch", "-d", branch_name], repo_path)
+        if result.returncode == 0:
+            removed.append(branch_name)
+    return removed
+
+
+def list_closed_orphan_task_branches(repo_path: Path) -> list[str]:
+    """Return orphan task branches whose linked task is already terminal."""
+    from app.storage import tasks as task_store
+
+    branches = get_all_branches(repo_path)
+    closed_branches: list[str] = []
+    for branch in branches:
+        if not branch.task_id or branch.has_worktree:
+            continue
+        task = task_store.get_task(branch.task_id)
+        if task and task.get("status") in _CLOSED_TASK_STATUSES:
+            closed_branches.append(branch.name)
+    return closed_branches
+
+
+def prune_closed_orphan_task_branches(repo_path: Path) -> list[str]:
+    """Delete orphan task branches when the linked task is already closed."""
+    removed: list[str] = []
+    base_branch = _detect_base_branch(repo_path)
+    current_branch_result = run_git(["rev-parse", "--abbrev-ref", "HEAD"], repo_path)
+    current_branch = current_branch_result.stdout.strip() if current_branch_result.returncode == 0 else ""
+
+    for branch_name in list_closed_orphan_task_branches(repo_path):
+        if current_branch == branch_name:
+            checkout_result = run_git(["checkout", base_branch], repo_path)
+            if checkout_result.returncode != 0:
+                continue
+            current_branch = base_branch
+        result = run_git(["branch", "-D", branch_name], repo_path)
         if result.returncode == 0:
             removed.append(branch_name)
     return removed

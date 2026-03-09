@@ -7,7 +7,10 @@ from types import SimpleNamespace
 
 from app.api.git_helpers.worktree_helpers import collect_worktrees
 from app.api.models.git_models import BranchInfo
-from app.utils._git_branches import build_repo_workspace_summary
+from app.utils._git_branches import (
+    build_repo_workspace_summary,
+    prune_closed_orphan_task_branches,
+)
 
 
 class TestBuildRepoWorkspaceSummary:
@@ -71,3 +74,37 @@ class TestCollectWorktrees:
         assert worktrees[0].task_id == "task-123"
         assert worktrees[0].project_id == "summitflow"
         assert worktrees[0].path == "/tmp/worktrees/summitflow/task-123"
+
+
+class TestPruneClosedOrphanTaskBranches:
+    """Tests for orphan branch pruning linked to closed tasks."""
+
+    def test_prunes_only_closed_orphan_task_branches(self, mocker) -> None:
+        repo_path = Path("/repos/summitflow")
+        mocker.patch(
+            "app.utils._git_branches.get_all_branches",
+            return_value=[
+                BranchInfo(name="main", is_current=True, has_worktree=False),
+                BranchInfo(name="task-done/main", is_current=False, has_worktree=False, task_id="task-done"),
+                BranchInfo(name="task-live/main", is_current=False, has_worktree=False, task_id="task-live"),
+                BranchInfo(name="task-worktree/main", is_current=False, has_worktree=True, task_id="task-worktree"),
+            ],
+        )
+        mocker.patch(
+            "app.storage.tasks.get_task",
+            side_effect=[
+                {"id": "task-done", "status": "completed"},
+                {"id": "task-live", "status": "running"},
+            ],
+        )
+        mock_run_git = mocker.patch("app.utils._git_branches.run_git")
+        mock_run_git.side_effect = [
+            SimpleNamespace(returncode=0, stdout="main\n"),
+            SimpleNamespace(returncode=0, stdout="", stderr=""),
+        ]
+        mocker.patch("app.utils._git_branches._detect_base_branch", return_value="main")
+
+        removed = prune_closed_orphan_task_branches(repo_path)
+
+        assert removed == ["task-done/main"]
+        assert mock_run_git.call_args_list[1].args[0] == ["branch", "-D", "task-done/main"]

@@ -220,6 +220,7 @@ def test_cleanup_worktrees_auto_prunes_git_residue() -> None:
         patch("cli.commands.cleanup.execute_cleanup") as mock_execute,
         patch("cli.commands.cleanup.prune_worktree_registrations") as mock_prune_worktrees,
         patch("cli.commands.cleanup.prune_prunable_task_branches", return_value=["task-1/main", "task-2/main"]) as mock_prune_branches,
+        patch("cli.commands.cleanup.prune_closed_orphan_task_branches", return_value=["task-3/main"]) as mock_prune_closed,
     ):
         mock_execute.return_value = SimpleNamespace(cleaned=1, skipped=0, errors=0)
         result = runner.invoke(app, ["worktrees", "--auto"])
@@ -227,8 +228,10 @@ def test_cleanup_worktrees_auto_prunes_git_residue() -> None:
     assert result.exit_code == 0
     mock_prune_worktrees.assert_called_once_with(Path("/repos/agent-hub"))
     mock_prune_branches.assert_called_once_with(Path("/repos/agent-hub"))
+    mock_prune_closed.assert_called_once_with(Path("/repos/agent-hub"))
     assert "Pruned git worktree registrations in 1 repo(s)" in result.output
     assert "Pruned merged orphan task branches: 2" in result.output
+    assert "Pruned closed orphan task branches: 1" in result.output
 
 
 def test_cleanup_worktrees_auto_prunes_git_residue_without_worktrees() -> None:
@@ -238,6 +241,7 @@ def test_cleanup_worktrees_auto_prunes_git_residue_without_worktrees() -> None:
         patch("cli.commands.cleanup.get_active_worktrees", return_value=[]),
         patch("cli.commands.cleanup.prune_worktree_registrations") as mock_prune_regs,
         patch("cli.commands.cleanup.prune_prunable_task_branches", return_value=["task-1/main", "task-2/main"]),
+        patch("cli.commands.cleanup.prune_closed_orphan_task_branches", return_value=["task-3/main"]),
     ):
         result = runner.invoke(app, ["worktrees", "--auto"])
 
@@ -246,6 +250,7 @@ def test_cleanup_worktrees_auto_prunes_git_residue_without_worktrees() -> None:
     assert "No worktrees found" in result.output
     assert "Pruned git worktree registrations in 1 repo(s)" in result.output
     assert "Pruned merged orphan task branches: 2" in result.output
+    assert "Pruned closed orphan task branches: 1" in result.output
 
 
 def test_analyze_worktree_treats_clean_cancelled_conflict_as_safe_delete(tmp_path: Path) -> None:
