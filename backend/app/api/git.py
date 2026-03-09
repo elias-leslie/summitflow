@@ -264,7 +264,7 @@ async def finalize_task_merge(task_id: str) -> dict[str, object]:
             detail=f"Task is still active ({status}); use the normal execution/done path instead",
         )
 
-    if status not in {"completed", "conflicted", "blocked", "failed"}:
+    if status not in {"completed", "conflicted"}:
         raise HTTPException(
             status_code=400,
             detail=f"Task status {status!r} is not eligible for finalize",
