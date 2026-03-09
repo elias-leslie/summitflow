@@ -141,6 +141,43 @@ def _print_agent_event(out: OutputContext, event: dict[str, Any], debug: bool) -
         print(f"  {line}")
 
 
+def _session_label(session: dict[str, Any]) -> str:
+    """Return a display label for an agent session."""
+    live = session.get("live_activity") if isinstance(session, dict) else None
+    role = str(session.get("agent_slug") or session.get("lane_role") or "agent")
+    model = (
+        session.get("effective_model")
+        or session.get("requested_model")
+        or session.get("id")
+        or "unknown"
+    )
+    short_model = str(model).split("/")[-1]
+    if isinstance(live, dict):
+        return f"{role}:{short_model}:{live.get('health', 'unknown')}/{live.get('phase', 'unknown')}"
+    return f"{role}:{short_model}:{session.get('status', 'unknown')}"
+
+
+def _print_sessions(sessions: list[dict[str, Any]]) -> None:
+    """Print verbose agent session list."""
+    print("Agent Sessions:")
+    for session in sessions:
+        label = _session_label(session)
+        live = session.get("live_activity") if isinstance(session, dict) else None
+        print(f"  {session.get('id', '?')[:8]}: {label}")
+        if isinstance(live, dict) and live.get("summary"):
+            print(f"    {live['summary']}")
+
+
+def _print_subtasks(subtasks: list[dict[str, Any]], summary: str) -> None:
+    """Print verbose subtask list."""
+    print(f"Subtasks: {summary}")
+    for s in subtasks:
+        s_id = s.get("subtask_id", "?")
+        s_status = s.get("status", "?")
+        s_desc = s.get("description", "")[:40]
+        print(f"  {s_id}: {s_status} - {s_desc}")
+
+
 def print_header(
     out: OutputContext,
     task: dict[str, Any],
@@ -161,47 +198,23 @@ def print_header(
     summary = subtask_summary(subtasks)
     sessions = agent_sessions.get("sessions", []) if isinstance(agent_sessions, dict) else []
 
-    def _session_label(session: dict[str, Any]) -> str:
-        live = session.get("live_activity") if isinstance(session, dict) else None
-        role = str(session.get("agent_slug") or session.get("lane_role") or "agent")
-        model = (
-            session.get("effective_model")
-            or session.get("requested_model")
-            or session.get("id")
-            or "unknown"
-        )
-        short_model = str(model).split("/")[-1]
-        if isinstance(live, dict):
-            return f"{role}:{short_model}:{live.get('health', 'unknown')}/{live.get('phase', 'unknown')}"
-        return f"{role}:{short_model}:{session.get('status', 'unknown')}"
-
     if out.is_compact:
-        session_summary = ",".join(_session_label(session) for session in sessions[:2])
+        session_summary = ",".join(_session_label(s) for s in sessions[:2])
         suffix = f"|AH:{session_summary}" if session_summary else ""
         if hidden_attempts:
             suffix += f"|hist={hidden_attempts}"
         print(f"EXEC:{task_id}|{status}|{summary}|{title}{suffix}")
-    else:
-        print(f"Task: {task_id}")
-        print(f"Title: {title}")
-        print(f"Status: {status}")
-        if hidden_attempts:
-            print(f"History: {hidden_attempts} older session(s) hidden; use st session-events --task {task_id} for full history")
-        if sessions:
-            print("Agent Sessions:")
-            for session in sessions:
-                label = _session_label(session)
-                live = session.get("live_activity") if isinstance(session, dict) else None
-                print(f"  {session.get('id', '?')[:8]}: {label}")
-                if isinstance(live, dict) and live.get("summary"):
-                    print(f"    {live['summary']}")
-        if subtasks:
-            print(f"Subtasks: {summary}")
-            for s in subtasks:
-                s_id = s.get("subtask_id", "?")
-                s_status = s.get("status", "?")
-                s_desc = s.get("description", "")[:40]
-                print(f"  {s_id}: {s_status} - {s_desc}")
-        if debug:
-            print("Mode: debug (showing all visibility levels)")
-        print("-" * 60)
+        return
+
+    print(f"Task: {task_id}")
+    print(f"Title: {title}")
+    print(f"Status: {status}")
+    if hidden_attempts:
+        print(f"History: {hidden_attempts} older session(s) hidden; use st session-events --task {task_id} for full history")
+    if sessions:
+        _print_sessions(sessions)
+    if subtasks:
+        _print_subtasks(subtasks, summary)
+    if debug:
+        print("Mode: debug (showing all visibility levels)")
+    print("-" * 60)
