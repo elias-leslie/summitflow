@@ -71,6 +71,7 @@ def _safe_finalize_branch_without_worktree(task_id: str, project_id: str) -> Mer
     if checkout_error:
         return _err(task_id, checkout_error)
 
+    _git(["git", "worktree", "prune"], project_root)
     branch_deleted = delete_task_branch(project_root, task_branch, task_id)
     if branch_deleted:
         logger.info(

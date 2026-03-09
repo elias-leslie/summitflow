@@ -308,6 +308,7 @@ class TestMergeAndCleanup:
         assert result["status"] == "blocked"
         assert result["reason"] == "task_still_running"
 
+    @patch("app.tasks.autonomous.cleanup.merge_operations._git")
     @patch("app.tasks.autonomous.cleanup.merge_operations.delete_task_branch")
     @patch("app.tasks.autonomous.cleanup.merge_operations.checkout_base_branch")
     @patch("app.tasks.autonomous.cleanup.merge_operations.get_project_root_path")
@@ -320,6 +321,7 @@ class TestMergeAndCleanup:
         mock_root: MagicMock,
         mock_checkout: MagicMock,
         mock_delete: MagicMock,
+        mock_git: MagicMock,
     ) -> None:
         from app.tasks.autonomous.cleanup.merge_operations import (
             merge_and_cleanup_task_worktree,
@@ -336,6 +338,7 @@ class TestMergeAndCleanup:
         assert result["status"] == "merged"
         assert result["branch_deleted"] is True
         mock_checkout.assert_called_once_with("/tmp/project", "main")
+        mock_git.assert_called_once_with(["git", "worktree", "prune"], "/tmp/project")
         mock_delete.assert_called_once_with("/tmp/project", "task-1/main", "task-1")
 
     @patch("app.tasks.autonomous.cleanup.merge_operations._git")
