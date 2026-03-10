@@ -69,6 +69,13 @@ class _TaskScope:
     paths: frozenset[str]
 
 
+@dataclass(frozen=True)
+class _LaneScope:
+    task_id: str
+    write_paths: frozenset[str]
+    read_paths: frozenset[str]
+
+
 def _fetch_live_project_inventory(
     project_id: str,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -127,6 +134,16 @@ def _owner_to_session(owner: dict[str, Any]) -> dict[str, Any]:
         "workstream_note": owner.get("workstream_note"),
         "ownership_kind": owner.get("ownership_kind"),
         "scope_paths": owner.get("scope_paths") if isinstance(owner.get("scope_paths"), list) else [],
+        "declared_scope_paths": owner.get("declared_scope_paths")
+        if isinstance(owner.get("declared_scope_paths"), list)
+        else [],
+        "observed_read_paths": owner.get("observed_read_paths")
+        if isinstance(owner.get("observed_read_paths"), list)
+        else [],
+        "observed_write_paths": owner.get("observed_write_paths")
+        if isinstance(owner.get("observed_write_paths"), list)
+        else [],
+        "scope_confidence": owner.get("scope_confidence"),
         "created_at": owner.get("created_at"),
         "updated_at": owner.get("updated_at"),
     }
@@ -285,6 +302,16 @@ def _normalize_scope_entry(value: Any) -> str | None:
     return normalized
 
 
+def _normalize_scope_values(values: Any) -> frozenset[str]:
+    if not isinstance(values, list):
+        return frozenset()
+    return frozenset(
+        normalized
+        for raw in values
+        if (normalized := _normalize_scope_entry(raw)) is not None
+    )
+
+
 def _load_task_scope(task_id: str) -> _TaskScope | None:
     spirit = get_task_spirit(task_id)
     if not spirit:
@@ -432,13 +459,13 @@ def _apply_unscoped_target_conflict(
 
 def _classify_lane_sessions(
     lane_sessions: list[dict[str, Any]],
-) -> tuple[list[tuple[str, _TaskScope]], list[str]]:
+) -> tuple[list[tuple[str, _LaneScope]], list[str]]:
     """Return (scoped_entries, unscoped_task_ids) for other-lane sessions."""
-    scoped: list[tuple[str, _TaskScope]] = []
+    scoped: list[tuple[str, _LaneScope]] = []
     unscoped: list[str] = []
     for session in lane_sessions:
         lid = _lane_task_id(session)
-        scope = _load_task_scope(lid) if lid else None
+        scope = _load_live_lane_scope(session, lid) if lid else None
         if scope is None:
             unscoped.append(lid or "unknown task")
         else:
@@ -446,21 +473,51 @@ def _classify_lane_sessions(
     return scoped, unscoped
 
 
+def _load_live_lane_scope(session: dict[str, Any], task_id: str) -> _LaneScope | None:
+    """Prefer live session scope, falling back to task spirit scope for managed lanes."""
+    declared_paths = _normalize_scope_values(session.get("declared_scope_paths"))
+    write_paths = declared_paths | _normalize_scope_values(session.get("observed_write_paths"))
+    read_paths = _normalize_scope_values(session.get("observed_read_paths"))
+    scope_paths = _normalize_scope_values(session.get("scope_paths"))
+    scope_confidence = str(session.get("scope_confidence") or "unknown")
+
+    if scope_paths:
+        if scope_confidence == "observed_read" and not write_paths:
+            read_paths = read_paths | scope_paths
+        elif not write_paths:
+            write_paths = write_paths | scope_paths
+
+    if not write_paths and not read_paths:
+        fallback = _load_task_scope(task_id)
+        if fallback is None:
+            return None
+        return _LaneScope(task_id=task_id, write_paths=fallback.paths, read_paths=frozenset())
+
+    return _LaneScope(task_id=task_id, write_paths=write_paths, read_paths=read_paths)
+
+
 def _find_scope_overlap(
     target_scope: _TaskScope,
-    scoped_entries: list[tuple[str, _TaskScope]],
-) -> tuple[str | None, list[str], str | None, list[str]]:
-    """Return first (exact_id, exact_paths, plumbing_id, plumbing_paths) overlap found."""
+    scoped_entries: list[tuple[str, _LaneScope]],
+) -> tuple[str | None, list[str], str | None, list[str], str | None, list[str]]:
+    """Return first exact/shared-plumbing/read overlap found."""
     target_shared = _shared_plumbing_paths(target_scope.paths)
+    read_overlap_id: str | None = None
+    read_overlap_paths: list[str] = []
     for lid, scope in scoped_entries:
-        overlaps = sorted(target_scope.paths & scope.paths)
+        overlaps = sorted(target_scope.paths & scope.write_paths)
         if overlaps:
-            return lid, overlaps, None, []
+            return lid, overlaps, None, [], None, []
         if target_shared:
-            active_shared = _shared_plumbing_paths(scope.paths)
+            active_shared = _shared_plumbing_paths(scope.write_paths)
             if active_shared:
-                return None, [], lid, sorted(set(target_shared) | set(active_shared))
-    return None, [], None, []
+                return None, [], lid, sorted(set(target_shared) | set(active_shared)), None, []
+        if not read_overlap_paths:
+            overlaps = sorted(target_scope.paths & scope.read_paths)
+            if overlaps:
+                read_overlap_id = lid
+                read_overlap_paths = overlaps
+    return None, [], None, [], read_overlap_id, read_overlap_paths
 
 
 def _apply_exact_overlap_conflict(
@@ -549,6 +606,30 @@ def _apply_unscoped_lane_conflict(
     )
 
 
+def _apply_read_overlap_warning(
+    result: TaskLaneConflictCheck,
+    project_id: str,
+    lane_sessions: list[dict[str, Any]],
+    overlap_id: str,
+    overlap_paths: list[str],
+) -> None:
+    chosen = next(s for s in lane_sessions if _lane_task_id(s) == overlap_id)
+    _set_owner(result, chosen)
+    result.conflicting_tasks = [overlap_id]
+    result.overlap_kind = "read_overlap"
+    result.overlap_paths = overlap_paths
+    result.disposition = "warn"
+    preview = ", ".join(overlap_paths[:3])
+    result.issues.append(
+        f"Another active coding lane is reading files in the target scope in project {project_id}: "
+        f"{overlap_id} ({preview})"
+    )
+    result.suggestions.append(
+        f"Read-scope overlap with {overlap_id}: {preview}. Coordinate before editing if that lane "
+        "may promote into writes, but safe parallel work can continue."
+    )
+
+
 def _apply_scoped_conflict(
     result: TaskLaneConflictCheck,
     task_id: str,
@@ -557,12 +638,17 @@ def _apply_scoped_conflict(
     target_scope: _TaskScope,
 ) -> None:
     scoped_entries, unscoped_ids = _classify_lane_sessions(lane_sessions)
-    exact_id, exact_paths, plumbing_id, plumbing_paths = _find_scope_overlap(target_scope, scoped_entries)
+    exact_id, exact_paths, plumbing_id, plumbing_paths, read_id, read_paths = _find_scope_overlap(
+        target_scope,
+        scoped_entries,
+    )
 
     if exact_id:
         _apply_exact_overlap_conflict(result, project_id, lane_sessions, exact_id, exact_paths)
     elif plumbing_id:
         _apply_shared_plumbing_conflict(result, project_id, lane_sessions, plumbing_id, plumbing_paths)
+    elif read_id:
+        _apply_read_overlap_warning(result, project_id, lane_sessions, read_id, read_paths)
     elif scoped_entries:
         pass  # At least one active lane is safely scoped and disjoint; allow.
     elif unscoped_ids:
