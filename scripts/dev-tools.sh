@@ -974,6 +974,32 @@ is_frontend_pytest_target() {
     return 1
 }
 
+is_cross_project_pytest_target() {
+    local arg="$1"
+    local path_part="$arg"
+
+    [[ "$arg" == -* ]] && return 1
+
+    if [[ "$arg" == *"::"* ]]; then
+        path_part="${arg%%::*}"
+    fi
+
+    [[ -z "$path_part" ]] && return 1
+
+    if [[ "$path_part" == /* ]]; then
+        [[ "$path_part" != "$PROJECT_DIR/"* ]] && return 0
+        return 1
+    fi
+
+    case "$path_part" in
+        ../*|*/../*)
+            return 0
+            ;;
+    esac
+
+    return 1
+}
+
 # Generic TOON wrapper - runs any tool defined in TOOL_DEFS
 run_tool_toon() {
     local tool_name="$1"
@@ -1038,9 +1064,14 @@ run_tool_toon() {
     local output retval=0
     if [[ "$tool_name" == "pytest" ]]; then
         local frontend_target=""
+        local cross_project_target=""
         for arg in "${NORMALIZED_TOOL_ARGS[@]}"; do
             if is_frontend_pytest_target "$arg"; then
                 frontend_target="$arg"
+                break
+            fi
+            if is_cross_project_pytest_target "$arg"; then
+                cross_project_target="$arg"
                 break
             fi
         done
@@ -1050,6 +1081,14 @@ run_tool_toon() {
 dt pytest only runs Python tests and cannot execute frontend test target: $frontend_target
 Run the frontend test from the frontend package instead, for example:
   cd frontend && npm test -- --run ${frontend_target#frontend/}
+EOF
+            )
+            retval=2
+        elif [[ -n "$cross_project_target" ]]; then
+            output=$(
+                cat <<EOF
+dt pytest runs in the current project's pytest context and cannot mix cross-project targets: $cross_project_target
+Run separate dt pytest commands from each repo instead.
 EOF
             )
             retval=2

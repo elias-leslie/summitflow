@@ -35,7 +35,7 @@ TierUpdateOpt = Annotated[
 ]
 
 # Content and metadata options
-ContentArg = Annotated[str, typer.Argument(help="Learning content to save")]
+ContentArg = Annotated[str | None, typer.Argument(help="Learning content to save")]
 
 ContentOpt = Annotated[
     str | None,
@@ -46,7 +46,7 @@ ContentFileOpt = Annotated[
     str | None,
     typer.Option(
         "--content-file",
-        help="Read new content from a file path or '-' for stdin",
+        help="Read content from a file path or '-' for stdin",
     ),
 ]
 

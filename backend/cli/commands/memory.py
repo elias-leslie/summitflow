@@ -67,12 +67,14 @@ from .memory_options import (
 app = typer.Typer(help="Memory system commands (Agent Hub)")
 
 
-def _resolve_update_content(content: str | None, content_file: str | None) -> str | None:
-    """Resolve update content from inline text or file/stdin."""
+def _resolve_content(content: str | None, content_file: str | None, *, require_value: bool) -> str | None:
+    """Resolve content from inline text or file/stdin."""
     if content and content_file:
         raise typer.BadParameter("Specify only one of --content or --content-file")
 
     if content_file is None:
+        if require_value and not content:
+            raise typer.BadParameter("Provide content or use --content-file")
         return content
 
     if content_file == "-":
@@ -113,8 +115,9 @@ def stats(
 @app.command()
 def save(
     ctx: typer.Context,
-    content: ContentArg,
     summary: SummaryOpt,
+    content: ContentArg = None,
+    content_file: ContentFileOpt = None,
     tier: TierOpt = "reference",
     confidence: ConfidenceOpt = 80,
     context: ContextOpt = None,
@@ -125,8 +128,10 @@ def save(
     scope_id: ScopeIdOpt = None,
 ) -> None:
     """Save a learning to the memory system."""
+    resolved_content = _resolve_content(content, content_file, require_value=True)
+    assert resolved_content is not None
     save_impl(
-        ctx.obj, content, summary, tier, confidence, context, pinned, trigger_types, tags, scope, scope_id
+        ctx.obj, resolved_content, summary, tier, confidence, context, pinned, trigger_types, tags, scope, scope_id
     )
 
 
@@ -181,7 +186,7 @@ def update(
     clear_tags: ClearTagsOpt = False,
 ) -> None:
     """Update an episode in place (content/tier and properties)."""
-    resolved_content = _resolve_update_content(content, content_file)
+    resolved_content = _resolve_content(content, content_file, require_value=False)
     update_impl(uuid, resolved_content, tier, summary, trigger_types, pinned, tags, clear_tags)
 
 

@@ -52,7 +52,7 @@ def save_impl(
     scope_id: str | None,
 ) -> None:
     summary = validate_save_inputs(tier, confidence, summary)
-    validate_content_format(content, summary)
+    validate_content_format(content, summary, tier)
     payload = build_save_payload(content, summary, tier, confidence, context, pinned, trigger_types)
     result = agent_hub_request(
         "POST", "/api/memory/save-learning", json=payload,
@@ -184,22 +184,22 @@ def update_impl(
     existing = fetch_existing_episode(uuid)
     existing_tags = fetch_episode_tags(uuid)
     replacement_tags = [] if clear_tags else parse_tags_csv(tags)
+    effective_tier = tier if tier else str(existing.get("injection_tier", "reference"))
     content_or_tier_changed = bool(content or tier)
     properties_changed = bool(summary or trigger_types or pinned is not None)
     tags_changed = replacement_tags is not None or clear_tags
 
     if content:
-        validate_content_format(content, summary or str(existing.get("summary", "")))
+        validate_content_format(content, summary or str(existing.get("summary", "")), effective_tier)
 
     target_uuid = str(existing.get("uuid", uuid))
 
     if content_or_tier_changed:
         new_content = content if content else str(existing.get("content", ""))
-        new_tier = tier if tier else str(existing.get("injection_tier", "reference"))
         update_episode_content_or_tier(
             target_uuid,
             content=new_content,
-            tier=new_tier,
+            tier=effective_tier,
         )
         replace_episode_tags(target_uuid, replacement_tags if replacement_tags is not None else existing_tags)
 

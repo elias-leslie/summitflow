@@ -73,6 +73,50 @@ class TestMemoryUpdateContentInput:
         mock_update_impl.assert_not_called()
 
 
+class TestMemorySaveContentInput:
+    """Tests for safe content ingestion in `st memory save`."""
+
+    def test_save_accepts_content_from_file(self, tmp_path: Path) -> None:
+        """`--content-file` should load content for save."""
+        content_file = tmp_path / "episode.md"
+        content_file.write_text("**Mandate**: Use dt for all quality checks.\n", encoding="utf-8")
+
+        with patch("cli.commands.memory.save_impl") as mock_save_impl:
+            result = runner.invoke(
+                app,
+                [
+                    "save",
+                    "--content-file",
+                    str(content_file),
+                    "--summary",
+                    "Use dt for checks",
+                ],
+            )
+
+        assert result.exit_code == 0
+        args = mock_save_impl.call_args.args
+        assert args[1] == "**Mandate**: Use dt for all quality checks.\n"
+
+    def test_save_accepts_content_from_stdin(self) -> None:
+        """`--content-file -` should read save content from stdin."""
+        with patch("cli.commands.memory.save_impl") as mock_save_impl:
+            result = runner.invoke(
+                app,
+                [
+                    "save",
+                    "--content-file",
+                    "-",
+                    "--summary",
+                    "Use dt for checks",
+                ],
+                input="**Mandate**: Use dt for all quality checks.\n",
+            )
+
+        assert result.exit_code == 0
+        args = mock_save_impl.call_args.args
+        assert args[1] == "**Mandate**: Use dt for all quality checks.\n"
+
+
 class TestMemoryTagOptions:
     """Tests for tag-aware save/update CLI plumbing."""
 
