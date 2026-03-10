@@ -14,7 +14,11 @@ import typer
 from cli.client import STClient
 from cli.commands.done_git import git_stash_pop, git_stash_push
 from cli.commands.done_subtask import auto_close_subtasks
-from cli.commands.done_task import _auto_verify_readiness, _publish_completed_work, complete_task
+from cli.commands.done_task import (
+    _auto_verify_readiness,
+    _publish_completed_work,
+    complete_task,
+)
 from cli.commands.done_validators import is_subtask_id
 
 
@@ -296,6 +300,26 @@ class TestCompleteTaskSmart:
 
         with pytest.raises(typer.Exit):
             complete_task(client, "task-123")
+
+    @patch("cli.commands.done_task.get_snapshot_info", return_value=None)
+    @patch("cli.commands.done_task.output_error")
+    def test_missing_snapshot_allows_already_completed_task(
+        self,
+        mock_error: MagicMock,
+        mock_snapshot: MagicMock,
+    ) -> None:
+        """Already-completed tasks should be idempotent without a checkpoint."""
+        client = self._setup_mocks()
+        client.get_task.return_value = {"id": "task-123", "status": "completed"}
+
+        result = complete_task(client, "task-123")
+
+        assert result["merged"] is False
+        assert result["snapshot_removed"] is False
+        client.get_task.assert_called_once_with("task-123")
+        client.close_task.assert_not_called()
+        client.update_status.assert_not_called()
+        mock_error.assert_not_called()
 
     @patch("cli.commands.done_task.get_snapshot_info")
     @patch("cli.commands.done_task.remove_snapshot")

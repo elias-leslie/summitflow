@@ -189,6 +189,28 @@ def _complete_without_snapshot(
     }
 
 
+def _complete_if_already_completed(
+    client: STClient,
+    task_id: str,
+) -> dict[str, str | bool] | None:
+    """Treat completed tasks as idempotent even if checkpoint metadata is gone."""
+    try:
+        task = client.get_task(task_id)
+    except APIError:
+        return None
+
+    if task.get("status") != "completed":
+        return None
+
+    return {
+        "task_id": task_id,
+        "action": "completed",
+        "merged": False,
+        "snapshot_removed": False,
+        "base_branch": "main",
+    }
+
+
 def _complete_with_admin_close(
     client: STClient,
     task_id: str,
@@ -229,6 +251,9 @@ def complete_task(
     if not snapshot_info:
         if admin:
             return _complete_without_snapshot(client, task_id, message)
+        already_completed = _complete_if_already_completed(client, task_id)
+        if already_completed:
+            return already_completed
         output_error(f"No checkpoint found for {task_id}. Was it claimed?")
         raise typer.Exit(1)
 
