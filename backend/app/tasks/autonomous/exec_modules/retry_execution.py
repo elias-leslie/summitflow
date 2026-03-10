@@ -6,12 +6,13 @@ from ....constants import SELF_HEAL_MAX_ATTEMPTS
 from ....logging_config import get_logger
 from .agent_execution import execute_agent_fix
 from .events import emit_log
-from .git_ops import auto_commit, has_uncommitted_changes
+from .git_ops import has_uncommitted_changes, smart_commit
 
 logger = get_logger(__name__)
 
 
 def _commit_fix_attempt(
+    task_id: str,
     project_path: str,
     subtask_short_id: str,
     self_fix_attempts: int,
@@ -21,8 +22,14 @@ def _commit_fix_attempt(
     if has_uncommitted_changes(project_path):
         phase = "self-fix" if self_fix_attempts <= SELF_HEAL_MAX_ATTEMPTS else "guided"
         attempt_num = self_fix_attempts if phase == "self-fix" else supervisor_guided_attempts
-        commit_msg = f"[{phase}] {subtask_short_id} attempt {attempt_num}"
-        auto_commit(project_path, commit_msg)
+        commit_msg = f"fix: {subtask_short_id} {phase} attempt {attempt_num}"
+        smart_commit(
+            project_path,
+            commit_msg,
+            task_id=task_id,
+            push=True,
+            skip_checks=True,
+        )
 
 
 def _handle_fix_error(
@@ -81,6 +88,7 @@ def execute_fix_attempt(
         )
         response_content = response.content
         _commit_fix_attempt(
+            task_id,
             project_path,
             subtask_short_id,
             self_fix_attempts,

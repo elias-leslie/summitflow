@@ -31,29 +31,29 @@ function SummaryCard({
 export function GitClient() {
   const { data: gitStatus, isLoading, isError, refetch } = useGitStatus()
   const repos = gitStatus?.repositories ?? []
-  const projectRepos = repos.filter((repo) => repo.name !== '.claude')
+  const configRepos = repos.filter((repo) => repo.name.startsWith('.'))
   const needsAttention = (repo: (typeof repos)[number]) =>
     repo.state !== 'clean' ||
     (repo.workspace_summary?.dirty_worktrees ?? 0) > 0 ||
     (repo.workspace_summary?.orphan_branches ?? 0) > 0 ||
     (repo.workspace_summary?.prunable_branches ?? 0) > 0
-  const reposNeedingCleanup = projectRepos.filter(
+  const reposNeedingCleanup = repos.filter(
     (repo) => needsAttention(repo),
   ).length
-  const dirtyRepos = projectRepos.filter((repo) => repo.state === 'dirty' || repo.state === 'ahead').length
-  const activeWorktrees = projectRepos.reduce(
+  const dirtyRepos = repos.filter((repo) => repo.state === 'dirty' || repo.state === 'ahead').length
+  const activeWorktrees = repos.reduce(
     (sum, repo) => sum + (repo.workspace_summary?.active_worktrees ?? 0),
     0,
   )
-  const dirtyWorktrees = projectRepos.reduce(
+  const dirtyWorktrees = repos.reduce(
     (sum, repo) => sum + (repo.workspace_summary?.dirty_worktrees ?? 0),
     0,
   )
-  const orphanBranches = projectRepos.reduce(
+  const orphanBranches = repos.reduce(
     (sum, repo) => sum + (repo.workspace_summary?.orphan_branches ?? 0),
     0,
   )
-  const prunableBranches = projectRepos.reduce(
+  const prunableBranches = repos.reduce(
     (sum, repo) => sum + (repo.workspace_summary?.prunable_branches ?? 0),
     0,
   )
@@ -72,6 +72,11 @@ export function GitClient() {
           <p className="text-slate-400 max-w-2xl">
             Command center for version control across all managed workspaces.
           </p>
+          {configRepos.length > 0 && (
+            <p className="mt-2 text-sm text-slate-500">
+              Summary cards include managed config repos such as {configRepos.map((repo) => repo.name).join(', ')}.
+            </p>
+          )}
         </div>
 
         <button

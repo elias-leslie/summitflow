@@ -9,7 +9,7 @@
 # Flags:
 #   --current       Only commit current repo (DEFAULT)
 #   --all           Commit all managed repos
-#   --push          Push after commit (default: false)
+#   --push          Push after commit (default: true)
 #   --no-push       Don't push (explicit)
 #   --force         Use --force-with-lease when pushing
 #   --skip-checks   Skip dt quality gates
@@ -27,7 +27,7 @@ FALLBACK_FILE="$HOME/.claude/config/managed-repos.txt"
 MAIN_BRANCHES=("main" "master")
 QUALITY_GATE_STATE="${QUALITY_GATE_STATE:-$HOME/.claude/hooks/.quality-gate-state.json}"
 
-PUSH=false
+PUSH=true
 FORCE=false
 SKIP_CHECKS=false
 SYNC_ONLY=false
@@ -75,6 +75,20 @@ is_dirty() {
 is_project_repo() {
     local repo=$1
     [[ -d "$repo/backend" ]] || [[ -f "$repo/pyproject.toml" ]] || [[ -d "$repo/frontend" ]]
+}
+
+push_current_branch() {
+    local branch=$1
+    [[ -z "$branch" ]] && return 1
+
+    local push_args=()
+    $FORCE && push_args+=(--force-with-lease)
+
+    if git rev-parse --abbrev-ref --symbolic-full-name "@{upstream}" >/dev/null 2>&1; then
+        git push "${push_args[@]}" >/dev/null 2>&1
+    else
+        git push "${push_args[@]}" --set-upstream origin "$branch" >/dev/null 2>&1
+    fi
 }
 
 resolve_repo_name() {
@@ -483,11 +497,7 @@ commit_project_repo() {
             sha=$(git rev-parse --short HEAD)
         fi
 
-        local push_args=""
-        $FORCE && push_args="--force-with-lease"
-
-        # shellcheck disable=SC2086
-        if git push $push_args >/dev/null 2>&1; then
+        if push_current_branch "$branch"; then
             pushed="true"
         else
             emit_result "PARTIAL" "$repo_name" "$sha" "$message" "false" "$gates" "push_failed"
@@ -552,11 +562,7 @@ commit_config_repo() {
             sha=$(git rev-parse --short HEAD)
         fi
 
-        local push_args=""
-        $FORCE && push_args="--force-with-lease"
-
-        # shellcheck disable=SC2086
-        if git push $push_args >/dev/null 2>&1; then
+        if push_current_branch "$branch"; then
             pushed="true"
         else
             emit_result "PARTIAL" "$repo_name" "$sha" "$message" "false" "" "push_failed"
@@ -585,11 +591,7 @@ handle_push_only() {
                     fi
                 fi
 
-                local push_args=""
-                $FORCE && push_args="--force-with-lease"
-
-                # shellcheck disable=SC2086
-                if git push $push_args >/dev/null 2>&1; then
+                if push_current_branch "$branch"; then
                     emit_result "SUCCESS" "$repo_name" "$(git rev-parse --short HEAD)" "pushed_${ahead}_commits" "true" "" ""
                     return 0
                 fi

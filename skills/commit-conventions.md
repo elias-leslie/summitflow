@@ -22,11 +22,9 @@ tags: [skill:commit-conventions, git, commit]
 
 ## Branch Naming
 - Feature branches: `task/<task-id>` (created by worktree system)
-- Never commit directly to main during autonomous execution
 - Worktree branches are managed by the orchestrator
 
 ## Commit Safety
-- Never use `git commit` directly — use `/commit_it` or the stop hook
+- Never use `git commit` directly — use `/commit_it` (pushes by default)
 - Never force push to main
 - Never amend published commits
-- Stage specific files, avoid `git add -A`

@@ -10,7 +10,7 @@ from ....storage import tasks as task_store
 from ..pickup_guards import check_system_health
 from .agent_routing import supervisor_circuit_breaker_triage
 from .events import emit_log, emit_progress
-from .git_ops import auto_commit, has_uncommitted_changes, smart_commit
+from .git_ops import has_uncommitted_changes, smart_commit
 from .interruption import ExecutionInterrupted, assert_task_runnable
 from .session import wind_down
 from .subtask_executor import MAX_ITERATIONS, execute_subtask
@@ -57,16 +57,27 @@ def _commit_subtask_changes(
     subtask: dict[str, Any],
     status: str,
 ) -> None:
-    """Commit any uncommitted changes after a subtask completes."""
+    """Preserve any uncommitted changes after a subtask completes."""
     if not has_uncommitted_changes(project_path):
         return
     subtask_short_id = subtask.get("subtask_id", "")
     subtask_desc = subtask.get("description", "")[:50]
     commit_msg = f"Subtask {subtask_short_id}: {subtask_desc}"
     if status == "failed":
-        auto_commit(project_path, f"[FAILED] {commit_msg}")
-    elif smart_commit(project_path, commit_msg, task_id):
-        emit_log(task_id, "info", f"Committed changes for subtask {subtask_short_id}", project_id=project_id)
+        if smart_commit(
+            project_path,
+            f"[FAILED] {commit_msg}",
+            task_id=task_id,
+            push=True,
+            skip_checks=True,
+        ):
+            emit_log(task_id, "info", f"Preserved failing changes for subtask {subtask_short_id}", project_id=project_id)
+            return
+    elif smart_commit(project_path, commit_msg, task_id=task_id, push=True):
+        emit_log(task_id, "info", f"Published changes for subtask {subtask_short_id}", project_id=project_id)
+        return
+
+    emit_log(task_id, "warn", f"Failed to preserve changes for subtask {subtask_short_id}", project_id=project_id)
 
 
 def _handle_subtask_failure(

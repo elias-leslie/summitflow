@@ -6,7 +6,7 @@ from ....logging_config import get_logger
 from ....services.worktree import create_task_worktree
 from ....storage import tasks as task_store
 from .events import emit_error, emit_log
-from .git_ops import auto_commit, has_uncommitted_changes
+from .git_ops import has_uncommitted_changes, smart_commit
 from .worktree import get_project_path
 
 logger = get_logger(__name__)
@@ -40,10 +40,18 @@ def setup_worktree(task_id: str, project_id: str) -> str | None:
         emit_log(
             task_id,
             "warn",
-            "Found uncommitted changes from previous session, auto-committing",
+            "Found uncommitted changes from previous session, preserving them on remote",
             project_id=project_id,
         )
-        if auto_commit(project_path, "WIP: uncommitted changes from previous session"):
-            emit_log(task_id, "info", "Orphaned changes committed", project_id=project_id)
+        if smart_commit(
+            project_path,
+            f"wip({task_id}): recover prior worktree changes",
+            task_id=task_id,
+            push=True,
+            skip_checks=True,
+        ):
+            emit_log(task_id, "info", "Recovered orphaned changes published", project_id=project_id)
+        else:
+            emit_log(task_id, "warn", "Failed to preserve orphaned worktree changes", project_id=project_id)
 
     return project_path

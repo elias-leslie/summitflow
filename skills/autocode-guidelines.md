@@ -10,7 +10,7 @@ tags: [skill:autocode-guidelines, autocode]
 
 ## Pre-Execution
 - Verify codebase passes quality gates before starting (`dt --quick`)
-- Check for uncommitted changes — never start on a dirty worktree
+- Inspect uncommitted and ahead-of-upstream git state at start, then resolve it inside the session with the canonical commit workflow before new implementation work.
 - Read existing tests for the module before writing implementation
 
 ## During Execution
@@ -21,7 +21,7 @@ tags: [skill:autocode-guidelines, autocode]
 
 ## Post-Execution
 - Run `dt --quick` before marking any step as passed
-- Commit with descriptive messages using `[auto]` prefix
+- Publish validated commits with the canonical commit workflow
 - Never mark a task as done without restart + verify
 
 ## Anti-Patterns

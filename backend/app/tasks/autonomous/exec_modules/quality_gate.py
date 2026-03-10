@@ -5,7 +5,7 @@ from __future__ import annotations
 from ....logging_config import get_logger
 from .ah_events import emit_quality_gate_result
 from .events import emit_log
-from .git_ops import auto_commit, has_uncommitted_changes
+from .git_ops import has_uncommitted_changes, smart_commit
 from .quality import auto_fix_quality, run_final_quality_gate
 
 logger = get_logger(__name__)
@@ -38,8 +38,20 @@ def run_quality_gate_with_autofix(
         )
         auto_fix_quality(project_path, project_id)
 
-        if has_uncommitted_changes(project_path):
-            auto_commit(project_path, f"[auto-fix] Quality gate fixes for {task_id}")
+        if has_uncommitted_changes(project_path) and not smart_commit(
+            project_path,
+            f"fix: quality gate auto-fix for {task_id}",
+            task_id=task_id,
+            push=True,
+            skip_checks=True,
+        ):
+            emit_log(
+                task_id,
+                "warn",
+                "Quality auto-fix changed files but failed to preserve them on remote",
+                source="quality",
+                project_id=project_id,
+            )
 
         final_gate_passed = run_final_quality_gate(task_id, project_path, project_id)
 

@@ -17,7 +17,7 @@ from urllib import error, request
 
 DEFAULT_API = os.environ.get("AGENT_HUB_API", "http://localhost:8003/api")
 STATE_PATH = Path.home() / ".local" / "state" / "codex-session-sync" / "state.json"
-LOG_PATH = Path.home() / ".codex" / "hooks" / "codex-session-sync.log"
+LOG_PATH = Path.home() / ".codex" / "session-integrations" / "codex-session-sync.log"
 TRANSCRIPTS_ROOT = Path.home() / ".codex" / "sessions"
 ENV_FILE = Path.home() / ".env.local"
 
