@@ -32,6 +32,13 @@ def _resolve_message(message: str | None, file: str | None) -> str | None:
     return None
 
 
+def _resolve_working_dir(working_dir: str | None, execute_tools: bool) -> str | None:
+    """Default tool execution to the caller cwd when no working dir is provided."""
+    if working_dir or not execute_tools:
+        return working_dir
+    return str(Path.cwd())
+
+
 def _output_result(result: dict[str, Any], stream: bool, raw: bool) -> None:
     """Output the completion result to stdout."""
     if stream and not raw:
@@ -92,9 +99,10 @@ def complete_default(
 
         cfg = get_config_optional()
         project = cfg.project_id or "st-cli"
+    resolved_working_dir = _resolve_working_dir(working_dir, execute_tools)
     result = call_complete(
         agent, resolved_message, project, source, memory, memory_group,
-        execute_tools, working_dir, timeout, skip_cache, session_id,
+        execute_tools, resolved_working_dir, timeout, skip_cache, session_id,
         thinking_level, max_turns, stream, trace_id, roles, image or None,
     )
     _output_result(result, stream, raw)
