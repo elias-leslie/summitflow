@@ -71,3 +71,44 @@ def test_collect_precision_code_search_context_tracks_token_savings() -> None:
     assert result.metadata["symbol_count"] == 1
     assert result.metadata["estimated_tokens_saved"] >= 0
     assert "Exact Source Slices" in result.prompt_context
+
+
+def test_collect_precision_code_search_context_skips_workflow_meta_queries() -> None:
+    result = collect_precision_code_search_context(
+        "project-1",
+        [
+            "Run one no-code autonomous validation task through the updated workflow and confirm it no longer fails on missing work product or irrelevant Precision Code Search injection."
+        ],
+    )
+
+    assert result.prompt_context == ""
+    assert result.metadata["skipped_reason"] == "workflow_meta_low_signal"
+
+
+def test_collect_precision_code_search_context_filters_fallback_entries_by_query_terms() -> None:
+    with (
+        patch("app.services.context_gatherer.precision_code_search.search_symbols", return_value=[]),
+        patch("app.services.context_gatherer.precision_code_search.get_entries") as mock_entries,
+    ):
+        mock_entries.side_effect = [
+            [
+                {"path": "backend/app/api/tasks.py", "name": "tasks.py"},
+                {"path": "frontend/components/home.tsx", "name": "home.tsx"},
+            ],
+            [
+                {"path": "/api/tasks", "name": "tasks", "metadata": {"method": "GET"}},
+                {"path": "/api/users", "name": "users", "metadata": {"method": "GET"}},
+            ],
+            [
+                {"name": "tasks"},
+                {"name": "users"},
+            ],
+        ]
+
+        result = collect_precision_code_search_context("project-1", ["tasks api"])
+
+    assert "backend/app/api/tasks.py" in result.prompt_context
+    assert "/api/tasks" in result.prompt_context
+    assert "- tasks" in result.prompt_context
+    assert "/api/users" not in result.prompt_context
+    assert "- users" not in result.prompt_context

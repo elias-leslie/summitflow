@@ -592,3 +592,45 @@ class TestWorkProductDetection:
         ]
 
         assert _has_work_product("/tmp/test-worktree") is False
+
+    @patch("app.tasks.autonomous.exec_modules.steps.run_smoke_and_targeted_tests")
+    @patch("app.tasks.autonomous.exec_modules.steps.get_task_spirit")
+    @patch("app.tasks.autonomous.exec_modules.steps.get_task")
+    @patch("app.tasks.autonomous.exec_modules.steps.subprocess.run")
+    def test_run_execution_quality_check_allows_no_code_validation_tasks(
+        self,
+        mock_run: MagicMock,
+        mock_get_task: MagicMock,
+        mock_get_spirit: MagicMock,
+        mock_smoke: MagicMock,
+    ) -> None:
+        """Explicit workflow-only validation tasks should not fail on missing commits."""
+        from app.tasks.autonomous.exec_modules.steps import run_execution_quality_check
+
+        mock_run.side_effect = [
+            MagicMock(stdout=""),
+            MagicMock(stdout=""),
+        ]
+        mock_get_task.return_value = {
+            "id": "task-1",
+            "title": "Workflow validation task",
+            "description": "Do not modify product code during this workflow validation run.",
+        }
+        mock_get_spirit.return_value = {
+            "objective": "Run a workflow-only validation task.",
+            "constraints": ["Do not require product code edits as part of the task outcome"],
+        }
+        mock_smoke.return_value = True
+
+        all_passed, results = run_execution_quality_check(
+            "task-1",
+            "sub-1",
+            [{"step_number": 1, "description": "Validate workflow", "passes": False}],
+            "/tmp/test-worktree",
+            "summitflow",
+        )
+
+        assert all_passed is True
+        assert results[0]["passed"] is True
+        assert results[0]["reason"] == "auto_passed"
+        mock_smoke.assert_called_once()

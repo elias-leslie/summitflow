@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
+
 from cli._output_formatters import format_context_subtasks, format_context_task
+from cli.commands.tasks_context import get_task_context
 
 
 class TestFormatContextTask:
@@ -119,6 +122,20 @@ class TestFormatContextTask:
         assert "SYNCABLE_SUBTASKS:1.1,1.2" in output
         assert "SYNC_SKIPS:1.3:citations | 1.4:steps-2" in output
 
+    def test_omits_lane_preflight_for_terminal_tasks_without_injecting_noise(self) -> None:
+        task = {
+            "id": "task-792",
+            "status": "cancelled",
+            "priority": 2,
+            "task_type": "task",
+            "complexity": "STANDARD",
+            "title": "Cancelled validation task",
+        }
+
+        output = format_context_task(task)
+
+        assert "LANE:" not in output
+
 
 
 class TestFormatContextSubtasks:
@@ -128,3 +145,35 @@ class TestFormatContextSubtasks:
         output = format_context_subtasks([])
 
         assert output == ""
+
+
+class TestTaskContextCommand:
+    def test_get_task_context_skips_lane_preflight_for_cancelled_task(self) -> None:
+        client = MagicMock()
+        client.get_task.return_value = {
+            "id": "task-1",
+            "project_id": "summitflow",
+            "status": "cancelled",
+            "task_type": "task",
+            "priority": 2,
+            "complexity": "STANDARD",
+            "title": "Cancelled validation task",
+        }
+        client.get_subtasks.return_value = {"subtasks": []}
+        client.list_dependencies.return_value = []
+        client.get_task_completion_readiness.return_value = {"ready": False, "gates": []}
+
+        with (
+            patch("cli.commands.tasks_context._enrich_task_from_spirit"),
+            patch("cli.commands.tasks_context.assess_task_execution_readiness", return_value={}),
+            patch("cli.commands.tasks_context.fetch_triggered_references", return_value=[]),
+            patch("cli.commands.tasks_context.analyze_subtask_sync") as mock_sync,
+            patch("cli.commands.tasks_context.output_context"),
+            patch("cli.commands.tasks_context.check_task_lane_conflicts") as mock_lane,
+            patch("cli.commands.tasks_context.get_worktree_info", return_value=None),
+        ):
+            mock_sync.return_value.syncable = []
+            mock_sync.return_value.skipped = []
+            get_task_context("task-1", None, client)
+
+        mock_lane.assert_not_called()

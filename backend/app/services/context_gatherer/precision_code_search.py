@@ -32,6 +32,63 @@ _STOP_WORDS = {
     "code",
     "shared",
     "path",
+    "workflow",
+    "validation",
+    "dispatch",
+    "readiness",
+    "reconciliation",
+    "friction",
+    "signal",
+    "temporary",
+    "queue",
+    "summary",
+    "closure",
+    "ergonomics",
+    "context",
+    "task-system",
+}
+_WORKFLOW_META_TERMS = {
+    "workflow",
+    "validation",
+    "dispatch",
+    "readiness",
+    "reconciliation",
+    "friction",
+    "signal",
+    "temporary",
+    "queue",
+    "residue",
+    "closure",
+    "citation",
+    "syncable",
+    "lane",
+    "ergonomics",
+}
+_CODE_SIGNAL_TERMS = {
+    "api",
+    "endpoint",
+    "table",
+    "schema",
+    "migration",
+    "query",
+    "sql",
+    "symbol",
+    "function",
+    "class",
+    "module",
+    "component",
+    "frontend",
+    "backend",
+    "react",
+    "typescript",
+    "python",
+    "cli",
+    "prompt",
+    "review",
+    "planner",
+    "autocode",
+    "file",
+    "worktree",
 }
 
 
@@ -84,6 +141,28 @@ def _extract_query_terms(queries: list[str]) -> list[str]:
                 return terms
 
     return terms
+
+
+def _has_explicit_code_signal(queries: list[str]) -> bool:
+    combined = " ".join(queries).lower()
+    if any(marker in combined for marker in ("backend/", "frontend/", ".py", ".ts", ".tsx", "`", "::", "()")):
+        return True
+    return any(term in combined for term in _CODE_SIGNAL_TERMS)
+
+
+def _looks_like_workflow_meta_query(queries: list[str]) -> bool:
+    combined = " ".join(queries).lower()
+    workflow_hits = sum(1 for term in _WORKFLOW_META_TERMS if term in combined)
+    return workflow_hits >= 2 and not _has_explicit_code_signal(queries)
+
+
+def _fallback_match_terms(query_terms: list[str]) -> list[str]:
+    specific_terms = [
+        term.lower()
+        for term in query_terms
+        if term.lower() not in _CODE_SIGNAL_TERMS and term.lower() not in _STOP_WORDS
+    ]
+    return specific_terms or [term.lower() for term in query_terms]
 
 
 def _search_symbol_matches(project_id: str, queries: list[str]) -> list[dict[str, Any]]:
@@ -195,7 +274,7 @@ def _build_symbol_section(project_id: str, symbols: list[dict[str, Any]]) -> str
 
 def _collect_files(project_id: str, query_terms: list[str]) -> str | None:
     files = get_entries(project_id, filters={"type": "file"})
-    lowered_terms = [term.lower() for term in query_terms]
+    lowered_terms = _fallback_match_terms(query_terms)
     relevant = [
         file_entry
         for file_entry in files
@@ -210,29 +289,45 @@ def _collect_files(project_id: str, query_terms: list[str]) -> str | None:
     return "\n".join(["## Relevant Files", "", *[f"- {f.get('path', 'unknown')}" for f in relevant]])
 
 
-def _collect_endpoints(project_id: str) -> str | None:
+def _collect_endpoints(project_id: str, query_terms: list[str]) -> str | None:
     endpoints = get_entries(project_id, filters={"type": "endpoint"})[:12]
-    if not endpoints:
+    lowered_terms = _fallback_match_terms(query_terms)
+    relevant = [
+        endpoint
+        for endpoint in endpoints
+        if any(
+            term in str(endpoint.get("path", "")).lower()
+            or term in str(endpoint.get("name", "")).lower()
+            for term in lowered_terms
+        )
+    ]
+    if not relevant:
         return None
     lines = ["## API Endpoints", ""]
-    for endpoint in endpoints:
+    for endpoint in relevant[:12]:
         method = endpoint.get("metadata", {}).get("method", "GET")
         lines.append(f"- {method} {endpoint.get('path', 'unknown')}")
     return "\n".join(lines)
 
 
-def _collect_tables(project_id: str) -> str | None:
+def _collect_tables(project_id: str, query_terms: list[str]) -> str | None:
     tables = get_entries(project_id, filters={"type": "table"})[:12]
-    if not tables:
+    lowered_terms = _fallback_match_terms(query_terms)
+    relevant = [
+        table
+        for table in tables
+        if any(term in str(table.get("name", "")).lower() for term in lowered_terms)
+    ]
+    if not relevant:
         return None
-    return "\n".join(["## Database Tables", "", *[f"- {t.get('name', 'unknown')}" for t in tables]])
+    return "\n".join(["## Database Tables", "", *[f"- {t.get('name', 'unknown')}" for t in relevant[:12]]])
 
 
 def _build_fallback_section(project_id: str, query_terms: list[str]) -> str:
     sections = [
         _collect_files(project_id, query_terms),
-        _collect_endpoints(project_id),
-        _collect_tables(project_id),
+        _collect_endpoints(project_id, query_terms),
+        _collect_tables(project_id, query_terms),
     ]
     return "\n\n".join(section for section in sections if section)
 
@@ -247,6 +342,11 @@ def collect_precision_code_search_context(
     normalized_queries = _normalize_queries(queries)
     if not normalized_queries:
         return PrecisionCodeSearchResult(prompt_context="", metadata={"query_count": 0})
+    if _looks_like_workflow_meta_query(normalized_queries):
+        return PrecisionCodeSearchResult(
+            prompt_context="",
+            metadata={"query_count": len(normalized_queries), "skipped_reason": "workflow_meta_low_signal"},
+        )
 
     query_terms = _extract_query_terms(normalized_queries)
     symbols = _search_symbol_matches(project_id, normalized_queries)

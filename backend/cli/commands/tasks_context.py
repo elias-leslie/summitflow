@@ -16,6 +16,8 @@ from ..output import handle_api_error, output_context, output_subtask_context
 from .tasks_helpers import fetch_phase_triggered_references, fetch_triggered_references
 from .tasks_progress import analyze_subtask_sync
 
+_TERMINAL_TASK_STATUSES = {"completed", "cancelled", "abandoned", "failed", "blocked"}
+
 
 def _enrich_task_from_spirit(task: dict[str, Any], task_id: str) -> None:
     """Enrich task dict with normalized fields from task_spirit storage."""
@@ -125,7 +127,8 @@ def _handle_task_context(
     task_refs = fetch_triggered_references(task_type) if task_type else []
     task["execution_readiness"] = assess_task_execution_readiness(task, task, subtasks)
     task["completion_readiness"] = client.get_task_completion_readiness(task_id)
-    task["lane_preflight"] = check_task_lane_conflicts(task_id, task["project_id"]).to_dict()
+    if task.get("status") not in _TERMINAL_TASK_STATUSES:
+        task["lane_preflight"] = check_task_lane_conflicts(task_id, task["project_id"]).to_dict()
     sync_analysis = analyze_subtask_sync(subtasks)
     task["syncable_subtasks"] = sync_analysis.syncable
     task["syncable_subtasks_skipped"] = sync_analysis.skipped

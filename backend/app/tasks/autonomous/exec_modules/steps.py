@@ -11,6 +11,8 @@ from typing import Any
 
 from ....logging_config import get_logger
 from ....storage.steps import get_steps_for_subtask, update_step_passes
+from ....storage.task_spirit import get_task_spirit
+from ....storage.tasks import get_task
 from .step_defect import (
     INFRASTRUCTURE_PATTERNS,
     auto_defect_step,
@@ -20,6 +22,15 @@ from .step_issue import compute_issue_id
 from .step_smoke_tests import run_smoke_and_targeted_tests
 
 logger = get_logger(__name__)
+
+_NO_CODE_MARKERS = (
+    "no code edits",
+    "no product code edits",
+    "do not modify product code",
+    "workflow validation only",
+    "workflow-only",
+    "temporary validation task only",
+)
 
 __all__ = [
     "INFRASTRUCTURE_PATTERNS",
@@ -108,6 +119,23 @@ def _has_work_product(project_path: str) -> bool:
         return True
 
 
+def _allows_no_code_verification(task_id: str) -> bool:
+    """Return True when a task is explicitly scoped as workflow/no-code validation."""
+    task = get_task(task_id) or {}
+    spirit = get_task_spirit(task_id) or {}
+
+    fields = [
+        task.get("title", ""),
+        task.get("description", ""),
+        spirit.get("objective", ""),
+        spirit.get("spirit_anti", ""),
+        *(spirit.get("constraints") or []),
+        *(spirit.get("done_when") or []),
+    ]
+    haystack = " ".join(str(field).lower() for field in fields if field)
+    return any(marker in haystack for marker in _NO_CODE_MARKERS)
+
+
 def run_execution_quality_check(
     task_id: str,
     subtask_id: str,
@@ -128,8 +156,8 @@ def run_execution_quality_check(
 
     step_results = _auto_mark_steps(subtask_id, steps, project_id, STEP_STATUS_PLAN_DEFECT)
 
-    # Fail if no work product (commits) exist on the branch
-    if not _has_work_product(project_path):
+    # Fail if no work product exists unless the task is explicitly no-code validation.
+    if not _has_work_product(project_path) and not _allows_no_code_verification(task_id):
         logger.warning("No commits on branch — marking as failed",
                         task_id=task_id, subtask_id=subtask_id)
         if step_results:

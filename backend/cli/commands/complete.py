@@ -46,6 +46,7 @@ def _output_result(result: dict[str, Any], stream: bool, raw: bool) -> None:
 def complete_default(
     ctx: typer.Context,
     message: Annotated[str | None, _Arg(help="Message to send")] = None,
+    message_option: Annotated[str | None, _Opt("--message", help="Message to send without relying on positional ordering")] = None,
     agent: Annotated[str | None, _Opt("--agent", "-a", help="Agent slug")] = None,
     model: Annotated[str | None, _Opt("--model", "-M", help="Model override (e.g. cloudflare/qwen2.5-coder-32b). Uses @mention injection to override agent's default model.")] = None,
     project: Annotated[str | None, _Opt("--project", "-p", help="Project ID")] = None,
@@ -79,7 +80,7 @@ def complete_default(
     """
     if ctx.invoked_subcommand is not None:
         return
-    resolved_message = _resolve_message(message, file)
+    resolved_message = _resolve_message(message_option or message, file)
     if not resolved_message:
         typer.echo(ctx.get_help())
         return

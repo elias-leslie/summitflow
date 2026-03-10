@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
-const { execFileSync, spawn } = require('child_process');
+const { execFileSync } = require('child_process');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
 const {
   getApiHost,
   getCFAuthCookie,
@@ -14,6 +16,7 @@ const {
 const MANAGED_ROOT = process.env.AGENT_BROWSER_MANAGED_ROOT || path.join(process.env.HOME, '.local', 'share', 'agent-browser-managed');
 const REAL_AGENT_BROWSER = process.env.AGENT_BROWSER_REAL_BIN || path.join(MANAGED_ROOT, 'node_modules', '.bin', 'agent-browser');
 const REAPER = process.env.AGENT_BROWSER_REAPER_BIN || path.join(process.env.HOME, 'summitflow', 'scripts', 'agent-browser-idle-reaper.js');
+const DEFAULT_SESSION_NAME = 'default';
 
 function parseArgs(args) {
   const result = {
@@ -49,15 +52,31 @@ function parseArgs(args) {
   return result;
 }
 
-function runReaper() {
-  try {
-    execFileSync(REAPER, [], {
-      stdio: ['ignore', 'ignore', 'ignore'],
-      env: process.env,
-    });
-  } catch {
-    // Never block browser use on cleanup failures.
+function getSocketRoot(env = process.env) {
+  if (env.AGENT_BROWSER_SOCKET_DIR) {
+    return env.AGENT_BROWSER_SOCKET_DIR;
   }
+  if (env.XDG_RUNTIME_DIR) {
+    return path.join(env.XDG_RUNTIME_DIR, 'agent-browser');
+  }
+  if (env.HOME) {
+    return path.join(env.HOME, '.agent-browser');
+  }
+  return path.join(os.tmpdir(), 'agent-browser');
+}
+
+function getSessionName(args, env = process.env) {
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--session' && index + 1 < args.length) {
+      return args[index + 1];
+    }
+  }
+  return env.AGENT_BROWSER_SESSION || DEFAULT_SESSION_NAME;
+}
+
+function ensureDir(dirPath) {
+  fs.mkdirSync(dirPath, { recursive: true });
 }
 
 function buildHeadersArg(existingHeaders, cfHeaders) {
@@ -90,21 +109,31 @@ function removeHeadersArg(args) {
 }
 
 function runAgentBrowser(args) {
-  runReaper();
+  const sessionName = getSessionName(args);
+  const socketRoot = getSocketRoot();
+  const lockDir = path.join(socketRoot, 'locks');
+  const lockPath = path.join(lockDir, `${sessionName}.wrapper.lock`);
 
-  const child = spawn(REAL_AGENT_BROWSER, args, {
-    stdio: 'inherit',
-    env: process.env,
-  });
+  ensureDir(lockDir);
 
-  child.on('close', (code) => {
-    process.exit(code || 0);
-  });
+  try {
+    // Serialize per-session CLI calls so open/snapshot/eval do not race the same daemon socket.
+    execFileSync('flock', ['-w', '30', lockPath, 'node', REAPER], {
+      stdio: ['ignore', 'ignore', 'ignore'],
+      env: process.env,
+    });
 
-  child.on('error', (error) => {
+    execFileSync('flock', ['-w', '30', lockPath, REAL_AGENT_BROWSER, ...args], {
+      stdio: 'inherit',
+      env: process.env,
+    });
+  } catch (error) {
+    if (error && typeof error.status === 'number') {
+      process.exit(error.status);
+    }
     console.error(`Error running agent-browser: ${error.message}`);
     process.exit(2);
-  });
+  }
 }
 
 async function main() {
