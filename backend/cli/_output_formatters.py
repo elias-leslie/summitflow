@@ -103,13 +103,15 @@ def _format_lane_lines(lane_preflight: dict[str, Any] | None) -> list[str]:
     lines = []
     if lane_preflight.get("issues"):
         parts = []
-        if disposition := lane_preflight.get("disposition"):
+        disposition = lane_preflight.get("disposition")
+        if disposition:
             parts.append(f"disp:{disposition}")
         if overlap_kind := lane_preflight.get("overlap_kind"):
             parts.append(f"kind:{overlap_kind}")
         conflicting_tasks = lane_preflight.get("conflicting_tasks") or []
         if conflicting_tasks:
-            parts.append(f"tasks:{','.join(conflicting_tasks[:3])}")
+            key = "active_tasks" if disposition == "warn" else "tasks"
+            parts.append(f"{key}:{','.join(conflicting_tasks[:3])}")
         if owner_location := lane_preflight.get("owner_location"):
             parts.append(f"owner:{owner_location}")
         overlap_paths = lane_preflight.get("overlap_paths") or []
@@ -117,13 +119,30 @@ def _format_lane_lines(lane_preflight: dict[str, Any] | None) -> list[str]:
             parts.append(f"paths:{','.join(overlap_paths[:3])}")
         if lane_preflight.get("shared_plumbing"):
             parts.append("shared:yes")
-        lines.append(f"LANE:{' | '.join(parts) if parts else 'conflict'}")
+        label = "LANE_ADVISORY" if disposition == "warn" else "LANE"
+        lines.append(f"{label}:{' | '.join(parts) if parts else 'conflict'}")
     specialist_groups = lane_preflight.get("active_specialists") or []
     if isinstance(specialist_groups, list) and specialist_groups:
         parts = [seg for g in specialist_groups[:3] if (seg := _format_specialist_group(g)) is not None]
         if parts:
             lines.append(f"SPECIALISTS:{' | '.join(parts)}")
     return lines
+
+
+def _visible_sync_skips(task: dict[str, Any]) -> list[str]:
+    """Return sync skips worth surfacing in context output."""
+    skipped = task.get("syncable_subtasks_skipped") or []
+    if not isinstance(skipped, list):
+        return []
+    syncable = task.get("syncable_subtasks") or []
+    has_syncable = isinstance(syncable, list) and bool(syncable)
+    if has_syncable:
+        return [str(item) for item in skipped]
+
+    status = str(task.get("status") or "")
+    if status == "pending":
+        return [str(item) for item in skipped if ":steps-" not in str(item)]
+    return [str(item) for item in skipped]
 
 
 def format_context_task(task: dict[str, Any]) -> str:
@@ -174,9 +193,9 @@ def format_context_task(task: dict[str, Any]) -> str:
     syncable = task.get("syncable_subtasks") or []
     if isinstance(syncable, list) and syncable:
         lines.append(f"SYNCABLE_SUBTASKS:{','.join(str(item) for item in syncable)}")
-    skipped = task.get("syncable_subtasks_skipped") or []
-    if isinstance(skipped, list) and skipped:
-        lines.append(f"SYNC_SKIPS:{' | '.join(str(item) for item in skipped[:8])}")
+    skipped = _visible_sync_skips(task)
+    if skipped:
+        lines.append(f"SYNC_SKIPS:{' | '.join(skipped[:8])}")
     lines.extend(_format_context_lines(task.get("context")))
     lines.extend(_format_lane_lines(task.get("lane_preflight")))
     return "\n".join(lines)

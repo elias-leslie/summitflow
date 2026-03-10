@@ -74,56 +74,32 @@ def fetch_episode_tags(uuid: str) -> list[str]:
     return [str(tag) for tag in result.get("tags", [])]
 
 
-def replace_episode(
-    old_uuid: str,
-    new_content: str,
-    new_tier: str,
-    existing: dict[str, object],
-) -> str:
-    """Create a new episode and delete the old one. Returns new UUID."""
-    full_uuid = str(existing.get("uuid", old_uuid))
+def update_episode_content_or_tier(
+    episode_uuid: str,
+    *,
+    content: str | None,
+    tier: str | None,
+) -> None:
+    """Patch episode content and/or tier in place while preserving UUID."""
+    payload: dict[str, object] = {}
+    if content is not None:
+        payload["content"] = content
+    if tier is not None:
+        payload["injection_tier"] = tier
 
-    create_result = agent_hub_request(
-        "POST",
-        "/api/memory/add",
-        json={
-            "content": new_content,
-            "name": existing.get("name", "updated_episode"),
-            "injection_tier": new_tier,
-            "preserve_stats_from": full_uuid,
-        },
+    result = agent_hub_request(
+        "PATCH",
+        f"/api/memory/episode/{episode_uuid}",
+        json=payload,
         tool_name="st memory update",
     )
-
-    new_uuid = create_result.get("uuid")
-    if not new_uuid:
-        typer.echo(f"Error creating new episode: {create_result}")
+    if not result.get("success"):
+        typer.echo(f"Error updating episode: {result}")
         raise typer.Exit(1)
 
-    _delete_with_retry(old_uuid, str(new_uuid))
-    return str(new_uuid)
-
-
-def _delete_with_retry(uuid: str, new_uuid: str) -> None:
-    """Delete episode with one retry on failure."""
-    delete_result: dict[str, object] = {}
-    for attempt in range(2):
-        try:
-            delete_result = agent_hub_request(
-                "DELETE", f"/api/memory/episode/{uuid}", tool_name="st memory update"
-            )
-            if delete_result.get("success"):
-                return
-        except SystemExit:
-            if attempt == 0:
-                typer.echo("  Retrying delete...")
-                continue
-            raise
-
-    typer.echo(f"Warning: Failed to delete original: {delete_result.get('detail', 'Unknown')}")
-    typer.echo(f"New episode created: {new_uuid[:8]}")
-    typer.echo(f"Please manually delete: {uuid[:8]}")
-    raise typer.Exit(1)
+    typer.echo(f"Updated: {episode_uuid[:8]}")
+    if tier is not None:
+        typer.echo(f"  Tier: {tier}")
 
 
 def patch_episode_properties(

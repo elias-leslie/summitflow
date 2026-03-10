@@ -180,7 +180,7 @@ def update(
     tags: TagsUpdateOpt = None,
     clear_tags: ClearTagsOpt = False,
 ) -> None:
-    """Update an episode (delete + recreate for content/tier, PATCH for properties)."""
+    """Update an episode in place (content/tier and properties)."""
     resolved_content = _resolve_update_content(content, content_file)
     update_impl(uuid, resolved_content, tier, summary, trigger_types, pinned, tags, clear_tags)
 

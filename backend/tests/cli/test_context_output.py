@@ -74,6 +74,31 @@ class TestFormatContextTask:
             in output
         )
 
+    def test_formats_warn_lane_as_advisory_overlap(self) -> None:
+        task = {
+            "id": "task-790",
+            "status": "pending",
+            "priority": 2,
+            "task_type": "task",
+            "complexity": "STANDARD",
+            "title": "Assess adjacent validation lane",
+            "lane_preflight": {
+                "issues": ["Another active coding lane exists in project summitflow but lacks usable file scope"],
+                "disposition": "warn",
+                "overlap_kind": "unscoped_target",
+                "conflicting_tasks": ["task-42f6700b"],
+                "owner_location": "worktree /tmp/worktrees/task-42f6700b",
+            },
+        }
+
+        output = format_context_task(task)
+
+        assert (
+            "LANE_ADVISORY:disp:warn | kind:unscoped_target | active_tasks:task-42f6700b | "
+            "owner:worktree /tmp/worktrees/task-42f6700b"
+            in output
+        )
+
     def test_includes_active_specialist_summary_when_present(self) -> None:
         task = {
             "id": "task-790",
@@ -122,9 +147,42 @@ class TestFormatContextTask:
         assert "SYNCABLE_SUBTASKS:1.1,1.2" in output
         assert "SYNC_SKIPS:1.3:citations | 1.4:steps-2" in output
 
-    def test_omits_lane_preflight_for_terminal_tasks_without_injecting_noise(self) -> None:
+    def test_hides_pending_step_only_sync_skips_without_syncable_subtasks(self) -> None:
         task = {
             "id": "task-792",
+            "status": "pending",
+            "priority": 2,
+            "task_type": "task",
+            "complexity": "STANDARD",
+            "title": "Pending validation task",
+            "syncable_subtasks": [],
+            "syncable_subtasks_skipped": ["1.1:steps-1,2", "1.2:steps-1,2"],
+        }
+
+        output = format_context_task(task)
+
+        assert "SYNC_SKIPS:" not in output
+
+    def test_keeps_pending_non_step_sync_skips_visible(self) -> None:
+        task = {
+            "id": "task-793",
+            "status": "pending",
+            "priority": 2,
+            "task_type": "task",
+            "complexity": "STANDARD",
+            "title": "Pending citation follow-up",
+            "syncable_subtasks": [],
+            "syncable_subtasks_skipped": ["1.3:citations", "1.4:steps-2"],
+        }
+
+        output = format_context_task(task)
+
+        assert "SYNC_SKIPS:1.3:citations" in output
+        assert "1.4:steps-2" not in output
+
+    def test_omits_lane_preflight_for_terminal_tasks_without_injecting_noise(self) -> None:
+        task = {
+            "id": "task-794",
             "status": "cancelled",
             "priority": 2,
             "task_type": "task",

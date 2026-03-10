@@ -12,8 +12,8 @@ from ._memory_crud_helpers import (
     fetch_existing_episode,
     parse_tags_csv,
     patch_episode_properties,
-    replace_episode,
     replace_episode_tags,
+    update_episode_content_or_tier,
     validate_save_inputs,
 )
 from .memory_api import agent_hub_request
@@ -196,10 +196,11 @@ def update_impl(
     if content_or_tier_changed:
         new_content = content if content else str(existing.get("content", ""))
         new_tier = tier if tier else str(existing.get("injection_tier", "reference"))
-        target_uuid = replace_episode(uuid, new_content, new_tier, existing)
-        typer.echo(f"Updated: {uuid[:8]} -> {target_uuid[:8]}")
-        if tier:
-            typer.echo(f"  Tier: {new_tier}")
+        update_episode_content_or_tier(
+            target_uuid,
+            content=new_content,
+            tier=new_tier,
+        )
         replace_episode_tags(target_uuid, replacement_tags if replacement_tags is not None else existing_tags)
 
     if properties_changed:
