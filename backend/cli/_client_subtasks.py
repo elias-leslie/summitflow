@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
+from app.storage.tasks import canonicalize_task_id
+
 if TYPE_CHECKING:
     import httpx
 
@@ -17,7 +19,10 @@ def get_subtasks(
 ) -> dict[str, Any]:
     """Get subtasks for a task."""
     params = {"include_steps": str(include_steps).lower()}
-    response = client.get(global_url_fn(f"/tasks/{task_id}/subtasks"), params=params)
+    response = client.get(
+        global_url_fn(f"/tasks/{canonicalize_task_id(task_id)}/subtasks"),
+        params=params,
+    )
     return cast(dict[str, Any], handle_response(response))
 
 
@@ -45,7 +50,7 @@ def create_subtask(
         data["details"] = details
     if subtask_type:
         data["subtask_type"] = subtask_type
-    response = client.post(url_fn(f"/tasks/{task_id}/subtasks"), json=data)
+    response = client.post(url_fn(f"/tasks/{canonicalize_task_id(task_id)}/subtasks"), json=data)
     return cast(dict[str, Any], handle_response(response))
 
 
@@ -58,7 +63,7 @@ def bulk_create_subtasks(
 ) -> dict[str, Any]:
     """Create multiple subtasks for a task in batch."""
     response = client.post(
-        url_fn(f"/tasks/{task_id}/subtasks/batch"),
+        url_fn(f"/tasks/{canonicalize_task_id(task_id)}/subtasks/batch"),
         json={"subtasks": subtasks},
     )
     return cast(dict[str, Any], handle_response(response))
@@ -74,7 +79,10 @@ def update_subtask(
 ) -> dict[str, Any]:
     """Update a subtask's passes status."""
     data = {"passes": passes}
-    response = client.patch(global_url_fn(f"/tasks/{task_id}/subtasks/{subtask_id}"), json=data)
+    response = client.patch(
+        global_url_fn(f"/tasks/{canonicalize_task_id(task_id)}/subtasks/{subtask_id}"),
+        json=data,
+    )
     return cast(dict[str, Any], handle_response(response))
 
 
@@ -82,7 +90,7 @@ def delete_subtask(
     client: httpx.Client, url_fn: Any, handle_response: Any, task_id: str, subtask_id: str
 ) -> dict[str, Any]:
     """Delete a subtask and all its steps."""
-    response = client.delete(url_fn(f"/tasks/{task_id}/subtasks/{subtask_id}"))
+    response = client.delete(url_fn(f"/tasks/{canonicalize_task_id(task_id)}/subtasks/{subtask_id}"))
     return cast(dict[str, Any], handle_response(response))
 
 
@@ -96,7 +104,7 @@ def log_citations(
 ) -> dict[str, Any]:
     """Log episode citations for a subtask."""
     response = client.post(
-        global_url_fn(f"/tasks/{task_id}/subtasks/{subtask_id}/citations"),
+        global_url_fn(f"/tasks/{canonicalize_task_id(task_id)}/subtasks/{subtask_id}/citations"),
         json={"citations": citations},
     )
     return cast(dict[str, Any], handle_response(response))
@@ -107,7 +115,9 @@ def acknowledge_no_citations(
 ) -> dict[str, Any]:
     """Acknowledge that no memories were needed for a subtask."""
     response = client.post(
-        global_url_fn(f"/tasks/{task_id}/subtasks/{subtask_id}/citations/acknowledge-none"),
+        global_url_fn(
+            f"/tasks/{canonicalize_task_id(task_id)}/subtasks/{subtask_id}/citations/acknowledge-none"
+        ),
         json={"honestly_none": True},
     )
     return cast(dict[str, Any], handle_response(response))

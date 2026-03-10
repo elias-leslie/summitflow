@@ -14,6 +14,7 @@ from ..client import APIError, STClient
 from ..lib.worktree import get_worktree_info
 from ..output import handle_api_error, output_context, output_subtask_context
 from .tasks_helpers import fetch_phase_triggered_references, fetch_triggered_references
+from .tasks_progress import analyze_subtask_sync
 
 
 def _enrich_task_from_spirit(task: dict[str, Any], task_id: str) -> None:
@@ -123,7 +124,11 @@ def _handle_task_context(
     task_type = task.get("task_type", "")
     task_refs = fetch_triggered_references(task_type) if task_type else []
     task["execution_readiness"] = assess_task_execution_readiness(task, task, subtasks)
+    task["completion_readiness"] = client.get_task_completion_readiness(task_id)
     task["lane_preflight"] = check_task_lane_conflicts(task_id, task["project_id"]).to_dict()
+    sync_analysis = analyze_subtask_sync(subtasks)
+    task["syncable_subtasks"] = sync_analysis.syncable
+    task["syncable_subtasks_skipped"] = sync_analysis.skipped
     output_context(task, subtasks, blockers, task_refs)
 
 
@@ -135,6 +140,7 @@ def get_task_context(
     """Get task or subtask context in a single call."""
     try:
         task = client.get_task(task_id)
+        task_id = str(task.get("id", task_id))
         _enrich_task_from_spirit(task, task_id)
 
         subtask_data = client.get_subtasks(task_id, include_steps=True)

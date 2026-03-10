@@ -5,6 +5,7 @@ Internal helpers split out to keep claim.py under 150 lines.
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
@@ -12,6 +13,7 @@ from typing import Any
 
 import typer
 
+from ..lib.worktree_git import get_repo_root
 from ..output import output_error, output_success, output_warning
 
 _UNMERGED_PREFIXES = {"DD", "AU", "UD", "UA", "DU", "AA", "UU"}
@@ -21,6 +23,23 @@ _IN_PROGRESS_FILES = (
     "CHERRY_PICK_HEAD",
     "BISECT_LOG",
 )
+
+
+def _copy_path(src: Path, dest: Path) -> None:
+    if src.is_dir():
+        shutil.copytree(src, dest, dirs_exist_ok=True)
+        return
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dest)
+
+
+def _remove_path(path: Path) -> None:
+    if not path.exists() and not path.is_symlink():
+        return
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+        return
+    path.unlink()
 
 
 def is_subtask_id(id_str: str) -> bool:
@@ -43,6 +62,15 @@ def _git_status_lines() -> list[str]:
         return [line for line in result.stdout.splitlines() if line.strip()]
     except subprocess.CalledProcessError:
         return []
+
+
+def _parse_status_paths(line: str) -> tuple[str | None, str | None]:
+    """Parse porcelain status line into (old_path, new_path)."""
+    path_field = line[3:].strip()
+    if " -> " in path_field:
+        old_path, new_path = path_field.split(" -> ", 1)
+        return old_path, new_path
+    return None, path_field
 
 
 def _find_claim_hazards() -> list[str]:
@@ -77,6 +105,39 @@ def require_claim_safe_tree() -> None:
             "Working tree has uncommitted changes, but no claim-blocking hazards were found. "
             "Proceeding with checkpoint baseline capture."
         )
+
+
+def adopt_dirty_changes_to_worktree(worktree_path: str) -> int:
+    """Copy current dirty tracked/untracked paths into a freshly claimed task worktree."""
+    status_lines = _git_status_lines()
+    if not status_lines:
+        return 0
+
+    repo_root = get_repo_root()
+    worktree_root = Path(worktree_path)
+    adopted: set[str] = set()
+
+    for line in status_lines:
+        old_path, new_path = _parse_status_paths(line)
+        if old_path:
+            _remove_path(worktree_root / old_path)
+
+        if not new_path:
+            continue
+
+        src = repo_root / new_path
+        dest = worktree_root / new_path
+        if src.exists() or src.is_symlink():
+            _copy_path(src, dest)
+        else:
+            _remove_path(dest)
+        adopted.add(new_path)
+
+    if adopted:
+        output_success(
+            f"Adopted {len(adopted)} dirty path(s) into claimed task worktree."
+        )
+    return len(adopted)
 
 
 def require_clean_tree() -> None:

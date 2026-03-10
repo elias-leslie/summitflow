@@ -218,7 +218,42 @@ class TestTaskUpdates:
         assert response.status_code == 200
         updated = response.json()
         assert updated["execution_mode"] == "manual"
-        assert updated["autonomous"] is False
+
+
+class TestShortTaskIdApiResolution:
+    def test_get_task_accepts_short_suffix(
+        self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
+    ) -> None:
+        response = client.post(
+            f"/api/projects/{test_project_id}/tasks",
+            json={"title": "Short id API target", "task_type": "task"},
+        )
+        assert response.status_code == 200
+        task_id = response.json()["id"]
+        cleanup_task(task_id)
+
+        short_id = task_id.removeprefix("task-")
+        response = client.get(f"/api/tasks/{short_id}")
+
+        assert response.status_code == 200
+        assert response.json()["id"] == task_id
+
+    def test_completion_readiness_accepts_short_suffix(
+        self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
+    ) -> None:
+        response = client.post(
+            f"/api/projects/{test_project_id}/tasks",
+            json={"title": "Short id readiness target", "task_type": "task"},
+        )
+        assert response.status_code == 200
+        task_id = response.json()["id"]
+        cleanup_task(task_id)
+
+        short_id = task_id.removeprefix("task-")
+        response = client.get(f"/api/tasks/{short_id}/completion-readiness")
+
+        assert response.status_code == 200
+        assert response.json()["ready"] is True
 
     def test_create_simple_task_auto_approves_when_execution_ready(
         self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]

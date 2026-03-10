@@ -1,11 +1,13 @@
-"""Test subtask pass command helper functions.
-
-Tests the is_step_resolved function that determines if a step should block
-subtask completion.
-"""
+"""Tests for subtask pass helpers and command behavior."""
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
+
+import pytest
+import typer
+
+from cli.commands.subtask import pass_subtask
 from cli.commands.subtask_validation import is_step_resolved
 
 
@@ -106,3 +108,51 @@ class TestIsStepResolved:
                 f"passes={step.get('passes')}, status={step.get('status')}, "
                 f"fix_step={step.get('fix_step_number')}"
             )
+
+
+class TestPassSubtaskCommand:
+    def test_pass_subtask_can_acknowledge_none_inline(self) -> None:
+        client = MagicMock()
+        client.get_subtasks.return_value = {
+            "subtasks": [
+                {
+                    "subtask_id": "1.1",
+                    "steps_from_table": [{"step_number": 1, "passes": True, "status": "pending"}],
+                }
+            ]
+        }
+
+        with (
+            patch("cli.commands.subtask.STClient", return_value=client),
+            patch("cli.commands.subtask.output_success"),
+        ):
+            pass_subtask("1.1", "task-1", None, True)
+
+        client.acknowledge_no_citations.assert_called_once_with("task-1", "1.1")
+        client.update_subtask.assert_called_once_with("task-1", "1.1", passes=True)
+
+    def test_pass_subtask_can_log_inline_citations(self) -> None:
+        client = MagicMock()
+        client.get_subtasks.return_value = {
+            "subtasks": [
+                {
+                    "subtask_id": "1.1",
+                    "steps_from_table": [{"step_number": 1, "passes": True, "status": "pending"}],
+                }
+            ]
+        }
+
+        with (
+            patch("cli.commands.subtask.STClient", return_value=client),
+            patch("cli.commands.subtask.output_success"),
+        ):
+            pass_subtask("1.1", "task-1", ["M:abc12345+"], False)
+
+        client.log_citations.assert_called_once_with("task-1", "1.1", ["M:abc12345+"])
+        client.update_subtask.assert_called_once_with("task-1", "1.1", passes=True)
+
+    def test_pass_subtask_rejects_conflicting_citation_flags(self) -> None:
+        with pytest.raises(typer.Exit) as exc_info:
+            pass_subtask("1.1", "task-1", ["M:abc12345+"], True)
+
+        assert exc_info.value.exit_code == 1

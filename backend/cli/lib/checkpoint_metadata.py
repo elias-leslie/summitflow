@@ -12,6 +12,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from app.storage.tasks import canonicalize_task_id
+
 
 @dataclass
 class SnapshotMeta:
@@ -107,11 +109,13 @@ def get_meta_path(
     project_id: str | None = None,
 ) -> Path:
     """Get path for task snapshot metadata file."""
+    task_id = canonicalize_task_id(task_id)
     return get_snapshots_dir(project_id=project_id, project_root=project_root) / f"{task_id}.meta.json"
 
 
 def _find_global_meta_path(task_id: str, project_id: str | None = None) -> Path | None:
     """Search global checkpoint storage for a task metadata file."""
+    task_id = canonicalize_task_id(task_id)
     if project_id:
         candidate = get_meta_path(task_id, project_id=project_id)
         return candidate if candidate.exists() else None
@@ -131,6 +135,7 @@ def load_snapshot_meta(task_id: str, project_root: str | Path | None = None) -> 
     Returns:
         SnapshotMeta if found, None otherwise
     """
+    task_id = canonicalize_task_id(task_id)
     meta_path = _find_global_meta_path(task_id)
     if meta_path is None:
         meta_path = get_meta_path(task_id, project_root=project_root)

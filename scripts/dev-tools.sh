@@ -134,10 +134,11 @@ get_changed_files() {
     local ext_pattern="$1"
     local base_dir="${2:-$PROJECT_DIR}"
 
-    # Get both staged and unstaged changes
+    # Get staged, unstaged, and untracked files.
     (
         git -C "$base_dir" diff --name-only HEAD 2>/dev/null
         git -C "$base_dir" diff --name-only --cached 2>/dev/null
+        git -C "$base_dir" ls-files --others --exclude-standard 2>/dev/null
     ) | grep -E "\.($ext_pattern)$" | sort -u | while read -r file; do
         # Return full path if file exists
         local full_path="$base_dir/$file"

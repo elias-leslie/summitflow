@@ -13,6 +13,7 @@ from ..lib.checkpoint_branches import merge_task_branch
 from ..output import output_error, output_success, output_warning
 from .done_git import git_stash_pop, git_stash_push, is_working_tree_clean
 from .done_subtask import auto_close_subtasks
+from .tasks_progress import sync_completed_subtasks
 
 
 def ensure_worktree_clean(snapshot_info: dict[str, str | int | None]) -> None:
@@ -70,6 +71,15 @@ def _perform_completion(
     strict: bool,
 ) -> None:
     if not strict:
+        subtasks_resp = client.get_subtasks(task_id, include_steps=True)
+        sync_analysis = sync_completed_subtasks(
+            client,
+            task_id,
+            subtasks_resp.get("subtasks", []),
+            acknowledge_none=True,
+        )
+        if sync_analysis.synced:
+            output_success(f"Pre-synced subtasks before completion: {', '.join(sync_analysis.synced)}")
         _auto_verify_readiness(client, task_id)
         auto_close_subtasks(client, task_id, project_id)
 

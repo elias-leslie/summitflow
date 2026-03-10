@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..connection import get_connection
-from .core import TASK_COLUMNS, _row_to_dict, get_task
+from .core import TASK_COLUMNS, _row_to_dict, canonicalize_task_id, get_task
 
 # Valid task status transitions
 VALID_TRANSITIONS: dict[str, set[str]] = {
@@ -82,11 +82,12 @@ def _execute_status_update(
     task_id: str, status: str, error_message: str | None
 ) -> dict[str, Any] | None:
     """Execute the status UPDATE SQL and return the updated row dict or None."""
+    resolved_task_id = canonicalize_task_id(task_id)
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             _UPDATE_SQL,
             (status, status, status, status, status, error_message,
-             status, status, status, status, task_id),
+             status, status, status, status, resolved_task_id),
         )
         row = cur.fetchone()
         conn.commit()
@@ -130,10 +131,11 @@ def add_commit(task_id: str, commit_sha: str) -> dict[str, Any] | None:
     Returns:
         Updated task dict or None if not found.
     """
+    resolved_task_id = canonicalize_task_id(task_id)
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             f"UPDATE tasks SET commits = array_append(commits, %s) WHERE id = %s RETURNING {TASK_COLUMNS}",
-            (commit_sha, task_id),
+            (commit_sha, resolved_task_id),
         )
         row = cur.fetchone()
         conn.commit()

@@ -214,6 +214,29 @@ class TestTaskLifecycleEndpoints:
         assert release_data["id"] == task_id
         assert release_data["status"] == "pending"
 
+    def test_claim_accepts_short_task_suffix(
+        self,
+        client: Any,
+        test_project_id: str,
+        cleanup_task: Callable[[str], None],
+    ) -> None:
+        response = client.post(
+            f"/api/projects/{test_project_id}/tasks",
+            json={"title": "Short claim target", "task_type": "task", "priority": 2},
+        )
+        assert response.status_code == 200
+        task_id = response.json()["id"]
+        cleanup_task(task_id)
+
+        short_id = task_id.removeprefix("task-")
+        claim_response = client.post(
+            f"/api/projects/{test_project_id}/tasks/{short_id}/claim",
+            json={"worker_id": "worker-1", "lock_minutes": 15},
+        )
+
+        assert claim_response.status_code == 200
+        assert claim_response.json()["id"] == task_id
+
     def test_release_rejects_unclaimed_task(
         self,
         client: Any,

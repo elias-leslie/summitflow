@@ -67,13 +67,15 @@ TASKS (create/bug/idea REQUIRE -P <project>):
   log <id> <message>
   cancel <id> [-r reason]                  # cancel a task (from any state)
   reopen <id> [-r reason]                  # reopen a task (move back to pending)
+  sync-progress <id> [--none]              # sync passed subtasks from completed steps
   autocode <id> [--dry-run] [--at TIME]    # queue for autonomous execution (immediate or scheduled)
   critique <id> [--stage task_shape]       # request/store a second-opinion critique
   verify <plan.json>                       # validate plan file against schema
   exec-log <id> [-f] [-n N] [--debug]      # view execution log (subtasks, tool calls, events)
 
 CHECKPOINT (claim -> done | abandon):
-  claim <id> [--force]                     # claim task, create checkpoint (DB+git)
+  claim <id> [--force]                     # claim task, create checkpoint (DB+git, auto-adopt dirty files)
+  adopt <id>                               # copy current dirty paths into an existing claimed worktree
   claim <subtask> -t <task>                # claim subtask, create branch
   done <subtask> -t <task>                 # complete subtask, merge branch
   done <task>                              # complete task, merge to main, remove checkpoint
@@ -85,7 +87,7 @@ SUBTASK:
   subtask list <task-id>
   subtask show <task-id> <subtask-id>
   subtask create <task-id> <sub-id> <desc> [--phase P] [--steps "a,b,c"]
-  subtask pass <task-id> <subtask-id>
+  subtask pass <subtask-id> -t <task-id> [--citation M:abc12345+] [--none]
   subtask delete <task-id> <subtask-id>
 
 STEP:
@@ -235,8 +237,8 @@ app.command("exec-log")(exec_monitor.exec_log_command)
 # Register checkpoint-aware commands (override old claim from tasks.py)
 # These are defined with @app.command() in their modules, so access via module.app
 for cmd in claim.app.registered_commands:
-    if cmd.callback is not None and cmd.name == "claim":
-        app.command(name="claim")(cmd.callback)
+    if cmd.callback is not None and cmd.name in {"claim", "adopt"}:
+        app.command(name=cmd.name)(cmd.callback)
 app.add_typer(checkpoints.app, name="checkpoints")
 for cmd in done.app.registered_commands:
     if cmd.callback is not None and cmd.name == "done":

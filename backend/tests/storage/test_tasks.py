@@ -280,3 +280,22 @@ class TestDeleteTask:
         """Test deleting nonexistent task returns False."""
         result = task_store.delete_task("nonexistent-id")
         assert result is False
+
+
+class TestShortTaskIdResolution:
+    def test_get_task_accepts_short_suffix(self, project_id: str) -> None:
+        task = task_store.create_task(project_id, "Short id lookup")
+
+        retrieved = task_store.get_task(task["id"].removeprefix("task-"))
+
+        assert retrieved is not None
+        assert retrieved["id"] == task["id"]
+
+    def test_update_task_status_accepts_short_suffix(self, project_id: str) -> None:
+        task = task_store.create_task(project_id, "Short id status")
+
+        updated = task_store.update_task_status(task["id"].removeprefix("task-"), "running")
+
+        assert updated is not None
+        assert updated["id"] == task["id"]
+        assert updated["status"] == "running"

@@ -97,6 +97,28 @@ class TestFormatContextTask:
 
         assert "SPECIALISTS:reviewer:2:1-4m:dispatch" in output
 
+    def test_includes_completion_readiness_and_sync_hints(self) -> None:
+        task = {
+            "id": "task-791",
+            "status": "running",
+            "priority": 2,
+            "task_type": "task",
+            "complexity": "STANDARD",
+            "title": "Finish closure safely",
+            "completion_readiness": {
+                "ready": False,
+                "gates": [{"gate": "subtasks"}, {"gate": "verification"}],
+            },
+            "syncable_subtasks": ["1.1", "1.2"],
+            "syncable_subtasks_skipped": ["1.3:citations", "1.4:steps-2"],
+        }
+
+        output = format_context_task(task)
+
+        assert "COMPLETE_READY:no|gates:subtasks,verification" in output
+        assert "SYNCABLE_SUBTASKS:1.1,1.2" in output
+        assert "SYNC_SKIPS:1.3:citations | 1.4:steps-2" in output
+
 
 
 class TestFormatContextSubtasks:

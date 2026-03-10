@@ -9,6 +9,8 @@ from typing import Annotated, Any
 
 import typer
 
+from app.storage.tasks import canonicalize_task_id
+
 from ..client import APIError, STClient
 from ..lib.checkpoint import (
     create_subtask_branch,
@@ -18,6 +20,7 @@ from ..lib.checkpoint import (
 )
 from ..output import output_error, output_success, output_warning
 from .claim_helpers import (
+    adopt_dirty_changes_to_worktree,
     handle_existing_checkpoint,
     is_subtask_id,
     print_claimed,
@@ -37,7 +40,9 @@ def _claim_task(
 
     Creates DB snapshot, git branch, and sets task status to running.
     """
+    task_id = canonicalize_task_id(task_id)
     task = client.get_task(task_id)
+    task_id = str(task.get("id", task_id))
     project_id = task.get("project_id", "")
 
     existing = get_snapshot_info(task_id)
@@ -63,6 +68,18 @@ def _claim_task(
         output_error(f"Failed to create checkpoint: {e}")
         raise typer.Exit(1) from None
 
+    if meta.worktree_path:
+        try:
+            adopt_dirty_changes_to_worktree(meta.worktree_path)
+        except Exception as e:
+            remove_snapshot(task_id, remove_worktree=True, project_id=project_id)
+            try:
+                client.release_task(task_id)
+            except Exception as release_error:
+                output_warning(f"Failed to release task claim after adoption error: {release_error}")
+            output_error(f"Failed to adopt current changes into worktree: {e}")
+            raise typer.Exit(1) from None
+
     return {
         "task_id": task_id,
         "action": "claimed",
@@ -83,6 +100,7 @@ def _claim_subtask(
 
     Parent task must be claimed first.
     """
+    task_id = canonicalize_task_id(task_id)
     task = client.get_task(task_id)
     status = task.get("status", "")
 
@@ -138,8 +156,38 @@ def claim_command(
         output_success(f"Subtask {id} claimed. Branch: {result['branch']}")
         return
 
-    result = _claim_task(client, id, force)
+    result = _claim_task(client, canonicalize_task_id(id), force)
     if result.get("action") == "resumed":
         print_resumed(id, result)
     else:
         print_claimed(id, result)
+
+
+@app.command(name="adopt")
+def adopt_command(
+    task_id: Annotated[str | None, typer.Argument(help="Task ID with an existing claimed worktree")] = None,
+) -> None:
+    """Adopt current dirty changes into an already-claimed task worktree."""
+    from ..context import require_task_id
+
+    resolved_task_id = require_task_id(task_id)
+    snapshot = get_snapshot_info(resolved_task_id)
+    if not snapshot:
+        output_error(f"No checkpoint found for {resolved_task_id}. Claim the task first.")
+        raise typer.Exit(1)
+
+    worktree_path = snapshot.get("worktree_path")
+    if not worktree_path or not isinstance(worktree_path, str):
+        output_error(f"Task {resolved_task_id} has no worktree to adopt into.")
+        raise typer.Exit(1)
+
+    try:
+        adopted = adopt_dirty_changes_to_worktree(worktree_path)
+    except Exception as e:
+        output_error(f"Failed to adopt current changes into worktree: {e}")
+        raise typer.Exit(1) from None
+
+    if adopted == 0:
+        output_warning("No current dirty paths needed adopting.")
+        return
+    output_success(f"Task {resolved_task_id} worktree updated from current repo state.")

@@ -58,6 +58,14 @@ def create_subtask(
 def pass_subtask(
     subtask_id: str,
     task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
+    citations: Annotated[
+        list[str] | None,
+        typer.Option("--citation", help="Inline memory citations for this pass"),
+    ] = None,
+    acknowledge_none: Annotated[
+        bool,
+        typer.Option("--none", help="Acknowledge that no memories were needed"),
+    ] = False,
 ) -> None:
     """Mark a subtask as passed. All steps must be complete (enforced by DB trigger)."""
     from ..context import require_task_id
@@ -65,7 +73,20 @@ def pass_subtask(
     task_id = require_task_id(task_id)
     client = STClient()
 
+    if citations and acknowledge_none:
+        output_error("Use either --citation or --none, not both.")
+        raise typer.Exit(1)
+
     _check_incomplete_steps(client, task_id, subtask_id)
+
+    try:
+        if citations:
+            client.log_citations(task_id, subtask_id, citations)
+        elif acknowledge_none:
+            client.acknowledge_no_citations(task_id, subtask_id)
+    except APIError as e:
+        handle_api_error(e)
+        return
 
     try:
         client.update_subtask(task_id, subtask_id, passes=True)

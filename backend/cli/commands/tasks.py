@@ -185,6 +185,20 @@ def log(
     append_task_log(message, resolved_task_id, STClient())
 
 
+@app.command("sync-progress")
+def sync_progress(
+    task_id: Annotated[str | None, typer.Argument()] = None,
+    acknowledge_none: Annotated[
+        bool,
+        typer.Option("--none", help="Acknowledge no memories for synced subtasks"),
+    ] = False,
+) -> None:
+    """Sync subtask pass state from already-completed steps."""
+    from .tasks_progress import sync_progress_command
+
+    sync_progress_command(task_id, acknowledge_none)
+
+
 @app.command("verify")
 def verify_plan(
     file_path: Annotated[Path, typer.Argument()],

@@ -5,6 +5,8 @@ from __future__ import annotations
 import socket
 from typing import TYPE_CHECKING, Any, cast
 
+from app.storage.tasks import canonicalize_task_id
+
 if TYPE_CHECKING:
     import httpx
 
@@ -29,7 +31,7 @@ def get_task(
     client: httpx.Client, global_url_fn: Any, handle_response: Any, task_id: str
 ) -> dict[str, Any]:
     """Get a task by ID (global lookup)."""
-    response = client.get(global_url_fn(f"/tasks/{task_id}"))
+    response = client.get(global_url_fn(f"/tasks/{canonicalize_task_id(task_id)}"))
     return cast(dict[str, Any], handle_response(response))
 
 
@@ -37,7 +39,7 @@ def get_task_completion_readiness(
     client: httpx.Client, global_url_fn: Any, handle_response: Any, task_id: str
 ) -> dict[str, Any]:
     """Get completion-readiness gates for a task."""
-    response = client.get(global_url_fn(f"/tasks/{task_id}/completion-readiness"))
+    response = client.get(global_url_fn(f"/tasks/{canonicalize_task_id(task_id)}/completion-readiness"))
     return cast(dict[str, Any], handle_response(response))
 
 
@@ -79,7 +81,7 @@ def update_task(
     client: httpx.Client, url_fn: Any, handle_response: Any, task_id: str, **updates: Any
 ) -> dict[str, Any]:
     """Update a task."""
-    response = client.patch(url_fn(f"/tasks/{task_id}"), json=updates)
+    response = client.patch(url_fn(f"/tasks/{canonicalize_task_id(task_id)}"), json=updates)
     return cast(dict[str, Any], handle_response(response))
 
 
@@ -102,7 +104,7 @@ def update_status(
     if skip_gates:
         data["skip_gates"] = True
 
-    response = client.patch(url_fn(f"/tasks/{task_id}/status"), json=data)
+    response = client.patch(url_fn(f"/tasks/{canonicalize_task_id(task_id)}/status"), json=data)
     return cast(dict[str, Any], handle_response(response))
 
 
@@ -110,7 +112,7 @@ def delete_task(
     client: httpx.Client, url_fn: Any, handle_response: Any, task_id: str
 ) -> dict[str, Any]:
     """Delete a task."""
-    response = client.delete(url_fn(f"/tasks/{task_id}"))
+    response = client.delete(url_fn(f"/tasks/{canonicalize_task_id(task_id)}"))
     return cast(dict[str, Any], handle_response(response))
 
 
@@ -127,7 +129,7 @@ def claim_task(
         worker_id = socket.gethostname()
 
     data = {"worker_id": worker_id, "lock_minutes": lock_minutes}
-    response = client.post(url_fn(f"/tasks/{task_id}/claim"), json=data)
+    response = client.post(url_fn(f"/tasks/{canonicalize_task_id(task_id)}/claim"), json=data)
     return cast(dict[str, Any], handle_response(response))
 
 
@@ -135,7 +137,7 @@ def release_task(
     client: httpx.Client, url_fn: Any, handle_response: Any, task_id: str
 ) -> dict[str, Any]:
     """Release a claimed task."""
-    response = client.post(url_fn(f"/tasks/{task_id}/release"))
+    response = client.post(url_fn(f"/tasks/{canonicalize_task_id(task_id)}/release"))
     return cast(dict[str, Any], handle_response(response))
 
 
@@ -144,7 +146,7 @@ def append_log(
 ) -> dict[str, Any]:
     """Append an entry to the task's progress log."""
     data = {"entry": entry}
-    response = client.post(global_url_fn(f"/tasks/{task_id}/log"), json=data)
+    response = client.post(global_url_fn(f"/tasks/{canonicalize_task_id(task_id)}/log"), json=data)
     return cast(dict[str, Any], handle_response(response))
 
 
@@ -152,7 +154,7 @@ def validate_ready(
     client: httpx.Client, url_fn: Any, handle_response: Any, task_id: str
 ) -> dict[str, Any]:
     """Validate task execution readiness."""
-    response = client.post(url_fn(f"/tasks/{task_id}/validate-ready"))
+    response = client.post(url_fn(f"/tasks/{canonicalize_task_id(task_id)}/validate-ready"))
     return cast(dict[str, Any], handle_response(response))
 
 
@@ -160,7 +162,7 @@ def finalize_task_merge(
     client: httpx.Client, global_url_fn: Any, handle_response: Any, task_id: str
 ) -> dict[str, Any]:
     """Finalize merge/cleanup for a non-active task residue lane."""
-    response = client.post(global_url_fn(f"/git/tasks/{task_id}/finalize"))
+    response = client.post(global_url_fn(f"/git/tasks/{canonicalize_task_id(task_id)}/finalize"))
     return cast(dict[str, Any], handle_response(response))
 
 
@@ -168,7 +170,7 @@ def resolve_task_conflict(
     client: httpx.Client, global_url_fn: Any, handle_response: Any, task_id: str
 ) -> dict[str, Any]:
     """Reopen a residue task for conflict-resolution execution."""
-    response = client.post(global_url_fn(f"/git/tasks/{task_id}/resolve-conflict"))
+    response = client.post(global_url_fn(f"/git/tasks/{canonicalize_task_id(task_id)}/resolve-conflict"))
     return cast(dict[str, Any], handle_response(response))
 
 

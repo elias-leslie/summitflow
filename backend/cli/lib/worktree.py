@@ -11,6 +11,8 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.storage.tasks import canonicalize_task_id
+
 from .worktree_deps import symlink_gitignored_deps
 from .worktree_git import WorktreeError, get_branch_name, get_current_branch, get_repo_root, run_git
 from .worktree_helpers import (
@@ -46,6 +48,7 @@ def create_worktree(
     task_id: str, base_branch: str = "main", project_id: str | None = None
 ) -> WorktreeInfo:
     """Create a worktree for a task."""
+    task_id = canonicalize_task_id(task_id)
     worktree_path = get_worktree_path(task_id, project_id)
     branch_name = get_branch_name(task_id)
     if worktree_path.exists():
@@ -69,6 +72,7 @@ def create_worktree(
 
 def get_worktree_info(task_id: str, project_id: str | None = None) -> WorktreeInfo | None:
     """Get information about an existing worktree."""
+    task_id = canonicalize_task_id(task_id)
     worktree_path = get_worktree_path(task_id, project_id)
     if not worktree_path.exists() or not (worktree_path / ".git").exists():
         return None
@@ -89,6 +93,7 @@ def remove_worktree(
     task_id: str, delete_branch: bool = True, project_id: str | None = None
 ) -> bool:
     """Remove a task's worktree and optionally its branch."""
+    task_id = canonicalize_task_id(task_id)
     worktree_path = get_worktree_path(task_id, project_id)
     branch_name = get_branch_name(task_id)
     if not worktree_path.exists():

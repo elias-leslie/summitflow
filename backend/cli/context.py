@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import os
 
+from app.storage.tasks import canonicalize_task_id
+
 
 def require_task_id(explicit_task_id: str | None) -> str:
     """Get task_id from argument or ST_CURRENT_TASK_ID env var.
@@ -25,11 +27,11 @@ def require_task_id(explicit_task_id: str | None) -> str:
     from .output import output_error
 
     if explicit_task_id:
-        return explicit_task_id
+        return canonicalize_task_id(explicit_task_id)
 
     env_task = os.getenv("ST_CURRENT_TASK_ID")
     if env_task:
-        return env_task
+        return canonicalize_task_id(env_task)
 
     output_error(
         "No task specified and no active context.\nEither provide a task_id or use -t/--task flag."

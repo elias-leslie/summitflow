@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..connection import get_connection
-from .core import TASK_COLUMNS, _row_to_dict
+from .core import TASK_COLUMNS, _row_to_dict, canonicalize_task_id
 
 _CLAIMABLE_STATUSES = {"pending", "paused", "blocked", "failed", "queue"}
 
@@ -37,10 +37,11 @@ def claim_task(
         Claimed task dict if successful, None if task not found, not in a
         claimable status, or already claimed by another worker.
     """
+    resolved_task_id = canonicalize_task_id(task_id)
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             f"SELECT {TASK_COLUMNS} FROM tasks WHERE id = %s FOR UPDATE",
-            (task_id,),
+            (resolved_task_id,),
         )
         row = cur.fetchone()
         if not row:
@@ -63,7 +64,7 @@ def claim_task(
             WHERE id = %s
             RETURNING {TASK_COLUMNS}
             """,
-            (worker_id, lock_duration_minutes, task_id),
+            (worker_id, lock_duration_minutes, resolved_task_id),
         )
         row = cur.fetchone()
         conn.commit()
@@ -79,6 +80,7 @@ def release_task(task_id: str) -> dict[str, Any] | None:
     Returns:
         Updated task dict or None if not found.
     """
+    resolved_task_id = canonicalize_task_id(task_id)
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             f"""
@@ -90,7 +92,7 @@ def release_task(task_id: str) -> dict[str, Any] | None:
             WHERE id = %s
             RETURNING {TASK_COLUMNS}
             """,
-            (task_id,),
+            (resolved_task_id,),
         )
         row = cur.fetchone()
         conn.commit()

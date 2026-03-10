@@ -19,6 +19,28 @@ def _generate_task_id() -> str:
     return generate_prefixed_id("task")
 
 
+def canonicalize_task_id(task_id: str) -> str:
+    """Normalize user/agent input to the canonical stored task id format."""
+    raw = task_id.strip()
+    if raw.startswith("task-"):
+        return raw
+    return f"task-{raw}"
+
+
+def _fetch_task_row(task_id: str) -> Any | None:
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT {TASK_COLUMNS_WITH_SPIRIT}
+            FROM tasks t
+            LEFT JOIN task_spirit ts ON t.id = ts.task_id
+            WHERE t.id = %s
+            """,
+            (task_id,),
+        )
+        return cur.fetchone()
+
+
 def _insert_task(params: tuple[Any, ...]) -> dict[str, Any]:
     """Execute INSERT for a task row and return the created dict."""
     with get_connection() as conn, conn.cursor() as cur:
@@ -62,8 +84,7 @@ def create_task(
     Spirit fields (objective, constraints, done_when, etc.) live in task_spirit;
     use storage.task_spirit functions. Verification is at step level (storage.steps).
     """
-    if task_id is None:
-        task_id = _generate_task_id()
+    task_id = _generate_task_id() if task_id is None else canonicalize_task_id(task_id)
     execution_fields = normalize_execution_fields(
         task_type=task_type,
         execution_mode=execution_mode,
@@ -81,18 +102,10 @@ def create_task(
 
 def get_task(task_id: str) -> dict[str, Any] | None:
     """Get a task by ID with spirit fields, or None if not found."""
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            f"""
-            SELECT {TASK_COLUMNS_WITH_SPIRIT}
-            FROM tasks t
-            LEFT JOIN task_spirit ts ON t.id = ts.task_id
-            WHERE t.id = %s
-            """,
-            (task_id,),
-        )
-        row = cur.fetchone()
-
+    canonical_task_id = canonicalize_task_id(task_id)
+    row = _fetch_task_row(task_id) if canonical_task_id != task_id else None
+    if row is None:
+        row = _fetch_task_row(canonical_task_id)
     if not row:
         return None
     return row_to_dict_with_spirit(row)
@@ -104,8 +117,9 @@ def update_task(task_id: str, **fields: Any) -> dict[str, Any] | None:
     Raises:
         ValueError: If no fields provided or invalid field name.
     """
+    resolved_task_id = canonicalize_task_id(task_id)
     if "execution_mode" in fields or "autonomous" in fields or "task_type" in fields:
-        existing = get_task(task_id)
+        existing = get_task(resolved_task_id)
         if existing is None:
             return None
         execution_fields = normalize_execution_fields(
@@ -115,15 +129,16 @@ def update_task(task_id: str, **fields: Any) -> dict[str, Any] | None:
         )
         fields["execution_mode"] = execution_fields["execution_mode"]
         fields["autonomous"] = execution_fields["autonomous"]
-    return update_task_fields(task_id, **fields)
+    return update_task_fields(resolved_task_id, **fields)
 
 
 def delete_task(task_id: str) -> bool:
     """Delete a task. Returns True if deleted, False if not found."""
+    resolved_task_id = canonicalize_task_id(task_id)
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             "DELETE FROM tasks WHERE id = %s RETURNING id",
-            (task_id,),
+            (resolved_task_id,),
         )
         result = cur.fetchone()
         conn.commit()
@@ -152,6 +167,7 @@ __all__ = [
     "_row_to_dict",
     "_row_to_dict_with_spirit",
     "add_agent_hub_session",
+    "canonicalize_task_id",
     "create_task",
     "delete_task",
     "get_agent_hub_sessions",

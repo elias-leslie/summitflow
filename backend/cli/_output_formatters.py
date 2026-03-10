@@ -158,6 +158,25 @@ def format_context_task(task: dict[str, Any]) -> str:
         lines.append(f"DONE_WHEN[{len(done_when)}]:{' | '.join(done_when)}")
     if readiness and readiness.missing_fields:
         lines.append(f"READINESS:missing:{','.join(readiness.missing_fields)}")
+    completion_readiness = task.get("completion_readiness")
+    if isinstance(completion_readiness, dict):
+        gates = completion_readiness.get("gates") or []
+        if completion_readiness.get("ready"):
+            lines.append("COMPLETE_READY:yes")
+        else:
+            gate_codes = [
+                str(g.get("gate") or g.get("code") or "unknown")
+                for g in gates
+                if isinstance(g, dict)
+            ]
+            if gate_codes:
+                lines.append(f"COMPLETE_READY:no|gates:{','.join(gate_codes)}")
+    syncable = task.get("syncable_subtasks") or []
+    if isinstance(syncable, list) and syncable:
+        lines.append(f"SYNCABLE_SUBTASKS:{','.join(str(item) for item in syncable)}")
+    skipped = task.get("syncable_subtasks_skipped") or []
+    if isinstance(skipped, list) and skipped:
+        lines.append(f"SYNC_SKIPS:{' | '.join(str(item) for item in skipped[:8])}")
     lines.extend(_format_context_lines(task.get("context")))
     lines.extend(_format_lane_lines(task.get("lane_preflight")))
     return "\n".join(lines)

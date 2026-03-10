@@ -226,21 +226,52 @@ class TestCompleteTaskSmart:
     @patch("cli.commands.done_task.remove_snapshot")
     @patch("cli.commands.done_task.merge_task_branch")
     @patch("cli.commands.done_task.auto_close_subtasks")
+    @patch("cli.commands.done_task.sync_completed_subtasks")
     @patch("cli.commands.done_task.is_working_tree_clean", return_value=True)
     @patch("cli.commands.done_task._publish_completed_work")
     def test_calls_auto_close_by_default(
-        self, mock_publish: MagicMock, mock_clean: MagicMock, mock_auto: MagicMock, mock_merge: MagicMock,
+        self, mock_publish: MagicMock, mock_clean: MagicMock, mock_sync: MagicMock, mock_auto: MagicMock, mock_merge: MagicMock,
         mock_remove: MagicMock, mock_snapshot: MagicMock
     ) -> None:
         """Smart mode calls auto_close_subtasks by default."""
         mock_snapshot.return_value = {"worktree_path": None, "project_id": "test"}
         client = self._setup_mocks()
+        client.get_subtasks.return_value = {"subtasks": []}
+        mock_sync.return_value = MagicMock(synced=[], syncable=[], skipped=[])
 
         complete_task(client, "task-123")
 
+        mock_sync.assert_called_once()
         mock_auto.assert_called_once_with(client, "task-123", "test")
         mock_publish.assert_called_once_with("task-123", "test")
         client.post.assert_not_called()
+
+    @patch("cli.commands.done_task.get_snapshot_info")
+    @patch("cli.commands.done_task.remove_snapshot")
+    @patch("cli.commands.done_task.merge_task_branch")
+    @patch("cli.commands.done_task.auto_close_subtasks")
+    @patch("cli.commands.done_task.sync_completed_subtasks")
+    @patch("cli.commands.done_task.is_working_tree_clean", return_value=True)
+    @patch("cli.commands.done_task._publish_completed_work")
+    def test_completion_pre_syncs_objectively_done_subtasks(
+        self,
+        mock_publish: MagicMock,
+        mock_clean: MagicMock,
+        mock_sync: MagicMock,
+        mock_auto: MagicMock,
+        mock_merge: MagicMock,
+        mock_remove: MagicMock,
+        mock_snapshot: MagicMock,
+    ) -> None:
+        mock_snapshot.return_value = {"worktree_path": None, "project_id": "test"}
+        client = self._setup_mocks()
+        client.get_subtasks.return_value = {"subtasks": [{"subtask_id": "1.1"}]}
+        mock_sync.return_value = MagicMock(synced=["1.1"], syncable=[], skipped=[])
+
+        with patch("cli.commands.done_task.output_success") as mock_success:
+            complete_task(client, "task-123")
+
+        assert any("Pre-synced subtasks before completion: 1.1" in call.args[0] for call in mock_success.call_args_list)
 
     @patch("cli.commands.done_task.get_snapshot_info", return_value=None)
     @patch("cli.commands.done_task._publish_completed_work")

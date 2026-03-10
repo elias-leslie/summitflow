@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
+from app.storage.tasks import canonicalize_task_id
+
 if TYPE_CHECKING:
     import httpx
 
@@ -79,13 +81,14 @@ def get_task_agent_events(
     page_size: int = 500,
 ) -> dict[str, Any]:
     """Get Agent Hub session events linked to a task."""
+    canonical_task_id = canonicalize_task_id(task_id)
     params: dict[str, Any] = {"page": page, "page_size": page_size}
     if event_type:
         params["event_type"] = event_type
     if turn is not None:
         params["turn"] = turn
     response = client.get(
-        f"{base_url}/projects/{project_id}/tasks/{task_id}/agent-events",
+        f"{base_url}/projects/{project_id}/tasks/{canonical_task_id}/agent-events",
         params=params,
     )
     return cast(dict[str, Any], handle_response(response))
@@ -99,7 +102,9 @@ def get_task_agent_sessions(
     task_id: str,
 ) -> dict[str, Any]:
     """Get Agent Hub sessions linked to a task."""
-    response = client.get(f"{base_url}/projects/{project_id}/tasks/{task_id}/agent-sessions")
+    response = client.get(
+        f"{base_url}/projects/{project_id}/tasks/{canonicalize_task_id(task_id)}/agent-sessions"
+    )
     return cast(dict[str, Any], handle_response(response))
 
 
@@ -113,7 +118,7 @@ def get_events(
     include_debug: bool = False,
 ) -> dict[str, Any]:
     """Get execution events for a task."""
-    params: dict[str, Any] = {"trace_id": task_id, "limit": limit}
+    params: dict[str, Any] = {"trace_id": canonicalize_task_id(task_id), "limit": limit}
     if not include_debug:
         params["visibility"] = "user"
     response = client.get(
