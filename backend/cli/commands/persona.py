@@ -32,6 +32,16 @@ def _read_file(path: str) -> str:
     return p.read_text(encoding="utf-8")
 
 
+def _write_file(path: str, content: str) -> None:
+    """Write content to a file, exiting on invalid destination."""
+    p = Path(path)
+    parent = p.parent
+    if not parent.exists():
+        output_error(f"Directory not found: {parent}")
+        raise typer.Exit(1)
+    p.write_text(content, encoding="utf-8")
+
+
 def _api(fn: Any, msg: str) -> Any:
     """Call fn(); on exception print msg and exit."""
     try:
@@ -183,7 +193,7 @@ def show() -> None:
 
 @app.command()
 def update(
-    heartbeat_instructions: Annotated[str | None, _Opt("--heartbeat-instructions", "-H", help="File with heartbeat instructions")] = None,
+    heartbeat_instructions: Annotated[str | None, _Opt("--heartbeat-instructions", "-H", help="Import heartbeat instructions from file into DB")] = None,
     user_context: Annotated[str | None, _Opt("--user-context", "-U", help="File with user context")] = None,
     voice_enabled: Annotated[bool | None, _Opt("--voice-enabled/--no-voice", help="Toggle voice")] = None,
     voice_id: Annotated[str | None, _Opt("--voice-id", help="Voice ID string")] = None,
@@ -272,12 +282,13 @@ def name(
 def instructions(
     edit: Annotated[bool, _Opt("--edit", "-e", help="Open $EDITOR to modify")] = False,
     set_text: Annotated[str | None, _Opt("--set", "-s", help="Set heartbeat instructions directly")] = None,
+    export: Annotated[str | None, _Opt("--export", help="Export DB-backed heartbeat instructions to file")] = None,
 ) -> None:
-    """Print or modify heartbeat instructions."""
+    """Print, modify, or export DB-backed heartbeat instructions."""
     from .persona_api import get_persona, update_persona
 
-    if edit and set_text is not None:
-        output_error("--edit and --set are mutually exclusive")
+    if sum([edit, set_text is not None, export is not None]) > 1:
+        output_error("--edit, --set, and --export are mutually exclusive")
         raise typer.Exit(1)
     if set_text is not None:
         result = _api(
@@ -287,8 +298,13 @@ def instructions(
         print(f"Heartbeat instructions updated (version {result.get('version', '?')})")
         return
     persona = _api(get_persona, "Failed to fetch persona")
+    text = persona.get("heartbeat_instructions") or ""
+    if export is not None:
+        _write_file(export, text)
+        print(f"Heartbeat instructions exported to {export} ({len(text)} chars)")
+        return
     if edit:
-        new_text = _edit_text_in_editor(persona.get("heartbeat_instructions") or "")
+        new_text = _edit_text_in_editor(text)
         if new_text is None:
             print("No changes made.")
             return
@@ -298,7 +314,6 @@ def instructions(
         )
         print(f"Heartbeat instructions updated (version {result.get('version', '?')})")
         return
-    text = persona.get("heartbeat_instructions")
     print(text if text else "(No heartbeat instructions set)")
 
 

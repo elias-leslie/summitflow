@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
-from cli.commands.persona import _get_dispatch_hint
+from typer.testing import CliRunner
+
+from cli.commands.persona import _get_dispatch_hint, app
+
+runner = CliRunner()
 
 
 class TestPersonaHeartbeatHelpers:
@@ -41,3 +46,32 @@ class TestPersonaHeartbeatHelpers:
         }
 
         assert _get_dispatch_hint(client, "agent-hub") is None
+
+
+class TestPersonaInstructionsCommand:
+    def test_instructions_prints_db_backed_text(self) -> None:
+        with patch("cli.commands.persona._api") as mock_api:
+            mock_api.return_value = {"heartbeat_instructions": "DB text"}
+
+            result = runner.invoke(app, ["instructions"])
+
+        assert result.exit_code == 0
+        assert "DB text" in result.output
+
+    def test_instructions_exports_db_backed_text(self, tmp_path: Path) -> None:
+        target = tmp_path / "heartbeat.md"
+
+        with patch("cli.commands.persona._api") as mock_api:
+            mock_api.return_value = {"heartbeat_instructions": "DB text"}
+
+            result = runner.invoke(app, ["instructions", "--export", str(target)])
+
+        assert result.exit_code == 0
+        assert target.read_text(encoding="utf-8") == "DB text"
+        assert f"Heartbeat instructions exported to {target} (7 chars)" in result.output
+
+    def test_instructions_rejects_conflicting_modes(self) -> None:
+        result = runner.invoke(app, ["instructions", "--edit", "--export", "heartbeat.md"])
+
+        assert result.exit_code == 1
+        assert "--edit, --set, and --export are mutually exclusive" in result.output
