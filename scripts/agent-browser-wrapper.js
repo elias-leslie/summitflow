@@ -110,9 +110,11 @@ function removeHeadersArg(args) {
 
 function runAgentBrowser(args) {
   const sessionName = getSessionName(args);
+  const hasExplicitSession = args.includes('--session');
   const socketRoot = getSocketRoot();
   const lockDir = path.join(socketRoot, 'locks');
   const lockPath = path.join(lockDir, `${sessionName}.wrapper.lock`);
+  const forwardedArgs = hasExplicitSession ? args : ['--session', sessionName, ...args];
 
   ensureDir(lockDir);
 
@@ -123,7 +125,7 @@ function runAgentBrowser(args) {
       env: process.env,
     });
 
-    execFileSync('flock', ['-w', '30', lockPath, REAL_AGENT_BROWSER, ...args], {
+    execFileSync('flock', ['-w', '30', lockPath, REAL_AGENT_BROWSER, ...forwardedArgs], {
       stdio: 'inherit',
       env: process.env,
     });
