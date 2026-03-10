@@ -5,7 +5,10 @@ from __future__ import annotations
 from typing import Any
 
 from ....logging_config import get_logger
-from ....services.context_gatherer import collect_precision_code_search_context
+from ....services.context_gatherer import (
+    PRECISION_CODE_SEARCH_GUIDANCE,
+    collect_precision_code_search_context,
+)
 from ....storage import tasks as task_store
 from ....storage.events import get_events_by_trace
 from ....storage.subtasks import get_handoff_context
@@ -201,7 +204,10 @@ def _build_precision_code_search_block(
     )
     if not result.prompt_context:
         return ""
-    return f"\n# Precision Code Search\n{result.prompt_context}"
+    return (
+        f"\n# Precision Code Search\n{result.prompt_context}\n\n"
+        f"{PRECISION_CODE_SEARCH_GUIDANCE}"
+    )
 
 
 def build_subtask_prompt(

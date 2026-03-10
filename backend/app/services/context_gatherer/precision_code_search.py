@@ -17,6 +17,10 @@ logger = logging.getLogger(__name__)
 _SEARCH_LIMIT = 5
 _SOURCE_SYMBOL_LIMIT = 2
 _RELATED_ENTRY_LIMIT = 2
+PRECISION_CODE_SEARCH_GUIDANCE = (
+    "Use the Precision Code Search block as the first code-navigation pass. "
+    "Only broaden to file-wide or text search if these indexed symbols are insufficient, stale, or clearly unrelated."
+)
 _STOP_WORDS = {
     "the",
     "and",
@@ -272,6 +276,33 @@ def _build_symbol_section(project_id: str, symbols: list[dict[str, Any]]) -> str
     return "\n".join(lines).strip()
 
 
+def _estimate_naive_file_tokens_for_symbols(
+    project_id: str,
+    symbols: list[dict[str, Any]],
+) -> int:
+    root_path = explorer_service.get_project_root(project_id)
+    if not root_path or not symbols:
+        return 0
+
+    root = Path(root_path).resolve()
+    total = 0
+    seen_paths: set[str] = set()
+
+    for symbol in symbols:
+        file_path = str(symbol.get("file_path", ""))
+        if not file_path or file_path in seen_paths:
+            continue
+        seen_paths.add(file_path)
+        absolute_path = (root / file_path).resolve()
+        if not absolute_path.is_relative_to(root) or not absolute_path.exists():
+            continue
+        try:
+            total += max(absolute_path.stat().st_size // 4, 0)
+        except OSError:
+            logger.debug("precision_code_search_stat_failed", exc_info=True)
+    return total
+
+
 def _collect_files(project_id: str, query_terms: list[str]) -> str | None:
     files = get_entries(project_id, filters={"type": "file"})
     lowered_terms = _fallback_match_terms(query_terms)
@@ -351,26 +382,35 @@ def collect_precision_code_search_context(
     query_terms = _extract_query_terms(normalized_queries)
     symbols = _search_symbol_matches(project_id, normalized_queries)
     symbol_section = _build_symbol_section(project_id, symbols) if symbols else ""
-    fallback_section = _build_fallback_section(project_id, query_terms)
+    fallback_section = "" if symbol_section else _build_fallback_section(project_id, query_terms)
 
     used_symbol_first = bool(symbol_section)
     used_fallback = not used_symbol_first and bool(fallback_section)
     body = symbol_section if used_symbol_first else fallback_section
     truncated_body = truncate_to_tokens(body, budget_tokens) if body else ""
 
+    naive_file_tokens = _estimate_naive_file_tokens_for_symbols(project_id, symbols) if used_symbol_first else 0
+
     metadata = {
         "query_count": len(normalized_queries),
         "symbol_count": len(symbols),
         "used_symbol_first": used_symbol_first,
         "used_fallback": used_fallback,
+        "naive_file_tokens": naive_file_tokens,
         "symbol_tokens": estimate_tokens(symbol_section),
         "fallback_tokens": estimate_tokens(fallback_section),
     }
     metadata["final_tokens"] = estimate_tokens(truncated_body)
-    metadata["estimated_tokens_saved"] = max(
-        metadata["fallback_tokens"] - metadata["final_tokens"],
-        0,
-    ) if used_symbol_first else 0
+    if used_symbol_first:
+        metadata["estimated_tokens_saved"] = max(
+            naive_file_tokens - metadata["final_tokens"],
+            0,
+        )
+    else:
+        metadata["estimated_tokens_saved"] = max(
+            metadata["fallback_tokens"] - metadata["final_tokens"],
+            0,
+        )
 
     if not truncated_body:
         return PrecisionCodeSearchResult(prompt_context="", metadata=metadata)

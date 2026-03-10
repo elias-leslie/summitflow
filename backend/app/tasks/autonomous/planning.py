@@ -11,7 +11,10 @@ from typing import Any
 
 from ...logging_config import get_logger
 from ...services.agent_hub_client import get_sync_client
-from ...services.context_gatherer import collect_precision_code_search_context
+from ...services.context_gatherer import (
+    PRECISION_CODE_SEARCH_GUIDANCE,
+    collect_precision_code_search_context,
+)
 from ...storage import log_task_event
 from ...storage import tasks as task_store
 from .planning_routing import route_based_on_complexity, supervisor_validate_plan
@@ -31,7 +34,7 @@ def _build_planning_prompt(title: str, description: str, precision_context: str 
         Formatted prompt string
     """
     precision_block = (
-        f"\n## Precision Code Search\n\n{precision_context}\n"
+        f"\n## Precision Code Search\n\n{precision_context}\n\n{PRECISION_CODE_SEARCH_GUIDANCE}\n"
         if precision_context
         else ""
     )

@@ -6,7 +6,10 @@ import json
 import logging
 from typing import Any
 
-from ..context_gatherer import collect_precision_code_search_context
+from ..context_gatherer import (
+    PRECISION_CODE_SEARCH_GUIDANCE,
+    collect_precision_code_search_context,
+)
 from .models import DiscussionResponse
 from .parsers import load_prompt, parse_enrichment_response
 
@@ -71,7 +74,7 @@ def _build_discussion_prompt(
     """
     conversation_section = conversation if conversation else "(No previous messages)"
     precision_block = (
-        f"\n## Precision Code Search\n\n{precision_context}\n"
+        f"\n## Precision Code Search\n\n{precision_context}\n\n{PRECISION_CODE_SEARCH_GUIDANCE}\n"
         if precision_context
         else ""
     )

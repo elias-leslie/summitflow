@@ -14,7 +14,10 @@ from .docs_collector import gather_docs_context
 from .explorer_collector import gather_explorer_context
 from .gemini_collector import gather_gemini_context
 from .helpers import gather_memory_context, is_frontend_task
-from .precision_code_search import collect_precision_code_search_context
+from .precision_code_search import (
+    PRECISION_CODE_SEARCH_GUIDANCE,
+    collect_precision_code_search_context,
+)
 from .rules_collector import gather_rules_context
 from .token_utils import estimate_tokens
 
@@ -23,6 +26,7 @@ logger = logging.getLogger(__name__)
 # Re-export public API
 __all__ = [
     "collect_precision_code_search_context",
+    "PRECISION_CODE_SEARCH_GUIDANCE",
     "format_context_for_prompt",
     "gather_all_context",
     "gather_design_standards_context",

@@ -57,6 +57,7 @@ class TestDoneWhenInReviewPrompt:
         assert "Success Criteria (done_when)" in prompt
         assert "API returns 200 on /health" in prompt
         assert "Tests pass" in prompt
+        assert "Use the Precision Code Search block as the first code-navigation pass." in prompt
         assert "verify the diff addresses each one" in prompt
         assert "Touched Files:" in prompt
         assert "Touched File Snapshots:" in prompt

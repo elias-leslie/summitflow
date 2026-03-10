@@ -61,7 +61,13 @@ class TestPromptTemplateFallbacks:
     @patch(f"{_PROMPTS}.build_health_context", return_value="")
     @patch(f"{_PROMPTS}.build_conflict_context", return_value="")
     @patch(f"{_PROMPTS}.build_resume_context", return_value="")
-    @patch(f"{_PROMPTS}._build_precision_code_search_block", return_value="\n# Precision Code Search\nPrecision Code Search: symbol-first")
+    @patch(
+        f"{_PROMPTS}._build_precision_code_search_block",
+        return_value=(
+            "\n# Precision Code Search\nPrecision Code Search: symbol-first\n\n"
+            "Use the Precision Code Search block as the first code-navigation pass."
+        ),
+    )
     @patch(f"{_PROMPTS}.get_handoff_context", return_value={})
     @patch(f"{_PROMPTS}.get_task_spirit")
     @patch(f"{_PROMPTS}.logger")
@@ -111,6 +117,7 @@ class TestPromptTemplateFallbacks:
         assert "Extract reusable ActivityTimeline helpers" in prompt
         assert "/tmp/worktree" in prompt
         assert "Precision Code Search: symbol-first" in prompt
+        assert "Use the Precision Code Search block as the first code-navigation pass." in prompt
         mock_logger.warning.assert_called_once()
 
     @patch(f"{_PROMPTS}.task_store")

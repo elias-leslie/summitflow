@@ -16,7 +16,10 @@ from typing import Any
 
 from ...logging_config import get_logger
 from ...services.agent_hub_client import get_sync_client
-from ...services.context_gatherer import collect_precision_code_search_context
+from ...services.context_gatherer import (
+    PRECISION_CODE_SEARCH_GUIDANCE,
+    collect_precision_code_search_context,
+)
 from ...services.worktree import get_execution_path
 from ...storage import log_task_event
 from ...storage import tasks as task_store
@@ -187,6 +190,7 @@ def _build_prompt(task: dict, complexity: str, git_diff: str, task_id: str) -> s
         f"{scope_block}"
         f"{snapshot_block}"
         f"Git Diff:\n```\n{git_diff[:50000]}\n```\n\n"
+        f"{PRECISION_CODE_SEARCH_GUIDANCE}\n"
         "If done_when criteria are defined, verify the diff addresses each one.\n"
         "Review the touched area, not just the patch. Reject code that leaves touched files structurally worse without justification.\n"
         "Flag new duplication, dead code, stale compatibility wrappers, broadened scope beyond the touched files, or maintainability regressions in touched files.\n\n"

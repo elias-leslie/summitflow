@@ -34,6 +34,10 @@ def test_collect_precision_code_search_context_tracks_token_savings() -> None:
         patch("app.services.context_gatherer.precision_code_search.get_entries") as mock_entries,
         patch("app.services.context_gatherer.precision_code_search.get_symbol") as mock_get_symbol,
         patch(
+            "app.services.context_gatherer.precision_code_search._estimate_naive_file_tokens_for_symbols",
+            return_value=2000,
+        ),
+        patch(
             "app.services.context_gatherer.precision_code_search._read_symbol_source"
         ) as mock_read_symbol_source,
     ):
@@ -69,7 +73,8 @@ def test_collect_precision_code_search_context_tracks_token_savings() -> None:
 
     assert result.metadata["used_symbol_first"] is True
     assert result.metadata["symbol_count"] == 1
-    assert result.metadata["estimated_tokens_saved"] >= 0
+    assert result.metadata["naive_file_tokens"] == 2000
+    assert result.metadata["estimated_tokens_saved"] > 0
     assert "Exact Source Slices" in result.prompt_context
 
 
@@ -112,3 +117,52 @@ def test_collect_precision_code_search_context_filters_fallback_entries_by_query
     assert "- tasks" in result.prompt_context
     assert "/api/users" not in result.prompt_context
     assert "- users" not in result.prompt_context
+
+
+def test_collect_precision_code_search_context_skips_fallback_fetch_on_symbol_hits() -> None:
+    with (
+        patch(
+            "app.services.context_gatherer.precision_code_search.search_symbols",
+            return_value=[
+                {
+                    "symbol_id": "backend/app/api/files.py::get_file_tree#function",
+                    "qualified_name": "get_file_tree",
+                    "name": "get_file_tree",
+                    "kind": "function",
+                    "file_path": "backend/app/api/files.py",
+                    "start_line": 7,
+                    "end_line": 9,
+                    "signature": "def get_file_tree(path: str) -> dict[str, str]",
+                    "summary": "List directory entries for file tree navigation.",
+                }
+            ],
+        ),
+        patch(
+            "app.services.context_gatherer.precision_code_search.list_related_entries_for_file",
+            return_value=[],
+        ),
+        patch(
+            "app.services.context_gatherer.precision_code_search.get_symbol",
+            return_value={
+                "symbol_id": "backend/app/api/files.py::get_file_tree#function",
+                "qualified_name": "get_file_tree",
+                "file_path": "backend/app/api/files.py",
+                "start_line": 7,
+                "end_line": 9,
+            },
+        ),
+        patch(
+            "app.services.context_gatherer.precision_code_search._read_symbol_source",
+            return_value="def get_file_tree(path: str) -> dict[str, str]: ...",
+        ),
+        patch(
+            "app.services.context_gatherer.precision_code_search._estimate_naive_file_tokens_for_symbols",
+            return_value=2000,
+        ),
+        patch("app.services.context_gatherer.precision_code_search.get_entries") as mock_entries,
+    ):
+        result = collect_precision_code_search_context("project-1", ["get_file_tree"])
+
+    mock_entries.assert_not_called()
+    assert result.metadata["used_symbol_first"] is True
+    assert result.metadata["used_fallback"] is False

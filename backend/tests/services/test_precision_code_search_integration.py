@@ -38,6 +38,7 @@ def test_create_plan_includes_precision_code_search_context() -> None:
     assert result["status"] == "completed"
     assert "## Precision Code Search" in prompt
     assert "Precision Code Search: symbol-first" in prompt
+    assert "Use the Precision Code Search block as the first code-navigation pass." in prompt
 
 
 def test_discuss_task_includes_precision_code_search_context() -> None:
@@ -76,3 +77,4 @@ def test_discuss_task_includes_precision_code_search_context() -> None:
     assert result.response == "Done"
     assert "## Precision Code Search" in prompt
     assert "Precision Code Search: symbol-first" in prompt
+    assert "Use the Precision Code Search block as the first code-navigation pass." in prompt
