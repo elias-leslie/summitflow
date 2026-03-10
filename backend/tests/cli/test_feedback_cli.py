@@ -39,3 +39,38 @@ class TestFeedbackLimitValidation:
 
         assert result.exit_code == 0
         mock_search_impl.assert_called_once()
+
+
+class TestFeedbackCommandRouting:
+    """Feedback command flags should wire through to implementations."""
+
+    def test_report_passes_vote_if_match(self) -> None:
+        with patch("cli.commands.feedback.report_impl") as mock_report_impl:
+            result = runner.invoke(
+                app,
+                [
+                    "report",
+                    "sf.cli",
+                    "Existing duplicate",
+                    "--session",
+                    "sess-123",
+                    "--vote-if-match",
+                ],
+            )
+
+        assert result.exit_code == 0
+        assert mock_report_impl.call_args.kwargs["vote_if_duplicate"] is True
+
+    def test_archive_routes_to_archive_impl(self) -> None:
+        with patch("cli.commands.feedback.archive_impl") as mock_archive_impl:
+            result = runner.invoke(app, ["archive", "deadbeef", "--note", "aged out"])
+
+        assert result.exit_code == 0
+        mock_archive_impl.assert_called_once_with("deadbeef", note="aged out")
+
+    def test_merge_routes_to_merge_impl(self) -> None:
+        with patch("cli.commands.feedback.merge_impl") as mock_merge_impl:
+            result = runner.invoke(app, ["merge", "deadbeef", "feedcafe"])
+
+        assert result.exit_code == 0
+        mock_merge_impl.assert_called_once_with("deadbeef", "feedcafe")

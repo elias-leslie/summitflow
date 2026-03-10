@@ -2,7 +2,7 @@
 
 import { clsx } from 'clsx'
 import { Search } from 'lucide-react'
-import type { FeedbackFilters } from '@/lib/api/feedback'
+import type { FeedbackFilters, FeedbackStatusFilter } from '@/lib/api/feedback'
 import { TYPE_CONFIG, COMPONENT_GROUPS, SORT_OPTIONS } from './feedbackConstants'
 
 // ============================================================================
@@ -82,16 +82,20 @@ export function FeedbackFilterBar({
       <select
         value={filters.status || ''}
         onChange={(e) =>
-          onFiltersChange({ status: e.target.value || undefined })
+          onFiltersChange({
+            status: (e.target.value || undefined) as FeedbackStatusFilter | undefined,
+          })
         }
         className="px-3 py-1.5 bg-slate-800/50 border border-slate-700 rounded-lg
                    text-xs text-slate-300 focus:outline-none focus:border-outrun-500/40"
       >
         <option value="">All Status</option>
+        <option value="active">Active</option>
         <option value="open">Open</option>
         <option value="acknowledged">Acknowledged</option>
         <option value="resolved">Resolved</option>
         <option value="wont_fix">Won&apos;t Fix</option>
+        <option value="archived">Archived</option>
       </select>
 
       {/* Component */}

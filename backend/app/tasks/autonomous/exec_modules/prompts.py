@@ -216,7 +216,7 @@ def build_subtask_prompt(
     return prompt
 
 
-def build_feedback_prompt(results: list[dict[str, Any]]) -> str:
+def build_feedback_prompt(results: list[dict[str, Any]], feedback_session_id: str) -> str:
     """Build a feedback prompt with task execution summary."""
     parts = [
         f"- Subtask {r.get('subtask_id', '?')}: {r.get('status', 'unknown')} "
@@ -224,7 +224,10 @@ def build_feedback_prompt(results: list[dict[str, Any]]) -> str:
         for r in results
     ]
     task_summary = "\n".join(parts) if parts else "No subtask results"
-    return FEEDBACK_PROMPT.format(task_summary=task_summary)
+    return FEEDBACK_PROMPT.format(
+        task_summary=task_summary,
+        feedback_session_id=feedback_session_id,
+    )
 
 
 def build_fix_prompt(

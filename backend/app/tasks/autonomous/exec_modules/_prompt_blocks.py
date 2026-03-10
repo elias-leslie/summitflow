@@ -17,12 +17,14 @@ EVENTS_FETCH_LIMIT = 50
 
 FEEDBACK_PROMPT = """Before this work stint ends, submit any feedback on the tools and infrastructure you used during this task.
 
+Use this session id for feedback and duplicate voting: {feedback_session_id}
+
 Search first to avoid duplicates: st feedback search "keyword"
 
 Then report:
-- What caused friction? st feedback report <component> "issue" --type friction --severity medium
-- Any improvement ideas? st feedback report <component> "idea" --type idea
-- What worked well? st feedback report <component> "what worked" --type praise
+- What caused friction? st feedback report <component> "issue" --type friction --severity medium --session {feedback_session_id} --vote-if-match
+- Any improvement ideas? st feedback report <component> "idea" --type idea --session {feedback_session_id} --vote-if-match
+- What worked well? st feedback report <component> "what worked" --type praise --session {feedback_session_id} --vote-if-match
 
 Components: sf.cli, sf.dt, sf.quality, sf.worktree, sf.api, ah.memory, ah.sessions, ah.hooks, xc.tool_registry, xc.error_handling
 

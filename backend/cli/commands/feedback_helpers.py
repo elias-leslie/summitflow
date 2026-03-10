@@ -11,7 +11,7 @@ STATUS_RESOLVED = "resolved"
 
 VALID_TYPES = ("friction", "idea", "improvement", "praise")
 VALID_SEVERITIES = ("low", "medium", "high")
-VALID_STATUSES = ("open", "acknowledged", "resolved", "wont_fix")
+VALID_STATUSES = ("open", "acknowledged", "resolved", "wont_fix", "archived", "active")
 VALID_SORTS = ("votes", "newest", "oldest")
 
 
@@ -27,6 +27,7 @@ def build_report_body(
     agent_slug: str | None,
     model_used: str | None,
     session_type: str | None,
+    vote_if_duplicate: bool,
 ) -> dict[str, Any]:
     """Build the request body for creating a feedback item."""
     body: dict[str, Any] = {
@@ -47,6 +48,8 @@ def build_report_body(
         body["model_used"] = model_used
     if session_type:
         body["session_type"] = session_type
+    if vote_if_duplicate:
+        body["vote_if_duplicate"] = True
     return body
 
 
@@ -91,6 +94,11 @@ def build_vote_body(
     if model_used:
         body["model_used"] = model_used
     return body
+
+
+def build_merge_body(target_item_id: str) -> dict[str, Any]:
+    """Build the request body for merging a feedback item into a canonical item."""
+    return {"target_item_id": target_item_id}
 
 
 def build_summary_params(days: int, *, project_id: str | None = None) -> dict[str, Any]:

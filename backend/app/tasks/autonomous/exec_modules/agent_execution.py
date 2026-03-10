@@ -123,7 +123,7 @@ def execute_agent_feedback(
     try:
         client = get_sync_client()
         feedback_session_id = create_session(task_id)
-        prompt = build_feedback_prompt(results)
+        prompt = build_feedback_prompt(results, feedback_session_id)
         emit_log(
             task_id, "info",
             f"Requesting agent feedback (session {feedback_session_id})",

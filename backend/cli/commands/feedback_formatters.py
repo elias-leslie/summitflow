@@ -40,6 +40,26 @@ def output_feedback_created(item: dict[str, Any]) -> None:
     print(f"FEEDBACK:CREATED:{id_short}|{ftype}|{component}|{title}")
 
 
+def output_feedback_deduped(item: dict[str, Any]) -> None:
+    """Output when a report was converted into a vote on an existing item."""
+    id_short = item.get("id", "")[:8]
+    component = item.get("component_id", "?")
+    ftype = item.get("feedback_type", "?")
+    votes = item.get("vote_count", 1)
+    title = item.get("title", "")
+    print(f"FEEDBACK:VOTED_EXISTING:{id_short}|{component}|{ftype}|votes={votes}|{title}")
+
+
+def output_feedback_existing(item: dict[str, Any]) -> None:
+    """Output when a duplicate already existed and no new vote was recorded."""
+    id_short = item.get("id", "")[:8]
+    component = item.get("component_id", "?")
+    ftype = item.get("feedback_type", "?")
+    votes = item.get("vote_count", 1)
+    title = item.get("title", "")
+    print(f"FEEDBACK:EXISTS:{id_short}|{component}|{ftype}|votes={votes}|{title}")
+
+
 def output_feedback_voted(item: dict[str, Any]) -> None:
     """Output for a vote on an existing item."""
     id_short = item.get("id", "")[:8]
@@ -92,7 +112,7 @@ def output_duplicate_candidates(candidates: list[dict[str, Any]]) -> None:
             file=sys.stderr,
         )
     print(
-        "  Use: st feedback vote <id> to vote on existing",
+        "  Use: st feedback report ... --session <session-id> --vote-if-match",
         file=sys.stderr,
     )
 

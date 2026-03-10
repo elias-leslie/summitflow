@@ -314,6 +314,40 @@ def test_start_execution_routes_completion_before_optional_feedback(
 @patch("app.tasks.autonomous.exec_modules.orchestrator.validate_pristine_codebase", return_value=True)
 @patch("app.tasks.autonomous.exec_modules.orchestrator.setup_worktree", return_value="/tmp/worktree")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.execute_subtask_loop")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.execute_agent_feedback")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.handle_failed_execution")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.emit_log")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.emit_progress")
+def test_start_execution_collects_feedback_after_failed_run(
+    mock_emit_progress: MagicMock,
+    mock_emit_log: MagicMock,
+    mock_handle_failed_execution: MagicMock,
+    mock_feedback: MagicMock,
+    mock_loop: MagicMock,
+    mock_setup: MagicMock,
+    mock_validate: MagicMock,
+    mock_get_subtasks: MagicMock,
+    mock_task_store: MagicMock,
+) -> None:
+    task_id = "task-failed"
+    project_id = "proj-123"
+
+    mock_task_store.get_task.return_value = {"id": task_id, "task_type": "task"}
+    mock_get_subtasks.return_value = [{"id": "s1", "subtask_id": "1.1", "passes": False}]
+    mock_loop.return_value = ([{"subtask_id": "1.1", "status": "failed"}], 0)
+
+    result = start_execution(task_id, project_id)
+
+    assert result["status"] == "executed"
+    mock_handle_failed_execution.assert_called_once()
+    mock_feedback.assert_called_once()
+
+
+@patch("app.tasks.autonomous.exec_modules.orchestrator.task_store")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.get_subtasks_for_task")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.validate_pristine_codebase", return_value=True)
+@patch("app.tasks.autonomous.exec_modules.orchestrator.setup_worktree", return_value="/tmp/worktree")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.execute_subtask_loop")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.emit_log")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.emit_progress")
 def test_start_execution_reopens_passed_subtasks_for_conflict_resolution(

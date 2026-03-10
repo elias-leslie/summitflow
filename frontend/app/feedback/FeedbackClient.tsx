@@ -10,6 +10,7 @@ import { FeedbackDetail } from '@/components/feedback/FeedbackDetail'
 import { FeedbackStats } from '@/components/feedback/FeedbackStats'
 import {
   type FeedbackFilters,
+  type FeedbackStatusFilter,
   fetchFeedbackItems,
   fetchFeedbackSummary,
 } from '@/lib/api/feedback'
@@ -17,6 +18,7 @@ import {
 export function FeedbackClient() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [filters, setFilters] = useState<FeedbackFilters>({
+    status: 'active',
     sort: 'votes',
     limit: 50,
   })
@@ -43,7 +45,7 @@ export function FeedbackClient() {
     handleFiltersChange({ feedback_type: type })
   }
 
-  const handleStatusClick = (status: string | undefined) => {
+  const handleStatusClick = (status: FeedbackStatusFilter | undefined) => {
     handleFiltersChange({ status })
   }
 

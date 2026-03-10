@@ -16,7 +16,7 @@ export interface FeedbackItem {
   title: string
   description: string | null
   severity: string | null
-  status: 'open' | 'acknowledged' | 'resolved' | 'wont_fix'
+  status: 'open' | 'acknowledged' | 'resolved' | 'wont_fix' | 'archived'
   project_id: string
   agent_slug: string | null
   model_used: string | null
@@ -28,6 +28,9 @@ export interface FeedbackItem {
   created_at: string
   updated_at: string
 }
+
+export type FeedbackStatus = FeedbackItem['status']
+export type FeedbackStatusFilter = 'active' | FeedbackStatus
 
 export interface FeedbackVote {
   id: string
@@ -58,6 +61,7 @@ interface FeedbackSummaryRaw {
   }[]
   by_component: {
     component_id: string; open_count: number; resolved_count: number;
+    wont_fix_count: number; archived_count: number;
     friction_count: number; idea_count: number; praise_count: number; total_votes: number;
   }[]
 }
@@ -82,7 +86,7 @@ function transformSummary(raw: FeedbackSummaryRaw): FeedbackSummary {
   const by_component: Record<string, { total: number; open: number }> = {}
   for (const c of raw.by_component) {
     by_component[c.component_id] = {
-      total: c.open_count + c.resolved_count,
+      total: c.open_count + c.resolved_count + c.wont_fix_count + c.archived_count,
       open: c.open_count,
     }
   }
@@ -106,7 +110,7 @@ export interface FeedbackFilters {
   query?: string
   component_id?: string
   feedback_type?: string
-  status?: string
+  status?: FeedbackStatusFilter
   project_id?: string
   sort?: 'votes' | 'newest' | 'oldest'
   limit?: number
@@ -172,7 +176,7 @@ export async function fetchComponentFeedback(
 export async function updateFeedbackStatus(
   id: string,
   data: {
-    status: string
+    status: FeedbackStatus
     resolution_note?: string
     linked_task_id?: string
   },

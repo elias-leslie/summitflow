@@ -140,9 +140,9 @@ PROMPT: prompt list [--global] | get <slug> | create <slug> <name> -f path | upd
 
 MEMORY: memory stats | save <text> [--tier T] | list | search <query> | get <id> | delete <id>
 
-FEEDBACK: feedback report <component> <title> [--type T] [--severity S] | feedback search <query>
+FEEDBACK: feedback report <component> <title> [--type T] [--severity S] [--session SID] [--vote-if-match] | feedback search <query>
           feedback list [--component C] [--type T] [--status S] [--sort S]
-          feedback get <id> | feedback vote <id> --session <sid> | feedback resolve <id>
+          feedback get <id> | feedback vote <id> --session <sid> | feedback resolve <id> | feedback archive <id> | feedback merge <id> <target>
           feedback summary [--project P] [--days N]
 
 TOOLS: tools status [--hours N]

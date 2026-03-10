@@ -51,7 +51,10 @@ def _handle_task_completion(
         typer.echo(f"  Merged to: {base_branch}")
     else:
         output_success(f"Task {id} completed without checkpoint merge.")
-    typer.echo("💡 Any feedback? st feedback report <component> \"title\" --type friction|idea|improvement|praise", err=True)
+    typer.echo(
+        "💡 Any feedback? st feedback search \"keyword\" then st feedback report <component> \"title\" --type friction|idea|improvement|praise --session <sid> --vote-if-match",
+        err=True,
+    )
 
 
 @app.command(name="done")

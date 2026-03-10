@@ -9,14 +9,14 @@ import {
   TrendingUp,
   Zap,
 } from 'lucide-react'
-import type { FeedbackSummary } from '@/lib/api/feedback'
+import type { FeedbackStatusFilter, FeedbackSummary } from '@/lib/api/feedback'
 
 const STAT_CARDS = [
   {
-    key: 'open',
-    label: 'Open',
+    key: 'active',
+    label: 'Active',
     icon: MessageSquareWarning,
-    getCount: (s: FeedbackSummary) => s.by_status?.open ?? 0,
+    getCount: (s: FeedbackSummary) => (s.by_status?.open ?? 0) + (s.by_status?.acknowledged ?? 0),
     color: 'text-slate-200',
     bg: 'bg-slate-500/20',
     iconColor: 'text-slate-400',
@@ -63,9 +63,9 @@ interface FeedbackStatsProps {
   summary: FeedbackSummary | undefined
   isLoading: boolean
   activeType: string | undefined
-  activeStatus: string | undefined
+  activeStatus: FeedbackStatusFilter | undefined
   onTypeClick: (type: string | undefined) => void
-  onStatusClick: (status: string | undefined) => void
+  onStatusClick: (status: FeedbackStatusFilter | undefined) => void
 }
 
 export function FeedbackStats({
@@ -81,12 +81,12 @@ export function FeedbackStats({
       {STAT_CARDS.map((card) => {
         const Icon = card.icon
         const isActive =
-          (card.key === 'open' && activeStatus === 'open') ||
-          (card.key !== 'open' && activeType === card.key)
+          (card.key === 'active' && activeStatus === 'active') ||
+          (card.key !== 'active' && activeType === card.key)
         const handleClick = () => {
-          if (card.key === 'open') {
+          if (card.key === 'active') {
             onTypeClick(undefined)
-            onStatusClick(activeStatus === 'open' ? undefined : 'open')
+            onStatusClick(activeStatus === 'active' ? undefined : 'active')
           } else {
             onStatusClick(undefined)
             onTypeClick(activeType === card.key ? undefined : card.key)

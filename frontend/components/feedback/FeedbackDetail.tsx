@@ -5,6 +5,7 @@ import { Loader2 } from 'lucide-react'
 import {
   deleteFeedbackItem,
   fetchFeedbackItem,
+  type FeedbackStatus,
   updateFeedbackStatus,
 } from '@/lib/api/feedback'
 import { FeedbackDetailActions } from './FeedbackDetailActions'
@@ -29,7 +30,7 @@ export function FeedbackDetail({ itemId, onClose }: FeedbackDetailProps) {
   })
 
   const statusMutation = useMutation({
-    mutationFn: (data: { status: string; resolution_note?: string }) =>
+    mutationFn: (data: { status: FeedbackStatus; resolution_note?: string }) =>
       updateFeedbackStatus(itemId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['feedback-item', itemId] })

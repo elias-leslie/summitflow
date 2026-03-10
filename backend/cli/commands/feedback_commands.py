@@ -11,7 +11,9 @@ from .feedback_api import feedback_request
 from .feedback_formatters import (
     output_duplicate_candidates,
     output_feedback_created,
+    output_feedback_deduped,
     output_feedback_detail,
+    output_feedback_existing,
     output_feedback_list,
     output_feedback_voted,
     output_summary,
@@ -46,6 +48,7 @@ def report_impl(
     agent_slug: str | None = None,
     model_used: str | None = None,
     session_type: str | None = None,
+    vote_if_duplicate: bool = False,
 ) -> None:
     """Create a new feedback item."""
     validate_component_id(component_id)
@@ -55,11 +58,18 @@ def report_impl(
         component_id, feedback_type, title, project_id,
         description=description, severity=severity, session_id=session_id,
         agent_slug=agent_slug, model_used=model_used, session_type=session_type,
+        vote_if_duplicate=vote_if_duplicate,
     )
     result = feedback_request("POST", FEEDBACK_API_PATH, json=body)
     candidates = result.get("duplicate_candidates", [])
     if candidates:
         output_duplicate_candidates(candidates)
+    if not result.get("created", True):
+        if result.get("voted"):
+            output_feedback_deduped(result.get("item", {}))
+            return
+        output_feedback_existing(result.get("item", {}))
+        return
     output_feedback_created(result.get("item", {}))
 
 
@@ -77,7 +87,7 @@ def search_impl(
     validate_limit(limit)
     params = build_filter_params(
         sort, limit, query=query, component_id=component_id,
-        feedback_type=feedback_type, status=status, project_id=project_id,
+        feedback_type=feedback_type, status=status or "active", project_id=project_id,
     )
     result = feedback_request("GET", FEEDBACK_API_PATH, params=params)
     items = result.get("items", [])
@@ -97,7 +107,7 @@ def list_impl(
     validate_limit(limit)
     params = build_filter_params(
         sort, limit, component_id=component_id, feedback_type=feedback_type,
-        status=status, project_id=project_id,
+        status=status or "active", project_id=project_id,
     )
     result = feedback_request("GET", FEEDBACK_API_PATH, params=params)
     items = result.get("items", [])
@@ -142,6 +152,26 @@ def delete_impl(item_id: str) -> None:
     """Delete a feedback item."""
     feedback_request("DELETE", f"{FEEDBACK_API_PATH}/{item_id}")
     print(f"FEEDBACK:DELETED:{item_id[:8]}")
+
+
+def archive_impl(item_id: str, *, note: str | None = None) -> None:
+    """Archive a feedback item."""
+    body: dict[str, Any] = {"status": "archived"}
+    if note:
+        body["resolution_note"] = note
+    result = feedback_request("PATCH", f"{FEEDBACK_API_PATH}/{item_id}", json=body)
+    print(f"FEEDBACK:ARCHIVED:{result.get('id', item_id)[:8]}|{result.get('title', '')}")
+
+
+def merge_impl(item_id: str, target_item_id: str) -> None:
+    """Merge a duplicate feedback item into a canonical feedback item."""
+    from .feedback_helpers import build_merge_body
+
+    result = feedback_request("POST", f"{FEEDBACK_API_PATH}/{item_id}/merge", json=build_merge_body(target_item_id))
+    print(
+        f"FEEDBACK:MERGED:{item_id[:8]}->{result.get('id', target_item_id)[:8]}|"
+        f"{result.get('title', '')}"
+    )
 
 
 def summary_impl(*, project_id: str | None = None, days: int = 30) -> None:

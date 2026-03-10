@@ -7,9 +7,11 @@ from typing import Annotated
 import typer
 
 from .feedback_commands import (
+    archive_impl,
     delete_impl,
     get_impl,
     list_impl,
+    merge_impl,
     report_impl,
     resolve_impl,
     search_impl,
@@ -52,6 +54,13 @@ def report(
     session_type: Annotated[
         str | None, typer.Option("--session-type", help="Session type")
     ] = None,
+    vote_if_match: Annotated[
+        bool,
+        typer.Option(
+            "--vote-if-match/--no-vote-if-match",
+            help="Vote on the strongest duplicate candidate instead of creating a new item",
+        ),
+    ] = False,
 ) -> None:
     """Report new feedback on a component.
 
@@ -60,6 +69,7 @@ def report(
       st feedback report ah.memory "Pre-load cross-project context" --type idea
       st feedback report sf.worktree "Isolation worked perfectly" --type praise
       st feedback report sf.dt "Cache ruff results for unchanged files" --type improvement
+      st feedback report sf.cli "Same failure again" --session sess-123 --vote-if-match
     """
     report_impl(
         component_id,
@@ -72,6 +82,7 @@ def report(
         agent_slug=agent_slug,
         model_used=model_used,
         session_type=session_type,
+        vote_if_duplicate=vote_if_match,
     )
 
 
@@ -85,7 +96,7 @@ def search(
         str | None, typer.Option("--type", "-t", help="Filter by type")
     ] = None,
     status: Annotated[
-        str | None, typer.Option("--status", help="Filter by status")
+        str | None, typer.Option("--status", help="Filter by status: active, open, acknowledged, resolved, wont_fix, archived")
     ] = None,
     project_id: Annotated[
         str | None, typer.Option("--project", "-p", help="Filter by project")
@@ -121,7 +132,7 @@ def list_feedback(
         str | None, typer.Option("--type", "-t", help="Filter by type")
     ] = None,
     status: Annotated[
-        str | None, typer.Option("--status", help="Filter by status")
+        str | None, typer.Option("--status", help="Filter by status: active, open, acknowledged, resolved, wont_fix, archived")
     ] = None,
     project_id: Annotated[
         str | None, typer.Option("--project", "-p", help="Filter by project")
@@ -136,7 +147,7 @@ def list_feedback(
     Examples:
       st feedback list
       st feedback list --component ah.memory --type idea
-      st feedback list --sort votes --status open
+      st feedback list --sort votes --status active
     """
     list_impl(
         component_id=component_id,
@@ -204,6 +215,26 @@ def resolve(
       st feedback resolve a1b2c3d4 --note "Fixed in commit abc123"
     """
     resolve_impl(item_id, note=note)
+
+
+@app.command("archive")
+def archive(
+    item_id: Annotated[str, typer.Argument(help="Feedback item ID to archive")],
+    note: Annotated[
+        str | None, typer.Option("--note", "-n", help="Archive note")
+    ] = None,
+) -> None:
+    """Archive a resolved or won't-fix feedback item."""
+    archive_impl(item_id, note=note)
+
+
+@app.command("merge")
+def merge(
+    item_id: Annotated[str, typer.Argument(help="Duplicate feedback item ID to merge")],
+    target_item_id: Annotated[str, typer.Argument(help="Canonical feedback item ID")],
+) -> None:
+    """Merge a duplicate feedback item into a canonical feedback item."""
+    merge_impl(item_id, target_item_id)
 
 
 @app.command("delete")

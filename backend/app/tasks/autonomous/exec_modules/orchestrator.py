@@ -165,8 +165,8 @@ def execute_task_locked(
 
     check_main_repo_leakage(task_id, project_id, project_path)
 
-    completion_outcome = _handle_completion(task_id, project_id, project_path, results, incomplete, dispatch)
-    if completion_outcome in {"passed", "partial"}:
+    _handle_completion(task_id, project_id, project_path, results, incomplete, dispatch)
+    if results:
         try:
             execute_agent_feedback(
                 task_id, project_path, project_id, results,

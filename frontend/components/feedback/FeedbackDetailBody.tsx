@@ -8,10 +8,12 @@ import type { FeedbackItemWithVotes } from '@/lib/api/feedback'
 // ============================================================================
 
 const STATUS_LABELS: Record<string, string> = {
+  active: 'Active',
   open: 'Open',
   acknowledged: 'Acknowledged',
   resolved: 'Resolved',
   wont_fix: "Won't Fix",
+  archived: 'Archived',
 }
 
 // ============================================================================

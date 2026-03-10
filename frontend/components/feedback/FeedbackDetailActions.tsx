@@ -3,12 +3,13 @@
 import { Check, Clock, Loader2, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import type { UseMutationResult } from '@tanstack/react-query'
+import type { FeedbackStatus } from '@/lib/api/feedback'
 
 // ============================================================================
 // Types
 // ============================================================================
 
-type StatusMutationData = { status: string; resolution_note?: string }
+type StatusMutationData = { status: FeedbackStatus; resolution_note?: string }
 
 interface FeedbackDetailActionsProps {
   currentStatus: string
@@ -48,8 +49,8 @@ export function FeedbackDetailActions({
 
   return (
     <>
-      {/* Status actions — hidden once resolved or won't fix */}
-      {currentStatus !== 'resolved' && currentStatus !== 'wont_fix' && (
+      {/* Status actions */}
+      {currentStatus !== 'archived' && (
         <div className="px-5 pt-4 pb-2 border-t border-slate-700/50 space-y-3">
           {showResolveInput ? (
             <div className="space-y-2">
@@ -87,36 +88,51 @@ export function FeedbackDetailActions({
             </div>
           ) : (
             <div className="flex items-center gap-2">
-              {currentStatus === 'open' && (
+              {(currentStatus === 'open' || currentStatus === 'acknowledged') && (
+                <>
+                  {currentStatus === 'open' && (
+                    <button
+                      onClick={() => statusMutation.mutate({ status: 'acknowledged' })}
+                      disabled={statusMutation.isPending}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 text-amber-400
+                                 border border-amber-500/30 rounded-md text-xs font-medium
+                                 hover:bg-amber-500/20 transition-all disabled:opacity-50"
+                    >
+                      <Clock className="w-3 h-3" />
+                      Acknowledge
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowResolveInput(true)}
+                    disabled={statusMutation.isPending}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 text-emerald-400
+                               border border-emerald-500/30 rounded-md text-xs font-medium
+                               hover:bg-emerald-500/20 transition-all disabled:opacity-50"
+                  >
+                    <Check className="w-3 h-3" />
+                    Resolve
+                  </button>
+                  <button
+                    onClick={() => statusMutation.mutate({ status: 'wont_fix' })}
+                    disabled={statusMutation.isPending}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-500
+                               hover:text-slate-400 transition-all disabled:opacity-50"
+                  >
+                    Won&apos;t Fix
+                  </button>
+                </>
+              )}
+              {(currentStatus === 'resolved' || currentStatus === 'wont_fix') && (
                 <button
-                  onClick={() => statusMutation.mutate({ status: 'acknowledged' })}
+                  onClick={() => statusMutation.mutate({ status: 'archived' })}
                   disabled={statusMutation.isPending}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 text-amber-400
-                             border border-amber-500/30 rounded-md text-xs font-medium
-                             hover:bg-amber-500/20 transition-all disabled:opacity-50"
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-700/40 text-slate-300
+                             border border-slate-600/40 rounded-md text-xs font-medium
+                             hover:bg-slate-700/60 transition-all disabled:opacity-50"
                 >
-                  <Clock className="w-3 h-3" />
-                  Acknowledge
+                  Archive
                 </button>
               )}
-              <button
-                onClick={() => setShowResolveInput(true)}
-                disabled={statusMutation.isPending}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 text-emerald-400
-                           border border-emerald-500/30 rounded-md text-xs font-medium
-                           hover:bg-emerald-500/20 transition-all disabled:opacity-50"
-              >
-                <Check className="w-3 h-3" />
-                Resolve
-              </button>
-              <button
-                onClick={() => statusMutation.mutate({ status: 'wont_fix' })}
-                disabled={statusMutation.isPending}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-500
-                           hover:text-slate-400 transition-all disabled:opacity-50"
-              >
-                Won&apos;t Fix
-              </button>
             </div>
           )}
         </div>
