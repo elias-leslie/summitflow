@@ -116,6 +116,55 @@ class TestMemorySaveContentInput:
         args = mock_save_impl.call_args.args
         assert args[1] == "**Mandate**: Use dt for all quality checks.\n"
 
+    def test_save_rejects_inline_and_file_content_together(self, tmp_path: Path) -> None:
+        """`save` should reject inline content combined with --content-file."""
+        content_file = tmp_path / "episode.md"
+        content_file.write_text("content\n", encoding="utf-8")
+
+        with patch("cli.commands.memory.save_impl") as mock_save_impl:
+            result = runner.invoke(
+                app,
+                [
+                    "save",
+                    "inline content",
+                    "--content-file",
+                    str(content_file),
+                    "--summary",
+                    "Use dt for checks",
+                ],
+            )
+
+        assert result.exit_code == 2
+        assert "Specify only one of --content or --content-file" in result.output
+        mock_save_impl.assert_not_called()
+
+
+class TestMemoryFormatCommand:
+    """Tests for the mechanical memory formatter helper."""
+
+    def test_format_builds_standard_episode_and_summary(self) -> None:
+        result = runner.invoke(
+            app,
+            [
+                "format",
+                "--tier",
+                "mandate",
+                "--instruction",
+                "Use exact tier headers for every memory episode",
+                "--prohibition",
+                "Never use custom bold topics for mandate content",
+                "--why",
+                "retrieval and citation depend on clear authority cues",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "summary: exact tier headers for every memory" in result.output.lower()
+        assert "CONTENT:" in result.output
+        assert "**Mandate**: Use exact tier headers for every memory episode." in result.output
+        assert "Never use custom bold topics for mandate content." in result.output
+        assert "Why: retrieval and citation depend on clear authority cues." in result.output
+
 
 class TestMemoryTagOptions:
     """Tests for tag-aware save/update CLI plumbing."""

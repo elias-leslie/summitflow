@@ -61,11 +61,7 @@ def validate_save_inputs(tier: str, confidence: int, summary: str) -> str:
 
 def fetch_existing_episode(uuid: str) -> dict[str, object]:
     """Fetch an existing episode, raising on error."""
-    existing = agent_hub_request("GET", f"/api/memory/episode/{uuid}", tool_name="st memory update")
-    if "detail" in existing:
-        typer.echo(f"Error: {existing['detail']}")
-        raise typer.Exit(1)
-    return existing
+    return agent_hub_request("GET", f"/api/memory/episode/{uuid}", tool_name="st memory update")
 
 
 def fetch_episode_tags(uuid: str) -> list[str]:

@@ -125,9 +125,6 @@ def get_impl(out: OutputContext, uuids: list[str]) -> None:
         return
 
     result = agent_hub_request("GET", f"/api/memory/episode/{uuids[0]}", tool_name="st memory get")
-    if "detail" in result:
-        output_error(result["detail"])
-        raise typer.Exit(1)
     if out.is_compact:
         format_get_compact(result)
     else:

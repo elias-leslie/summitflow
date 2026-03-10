@@ -32,3 +32,17 @@ def test_validate_content_format_rejects_conversational_language() -> None:
             "Grep before deletion",
             "guardrail",
         )
+
+
+def test_validate_content_format_warns_but_allows_long_single_rule(capsys) -> None:
+    validate_content_format(
+        (
+            "**Reference**: Use exact tier headers for memory episodes so retrieval and citation stay precise. "
+            "Prefer keeping each rule compact even when a slightly longer explanation is clearer than splitting one rule into multiple entries across fragmented memories and retrieval paths that dilute authority cues."
+        ),
+        "Use exact tier headers",
+        "reference",
+    )
+
+    err = capsys.readouterr().err
+    assert "prefer 280 or fewer" in err.lower()

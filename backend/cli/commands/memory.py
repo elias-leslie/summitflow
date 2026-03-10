@@ -63,6 +63,7 @@ from .memory_options import (
     UUIDsDeleteArg,
     UUIDsOptArg,
 )
+from .memory_validation import build_episode_content, suggest_summary, validate_content_format
 
 app = typer.Typer(help="Memory system commands (Agent Hub)")
 
@@ -133,6 +134,35 @@ def save(
     save_impl(
         ctx.obj, resolved_content, summary, tier, confidence, context, pinned, trigger_types, tags, scope, scope_id
     )
+
+
+@app.command("format")
+def format_cmd(
+    tier: TierOpt = "reference",
+    instruction: Annotated[
+        str,
+        typer.Option("--instruction", help="Required primary instruction sentence"),
+    ] = ...,
+    prohibition: Annotated[
+        str | None,
+        typer.Option("--prohibition", help="Optional second sentence for a direct prohibition"),
+    ] = None,
+    why: Annotated[
+        str | None,
+        typer.Option("--why", help="Optional brief rationale; emitted as 'Why: ...'"),
+    ] = None,
+    summary: Annotated[
+        str | None,
+        typer.Option("--summary", "-S", help="Optional summary override (default: suggested from instruction)"),
+    ] = None,
+) -> None:
+    """Generate a standard memory episode body and compact summary."""
+    content = build_episode_content(tier, instruction, prohibition, why)
+    resolved_summary = (summary.strip() if summary else suggest_summary(instruction)) or "Memory episode"
+    validate_content_format(content, resolved_summary, tier)
+    typer.echo(f"SUMMARY: {resolved_summary}")
+    typer.echo("CONTENT:")
+    typer.echo(content)
 
 
 @app.command("list")

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json as jsonlib
 from pathlib import Path
 from typing import Any, cast
 
@@ -49,13 +50,41 @@ def _dispatch(client: httpx.Client, method: str, url: str, **kw: Any) -> httpx.R
     return client.post(url, json=kw.get("json"), headers=kw["headers"])
 
 
+def _format_error_payload(payload: dict[str, Any], fallback: str) -> str:
+    """Render Agent Hub error payloads into a concise CLI message."""
+    message = str(payload.get("message") or payload.get("detail") or payload.get("error") or fallback)
+    parts = [message]
+
+    details = payload.get("details")
+    if details:
+        if isinstance(details, list):
+            rendered = ", ".join(
+                item.get("message") if isinstance(item, dict) and item.get("message") else jsonlib.dumps(item, ensure_ascii=True)
+                for item in details
+            )
+        elif isinstance(details, dict):
+            rendered = str(details.get("message") or jsonlib.dumps(details, ensure_ascii=True))
+        else:
+            rendered = str(details)
+        if rendered and rendered not in message:
+            parts.append(rendered)
+
+    hint = payload.get("hint")
+    if hint:
+        parts.append(str(hint))
+
+    return " | ".join(parts)
+
+
 def _check_response(response: httpx.Response, agent_hub_url: str) -> dict[str, Any]:
     """Validate response and return parsed body."""
     if response.status_code >= 400:
         try:
-            detail = response.json().get("detail", response.text)
+            payload = response.json()
         except Exception:
             detail = response.text
+        else:
+            detail = _format_error_payload(payload if isinstance(payload, dict) else {}, response.text)
         output_error(f"API error ({response.status_code}): {detail}")
         raise typer.Exit(1) from None
     if response.status_code == 204:
