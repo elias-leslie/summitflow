@@ -25,8 +25,8 @@ logger = logging.getLogger(__name__)
 
 # Re-export public API
 __all__ = [
-    "collect_precision_code_search_context",
     "PRECISION_CODE_SEARCH_GUIDANCE",
+    "collect_precision_code_search_context",
     "format_context_for_prompt",
     "gather_all_context",
     "gather_design_standards_context",
