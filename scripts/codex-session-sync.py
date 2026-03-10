@@ -180,6 +180,7 @@ def build_project_context(cwd: Path) -> dict[str, Any] | None:
         "project_id": project_id,
         "branch": current_branch,
         "is_worktree": (project_path / ".git").is_file(),
+        "repo_root": str(project_path),
         "git_context": "\n".join(git_lines[:10]),
     }
 
@@ -196,6 +197,8 @@ def post_json(
         "X-Client-Id": client_id,
         "X-Client-Secret": client_secret,
         "X-Request-Source": "codex-transcript-sync",
+        "X-Source-Client": "summitflow/codex-session-sync",
+        "X-Source-Path": str(Path(__file__)),
     }
     data = json.dumps(body).encode("utf-8") if body is not None else None
     req = request.Request(f"{api_url.rstrip('/')}/{endpoint.lstrip('/')}", data=data, headers=headers, method="POST")
@@ -231,7 +234,13 @@ def sync_transcript(
         "session_type": "agent",
         "cwd": str(info.cwd),
         "current_branch": project["branch"],
-        "provider_metadata": {"transcript_path": str(info.path)},
+        "scope_confidence": "unknown",
+        "provider_metadata": {
+            "transcript_path": str(info.path),
+            "repo_root": project["repo_root"],
+            "worktree_path": str(info.cwd),
+            "host": os.uname().nodename,
+        },
     }
     status, payload = post_json(
         api_url,
@@ -270,6 +279,30 @@ def sync_transcript(
         ),
         checkpoint=ingest_data.get("next_checkpoint"),
     )
+
+    heartbeat_body = {
+        "cwd": str(info.cwd),
+        "current_branch": project["branch"],
+        "phase": "waiting_for_model",
+        "status": "active",
+        "summary": f"Transcript sync heartbeat for {info.session_id}",
+        "last_event_type": "heartbeat",
+        "provider_metadata": {
+            "transcript_path": str(info.path),
+            "repo_root": project["repo_root"],
+            "worktree_path": str(info.cwd),
+            "host": os.uname().nodename,
+        },
+    }
+    status, payload = post_json(
+        api_url,
+        f"/sessions/{info.session_id}/heartbeat",
+        heartbeat_body,
+        client_id,
+        client_secret,
+    )
+    if status != 200:
+        return False, f"heartbeat failed status={status} body={payload[:300]}"
 
     finalize_body = {
         "branch": project["branch"],

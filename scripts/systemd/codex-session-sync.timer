@@ -3,7 +3,7 @@ Description=Run Codex transcript sync every minute
 
 [Timer]
 OnBootSec=30s
-OnUnitActiveSec=60s
+OnUnitActiveSec=15s
 Unit=codex-session-sync.service
 Persistent=true
 

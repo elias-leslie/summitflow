@@ -1,0 +1,8 @@
+[Unit]
+Description=Sync external tmux agent sessions into Agent Hub
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env python3 /home/kasadis/summitflow/scripts/tmux-agent-session-sync.py
+

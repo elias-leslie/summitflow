@@ -324,3 +324,45 @@ class TestOwnershipCommand:
         assert '"total": 1' in result.output
         assert '"project_id": "agent-hub"' in result.output
         assert '"task_id": "task-2"' in result.output
+
+
+class TestOverlapCommand:
+    """Tests for `st sessions overlap`."""
+
+    def test_overlap_lists_exact_write_and_read_overlap_rows(self) -> None:
+        mock_client = MagicMock()
+        mock_client.get.side_effect = [
+            {
+                "active_owners": [
+                    {
+                        "task_id": "task-1",
+                        "session_id": "sess-1",
+                        "declared_scope_paths": ["backend/app/foo.py"],
+                        "observed_read_paths": [],
+                        "observed_write_paths": ["backend/app/foo.py"],
+                    },
+                    {
+                        "task_id": "task-2",
+                        "session_id": "sess-2",
+                        "declared_scope_paths": ["backend/app/foo.py"],
+                        "observed_read_paths": ["backend/app/bar.py"],
+                        "observed_write_paths": ["backend/app/foo.py"],
+                    },
+                    {
+                        "task_id": "task-3",
+                        "session_id": "sess-3",
+                        "declared_scope_paths": ["backend/app/bar.py"],
+                        "observed_read_paths": [],
+                        "observed_write_paths": ["backend/app/bar.py"],
+                    },
+                ]
+            }
+        ]
+
+        with patch("cli.commands.sessions.STClient", return_value=mock_client):
+            result = runner.invoke(app, ["sessions", "overlap", "--project", "summitflow"])
+
+        assert result.exit_code == 0
+        assert "OVERLAPS[2]" in result.output
+        assert "OVR summitflow | block | exact_write | task-1 | task-2 | paths=backend/app/foo.py" in result.output
+        assert "OVR summitflow | warn | read_overlap | task-2 | task-3 | paths=backend/app/bar.py" in result.output

@@ -83,6 +83,11 @@ class TestTaskLaneScopes:
             "Another active coding lane overlaps exact files in project summitflow: task-999 (backend/app/foo.py)"
         ]
         assert result.conflicting_tasks == ["task-999"]
+
+        assert result.issues == [
+            "Another active coding lane overlaps exact files in project summitflow: task-999 (backend/app/foo.py)"
+        ]
+        assert result.conflicting_tasks == ["task-999"]
         assert result.overlap_kind == "exact_file"
         assert result.overlap_paths == ["backend/app/foo.py"]
         assert "backend/app/foo.py" in result.suggestions[0]
@@ -263,6 +268,99 @@ class TestTaskLaneScopes:
             "Another active coding lane overlaps exact files in project summitflow: task-999 (backend/app/foo.py)"
         ]
         assert result.conflicting_tasks == ["task-999"]
+
+    @patch("app.services.task_lane_preflight.get_task_spirit")
+    @patch("app.services.task_lane_preflight.task_store.get_task")
+    def test_live_declared_scope_takes_precedence_over_task_spirit_fallback(
+        self,
+        mock_get_task: MagicMock,
+        mock_get_spirit: MagicMock,
+        mock_httpx_client: MagicMock,
+    ) -> None:
+        mock_get_task.return_value = {"id": "task-999", "status": "running"}
+        mock_httpx_client.get.return_value = _mock_response(
+            {
+                "project_id": "summitflow",
+                "active_owners": [
+                    {
+                        "task_id": "task-999",
+                        "session_id": "sess-12",
+                        "branch": "task-999/main",
+                        "worktree_path": "/tmp/worktrees/task-999",
+                        "is_worktree": True,
+                        "session_status": "active",
+                        "ownership_kind": "scoped",
+                        "scope_paths": ["backend/app/ignored-by-live-scope.py"],
+                        "declared_scope_paths": ["backend/app/foo.py"],
+                        "observed_read_paths": [],
+                        "observed_write_paths": ["backend/app/foo.py"],
+                        "scope_confidence": "declared",
+                    }
+                ],
+                "active_specialists": [],
+            }
+        )
+
+        def _spirit(task_id: str) -> dict[str, object]:
+            if task_id == "task-123":
+                return {"context": {"files_to_modify": ["backend/app/foo.py"]}}
+            if task_id == "task-999":
+                return {"context": {"files_to_modify": ["backend/app/bar.py"]}}
+            return {}
+
+        mock_get_spirit.side_effect = _spirit
+
+        result = check_task_lane_conflicts("task-123", "summitflow")
+
+        assert result.overlap_kind == "exact_file"
+        assert result.overlap_paths == ["backend/app/foo.py"]
+
+    @patch("app.services.task_lane_preflight.get_task_spirit")
+    @patch("app.services.task_lane_preflight.task_store.get_task")
+    def test_live_read_overlap_warns_without_blocking(
+        self,
+        mock_get_task: MagicMock,
+        mock_get_spirit: MagicMock,
+        mock_httpx_client: MagicMock,
+    ) -> None:
+        mock_get_task.return_value = {"id": "task-999", "status": "running"}
+        mock_httpx_client.get.return_value = _mock_response(
+            {
+                "project_id": "summitflow",
+                "active_owners": [
+                    {
+                        "task_id": "task-999",
+                        "session_id": "sess-13",
+                        "branch": "task-999/main",
+                        "worktree_path": "/tmp/worktrees/task-999",
+                        "is_worktree": True,
+                        "session_status": "active",
+                        "ownership_kind": "scoped",
+                        "declared_scope_paths": [],
+                        "observed_read_paths": ["backend/app/foo.py"],
+                        "observed_write_paths": [],
+                        "scope_confidence": "observed_read",
+                    }
+                ],
+                "active_specialists": [],
+            }
+        )
+
+        def _spirit(task_id: str) -> dict[str, object]:
+            if task_id == "task-123":
+                return {"context": {"files_to_modify": ["backend/app/foo.py"]}}
+            return {}
+
+        mock_get_spirit.side_effect = _spirit
+
+        result = check_task_lane_conflicts("task-123", "summitflow")
+
+        assert result.disposition == "warn"
+        assert result.overlap_kind == "read_overlap"
+        assert result.overlap_paths == ["backend/app/foo.py"]
+        assert result.issues == [
+            "Another active coding lane is reading files in the target scope in project summitflow: task-999 (backend/app/foo.py)"
+        ]
 
     @patch("app.services.task_lane_preflight.get_task_spirit")
     @patch("app.services.task_lane_preflight.task_store.get_task")

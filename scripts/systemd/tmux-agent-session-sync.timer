@@ -1,0 +1,11 @@
+[Unit]
+Description=Run external tmux agent session sync every 15 seconds
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=15s
+Unit=tmux-agent-session-sync.service
+Persistent=true
+
+[Install]
+WantedBy=timers.target
