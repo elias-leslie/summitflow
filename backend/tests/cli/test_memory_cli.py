@@ -161,19 +161,24 @@ class TestMemoryTagOptions:
 
         mock_replace_tags.assert_called_once_with("abc12345", ["finance-relevant", "portfolio"])
 
-    def test_update_impl_preserves_existing_tags_when_replacing_episode(self) -> None:
-        """Content/tier replacements should carry tags forward onto the new episode."""
+    def test_update_impl_preserves_existing_tags_when_updating_in_place(self) -> None:
+        """Content/tier updates should preserve tags on the existing episode UUID."""
         with (
             patch("cli.commands.memory_crud.fetch_existing_episode", return_value={"uuid": "abc12345", "content": "old", "summary": "Old", "injection_tier": "reference"}),
             patch("cli.commands.memory_crud.fetch_episode_tags", return_value=["finance-relevant"]),
-            patch("cli.commands.memory_crud.replace_episode", return_value="def67890"),
+            patch("cli.commands.memory_crud.update_episode_content_or_tier") as mock_update_episode,
             patch("cli.commands.memory_crud.replace_episode_tags") as mock_replace_tags,
             patch("cli.commands.memory_crud.validate_content_format"),
             patch("cli.commands.memory_crud.typer.echo"),
         ):
             update_impl("abc12345", "new content", None, None, None, None, None, False)
 
-        mock_replace_tags.assert_called_once_with("def67890", ["finance-relevant"])
+        mock_update_episode.assert_called_once_with(
+            "abc12345",
+            content="new content",
+            tier="reference",
+        )
+        mock_replace_tags.assert_called_once_with("abc12345", ["finance-relevant"])
 
 
 class TestMemoryListFormatting:
