@@ -34,8 +34,8 @@ VALID_TRANSITIONS: dict[str, set[str]] = {
     "conflicted": {"queue", "running", "pending", "failed", "cancelled", "abandoned"},
     # Terminal states
     "completed": {"failed", "pending"},  # Reopen if incorrectly closed
-    "cancelled": set(),
-    "abandoned": set(),  # Terminal - claimed but rolled back
+    "cancelled": {"pending"},  # Reopen cancelled tasks for reruns/continued work
+    "abandoned": {"pending"},  # Reopen after rollback when work should resume
 }
 
 # All valid status values (derived from transition keys)

@@ -57,10 +57,11 @@ class TestValidTransitions:
             f"State '{state}' missing 'abandoned' transition"
         )
 
-    def test_terminal_states_have_no_outbound(self) -> None:
-        """Terminal states (cancelled, abandoned) have no outbound transitions."""
-        assert VALID_TRANSITIONS["cancelled"] == set()
-        assert VALID_TRANSITIONS["abandoned"] == set()
+    def test_reopenable_terminal_states_can_return_to_pending(self) -> None:
+        """Completed, cancelled, and abandoned tasks can be reopened to pending."""
+        assert VALID_TRANSITIONS["completed"] == {"failed", "pending"}
+        assert VALID_TRANSITIONS["cancelled"] == {"pending"}
+        assert VALID_TRANSITIONS["abandoned"] == {"pending"}
 
 
 class TestCreateTask:
@@ -185,6 +186,24 @@ class TestUpdateTaskStatus:
 
         assert result is not None
         assert result["status"] == "abandoned"
+
+    def test_status_cancelled_to_pending_reopens_task(self, test_task: dict[str, Any]) -> None:
+        """Cancelled tasks should be reopenable."""
+        task_store.update_task_status(test_task["id"], "cancelled")
+
+        result = task_store.update_task_status(test_task["id"], "pending")
+
+        assert result is not None
+        assert result["status"] == "pending"
+
+    def test_status_abandoned_to_pending_reopens_task(self, test_task: dict[str, Any]) -> None:
+        """Abandoned tasks should be reopenable after rollback."""
+        task_store.update_task_status(test_task["id"], "abandoned")
+
+        result = task_store.update_task_status(test_task["id"], "pending")
+
+        assert result is not None
+        assert result["status"] == "pending"
 
     def test_invalid_status_raises_error(self, test_task: dict[str, Any]) -> None:
         """Test that invalid status raises ValueError."""
