@@ -46,6 +46,8 @@ def _format_owner(owner: dict[str, Any]) -> str:
     ]
     if scope_preview:
         details.append(f"paths={scope_preview}")
+    if owner.get("scope_confidence"):
+        details.append(f"scope={owner['scope_confidence']}")
     if owner.get("is_stale"):
         details.append("stale=yes")
     return "OWN " + " | ".join(details)
@@ -55,6 +57,8 @@ def _format_session(session: dict[str, Any]) -> str:
     live = session.get("live_activity") if isinstance(session.get("live_activity"), dict) else {}
     touched = live.get("files_touched") if isinstance(live, dict) else []
     touched_preview = ",".join(str(path) for path in touched[:2]) if isinstance(touched, list) else ""
+    observed_writes = session.get("observed_write_paths") if isinstance(session.get("observed_write_paths"), list) else []
+    write_preview = ",".join(str(path) for path in observed_writes[:2]) if observed_writes else ""
     model = session.get("effective_model") or session.get("requested_model") or "unknown"
     details = [
         str(session.get("lane_role") or "observer"),
@@ -63,6 +67,10 @@ def _format_session(session: dict[str, Any]) -> str:
         str(model).split("/")[-1],
         f"{live.get('health', session.get('status', 'unknown'))}/{live.get('phase', session.get('status', 'unknown'))}",
     ]
+    if session.get("scope_confidence"):
+        details.append(f"scope={session['scope_confidence']}")
+    if write_preview:
+        details.append(f"writes={write_preview}")
     if touched_preview:
         details.append(f"files={touched_preview}")
     return "SES " + " | ".join(details)
