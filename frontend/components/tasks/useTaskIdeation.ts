@@ -3,6 +3,7 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { ChatMessage } from '@agent-hub/chat-ui'
 import { buildAgentHubChatApiConfig } from '@/lib/agent-hub-chat-config'
+import { getAgentHubProxyBase } from '@/lib/agent-hub-proxy'
 import { getApiBaseUrl } from '@/lib/api-config'
 import {
   CREATE_TASK_TOOL_NAME,
@@ -12,24 +13,6 @@ import {
 } from './taskIdeationTypes'
 import type { Complexity, IdeationTaskData, IdeationTaskResponse } from './taskIdeationTypes'
 import type { TaskType } from '@/lib/api/tasks-types'
-
-/**
- * Get the base path for Agent Hub API calls.
- *
- * Browser: /api/agent-hub/* is rewritten (beforeFiles) to the Route Handler
- * at /proxy-hub/agent-hub/[...path] which injects client credentials and
- * proxies directly to Agent Hub (localhost:8003). Single-layer proxy,
- * equivalent to Monkey Fight's Express proxy pattern.
- *
- * SSR: Falls back to backend proxy at localhost:8001 (shouldn't be hit
- * since ChatPanel is a client component).
- */
-export function getAgentHubProxyBase(): string {
-  if (typeof window === 'undefined') {
-    return 'http://localhost:8001/api/agent-hub'
-  }
-  return '/api/agent-hub'
-}
 
 function extractCreateTaskTool(messages: ChatMessage[]): IdeationTaskData | null {
   for (let i = messages.length - 1; i >= 0; i--) {

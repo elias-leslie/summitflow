@@ -3,6 +3,7 @@
  * Routes through Next.js proxy: /api/agent-hub/feedback/* -> Agent Hub port 8003
  */
 
+import { getAgentHubProxyBase } from '../agent-hub-proxy'
 import { buildQueryString, getApiBase } from './utils'
 
 // ============================================================================
@@ -122,8 +123,8 @@ export interface FeedbackFilters {
 // ============================================================================
 
 async function feedbackFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const apiBase = getApiBase()
-  const response = await fetch(`${apiBase}/api/agent-hub/feedback${path}`, options)
+  const apiBase = typeof window === 'undefined' ? getApiBase() : getAgentHubProxyBase()
+  const response = await fetch(`${apiBase}/feedback${path}`, options)
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Request failed' }))
     throw new Error(error.detail || error.message || 'Request failed')

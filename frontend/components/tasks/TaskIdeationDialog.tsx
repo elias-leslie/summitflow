@@ -3,6 +3,7 @@
 import { MessageSquare } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { ChatPanel } from '@agent-hub/chat-ui'
+import { getAgentHubProxyBase } from '@/lib/agent-hub-proxy'
 import {
   Dialog,
   DialogClose,
@@ -11,7 +12,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { TaskSummaryCard } from './TaskSummaryCard'
-import { getAgentHubProxyBase, useTaskIdeation } from './useTaskIdeation'
+import { useTaskIdeation } from './useTaskIdeation'
 import type { TaskIdeationDialogProps } from './taskIdeationTypes'
 import { AGENT_SLUG, CHAT_TITLE } from './taskIdeationTypes'
 

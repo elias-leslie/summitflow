@@ -2,6 +2,7 @@
  * Tasks API - Agent Hub Integration & Observability
  */
 
+import { getAgentHubProxyBase } from '../agent-hub-proxy'
 import { buildQueryString, fetchWithErrorHandling, getApiBase } from './utils'
 import type {
   CodingAgentsResponse,
@@ -18,8 +19,8 @@ import type {
  * These are agents that can execute autonomous tasks.
  */
 export async function fetchCodingAgents(): Promise<CodingAgentsResponse> {
-  const apiBase = getApiBase()
-  const response = await fetch(`${apiBase}/api/agent-hub/agents`)
+  const apiBase = typeof window === 'undefined' ? getApiBase() : getAgentHubProxyBase()
+  const response = await fetch(`${apiBase}/agents`)
   if (!response.ok) {
     throw new Error('Failed to fetch coding agents')
   }

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { getAgentHubProxyBase } from '@/components/tasks/useTaskIdeation'
+import { getAgentHubProxyBase } from '@/lib/agent-hub-proxy'
 
 interface PersonaResponse {
   name: string

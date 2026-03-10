@@ -3,9 +3,9 @@
 import { useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ChatPanel } from '@agent-hub/chat-ui'
+import { getAgentHubProxyBase } from '@/lib/agent-hub-proxy'
 import { getVoiceWsUrl, getTtsBaseUrl } from '@/lib/api-config'
 import { buildAgentHubChatApiConfig } from '@/lib/agent-hub-chat-config'
-import { getAgentHubProxyBase } from '@/components/tasks/useTaskIdeation'
 import { fetchNotification, type Notification } from '@/lib/api/notifications'
 import { usePersonaName } from '@/hooks/usePersonaName'
 import { getChatProjectId } from './chat-routing'
@@ -32,13 +32,15 @@ export function PersonaChatClient() {
       .catch(() => {}) // Non-critical — chat works without it
   }, [notificationId, projectId])
 
+  const agentHubProxyBase = getAgentHubProxyBase()
+
   const apiConfig = useMemo(
     () =>
       buildAgentHubChatApiConfig({
-        proxyBase: getAgentHubProxyBase(),
+        proxyBase: agentHubProxyBase,
         projectId,
       }),
-    [projectId],
+    [agentHubProxyBase, projectId],
   )
 
   const voiceWsUrl = useMemo(() => getVoiceWsUrl(), [])
@@ -55,7 +57,7 @@ export function PersonaChatClient() {
           agentSlug={AGENT_SLUG}
           toolsEnabled
           apiConfig={apiConfig}
-          modelsEndpoint={`${getAgentHubProxyBase()}/models`}
+          modelsEndpoint={`${agentHubProxyBase}/models`}
           voiceWsUrl={voiceWsUrl ?? undefined}
           ttsBaseUrl={ttsBaseUrl ?? undefined}
           title={personaName}
