@@ -88,7 +88,6 @@ SKIP_DIRS: frozenset[str] = frozenset(
         "logs",
         # Test artifacts
         "test-results",
-        "playwright-report",
         # IDE/editor
         ".idea",
         ".vscode",

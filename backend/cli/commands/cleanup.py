@@ -450,6 +450,10 @@ def cleanup_status(
         bool,
         typer.Option("--all", help="Show all projects (default: current project only)"),
     ] = False,
+    fail_on_residue: Annotated[
+        bool,
+        typer.Option("--fail-on-residue", help="Exit nonzero when any managed repo still needs cleanup"),
+    ] = False,
 ) -> None:
     """Show summary of worktrees and their cleanup status."""
     result = build_cleanup_status_payload(all_projects)
@@ -458,6 +462,8 @@ def cleanup_status(
         format_cleanup_status_compact(result, all_projects)
     else:
         output_json(result)
+    if fail_on_residue and result["summary"]["repos_needing_cleanup"] > 0:
+        raise typer.Exit(2)
 
 
 @app.command("path")
