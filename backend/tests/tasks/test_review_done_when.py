@@ -10,6 +10,8 @@ class TestDoneWhenInReviewPrompt:
 
     @patch("app.tasks.autonomous.review.route_based_on_verdict")
     @patch("app.tasks.autonomous.review.get_sync_client")
+    @patch("app.tasks.autonomous.review._build_snapshot_block", return_value="Touched File Snapshots:\nFile: backend/app/main.py")
+    @patch("app.tasks.autonomous.review._build_scope_block", return_value="Touched Files:\n- backend/app/main.py\n\n")
     @patch("app.tasks.autonomous.review.get_task_spirit")
     @patch("app.tasks.autonomous.review.collect_precision_code_search_context")
     @patch("app.tasks.autonomous.review.get_git_diff")
@@ -20,6 +22,8 @@ class TestDoneWhenInReviewPrompt:
         mock_diff: MagicMock,
         mock_precision: MagicMock,
         mock_spirit: MagicMock,
+        _mock_scope_block: MagicMock,
+        _mock_snapshot_block: MagicMock,
         mock_client_fn: MagicMock,
         mock_route: MagicMock,
     ) -> None:
@@ -54,9 +58,14 @@ class TestDoneWhenInReviewPrompt:
         assert "API returns 200 on /health" in prompt
         assert "Tests pass" in prompt
         assert "verify the diff addresses each one" in prompt
+        assert "Touched Files:" in prompt
+        assert "Touched File Snapshots:" in prompt
+        assert "Flag new duplication, dead code" in prompt
 
     @patch("app.tasks.autonomous.review.route_based_on_verdict")
     @patch("app.tasks.autonomous.review.get_sync_client")
+    @patch("app.tasks.autonomous.review._build_snapshot_block", return_value="")
+    @patch("app.tasks.autonomous.review._build_scope_block", return_value="")
     @patch("app.tasks.autonomous.review.get_task_spirit")
     @patch("app.tasks.autonomous.review.collect_precision_code_search_context")
     @patch("app.tasks.autonomous.review.get_git_diff")
@@ -67,6 +76,8 @@ class TestDoneWhenInReviewPrompt:
         mock_diff: MagicMock,
         mock_precision: MagicMock,
         mock_spirit: MagicMock,
+        _mock_scope_block: MagicMock,
+        _mock_snapshot_block: MagicMock,
         mock_client_fn: MagicMock,
         mock_route: MagicMock,
     ) -> None:
@@ -95,6 +106,8 @@ class TestDoneWhenInReviewPrompt:
 
     @patch("app.tasks.autonomous.review.route_based_on_verdict")
     @patch("app.tasks.autonomous.review.get_sync_client")
+    @patch("app.tasks.autonomous.review._build_snapshot_block", return_value="")
+    @patch("app.tasks.autonomous.review._build_scope_block", return_value="")
     @patch("app.tasks.autonomous.review.get_task_spirit")
     @patch("app.tasks.autonomous.review.collect_precision_code_search_context")
     @patch("app.tasks.autonomous.review.get_git_diff")
@@ -105,6 +118,8 @@ class TestDoneWhenInReviewPrompt:
         mock_diff: MagicMock,
         mock_precision: MagicMock,
         mock_spirit: MagicMock,
+        _mock_scope_block: MagicMock,
+        _mock_snapshot_block: MagicMock,
         mock_client_fn: MagicMock,
         mock_route: MagicMock,
     ) -> None:

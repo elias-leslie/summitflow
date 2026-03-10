@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from ...logging_config import get_logger
+from ...services.task_execution_readiness import sync_task_execution_readiness
 from ...services.task_second_opinion import ensure_second_opinion_tracking
 from ...storage import tasks as task_store
 from ...storage.subtasks import bulk_add_subtask_dependencies, bulk_create_subtasks
@@ -13,10 +14,14 @@ from ...storage.task_spirit import create_task_spirit, get_task_spirit, update_t
 logger = get_logger(__name__)
 
 
-def _format_step(step: Any) -> dict[str, str]:
+def _format_step(step: Any) -> dict[str, Any]:
     """Format a single step into a dict with a description field."""
     if isinstance(step, dict):
-        return {"description": step.get("description", "")}
+        formatted: dict[str, Any] = {"description": step.get("description", "")}
+        spec = step.get("spec")
+        if isinstance(spec, dict) and spec:
+            formatted["spec"] = spec
+        return formatted
     return {"description": str(step)}
 
 
@@ -44,9 +49,37 @@ def _collect_dependencies(subtasks_data: list[dict[str, Any]]) -> list[tuple[str
     return deps
 
 
-def _upsert_task_spirit(
-    task_id: str, objective: str, constraints: list[Any]
-) -> None:
+def _merge_unique_strings(
+    existing: list[Any] | None,
+    incoming: list[Any] | None,
+) -> list[str]:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for source in [*(existing or []), *(incoming or [])]:
+        text = str(source).strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        merged.append(text)
+    return merged
+
+
+def _merge_context(
+    existing: dict[str, Any] | None,
+    incoming: dict[str, Any] | None,
+) -> dict[str, Any]:
+    merged = dict(existing or {})
+    for key, value in (incoming or {}).items():
+        if key in {"files_to_modify", "files_to_create", "risks"}:
+            existing_items = merged.get(key) if isinstance(merged.get(key), list) else []
+            incoming_items = value if isinstance(value, list) else []
+            merged[key] = _merge_unique_strings(existing_items, incoming_items)
+            continue
+        merged[key] = value
+    return merged
+
+
+def _upsert_task_spirit(task_id: str, plan_data: dict[str, Any]) -> None:
     """Create or update the task spirit record.
 
     When updating an existing spirit (created by triage), preserves the triage
@@ -54,14 +87,43 @@ def _upsert_task_spirit(
     The planner's objective is often a reworded abstraction that can diverge
     from the concrete done_when criteria set by the triager.
     """
+    objective = str(plan_data.get("objective", "")).strip()
+    spirit_anti = str(plan_data.get("spirit_anti", "")).strip() or None
+    decisions = plan_data.get("decisions", [])
+    constraints = _merge_unique_strings(None, plan_data.get("constraints", []))
+    done_when = _merge_unique_strings(None, plan_data.get("done_when", []))
+    context = plan_data.get("context") if isinstance(plan_data.get("context"), dict) else {}
+    complexity = str(plan_data.get("complexity", "")).strip() or None
     spirit = get_task_spirit(task_id)
     if not spirit:
-        create_task_spirit(task_id=task_id, objective=objective, constraints=constraints)
+        create_task_spirit(
+            task_id=task_id,
+            objective=objective,
+            spirit_anti=spirit_anti,
+            decisions=decisions if isinstance(decisions, list) else None,
+            constraints=constraints,
+            done_when=done_when,
+            context=context,
+            complexity=complexity,
+        )
     else:
         # Preserve triage objective if one exists; only update constraints
-        updates: dict[str, Any] = {"constraints": constraints}
+        updates: dict[str, Any] = {
+            "constraints": _merge_unique_strings(spirit.get("constraints"), constraints),
+            "done_when": _merge_unique_strings(spirit.get("done_when"), done_when),
+            "context": _merge_context(
+                spirit.get("context") if isinstance(spirit.get("context"), dict) else {},
+                context,
+            ),
+        }
         if not spirit.get("objective"):
             updates["objective"] = objective
+        if not spirit.get("spirit_anti") and spirit_anti:
+            updates["spirit_anti"] = spirit_anti
+        if decisions:
+            updates["decisions"] = decisions
+        if complexity and not spirit.get("complexity"):
+            updates["complexity"] = complexity
         update_task_spirit(task_id, **updates)
 
 
@@ -92,11 +154,8 @@ def save_plan_to_database(task_id: str, plan_data: dict[str, Any]) -> None:
         task_id: Task ID to save plan for
         plan_data: Parsed plan with objective, subtasks, and constraints
     """
-    objective = plan_data.get("objective", "")
     subtasks_data = plan_data.get("subtasks", [])
-    constraints = plan_data.get("constraints", [])
-
-    _upsert_task_spirit(task_id, objective, constraints)
+    _upsert_task_spirit(task_id, plan_data)
 
     if subtasks_data:
         _create_subtasks_from_plan(task_id, subtasks_data)
@@ -104,3 +163,4 @@ def save_plan_to_database(task_id: str, plan_data: dict[str, Any]) -> None:
     task = task_store.get_task(task_id)
     if task:
         ensure_second_opinion_tracking(task_id, task, source="planning")
+        sync_task_execution_readiness(task_id, "planning")

@@ -41,9 +41,29 @@ Title: {title}
 Description: {description or "(no description)"}
 {precision_block}
 
+Build a plan that is execution-ready for an autonomous coding agent.
+- Keep scope tight and explicit.
+- For any existing file you expect to touch, include it in context.files_to_modify when you can infer it.
+- If touched files already contain local duplication, dead code, stale shims, or obvious structural mess, absorb that cleanup into this task instead of deferring it, unless doing so would clearly broaden scope or risk behavior changes.
+- If cleanup must be deferred, say why in constraints.
+- Use step.spec.verify_commands when a step has concrete verification the agent should run.
+
 You MUST respond with a JSON object (no markdown, no explanation outside the JSON):
 {{
     "objective": "Clear 1-2 sentence objective",
+    "spirit_anti": "What must NOT happen while implementing this task",
+    "done_when": [
+        "Concrete completion criterion",
+        "Another concrete completion criterion"
+    ],
+    "decisions": [
+        {{
+            "id": "d1",
+            "title": "Important implementation choice",
+            "outcome": "Chosen approach",
+            "rationale": "Why this is the right tradeoff"
+        }}
+    ],
     "subtasks": [
         {{
             "subtask_id": "1.1",
@@ -52,13 +72,21 @@ You MUST respond with a JSON object (no markdown, no explanation outside the JSO
             "description": "What this subtask accomplishes",
             "steps": [
                 {{
-                    "description": "Specific implementation step"
+                    "description": "Specific implementation step",
+                    "spec": {{
+                        "verify_commands": ["Optional command to verify this step"]
+                    }}
                 }}
             ],
             "depends_on": []
         }}
     ],
-    "constraints": ["Any constraints or non-goals"]
+    "constraints": ["Any constraints or non-goals"],
+    "context": {{
+        "files_to_modify": ["existing/file.py"],
+        "files_to_create": ["new/file.ts"],
+        "risks": ["Known risk or gotcha"]
+    }}
 }}"""
 
 

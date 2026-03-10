@@ -54,17 +54,34 @@ def expand_command(cmd: str) -> str:
     return strip_venv_paths(cmd)
 
 
+def get_diff_range(project_path: str, base_branch: str = "main") -> str:
+    """Return a git diff range from merge-base to HEAD, with a safe fallback."""
+    try:
+        merge_base = subprocess.run(
+            ["git", "merge-base", "HEAD", base_branch],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if merge_base.returncode == 0 and merge_base.stdout.strip():
+            return f"{merge_base.stdout.strip()}..HEAD"
+    except Exception:
+        logger.debug("merge_base_lookup_failed", exc_info=True)
+    return "HEAD~1..HEAD"
+
+
 def detect_changed_files(project_path: str) -> list[str]:
     """Detect Python files changed in the last commit.
 
-    Uses git diff HEAD~1 to find files modified by the agent.
+    Uses the merge-base against main to find files modified by the agent.
 
     Returns:
         List of changed .py file paths relative to project root.
     """
     try:
         result = subprocess.run(
-            ["git", "diff", "--name-only", "HEAD~1", "--", "*.py"],
+            ["git", "diff", "--name-only", get_diff_range(project_path), "--", "*.py"],
             cwd=project_path,
             capture_output=True,
             text=True,

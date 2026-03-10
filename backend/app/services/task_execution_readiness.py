@@ -13,6 +13,16 @@ from .task_second_opinion import assess_second_opinion_readiness
 _NONTRIVIAL_TASK_TYPES = {"feature", "task", "refactor", "debt", "regression"}
 
 
+def _has_scope_context(context: Any) -> bool:
+    if not isinstance(context, dict):
+        return False
+    for key in ("files_to_modify", "files_to_create"):
+        value = context.get(key)
+        if isinstance(value, list) and any(str(item).strip() for item in value):
+            return True
+    return False
+
+
 @dataclass
 class TaskExecutionReadiness:
     """Execution-readiness evaluation for a task."""
@@ -90,8 +100,9 @@ def assess_task_execution_readiness(
             )
             missing_fields.append("steps")
 
-    if requires_nontrivial_plan and not context:
-        suggestions.append("Add context.files_to_modify/files_to_create for clearer execution scope")
+    if requires_nontrivial_plan and not _has_scope_context(context):
+        issues.append("Missing execution scope context (files_to_modify/files_to_create)")
+        missing_fields.append("context")
 
     if requires_nontrivial_plan and not task.get("description"):
         suggestions.append("Add a task description with scope and constraints")

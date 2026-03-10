@@ -14,6 +14,7 @@ from ....storage import tasks as task_store
 from ....storage.projects import get_project_root_path
 from ..cleanup.merge_types import MergeResult
 from ..exec_modules.memory_writes import save_qa_fix_pattern
+from ..verification_helpers import get_diff_range
 from .parsing import parse_review_response
 
 logger = get_logger(__name__)
@@ -124,7 +125,11 @@ def _get_diff_text(project_path: str) -> str:
     """Return git diff or fallback string."""
     try:
         r = subprocess.run(
-            ["git", "diff", "HEAD~1"], cwd=project_path, capture_output=True, text=True, timeout=30
+            ["git", "diff", get_diff_range(project_path)],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         return r.stdout[:5000] if r.stdout else "(no changes)"
     except Exception:

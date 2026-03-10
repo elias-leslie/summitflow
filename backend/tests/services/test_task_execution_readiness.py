@@ -22,6 +22,7 @@ class TestAssessTaskExecutionReadiness:
         assert readiness.ready is False
         assert "spirit_anti" in readiness.missing_fields
         assert "subtasks" in readiness.missing_fields
+        assert "context" in readiness.missing_fields
 
     def test_nontrivial_task_with_subtasks_requires_steps(self) -> None:
         readiness = assess_task_execution_readiness(
@@ -30,12 +31,34 @@ class TestAssessTaskExecutionReadiness:
                 "objective": "Add health endpoint",
                 "done_when": ["Endpoint returns 200"],
                 "spirit_anti": "Do not break existing routes",
+                "context": {"files_to_modify": ["backend/app/main.py"]},
             },
             [{"subtask_id": "1.1", "description": "Implement API", "steps_from_table": []}],
         )
 
         assert readiness.ready is False
         assert "steps" in readiness.missing_fields
+
+    def test_nontrivial_task_requires_scope_context(self) -> None:
+        readiness = assess_task_execution_readiness(
+            {"task_type": "feature", "complexity": "STANDARD", "description": "Add endpoint"},
+            {
+                "objective": "Add health endpoint",
+                "done_when": ["Endpoint returns 200"],
+                "spirit_anti": "Do not break existing routes",
+            },
+            [
+                {
+                    "subtask_id": "1.1",
+                    "description": "Implement API",
+                    "steps_from_table": [{"step_number": 1, "description": "Add route"}],
+                }
+            ],
+        )
+
+        assert readiness.ready is False
+        assert "context" in readiness.missing_fields
+        assert any("scope context" in issue.lower() for issue in readiness.issues)
 
     def test_ready_task_is_execution_ready(self) -> None:
         readiness = assess_task_execution_readiness(

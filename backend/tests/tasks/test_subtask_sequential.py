@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -413,7 +414,7 @@ def test_start_execution_skips_duplicate_same_task_lane(
 @pytest.mark.integration
 def test_db_subtask_ordering(ensure_test_project: str, cleanup_task: Any) -> None:
     """Verify that subtasks are retrieved from the database in display_order."""
-    task_id = "test-ordering-task"
+    task_id = f"test-ordering-task-{uuid.uuid4().hex[:8]}"
     cleanup_task(task_id)
 
     create_task(

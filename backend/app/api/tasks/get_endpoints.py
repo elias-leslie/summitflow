@@ -113,7 +113,7 @@ async def get_task(
 async def review_task(task_id: str) -> dict[str, Any]:
     """Run AI reviewer on task diff. Returns verdict without side effects."""
     from ...services.agent_hub_client import get_sync_client
-    from ...storage.task_spirit import get_task_spirit
+    from ...tasks.autonomous.review import _build_prompt
     from ...tasks.autonomous.review_modules.diff import get_git_diff
     from ...tasks.autonomous.review_modules.parsing import parse_review_response
 
@@ -123,26 +123,13 @@ async def review_task(task_id: str) -> dict[str, Any]:
     git_diff = await asyncio.to_thread(get_git_diff, task_id, project_id)
     if not git_diff or git_diff.strip() in ("(no changes)", ""):
         return {"verdict": "REJECTED", "concerns": [], "summary": "No code changes detected"}
-
-    spirit = await asyncio.to_thread(get_task_spirit, task_id)
-    done_when = spirit.get("done_when", []) if spirit else []
-    done_when_text = (
-        "\n".join(f"- {c}" for c in done_when) if done_when else "(none defined)"
+    prompt = await asyncio.to_thread(
+        _build_prompt,
+        task,
+        str(task.get("complexity") or "STANDARD"),
+        git_diff,
+        task_id,
     )
-
-    prompt = f"""Task: {task.get("title", "")}
-
-Success Criteria (done_when):
-{done_when_text}
-
-Git Diff:
-```
-{git_diff[:5000]}
-```
-
-If done_when criteria are defined, verify the diff addresses each one.
-
-Respond ONLY with a JSON object. No prose, no tool calls, no markdown. Required format: {{"verdict": "APPROVED" | "NEEDS_FIX" | "PLAN_DEFECT" | "ESCALATE", "concerns": [...], "recommendation": "..."}}"""
 
     client = await asyncio.to_thread(get_sync_client)
     response = await asyncio.to_thread(

@@ -9,12 +9,15 @@ Reviews git diffs and routes tasks based on verdict:
 
 from __future__ import annotations
 
+import subprocess
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from ...logging_config import get_logger
 from ...services.agent_hub_client import get_sync_client
 from ...services.context_gatherer import collect_precision_code_search_context
+from ...services.worktree import get_execution_path
 from ...storage import log_task_event
 from ...storage import tasks as task_store
 from ...storage.notifications import create_task_failure_notification
@@ -30,8 +33,17 @@ from .review_modules.routing import (
     route_based_on_verdict,
     supervisor_resolve_escalation,
 )
+from .verification_helpers import get_diff_range
 
 logger = get_logger(__name__)
+_MAX_REVIEW_FILES = 5
+_MAX_SNAPSHOT_CHARS = 3000
+
+
+def _get_spirit_context(task_id: str) -> dict[str, Any]:
+    spirit = get_task_spirit(task_id)
+    context = spirit.get("context") if spirit else {}
+    return context if isinstance(context, dict) else {}
 
 
 def _build_precision_context(task: dict[str, Any], task_id: str, project_id: str) -> str:
@@ -51,6 +63,75 @@ def _build_precision_context(task: dict[str, Any], task_id: str, project_id: str
     if not result.prompt_context:
         return ""
     return f"Precision Code Search:\n{result.prompt_context}\n\n"
+
+
+def _collect_touched_files(task_id: str, project_id: str) -> list[str]:
+    context = _get_spirit_context(task_id)
+    declared_paths = [
+        str(path).strip()
+        for key in ("files_to_modify", "files_to_create")
+        for path in context.get(key, [])
+        if str(path).strip()
+    ]
+    discovered_paths: list[str] = []
+    try:
+        project_path = get_execution_path(task_id, project_id)
+        result = subprocess.run(
+            ["git", "diff", "--name-only", get_diff_range(project_path)],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            discovered_paths = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    except Exception:
+        logger.debug("review_changed_files_lookup_failed", task_id=task_id, exc_info=True)
+
+    seen: set[str] = set()
+    merged: list[str] = []
+    for path in [*declared_paths, *discovered_paths]:
+        if path and path not in seen:
+            seen.add(path)
+            merged.append(path)
+    return merged[:_MAX_REVIEW_FILES]
+
+
+def _build_scope_block(task_id: str, project_id: str) -> str:
+    touched_files = _collect_touched_files(task_id, project_id)
+    if not touched_files:
+        return ""
+    lines = ["Touched Files:"]
+    lines.extend(f"- {path}" for path in touched_files)
+    return "\n".join(lines) + "\n\n"
+
+
+def _build_snapshot_block(task_id: str, project_id: str) -> str:
+    touched_files = _collect_touched_files(task_id, project_id)
+    if not touched_files:
+        return ""
+
+    try:
+        project_root = Path(get_execution_path(task_id, project_id)).resolve()
+    except Exception:
+        return ""
+
+    blocks: list[str] = []
+    for relative_path in touched_files:
+        try:
+            file_path = (project_root / relative_path).resolve()
+            if not file_path.is_relative_to(project_root) or not file_path.is_file():
+                continue
+            content = file_path.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            continue
+
+        blocks.append(
+            f"File: {relative_path}\n```\n{content[:_MAX_SNAPSHOT_CHARS]}\n```"
+        )
+    if not blocks:
+        return ""
+    return "Touched File Snapshots:\n" + "\n\n".join(blocks) + "\n\n"
 
 
 def _notify_failure(project_id: str, task_id: str, task: dict, error_message: str) -> None:
@@ -96,13 +177,19 @@ def _build_prompt(task: dict, complexity: str, git_diff: str, task_id: str) -> s
     done_when = spirit.get("done_when", []) if spirit else []
     done_when_text = "\n".join(f"- {c}" for c in done_when) if done_when else "(none defined)"
     precision_context = _build_precision_context(task, task_id, task.get("project_id", ""))
+    scope_block = _build_scope_block(task_id, task.get("project_id", ""))
+    snapshot_block = _build_snapshot_block(task_id, task.get("project_id", ""))
 
     return (
         f"Task: {task.get('title', '')}\nComplexity: {complexity}\n\n"
         f"{precision_context}"
         f"Success Criteria (done_when):\n{done_when_text}\n\n"
+        f"{scope_block}"
+        f"{snapshot_block}"
         f"Git Diff:\n```\n{git_diff[:50000]}\n```\n\n"
-        "If done_when criteria are defined, verify the diff addresses each one.\n\n"
+        "If done_when criteria are defined, verify the diff addresses each one.\n"
+        "Review the touched area, not just the patch. Reject code that leaves touched files structurally worse without justification.\n"
+        "Flag new duplication, dead code, stale compatibility wrappers, broadened scope beyond the touched files, or maintainability regressions in touched files.\n\n"
         'Respond ONLY with a JSON object. No prose, no tool calls, no markdown. '
         'Required format: {"verdict": "APPROVED" | "NEEDS_FIX" | "PLAN_DEFECT" | "ESCALATE", '
         '"concerns": [...], "recommendation": "..."}'

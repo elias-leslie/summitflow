@@ -5,6 +5,7 @@ from __future__ import annotations
 import subprocess
 
 from ....services.worktree import get_execution_path
+from ..verification_helpers import get_diff_range
 
 
 def get_git_diff(task_id: str, project_id: str) -> str:
@@ -20,7 +21,7 @@ def get_git_diff(task_id: str, project_id: str) -> str:
     try:
         cwd = get_execution_path(task_id, project_id)
         result = subprocess.run(
-            ["git", "diff", "HEAD~1"],
+            ["git", "diff", get_diff_range(cwd)],
             capture_output=True,
             text=True,
             timeout=30,

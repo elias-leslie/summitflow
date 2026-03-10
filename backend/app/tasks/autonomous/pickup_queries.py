@@ -8,10 +8,15 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services.task_execution_readiness import load_task_execution_readiness
 from app.storage import tasks as task_store
 from app.storage.connection import get_connection
 from app.storage.subtasks import get_subtasks_for_task
 from app.storage.task_spirit import get_task_spirit
+
+_REPLANNING_FIELDS = frozenset(
+    {"objective", "done_when", "spirit_anti", "decisions", "subtasks", "steps", "context"}
+)
 
 
 def determine_next_stage(task_id: str) -> str:
@@ -33,6 +38,12 @@ def determine_next_stage(task_id: str) -> str:
 
     if not subtasks:
         return "planning"
+
+    readiness = load_task_execution_readiness(task_id)
+    if not readiness.ready:
+        if _REPLANNING_FIELDS.intersection(readiness.missing_fields):
+            return "planning"
+        return "unknown"
 
     if any(not s.get("passes") for s in subtasks):
         return "execution"

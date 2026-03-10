@@ -17,6 +17,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from app.logging_config import get_logger
+from app.services.task_validation import validate_task_ready
 from app.storage import tasks as task_store
 from app.storage.task_dependencies import is_blocked
 
@@ -44,7 +45,13 @@ def _dispatch_one(
         dispatched["skipped"] += 1
         return
 
-    stage = determine_next_stage(task_id)
+    stage = _determine_next_stage(task_id)
+    if stage == "execution":
+        readiness = validate_task_ready(task_id, project_id)
+        if not readiness.ready:
+            logger.info("Task not execution-ready, skipping", task_id=task_id, issues=readiness.issues[:3])
+            dispatched["skipped"] += 1
+            return
 
     try:
         if dispatch_to_stage(stage, task_id, project_id, dispatch):
@@ -117,7 +124,12 @@ def dispatch_task_immediate(
         logger.info("Task blocked by dependency", task_id=task_id)
         return {"status": "blocked", "task_id": task_id, "reason": "dependency_blocked"}
 
-    stage = determine_next_stage(task_id)
+    stage = _determine_next_stage(task_id)
+    if stage == "execution":
+        readiness = validate_task_ready(task_id, project_id)
+        if not readiness.ready:
+            logger.info("Task not execution-ready for immediate dispatch", task_id=task_id, issues=readiness.issues[:3])
+            return {"status": "not_ready", "task_id": task_id, "issues": readiness.issues, "suggestions": readiness.suggestions}
 
     try:
         if dispatch_to_stage(stage, task_id, project_id, dispatch, worker_id_prefix="dispatch"):

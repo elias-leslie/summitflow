@@ -84,6 +84,11 @@ class TestPromptTemplateFallbacks:
         mock_get_task_spirit.return_value = {
             "objective": "Reduce the component size while preserving behavior",
             "spirit_anti": "- Do not change UI behavior",
+            "done_when": ["No regressions", "Keep render output stable"],
+            "context": {
+                "files_to_modify": ["frontend/components/ActivityTimeline.tsx"],
+                "files_to_create": ["frontend/components/ActivityTimelineParts.tsx"],
+            },
         }
 
         prompt = build_subtask_prompt(
@@ -99,6 +104,10 @@ class TestPromptTemplateFallbacks:
 
         assert "Reduce the component size while preserving behavior" in prompt
         assert "Do not change UI behavior" in prompt
+        assert "Completion Criteria" in prompt
+        assert "No regressions" in prompt
+        assert "Expected Scope" in prompt
+        assert "frontend/components/ActivityTimeline.tsx" in prompt
         assert "Extract reusable ActivityTimeline helpers" in prompt
         assert "/tmp/worktree" in prompt
         assert "Precision Code Search: symbol-first" in prompt

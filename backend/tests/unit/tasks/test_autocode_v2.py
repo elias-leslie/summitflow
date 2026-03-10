@@ -111,7 +111,41 @@ class TestDetermineNextStage:
             {"subtask_id": "1.2", "passes": True},
         ]
 
-        assert _determine_next_stage("task-1") == "execution"
+        with patch("app.tasks.autonomous.pickup_queries.load_task_execution_readiness") as mock_ready:
+            mock_ready.return_value = MagicMock(ready=True, missing_fields=[])
+            assert _determine_next_stage("task-1") == "execution"
+
+    @patch("app.tasks.autonomous.pickup_queries.get_subtasks_for_task")
+    @patch("app.tasks.autonomous.pickup_queries.get_task_spirit")
+    @patch("app.tasks.autonomous.pickup_queries.task_store")
+    def test_incomplete_subtasks_missing_plan_contract_returns_planning(
+        self, mock_store: MagicMock, mock_spirit: MagicMock, mock_subtasks: MagicMock
+    ) -> None:
+        from app.tasks.autonomous.pickup import _determine_next_stage
+
+        mock_store.get_task.return_value = {"labels": []}
+        mock_spirit.return_value = {"objective": "Add API endpoint"}
+        mock_subtasks.return_value = [{"subtask_id": "1.1", "passes": False}]
+
+        with patch("app.tasks.autonomous.pickup_queries.load_task_execution_readiness") as mock_ready:
+            mock_ready.return_value = MagicMock(ready=False, missing_fields=["done_when"])
+            assert _determine_next_stage("task-1") == "planning"
+
+    @patch("app.tasks.autonomous.pickup_queries.get_subtasks_for_task")
+    @patch("app.tasks.autonomous.pickup_queries.get_task_spirit")
+    @patch("app.tasks.autonomous.pickup_queries.task_store")
+    def test_incomplete_subtasks_with_nonplanning_readiness_gap_returns_unknown(
+        self, mock_store: MagicMock, mock_spirit: MagicMock, mock_subtasks: MagicMock
+    ) -> None:
+        from app.tasks.autonomous.pickup import _determine_next_stage
+
+        mock_store.get_task.return_value = {"labels": []}
+        mock_spirit.return_value = {"objective": "Add API endpoint"}
+        mock_subtasks.return_value = [{"subtask_id": "1.1", "passes": False}]
+
+        with patch("app.tasks.autonomous.pickup_queries.load_task_execution_readiness") as mock_ready:
+            mock_ready.return_value = MagicMock(ready=False, missing_fields=["second_opinion"])
+            assert _determine_next_stage("task-1") == "unknown"
 
     @patch("app.tasks.autonomous.pickup_queries.get_subtasks_for_task")
     @patch("app.tasks.autonomous.pickup_queries.get_task_spirit")
@@ -128,7 +162,9 @@ class TestDetermineNextStage:
             {"subtask_id": "1.1", "passes": True},
         ]
 
-        assert _determine_next_stage("task-1") == "unknown"
+        with patch("app.tasks.autonomous.pickup_queries.load_task_execution_readiness") as mock_ready:
+            mock_ready.return_value = MagicMock(ready=True, missing_fields=[])
+            assert _determine_next_stage("task-1") == "unknown"
 
 
 class TestQueuedAutonomousTasks:

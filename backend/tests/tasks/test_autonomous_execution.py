@@ -69,10 +69,12 @@ class TestTaskDispatching:
     @patch("app.tasks.autonomous.pickup.validate_autonomous_dispatch", return_value=None)
     @patch("app.tasks.autonomous.pickup.get_queued_autonomous_tasks")
     @patch("app.tasks.autonomous.pickup._determine_next_stage")
+    @patch("app.tasks.autonomous.pickup.validate_task_ready")
     @patch("app.tasks.autonomous.pickup.is_blocked", return_value=False)
     def test_task_dispatched_to_triage(
         self,
         mock_blocked: MagicMock,
+        mock_validate_task_ready: MagicMock,
         mock_stage: MagicMock,
         mock_get_tasks: MagicMock,
         mock_validate: MagicMock,
@@ -88,6 +90,7 @@ class TestTaskDispatching:
             }
         ]
         mock_stage.return_value = "triage"
+        mock_validate_task_ready.return_value = MagicMock(ready=True, issues=[], suggestions=[])
 
         mock_dispatch = MagicMock()
         result = autonomous_work_pickup("test-project", dispatch=mock_dispatch)
@@ -98,8 +101,10 @@ class TestTaskDispatching:
 
     @patch("app.tasks.autonomous.pickup.validate_autonomous_dispatch", return_value=None)
     @patch("app.tasks.autonomous.pickup.get_queued_autonomous_tasks")
+    @patch("app.tasks.autonomous.pickup.validate_task_ready")
     def test_no_tasks_returns_zero_dispatched(
         self,
+        mock_validate_task_ready: MagicMock,
         mock_get_tasks: MagicMock,
         mock_validate: MagicMock,
     ) -> None:
@@ -114,10 +119,12 @@ class TestTaskDispatching:
     @patch("app.tasks.autonomous.pickup.validate_autonomous_dispatch", return_value=None)
     @patch("app.tasks.autonomous.pickup.get_queued_autonomous_tasks")
     @patch("app.tasks.autonomous.pickup._determine_next_stage")
+    @patch("app.tasks.autonomous.pickup.validate_task_ready")
     @patch("app.tasks.autonomous.pickup.is_blocked", return_value=True)
     def test_blocked_task_skipped(
         self,
         mock_blocked: MagicMock,
+        mock_validate_task_ready: MagicMock,
         mock_stage: MagicMock,
         mock_get_tasks: MagicMock,
         mock_validate: MagicMock,
@@ -137,4 +144,38 @@ class TestTaskDispatching:
 
         mock_dispatch.assert_not_called()
         mock_stage.assert_not_called()
+        assert result["breakdown"]["skipped"] == 1
+
+    @patch("app.tasks.autonomous.pickup.validate_autonomous_dispatch", return_value=None)
+    @patch("app.tasks.autonomous.pickup.get_queued_autonomous_tasks")
+    @patch("app.tasks.autonomous.pickup._determine_next_stage", return_value="execution")
+    @patch("app.tasks.autonomous.pickup.validate_task_ready")
+    @patch("app.tasks.autonomous.pickup.is_blocked", return_value=False)
+    def test_execution_task_not_ready_is_skipped(
+        self,
+        _mock_blocked: MagicMock,
+        mock_validate_task_ready: MagicMock,
+        _mock_stage: MagicMock,
+        mock_get_tasks: MagicMock,
+        _mock_validate: MagicMock,
+    ) -> None:
+        mock_get_tasks.return_value = [
+            {
+                "id": "task-123",
+                "title": "Add endpoint",
+                "task_type": "feature",
+                "complexity": "STANDARD",
+                "status": "queue",
+            }
+        ]
+        mock_validate_task_ready.return_value = MagicMock(
+            ready=False,
+            issues=["Missing done_when success criteria"],
+            suggestions=["Re-run planning"],
+        )
+
+        mock_dispatch = MagicMock()
+        result = autonomous_work_pickup("test-project", dispatch=mock_dispatch)
+
+        mock_dispatch.assert_not_called()
         assert result["breakdown"]["skipped"] == 1

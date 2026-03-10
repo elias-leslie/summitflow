@@ -26,7 +26,7 @@ logger = get_logger(__name__)
 _SLUG_AUTOCODE_SUBTASK = "autocode-subtask"
 _SLUG_AUTOCODE_FIX = "autocode-fix"
 _TRANSIENT_SUBTASK_TEMPLATE = """# Task Objective
-{objective}{spirit_anti_block}{handoff_block}
+{objective}{spirit_anti_block}{done_when_block}{scope_block}{handoff_block}
 
 # Subtask {subtask_id}
 {description}
@@ -144,6 +144,36 @@ def _build_spirit_block(spirit_anti: str) -> str:
     return f"\n# Guiding Principles\n{spirit_anti}"
 
 
+def _build_done_when_block(done_when: list[Any]) -> str:
+    items = [str(item).strip() for item in done_when if str(item).strip()]
+    if not items:
+        return ""
+    lines = ["\n# Completion Criteria"]
+    lines.extend(f"- {item}" for item in items)
+    return "\n".join(lines)
+
+
+def _build_scope_block(context: dict[str, Any]) -> str:
+    if not isinstance(context, dict):
+        return ""
+    files_to_modify = [str(path).strip() for path in context.get("files_to_modify", []) if str(path).strip()]
+    files_to_create = [str(path).strip() for path in context.get("files_to_create", []) if str(path).strip()]
+    risks = [str(item).strip() for item in context.get("risks", []) if str(item).strip()]
+    if not files_to_modify and not files_to_create and not risks:
+        return ""
+    lines = ["\n# Expected Scope"]
+    if files_to_modify:
+        lines.append("Existing files to modify:")
+        lines.extend(f"- {path}" for path in files_to_modify)
+    if files_to_create:
+        lines.append("Files to create:")
+        lines.extend(f"- {path}" for path in files_to_create)
+    if risks:
+        lines.append("Known risks:")
+        lines.extend(f"- {item}" for item in risks)
+    return "\n".join(lines)
+
+
 def _build_handoff_block(handoff: dict[str, Any]) -> str:
     previous_summaries = handoff.get("previous_summaries")
     if not previous_summaries:
@@ -184,6 +214,8 @@ def build_subtask_prompt(
     spirit = get_task_spirit(task_id)
     objective = spirit.get("objective", "") if spirit else ""
     spirit_anti = spirit.get("spirit_anti", "") if spirit else ""
+    done_when = spirit.get("done_when", []) if spirit else []
+    context = spirit.get("context", {}) if spirit else {}
     subtask_short_id = subtask.get("subtask_id", "")
     handoff = get_handoff_context(task_id, subtask_short_id)
 
@@ -194,6 +226,8 @@ def build_subtask_prompt(
     prompt = template.format_map({
         "objective": objective,
         "spirit_anti_block": _build_spirit_block(spirit_anti),
+        "done_when_block": _build_done_when_block(done_when),
+        "scope_block": _build_scope_block(context),
         "handoff_block": _build_handoff_block(handoff),
         "subtask_id": subtask_short_id,
         "description": subtask.get("description", ""),
