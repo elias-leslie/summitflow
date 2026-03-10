@@ -18,6 +18,7 @@ import {
   type StatusFilter,
 } from '@/components/design/MockupStatsGrid'
 import { DesignStandardsPanel } from '@/components/explorer/design-standards'
+import { useClampedPagination } from '@/hooks/useClampedPagination'
 import { ConfirmDeleteDialog } from '@/components/shared/ConfirmDeleteDialog'
 import {
   deleteMockup,
@@ -84,6 +85,12 @@ export function UiDesignWorkspace({
 
   const mockups = mockupsData?.items ?? []
   const totalCount = mockupsData?.total ?? 0
+  useClampedPagination({
+    page,
+    setPage,
+    totalCount,
+    pageSize,
+  })
 
   const toggleSelection = (mockupId: string): void => {
     setSelectedMockups((prev) => {

@@ -15,6 +15,7 @@ import {
 import Link from 'next/link'
 import { useState } from 'react'
 import { ActivityFeed, ProjectCard, SystemHealthWidget } from '@/components/dashboard'
+import { useClampedPagination } from '@/hooks/useClampedPagination'
 import { fetchProjectsWithStats, type ProjectWithStats } from '@/lib/api'
 import { usePersonaName } from '@/hooks/usePersonaName'
 
@@ -31,7 +32,12 @@ export function DashboardClient() {
 
   const projects = data?.projects ?? []
   const totalProjects = projects.length
-  const totalPages = Math.ceil(totalProjects / PROJECTS_PER_PAGE)
+  const totalPages = useClampedPagination({
+    page,
+    setPage,
+    totalCount: totalProjects,
+    pageSize: PROJECTS_PER_PAGE,
+  })
   const startIndex = page * PROJECTS_PER_PAGE
   const endIndex = startIndex + PROJECTS_PER_PAGE
   const visibleProjects = projects.slice(startIndex, endIndex)

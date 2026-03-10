@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, Image as ImageIcon, Layers3, Package, Tags, X } from 'lucide-react'
 import Image from 'next/image'
 import { useState } from 'react'
+import { useClampedPagination } from '@/hooks/useClampedPagination'
 import { ConfirmDeleteDialog } from '@/components/shared/ConfirmDeleteDialog'
 import {
   deleteDesignAsset,
@@ -131,6 +132,12 @@ export function AssetStudioWorkspace({
 
   const assets = assetData?.items ?? []
   const totalCount = assetData?.total ?? 0
+  const totalPages = useClampedPagination({
+    page,
+    setPage,
+    totalCount,
+    pageSize,
+  })
 
   return (
     <div className="flex h-full flex-col min-w-0">
@@ -327,7 +334,7 @@ export function AssetStudioWorkspace({
                     Previous
                   </button>
                   <span className="text-slate-400">
-                    Page {page + 1} of {Math.ceil(totalCount / pageSize)}
+                    Page {page + 1} of {totalPages}
                   </span>
                   <button
                     onClick={() => setPage(page + 1)}
