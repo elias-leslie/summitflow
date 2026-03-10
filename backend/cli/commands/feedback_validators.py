@@ -9,6 +9,7 @@ from .feedback_helpers import VALID_SEVERITIES, VALID_TYPES
 
 MAX_SUGGESTIONS = 5
 MAX_FALLBACK_COMPONENTS = 10
+MAX_FEEDBACK_LIMIT = 200
 
 
 def _get_component_suggestions(bad_id: str) -> list[str]:
@@ -62,3 +63,11 @@ def validate_severity(severity: str | None) -> None:
     if severity and severity not in VALID_SEVERITIES:
         output_error(f'Invalid severity "{severity}". Valid: {", ".join(VALID_SEVERITIES)}')
         raise typer.Exit(1)
+
+
+def validate_limit(limit: int) -> None:
+    """Validate list/search limits against the feedback API cap."""
+    if 1 <= limit <= MAX_FEEDBACK_LIMIT:
+        return
+    output_error(f"Limit must be between 1 and {MAX_FEEDBACK_LIMIT}.")
+    raise typer.Exit(1)

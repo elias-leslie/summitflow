@@ -26,7 +26,12 @@ from .feedback_helpers import (
     build_summary_params,
     build_vote_body,
 )
-from .feedback_validators import validate_component_id, validate_feedback_type, validate_severity
+from .feedback_validators import (
+    validate_component_id,
+    validate_feedback_type,
+    validate_limit,
+    validate_severity,
+)
 
 
 def report_impl(
@@ -69,6 +74,7 @@ def search_impl(
     limit: int = 20,
 ) -> None:
     """Search feedback items."""
+    validate_limit(limit)
     params = build_filter_params(
         sort, limit, query=query, component_id=component_id,
         feedback_type=feedback_type, status=status, project_id=project_id,
@@ -88,6 +94,7 @@ def list_impl(
     limit: int = 50,
 ) -> None:
     """List feedback items."""
+    validate_limit(limit)
     params = build_filter_params(
         sort, limit, component_id=component_id, feedback_type=feedback_type,
         status=status, project_id=project_id,
