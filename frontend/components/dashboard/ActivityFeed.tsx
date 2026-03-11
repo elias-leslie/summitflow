@@ -23,26 +23,45 @@ import { getErrorMessage } from '@/lib/utils'
 
 const eventConfig: Record<
   ActivityEventType,
-  { icon: React.ElementType; color: string; label: string }
+  {
+    icon: React.ElementType
+    color: {
+      text: string
+      bg: string
+    }
+    label: string
+  }
 > = {
   task: {
     icon: CheckCircle2,
-    color: 'text-green-400 bg-green-500/10',
+    color: {
+      text: 'text-green-400',
+      bg: 'bg-green-500/10',
+    },
     label: 'Task',
   },
   session: {
     icon: Bot,
-    color: 'text-purple-400 bg-purple-500/10',
+    color: {
+      text: 'text-purple-400',
+      bg: 'bg-purple-500/10',
+    },
     label: 'Agent',
   },
   backup: {
     icon: Archive,
-    color: 'text-blue-400 bg-blue-500/10',
+    color: {
+      text: 'text-blue-400',
+      bg: 'bg-blue-500/10',
+    },
     label: 'Backup',
   },
   git: {
     icon: GitCommit,
-    color: 'text-cyan-400 bg-cyan-500/10',
+    color: {
+      text: 'text-cyan-400',
+      bg: 'bg-cyan-500/10',
+    },
     label: 'Git',
   },
 }
@@ -91,13 +110,13 @@ function ActivityRow({
       <div
         className={clsx(
           'p-2 rounded-lg flex-shrink-0',
-          config.color.split(' ')[1],
+          config.color.bg,
         )}
       >
         {isFailed ? (
           <XCircle className="w-4 h-4 text-red-400" />
         ) : (
-          <Icon className={clsx('w-4 h-4', config.color.split(' ')[0])} />
+          <Icon className={clsx('w-4 h-4', config.color.text)} />
         )}
       </div>
       <div className="flex-1 min-w-0">

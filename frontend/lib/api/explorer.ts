@@ -324,19 +324,10 @@ export async function fetchExplorerEntry(
   type: ExplorerEntryType,
   path: string,
 ): Promise<ExplorerEntry> {
-  const res = await fetch(
+  return fetchWithErrorHandling<ExplorerEntry>(
     `/api/projects/${projectId}/explorer/${type}/${encodeURIComponent(path)}`,
+    { errorMessage: `Entry not found: ${type}/${path}` },
   )
-  if (!res.ok) {
-    if (res.status === 404) {
-      throw new Error(`Entry not found: ${type}/${path}`)
-    }
-    const error = await res
-      .json()
-      .catch(() => ({ detail: 'Failed to fetch explorer entry' }))
-    throw new Error(error.detail || 'Failed to fetch explorer entry')
-  }
-  return res.json()
 }
 
 /**
@@ -346,19 +337,10 @@ export async function fetchExplorerEntryById(
   projectId: string,
   entryId: number,
 ): Promise<ExplorerEntry> {
-  const res = await fetch(
+  return fetchWithErrorHandling<ExplorerEntry>(
     `/api/projects/${projectId}/explorer/entry/${entryId}`,
+    { errorMessage: `Entry ${entryId} not found` },
   )
-  if (!res.ok) {
-    if (res.status === 404) {
-      throw new Error(`Entry ${entryId} not found`)
-    }
-    const error = await res
-      .json()
-      .catch(() => ({ detail: 'Failed to fetch explorer entry' }))
-    throw new Error(error.detail || 'Failed to fetch explorer entry')
-  }
-  return res.json()
 }
 
 /**

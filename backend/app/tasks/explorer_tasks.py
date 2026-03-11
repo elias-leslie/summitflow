@@ -77,7 +77,10 @@ def _scan_single_project(
             duration_ms=duration_ms,
         )
         if dispatch:
-            _dispatch_post_scan_tasks(dispatch, proj_id)
+            try:
+                _dispatch_post_scan_tasks(dispatch, proj_id)
+            except Exception:
+                logger.exception("post_scan_dispatch_failed", project_id=proj_id)
         detail = {
             "project_id": proj_id,
             "project_name": proj_name,

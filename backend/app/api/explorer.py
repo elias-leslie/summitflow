@@ -85,11 +85,12 @@ async def get_children(
     project_id: str,
     type: str = Query(..., description="Entry type (file, table, task, endpoint)"),
     path: str = Query("", description="Parent path (empty for root level)"),
+    limit: int = Query(1000, ge=1, le=5000, description="Maximum children to return"),
 ) -> list[dict[str, Any]]:
     """Get direct children of a path for tree navigation."""
     validate_project_exists(project_id)
     helpers.validate_entry_type(type)
-    return explorer.get_children(project_id, type, path)
+    return explorer.get_children(project_id, type, path, limit)
 
 
 @router.get("/{project_id}/explorer/symbols/search")

@@ -125,11 +125,12 @@ def _ensure_celery_result_tables(conn: Any) -> None:
 class TestNotificationRetention:
     """Notification cleanup removes only old terminal rows."""
 
-    def test_cleanup_old_notifications_keeps_pending(self, ensure_test_project: str) -> None:
+    def test_cleanup_old_notifications_prunes_old_pending(self, ensure_test_project: str) -> None:
         project_id = ensure_test_project
         old_read_id = "notif-old-read"
         old_dismissed_id = "notif-old-dismissed"
-        pending_id = "notif-pending"
+        old_pending_id = "notif-pending-old"
+        recent_pending_id = "notif-pending-recent"
         now = datetime.now(UTC)
 
         with get_connection() as conn:
@@ -151,26 +152,40 @@ class TestNotificationRetention:
             )
             _insert_notification(
                 conn,
-                notification_id=pending_id,
+                notification_id=old_pending_id,
                 project_id=project_id,
                 status="pending",
                 created_at=now - timedelta(days=100),
             )
+            _insert_notification(
+                conn,
+                notification_id=recent_pending_id,
+                project_id=project_id,
+                status="pending",
+                created_at=now - timedelta(days=10),
+            )
 
-        result = cleanup_old_notifications(max_read_age_days=30, max_dismissed_age_days=14)
+        result = cleanup_old_notifications(
+            max_read_age_days=30,
+            max_dismissed_age_days=14,
+            max_pending_age_days=90,
+        )
 
-        assert result == {"read_deleted": 1, "dismissed_deleted": 1}
+        assert result == {"read_deleted": 1, "dismissed_deleted": 1, "pending_deleted": 1}
 
         with get_connection() as conn, conn.cursor() as cur:
             cur.execute(
                 "SELECT id FROM notifications WHERE id = ANY(%s::text[]) ORDER BY id",
-                ([old_read_id, old_dismissed_id, pending_id],),
+                ([old_read_id, old_dismissed_id, old_pending_id, recent_pending_id],),
             )
             remaining = [row[0] for row in cur.fetchall()]
-            cur.execute("DELETE FROM notifications WHERE id = ANY(%s::text[])", ([pending_id],))
+            cur.execute(
+                "DELETE FROM notifications WHERE id = ANY(%s::text[])",
+                ([recent_pending_id],),
+            )
             conn.commit()
 
-        assert remaining == [pending_id]
+        assert remaining == [recent_pending_id]
 
 
 class TestQualityCheckRetention:

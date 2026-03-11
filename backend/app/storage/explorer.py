@@ -23,8 +23,6 @@ from .explorer_analysis import (
 
 # Re-export from explorer_entries (core CRUD)
 from .explorer_entries import (
-    _ALLOWED_SORT_FIELDS,
-    _ENTRY_COLUMNS,
     cleanup_stale_entries,
     delete_entries,
     get_children,
@@ -57,8 +55,6 @@ from .explorer_symbols import (
 __all__ = [
     "REFACTORABLE_EXTENSIONS",
     "REFACTOR_EXCLUDE_PATTERNS",
-    "_ALLOWED_SORT_FIELDS",
-    "_ENTRY_COLUMNS",
     "cleanup_stale_entries",
     "cleanup_stale_symbols",
     "count_stale_metadata_entries",

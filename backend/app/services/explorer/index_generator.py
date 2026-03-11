@@ -166,8 +166,10 @@ def write_index_file(project_id: str) -> str | None:
         logger.warning(f"No root path found for project {project_id}")
         return None
     index_path = Path(root_path) / ".index.yaml"
+    tmp_path = index_path.with_name(f"{index_path.name}.tmp")
     try:
-        index_path.write_text(generate_index(project_id))
+        tmp_path.write_text(generate_index(project_id))
+        tmp_path.rename(index_path)
         logger.info(f"Wrote index file: {index_path}")
         return str(index_path)
     except OSError as e:

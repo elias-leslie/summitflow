@@ -133,7 +133,12 @@ def get_entry(project_id: str, entry_type: str, path: str) -> dict[str, Any] | N
     return storage.get_entry(project_id, entry_type, path)
 
 
-def get_children(project_id: str, entry_type: str, parent_path: str = "") -> list[dict[str, Any]]:
+def get_children(
+    project_id: str,
+    entry_type: str,
+    parent_path: str = "",
+    limit: int = 1000,
+) -> list[dict[str, Any]]:
     """Get direct children for tree navigation.
 
     Args:
@@ -144,7 +149,7 @@ def get_children(project_id: str, entry_type: str, parent_path: str = "") -> lis
     Returns:
         List of child entry dicts
     """
-    return storage.get_children(project_id, entry_type, parent_path)
+    return storage.get_children(project_id, entry_type, parent_path, limit)
 
 
 def get_stats(project_id: str, entry_type: str | None = None) -> dict[str, Any]:

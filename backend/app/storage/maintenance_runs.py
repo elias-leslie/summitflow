@@ -16,13 +16,6 @@ _SELECT_COLS = """
 """
 
 
-def _table_exists(cur: Any) -> bool:
-    """Return True when the maintenance_runs table exists."""
-    cur.execute("SELECT to_regclass('public.maintenance_runs')")
-    row = cur.fetchone()
-    return bool(row and row[0])
-
-
 def _row_to_dict(row: tuple[Any, ...]) -> dict[str, Any]:
     return {
         "id": int(row[0]),
@@ -57,8 +50,6 @@ def record_maintenance_run(
     duration_ms = max(0, int((finished_at - started_at).total_seconds() * 1000))
 
     with get_connection() as conn, conn.cursor() as cur:
-        if not _table_exists(cur):
-            return None
         cur.execute(
             f"""
             INSERT INTO maintenance_runs (
@@ -92,9 +83,6 @@ def cleanup_old_maintenance_runs(
 ) -> int:
     """Delete old maintenance run records while preserving recent workflow history."""
     with get_connection() as conn, conn.cursor() as cur:
-        if not _table_exists(cur):
-            return 0
-
         cur.execute(
             """
             WITH ranked AS (
@@ -134,9 +122,6 @@ def list_maintenance_runs(
 ) -> list[dict[str, Any]]:
     """Return recent maintenance runs ordered by newest start time first."""
     with get_connection() as conn, conn.cursor() as cur:
-        if not _table_exists(cur):
-            return []
-
         if workflow_name is None:
             cur.execute(
                 f"""
@@ -168,9 +153,6 @@ def get_latest_maintenance_runs(
 ) -> dict[str, dict[str, Any]]:
     """Return the latest run per workflow name."""
     with get_connection() as conn, conn.cursor() as cur:
-        if not _table_exists(cur):
-            return {}
-
         if workflow_names:
             cur.execute(
                 f"""

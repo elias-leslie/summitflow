@@ -25,7 +25,7 @@ interface UseExplorerScanReturn {
   handleFullScan: () => Promise<void>
 }
 
-const POLL_INTERVAL_MS = 500
+const POLL_INTERVAL_MS = 2000
 const SCAN_TIMEOUT_MS = 5 * 60 * 1000
 type ScanTriggerType = Parameters<typeof triggerExplorerScan>[1]
 

@@ -66,18 +66,7 @@ def _fetch_task_counts(cur: object, project_ids: list[str]) -> dict[str, int]:
 
 def _fetch_bug_counts(cur: object, project_ids: list[str]) -> dict[str, int]:
     """Fetch active bug counts per project."""
-    cur.execute(  # type: ignore[union-attr]
-        """
-        SELECT project_id, COUNT(*) as count
-        FROM tasks
-        WHERE project_id = ANY(%s)
-          AND task_type = 'bug'
-          AND status NOT IN ('completed', 'failed', 'cancelled', 'abandoned')
-        GROUP BY project_id
-        """,
-        (project_ids,),
-    )
-    return {row[0]: row[1] for row in cur.fetchall()}  # type: ignore[union-attr]
+    return _fetch_active_type_counts(cur, project_ids, "bug")
 
 
 def _fetch_blocked_counts(cur: object, project_ids: list[str]) -> dict[str, int]:

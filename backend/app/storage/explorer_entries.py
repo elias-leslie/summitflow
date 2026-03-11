@@ -26,12 +26,9 @@ from .explorer_helpers import (
     to_iso_string,
 )
 
-# Re-export functions and constants for backwards compatibility
-_row_to_entry = row_to_entry
-_build_where_clause = build_where_clause
-_to_iso_string = to_iso_string
-_ALLOWED_SORT_FIELDS = ALLOWED_SORT_FIELDS
-_ENTRY_COLUMNS = ENTRY_COLUMNS
+UPSERT_BATCH_SIZE = 500
+DEFAULT_CHILDREN_LIMIT = 1000
+MAX_CHILDREN_LIMIT = 5000
 
 
 def upsert_entries(project_id: str, entry_type: str, entries: list[dict[str, Any]]) -> int:
@@ -56,20 +53,24 @@ def upsert_entries(project_id: str, entry_type: str, entries: list[dict[str, Any
     """
 
     with get_connection() as conn, conn.cursor() as cur:
-        for entry in entries:
-            cur.execute(
+        for index in range(0, len(entries), UPSERT_BATCH_SIZE):
+            batch = entries[index:index + UPSERT_BATCH_SIZE]
+            cur.executemany(
                 query,
-                (
-                    project_id,
-                    entry_type,
-                    entry.get("path"),
-                    entry.get("name"),
-                    entry.get("health_status", "unknown"),
-                    json.dumps(entry.get("metadata", {})),
-                    now,
-                    now,
-                    now,
-                ),
+                [
+                    (
+                        project_id,
+                        entry_type,
+                        entry.get("path"),
+                        entry.get("name"),
+                        entry.get("health_status", "unknown"),
+                        json.dumps(entry.get("metadata", {})),
+                        now,
+                        now,
+                        now,
+                    )
+                    for entry in batch
+                ],
             )
         conn.commit()
         return len(entries)
@@ -150,27 +151,33 @@ def get_entry_by_id(entry_id: int) -> dict[str, Any] | None:
         return row_to_entry(row) if row else None
 
 
-def get_children(project_id: str, entry_type: str, parent_path: str) -> list[dict[str, Any]]:
+def get_children(
+    project_id: str,
+    entry_type: str,
+    parent_path: str,
+    limit: int = DEFAULT_CHILDREN_LIMIT,
+) -> list[dict[str, Any]]:
     """Get direct children of a path (for tree navigation, immediate children only)."""
     # Normalize parent path
     if parent_path and not parent_path.endswith("/"):
         parent_path = parent_path + "/"
+    limit = max(1, min(limit, MAX_CHILDREN_LIMIT))
 
     with get_connection() as conn, conn.cursor() as cur:
         if not parent_path:
             query = (
                 f"SELECT {ENTRY_COLUMNS} FROM explorer_entries "
                 "WHERE project_id = %s AND entry_type = %s AND path NOT LIKE '%%/%%' "
-                "ORDER BY path"
+                "ORDER BY path LIMIT %s"
             )
-            params: tuple[Any, ...] = (project_id, entry_type)
+            params: tuple[Any, ...] = (project_id, entry_type, limit)
         else:
             query = (
                 f"SELECT {ENTRY_COLUMNS} FROM explorer_entries "
                 "WHERE project_id = %s AND entry_type = %s AND path LIKE %s "
-                "AND path NOT LIKE %s ORDER BY path"
+                "AND path NOT LIKE %s ORDER BY path LIMIT %s"
             )
-            params = (project_id, entry_type, f"{parent_path}%", f"{parent_path}%/%")
+            params = (project_id, entry_type, f"{parent_path}%", f"{parent_path}%/%", limit)
 
         cur.execute(query, params)
         rows = cur.fetchall()

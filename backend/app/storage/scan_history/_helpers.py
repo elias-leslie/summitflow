@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..explorer_entries import _to_iso_string
+from ..explorer_helpers import to_iso_string
 
 
 def row_to_scan(row: tuple[Any, ...]) -> dict[str, Any]:
@@ -17,8 +17,8 @@ def row_to_scan(row: tuple[Any, ...]) -> dict[str, Any]:
         "triggered_by_session": row[4],
         "triggered_by_user": row[5],
         "trigger_context": row[6] if row[6] else {},
-        "started_at": _to_iso_string(row[7]),
-        "completed_at": _to_iso_string(row[8]),
+        "started_at": to_iso_string(row[7]),
+        "completed_at": to_iso_string(row[8]),
         "duration_ms": row[9],
         "status": row[10],
         "error_message": row[11],
@@ -27,7 +27,7 @@ def row_to_scan(row: tuple[Any, ...]) -> dict[str, Any]:
         "entries_saved": row[14] or 0,
         "previous_scan_id": row[15],
         "metrics_delta": row[16] if row[16] else {},
-        "created_at": _to_iso_string(row[17]),
+        "created_at": to_iso_string(row[17]),
     }
 
 

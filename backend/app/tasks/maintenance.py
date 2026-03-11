@@ -47,7 +47,11 @@ def _deleted_count(result: Any) -> int:
     return 0
 
 
-def run_daily_maintenance(max_age_days: int = 30) -> dict[str, Any]:
+def run_daily_maintenance(
+    max_age_days: int = 30,
+    *,
+    notification_pending_age_days: int = 90,
+) -> dict[str, Any]:
     """Run the daily retention and stale-state cleanup workflow."""
     started_at = datetime.now(UTC)
     logger.info("daily_maintenance_started", max_age_days=max_age_days)
@@ -67,6 +71,7 @@ def run_daily_maintenance(max_age_days: int = 30) -> dict[str, Any]:
         notifications_deleted = _run_step(
             "notification_retention",
             notification_store.cleanup_old_notifications,
+            max_pending_age_days=notification_pending_age_days,
         )
         qcr_deleted = _run_step(
             "quality_result_retention",

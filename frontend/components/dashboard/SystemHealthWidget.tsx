@@ -11,14 +11,14 @@ interface SystemHealthWidgetProps {
     className?: string
 }
 
-function getStatusColor(status: 'ok' | 'warning' | 'critical'): string {
+function getStatusColor(status: 'ok' | 'warning' | 'critical'): { text: string; bg: string } {
     switch (status) {
         case 'ok':
-            return 'text-neon-cyan bg-neon-cyan'
+            return { text: 'text-neon-cyan', bg: 'bg-neon-cyan' }
         case 'warning':
-            return 'text-amber-400 bg-amber-400'
+            return { text: 'text-amber-400', bg: 'bg-amber-400' }
         case 'critical':
-            return 'text-rose-500 bg-rose-500'
+            return { text: 'text-rose-500', bg: 'bg-rose-500' }
     }
 }
 
@@ -89,13 +89,13 @@ export function SystemHealthWidget({ className }: SystemHealthWidgetProps) {
                                     <Cpu className="w-3 h-3" />
                                     CPU
                                 </span>
-                                <span className={cn('text-xs font-mono', getStatusColor(data.cpu.status).split(' ')[0])}>
+                                <span className={cn('text-xs font-mono', getStatusColor(data.cpu.status).text)}>
                                     {data.cpu.percent_used}%
                                 </span>
                             </div>
                             <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
                                 <div
-                                    className={cn('h-full rounded-full transition-all duration-500', getStatusColor(data.cpu.status).split(' ')[1])}
+                                    className={cn('h-full rounded-full transition-all duration-500', getStatusColor(data.cpu.status).bg)}
                                     style={{ width: `${Math.min(data.cpu.percent_used, 100)}%` }}
                                 />
                             </div>
@@ -110,13 +110,13 @@ export function SystemHealthWidget({ className }: SystemHealthWidgetProps) {
                                     <HardDrive className="w-3 h-3" />
                                     RAM
                                 </span>
-                                <span className={cn('text-xs font-mono', getStatusColor(data.memory.status).split(' ')[0])}>
+                                <span className={cn('text-xs font-mono', getStatusColor(data.memory.status).text)}>
                                     {data.memory.percent_used}%
                                 </span>
                             </div>
                             <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
                                 <div
-                                    className={cn('h-full rounded-full transition-all duration-500', getStatusColor(data.memory.status).split(' ')[1])}
+                                    className={cn('h-full rounded-full transition-all duration-500', getStatusColor(data.memory.status).bg)}
                                     style={{ width: `${Math.min(data.memory.percent_used, 100)}%` }}
                                 />
                             </div>
@@ -131,13 +131,13 @@ export function SystemHealthWidget({ className }: SystemHealthWidgetProps) {
                                     <Database className="w-3 h-3" />
                                     Disk
                                 </span>
-                                <span className={cn('text-xs font-mono', getStatusColor(data.disk.status).split(' ')[0])}>
+                                <span className={cn('text-xs font-mono', getStatusColor(data.disk.status).text)}>
                                     {data.disk.percent_used}%
                                 </span>
                             </div>
                             <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
                                 <div
-                                    className={cn('h-full rounded-full transition-all duration-500', getStatusColor(data.disk.status).split(' ')[1])}
+                                    className={cn('h-full rounded-full transition-all duration-500', getStatusColor(data.disk.status).bg)}
                                     style={{ width: `${Math.min(data.disk.percent_used, 100)}%` }}
                                 />
                             </div>

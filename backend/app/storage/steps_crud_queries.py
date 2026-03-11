@@ -11,6 +11,7 @@ from .connection import get_connection
 from .steps_crud_serialization import STEP_COLUMNS, row_to_dict
 
 logger = logging.getLogger(__name__)
+_STEP_SHIFT_OFFSET = 1_000_000
 
 _UPSERT_SQL = (
     "INSERT INTO task_subtask_steps (subtask_id, step_number, description, spec) "
@@ -108,16 +109,24 @@ def execute_delete_all_steps(subtask_id: str) -> int:
 def _shift_steps_up(cur: Any, subtask_id: str, position: int) -> int:
     """Shift all steps at or after position up by 1; returns count of shifted steps."""
     cur.execute(
-        "SELECT step_number FROM task_subtask_steps WHERE subtask_id = %s AND step_number >= %s ORDER BY step_number DESC",
-        (subtask_id, position),
+        """
+        UPDATE task_subtask_steps
+        SET step_number = step_number + %s
+        WHERE subtask_id = %s AND step_number >= %s
+        """,
+        (_STEP_SHIFT_OFFSET, subtask_id, position),
     )
-    steps_to_shift = [r[0] for r in cur.fetchall()]
-    for step_num in steps_to_shift:
+    shifted = cur.rowcount
+    if shifted:
         cur.execute(
-            "UPDATE task_subtask_steps SET step_number = %s WHERE subtask_id = %s AND step_number = %s",
-            (step_num + 1, subtask_id, step_num),
+            """
+            UPDATE task_subtask_steps
+            SET step_number = step_number - %s + 1
+            WHERE subtask_id = %s AND step_number >= %s
+            """,
+            (_STEP_SHIFT_OFFSET, subtask_id, position + _STEP_SHIFT_OFFSET),
         )
-    return len(steps_to_shift)
+    return shifted
 
 
 def execute_insert_step(subtask_id: str, position: int, description: str, spec: dict[str, Any] | None) -> dict[str, Any]:

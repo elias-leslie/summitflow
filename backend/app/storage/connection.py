@@ -42,6 +42,7 @@ def get_pool() -> ConnectionPool:
             DATABASE_URL,
             min_size=POOL_MIN_SIZE,
             max_size=POOL_MAX_SIZE,
+            timeout=30.0,
             open=True,
         )
         logger.info("Connection pool initialized (min=%d, max=%d)", POOL_MIN_SIZE, POOL_MAX_SIZE)

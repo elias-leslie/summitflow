@@ -15,6 +15,7 @@ export function useHealthData(projectId: string) {
           errorMessage: 'Failed to fetch quality health',
         },
       ),
+    enabled: !!projectId,
     refetchInterval: 30000,
   })
 
@@ -30,6 +31,7 @@ export function useHealthData(projectId: string) {
           errorMessage: 'Failed to fetch recent quality results',
         },
       ),
+    enabled: !!projectId,
     refetchInterval: 30000,
   })
 
@@ -42,6 +44,7 @@ export function useHealthData(projectId: string) {
           errorMessage: 'Failed to fetch unfixed quality issues',
         },
       ),
+    enabled: !!projectId,
     refetchInterval: 30000,
   })
 

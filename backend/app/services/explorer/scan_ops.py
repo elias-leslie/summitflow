@@ -88,7 +88,7 @@ def _mark_scan_failed(project_id: str, error: str) -> None:
         started_at=_parse_started_at(current.get("started_at")),
         completed_at=datetime.now(UTC),
         error=error,
-        results=(current.get("results") or {}),
+        results=(current.get("results") or {"scans": []}),
     )
 
 

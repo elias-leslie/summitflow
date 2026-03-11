@@ -9,16 +9,7 @@ from psycopg import sql
 from .connection import get_connection
 
 
-def _table_exists(cur: Any, table_name: str) -> bool:
-    cur.execute("SELECT to_regclass(%s)", (f"public.{table_name}",))
-    row = cur.fetchone()
-    return bool(row and row[0])
-
-
 def _cleanup_table(cur: Any, table_name: str, max_age_days: int) -> int:
-    if not _table_exists(cur, table_name):
-        return 0
-
     cur.execute(
         sql.SQL(
             """

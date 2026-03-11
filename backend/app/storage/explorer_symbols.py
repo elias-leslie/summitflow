@@ -8,7 +8,7 @@ from typing import Any
 from psycopg import sql
 
 from .connection import get_connection
-from .explorer_helpers import to_iso_string
+from .explorer_helpers import row_to_entry, to_iso_string
 
 
 def _row_to_symbol(row: tuple[Any, ...]) -> dict[str, Any]:
@@ -159,9 +159,7 @@ def list_related_entries_for_file(project_id: str, file_path: str) -> list[dict[
         )
         rows = cur.fetchall()
 
-    from .explorer_entries import _row_to_entry
-
-    return [_row_to_entry(row) for row in rows]
+    return [row_to_entry(row) for row in rows]
 
 
 def summarize_symbols_for_file(project_id: str, file_path: str, *, limit: int = 5) -> list[dict[str, Any]]:

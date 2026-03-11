@@ -10,6 +10,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
+from ...logging_config import get_logger
 from ...storage import explorer as storage
 from .constants import (
     SCAN_STATUS_COMPLETED,
@@ -20,6 +21,8 @@ from .constants import (
 from .index_generator import write_index_file
 from .models import ScanResult
 from .types import list_registered_types
+
+logger = get_logger(__name__)
 
 ScanFn = Callable[[str, str], ScanResult]
 
@@ -62,6 +65,27 @@ def _result_to_dict(result: ScanResult) -> dict[str, Any]:
     }
 
 
+def _log_state_transition(
+    project_id: str,
+    previous_status: str | None,
+    next_status: str,
+) -> None:
+    if previous_status == next_status:
+        return
+    if (previous_status, next_status) not in {
+        (SCAN_STATUS_IDLE, SCAN_STATUS_RUNNING),
+        (SCAN_STATUS_RUNNING, SCAN_STATUS_COMPLETED),
+        (SCAN_STATUS_RUNNING, SCAN_STATUS_FAILED),
+    }:
+        return
+    logger.info(
+        "explorer_scan_state_transition",
+        project_id=project_id,
+        previous_status=previous_status,
+        status=next_status,
+    )
+
+
 def get_scan_status(project_id: str) -> dict[str, Any]:
     """Get current scan status for a project.
 
@@ -102,6 +126,7 @@ def start_scan(project_id: str, entry_type: str | None = None) -> dict[str, Any]
         Initial status dict
     """
     types_to_scan = [entry_type] if entry_type else list_registered_types()
+    previous_state = storage.get_scan_state(project_id) or {}
     storage.update_scan_state(
         project_id=project_id,
         status=SCAN_STATUS_RUNNING,
@@ -109,6 +134,11 @@ def start_scan(project_id: str, entry_type: str | None = None) -> dict[str, Any]
         types_completed=0,
         started_at=datetime.now(UTC),
         results={"scans": []},
+    )
+    _log_state_transition(
+        project_id,
+        str(previous_state.get("status") or SCAN_STATUS_IDLE),
+        SCAN_STATUS_RUNNING,
     )
     return get_scan_status(project_id)
 
@@ -143,6 +173,7 @@ def _finalize_scan(
 ) -> None:
     """Finalize the scan state and generate index if successful."""
     final_status = SCAN_STATUS_COMPLETED if not error_msg else SCAN_STATUS_FAILED
+    previous_state = storage.get_scan_state(project_id) or {}
     storage.update_scan_state(
         project_id=project_id,
         status=final_status,
@@ -153,6 +184,11 @@ def _finalize_scan(
         completed_at=datetime.now(UTC),
         error=error_msg,
         results={"scans": scan_results},
+    )
+    _log_state_transition(
+        project_id,
+        str(previous_state.get("status") or SCAN_STATUS_IDLE),
+        final_status,
     )
     if not error_msg:
         write_index_file(project_id)
