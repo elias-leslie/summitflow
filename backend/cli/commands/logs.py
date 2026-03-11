@@ -73,7 +73,7 @@ def tail(
     lines: Annotated[int, typer.Option("--lines", "-n", help="Number of lines to show")] = 100,
     since: Annotated[
         str,
-        typer.Option("--since", help="Time range (e.g., '30 minutes ago', '1 hour ago', 'today')"),
+        typer.Option("--since", help="Time range (e.g., '2m', '1h', '30 minutes ago', 'today')"),
     ] = DEFAULT_SINCE,
     follow: Annotated[bool, typer.Option("--follow", "-f", help="Follow log output (like tail -f)")] = False,
 ) -> None:

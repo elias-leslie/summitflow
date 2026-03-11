@@ -79,9 +79,37 @@ class LogEntry:
         }
 
 
+_SHORTHAND_UNITS = {
+    "m": "minutes",
+    "min": "minutes",
+    "h": "hours",
+    "hr": "hours",
+    "d": "days",
+}
+
+
+def _expand_shorthand(since: str) -> str | None:
+    """Expand shorthand like '2m', '1h', '3d' into journalctl-compatible form."""
+    import re
+
+    match = re.fullmatch(r"(\d+)\s*([a-z]+)", since)
+    if not match:
+        return None
+    value, unit = match.group(1), match.group(2)
+    expanded_unit = _SHORTHAND_UNITS.get(unit)
+    if expanded_unit is None:
+        return None
+    return f"{value} {expanded_unit} ago"
+
+
 def validate_since(since: str) -> str:
     """Validate since parameter to prevent command injection."""
     since_lower = since.lower().strip()
+
+    # Try expanding shorthand first (e.g. "2m" -> "2 minutes ago")
+    expanded = _expand_shorthand(since_lower)
+    if expanded:
+        return expanded
 
     # Check exact matches
     for valid in VALID_SINCE:
