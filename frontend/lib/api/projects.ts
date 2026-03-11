@@ -91,11 +91,10 @@ export async function updateAgentConfig(
   projectId: string,
   config: ProjectAgentConfigUpdate,
 ): Promise<ProjectAgentConfig> {
-  const res = await fetch(`/api/projects/${projectId}/agents`, {
+  return fetchWithErrorHandling(`/api/projects/${projectId}/agents`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(config),
+    errorMessage: 'Failed to update agent config',
   })
-  if (!res.ok) throw new Error('Failed to update agent config')
-  return res.json()
 }
