@@ -112,6 +112,13 @@ class PrecisionCodeSearchResult:
     metadata: dict[str, Any]
 
 
+def _age_minutes(timestamp: datetime | None) -> int | None:
+    if timestamp is None:
+        return None
+    delta = datetime.now(UTC) - timestamp
+    return max(int(delta.total_seconds() // 60), 0)
+
+
 def _parse_iso_datetime(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -124,25 +131,40 @@ def _parse_iso_datetime(value: str | None) -> datetime | None:
     return parsed
 
 
-def _should_refresh_precision_index(project_id: str) -> bool:
+def _get_precision_index_status(project_id: str) -> dict[str, Any]:
     file_stats = explorer_service.get_stats(project_id, entry_type="file")
     symbol_stats = get_symbol_stats(project_id)
 
     file_total = int(file_stats.get("total") or 0)
     symbol_count = int(symbol_stats.get("count") or 0)
-    if file_total == 0 or symbol_count == 0:
-        return True
-
     file_last_scanned = _parse_iso_datetime(file_stats.get("last_scanned"))
     symbol_last_updated = _parse_iso_datetime(symbol_stats.get("last_updated"))
     stale_before = datetime.now(UTC) - _PRECISION_INDEX_MAX_AGE
+    refresh_reasons: list[str] = []
 
-    return (
-        file_last_scanned is None
-        or symbol_last_updated is None
-        or file_last_scanned < stale_before
-        or symbol_last_updated < stale_before
-    )
+    if file_total == 0:
+        refresh_reasons.append("missing_file_index")
+    if symbol_count == 0:
+        refresh_reasons.append("missing_symbol_index")
+    if file_last_scanned is None:
+        refresh_reasons.append("missing_file_scan_timestamp")
+    elif file_last_scanned < stale_before:
+        refresh_reasons.append("stale_file_index")
+    if symbol_last_updated is None:
+        refresh_reasons.append("missing_symbol_timestamp")
+    elif symbol_last_updated < stale_before:
+        refresh_reasons.append("stale_symbol_index")
+
+    return {
+        "file_total": file_total,
+        "symbol_count": symbol_count,
+        "file_last_scanned": file_stats.get("last_scanned"),
+        "symbol_last_updated": symbol_stats.get("last_updated"),
+        "file_index_age_minutes": _age_minutes(file_last_scanned),
+        "symbol_index_age_minutes": _age_minutes(symbol_last_updated),
+        "refresh_reasons": refresh_reasons,
+        "should_refresh": bool(refresh_reasons),
+    }
 
 
 def _refresh_precision_index(project_id: str) -> bool:
@@ -443,8 +465,9 @@ def collect_precision_code_search_context(
             metadata={"query_count": len(normalized_queries), "skipped_reason": "workflow_meta_low_signal"},
         )
 
+    index_status = _get_precision_index_status(project_id)
     refreshed_index = False
-    if _should_refresh_precision_index(project_id):
+    if index_status["should_refresh"]:
         refreshed_index = _refresh_precision_index(project_id)
 
     query_terms = _extract_query_terms(normalized_queries)
@@ -468,6 +491,13 @@ def collect_precision_code_search_context(
         "naive_file_tokens": naive_file_tokens,
         "symbol_tokens": estimate_tokens(symbol_section),
         "fallback_tokens": estimate_tokens(fallback_section),
+        "stale_hit": index_status["should_refresh"],
+        "refresh_reasons": index_status["refresh_reasons"],
+        "file_total": index_status["file_total"],
+        "file_last_scanned": index_status["file_last_scanned"],
+        "symbol_last_updated": index_status["symbol_last_updated"],
+        "file_index_age_minutes": index_status["file_index_age_minutes"],
+        "symbol_index_age_minutes": index_status["symbol_index_age_minutes"],
     }
     metadata["final_tokens"] = estimate_tokens(truncated_body)
     if used_symbol_first:
@@ -481,10 +511,9 @@ def collect_precision_code_search_context(
             0,
         )
 
-    if not truncated_body:
-        return PrecisionCodeSearchResult(prompt_context="", metadata=metadata)
-
     mode = "symbol-first" if used_symbol_first else "fallback-only"
+    if not truncated_body:
+        mode = "empty"
     telemetry = (
         "Precision Code Search: "
         f"{mode}; symbols={metadata['symbol_count']}; "
@@ -499,8 +528,17 @@ def collect_precision_code_search_context(
             "used_symbol_first": used_symbol_first,
             "used_fallback": used_fallback,
             "estimated_tokens_saved": metadata["estimated_tokens_saved"],
+            "stale_hit": metadata["stale_hit"],
+            "refreshed_index": refreshed_index,
+            "refresh_reasons": metadata["refresh_reasons"],
+            "file_index_age_minutes": metadata["file_index_age_minutes"],
+            "symbol_index_age_minutes": metadata["symbol_index_age_minutes"],
+            "mode": mode,
         },
     )
+
+    if not truncated_body:
+        return PrecisionCodeSearchResult(prompt_context="", metadata=metadata)
 
     return PrecisionCodeSearchResult(
         prompt_context=f"{telemetry}\n\n{truncated_body}",

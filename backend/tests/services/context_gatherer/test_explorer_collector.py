@@ -199,6 +199,10 @@ def test_collect_precision_code_search_context_refreshes_stale_file_index() -> N
 
     mock_scan.assert_called_once_with("project-1", "file")
     assert result.metadata["refreshed_index"] is True
+    assert result.metadata["stale_hit"] is True
+    assert result.metadata["refresh_reasons"] == ["stale_file_index", "stale_symbol_index"]
+    assert result.metadata["file_index_age_minutes"] is not None
+    assert result.metadata["symbol_index_age_minutes"] is not None
 
 
 def test_collect_precision_code_search_context_skips_refresh_for_workflow_meta_queries() -> None:
@@ -212,3 +216,31 @@ def test_collect_precision_code_search_context_skips_refresh_for_workflow_meta_q
 
     mock_scan.assert_not_called()
     assert result.metadata["skipped_reason"] == "workflow_meta_low_signal"
+
+
+def test_collect_precision_code_search_context_tracks_fresh_index_telemetry() -> None:
+    with (
+        patch(
+            "app.services.context_gatherer.precision_code_search.explorer_service.get_stats",
+            return_value={"total": 12, "last_scanned": "3026-03-10T17:00:00+00:00"},
+        ),
+        patch(
+            "app.services.context_gatherer.precision_code_search.get_symbol_stats",
+            return_value={"count": 4, "last_updated": "3026-03-10T17:00:00+00:00"},
+        ),
+        patch(
+            "app.services.context_gatherer.precision_code_search.search_symbols",
+            return_value=[],
+        ),
+        patch(
+            "app.services.context_gatherer.precision_code_search.get_entries",
+            return_value=[],
+        ),
+    ):
+        result = collect_precision_code_search_context("project-1", ["get_file_tree"])
+
+    assert result.metadata["stale_hit"] is False
+    assert result.metadata["refresh_reasons"] == []
+    assert result.metadata["file_total"] == 12
+    assert result.metadata["file_last_scanned"] == "3026-03-10T17:00:00+00:00"
+    assert result.metadata["symbol_last_updated"] == "3026-03-10T17:00:00+00:00"

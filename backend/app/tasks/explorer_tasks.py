@@ -60,9 +60,17 @@ def _scan_single_project(
     dispatch: Callable[[str, str, str], None] | None,
 ) -> tuple[dict[str, Any], bool]:
     """Scan one project; return (detail_dict, success_flag)."""
+    started_at = time.perf_counter()
     try:
         result = scan_project(proj_id, entry_type)
-        logger.info("project_scanned", project_id=proj_id, results_count=len(result))
+        duration_ms = round((time.perf_counter() - started_at) * 1000, 1)
+        logger.info(
+            "project_scanned",
+            project_id=proj_id,
+            entry_type=entry_type or "all",
+            results_count=len(result),
+            duration_ms=duration_ms,
+        )
         if dispatch:
             _dispatch_post_scan_tasks(dispatch, proj_id)
         detail = {
@@ -70,15 +78,24 @@ def _scan_single_project(
             "project_name": proj_name,
             "status": "success",
             "results": result,
+            "duration_ms": duration_ms,
         }
         return detail, True
     except Exception as e:
-        logger.error("project_scan_failed", project_id=proj_id, error=str(e))
+        duration_ms = round((time.perf_counter() - started_at) * 1000, 1)
+        logger.error(
+            "project_scan_failed",
+            project_id=proj_id,
+            entry_type=entry_type or "all",
+            duration_ms=duration_ms,
+            error=str(e),
+        )
         detail = {
             "project_id": proj_id,
             "project_name": proj_name,
             "status": "error",
             "error": str(e),
+            "duration_ms": duration_ms,
         }
         return detail, False
 
@@ -132,6 +149,7 @@ def scan_all_projects(
     Returns:
         Summary dict with scanned projects and results
     """
+    started_at = time.perf_counter()
     logger.info(
         "scan_all_projects_started",
         project_id=project_id or "all",
@@ -147,18 +165,35 @@ def scan_all_projects(
             return {"status": "success", "message": "No projects to scan", "scanned": 0}
 
         scanned, errors, details = _process_projects(projects, entry_type, dry_run, dispatch)
+        duration_ms = round((time.perf_counter() - started_at) * 1000, 1)
 
-        logger.info("scan_all_projects_complete", scanned=scanned, errors=errors)
+        logger.info(
+            "scan_all_projects_complete",
+            project_id=project_id or "all",
+            entry_type=entry_type or "all",
+            scanned=scanned,
+            errors=errors,
+            duration_ms=duration_ms,
+            project_count=len(projects),
+        )
         return {
             "status": "success" if errors == 0 else "partial",
             "dry_run": dry_run,
             "scanned": scanned,
             "errors": errors,
+            "duration_ms": duration_ms,
             "details": details,
         }
 
     except Exception as e:
-        logger.error("scan_all_projects_failed", error=str(e))
+        duration_ms = round((time.perf_counter() - started_at) * 1000, 1)
+        logger.error(
+            "scan_all_projects_failed",
+            project_id=project_id or "all",
+            entry_type=entry_type or "all",
+            duration_ms=duration_ms,
+            error=str(e),
+        )
         return {"status": "error", "error": str(e)}
 
 
