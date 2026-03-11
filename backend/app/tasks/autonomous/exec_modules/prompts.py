@@ -256,13 +256,44 @@ def build_subtask_prompt(
     return prompt
 
 
+def _summarize_failure(step_results: list[dict[str, Any]]) -> str:
+    """Extract a concise failure reason from step results."""
+    failed = [r for r in step_results if not r.get("passed")]
+    if not failed:
+        return "no failure details"
+    reasons = []
+    for f in failed[:3]:
+        reason = f.get("reason") or f.get("error") or "unknown"
+        reasons.append(str(reason)[:100])
+    return "; ".join(reasons)
+
+
+def _format_subtask_result_line(r: dict[str, Any]) -> str:
+    """Format a single subtask result with failure context when applicable."""
+    subtask_id = r.get("subtask_id", "?")
+    status = r.get("status", "unknown")
+    total_attempts = 1 + r.get("self_fix_attempts", 0) + r.get("supervisor_guided_attempts", 0)
+    line = f"- Subtask {subtask_id}: {status} ({total_attempts} attempts)"
+
+    if status != "passed":
+        step_results = r.get("step_results", [])
+        failure_reason = _summarize_failure(step_results) if step_results else (
+            r.get("error") or r.get("message") or "no details available"
+        )
+        line += f"\n  Failure: {failure_reason}"
+        # Surface affected area from failed steps
+        failed_steps = [s for s in step_results if not s.get("passed")]
+        if failed_steps:
+            step_ids = [str(s.get("step_number", "?")) for s in failed_steps[:5]]
+            line += f"\n  Affected steps: {', '.join(step_ids)}"
+        line += "\n  Next: investigate failure root cause, then re-run or adjust approach"
+
+    return line
+
+
 def build_feedback_prompt(results: list[dict[str, Any]], feedback_session_id: str) -> str:
     """Build a feedback prompt with task execution summary."""
-    parts = [
-        f"- Subtask {r.get('subtask_id', '?')}: {r.get('status', 'unknown')} "
-        f"({1 + r.get('self_fix_attempts', 0) + r.get('supervisor_guided_attempts', 0)} attempts)"
-        for r in results
-    ]
+    parts = [_format_subtask_result_line(r) for r in results]
     task_summary = "\n".join(parts) if parts else "No subtask results"
     return FEEDBACK_PROMPT.format(
         task_summary=task_summary,

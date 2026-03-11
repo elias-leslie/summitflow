@@ -118,13 +118,30 @@ def build_successful_completion_verification(
     return result
 
 
+def _extract_failure_summary(result: dict[str, Any]) -> str:
+    """Extract a concise failure reason from a subtask result."""
+    step_results = result.get("step_results", [])
+    failed_steps = [s for s in step_results if not s.get("passed")]
+    if failed_steps:
+        reasons = [str(s.get("reason") or s.get("error") or "unknown")[:80] for s in failed_steps[:2]]
+        return "; ".join(reasons)
+    return result.get("error") or result.get("message") or "unknown"
+
+
 def build_partial_completion_verification(
     results: list[dict[str, Any]],
     passed: list[dict[str, Any]],
     failed: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """Build verification result when only some subtasks pass (partial merge)."""
-    failed_ids = [r.get("subtask_id", "") for r in failed]
+    failed_details = [
+        {
+            "subtask_id": r.get("subtask_id", ""),
+            "failure_reason": _extract_failure_summary(r),
+        }
+        for r in failed
+    ]
+    failed_ids = [d["subtask_id"] for d in failed_details]
 
     return {
         "partial_merge": True,
@@ -132,6 +149,7 @@ def build_partial_completion_verification(
         "passed_count": len(passed),
         "failed_count": len(failed),
         "failed_subtasks": failed_ids,
+        "failed_details": failed_details,
         "total_self_fix_attempts": sum(r.get("self_fix_attempts", 0) for r in results),
         "total_supervisor_attempts": sum(
             r.get("supervisor_guided_attempts", 0) for r in results
