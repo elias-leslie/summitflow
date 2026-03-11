@@ -1,11 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
+import { toast } from 'sonner'
 import {
   deleteMockup,
   fetchMockupHistory,
   updateMockupStatus,
   type Mockup,
 } from '@/lib/api/mockups'
+import { getErrorMessage } from '@/lib/utils'
 
 export function useMockupModal(
   mockup: Mockup,
@@ -26,7 +28,11 @@ export function useMockupModal(
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mockups', projectId] })
       queryClient.invalidateQueries({ queryKey: ['mockup-stats', projectId] })
+      toast.success('Mockup deleted')
       onOpenChange(false)
+    },
+    onError: (error) => {
+      toast.error(getErrorMessage(error, 'Failed to delete mockup'))
     },
   })
 
@@ -46,11 +52,12 @@ export function useMockupModal(
         newStatus === 'approved' ? 'user' : undefined,
       )
       onStatusChange()
+      toast.success('Mockup status updated')
       if (newStatus === 'rejected' || newStatus === 'archived') {
         onOpenChange(false)
       }
     } catch (error) {
-      console.error('Failed to update status:', error)
+      toast.error(getErrorMessage(error, 'Failed to update mockup status'))
     } finally {
       setUpdating(false)
     }

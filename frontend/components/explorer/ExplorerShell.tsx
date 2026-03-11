@@ -12,7 +12,7 @@
 
 'use client'
 
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { cn } from '@/lib/utils'
 import { CodeHealthPanel } from './CodeHealthPanel'
 import { typeIcons, typeTitles } from './explorerConstants'
@@ -64,12 +64,24 @@ export function ExplorerShell({
     handleCollapseAll,
   } = useExplorerShellState(initialType, onTypeChangeProp)
 
-  const { statsData } = useExplorerStats(projectId)
+  const { statsData, statsError, refetchStats } = useExplorerStats(projectId)
 
-  const { isScanning, scanProgress, handleScan } = useExplorerScan(
+  const {
+    isScanning,
+    scanProgress,
+    scanError,
+    scanCompletedAt,
+    handleScan,
+  } = useExplorerScan(
     projectId,
     activeType,
   )
+
+  useEffect(() => {
+    if (scanCompletedAt) {
+      void refetchStats()
+    }
+  }, [refetchStats, scanCompletedAt])
 
   // Current stats and counts
   const stats = statsData[activeType]
@@ -132,6 +144,12 @@ export function ExplorerShell({
             {typeTitles[activeType]}
           </h2>
         </div>
+
+        {(statsError || scanError) && (
+          <div className="border-b border-rose-900/40 bg-rose-950/20 px-4 py-2 text-xs text-rose-300">
+            {scanError || statsError}
+          </div>
+        )}
 
         {/* Summary bar */}
         <SummaryBar

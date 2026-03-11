@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { type Event, getEventsForTrace } from '@/lib/api/events'
+import { getErrorMessage } from '@/lib/utils'
 import type { TimelineMessage } from '../TimelineEvent'
 
 interface UseTimelineHistoryOptions {
@@ -17,6 +18,7 @@ export function useTimelineHistory({
     [],
   )
   const [isLoading, setIsLoading] = useState(false)
+  const [historyError, setHistoryError] = useState<string | null>(null)
 
   // Use ref to avoid onLastSequence in deps (prevents infinite loops)
   const onLastSequenceRef = useRef(onLastSequence)
@@ -59,6 +61,7 @@ export function useTimelineHistory({
 
     const fetchHistory = async () => {
       setIsLoading(true)
+      setHistoryError(null)
       try {
         const events: Event[] = []
         const pageSize = 1000
@@ -88,7 +91,8 @@ export function useTimelineHistory({
           : 0
         onLastSequenceRef.current?.(lastSeq)
       } catch (err) {
-        console.error('Failed to fetch historical events:', err)
+        setHistoricalEvents([])
+        setHistoryError(getErrorMessage(err, 'Failed to load execution history'))
       } finally {
         setIsLoading(false)
       }
@@ -99,6 +103,7 @@ export function useTimelineHistory({
 
   return {
     historicalEvents,
+    historyError,
     isLoading,
   }
 }

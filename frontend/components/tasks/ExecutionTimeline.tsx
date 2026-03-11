@@ -85,7 +85,11 @@ export function ExecutionTimeline({
     })
 
   // Fetch historical events (hook uses ref internally for callback stability)
-  const { historicalEvents, isLoading: isLoadingHistory } = useTimelineHistory({
+  const {
+    historicalEvents,
+    historyError,
+    isLoading: isLoadingHistory,
+  } = useTimelineHistory({
     taskId,
     projectId,
     onLastSequence: setLastSequence,
@@ -141,6 +145,11 @@ export function ExecutionTimeline({
         className="flex-1 overflow-y-auto bg-slate-950/40 rounded-b-lg border border-slate-800/50 border-t-0"
         style={heightStyle}
       >
+        {historyError && (
+          <div className="border-b border-amber-900/40 bg-amber-950/20 px-3 py-2 text-xs text-amber-300">
+            {historyError}
+          </div>
+        )}
         {isLoadingHistory ? (
           <div className="flex flex-col items-center justify-center h-full text-slate-600 py-8">
             <Loader2 className="h-5 w-5 animate-spin mb-2" />

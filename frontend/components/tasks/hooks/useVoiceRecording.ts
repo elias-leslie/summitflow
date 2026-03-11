@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getVoiceWsUrl } from '@/lib/api-config'
+import { getErrorMessage } from '@/lib/utils'
 
 interface UseVoiceRecordingOptions {
   onTranscription: (text: string) => void
@@ -14,12 +15,14 @@ export function useVoiceRecording({
   const voiceWsRef = useRef<WebSocket | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
 
+  const stopStream = useCallback((stream: MediaStream) => {
+    stream.getTracks().forEach((track) => track.stop())
+  }, [])
+
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current) {
       mediaRecorderRef.current.stop()
-      mediaRecorderRef.current.stream
-        .getTracks()
-        .forEach((track) => track.stop())
+      stopStream(mediaRecorderRef.current.stream)
       mediaRecorderRef.current = null
     }
 
@@ -29,7 +32,7 @@ export function useVoiceRecording({
     }
 
     setIsRecording(false)
-  }, [])
+  }, [stopStream])
 
   const startRecording = useCallback(async () => {
     try {
@@ -38,6 +41,7 @@ export function useVoiceRecording({
 
       const voiceUrl = getVoiceWsUrl()
       if (!voiceUrl) {
+        stopStream(stream)
         setError('Voice service not configured')
         return
       }
@@ -56,7 +60,7 @@ export function useVoiceRecording({
             onTranscription(data.text)
           }
         } catch (err) {
-          console.error('Failed to parse voice response:', err)
+          setError(getErrorMessage(err, 'Received invalid voice response'))
         }
       }
 
@@ -80,10 +84,9 @@ export function useVoiceRecording({
 
       mediaRecorder.start(250)
     } catch (err) {
-      console.error('Failed to start voice recording:', err)
-      setError('Microphone access denied')
+      setError(getErrorMessage(err, 'Microphone access denied'))
     }
-  }, [onTranscription, stopRecording])
+  }, [onTranscription, stopRecording, stopStream])
 
   const toggleRecording = useCallback(() => {
     if (isRecording) {

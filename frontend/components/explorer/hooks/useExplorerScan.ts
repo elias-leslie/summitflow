@@ -3,13 +3,14 @@
  */
 
 import { useQueryClient } from '@tanstack/react-query'
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   fetchScanStatus,
   type ScanStatusResponse,
   triggerExplorerScan,
 } from '@/lib/api/explorer-scan'
 import { scanHistoryKeys } from '@/lib/hooks/useScanHistory'
+import { getErrorMessage } from '@/lib/utils'
 import type { ExplorerType } from '../types'
 import { uiTypeToApiType } from '../explorerConstants'
 import { explorerKeys } from './useExplorerData'
@@ -17,6 +18,8 @@ import { explorerKeys } from './useExplorerData'
 interface UseExplorerScanReturn {
   isScanning: boolean
   scanProgress: ScanStatusResponse | null
+  scanError: string | null
+  scanCompletedAt: number | null
   handleScan: () => Promise<void>
 }
 
@@ -30,10 +33,65 @@ export function useExplorerScan(
   const queryClient = useQueryClient()
   const [isScanning, setIsScanning] = useState(false)
   const [scanProgress, setScanProgress] = useState<ScanStatusResponse | null>(null)
+  const [scanError, setScanError] = useState<string | null>(null)
+  const [scanCompletedAt, setScanCompletedAt] = useState<number | null>(null)
+  const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const clearPendingPoll = useCallback(() => {
+    if (pollTimeoutRef.current) {
+      clearTimeout(pollTimeoutRef.current)
+      pollTimeoutRef.current = null
+    }
+  }, [])
+
+  const finishScan = useCallback(() => {
+    clearPendingPoll()
+    setIsScanning(false)
+    setScanProgress(null)
+  }, [clearPendingPoll])
+
+  const pollScanStatus = useCallback(async (deadline: number) => {
+    try {
+      const status = await fetchScanStatus(projectId)
+      setScanProgress(status)
+
+      if (status.status === 'completed') {
+        setScanCompletedAt(Date.now())
+        finishScan()
+        void queryClient.invalidateQueries({ queryKey: scanHistoryKeys.all })
+        void queryClient.invalidateQueries({
+          queryKey: explorerKeys.entries(projectId),
+        })
+        return
+      }
+
+      if (status.status === 'failed') {
+        setScanError(status.error || 'Scan failed')
+        finishScan()
+        return
+      }
+
+      if (Date.now() >= deadline) {
+        setScanError('Scan timed out')
+        finishScan()
+        return
+      }
+
+      pollTimeoutRef.current = setTimeout(() => {
+        void pollScanStatus(deadline)
+      }, POLL_INTERVAL_MS)
+    } catch (pollErr) {
+      setScanError(getErrorMessage(pollErr, 'Failed to poll scan status'))
+      finishScan()
+    }
+  }, [finishScan, projectId, queryClient])
 
   const handleScan = useCallback(async () => {
+    clearPendingPoll()
     setIsScanning(true)
     setScanProgress(null)
+    setScanError(null)
+    setScanCompletedAt(null)
 
     try {
       const apiType = uiTypeToApiType[activeType]
@@ -41,55 +99,20 @@ export function useExplorerScan(
         projectId,
         apiType as 'file' | 'table' | 'task' | 'endpoint' | 'page',
       )
-
-      // Poll for completion
-      const pollInterval = setInterval(async () => {
-        try {
-          const status = await fetchScanStatus(projectId)
-          setScanProgress(status)
-
-          if (status.status === 'completed' || status.status === 'failed') {
-            clearInterval(pollInterval)
-            setIsScanning(false)
-            setScanProgress(null)
-
-            // Invalidate caches to update UI
-            queryClient.invalidateQueries({ queryKey: scanHistoryKeys.all })
-            queryClient.invalidateQueries({
-              queryKey: explorerKeys.entries(projectId),
-            })
-            queryClient.invalidateQueries({
-              queryKey: explorerKeys.stats(projectId),
-            })
-
-            if (status.status === 'failed' && status.error) {
-              console.error('Scan completed with error:', status.error)
-            }
-          }
-        } catch (pollErr) {
-          console.error('Poll failed:', pollErr)
-          clearInterval(pollInterval)
-          setIsScanning(false)
-          setScanProgress(null)
-        }
-      }, POLL_INTERVAL_MS)
-
-      // Safety timeout
-      setTimeout(() => {
-        clearInterval(pollInterval)
-        setIsScanning(false)
-        setScanProgress(null)
-      }, SCAN_TIMEOUT_MS)
+      void pollScanStatus(Date.now() + SCAN_TIMEOUT_MS)
     } catch (err) {
-      console.error('Scan failed:', err)
-      setIsScanning(false)
-      setScanProgress(null)
+      setScanError(getErrorMessage(err, 'Failed to start scan'))
+      finishScan()
     }
-  }, [projectId, activeType, queryClient])
+  }, [activeType, clearPendingPoll, finishScan, pollScanStatus, projectId])
+
+  useEffect(() => clearPendingPoll, [clearPendingPoll])
 
   return {
     isScanning,
     scanProgress,
+    scanError,
+    scanCompletedAt,
     handleScan,
   }
 }

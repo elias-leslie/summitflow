@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { fetchTask, type Task } from '@/lib/api/tasks'
+import { getErrorMessage } from '@/lib/utils'
 
 interface UseEnrichmentPollingProps {
   projectId: string
@@ -26,6 +27,7 @@ export function useEnrichmentPolling({
     try {
       const updatedTask = await fetchTask(projectId, task.id)
       setTask(updatedTask)
+      setError(null)
 
       if (updatedTask.enrichment_status === 'review') {
         onComplete(updatedTask)
@@ -34,7 +36,7 @@ export function useEnrichmentPolling({
         onError(updatedTask.error_message || 'Enrichment failed')
       }
     } catch (err) {
-      console.error('Failed to poll task:', err)
+      setError(getErrorMessage(err, 'Failed to refresh enrichment status'))
     }
   }, [projectId, task.id, onComplete, onError])
 

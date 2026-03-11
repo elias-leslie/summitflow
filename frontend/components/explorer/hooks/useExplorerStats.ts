@@ -2,13 +2,15 @@
  * useExplorerStats - Hook for fetching and managing explorer statistics
  */
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { fetchExplorerEntries } from '@/lib/api/explorer'
+import { getErrorMessage } from '@/lib/utils'
 import type { ExplorerStats, ExplorerType } from '../types'
 import { explorerTypes, uiTypeToApiType } from '../explorerConstants'
 
 interface UseExplorerStatsReturn {
   statsData: Record<ExplorerType, ExplorerStats>
+  statsError: string | null
   refetchStats: () => Promise<void>
 }
 
@@ -34,49 +36,66 @@ export function useExplorerStats(projectId: string): UseExplorerStatsReturn {
   const [statsData, setStatsData] = useState<Record<ExplorerType, ExplorerStats>>(
     initialStatsData,
   )
+  const [statsError, setStatsError] = useState<string | null>(null)
 
-  const fetchAllStats = async () => {
-    const newStats: Record<ExplorerType, ExplorerStats> = {
-      files: { ...emptyStats },
-      database: { ...emptyStats },
-      celery: { ...emptyStats },
-      api: { ...emptyStats },
-      pages: { ...emptyStats },
-      dependencies: { ...emptyStats },
-      architecture: { ...emptyStats },
-    }
-
-    for (const type of explorerTypes) {
-      try {
+  const fetchAllStats = useCallback(async () => {
+    setStatsError(null)
+    const results = await Promise.allSettled(
+      explorerTypes.map(async (type) => {
         const apiType = uiTypeToApiType[type]
         const response = await fetchExplorerEntries(projectId, {
           type: apiType,
-          limit: 1, // Just need stats, not entries
+          limit: 1,
         })
 
-        // Map API health statuses to UI stats
         const byHealth = response.stats?.byHealth || {}
-        newStats[type] = {
-          total: response.total || 0,
-          fresh: (byHealth.healthy || 0) as number,
-          stale: (byHealth.warning || 0) as number,
-          orphan: (byHealth.error || 0) as number,
-          lastScan: response.stats?.lastScanned || null,
-        }
-      } catch (err) {
-        console.error(`Failed to fetch stats for ${type}:`, err)
+        return [
+          type,
+          {
+            total: response.total || 0,
+            fresh: (byHealth.healthy || 0) as number,
+            stale: (byHealth.warning || 0) as number,
+            orphan: (byHealth.error || 0) as number,
+            lastScan: response.stats?.lastScanned || null,
+          },
+        ] as const
+      }),
+    )
+
+    const newStats = { ...initialStatsData }
+    const failedTypes: string[] = []
+    let firstError: string | null = null
+
+    results.forEach((result, index) => {
+      const type = explorerTypes[index]
+      if (result.status === 'fulfilled') {
+        const [resolvedType, stats] = result.value
+        newStats[resolvedType] = stats
+        return
       }
-    }
+
+      failedTypes.push(type)
+      firstError ??= getErrorMessage(
+        result.reason,
+        `Failed to load ${type} stats`,
+      )
+    })
 
     setStatsData(newStats)
-  }
+    if (failedTypes.length > 1) {
+      setStatsError(`Failed to load stats for ${failedTypes.join(', ')}`)
+    } else if (firstError) {
+      setStatsError(firstError)
+    }
+  }, [projectId])
 
   useEffect(() => {
-    fetchAllStats()
-  }, [projectId])
+    void fetchAllStats()
+  }, [fetchAllStats])
 
   return {
     statsData,
+    statsError,
     refetchStats: fetchAllStats,
   }
 }
