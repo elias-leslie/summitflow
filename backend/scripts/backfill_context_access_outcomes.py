@@ -20,8 +20,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Auto-detect and re-exec into the backend venv if needed
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+import lib.ensure_backend_venv  # noqa: E402, F401
 
 from app.storage.connection import get_connection
 

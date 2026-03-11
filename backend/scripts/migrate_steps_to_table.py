@@ -13,9 +13,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
-# Add backend to path for imports
-backend_path = Path(__file__).parent.parent
-sys.path.insert(0, str(backend_path))
+# Auto-detect and re-exec into the backend venv if needed
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+import lib.ensure_backend_venv  # noqa: E402, F401
 
 from app.storage.connection import get_connection
 from app.storage.steps import bulk_create_steps
