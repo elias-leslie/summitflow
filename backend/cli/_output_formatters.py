@@ -36,9 +36,9 @@ def format_compact_subtask(subtask: dict[str, Any]) -> str:
     subtask_id = subtask.get("subtask_id", "?")
     passes = "PASS" if subtask.get("passes") else "____"
     description = truncate(subtask.get("description") or "", 40)
-    step_summary = subtask.get("step_summary", {})
-    done = step_summary.get("completed", 0)
-    total = step_summary.get("total", 0)
+    step_summary = subtask.get("step_summary") or {}
+    done = _safe_int(step_summary.get("completed", 0))
+    total = _safe_int(step_summary.get("total", 0))
     return f"{subtask_id:5} {passes} {description:40} [{done}/{total}]"
 
 
@@ -62,7 +62,7 @@ def _format_context_lines(context: dict[str, Any] | None) -> list[str]:
     """Build CONTEXT line parts from task context dict."""
     if not context or not isinstance(context, dict):
         return []
-    parts = []
+    parts: list[str] = []
     if files_mod := context.get("files_to_modify"):
         parts.append(f"modify:{','.join(files_mod)}")
     if files_create := context.get("files_to_create"):
@@ -80,7 +80,7 @@ def _format_context_lines(context: dict[str, Any] | None) -> list[str]:
     return [f"CONTEXT:{' | '.join(parts)}"] if parts else []
 
 
-def _format_specialist_group(group: dict[str, Any]) -> str | None:
+def _format_specialist_group(group: Any) -> str | None:
     """Format a single specialist group entry; returns None for invalid groups."""
     if not isinstance(group, dict):
         return None
@@ -96,31 +96,36 @@ def _format_specialist_group(group: dict[str, Any]) -> str | None:
     return segment
 
 
+def _format_lane_conflict(lane_preflight: dict[str, Any]) -> str:
+    """Build the LANE or LANE_ADVISORY line from lane_preflight issues."""
+    parts: list[str] = []
+    disposition = lane_preflight.get("disposition")
+    if disposition:
+        parts.append(f"disp:{disposition}")
+    if overlap_kind := lane_preflight.get("overlap_kind"):
+        parts.append(f"kind:{overlap_kind}")
+    conflicting_tasks = lane_preflight.get("conflicting_tasks") or []
+    if conflicting_tasks:
+        key = "active_tasks" if disposition == "warn" else "tasks"
+        parts.append(f"{key}:{','.join(conflicting_tasks[:3])}")
+    if owner_location := lane_preflight.get("owner_location"):
+        parts.append(f"owner:{owner_location}")
+    overlap_paths = lane_preflight.get("overlap_paths") or []
+    if overlap_paths:
+        parts.append(f"paths:{','.join(overlap_paths[:3])}")
+    if lane_preflight.get("shared_plumbing"):
+        parts.append("shared:yes")
+    label = "LANE_ADVISORY" if disposition == "warn" else "LANE"
+    return f"{label}:{' | '.join(parts) if parts else 'conflict'}"
+
+
 def _format_lane_lines(lane_preflight: dict[str, Any] | None) -> list[str]:
     """Build LANE and SPECIALISTS lines from lane_preflight."""
     if not isinstance(lane_preflight, dict):
         return []
-    lines = []
+    lines: list[str] = []
     if lane_preflight.get("issues"):
-        parts = []
-        disposition = lane_preflight.get("disposition")
-        if disposition:
-            parts.append(f"disp:{disposition}")
-        if overlap_kind := lane_preflight.get("overlap_kind"):
-            parts.append(f"kind:{overlap_kind}")
-        conflicting_tasks = lane_preflight.get("conflicting_tasks") or []
-        if conflicting_tasks:
-            key = "active_tasks" if disposition == "warn" else "tasks"
-            parts.append(f"{key}:{','.join(conflicting_tasks[:3])}")
-        if owner_location := lane_preflight.get("owner_location"):
-            parts.append(f"owner:{owner_location}")
-        overlap_paths = lane_preflight.get("overlap_paths") or []
-        if overlap_paths:
-            parts.append(f"paths:{','.join(overlap_paths[:3])}")
-        if lane_preflight.get("shared_plumbing"):
-            parts.append("shared:yes")
-        label = "LANE_ADVISORY" if disposition == "warn" else "LANE"
-        lines.append(f"{label}:{' | '.join(parts) if parts else 'conflict'}")
+        lines.append(_format_lane_conflict(lane_preflight))
     specialist_groups = lane_preflight.get("active_specialists") or []
     if isinstance(specialist_groups, list) and specialist_groups:
         parts = [seg for g in specialist_groups[:3] if (seg := _format_specialist_group(g)) is not None]
@@ -135,66 +140,72 @@ def _visible_sync_skips(task: dict[str, Any]) -> list[str]:
     if not isinstance(skipped, list):
         return []
     syncable = task.get("syncable_subtasks") or []
-    has_syncable = isinstance(syncable, list) and bool(syncable)
-    if has_syncable:
+    if isinstance(syncable, list) and syncable:
         return [str(item) for item in skipped]
-
     status = str(task.get("status") or "")
     if status == "pending":
         return [str(item) for item in skipped if ":steps-" not in str(item)]
     return [str(item) for item in skipped]
 
 
+def _format_workflow_line(task: dict[str, Any]) -> str | None:
+    """Return WORKFLOW line if there's anything worth showing."""
+    decisions_count = len(task.get("decisions") or [])
+    readiness = task.get("execution_readiness")
+    plan_status = task.get("plan_status") or "draft"
+    if not (decisions_count > 0 or readiness is not None or plan_status != "draft"):
+        return None
+    ready_flag = "yes" if readiness and readiness.ready else "no"
+    issues = len(readiness.issues) if readiness else 0
+    return f"WORKFLOW:plan:{plan_status}|ready:{ready_flag}|issues:{issues}|decisions:{decisions_count}"
+
+
+def _format_completion_readiness(completion_readiness: Any) -> str | None:
+    """Return COMPLETE_READY line if relevant."""
+    if not isinstance(completion_readiness, dict):
+        return None
+    if completion_readiness.get("ready"):
+        return "COMPLETE_READY:yes"
+    gates = completion_readiness.get("gates") or []
+    gate_codes = [
+        str(g.get("gate") or g.get("code") or "unknown")
+        for g in gates
+        if isinstance(g, dict)
+    ]
+    return f"COMPLETE_READY:no|gates:{','.join(gate_codes)}" if gate_codes else None
+
+
 def format_context_task(task: dict[str, Any]) -> str:
     """Format task header for context output."""
-    lines = []
     task_id = task.get("id", "unknown")
     status = task.get("status", "pending")
     priority = task.get("priority", 3)
     task_type = task.get("task_type", "task")
     complexity = task.get("complexity") or "SIMPLE"
-    lines.append(f"TASK:{task_id}|{status}|P{priority}|{task_type}|{complexity}")
+    lines = [f"TASK:{task_id}|{status}|P{priority}|{task_type}|{complexity}"]
     if title := task.get("title"):
         lines.append(f"TITLE:{title}")
     if description := task.get("description"):
         lines.append(f"DESCRIPTION:{description}")
-    decisions_count = len(task.get("decisions") or [])
-    readiness = task.get("execution_readiness")
-    plan_status = task.get("plan_status") or "draft"
-    if decisions_count > 0 or readiness is not None or plan_status != "draft":
-        ready_flag = "yes" if readiness and readiness.ready else "no"
-        issues = len(readiness.issues) if readiness else 0
-        lines.append(f"WORKFLOW:plan:{plan_status}|ready:{ready_flag}|issues:{issues}|decisions:{decisions_count}")
+    if workflow := _format_workflow_line(task):
+        lines.append(workflow)
     if objective := task.get("objective"):
         lines.append(f"OBJECTIVE:{objective}")
     if spirit_anti := task.get("spirit_anti"):
         lines.append(f"SPIRIT_ANTI:{spirit_anti}")
-    constraints = task.get("constraints") or []
-    if constraints:
+    if constraints := task.get("constraints") or []:
         lines.append(f"CONSTRAINTS[{len(constraints)}]:{' | '.join(constraints)}")
-    done_when = task.get("done_when") or []
-    if done_when:
+    if done_when := task.get("done_when") or []:
         lines.append(f"DONE_WHEN[{len(done_when)}]:{' | '.join(done_when)}")
+    readiness = task.get("execution_readiness")
     if readiness and readiness.missing_fields:
         lines.append(f"READINESS:missing:{','.join(readiness.missing_fields)}")
-    completion_readiness = task.get("completion_readiness")
-    if isinstance(completion_readiness, dict):
-        gates = completion_readiness.get("gates") or []
-        if completion_readiness.get("ready"):
-            lines.append("COMPLETE_READY:yes")
-        else:
-            gate_codes = [
-                str(g.get("gate") or g.get("code") or "unknown")
-                for g in gates
-                if isinstance(g, dict)
-            ]
-            if gate_codes:
-                lines.append(f"COMPLETE_READY:no|gates:{','.join(gate_codes)}")
+    if cr_line := _format_completion_readiness(task.get("completion_readiness")):
+        lines.append(cr_line)
     syncable = task.get("syncable_subtasks") or []
     if isinstance(syncable, list) and syncable:
         lines.append(f"SYNCABLE_SUBTASKS:{','.join(str(item) for item in syncable)}")
-    skipped = _visible_sync_skips(task)
-    if skipped:
+    if skipped := _visible_sync_skips(task):
         lines.append(f"SYNC_SKIPS:{' | '.join(skipped[:8])}")
     lines.extend(_format_context_lines(task.get("context")))
     lines.extend(_format_lane_lines(task.get("lane_preflight")))
@@ -207,10 +218,7 @@ def format_context_decisions(decisions: list[dict[str, Any]]) -> str:
         return ""
     lines = [f"DECISIONS[{len(decisions)}]"]
     for d in decisions:
-        d_id = d.get("id", "?")
-        title = d.get("title", "")
-        outcome = d.get("outcome", "")
-        lines.append(f"{d_id}:{title}→{outcome}")
+        lines.append(f"{d.get('id', '?')}:{d.get('title', '')}→{d.get('outcome', '')}")
     return "\n".join(lines)
 
 
@@ -227,17 +235,15 @@ def format_context_subtasks(subtasks: list[dict[str, Any]]) -> str:
         passes = "PASS" if subtask.get("passes") else "____"
         phase = subtask.get("phase") or ""
         desc = subtask.get("description") or ""
-        step_summary = subtask.get("step_summary", {})
-        step_done = step_summary.get("completed", 0)
-        step_total = step_summary.get("total", 0)
+        step_summary = subtask.get("step_summary") or {}
+        step_done = _safe_int(step_summary.get("completed", 0))
+        step_total = _safe_int(step_summary.get("total", 0))
         phase_prefix = f"[{phase}] " if phase else ""
         lines.append(f"{subtask_id:5} {passes} {phase_prefix}{desc} [{step_done}/{step_total}]")
-        steps = subtask.get("steps") or subtask.get("steps_from_table") or []
-        for step in steps:
+        for step in subtask.get("steps") or subtask.get("steps_from_table") or []:
             step_num = step.get("step_number", 0)
             step_pass = "PASS" if step.get("passes") else "____"
-            step_desc = step.get("description") or ""
-            lines.append(f"  {step_num}. {step_pass} {step_desc}")
+            lines.append(f"  {step_num}. {step_pass} {step.get('description') or ''}")
     return "\n".join(lines)
 
 
@@ -247,10 +253,7 @@ def format_context_blockers(blockers: list[dict[str, Any]]) -> str:
         return ""
     lines = [f"BLOCKERS[{len(blockers)}]"]
     for b in blockers:
-        b_id = b.get("id", "?")
-        status = b.get("status", "?")
-        title = b.get("title") or ""
-        lines.append(f"{b_id}|{status}|{title}")
+        lines.append(f"{b.get('id', '?')}|{b.get('status', '?')}|{b.get('title') or ''}")
     return "\n".join(lines)
 
 
@@ -258,19 +261,13 @@ def format_context_log(progress_log: list[str] | str | None) -> str:
     """Format progress log for context output (last 3 entries)."""
     if not progress_log:
         return ""
-    if isinstance(progress_log, str):
-        entries = [e.strip() for e in progress_log.split("\n") if e.strip()]
-    else:
-        entries = progress_log
+    entries = [e.strip() for e in progress_log.split("\n") if e.strip()] if isinstance(progress_log, str) else progress_log
     if not entries:
         return ""
-    recent_logs = entries[-3:]
     lines = [f"LOG[{len(entries)}]"]
-    for log in recent_logs:
-        log_preview = str(log)[:100]
-        if len(str(log)) > 100:
-            log_preview += "..."
-        lines.append(f"  {log_preview}")
+    for log in entries[-3:]:
+        log_str = str(log)
+        lines.append(f"  {log_str[:100]}{'...' if len(log_str) > 100 else ''}")
     return "\n".join(lines)
 
 
@@ -288,29 +285,25 @@ def format_context_references(references: list[dict[str, Any]], header: str = "R
 
 def format_subtask_context_task_summary(task: dict[str, Any]) -> str:
     """Format task summary for subtask-scoped context."""
-    lines = []
     task_id = task.get("id", "unknown")
     title = task.get("title", "")
-    lines.append(f"TASK:{task_id}|{title}")
+    lines = [f"TASK:{task_id}|{title}"]
     if objective := task.get("objective"):
         lines.append(f"OBJECTIVE:{objective}")
     if spirit_anti := task.get("spirit_anti"):
         lines.append(f"SPIRIT_ANTI:{spirit_anti}")
-    done_when = task.get("done_when") or []
-    if done_when:
+    if done_when := task.get("done_when") or []:
         lines.append(f"DONE_WHEN[{len(done_when)}]:{' | '.join(done_when)}")
     return "\n".join(lines)
 
 
 def format_subtask_context_subtask(subtask: dict[str, Any]) -> str:
     """Format subtask details with all steps and verification info."""
-    lines = []
     subtask_id = subtask.get("subtask_id", "?")
     phase = subtask.get("phase") or ""
     passes = "PASS" if subtask.get("passes") else "____"
     desc = subtask.get("description") or ""
-    lines.append(f"SUBTASK:{subtask_id}|{phase}|{passes}")
-    lines.append(f"DESCRIPTION:{desc}")
+    lines = [f"SUBTASK:{subtask_id}|{phase}|{passes}", f"DESCRIPTION:{desc}"]
     steps = subtask.get("steps") or subtask.get("steps_from_table") or []
     if steps:
         done = sum(1 for s in steps if s.get("passes"))
@@ -320,8 +313,7 @@ def format_subtask_context_subtask(subtask: dict[str, Any]) -> str:
         for step in steps:
             step_num = step.get("step_number", 0)
             step_pass = "PASS" if step.get("passes") else "____"
-            step_desc = step.get("description") or ""
-            lines.append(f"  {step_num}. {step_pass} {step_desc}")
+            lines.append(f"  {step_num}. {step_pass} {step.get('description') or ''}")
     return "\n".join(lines)
 
 
@@ -331,7 +323,5 @@ def format_subtask_context_dependencies(dependencies: list[dict[str, Any]]) -> s
         return ""
     lines = [f"DEPENDS_ON[{len(dependencies)}]"]
     for dep in dependencies:
-        dep_id = dep.get("subtask_id", "?")
-        status = dep.get("status", "PENDING")
-        lines.append(f"  {dep_id} [{status}]")
+        lines.append(f"  {dep.get('subtask_id', '?')} [{dep.get('status', 'PENDING')}]")
     return "\n".join(lines)
