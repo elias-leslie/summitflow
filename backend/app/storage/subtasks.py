@@ -30,7 +30,7 @@ def create_subtask(
     subtask_type: str | None = None,
 ) -> dict[str, Any]:
     """Create a new subtask."""
-    from .subtasks_crud import create_subtask as _create
+    from .subtasks_create import create_subtask as _create
 
     return _create(
         canonicalize_task_id(task_id),
@@ -73,7 +73,7 @@ def update_subtask_passes(
     passes: bool,
 ) -> dict[str, Any] | None:
     """Update subtask passes status with validation gates."""
-    from .subtasks_crud import update_subtask_passes as _update
+    from .subtasks_passes import update_subtask_passes as _update
 
     return _update(canonicalize_task_id(task_id), subtask_id, passes)
 
