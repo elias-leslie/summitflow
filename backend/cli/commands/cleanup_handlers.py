@@ -3,8 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import typer
+
+from app.utils._git_branches import (
+    prune_closed_orphan_task_branches,
+    prune_equivalent_orphan_task_branches,
+    prune_prunable_task_branches,
+    prune_worktree_registrations,
+)
 
 from .cleanup_analysis import CleanupAction, WorktreeAnalysis, cleanup_worktree
 
@@ -123,3 +131,17 @@ def print_cleanup_results(results: CleanupResults, dry_run: bool) -> None:
     else:
         message = f"Cleaned {results.cleaned}, skipped {results.skipped}, errors {results.errors}"
     output_success(message)
+
+
+def cleanup_safe_git_residue(repos: list[Path], dry_run: bool) -> tuple[int, int, int, int]:
+    """Prune stale worktree registrations and safe orphan task branches."""
+    if dry_run:
+        return (0, 0, 0, 0)
+    pruned_regs = pruned_branches = pruned_equiv = pruned_closed = 0
+    for repo_path in repos:
+        prune_worktree_registrations(repo_path)
+        pruned_regs += 1
+        pruned_branches += len(prune_prunable_task_branches(repo_path))
+        pruned_equiv += len(prune_equivalent_orphan_task_branches(repo_path))
+        pruned_closed += len(prune_closed_orphan_task_branches(repo_path))
+    return pruned_regs, pruned_branches, pruned_equiv, pruned_closed
