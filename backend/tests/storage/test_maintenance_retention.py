@@ -6,8 +6,9 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.storage.celery_results import cleanup_old_celery_results
-from app.storage.connection import get_connection
+from app.storage.connection import generate_prefixed_id, get_connection
 from app.storage.events import cleanup_old_events
+from app.storage.maintenance_runs import cleanup_old_maintenance_runs, record_maintenance_run
 from app.storage.notifications import cleanup_old_notifications
 from app.storage.quality_check_results import cleanup_old_results, create_check_result, mark_fixed
 from app.storage.scan_history import cleanup_old_scan_history, fail_stale_running_scans
@@ -357,6 +358,50 @@ class TestCeleryResultRetention:
 
         assert remaining_taskmeta == [900002]
         assert remaining_tasksetmeta == [910002]
+
+
+class TestMaintenanceRunRetention:
+    """Maintenance run ledger cleanup stays bounded per workflow."""
+
+    def test_cleanup_old_maintenance_runs_keeps_recent_history(self) -> None:
+        workflow_name = f"test-maintenance-{generate_prefixed_id('wf')}"
+        older = datetime.now(UTC) - timedelta(days=220)
+        newer = datetime.now(UTC) - timedelta(days=2)
+
+        old_run = record_maintenance_run(
+            workflow_name,
+            "success",
+            started_at=older,
+            finished_at=older,
+            rows_cleaned=1,
+            summary={"marker": "old"},
+        )
+        new_run = record_maintenance_run(
+            workflow_name,
+            "success",
+            started_at=newer,
+            finished_at=newer,
+            rows_cleaned=2,
+            summary={"marker": "new"},
+        )
+
+        assert old_run is not None
+        assert new_run is not None
+
+        deleted = cleanup_old_maintenance_runs(max_age_days=180, keep_latest_per_workflow=1)
+
+        assert deleted >= 1
+
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT id FROM maintenance_runs WHERE id = ANY(%s::bigint[]) ORDER BY id",
+                ([old_run["id"], new_run["id"]],),
+            )
+            remaining = [row[0] for row in cur.fetchall()]
+            cur.execute("DELETE FROM maintenance_runs WHERE id = %s", (new_run["id"],))
+            conn.commit()
+
+        assert remaining == [new_run["id"]]
 
 
 class TestScanHistoryRetention:

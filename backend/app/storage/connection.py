@@ -1,5 +1,6 @@
 """Database connection management with connection pooling."""
 
+import atexit
 import logging
 import uuid
 from collections.abc import Generator
@@ -90,3 +91,6 @@ def init_schema() -> None:
     from .schema import init_schema as _init_schema
 
     _init_schema()
+
+
+atexit.register(close_pool)

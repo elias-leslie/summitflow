@@ -80,6 +80,10 @@ def run_daily_maintenance(max_age_days: int = 30) -> dict[str, Any]:
             "celery_result_retention",
             celery_store.cleanup_old_celery_results,
         )
+        maintenance_runs_deleted = _run_step(
+            "maintenance_run_retention",
+            maintenance_store.cleanup_old_maintenance_runs,
+        )
         stale_backups_deleted = _run_step(
             "stale_backups",
             backup_store.cleanup_stale_backup_records,
@@ -103,6 +107,7 @@ def run_daily_maintenance(max_age_days: int = 30) -> dict[str, Any]:
                 _deleted_count(qcr_deleted),
                 _deleted_count(events_deleted),
                 _deleted_count(celery_results_deleted),
+                _deleted_count(maintenance_runs_deleted),
                 _deleted_count(stale_backups_deleted),
                 _deleted_count(expired_backups_deleted),
             ]
@@ -119,6 +124,7 @@ def run_daily_maintenance(max_age_days: int = 30) -> dict[str, Any]:
                     qcr_deleted,
                     events_deleted,
                     celery_results_deleted,
+                    maintenance_runs_deleted,
                     stale_backups_deleted,
                     expired_backups_deleted,
                 )
@@ -132,6 +138,7 @@ def run_daily_maintenance(max_age_days: int = 30) -> dict[str, Any]:
             "quality_results_deleted": qcr_deleted,
             "events_deleted": events_deleted,
             "celery_results_deleted": celery_results_deleted,
+            "maintenance_runs_deleted": maintenance_runs_deleted,
             "stale_backups_deleted": stale_backups_deleted,
             "expired_backups_deleted": expired_backups_deleted,
         }
@@ -156,6 +163,7 @@ def run_daily_maintenance(max_age_days: int = 30) -> dict[str, Any]:
             quality_results_deleted=_deleted_count(qcr_deleted),
             events_deleted=_deleted_count(events_deleted),
             celery_results_deleted=_deleted_count(celery_results_deleted),
+            maintenance_runs_deleted=_deleted_count(maintenance_runs_deleted),
             stale_backups_deleted=stale_backups_deleted if isinstance(stale_backups_deleted, int) else 0,
             expired_backups_deleted=expired_backups_deleted if isinstance(expired_backups_deleted, int) else 0,
         )

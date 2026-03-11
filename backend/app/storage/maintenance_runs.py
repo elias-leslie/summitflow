@@ -85,6 +85,48 @@ def record_maintenance_run(
     return _row_to_dict(row) if row else None
 
 
+def cleanup_old_maintenance_runs(
+    *,
+    max_age_days: int = 180,
+    keep_latest_per_workflow: int = 100,
+) -> int:
+    """Delete old maintenance run records while preserving recent workflow history."""
+    with get_connection() as conn, conn.cursor() as cur:
+        if not _table_exists(cur):
+            return 0
+
+        cur.execute(
+            """
+            WITH ranked AS (
+                SELECT
+                    id,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY workflow_name
+                        ORDER BY started_at DESC, id DESC
+                    ) AS rn
+                FROM maintenance_runs
+            ),
+            deleted AS (
+                DELETE FROM maintenance_runs
+                WHERE id IN (
+                    SELECT mr.id
+                    FROM maintenance_runs mr
+                    JOIN ranked r ON r.id = mr.id
+                    WHERE r.rn > %s
+                      AND mr.started_at < NOW() - (%s * INTERVAL '1 day')
+                )
+                RETURNING 1
+            )
+            SELECT COUNT(*) FROM deleted
+            """,
+            (keep_latest_per_workflow, max_age_days),
+        )
+        row = cur.fetchone()
+        conn.commit()
+
+    return int(row[0] or 0) if row else 0
+
+
 def list_maintenance_runs(
     *,
     limit: int = 20,
