@@ -109,9 +109,15 @@ def _handle_subtask_failure(
             source="supervisor", project_id=project_id,
         )
 
+    step_results = result.get("step_results", [])
+    failed_steps = [s for s in step_results if not s.get("passed")]
+    failure_detail = ""
+    if failed_steps:
+        reasons = [str(s.get("reason") or s.get("error") or "unknown")[:80] for s in failed_steps[:2]]
+        failure_detail = f": {'; '.join(reasons)}"
     emit_log(
         task_id, "warn",
-        f"Subtask {result.get('subtask_id')} failed after {total_attempts} attempts, continuing",
+        f"Subtask {result.get('subtask_id')} failed after {total_attempts} attempts{failure_detail}, continuing",
         project_id=project_id,
     )
     return True
