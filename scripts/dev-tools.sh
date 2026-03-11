@@ -842,7 +842,7 @@ count_issues() {
             # Use a tight pattern to avoid matching coverage file paths like console_errors.py
             # The summary always has "=== ... ===" or a bare "N passed" / "N failed" format
             local summary_line
-            summary_line=$(echo "$output" | strip_ansi | grep -E '^\s*=*\s*[0-9]+ (passed|failed|error|skipped|warning)' | tail -1) || true
+            summary_line=$(echo "$output" | strip_ansi | grep -E '^\s*=*\s*[0-9]+ (passed|failed|error|skipped|deselected|warning)' | tail -1) || true
             if [[ -z "$summary_line" ]]; then
                 # Fallback: grab the very last non-empty line (works for all pytest formats)
                 summary_line=$(echo "$output" | strip_ansi | grep -v '^\s*$' | tail -1) || true
