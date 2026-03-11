@@ -6,7 +6,7 @@ Provides worktree cleanup, orphan inspection, and minimal salvage recovery.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated
 
 import typer
 
@@ -34,6 +34,7 @@ from .cleanup_analysis import (
     cleanup_worktree,
     format_analysis,
 )
+from .cleanup_display import RepoEntry, format_cleanup_status_compact, print_git_residue_report
 from .cleanup_git import has_uncommitted_changes
 from .cleanup_handlers import (
     categorize_worktrees,
@@ -43,6 +44,7 @@ from .cleanup_handlers import (
     print_worktree_summary,
 )
 from .cleanup_paths import cleanup_paths_command
+from .cleanup_salvage import validate_salvage_candidate
 
 # Re-export for backward compatibility
 __all__ = [
@@ -59,7 +61,6 @@ __all__ = [
 
 app = typer.Typer(help="Cleanup commands for stale resources")
 
-# Messages
 _NO_CLEANUP_FLAG_MSG = "Use --auto to cleanup safe cases or --force for all"
 _DRY_RUN_MSG = "DRY RUN - No changes will be made:"
 _ABORTED_MSG = "Aborted"
@@ -76,7 +77,6 @@ def get_project_id(all_projects: bool) -> str | None:
     """Get project ID based on --all flag."""
     if all_projects:
         return None
-
     return get_config_optional().project_id or None
 
 
@@ -85,14 +85,13 @@ def _iter_target_repos(all_projects: bool) -> list[Path]:
     repos = [repo for repo in _get_managed_repos() if not repo.name.startswith(".")]
     if all_projects:
         return repos
-
     project_id = get_project_id(False)
     if project_id:
         return [repo for repo in repos if repo.name == project_id]
     return repos[:1] if repos else []
 
 
-def _categorize_analyses(analyses: list) -> tuple[list, list, list]:
+def _categorize_analyses(analyses: list[WorktreeAnalysis]) -> tuple[list[str], list[str], list[str]]:
     """Return (needs_merge_tasks, conflict_tasks, review_tasks) from analyses."""
     needs_merge = [
         a.worktree.task_id for a in analyses
@@ -107,125 +106,61 @@ def _categorize_analyses(analyses: list) -> tuple[list, list, list]:
     return needs_merge, conflicts, review
 
 
-def _build_repo_cleanup_entry(repo_path: Path) -> dict[str, Any]:
+def _build_repo_cleanup_entry(repo_path: Path) -> RepoEntry:
     """Build cleanup counters for one managed repository."""
     project_id = repo_path.name
-    workspace_summary = build_repo_workspace_summary(repo_path)
+    ws = build_repo_workspace_summary(repo_path)
     active_worktrees = get_active_worktrees(project_id)
     client = STClient(require_project=False)
-    analyses = [analyze_worktree(worktree, client) for worktree in active_worktrees]
+    analyses = [analyze_worktree(wt, client) for wt in active_worktrees]
     dirty_worktrees = sum(1 for wt in active_worktrees if has_uncommitted_changes(wt.path))
     needs_merge_tasks, conflict_tasks, review_tasks = _categorize_analyses(analyses)
     needs_cleanup = any((
-        dirty_worktrees, workspace_summary.orphan_branches, workspace_summary.prunable_branches,
+        dirty_worktrees, ws.orphan_branches, ws.prunable_branches,
         needs_merge_tasks, conflict_tasks, review_tasks,
     ))
-    return {
-        "project_id": project_id,
-        "path": str(repo_path),
-        "active_worktrees": workspace_summary.active_worktrees,
-        "dirty_worktrees": dirty_worktrees,
-        "orphan_task_branches": workspace_summary.orphan_branches,
-        "prunable_task_branches": workspace_summary.prunable_branches,
-        "worktree_task_ids": workspace_summary.worktree_task_ids,
-        "orphan_branch_names": workspace_summary.orphan_branch_names,
-        "prunable_branch_names": workspace_summary.prunable_branch_names,
-        "salvage_task_ids": workspace_summary.salvage_task_ids,
-        "review_orphan_task_ids": workspace_summary.review_orphan_task_ids,
-        "needs_merge_count": len(needs_merge_tasks),
-        "conflict_count": len(conflict_tasks),
-        "review_count": len(review_tasks),
-        "needs_merge_tasks": needs_merge_tasks[:3],
-        "conflict_tasks": conflict_tasks[:3],
-        "review_tasks": review_tasks[:3],
-        "needs_cleanup": needs_cleanup,
-    }
+    return RepoEntry(
+        project_id=project_id, path=str(repo_path),
+        active_worktrees=ws.active_worktrees, dirty_worktrees=dirty_worktrees,
+        orphan_task_branches=ws.orphan_branches, prunable_task_branches=ws.prunable_branches,
+        worktree_task_ids=ws.worktree_task_ids, orphan_branch_names=ws.orphan_branch_names,
+        prunable_branch_names=ws.prunable_branch_names, salvage_task_ids=ws.salvage_task_ids,
+        review_orphan_task_ids=ws.review_orphan_task_ids,
+        needs_merge_count=len(needs_merge_tasks), conflict_count=len(conflict_tasks),
+        review_count=len(review_tasks), needs_merge_tasks=needs_merge_tasks[:3],
+        conflict_tasks=conflict_tasks[:3], review_tasks=review_tasks[:3],
+        needs_cleanup=needs_cleanup,
+    )
 
 
-def build_cleanup_status_payload(all_projects: bool) -> dict[str, Any]:
+def build_cleanup_status_payload(all_projects: bool) -> dict[str, object]:
     """Build the canonical cross-repo cleanup summary payload."""
     project_id = get_project_id(all_projects)
     worktrees = get_active_worktrees(project_id)
-    repositories = [_build_repo_cleanup_entry(repo_path) for repo_path in _iter_target_repos(all_projects)]
-
-    summary = {
+    repositories = [_build_repo_cleanup_entry(p) for p in _iter_target_repos(all_projects)]
+    summary: dict[str, int] = {
         "repos": len(repositories),
-        "repos_needing_cleanup": sum(1 for repo in repositories if repo["needs_cleanup"]),
-        "active_worktrees": sum(repo["active_worktrees"] for repo in repositories),
-        "dirty_worktrees": sum(repo["dirty_worktrees"] for repo in repositories),
-        "orphan_task_branches": sum(repo["orphan_task_branches"] for repo in repositories),
-        "prunable_task_branches": sum(repo["prunable_task_branches"] for repo in repositories),
+        "repos_needing_cleanup": sum(1 for r in repositories if r["needs_cleanup"]),
+        "active_worktrees": sum(r["active_worktrees"] for r in repositories),
+        "dirty_worktrees": sum(r["dirty_worktrees"] for r in repositories),
+        "orphan_task_branches": sum(r["orphan_task_branches"] for r in repositories),
+        "prunable_task_branches": sum(r["prunable_task_branches"] for r in repositories),
     }
-
     return {
         "summary": summary,
         "repositories": repositories,
         "worktrees": [
-            {
-                "task_id": wt.task_id,
-                "path": str(wt.path),
-                "branch": wt.branch,
-                "base_branch": wt.base_branch,
-                "project_id": wt.project_id,
-            }
+            {"task_id": wt.task_id, "path": str(wt.path), "branch": wt.branch,
+             "base_branch": wt.base_branch, "project_id": wt.project_id}
             for wt in worktrees
         ],
         "total": len(worktrees),
     }
 
 
-def _print_repo_compact(repo: dict[str, Any]) -> None:
-    """Print compact status line for one repo entry."""
-    if not repo["needs_cleanup"] and not repo["active_worktrees"]:
-        print(f"{repo['project_id']} clean")
-        return
-    preview = f" tasks:{','.join(repo['worktree_task_ids'])}" if repo["worktree_task_ids"] else ""
-    attention_parts: list[str] = []
-    if repo["needs_merge_tasks"]:
-        attention_parts.append(f"finalize:{','.join(repo['needs_merge_tasks'])}")
-    if repo["conflict_tasks"]:
-        attention_parts.append(f"conflicts:{','.join(repo['conflict_tasks'])}")
-    if repo["review_tasks"]:
-        attention_parts.append(f"review:{','.join(repo['review_tasks'])}")
-    if repo["salvage_task_ids"]:
-        attention_parts.append(f"salvage:{','.join(repo['salvage_task_ids'])}")
-    if repo["review_orphan_task_ids"]:
-        attention_parts.append(f"review_orphans:{','.join(repo['review_orphan_task_ids'])}")
-    attention = f" {' '.join(attention_parts)}" if attention_parts else ""
-    branch_parts: list[str] = []
-    if repo["prunable_branch_names"]:
-        branch_parts.append(f"prune_branches:{','.join(repo['prunable_branch_names'])}")
-    if repo["orphan_branch_names"]:
-        branch_parts.append(f"orphan_branches:{','.join(repo['orphan_branch_names'])}")
-    branch_preview = f" {' '.join(branch_parts)}" if branch_parts else ""
-    print(
-        f"{repo['project_id']} worktrees:{repo['active_worktrees']} "
-        f"dirty:{repo['dirty_worktrees']} orphan:{repo['orphan_task_branches']} "
-        f"prunable:{repo['prunable_task_branches']}{preview}{attention}{branch_preview}"
-    )
-
-
-def format_cleanup_status_compact(data: dict[str, Any], all_projects: bool) -> None:
-    """Emit TOON summary for cleanup status."""
-    summary = data["summary"]
-    scope = "all" if all_projects else "current"
-    print(
-        "CLEANUP[{scope}]:repos={repos} needs_cleanup={needs} worktrees={worktrees} "
-        "dirty={dirty} orphan={orphan} prunable={prunable}".format(
-            scope=scope,
-            repos=summary["repos"],
-            needs=summary["repos_needing_cleanup"],
-            worktrees=summary["active_worktrees"],
-            dirty=summary["dirty_worktrees"],
-            orphan=summary["orphan_task_branches"],
-            prunable=summary["prunable_task_branches"],
-        )
-    )
-    for repo in data["repositories"]:
-        _print_repo_compact(repo)
-
-
-def _analyze_and_display(worktrees: list, client: STClient, stale_days: int) -> tuple:
+def _analyze_and_display(
+    worktrees: list, client: STClient, stale_days: int
+) -> tuple[list[WorktreeAnalysis], object]:
     """Analyze worktrees, print summary, and return (analyses, categorization)."""
     analyses = [analyze_worktree(wt, client) for wt in worktrees]
     categorization = categorize_worktrees(analyses, stale_days)
@@ -235,46 +170,18 @@ def _analyze_and_display(worktrees: list, client: STClient, stale_days: int) -> 
     return analyses, categorization
 
 
-def _run_cleanup(analyses: list, categorization, force: bool, dry_run: bool) -> None:
-    """Execute cleanup and print results."""
-    typer.echo("")
-    if dry_run:
-        typer.echo(_DRY_RUN_MSG)
-    targets = analyses if force else categorization.safe_to_delete
-    results = execute_cleanup(targets, force=force, dry_run=dry_run)
-    print_cleanup_results(results, dry_run)
-
-
 def _cleanup_safe_git_residue(repos: list[Path], dry_run: bool) -> tuple[int, int, int, int]:
     """Prune stale worktree registrations and safe orphan task branches."""
     if dry_run:
         return (0, 0, 0, 0)
-
-    pruned_worktree_registrations = 0
-    pruned_task_branches = 0
-    pruned_equivalent_task_branches = 0
-    pruned_closed_task_branches = 0
+    pruned_regs = pruned_branches = pruned_equiv = pruned_closed = 0
     for repo_path in repos:
         prune_worktree_registrations(repo_path)
-        pruned_worktree_registrations += 1
-        pruned_task_branches += len(prune_prunable_task_branches(repo_path))
-        pruned_equivalent_task_branches += len(prune_equivalent_orphan_task_branches(repo_path))
-        pruned_closed_task_branches += len(prune_closed_orphan_task_branches(repo_path))
-
-    return (
-        pruned_worktree_registrations,
-        pruned_task_branches,
-        pruned_equivalent_task_branches,
-        pruned_closed_task_branches,
-    )
-
-
-def _get_orphan_assessment(repo_path: Path, task_id: str) -> Any | None:
-    """Return orphan assessment for task_id in repo_path, if any."""
-    for item in assess_orphan_task_branches(repo_path):
-        if item.task_id == task_id:
-            return item
-    return None
+        pruned_regs += 1
+        pruned_branches += len(prune_prunable_task_branches(repo_path))
+        pruned_equiv += len(prune_equivalent_orphan_task_branches(repo_path))
+        pruned_closed += len(prune_closed_orphan_task_branches(repo_path))
+    return pruned_regs, pruned_branches, pruned_equiv, pruned_closed
 
 
 def _get_branch_subject(repo_path: Path, branch_name: str) -> str | None:
@@ -282,8 +189,7 @@ def _get_branch_subject(repo_path: Path, branch_name: str) -> str | None:
     result = run_git(["log", "-1", "--format=%s", branch_name], repo_path)
     if result.returncode != 0:
         return None
-    subject = result.stdout.strip()
-    return subject or None
+    return result.stdout.strip() or None
 
 
 def _build_salvage_description(task_id: str, branch_name: str, repo_path: Path) -> str:
@@ -304,29 +210,17 @@ def cleanup_worktrees(
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Show what would be cleaned up without doing it")] = False,
     all_projects: Annotated[bool, typer.Option("--all", help="Scan all projects (default: current project only)")] = False,
 ) -> None:
-    """List orphaned/stale worktrees with cleanup recommendations.
-
-    Actions: SAFE, MERGED, NEEDS_MERGE, CONFLICT, REVIEW, ACTIVE.
-    Examples: --auto (safe cases), --force (all), --stale-days N, --dry-run.
-    """
+    """List orphaned/stale worktrees with recommendations. Actions: SAFE, MERGED, NEEDS_MERGE, CONFLICT, REVIEW, ACTIVE."""
     project_id = get_project_id(all_projects)
     worktrees = get_active_worktrees(project_id)
 
     if not worktrees:
-        if auto:
-            pruned_worktree_registrations, pruned_task_branches, pruned_equivalent_task_branches, pruned_closed_task_branches = _cleanup_safe_git_residue(
-                _iter_target_repos(all_projects),
-                dry_run=dry_run,
-            )
-            if dry_run:
-                typer.echo(_DRY_RUN_MSG)
-            output_success("No worktrees found")
-            typer.echo(f"  Pruned git worktree registrations in {pruned_worktree_registrations} repo(s)")
-            typer.echo(f"  Pruned merged orphan task branches: {pruned_task_branches}")
-            typer.echo(f"  Pruned equivalent orphan task branches: {pruned_equivalent_task_branches}")
-            typer.echo(f"  Pruned closed orphan task branches: {pruned_closed_task_branches}")
-            return
+        counts = _cleanup_safe_git_residue(_iter_target_repos(all_projects), dry_run) if auto else (0, 0, 0, 0)
+        if auto and dry_run:
+            typer.echo(_DRY_RUN_MSG)
         output_success("No worktrees found")
+        if auto:
+            print_git_residue_report(*counts)
         return
 
     typer.echo(f"Analyzing {len(worktrees)} worktree(s)...")
@@ -342,16 +236,15 @@ def cleanup_worktrees(
         typer.echo(_ABORTED_MSG)
         return
 
-    _run_cleanup(analyses, categorization, force=force, dry_run=dry_run)
-    pruned_worktree_registrations, pruned_task_branches, pruned_equivalent_task_branches, pruned_closed_task_branches = _cleanup_safe_git_residue(
-        _iter_target_repos(all_projects),
-        dry_run=dry_run,
-    )
+    typer.echo("")
+    if dry_run:
+        typer.echo(_DRY_RUN_MSG)
+    targets = analyses if force else categorization.safe_to_delete
+    results = execute_cleanup(targets, force=force, dry_run=dry_run)
+    print_cleanup_results(results, dry_run)
+    counts = _cleanup_safe_git_residue(_iter_target_repos(all_projects), dry_run)
     if auto and not dry_run:
-        typer.echo(f"  Pruned git worktree registrations in {pruned_worktree_registrations} repo(s)")
-        typer.echo(f"  Pruned merged orphan task branches: {pruned_task_branches}")
-        typer.echo(f"  Pruned equivalent orphan task branches: {pruned_equivalent_task_branches}")
-        typer.echo(f"  Pruned closed orphan task branches: {pruned_closed_task_branches}")
+        print_git_residue_report(*counts)
 
 
 @app.command("inspect-orphans")
@@ -360,8 +253,7 @@ def inspect_orphans(
 ) -> None:
     """Inspect unresolved orphan task branches that need salvage or review."""
     lines: list[str] = []
-    salvage_count = 0
-    review_count = 0
+    salvage_count = review_count = 0
     for repo_path in _iter_target_repos(all_projects):
         for item in assess_orphan_task_branches(repo_path):
             if item.resolution == "salvage":
@@ -373,16 +265,25 @@ def inspect_orphans(
                 flags.append("task_missing")
             if item.has_node_modules_artifact:
                 flags.append("node_modules_artifact")
-            flag_text = ",".join(flags) if flags else "-"
             lines.append(
                 f"{repo_path.name} {item.task_id} branch:{item.branch_name} "
                 f"resolution:{item.resolution} task:{item.task_status or 'missing'} "
-                f"ahead:{item.commits_ahead} files:{item.files_changed} flags:{flag_text}"
+                f"ahead:{item.commits_ahead} files:{item.files_changed} "
+                f"flags:{','.join(flags) if flags else '-'}"
             )
     scope = "all" if all_projects else "current"
     typer.echo(f"ORPHAN-REVIEW[{scope}]:total={len(lines)} salvage={salvage_count} review={review_count}")
     for line in lines:
         typer.echo(line)
+
+
+def _find_orphan_match(repos: list[Path], task_id: str) -> tuple[Path, object] | None:
+    """Search repos for orphan assessment matching task_id."""
+    for repo_path in repos:
+        for item in assess_orphan_task_branches(repo_path):
+            if item.task_id == task_id:
+                return (repo_path, item)
+    return None
 
 
 @app.command("salvage")
@@ -394,14 +295,7 @@ def salvage_orphan(
     ] = False,
 ) -> None:
     """Recover a missing-task orphan branch into a normal task lane."""
-    repos = _iter_target_repos(all_projects)
-    match: tuple[Path, Any] | None = None
-    for repo_path in repos:
-        item = _get_orphan_assessment(repo_path, task_id)
-        if item is not None:
-            match = (repo_path, item)
-            break
-
+    match = _find_orphan_match(_iter_target_repos(all_projects), task_id)
     if match is None:
         output_error(
             f"No unresolved orphan branch found for {task_id}. "
@@ -410,24 +304,16 @@ def salvage_orphan(
         raise typer.Exit(1)
 
     repo_path, item = match
-    if item.resolution != "salvage" or item.task_status is not None:
-        output_error(
-            f"{task_id} is not a missing-task salvage candidate. "
-            "This command only restores orphan branches whose task record is gone."
-        )
+    if not validate_salvage_candidate(item, task_id):
         raise typer.Exit(1)
 
     title = _get_branch_subject(repo_path, item.branch_name) or f"Recover orphan branch {task_id}"
     description = _build_salvage_description(task_id, item.branch_name, repo_path)
     created = task_store.create_task(
-        project_id=repo_path.name,
-        title=title,
-        description=description,
-        task_id=task_id,
-        labels=["cleanup:salvaged"],
+        project_id=repo_path.name, title=title, description=description,
+        task_id=task_id, labels=["cleanup:salvaged"],
     )
     task_store.update_task(task_id, branch_name=item.branch_name)
-
     try:
         worktree = create_worktree(task_id, project_id=repo_path.name)
     except Exception as exc:
@@ -457,26 +343,19 @@ def cleanup_status(
 ) -> None:
     """Show summary of worktrees and their cleanup status."""
     result = build_cleanup_status_payload(all_projects)
-
     if ctx.obj.is_compact:
         format_cleanup_status_compact(result, all_projects)
     else:
         output_json(result)
-    if fail_on_residue and result["summary"]["repos_needing_cleanup"] > 0:
+    if fail_on_residue and result["summary"]["repos_needing_cleanup"] > 0:  # type: ignore[index]
         raise typer.Exit(2)
 
 
 @app.command("path")
 def cleanup_path(
     paths: Annotated[list[str], typer.Argument(help="Literal repo-relative path(s) to remove")],
-    recursive: Annotated[
-        bool,
-        typer.Option("--recursive", help="Allow directory deletion"),
-    ] = False,
-    dry_run: Annotated[
-        bool,
-        typer.Option("--dry-run", help="Show what would be deleted without deleting it"),
-    ] = False,
+    recursive: Annotated[bool, typer.Option("--recursive", help="Allow directory deletion")] = False,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Show what would be deleted without deleting it")] = False,
 ) -> None:
     """Safely remove repo-local paths with guardrails."""
     cleanup_paths_command(paths, recursive=recursive, dry_run=dry_run)
