@@ -37,9 +37,9 @@ HEADER_REQUEST_SOURCE = "X-Request-Source"
 HEADER_SOURCE_CLIENT = "X-Source-Client"
 HEADER_SOURCE_PATH = "X-Source-Path"
 
-ENDPOINT_UPSERT = "/session-ingestion/sessions/upsert"
+ENDPOINT_UPSERT = "/session-ingestion/sessions/upsert?include_session=false"
 ENDPOINT_TRANSCRIPT = "/session-ingestion/sessions/{sid}/transcript-events"
-ENDPOINT_HEARTBEAT = "/sessions/{sid}/heartbeat"
+ENDPOINT_HEARTBEAT = "/session-ingestion/sessions/{sid}/heartbeat?include_session=false"
 ENDPOINT_FINALIZE = "/session-ingestion/sessions/{sid}/finalize"
 ENDPOINT_CLOSE = "/sessions/{sid}/close"
 

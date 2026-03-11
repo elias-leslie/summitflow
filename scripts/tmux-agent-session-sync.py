@@ -160,7 +160,7 @@ def main() -> int:
             },
         }
         _api_request(
-            f"{AGENT_HUB_API}/session-ingestion/sessions/upsert",
+            f"{AGENT_HUB_API}/session-ingestion/sessions/upsert?include_session=false",
             method="POST",
             body=upsert_body,
             client_id=client_id,
@@ -186,7 +186,7 @@ def main() -> int:
             },
         }
         _api_request(
-            f"{AGENT_HUB_API}/sessions/{session_id}/heartbeat",
+            f"{AGENT_HUB_API}/session-ingestion/sessions/{session_id}/heartbeat?include_session=false",
             method="POST",
             body=heartbeat_body,
             client_id=client_id,

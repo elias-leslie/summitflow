@@ -60,6 +60,28 @@ def _find_venv_python(root: Path) -> Path | None:
     return venv_python if venv_python.exists() else None
 
 
+def _venv_root(executable: str | Path) -> Path | None:
+    """Return the virtualenv root for a Python shim path, if recognizable."""
+    path = Path(executable).expanduser()
+    if path.parent.name != "bin":
+        return None
+    return path.parent.parent
+
+
+def _same_venv(current_executable: str | Path, target_executable: Path) -> bool:
+    """Return True when both interpreter paths belong to the same virtualenv."""
+    current_path = Path(current_executable).expanduser()
+    target_path = target_executable.expanduser()
+    if current_path == target_path:
+        return True
+
+    current_root = _venv_root(current_path)
+    target_root = _venv_root(target_path)
+    if current_root is None or target_root is None:
+        return False
+    return current_root == target_root
+
+
 def _activate() -> None:
     root = _repo_root()
     if root is None:
@@ -76,7 +98,7 @@ def _activate() -> None:
             venv_python = _find_venv_python(main_root)
 
     # Re-exec into the venv interpreter if we are running under a different one.
-    if venv_python is not None and Path(sys.executable).resolve() != venv_python.resolve():
+    if venv_python is not None and not _same_venv(sys.executable, venv_python):
         os.execv(str(venv_python), [str(venv_python), *sys.argv])
 
     # Make ``from app.…`` imports work.

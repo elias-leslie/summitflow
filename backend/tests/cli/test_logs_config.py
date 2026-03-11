@@ -1,6 +1,11 @@
 import pytest
 
-from cli.commands.logs_config import SYSTEM_SERVICES, USER_SERVICES, get_service_list, validate_since
+from cli.commands.logs_config import (
+    SYSTEM_SERVICES,
+    USER_SERVICES,
+    get_service_list,
+    validate_since,
+)
 
 
 def test_get_service_list_includes_portfolio_ai_user_service() -> None:

@@ -21,7 +21,7 @@ from pathlib import Path
 
 # Auto-detect and re-exec into the backend venv if needed
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
-import lib.ensure_backend_venv  # noqa: E402, F401
+import lib.ensure_backend_venv  # noqa: F401
 
 from app.storage.connection import get_connection
 
