@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { fetchBlockedTasks, updateTaskStatus, type Task } from '@/lib/api'
 import { taskQueryKeys } from '@/lib/task-cache'
 import { useTaskMutationSync } from '@/lib/task-mutation-sync'
+import { getErrorMessage } from '@/lib/utils'
 
 interface BlockedTasksAlertProps {
   projectId: string
@@ -28,11 +29,36 @@ export function BlockedTasksAlert({
 }: BlockedTasksAlertProps) {
   const { syncUpdatedTask } = useTaskMutationSync(projectId)
   const [retryingTaskId, setRetryingTaskId] = useState<string | null>(null)
-  const { data, refetch } = useQuery({
+  const { data, refetch, isLoading, isError, error } = useQuery({
     queryKey: taskQueryKeys.blocked(projectId),
     queryFn: () => fetchBlockedTasks(projectId, 20),
     staleTime: 30000,
   })
+
+  if (isLoading) {
+    return (
+      <div className="card border-orange-500/20 bg-orange-950/5 px-4 py-3 text-sm text-slate-400">
+        Loading blocked tasks...
+      </div>
+    )
+  }
+
+  if (isError) {
+    return (
+      <div className="card border-rose-500/30 bg-rose-950/10 px-4 py-3">
+        <div className="text-sm font-medium text-rose-300">Blocked task status unavailable</div>
+        <div className="mt-1 text-xs text-slate-400">
+          {getErrorMessage(error, 'Failed to load blocked tasks')}
+        </div>
+        <button
+          onClick={() => refetch()}
+          className="mt-2 text-xs text-rose-300 hover:text-rose-200"
+        >
+          Retry
+        </button>
+      </div>
+    )
+  }
 
   const tasks = data?.tasks ?? []
   if (tasks.length === 0) return null
@@ -50,8 +76,8 @@ export function BlockedTasksAlert({
       syncUpdatedTask(updated)
       refetch()
       toast.success('Task re-queued')
-    } catch {
-      toast.error('Failed to re-queue task')
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Failed to re-queue task'))
     } finally {
       setRetryingTaskId(null)
     }
@@ -71,15 +97,29 @@ export function BlockedTasksAlert({
             key={task.id}
             className="px-4 py-2.5 flex items-center gap-3 hover:bg-slate-800/30 cursor-pointer"
             onClick={() => onTaskClick?.(task.id)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                onTaskClick?.(task.id)
+              }
+            }}
+            role="button"
+            tabIndex={0}
           >
             <div className="flex-1 min-w-0">
               <div className="text-sm text-white truncate">{task.title}</div>
-              <div className="text-xs text-slate-500 truncate">
+              <div
+                className="text-xs text-slate-500 truncate"
+                title={task.error_message ?? 'Blocked'}
+              >
                 {task.error_message?.slice(0, 80) || 'Blocked'}
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              <span className="text-[10px] text-slate-500 flex items-center gap-1">
+              <span
+                className="text-[10px] text-slate-500 flex items-center gap-1"
+                title={task.created_at ?? undefined}
+              >
                 <Clock className="w-3 h-3" />
                 {timeAgo(task.created_at)}
               </span>
@@ -91,6 +131,7 @@ export function BlockedTasksAlert({
                 disabled={retryingTaskId === task.id}
                 className="p-1 rounded text-slate-500 hover:text-phosphor-400 hover:bg-slate-800 transition-colors"
                 title="Re-queue task"
+                aria-label={`Re-queue ${task.title}`}
               >
                 <Play className="w-3 h-3" />
               </button>

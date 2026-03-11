@@ -18,6 +18,8 @@ import {
   type ActivityEventType,
   fetchActivity,
 } from '@/lib/api/activity'
+import { formatDate } from '@/lib/format'
+import { getErrorMessage } from '@/lib/utils'
 
 const eventConfig: Record<
   ActivityEventType,
@@ -45,11 +47,10 @@ const eventConfig: Record<
   },
 }
 
-function formatRelativeTime(timestamp: string | null): string {
+function formatRelativeTime(timestamp: string | null, nowMs: number): string {
   if (!timestamp) return ''
   const date = new Date(timestamp)
-  const now = new Date()
-  const diffMs = now.getTime() - date.getTime()
+  const diffMs = nowMs - date.getTime()
   const diffSec = Math.floor(diffMs / 1000)
   const diffMin = Math.floor(diffSec / 60)
   const diffHr = Math.floor(diffMin / 60)
@@ -64,12 +65,14 @@ function formatRelativeTime(timestamp: string | null): string {
 
 interface ActivityRowProps {
   items: ActivityEvent[]
+  nowMs: number
 }
 
 function ActivityRow({
   index,
   style,
   items,
+  nowMs,
 }: RowComponentProps<ActivityRowProps>): ReactElement | null {
   const event = items[index]
   if (!event) return null
@@ -83,6 +86,7 @@ function ActivityRow({
       style={style}
       className="px-4 flex items-center gap-3 hover:bg-slate-800/30 transition-colors border-b border-slate-800/50"
       data-testid={`activity-item-${event.type}`}
+      title={event.timestamp ? formatDate(event.timestamp) : undefined}
     >
       <div
         className={clsx(
@@ -99,6 +103,9 @@ function ActivityRow({
       <div className="flex-1 min-w-0">
         <p className="text-sm text-slate-300 truncate">{event.message}</p>
         <p className="text-xs text-slate-500 mt-0.5">
+          <span className="mr-2 uppercase tracking-wide text-slate-600">
+            {config.label}
+          </span>
           <span className="font-mono">{event.project_id}</span>
           {event.metadata.status && (
             <span
@@ -117,7 +124,7 @@ function ActivityRow({
         </p>
       </div>
       <span className="text-xs text-slate-500 font-mono flex-shrink-0">
-        {formatRelativeTime(event.timestamp)}
+        {formatRelativeTime(event.timestamp, nowMs)}
       </span>
     </div>
   )
@@ -144,6 +151,7 @@ export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedP
   const containerRef = useRef<HTMLDivElement>(null)
   const [listHeight, setListHeight] = useState(400)
   const [typeFilter, setTypeFilter] = useState<ActivityEventType | 'all'>(defaultFilter)
+  const [now, setNow] = useState(() => Date.now())
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['activity-feed', typeFilter],
@@ -170,43 +178,16 @@ export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedP
     return () => window.removeEventListener('resize', updateHeight)
   }, [])
 
-  if (isLoading) {
-    return (
-      <div className={clsx('card p-8 text-center', className)}>
-        <Loader2 className="w-8 h-8 text-slate-500 mx-auto animate-spin" />
-        <p className="text-sm text-slate-500 mt-3">Loading activity...</p>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className={clsx('card p-8 text-center', className)}>
-        <XCircle className="w-10 h-10 text-red-400 mx-auto mb-3" />
-        <p className="text-sm text-red-400">Failed to load activity</p>
-        <button
-          onClick={() => refetch()}
-          className="mt-3 text-xs text-slate-400 hover:text-slate-200"
-        >
-          Try again
-        </button>
-      </div>
-    )
-  }
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setNow(Date.now()), 60000)
+    return () => window.clearInterval(intervalId)
+  }, [])
 
   const items = data?.items ?? []
-
-  if (items.length === 0) {
-    return (
-      <div className={clsx('card p-8 text-center', className)}>
-        <Activity className="w-10 h-10 text-slate-600 mx-auto mb-3" />
-        <p className="text-sm text-slate-500">No recent activity</p>
-        <p className="text-xs text-slate-600 mt-1">
-          Activity will appear here as you use SummitFlow
-        </p>
-      </div>
-    )
-  }
+  const emptyLabel =
+    typeFilter === 'all'
+      ? 'No recent activity'
+      : `No recent ${TYPE_FILTERS.find((filter) => filter.value === typeFilter)?.label.toLowerCase()} activity`
 
   return (
     <div
@@ -221,6 +202,7 @@ export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedP
             <button
               key={f.value}
               onClick={() => setTypeFilter(f.value)}
+              aria-pressed={typeFilter === f.value}
               className={clsx(
                 'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs transition-colors',
                 typeFilter === f.value
@@ -234,19 +216,52 @@ export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedP
           )
         })}
       </div>
-      <List
-        rowComponent={ActivityRow}
-        rowCount={items.length}
-        rowHeight={64}
-        rowProps={{ items }}
-        style={{ height: listHeight }}
-      />
-      {data?.has_more && (
-        <div className="p-3 text-center border-t border-slate-800">
-          <p className="text-xs text-slate-500">
-            Showing {items.length} of {data.total} events
+      {isLoading ? (
+        <div className="p-8 text-center">
+          <Loader2 className="w-8 h-8 text-slate-500 mx-auto animate-spin" />
+          <p className="text-sm text-slate-500 mt-3">Loading activity...</p>
+        </div>
+      ) : error ? (
+        <div className="p-8 text-center">
+          <XCircle className="w-10 h-10 text-red-400 mx-auto mb-3" />
+          <p className="text-sm text-red-400">Failed to load activity</p>
+          <p className="mt-1 text-xs text-slate-500">
+            {getErrorMessage(error, 'Activity feed is temporarily unavailable')}
+          </p>
+          <button
+            onClick={() => refetch()}
+            className="mt-3 text-xs text-slate-400 hover:text-slate-200"
+          >
+            Try again
+          </button>
+        </div>
+      ) : items.length === 0 ? (
+        <div className="p-8 text-center">
+          <Activity className="w-10 h-10 text-slate-600 mx-auto mb-3" />
+          <p className="text-sm text-slate-500">{emptyLabel}</p>
+          <p className="text-xs text-slate-600 mt-1">
+            {typeFilter === 'all'
+              ? 'Activity will appear here as you use SummitFlow'
+              : 'Try another filter to inspect a different activity stream'}
           </p>
         </div>
+      ) : (
+        <>
+          <List
+            rowComponent={ActivityRow}
+            rowCount={items.length}
+            rowHeight={64}
+            rowProps={{ items, nowMs: now }}
+            style={{ height: listHeight }}
+          />
+          {data?.has_more && (
+            <div className="p-3 text-center border-t border-slate-800">
+              <p className="text-xs text-slate-500">
+                Showing {items.length} of {data.total} events
+              </p>
+            </div>
+          )}
+        </>
       )}
     </div>
   )

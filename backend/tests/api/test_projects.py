@@ -14,7 +14,9 @@ def test_list_projects_with_stats_returns_feature_task_bug_counts(client) -> Non
         "feature_active": f"{project_id}-feature-active",
         "feature_done": f"{project_id}-feature-done",
         "task_active": f"{project_id}-task-active",
+        "task_cancelled": f"{project_id}-task-cancelled",
         "bug_active": f"{project_id}-bug-active",
+        "bug_abandoned": f"{project_id}-bug-abandoned",
     }
 
     with get_connection() as conn, conn.cursor() as cur:
@@ -29,6 +31,8 @@ def test_list_projects_with_stats_returns_feature_task_bug_counts(client) -> Non
             """
             INSERT INTO tasks (id, project_id, title, status, task_type)
             VALUES
+              (%s, %s, %s, %s, %s),
+              (%s, %s, %s, %s, %s),
               (%s, %s, %s, %s, %s),
               (%s, %s, %s, %s, %s),
               (%s, %s, %s, %s, %s),
@@ -50,10 +54,20 @@ def test_list_projects_with_stats_returns_feature_task_bug_counts(client) -> Non
                 "Active task",
                 "pending",
                 "task",
+                task_ids["task_cancelled"],
+                project_id,
+                "Cancelled task",
+                "cancelled",
+                "task",
                 task_ids["bug_active"],
                 project_id,
                 "Active bug",
                 "pending",
+                "bug",
+                task_ids["bug_abandoned"],
+                project_id,
+                "Abandoned bug",
+                "abandoned",
                 "bug",
             ),
         )

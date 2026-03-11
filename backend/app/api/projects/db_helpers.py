@@ -46,7 +46,7 @@ def _fetch_active_type_counts(
         FROM tasks
         WHERE project_id = ANY(%s)
           AND task_type = %s
-          AND status NOT IN ('completed', 'failed')
+          AND status NOT IN ('completed', 'failed', 'cancelled', 'abandoned')
         GROUP BY project_id
         """,
         (project_ids, task_type),
@@ -72,7 +72,7 @@ def _fetch_bug_counts(cur: object, project_ids: list[str]) -> dict[str, int]:
         FROM tasks
         WHERE project_id = ANY(%s)
           AND task_type = 'bug'
-          AND status NOT IN ('completed', 'failed')
+          AND status NOT IN ('completed', 'failed', 'cancelled', 'abandoned')
         GROUP BY project_id
         """,
         (project_ids,),
@@ -89,9 +89,9 @@ def _fetch_blocked_counts(cur: object, project_ids: list[str]) -> dict[str, int]
         INNER JOIN task_dependencies td ON t.id = td.task_id
         INNER JOIN tasks dep ON td.depends_on_task_id = dep.id
         WHERE t.project_id = ANY(%s)
-          AND t.status NOT IN ('completed', 'failed')
+          AND t.status NOT IN ('completed', 'failed', 'cancelled', 'abandoned')
           AND td.dependency_type = 'blocks'
-          AND dep.status NOT IN ('completed', 'failed')
+          AND dep.status NOT IN ('completed', 'failed', 'cancelled', 'abandoned')
         GROUP BY t.project_id
         """,
         (project_ids,),
