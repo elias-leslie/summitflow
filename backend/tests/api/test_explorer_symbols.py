@@ -31,7 +31,8 @@ router = APIRouter(prefix="/files")
 @router.get("/tree")
 def get_file_tree(path: str) -> dict[str, str]:
     """List directory entries for file tree navigation."""
-    return {"path": path}
+    marker = "special fallback token"
+    return {"path": path, "marker": marker}
 ''',
         encoding="utf-8",
     )
@@ -133,6 +134,67 @@ class TestExplorerSymbolSearchEndpoint:
         assert data["items"][0]["name"] == "FilesClient"
         assert data["items"][0]["language"] == "tsx"
         assert data["items"][0]["kind"] == "function"
+
+    def test_precision_search_returns_prompt_context_and_metadata(
+        self,
+        client: TestClient,
+        symbol_api_project: str,
+    ) -> None:
+        """Precision search should return prompt-ready context plus telemetry."""
+        response = client.get(
+            f"/api/projects/{symbol_api_project}/explorer/precision-search",
+            params={"q": "get_file_tree", "budget": 1200},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["query"] == "get_file_tree"
+        assert "Precision Code Search: symbol-first" in data["prompt_context"]
+        assert "`get_file_tree`" in data["prompt_context"]
+        assert data["metadata"]["used_symbol_first"] is True
+        assert data["metadata"]["symbol_count"] >= 1
+
+    def test_search_text_returns_matching_lines(
+        self,
+        client: TestClient,
+        symbol_api_project: str,
+    ) -> None:
+        """Text search should return matching file lines from indexed files."""
+        response = client.get(
+            f"/api/projects/{symbol_api_project}/explorer/text/search",
+            params={"q": "special fallback token"},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["query"] == "special fallback token"
+        assert data["count"] == 1
+        assert data["files_searched"] >= 1
+        assert data["items"][0]["path"] == "backend/app/api/files.py"
+        assert data["items"][0]["line"] >= 1
+        assert "special fallback token" in data["items"][0]["content"]
+
+    def test_precision_search_uses_text_fallback_on_symbol_miss(
+        self,
+        client: TestClient,
+        symbol_api_project: str,
+    ) -> None:
+        """Precision search should use text fallback when symbol search misses."""
+        response = client.get(
+            f"/api/projects/{symbol_api_project}/explorer/precision-search",
+            params={"q": "special fallback token", "budget": 1200},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["query"] == "special fallback token"
+        assert "Precision Code Search: text-fallback" in data["prompt_context"]
+        assert "## Relevant Text Matches" in data["prompt_context"]
+        assert "backend/app/api/files.py" in data["prompt_context"]
+        assert data["metadata"]["used_symbol_first"] is False
+        assert data["metadata"]["used_fallback"] is True
+        assert data["metadata"]["fallback_mode"] == "text"
+        assert data["metadata"]["text_match_count"] == 1
 
 
 class TestExplorerSymbolDetailEndpoint:

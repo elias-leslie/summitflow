@@ -31,7 +31,6 @@ def test_collect_precision_code_search_context_tracks_token_savings() -> None:
         patch(
             "app.services.context_gatherer.precision_code_search.list_related_entries_for_file"
         ) as mock_related,
-        patch("app.services.context_gatherer.precision_code_search.get_entries") as mock_entries,
         patch("app.services.context_gatherer.precision_code_search.get_symbol") as mock_get_symbol,
         patch(
             "app.services.context_gatherer.precision_code_search._estimate_naive_file_tokens_for_symbols",
@@ -63,11 +62,6 @@ def test_collect_precision_code_search_context_tracks_token_savings() -> None:
             "end_line": 9,
         }
         mock_read_symbol_source.return_value = "def get_file_tree(path: str) -> dict[str, str]: ..."
-        mock_entries.side_effect = [
-            [{"path": "backend/app/api/files.py", "name": "files.py"}],
-            [{"path": "GET /files/tree", "metadata": {"method": "GET"}}],
-            [{"name": "files"}],
-        ]
 
         result = collect_precision_code_search_context("project-1", ["get_file_tree"])
 
@@ -90,33 +84,32 @@ def test_collect_precision_code_search_context_skips_workflow_meta_queries() -> 
     assert result.metadata["skipped_reason"] == "workflow_meta_low_signal"
 
 
-def test_collect_precision_code_search_context_filters_fallback_entries_by_query_terms() -> None:
+def test_collect_precision_code_search_context_formats_text_fallback_matches() -> None:
     with (
         patch("app.services.context_gatherer.precision_code_search.search_symbols", return_value=[]),
-        patch("app.services.context_gatherer.precision_code_search.get_entries") as mock_entries,
+        patch(
+            "app.services.context_gatherer.precision_code_search.search_text",
+            return_value={
+                "items": [
+                    {
+                        "path": "backend/app/api/tasks.py",
+                        "line": 12,
+                        "content": 'router = APIRouter(tags=["tasks api"])',
+                        "language": "python",
+                    }
+                ],
+                "count": 1,
+                "files_searched": 2,
+                "truncated": False,
+            },
+        ),
     ):
-        mock_entries.side_effect = [
-            [
-                {"path": "backend/app/api/tasks.py", "name": "tasks.py"},
-                {"path": "frontend/components/home.tsx", "name": "home.tsx"},
-            ],
-            [
-                {"path": "/api/tasks", "name": "tasks", "metadata": {"method": "GET"}},
-                {"path": "/api/users", "name": "users", "metadata": {"method": "GET"}},
-            ],
-            [
-                {"name": "tasks"},
-                {"name": "users"},
-            ],
-        ]
-
         result = collect_precision_code_search_context("project-1", ["tasks api"])
 
     assert "backend/app/api/tasks.py" in result.prompt_context
-    assert "/api/tasks" in result.prompt_context
-    assert "- tasks" in result.prompt_context
-    assert "/api/users" not in result.prompt_context
-    assert "- users" not in result.prompt_context
+    assert "tasks api" in result.prompt_context
+    assert result.metadata["fallback_mode"] == "text"
+    assert result.metadata["text_match_count"] == 1
 
 
 def test_collect_precision_code_search_context_skips_fallback_fetch_on_symbol_hits() -> None:
@@ -159,13 +152,177 @@ def test_collect_precision_code_search_context_skips_fallback_fetch_on_symbol_hi
             "app.services.context_gatherer.precision_code_search._estimate_naive_file_tokens_for_symbols",
             return_value=2000,
         ),
-        patch("app.services.context_gatherer.precision_code_search.get_entries") as mock_entries,
+        patch("app.services.context_gatherer.precision_code_search.search_text") as mock_search_text,
     ):
         result = collect_precision_code_search_context("project-1", ["get_file_tree"])
 
-    mock_entries.assert_not_called()
+    mock_search_text.assert_not_called()
     assert result.metadata["used_symbol_first"]
     assert not result.metadata["used_fallback"]
+
+
+def test_collect_precision_code_search_context_uses_text_search_primitive_for_fallback() -> None:
+    with (
+        patch("app.services.context_gatherer.precision_code_search.search_symbols", return_value=[]),
+        patch(
+            "app.services.context_gatherer.precision_code_search.search_text",
+            return_value={
+                "items": [
+                    {
+                        "path": "backend/app/api/files.py",
+                        "line": 8,
+                        "content": '    marker = "special fallback token"',
+                        "language": "python",
+                    }
+                ],
+                "count": 1,
+                "files_searched": 4,
+                "truncated": False,
+            },
+        ) as mock_search_text,
+    ):
+        result = collect_precision_code_search_context("project-1", ["special fallback token"])
+
+    mock_search_text.assert_called_once_with("project-1", "special fallback token", limit=12)
+    assert result.metadata["used_symbol_first"] is False
+    assert result.metadata["used_fallback"] is True
+    assert result.metadata["fallback_mode"] == "text"
+    assert result.metadata["text_match_count"] == 1
+    assert "## Relevant Text Matches" in result.prompt_context
+    assert "backend/app/api/files.py:8" in result.prompt_context
+
+
+def test_collect_precision_code_search_context_ranks_multi_term_matches_by_coverage() -> None:
+    """Multi-term queries should not let early broad hits crowd out better later matches."""
+
+    def _search_side_effect(project_id: str, query: str, limit: int = 5) -> list[dict[str, object]]:
+        assert project_id == "project-1"
+        assert limit >= 5
+        if query == "quality health":
+            return []
+        if query == "quality":
+            return [
+                {
+                    "symbol_id": "backend/app/tasks/autonomous/exec_modules/quality_gates.py::auto_fix_quality#function",
+                    "qualified_name": "auto_fix_quality",
+                    "name": "auto_fix_quality",
+                    "kind": "function",
+                    "file_path": "backend/app/tasks/autonomous/exec_modules/quality_gates.py",
+                    "start_line": 112,
+                    "end_line": 141,
+                    "signature": "def auto_fix_quality(project_path: str, project_id: str) -> bool",
+                    "summary": "Run dt --fix to attempt auto-fixing quality issues.",
+                },
+                {
+                    "symbol_id": "frontend/components/health/NeedsAttentionCard.test.tsx::createMockQualityCheck#function",
+                    "qualified_name": "createMockQualityCheck",
+                    "name": "createMockQualityCheck",
+                    "kind": "function",
+                    "file_path": "frontend/components/health/NeedsAttentionCard.test.tsx",
+                    "start_line": 8,
+                    "end_line": 20,
+                    "signature": "function createMockQualityCheck(overrides: Partial<CheckResult> = {}): CheckResult",
+                    "summary": "Build a mock quality check result for frontend tests.",
+                },
+                {
+                    "symbol_id": "backend/app/tasks/autonomous/exec_modules/ah_events.py::emit_quality_gate_result#function",
+                    "qualified_name": "emit_quality_gate_result",
+                    "name": "emit_quality_gate_result",
+                    "kind": "function",
+                    "file_path": "backend/app/tasks/autonomous/exec_modules/ah_events.py",
+                    "start_line": 108,
+                    "end_line": 125,
+                    "signature": "def emit_quality_gate_result(task_id: str, passed: bool, detail: str = '') -> None",
+                    "summary": "Emit a quality gate pass or fail event.",
+                },
+                {
+                    "symbol_id": "frontend/lib/api/projects.ts::fetchQualityGateHealth#function",
+                    "qualified_name": "fetchQualityGateHealth",
+                    "name": "fetchQualityGateHealth",
+                    "kind": "function",
+                    "file_path": "frontend/lib/api/projects.ts",
+                    "start_line": 70,
+                    "end_line": 74,
+                    "signature": "export async function fetchQualityGateHealth(id: string): Promise<QualityGateHealth>",
+                    "summary": "Fetch quality gate health for a project.",
+                },
+                {
+                    "symbol_id": "backend/app/storage/agent_configs_quality.py::get_quality_gate_fix_enabled#function",
+                    "qualified_name": "get_quality_gate_fix_enabled",
+                    "name": "get_quality_gate_fix_enabled",
+                    "kind": "function",
+                    "file_path": "backend/app/storage/agent_configs_quality.py",
+                    "start_line": 40,
+                    "end_line": 50,
+                    "signature": "def get_quality_gate_fix_enabled(project_id: str) -> bool",
+                    "summary": "Check if auto-fix is enabled for quality gates.",
+                },
+            ]
+        if query == "health":
+            return [
+                {
+                    "symbol_id": "backend/app/api/quality_gate.py::get_health_summary#function",
+                    "qualified_name": "get_health_summary",
+                    "name": "get_health_summary",
+                    "kind": "function",
+                    "file_path": "backend/app/api/quality_gate.py",
+                    "start_line": 24,
+                    "end_line": 35,
+                    "signature": "async def get_health_summary(project_id: str) -> HealthSummaryResponse",
+                    "summary": "Get quality gate health summary for a project.",
+                }
+            ]
+        raise AssertionError(f"Unexpected query term: {query}")
+
+    with (
+        patch(
+            "app.services.context_gatherer.precision_code_search.search_symbols",
+            side_effect=_search_side_effect,
+        ),
+        patch(
+            "app.services.context_gatherer.precision_code_search.list_related_entries_for_file"
+        ) as mock_related,
+        patch("app.services.context_gatherer.precision_code_search.get_symbol") as mock_get_symbol,
+        patch(
+            "app.services.context_gatherer.precision_code_search._read_symbol_source",
+            return_value="async def get_health_summary(project_id: str) -> HealthSummaryResponse: ...",
+        ),
+        patch(
+            "app.services.context_gatherer.precision_code_search._estimate_naive_file_tokens_for_symbols",
+            return_value=3000,
+        ),
+    ):
+        mock_related.side_effect = lambda _project_id, file_path: (
+            [
+                {
+                    "entry_type": "endpoint",
+                    "path": "/projects/{project_id}/quality/health",
+                    "metadata": {"depends_on_tables": ["quality_check_results"]},
+                }
+            ]
+            if file_path == "backend/app/api/quality_gate.py"
+            else []
+        )
+        mock_get_symbol.side_effect = lambda _project_id, symbol_id: (
+            {
+                "symbol_id": symbol_id,
+                "qualified_name": "get_health_summary",
+                "file_path": "backend/app/api/quality_gate.py",
+                "start_line": 24,
+                "end_line": 35,
+                "byte_offset": 0,
+                "byte_length": 0,
+            }
+            if symbol_id == "backend/app/api/quality_gate.py::get_health_summary#function"
+            else None
+        )
+
+        result = collect_precision_code_search_context("project-1", ["quality health"])
+
+    assert result.metadata["used_symbol_first"]
+    assert result.metadata["symbol_count"] == 5
+    assert "`get_health_summary`" in result.prompt_context
+    assert "/projects/{project_id}/quality/health" in result.prompt_context
 
 
 def test_collect_precision_code_search_context_refreshes_stale_file_index() -> None:
@@ -186,8 +343,8 @@ def test_collect_precision_code_search_context_refreshes_stale_file_index() -> N
             return_value=[],
         ),
         patch(
-            "app.services.context_gatherer.precision_code_search.get_entries",
-            return_value=[],
+            "app.services.context_gatherer.precision_code_search.search_text",
+            return_value={"items": [], "count": 0, "files_searched": 0, "truncated": False},
         ),
     ):
         mock_scan.return_value.success = True
@@ -233,8 +390,8 @@ def test_collect_precision_code_search_context_tracks_fresh_index_telemetry() ->
             return_value=[],
         ),
         patch(
-            "app.services.context_gatherer.precision_code_search.get_entries",
-            return_value=[],
+            "app.services.context_gatherer.precision_code_search.search_text",
+            return_value={"items": [], "count": 0, "files_searched": 0, "truncated": False},
         ),
     ):
         result = collect_precision_code_search_context("project-1", ["get_file_tree"])

@@ -113,6 +113,21 @@ async def precision_search(
     }
 
 
+@router.get("/{project_id}/explorer/text/search")
+async def search_text(
+    project_id: str,
+    q: str = Query(..., min_length=1, description="Text query"),
+    limit: int = Query(20, ge=1, le=100, description="Maximum results"),
+) -> dict[str, Any]:
+    """Search indexed project file contents for matching lines."""
+    validate_project_exists(project_id)
+    result = explorer.search_text(project_id, q, limit=limit)
+    return {
+        "query": q,
+        **result,
+    }
+
+
 @router.get("/{project_id}/explorer/symbols/search")
 async def search_symbols(
     project_id: str,

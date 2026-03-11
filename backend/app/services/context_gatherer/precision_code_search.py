@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -13,11 +14,10 @@ from ...storage.explorer import (
     list_related_entries_for_file,
     search_symbols,
 )
-from ...storage.explorer_entries import get_entries
 from .. import explorer as explorer_service
+from ..explorer.text_search import search_text
 from ._precision_query import (
     extract_query_terms,
-    fallback_match_terms,
     looks_like_workflow_meta_query,
     normalize_queries,
 )
@@ -26,10 +26,13 @@ from .token_utils import MAX_EXPLORER_TOKENS, estimate_tokens, truncate_to_token
 logger = get_logger(__name__)
 
 _SEARCH_LIMIT = 5
+_CANDIDATE_LIMIT = 50
 _SOURCE_SYMBOL_LIMIT = 2
 _RELATED_ENTRY_LIMIT = 2
 _ENTRY_LIMIT = 12
 _PRECISION_INDEX_MAX_AGE = timedelta(minutes=30)
+_CAMEL_CASE_RE = re.compile(r"([a-z0-9])([A-Z])")
+_NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
 
 PRECISION_CODE_SEARCH_GUIDANCE = (
     "Use the Precision Code Search block as the first code-navigation pass. "
@@ -203,21 +206,68 @@ def _format_symbol_related(entry: dict[str, object]) -> str | None:
 
 
 def _search_symbol_matches(project_id: str, queries: list[str]) -> list[dict[str, object]]:
-    matches: list[dict[str, object]] = []
-    seen_ids: set[str] = set()
+    candidates: dict[str, dict[str, object]] = {}
+    query_terms = extract_query_terms(queries)
 
-    for query in extract_query_terms(queries):
-        rows = search_symbols(project_id, query, limit=_SEARCH_LIMIT)
+    for query in query_terms:
+        rows = search_symbols(project_id, query, limit=_CANDIDATE_LIMIT)
         for row in rows:
-            symbol_id = str(row["symbol_id"])
-            if symbol_id in seen_ids:
-                continue
-            matches.append(row)
-            seen_ids.add(symbol_id)
-            if len(matches) >= _SEARCH_LIMIT:
-                return matches
+            candidates.setdefault(str(row["symbol_id"]), row)
 
-    return matches
+    if not candidates:
+        return []
+
+    normalized_queries = [_normalize_match_text(query) for query in queries]
+    normalized_terms = [_normalize_match_text(term) for term in query_terms]
+    ranked = sorted(
+        candidates.values(),
+        key=lambda row: _symbol_match_rank(row, normalized_queries, normalized_terms),
+        reverse=True,
+    )
+    return ranked[:_SEARCH_LIMIT]
+
+
+def _normalize_match_text(value: object) -> str:
+    text = str(value or "")
+    text = _CAMEL_CASE_RE.sub(r"\1 \2", text)
+    return _NON_ALNUM_RE.sub(" ", text.lower()).strip()
+
+
+def _match_term_count(text: str, terms: list[str]) -> int:
+    text_tokens = set(text.split())
+    return sum(1 for term in terms if term and (term in text or term in text_tokens))
+
+
+def _symbol_match_rank(
+    row: dict[str, object],
+    normalized_queries: list[str],
+    normalized_terms: list[str],
+) -> tuple[int, int, int, int, int, str]:
+    name = _normalize_match_text(row.get("name"))
+    qualified_name = _normalize_match_text(row.get("qualified_name"))
+    signature = _normalize_match_text(row.get("signature"))
+    summary = _normalize_match_text(row.get("summary"))
+    file_path = _normalize_match_text(row.get("file_path"))
+    raw_keywords = row.get("keywords", [])
+    keyword_values = raw_keywords if isinstance(raw_keywords, list | tuple | set) else []
+    keywords = " ".join(_normalize_match_text(keyword) for keyword in keyword_values)
+    blob = " ".join(part for part in (name, qualified_name, signature, summary, file_path, keywords) if part)
+
+    query_phrase_hits = sum(1 for query in normalized_queries if query and query in blob)
+    distinct_term_hits = _match_term_count(blob, normalized_terms)
+    name_term_hits = _match_term_count(name, normalized_terms)
+    qualified_term_hits = _match_term_count(qualified_name, normalized_terms)
+    path_term_hits = _match_term_count(file_path, normalized_terms)
+    exact_name_hits = sum(1 for query in normalized_queries if query and query == name)
+
+    return (
+        distinct_term_hits,
+        query_phrase_hits,
+        exact_name_hits,
+        name_term_hits + qualified_term_hits,
+        path_term_hits + _match_term_count(summary, normalized_terms),
+        str(row.get("qualified_name", "")),
+    )
 
 
 def _build_symbol_section(project_id: str, symbols: list[dict[str, object]]) -> str:
@@ -256,64 +306,22 @@ def _build_symbol_section(project_id: str, symbols: list[dict[str, object]]) -> 
     return "\n".join(lines).strip()
 
 
-# ---------------------------------------------------------------------------
-# Fallback retrieval (files, endpoints, tables)
-# ---------------------------------------------------------------------------
+def _build_text_section(text_results: dict[str, object]) -> str:
+    items = text_results.get("items", [])
+    if not isinstance(items, list) or not items:
+        return ""
 
+    lines = ["## Relevant Text Matches", ""]
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        match = item
+        path = str(match.get("path") or "unknown")
+        line = match.get("line")
+        content = str(match.get("content") or "").strip()
+        lines.append(f"- {path}:{line} - {content}")
 
-def _collect_files(project_id: str, query_terms: list[str]) -> str | None:
-    files = get_entries(project_id, filters={"type": "file"})
-    lowered_terms = fallback_match_terms(query_terms)
-    relevant = [
-        f
-        for f in files
-        if any(
-            term in str(f.get(field, "")).lower()
-            for term in lowered_terms
-            for field in ("name", "path")
-        )
-    ][:_ENTRY_LIMIT]
-    if not relevant:
-        return None
-    return "\n".join(["## Relevant Files", "", *[f"- {f.get('path', 'unknown')}" for f in relevant]])
-
-
-def _collect_endpoints(project_id: str, query_terms: list[str]) -> str | None:
-    endpoints = get_entries(project_id, filters={"type": "endpoint"})[:_ENTRY_LIMIT]
-    lowered_terms = fallback_match_terms(query_terms)
-    relevant = [
-        ep
-        for ep in endpoints
-        if any(
-            term in str(ep.get("path", "")).lower() or term in str(ep.get("name", "")).lower()
-            for term in lowered_terms
-        )
-    ]
-    if not relevant:
-        return None
-    lines = ["## API Endpoints", ""]
-    for ep in relevant[:_ENTRY_LIMIT]:
-        method = (ep.get("metadata") or {}).get("method", "GET")
-        lines.append(f"- {method} {ep.get('path', 'unknown')}")
-    return "\n".join(lines)
-
-
-def _collect_tables(project_id: str, query_terms: list[str]) -> str | None:
-    tables = get_entries(project_id, filters={"type": "table"})[:_ENTRY_LIMIT]
-    lowered_terms = fallback_match_terms(query_terms)
-    relevant = [t for t in tables if any(term in str(t.get("name", "")).lower() for term in lowered_terms)]
-    if not relevant:
-        return None
-    return "\n".join(["## Database Tables", "", *[f"- {t.get('name', 'unknown')}" for t in relevant[:_ENTRY_LIMIT]]])
-
-
-def _build_fallback_section(project_id: str, query_terms: list[str]) -> str:
-    sections = [
-        _collect_files(project_id, query_terms),
-        _collect_endpoints(project_id, query_terms),
-        _collect_tables(project_id, query_terms),
-    ]
-    return "\n\n".join(s for s in sections if s)
+    return "\n".join(lines).strip()
 
 
 # ---------------------------------------------------------------------------
@@ -324,33 +332,40 @@ def _build_fallback_section(project_id: str, query_terms: list[str]) -> str:
 def _build_result_metadata(
     normalized_queries: list[str],
     symbols: list[dict[str, object]],
+    text_results: dict[str, object],
     index_status: dict[str, object],
     refreshed_index: bool,
     used_symbol_first: bool,
     used_fallback: bool,
     symbol_section: str,
-    fallback_section: str,
+    text_section: str,
     truncated_body: str,
     project_id: str,
 ) -> dict[str, object]:
     naive_file_tokens = _estimate_naive_file_tokens_for_symbols(project_id, symbols) if used_symbol_first else 0
     final_tokens = estimate_tokens(truncated_body)
-    fallback_tokens = estimate_tokens(fallback_section)
+    text_tokens = estimate_tokens(text_section)
+    text_items = text_results.get("items", [])
+    text_match_count = len(text_items) if isinstance(text_items, list) else 0
+    fallback_mode = "text" if used_fallback else None
     estimated_tokens_saved = (
         max(naive_file_tokens - final_tokens, 0)
         if used_symbol_first
-        else max(fallback_tokens - final_tokens, 0)
+        else max(text_tokens - final_tokens, 0)
     )
 
     return {
         "query_count": len(normalized_queries),
         "symbol_count": len(symbols),
+        "text_match_count": text_match_count,
+        "text_files_searched": text_results.get("files_searched", 0),
         "refreshed_index": refreshed_index,
         "used_symbol_first": used_symbol_first,
         "used_fallback": used_fallback,
+        "fallback_mode": fallback_mode,
         "naive_file_tokens": naive_file_tokens,
         "symbol_tokens": estimate_tokens(symbol_section),
-        "fallback_tokens": fallback_tokens,
+        "fallback_tokens": text_tokens,
         "stale_hit": index_status["should_refresh"],
         "refresh_reasons": index_status["refresh_reasons"],
         "file_total": index_status["file_total"],
@@ -391,25 +406,40 @@ def _retrieve_and_assemble(
     project_id: str,
     normalized_queries: list[str],
     budget_tokens: int,
-) -> tuple[list[dict[str, object]], str, str, str, bool, bool, dict[str, object], bool]:
-    """Retrieve symbols/fallback, assemble sections, return retrieval state."""
+) -> tuple[
+    list[dict[str, object]],
+    str,
+    dict[str, object],
+    str,
+    str,
+    bool,
+    bool,
+    dict[str, object],
+    bool,
+]:
+    """Retrieve symbols/text matches, assemble sections, return retrieval state."""
     index_status = _get_precision_index_status(project_id)
     refreshed_index = _refresh_precision_index(project_id) if index_status["should_refresh"] else False
 
-    query_terms = extract_query_terms(normalized_queries)
     symbols = _search_symbol_matches(project_id, normalized_queries)
     symbol_section = _build_symbol_section(project_id, symbols) if symbols else ""
-    fallback_section = "" if symbol_section else _build_fallback_section(project_id, query_terms)
+    text_results = (
+        {"count": 0, "files_searched": 0, "items": [], "truncated": False}
+        if symbol_section
+        else search_text(project_id, " ".join(normalized_queries), limit=_ENTRY_LIMIT)
+    )
+    text_section = "" if symbol_section else _build_text_section(text_results)
 
     used_symbol_first = bool(symbol_section)
-    used_fallback = not used_symbol_first and bool(fallback_section)
-    body = symbol_section if used_symbol_first else fallback_section
+    used_fallback = not used_symbol_first and bool(text_section)
+    body = symbol_section if used_symbol_first else text_section
     truncated_body = truncate_to_tokens(body, budget_tokens) if body else ""
 
     return (
         symbols,
         symbol_section,
-        fallback_section,
+        text_results,
+        text_section,
         truncated_body,
         used_symbol_first,
         used_fallback,
@@ -443,24 +473,25 @@ def collect_precision_code_search_context(
             metadata={"query_count": len(normalized_queries), "skipped_reason": "workflow_meta_low_signal"},
         )
 
-    symbols, symbol_section, fallback_section, truncated_body, used_symbol_first, used_fallback, index_status, refreshed_index = (
+    symbols, symbol_section, text_results, text_section, truncated_body, used_symbol_first, used_fallback, index_status, refreshed_index = (
         _retrieve_and_assemble(project_id, normalized_queries, budget_tokens)
     )
 
     metadata = _build_result_metadata(
         normalized_queries=normalized_queries,
         symbols=symbols,
+        text_results=text_results,
         index_status=index_status,
         refreshed_index=refreshed_index,
         used_symbol_first=used_symbol_first,
         used_fallback=used_fallback,
         symbol_section=symbol_section,
-        fallback_section=fallback_section,
+        text_section=text_section,
         truncated_body=truncated_body,
         project_id=project_id,
     )
 
-    mode = "symbol-first" if used_symbol_first else ("fallback-only" if truncated_body else "empty")
+    mode = "symbol-first" if used_symbol_first else ("text-fallback" if truncated_body else "empty")
     _log_result(project_id, metadata, mode)
 
     if not truncated_body:

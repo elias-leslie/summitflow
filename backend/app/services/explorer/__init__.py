@@ -43,6 +43,7 @@ from .scan_ops import (
     get_scan_overview,
     run_scan_job,
 )
+from .text_search import search_text
 from .types import get_scanner
 
 __all__ = [
@@ -69,6 +70,7 @@ __all__ = [
     "run_scan_job",
     "run_scan_with_tracking",
     "scan",
+    "search_text",
     "start_scan",
     "write_all_index_files",
     "write_index_file",
