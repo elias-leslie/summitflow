@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from cli._output_formatters import format_context_subtasks, format_context_task
+from cli._output_formatters import (
+    format_context_snapshot,
+    format_context_subtasks,
+    format_context_task,
+)
 from cli.commands.tasks_context import get_task_context
 
 
@@ -196,6 +200,50 @@ class TestFormatContextTask:
 
 
 
+class TestFormatContextSnapshot:
+    """Tests for snapshot/checkpoint state formatting."""
+
+    def test_formats_active_snapshot_with_all_fields(self) -> None:
+        snapshot = {
+            "claimed_by": "agent-coder",
+            "created_at": "2026-03-10T14:30:00.123456",
+            "base_branch": "main",
+            "worktree_path": "/home/user/.local/share/st/worktrees/proj/task-123",
+            "worktree_branch": "task/task-123",
+            "backend_port": 8081,
+            "frontend_port": 3001,
+        }
+
+        output = format_context_snapshot(snapshot)
+
+        assert "SNAPSHOT:active|claimed_by:agent-coder|since:2026-03-10T14:30:00" in output
+        assert "BASE_BRANCH:main" in output
+        assert "WORKTREE_PATH:/home/user/.local/share/st/worktrees/proj/task-123" in output
+        assert "TASK_BRANCH:task/task-123" in output
+        assert "PORTS:backend:8081 | frontend:3001" in output
+
+    def test_returns_empty_for_empty_snapshot(self) -> None:
+        assert format_context_snapshot({}) == ""
+
+    def test_returns_empty_for_no_snapshot(self) -> None:
+        # Simulates a task with no active checkpoint
+        output = format_context_snapshot({})
+        assert output == ""
+
+    def test_partial_snapshot_without_worktree(self) -> None:
+        snapshot = {
+            "claimed_by": "human",
+            "created_at": "2026-03-10T10:00:00",
+            "base_branch": "main",
+        }
+
+        output = format_context_snapshot(snapshot)
+
+        assert "SNAPSHOT:active|claimed_by:human|since:2026-03-10T10:00:00" in output
+        assert "WORKTREE_PATH" not in output
+        assert "PORTS" not in output
+
+
 class TestFormatContextSubtasks:
     """Tests for compact subtask context formatting."""
 
@@ -228,6 +276,7 @@ class TestTaskContextCommand:
             patch("cli.commands.tasks_context.analyze_subtask_sync") as mock_sync,
             patch("cli.commands.tasks_context.output_context"),
             patch("cli.commands.tasks_context.check_task_lane_conflicts") as mock_lane,
+            patch("cli.commands.tasks_context._load_snapshot_info", return_value=None),
             patch("cli.commands.tasks_context.get_worktree_info", return_value=None),
         ):
             mock_sync.return_value.syncable = []
