@@ -12,7 +12,10 @@ from typing import Any
 from hatchet_sdk import ConcurrencyExpression, ConcurrencyLimitStrategy, Context
 
 from ..hatchet_app import hatchet
+from ..logging_config import get_logger
 from .models import TaskInput
+
+logger = get_logger(__name__)
 
 
 async def _trigger_workflow(stage: str, task_id: str, project_id: str) -> None:
@@ -54,6 +57,9 @@ async def _trigger_workflow(stage: str, task_id: str, project_id: str) -> None:
     util_wf = utility_map.get(stage)
     if util_wf:
         await util_wf.aio_run_no_wait(ProjectInput(project_id=project_id))
+        return
+
+    raise ValueError(f"Unknown workflow stage: {stage}")
 
 
 def _make_dispatch_callback() -> Any:
@@ -61,7 +67,10 @@ def _make_dispatch_callback() -> Any:
     def dispatch(stage: str, task_id: str, project_id: str) -> None:
         loop = asyncio.new_event_loop()
         try:
-            loop.run_until_complete(_trigger_workflow(stage, task_id, project_id))
+            try:
+                loop.run_until_complete(_trigger_workflow(stage, task_id, project_id))
+            except Exception:
+                logger.exception("dispatch_callback_failed", stage=stage, task_id=task_id)
         finally:
             loop.close()
     return dispatch

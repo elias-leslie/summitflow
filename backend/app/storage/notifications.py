@@ -74,7 +74,7 @@ def _is_duplicate(
             """
             SELECT severity FROM notifications
             WHERE project_id = %s AND type = %s AND task_id IS NOT DISTINCT FROM %s
-              AND created_at > NOW() - INTERVAL '%s minutes'
+              AND created_at > NOW() - (%s * INTERVAL '1 minute')
               AND status != 'dismissed'
             ORDER BY created_at DESC
             LIMIT 1

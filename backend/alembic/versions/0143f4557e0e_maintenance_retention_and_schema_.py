@@ -58,3 +58,6 @@ def downgrade() -> None:
     op.execute("DROP INDEX IF EXISTS idx_tasks_updated")
     op.execute("DROP INDEX IF EXISTS idx_tasks_feature")
     op.execute("DROP INDEX IF EXISTS idx_tasks_capability")
+    op.execute("ALTER TABLE agent_sessions DROP COLUMN IF EXISTS build_state")
+    op.execute("ALTER TABLE tasks DROP COLUMN IF EXISTS feature_id")
+    op.execute("ALTER TABLE tasks DROP COLUMN IF EXISTS capability_id")
