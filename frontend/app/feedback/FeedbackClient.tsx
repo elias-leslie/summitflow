@@ -14,6 +14,7 @@ import {
   fetchFeedbackItems,
   fetchFeedbackSummary,
 } from '@/lib/api/feedback'
+import { STALE_GIT, STALE_STANDARD } from '@/lib/polling'
 
 export function FeedbackClient() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -27,14 +28,14 @@ export function FeedbackClient() {
   const { data: summary, isLoading: summaryLoading } = useQuery({
     queryKey: ['feedback-summary'],
     queryFn: () => fetchFeedbackSummary(),
-    staleTime: 30000,
+    staleTime: STALE_GIT,
   })
 
   // Fetch items with filters
   const { data: itemsData, isLoading: itemsLoading } = useQuery({
     queryKey: ['feedback-items', filters],
     queryFn: () => fetchFeedbackItems(filters),
-    staleTime: 15000,
+    staleTime: STALE_STANDARD,
   })
 
   const handleFiltersChange = (partial: Partial<FeedbackFilters>) => {

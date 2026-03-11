@@ -16,6 +16,7 @@ import {
   retryMerge,
   type ConflictInfo,
 } from '@/lib/api/git-enhanced'
+import { POLL_STANDARD, STALE_STANDARD } from '@/lib/polling'
 
 function relativeTime(iso: string): string {
   if (!iso) return ''
@@ -171,8 +172,8 @@ export function ConflictAlerts() {
   const { data, isLoading } = useQuery({
     queryKey: ['git-conflicts'],
     queryFn: fetchConflicts,
-    staleTime: 15000,
-    refetchInterval: 30000,
+    staleTime: STALE_STANDARD,
+    refetchInterval: POLL_STANDARD * 2,
   })
 
   // Only render when conflicts exist

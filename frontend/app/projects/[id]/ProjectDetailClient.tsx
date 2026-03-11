@@ -30,6 +30,7 @@ import { type TabId, useTabPersistence } from '@/lib/hooks/useTabPersistence'
 import { buildUrlWithUpdatedSearchParams } from '@/lib/search-params'
 import { taskQueryKeys } from '@/lib/task-cache'
 import { useTaskMutationSync } from '@/lib/task-mutation-sync'
+import { STALE_GIT } from '@/lib/polling'
 import { getErrorMessage } from '@/lib/utils'
 
 export function ProjectDetailClient() {
@@ -132,7 +133,7 @@ export function ProjectDetailClient() {
   const { data: kanbanTasksData } = useQuery({
     queryKey: taskQueryKeys.kanban(projectId),
     queryFn: () => fetchTasks(projectId, { include: 'feature', limit: 500 }),
-    staleTime: 30000,
+    staleTime: STALE_GIT,
     enabled: activeTab === 'tasks' && viewMode === 'board',
   })
   const kanbanTasks = kanbanTasksData?.tasks ?? []

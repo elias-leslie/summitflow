@@ -13,9 +13,6 @@ import {
 } from './websocketTypes'
 import type { WebSocketMessage } from './websocketTypes'
 
-// Re-export stream hook for backward compatibility
-export { useExecutionWebSocketStream } from './useExecutionWebSocketStream'
-
 // ============================================================================
 // Shared Utilities
 // ============================================================================
@@ -98,8 +95,8 @@ export function useExecutionWebSocket({
         const msg: WebSocketMessage = JSON.parse(event.data)
         lastSequenceRef.current = msg.sequence
         handleMessage(msg, setExecution, onError)
-      } catch (e) {
-        console.error('Failed to parse WebSocket message:', e)
+      } catch {
+        onError?.('Failed to parse WebSocket message')
       }
     }
   }, [taskId, enabled, onError])

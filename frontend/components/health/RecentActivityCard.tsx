@@ -2,6 +2,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { fetchActivity, type ActivityEvent } from '@/lib/api/activity'
+import { POLL_STANDARD, STALE_STANDARD } from '@/lib/polling'
 import { useQuery } from '@tanstack/react-query'
 import { formatTimeAgo } from '@/lib/format'
 
@@ -52,8 +53,8 @@ export function RecentActivityCard({ projectId }: RecentActivityCardProps) {
   const { data, isLoading, isError } = useQuery({
     queryKey: ['activity', projectId],
     queryFn: () => fetchActivity({ project_id: projectId, limit: 8 }),
-    staleTime: 15000,
-    refetchInterval: 30000,
+    staleTime: STALE_STANDARD,
+    refetchInterval: POLL_STANDARD * 2,
   })
 
   if (isError) {

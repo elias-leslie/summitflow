@@ -2,6 +2,7 @@
 
 import { useSystemStats } from '@/hooks/useSystemStats'
 import { API_PATHS, buildApiUrl } from '@/lib/api-config'
+import { POLL_STANDARD } from '@/lib/polling'
 import { useQuery } from '@tanstack/react-query'
 
 interface ComponentHealth {
@@ -65,8 +66,8 @@ export function InfraStatusBar() {
       if (!res.ok) throw new Error('Failed to fetch detailed health')
       return res.json() as Promise<DetailedHealth>
     },
-    refetchInterval: 30000,
-    staleTime: 25000,
+    refetchInterval: POLL_STANDARD * 2,
+    staleTime: POLL_STANDARD * 2 - 5000,
   })
 
   const overall = getOverallStatus(

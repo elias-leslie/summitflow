@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { buildQueryString, fetchWithErrorHandling } from '@/lib/api'
+import { POLL_STANDARD, STALE_STANDARD } from '@/lib/polling'
 import type { PipelineStatsResponse } from './PipelineTypes'
 
 export function usePipelineData(projectId: string) {
@@ -12,8 +13,8 @@ export function usePipelineData(projectId: string) {
           errorMessage: 'Failed to fetch pipeline stats',
         },
       ),
-    staleTime: 15000,
-    refetchInterval: 30000,
+    staleTime: STALE_STANDARD,
+    refetchInterval: POLL_STANDARD * 2,
     enabled: !!projectId,
   })
 

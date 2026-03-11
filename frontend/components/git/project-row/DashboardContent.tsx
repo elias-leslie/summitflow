@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { GitCommitHorizontal, GitMerge, Layers, Loader2, Shield } from 'lucide-react'
 import { useState } from 'react'
 import { fetchProjectDashboard } from '@/lib/api/git-enhanced'
+import { POLL_SLOW, STALE_GIT } from '@/lib/polling'
 import { CommitEntry } from './CommitEntry'
 import { MergeRow } from './MergeRow'
 import { SectionLabel } from './SectionLabel'
@@ -16,8 +17,8 @@ export function DashboardContent({ projectId }: { projectId: string }) {
   const { data, isLoading } = useQuery({
     queryKey: ['project-dashboard', projectId],
     queryFn: () => fetchProjectDashboard(projectId),
-    staleTime: 30000,
-    refetchInterval: 60000,
+    staleTime: STALE_GIT,
+    refetchInterval: POLL_SLOW,
   })
 
   if (isLoading) {

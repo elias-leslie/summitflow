@@ -20,6 +20,7 @@ import {
   fetchExplorerStats,
   type StatsResponse,
 } from '@/lib/api/explorer'
+import { STALE_GIT } from '@/lib/polling'
 
 // Query key factories for consistent cache management
 export const explorerKeys = {
@@ -68,7 +69,7 @@ export function useExplorerData({
     queryKey: explorerKeys.entriesFiltered(projectId, filters),
     queryFn: () => fetchExplorerEntries(projectId, filters),
     enabled: enabled && !!projectId,
-    staleTime: 30000, // 30 seconds
+    staleTime: STALE_GIT,
     gcTime: 5 * 60 * 1000, // 5 minutes (formerly cacheTime)
   })
 
@@ -117,7 +118,7 @@ export function useExplorerChildren({
     queryKey: explorerKeys.children(projectId, type, parentPath),
     queryFn: () => fetchExplorerChildren(projectId, type, parentPath),
     enabled: enabled && !!projectId,
-    staleTime: 30000,
+    staleTime: STALE_GIT,
     gcTime: 5 * 60 * 1000,
   })
 }

@@ -1,3 +1,4 @@
+import { POLL_SLOW } from '@/lib/polling'
 import { useQuery } from '@tanstack/react-query'
 
 /**
@@ -23,8 +24,8 @@ export function useProjectPermissionTier(projectId: string): string | null {
   const { data } = useQuery({
     queryKey: ['ah-project-permissions'],
     queryFn: fetchPermissions,
-    staleTime: 60_000,
-    refetchInterval: 120_000,
+    staleTime: POLL_SLOW,
+    refetchInterval: POLL_SLOW * 2,
   })
 
   if (!data) return null

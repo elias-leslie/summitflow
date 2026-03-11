@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { buildQueryString, fetchWithErrorHandling } from '@/lib/api'
+import { POLL_STANDARD, STALE_STANDARD } from '@/lib/polling'
 import type {
   CheckResultsResponse,
   HealthSummary,
@@ -16,8 +17,8 @@ export function useHealthData(projectId: string) {
         },
       ),
     enabled: !!projectId,
-    staleTime: 15000,
-    refetchInterval: 30000,
+    staleTime: STALE_STANDARD,
+    refetchInterval: POLL_STANDARD * 2,
   })
 
   const recentQuery = buildQueryString({ limit: 50 })
@@ -33,8 +34,8 @@ export function useHealthData(projectId: string) {
         },
       ),
     enabled: !!projectId,
-    staleTime: 15000,
-    refetchInterval: 30000,
+    staleTime: STALE_STANDARD,
+    refetchInterval: POLL_STANDARD * 2,
   })
 
   const { data: unfixedResults, error: unfixedResultsError } = useQuery({
@@ -47,8 +48,8 @@ export function useHealthData(projectId: string) {
         },
       ),
     enabled: !!projectId,
-    staleTime: 15000,
-    refetchInterval: 30000,
+    staleTime: STALE_STANDARD,
+    refetchInterval: POLL_STANDARD * 2,
   })
 
   // Compute metrics

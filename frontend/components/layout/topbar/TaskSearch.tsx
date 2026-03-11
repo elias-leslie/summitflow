@@ -5,6 +5,7 @@ import { Search } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { fetchTasks, type Task } from '@/lib/api'
+import { STALE_GIT } from '@/lib/polling'
 import { useSelectedProject } from '../ProjectSelector'
 import { typeIcons } from './constants'
 
@@ -21,7 +22,7 @@ export function TaskSearch() {
     queryKey: ['tasks', selectedProjectId, 'search'],
     queryFn: () => fetchTasks(selectedProjectId!, { limit: 500 }),
     enabled: !!selectedProjectId && searchValue.length > 0,
-    staleTime: 30000,
+    staleTime: STALE_GIT,
   })
 
   const searchResults = useMemo(() => {

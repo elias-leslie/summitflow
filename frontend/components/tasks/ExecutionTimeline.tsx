@@ -2,7 +2,7 @@
 
 import { AlertCircle, Loader2 } from 'lucide-react'
 import { useCallback, useMemo, useRef, useState } from 'react'
-import { useExecutionWebSocketStream } from '@/hooks/useExecutionWebSocket'
+import { useExecutionWebSocketStream } from '@/hooks/useExecutionWebSocketStream'
 import { useTimelineHistory } from './hooks/useTimelineHistory'
 import { useVoiceRecording } from './hooks/useVoiceRecording'
 import { TimelineChatInput } from './TimelineChatInput'

@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useCallback } from 'react'
 import { fetchBlockedTasks, fetchTasks, type Task } from '@/lib/api'
+import { STALE_GIT } from '@/lib/polling'
 import { taskQueryKeys } from '@/lib/task-cache'
 import type { TaskFilterValues } from '../TaskFilters'
 
@@ -34,7 +35,7 @@ export function useTasksList(
   } = useQuery({
     queryKey: taskQueryKeys.all(projectId),
     queryFn: () => fetchTasks(projectId, { limit: 500 }),
-    staleTime: 30000,
+    staleTime: STALE_GIT,
   })
 
   // Fetch blocked tasks (separate query since it's a different endpoint)
@@ -46,7 +47,7 @@ export function useTasksList(
   } = useQuery({
     queryKey: taskQueryKeys.blocked(projectId),
     queryFn: () => fetchBlockedTasks(projectId, 500),
-    staleTime: 30000,
+    staleTime: STALE_GIT,
     enabled: filters.status === 'blocked', // Only fetch when filter is blocked
   })
 

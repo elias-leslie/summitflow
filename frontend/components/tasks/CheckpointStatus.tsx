@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 import { getCheckpoint } from '@/lib/api/checkpoints'
+import { STALE_GIT } from '@/lib/polling'
 
 interface CheckpointStatusProps {
   taskId: string
@@ -31,7 +32,7 @@ export function CheckpointStatus({
     queryKey: ['checkpoint', taskId, projectId],
     queryFn: () => getCheckpoint(taskId, projectId),
     enabled: taskStatus === 'running',
-    staleTime: 30000,
+    staleTime: STALE_GIT,
   })
 
   // Only show when task is running and has a checkpoint

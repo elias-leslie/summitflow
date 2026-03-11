@@ -51,8 +51,8 @@ export function useExecutionWebSocketStream({
           )
           onMessage(message)
           setTimeout(onScrollToBottom, 10)
-        } catch (err) {
-          console.error('Failed to parse message:', err)
+        } catch {
+          setError('Failed to parse execution message')
         }
       }
 
@@ -75,8 +75,7 @@ export function useExecutionWebSocketStream({
       }
 
       wsRef.current = ws
-    } catch (err) {
-      console.error('Failed to connect:', err)
+    } catch {
       setError('Failed to connect to execution stream')
     }
   }, [taskId, autoConnect, onMessage, onScrollToBottom])

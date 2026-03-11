@@ -5,6 +5,7 @@ import { AlertTriangle, Clock, Play } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { fetchBlockedTasks, updateTaskStatus, type Task } from '@/lib/api'
+import { STALE_GIT } from '@/lib/polling'
 import { taskQueryKeys } from '@/lib/task-cache'
 import { useTaskMutationSync } from '@/lib/task-mutation-sync'
 import { getErrorMessage } from '@/lib/utils'
@@ -32,7 +33,7 @@ export function BlockedTasksAlert({
   const { data, refetch, isLoading, isError, error } = useQuery({
     queryKey: taskQueryKeys.blocked(projectId),
     queryFn: () => fetchBlockedTasks(projectId, 20),
-    staleTime: 30000,
+    staleTime: STALE_GIT,
   })
 
   if (isLoading) {
