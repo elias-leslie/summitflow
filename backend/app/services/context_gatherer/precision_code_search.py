@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 _SEARCH_LIMIT = 5
 _SOURCE_SYMBOL_LIMIT = 2
 _RELATED_ENTRY_LIMIT = 2
-_PRECISION_INDEX_MAX_AGE = timedelta(minutes=90)
+_PRECISION_INDEX_MAX_AGE = timedelta(minutes=30)
 PRECISION_CODE_SEARCH_GUIDANCE = (
     "Use the Precision Code Search block as the first code-navigation pass. "
     "Only broaden to file-wide or text search if these indexed symbols are insufficient, stale, or clearly unrelated."

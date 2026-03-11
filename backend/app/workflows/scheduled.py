@@ -49,7 +49,7 @@ async def work_pickup_wf(input: ProjectInput, ctx: Context) -> dict[str, Any]:
     execution_timeout="120s",
     retries=3,
     backoff_factor=2.0,
-    on_crons=["0 * * * *"],
+    on_crons=["*/15 * * * *"],
     concurrency=ConcurrencyExpression(
         expression="'summitflow-reset-claims'",
         max_runs=1,
