@@ -16,13 +16,14 @@ import json
 import logging
 from typing import Any
 
-from ._task_spirit_helpers import EXPECTED_COLUMNS, _row_to_dict
+from ._task_spirit_helpers import EXPECTED_COLUMNS, SPIRIT_SELECT, _row_to_dict
 from ._task_spirit_workflow import approve_plan, reject_plan, set_plan_status
 from ._task_spirit_write import create_task_spirit, delete_task_spirit, upsert_task_spirit
 from .connection import get_connection
 
 __all__ = [
     "EXPECTED_COLUMNS",
+    "SPIRIT_SELECT",
     "_row_to_dict",
     "approve_plan",
     "create_task_spirit",
@@ -41,7 +42,7 @@ def get_task_spirit(task_id: str) -> dict[str, Any] | None:
     """Get task_spirit record by task ID."""
     with get_connection() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT * FROM task_spirit WHERE task_id = %s", (task_id,))
+        cur.execute(f"SELECT {SPIRIT_SELECT} FROM task_spirit WHERE task_id = %s", (task_id,))
         return _row_to_dict(cur.fetchone())
 
 
@@ -74,11 +75,11 @@ def update_task_spirit(task_id: str, **fields: Any) -> dict[str, Any] | None:
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(
-            f"UPDATE task_spirit SET {set_clause} WHERE task_id = %s RETURNING *",
+            f"UPDATE task_spirit SET {set_clause} WHERE task_id = %s RETURNING {SPIRIT_SELECT}",
             values,
         )
         row = cur.fetchone()
         conn.commit()
     if row:
-        logger.info(f"Updated task_spirit for task {task_id}: {list(updates.keys())}")
+        logger.info("Updated task_spirit for task %s: %s", task_id, list(updates.keys()))
     return _row_to_dict(row)

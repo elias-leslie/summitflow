@@ -6,8 +6,16 @@ from typing import Any
 
 from psycopg.rows import TupleRow
 
+# Explicit column list for SELECT queries (avoids SELECT * fragility)
+SPIRIT_COLUMNS = (
+    "task_id", "objective", "spirit_anti", "decisions", "constraints",
+    "done_when", "context", "plan_status", "plan_approved_at",
+    "plan_approved_by", "plan_history", "created_at", "updated_at", "complexity",
+)
+SPIRIT_SELECT = ", ".join(SPIRIT_COLUMNS)
+
 # Expected columns for validation
-EXPECTED_COLUMNS = 14  # task_id, objective, spirit_anti, decisions, constraints, done_when, context, plan_status, plan_approved_at, plan_approved_by, plan_history, created_at, updated_at, complexity
+EXPECTED_COLUMNS = len(SPIRIT_COLUMNS)
 
 
 def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any] | None:

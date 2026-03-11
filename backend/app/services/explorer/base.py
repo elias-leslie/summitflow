@@ -110,7 +110,7 @@ class BaseScanner(ABC):
             return self._run_scan_success(start_time)
         except Exception as e:
             duration_ms = int((time.time() - start_time) * 1000)
-            logger.error(f"Scan failed: {self.entry_type} for {self.project_id} - {e}")
+            logger.error("Scan failed: %s for %s - %s", self.entry_type, self.project_id, e)
             return ScanResult(
                 success=False,
                 entry_type=self.entry_type,

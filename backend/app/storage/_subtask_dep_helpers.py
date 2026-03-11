@@ -12,8 +12,10 @@ from psycopg.rows import TupleRow
 
 from .connection import get_connection
 
-# Expected columns for validation
-EXPECTED_COLUMNS = 4  # id, subtask_id, depends_on_subtask_id, created_at
+# Explicit column list for SELECT queries
+DEP_COLUMNS = ("id", "subtask_id", "depends_on_subtask_id", "created_at")
+DEP_SELECT = ", ".join(DEP_COLUMNS)
+EXPECTED_COLUMNS = len(DEP_COLUMNS)
 
 
 class CycleError(Exception):
@@ -128,7 +130,7 @@ def fetch_inserted_deps(cur: Any, dependencies: list[tuple[str, str]]) -> list[d
     placeholders = ", ".join("(%s, %s)" for _ in dependencies)
     flat_values = [v for pair in dependencies for v in pair]
     cur.execute(
-        f"SELECT * FROM subtask_dependencies"
+        f"SELECT {DEP_SELECT} FROM subtask_dependencies"
         f" WHERE (subtask_id, depends_on_subtask_id) IN ({placeholders})",
         flat_values,
     )

@@ -87,26 +87,6 @@ export async function getEvents(
   return res.json()
 }
 
-/**
- * Fetch events for a specific task by trace_id.
- * Convenience wrapper around getEvents with trace_id filter.
- */
-export async function getEventsByTask(
-  projectId: string,
-  taskId: string,
-  options: {
-    visibility?: EventVisibility
-    limit?: number
-  } = {},
-): Promise<Event[]> {
-  const result = await getEvents(projectId, {
-    trace_id: taskId,
-    visibility: options.visibility,
-    limit: options.limit,
-  })
-  return result.events
-}
-
 export async function getEventsForTrace(
   projectId: string,
   traceId: string,

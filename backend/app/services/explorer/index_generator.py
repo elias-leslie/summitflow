@@ -163,17 +163,17 @@ def write_index_file(project_id: str) -> str | None:
     """Generate and write .index.yaml to project root."""
     root_path = get_project_root(project_id)
     if not root_path:
-        logger.warning(f"No root path found for project {project_id}")
+        logger.warning("No root path found for project %s", project_id)
         return None
     index_path = Path(root_path) / ".index.yaml"
     tmp_path = index_path.with_name(f"{index_path.name}.tmp")
     try:
         tmp_path.write_text(generate_index(project_id))
         tmp_path.rename(index_path)
-        logger.info(f"Wrote index file: {index_path}")
+        logger.info("Wrote index file: %s", index_path)
         return str(index_path)
     except OSError as e:
-        logger.error(f"Failed to write index file {index_path}: {e}")
+        logger.error("Failed to write index file %s: %s", index_path, e)
         return None
 
 
@@ -189,6 +189,6 @@ def write_all_index_files() -> dict[str, str | None]:
         try:
             results[project_id] = write_index_file(project_id)
         except Exception as e:
-            logger.error(f"Failed to generate index for {project_id}: {e}")
+            logger.error("Failed to generate index for %s: %s", project_id, e)
             results[project_id] = None
     return results

@@ -1,16 +1,12 @@
 from __future__ import annotations
 
+import pytest
 
-def test_dispatch_callback_logs_unknown_stage(mocker) -> None:
+
+def test_dispatch_callback_raises_on_unknown_stage() -> None:
     from app.workflows.pipeline import _make_dispatch_callback
 
-    logger = mocker.patch("app.workflows.pipeline.logger")
     dispatch = _make_dispatch_callback()
 
-    dispatch("missing-stage", "task-123", "project-123")
-
-    logger.exception.assert_called_once_with(
-        "dispatch_callback_failed",
-        stage="missing-stage",
-        task_id="task-123",
-    )
+    with pytest.raises(ValueError, match="Unknown workflow stage: missing-stage"):
+        dispatch("missing-stage", "task-123", "project-123")

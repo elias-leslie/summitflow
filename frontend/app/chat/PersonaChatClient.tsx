@@ -43,8 +43,8 @@ export function PersonaChatClient() {
     [agentHubProxyBase, projectId],
   )
 
-  const voiceWsUrl = useMemo(() => getVoiceWsUrl(), [])
-  const ttsBaseUrl = useMemo(() => getTtsBaseUrl(), [])
+  const voiceWsUrl = getVoiceWsUrl()
+  const ttsBaseUrl = getTtsBaseUrl()
 
   const handleSessionCreated = useCallback((id: string) => {
     setSessionId(id)

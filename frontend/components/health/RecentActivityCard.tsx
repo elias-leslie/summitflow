@@ -3,7 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { fetchActivity, type ActivityEvent } from '@/lib/api/activity'
 import { useQuery } from '@tanstack/react-query'
-import { formatRelativeTime } from './HealthUtils'
+import { formatTimeAgo } from '@/lib/format'
 
 interface RecentActivityCardProps {
   projectId: string
@@ -41,7 +41,7 @@ function ActivityRow({ event }: { event: ActivityEvent }) {
       </div>
       {event.timestamp && (
         <span className="text-xs text-slate-500 whitespace-nowrap">
-          {formatRelativeTime(event.timestamp)}
+          {formatTimeAgo(event.timestamp)}
         </span>
       )}
     </div>
@@ -52,6 +52,7 @@ export function RecentActivityCard({ projectId }: RecentActivityCardProps) {
   const { data, isLoading, isError } = useQuery({
     queryKey: ['activity', projectId],
     queryFn: () => fetchActivity({ project_id: projectId, limit: 8 }),
+    staleTime: 15000,
     refetchInterval: 30000,
   })
 

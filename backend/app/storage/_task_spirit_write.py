@@ -6,7 +6,7 @@ import json
 import logging
 from typing import Any
 
-from ._task_spirit_helpers import _row_to_dict
+from ._task_spirit_helpers import SPIRIT_SELECT, _row_to_dict
 from .connection import get_connection
 
 logger = logging.getLogger(__name__)
@@ -65,13 +65,13 @@ def create_task_spirit(
     params = _build_insert_params(
         task_id, objective, spirit_anti, decisions, constraints, done_when, context, complexity
     )
-    sql = f"INSERT INTO task_spirit {_INSERT_FIELDS} VALUES {_INSERT_PLACEHOLDERS} RETURNING *"
+    sql = f"INSERT INTO task_spirit {_INSERT_FIELDS} VALUES {_INSERT_PLACEHOLDERS} RETURNING {SPIRIT_SELECT}"
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(sql, params)
         row = cur.fetchone()
         conn.commit()
-    logger.info(f"Created task_spirit for task {task_id}")
+    logger.info("Created task_spirit for task %s", task_id)
     result = _row_to_dict(row)
     if result is None:
         raise ValueError(f"Failed to create task_spirit for {task_id}")
@@ -106,14 +106,14 @@ def upsert_task_spirit(
             context = EXCLUDED.context,
             complexity = EXCLUDED.complexity,
             updated_at = NOW()
-        RETURNING *
+        RETURNING {SPIRIT_SELECT}
     """
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(sql, params)
         row = cur.fetchone()
         conn.commit()
-    logger.info(f"Upserted task_spirit for task {task_id}")
+    logger.info("Upserted task_spirit for task %s", task_id)
     result = _row_to_dict(row)
     if result is None:
         raise ValueError(f"Failed to upsert task_spirit for {task_id}")
@@ -131,5 +131,5 @@ def delete_task_spirit(task_id: str) -> bool:
         deleted = cur.rowcount > 0
         conn.commit()
     if deleted:
-        logger.info(f"Deleted task_spirit for task {task_id}")
+        logger.info("Deleted task_spirit for task %s", task_id)
     return deleted

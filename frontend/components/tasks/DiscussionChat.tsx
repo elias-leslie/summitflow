@@ -106,9 +106,9 @@ export function DiscussionChat({
         )}
 
         <AnimatePresence mode="popLayout">
-          {messages.map((message, index) => (
+          {messages.map((message) => (
             <motion.div
-              key={index}
+              key={`${message.role}-${message.timestamp}`}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}

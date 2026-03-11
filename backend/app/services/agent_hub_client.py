@@ -70,7 +70,7 @@ class AgentHubLLMClient(LLMClient):
             self._get_client().list_sessions(page_size=1)
             return True
         except Exception as e:
-            logger.warning(f"Agent Hub not available: {e}")
+            logger.warning("Agent Hub not available: %s", e)
             return False
 
     def get_model_name(self) -> str:
@@ -110,7 +110,7 @@ class AgentHubLLMClient(LLMClient):
             )
             return response_to_llm_response(response)
         except Exception as e:
-            logger.error(f"Agent Hub request failed: {e}")
+            logger.error("Agent Hub request failed: %s", e)
             raise RuntimeError(f"Agent Hub request failed: {e}") from e
 
     def close(self) -> None:

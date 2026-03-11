@@ -114,15 +114,6 @@ export function restoreSourceBackup(sourceId: string, backupId: string, options?
   )
 }
 
-export function previewRestore(projectId: string, backupId: string): Promise<{
-  backup_id: string; backup_name: string; dry_run: boolean; result: unknown
-}> {
-  return fetchWithErrorHandling(
-    `/api/projects/${projectId}/backups/${backupId}/restore/preview`,
-    { errorMessage: 'Failed to preview restore' },
-  )
-}
-
 export function deleteBackup(projectId: string, backupId: string): Promise<{ deleted: boolean; backup_id: string }> {
   return fetchWithErrorHandling(
     `/api/projects/${projectId}/backups/${backupId}`,

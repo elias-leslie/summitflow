@@ -9,7 +9,7 @@ from typing import Any
 
 from fastapi import APIRouter, Query
 
-from ..services import tdd_suggestions
+from ..services.tdd import get_component_suggestions_by_source, get_tdd_suggestions
 from .dependencies import validate_project_exists
 
 router = APIRouter()
@@ -28,7 +28,7 @@ async def get_suggestions(project_id: str) -> dict[str, Any]:
     """
     validate_project_exists(project_id)
 
-    return tdd_suggestions.get_tdd_suggestions(project_id)
+    return get_tdd_suggestions(project_id)
 
 
 @router.get("/projects/{project_id}/tdd/component-suggestions")
@@ -45,4 +45,4 @@ async def get_component_suggestions(
     """
     validate_project_exists(project_id)
 
-    return tdd_suggestions.get_component_suggestions_by_source(project_id, source)
+    return get_component_suggestions_by_source(project_id, source)

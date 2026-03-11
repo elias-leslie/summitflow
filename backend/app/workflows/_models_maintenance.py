@@ -13,8 +13,3 @@ class ScanInput(BaseModel):
 
 class StaleCleanupInput(BaseModel):
     max_age_days: int = 30
-
-
-class DebugCleanupInput(BaseModel):
-    max_age_days: int = 7
-    max_files: int = 20

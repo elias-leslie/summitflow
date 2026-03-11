@@ -24,30 +24,6 @@ export interface Checkpoint {
   branches: BranchInfo[]
 }
 
-export interface CheckpointsListResponse {
-  checkpoints: Checkpoint[]
-  total: number
-}
-
-/**
- * List all active checkpoints.
- *
- * @param projectId - Optional filter by project ID
- * @returns List of checkpoints
- */
-export async function listCheckpoints(
-  projectId?: string,
-): Promise<CheckpointsListResponse> {
-  const url = `/api/checkpoints${buildQueryString({ project_id: projectId })}`
-  const response = await fetch(url)
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch checkpoints: ${response.statusText}`)
-  }
-
-  return response.json()
-}
-
 /**
  * Get checkpoint details for a specific task.
  *

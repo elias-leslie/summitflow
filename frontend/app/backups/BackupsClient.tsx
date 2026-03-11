@@ -518,7 +518,7 @@ export function BackupsClient() {
       const backups = query.state.data?.backups
       if (!backups) return 10000
       const hasActive = backups.some(
-        (b) => b.status === 'pending' || b.status === 'running',
+        (b: Backup) => b.status === 'pending' || b.status === 'running',
       )
       const recentlyDispatched = Date.now() - dispatchedAtRef.current < 30_000
       return hasActive || recentlyDispatched ? 3000 : false

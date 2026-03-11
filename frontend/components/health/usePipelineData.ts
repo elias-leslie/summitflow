@@ -12,6 +12,7 @@ export function usePipelineData(projectId: string) {
           errorMessage: 'Failed to fetch pipeline stats',
         },
       ),
+    staleTime: 15000,
     refetchInterval: 30000,
     enabled: !!projectId,
   })

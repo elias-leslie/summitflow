@@ -30,7 +30,7 @@ HEALTH_URLS: dict[str, str] = {
     "portfolio-ai": "http://localhost:8000/health",
     "terminal": "http://localhost:8002/health",
 }
-# Backward compatibility alias for refactored name
+# Legacy alias — used by autonomous review actions and tests
 PROD_HEALTH_URLS = HEALTH_URLS
 
 

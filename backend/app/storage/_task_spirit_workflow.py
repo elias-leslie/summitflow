@@ -7,7 +7,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from ._task_spirit_helpers import _row_to_dict
+from ._task_spirit_helpers import SPIRIT_SELECT, _row_to_dict
 from .connection import get_connection
 
 logger = logging.getLogger(__name__)
@@ -38,7 +38,7 @@ def approve_plan(
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(
-            """
+            f"""
             UPDATE task_spirit SET
                 plan_status = 'approved',
                 plan_approved_at = %s,
@@ -46,14 +46,14 @@ def approve_plan(
                 plan_history = COALESCE(plan_history, '[]'::jsonb) || %s::jsonb,
                 updated_at = NOW()
             WHERE task_id = %s
-            RETURNING *
+            RETURNING {SPIRIT_SELECT}
             """,
             (now, approved_by, json.dumps([history_entry]), task_id),
         )
         row = cur.fetchone()
         conn.commit()
     if row:
-        logger.info(f"Approved plan for task {task_id} by {approved_by}")
+        logger.info("Approved plan for task %s by %s", task_id, approved_by)
     return _row_to_dict(row)
 
 
@@ -82,20 +82,20 @@ def reject_plan(
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(
-            """
+            f"""
             UPDATE task_spirit SET
                 plan_status = 'rejected',
                 plan_history = COALESCE(plan_history, '[]'::jsonb) || %s::jsonb,
                 updated_at = NOW()
             WHERE task_id = %s
-            RETURNING *
+            RETURNING {SPIRIT_SELECT}
             """,
             (json.dumps([history_entry]), task_id),
         )
         row = cur.fetchone()
         conn.commit()
     if row:
-        logger.info(f"Rejected plan for task {task_id} by {rejected_by}: {reason}")
+        logger.info("Rejected plan for task %s by %s: %s", task_id, rejected_by, reason)
     return _row_to_dict(row)
 
 
@@ -116,7 +116,7 @@ def set_plan_status(
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(
-            """
+            f"""
             UPDATE task_spirit SET
                 plan_status = %s,
                 plan_approved_at = CASE WHEN %s = 'approved' THEN COALESCE(plan_approved_at, %s) ELSE NULL END,
@@ -124,7 +124,7 @@ def set_plan_status(
                 plan_history = COALESCE(plan_history, '[]'::jsonb) || %s::jsonb,
                 updated_at = NOW()
             WHERE task_id = %s
-            RETURNING *
+            RETURNING {SPIRIT_SELECT}
             """,
             (plan_status, plan_status, now, plan_status, actor, json.dumps([history_entry]), task_id),
         )

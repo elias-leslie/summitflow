@@ -10,6 +10,7 @@ import logging
 from typing import Any
 
 from ._subtask_dep_helpers import (
+    DEP_SELECT,
     CycleError,
     build_graph,
     fetch_inserted_deps,
@@ -36,18 +37,18 @@ def add_dependency(subtask_id: str, depends_on_subtask_id: str) -> dict[str, Any
         cur = conn.cursor()
         try:
             cur.execute(
-                """
+                f"""
                 INSERT INTO subtask_dependencies (subtask_id, depends_on_subtask_id)
                 VALUES (%s, %s)
                 ON CONFLICT (subtask_id, depends_on_subtask_id) DO NOTHING
-                RETURNING *
+                RETURNING {DEP_SELECT}
                 """,
                 (subtask_id, depends_on_subtask_id),
             )
             row = cur.fetchone()
             conn.commit()
             if row:
-                logger.info(f"Added dependency: {subtask_id} -> {depends_on_subtask_id}")
+                logger.info("Added dependency: %s -> %s", subtask_id, depends_on_subtask_id)
                 return row_to_dict(row)
             return None
         except Exception as e:
@@ -68,7 +69,7 @@ def remove_dependency(subtask_id: str, depends_on_subtask_id: str) -> bool:
         deleted = cur.rowcount > 0
         conn.commit()
         if deleted:
-            logger.info(f"Removed dependency: {subtask_id} -> {depends_on_subtask_id}")
+            logger.info("Removed dependency: %s -> %s", subtask_id, depends_on_subtask_id)
         return deleted
 
 
@@ -186,5 +187,5 @@ def delete_dependencies_for_subtask(subtask_id: str) -> int:
         deleted = cur.rowcount
         conn.commit()
         if deleted:
-            logger.info(f"Deleted {deleted} dependencies for subtask {subtask_id}")
+            logger.info("Deleted %d dependencies for subtask %s", deleted, subtask_id)
         return deleted

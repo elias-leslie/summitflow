@@ -276,7 +276,7 @@ def get_scan_metrics(project_id: str) -> dict[str, Any]:
                     CASE
                         WHEN entry_type = 'file'
                         AND metadata->>'complexity_score' IS NOT NULL
-                        AND metadata->>'complexity_score' ~ '^[0-9]+\.?[0-9]*$'
+                        AND metadata->>'complexity_score' ~ '^[0-9]+\\.?[0-9]*$'
                         THEN (metadata->>'complexity_score')::float
                         ELSE 0
                     END

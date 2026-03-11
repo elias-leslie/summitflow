@@ -85,7 +85,7 @@ class PageScanner(BaseScanner):
         """Load root_path and frontend_dir from project config and overrides. Returns False on error."""
         project_config = get_project_config(self.project_id)
         if not project_config:
-            logger.error(f"Project not found: {self.project_id}")
+            logger.error("Project not found: %s", self.project_id)
             return False
         for source in (project_config, self.config):
             if source.get("root_path"):
@@ -100,7 +100,7 @@ class PageScanner(BaseScanner):
             if source.get("base_url"):
                 self.page_base_url = str(source["base_url"]).rstrip("/")
         if not self.root_path:
-            logger.error(f"No root_path for project {self.project_id}")
+            logger.error("No root_path for project %s", self.project_id)
             return False
         if self.frontend_port is None:
             services = get_services(self.project_id)
@@ -114,9 +114,9 @@ class PageScanner(BaseScanner):
         """Scan frontend pages and return page entries."""
         if not self._load_config():
             return []
-        logger.info(f"Page scan started for {self.project_id}")
+        logger.info("Page scan started for %s", self.project_id)
         entries = self._scan_nextjs_pages() or self._scan_spa_pages()
-        logger.info(f"Page scan found {len(entries)} pages")
+        logger.info("Page scan found %d pages", len(entries))
         return entries
 
     def _find_app_dir(self) -> Path | None:
@@ -147,7 +147,7 @@ class PageScanner(BaseScanner):
                     )
                 )
             except Exception as e:
-                logger.warning(f"Failed to scan page {page_file}: {e}")
+                logger.warning("Failed to scan page %s: %s", page_file, e)
         return entries
 
     def _scan_spa_pages(self) -> list[ExplorerEntryCreate]:

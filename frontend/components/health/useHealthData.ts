@@ -16,6 +16,7 @@ export function useHealthData(projectId: string) {
         },
       ),
     enabled: !!projectId,
+    staleTime: 15000,
     refetchInterval: 30000,
   })
 
@@ -32,6 +33,7 @@ export function useHealthData(projectId: string) {
         },
       ),
     enabled: !!projectId,
+    staleTime: 15000,
     refetchInterval: 30000,
   })
 
@@ -45,6 +47,7 @@ export function useHealthData(projectId: string) {
         },
       ),
     enabled: !!projectId,
+    staleTime: 15000,
     refetchInterval: 30000,
   })
 
