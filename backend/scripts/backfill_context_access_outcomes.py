@@ -53,11 +53,11 @@ def _process_session(cur: Any, session_id: str, outcome: str, stats: dict[str, i
         updated = _update_session_outcome(cur, session_id, outcome)
         if updated > 0:
             stats["entries_updated"] += updated
-            logger.debug(f"  Session {session_id[:8]}...: {updated} entries updated")
+            logger.debug("  Session %s...: %d entries updated", session_id[:8], updated)
         stats["sessions_processed"] += 1
     except Exception as e:
         stats["errors"] += 1
-        logger.error(f"  Error processing session {session_id}: {e}")
+        logger.error("  Error processing session %s: %s", session_id, e)
 
 
 def backfill_outcomes() -> dict[str, int]:
@@ -80,7 +80,7 @@ def backfill_outcomes() -> dict[str, int]:
         )
         diary_entries = cur.fetchall()
 
-        logger.info(f"Found {len(diary_entries)} session diary entries with outcomes")
+        logger.info("Found %d session diary entries with outcomes", len(diary_entries))
 
         # For each diary entry, update context_access_log
         for session_id, outcome in diary_entries:
@@ -114,7 +114,7 @@ def main() -> int:
     with get_connection() as conn, conn.cursor() as cur:
         null_count, filled_count = _get_outcome_counts(cur)
 
-    logger.info(f"Current state: {filled_count} with outcomes, {null_count} without")
+    logger.info("Current state: %d with outcomes, %d without", filled_count, null_count)
 
     if null_count == 0:
         logger.info("No entries need backfilling. Exiting.")
@@ -124,9 +124,9 @@ def main() -> int:
     stats = backfill_outcomes()
 
     logger.info("Backfill complete!")
-    logger.info(f"  Sessions processed: {stats['sessions_processed']}")
-    logger.info(f"  Entries updated: {stats['entries_updated']}")
-    logger.info(f"  Errors: {stats['errors']}")
+    logger.info("  Sessions processed: %d", stats["sessions_processed"])
+    logger.info("  Entries updated: %d", stats["entries_updated"])
+    logger.info("  Errors: %d", stats["errors"])
 
     # Verify final state
     with get_connection() as conn, conn.cursor() as cur:
@@ -134,7 +134,7 @@ def main() -> int:
         remaining_row = cur.fetchone()
         assert remaining_row is not None
         remaining = remaining_row[0]
-        logger.info(f"  Remaining NULL entries: {remaining}")
+        logger.info("  Remaining NULL entries: %d", remaining)
 
     return 0 if stats["errors"] == 0 else 1
 
