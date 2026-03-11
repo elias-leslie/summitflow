@@ -80,8 +80,8 @@ def _perform_completion(
         )
         if sync_analysis.synced:
             output_success(f"Pre-synced subtasks before completion: {', '.join(sync_analysis.synced)}")
-        _auto_verify_readiness(client, task_id)
         auto_close_subtasks(client, task_id, project_id)
+        _auto_verify_readiness(client, task_id)
 
     merge_task_branch(task_id, project_id=project_id)
     try:
