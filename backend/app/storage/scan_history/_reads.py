@@ -150,7 +150,7 @@ def _fetch_complexity_trend(cur: Any, project_id: str) -> str:
                   AND status = 'completed' AND metrics->>'complexity' IS NOT NULL
             GROUP BY period
         )
-        SELECT * FROM weekly WHERE period IS NOT NULL
+        SELECT period, avg_complexity FROM weekly WHERE period IS NOT NULL
         """,
         (project_id,),
     )

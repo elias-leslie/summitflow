@@ -15,8 +15,8 @@ export function FilesModified({ files }: FilesModifiedProps) {
         Files Modified
       </div>
       <div className="flex flex-wrap gap-1">
-        {files.slice(0, 5).map((file, i) => (
-          <Badge key={i} variant="outline" className="text-xs font-mono">
+        {files.slice(0, 5).map((file) => (
+          <Badge key={file} variant="outline" className="text-xs font-mono">
             {file.split('/').pop()}
           </Badge>
         ))}

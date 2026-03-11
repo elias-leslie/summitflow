@@ -179,6 +179,7 @@ export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedP
         limit: 100,
         types: typeFilter === 'all' ? undefined : [typeFilter],
       }),
+    staleTime: 15000,
     refetchInterval: 30000,
   })
 

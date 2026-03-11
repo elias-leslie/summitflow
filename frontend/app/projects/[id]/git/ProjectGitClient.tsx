@@ -27,6 +27,7 @@ export function ProjectGitClient() {
   } = useQuery({
     queryKey: ['git-status', projectId],
     queryFn: () => fetchProjectGitStatus(projectId),
+    staleTime: 15000,
     refetchInterval: 30000,
   })
 

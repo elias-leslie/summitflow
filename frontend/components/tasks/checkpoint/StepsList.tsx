@@ -23,7 +23,7 @@ export function StepsList({ steps, type }: StepsListProps) {
       </div>
       <ScrollArea className="max-h-24">
         {steps.slice(0, 10).map((step, i) => (
-          <div key={i} className="flex items-start gap-1.5 text-xs py-0.5">
+          <div key={`${type}-${i}-${step.slice(0, 12)}`} className="flex items-start gap-1.5 text-xs py-0.5">
             <Icon className={iconClass} />
             <span className={textClass}>{step}</span>
           </div>

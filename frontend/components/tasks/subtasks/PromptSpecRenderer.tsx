@@ -13,12 +13,12 @@ function HighlightTemplateVars({ text }: { text: string }) {
       {parts.map((part, i) => {
         if (part.match(/^\{\{?\w+\}?\}$/)) {
           return (
-            <span key={i} className="text-purple-400 font-semibold">
+            <span key={`var-${i}-${part}`} className="text-purple-400 font-semibold">
               {part}
             </span>
           )
         }
-        return <span key={i}>{part}</span>
+        return <span key={`text-${i}-${part.slice(0, 8)}`}>{part}</span>
       })}
     </>
   )

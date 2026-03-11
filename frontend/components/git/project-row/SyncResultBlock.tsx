@@ -58,7 +58,7 @@ export function SyncResultBlock({ result }: { result: SyncResult }) {
       {result.errors.length > 0 && (
         <div className="space-y-0.5 mb-1.5">
           {result.errors.map((error, i) => (
-            <div key={i} className="text-[10px] font-mono text-pink-400 bg-pink-500/5 px-2 py-0.5 rounded">
+            <div key={`err-${i}-${error.slice(0, 16)}`} className="text-[10px] font-mono text-pink-400 bg-pink-500/5 px-2 py-0.5 rounded">
               {error}
             </div>
           ))}

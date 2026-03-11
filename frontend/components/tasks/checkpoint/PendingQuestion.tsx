@@ -23,7 +23,7 @@ export function PendingQuestion({
           <div className="text-xs text-slate-500">Options:</div>
           {options.map((opt, i) => (
             <div
-              key={i}
+              key={`opt-${i}-${opt.label}`}
               className="text-sm pl-2 text-slate-600 dark:text-slate-400"
             >
               {i + 1}. {opt.label}

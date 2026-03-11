@@ -168,7 +168,7 @@ export function EscalationPanel({
               <div className="flex-1 overflow-y-auto p-4 space-y-3">
                 {chatMessages.map((msg, i) => (
                   <div
-                    key={i}
+                    key={`${msg.role}-${i}-${msg.content?.slice(0, 12)}`}
                     className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                   >
                     <div

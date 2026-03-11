@@ -34,6 +34,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
     queryKey: ['project-health', project.id],
     queryFn: () => fetchProjectHealth(project.id),
     enabled: showHealth,
+    staleTime: 15000,
     refetchInterval: showHealth ? 30000 : false,
   })
 
@@ -41,6 +42,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
     queryKey: ['quality-gate-health', project.id],
     queryFn: () => fetchQualityGateHealth(project.id),
     enabled: showHealth,
+    staleTime: 15000,
     refetchInterval: showHealth ? 30000 : false,
   })
 
