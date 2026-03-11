@@ -6,13 +6,13 @@ for subtasks, supporting Agent Hub ACE-aligned tier optimization.
 
 from __future__ import annotations
 
-import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from ..logging_config import get_logger
 from .connection import get_connection
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def parse_citation(citation: str) -> tuple[str, str]:

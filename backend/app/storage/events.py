@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import logging
 import uuid
 from datetime import UTC, datetime
 from typing import Any
 
 from psycopg.types.json import Jsonb
 
+from ..logging_config import get_logger
 from ._events_models import (
     Event,
     EventCreate,
@@ -35,7 +35,7 @@ __all__ = [
     "log_task_event",
 ]
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _ACTIVE_TASK_STATUSES = (
     "pending",

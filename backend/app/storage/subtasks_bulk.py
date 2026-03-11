@@ -5,14 +5,14 @@ This module provides bulk creation operations for subtasks.
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
+from ..logging_config import get_logger
 from .connection import get_connection
 from .steps import bulk_create_steps
 from .subtasks_helpers import SUBTASK_COLUMNS, generate_subtask_id, row_to_dict
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _INSERT_SQL = f"""
     INSERT INTO task_subtasks (id, task_id, subtask_id, phase, description,

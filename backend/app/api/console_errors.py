@@ -14,6 +14,9 @@ logger = get_logger(__name__)
 
 router = APIRouter()
 
+_MAX_ERROR_PREVIEW = 80
+_MAX_STACK_TRACE = 2000
+
 
 def _compute_console_error_hash(error: str, stack: str | None) -> str:
     """Compute a stable hash for a console error.
@@ -38,8 +41,8 @@ def _build_error_title(error: str) -> str:
     Returns:
         Formatted title with truncated error preview
     """
-    error_preview = error[:80]
-    if len(error) > 80:
+    error_preview = error[:_MAX_ERROR_PREVIEW]
+    if len(error) > _MAX_ERROR_PREVIEW:
         error_preview += "..."
     return f"Fix: [Frontend] {error_preview}"
 
@@ -75,7 +78,7 @@ def _build_error_description(request: ConsoleErrorRequest, error_hash: str) -> s
                 "",
                 "**Stack Trace:**",
                 "```",
-                request.stack[:2000],  # Limit stack trace size
+                request.stack[:_MAX_STACK_TRACE],
                 "```",
             ]
         )

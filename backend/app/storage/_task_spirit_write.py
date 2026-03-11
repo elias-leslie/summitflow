@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import json
-import logging
 from typing import Any
 
+from ..logging_config import get_logger
 from ._task_spirit_helpers import SPIRIT_SELECT, _row_to_dict
 from .connection import get_connection
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _INSERT_FIELDS = "(task_id, objective, spirit_anti, decisions, constraints, done_when, context, complexity)"
 _INSERT_PLACEHOLDERS = "(%s, %s, %s, %s, %s, %s, %s, %s)"

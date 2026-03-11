@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import logging
 from datetime import datetime
 from typing import Any, TypedDict
 
+from ..logging_config import get_logger
 from .connection import get_connection
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ExplorerSubElement(TypedDict, total=False):

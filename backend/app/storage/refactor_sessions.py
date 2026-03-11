@@ -6,12 +6,12 @@ Replaces volatile /tmp file storage with database persistence.
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
+from ..logging_config import get_logger
 from .connection import get_connection
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def create_refactor_session(

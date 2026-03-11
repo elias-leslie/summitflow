@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING
+
+from ...logging_config import get_logger
 
 if TYPE_CHECKING:
     from ..models.git_models import SyncResult
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def build_sync_response_from_result(result: SyncResult) -> dict[str, int]:

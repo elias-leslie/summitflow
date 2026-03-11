@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
+from ..logging_config import get_logger
 from .connection import get_connection
 from .steps_crud import get_step
 from .steps_exceptions import StepDeletionResult, StepGateError
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _check_passed_gate(step_number: int, was_passed: bool, force: bool) -> None:

@@ -7,12 +7,12 @@ context handoff between sequential subtasks without accumulated history.
 from __future__ import annotations
 
 import json
-import logging
 from typing import Any
 
+from ..logging_config import get_logger
 from .connection import get_connection
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _row_to_summary_dict(row: tuple[Any, ...]) -> dict[str, Any]:

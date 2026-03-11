@@ -1,7 +1,6 @@
 """Database connection management with connection pooling."""
 
 import atexit
-import logging
 import uuid
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -10,8 +9,9 @@ import psycopg
 from psycopg_pool import ConnectionPool
 
 from ..config import DATABASE_URL
+from ..logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Module-level connection pool (lazy-initialized)
 _pool: ConnectionPool | None = None

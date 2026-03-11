@@ -4,10 +4,9 @@ This module contains the init_schema() function which creates all database table
 Table creation is delegated to focused modules in the tables/ subdirectory.
 """
 
-import logging
-
 import psycopg
 
+from ..logging_config import get_logger
 from .connection import get_connection
 from .tables import (
     apply_schema_migrations,
@@ -18,7 +17,7 @@ from .tables import (
     create_notifications_tables,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # PostgreSQL advisory lock ID for schema initialization
 # Using a fixed hash to ensure all workers use the same lock

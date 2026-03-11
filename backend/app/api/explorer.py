@@ -15,20 +15,20 @@ Endpoints:
 - GET /api/projects/{id}/explorer/children - Get children for tree nav
 """
 
-import logging
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from fastapi.responses import JSONResponse
 
+from ..logging_config import get_logger
 from ..services import explorer
 from ..storage import explorer as explorer_storage
 from ..storage import scan_history
 from . import explorer_helpers as helpers
 from .dependencies import validate_project_exists
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter()
 

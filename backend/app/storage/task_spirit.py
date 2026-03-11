@@ -13,9 +13,9 @@ Public API is re-exported from internal modules for maintainability.
 from __future__ import annotations
 
 import json
-import logging
 from typing import Any
 
+from ..logging_config import get_logger
 from ._task_spirit_helpers import EXPECTED_COLUMNS, SPIRIT_SELECT, _row_to_dict
 from ._task_spirit_workflow import approve_plan, reject_plan, set_plan_status
 from ._task_spirit_write import create_task_spirit, delete_task_spirit, upsert_task_spirit
@@ -35,7 +35,7 @@ __all__ = [
     "upsert_task_spirit",
 ]
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def get_task_spirit(task_id: str) -> dict[str, Any] | None:

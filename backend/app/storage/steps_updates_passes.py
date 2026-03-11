@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import logging
 from datetime import UTC, datetime
 
+from ..logging_config import get_logger
 from .connection import get_connection
 from .steps_crud_serialization import STEP_COLUMNS, row_to_dict
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _TABLE = "task_subtask_steps"
 _WHERE = "WHERE subtask_id = %s AND step_number = %s"

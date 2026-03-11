@@ -6,12 +6,11 @@ All functions use short subtask IDs (e.g., "1.1") and convert to table IDs inter
 
 from __future__ import annotations
 
-import logging
-
+from ..logging_config import get_logger
 from .connection import get_connection
 from .subtasks_helpers import SUBTASK_COLUMNS, generate_subtask_id, row_to_dict
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def get_subtask(task_id: str, subtask_id: str) -> dict[str, object] | None:

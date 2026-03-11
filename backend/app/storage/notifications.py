@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 from typing import Any
 
+from ..logging_config import get_logger
 from .connection import generate_prefixed_id, get_connection
 from .notifications_helpers import (
     NotificationSeverity,
@@ -34,7 +34,7 @@ from .notifications_write import (
     mark_as_read,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _background_tasks: set[asyncio.Task[None]] = set()
 _SEVERITY_RANK: dict[str, int] = {"info": 0, "warning": 1, "error": 2, "critical": 3}

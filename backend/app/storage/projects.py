@@ -5,14 +5,14 @@ Centralizes project-related database queries.
 
 from __future__ import annotations
 
-import logging
 import os
 from pathlib import Path
 from typing import Any
 
+from ..logging_config import get_logger
 from .connection import get_connection
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def get_project_test_config(project_id: str) -> tuple[Any, ...] | None:

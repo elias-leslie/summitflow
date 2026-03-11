@@ -6,7 +6,7 @@ normalized step data for granular completion tracking within subtasks.
 
 from __future__ import annotations
 
-import logging
+from ..logging_config import get_logger
 
 # Re-export from submodules for backward compatibility
 from .steps_constants import (
@@ -46,7 +46,7 @@ from .steps_updates import (
     update_step_status,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Expose all public symbols
 __all__ = [

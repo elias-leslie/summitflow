@@ -6,9 +6,9 @@ Provides CRUD, topological sort, cycle detection, and blocking status checks.
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
+from ..logging_config import get_logger
 from ._subtask_dep_helpers import (
     DEP_SELECT,
     CycleError,
@@ -20,7 +20,7 @@ from ._subtask_dep_helpers import (
 )
 from .connection import get_connection
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def add_dependency(subtask_id: str, depends_on_subtask_id: str) -> dict[str, Any] | None:

@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-import logging
 from typing import TypedDict, cast
 
 from psycopg.types.json import Jsonb
 
 from ..constants import DEFAULT_CLAUDE_MODEL, DEFAULT_GEMINI_MODEL
+from ..logging_config import get_logger
 from .connection import get_connection
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class AgentConfig(TypedDict, total=False):

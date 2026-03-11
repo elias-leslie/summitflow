@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import json
-import logging
 from collections.abc import Sequence
 from typing import Any
 
+from ..logging_config import get_logger
 from .connection import get_connection
 from .steps_crud_serialization import STEP_COLUMNS, row_to_dict
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 _STEP_SHIFT_OFFSET = 1_000_000
 
 _UPSERT_SQL = (

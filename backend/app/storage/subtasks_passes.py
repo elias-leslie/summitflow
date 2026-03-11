@@ -6,14 +6,14 @@ and citation acknowledgment gates before allowing a subtask to be marked as pass
 
 from __future__ import annotations
 
-import logging
 from datetime import UTC, datetime
 
+from ..logging_config import get_logger
 from .connection import get_connection
 from .subtasks_helpers import SUBTASK_COLUMNS, generate_subtask_id, row_to_dict
 from .subtasks_validation import validate_citations_acknowledged, validate_steps_complete
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _clear_subtask_passes(table_id: str, task_id: str, subtask_id: str) -> dict[str, object] | None:

@@ -5,12 +5,11 @@ This module provides deletion operations for subtasks.
 
 from __future__ import annotations
 
-import logging
-
+from ..logging_config import get_logger
 from .connection import get_connection
 from .subtasks_helpers import generate_subtask_id
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def delete_subtasks_for_task(task_id: str) -> int:

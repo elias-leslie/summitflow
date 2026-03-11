@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-import logging
-
+from ..logging_config import get_logger
 from .connection import get_connection
 from .steps_constants import STEP_STATUS_PLAN_DEFECT, VALID_STEP_STATUSES
 from .steps_crud import get_step
 from .steps_crud_serialization import STEP_COLUMNS, row_to_dict
 from .steps_exceptions import PlanDefectError
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _validate_status(status: str) -> None:

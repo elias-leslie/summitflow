@@ -7,12 +7,13 @@ Note: Alembic migrations are authoritative. This is fallback only.
 """
 
 import contextlib
-import logging
 
 import psycopg
 from psycopg import sql
 
-logger = logging.getLogger(__name__)
+from ...logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 def apply_schema_migrations(conn: psycopg.Connection, cur: psycopg.Cursor) -> None:

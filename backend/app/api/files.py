@@ -7,15 +7,15 @@ Endpoints:
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
+from ..logging_config import get_logger
 from ..services import file_browser
 from .dependencies import ValidProject
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter()
 
