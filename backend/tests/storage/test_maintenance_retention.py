@@ -5,7 +5,9 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from app.storage.celery_results import cleanup_old_celery_results
 from app.storage.connection import get_connection
+from app.storage.events import cleanup_old_events
 from app.storage.notifications import cleanup_old_notifications
 from app.storage.quality_check_results import cleanup_old_results, create_check_result, mark_fixed
 from app.storage.scan_history import cleanup_old_scan_history, fail_stale_running_scans
@@ -40,6 +42,81 @@ def _insert_notification(
                 read_at,
                 dismissed_at,
             ),
+        )
+        conn.commit()
+
+
+def _insert_task(
+    conn: Any,
+    *,
+    task_id: str,
+    project_id: str,
+    status: str,
+) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO tasks (id, project_id, title, status)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status
+            """,
+            (task_id, project_id, task_id, status),
+        )
+        conn.commit()
+
+
+def _insert_event(
+    conn: Any,
+    *,
+    project_id: str,
+    trace_id: str,
+    visibility: str,
+    timestamp: datetime,
+    message: str,
+) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO events (
+                project_id, trace_id, span_id, event_type, source, level,
+                visibility, message, attributes, timestamp
+            )
+            VALUES (%s, %s, %s, 'log', 'test', 'info', %s, %s, '{}'::jsonb, %s)
+            """,
+            (project_id, trace_id, f"span-{message}", visibility, message, timestamp),
+        )
+        conn.commit()
+
+
+def _ensure_celery_result_tables(conn: Any) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS celery_taskmeta (
+                id INTEGER PRIMARY KEY,
+                task_id VARCHAR UNIQUE,
+                status VARCHAR,
+                result BYTEA,
+                date_done TIMESTAMP,
+                traceback TEXT,
+                name VARCHAR,
+                args BYTEA,
+                kwargs BYTEA,
+                worker VARCHAR,
+                retries INTEGER,
+                queue VARCHAR
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS celery_tasksetmeta (
+                id INTEGER PRIMARY KEY,
+                taskset_id VARCHAR UNIQUE,
+                result BYTEA,
+                date_done TIMESTAMP
+            )
+            """
         )
         conn.commit()
 
@@ -143,6 +220,143 @@ class TestQualityCheckRetention:
             conn.commit()
 
         assert remaining == [open_fail["id"]]
+
+
+class TestEventRetention:
+    """Event cleanup keeps active traces and recent user context."""
+
+    def test_cleanup_old_events_preserves_active_and_latest_user_trace_context(
+        self, ensure_test_project: str
+    ) -> None:
+        project_id = ensure_test_project
+        completed_task_id = "task-event-retention-completed"
+        active_task_id = "task-event-retention-active"
+        older = datetime.now(UTC) - timedelta(days=40)
+        newer = datetime.now(UTC) - timedelta(days=39)
+
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM events WHERE trace_id = ANY(%s::text[])", ([completed_task_id, active_task_id],))
+                cur.execute("DELETE FROM tasks WHERE id = ANY(%s::text[])", ([completed_task_id, active_task_id],))
+                conn.commit()
+            _insert_task(conn, task_id=completed_task_id, project_id=project_id, status="completed")
+            _insert_task(conn, task_id=active_task_id, project_id=project_id, status="running")
+            _insert_event(
+                conn,
+                project_id=project_id,
+                trace_id=completed_task_id,
+                visibility="user",
+                timestamp=older,
+                message="completed-older-user",
+            )
+            _insert_event(
+                conn,
+                project_id=project_id,
+                trace_id=completed_task_id,
+                visibility="user",
+                timestamp=newer,
+                message="completed-newer-user",
+            )
+            _insert_event(
+                conn,
+                project_id=project_id,
+                trace_id=completed_task_id,
+                visibility="internal",
+                timestamp=older,
+                message="completed-old-internal",
+            )
+            _insert_event(
+                conn,
+                project_id=project_id,
+                trace_id=active_task_id,
+                visibility="internal",
+                timestamp=older,
+                message="active-old-internal",
+            )
+
+        result = cleanup_old_events(
+            max_internal_age_days=14,
+            max_user_age_days=30,
+            recent_trace_age_days=7,
+            keep_latest_user_per_trace=1,
+        )
+
+        assert result["user_deleted"] >= 1
+        assert result["internal_deleted"] >= 1
+        assert result["total_deleted"] >= 2
+
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT message
+                FROM events
+                WHERE trace_id = ANY(%s::text[])
+                ORDER BY message
+                """,
+                ([completed_task_id, active_task_id],),
+            )
+            remaining = [row[0] for row in cur.fetchall()]
+            cur.execute("DELETE FROM events WHERE trace_id = ANY(%s::text[])", ([completed_task_id, active_task_id],))
+            cur.execute("DELETE FROM tasks WHERE id = ANY(%s::text[])", ([completed_task_id, active_task_id],))
+            conn.commit()
+
+        assert remaining == ["active-old-internal", "completed-newer-user"]
+
+
+class TestCeleryResultRetention:
+    """Celery result cleanup covers task and task-group metadata tables."""
+
+    def test_cleanup_old_celery_results_prunes_old_taskmeta_and_tasksetmeta(self) -> None:
+        with get_connection() as conn:
+            _ensure_celery_result_tables(conn)
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM celery_taskmeta WHERE id = ANY(%s::int[])", ([900001, 900002],))
+                cur.execute(
+                    "DELETE FROM celery_tasksetmeta WHERE id = ANY(%s::int[])",
+                    ([910001, 910002],),
+                )
+                cur.execute(
+                    """
+                    INSERT INTO celery_taskmeta (id, task_id, status, date_done)
+                    VALUES
+                        (900001, 'taskmeta-old', 'SUCCESS', NOW() - INTERVAL '45 days'),
+                        (900002, 'taskmeta-new', 'SUCCESS', NOW() - INTERVAL '5 days')
+                    """
+                )
+                cur.execute(
+                    """
+                    INSERT INTO celery_tasksetmeta (id, taskset_id, date_done)
+                    VALUES
+                        (910001, 'taskset-old', NOW() - INTERVAL '45 days'),
+                        (910002, 'taskset-new', NOW() - INTERVAL '5 days')
+                    """
+                )
+                conn.commit()
+
+        result = cleanup_old_celery_results(max_task_age_days=30, max_group_age_days=30)
+
+        assert result == {
+            "taskmeta_deleted": 1,
+            "tasksetmeta_deleted": 1,
+        }
+
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT id FROM celery_taskmeta WHERE id = ANY(%s::int[]) ORDER BY id",
+                ([900001, 900002],),
+            )
+            remaining_taskmeta = [row[0] for row in cur.fetchall()]
+            cur.execute(
+                "SELECT id FROM celery_tasksetmeta WHERE id = ANY(%s::int[]) ORDER BY id",
+                ([910001, 910002],),
+            )
+            remaining_tasksetmeta = [row[0] for row in cur.fetchall()]
+            cur.execute("DELETE FROM celery_taskmeta WHERE id = ANY(%s::int[])", ([900002],))
+            cur.execute("DELETE FROM celery_tasksetmeta WHERE id = ANY(%s::int[])", ([910002],))
+            conn.commit()
+
+        assert remaining_taskmeta == [900002]
+        assert remaining_tasksetmeta == [910002]
 
 
 class TestScanHistoryRetention:

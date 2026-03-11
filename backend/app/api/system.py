@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from ..services.resource_monitor import (
@@ -12,6 +13,7 @@ from ..services.resource_monitor import (
     get_disk_usage,
     get_memory_usage,
 )
+from ..storage import maintenance_runs as maintenance_store
 
 router = APIRouter(prefix="/api/system", tags=["system"])
 
@@ -55,6 +57,28 @@ class ResourcesResponse(BaseModel):
     )
 
 
+class MaintenanceRunResponse(BaseModel):
+    """One recorded maintenance workflow run."""
+
+    id: int
+    workflow_name: str
+    status: str
+    started_at: datetime
+    finished_at: datetime | None = None
+    duration_ms: int | None = None
+    rows_cleaned: int
+    summary: dict[str, Any] = Field(default_factory=dict)
+    error_message: str | None = None
+    created_at: datetime
+
+
+class MaintenanceStatusResponse(BaseModel):
+    """Operator-facing maintenance run overview."""
+
+    latest: dict[str, MaintenanceRunResponse] = Field(default_factory=dict)
+    recent: list[MaintenanceRunResponse] = Field(default_factory=list)
+
+
 @router.get("/stats", response_model=ResourcesResponse)
 def get_system_resources() -> ResourcesResponse:
     """Get current system resource usage (disk, memory, CPU).
@@ -85,3 +109,21 @@ def get_system_resources() -> ResourcesResponse:
         raise HTTPException(
             status_code=500, detail=f"Error retrieving system resources: {e!s}"
         ) from e
+
+
+@router.get("/maintenance", response_model=MaintenanceStatusResponse)
+def get_maintenance_status(
+    limit: int = Query(default=10, ge=1, le=50),
+) -> MaintenanceStatusResponse:
+    """Return recent maintenance workflow runs and the latest run per workflow."""
+    latest = {
+        workflow_name: MaintenanceRunResponse(**run)
+        for workflow_name, run in maintenance_store.get_latest_maintenance_runs(
+            ("daily_maintenance", "scheduled_backups")
+        ).items()
+    }
+    recent = [
+        MaintenanceRunResponse(**run)
+        for run in maintenance_store.list_maintenance_runs(limit=limit)
+    ]
+    return MaintenanceStatusResponse(latest=latest, recent=recent)

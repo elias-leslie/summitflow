@@ -9,6 +9,7 @@ def create_core_tables(cur: psycopg.Cursor) -> None:
     _create_sitemap_entries_table(cur)
     _create_tasks_table(cur)
     _create_task_dependencies_table(cur)
+    _create_maintenance_runs_table(cur)
 
 
 def _create_projects_table(cur: psycopg.Cursor) -> None:
@@ -173,4 +174,32 @@ def _create_task_dependencies_table(cur: psycopg.Cursor) -> None:
     cur.execute("CREATE INDEX IF NOT EXISTS idx_task_deps_task ON task_dependencies(task_id)")
     cur.execute(
         "CREATE INDEX IF NOT EXISTS idx_task_deps_depends ON task_dependencies(depends_on_task_id)"
+    )
+
+
+def _create_maintenance_runs_table(cur: psycopg.Cursor) -> None:
+    """Create maintenance_runs table and indexes."""
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS maintenance_runs (
+            id BIGSERIAL PRIMARY KEY,
+            workflow_name TEXT NOT NULL,
+            status TEXT NOT NULL,
+            started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            finished_at TIMESTAMPTZ,
+            duration_ms INTEGER,
+            rows_cleaned INTEGER NOT NULL DEFAULT 0,
+            summary JSONB NOT NULL DEFAULT '{}'::jsonb,
+            error_message TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_maintenance_runs_workflow_started"
+        " ON maintenance_runs(workflow_name, started_at DESC)"
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_maintenance_runs_status_started"
+        " ON maintenance_runs(status, started_at DESC)"
     )

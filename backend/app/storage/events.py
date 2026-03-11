@@ -27,6 +27,7 @@ __all__ = [
     "EventLevel",
     "EventVisibility",
     "EventsQueryResult",
+    "cleanup_old_events",
     "create_event",
     "generate_span_id",
     "get_events_by_trace",
@@ -35,6 +36,17 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+
+_ACTIVE_TASK_STATUSES = (
+    "pending",
+    "running",
+    "blocked",
+    "queue",
+    "ai_reviewing",
+    "failed",
+    "paused",
+    "review",
+)
 
 
 def generate_span_id() -> str:
@@ -146,3 +158,82 @@ def log_task_event(
         message=message,
         attributes=attributes,
     )
+
+
+def cleanup_old_events(
+    *,
+    max_internal_age_days: int = 14,
+    max_user_age_days: int = 30,
+    recent_trace_age_days: int = 14,
+    keep_latest_user_per_trace: int = 50,
+) -> dict[str, int]:
+    """Prune old events while preserving recent and user-relevant trace context."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            WITH trace_state AS (
+                SELECT
+                    e.trace_id,
+                    MAX(e.timestamp) AS latest_event_at,
+                    COALESCE(BOOL_OR(t.status = ANY(%s::text[])), FALSE) AS retain_trace
+                FROM events e
+                LEFT JOIN tasks t ON t.id = e.trace_id
+                GROUP BY e.trace_id
+            ),
+            ranked_user AS (
+                SELECT
+                    e.id,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY e.trace_id
+                        ORDER BY e.timestamp DESC, e.id DESC
+                    ) AS rn
+                FROM events e
+                WHERE e.visibility = 'user'
+            ),
+            candidates AS (
+                SELECT e.id
+                FROM events e
+                JOIN trace_state ts ON ts.trace_id = e.trace_id
+                LEFT JOIN ranked_user ru ON ru.id = e.id
+                WHERE ts.retain_trace = FALSE
+                  AND ts.latest_event_at < NOW() - (%s * INTERVAL '1 day')
+                  AND (
+                      (
+                          e.visibility = 'internal'
+                          AND e.timestamp < NOW() - (%s * INTERVAL '1 day')
+                      ) OR (
+                          e.visibility = 'user'
+                          AND e.timestamp < NOW() - (%s * INTERVAL '1 day')
+                          AND COALESCE(ru.rn, %s + 1) > %s
+                      )
+                  )
+            ),
+            deleted AS (
+                DELETE FROM events
+                WHERE id IN (SELECT id FROM candidates)
+                RETURNING visibility
+            )
+            SELECT
+                COUNT(*) FILTER (WHERE visibility = 'user') AS user_deleted,
+                COUNT(*) FILTER (WHERE visibility = 'internal') AS internal_deleted
+            FROM deleted
+            """,
+            (
+                list(_ACTIVE_TASK_STATUSES),
+                recent_trace_age_days,
+                max_internal_age_days,
+                max_user_age_days,
+                keep_latest_user_per_trace,
+                keep_latest_user_per_trace,
+            ),
+        )
+        row = cur.fetchone()
+        conn.commit()
+
+    user_deleted = int(row[0] or 0) if row else 0
+    internal_deleted = int(row[1] or 0) if row else 0
+    return {
+        "user_deleted": user_deleted,
+        "internal_deleted": internal_deleted,
+        "total_deleted": user_deleted + internal_deleted,
+    }

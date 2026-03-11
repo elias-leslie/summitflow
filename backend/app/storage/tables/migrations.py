@@ -143,6 +143,27 @@ def _create_migration_indexes(cur: psycopg.Cursor) -> None:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_capability ON tasks(capability_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_feature ON tasks(feature_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_updated ON tasks(updated_at DESC)")
+    with contextlib.suppress(psycopg.errors.UndefinedTable, psycopg.errors.UndefinedColumn):
+        cur.execute(
+            'CREATE INDEX IF NOT EXISTS idx_events_trace_timestamp ON events(trace_id, "timestamp" ASC)'
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_qcr_project_created"
+            " ON quality_check_results(project_id, created_at DESC)"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_qcr_project_type_created"
+            " ON quality_check_results(project_id, check_type, created_at DESC)"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_qa_issues_project_status_detected"
+            " ON qa_issues(project_id, status, last_detected_at DESC)"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_backups_project_event_time"
+            " ON backups(project_id, COALESCE(completed_at, created_at) DESC)"
+            " WHERE status IN ('completed', 'failed')"
+        )
 
 
 def _backfill_execution_mode(cur: psycopg.Cursor) -> None:
