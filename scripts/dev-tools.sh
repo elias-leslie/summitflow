@@ -494,8 +494,8 @@ quick_check() {
 
     # Python tools only if backend exists
     if has_python_backend "$project_dir"; then
-        run_lint "$project_dir" || ((errors++))
-        run_types "$project_dir" || ((errors++))
+        run_lint "$project_dir" || { ((errors++)) || true; }
+        run_types "$project_dir" || { ((errors++)) || true; }
     else
         echo "LINT:OK:skipped_no_python"
         echo "TYPES:OK:skipped_no_python"
@@ -503,8 +503,8 @@ quick_check() {
 
     # Frontend tools if project has frontend
     if has_frontend "$project_dir"; then
-        run_tool_toon biome || ((errors++))
-        run_tool_toon tsc || ((errors++))
+        run_tool_toon biome || { ((errors++)) || true; }
+        run_tool_toon tsc || { ((errors++)) || true; }
     else
         echo "BIOME:OK:skipped_no_frontend"
         echo "TSC:OK:skipped_no_frontend"
@@ -534,8 +534,8 @@ frontend_only_check() {
         return 1
     fi
 
-    run_tool_toon biome || ((errors++))
-    run_tool_toon tsc || ((errors++))
+    run_tool_toon biome || { ((errors++)) || true; }
+    run_tool_toon tsc || { ((errors++)) || true; }
 
     if [[ $errors -eq 0 ]]; then
         echo "CHECK_RESULT:OK"
@@ -554,9 +554,9 @@ full_check() {
     echo "CHECK:$project_name"
     
     if has_python_backend "$project_dir"; then
-        run_lint "$project_dir" || ((errors++))
-        run_types "$project_dir" || ((errors++))
-        run_tests "$project_dir" || ((errors++))
+        run_lint "$project_dir" || { ((errors++)) || true; }
+        run_types "$project_dir" || { ((errors++)) || true; }
+        run_tests "$project_dir" || { ((errors++)) || true; }
     else
         echo "LINT:OK:skipped_no_python"
         echo "TYPES:OK:skipped_no_python"
@@ -565,8 +565,8 @@ full_check() {
 
     # Frontend tools if project has frontend
     if has_frontend "$project_dir"; then
-        run_tool_toon biome || ((errors++))
-        run_tool_toon tsc || ((errors++))
+        run_tool_toon biome || { ((errors++)) || true; }
+        run_tool_toon tsc || { ((errors++)) || true; }
     else
         echo "BIOME:OK:skipped_no_frontend"
         echo "TSC:OK:skipped_no_frontend"
@@ -1200,6 +1200,25 @@ show_help() {
 # MAIN
 # =============================================================================
 
+# Safety net: ensure check actions always print a terminal summary, even on
+# unexpected exit (e.g., signal, unhandled error in a sub-function).
+_DT_SUMMARY_PRINTED=0
+_dt_exit_trap() {
+    local exit_code=$?
+    if [[ $_DT_SUMMARY_PRINTED -eq 0 ]]; then
+        case "$ACTION" in
+            check|quick_check|frontend_only_check)
+                if [[ $exit_code -eq 0 ]]; then
+                    echo "CHECK_RESULT:OK"
+                else
+                    echo "CHECK_RESULT:FAIL:exit_code=$exit_code"
+                fi
+                ;;
+        esac
+    fi
+}
+trap _dt_exit_trap EXIT
+
 case "$ACTION" in
     help)
         show_help
@@ -1209,12 +1228,15 @@ case "$ACTION" in
         ;;
     check)
         full_check "$PROJECT_DIR"
+        _DT_SUMMARY_PRINTED=1
         ;;
     quick_check)
         quick_check "$PROJECT_DIR"
+        _DT_SUMMARY_PRINTED=1
         ;;
     frontend_only_check)
         frontend_only_check "$PROJECT_DIR"
+        _DT_SUMMARY_PRINTED=1
         ;;
     fix)
         if [[ "$TARGET" == "all" ]]; then
