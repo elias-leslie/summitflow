@@ -127,17 +127,17 @@ def merge_and_cleanup_task_worktree(task_id: str, project_id: str) -> MergeResul
 
         if merge_outcome.merge_sha:
             update_task_fields(task_id, merge_sha=merge_outcome.merge_sha)
-        logger.info(f"Merged {task_branch} into {base_branch}", extra={"task_id": task_id})
+        logger.info("Merged %s into %s", task_branch, base_branch, extra={"task_id": task_id})
         return _finalize_task_status(
             task_id,
             _finalize_merge(task_id, project_root, project_id, task_branch, base_branch),
         )
 
     except subprocess.TimeoutExpired:
-        logger.error(f"Timeout during merge/cleanup for task {task_id}")
+        logger.error("Timeout during merge/cleanup for task %s", task_id)
         return _finalize_task_status(task_id, _err(task_id, "Git operation timed out"))
     except Exception as e:
-        logger.error(f"Error merging/cleaning up task {task_id}: {e}")
+        logger.error("Error merging/cleaning up task %s: %s", task_id, e)
         return _finalize_task_status(task_id, _err(task_id, str(e)))
 
 
@@ -169,7 +169,7 @@ def _build_merge_failure_result(
     log_task_event(task_id,
         f"Merge conflict detected in {num_conflicts} file(s): "
         f"{', '.join(merge_outcome.conflicting_files[:5])}")
-    logger.warning(f"Merge conflict for {task_branch}",
+    logger.warning("Merge conflict for %s", task_branch,
         extra={"task_id": task_id, "conflicting_files": merge_outcome.conflicting_files})
     return {
         "task_id": task_id, "status": "conflicted",

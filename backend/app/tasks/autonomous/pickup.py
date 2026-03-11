@@ -133,7 +133,7 @@ def dispatch_task_immediate(
 
     try:
         if dispatch_to_stage(stage, task_id, project_id, dispatch, worker_id_prefix="dispatch"):
-            logger.info(f"Dispatched to {stage} (immediate)", task_id=task_id)
+            logger.info("Dispatched to %s (immediate)", stage, task_id=task_id)
             return {"status": "dispatched", "task_id": task_id, "stage": stage}
 
         return {"status": "already_claimed", "task_id": task_id}

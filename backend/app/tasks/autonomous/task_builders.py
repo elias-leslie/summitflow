@@ -95,7 +95,7 @@ def create_refactor_task(
         description=f"Refactor {relative_path} - simplify structure and aim for <{target_lines} lines where it helps", steps=steps,
         subtask_type="refactor",
     )
-    logger.info(f"Created refactor task {task_id} with line verification: {title}")
+    logger.info("Created refactor task %s with line verification: %s", task_id, title)
     return task_id, issue_id
 
 
@@ -131,7 +131,7 @@ def create_schema_task(
         task_id=task_id, subtask_id="1.1", phase="backend",
         description=f"Fix {violation_type} in {table_name}", steps=steps,
     )
-    logger.info(f"Created schema task {task_id}, linked to issue {issue_id}: {title}")
+    logger.info("Created schema task %s, linked to issue %s: %s", task_id, issue_id, title)
     return task_id, issue_id
 
 
@@ -164,5 +164,5 @@ def create_architecture_task(
 
     link_task_to_issue(task_id, issue_id)
     create_architecture_subtasks(task_id, violation_type, affected_files)
-    logger.info(f"Created consolidated architecture task {task_id} for {violation_type}: {len(affected_files)} files, linked to issue {issue_id}")
+    logger.info("Created consolidated architecture task %s for %s: %d files, linked to issue %s", task_id, violation_type, len(affected_files), issue_id)
     return task_id, issue_id

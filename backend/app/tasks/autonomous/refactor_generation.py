@@ -103,7 +103,7 @@ def _check_skip(
             return True
     elif skip_existing and task_store.task_exists_for_file(project_id, relative_path):
         _backfill_existing_refactor_scopes(project_id, relative_path)
-        logger.info(f"Skipping {relative_path}: task already exists")
+        logger.info("Skipping %s: task already exists", relative_path)
         return True
     return False
 
@@ -146,7 +146,7 @@ def _build_and_create_task(
     if task_id:
         _ensure_refactor_scope(task_id, relative_path)
         retired_count += _retire_duplicate_refactor_tasks(project_id, relative_path, task_id)
-        logger.info(f"Created task {task_id} with spirit+criteria, linked to issue {issue_id}")
+        logger.info("Created task %s with spirit+criteria, linked to issue %s", task_id, issue_id)
         return True, retired_count
     return False, retired_count
 
@@ -245,7 +245,7 @@ def regenerate_refactor_tasks_impl(project_id: str) -> dict[str, Any]:
     """Scan, close resolved refactor tasks, and create only newly needed tasks."""
     project_root = get_project_root_path(project_id)
     if not project_root:
-        logger.error(f"Project {project_id} not found or has no root_path")
+        logger.error("Project %s not found or has no root_path", project_id)
         return {
             "error": f"Project {project_id} not found",
             "closed_count": 0,
@@ -257,9 +257,8 @@ def regenerate_refactor_tasks_impl(project_id: str) -> dict[str, Any]:
     closed_count = check_and_close_resolved_issues(project_id)
     result = generate_refactor_tasks_internal(project_id, skip_existing=True, project_root=project_root)
     logger.info(
-        f"Refactor task sync complete for {project_id}: "
-        f"closed={closed_count}, created={result['created_count']}, "
-        f"retired={result['retired_count']}, "
-        f"scanned={result['scanned_count']}, skipped={result['skipped_count']}"
+        "Refactor task sync complete for %s: closed=%d, created=%d, retired=%d, scanned=%d, skipped=%d",
+        project_id, closed_count, result['created_count'],
+        result['retired_count'], result['scanned_count'], result['skipped_count'],
     )
     return {"closed_count": closed_count, **result}

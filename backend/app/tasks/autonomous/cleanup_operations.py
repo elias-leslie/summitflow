@@ -35,7 +35,7 @@ def _cancel_stale_task(task: dict[str, Any], max_age_days: int) -> bool:
             f"Auto-cancelled: No activity for {max_age_days}+ days. "
             "Stale auto-generated task archived.",
         )
-        logger.info(f"Cancelled stale task {task_id}: {task.get('title', '')[:50]}")
+        logger.info("Cancelled stale task %s: %s", task_id, task.get('title', '')[:50])
         return True
     except Exception:
         logger.exception("Failed to cancel task %s", task_id)
@@ -53,14 +53,14 @@ def cleanup_stale_tasks(max_age_days: int = 30) -> dict[str, Any]:
         )
         skipped = len(stale_tasks) - cancelled
 
-        logger.info(f"Stale task cleanup complete: cancelled={cancelled}, skipped={skipped}")
+        logger.info("Stale task cleanup complete: cancelled=%d, skipped=%d", cancelled, skipped)
         return {
             "cancelled_count": cancelled,
             "skipped_count": skipped,
             "max_age_days": max_age_days,
         }
     except Exception as e:
-        logger.error(f"Error in stale task cleanup: {e}")
+        logger.error("Error in stale task cleanup: %s", e)
         return {"error": str(e), "cancelled_count": 0, "skipped_count": 0}
 
 
@@ -151,12 +151,12 @@ def generate_schema_tasks(project_id: str) -> dict[str, Any]:
             skipped += table_skipped
 
         logger.info(
-            f"Schema task generation complete for {project_id}: "
-            f"created={created}, scanned={scanned}, skipped={skipped}"
+            "Schema task generation complete for %s: created=%d, scanned=%d, skipped=%d",
+            project_id, created, scanned, skipped,
         )
         return {"created_count": created, "scanned_count": scanned, "skipped_count": skipped}
     except Exception as e:
-        logger.error(f"Error generating schema tasks: {e}")
+        logger.error("Error generating schema tasks: %s", e)
         return {"error": str(e), "created_count": 0, "scanned_count": 0, "skipped_count": 0}
 
 
@@ -171,7 +171,8 @@ def generate_architecture_tasks(project_id: str) -> dict[str, Any]:
     Users can manually create tasks when they want to act on violations.
     """
     logger.info(
-        f"Architecture task generation disabled for {project_id}. "
-        "Violations are still tracked in Explorer health dashboard."
+        "Architecture task generation disabled for %s. "
+        "Violations are still tracked in Explorer health dashboard.",
+        project_id,
     )
     return {"created_count": 0, "scanned_count": 0, "skipped_count": 0}

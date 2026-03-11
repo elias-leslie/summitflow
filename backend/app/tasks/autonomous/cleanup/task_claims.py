@@ -33,8 +33,8 @@ def reset_expired_task_claims() -> ClaimResetResult:
     try:
         count = task_store.reset_expired_claims()
         if count > 0:
-            logger.info(f"Reset {count} expired task claims")
+            logger.info("Reset %d expired task claims", count)
         return {"reset_count": count, "error": None}
     except Exception as e:
-        logger.error(f"Error resetting expired claims: {e}")
+        logger.error("Error resetting expired claims: %s", e)
         return {"reset_count": 0, "error": str(e)}

@@ -95,7 +95,8 @@ def cleanup_task_worktree(
             }
 
         logger.info(
-            f"Cleaned up worktree for task {task_id}",
+            "Cleaned up worktree for task %s",
+            task_id,
             extra={
                 "task_id": task_id,
                 "worktree_path": worktree_path,
@@ -112,7 +113,7 @@ def cleanup_task_worktree(
         }
 
     except Exception as e:
-        logger.error(f"Error cleaning up worktree for task {task_id}: {e}")
+        logger.error("Error cleaning up worktree for task %s: %s", task_id, e)
         return {
             "task_id": task_id,
             "status": "error",

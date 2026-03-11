@@ -78,7 +78,7 @@ def get_agent_config(project_id: str) -> AgentConfig:
         row = cur.fetchone()
 
         if row is None:
-            logger.warning(f"Project {project_id} not found, returning default config")
+            logger.warning("Project %s not found, returning default config", project_id)
             return DEFAULT_AGENT_CONFIG.copy()
 
         config = row[0]

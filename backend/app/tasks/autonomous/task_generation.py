@@ -40,13 +40,13 @@ def generate_tasks_from_scan(project_id: str) -> dict[str, Any]:
     try:
         result = regenerate_refactor_tasks_impl(project_id)
         logger.info(
-            f"Task generation complete for {project_id}: "
-            f"closed={result['closed_count']}, created={result['created_count']}, "
-            f"scanned={result['scanned_count']}, skipped={result['skipped_count']}"
+            "Task generation complete for %s: closed=%d, created=%d, scanned=%d, skipped=%d",
+            project_id, result['closed_count'], result['created_count'],
+            result['scanned_count'], result['skipped_count'],
         )
         return result
     except Exception as e:
-        logger.error(f"Error generating tasks from scan: {e}")
+        logger.error("Error generating tasks from scan: %s", e)
         return {
             "error": str(e),
             "closed_count": 0,
@@ -66,5 +66,5 @@ def regenerate_refactor_tasks(project_id: str) -> dict[str, Any]:
     try:
         return regenerate_refactor_tasks_sync(project_id)
     except Exception as e:
-        logger.error(f"Error regenerating refactor tasks: {e}")
+        logger.error("Error regenerating refactor tasks: %s", e)
         return {"error": str(e), "deleted_count": 0, "created_count": 0, "scanned_count": 0}
