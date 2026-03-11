@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Event } from '@/lib/api/events'
 import { getEvents } from '@/lib/api/events'
 import { formatDuration } from '@/lib/format'
+import { getErrorMessage } from '@/lib/utils'
 
 // ============================================================================
 // Types
@@ -250,7 +251,7 @@ export function SpanTree({
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to fetch events')
+          setError(getErrorMessage(err, 'Failed to fetch events'))
         }
       } finally {
         if (!cancelled) {

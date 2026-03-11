@@ -15,6 +15,7 @@ import { useEffect, useState } from 'react'
 import { fetchBackupSource, updateBackupSource } from '@/lib/api/backups'
 import { formatDate } from '@/lib/format'
 import { FEEDBACK_TIMEOUT } from '@/lib/polling'
+import { getErrorMessage } from '@/lib/utils'
 
 interface BackupScheduleConfigProps {
   sourceId: string
@@ -70,7 +71,7 @@ export function BackupScheduleConfig({ sourceId }: BackupScheduleConfigProps) {
       setTimeout(() => setSaveSuccess(false), FEEDBACK_TIMEOUT)
     } catch (err) {
       setSaveError(
-        err instanceof Error ? err.message : 'Failed to save schedule',
+        getErrorMessage(err, 'Failed to save schedule'),
       )
     } finally {
       setSaving(false)

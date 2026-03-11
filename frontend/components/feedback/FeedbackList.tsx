@@ -3,22 +3,8 @@
 import { clsx } from 'clsx'
 import { Loader2, MessageSquare, ThumbsUp } from 'lucide-react'
 import type { FeedbackItem, FeedbackFilters } from '@/lib/api/feedback'
+import { formatTimeAgo } from '@/lib/format'
 import { TYPE_CONFIG, STATUS_CONFIG } from './feedbackConstants'
-
-// ============================================================================
-// Helper
-// ============================================================================
-
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime()
-  const minutes = Math.floor(diff / 60000)
-  if (minutes < 60) return `${minutes}m`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h`
-  const days = Math.floor(hours / 24)
-  if (days < 30) return `${days}d`
-  return `${Math.floor(days / 30)}mo`
-}
 
 // ============================================================================
 // Types
@@ -144,7 +130,7 @@ export function FeedbackList({
 
             {/* Age */}
             <span className="flex-shrink-0 text-2xs text-slate-600 w-8 text-right">
-              {timeAgo(item.created_at)}
+              {formatTimeAgo(item.created_at)}
             </span>
           </button>
         )

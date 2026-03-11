@@ -8,6 +8,7 @@ import {
   type AgentHubSessionSummary,
   fetchTaskAgentEvents,
 } from '@/lib/api/tasks'
+import { getErrorMessage } from '@/lib/utils'
 
 interface UseAgentHubEventsOptions {
   taskId: string
@@ -72,7 +73,7 @@ export function useAgentHubEvents({
       })
     } catch (err) {
       if (!mountedRef.current) return
-      setError(err instanceof Error ? err.message : 'Failed to fetch events')
+      setError(getErrorMessage(err, 'Failed to fetch events'))
     } finally {
       if (mountedRef.current) {
         setIsLoading(false)

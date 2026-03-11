@@ -5,6 +5,7 @@ import { AlertTriangle, Clock, Play } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { fetchBlockedTasks, updateTaskStatus, type Task } from '@/lib/api'
+import { formatTimeAgo } from '@/lib/format'
 import { STALE_GIT } from '@/lib/polling'
 import { taskQueryKeys } from '@/lib/task-cache'
 import { useTaskMutationSync } from '@/lib/task-mutation-sync'
@@ -13,15 +14,6 @@ import { getErrorMessage } from '@/lib/utils'
 interface BlockedTasksAlertProps {
   projectId: string
   onTaskClick?: (taskId: string) => void
-}
-
-function timeAgo(dateStr: string | null): string {
-  if (!dateStr) return ''
-  const diff = Date.now() - new Date(dateStr).getTime()
-  const hours = Math.floor(diff / 3600000)
-  if (hours < 1) return '<1h'
-  if (hours < 24) return `${hours}h`
-  return `${Math.floor(hours / 24)}d`
 }
 
 export function BlockedTasksAlert({
@@ -122,7 +114,7 @@ export function BlockedTasksAlert({
                 title={task.created_at ?? undefined}
               >
                 <Clock className="w-3 h-3" />
-                {timeAgo(task.created_at)}
+                {formatTimeAgo(task.created_at)}
               </span>
               <button
                 onClick={(e) => {

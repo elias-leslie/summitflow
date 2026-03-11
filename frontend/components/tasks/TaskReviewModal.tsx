@@ -11,6 +11,7 @@ import {
   type Subtask,
   type Task,
 } from '@/lib/api/tasks'
+import { getErrorMessage } from '@/lib/utils'
 import { DiscussionChat } from './DiscussionChat'
 import { TaskPreview } from './TaskPreview'
 
@@ -68,9 +69,7 @@ export function TaskReviewModal({
           return
         }
         setSubtasks([])
-        setError(
-          err instanceof Error ? err.message : 'Failed to load subtasks',
-        )
+        setError(getErrorMessage(err, 'Failed to load subtasks'))
       })
 
     return () => {
@@ -102,11 +101,7 @@ export function TaskReviewModal({
             return
           }
           setSubtasks([])
-          setError(
-            err instanceof Error
-              ? err.message
-              : 'Failed to refresh subtasks',
-          )
+          setError(getErrorMessage(err, 'Failed to refresh subtasks'))
         })
     },
     [projectId],
@@ -121,7 +116,7 @@ export function TaskReviewModal({
       onAccept(acceptedTask)
       onOpenChange(false)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to accept task')
+      setError(getErrorMessage(err, 'Failed to accept task'))
     } finally {
       setIsAccepting(false)
     }

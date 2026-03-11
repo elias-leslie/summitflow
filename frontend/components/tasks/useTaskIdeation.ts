@@ -13,6 +13,7 @@ import {
 import type { Complexity, IdeationTaskData, IdeationTaskResponse } from './taskIdeationTypes'
 import type { TaskType } from '@/lib/api/tasks-types'
 import { useTaskMutationSync } from '@/lib/task-mutation-sync'
+import { getErrorMessage } from '@/lib/utils'
 
 function extractCreateTaskTool(messages: ChatMessage[]): IdeationTaskData | null {
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -119,7 +120,7 @@ export function useTaskIdeation(projectId: string, onOpenChange: (open: boolean)
       setError(null)
       onOpenChange(false)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create task')
+      setError(getErrorMessage(err, 'Failed to create task'))
     } finally {
       setIsSubmitting(false)
     }

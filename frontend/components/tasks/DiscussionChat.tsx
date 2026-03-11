@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { type DiscussionMessage, discussTask, type Task } from '@/lib/api/tasks'
+import { getErrorMessage } from '@/lib/utils'
 
 interface DiscussionChatProps {
   projectId: string
@@ -65,7 +66,7 @@ export function DiscussionChat({
         onTaskUpdated(response.updated_task)
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to send message')
+      setError(getErrorMessage(err, 'Failed to send message'))
       // Remove the user message on error
       setMessages((prev) => prev.slice(0, -1))
       setInput(trimmedInput) // Restore input

@@ -4,7 +4,8 @@ import { Bot, Minus, Plus, User } from 'lucide-react'
 import { useState } from 'react'
 import { fetchCommitDiff, type CommitInfo } from '@/lib/api/git-enhanced'
 import { DiffPanel } from '../DiffPanel'
-import { isAgentCommit, relativeTime } from './helpers'
+import { formatTimeAgo } from '@/lib/format'
+import { isAgentCommit } from './helpers'
 
 export function CommitEntry({ commit, projectId }: { commit: CommitInfo; projectId: string }) {
   const [diffOpen, setDiffOpen] = useState(false)
@@ -47,7 +48,7 @@ export function CommitEntry({ commit, projectId }: { commit: CommitInfo; project
           </div>
           <div className="flex items-center gap-2 text-[10px] text-slate-500">
             <span>{commit.author_name}</span>
-            <span>{relativeTime(commit.date)}</span>
+            <span>{formatTimeAgo(commit.date)}</span>
           </div>
         </div>
         <div className="shrink-0 flex items-center gap-1.5 text-[10px] font-mono opacity-50 group-hover:opacity-100 transition-opacity">

@@ -4,6 +4,7 @@ import { Loader2, RotateCcw } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
 import { buildApiUrl } from '@/lib/api-config'
+import { getErrorMessage } from '@/lib/utils'
 
 interface ResumeBarProps {
   projectId: string
@@ -41,7 +42,7 @@ export function ResumeBar({
       })
     } catch (err) {
       toast.error('Failed to re-run task', {
-        description: err instanceof Error ? err.message : 'Unknown error',
+        description: getErrorMessage(err, 'Unknown error'),
       })
     } finally {
       setIsResuming(false)

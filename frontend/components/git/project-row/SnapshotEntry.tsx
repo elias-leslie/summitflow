@@ -3,7 +3,7 @@ import clsx from 'clsx'
 import { Loader2, RotateCcw } from 'lucide-react'
 import { useState } from 'react'
 import { revertToSnapshot, type SnapshotInfo } from '@/lib/api/git-enhanced'
-import { relativeTime } from './helpers'
+import { formatTimeAgo } from '@/lib/format'
 
 export function SnapshotEntry({ snapshot }: { snapshot: SnapshotInfo }) {
   const queryClient = useQueryClient()
@@ -38,7 +38,7 @@ export function SnapshotEntry({ snapshot }: { snapshot: SnapshotInfo }) {
         <span className="text-sm text-white truncate block">{snapshot.task_title || snapshot.task_id}</span>
         <div className="flex items-center gap-2 text-[10px] text-slate-500">
           <span className="font-mono">{snapshot.short_sha}</span>
-          <span>{relativeTime(snapshot.created_at)}</span>
+          <span>{formatTimeAgo(snapshot.created_at)}</span>
           {snapshot.commits_ahead > 0 && (
             <span className="text-amber-500/70">{snapshot.commits_ahead} behind</span>
           )}
