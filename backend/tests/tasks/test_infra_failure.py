@@ -27,7 +27,7 @@ class TestInfrastructureFailureClassification:
     def test_detects_infrastructure_failures(
         self, output: str, reason: str, returncode: int
     ) -> None:
-        assert _is_infrastructure_failure(output, reason, returncode) is True
+        assert _is_infrastructure_failure(output, reason, returncode)
 
     @pytest.mark.parametrize(
         "output,reason,returncode",
@@ -43,10 +43,10 @@ class TestInfrastructureFailureClassification:
     def test_detects_code_failures(
         self, output: str, reason: str, returncode: int
     ) -> None:
-        assert _is_infrastructure_failure(output, reason, returncode) is False
+        assert not _is_infrastructure_failure(output, reason, returncode)
 
     def test_reason_field_checked(self) -> None:
-        assert _is_infrastructure_failure("", "command not found", 127) is True
+        assert _is_infrastructure_failure("", "command not found", 127)
 
     def test_empty_output_is_code_failure(self) -> None:
-        assert _is_infrastructure_failure("", "", 1) is False
+        assert not _is_infrastructure_failure("", "", 1)

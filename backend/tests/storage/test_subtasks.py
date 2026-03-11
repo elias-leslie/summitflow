@@ -8,8 +8,8 @@ import pytest
 
 from app.storage import steps as step_store
 from app.storage import subtasks as subtask_store
-from app.storage.subtasks import SubtaskGateError
 from app.storage.subtasks_crud import generate_subtask_id as _generate_subtask_id
+from app.storage.subtasks_validation import SubtaskGateError
 
 
 class TestGenerateSubtaskId:
@@ -44,7 +44,7 @@ class TestCreateSubtask:
         assert subtask["subtask_id"] == "1.1"
         assert subtask["description"] == "First subtask"
         assert subtask["display_order"] == 0
-        assert subtask["passes"] is False
+        assert not subtask["passes"]
         assert subtask["passed_at"] is None
 
     def test_create_subtask_with_phase(self, test_task: dict[str, Any]) -> None:
@@ -192,7 +192,7 @@ class TestUpdateSubtaskPasses:
         updated = subtask_store.update_subtask_passes(test_task["id"], "1.1", True)
 
         assert updated is not None
-        assert updated["passes"] is True
+        assert updated["passes"]
         assert updated["passed_at"] is not None
 
     def test_update_passes_false(self, test_task: dict[str, Any]) -> None:
@@ -208,7 +208,7 @@ class TestUpdateSubtaskPasses:
         updated = subtask_store.update_subtask_passes(test_task["id"], "1.1", False)
 
         assert updated is not None
-        assert updated["passes"] is False
+        assert not updated["passes"]
         assert updated["passed_at"] is None
 
     def test_update_passes_toggle(self, test_task: dict[str, Any]) -> None:
@@ -224,17 +224,17 @@ class TestUpdateSubtaskPasses:
         # On
         u1 = subtask_store.update_subtask_passes(test_task["id"], "1.1", True)
         assert u1 is not None
-        assert u1["passes"] is True
+        assert u1["passes"]
 
         # Off
         u2 = subtask_store.update_subtask_passes(test_task["id"], "1.1", False)
         assert u2 is not None
-        assert u2["passes"] is False
+        assert not u2["passes"]
 
         # On again
         u3 = subtask_store.update_subtask_passes(test_task["id"], "1.1", True)
         assert u3 is not None
-        assert u3["passes"] is True
+        assert u3["passes"]
 
     def test_update_passes_nonexistent(self, test_task: dict[str, Any]) -> None:
         """Test updating non-existent subtask returns None (checked before gate)."""
@@ -532,7 +532,7 @@ class TestSubtaskGates:
         subtask_store.acknowledge_no_citations(test_task["id"], "1.1")
         result = subtask_store.update_subtask_passes(test_task["id"], "1.1", True)
         assert result is not None
-        assert result["passes"] is True
+        assert result["passes"]
 
     def test_subtask_gate_force_param_removed(self, test_task: dict[str, Any]) -> None:
         """Force flag has been removed - no bypass available."""
@@ -567,4 +567,4 @@ class TestSubtaskGates:
         # Can clear subtask even with incomplete steps
         result = subtask_store.update_subtask_passes(test_task["id"], "1.1", False)
         assert result is not None
-        assert result["passes"] is False
+        assert not result["passes"]

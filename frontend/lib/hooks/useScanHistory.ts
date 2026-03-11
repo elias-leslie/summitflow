@@ -12,6 +12,7 @@ import {
   fetchScanHistory,
   type ScanHistoryResponse,
 } from '@/lib/api/explorer-scan'
+import { POLL_RARE, STALE_SCAN } from '@/lib/polling'
 
 // Query key factories for consistent cache management
 export const scanHistoryKeys = {
@@ -58,9 +59,9 @@ export function useScanHistory({
     queryKey: scanHistoryKeys.history(projectId, days, scanType),
     queryFn: () => fetchScanHistory(projectId, days, scanType),
     enabled: enabled && !!projectId,
-    staleTime: 2 * 60 * 1000, // 2 minutes
-    refetchInterval: 5 * 60 * 1000, // 5 minutes
-    gcTime: 10 * 60 * 1000, // 10 minutes
+    staleTime: STALE_SCAN,
+    refetchInterval: POLL_RARE,
+    gcTime: POLL_RARE * 2,
   })
 
   return {

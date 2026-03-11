@@ -129,6 +129,6 @@ def test_get_refactor_targets_includes_top_symbols(
             "end_line": 38,
         },
     ]
-    assert result["targets"][0]["should_create_task"] is True
+    assert result["targets"][0]["should_create_task"]
     assert result["targets"][0]["recommended_action"] == "create_task"
     assert result["targets"][0]["promotion_reasons"]

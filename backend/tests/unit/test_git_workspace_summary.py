@@ -72,7 +72,7 @@ class TestBuildRepoWorkspaceSummary:
         assert summary.task_branches == 3
         assert summary.orphan_branches == 2
         assert summary.prunable_branches == 1
-        assert summary.needs_cleanup is True
+        assert summary.needs_cleanup
         assert summary.worktree_task_ids == ["task-123", "task-999"]
         assert summary.salvage_task_ids == []
         assert summary.review_orphan_task_ids == ["task-789"]
@@ -164,4 +164,4 @@ class TestAssessOrphanTaskBranches:
         assert len(items) == 1
         assert items[0].resolution == "salvage"
         assert items[0].task_status is None
-        assert items[0].has_node_modules_artifact is True
+        assert items[0].has_node_modules_artifact

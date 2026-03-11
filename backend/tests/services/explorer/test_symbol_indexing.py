@@ -65,7 +65,7 @@ export function FilesClient(): React.ReactElement {
 
         result = FileScanner(project_id).run()
 
-        assert result.success is True
+        assert result.success
         backend_symbols = explorer_symbols.list_symbols_for_file(project_id, "backend/app/api/files.py")
         frontend_symbols = explorer_symbols.list_symbols_for_file(
             project_id,
@@ -87,7 +87,7 @@ def get_file_tree(path: str) -> dict[str, str]:
         )
 
         first = FileScanner(project_id).run()
-        assert first.success is True
+        assert first.success
         assert explorer_symbols.get_symbol(
             project_id,
             "backend/app/api/files.py::get_file_tree#function",
@@ -96,7 +96,7 @@ def get_file_tree(path: str) -> dict[str, str]:
         backend_file.unlink()
 
         second = FileScanner(project_id).run()
-        assert second.success is True
+        assert second.success
         assert explorer_symbols.get_symbol(
             project_id,
             "backend/app/api/files.py::get_file_tree#function",

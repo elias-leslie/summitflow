@@ -36,7 +36,7 @@ class TestIsDuplicate:
         mock_conn.return_value.__exit__ = lambda *a: None
 
         result = _is_duplicate("proj-1", "task_failed", "error", "task-1")
-        assert result is False
+        assert not result
 
     @patch("app.storage.notifications.get_connection")
     def test_existing_same_severity_is_duplicate(self, mock_conn: MagicMock) -> None:
@@ -50,7 +50,7 @@ class TestIsDuplicate:
         mock_conn.return_value.__exit__ = lambda *a: None
 
         result = _is_duplicate("proj-1", "task_failed", "error", "task-1")
-        assert result is True
+        assert result
 
     @patch("app.storage.notifications.get_connection")
     def test_severity_escalation_not_duplicate(self, mock_conn: MagicMock) -> None:
@@ -64,7 +64,7 @@ class TestIsDuplicate:
         mock_conn.return_value.__exit__ = lambda *a: None
 
         result = _is_duplicate("proj-1", "task_failed", "error", "task-1")
-        assert result is False  # error > warning → not a dup
+        assert not result  # error > warning → not a dup
 
     @patch("app.storage.notifications.get_connection")
     def test_severity_downgrade_is_duplicate(self, mock_conn: MagicMock) -> None:
@@ -78,13 +78,13 @@ class TestIsDuplicate:
         mock_conn.return_value.__exit__ = lambda *a: None
 
         result = _is_duplicate("proj-1", "task_failed", "warning", "task-1")
-        assert result is True  # warning < error → dup
+        assert result  # warning < error → dup
 
     def test_system_notifications_never_deduped(self) -> None:
         """System notifications bypass dedup entirely."""
         # No DB mock needed — should return False before any query
         result = _is_duplicate("proj-1", "system", "error")
-        assert result is False
+        assert not result
 
 
 class TestCreateTaskFailureNotification:
@@ -161,7 +161,7 @@ class TestCreateTaskFailureNotification:
 
         metadata_json = call_args[0][1][8]  # metadata param (9th positional)
         metadata = json.loads(metadata_json)
-        assert metadata["johnny"] is True
+        assert metadata["johnny"]
         assert metadata["agent_hub_session_ids"] == ["sess-1", "sess-2"]
 
 
@@ -206,7 +206,7 @@ class TestCreateTaskFailureNotification:
 
         metadata_json = call_args[0][1][8]  # metadata param (9th positional)
         metadata = json.loads(metadata_json)
-        assert metadata["johnny"] is True
+        assert metadata["johnny"]
         assert metadata["subtask_id"] == "st-test-42"
         assert metadata["blocker_summary"] == "TypeError in module X"
         assert metadata["recommendation"] == "Check type annotations"
@@ -243,7 +243,7 @@ class TestCreateTaskFailureNotification:
 
         metadata_json = call_args[0][1][8]
         metadata = json.loads(metadata_json)
-        assert metadata["johnny"] is True
+        assert metadata["johnny"]
         assert "subtask_id" not in metadata
         assert "blocker_summary" not in metadata
         assert "recommendation" not in metadata

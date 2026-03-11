@@ -19,4 +19,4 @@ def test_same_venv_rejects_different_envs_even_if_real_binary_matches() -> None:
     current = Path("/tmp/agent-hub/backend/.venv/bin/python")
     target = Path("/tmp/summitflow/backend/.venv/bin/python")
 
-    assert _same_venv(current, target) is False
+    assert not _same_venv(current, target)

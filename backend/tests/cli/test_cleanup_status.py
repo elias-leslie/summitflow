@@ -88,14 +88,14 @@ def test_build_cleanup_status_payload_aggregates_repo_hygiene() -> None:
         "prunable_task_branches": 1,
     }
     assert payload["repositories"][0]["project_id"] == "summitflow"
-    assert payload["repositories"][0]["needs_cleanup"] is True
+    assert payload["repositories"][0]["needs_cleanup"]
     assert payload["repositories"][0]["needs_merge_tasks"] == ["task-1"]
     assert payload["repositories"][0]["review_tasks"] == ["task-2"]
     assert payload["repositories"][0]["orphan_branch_names"] == ["task-3/main"]
     assert payload["repositories"][0]["prunable_branch_names"] == ["task-4/main"]
     assert payload["repositories"][0]["salvage_task_ids"] == ["task-3"]
     assert payload["repositories"][1]["project_id"] == "agent-hub"
-    assert payload["repositories"][1]["needs_cleanup"] is False
+    assert not payload["repositories"][1]["needs_cleanup"]
     assert payload["total"] == 2
 
 
@@ -373,7 +373,7 @@ def test_analyze_worktree_treats_clean_cancelled_conflict_as_safe_delete(tmp_pat
 
     assert analysis.action == CleanupAction.SAFE_DELETE
     assert analysis.task_status == "cancelled"
-    assert analysis.has_conflicts is True
+    assert analysis.has_conflicts
     assert "can be discarded" in analysis.reason
 
 

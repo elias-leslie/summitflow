@@ -29,7 +29,7 @@ class TestPostMergeValidation:
 
         result = run_post_merge_validation("task-1", "/tmp/project", "test-project")
 
-        assert result is True
+        assert result
         mock_run.assert_called_once_with(
             ["dt", "--quick"],
             cwd="/tmp/project",
@@ -47,7 +47,7 @@ class TestPostMergeValidation:
 
         result = run_post_merge_validation("task-1", "/tmp/project", "test-project")
 
-        assert result is False
+        assert not result
         mock_log.assert_called()
 
     @patch("app.storage.log_task_event")
@@ -59,7 +59,7 @@ class TestPostMergeValidation:
 
         result = run_post_merge_validation("task-1", "/tmp/project", "test-project")
 
-        assert result is False
+        assert not result
 
     @patch("app.storage.log_task_event")
     @patch("subprocess.run")
@@ -70,7 +70,7 @@ class TestPostMergeValidation:
 
         result = run_post_merge_validation("task-1", "/tmp/project", "test-project")
 
-        assert result is False
+        assert not result
 
 
 # ---------------------------------------------------------------------------
@@ -94,7 +94,7 @@ class TestAutoRollback:
 
         result = auto_rollback("task-1", "/tmp/project", "test-project", "task-1/main")
 
-        assert result is True
+        assert result
         mock_revert.assert_called_once_with("task-1", "/tmp/project")
         mock_create.assert_called_once_with("task-1", "test-project", "task-1/main")
         mock_store.update_task_status.assert_called_once_with("task-1", "blocked")
@@ -109,7 +109,7 @@ class TestAutoRollback:
 
         result = auto_rollback("task-1", "/tmp/project", "test-project", "task-1/main")
 
-        assert result is False
+        assert not result
 
     @patch("app.storage.log_task_event")
     @patch("app.tasks.autonomous.cleanup.validation.revert_merge_commit")
@@ -120,7 +120,7 @@ class TestAutoRollback:
 
         result = auto_rollback("task-1", "/tmp/project", "test-project", "task-1/main")
 
-        assert result is False
+        assert not result
 
     @patch("app.storage.log_task_event")
     @patch("app.tasks.autonomous.cleanup.validation.revert_merge_commit")
@@ -131,7 +131,7 @@ class TestAutoRollback:
 
         result = auto_rollback("task-1", "/tmp/project", "test-project", "task-1/main")
 
-        assert result is False
+        assert not result
 
 
 # ---------------------------------------------------------------------------
@@ -152,7 +152,7 @@ class TestCreateRegressionFixTask:
         assert kwargs["task_type"] == "regression"
         assert kwargs["priority"] == 1
         assert kwargs["parent_task_id"] == "task-1"
-        assert kwargs["autonomous"] is True
+        assert kwargs["autonomous"]
         assert "task-1" in kwargs["title"]
 
     @patch("app.storage.tasks.core.create_task")
@@ -242,7 +242,7 @@ class TestMergeAndCleanup:
         result = merge_and_cleanup_task_worktree("task-1", "test-project")
 
         assert result["status"] == "merged"
-        assert result["post_merge_valid"] is True
+        assert result["post_merge_valid"]
         mock_git.assert_any_call(["git", "worktree", "prune"], "/tmp/project")
 
     @patch("app.tasks.autonomous.cleanup.merge_operations._git")
@@ -337,7 +337,7 @@ class TestMergeAndCleanup:
         result = merge_and_cleanup_task_worktree("task-1", "test-project")
 
         assert result["status"] == "merged"
-        assert result["branch_deleted"] is True
+        assert result["branch_deleted"]
         mock_checkout.assert_called_once_with("/tmp/project", "main")
         mock_git.assert_called_once_with(["git", "worktree", "prune"], "/tmp/project")
         mock_delete.assert_called_once_with("/tmp/project", "task-1/main", "task-1")

@@ -24,15 +24,15 @@ from cli.commands.done_validators import is_subtask_id
 
 class TestIsSubtaskId:
     def test_valid_subtask_ids(self) -> None:
-        assert is_subtask_id("1.1") is True
-        assert is_subtask_id("2.3") is True
-        assert is_subtask_id("10.20") is True
+        assert is_subtask_id("1.1")
+        assert is_subtask_id("2.3")
+        assert is_subtask_id("10.20")
 
     def test_invalid_subtask_ids(self) -> None:
-        assert is_subtask_id("task-abc") is False
-        assert is_subtask_id("1.2.3") is False
-        assert is_subtask_id("abc") is False
-        assert is_subtask_id("a.b") is False
+        assert not is_subtask_id("task-abc")
+        assert not is_subtask_id("1.2.3")
+        assert not is_subtask_id("abc")
+        assert not is_subtask_id("a.b")
 
 
 class TestAutoCloseSubtasks:
@@ -314,8 +314,8 @@ class TestCompleteTaskSmart:
 
         result = complete_task(client, "task-123")
 
-        assert result["merged"] is False
-        assert result["snapshot_removed"] is False
+        assert not result["merged"]
+        assert not result["snapshot_removed"]
         client.get_task.assert_called_once_with("task-123")
         client.close_task.assert_not_called()
         client.update_status.assert_not_called()
@@ -346,8 +346,8 @@ class TestCompleteTaskSmart:
 
         result = complete_task(client, "task-123", strict=False, admin=True, message="stale state")
 
-        assert result["merged"] is False
-        assert result["snapshot_removed"] is True
+        assert not result["merged"]
+        assert result["snapshot_removed"]
         client.close_task.assert_called_once_with("task-123", reason="stale state", skip_gates=True)
         mock_remove.assert_called_once_with("task-123", project_id="test")
         mock_merge.assert_not_called()
@@ -497,7 +497,7 @@ class TestCompleteTaskSmart:
         assert "st done task-123 --admin" in mock_warning.call_args.args[0]
         mock_remove.assert_called_once()
         mock_publish.assert_called_once_with("task-123", "test")
-        assert result["merged"] is True
+        assert result["merged"]
 
     @patch("cli.commands.done_task.get_snapshot_info")
     @patch("cli.commands.done_task.remove_snapshot")
@@ -589,7 +589,7 @@ class TestGitStashHelpers:
             MagicMock(stdout="", returncode=0),
             MagicMock(stdout="stash@{0}: WIP on main: st-done-auto\n", returncode=0),
         ]
-        assert git_stash_push() is True
+        assert git_stash_push()
 
     @patch("subprocess.run")
     def test_stash_push_returns_false_on_nothing_to_stash(self, mock_run: MagicMock) -> None:
@@ -599,7 +599,7 @@ class TestGitStashHelpers:
             MagicMock(stdout="", returncode=0),
             MagicMock(stdout="", returncode=0),
         ]
-        assert git_stash_push() is False
+        assert not git_stash_push()
 
     @patch("subprocess.run")
     def test_stash_pop_handles_failure_gracefully(self, mock_run: MagicMock) -> None:

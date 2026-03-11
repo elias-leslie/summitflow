@@ -67,7 +67,7 @@ class TestDetectProgress:
             result = detect_progress("sub-1", steps, step_results, str(tmp_path))
 
         assert result is not None
-        assert result["has_code_changes"] is True
+        assert result["has_code_changes"]
         assert "3 files changed" in result["diff_summary"]
 
     def test_detects_defected_steps(self, tmp_path: Path) -> None:
@@ -129,7 +129,7 @@ class TestDetectProgress:
 
         assert result is not None
         assert result["steps_passed"] == "1/2"
-        assert result["has_code_changes"] is True
+        assert result["has_code_changes"]
         assert result["adjusted_steps"] == 1
 
 
@@ -160,7 +160,7 @@ class TestRequestExtension:
             "task-1", "1.1", step_results, progress, project_id="test-project",
         )
 
-        assert approved is True
+        assert approved
         assert guidance is not None
         assert "APPROVED" in guidance
         mock_client.complete.assert_called_once()
@@ -191,7 +191,7 @@ class TestRequestExtension:
             "task-1", "1.1", step_results, progress, project_id="test-project",
         )
 
-        assert approved is False
+        assert not approved
         assert guidance is None
 
     @patch("app.tasks.autonomous.exec_modules.agent_routing.log_task_event")
@@ -215,7 +215,7 @@ class TestRequestExtension:
             "task-1", "1.1", step_results, progress, project_id="test-project",
         )
 
-        assert approved is True
+        assert approved
         assert guidance is None
 
     @patch("app.tasks.autonomous.exec_modules.agent_routing.log_task_event")
@@ -269,7 +269,7 @@ class TestRequestExtension:
             {"steps_passed": "1/2"},
         )
 
-        assert approved is True
+        assert approved
         assert guidance is not None
         assert mock_client.complete.call_args.kwargs["project_id"] == "agent-hub"
 
@@ -382,7 +382,7 @@ class TestHealLoopExtension:
             )
         )
 
-        assert all_passed is True
+        assert all_passed
         assert extensions_granted == 1
         mock_check_ext.assert_called_once()
 
@@ -451,7 +451,7 @@ class TestHealLoopExtension:
             )
         )
 
-        assert all_passed is False
+        assert not all_passed
         assert extensions_granted == 0
         mock_check_ext.assert_called_once()
 
@@ -521,7 +521,7 @@ class TestHealLoopExtension:
             )
         )
 
-        assert all_passed is False
+        assert not all_passed
         assert extensions_granted == 0
         # check_and_request_extension is called (it internally handles the no-progress case)
         mock_check_ext.assert_called_once()

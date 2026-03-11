@@ -61,7 +61,7 @@ def handle_update_step_status(
     return StepResponse(**updated)
 
 
-def _raise_passes_error(e: Exception) -> None:
+def _raise_passes_error(e: Exception) -> NoReturn:
     """Raise HTTPException for StepGateError or StepVerificationError."""
     from ...storage.steps import StepGateError, StepVerificationError
 
@@ -106,7 +106,6 @@ def handle_update_step_passes(
         )
     except (StepGateError, StepVerificationError) as e:
         _raise_passes_error(e)
-        raise AssertionError("unreachable") from e
 
     if updated is None:
         raise HTTPException(status_code=404, detail=f"Step {step_number} not found")

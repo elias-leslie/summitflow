@@ -19,6 +19,7 @@ import {
   Palette,
 } from 'lucide-react'
 import { useState } from 'react'
+import { POLL_RARE } from '@/lib/polling'
 import { cn } from '@/lib/utils'
 import { fetchEffectiveRules } from './api'
 import { CategorySection } from './CategorySection'
@@ -40,7 +41,7 @@ export function DesignStandardsPanel({
   } = useQuery({
     queryKey: ['design-rules', projectId],
     queryFn: () => fetchEffectiveRules(projectId),
-    staleTime: 300000, // 5 minutes
+    staleTime: POLL_RARE,
     refetchOnWindowFocus: false,
   })
 

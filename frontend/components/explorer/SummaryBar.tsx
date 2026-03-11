@@ -10,6 +10,7 @@
 import { Clock, Loader2, RefreshCw } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { formatDate, formatTimeAgo } from '@/lib/format'
+import { POLL_SLOW } from '@/lib/polling'
 import { cn } from '@/lib/utils'
 import type { ExplorerOverviewScan } from '@/lib/api/explorer'
 import { StatusIndicator } from './StatusIndicator'
@@ -66,7 +67,7 @@ export function SummaryBar({
     }
 
     syncTimes()
-    const intervalId = window.setInterval(syncTimes, 60000)
+    const intervalId = window.setInterval(syncTimes, POLL_SLOW)
     return () => window.clearInterval(intervalId)
   }, [lastCompletedScan?.completed_at, stats.lastScan])
 

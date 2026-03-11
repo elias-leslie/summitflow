@@ -142,7 +142,8 @@ def update_subtask_logic(
     Raises:
         HTTPException: If subtask not found or gate conditions not met
     """
-    from ...storage.subtasks import SubtaskGateError, update_subtask_passes
+    from ...storage.subtasks import update_subtask_passes
+    from ...storage.subtasks_validation import SubtaskGateError
 
     try:
         updated = update_subtask_passes(task_id, subtask_id, request.passes)

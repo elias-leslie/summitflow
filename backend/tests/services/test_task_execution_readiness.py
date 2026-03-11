@@ -19,7 +19,7 @@ class TestAssessTaskExecutionReadiness:
             [],
         )
 
-        assert readiness.ready is False
+        assert not readiness.ready
         assert "spirit_anti" in readiness.missing_fields
         assert "subtasks" in readiness.missing_fields
         assert "context" in readiness.missing_fields
@@ -36,7 +36,7 @@ class TestAssessTaskExecutionReadiness:
             [{"subtask_id": "1.1", "description": "Implement API", "steps_from_table": []}],
         )
 
-        assert readiness.ready is False
+        assert not readiness.ready
         assert "steps" in readiness.missing_fields
 
     def test_nontrivial_task_requires_scope_context(self) -> None:
@@ -56,7 +56,7 @@ class TestAssessTaskExecutionReadiness:
             ],
         )
 
-        assert readiness.ready is False
+        assert not readiness.ready
         assert "context" in readiness.missing_fields
         assert any("scope context" in issue.lower() for issue in readiness.issues)
 
@@ -78,7 +78,7 @@ class TestAssessTaskExecutionReadiness:
             ],
         )
 
-        assert readiness.ready is True
+        assert readiness.ready
 
 
 class TestSecondOpinionParsing:
@@ -127,7 +127,7 @@ class TestSecondOpinionParsing:
         )
 
         assert entry is not None
-        assert entry["required"] is True
+        assert entry["required"]
         assert entry["stage"] == "task_shape"
         assert entry["status"] == "pending"
         assert "complexity=COMPLEX" in entry["reasons"]
@@ -185,7 +185,7 @@ class TestSecondOpinionParsing:
             ],
         )
 
-        assert readiness.ready is False
+        assert not readiness.ready
         assert "second_opinion" in readiness.missing_fields
         assert any("second opinion" in issue.lower() for issue in readiness.issues)
 
@@ -221,7 +221,7 @@ class TestSecondOpinionParsing:
             ],
         )
 
-        assert readiness.ready is False
+        assert not readiness.ready
         assert sum("second opinion" in issue.lower() for issue in readiness.issues) == 1
 
     def test_completed_second_opinion_satisfies_complex_task_gate(self) -> None:
@@ -257,4 +257,4 @@ class TestSecondOpinionParsing:
             ],
         )
 
-        assert readiness.ready is True
+        assert readiness.ready

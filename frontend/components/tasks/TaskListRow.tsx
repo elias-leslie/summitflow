@@ -5,8 +5,8 @@ import { cn } from '@/lib/utils'
 import { CriteriaProgress } from './CriteriaProgress'
 import { EnrichmentStatusBadge } from './EnrichmentStatusBadge'
 import { SubtaskProgress } from './SubtaskProgress'
+import { formatTimeAgo } from '@/lib/format'
 import {
-  formatRelativeTime,
   priorityConfig,
   statusIconConfig,
   typeConfig,
@@ -135,7 +135,7 @@ export function TaskListRow({
       {/* Created */}
       <td className="px-3 py-3 cursor-pointer" onClick={onToggle}>
         <span className="text-xs text-slate-500">
-          {task.created_at ? formatRelativeTime(task.created_at) : '-'}
+          {task.created_at ? formatTimeAgo(task.created_at) : '-'}
         </span>
       </td>
 

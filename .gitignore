@@ -55,9 +55,6 @@ htmlcov/
 credentials.json
 secrets.json
 
-# Celery
-celerybeat-schedule*
-
 # Project data
 data/
 backups/
@@ -72,3 +69,8 @@ references/
 # Checkpoint data
 .st/
 .summitflow/
+
+# Temp session artifacts
+.qna-session/
+.tmp/
+.task-findings.md

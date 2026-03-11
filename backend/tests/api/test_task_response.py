@@ -43,14 +43,14 @@ class TestTaskToResponse:
         """ai_review=True in task dict appears in response."""
         task = _minimal_task(ai_review=True)
         response = task_to_response(task)
-        assert response.ai_review is True
+        assert response.ai_review
 
     @patch("app.api.tasks.response.get_step_count_for_task", return_value=0)
     def test_ai_review_false_propagated(self, _mock: object) -> None:
         """ai_review=False in task dict appears in response (the critical case)."""
         task = _minimal_task(ai_review=False)
         response = task_to_response(task)
-        assert response.ai_review is False
+        assert not response.ai_review
 
     @patch("app.api.tasks.response.get_step_count_for_task", return_value=0)
     def test_ai_review_missing_defaults_true(self, _mock: object) -> None:
@@ -58,14 +58,14 @@ class TestTaskToResponse:
         task = _minimal_task()
         del task["ai_review"]
         response = task_to_response(task)
-        assert response.ai_review is True
+        assert response.ai_review
 
     @patch("app.api.tasks.response.get_step_count_for_task", return_value=0)
     def test_autonomous_propagated(self, _mock: object) -> None:
         """autonomous field also propagates (sanity check for similar fields)."""
         task = _minimal_task(autonomous=True)
         response = task_to_response(task)
-        assert response.autonomous is True
+        assert response.autonomous
 
     @patch("app.api.tasks.response.get_step_count_for_task", return_value=0)
     def test_execution_mode_propagated(self, _mock: object) -> None:
@@ -73,11 +73,11 @@ class TestTaskToResponse:
         task = _minimal_task(execution_mode="manual")
         response = task_to_response(task)
         assert response.execution_mode == "manual"
-        assert response.autonomous is False
+        assert not response.autonomous
 
     @patch("app.api.tasks.response.get_step_count_for_task", return_value=0)
     def test_execution_mode_autonomous_sets_compat_flag(self, _mock: object) -> None:
         task = _minimal_task(execution_mode="autonomous", autonomous=False)
         response = task_to_response(task)
         assert response.execution_mode == "autonomous"
-        assert response.autonomous is True
+        assert response.autonomous

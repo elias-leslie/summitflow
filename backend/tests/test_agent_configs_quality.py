@@ -141,7 +141,7 @@ class TestGetQualityGateFixEnabled:
             result = get_quality_gate_fix_enabled("test-project")
 
         # Assert
-        assert result is True
+        assert result
 
     def test_get_quality_gate_fix_enabled_returns_false_when_disabled(self) -> None:
         """Test get_quality_gate_fix_enabled returns False when disabled."""
@@ -154,7 +154,7 @@ class TestGetQualityGateFixEnabled:
             result = get_quality_gate_fix_enabled("test-project")
 
         # Assert
-        assert result is False
+        assert not result
 
 
 class TestBuildDtCommand:

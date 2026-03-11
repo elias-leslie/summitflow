@@ -716,18 +716,7 @@ class TestSubtaskCreate:
             assert '"message": "1.1"' in result.output
 
 class TestStepCreate:
-    """Test st step create command.
-
-    These tests verify step creation - currently skipped as they require
-    more complex mocking of the step storage layer.
-    """
-
-    @pytest.mark.skip(
-        reason="Requires complex storage mocking - use integration tests for full flow"
-    )
-    def test_step_create(self, mock_storage: dict[str, Any]) -> None:
-        """Test creating steps for a subtask."""
-        pass
+    """Test st step create command."""
 
     def test_step_new_invalid_task(self) -> None:
         """Test error when creating steps for non-existent task."""

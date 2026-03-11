@@ -58,7 +58,7 @@ class TestActivityFeed:
 
         assert len(data["items"]) == 2
         assert data["total"] == 2
-        assert data["has_more"] is False
+        assert not data["has_more"]
 
         # Check first event
         first = data["items"][0]
@@ -146,7 +146,7 @@ class TestActivityFeed:
         assert response.status_code == 200
         data = response.json()
 
-        assert data["has_more"] is True
+        assert data["has_more"]
 
 
 class TestActivityEventTypes:

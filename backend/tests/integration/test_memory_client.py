@@ -74,7 +74,7 @@ async def test_store_pattern(client: MemoryClient, cleanup_episodes: list[str]) 
     )
 
     result = await client.store_pattern(pattern)
-    assert result["success"] is True
+    assert result["success"]
     assert "episode_uuid" in result
 
     # Track for cleanup
@@ -107,7 +107,7 @@ async def test_record_gotcha(client: MemoryClient, cleanup_episodes: list[str]) 
         scope="project",
         scope_id="summitflow",
     )
-    assert result["success"] is True
+    assert result["success"]
     assert "episode_uuid" in result
 
     # Track for cleanup

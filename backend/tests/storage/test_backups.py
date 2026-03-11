@@ -155,13 +155,13 @@ class TestBackupCRUD:
         assert backups.get_backup(backup["id"]) is not None
 
         deleted = backups.delete_backup_record(backup["id"])
-        assert deleted is True
+        assert deleted
         assert backups.get_backup(backup["id"]) is None
 
     def test_delete_backup_not_found(self) -> None:
         """Delete nonexistent backup returns False."""
         result = backups.delete_backup_record("bkp-nonexistent")
-        assert result is False
+        assert not result
 
 
 class TestSourceCRUD:
@@ -189,7 +189,7 @@ class TestSourceCRUD:
         )
 
         assert updated is not None
-        assert updated["enabled"] is True
+        assert updated["enabled"]
         assert updated["frequency"] == "weekly"
         assert updated["retention_days"] == 10
 
@@ -200,7 +200,7 @@ class TestSourceCRUD:
         next_run = datetime.now(UTC) + timedelta(days=1)
 
         result = backups.update_source_last_run(cleanup_project, next_run)
-        assert result is True
+        assert result
 
         source = backups.get_source(cleanup_project)
         assert source is not None

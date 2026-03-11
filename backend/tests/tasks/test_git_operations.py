@@ -13,7 +13,7 @@ def test_merge_task_branch_reports_missing_branch(mock_run: MagicMock) -> None:
 
     result = merge_task_branch("/tmp/project", "task-1/main", "task-1")
 
-    assert result.success is False
+    assert not result.success
     assert result.error == "Failed to merge task-1/main: branch not found"
 
 
@@ -27,7 +27,7 @@ def test_merge_task_branch_falls_back_to_stdout_or_return_code(mock_run: MagicMo
 
     result = merge_task_branch("/tmp/project", "task-1/main", "task-1")
 
-    assert result.success is False
+    assert not result.success
     assert result.error == "Failed to merge task-1/main: merge blocked by local changes"
 
 
@@ -50,7 +50,7 @@ def test_merge_task_branch_extracts_conflicts_from_stdout(mock_run: MagicMock) -
 
     result = merge_task_branch("/tmp/project", "task-1/main", "task-1")
 
-    assert result.success is False
+    assert not result.success
     assert result.conflicting_files == [
         "backend/app/services/memory/analytics_service.py"
     ]

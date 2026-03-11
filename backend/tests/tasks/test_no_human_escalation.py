@@ -22,7 +22,7 @@ class TestSupervisorValidatePlan:
         mock_client.return_value.complete.return_value = MagicMock(
             content="APPROVED - proceed with execution"
         )
-        assert _supervisor_validate_plan("task-1", "complex reasoning", "test-project") is True
+        assert _supervisor_validate_plan("task-1", "complex reasoning", "test-project")
 
     @patch("app.tasks.autonomous.planning_routing.get_sync_client")
     def test_blocked_returns_false(self, mock_client: MagicMock) -> None:
@@ -31,14 +31,14 @@ class TestSupervisorValidatePlan:
         mock_client.return_value.complete.return_value = MagicMock(
             content="BLOCKED - architecture review needed first"
         )
-        assert _supervisor_validate_plan("task-1", "complex reasoning", "test-project") is False
+        assert not _supervisor_validate_plan("task-1", "complex reasoning", "test-project")
 
     @patch("app.tasks.autonomous.planning_routing.get_sync_client")
     def test_exception_returns_true_optimistic(self, mock_client: MagicMock) -> None:
         from app.tasks.autonomous.planning import _supervisor_validate_plan
 
         mock_client.return_value.complete.side_effect = RuntimeError("API down")
-        assert _supervisor_validate_plan("task-1", "reasoning", "test-project") is True
+        assert _supervisor_validate_plan("task-1", "reasoning", "test-project")
 
     @patch("app.tasks.autonomous.planning_routing._apply_complex_routing")
     @patch("app.tasks.autonomous.planning_routing._resolve_complexity_tier")
@@ -79,7 +79,7 @@ class TestSupervisorCircuitBreakerTriage:
         mock_client.return_value.complete.return_value = MagicMock(
             content="CONTINUE - the remaining subtasks are independent"
         )
-        assert _supervisor_circuit_breaker_triage("task-1", "abc123", 2, "test-project") is True
+        assert _supervisor_circuit_breaker_triage("task-1", "abc123", 2, "test-project")
 
     @patch("app.tasks.autonomous.exec_modules.agent_routing.get_sync_client")
     def test_block_returns_false(self, mock_client: MagicMock) -> None:
@@ -88,7 +88,7 @@ class TestSupervisorCircuitBreakerTriage:
         mock_client.return_value.complete.return_value = MagicMock(
             content="BLOCK - same env issue will affect all remaining subtasks"
         )
-        assert _supervisor_circuit_breaker_triage("task-1", "abc123", 2, "test-project") is False
+        assert not _supervisor_circuit_breaker_triage("task-1", "abc123", 2, "test-project")
 
     @patch("app.tasks.autonomous.exec_modules.agent_routing.get_sync_client")
     def test_exception_defaults_to_continue(self, mock_client: MagicMock) -> None:
@@ -96,7 +96,7 @@ class TestSupervisorCircuitBreakerTriage:
         from app.tasks.autonomous.execution import _supervisor_circuit_breaker_triage
 
         mock_client.return_value.complete.side_effect = RuntimeError("API down")
-        assert _supervisor_circuit_breaker_triage("task-1", "abc123", 2, "test-project") is True
+        assert _supervisor_circuit_breaker_triage("task-1", "abc123", 2, "test-project")
 
 
 class TestSupervisorResolveEscalation:

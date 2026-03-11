@@ -18,14 +18,14 @@ class TestCheckIntent:
     def test_no_spirit_data_returns_pass(self, mock_spirit: MagicMock) -> None:
         mock_spirit.return_value = None
         result = check_intent("task-1", "/tmp/project", "summitflow")
-        assert result.passed is True
+        assert result.passed
         assert "No spirit data" in result.summary
 
     @patch("app.tasks.autonomous.exec_modules.intent_check.get_task_spirit")
     def test_no_done_when_returns_pass(self, mock_spirit: MagicMock) -> None:
         mock_spirit.return_value = {"objective": "Build X", "done_when": []}
         result = check_intent("task-1", "/tmp/project", "summitflow")
-        assert result.passed is True
+        assert result.passed
         assert "No done_when" in result.summary
 
     @patch("app.tasks.autonomous.exec_modules.intent_check._evaluate_intent")
@@ -54,7 +54,7 @@ class TestCheckIntent:
             summary="All pass",
         )
         result = check_intent("task-1", "/tmp/project", "summitflow")
-        assert result.passed is True
+        assert result.passed
         mock_eval.assert_called_once()
 
     @patch("app.tasks.autonomous.exec_modules.intent_check._evaluate_intent")
@@ -91,7 +91,7 @@ class TestCheckIntent:
 
         result = check_intent("task-1", "/tmp/project", "summitflow")
 
-        assert result.passed is True
+        assert result.passed
         assert result.summary == "Passed using refactor step verification evidence"
         mock_eval.assert_not_called()
 
@@ -137,7 +137,7 @@ class TestCheckIntent:
 
         result = check_intent("task-1", "/tmp/project", "summitflow")
 
-        assert result.passed is True
+        assert result.passed
         assert result.summary == "LLM reviewed"
         mock_eval.assert_called_once()
 
@@ -154,9 +154,9 @@ SUMMARY: All criteria met"""
         result = _parse_intent_response(
             content, ["API endpoint exists", "Tests cover endpoint"], "Build API", ""
         )
-        assert result.passed is True
-        assert result.objective_met is True
-        assert result.spirit_violated is False
+        assert result.passed
+        assert result.objective_met
+        assert not result.spirit_violated
         assert len(result.done_when_results) == 2
         assert result.done_when_results[0].status == "pass"
         assert result.done_when_results[1].status == "pass"
@@ -170,7 +170,7 @@ SUMMARY: Missing feature"""
         result = _parse_intent_response(
             content, ["Feature A", "Feature B"], "Build both", ""
         )
-        assert result.passed is False
+        assert not result.passed
         assert result.done_when_results[1].status == "fail"
 
     def test_spirit_violated(self) -> None:
@@ -179,8 +179,8 @@ OBJECTIVE_MET: YES
 SPIRIT_VIOLATED: YES
 SUMMARY: Broke existing tests"""
         result = _parse_intent_response(content, ["Build X"], "Build X", "Don't break tests")
-        assert result.passed is False
-        assert result.spirit_violated is True
+        assert not result.passed
+        assert result.spirit_violated
 
     def test_unclear_items_pass(self) -> None:
         content = """DONE_WHEN_1: PASS - Done
@@ -191,5 +191,5 @@ SUMMARY: Mostly done"""
         result = _parse_intent_response(
             content, ["Feature A", "Feature B"], "Build both", ""
         )
-        assert result.passed is True
+        assert result.passed
         assert result.done_when_results[1].status == "unclear"

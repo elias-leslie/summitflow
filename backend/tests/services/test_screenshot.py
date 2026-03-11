@@ -123,7 +123,7 @@ class TestCapturePageScreenshot:
                 output_path=output,
             )
 
-        assert success is False
+        assert not success
         assert error_msg == "Screenshot operation timed out"
         proc.kill.assert_called_once()
 
@@ -160,7 +160,7 @@ class TestCapturePageScreenshot:
                 output_path=output,
             )
 
-        assert success is False
+        assert not success
         assert msg == "Screenshot operation timed out"
 
     # ------------------------------------------------------------------
@@ -195,7 +195,7 @@ class TestCapturePageScreenshot:
                 output_path=output,
             )
 
-        assert success is False
+        assert not success
         assert msg is not None
         assert "Screenshot failed" in msg
 
@@ -225,7 +225,7 @@ class TestCapturePageScreenshot:
                 output_path=output,
             )
 
-        assert success is False
+        assert not success
         assert "connection refused on port 9222" in (msg or "")
 
     async def test_success_path_returns_true(self, tmp_path: Path) -> None:
@@ -256,7 +256,7 @@ class TestCapturePageScreenshot:
                 output_path=output,
             )
 
-        assert success is True
+        assert success
         assert msg is None
 
     async def test_missing_output_file_returns_failure(self, tmp_path: Path) -> None:
@@ -286,7 +286,7 @@ class TestCapturePageScreenshot:
                 output_path=output,
             )
 
-        assert success is False
+        assert not success
         assert msg == "Screenshot file not created"
 
     # ------------------------------------------------------------------

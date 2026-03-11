@@ -69,7 +69,7 @@ Body content."""
 
         frontmatter, _body = _parse_frontmatter(text)
 
-        assert frontmatter["pinned"] is True
+        assert frontmatter["pinned"]
 
     def test_parse_frontmatter_handles_boolean_false(self) -> None:
         """Test that frontmatter parses pinned: false correctly."""
@@ -81,7 +81,7 @@ Body content."""
 
         frontmatter, _body = _parse_frontmatter(text)
 
-        assert frontmatter["pinned"] is False
+        assert not frontmatter["pinned"]
 
     def test_parse_frontmatter_handles_yes_no_booleans(self) -> None:
         """Test that frontmatter recognizes yes/no as boolean values."""
@@ -94,8 +94,8 @@ Body content."""
 
         frontmatter, _body = _parse_frontmatter(text)
 
-        assert frontmatter["enabled"] is True
-        assert frontmatter["disabled"] is False
+        assert frontmatter["enabled"]
+        assert not frontmatter["disabled"]
 
     def test_parse_frontmatter_returns_body_without_frontmatter(self) -> None:
         """Test that body content excludes frontmatter delimiters."""
@@ -505,7 +505,7 @@ class TestUpsertSkillEpisode:
         )
 
         call_args = mock_request.call_args
-        assert call_args[1]["json"]["pinned"] is True
+        assert call_args[1]["json"]["pinned"]
 
     @patch("cli.commands.memory_seed._find_existing_by_tag")
     @patch("cli.commands.memory_seed.agent_hub_request")
@@ -611,7 +611,7 @@ class TestSeedImpl:
 
         mock_upsert.assert_called_once()
         # dry_run is 6th positional argument (index 5)
-        assert mock_upsert.call_args[0][5] is True
+        assert mock_upsert.call_args[0][5]
 
     @patch("cli.commands.memory_seed._upsert_skill_episode")
     def test_seed_impl_skips_files_with_empty_body(

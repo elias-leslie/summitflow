@@ -14,7 +14,7 @@ class TestHealthFlagComputation:
         """Test too_many_functions flag when function count exceeds threshold."""
         max_funcs = CODE_HEALTH_THRESHOLDS["max_functions_per_file"]
         flags = compute_health_flags(Path("/tmp/test.py"), ".py", max_funcs + 1, 0, 0)
-        assert flags.get("too_many_functions") is True
+        assert flags.get("too_many_functions")
 
     def test_too_many_functions_not_set_when_under_threshold(self) -> None:
         """Test too_many_functions not set when under threshold."""
@@ -26,13 +26,13 @@ class TestHealthFlagComputation:
         """Test too_many_classes flag when class count exceeds threshold."""
         max_classes = CODE_HEALTH_THRESHOLDS["max_classes_per_file"]
         flags = compute_health_flags(Path("/tmp/test.py"), ".py", 0, max_classes + 1, 0)
-        assert flags.get("too_many_classes") is True
+        assert flags.get("too_many_classes")
 
     def test_too_many_imports_flag(self) -> None:
         """Test too_many_imports flag when import count exceeds threshold."""
         max_imports = CODE_HEALTH_THRESHOLDS["max_imports"]
         flags = compute_health_flags(Path("/tmp/test.py"), ".py", 0, 0, max_imports + 1)
-        assert flags.get("too_many_imports") is True
+        assert flags.get("too_many_imports")
 
     def test_no_flags_when_all_under_thresholds(self) -> None:
         """Test no flags set when all counts are under thresholds."""
@@ -46,7 +46,7 @@ class TestHealthFlagComputation:
         """Test that non-Python files skip AST analysis."""
         flags = compute_health_flags(Path("/tmp/test.js"), ".js", 25, 0, 0)
         # Should have basic flag but no AST-based flags
-        assert flags.get("too_many_functions") is True
+        assert flags.get("too_many_functions")
         assert "has_long_functions" not in flags
         assert "deep_nesting" not in flags
 
@@ -63,7 +63,7 @@ class TestHealthFlagsWithRealFiles:
             f.flush()
 
             flags = compute_health_flags(Path(f.name), ".py", 1, 0, 0)
-            assert flags.get("has_long_functions") is True
+            assert flags.get("has_long_functions")
 
     def test_has_large_classes_flag_with_many_methods(self) -> None:
         """Test has_large_classes flag detected for class with many methods."""
@@ -75,7 +75,7 @@ class TestHealthFlagsWithRealFiles:
             f.flush()
 
             flags = compute_health_flags(Path(f.name), ".py", 0, 1, 0)
-            assert flags.get("has_large_classes") is True
+            assert flags.get("has_large_classes")
 
     def test_deep_nesting_flag_with_nested_code(self) -> None:
         """Test deep_nesting flag detected for deeply nested code."""
@@ -93,7 +93,7 @@ def func():
             f.flush()
 
             flags = compute_health_flags(Path(f.name), ".py", 1, 0, 0)
-            assert flags.get("deep_nesting") is True
+            assert flags.get("deep_nesting")
 
     def test_no_ast_flags_for_clean_code(self) -> None:
         """Test no AST flags for clean, well-structured code."""

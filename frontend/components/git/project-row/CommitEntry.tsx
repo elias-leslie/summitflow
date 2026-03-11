@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { fetchCommitDiff, type CommitInfo } from '@/lib/api/git-enhanced'
 import { DiffPanel } from '../DiffPanel'
 import { formatTimeAgo } from '@/lib/format'
+import { POLL_RARE } from '@/lib/polling'
 
 export function CommitEntry({ commit, projectId }: { commit: CommitInfo; projectId: string }) {
   const [diffOpen, setDiffOpen] = useState(false)
@@ -14,7 +15,7 @@ export function CommitEntry({ commit, projectId }: { commit: CommitInfo; project
     queryKey: ['commit-diff', commit.sha],
     queryFn: () => fetchCommitDiff(commit.sha, projectId),
     enabled: false,
-    staleTime: 600000,
+    staleTime: POLL_RARE * 2,
   })
 
   return (

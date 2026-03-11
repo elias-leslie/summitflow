@@ -78,7 +78,7 @@ class TestRunSmokeTests:
 
         result = run_smoke_tests("/home/user/project")
 
-        assert result.passed is True
+        assert result.passed
         assert result.files_tested == []
         assert result.failures == []
 
@@ -100,7 +100,7 @@ class TestRunSmokeTests:
             changed_files=["backend/app/models.py"],
         )
 
-        assert result.passed is True
+        assert result.passed
         assert "app.models" in result.files_tested
         assert result.failures == []
 
@@ -123,7 +123,7 @@ class TestRunSmokeTests:
             changed_files=["backend/app/models.py"],
         )
 
-        assert result.passed is False
+        assert not result.passed
         assert "app.models" in result.files_tested
         assert len(result.failures) == 1
         assert result.failures[0]["module"] == "app.models"
@@ -143,7 +143,7 @@ class TestRunSmokeTests:
             changed_files=["README.md", "frontend/src/App.tsx"],
         )
 
-        assert result.passed is True
+        assert result.passed
         assert result.files_tested == []
         mock_smoke.assert_not_called()
 
@@ -160,7 +160,7 @@ class TestRunTargetedTests:
 
         result = run_targeted_tests("/home/user/project")
 
-        assert result.passed is True
+        assert result.passed
         assert result.tests_run == []
         assert result.tests_skipped == []
 
@@ -204,7 +204,7 @@ class TestRunTargetedTests:
             changed_files=["backend/app/models.py"],
         )
 
-        assert result.passed is True
+        assert result.passed
         assert "tests/test_models.py" in result.tests_run
         assert result.failures == []
 
@@ -252,7 +252,7 @@ class TestRunTargetedTests:
             changed_files=["backend/app/models.py"],
         )
 
-        assert result.passed is False
+        assert not result.passed
         assert "tests/test_models.py" in result.tests_run
         assert len(result.failures) == 1
 
@@ -268,7 +268,7 @@ class TestRunTargetedTests:
             changed_files=["backend/app/models.py"],
         )
 
-        assert result.passed is True
+        assert result.passed
         assert result.tests_run == []
         assert "backend/app/models.py" in result.tests_skipped
 
@@ -304,7 +304,7 @@ class TestRunTargetedTests:
             changed_files=["backend/app/models.py"],
         )
 
-        assert result.passed is True
+        assert result.passed
         assert result.tests_run == []
         assert "backend/app/models.py" in result.tests_skipped
 
@@ -319,7 +319,7 @@ class TestRunTargetedTests:
             changed_files=["README.md", "frontend/src/App.tsx"],
         )
 
-        assert result.passed is True
+        assert result.passed
         assert result.tests_run == []
         mock_find.assert_not_called()
 
@@ -362,6 +362,6 @@ class TestRunTargetedTests:
             changed_files=["backend/app/models.py"],
         )
 
-        assert result.passed is False
+        assert not result.passed
         assert len(result.failures) == 1
         assert "timed out" in result.failures[0]["error"]

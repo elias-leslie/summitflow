@@ -253,7 +253,7 @@ class TestShortTaskIdApiResolution:
         response = client.get(f"/api/tasks/{short_id}/completion-readiness")
 
         assert response.status_code == 200
-        assert response.json()["ready"] is True
+        assert response.json()["ready"]
 
     def test_create_simple_task_auto_approves_when_execution_ready(
         self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]

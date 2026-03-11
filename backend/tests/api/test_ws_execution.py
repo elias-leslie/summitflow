@@ -219,7 +219,7 @@ class TestHelperFunctions:
         msg = mock_broadcast.call_args[0][1]
         assert msg.type == MessageType.ERROR
         assert msg.data["error"] == "Something failed"
-        assert msg.data["recoverable"] is False
+        assert not msg.data["recoverable"]
 
     @pytest.mark.asyncio
     async def test_stop_signal_pauses_running_task(self, mocker: MockerFixture) -> None:
@@ -266,7 +266,7 @@ class TestWebSocketEndpoint:
             data = websocket.receive_json()
             assert data["type"] == "error"
             assert "not found" in data["data"]["error"].lower()
-            assert data["data"]["recoverable"] is False
+            assert not data["data"]["recoverable"]
 
         mock_get_task.assert_called_once_with("nonexistent-task")
 

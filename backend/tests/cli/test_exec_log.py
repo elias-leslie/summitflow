@@ -371,4 +371,4 @@ class TestExecLogCommand:
             assert result.exit_code == 0
             mock_client.get_events.assert_called_once()
             call_kwargs = mock_client.get_events.call_args
-            assert call_kwargs[1]["include_debug"] is True or call_kwargs[0][3] is True
+            assert call_kwargs[1]["include_debug"] or call_kwargs[0][3] is True

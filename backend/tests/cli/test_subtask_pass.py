@@ -18,13 +18,13 @@ class TestIsStepResolved:
         """A step with passes=True is resolved."""
         step = {"step_number": 1, "passes": True, "status": "pending"}
         step_passes = {1: True}
-        assert is_step_resolved(step, step_passes) is True
+        assert is_step_resolved(step, step_passes)
 
     def test_unpassed_step_not_resolved(self) -> None:
         """A step with passes=False and no plan_defect status is not resolved."""
         step = {"step_number": 1, "passes": False, "status": "pending"}
         step_passes = {1: False}
-        assert is_step_resolved(step, step_passes) is False
+        assert not is_step_resolved(step, step_passes)
 
     def test_plan_defect_with_passing_fix_is_resolved(self) -> None:
         """A plan_defect step with a passing fix step is resolved."""
@@ -35,7 +35,7 @@ class TestIsStepResolved:
             "fix_step_number": 7,
         }
         step_passes = {2: False, 7: True}
-        assert is_step_resolved(step, step_passes) is True
+        assert is_step_resolved(step, step_passes)
 
     def test_plan_defect_with_failing_fix_not_resolved(self) -> None:
         """A plan_defect step with a failing fix step is not resolved."""
@@ -46,7 +46,7 @@ class TestIsStepResolved:
             "fix_step_number": 7,
         }
         step_passes = {2: False, 7: False}
-        assert is_step_resolved(step, step_passes) is False
+        assert not is_step_resolved(step, step_passes)
 
     def test_plan_defect_without_fix_step_not_resolved(self) -> None:
         """A plan_defect step without a fix_step_number is not resolved."""
@@ -57,7 +57,7 @@ class TestIsStepResolved:
             "fix_step_number": None,
         }
         step_passes = {2: False}
-        assert is_step_resolved(step, step_passes) is False
+        assert not is_step_resolved(step, step_passes)
 
     def test_plan_defect_with_missing_fix_step_not_resolved(self) -> None:
         """A plan_defect step where fix step doesn't exist in map is not resolved."""
@@ -68,13 +68,13 @@ class TestIsStepResolved:
             "fix_step_number": 99,  # Not in step_passes map
         }
         step_passes = {2: False, 7: True}
-        assert is_step_resolved(step, step_passes) is False
+        assert not is_step_resolved(step, step_passes)
 
     def test_missing_passes_field_not_resolved(self) -> None:
         """A step missing the passes field is not resolved."""
         step = {"step_number": 1, "status": "pending"}
         step_passes = {1: False}
-        assert is_step_resolved(step, step_passes) is False
+        assert not is_step_resolved(step, step_passes)
 
     def test_real_world_scenario(self) -> None:
         """Test a real-world scenario with multiple steps and plan defects."""
@@ -103,7 +103,7 @@ class TestIsStepResolved:
 
         # All steps should be resolved
         for step in steps:
-            assert is_step_resolved(step, step_passes) is True, (
+            assert is_step_resolved(step, step_passes), (
                 f"Step {step['step_number']} should be resolved: "
                 f"passes={step.get('passes')}, status={step.get('status')}, "
                 f"fix_step={step.get('fix_step_number')}"

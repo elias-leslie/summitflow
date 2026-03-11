@@ -78,7 +78,7 @@ class TestPatternMemoryService:
             root_cause_summary="Removed unused import",
         )
 
-        assert result["success"] is True
+        assert result["success"]
         assert "episode_uuid" in result
 
         # Verify client was called with correct arguments
@@ -141,7 +141,7 @@ class TestPatternMemoryService:
             solution="Review all type: ignore comments",
         )
 
-        assert result["success"] is True
+        assert result["success"]
         mock_client.record_gotcha.assert_called_once()
 
         call_args = mock_client.record_gotcha.call_args

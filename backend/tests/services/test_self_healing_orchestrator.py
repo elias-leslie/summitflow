@@ -233,7 +233,7 @@ class TestSelfHealingOrchestrator:
         orch = SelfHealingOrchestrator(mock_conn)
         summary = orch.get_health_summary()
 
-        assert summary["should_run"] is False
+        assert not summary["should_run"]
         assert summary["total_unfixed"] == 0
         assert summary["projects_needing_fixes"] == 0
 
@@ -263,7 +263,7 @@ class TestSelfHealingOrchestrator:
         orch = SelfHealingOrchestrator(mock_conn)
         summary = orch.get_health_summary()
 
-        assert summary["should_run"] is True
+        assert summary["should_run"]
         assert summary["total_unfixed"] == 8
         assert summary["projects_needing_fixes"] == 2
         assert summary["by_project"]["proj-1"] == 5
@@ -364,7 +364,7 @@ class TestBudgetCapEnforcement:
 
         assert "cumulative_cost_usd" in result
         assert result["cumulative_cost_usd"] == 0.15
-        assert result["budget_exceeded"] is False
+        assert not result["budget_exceeded"]
 
     @patch("app.services.quality_gate.fix_agent.fix_unfixed_errors")
     @patch("app.services.self_healing.project_scanner.list_projects")
@@ -390,7 +390,7 @@ class TestBudgetCapEnforcement:
         result = orch.poll_and_fix()
 
         # Should not crash, but should set budget_exceeded flag
-        assert result["budget_exceeded"] is True
+        assert result["budget_exceeded"]
         assert result["cumulative_cost_usd"] == 2.5
         # Only first project should have been attempted
         assert mock_fix.call_count == 1

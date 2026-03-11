@@ -298,7 +298,7 @@ class TestCompletionContract:
         assert result.usage["output_tokens"] == 50
         assert result.usage["total_tokens"] == 150
         assert result.raw_response["session_id"] == "sess-abc"
-        assert result.raw_response["from_cache"] is True
+        assert result.raw_response["from_cache"]
 
     def test_response_contract_validation(self, mock_agent_hub_client: MagicMock) -> None:
         """Verify response conforms to expected contract."""
@@ -337,7 +337,7 @@ class TestCompletionContract:
             client.generate(prompt="Hello")
 
         call_kwargs = mock_agent_hub_client.complete.call_args.kwargs
-        assert call_kwargs.get("enable_caching") is True
+        assert call_kwargs.get("enable_caching")
 
 
 class TestErrorHandlingContract:
@@ -529,7 +529,7 @@ class TestSessionContract:
             client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
             result = client.is_available()
 
-        assert result is True
+        assert result
         mock_agent_hub_client.list_sessions.assert_called_once_with(page_size=1)
 
     def test_availability_check_returns_false_on_error(self, mock_agent_hub_client: MagicMock) -> None:
@@ -545,7 +545,7 @@ class TestSessionContract:
             client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
             result = client.is_available()
 
-        assert result is False
+        assert not result
 
 
 # ---------------------------------------------------------------------------

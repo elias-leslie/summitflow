@@ -10,11 +10,7 @@ from typing import Any
 
 from ..logging_config import get_logger
 from .subtasks_crud import generate_subtask_id as _generate_subtask_id
-from .subtasks_validation import SubtaskGateError  # Re-export for backward compatibility
 from .tasks import canonicalize_task_id
-
-# Suppress unused import warning - this is intentionally re-exported for backward compatibility
-__all__ = ["SubtaskGateError"]
 
 logger = get_logger(__name__)
 

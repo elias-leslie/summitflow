@@ -289,7 +289,7 @@ class TestDeleteTask:
         task_id = task["id"]
 
         result = task_store.delete_task(task_id)
-        assert result is True
+        assert result
 
         # Verify deleted
         retrieved = task_store.get_task(task_id)
@@ -298,7 +298,7 @@ class TestDeleteTask:
     def test_delete_task_nonexistent_returns_false(self) -> None:
         """Test deleting nonexistent task returns False."""
         result = task_store.delete_task("nonexistent-id")
-        assert result is False
+        assert not result
 
 
 class TestShortTaskIdResolution:

@@ -71,7 +71,7 @@ def test_collect_precision_code_search_context_tracks_token_savings() -> None:
 
         result = collect_precision_code_search_context("project-1", ["get_file_tree"])
 
-    assert result.metadata["used_symbol_first"] is True
+    assert result.metadata["used_symbol_first"]
     assert result.metadata["symbol_count"] == 1
     assert result.metadata["naive_file_tokens"] == 2000
     assert result.metadata["estimated_tokens_saved"] > 0
@@ -164,8 +164,8 @@ def test_collect_precision_code_search_context_skips_fallback_fetch_on_symbol_hi
         result = collect_precision_code_search_context("project-1", ["get_file_tree"])
 
     mock_entries.assert_not_called()
-    assert result.metadata["used_symbol_first"] is True
-    assert result.metadata["used_fallback"] is False
+    assert result.metadata["used_symbol_first"]
+    assert not result.metadata["used_fallback"]
 
 
 def test_collect_precision_code_search_context_refreshes_stale_file_index() -> None:
@@ -198,8 +198,8 @@ def test_collect_precision_code_search_context_refreshes_stale_file_index() -> N
         result = collect_precision_code_search_context("project-1", ["get_file_tree"])
 
     mock_scan.assert_called_once_with("project-1", "file")
-    assert result.metadata["refreshed_index"] is True
-    assert result.metadata["stale_hit"] is True
+    assert result.metadata["refreshed_index"]
+    assert result.metadata["stale_hit"]
     assert result.metadata["refresh_reasons"] == ["stale_file_index", "stale_symbol_index"]
     assert result.metadata["file_index_age_minutes"] is not None
     assert result.metadata["symbol_index_age_minutes"] is not None
@@ -239,7 +239,7 @@ def test_collect_precision_code_search_context_tracks_fresh_index_telemetry() ->
     ):
         result = collect_precision_code_search_context("project-1", ["get_file_tree"])
 
-    assert result.metadata["stale_hit"] is False
+    assert not result.metadata["stale_hit"]
     assert result.metadata["refresh_reasons"] == []
     assert result.metadata["file_total"] == 12
     assert result.metadata["file_last_scanned"] == "3026-03-10T17:00:00+00:00"

@@ -79,7 +79,7 @@ class TestDesignStandardsCRUD:
             )
 
             assert result["name"] == "Test Base"
-            assert result["is_base"] is True
+            assert result["is_base"]
             assert result["project_id"] is None
         finally:
             with conn.cursor() as cur:
@@ -100,7 +100,7 @@ class TestDesignStandardsCRUD:
 
         assert result["name"] == "Project Standard"
         assert result["project_id"] == project_id
-        assert result["is_base"] is False
+        assert not result["is_base"]
 
     def test_get_base_standard(self, base_standard: dict[str, Any]) -> None:
         """Get the base standard."""
@@ -108,7 +108,7 @@ class TestDesignStandardsCRUD:
 
         assert result is not None
         assert result["id"] == base_standard["id"]
-        assert result["is_base"] is True
+        assert result["is_base"]
 
     def test_get_project_standard(self, cleanup_project: str) -> None:
         """Get project-specific standard."""
@@ -186,7 +186,7 @@ class TestDesignStandardsCRUD:
         )
 
         deleted = design_standards.delete_standard(created["id"])
-        assert deleted is True
+        assert deleted
 
         result = design_standards.get_standard_by_id(created["id"])
         assert result is None
@@ -203,7 +203,7 @@ class TestDesignStandardsInheritance:
 
         assert result["project_id"] == project_id
         assert result["base_standard_id"] == base_standard["id"]
-        assert result["is_base"] is False
+        assert not result["is_base"]
 
     def test_inherit_from_base_no_base_exists(self, cleanup_project: str, conn: Any) -> None:
         """Error when no base standard exists."""
@@ -309,7 +309,7 @@ class TestDesignRulesCRUD:
         design_standards.create_rule(standard["id"], "layout", "lay-delete", "Delete Me", {})
 
         deleted = design_standards.delete_rule(standard["id"], "lay-delete")
-        assert deleted is True
+        assert deleted
 
         result = design_standards.get_rule(standard["id"], "lay-delete")
         assert result is None

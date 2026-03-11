@@ -18,7 +18,7 @@ def test_promotes_structural_target_with_execution_pressure() -> None:
         }
     )
 
-    assert assessment.should_create_task is True
+    assert assessment.should_create_task
     assert assessment.confidence in {"high", "medium"}
     assert assessment.recommended_action == "create_task"
     assert assessment.structural_signals >= 2
@@ -38,7 +38,7 @@ def test_suppresses_small_scope_hygiene_target() -> None:
         }
     )
 
-    assert assessment.should_create_task is False
+    assert not assessment.should_create_task
     assert assessment.recommended_action == "keep_in_explorer"
     assert "Small-scope hygiene issue" in assessment.suppression_reasons[0]
 
@@ -56,6 +56,6 @@ def test_suppresses_size_only_target_without_real_pressure() -> None:
         }
     )
 
-    assert assessment.should_create_task is False
+    assert not assessment.should_create_task
     assert assessment.recommended_action == "keep_in_explorer"
     assert "Size-only finding" in assessment.suppression_reasons[0]

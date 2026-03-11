@@ -22,7 +22,7 @@ class TestExplorerSymbolsTable:
             )
             row = cur.fetchone()
             assert row is not None
-            assert row[0] is True
+            assert row[0]
 
     def test_explorer_symbols_has_project_fk(self, db_schema_initialized: None) -> None:
         """explorer_symbols should reference projects by project_id."""
@@ -43,7 +43,7 @@ class TestExplorerSymbolsTable:
             )
             row = cur.fetchone()
             assert row is not None
-            assert row[0] is True
+            assert row[0]
 
     def test_explorer_symbols_project_fk_cascades_on_delete(self, db_schema_initialized: None) -> None:
         """explorer_symbols FK on project_id should CASCADE on delete."""
@@ -80,7 +80,7 @@ class TestExplorerSymbolsTable:
             )
             row = cur.fetchone()
             assert row is not None
-            assert row[0] is True
+            assert row[0]
 
     def test_explorer_symbols_has_file_lookup_index(self, db_schema_initialized: None) -> None:
         """explorer_symbols should support fast file-scoped refresh and lookup."""
@@ -98,4 +98,4 @@ class TestExplorerSymbolsTable:
             )
             row = cur.fetchone()
             assert row is not None
-            assert row[0] is True
+            assert row[0]

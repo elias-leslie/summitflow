@@ -43,7 +43,7 @@ def test_smart_commit_uses_canonical_commit_script_with_push_and_skip_checks(
             skip_checks=True,
         )
 
-    assert result is True
+    assert result
     mock_run.assert_called_once_with(
         [
             "/tmp/worktree/scripts/commit.sh",
@@ -86,7 +86,7 @@ def test_publish_existing_commits_pushes_clean_ahead_branch(
     ):
         result = publish_existing_commits("/tmp/worktree")
 
-    assert result is True
+    assert result
     mock_run.assert_called_once_with(
         ["/tmp/worktree/scripts/commit.sh", "--json", "--current", "--push"],
         cwd="/tmp/worktree",

@@ -28,7 +28,7 @@ def hello(name: str) -> str:
         func = result["functions"][0]
         assert func["name"] == "hello"
         assert func["params"] == ["name"]
-        assert func["has_docstring"] is True
+        assert func["has_docstring"]
         assert func["lines"] > 0
 
     def test_parse_async_function(self, tmp_path: Path) -> None:
@@ -68,7 +68,7 @@ class Calculator:
         assert cls["name"] == "Calculator"
         assert "add" in cls["methods"]
         assert "subtract" in cls["methods"]
-        assert cls["has_docstring"] is True
+        assert cls["has_docstring"]
 
     def test_parse_nesting_depth(self, tmp_path: Path) -> None:
         """Test calculating max nesting depth."""
@@ -130,7 +130,7 @@ def no_docs():
 
         result = parse_python_file(file)
 
-        assert result["functions"][0]["has_docstring"] is False
+        assert not result["functions"][0]["has_docstring"]
 
     def test_parse_empty_file(self, tmp_path: Path) -> None:
         """Test parsing empty file."""

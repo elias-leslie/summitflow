@@ -10,8 +10,8 @@ import { Button } from '@/components/ui/button'
 import type { Task, TaskStatus } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { ExecutionTimeline } from './ExecutionTimeline'
+import { formatTimeAgo } from '@/lib/format'
 import {
-  formatDate,
   priorityConfig,
   statusIconConfig,
   typeIcons,
@@ -114,7 +114,7 @@ export function TaskRow({
 
         {/* Date */}
         <td className="w-24 px-2 py-2 text-xs text-slate-500">
-          {formatDate(task.created_at)}
+          {formatTimeAgo(task.created_at)}
         </td>
       </tr>
 

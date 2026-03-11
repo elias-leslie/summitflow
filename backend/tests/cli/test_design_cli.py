@@ -38,7 +38,7 @@ def test_build_asset_payload_parses_csv_options() -> None:
 
     assert payload["tags"] == ["hero", "combat", "player"]
     assert payload["animation_labels"] == ["idle", "attack"]
-    assert payload["transparent_background"] is True
+    assert payload["transparent_background"]
 
 
 def test_design_asset_generate_posts_to_design_assets_endpoint() -> None:

@@ -9,11 +9,17 @@
 /** Standard refresh for dashboard-level data (activity, health, quality). */
 export const POLL_STANDARD = 15_000
 
+/** Rapid refresh for enrichment/progress watching. */
+export const POLL_RAPID = 2_000
+
 /** Fast refresh for system stats and actively-changing data. */
 export const POLL_FAST = 5_000
 
 /** Slow refresh for background/infrequent data (git status, file explorer). */
 export const POLL_SLOW = 60_000
+
+/** Very slow refresh for rarely-changing data (design standards, scan diffs). */
+export const POLL_RARE = 300_000
 
 /** Notification count polling interval. */
 export const POLL_NOTIFICATIONS = 30_000
@@ -27,6 +33,9 @@ export const STALE_FAST = 4_000
 
 /** Git-level stale time. */
 export const STALE_GIT = 30_000
+
+/** Stale time for scan history and diff data. */
+export const STALE_SCAN = 120_000
 
 // --- UI feedback timeouts ---
 /** Duration to show copy-to-clipboard / save confirmation feedback. */

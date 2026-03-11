@@ -42,7 +42,7 @@ class TestCreateStep:
         assert step["subtask_id"] == test_subtask["id"]
         assert step["step_number"] == 1
         assert step["description"] == "First test step"
-        assert step["passes"] is False
+        assert not step["passes"]
         assert step["passed_at"] is None
         assert step["created_at"] is not None
 
@@ -123,7 +123,7 @@ class TestUpdateStepPasses:
         updated = step_store.update_step_passes(test_subtask["id"], 1, True)
 
         assert updated is not None
-        assert updated["passes"] is True
+        assert updated["passes"]
         assert updated["passed_at"] is not None
 
     def test_update_step_passes_false(self, test_subtask: dict[str, Any]) -> None:
@@ -134,7 +134,7 @@ class TestUpdateStepPasses:
         updated = step_store.update_step_passes(test_subtask["id"], 1, False)
 
         assert updated is not None
-        assert updated["passes"] is False
+        assert not updated["passes"]
         assert updated["passed_at"] is None
 
     def test_update_step_passes_toggle(self, test_subtask: dict[str, Any]) -> None:
@@ -144,17 +144,17 @@ class TestUpdateStepPasses:
         # Toggle on
         updated1 = step_store.update_step_passes(test_subtask["id"], 1, True)
         assert updated1 is not None
-        assert updated1["passes"] is True
+        assert updated1["passes"]
 
         # Toggle off
         updated2 = step_store.update_step_passes(test_subtask["id"], 1, False)
         assert updated2 is not None
-        assert updated2["passes"] is False
+        assert not updated2["passes"]
 
         # Toggle on again
         updated3 = step_store.update_step_passes(test_subtask["id"], 1, True)
         assert updated3 is not None
-        assert updated3["passes"] is True
+        assert updated3["passes"]
 
     def test_update_step_passes_nonexistent(self, test_subtask: dict[str, Any]) -> None:
         """Test updating non-existent step returns None."""
@@ -288,7 +288,7 @@ class TestStepGates:
 
         result = step_store.update_step_passes(test_subtask["id"], step_number=2, passes=True)
         assert result is not None
-        assert result["passes"] is True
+        assert result["passes"]
 
     def test_step_gate_allows_sequential_completion(self, test_subtask: dict[str, Any]) -> None:
         """Can mark step 2 as passed after step 1 is passed."""
@@ -297,12 +297,12 @@ class TestStepGates:
         # Mark step 1 as passed
         result1 = step_store.update_step_passes(test_subtask["id"], step_number=1, passes=True)
         assert result1 is not None
-        assert result1["passes"] is True
+        assert result1["passes"]
 
         # Now step 2 should work
         result2 = step_store.update_step_passes(test_subtask["id"], step_number=2, passes=True)
         assert result2 is not None
-        assert result2["passes"] is True
+        assert result2["passes"]
 
     def test_step_gate_force_param_removed(self, test_subtask: dict[str, Any]) -> None:
         """Force flag has been removed - no bypass available."""
@@ -320,7 +320,7 @@ class TestStepGates:
         # Step 1 should always work
         result = step_store.update_step_passes(test_subtask["id"], step_number=1, passes=True)
         assert result is not None
-        assert result["passes"] is True
+        assert result["passes"]
 
     def test_step_gate_logs_missing_steps(self, test_subtask: dict[str, Any]) -> None:
         """Gate logs missing steps but allows completion."""
@@ -328,7 +328,7 @@ class TestStepGates:
 
         result = step_store.update_step_passes(test_subtask["id"], step_number=3, passes=True)
         assert result is not None
-        assert result["passes"] is True
+        assert result["passes"]
 
     def test_clearing_step_has_no_gate(self, test_subtask: dict[str, Any]) -> None:
         """Setting passes=False has no gate check (can clear any step)."""
@@ -337,7 +337,7 @@ class TestStepGates:
         # Can clear step 2 even if step 1 is not passed
         result = step_store.update_step_passes(test_subtask["id"], step_number=2, passes=False)
         assert result is not None
-        assert result["passes"] is False
+        assert not result["passes"]
 
 
 class TestInsertStep:

@@ -1,18 +1,8 @@
 'use client'
 
 import { clsx } from 'clsx'
-import { Lightbulb, Sparkles, TrendingUp, X, Zap } from 'lucide-react'
-
-// ============================================================================
-// Constants
-// ============================================================================
-
-export const TYPE_CONFIG = {
-  friction: { icon: Zap, label: 'Friction', color: 'text-rose-400', bg: 'bg-rose-500/10', border: 'border-rose-500/30' },
-  idea: { icon: Lightbulb, label: 'Idea', color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/30' },
-  improvement: { icon: TrendingUp, label: 'Improvement', color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/30' },
-  praise: { icon: Sparkles, label: 'Praise', color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/30' },
-} as const
+import { X } from 'lucide-react'
+import { TYPE_CONFIG } from './feedbackConstants'
 
 // ============================================================================
 // Component

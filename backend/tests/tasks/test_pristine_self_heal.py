@@ -138,7 +138,7 @@ class TestPristineSelfHeal:
 
         result = pristine_self_heal("task-123", "test-project")
 
-        assert result is True
+        assert result
         mock_subprocess.assert_called_once()
 
     def test_pristine_fix_succeeds(
@@ -163,7 +163,7 @@ class TestPristineSelfHeal:
 
                 result = pristine_self_heal("task-123", "test-project")
 
-        assert result is True
+        assert result
         mock_agent_client.complete.assert_called_once()
         mock_commit.assert_called_once_with(
             "/test/project",
@@ -190,7 +190,7 @@ class TestPristineSelfHeal:
 
         result = pristine_self_heal("task-123", "test-project")
 
-        assert result is False
+        assert not result
         git_checkout_calls = [c for c in mock_subprocess.call_args_list if "checkout" in str(c)]
         assert len(git_checkout_calls) == 1
 
@@ -208,7 +208,7 @@ class TestPristineSelfHeal:
 
         result = pristine_self_heal("task-123", "test-project")
 
-        assert result is False
+        assert not result
         assert mock_agent_client.complete.call_count == 2
 
     def test_pristine_no_project_path(self) -> None:
@@ -220,7 +220,7 @@ class TestPristineSelfHeal:
 
             result = pristine_self_heal("task-123", "test-project")
 
-        assert result is False
+        assert not result
 
     def test_pristine_no_dt_command(self, mock_project_path: MagicMock) -> None:
         """If dt not found, return True (skip check)."""
@@ -231,7 +231,7 @@ class TestPristineSelfHeal:
 
             result = pristine_self_heal("task-123", "test-project")
 
-        assert result is True
+        assert result
 
     def test_pristine_timeout(
         self,
@@ -248,4 +248,4 @@ class TestPristineSelfHeal:
 
         result = pristine_self_heal("task-123", "test-project")
 
-        assert result is False
+        assert not result

@@ -85,9 +85,9 @@ def symbol_api_project(
         conn.commit()
 
     result = FileScanner(project_id).run()
-    assert result.success is True
-    assert EndpointScanner(project_id).run().success is True
-    assert PageScanner(project_id).run().success is True
+    assert result.success
+    assert EndpointScanner(project_id).run().success
+    assert PageScanner(project_id).run().success
 
     yield project_id
 

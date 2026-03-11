@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { fetchTaskDiff, type MergedTaskSummary } from '@/lib/api/git-enhanced'
 import { DiffPanel } from '../DiffPanel'
 import { formatTimeAgo } from '@/lib/format'
+import { POLL_RARE } from '@/lib/polling'
 import { StatBar } from './StatBar'
 
 export function MergeRow({ merge }: { merge: MergedTaskSummary }) {
@@ -14,7 +15,7 @@ export function MergeRow({ merge }: { merge: MergedTaskSummary }) {
     queryKey: ['task-diff', merge.task_id],
     queryFn: () => fetchTaskDiff(merge.task_id),
     enabled: diffOpen,
-    staleTime: 300000,
+    staleTime: POLL_RARE,
   })
 
   return (

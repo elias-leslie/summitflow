@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { fetchTask, type Task } from '@/lib/api/tasks'
+import { POLL_RAPID } from '@/lib/polling'
 import { getErrorMessage } from '@/lib/utils'
 
 interface UseEnrichmentPollingProps {
@@ -44,7 +45,7 @@ export function useEnrichmentPolling({
   useEffect(() => {
     if (task.enrichment_status !== 'enriching') return
 
-    pollRef.current = setInterval(pollTask, 2000)
+    pollRef.current = setInterval(pollTask, POLL_RAPID)
 
     return () => {
       if (pollRef.current) clearInterval(pollRef.current)

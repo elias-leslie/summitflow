@@ -223,7 +223,7 @@ class TestCheckHealthOrWait:
         result = _check_health_or_wait("task-123", "test-project", max_retries=3)
 
         # Assert
-        assert result is True
+        assert result
         mock_check_health.assert_called_once_with("test-project")
         mock_emit_log.assert_not_called()
 
@@ -247,7 +247,7 @@ class TestCheckHealthOrWait:
         result = _check_health_or_wait("task-123", "test-project", max_retries=3)
 
         # Assert
-        assert result is True
+        assert result
         assert mock_check_health.call_count == 2
         mock_sleep.assert_called_once_with(30)
         assert mock_emit_log.call_count == 2
@@ -279,7 +279,7 @@ class TestCheckHealthOrWait:
         result = _check_health_or_wait("task-123", "test-project", max_retries=3)
 
         # Assert
-        assert result is False
+        assert not result
         assert mock_check_health.call_count == 4  # initial + 3 retries
         assert mock_sleep.call_count == 3
         mock_sleep.assert_any_call(30)
@@ -308,7 +308,7 @@ class TestCheckHealthOrWait:
         result = _check_health_or_wait("task-123", "test-project", max_retries=3)
 
         # Assert
-        assert result is True
+        assert result
         assert mock_sleep.call_count == 3
         assert mock_sleep.call_args_list[0][0][0] == 30
         assert mock_sleep.call_args_list[1][0][0] == 60
@@ -334,7 +334,7 @@ class TestCheckHealthOrWait:
         result = _check_health_or_wait("task-123", "test-project", max_retries=5)
 
         # Assert
-        assert result is False
+        assert not result
         assert mock_sleep.call_count == 5
         assert mock_sleep.call_args_list[0][0][0] == 30
         assert mock_sleep.call_args_list[1][0][0] == 60
@@ -366,7 +366,7 @@ class TestCheckHealthOrWait:
         result = _check_health_or_wait("task-123", "test-project", max_retries=3)
 
         # Assert
-        assert result is True
+        assert result
         warn_call = mock_emit_log.call_args_list[0]
         assert "postgres, redis" in warn_call[0][2]
         assert warn_call[1]["source"] == "health"

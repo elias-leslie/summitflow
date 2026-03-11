@@ -86,9 +86,9 @@ class TestCaptureConsoleErrorEndpoint:
         request = ConsoleErrorRequest(**error_request_data)
         result = await capture_console_error("test-project", request)
 
-        assert result.success is True
+        assert result.success
         assert result.task_id == "task-console123"
-        assert result.is_duplicate is False
+        assert not result.is_duplicate
 
         # Verify create_task was called correctly
         mock_create.assert_called_once()
@@ -96,7 +96,7 @@ class TestCaptureConsoleErrorEndpoint:
         assert call_kwargs["project_id"] == "test-project"
         assert call_kwargs["task_type"] == "bug"
         assert call_kwargs["priority"] == 2
-        assert call_kwargs["autonomous"] is True
+        assert call_kwargs["autonomous"]
         assert "[Frontend]" in call_kwargs["title"]
         assert "TypeError" in call_kwargs["title"]
 
@@ -146,9 +146,9 @@ class TestCaptureConsoleErrorEndpoint:
         request = ConsoleErrorRequest(**error_request_data)
         result = await capture_console_error("summitflow", request)
 
-        assert result.success is True
+        assert result.success
         assert result.task_id is None
-        assert result.is_duplicate is True
+        assert result.is_duplicate
         mock_create.assert_not_called()
 
     @pytest.mark.asyncio
@@ -173,7 +173,7 @@ class TestCaptureConsoleErrorEndpoint:
         )
         result = await capture_console_error("summitflow", request)
 
-        assert result.success is True
+        assert result.success
         call_kwargs = mock_create.call_args[1]
         description = call_kwargs["description"]
         assert "Stack Trace" not in description

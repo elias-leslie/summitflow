@@ -425,7 +425,7 @@ class TestExecutionE2E:
         assert result["subtask_results"][0]["status"] == "passed"
 
         subtasks = get_subtasks_for_task(task_id, include_steps=True)
-        assert subtasks[0]["passes"] is True
+        assert subtasks[0]["passes"]
 
     def test_execution_handles_verification_failure(
         self, test_project_id: str, cleanup_tasks: list[str]
@@ -665,25 +665,25 @@ class TestEscalationE2E:
     def test_no_escalation_below_threshold(self) -> None:
         """First failures should not trigger escalation."""
         result = check_escalation_needed(failure_count=1, supervisor_attempts=0)
-        assert result["escalate_to_supervisor"] is False
-        assert result["escalate_to_pipeline"] is False
+        assert not result["escalate_to_supervisor"]
+        assert not result["escalate_to_pipeline"]
 
         result = check_escalation_needed(failure_count=2, supervisor_attempts=0)
-        assert result["escalate_to_supervisor"] is False
-        assert result["escalate_to_pipeline"] is False
+        assert not result["escalate_to_supervisor"]
+        assert not result["escalate_to_pipeline"]
 
     def test_escalate_to_supervisor_at_3_failures(self) -> None:
         """3 worker failures should trigger supervisor escalation."""
         result = check_escalation_needed(failure_count=3, supervisor_attempts=0)
-        assert result["escalate_to_supervisor"] is True
-        assert result["escalate_to_pipeline"] is False
+        assert result["escalate_to_supervisor"]
+        assert not result["escalate_to_pipeline"]
 
     def test_escalate_to_pipeline_at_2_supervisor_attempts(self) -> None:
         """2 supervisor attempts should trigger pipeline escalation."""
         result = check_escalation_needed(failure_count=3, supervisor_attempts=2)
         # Once pipeline escalation is triggered, supervisor escalation is False
-        assert result["escalate_to_supervisor"] is False
-        assert result["escalate_to_pipeline"] is True
+        assert not result["escalate_to_supervisor"]
+        assert result["escalate_to_pipeline"]
 
     def test_escalation_thresholds_match_321_pattern(self) -> None:
         """Verify 3-2-1 pattern: 3 worker, 2 supervisor, 1 human."""
@@ -1006,7 +1006,7 @@ class TestPartialMergeE2E:
             task_id, test_project_id, "/tmp/e2e-test", results, dispatch
         )
 
-        assert success is True
+        assert success
 
         # Verify original task moved to ai_reviewing
         updated_task = task_store.get_task(task_id)
@@ -1015,7 +1015,7 @@ class TestPartialMergeE2E:
 
         # Verify verification_result has partial merge info
         vr = updated_task.get("verification_result") or {}
-        assert vr.get("partial_merge") is True
+        assert vr.get("partial_merge")
         assert vr.get("passed_count") == 1
         assert vr.get("failed_count") == 1
 
@@ -1060,7 +1060,7 @@ class TestPartialMergeE2E:
             task_id, test_project_id, "/tmp/e2e-test", results
         )
 
-        assert success is False
+        assert not success
 
     def test_partial_completion_all_failed_returns_false(
         self, test_project_id: str, cleanup_tasks: list[str]
@@ -1085,7 +1085,7 @@ class TestPartialMergeE2E:
             task_id, test_project_id, "/tmp/e2e-test", results
         )
 
-        assert success is False
+        assert not success
 
 
 @pytest.mark.e2e
@@ -1140,7 +1140,7 @@ class TestAutoRollbackE2E:
         assert result["status"] == "merged"
         assert result["task_branch"] == f"{task_id}/main"
         assert result["base_branch"] == "main"
-        assert result["post_merge_valid"] is True
+        assert result["post_merge_valid"]
 
     def test_merge_with_failed_validation_triggers_rollback(
         self, test_project_id: str, cleanup_tasks: list[str]
@@ -1227,7 +1227,7 @@ class TestAutoRollbackE2E:
         ):
             success = _auto_rollback(task_id, "/tmp/e2e-test", test_project_id, task_branch)
 
-        assert success is True
+        assert success
 
         # Verify original task is now blocked
         updated_task = task_store.get_task(task_id)
@@ -1354,7 +1354,7 @@ class TestIntentOnlyAcceptanceE2E:
         assert updated_task["status"] == "completed"
 
         vr = updated_task.get("verification_result") or {}
-        assert vr.get("execution_clean") is True
+        assert vr.get("execution_clean")
 
         assert not task_events_contain(task_id, "Intent check failed")
 

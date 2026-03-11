@@ -56,7 +56,7 @@ class TestSystemdMonitorIntegration:
         assert call_kwargs["project_id"] == "summitflow"
         assert call_kwargs["task_type"] == "bug"
         assert call_kwargs["priority"] == 2
-        assert call_kwargs["autonomous"] is True
+        assert call_kwargs["autonomous"]
         assert "Database connection refused" in call_kwargs["title"]
 
     @patch("app.services.self_healing.monitor.create_task")
@@ -319,8 +319,8 @@ class TestOrchestrateTask:
 
         result = orchestrate_self_healing(enabled=False)
 
-        assert result["enabled"] is False
-        assert result["skipped"] is True
+        assert not result["enabled"]
+        assert result["skipped"]
         mock_conn.assert_not_called()
 
     @patch("app.tasks.self_healing.get_connection")
@@ -343,7 +343,7 @@ class TestOrchestrateTask:
 
         result = orchestrate_self_healing()
 
-        assert result["enabled"] is True
+        assert result["enabled"]
         assert result["projects_processed"] == 0
         assert "No unfixed errors" in result.get("message", "")
         mock_orch.poll_and_fix.assert_not_called()
@@ -376,7 +376,7 @@ class TestOrchestrateTask:
 
         result = orchestrate_self_healing(max_errors=10)
 
-        assert result["enabled"] is True
+        assert result["enabled"]
         assert result["projects_processed"] == 1
         assert result["total_fixed"] == 3
         assert result["total_failed"] == 1
@@ -400,7 +400,7 @@ class TestOrchestrateTask:
 
         result = orchestrate_self_healing()
 
-        assert result["enabled"] is True
+        assert result["enabled"]
         assert "error" in result
         assert "DB connection failed" in result["error"]
         assert result["projects_processed"] == 0

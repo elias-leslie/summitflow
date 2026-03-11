@@ -59,7 +59,7 @@ class TestFeedbackCommandRouting:
             )
 
         assert result.exit_code == 0
-        assert mock_report_impl.call_args.kwargs["vote_if_duplicate"] is True
+        assert mock_report_impl.call_args.kwargs["vote_if_duplicate"]
 
     def test_archive_routes_to_archive_impl(self) -> None:
         with patch("cli.commands.feedback.archive_impl") as mock_archive_impl:

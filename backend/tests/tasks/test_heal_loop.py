@@ -92,7 +92,7 @@ class TestStepRereadAfterHealAttempt:
         )
 
         all_passed = result[0]
-        assert all_passed is True
+        assert all_passed
         mock_get_steps.assert_called_once_with("sub-1")
 
     @patch(f"{_RETRY_LOOP}.agent_configs")
@@ -142,7 +142,7 @@ class TestStepRereadAfterHealAttempt:
         )
 
         all_passed = result[0]
-        assert all_passed is True
+        assert all_passed
         mock_get_steps.assert_not_called()
 
 
@@ -231,7 +231,7 @@ class TestWorktreeHealthCheck:
         missing = str(tmp_path / "nonexistent")
         result = check_worktree_health(missing, "task-1", "test-project")
 
-        assert result is False
+        assert not result
         mock_log.assert_called_once()
         assert "WORKTREE GONE" in mock_log.call_args[0][2]
 
@@ -246,7 +246,7 @@ class TestWorktreeHealthCheck:
 
         result = check_worktree_health(str(tmp_path), "task-1", "test-project")
 
-        assert result is False
+        assert not result
         mock_log.assert_called_once()
         assert "WORKTREE CORRUPTED" in mock_log.call_args[0][2]
 
@@ -262,7 +262,7 @@ class TestWorktreeHealthCheck:
         (tmp_path / ".git").mkdir()
         result = check_worktree_health(str(tmp_path), "task-1", "test-project")
 
-        assert result is True
+        assert result
         mock_log.assert_not_called()
 
     @patch(f"{_WORKTREE}.emit_log")
@@ -277,7 +277,7 @@ class TestWorktreeHealthCheck:
         (tmp_path / ".git").write_text("gitdir: /path/to/main/.git/worktrees/task-1")
         result = check_worktree_health(str(tmp_path), "task-1", "test-project")
 
-        assert result is True
+        assert result
         mock_log.assert_not_called()
 
 
@@ -327,7 +327,7 @@ class TestHealLoopAbortsOnInvalidWorktree:
 
         all_passed = result[0]
         step_results = result[1]
-        assert all_passed is False
+        assert not all_passed
         assert step_results[0]["reason"] == "worktree_destroyed"
 
 
@@ -389,7 +389,7 @@ class TestMainRepoLeakageDetection:
 
         detected = check_main_repo_leakage("task-1", "test-project", "/tmp/worktree")
 
-        assert detected is True
+        assert detected
         assert any("WORKTREE LEAKAGE" in str(c) for c in mock_log.call_args_list)
 
     @patch(f"{_WORKTREE}._load_main_repo_dirty_baseline")
@@ -414,7 +414,7 @@ class TestMainRepoLeakageDetection:
 
         detected = check_main_repo_leakage("task-1", "test-project", "/tmp/worktree")
 
-        assert detected is False
+        assert not detected
         mock_log.assert_not_called()
 
     @patch(f"{_WORKTREE}._load_main_repo_dirty_baseline")
@@ -439,7 +439,7 @@ class TestMainRepoLeakageDetection:
 
         detected = check_main_repo_leakage("task-1", "test-project", "/tmp/worktree")
 
-        assert detected is True
+        assert detected
         assert any("leaked_file.py" in str(c) for c in mock_log.call_args_list)
 
     @patch(f"{_WORKTREE}.emit_log")
@@ -461,7 +461,7 @@ class TestMainRepoLeakageDetection:
 
         detected = check_main_repo_leakage("task-1", "test-project", "/tmp/worktree")
 
-        assert detected is False
+        assert not detected
 
     @patch(f"{_WORKTREE}.emit_log")
     @patch(f"{_WORKTREE}.get_project_root_path")
@@ -477,7 +477,7 @@ class TestMainRepoLeakageDetection:
 
         detected = check_main_repo_leakage("task-1", "test-project", "/home/test/project")
 
-        assert detected is False
+        assert not detected
         mock_log.assert_not_called()
 
 
@@ -523,7 +523,7 @@ class TestWorkProductDetection:
 
         mock_run.return_value = MagicMock(stdout="abc123 change\n")
 
-        assert _has_work_product("/tmp/test-worktree") is True
+        assert _has_work_product("/tmp/test-worktree")
 
     @patch("app.tasks.autonomous.exec_modules.steps.subprocess.run")
     def test_has_work_product_when_worktree_has_uncommitted_changes(
@@ -538,7 +538,7 @@ class TestWorkProductDetection:
             MagicMock(stdout=" M terminal/api/handlers/websocket_resize.py\n"),
         ]
 
-        assert _has_work_product("/tmp/test-worktree") is True
+        assert _has_work_product("/tmp/test-worktree")
 
     @patch("app.tasks.autonomous.exec_modules.git_work_product.emit_log")
     @patch("app.tasks.autonomous.exec_modules.git_work_product.has_unpublished_commits")
@@ -617,7 +617,7 @@ class TestWorkProductDetection:
             MagicMock(stdout=""),
         ]
 
-        assert _has_work_product("/tmp/test-worktree") is False
+        assert not _has_work_product("/tmp/test-worktree")
 
     @patch("app.tasks.autonomous.exec_modules.steps.run_smoke_and_targeted_tests")
     @patch("app.tasks.autonomous.exec_modules.steps.get_task_spirit")
@@ -656,7 +656,7 @@ class TestWorkProductDetection:
             "summitflow",
         )
 
-        assert all_passed is True
-        assert results[0]["passed"] is True
+        assert all_passed
+        assert results[0]["passed"]
         assert results[0]["reason"] == "auto_passed"
         mock_smoke.assert_called_once()

@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 import type { TaskAcceptanceCriterion } from '@/lib/api/tasks'
+import { formatDate } from '@/lib/format'
 
 interface CriterionDetailModalProps {
   criterion: TaskAcceptanceCriterion
@@ -55,17 +56,6 @@ export function CriterionDetailModal({
     } finally {
       setIsVerifying(false)
     }
-  }
-
-  const formatDate = (dateStr: string | null | undefined) => {
-    if (!dateStr) return ''
-    return new Date(dateStr).toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
   }
 
   return (
