@@ -104,6 +104,8 @@ def _create_tasks_table(cur: psycopg.Cursor) -> None:
             priority INTEGER DEFAULT 2,
             task_type VARCHAR(20) DEFAULT 'task',
             parent_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+            capability_id INTEGER,
+            feature_id INTEGER,
             -- Autonomous execution fields
             claimed_by TEXT,
             claimed_at TIMESTAMPTZ,
@@ -142,11 +144,14 @@ def _create_tasks_table(cur: psycopg.Cursor) -> None:
     cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_type ON tasks(task_type)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_task_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_capability ON tasks(capability_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_feature ON tasks(feature_id)")
     # Composite indexes for common query patterns (PERF-002, PERF-004)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_project_status ON tasks(project_id, status)")
     cur.execute(
         "CREATE INDEX IF NOT EXISTS idx_tasks_project_created ON tasks(project_id, created_at DESC)"
     )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_updated ON tasks(updated_at DESC)")
 
 
 def _create_task_dependencies_table(cur: psycopg.Cursor) -> None:

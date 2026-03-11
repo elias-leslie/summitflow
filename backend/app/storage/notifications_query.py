@@ -131,3 +131,41 @@ def get_notifications_by_user_email(
                 conn.commit()
 
     return notifications
+
+
+def cleanup_old_notifications(
+    *,
+    max_read_age_days: int = 45,
+    max_dismissed_age_days: int = 14,
+) -> dict[str, int]:
+    """Delete old non-pending notifications by status-specific retention windows."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            WITH deleted AS (
+                DELETE FROM notifications
+                WHERE (
+                    status = 'read'
+                    AND read_at IS NOT NULL
+                    AND read_at < NOW() - (%s * INTERVAL '1 day')
+                ) OR (
+                    status = 'dismissed'
+                    AND dismissed_at IS NOT NULL
+                    AND dismissed_at < NOW() - (%s * INTERVAL '1 day')
+                )
+                RETURNING status
+            )
+            SELECT
+                COUNT(*) FILTER (WHERE status = 'read') AS read_deleted,
+                COUNT(*) FILTER (WHERE status = 'dismissed') AS dismissed_deleted
+            FROM deleted
+            """,
+            (max_read_age_days, max_dismissed_age_days),
+        )
+        row = cur.fetchone()
+        conn.commit()
+
+    return {
+        "read_deleted": int(row[0] or 0) if row else 0,
+        "dismissed_deleted": int(row[1] or 0) if row else 0,
+    }

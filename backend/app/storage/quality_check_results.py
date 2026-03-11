@@ -16,6 +16,7 @@ from ._qcr_helpers import (
     fetch_health_data,
     row_to_dict,
 )
+from .connection import get_connection
 
 CheckType = Literal["pytest", "ruff", "types", "biome", "tsc"]
 Status = Literal["pass", "fail", "error", "skipped"]
@@ -195,3 +196,41 @@ def mark_escalated(
         f" SET escalation_task_id = %s, updated_at = NOW() WHERE id = %s {RETURNING}",
         (task_id, result_id),
     )
+
+
+def cleanup_old_results(
+    *,
+    max_pass_age_days: int = 21,
+    max_fixed_age_days: int = 45,
+) -> dict[str, int]:
+    """Delete old pass/fixed/skipped results while retaining active failures."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            WITH deleted AS (
+                DELETE FROM quality_check_results
+                WHERE (
+                    status IN ('pass', 'skipped')
+                    AND created_at < NOW() - (%s * INTERVAL '1 day')
+                ) OR (
+                    fixed_at IS NOT NULL
+                    AND fixed_at < NOW() - (%s * INTERVAL '1 day')
+                )
+                RETURNING status, fixed_at
+            )
+            SELECT
+                COUNT(*) FILTER (WHERE status = 'pass') AS pass_deleted,
+                COUNT(*) FILTER (WHERE status = 'skipped') AS skipped_deleted,
+                COUNT(*) FILTER (WHERE fixed_at IS NOT NULL) AS fixed_deleted
+            FROM deleted
+            """,
+            (max_pass_age_days, max_fixed_age_days),
+        )
+        row = cur.fetchone()
+        conn.commit()
+
+    return {
+        "pass_deleted": int(row[0] or 0) if row else 0,
+        "skipped_deleted": int(row[1] or 0) if row else 0,
+        "fixed_deleted": int(row[2] or 0) if row else 0,
+    }

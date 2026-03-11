@@ -143,9 +143,9 @@ async def scheduled_backups_wf(input: EmptyInput, ctx: Context) -> dict[str, Any
     ),
 )
 async def stale_cleanup_wf(input: StaleCleanupInput, ctx: Context) -> dict[str, Any]:
-    from ..tasks.autonomous.task_generation import cleanup_stale_tasks
+    from ..tasks.maintenance import run_daily_maintenance
 
-    return await asyncio.to_thread(cleanup_stale_tasks, input.max_age_days)
+    return await asyncio.to_thread(run_daily_maintenance, input.max_age_days)
 
 
 @hatchet.task(

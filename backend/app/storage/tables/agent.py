@@ -31,6 +31,7 @@ def _create_agent_sessions_table(cur: psycopg.Cursor) -> None:
             -- Handoff
             notes TEXT,
             git_commit_sha VARCHAR(40),
+            build_state JSONB DEFAULT '{}'::jsonb,
             created_at TIMESTAMPTZ DEFAULT NOW(),
             updated_at TIMESTAMPTZ DEFAULT NOW(),
             UNIQUE(project_id, session_id)

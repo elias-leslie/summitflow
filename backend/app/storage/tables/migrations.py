@@ -59,6 +59,8 @@ def _task_column_additions() -> list[tuple[str, str]]:
         ("priority INTEGER DEFAULT 2", "tasks"),
         ("task_type VARCHAR(20) DEFAULT 'task'", "tasks"),
         ("parent_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL", "tasks"),
+        ("capability_id INTEGER", "tasks"),
+        ("feature_id INTEGER", "tasks"),
         (
             "complexity VARCHAR(20) CHECK (complexity IN ('SIMPLE', 'STANDARD', 'COMPLEX'))",
             "tasks",
@@ -88,6 +90,7 @@ def _task_column_additions() -> list[tuple[str, str]]:
         # Git conflict handling (migration 52bde0e4709d)
         ("conflict_info JSONB", "tasks"),
         ("merge_sha TEXT", "tasks"),
+        ("build_state JSONB DEFAULT '{}'::jsonb", "agent_sessions"),
     ]
 
 
@@ -136,6 +139,10 @@ def _create_migration_indexes(cur: psycopg.Cursor) -> None:
             WHERE escalation_task_id IS NOT NULL
             """
         )
+    with contextlib.suppress(psycopg.errors.UndefinedColumn):
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_capability ON tasks(capability_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_feature ON tasks(feature_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_updated ON tasks(updated_at DESC)")
 
 
 def _backfill_execution_mode(cur: psycopg.Cursor) -> None:

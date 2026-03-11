@@ -29,6 +29,7 @@ _STATUS_HEALTHY = "healthy"
 
 # Action values
 _ACTION_NO_CHANGE = "no_change"
+_ACTION_INITIAL_ALERT = "initial_alert"
 _ACTION_TRANSITION_PREFIX = "transition:"
 
 # Notification constants
@@ -89,7 +90,10 @@ def check_and_notify() -> dict[str, str]:
     previous_status = _get_last_status()
 
     action = _ACTION_NO_CHANGE
-    if previous_status and previous_status != current_status:
+    if previous_status is None and current_status != _STATUS_HEALTHY:
+        _send_transition_notification("unknown", current_status, db_health, cache_health)
+        action = _ACTION_INITIAL_ALERT
+    elif previous_status and previous_status != current_status:
         action = _handle_transition(previous_status, current_status, db_health, cache_health)
 
     _set_last_status(current_status)

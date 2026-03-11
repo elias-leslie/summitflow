@@ -19,6 +19,7 @@ from .notifications_helpers import (
     _row_to_dict,
 )
 from .notifications_query import (
+    cleanup_old_notifications,
     get_notification,
     get_notifications_by_user_email,
     get_pending_count,
@@ -39,11 +40,20 @@ _background_tasks: set[asyncio.Task[None]] = set()
 _SEVERITY_RANK: dict[str, int] = {"info": 0, "warning": 1, "error": 2, "critical": 3}
 
 __all__ = [
-    "NotificationSeverity", "NotificationStatus", "NotificationType",
-    "create_notification", "create_task_completion_notification",
-    "create_task_failure_notification", "delete_notification",
-    "dismiss_all_for_project", "dismiss_notification", "get_notification",
-    "get_notifications_by_user_email", "get_pending_count", "list_notifications",
+    "NotificationSeverity",
+    "NotificationStatus",
+    "NotificationType",
+    "cleanup_old_notifications",
+    "create_notification",
+    "create_task_completion_notification",
+    "create_task_failure_notification",
+    "delete_notification",
+    "dismiss_all_for_project",
+    "dismiss_notification",
+    "get_notification",
+    "get_notifications_by_user_email",
+    "get_pending_count",
+    "list_notifications",
     "mark_as_read",
 ]
 

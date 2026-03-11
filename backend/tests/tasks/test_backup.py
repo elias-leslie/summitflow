@@ -208,14 +208,19 @@ class TestCreateBackupTask:
 class TestScheduledBackups:
     """Tests for scheduled backup functionality."""
 
-    def test_run_scheduled_backups_no_due(self) -> None:
-        """Run scheduled backups with no due schedules."""
+    def test_run_scheduled_backups_no_due_still_runs_expired_cleanup(self) -> None:
+        """Expired-record cleanup still runs even when nothing is due."""
         from app.tasks.backup import run_scheduled_backups
 
-        result = run_scheduled_backups()
+        with patch("app.tasks.backup_scheduler.backup_store.cleanup_expired_backup_records") as mock_cleanup:
+            mock_cleanup.return_value = 4
+
+            result = run_scheduled_backups()
 
         assert result["status"] == "success"
         assert result["count"] == 0
+        assert result["expired_cleaned"] == 4
+        mock_cleanup.assert_called_once()
 
     def test_run_scheduled_backups_with_due(self, cleanup_project: str, conn: Any) -> None:
         """Run scheduled backups triggers backup for due projects."""
@@ -248,3 +253,77 @@ class TestScheduledBackups:
         assert source is not None
         assert source["last_run_at"] is not None
         assert source["next_run_at"] is not None
+
+    def test_run_scheduled_backups_failed_source_does_not_advance_schedule(
+        self, cleanup_project: str, conn: Any
+    ) -> None:
+        """Failed scheduled backups leave the source due so the next run can retry."""
+        from app.tasks.backup import run_scheduled_backups
+
+        backup_store.update_source(cleanup_project, enabled=True)
+
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE backup_sources SET last_run_at = NULL, next_run_at = NOW() - INTERVAL '1 hour' WHERE id = %s",
+                (cleanup_project,),
+            )
+            conn.commit()
+
+        with patch("app.tasks.backup_scheduler.create_backup") as mock_create:
+            mock_create.return_value = {"status": "failed", "error": "Disk full"}
+
+            result = run_scheduled_backups()
+
+        assert result["status"] == "partial"
+        assert result["failed"] >= 1
+        source = backup_store.get_source(cleanup_project)
+        assert source is not None
+        assert source["last_run_at"] is None
+        assert source["next_run_at"] is not None
+
+    def test_run_scheduled_backups_continues_after_one_source_fails(
+        self, cleanup_project: str, conn: Any
+    ) -> None:
+        """One failing source should not block later due sources in the same sweep."""
+        from app.tasks.backup import run_scheduled_backups
+
+        second_source_id = f"{cleanup_project}-secondary"
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO backup_sources (
+                    id, name, path, source_type, project_id, enabled, frequency, next_run_at
+                )
+                VALUES (%s, %s, %s, 'project', %s, TRUE, 'daily', NOW() - INTERVAL '1 hour')
+                ON CONFLICT (id) DO NOTHING
+                """,
+                (second_source_id, "Secondary Source", "/tmp/test-project-2", cleanup_project),
+            )
+            cur.execute(
+                "UPDATE backup_sources SET enabled = TRUE, last_run_at = NULL, next_run_at = NOW() - INTERVAL '1 hour' WHERE id = %s",
+                (cleanup_project,),
+            )
+            conn.commit()
+
+        def _create_backup(**kwargs: Any) -> dict[str, str]:
+            if kwargs["source_id"] == cleanup_project:
+                return {"status": "failed", "error": "Disk full"}
+            return {"status": "completed", "backup_id": "backup-ok"}
+
+        with patch("app.tasks.backup_scheduler.create_backup", side_effect=_create_backup):
+            result = run_scheduled_backups()
+
+        assert result["count"] >= 2
+        assert result["failed"] >= 1
+        assert result["succeeded"] >= 1
+
+        first_source = backup_store.get_source(cleanup_project)
+        second_source = backup_store.get_source(second_source_id)
+        assert first_source is not None
+        assert second_source is not None
+        assert first_source["last_run_at"] is None
+        assert second_source["last_run_at"] is not None
+
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM backup_sources WHERE id = %s", (second_source_id,))
+            conn.commit()
