@@ -114,13 +114,23 @@ def _handle_subtask_context(
     output_subtask_context(task, target_subtask, dep_status, phase_refs)
 
 
+def _load_snapshot_info(task_id: str) -> dict[str, Any] | None:
+    """Load snapshot/checkpoint metadata for a task if one exists."""
+    from ..lib.checkpoint import get_snapshot_info
+
+    try:
+        return get_snapshot_info(task_id)
+    except Exception:
+        return None
+
+
 def _handle_task_context(
     task: dict[str, Any],
     task_id: str,
     subtasks: list[dict[str, Any]],
     client: STClient,
 ) -> None:
-    """Output full task context including blockers and references."""
+    """Output full task context including blockers, references, and snapshot state."""
     task_deps: list[dict[str, Any]] = client.list_dependencies(task_id)
     blockers = _get_blockers(task_id, task_deps, client)
     task_type = task.get("task_type", "")
@@ -132,7 +142,8 @@ def _handle_task_context(
     sync_analysis = analyze_subtask_sync(subtasks)
     task["syncable_subtasks"] = sync_analysis.syncable
     task["syncable_subtasks_skipped"] = sync_analysis.skipped
-    output_context(task, subtasks, blockers, task_refs)
+    snapshot = _load_snapshot_info(task_id)
+    output_context(task, subtasks, blockers, task_refs, snapshot)
 
 
 def get_task_context(

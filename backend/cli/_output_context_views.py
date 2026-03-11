@@ -10,6 +10,7 @@ from ._output_formatters import (
     format_context_decisions,
     format_context_log,
     format_context_references,
+    format_context_snapshot,
     format_context_subtasks,
     format_context_task,
     format_subtask_context_dependencies,
@@ -23,6 +24,7 @@ def output_context(
     subtasks: list[dict[str, Any]],
     blockers: list[dict[str, Any]] | None = None,
     references: list[dict[str, Any]] | None = None,
+    snapshot: dict[str, Any] | None = None,
 ) -> None:
     """Output full task context in TOON format."""
     from ._output_state import _compact_output
@@ -30,6 +32,7 @@ def output_context(
     if _compact_output:
         sections = [
             format_context_task(task),
+            format_context_snapshot(snapshot or {}),
             format_context_decisions(task.get("decisions") or []),
             format_context_subtasks(subtasks),
         ]
@@ -47,6 +50,7 @@ def output_context(
                 "subtasks": subtasks,
                 "blockers": blockers or [],
                 "references": references or [],
+                "snapshot": snapshot,
             }
         )
 
