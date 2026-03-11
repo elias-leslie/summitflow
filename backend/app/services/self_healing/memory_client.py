@@ -131,7 +131,7 @@ class MemoryClient:
             response.raise_for_status()
             result = cast(dict[str, Any], response.json())
             logger.info(
-                f"Stored fix pattern for {pattern.error_signature}: {result.get('episode_uuid')}"
+                "Stored fix pattern for %s: %s", pattern.error_signature, result.get('episode_uuid'),
             )
             return result
 
@@ -193,7 +193,7 @@ class MemoryClient:
                     )
                 )
 
-            logger.debug(f"Found {len(results)} patterns for query: {query[:50]}")
+            logger.debug("Found %d patterns for query: %s", len(results), query[:50])
             return results
 
     @retry(

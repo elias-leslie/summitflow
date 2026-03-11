@@ -36,7 +36,7 @@ logger = get_logger(__name__)
 def _handle_escalation(
     task_id: str, checks: dict[str, Any], escalation_type: str, reason: str, issues: list[str], risk_level: RiskLevel
 ) -> dict[str, Any]:
-    logger.info(f"{escalation_type}_escalation", task_id=task_id, reason=reason)
+    logger.info("%s_escalation", escalation_type, task_id=task_id, reason=reason)
     result = ReviewResult(verdict=ReviewVerdict.FAIL, summary=f"{escalation_type}: {reason}", checks=checks, issues=issues, risk_level=risk_level)
     task_store.update_task(task_id, review_result=result.to_dict())
     task_store.update_task_status(task_id, "blocked")
@@ -69,7 +69,7 @@ def _run_standard_checks(task: dict[str, Any], project_path: Path, checks: dict[
         ("step_completion", lambda: _verify_step_completion(task), None, False),
     ]
     for check_name, check_fn, simple_msg, has_details in check_configs:
-        logger.info(f"running_{check_name}", task_id=task_id)
+        logger.info("running_%s", check_name, task_id=task_id)
         checks[check_name] = check_fn()
         if checks[check_name].get("status") != "fail":
             continue

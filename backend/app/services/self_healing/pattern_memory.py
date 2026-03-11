@@ -114,7 +114,8 @@ class PatternMemoryService:
 
         result = await self.client.store_pattern(pattern, scope="project")
         logger.info(
-            f"Stored fix pattern for {check_type}:{error_code} (signature: {error_signature[:8]})"
+            "Stored fix pattern for %s:%s (signature: %s)",
+            check_type, error_code, error_signature[:8],
         )
         return result
 
@@ -159,7 +160,7 @@ class PatternMemoryService:
             if pattern:
                 patterns.append(pattern)
 
-        logger.debug(f"Found {len(patterns)} similar patterns for {check_type}:{error_code}")
+        logger.debug("Found %d similar patterns for %s:%s", len(patterns), check_type, error_code)
         return patterns
 
     def _parse_search_result(self, result: SearchResult) -> StoredPattern | None:
@@ -199,7 +200,7 @@ class PatternMemoryService:
                 similarity_score=result.score,
             )
         except Exception as e:
-            logger.warning(f"Failed to parse search result: {e}")
+            logger.warning("Failed to parse search result: %s", e)
             return None
 
     async def record_gotcha(

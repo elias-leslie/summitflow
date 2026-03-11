@@ -30,7 +30,7 @@ def scan_python_dependencies(project_id: str, root_path: Path) -> list[ExplorerE
             for name, constraint in deps.items():
                 entries.append(_build_dep_entry(name, constraint, locks, audit_results, outdated_results, rel, pp))
         except Exception as e:
-            logger.warning(f"Failed to parse {pp}: {e}")
+            logger.warning("Failed to parse %s: %s", pp, e)
     return entries
 
 
@@ -64,7 +64,7 @@ def _parse_pyproject_toml(path: Path) -> dict[str, dict[str, Any]]:
     try:
         content = path.read_text()
     except Exception as e:
-        logger.warning(f"Failed to parse pyproject.toml {path}: {e}")
+        logger.warning("Failed to parse pyproject.toml %s: %s", path, e)
         return {}
     deps: dict[str, dict[str, Any]] = {}
     in_deps, section = False, ""
@@ -99,7 +99,7 @@ def _parse_uv_lock(path: Path) -> dict[str, str]:
                 versions[cur] = s.split('"')[1]
                 cur = None
     except Exception as e:
-        logger.warning(f"Failed to parse uv.lock {path}: {e}")
+        logger.warning("Failed to parse uv.lock %s: %s", path, e)
     return versions
 
 
@@ -129,7 +129,7 @@ def _run_python_audit(root_path: Path) -> dict[str, dict[str, Any]]:
     except subprocess.TimeoutExpired:
         logger.warning("pip-audit timed out")
     except Exception as e:
-        logger.warning(f"pip-audit failed: {e}")
+        logger.warning("pip-audit failed: %s", e)
     return results
 
 
@@ -145,5 +145,5 @@ def _run_python_outdated(root_path: Path) -> dict[str, dict[str, Any]]:
             n = pkg.get("name", "").lower().replace("_", "-")
             results[n] = {"latest": pkg.get("latest_version"), "current": pkg.get("version"), "outdated": True}
     except Exception as e:
-        logger.warning(f"pip outdated check failed: {e}")
+        logger.warning("pip outdated check failed: %s", e)
     return results

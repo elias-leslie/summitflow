@@ -44,10 +44,10 @@ class DatabaseScanner(BaseScanner):
             self.db_url = get_db_url_for_project(self.project_id)
 
         if not self.db_url:
-            logger.warning(f"No database URL configured for project {self.project_id}")
+            logger.warning("No database URL configured for project %s", self.project_id)
             return []
 
-        logger.info(f"Database scan started for {self.project_id}")
+        logger.info("Database scan started for %s", self.project_id)
 
         entries: list[ExplorerEntryCreate] = []
         try:
@@ -55,9 +55,9 @@ class DatabaseScanner(BaseScanner):
             inspector = inspect(engine)
             with engine.connect() as conn:
                 self._collect_entries(conn, inspector, entries)
-            logger.info(f"Database scan found {len(entries)} tables")
+            logger.info("Database scan found %d tables", len(entries))
         except Exception as e:
-            logger.error(f"Database scan failed: {e}")
+            logger.error("Database scan failed: %s", e)
 
         return entries
 
@@ -86,7 +86,7 @@ class DatabaseScanner(BaseScanner):
             if entry:
                 entries.append(entry)
         except Exception as e:
-            logger.warning(f"Failed to scan table {table_name}: {e}")
+            logger.warning("Failed to scan table %s: %s", table_name, e)
 
     def _get_row_count(self, table_name: str, conn: Any) -> int:
         """Return the number of rows in the given table."""

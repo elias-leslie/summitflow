@@ -95,15 +95,15 @@ class CodeArchitectureScanner(BaseScanner):
         """Scan for architecture violations and return entries."""
         root = get_project_root(self.project_id)
         if not root:
-            logger.error(f"No root_path configured for project {self.project_id}")
+            logger.error("No root_path configured for project %s", self.project_id)
             return []
 
         self.root_path = Path(root)
         if not self.root_path.exists():
-            logger.error(f"Root path does not exist: {self.root_path}")
+            logger.error("Root path does not exist: %s", self.root_path)
             return []
 
-        logger.info(f"Architecture scan started for {self.project_id}: {self.root_path}")
+        logger.info("Architecture scan started for %s: %s", self.project_id, self.root_path)
         start_time = time.time()
 
         backend_dir = self.config.get("backend_dir", "backend")
@@ -116,8 +116,8 @@ class CodeArchitectureScanner(BaseScanner):
             entry.metadata["last_scan_duration_ms"] = duration_ms
 
         logger.info(
-            f"Architecture scan found {len(violations)} violations "
-            f"across {len(entries)} entries in {duration_ms}ms"
+            "Architecture scan found %d violations across %d entries in %dms",
+            len(violations), len(entries), duration_ms,
         )
         return entries
 

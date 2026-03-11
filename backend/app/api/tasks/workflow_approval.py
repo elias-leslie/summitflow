@@ -42,7 +42,7 @@ def approve_task_plan_impl(task_id: str, approved_by: str, notes: str | None) ->
                 )
                 result = approve_plan(task_id, approved_by=approved_by, notes=notes)
         except Exception as e:
-            logger.warning(f"Failed to create task_spirit for approval: {e}")
+            logger.warning("Failed to create task_spirit for approval: %s", e)
 
     if not result:
         raise RuntimeError(f"Failed to approve plan for task {task_id}")

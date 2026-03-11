@@ -34,7 +34,7 @@ def _classify_sync_status(status: str) -> str:
         return "success"
     if status == "failed":
         return "failed"
-    logger.warning(f"Unexpected sync status '{status}', classifying as skipped")
+    logger.warning("Unexpected sync status '%s', classifying as skipped", status)
     return "skipped"
 
 

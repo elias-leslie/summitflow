@@ -49,7 +49,7 @@ class TaskScanner(BaseScanner):
         # Get project config
         project_config = get_project_config(self.project_id)
         if not project_config:
-            logger.error(f"Project not found: {self.project_id}")
+            logger.error("Project not found: %s", self.project_id)
             return []
 
         if project_config.get("root_path"):
@@ -66,7 +66,7 @@ class TaskScanner(BaseScanner):
             if self.config.get("task_schedule_endpoint"):
                 self.task_schedule_endpoint = self.config["task_schedule_endpoint"]
 
-        logger.info(f"Task scan started for {self.project_id}")
+        logger.info("Task scan started for %s", self.project_id)
 
         # Get scheduled workflow definitions
         task_schedule = get_task_schedule(
@@ -76,7 +76,7 @@ class TaskScanner(BaseScanner):
             self.backend_dir,
         )
         if not task_schedule:
-            logger.warning(f"No scheduled workflows found for {self.project_id}")
+            logger.warning("No scheduled workflows found for %s", self.project_id)
             return []
 
         # Execution telemetry is not yet wired for per-workflow runtime metrics.
@@ -90,9 +90,9 @@ class TaskScanner(BaseScanner):
                 if entry:
                     entries.append(entry)
             except Exception as e:
-                logger.warning(f"Failed to scan task {task_name}: {e}")
+                logger.warning("Failed to scan task %s: %s", task_name, e)
 
-        logger.info(f"Task scan found {len(entries)} tasks")
+        logger.info("Task scan found %d tasks", len(entries))
         return entries
 
 

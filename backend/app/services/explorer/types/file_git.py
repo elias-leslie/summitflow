@@ -29,7 +29,7 @@ def _run_git_log(root_path: Path, args: list[str], timeout: int) -> str | None:
         check=False,
     )
     if result.returncode != 0:
-        logger.warning(f"git log failed: {result.stderr}")
+        logger.warning("git log failed: %s", result.stderr)
         return None
     return result.stdout
 
@@ -90,14 +90,14 @@ def get_all_last_commits(root_path: Path) -> dict[str, tuple[int, str, str]]:
         if stdout is None:
             return {}
         file_commits = _build_file_commit_map(stdout)
-        logger.info(f"Batch git: got last commit info for {len(file_commits)} files")
+        logger.info("Batch git: got last commit info for %d files", len(file_commits))
         return file_commits
 
     except subprocess.TimeoutExpired:
         logger.warning("git log for last commits timed out")
         return {}
     except OSError as e:
-        logger.warning(f"git log for last commits failed: {e}")
+        logger.warning("git log for last commits failed: %s", e)
         return {}
 
 
@@ -123,14 +123,14 @@ def get_all_commit_counts_90d(root_path: Path) -> dict[str, int]:
         file_counts: Counter[str] = Counter(
             path for line in stdout.split("\n") if (path := line.strip())
         )
-        logger.info(f"Batch git: got 90-day commit counts for {len(file_counts)} files")
+        logger.info("Batch git: got 90-day commit counts for %d files", len(file_counts))
         return dict(file_counts)
 
     except subprocess.TimeoutExpired:
         logger.warning("git log for commit counts timed out")
         return {}
     except OSError as e:
-        logger.warning(f"git log for commit counts failed: {e}")
+        logger.warning("git log for commit counts failed: %s", e)
         return {}
 
 

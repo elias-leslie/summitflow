@@ -28,7 +28,7 @@ def scan_nodejs_dependencies(project_id: str, root_path: Path) -> list[ExplorerE
     """Scan Node.js dependencies using multi-context discovery."""
     workspace_root = _find_pnpm_workspace_root(root_path)
     if not workspace_root:
-        logger.debug(f"No pnpm workspace found, scanning {project_id} as standalone")
+        logger.debug("No pnpm workspace found, scanning %s as standalone", project_id)
         pkg = root_path / "package.json"
         return _scan_standalone_node_project(pkg) if pkg.exists() else []
     workspace_packages = _parse_pnpm_workspace(workspace_root)
@@ -36,13 +36,14 @@ def scan_nodejs_dependencies(project_id: str, root_path: Path) -> list[ExplorerE
     has_own_lockfile = _has_own_lockfile(root_path)
     if not is_in_workspace or has_own_lockfile:
         logger.info(
-            f"Project {project_id} has own resolution context "
-            f"(in_workspace={is_in_workspace}, own_lockfile={has_own_lockfile}), "
-            "scanning as standalone"
+            "Project %s has own resolution context "
+            "(in_workspace=%s, own_lockfile=%s), "
+            "scanning as standalone",
+            project_id, is_in_workspace, has_own_lockfile,
         )
         pkg = root_path / "package.json"
         return _scan_standalone_node_project(pkg) if pkg.exists() else []
-    logger.debug(f"Scanning {project_id} as part of pnpm workspace at {workspace_root}")
+    logger.debug("Scanning %s as part of pnpm workspace at %s", project_id, workspace_root)
     lock_versions = _parse_pnpm_lock(workspace_root / "pnpm-lock.yaml")
     audit_results = _run_pnpm_audit(workspace_root)
     outdated_results = _run_pnpm_outdated(workspace_root)
@@ -56,7 +57,7 @@ def scan_nodejs_dependencies(project_id: str, root_path: Path) -> list[ExplorerE
                 meta = {"package_type": "nodejs", "constraint": constraint, "locked_version": lock_versions.get(name), "latest_version": od.get("latest"), "is_outdated": od.get("outdated", False), "is_workspace_ref": "workspace:" in constraint, "is_dev_dependency": info.get("dev", False), "vulnerabilities": vi["vulnerabilities"], "audit_advisories": vi["advisories"], "source_file": str(pkg_path)}
                 entries.append(ExplorerEntryCreate(path=f"nodejs/{rel}/{name}", name=name, health_status=calculate_health_for_entry("dependency", meta), metadata=meta))
         except Exception as e:
-            logger.warning(f"Failed to parse {pkg_path}: {e}")
+            logger.warning("Failed to parse %s: %s", pkg_path, e)
     return entries
 
 
@@ -106,7 +107,7 @@ def _parse_pnpm_workspace(workspace_root: Path) -> list[Path]:
                 if pkg_json.exists():
                     packages.append(pkg_json)
     except Exception as e:
-        logger.warning(f"Failed to parse pnpm-workspace.yaml: {e}")
+        logger.warning("Failed to parse pnpm-workspace.yaml: %s", e)
     return packages
 
 
@@ -122,7 +123,7 @@ def _parse_pnpm_lock(path: Path) -> dict[str, str]:
                 if "/" not in name and not version.startswith("http"):
                     versions[name] = version
     except Exception as e:
-        logger.warning(f"Failed to parse pnpm-lock.yaml: {e}")
+        logger.warning("Failed to parse pnpm-lock.yaml: %s", e)
     return versions
 
 
@@ -138,7 +139,7 @@ def _parse_package_json(path: Path) -> dict[str, dict[str, str | bool]]:
             if name not in deps:
                 deps[name] = {"version": version, "dev": False, "peer": True}
     except Exception as e:
-        logger.warning(f"Failed to parse package.json {path}: {e}")
+        logger.warning("Failed to parse package.json %s: %s", path, e)
     return deps
 
 
@@ -149,7 +150,7 @@ def _scan_standalone_node_project(package_json: Path) -> list[ExplorerEntryCreat
             meta = {"package_type": "nodejs", "constraint": info.get("version", ""), "locked_version": None, "latest_version": None, "is_outdated": False, "is_workspace_ref": False, "is_dev_dependency": info.get("dev", False), "vulnerabilities": dict(_EMPTY_VULNS), "audit_advisories": [], "source_file": str(package_json)}
             entries.append(ExplorerEntryCreate(path=f"nodejs/{name}", name=name, health_status="unknown", metadata=meta))
     except Exception as e:
-        logger.warning(f"Failed to scan standalone Node project: {e}")
+        logger.warning("Failed to scan standalone Node project: %s", e)
     return entries
 
 
@@ -176,7 +177,7 @@ def _run_pnpm_audit(workspace_root: Path) -> dict[str, _AuditEntry]:
     except subprocess.TimeoutExpired:
         logger.warning("pnpm audit timed out")
     except Exception as e:
-        logger.warning(f"pnpm audit failed: {e}")
+        logger.warning("pnpm audit failed: %s", e)
     return results
 
 
@@ -191,5 +192,5 @@ def _run_pnpm_outdated(workspace_root: Path) -> dict[str, dict[str, str | bool |
             except json.JSONDecodeError:
                 pass
     except Exception as e:
-        logger.warning(f"pnpm outdated check failed: {e}")
+        logger.warning("pnpm outdated check failed: %s", e)
     return results

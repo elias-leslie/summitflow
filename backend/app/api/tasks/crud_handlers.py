@@ -52,7 +52,7 @@ async def _save_task_spirit(task_id: str, item: object) -> None:
             **item.model_dump(include={"spirit_anti", "decisions", "constraints", "done_when", "complexity"}),  # type: ignore[attr-defined]
         )
     except Exception as e:
-        logger.warning(f"Failed to create task_spirit for task {task_id}: {e}")
+        logger.warning("Failed to create task_spirit for task %s: %s", task_id, e)
 
 
 async def _create_subtasks_with_deps(task_id: str, item: object) -> list[dict[str, Any]] | None:
@@ -81,7 +81,7 @@ async def _create_subtasks_with_deps(task_id: str, item: object) -> list[dict[st
     try:
         created_subs = await asyncio.to_thread(bulk_create_subtasks, task_id, sub_dicts)
     except Exception as e:
-        logger.warning(f"Failed to create subtasks for task {task_id}: {e}")
+        logger.warning("Failed to create subtasks for task %s: %s", task_id, e)
         return None
 
     deps = [(s.subtask_id, d) for s in subtasks if s.depends_on for d in s.depends_on]
@@ -89,7 +89,7 @@ async def _create_subtasks_with_deps(task_id: str, item: object) -> list[dict[st
         try:
             await asyncio.to_thread(bulk_add_subtask_dependencies, task_id, deps)
         except Exception as dep_err:
-            logger.warning(f"Failed dependencies for task {task_id}: {dep_err}")
+            logger.warning("Failed dependencies for task %s: %s", task_id, dep_err)
 
     return created_subs if created_subs else None
 

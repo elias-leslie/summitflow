@@ -54,15 +54,15 @@ class EndpointScanner(BaseScanner):
         """Scan API routes and return endpoint entries."""
         project_config = get_project_config(self.project_id)
         if not project_config:
-            logger.error(f"Project not found: {self.project_id}")
+            logger.error("Project not found: %s", self.project_id)
             return []
         self._load_config(project_config)
         if not self.root_path:
-            logger.error(f"No root_path for project {self.project_id}")
+            logger.error("No root_path for project %s", self.project_id)
             return []
-        logger.info(f"Endpoint scan started for {self.project_id}")
+        logger.info("Endpoint scan started for %s", self.project_id)
         entries = self._scan_api_routes()
-        logger.info(f"Endpoint scan found {len(entries)} API endpoints")
+        logger.info("Endpoint scan found %d API endpoints", len(entries))
         return entries
 
     def _scan_api_routes(self) -> list[ExplorerEntryCreate]:
@@ -85,7 +85,7 @@ class EndpointScanner(BaseScanner):
             try:
                 entries.extend(self._scan_route_file(route_file))
             except Exception as e:
-                logger.warning(f"Failed to scan route file {route_file}: {e}")
+                logger.warning("Failed to scan route file %s: %s", route_file, e)
         return entries
 
     def _scan_route_file(self, route_file: Path) -> list[ExplorerEntryCreate]:

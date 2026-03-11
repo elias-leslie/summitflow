@@ -47,6 +47,6 @@ def get_db_url_for_project(project_id: str) -> str | None:
     url = os.environ.get(env_var)
 
     if not url:
-        logger.debug(f"No DB URL for {project_id} (tried {env_var})")
+        logger.debug("No DB URL for %s (tried %s)", project_id, env_var)
 
     return url

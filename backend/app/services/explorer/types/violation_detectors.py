@@ -82,9 +82,9 @@ def _run_jscpd(project_root: Path, scan_dir: Path, formats: list[str]) -> list[C
     except FileNotFoundError:
         logger.debug("jscpd not available, skipping duplicate detection")
     except subprocess.TimeoutExpired:
-        logger.warning(f"jscpd timed out scanning {scan_dir}")
+        logger.warning("jscpd timed out scanning %s", scan_dir)
     except Exception as e:
-        logger.warning(f"jscpd failed for {scan_dir}: {e}")
+        logger.warning("jscpd failed for %s: %s", scan_dir, e)
     return []
 
 
@@ -118,7 +118,7 @@ def detect_dead_code(project_root: Path, backend_dir: str) -> list[CodeViolation
     except subprocess.TimeoutExpired:
         logger.warning("vulture timed out")
     except Exception as e:
-        logger.warning(f"vulture failed: {e}")
+        logger.warning("vulture failed: %s", e)
     return []
 
 
@@ -153,7 +153,7 @@ def detect_missing_infrastructure(
     except subprocess.TimeoutExpired:
         logger.warning("semgrep timed out")
     except Exception as e:
-        logger.warning(f"semgrep failed: {e}")
+        logger.warning("semgrep failed: %s", e)
     return []
 
 
@@ -184,7 +184,7 @@ def _check_api_patterns(file_path: Path) -> list[CodeViolation]:
             )
         ]
     except Exception as e:
-        logger.debug(f"Failed to check API patterns in {file_path}: {e}")
+        logger.debug("Failed to check API patterns in %s: %s", file_path, e)
         return []
 
 

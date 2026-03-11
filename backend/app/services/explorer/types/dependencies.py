@@ -46,15 +46,15 @@ class DependencyScanner(BaseScanner):
         """Scan dependencies and return entries."""
         root = get_project_root(self.project_id)
         if not root:
-            logger.error(f"No root_path configured for project {self.project_id}")
+            logger.error("No root_path configured for project %s", self.project_id)
             return []
 
         self.root_path = Path(root)
         if not self.root_path.exists():
-            logger.error(f"Root path does not exist: {self.root_path}")
+            logger.error("Root path does not exist: %s", self.root_path)
             return []
 
-        logger.info(f"Dependency scan started for {self.project_id}: {self.root_path}")
+        logger.info("Dependency scan started for %s: %s", self.project_id, self.root_path)
 
         entries: list[ExplorerEntryCreate] = []
 
@@ -67,8 +67,8 @@ class DependencyScanner(BaseScanner):
         entries.extend(node_entries)
 
         logger.info(
-            f"Dependency scan found {len(entries)} entries "
-            f"({len(python_entries)} Python, {len(node_entries)} Node.js)"
+            "Dependency scan found %d entries (%d Python, %d Node.js)",
+            len(entries), len(python_entries), len(node_entries),
         )
         return entries
 

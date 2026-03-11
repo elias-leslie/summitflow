@@ -45,7 +45,7 @@ def parse_jscpd_output(output: str) -> list[CodeViolation]:
     except json.JSONDecodeError:
         logger.debug("Failed to parse jscpd JSON output")
     except Exception as e:
-        logger.warning(f"Error parsing jscpd output: {e}")
+        logger.warning("Error parsing jscpd output: %s", e)
 
     return violations
 
@@ -112,6 +112,6 @@ def parse_semgrep_output(output: str) -> list[CodeViolation]:
     except json.JSONDecodeError:
         logger.debug("Failed to parse semgrep JSON output")
     except Exception as e:
-        logger.warning(f"Error parsing semgrep output: {e}")
+        logger.warning("Error parsing semgrep output: %s", e)
 
     return violations

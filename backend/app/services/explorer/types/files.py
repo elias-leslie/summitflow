@@ -47,15 +47,15 @@ class FileScanner(BaseScanner):
         """Scan codebase and return file entries."""
         root = get_project_root(self.project_id)
         if not root:
-            logger.error(f"No root_path configured for project {self.project_id}")
+            logger.error("No root_path configured for project %s", self.project_id)
             return []
 
         self.root_path = Path(root)
         if not self.root_path.exists():
-            logger.error(f"Root path does not exist: {self.root_path}")
+            logger.error("Root path does not exist: %s", self.root_path)
             return []
 
-        logger.info(f"File scan started for {self.project_id}: {self.root_path}")
+        logger.info("File scan started for %s: %s", self.project_id, self.root_path)
         entries: list[ExplorerEntryCreate] = []
         dir_stats: dict[str, dict[str, int]] = {}
 
@@ -68,8 +68,8 @@ class FileScanner(BaseScanner):
         dir_entries = create_directory_entries(dir_stats)
         entries.extend(dir_entries)
         logger.info(
-            f"File scan found {len(entries)} entries "
-            f"({len(entries) - len(dir_entries)} files, {len(dir_entries)} dirs)"
+            "File scan found %d entries (%d files, %d dirs)",
+            len(entries), len(entries) - len(dir_entries), len(dir_entries),
         )
         return entries
 
@@ -94,7 +94,7 @@ class FileScanner(BaseScanner):
                     entries.append(entry)
                     aggregate_to_parents(rel_path, entry, dir_stats)
             except Exception as e:
-                logger.warning(f"File scan error for {rel_path}: {e}")
+                logger.warning("File scan error for %s: %s", rel_path, e)
 
     def _scan_file(self, file_path: Path, rel_path: str, ext: str) -> ExplorerEntryCreate | None:
         """Scan a single file and return entry."""

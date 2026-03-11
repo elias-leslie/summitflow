@@ -25,7 +25,7 @@ def _fetch_task_schedule_from_endpoint(endpoint: str) -> dict[str, Any] | None:
             schedule = data.get("schedule", data)
             return cast(dict[str, Any], schedule)
     except Exception as e:
-        logger.warning(f"Task schedule fetch failed: {e}")
+        logger.warning("Task schedule fetch failed: %s", e)
         return None
 
 
@@ -70,7 +70,7 @@ def scan_hatchet_schedule_files(root_path: Path, backend_dir: str) -> dict[str, 
             schedule.update(parsed)
         return schedule
     except Exception as e:
-        logger.warning(f"Failed to parse Hatchet scheduled workflows: {e}")
+        logger.warning("Failed to parse Hatchet scheduled workflows: %s", e)
         return {}
 
 
