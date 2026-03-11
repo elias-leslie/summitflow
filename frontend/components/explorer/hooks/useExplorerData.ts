@@ -20,7 +20,7 @@ import {
   fetchExplorerStats,
   type StatsResponse,
 } from '@/lib/api/explorer'
-import { POLL_SLOW, STALE_GIT } from '@/lib/polling'
+import { GC_EXPLORER, POLL_SLOW, STALE_GIT } from '@/lib/polling'
 
 // Query key factories for consistent cache management
 export const explorerKeys = {
@@ -70,7 +70,7 @@ export function useExplorerData({
     queryFn: () => fetchExplorerEntries(projectId, filters),
     enabled: enabled && !!projectId,
     staleTime: STALE_GIT,
-    gcTime: 5 * 60 * 1000, // 5 minutes (formerly cacheTime)
+    gcTime: GC_EXPLORER,
   })
 
   // Separate stats query for header (can be shared across filter changes)
@@ -79,7 +79,7 @@ export function useExplorerData({
     queryFn: () => fetchExplorerStats(projectId),
     enabled: enabled && !!projectId,
     staleTime: POLL_SLOW,
-    gcTime: 5 * 60 * 1000,
+    gcTime: GC_EXPLORER,
   })
 
   return {
@@ -119,6 +119,6 @@ export function useExplorerChildren({
     queryFn: () => fetchExplorerChildren(projectId, type, parentPath),
     enabled: enabled && !!projectId,
     staleTime: STALE_GIT,
-    gcTime: 5 * 60 * 1000,
+    gcTime: GC_EXPLORER,
   })
 }

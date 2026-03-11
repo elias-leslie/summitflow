@@ -3,7 +3,7 @@ import {
   fetchExplorerOverview,
   type ExplorerOverview,
 } from '@/lib/api/explorer'
-import { POLL_SLOW, STALE_GIT } from '@/lib/polling'
+import { GC_EXPLORER, POLL_SLOW, STALE_GIT } from '@/lib/polling'
 
 export const overviewKeys = {
   all: ['explorer-overview'] as const,
@@ -27,7 +27,7 @@ export function useExplorerOverview(
     enabled: !!projectId,
     staleTime: STALE_GIT,
     refetchInterval: POLL_SLOW,
-    gcTime: 5 * 60 * 1000,
+    gcTime: GC_EXPLORER,
   })
 
   return {

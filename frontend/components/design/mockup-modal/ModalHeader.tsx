@@ -30,7 +30,7 @@ export function ModalHeader({ mockup, onClose }: ModalHeaderProps) {
           <span className={`text-xs ${status.color}`}>{status.label}</span>
         </div>
       </div>
-      <button onClick={onClose} className="p-2 text-slate-400 hover:text-white">
+      <button onClick={onClose} aria-label="Close" className="p-2 text-slate-400 hover:text-white">
         <X className="w-5 h-5" />
       </button>
     </div>

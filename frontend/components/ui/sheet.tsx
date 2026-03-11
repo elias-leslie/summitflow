@@ -129,6 +129,7 @@ export function SheetClose({ onClose, className = '' }: SheetCloseProps) {
   return (
     <button
       onClick={onClose}
+      aria-label="Close"
       className={`absolute right-4 top-4 p-1.5 rounded-md text-slate-500
         hover:text-phosphor-400 hover:bg-slate-800 transition-colors ${className}`}
     >

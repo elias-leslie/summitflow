@@ -69,15 +69,3 @@ export interface DiscussionResponse {
   updated_task: Task | null
   history: DiscussionMessage[]
 }
-
-export interface CriterionVerifyRequest {
-  verified?: boolean
-  verified_by: 'test' | 'opus' | 'human' | 'agent'
-}
-
-export interface CriterionVerifyResponse {
-  status: string
-  task_id: string
-  criterion_id: string
-  verified_by: string
-}

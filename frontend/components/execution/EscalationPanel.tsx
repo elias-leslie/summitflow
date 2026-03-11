@@ -9,7 +9,7 @@ import {
   X,
 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ExecutionTimeline } from '@/components/tasks/ExecutionTimeline'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -65,6 +65,15 @@ export function EscalationPanel({
     }
   }
 
+  useEffect(() => {
+    if (!isOpen) return
+    const handleEscapeKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handleEscapeKey)
+    return () => document.removeEventListener('keydown', handleEscapeKey)
+  }, [isOpen, onClose])
+
   const needsAttention = task.status === 'blocked'
 
   if (!isOpen) return null
@@ -102,6 +111,7 @@ export function EscalationPanel({
             </div>
             <button
               onClick={onClose}
+              aria-label="Close"
               className="p-2 rounded-md hover:bg-slate-800 transition-colors"
             >
               <X className="h-5 w-5 text-slate-400" />

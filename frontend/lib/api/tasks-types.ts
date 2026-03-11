@@ -39,8 +39,6 @@ export type {
   CleanupPromptResponse,
   DiscussionMessage,
   DiscussionResponse,
-  CriterionVerifyRequest,
-  CriterionVerifyResponse,
 } from './tasks-types-enrichment'
 
 // ============================================================================

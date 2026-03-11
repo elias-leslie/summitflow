@@ -7,7 +7,7 @@ import {
   type ExplorerSymbolDetailResponse,
   type ExplorerSymbolSearchResponse,
 } from '@/lib/api/explorer'
-import { STALE_GIT } from '@/lib/polling'
+import { GC_EXPLORER, STALE_GIT } from '@/lib/polling'
 import { explorerKeys } from './useExplorerData'
 
 export const explorerSymbolKeys = {
@@ -62,7 +62,7 @@ export function useExplorerSymbolSearch(
       (options.enabled ?? true) &&
       trimmedQuery.length >= 2,
     staleTime: STALE_GIT,
-    gcTime: 5 * 60 * 1000,
+    gcTime: GC_EXPLORER,
   })
 }
 
@@ -84,6 +84,6 @@ export function useExplorerSymbolDetail(
       }),
     enabled: Boolean(projectId && symbolId) && (options.enabled ?? true),
     staleTime: STALE_GIT,
-    gcTime: 5 * 60 * 1000,
+    gcTime: GC_EXPLORER,
   })
 }

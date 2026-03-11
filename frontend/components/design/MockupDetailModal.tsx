@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect } from 'react'
 import { hasScreenshot, type Mockup } from '@/lib/api/mockups'
 import { useMockupModal } from './mockup-modal/useMockupModal'
 import { ModalHeader } from './mockup-modal/ModalHeader'
@@ -34,6 +35,15 @@ export function MockupDetailModal({
     setShowDeleteConfirm,
     handleStatusChange,
   } = useMockupModal(mockup, projectId, open, onOpenChange, onStatusChange)
+
+  useEffect(() => {
+    if (!open) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onOpenChange(false)
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [open, onOpenChange])
 
   if (!open) return null
 

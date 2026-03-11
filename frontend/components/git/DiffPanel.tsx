@@ -148,7 +148,7 @@ export function DiffPanel({
                 </span>
               </div>
               <Dialog.Close asChild>
-                <button className="p-1.5 rounded-md text-slate-500 hover:text-white hover:bg-slate-800 transition-colors">
+                <button aria-label="Close diff" className="p-1.5 rounded-md text-slate-500 hover:text-white hover:bg-slate-800 transition-colors">
                   <X className="w-4 h-4" />
                 </button>
               </Dialog.Close>

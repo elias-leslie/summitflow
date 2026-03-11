@@ -38,6 +38,7 @@ export function TaskCardActions({
           }}
           className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-red-500/20 text-slate-500 hover:text-red-400"
           title="Delete task"
+          aria-label="Delete task"
         >
           <Trash2 className="h-3.5 w-3.5" />
         </button>

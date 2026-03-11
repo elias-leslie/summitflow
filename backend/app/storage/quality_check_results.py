@@ -4,6 +4,8 @@ Tracks results from dt quality gate checks (pytest, ruff, types, biome, tsc)
 and their fix status.
 """
 
+from __future__ import annotations
+
 from typing import Any, Literal
 
 import psycopg

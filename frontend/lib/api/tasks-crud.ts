@@ -92,18 +92,6 @@ export async function fetchTasks(
   })
 }
 
-export async function fetchReadyTasks(
-  projectId: string,
-  limit = 50,
-): Promise<TaskListResponse> {
-  return fetchWithErrorHandling(
-    `/api/projects/${projectId}/tasks/ready?limit=${limit}`,
-    {
-      errorMessage: 'Failed to fetch ready tasks',
-    },
-  )
-}
-
 export async function fetchBlockedTasks(
   projectId: string,
   limit = 50,

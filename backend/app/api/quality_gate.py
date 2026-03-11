@@ -1,5 +1,7 @@
 """Quality Gate API - REST endpoints for quality check management."""
 
+from __future__ import annotations
+
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query

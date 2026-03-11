@@ -4,6 +4,8 @@ Provides:
 - GET /api/activity - Paginated activity feed from all sources
 """
 
+from __future__ import annotations
+
 from typing import Any, Literal
 
 from fastapi import APIRouter, Query

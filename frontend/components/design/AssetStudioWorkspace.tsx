@@ -452,7 +452,7 @@ function AssetInspector({
           <p className="text-xs uppercase tracking-[0.22em] text-cyan-300">{asset.workflow}</p>
           <h3 className="mt-1 text-xl font-semibold text-white">{asset.name}</h3>
         </div>
-        <button onClick={onClose} className="text-slate-500 hover:text-white">
+        <button onClick={onClose} aria-label="Close" className="text-slate-500 hover:text-white">
           <X className="h-4 w-4" />
         </button>
       </div>

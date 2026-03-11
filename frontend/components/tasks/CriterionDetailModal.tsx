@@ -6,7 +6,7 @@ import {
   Loader2,
   X,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { TaskAcceptanceCriterion } from '@/lib/api/tasks'
 import { formatDate } from '@/lib/format'
 
@@ -38,6 +38,15 @@ export function CriterionDetailModal({
   onVerify,
 }: CriterionDetailModalProps) {
   const [isVerifying, setIsVerifying] = useState(false)
+
+  useEffect(() => {
+    if (!isOpen) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [isOpen, onClose])
 
   if (!isOpen) return null
 
@@ -92,6 +101,7 @@ export function CriterionDetailModal({
           </div>
           <button
             onClick={onClose}
+            aria-label="Close"
             className="p-1 text-slate-500 hover:text-slate-300 transition-colors"
           >
             <X className="h-5 w-5" />

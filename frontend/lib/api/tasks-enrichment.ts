@@ -11,9 +11,7 @@ import type {
   SubtasksResponse,
   Subtask,
   Step,
-  StepSummary,
   TaskAcceptanceCriterion,
-  CriterionVerifyResponse,
 } from './tasks-types'
 
 // ============================================================================
@@ -187,22 +185,6 @@ export async function updateStep(
   )
 }
 
-/**
- * Get step completion summary for a subtask.
- */
-export async function getStepSummary(
-  projectId: string,
-  taskId: string,
-  subtaskId: string,
-): Promise<StepSummary> {
-  return fetchWithErrorHandling(
-    `/api/projects/${projectId}/tasks/${taskId}/subtasks/${subtaskId}/steps/summary`,
-    {
-      errorMessage: 'Failed to fetch step summary',
-    },
-  )
-}
-
 // ============================================================================
 // Acceptance Criteria
 // ============================================================================
@@ -222,23 +204,3 @@ export async function getTaskCriteria(
   )
 }
 
-/**
- * Verify (mark as passed/failed) a task criterion.
- */
-export async function verifyTaskCriterion(
-  projectId: string,
-  taskId: string,
-  criterionId: string,
-  verifiedBy: 'test' | 'opus' | 'human' | 'agent' = 'human',
-  verified: boolean = true,
-): Promise<CriterionVerifyResponse> {
-  return fetchWithErrorHandling(
-    `/api/projects/${projectId}/tasks/${taskId}/criteria/${criterionId}/verify`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ verified, verified_by: verifiedBy }),
-      errorMessage: 'Failed to verify criterion',
-    },
-  )
-}

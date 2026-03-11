@@ -45,6 +45,7 @@ export function FeedbackDetailHeader({
       </div>
       <button
         onClick={onClose}
+        aria-label="Close"
         className="flex-shrink-0 p-1.5 text-slate-500 hover:text-slate-300 transition-colors"
       >
         <X className="w-4 h-4" />

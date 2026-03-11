@@ -25,8 +25,6 @@ export type {
   TaskDependency,
   // Acceptance criteria
   TaskAcceptanceCriterion,
-  CriterionVerifyRequest,
-  CriterionVerifyResponse,
   // Capability & blocking
   CapabilityContext,
   BlockerInfo,
@@ -70,7 +68,6 @@ export {
   // Read operations
   fetchTask,
   fetchTasks,
-  fetchReadyTasks,
   fetchBlockedTasks,
   // Execution control
   startTask,
@@ -97,10 +94,8 @@ export {
   // Steps
   getSteps,
   updateStep,
-  getStepSummary,
   // Acceptance criteria
   getTaskCriteria,
-  verifyTaskCriterion,
 } from './tasks-enrichment'
 
 // ============================================================================
