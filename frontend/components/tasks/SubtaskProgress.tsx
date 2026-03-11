@@ -45,7 +45,7 @@ export function SubtaskProgress({
       <div className="flex items-center gap-0.5">
         {displaySubtasks.map((subtask, index) => (
           <div
-            key={subtask.id || index}
+            key={subtask.id ?? `subtask-${index}`}
             className={`w-1.5 h-1.5 rounded-[1px] transition-all duration-200 ${
               subtask.passes
                 ? 'bg-emerald-400 shadow-sm shadow-emerald-400/30'

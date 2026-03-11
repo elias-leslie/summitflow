@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { fetchWithErrorHandling } from '@/lib/api'
+import { POLL_FAST, STALE_FAST } from '@/lib/polling'
 
 interface DiskUsage {
     total_gb: number
@@ -42,7 +43,7 @@ export function useSystemStats() {
     return useQuery({
         queryKey: ['system-stats'],
         queryFn: fetchSystemStats,
-        refetchInterval: 5000, // Refresh every 5 seconds
-        staleTime: 4000,
+        refetchInterval: POLL_FAST,
+        staleTime: STALE_FAST,
     })
 }

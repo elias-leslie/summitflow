@@ -9,6 +9,7 @@ import {
   subscribe,
   unsubscribe,
 } from '@agent-hub/push-client'
+import { PUSH_NOTIFICATION_TIMEOUT } from '@/lib/polling'
 
 type PushState = 'loading' | 'unsupported' | 'denied' | 'subscribed' | 'unsubscribed'
 
@@ -44,13 +45,13 @@ export function PushNotificationToggle() {
       if (state === 'subscribed') {
         const ok = await Promise.race([
           unsubscribe(),
-          new Promise<false>((r) => setTimeout(() => r(false), 10000)),
+          new Promise<false>((r) => setTimeout(() => r(false), PUSH_NOTIFICATION_TIMEOUT)),
         ])
         setState(ok ? 'unsubscribed' : 'subscribed')
       } else {
         const ok = await Promise.race([
           subscribe(),
-          new Promise<false>((r) => setTimeout(() => r(false), 10000)),
+          new Promise<false>((r) => setTimeout(() => r(false), PUSH_NOTIFICATION_TIMEOUT)),
         ])
         setState(ok ? 'subscribed' : getPermissionState() === 'denied' ? 'denied' : 'unsubscribed')
       }

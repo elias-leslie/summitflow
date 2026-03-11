@@ -113,9 +113,9 @@ def delete_step_handler(
         raise HTTPException(
             status_code=409,
             detail={
+                "error": "step_gate_conflict",
                 "message": str(e),
-                "step_number": step_number,
-                "requires_force": True,
+                "details": [{"step_number": step_number, "requires_force": True}],
             },
         ) from None
     if not result.deleted:

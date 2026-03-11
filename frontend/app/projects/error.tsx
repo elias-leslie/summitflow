@@ -23,11 +23,16 @@ export default function ProjectsError({ error, reset }: ErrorProps) {
         <h2 className="display text-xl font-semibold text-white mb-2">
           Failed to load projects
         </h2>
-        <p className="text-slate-400 mb-6">
+        <p className="text-slate-400 mb-4">
           There was an error loading the projects section. Please try again.
         </p>
+        {error.message && (
+          <p className="text-xs text-slate-500 mono mb-2 px-3 py-2 bg-slate-800/50 rounded break-all">
+            {error.message}
+          </p>
+        )}
         {error.digest && (
-          <p className="text-xs text-slate-500 mono mb-4">
+          <p className="text-xs text-slate-600 mono mb-4">
             Error ID: {error.digest}
           </p>
         )}

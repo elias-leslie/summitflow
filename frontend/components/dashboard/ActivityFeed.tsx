@@ -19,6 +19,7 @@ import {
   fetchActivity,
 } from '@/lib/api/activity'
 import { formatDate } from '@/lib/format'
+import { POLL_STANDARD, STALE_STANDARD } from '@/lib/polling'
 import { getErrorMessage } from '@/lib/utils'
 
 const eventConfig: Record<
@@ -179,8 +180,8 @@ export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedP
         limit: 100,
         types: typeFilter === 'all' ? undefined : [typeFilter],
       }),
-    staleTime: 15000,
-    refetchInterval: 30000,
+    staleTime: STALE_STANDARD,
+    refetchInterval: POLL_STANDARD * 2,
   })
 
   // Calculate height to fill available space

@@ -117,6 +117,7 @@ def _build_snapshot_block(task_id: str, project_id: str) -> str:
     try:
         project_root = Path(get_execution_path(task_id, project_id)).resolve()
     except Exception:
+        logger.debug("review_snapshot_path_resolve_failed", task_id=task_id, exc_info=True)
         return ""
 
     blocks: list[str] = []
@@ -127,6 +128,7 @@ def _build_snapshot_block(task_id: str, project_id: str) -> str:
                 continue
             content = file_path.read_text(encoding="utf-8", errors="replace")
         except Exception:
+            logger.debug("review_snapshot_read_failed", path=relative_path, exc_info=True)
             continue
 
         blocks.append(

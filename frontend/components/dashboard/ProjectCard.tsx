@@ -13,6 +13,7 @@ import {
   type ProjectWithStats,
 } from '@/lib/api'
 import { getActiveCheckpoint } from '@/lib/api/checkpoints'
+import { POLL_STANDARD, STALE_GIT, STALE_STANDARD } from '@/lib/polling'
 
 interface ProjectCardProps {
   project: ProjectWithStats
@@ -34,16 +35,16 @@ export function ProjectCard({ project }: ProjectCardProps) {
     queryKey: ['project-health', project.id],
     queryFn: () => fetchProjectHealth(project.id),
     enabled: showHealth,
-    staleTime: 15000,
-    refetchInterval: showHealth ? 30000 : false,
+    staleTime: STALE_STANDARD,
+    refetchInterval: showHealth ? POLL_STANDARD * 2 : false,
   })
 
   const { data: qualityGate, isLoading: qualityLoading } = useQuery({
     queryKey: ['quality-gate-health', project.id],
     queryFn: () => fetchQualityGateHealth(project.id),
     enabled: showHealth,
-    staleTime: 15000,
-    refetchInterval: showHealth ? 30000 : false,
+    staleTime: STALE_STANDARD,
+    refetchInterval: showHealth ? POLL_STANDARD * 2 : false,
   })
 
   // Check for active checkpoint (running task)
@@ -51,7 +52,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
     queryKey: ['active-checkpoint', project.id],
     queryFn: () => getActiveCheckpoint(project.id),
     enabled: showHealth,
-    staleTime: 30000,
+    staleTime: STALE_GIT,
   })
 
   // Generate gradient based on first letter (used as fallback if no logo)

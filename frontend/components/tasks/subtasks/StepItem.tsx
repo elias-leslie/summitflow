@@ -13,6 +13,7 @@ import {
 import { AnimatePresence, motion } from 'motion/react'
 import { useCallback, useEffect, useState } from 'react'
 import type { Step } from '@/lib/api/tasks'
+import { FEEDBACK_TIMEOUT } from '@/lib/polling'
 import { type SpecRecord, SpecRenderer } from './SpecRenderer'
 
 export interface StepItemProps {
@@ -49,7 +50,7 @@ export function StepItem({
     if (!step.spec) return
     await navigator.clipboard.writeText(JSON.stringify(step.spec, null, 2))
     setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    setTimeout(() => setCopied(false), FEEDBACK_TIMEOUT)
   }, [step.spec])
 
   return (

@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { fetchGitStatus, type RepoStatus } from '@/lib/api/git'
+import { POLL_SLOW, STALE_GIT } from '@/lib/polling'
 
 export type GitHealthState = 'clean' | 'dirty' | 'behind' | 'loading' | 'error'
 
@@ -7,8 +8,8 @@ export function useGitHealth(): GitHealthState {
   const { data, isLoading, isError } = useQuery({
     queryKey: ['git-status-topbar'],
     queryFn: fetchGitStatus,
-    staleTime: 30000,
-    refetchInterval: 60000,
+    staleTime: STALE_GIT,
+    refetchInterval: POLL_SLOW,
   })
 
   if (isLoading) return 'loading'

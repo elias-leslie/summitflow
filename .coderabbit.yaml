@@ -23,7 +23,6 @@ reviews:
     - "!**/*.lock"
     - "!**/package-lock.json"
     - "!**/*.min.js"
-    - "!**/migrations-archive/**"
     - "!data/**"
     - "!backups/**"
   path_instructions:
@@ -38,7 +37,7 @@ reviews:
         - Verify FK constraints have ON DELETE/UPDATE and indexes
     - path: "frontend/**/*.tsx"
       instructions: |
-        Next.js 14+ with TypeScript. Check for:
+        Next.js 16+ with TypeScript. Check for:
         - Proper TypeScript types (no 'any')
         - Named exports only
         - React hooks best practices

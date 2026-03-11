@@ -19,6 +19,7 @@ import {
   type Notification,
 } from '@/lib/api'
 import { buildChatUrl, getChatProjectId } from '@/app/chat/chat-routing'
+import { POLL_NOTIFICATIONS } from '@/lib/polling'
 import { PushNotificationToggle } from './PushNotificationToggle'
 
 interface NotificationBellProps {
@@ -96,7 +97,7 @@ export function NotificationBell({
     }
 
     fetchCount()
-    const interval = setInterval(fetchCount, 30000) // Every 30 seconds
+    const interval = setInterval(fetchCount, POLL_NOTIFICATIONS)
     return () => clearInterval(interval)
   }, [projectId])
 

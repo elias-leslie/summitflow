@@ -38,8 +38,6 @@ class TaskValidationResult:
         return result
 
 
-# Alias for backward compatibility
-ValidationResult = TaskValidationResult
 
 
 def _check_task_exists_in_project(
@@ -48,12 +46,12 @@ def _check_task_exists_in_project(
     """Return (task, None) when checks pass, or (None, failed_result) otherwise."""
     task = task_store.get_task(task_id)
     if not task:
-        return None, ValidationResult(
+        return None, TaskValidationResult(
             ready=False,
             issues=[f"Task '{task_id}' not found"],
         )
     if task["project_id"] != project_id:
-        return None, ValidationResult(
+        return None, TaskValidationResult(
             ready=False,
             issues=[f"Task '{task_id}' not found in project '{project_id}'"],
         )
@@ -61,18 +59,18 @@ def _check_task_exists_in_project(
 
 
 def _check_task_status(task: dict[str, Any]) -> TaskValidationResult | None:
-    """Return a failed ValidationResult if the task status prevents work.
+    """Return a failed TaskValidationResult if the task status prevents work.
 
     Returns None when the status allows the task to be started.
     """
     status = task["status"]
     if status == "completed":
-        return ValidationResult(
+        return TaskValidationResult(
             ready=False,
             issues=["Task is already completed"],
         )
     if status == "running":
-        return ValidationResult(
+        return TaskValidationResult(
             ready=False,
             issues=["Task is already running"],
         )
@@ -105,7 +103,7 @@ def validate_task_ready(task_id: str, project_id: str) -> TaskValidationResult:
         project_id: Project ID the task should belong to
 
     Returns:
-        ValidationResult with ready status, issues, and suggestions
+        TaskValidationResult with ready status, issues, and suggestions
     """
     task, early = _check_task_exists_in_project(task_id, project_id)
     if early is not None:
@@ -135,7 +133,7 @@ def validate_task_ready(task_id: str, project_id: str) -> TaskValidationResult:
             "conflicting_tasks": lane_check.conflicting_tasks,
         }
 
-    return ValidationResult(
+    return TaskValidationResult(
         ready=len(issues) == 0,
         issues=issues,
         suggestions=suggestions,

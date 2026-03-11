@@ -68,6 +68,6 @@ def _do_init_schema(conn: psycopg.Connection, cur: psycopg.Cursor) -> None:
 
 
 if __name__ == "__main__":
-    print("Initializing SummitFlow schema...")
+    logger.info("Initializing SummitFlow schema...")
     init_schema()
-    print("Done!")
+    logger.info("Schema initialization complete")

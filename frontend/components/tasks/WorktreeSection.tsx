@@ -4,6 +4,7 @@ import clsx from 'clsx'
 import { Copy, GitBranch, Layers } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
+import { FEEDBACK_TIMEOUT } from '@/lib/polling'
 import { getErrorMessage } from '@/lib/utils'
 
 interface WorktreeSectionProps {
@@ -24,7 +25,7 @@ export function WorktreeSection({ worktree }: WorktreeSectionProps) {
     try {
       await navigator.clipboard.writeText(worktree.path)
       setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+      setTimeout(() => setCopied(false), FEEDBACK_TIMEOUT)
     } catch (err) {
       toast.error(getErrorMessage(err, 'Failed to copy worktree path'))
     }

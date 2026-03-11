@@ -23,12 +23,17 @@ export default function Error({ error, reset }: ErrorProps) {
         <h2 className="display text-xl font-semibold text-white mb-2">
           Something went wrong
         </h2>
-        <p className="text-slate-400 mb-6">
+        <p className="text-slate-400 mb-4">
           An unexpected error occurred. Please try again or contact support if
           the problem persists.
         </p>
+        {error.message && (
+          <p className="text-xs text-slate-500 mono mb-2 px-3 py-2 bg-slate-800/50 rounded break-all">
+            {error.message}
+          </p>
+        )}
         {error.digest && (
-          <p className="text-xs text-slate-500 mono mb-4">
+          <p className="text-xs text-slate-600 mono mb-4">
             Error ID: {error.digest}
           </p>
         )}

@@ -136,7 +136,7 @@ export function TaskPreview({
             {task.acceptance_criteria.map(
               (criterion: TaskAcceptanceCriterion, index: number) => (
                 <motion.li
-                  key={criterion.id || index}
+                  key={criterion.id ?? `criterion-${index}`}
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: index * 0.05 }}

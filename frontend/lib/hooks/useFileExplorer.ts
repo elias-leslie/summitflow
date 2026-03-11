@@ -14,6 +14,7 @@ import {
   type FileTreeResponse,
   type FileContentResponse,
 } from '@/lib/api/files'
+import { POLL_SLOW, STALE_GIT } from '@/lib/polling'
 
 // Query key factories for consistent cache management
 export const fileQueryKeys = {
@@ -29,7 +30,7 @@ export function useFileTree(projectId: string, path: string = '') {
     queryKey: fileQueryKeys.tree(projectId, path),
     queryFn: () => fetchFileTree(projectId, path),
     enabled: !!projectId,
-    staleTime: 30_000,
+    staleTime: STALE_GIT,
   })
 }
 
@@ -38,6 +39,6 @@ export function useFileContent(projectId: string, path: string | null) {
     queryKey: fileQueryKeys.content(projectId, path ?? ''),
     queryFn: () => fetchFileContent(projectId, path!),
     enabled: !!projectId && !!path,
-    staleTime: 60_000,
+    staleTime: POLL_SLOW,
   })
 }

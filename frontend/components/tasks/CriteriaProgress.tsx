@@ -77,7 +77,7 @@ export function CriteriaProgress({
         <div className="flex items-center gap-0.5">
           {displayCriteria.map((criterion, index) => (
             <div
-              key={criterion.id || index}
+              key={criterion.id ?? `criterion-${index}`}
               className={`w-2 h-2 rounded-full transition-all duration-200 ${
                 criterion.verified
                   ? 'bg-phosphor-400 shadow-sm shadow-phosphor-400/30'
@@ -114,7 +114,7 @@ export function CriteriaProgress({
           </div>
           {criteria.map((c, i) => (
             <div
-              key={c.id || i}
+              key={c.id ?? `criterion-expanded-${i}`}
               onClick={(e) => handleCriterionClick(e, c)}
               className="flex items-start gap-2 p-2 rounded hover:bg-slate-700/50 cursor-pointer border-b border-slate-700/50 last:border-0"
             >

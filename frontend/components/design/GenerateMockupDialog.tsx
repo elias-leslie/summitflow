@@ -90,7 +90,7 @@ export function GenerateMockupDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/80" onClick={handleClose} />
+      <div className="absolute inset-0 bg-black/80" onClick={handleClose} role="presentation" />
 
       {/* Dialog */}
       <div className="relative bg-slate-900 rounded-xl w-full max-w-2xl mx-4">
@@ -103,8 +103,10 @@ export function GenerateMockupDialog({
             </h2>
           </div>
           <button
+            type="button"
             onClick={handleClose}
             className="p-2 text-slate-400 hover:text-white"
+            aria-label="Close dialog"
           >
             <X className="w-5 h-5" />
           </button>

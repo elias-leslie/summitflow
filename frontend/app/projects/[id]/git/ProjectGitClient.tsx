@@ -11,6 +11,7 @@ import {
 } from '@/lib/api'
 import { GitPageHeader } from './GitPageHeader'
 import { GitRepoCard } from './GitRepoCard'
+import { POLL_STANDARD, STALE_STANDARD } from '@/lib/polling'
 import { GitSyncToast } from './GitSyncToast'
 
 export function ProjectGitClient() {
@@ -27,8 +28,8 @@ export function ProjectGitClient() {
   } = useQuery({
     queryKey: ['git-status', projectId],
     queryFn: () => fetchProjectGitStatus(projectId),
-    staleTime: 15000,
-    refetchInterval: 30000,
+    staleTime: STALE_STANDARD,
+    refetchInterval: POLL_STANDARD * 2,
   })
 
   const syncMutation = useMutation({

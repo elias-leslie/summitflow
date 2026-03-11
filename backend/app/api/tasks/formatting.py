@@ -56,7 +56,7 @@ def get_hints(tasks: list[TaskResponse], project_id: str, endpoint_type: str = "
         List of hint strings with API URLs for next actions
     """
     hints: list[str] = []
-    base_url = f"http://localhost:8001/api/projects/{project_id}"
+    base_url = f"/api/projects/{project_id}"
 
     if not tasks:
         hints.append(f"No tasks found. Create one: POST {base_url}/tasks")
