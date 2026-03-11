@@ -20,7 +20,7 @@ import {
   fetchExplorerStats,
   type StatsResponse,
 } from '@/lib/api/explorer'
-import { STALE_GIT } from '@/lib/polling'
+import { POLL_SLOW, STALE_GIT } from '@/lib/polling'
 
 // Query key factories for consistent cache management
 export const explorerKeys = {
@@ -78,7 +78,7 @@ export function useExplorerData({
     queryKey: explorerKeys.stats(projectId),
     queryFn: () => fetchExplorerStats(projectId),
     enabled: enabled && !!projectId,
-    staleTime: 60000, // 1 minute
+    staleTime: POLL_SLOW,
     gcTime: 5 * 60 * 1000,
   })
 

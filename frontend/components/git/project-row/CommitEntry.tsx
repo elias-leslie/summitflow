@@ -5,11 +5,10 @@ import { useState } from 'react'
 import { fetchCommitDiff, type CommitInfo } from '@/lib/api/git-enhanced'
 import { DiffPanel } from '../DiffPanel'
 import { formatTimeAgo } from '@/lib/format'
-import { isAgentCommit } from './helpers'
 
 export function CommitEntry({ commit, projectId }: { commit: CommitInfo; projectId: string }) {
   const [diffOpen, setDiffOpen] = useState(false)
-  const agent = isAgentCommit(commit)
+  const agent = commit.author_email.includes('anthropic.com')
 
   const { data: diffData, refetch } = useQuery({
     queryKey: ['commit-diff', commit.sha],

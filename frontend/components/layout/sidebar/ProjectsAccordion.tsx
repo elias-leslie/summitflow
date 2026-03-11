@@ -5,6 +5,7 @@ import clsx from 'clsx'
 import Link from 'next/link'
 import { useRef } from 'react'
 import { fetchProject, fetchProjects } from '@/lib/api'
+import { POLL_SLOW } from '@/lib/polling'
 import { useProjectNavigation } from './hooks/useProjectNavigation'
 import { ProjectAccordionItem } from './ProjectAccordionItem'
 
@@ -32,7 +33,7 @@ export function ProjectsAccordion({
     queryKey: ['project', expandedProjectId],
     queryFn: () => fetchProject(expandedProjectId!),
     enabled: !!expandedProjectId,
-    staleTime: 60000,
+    staleTime: POLL_SLOW,
   })
 
   if (isCollapsed) {

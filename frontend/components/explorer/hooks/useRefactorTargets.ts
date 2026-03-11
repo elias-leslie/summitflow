@@ -2,6 +2,7 @@
  * Custom hook for managing refactor targets data and state
  */
 
+import { POLL_SLOW } from '@/lib/polling'
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import {
@@ -25,7 +26,7 @@ export function useRefactorTargets(projectId: string) {
   const { data, isLoading, error } = useQuery<RefactorTargetsResponse>({
     queryKey: ['refactor-targets', projectId, true],
     queryFn: () => fetchRefactorTargets(projectId, { codeOnly: true }),
-    staleTime: 60000,
+    staleTime: POLL_SLOW,
     refetchOnWindowFocus: false,
   })
 

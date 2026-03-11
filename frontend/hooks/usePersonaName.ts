@@ -1,3 +1,4 @@
+import { POLL_SLOW } from '@/lib/polling'
 import { useQuery } from '@tanstack/react-query'
 import { getAgentHubProxyBase } from '@/lib/agent-hub-proxy'
 
@@ -19,7 +20,7 @@ export function usePersonaName(fallback = 'Persona'): string {
       const data: PersonaResponse = await res.json()
       return data.name || fallback
     },
-    staleTime: 60_000,
+    staleTime: POLL_SLOW,
   })
 
   return data ?? fallback
