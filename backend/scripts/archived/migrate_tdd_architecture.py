@@ -12,7 +12,10 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Auto-detect and re-exec into the backend venv if needed
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+import lib.ensure_backend_venv  # noqa: E402, F401
+
 from app.storage.criteria import get_next_criterion_id
 
 from app.storage.connection import get_connection
