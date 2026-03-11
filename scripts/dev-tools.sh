@@ -838,8 +838,16 @@ count_issues() {
             echo "$count"
             ;;
         pytest_parse)
-            # For pytest, extract summary line
-            echo "$output" | strip_ansi | grep -E '(passed|failed|error|skipped)' | tail -1
+            # For pytest, extract the summary line (e.g. "4 passed in 1.23s")
+            # Use a tight pattern to avoid matching coverage file paths like console_errors.py
+            # The summary always has "=== ... ===" or a bare "N passed" / "N failed" format
+            local summary_line
+            summary_line=$(echo "$output" | strip_ansi | grep -E '^\s*=*\s*[0-9]+ (passed|failed|error|skipped|warning)' | tail -1) || true
+            if [[ -z "$summary_line" ]]; then
+                # Fallback: grab the very last non-empty line (works for all pytest formats)
+                summary_line=$(echo "$output" | strip_ansi | grep -v '^\s*$' | tail -1) || true
+            fi
+            echo "$summary_line"
             ;;
     esac
 }
@@ -1153,7 +1161,8 @@ EOF
         # Include first line of output as hint for quick diagnosis
         local hint=""
         if [[ -n "$output" ]]; then
-            hint=$(echo "$output" | strip_ansi | head -1 | cut -c1-120)
+            # Use || true to prevent SIGPIPE (exit 141) from head -1 with pipefail
+            hint=$(echo "$output" | strip_ansi | head -1 | cut -c1-120) || true
         fi
         echo "$label:FAIL:$count|details:$details_file${hint:+|hint:$hint}"
         # Sync fail result to quality gate
