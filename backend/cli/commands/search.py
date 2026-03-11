@@ -1,0 +1,86 @@
+"""Precision Code Search CLI command."""
+
+from __future__ import annotations
+
+from typing import Annotated
+from urllib.parse import urlencode
+
+import typer
+
+from .._output_state import is_compact
+from ..client import APIError, STClient
+from ..output import handle_api_error, output_json
+
+app = typer.Typer(help="Precision Code Search")
+
+
+@app.command()
+def search(
+    query: Annotated[
+        list[str],
+        typer.Argument(help="Search query (symbol name, function, class, endpoint)"),
+    ],
+    budget: Annotated[
+        int,
+        typer.Option("--budget", "-b", help="Token budget for prompt context"),
+    ] = 1200,
+    raw_json: Annotated[
+        bool,
+        typer.Option("--json", "-j", help="Emit full JSON payload"),
+    ] = False,
+) -> None:
+    """Search codebase symbols, endpoints, and tables with Precision Code Search.
+
+    Returns prompt-ready context with symbol source slices, related endpoints,
+    and database tables. Uses indexed symbols first, falls back to file/endpoint
+    matching when no symbols match.
+
+    Examples:
+        st search collect_precision_code_search_context
+        st search "TaskOperationsMixin"
+        st search router endpoint --budget 2000
+        st search scan_history --json
+    """
+    q = " ".join(query).strip()
+    if not q:
+        typer.echo("Error: empty query", err=True)
+        raise typer.Exit(1)
+
+    client = STClient()
+    try:
+        params = urlencode({"q": q, "budget": budget})
+        result = client.get(client._url(f"/explorer/precision-search?{params}"))
+    except APIError as e:
+        handle_api_error(e)
+        return
+
+    if raw_json:
+        output_json(result)
+        return
+
+    prompt_context = result.get("prompt_context", "")
+    metadata = result.get("metadata", {})
+
+    if is_compact():
+        _print_compact(q, prompt_context, metadata)
+    else:
+        output_json(result)
+
+
+def _print_compact(query: str, prompt_context: str, metadata: dict) -> None:
+    """Print TOON-style compact output for agent consumption."""
+    symbol_count = metadata.get("symbol_count", 0)
+    mode = "symbol-first" if metadata.get("used_symbol_first") else "fallback"
+    tokens_saved = metadata.get("estimated_tokens_saved", 0)
+    final_tokens = metadata.get("final_tokens", 0)
+
+    if not prompt_context:
+        print(f"SEARCH:{query}|mode=empty|symbols=0|tokens=0")
+        return
+
+    print(
+        f"SEARCH:{query}|mode={mode}|symbols={symbol_count}"
+        f"|tokens={final_tokens}|saved={tokens_saved}"
+    )
+    print()
+    print(prompt_context)

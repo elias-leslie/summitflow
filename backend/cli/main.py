@@ -30,6 +30,7 @@ from .commands import (
     prompt,
     pulse,
     refactor,
+    search,
     session_events,
     sessions,
     step,
@@ -186,6 +187,11 @@ EXAMPLES:
   st abandon task-abc --force              # rollback everything
   st checkpoints                           # show active checkpoints
 
+SEARCH (Precision Code Search):
+  search <query>                           # symbol-first search with fallback
+  search <query> --budget 2000             # custom token budget
+  search <query> --json                    # full JSON payload
+
 SESSION EVENTS (Agent Hub observability):
   session-events <session-id>              # view events by session ID
   session-events --task <task-id>          # view events by task ID (auto-resolves sessions)
@@ -232,6 +238,7 @@ app.add_typer(feedback.app, name="feedback")
 app.add_typer(persona.app, name="persona")
 app.add_typer(agents.app, name="agents")
 app.command("pulse")(pulse.pulse)
+app.command("search")(search.search)
 app.command("exec-log")(exec_monitor.exec_log_command)
 
 # Register checkpoint-aware commands (override old claim from tasks.py)

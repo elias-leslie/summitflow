@@ -93,6 +93,26 @@ async def get_children(
     return explorer.get_children(project_id, type, path, limit)
 
 
+@router.get("/{project_id}/explorer/precision-search")
+async def precision_search(
+    project_id: str,
+    q: str = Query(..., min_length=1, description="Search query (symbol name, function, class, endpoint)"),
+    budget: int = Query(1200, ge=100, le=10000, description="Token budget for prompt context"),
+) -> dict[str, Any]:
+    """Full Precision Code Search: symbol-first retrieval with fallback and token budgeting."""
+    validate_project_exists(project_id)
+    from ..services.context_gatherer.precision_code_search import (
+        collect_precision_code_search_context,
+    )
+
+    result = collect_precision_code_search_context(project_id, [q], budget_tokens=budget)
+    return {
+        "query": q,
+        "prompt_context": result.prompt_context,
+        "metadata": result.metadata,
+    }
+
+
 @router.get("/{project_id}/explorer/symbols/search")
 async def search_symbols(
     project_id: str,
