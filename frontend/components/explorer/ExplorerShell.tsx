@@ -17,12 +17,13 @@ import { cn } from '@/lib/utils'
 import { CodeHealthPanel } from './CodeHealthPanel'
 import { typeIcons, typeTitles } from './explorerConstants'
 import { ExplorerPlaceholder } from './ExplorerPlaceholder'
+import { useExplorerOverview } from './hooks/useExplorerOverview'
 import { useExplorerScan } from './hooks/useExplorerScan'
 import { useExplorerShellState } from './hooks/useExplorerShellState'
-import { useExplorerStats } from './hooks/useExplorerStats'
 import { ScanningOverlay, SummaryBar } from './SummaryBar'
 import { TypeNavigator } from './TypeNavigator'
 import type { ExplorerType, HealthStatus } from './types'
+import { uiTypeToApiType } from './explorerConstants'
 
 interface ExplorerShellProps {
   projectId: string
@@ -37,6 +38,7 @@ export interface ExplorerChildProps {
   filter: HealthStatus | 'all'
   sortField: string
   sortDir: 'asc' | 'desc'
+  typeLastScannedAt: string | null
   expandedIds: Set<string>
   onSort: (field: string) => void
   onToggleExpand: (id: string) => void
@@ -64,7 +66,11 @@ export function ExplorerShell({
     handleCollapseAll,
   } = useExplorerShellState(initialType, onTypeChangeProp)
 
-  const { statsData, statsError, refetchStats } = useExplorerStats(projectId)
+  const {
+    overview,
+    error: overviewError,
+    refetch: refetchOverview,
+  } = useExplorerOverview(projectId)
 
   const {
     isScanning,
@@ -72,6 +78,7 @@ export function ExplorerShell({
     scanError,
     scanCompletedAt,
     handleScan,
+    handleFullScan,
   } = useExplorerScan(
     projectId,
     activeType,
@@ -79,24 +86,31 @@ export function ExplorerShell({
 
   useEffect(() => {
     if (scanCompletedAt) {
-      void refetchStats()
+      void refetchOverview()
     }
-  }, [refetchStats, scanCompletedAt])
+  }, [refetchOverview, scanCompletedAt])
 
   // Current stats and counts
-  const stats = statsData[activeType]
-  const counts = useMemo(
-    () => ({
-      files: statsData.files.total,
-      database: statsData.database.total,
-      celery: statsData.celery.total,
-      api: statsData.api.total,
-      pages: statsData.pages.total,
-      dependencies: statsData.dependencies.total,
-      architecture: statsData.architecture.total,
-    }),
-    [statsData],
-  )
+  const counts = useMemo(() => {
+    const typeSummaries = overview?.type_summaries || {}
+    return {
+      files: typeSummaries.file?.total || 0,
+      database: typeSummaries.table?.total || 0,
+      celery: typeSummaries.task?.total || 0,
+      api: typeSummaries.endpoint?.total || 0,
+      pages: typeSummaries.page?.total || 0,
+      dependencies: typeSummaries.dependency?.total || 0,
+      architecture: typeSummaries.architecture?.total || 0,
+    }
+  }, [overview])
+  const activeSummary = overview?.type_summaries?.[uiTypeToApiType[activeType]]
+  const stats = {
+    total: activeSummary?.total || 0,
+    fresh: activeSummary?.by_health?.healthy || 0,
+    stale: activeSummary?.by_health?.warning || 0,
+    orphan: activeSummary?.by_health?.error || 0,
+    lastScan: activeSummary?.last_scanned || null,
+  }
 
   // Props for child render function
   const childProps: ExplorerChildProps = {
@@ -104,6 +118,7 @@ export function ExplorerShell({
     filter: activeFilter,
     sortField,
     sortDir,
+    typeLastScannedAt: activeSummary?.last_scanned || null,
     expandedIds,
     onSort: handleSort,
     onToggleExpand: handleToggleExpand,
@@ -145,9 +160,9 @@ export function ExplorerShell({
           </h2>
         </div>
 
-        {(statsError || scanError) && (
+        {(overviewError || scanError) && (
           <div className="border-b border-rose-900/40 bg-rose-950/20 px-4 py-2 text-xs text-rose-300">
-            {scanError || statsError}
+            {scanError || overviewError}
           </div>
         )}
 
@@ -158,7 +173,11 @@ export function ExplorerShell({
           activeFilter={activeFilter}
           onFilterChange={handleFilterChange}
           onScan={handleScan}
+          onFullScan={handleFullScan}
           isScanning={isScanning}
+          lastCompletedScan={overview?.last_completed_scan || null}
+          symbolCount={overview?.symbol_stats?.count || 0}
+          staleMetadataCount={overview?.stale_metadata_count || 0}
         />
 
         {/* Code Health Panel - only shown for files view */}

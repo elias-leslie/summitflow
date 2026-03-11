@@ -47,6 +47,27 @@ def get_scan_history(
         return [row_to_scan(row) for row in cur.fetchall()]
 
 
+def get_latest_scan(
+    project_id: str,
+    *,
+    statuses: list[str] | None = None,
+) -> dict[str, Any] | None:
+    """Return the most recent scan for a project, optionally filtered by status."""
+    with get_connection() as conn, conn.cursor() as cur:
+        query = _SCAN_SELECT + " WHERE project_id = %s"
+        params: list[Any] = [project_id]
+
+        if statuses:
+            query += " AND status = ANY(%s)"
+            params.append(statuses)
+
+        query += " ORDER BY started_at DESC LIMIT 1"
+        cur.execute(query, params)
+        row = cur.fetchone()
+
+    return row_to_scan(row) if row else None
+
+
 def get_scan_comparison(
     scan_id_before: int,
     scan_id_after: int,

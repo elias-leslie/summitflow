@@ -1,6 +1,8 @@
 """Task scanner for Explorer.
 
-Scans Celery beat schedule and produces entries for explorer_entries table.
+Scans scheduled background workflows and produces entries for explorer_entries table.
+Hatchet cron workflows are the canonical source; legacy Celery beat files remain
+as a fallback for older projects.
 
 Metadata schema (per architecture doc):
 {
@@ -32,7 +34,7 @@ logger = get_logger(__name__)
 
 
 class TaskScanner(BaseScanner):
-    """Scans Celery tasks for explorer entries."""
+    """Scans scheduled tasks for explorer entries."""
 
     entry_type = "task"
 
@@ -45,7 +47,7 @@ class TaskScanner(BaseScanner):
 
 
     def scan(self) -> list[ExplorerEntryCreate]:
-        """Scan Celery beat schedule and return task entries."""
+        """Scan scheduled workflow definitions and return task entries."""
         # Get project config
         project_config = get_project_config(self.project_id)
         if not project_config:
@@ -68,7 +70,7 @@ class TaskScanner(BaseScanner):
 
         logger.info(f"Task scan started for {self.project_id}")
 
-        # Get beat schedule
+        # Get scheduled workflow/beat definitions
         beat_schedule = get_beat_schedule(
             self.project_id,
             self.beat_schedule_endpoint,
@@ -79,7 +81,7 @@ class TaskScanner(BaseScanner):
             logger.warning(f"No beat schedule found for {self.project_id}")
             return []
 
-        # Task stats unavailable (Celery removed, Hatchet TBD)
+        # Execution telemetry is not yet wired for Hatchet/Celery parity.
         self._task_stats = {}
 
         entries: list[ExplorerEntryCreate] = []
@@ -116,9 +118,9 @@ class TaskScanner(BaseScanner):
             schedule_value = str(seconds)
             schedule_human = format_interval(seconds)
         elif "schedule_crontab" in task_config:
-            schedule_type = "crontab"
+            schedule_type = "cron"
             schedule_value = task_config["schedule_crontab"]
-            schedule_human = f"crontab({schedule_value})"
+            schedule_human = f"cron({schedule_value})"
 
         category = categorize_task(task_name)
 
@@ -136,6 +138,12 @@ class TaskScanner(BaseScanner):
                 "schedule_value": schedule_value,
                 "schedule_human": schedule_human,
                 "category": category,
+                "scheduler": task_config.get("scheduler")
+                or ("hatchet" if task_config.get("workflow_name") else "celery"),
+                "workflow_name": task_config.get("workflow_name"),
+                "source_file": task_config.get("source_file"),
+                "execution_timeout": task_config.get("execution_timeout"),
+                "retries": task_config.get("retries"),
                 "last_run_at": task_stats.get("last_run_at"),
                 "success_count_7d": task_stats.get("success_count_7d", 0),
                 "failure_count_7d": task_stats.get("failure_count_7d", 0),

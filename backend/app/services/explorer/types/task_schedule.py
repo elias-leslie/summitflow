@@ -1,7 +1,8 @@
-"""Beat schedule parsing and retrieval."""
+"""Scheduled workflow parsing and retrieval."""
 
 from __future__ import annotations
 
+import ast
 import contextlib
 import re
 from pathlib import Path
@@ -44,7 +45,80 @@ def get_beat_schedule(
     if not root_path:
         return {}
 
+    hatchet_schedule = scan_hatchet_schedule_files(root_path, backend_dir)
+    if hatchet_schedule:
+        return hatchet_schedule
+
     return scan_beat_schedule_files(root_path, backend_dir)
+
+
+def scan_hatchet_schedule_files(root_path: Path, backend_dir: str) -> dict[str, Any]:
+    """Scan Hatchet scheduled workflow files for cron-decorated tasks."""
+    scheduled_file = root_path / backend_dir / "app" / "workflows" / "scheduled.py"
+    if not scheduled_file.exists():
+        return {}
+
+    try:
+        return parse_hatchet_scheduled_workflows(scheduled_file.read_text(), scheduled_file, root_path)
+    except Exception as e:
+        logger.warning(f"Failed to parse Hatchet scheduled workflows: {e}")
+        return {}
+
+
+def _literal_value(node: ast.AST | None) -> Any:
+    if node is None:
+        return None
+    with contextlib.suppress(Exception):
+        return ast.literal_eval(node)
+    return None
+
+
+def parse_hatchet_scheduled_workflows(
+    content: str,
+    source_file: Path | None = None,
+    root_path: Path | None = None,
+) -> dict[str, Any]:
+    """Parse Hatchet @task decorators with on_crons from scheduled workflow modules."""
+    tree = ast.parse(content)
+    schedule: dict[str, Any] = {}
+
+    for node in tree.body:
+        if not isinstance(node, ast.AsyncFunctionDef | ast.FunctionDef):
+            continue
+
+        for decorator in node.decorator_list:
+            if not isinstance(decorator, ast.Call):
+                continue
+            if not isinstance(decorator.func, ast.Attribute) or decorator.func.attr != "task":
+                continue
+
+            keyword_map = {
+                kw.arg: kw.value
+                for kw in decorator.keywords
+                if kw.arg is not None
+            }
+            on_crons = _literal_value(keyword_map.get("on_crons"))
+            if not on_crons:
+                continue
+
+            workflow_name = _literal_value(keyword_map.get("name")) or node.name
+            cron_expr = on_crons[0]
+            rel_source = (
+                str(source_file.relative_to(root_path))
+                if source_file and root_path
+                else str(source_file) if source_file else None
+            )
+            schedule[str(workflow_name)] = {
+                "task": node.name,
+                "workflow_name": workflow_name,
+                "scheduler": "hatchet",
+                "schedule_crontab": cron_expr,
+                "execution_timeout": _literal_value(keyword_map.get("execution_timeout")),
+                "retries": _literal_value(keyword_map.get("retries")),
+                "source_file": rel_source,
+            }
+
+    return schedule
 
 
 def _parse_celery_file(celery_file: Path, schedule: dict[str, Any]) -> None:
@@ -60,7 +134,7 @@ def _parse_celery_file(celery_file: Path, schedule: dict[str, Any]) -> None:
 
 
 def scan_beat_schedule_files(root_path: Path, backend_dir: str) -> dict[str, Any]:
-    """Scan Celery files for beat_schedule definition."""
+    """Scan legacy Celery files for beat_schedule definitions."""
     celery_files = [
         root_path / backend_dir / "app" / "celery_schedules.py",
         root_path / backend_dir / "app" / "celery_app.py",

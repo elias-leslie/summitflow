@@ -41,6 +41,17 @@ export function PageDetail({ entry }: PageDetailProps) {
         </div>
       )}
 
+      {typeof meta.url === 'string' && meta.url.length > 0 && (
+        <div>
+          <span className="text-xs text-slate-500 uppercase tracking-wide">
+            URL
+          </span>
+          <p className="font-mono text-sm text-slate-300 mt-1 break-all">
+            {meta.url}
+          </p>
+        </div>
+      )}
+
       {/* Route params */}
       {routeParams.length > 0 && (
         <div>
@@ -67,7 +78,7 @@ export function PageDetail({ entry }: PageDetailProps) {
             Port
           </span>
           <p className="font-mono text-sm text-slate-200 mt-1">
-            {meta.port ?? 3001}
+            {meta.port ?? '-'}
           </p>
         </div>
         <div>

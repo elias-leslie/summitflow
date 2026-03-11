@@ -222,6 +222,79 @@ def get_stats(project_id: str, entry_type: str | None = None) -> dict[str, Any]:
         }
 
 
+def get_type_summaries(project_id: str) -> dict[str, dict[str, Any]]:
+    """Return per-entry-type totals, health counts, and last scan times."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                entry_type,
+                COUNT(*) AS total,
+                MAX(last_scanned_at) AS last_scanned,
+                COUNT(*) FILTER (WHERE health_status = 'healthy') AS healthy_count,
+                COUNT(*) FILTER (WHERE health_status = 'warning') AS warning_count,
+                COUNT(*) FILTER (WHERE health_status = 'error') AS error_count,
+                COUNT(*) FILTER (WHERE health_status = 'unknown') AS unknown_count
+            FROM explorer_entries
+            WHERE project_id = %s
+            GROUP BY entry_type
+            ORDER BY entry_type
+            """,
+            (project_id,),
+        )
+        rows = cur.fetchall()
+
+    summaries: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        summaries[row[0]] = {
+            "total": row[1],
+            "last_scanned": to_iso_string(row[2]),
+            "by_health": {
+                "healthy": row[3],
+                "warning": row[4],
+                "error": row[5],
+                "unknown": row[6],
+            },
+        }
+    return summaries
+
+
+def get_scan_metrics(project_id: str) -> dict[str, Any]:
+    """Return aggregate metrics used in scan history and overview surfaces."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                COALESCE(SUM(
+                    CASE
+                        WHEN entry_type = 'file'
+                        AND metadata->>'complexity_score' IS NOT NULL
+                        THEN (metadata->>'complexity_score')::float
+                        ELSE 0
+                    END
+                ), 0) AS complexity,
+                COUNT(*) FILTER (
+                    WHERE entry_type = 'file'
+                    AND metadata->>'refactor_priority' = 'high'
+                ) AS high_priority_count,
+                COUNT(*) FILTER (
+                    WHERE entry_type = 'file'
+                    AND metadata->>'refactor_priority' = 'medium'
+                ) AS medium_priority_count
+            FROM explorer_entries
+            WHERE project_id = %s
+            """,
+            (project_id,),
+        )
+        row = cur.fetchone()
+
+    return {
+        "complexity": round(float(row[0] or 0), 2) if row else 0.0,
+        "high_priority_count": int(row[1] or 0) if row else 0,
+        "medium_priority_count": int(row[2] or 0) if row else 0,
+    }
+
+
 def delete_entries(project_id: str, entry_type: str | None = None) -> int:
     """Delete explorer entries (optionally filtered by entry_type)."""
     with get_connection() as conn, conn.cursor() as cur:

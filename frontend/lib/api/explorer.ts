@@ -84,6 +84,7 @@ export interface ExplorerEntryMetadata {
 
   // Page metadata
   route_params?: string[]
+  url?: string
 
   // Dependency metadata
   package_type?: 'python' | 'nodejs'
@@ -171,6 +172,60 @@ export interface ExplorerSymbolDetailResponse {
   related_entries: ExplorerEntry[]
 }
 
+export interface ExplorerTypeSummary {
+  total: number
+  by_health: Record<ExplorerHealthStatus, number>
+  last_scanned: string | null
+}
+
+export interface ExplorerOverviewScan {
+  id: number
+  scan_type: string
+  triggered_by: string
+  status: 'running' | 'completed' | 'failed' | 'cancelled'
+  started_at: string
+  completed_at: string | null
+}
+
+export interface ExplorerOverview {
+  scan_status: {
+    status: 'idle' | 'running' | 'completed' | 'failed'
+    current_type: string | null
+    types_total: number
+    types_completed: number
+    progress_pct: number
+    started_at: string | null
+    completed_at: string | null
+    error: string | null
+    results: Array<{
+      entry_type: string
+      entries_found: number
+      entries_saved: number
+      duration_ms: number
+      success: boolean
+    }>
+  }
+  latest_scan: ExplorerOverviewScan | null
+  last_completed_scan: ExplorerOverviewScan | null
+  history_summary: {
+    total_scans: number
+    avg_duration_ms: number | null
+    complexity_trend: 'improving' | 'stable' | 'degrading' | 'unknown'
+    most_active_trigger: string | null
+    triggers_breakdown: Array<{
+      trigger: string
+      count: number
+      percentage: number
+    }>
+  }
+  type_summaries: Partial<Record<ExplorerEntryType, ExplorerTypeSummary>>
+  symbol_stats: {
+    count: number
+    last_updated: string | null
+  }
+  stale_metadata_count: number
+}
+
 interface RawExplorerEntry {
   id: number
   entry_type: ExplorerEntryType
@@ -249,6 +304,15 @@ export async function fetchExplorerStats(
   return fetchWithErrorHandling<StatsResponse>(
     `/api/projects/${projectId}/explorer/stats`,
     { errorMessage: 'Failed to fetch explorer stats' },
+  )
+}
+
+export async function fetchExplorerOverview(
+  projectId: string,
+): Promise<ExplorerOverview> {
+  return fetchWithErrorHandling<ExplorerOverview>(
+    `/api/projects/${projectId}/explorer/overview`,
+    { errorMessage: 'Failed to fetch explorer overview' },
   )
 }
 

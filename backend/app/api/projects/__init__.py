@@ -68,7 +68,12 @@ async def create_project(
     )
 
     # Trigger initial Explorer scan in background (all types)
-    background_tasks.add_task(explorer.run_scan_with_tracking, project.id, None)
+    background_tasks.add_task(
+        explorer.run_scan_job,
+        project.id,
+        None,
+        triggered_by="project_create",
+    )
 
     return response
 

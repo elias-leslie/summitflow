@@ -9,9 +9,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from ..services import explorer
 from ..storage import explorer as explorer_storage
-from ..storage.connection import get_connection
 
 
 def validate_entry_type(entry_type: str) -> None:
@@ -132,73 +130,6 @@ def format_stats_response(stats: dict[str, Any]) -> dict[str, Any]:
         "total": stats["total"],
         "lastScanned": stats["last_scanned"],
     }
-
-
-def get_total_complexity(project_id: str) -> float:
-    """Calculate total complexity score from file entries.
-
-    Called after scan completion to snapshot the current complexity state.
-    """
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-                SELECT COALESCE(SUM((metadata->>'complexity_score')::float), 0)
-                FROM explorer_entries
-                WHERE project_id = %s
-                  AND entry_type = 'file'
-                  AND metadata->>'complexity_score' IS NOT NULL
-                """,
-            (project_id,),
-        )
-        row = cur.fetchone()
-        return round(row[0], 2) if row and row[0] else 0.0
-
-
-async def run_scan_and_record(
-    project_id: str,
-    entry_type: str | None,
-    scan_id: int,
-) -> None:
-    """Run scan and record completion in scan_history."""
-    from ..storage import scan_history
-
-    try:
-        # Run the actual scan with tracking
-        explorer.run_scan_with_tracking(project_id, entry_type)
-
-        # Get scan results from scan_states
-        scan_status = explorer.get_scan_status(project_id)
-        results = scan_status.get("results", [])
-
-        # Calculate totals
-        entries_found = sum(r.get("entries_found", 0) for r in results)
-        entries_saved = sum(r.get("entries_saved", 0) for r in results)
-
-        # Calculate total complexity from file entries (snapshot at scan time)
-        total_complexity = get_total_complexity(project_id)
-
-        # Build metrics from results
-        metrics = {
-            "types_scanned": len(results),
-            "by_type": {r["entry_type"]: r for r in results},
-            "complexity": total_complexity,
-        }
-
-        scan_history.record_scan_complete(
-            scan_id=scan_id,
-            status="completed" if scan_status.get("status") == "completed" else "failed",
-            error_message=scan_status.get("error"),
-            metrics=metrics,
-            entries_found=entries_found,
-            entries_saved=entries_saved,
-        )
-    except Exception as e:
-        scan_history.record_scan_complete(
-            scan_id=scan_id,
-            status="failed",
-            error_message=str(e),
-        )
-
 
 def add_stale_metadata_warning(result: dict[str, Any], project_id: str) -> None:
     """Add stale metadata warning to result if applicable (in-place)."""

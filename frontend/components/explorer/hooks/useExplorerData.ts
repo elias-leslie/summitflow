@@ -9,7 +9,7 @@
  * Does NOT handle: UI state (expanded, selected), filters
  */
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import {
   type ExplorerEntry,
   type ExplorerEntryType,
@@ -20,7 +20,6 @@ import {
   fetchExplorerStats,
   type StatsResponse,
 } from '@/lib/api/explorer'
-import { triggerExplorerScan } from '@/lib/api/explorer-scan'
 
 // Query key factories for consistent cache management
 export const explorerKeys = {
@@ -54,10 +53,6 @@ interface UseExplorerDataReturn {
   // Stats query (separate for header display)
   statsData: StatsResponse | undefined
   isLoadingStats: boolean
-
-  // Scan mutation
-  scan: (type?: ExplorerEntryType) => void
-  isScanning: boolean
 }
 
 /**
@@ -68,8 +63,6 @@ export function useExplorerData({
   filters = {},
   enabled = true,
 }: UseExplorerDataOptions): UseExplorerDataReturn {
-  const queryClient = useQueryClient()
-
   // Main entries query
   const entriesQuery = useQuery({
     queryKey: explorerKeys.entriesFiltered(projectId, filters),
@@ -88,24 +81,6 @@ export function useExplorerData({
     gcTime: 5 * 60 * 1000,
   })
 
-  // Scan mutation
-  const scanMutation = useMutation({
-    mutationFn: (type?: ExplorerEntryType) =>
-      triggerExplorerScan(projectId, type),
-    onSuccess: () => {
-      // Invalidate after scan completes
-      // Small delay to let backend process
-      setTimeout(() => {
-        queryClient.invalidateQueries({
-          queryKey: explorerKeys.entries(projectId),
-        })
-        queryClient.invalidateQueries({
-          queryKey: explorerKeys.stats(projectId),
-        })
-      }, 2000)
-    },
-  })
-
   return {
     // Entries
     entries: entriesQuery.data?.entries ?? [],
@@ -119,10 +94,6 @@ export function useExplorerData({
     // Stats
     statsData: statsQuery.data,
     isLoadingStats: statsQuery.isLoading,
-
-    // Scan
-    scan: (type) => scanMutation.mutate(type),
-    isScanning: scanMutation.isPending,
   }
 }
 

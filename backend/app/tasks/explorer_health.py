@@ -53,7 +53,9 @@ def _now_utc() -> str:
 def _check_single_page(page: dict[str, Any], check_base: str) -> dict[str, Any]:
     """Run a health check on a single page and persist the result."""
     path = page["path"]
-    result = run_ba_check(f"{check_base}{path}")
+    page_url = page.get("metadata", {}).get("url")
+    target_url = page_url if isinstance(page_url, str) and page_url else f"{check_base}{path}"
+    result = run_ba_check(target_url)
     passed = result.get("pass")
     health_status = STATUS_HEALTHY if passed else STATUS_ERROR
     console_errors = result.get("checks", {}).get("consoleErrors", {})

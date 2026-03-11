@@ -15,7 +15,6 @@ import {
   Globe,
   Layers,
   Package,
-  Search,
   Zap,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -206,20 +205,6 @@ export function TypeNavigator({
 
       {/* Spacer */}
       <div className="flex-1" />
-
-      {/* Search button at bottom */}
-      <div className="px-2">
-        <button
-          className={cn(
-            'flex items-center justify-center',
-            'w-12 h-10 rounded-lg transition-all duration-150',
-            'text-slate-500 hover:text-phosphor-400 hover:bg-slate-800/50',
-          )}
-          title="Search (Cmd+K)"
-        >
-          <Search className="w-4 h-4" />
-        </button>
-      </div>
     </nav>
   )
 }

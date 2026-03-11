@@ -44,9 +44,13 @@ export function GenerateMockupDialog({
 
   // Build full URL from page entry
   const buildPageUrl = (page: ExplorerEntry): string => {
-    const port = page.metadata.port || 3001
-    const path = page.path
-    return `http://localhost:${port}${path}`
+    const scannedUrl = page.metadata.url
+    if (typeof scannedUrl === 'string' && scannedUrl.length > 0) {
+      return scannedUrl
+    }
+
+    const port = page.metadata.port
+    return port ? `http://localhost:${port}${page.path}` : page.path
   }
 
   // Handle page selection

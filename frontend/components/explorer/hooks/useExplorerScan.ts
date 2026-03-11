@@ -13,6 +13,7 @@ import { scanHistoryKeys } from '@/lib/hooks/useScanHistory'
 import { getErrorMessage } from '@/lib/utils'
 import type { ExplorerType } from '../types'
 import { uiTypeToApiType } from '../explorerConstants'
+import { overviewKeys } from './useExplorerOverview'
 import { explorerKeys } from './useExplorerData'
 
 interface UseExplorerScanReturn {
@@ -21,10 +22,12 @@ interface UseExplorerScanReturn {
   scanError: string | null
   scanCompletedAt: number | null
   handleScan: () => Promise<void>
+  handleFullScan: () => Promise<void>
 }
 
 const POLL_INTERVAL_MS = 500
-const SCAN_TIMEOUT_MS = 60000
+const SCAN_TIMEOUT_MS = 5 * 60 * 1000
+type ScanTriggerType = Parameters<typeof triggerExplorerScan>[1]
 
 export function useExplorerScan(
   projectId: string,
@@ -59,8 +62,12 @@ export function useExplorerScan(
         setScanCompletedAt(Date.now())
         finishScan()
         void queryClient.invalidateQueries({ queryKey: scanHistoryKeys.all })
+        void queryClient.invalidateQueries({ queryKey: overviewKeys.all })
         void queryClient.invalidateQueries({
           queryKey: explorerKeys.entries(projectId),
+        })
+        void queryClient.invalidateQueries({
+          queryKey: explorerKeys.stats(projectId),
         })
         return
       }
@@ -86,7 +93,7 @@ export function useExplorerScan(
     }
   }, [finishScan, projectId, queryClient])
 
-  const handleScan = useCallback(async () => {
+  const startScan = useCallback(async (scanType?: ScanTriggerType) => {
     clearPendingPoll()
     setIsScanning(true)
     setScanProgress(null)
@@ -94,17 +101,45 @@ export function useExplorerScan(
     setScanCompletedAt(null)
 
     try {
-      const apiType = uiTypeToApiType[activeType]
-      await triggerExplorerScan(
-        projectId,
-        apiType as 'file' | 'table' | 'task' | 'endpoint' | 'page',
-      )
+      await triggerExplorerScan(projectId, scanType)
       void pollScanStatus(Date.now() + SCAN_TIMEOUT_MS)
     } catch (err) {
       setScanError(getErrorMessage(err, 'Failed to start scan'))
       finishScan()
     }
-  }, [activeType, clearPendingPoll, finishScan, pollScanStatus, projectId])
+  }, [clearPendingPoll, finishScan, pollScanStatus, projectId])
+
+  const handleScan = useCallback(async () => {
+    const apiType = uiTypeToApiType[activeType]
+    await startScan(apiType)
+  }, [activeType, startScan])
+
+  const handleFullScan = useCallback(async () => {
+    await startScan(undefined)
+  }, [startScan])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function resumeScanIfNeeded() {
+      try {
+        const status = await fetchScanStatus(projectId)
+        if (cancelled || status.status !== 'running') {
+          return
+        }
+        setIsScanning(true)
+        setScanProgress(status)
+        void pollScanStatus(Date.now() + SCAN_TIMEOUT_MS)
+      } catch {
+        // Ignore bootstrap polling failures; explicit scan actions surface errors.
+      }
+    }
+
+    void resumeScanIfNeeded()
+    return () => {
+      cancelled = true
+    }
+  }, [pollScanStatus, projectId])
 
   useEffect(() => clearPendingPoll, [clearPendingPoll])
 
@@ -114,5 +149,6 @@ export function useExplorerScan(
     scanError,
     scanCompletedAt,
     handleScan,
+    handleFullScan,
   }
 }

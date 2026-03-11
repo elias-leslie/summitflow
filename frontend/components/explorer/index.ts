@@ -1,7 +1,7 @@
 /**
  * Explorer Components
  *
- * Unified explorer UI for Files, Database, Celery Tasks, and API endpoints.
+ * Unified explorer UI for Files, Database, Scheduled Jobs, and API endpoints.
  */
 
 // Data display

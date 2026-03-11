@@ -12,10 +12,10 @@ from collections.abc import Callable
 from typing import Any
 
 from ..logging_config import get_logger
+from ..services import explorer
 from ..storage.connection import get_connection
 from .explorer_health import run_page_health_checks as _run_page_health_checks
 from .explorer_resolution import check_and_close_resolved_issues
-from .explorer_scan import scan_project
 
 logger = get_logger(__name__)
 
@@ -62,13 +62,18 @@ def _scan_single_project(
     """Scan one project; return (detail_dict, success_flag)."""
     started_at = time.perf_counter()
     try:
-        result = scan_project(proj_id, entry_type)
+        result = explorer.run_scan_job(
+            proj_id,
+            entry_type,
+            triggered_by="scheduled",
+            enforce_exclusive=False,
+        )
         duration_ms = round((time.perf_counter() - started_at) * 1000, 1)
         logger.info(
             "project_scanned",
             project_id=proj_id,
             entry_type=entry_type or "all",
-            results_count=len(result),
+            results_count=len(result.get("results", [])),
             duration_ms=duration_ms,
         )
         if dispatch:
@@ -77,7 +82,9 @@ def _scan_single_project(
             "project_id": proj_id,
             "project_name": proj_name,
             "status": "success",
-            "results": result,
+            "results": result.get("results", []),
+            "scan_id": result.get("scan_id"),
+            "metrics": result.get("metrics", {}),
             "duration_ms": duration_ms,
         }
         return detail, True

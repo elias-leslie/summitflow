@@ -31,7 +31,9 @@ from .explorer_entries import (
     get_entries,
     get_entry,
     get_entry_by_id,
+    get_scan_metrics,
     get_stats,
+    get_type_summaries,
     upsert_entries,
 )
 
@@ -68,10 +70,12 @@ __all__ = [
     "get_entry",
     "get_entry_by_id",
     "get_refactor_targets",
+    "get_scan_metrics",
     "get_scan_state",
     "get_stats",
     "get_symbol",
     "get_symbol_stats",
+    "get_type_summaries",
     "list_related_entries_for_file",
     "list_symbols_for_file",
     "replace_file_symbols",

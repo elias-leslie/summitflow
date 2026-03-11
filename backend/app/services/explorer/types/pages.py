@@ -14,6 +14,7 @@ from ....logging_config import get_logger
 from ..base import BaseScanner, get_project_config
 from ..health import calculate_health_for_entry
 from ..models import ExplorerEntryCreate
+from ..port_detection import get_services
 
 logger = get_logger(__name__)
 
@@ -34,7 +35,13 @@ def _calculate_parent_path(path: str) -> str | None:
     return "/" if len(segs) <= 1 else "/" + "/".join(segs[:-1])
 
 
-def _build_nextjs_entry(page_file: Path, app_dir: Path, root_path: Path) -> ExplorerEntryCreate:
+def _build_nextjs_entry(
+    page_file: Path,
+    app_dir: Path,
+    root_path: Path,
+    page_base_url: str | None,
+    frontend_port: int | None,
+) -> ExplorerEntryCreate:
     """Build an ExplorerEntryCreate for a Next.js page file."""
     rel_path = page_file.parent.relative_to(app_dir)
     route = re.sub(r"\[([^\]]+)\]", r":\1", "/" + str(rel_path).replace("\\", "/"))
@@ -51,7 +58,8 @@ def _build_nextjs_entry(page_file: Path, app_dir: Path, root_path: Path) -> Expl
         health_status="unknown",
         metadata={
             "method": "GET",
-            "port": 3001,
+            "port": frontend_port,
+            "url": f"{page_base_url}{display_path}" if page_base_url else None,
             "source_file": str(page_file.relative_to(root_path)),
             "route_params": re.findall(r"\[([^\]]+)\]", str(rel_path)),
             **_HEALTH_DEFAULTS,
@@ -70,6 +78,8 @@ class PageScanner(BaseScanner):
         super().__init__(project_id, config)
         self.root_path: Path | None = None
         self.frontend_dir: str = "frontend"
+        self.frontend_port: int | None = None
+        self.page_base_url: str | None = None
 
     def _load_config(self) -> bool:
         """Load root_path and frontend_dir from project config and overrides. Returns False on error."""
@@ -82,9 +92,19 @@ class PageScanner(BaseScanner):
                 self.root_path = Path(source["root_path"])
             if source.get("frontend_dir"):
                 self.frontend_dir = source["frontend_dir"]
+            if source.get("frontend_port"):
+                self.frontend_port = int(source["frontend_port"])
+            if source.get("base_url"):
+                self.page_base_url = str(source["base_url"]).rstrip("/")
         if not self.root_path:
             logger.error(f"No root_path for project {self.project_id}")
             return False
+        if self.frontend_port is None:
+            services = get_services(self.project_id)
+            port = services.get("frontend_port")
+            self.frontend_port = int(port) if isinstance(port, int) else None
+            if not self.page_base_url and self.frontend_port is not None:
+                self.page_base_url = f"http://localhost:{self.frontend_port}"
         return True
 
     def scan(self) -> list[ExplorerEntryCreate]:
@@ -114,7 +134,15 @@ class PageScanner(BaseScanner):
         entries: list[ExplorerEntryCreate] = []
         for page_file in app_dir.rglob("page.tsx"):
             try:
-                entries.append(_build_nextjs_entry(page_file, app_dir, self.root_path))
+                entries.append(
+                    _build_nextjs_entry(
+                        page_file,
+                        app_dir,
+                        self.root_path,
+                        self.page_base_url,
+                        self.frontend_port,
+                    )
+                )
             except Exception as e:
                 logger.warning(f"Failed to scan page {page_file}: {e}")
         return entries
@@ -130,7 +158,8 @@ class PageScanner(BaseScanner):
                 health_status="unknown",
                 metadata={
                     "method": "GET",
-                    "port": 3001,
+                    "port": self.frontend_port,
+                    "url": f"{self.page_base_url}/" if self.page_base_url else None,
                     "source_file": "index.html",
                     "route_params": [],
                     **_HEALTH_DEFAULTS,

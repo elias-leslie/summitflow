@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from fastapi.responses import JSONResponse
 
 from ..services import explorer
 from ..storage import explorer as explorer_storage
@@ -148,7 +149,7 @@ async def trigger_scan(
     trigger_context_json: str | None = Query(
         None, description="JSON-encoded additional context", alias="trigger_context"
     ),
-) -> dict[str, Any]:
+) -> Any:
     """Trigger a scan for explorer entries. Runs in background."""
     validate_project_exists(project_id)
 
@@ -156,26 +157,24 @@ async def trigger_scan(
         helpers.validate_entry_type(type)
 
     trigger_context = helpers.parse_trigger_context(trigger_context_json)
+    try:
+        explorer.ensure_scan_not_running(project_id)
+    except explorer.ScanAlreadyRunningError as exc:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "message": "Explorer scan already running",
+                "scan_status": exc.scan_status,
+            },
+        )
 
-    # Initialize scan state tracking
-    explorer.start_scan(project_id, type)
-
-    # Record scan in history
-    scan_type = type or "full"
-    scan_id = scan_history.record_scan_start(
-        project_id=project_id,
-        scan_type=scan_type,
+    background_tasks.add_task(
+        explorer.run_scan_job,
+        project_id,
+        type,
         triggered_by=triggered_by,
         triggered_by_session=triggered_by_session,
         trigger_context=trigger_context,
-    )
-
-    # Run scan with progress tracking in background (pass scan_id for completion recording)
-    background_tasks.add_task(
-        helpers.run_scan_and_record,
-        project_id,
-        type,
-        scan_id,
     )
 
     return {
@@ -183,8 +182,21 @@ async def trigger_scan(
         "message": f"Scan started for {project_id}"
         + (f" (type: {type})" if type else " (all types)"),
         "type": type,
-        "scan_id": scan_id,
     }
+
+
+@router.get("/{project_id}/explorer/scan/status")
+async def get_scan_status(project_id: str) -> dict[str, Any]:
+    """Get live scan status for pollable scan progress."""
+    validate_project_exists(project_id)
+    return explorer.get_scan_status(project_id)
+
+
+@router.get("/{project_id}/explorer/overview")
+async def get_overview(project_id: str) -> dict[str, Any]:
+    """Get high-signal Explorer status, freshness, and history summary."""
+    validate_project_exists(project_id)
+    return explorer.get_scan_overview(project_id)
 
 
 @router.get("/{project_id}/explorer/scan-history")

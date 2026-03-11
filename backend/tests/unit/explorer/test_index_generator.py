@@ -21,11 +21,15 @@ class TestGenerateIndex:
             patch("app.services.explorer.index_generator.get_environment") as mock_env,
             patch("app.services.explorer.index_generator.get_services") as mock_services,
             patch("app.services.explorer.index_generator.get_cli_info") as mock_cli,
+            patch("app.services.explorer.index_generator.get_project_urls") as mock_urls,
+            patch("app.services.explorer.index_generator.get_explorer_summary") as mock_explorer,
         ):
             mock_storage.get_entries.return_value = []
             mock_env.return_value = {}
             mock_services.return_value = {}
             mock_cli.return_value = {}
+            mock_urls.return_value = {}
+            mock_explorer.return_value = {}
 
             result = generate_index("test-project")
 
@@ -48,6 +52,8 @@ class TestGenerateIndex:
             patch("app.services.explorer.index_generator.get_environment") as mock_env,
             patch("app.services.explorer.index_generator.get_services") as mock_services,
             patch("app.services.explorer.index_generator.get_cli_info") as mock_cli,
+            patch("app.services.explorer.index_generator.get_project_urls") as mock_urls,
+            patch("app.services.explorer.index_generator.get_explorer_summary") as mock_explorer,
         ):
             # Return file entries for type=file, empty for others
             def get_entries_side_effect(project_id: str, filters: dict[str, Any]) -> list[dict[str, Any]]:
@@ -59,6 +65,8 @@ class TestGenerateIndex:
             mock_env.return_value = {}
             mock_services.return_value = {}
             mock_cli.return_value = {}
+            mock_urls.return_value = {}
+            mock_explorer.return_value = {}
 
             result = generate_index("test-project")
 
@@ -83,6 +91,8 @@ class TestGenerateIndex:
             patch("app.services.explorer.index_generator.get_environment") as mock_env,
             patch("app.services.explorer.index_generator.get_services") as mock_services,
             patch("app.services.explorer.index_generator.get_cli_info") as mock_cli,
+            patch("app.services.explorer.index_generator.get_project_urls") as mock_urls,
+            patch("app.services.explorer.index_generator.get_explorer_summary") as mock_explorer,
         ):
 
             def get_entries_side_effect(project_id: str, filters: dict[str, Any]) -> list[dict[str, Any]]:
@@ -94,6 +104,8 @@ class TestGenerateIndex:
             mock_env.return_value = {}
             mock_services.return_value = {}
             mock_cli.return_value = {}
+            mock_urls.return_value = {}
+            mock_explorer.return_value = {}
 
             result = generate_index("test-project")
 
@@ -117,6 +129,8 @@ class TestGenerateIndex:
             patch("app.services.explorer.index_generator.get_environment") as mock_env,
             patch("app.services.explorer.index_generator.get_services") as mock_services,
             patch("app.services.explorer.index_generator.get_cli_info") as mock_cli,
+            patch("app.services.explorer.index_generator.get_project_urls") as mock_urls,
+            patch("app.services.explorer.index_generator.get_explorer_summary") as mock_explorer,
         ):
 
             def get_entries_side_effect(project_id: str, filters: dict[str, Any]) -> list[dict[str, Any]]:
@@ -128,6 +142,8 @@ class TestGenerateIndex:
             mock_env.return_value = {}
             mock_services.return_value = {}
             mock_cli.return_value = {}
+            mock_urls.return_value = {}
+            mock_explorer.return_value = {}
 
             result = generate_index("test-project")
 
@@ -135,6 +151,41 @@ class TestGenerateIndex:
         parsed = yaml.safe_load(result)
         assert parsed["project"] == "test-project"
         assert "folders" in parsed
+
+    def test_generate_index_includes_urls_and_explorer_summary(self) -> None:
+        """Test derived URLs and explorer trust metadata are surfaced."""
+        with (
+            patch("app.services.explorer.index_generator.storage") as mock_storage,
+            patch("app.services.explorer.index_generator.get_environment") as mock_env,
+            patch("app.services.explorer.index_generator.get_services") as mock_services,
+            patch("app.services.explorer.index_generator.get_cli_info") as mock_cli,
+            patch("app.services.explorer.index_generator.get_project_urls") as mock_urls,
+            patch("app.services.explorer.index_generator.get_explorer_summary") as mock_explorer,
+        ):
+            mock_storage.get_entries.return_value = []
+            mock_env.return_value = {}
+            mock_services.return_value = {"backend_port": 8001, "frontend_port": 3001}
+            mock_cli.return_value = {}
+            mock_urls.return_value = {
+                "frontend": "http://localhost:3001",
+                "api": "http://localhost:8001/api",
+            }
+            mock_explorer.return_value = {
+                "scan_status": "completed",
+                "last_completed_scan": "2026-03-11T12:00:00+00:00",
+                "entry_counts": {"file": 12, "page": 2},
+                "symbol_count": 44,
+                "stale_metadata_count": 3,
+            }
+
+            result = generate_index("test-project")
+
+        parsed = yaml.safe_load(result)
+        assert parsed["urls"]["frontend"] == "http://localhost:3001"
+        assert parsed["urls"]["api"] == "http://localhost:8001/api"
+        assert parsed["explorer"]["scan_status"] == "completed"
+        assert parsed["explorer"]["symbol_count"] == 44
+        assert parsed["explorer"]["entry_counts"] == {"file": 12, "page": 2}
 
 
 class TestWriteIndexFile:
@@ -159,6 +210,8 @@ class TestWriteIndexFile:
             patch("app.services.explorer.index_generator.get_environment") as mock_env,
             patch("app.services.explorer.index_generator.get_services") as mock_services,
             patch("app.services.explorer.index_generator.get_cli_info") as mock_cli,
+            patch("app.services.explorer.index_generator.get_project_urls") as mock_urls,
+            patch("app.services.explorer.index_generator.get_explorer_summary") as mock_explorer,
         ):
             mock_root.return_value = str(tmp_path)
 
@@ -171,6 +224,8 @@ class TestWriteIndexFile:
             mock_env.return_value = {}
             mock_services.return_value = {}
             mock_cli.return_value = {}
+            mock_urls.return_value = {}
+            mock_explorer.return_value = {}
 
             result = write_index_file("test-project")
 

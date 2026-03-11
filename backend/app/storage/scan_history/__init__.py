@@ -10,11 +10,18 @@ This module handles:
 from __future__ import annotations
 
 from ._helpers import row_to_scan as _row_to_scan
-from ._reads import get_scan_comparison, get_scan_history, get_sparkline_data, get_summary
+from ._reads import (
+    get_latest_scan,
+    get_scan_comparison,
+    get_scan_history,
+    get_sparkline_data,
+    get_summary,
+)
 from ._writes import record_scan_complete, record_scan_start
 
 __all__ = [
     "_row_to_scan",
+    "get_latest_scan",
     "get_scan_comparison",
     "get_scan_history",
     "get_sparkline_data",

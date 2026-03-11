@@ -11,6 +11,7 @@ import { Clock, Loader2, RefreshCw } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { formatTimeAgo } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import type { ExplorerOverviewScan } from '@/lib/api/explorer'
 import { StatusIndicator } from './StatusIndicator'
 import type { ExplorerStats, ExplorerType, HealthStatus } from './types'
 
@@ -20,7 +21,11 @@ interface SummaryBarProps {
   activeFilter: HealthStatus | 'all'
   onFilterChange: (filter: HealthStatus | 'all') => void
   onScan: () => void
+  onFullScan: () => void
   isScanning?: boolean
+  lastCompletedScan?: ExplorerOverviewScan | null
+  symbolCount?: number
+  staleMetadataCount?: number
   className?: string
 }
 
@@ -41,16 +46,24 @@ export function SummaryBar({
   activeFilter,
   onFilterChange,
   onScan,
+  onFullScan,
   isScanning = false,
+  lastCompletedScan = null,
+  symbolCount = 0,
+  staleMetadataCount = 0,
   className,
 }: SummaryBarProps) {
   const labels = typeLabels[type]
 
   // Client-only time ago to avoid hydration mismatch
   const [timeAgo, setTimeAgo] = useState<string>('...')
+  const [projectTimeAgo, setProjectTimeAgo] = useState<string>('...')
   useEffect(() => {
     setTimeAgo(formatTimeAgo(stats.lastScan, 'never'))
   }, [stats.lastScan])
+  useEffect(() => {
+    setProjectTimeAgo(formatTimeAgo(lastCompletedScan?.completed_at || null, 'never'))
+  }, [lastCompletedScan?.completed_at])
 
   const metrics: {
     key: HealthStatus | 'all'
@@ -108,36 +121,61 @@ export function SummaryBar({
         ))}
       </div>
 
-      {/* Last scan time */}
-      <div className="flex items-center gap-1.5 text-slate-500 text-xs mr-3">
+      {/* Scan trust signals */}
+      <div className="hidden xl:flex items-center gap-2 text-xs text-slate-500">
         <Clock className="w-3 h-3" />
-        <span>Scanned {timeAgo}</span>
+        <span>This view scanned {timeAgo}</span>
+        <span className="text-slate-700">|</span>
+        <span>Project scan {projectTimeAgo}</span>
+        <span className="text-slate-700">|</span>
+        <span>{symbolCount.toLocaleString()} symbols</span>
+        {staleMetadataCount > 0 && (
+          <>
+            <span className="text-slate-700">|</span>
+            <span className="text-amber-400">
+              {staleMetadataCount} stale file records
+            </span>
+          </>
+        )}
       </div>
 
-      {/* Scan button */}
-      <button
-        onClick={onScan}
-        disabled={isScanning}
-        className={cn(
-          'flex items-center gap-2 px-3 py-1.5 rounded-md',
-          'text-xs font-medium transition-all duration-200',
-          'border border-slate-600 hover:border-phosphor-500/50',
-          'hover:bg-phosphor-500/10 hover:text-phosphor-400',
-          isScanning && 'opacity-60 cursor-not-allowed',
-        )}
-      >
-        {isScanning ? (
-          <>
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            <span>Scanning...</span>
-          </>
-        ) : (
-          <>
-            <RefreshCw className="w-3.5 h-3.5" />
-            <span>Scan</span>
-          </>
-        )}
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onScan}
+          disabled={isScanning}
+          className={cn(
+            'flex items-center gap-2 px-3 py-1.5 rounded-md',
+            'text-xs font-medium transition-all duration-200',
+            'border border-slate-600 hover:border-phosphor-500/50',
+            'hover:bg-phosphor-500/10 hover:text-phosphor-400',
+            isScanning && 'opacity-60 cursor-not-allowed',
+          )}
+        >
+          {isScanning ? (
+            <>
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              <span>Scanning...</span>
+            </>
+          ) : (
+            <>
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Scan View</span>
+            </>
+          )}
+        </button>
+        <button
+          onClick={onFullScan}
+          disabled={isScanning}
+          className={cn(
+            'px-3 py-1.5 rounded-md border border-slate-700',
+            'text-xs font-medium text-slate-300 transition-colors',
+            'hover:bg-slate-800 hover:text-slate-100',
+            isScanning && 'opacity-60 cursor-not-allowed',
+          )}
+        >
+          Full Scan
+        </button>
+      </div>
     </div>
   )
 }

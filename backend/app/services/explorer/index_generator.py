@@ -63,6 +63,51 @@ def get_background_tasks(project_id: str) -> list[str]:
     return sorted(result)
 
 
+def get_project_urls(project_id: str) -> dict[str, str]:
+    """Get derived project URLs from project config and detected ports."""
+    from .base import get_project_config
+
+    project = get_project_config(project_id) or {}
+    services = get_services(project_id)
+
+    urls: dict[str, str] = {}
+    base_url = project.get("base_url")
+    if isinstance(base_url, str) and base_url:
+        urls["frontend"] = base_url.rstrip("/")
+
+    frontend_port = services.get("frontend_port")
+    if frontend_port and "frontend" not in urls:
+        urls["frontend"] = f"http://localhost:{frontend_port}"
+
+    backend_port = services.get("backend_port")
+    if backend_port:
+        urls["api"] = f"http://localhost:{backend_port}/api"
+
+    return urls
+
+
+def get_explorer_summary(project_id: str) -> dict[str, Any]:
+    """Get the highest-signal Explorer trust metadata for `.index.yaml`."""
+    from .scan_ops import get_scan_overview
+
+    overview = get_scan_overview(project_id)
+    last_completed = overview.get("last_completed_scan") or {}
+    symbol_stats = overview.get("symbol_stats") or {}
+    type_summaries = overview.get("type_summaries") or {}
+
+    return {
+        "scan_status": overview.get("scan_status", {}).get("status"),
+        "last_completed_scan": last_completed.get("completed_at"),
+        "last_scan_type": last_completed.get("scan_type"),
+        "entry_counts": {
+            entry_type: summary.get("total", 0)
+            for entry_type, summary in type_summaries.items()
+        },
+        "symbol_count": symbol_stats.get("count", 0),
+        "stale_metadata_count": overview.get("stale_metadata_count", 0),
+    }
+
+
 def get_folders(project_id: str) -> dict[str, str]:
     """Get folder structure with file counts and patterns."""
     entries = storage.get_entries(project_id, {"type": "file", "limit": _LIMITS["file"]})
@@ -100,7 +145,9 @@ def generate_index(project_id: str) -> str:
     for key, value in [
         ("environment", get_environment(project_id)),
         ("services", get_services(project_id)),
+        ("urls", get_project_urls(project_id)),
         ("cli", get_cli_info(project_id)),
+        ("explorer", get_explorer_summary(project_id)),
         ("pages", get_pages(project_id)),
         ("endpoints", get_endpoints(project_id)),
         ("tables", get_tables(project_id)),

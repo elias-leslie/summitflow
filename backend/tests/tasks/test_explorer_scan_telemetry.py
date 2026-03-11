@@ -14,7 +14,14 @@ def test_scan_all_projects_reports_duration_and_project_details() -> None:
                 ("project-2", "Project Two", "/tmp/project-2"),
             ],
         ),
-        patch("app.tasks.explorer_tasks.scan_project", return_value=[{"type": "file"}]),
+        patch(
+            "app.tasks.explorer_tasks.explorer.run_scan_job",
+            return_value={
+                "scan_id": 11,
+                "results": [{"entry_type": "file"}],
+                "metrics": {"complexity": 123},
+            },
+        ),
         patch("app.tasks.explorer_tasks.time.sleep"),
     ):
         result = scan_all_projects(entry_type="file", dry_run=False, dispatch=None)
@@ -24,6 +31,8 @@ def test_scan_all_projects_reports_duration_and_project_details() -> None:
     assert result["errors"] == 0
     assert result["duration_ms"] >= 0
     assert len(result["details"]) == 2
+    assert result["details"][0]["scan_id"] == 11
+    assert result["details"][0]["metrics"] == {"complexity": 123}
     assert result["details"][0]["duration_ms"] >= 0
     assert result["details"][1]["duration_ms"] >= 0
 
@@ -34,7 +43,10 @@ def test_scan_all_projects_reports_error_duration() -> None:
             "app.tasks.explorer_tasks._fetch_projects",
             return_value=[("project-1", "Project One", "/tmp/project-1")],
         ),
-        patch("app.tasks.explorer_tasks.scan_project", side_effect=RuntimeError("boom")),
+        patch(
+            "app.tasks.explorer_tasks.explorer.run_scan_job",
+            side_effect=RuntimeError("boom"),
+        ),
     ):
         result = scan_all_projects(entry_type="file", dry_run=False, dispatch=None)
 
@@ -44,4 +56,3 @@ def test_scan_all_projects_reports_error_duration() -> None:
     assert result["duration_ms"] >= 0
     assert result["details"][0]["status"] == "error"
     assert result["details"][0]["duration_ms"] >= 0
-

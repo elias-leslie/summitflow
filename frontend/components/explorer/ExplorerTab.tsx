@@ -49,6 +49,7 @@ export function ExplorerTab({
           filter={props.filter}
           sortField={props.sortField}
           sortDir={props.sortDir}
+          typeLastScannedAt={props.typeLastScannedAt}
           onSort={props.onSort}
         />
       )}
@@ -62,6 +63,7 @@ interface ExplorerContentProps {
   filter: HealthStatus | 'all'
   sortField: string
   sortDir: 'asc' | 'desc'
+  typeLastScannedAt: string | null
   onSort: (field: string) => void
 }
 
@@ -71,6 +73,7 @@ function ExplorerContent({
   filter,
   sortField,
   sortDir,
+  typeLastScannedAt,
   onSort,
 }: ExplorerContentProps) {
   // Convert UI type to API entry type
@@ -154,7 +157,11 @@ function ExplorerContent({
           onSort={onSort}
           renderRow={renderRow}
           isLoading={isLoading}
-          emptyMessage={`No ${typeConfig.label.toLowerCase()} found`}
+          emptyMessage={
+            typeLastScannedAt
+              ? `No ${typeConfig.label.toLowerCase()} match the current filters`
+              : `No ${typeConfig.label.toLowerCase()} indexed yet. Run a scan to populate Explorer.`
+          }
         />
       </div>
     </div>

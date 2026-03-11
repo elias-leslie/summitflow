@@ -2,7 +2,7 @@
  * Explorer Component Types
  *
  * Shared types for the unified explorer UI that handles
- * Files, Database, Celery Tasks, API Endpoints, and Pages.
+ * Files, Database, Scheduled Jobs, API Endpoints, and Pages.
  */
 
 export type ExplorerType =

@@ -38,7 +38,7 @@ export const typeIcons: Record<ExplorerType, React.ReactNode> = {
 export const typeTitles: Record<ExplorerType, string> = {
   files: 'Files Explorer',
   database: 'Database Tables',
-  celery: 'Celery Tasks',
+  celery: 'Scheduled Jobs',
   api: 'API Endpoints',
   pages: 'Frontend Pages',
   dependencies: 'Dependencies',

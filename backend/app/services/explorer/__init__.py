@@ -36,6 +36,13 @@ from .models import (
     ExplorerStats,
     ScanResult,
 )
+from .scan_ops import (
+    ScanAlreadyRunningError,
+    build_scan_metrics,
+    ensure_scan_not_running,
+    get_scan_overview,
+    run_scan_job,
+)
 from .types import get_scanner
 
 __all__ = [
@@ -45,16 +52,21 @@ __all__ = [
     "ExplorerFilters",
     "ExplorerRelationship",
     "ExplorerStats",
+    "ScanAlreadyRunningError",
     "ScanResult",
+    "build_scan_metrics",
     "calculate_health",
+    "ensure_scan_not_running",
     "generate_index",
     "get_children",
     "get_entries",
     "get_entry",
     "get_project_config",
     "get_project_root",
+    "get_scan_overview",
     "get_scan_status",
     "get_stats",
+    "run_scan_job",
     "run_scan_with_tracking",
     "scan",
     "start_scan",
