@@ -11,6 +11,19 @@ from ..output import set_compact_output
 
 app = typer.Typer(help="Task management commands")
 
+# Magic string constants
+_DEFAULT_TASK_TYPE = "task"
+_IDEA_LABELS = "crowdsourced"
+_IDEA_EXECUTION_MODE = "autonomous"
+_DEFAULT_CRITIQUE_STAGE = "task_shape"
+_DEFAULT_CRITIQUE_AGENT = "specifier"
+
+
+def _removed_command(name: str, replacement: str) -> None:
+    """Emit a standard error for removed commands and exit."""
+    typer.echo(f"Error: '{name}' removed. Use '{replacement}'", err=True)
+    raise typer.Exit(1)
+
 
 @app.command()
 def create(
@@ -20,7 +33,7 @@ def create(
     description: Annotated[str | None, typer.Option("-d", "--description")] = None,
     priority: Annotated[int, typer.Option("-p", "--priority", min=0, max=4)] = 2,
     labels: Annotated[str | None, typer.Option("-l", "--labels")] = None,
-    task_type: Annotated[str, typer.Option("-t", "--type")] = "task",
+    task_type: Annotated[str, typer.Option("-t", "--type")] = _DEFAULT_TASK_TYPE,
     parent: Annotated[str | None, typer.Option("--parent")] = None,
     plan: Annotated[Path | None, typer.Option("--plan")] = None,
     task_id: Annotated[str | None, typer.Option("--task")] = None,
@@ -112,7 +125,7 @@ def export(
     output: Annotated[str | None, typer.Option("-o", "--output")] = None,
 ) -> None:
     """Export complete task details to JSON file."""
-    from .tasks_commands import export_task
+    from .tasks_export import export_task
 
     export_task(task_id, output, STClient(require_project=False))
 
@@ -163,7 +176,7 @@ def bug(
     """
     from ..config import get_config
     from ..output import require_explicit_project
-    from .tasks_commands import create_bug_task
+    from .tasks_bug import create_bug_task
 
     require_explicit_project(get_config())
     create_bug_task(title, description, priority, labels, from_task, STClient())
@@ -231,12 +244,12 @@ def idea(
         dry_run=False,
         description=None,
         priority=priority,
-        labels="crowdsourced",
-        task_type="task",
+        labels=_IDEA_LABELS,
+        task_type=_DEFAULT_TASK_TYPE,
         parent=None,
         plan=None,
         blocked_by=None,
-        execution_mode="autonomous",
+        execution_mode=_IDEA_EXECUTION_MODE,
         autonomous=True,
     )
 
@@ -249,7 +262,7 @@ def autocode(
 ) -> None:
     """Queue task for autonomous execution via Hatchet."""
     from ..context import require_task_id
-    from .tasks_commands import autocode_task
+    from .tasks_autocode import autocode_task
 
     autocode_task(require_task_id(task_id), dry_run, at, STClient(require_project=False))
 
@@ -260,11 +273,11 @@ def critique(
     stage: Annotated[
         str,
         typer.Option("--stage", help="Critique stage: task_shape, pre_close, or both"),
-    ] = "task_shape",
+    ] = _DEFAULT_CRITIQUE_STAGE,
     agent: Annotated[
         str,
         typer.Option("--agent", help="Agent Hub agent slug to use for the critique"),
-    ] = "specifier",
+    ] = _DEFAULT_CRITIQUE_AGENT,
     force: Annotated[
         bool,
         typer.Option("--force", help="Run even when the task does not currently require a second opinion"),
@@ -276,37 +289,18 @@ def critique(
     critique_task_command(task_id, stage, agent, force)
 
 
-@app.command("import", hidden=True)
-def import_plan_removed() -> None:
-    """Removed: use st create --plan plan.json instead."""
-    typer.echo("Error: 'import' removed. Use 'st create --plan plan.json'", err=True)
-    raise typer.Exit(1)
+# Register stubs for removed commands so old scripts get a clear error.
+# Uses a loop to avoid one named function per removed command.
+_REMOVED: list[tuple[str, str]] = [
+    ("import", "st create --plan plan.json"),
+    ("work", "st claim <id>' and 'st context <id>"),
+    ("show", "st context <task-id>"),
+    ("close", "st done <id>"),
+    ("update", "st claim/done/abandon"),
+]
+for _cmd, _replacement in _REMOVED:
+    def _make_stub(name: str = _cmd, repl: str = _replacement) -> None:
+        _removed_command(name, repl)
 
-
-# Error stubs for removed commands
-@app.command("work", hidden=True)
-def work_removed() -> None:
-    """Removed: use st claim + st context instead."""
-    typer.echo("Error: 'work' removed. Use 'st claim <id>' and 'st context <id>'", err=True)
-    raise typer.Exit(1)
-
-
-@app.command("show", hidden=True)
-def show_removed() -> None:
-    """Removed: use st context instead."""
-    typer.echo("Error: 'show' removed. Use 'st context <task-id>'", err=True)
-    raise typer.Exit(1)
-
-
-@app.command("close", hidden=True)
-def close_removed() -> None:
-    """Removed: use st done instead."""
-    typer.echo("Error: 'close' removed. Use 'st done <id>'", err=True)
-    raise typer.Exit(1)
-
-
-@app.command("update", hidden=True)
-def update_removed() -> None:
-    """Removed: use lifecycle commands instead."""
-    typer.echo("Error: 'update' removed. Use 'st claim/done/abandon'", err=True)
-    raise typer.Exit(1)
+    _make_stub.__doc__ = f"Removed: use {_replacement} instead."
+    app.command(_cmd, hidden=True)(_make_stub)
