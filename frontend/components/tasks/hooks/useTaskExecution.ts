@@ -1,6 +1,5 @@
 'use client'
 
-import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
 import {
@@ -9,10 +8,7 @@ import {
   type Task,
   updateTaskStatus,
 } from '@/lib/api/tasks'
-import {
-  invalidateTaskQueries,
-  syncTaskInTaskLists,
-} from '@/lib/task-cache'
+import { useTaskMutationSync } from '@/lib/task-mutation-sync'
 
 interface UseTaskExecutionOptions {
   task: Task | null
@@ -35,7 +31,7 @@ export function useTaskExecution({
   onTaskUpdate,
   setTask,
 }: UseTaskExecutionOptions): UseTaskExecutionReturn {
-  const queryClient = useQueryClient()
+  const { syncUpdatedTask } = useTaskMutationSync(projectId)
   const [isExecuting, setIsExecuting] = useState(false)
   const [isStopping, setIsStopping] = useState(false)
   const [executionError, setExecutionError] = useState<string | null>(null)
@@ -49,8 +45,7 @@ export function useTaskExecution({
       const updated = await fetchTask(projectId, task.id)
       setTask(updated)
       onTaskUpdate?.(updated)
-      syncTaskInTaskLists(queryClient, projectId, updated)
-      void invalidateTaskQueries(queryClient, projectId)
+      syncUpdatedTask(updated)
       toast.success('Task queued for execution')
     } catch (err) {
       console.error('Failed to start execution:', err)
@@ -61,7 +56,7 @@ export function useTaskExecution({
     } finally {
       setIsExecuting(false)
     }
-  }, [task, projectId, onTaskUpdate, queryClient, setTask])
+  }, [onTaskUpdate, projectId, setTask, syncUpdatedTask, task])
 
   const handleStopExecution = useCallback(async () => {
     if (!task) return
@@ -70,8 +65,7 @@ export function useTaskExecution({
       const updated = await updateTaskStatus(projectId, task.id, 'paused')
       setTask(updated)
       onTaskUpdate?.(updated)
-      syncTaskInTaskLists(queryClient, projectId, updated)
-      void invalidateTaskQueries(queryClient, projectId)
+      syncUpdatedTask(updated)
       toast.success('Task paused')
     } catch (err) {
       console.error('Failed to stop execution:', err)
@@ -79,7 +73,7 @@ export function useTaskExecution({
     } finally {
       setIsStopping(false)
     }
-  }, [task, projectId, onTaskUpdate, queryClient, setTask])
+  }, [onTaskUpdate, projectId, setTask, syncUpdatedTask, task])
 
   return {
     isExecuting,

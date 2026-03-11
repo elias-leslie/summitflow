@@ -13,7 +13,7 @@ import {
   useSensors,
 } from '@dnd-kit/core'
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { useExecutionWebSocket } from '@/hooks/useExecutionWebSocket'
@@ -29,10 +29,7 @@ import {
   type TaskKanbanColumn,
 } from './columnConfig'
 import { useRowCollapse } from './hooks/useRowCollapse'
-import {
-  invalidateTaskQueries,
-  removeTaskFromTaskLists,
-} from '@/lib/task-cache'
+import { useTaskMutationSync } from '@/lib/task-mutation-sync'
 
 // ============================================================================
 // Types
@@ -70,7 +67,7 @@ export function TaskKanbanBoard({
   onStatusChange,
   onTaskClick,
 }: TaskKanbanBoardProps) {
-  const queryClient = useQueryClient()
+  const { invalidateTasks, syncDeletedTask } = useTaskMutationSync(projectId)
   const [activeId, setActiveId] = useState<string | null>(null)
   const [executingTaskId, setExecutingTaskId] = useState<string | null>(null)
   const [deleteConfirmTask, setDeleteConfirmTask] = useState<Task | null>(null)
@@ -149,7 +146,7 @@ export function TaskKanbanBoard({
     setExecutingTaskId(taskId)
     try {
       await executeTask(projectId, taskId)
-      void invalidateTaskQueries(queryClient, projectId)
+      invalidateTasks()
       toast.success('Task queued for execution')
     } catch (error) {
       console.error('Execute now failed:', error)
@@ -162,8 +159,7 @@ export function TaskKanbanBoard({
   const deleteMutation = useMutation({
     mutationFn: (taskId: string) => deleteTask(projectId, taskId),
     onSuccess: (_, taskId) => {
-      removeTaskFromTaskLists(queryClient, projectId, taskId)
-      void invalidateTaskQueries(queryClient, projectId)
+      syncDeletedTask(taskId)
       setDeleteConfirmTask(null)
       toast.success('Task deleted')
     },

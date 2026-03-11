@@ -1,4 +1,3 @@
-import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { ChatMessage } from '@agent-hub/chat-ui'
@@ -13,7 +12,7 @@ import {
 } from './taskIdeationTypes'
 import type { Complexity, IdeationTaskData, IdeationTaskResponse } from './taskIdeationTypes'
 import type { TaskType } from '@/lib/api/tasks-types'
-import { invalidateTaskQueries } from '@/lib/task-cache'
+import { useTaskMutationSync } from '@/lib/task-mutation-sync'
 
 function extractCreateTaskTool(messages: ChatMessage[]): IdeationTaskData | null {
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -38,7 +37,7 @@ function extractCreateTaskTool(messages: ChatMessage[]): IdeationTaskData | null
 }
 
 export function useTaskIdeation(projectId: string, onOpenChange: (open: boolean) => void) {
-  const queryClient = useQueryClient()
+  const { invalidateTasks } = useTaskMutationSync(projectId)
   const [taskData, setTaskData] = useState<IdeationTaskData | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -108,7 +107,7 @@ export function useTaskIdeation(projectId: string, onOpenChange: (open: boolean)
 
       const result: IdeationTaskResponse = await response.json()
 
-      void invalidateTaskQueries(queryClient, projectId)
+      invalidateTasks()
 
       toast.success(`Task created: ${result.task_id}`, {
         description: result.dispatched
@@ -124,7 +123,7 @@ export function useTaskIdeation(projectId: string, onOpenChange: (open: boolean)
     } finally {
       setIsSubmitting(false)
     }
-  }, [taskData, projectId, queryClient, onOpenChange])
+  }, [invalidateTasks, onOpenChange, projectId, taskData])
 
   const updateField = useCallback(
     <K extends keyof IdeationTaskData>(field: K, value: IdeationTaskData[K]) => {

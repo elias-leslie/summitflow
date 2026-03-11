@@ -1,16 +1,12 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
 import { deleteTask, deleteTasks } from '@/lib/api/tasks'
 import type { Task } from '@/lib/api'
-import {
-  invalidateTaskQueries,
-  removeTaskFromTaskLists,
-  syncTaskInTaskLists,
-} from '@/lib/task-cache'
+import { useTaskMutationSync } from '@/lib/task-mutation-sync'
 
 export function useTaskHandlers(projectId: string) {
-  const queryClient = useQueryClient()
+  const { syncDeletedTask, syncUpdatedTask } = useTaskMutationSync(projectId)
   const [deleteConfirmTask, setDeleteConfirmTask] = useState<Task | null>(null)
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false)
 
@@ -18,8 +14,7 @@ export function useTaskHandlers(projectId: string) {
   const deleteMutation = useMutation({
     mutationFn: (taskId: string) => deleteTask(projectId, taskId),
     onSuccess: (_, taskId) => {
-      removeTaskFromTaskLists(queryClient, projectId, taskId)
-      void invalidateTaskQueries(queryClient, projectId)
+      syncDeletedTask(taskId)
       setDeleteConfirmTask(null)
       toast.success('Task deleted')
     },
@@ -33,9 +28,8 @@ export function useTaskHandlers(projectId: string) {
     mutationFn: (taskIds: string[]) => deleteTasks(projectId, taskIds),
     onSuccess: (_, taskIds) => {
       for (const taskId of taskIds) {
-        removeTaskFromTaskLists(queryClient, projectId, taskId)
+        syncDeletedTask(taskId)
       }
-      void invalidateTaskQueries(queryClient, projectId)
       setBulkDeleteConfirm(false)
       toast.success(
         taskIds.length === 1 ? 'Task deleted' : `${taskIds.length} tasks deleted`,
@@ -50,10 +44,9 @@ export function useTaskHandlers(projectId: string) {
   // Task update handler
   const handleTaskUpdated = useCallback(
     (updatedTask: Task) => {
-      syncTaskInTaskLists(queryClient, projectId, updatedTask)
-      void invalidateTaskQueries(queryClient, projectId)
+      syncUpdatedTask(updatedTask)
     },
-    [queryClient, projectId],
+    [syncUpdatedTask],
   )
 
   return {
