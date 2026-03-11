@@ -71,7 +71,7 @@ def generate_mockup(
         result_or_info = _fetch_page_info(explorer_entry_id)
         if isinstance(result_or_info, MockupResult):
             return result_or_info
-        page_info = result_or_info  # type: ignore[assignment]
+        page_info = result_or_info
     design_standard = get_design_standard(project_id, standards_id)
     if not design_standard:
         return MockupResult(success=False, error=f"Design standard '{standards_id}' not found")

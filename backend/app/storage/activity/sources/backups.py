@@ -47,7 +47,7 @@ def _fetch_backup_rows(
             """,
             [*params, limit],
         )
-        return cur.fetchall()  # type: ignore[return-value]
+        return cur.fetchall()
 
 
 def get_recent_backup_events(

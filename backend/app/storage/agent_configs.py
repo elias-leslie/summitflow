@@ -130,7 +130,7 @@ def update_agent_config(project_id: str, config: AgentConfig) -> AgentConfig:
         return cast(AgentConfig, row[0])
 
 
-# Re-export submodule functions for backward compatibility
+# Re-export submodule functions — consumed via `from ...storage import agent_configs`
 # These imports are at the end to avoid circular dependencies
 from .agent_configs_agents import (  # noqa: E402
     enable_agent,

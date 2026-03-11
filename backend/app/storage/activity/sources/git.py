@@ -37,7 +37,7 @@ def _fetch_git_rows(
             """,
             [*params, limit],
         )
-        return cur.fetchall()  # type: ignore[no-any-return]
+        return cur.fetchall()
 
 
 def _row_to_git_event(row: tuple[Any, ...]) -> ActivityEvent:

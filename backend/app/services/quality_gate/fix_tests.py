@@ -203,7 +203,7 @@ def _parse_test_fix_response(response_text: str) -> dict[str, Any]:
         }
     try:
         parsed, _ = decoder.raw_decode(response_text, brace_idx)
-        return parsed  # type: ignore[return-value]
+        return parsed
     except json.JSONDecodeError as e:
         return {
             "fix_type": "cannot_fix",

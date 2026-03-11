@@ -109,7 +109,7 @@ def validate_task_ready(task_id: str, project_id: str) -> TaskValidationResult:
     if early is not None:
         return early
 
-    status_result = _check_task_status(task)  # type: ignore[arg-type]
+    status_result = _check_task_status(task)
     if status_result is not None:
         return status_result
 

@@ -73,7 +73,7 @@ async def _get_json(url: str, **kwargs: object) -> object:
     """Perform a GET request and return parsed JSON, raising HTTPException on error."""
     async with httpx.AsyncClient(timeout=_TIMEOUT_DEFAULT) as client:
         try:
-            response = await client.get(url, headers=_auth_headers(), **kwargs)  # type: ignore[arg-type]
+            response = await client.get(url, headers=_auth_headers(), **kwargs)
             response.raise_for_status()
             return response.json()
         except httpx.HTTPStatusError as exc:

@@ -362,7 +362,7 @@ def _validate_sheet_asset(asset: dict[str, object]) -> tuple[int, int, int, int]
     rows = asset.get("sheet_rows")
     if not all([frame_w, frame_h, cols, rows]):
         raise ValueError("Sprite sheet export requires frame dimensions and grid metadata")
-    return int(frame_w), int(frame_h), int(cols), int(rows)  # type: ignore[arg-type]
+    return int(frame_w), int(frame_h), int(cols), int(rows)
 
 
 def _slice_frames(
@@ -426,7 +426,7 @@ def export_sprite_sheet_frames(asset: dict[str, object]) -> dict[str, object]:
     export_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = image_path.parent / "exports" / "atlas.json"
 
-    animation_labels: list[str] = list(asset.get("animation_labels") or [])  # type: ignore[arg-type]
+    animation_labels: list[str] = list(asset.get("animation_labels") or [])
     atlas_frames = _slice_frames(
         image_path,
         export_dir,

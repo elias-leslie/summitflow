@@ -89,22 +89,3 @@ def get_subtasks_for_task(
             subtask["step_summary"] = get_step_summary(subtask_table_id)
 
     return subtasks
-
-
-# Re-export from focused modules for backward compatibility
-from .subtasks_bulk import bulk_create_subtasks  # noqa: E402
-from .subtasks_create import create_subtask  # noqa: E402
-from .subtasks_deletion import delete_subtask, delete_subtasks_for_task  # noqa: E402
-from .subtasks_passes import update_subtask_passes  # noqa: E402
-
-__all__ = [
-    "bulk_create_subtasks",
-    "create_subtask",
-    "delete_subtask",
-    "delete_subtasks_for_task",
-    "generate_subtask_id",
-    "get_subtask",
-    "get_subtask_by_table_id",
-    "get_subtasks_for_task",
-    "update_subtask_passes",
-]
