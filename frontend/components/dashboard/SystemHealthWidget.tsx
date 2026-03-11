@@ -3,6 +3,7 @@
 import { Activity, RefreshCw, Cpu, HardDrive, Database } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { formatDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useSystemStats } from '@/hooks/useSystemStats'
 
@@ -49,9 +50,10 @@ export function SystemHealthWidget({ className }: SystemHealthWidgetProps) {
             ? 'Elevated Resource Usage'
             : 'Critical Resource Usage'
 
+    const errorMessage = error instanceof Error ? error.message : 'Failed to load stats'
+
     return (
         <Card className={cn('card-elevated p-4 flex flex-col gap-4', className)}>
-            {/* Header */}
             <div className="flex items-center justify-between">
                 <h3 className="text-sm font-medium text-slate-400 flex items-center gap-2">
                     <Activity className="w-4 h-4 text-outrun-500" />
@@ -63,6 +65,7 @@ export function SystemHealthWidget({ className }: SystemHealthWidgetProps) {
                     className="h-6 w-6 p-0 rounded-full hover:bg-slate-800"
                     onClick={() => refetch()}
                     disabled={isFetching}
+                    aria-label="Refresh system status"
                 >
                     <RefreshCw className={cn('w-3.5 h-3.5 text-slate-500 hover:text-outrun-400', isFetching && 'animate-spin')} />
                 </Button>
@@ -73,16 +76,18 @@ export function SystemHealthWidget({ className }: SystemHealthWidgetProps) {
                     <div className="w-4 h-4 border-2 border-phosphor-500/30 border-t-phosphor-500 rounded-full animate-spin" />
                 </div>
             ) : error ? (
-                <div className="text-xs text-rose-400 text-center py-2">Failed to load stats</div>
+                <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-center">
+                    <div className="text-xs font-medium text-rose-300">System metrics unavailable</div>
+                    <div className="mt-1 text-[11px] text-rose-400/90">{errorMessage}</div>
+                </div>
             ) : data ? (
                 <>
-                    {/* Metrics Grid */}
                     <div className="grid grid-cols-3 gap-3">
-                        {/* CPU Metric */}
                         <div className="flex flex-col gap-1.5">
                             <div className="flex items-center justify-between">
                                 <span className="text-xs text-slate-500 flex items-center gap-1">
                                     <Cpu className="w-3 h-3" />
+                                    CPU
                                 </span>
                                 <span className={cn('text-xs font-mono', getStatusColor(data.cpu.status).split(' ')[0])}>
                                     {data.cpu.percent_used}%
@@ -94,14 +99,16 @@ export function SystemHealthWidget({ className }: SystemHealthWidgetProps) {
                                     style={{ width: `${Math.min(data.cpu.percent_used, 100)}%` }}
                                 />
                             </div>
-                            <span className="text-[10px] text-slate-600 text-center">CPU</span>
+                            <span className="text-[10px] text-slate-600 text-center">
+                                {data.cpu.cores} cores
+                            </span>
                         </div>
 
-                        {/* Memory Metric */}
                         <div className="flex flex-col gap-1.5">
                             <div className="flex items-center justify-between">
                                 <span className="text-xs text-slate-500 flex items-center gap-1">
                                     <HardDrive className="w-3 h-3" />
+                                    RAM
                                 </span>
                                 <span className={cn('text-xs font-mono', getStatusColor(data.memory.status).split(' ')[0])}>
                                     {data.memory.percent_used}%
@@ -113,14 +120,16 @@ export function SystemHealthWidget({ className }: SystemHealthWidgetProps) {
                                     style={{ width: `${Math.min(data.memory.percent_used, 100)}%` }}
                                 />
                             </div>
-                            <span className="text-[10px] text-slate-600 text-center">{data.memory.used_gb.toFixed(1)}GB</span>
+                            <span className="text-[10px] text-slate-600 text-center">
+                                {data.memory.used_gb.toFixed(1)}/{data.memory.total_gb.toFixed(1)}GB
+                            </span>
                         </div>
 
-                        {/* Disk Metric */}
                         <div className="flex flex-col gap-1.5">
                             <div className="flex items-center justify-between">
                                 <span className="text-xs text-slate-500 flex items-center gap-1">
                                     <Database className="w-3 h-3" />
+                                    Disk
                                 </span>
                                 <span className={cn('text-xs font-mono', getStatusColor(data.disk.status).split(' ')[0])}>
                                     {data.disk.percent_used}%
@@ -136,7 +145,6 @@ export function SystemHealthWidget({ className }: SystemHealthWidgetProps) {
                         </div>
                     </div>
 
-                    {/* Footer Status */}
                     <div className="pt-2 mt-auto flex items-center justify-between border-t border-slate-800/50">
                         <span className={cn(
                             'badge-outrun',
@@ -147,7 +155,12 @@ export function SystemHealthWidget({ className }: SystemHealthWidgetProps) {
                         </span>
                         <div className="flex items-center gap-2">
                             <div className={getStatusDotClass(overallStatus)} />
-                            <span className="text-[10px] text-slate-500 uppercase tracking-wider font-mono">Live</span>
+                            <span
+                                className="text-[10px] text-slate-500 uppercase tracking-wider font-mono"
+                                title={formatDate(data.timestamp)}
+                            >
+                                Updated {formatDate(data.timestamp)}
+                            </span>
                         </div>
                     </div>
                 </>

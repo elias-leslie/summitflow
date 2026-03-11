@@ -78,7 +78,7 @@ export function PipelineHealthDashboard({ data }: PipelineHealthDashboardProps) 
               </div>
 
               {/* Status badges grid */}
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
                 {taskStatuses.map((status) => (
                   <div key={status.label} className="flex items-center justify-between">
                     <span className="text-xs text-slate-500">{status.label}</span>
@@ -98,7 +98,7 @@ export function PipelineHealthDashboard({ data }: PipelineHealthDashboardProps) 
       </Card>
 
       {/* Metrics Grid */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* Throughput Metrics */}
         <Card>
           <CardHeader>

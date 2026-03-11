@@ -9,7 +9,7 @@
 
 import { Clock, Loader2, RefreshCw } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { formatTimeAgo } from '@/lib/format'
+import { formatDate, formatTimeAgo } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import type { ExplorerOverviewScan } from '@/lib/api/explorer'
 import { StatusIndicator } from './StatusIndicator'
@@ -55,15 +55,20 @@ export function SummaryBar({
 }: SummaryBarProps) {
   const labels = typeLabels[type]
 
-  // Client-only time ago to avoid hydration mismatch
   const [timeAgo, setTimeAgo] = useState<string>('...')
   const [projectTimeAgo, setProjectTimeAgo] = useState<string>('...')
   useEffect(() => {
-    setTimeAgo(formatTimeAgo(stats.lastScan, 'never'))
-  }, [stats.lastScan])
-  useEffect(() => {
-    setProjectTimeAgo(formatTimeAgo(lastCompletedScan?.completed_at || null, 'never'))
-  }, [lastCompletedScan?.completed_at])
+    const syncTimes = () => {
+      setTimeAgo(formatTimeAgo(stats.lastScan, 'never'))
+      setProjectTimeAgo(
+        formatTimeAgo(lastCompletedScan?.completed_at || null, 'never'),
+      )
+    }
+
+    syncTimes()
+    const intervalId = window.setInterval(syncTimes, 60000)
+    return () => window.clearInterval(intervalId)
+  }, [lastCompletedScan?.completed_at, stats.lastScan])
 
   const metrics: {
     key: HealthStatus | 'all'
@@ -92,6 +97,8 @@ export function SummaryBar({
           <button
             key={metric.key}
             onClick={() => onFilterChange(metric.key)}
+            aria-pressed={activeFilter === metric.key}
+            title={`Show ${metric.label}`}
             className={cn(
               'flex items-center gap-1.5 px-2 py-1 rounded-md transition-all duration-150',
               'hover:bg-slate-800/50',
@@ -124,9 +131,11 @@ export function SummaryBar({
       {/* Scan trust signals */}
       <div className="hidden xl:flex items-center gap-2 text-xs text-slate-500">
         <Clock className="w-3 h-3" />
-        <span>This view scanned {timeAgo}</span>
+        <span title={formatDate(stats.lastScan)}>This view scanned {timeAgo}</span>
         <span className="text-slate-700">|</span>
-        <span>Project scan {projectTimeAgo}</span>
+        <span title={formatDate(lastCompletedScan?.completed_at || null)}>
+          Project scan {projectTimeAgo}
+        </span>
         <span className="text-slate-700">|</span>
         <span>{symbolCount.toLocaleString()} symbols</span>
         {staleMetadataCount > 0 && (
@@ -137,6 +146,10 @@ export function SummaryBar({
             </span>
           </>
         )}
+      </div>
+      <div className="hidden md:flex xl:hidden items-center gap-2 text-xs text-slate-500">
+        <Clock className="w-3 h-3" />
+        <span title={formatDate(stats.lastScan)}>{timeAgo}</span>
       </div>
 
       <div className="flex items-center gap-2">
@@ -166,6 +179,7 @@ export function SummaryBar({
         <button
           onClick={onFullScan}
           disabled={isScanning}
+          title="Run a full explorer scan"
           className={cn(
             'px-3 py-1.5 rounded-md border border-slate-700',
             'text-xs font-medium text-slate-300 transition-colors',

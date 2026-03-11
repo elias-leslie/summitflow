@@ -34,20 +34,34 @@ def get_project_from_db(project_id: str) -> ProjectResponse:
     )
 
 
-def _fetch_task_counts(cur: object, project_ids: list[str]) -> dict[str, int]:
-    """Fetch non-bug active task counts per project."""
+def _fetch_active_type_counts(
+    cur: object,
+    project_ids: list[str],
+    task_type: str,
+) -> dict[str, int]:
+    """Fetch active task counts for a specific task type per project."""
     cur.execute(  # type: ignore[union-attr]
         """
         SELECT project_id, COUNT(*) as count
         FROM tasks
         WHERE project_id = ANY(%s)
-          AND task_type != 'bug'
+          AND task_type = %s
           AND status NOT IN ('completed', 'failed')
         GROUP BY project_id
         """,
-        (project_ids,),
+        (project_ids, task_type),
     )
     return {row[0]: row[1] for row in cur.fetchall()}  # type: ignore[union-attr]
+
+
+def _fetch_feature_counts(cur: object, project_ids: list[str]) -> dict[str, int]:
+    """Fetch active feature counts per project."""
+    return _fetch_active_type_counts(cur, project_ids, "feature")
+
+
+def _fetch_task_counts(cur: object, project_ids: list[str]) -> dict[str, int]:
+    """Fetch active regular task counts per project."""
+    return _fetch_active_type_counts(cur, project_ids, "task")
 
 
 def _fetch_bug_counts(cur: object, project_ids: list[str]) -> dict[str, int]:
@@ -88,12 +102,14 @@ def _fetch_blocked_counts(cur: object, project_ids: list[str]) -> dict[str, int]
 def fetch_project_stats(project_ids: list[str]) -> dict[str, ProjectStats]:
     """Fetch aggregated stats for multiple projects."""
     with get_connection() as conn, conn.cursor() as cur:
+        feature_counts = _fetch_feature_counts(cur, project_ids)
         task_counts = _fetch_task_counts(cur, project_ids)
         bug_counts = _fetch_bug_counts(cur, project_ids)
         blocked_counts = _fetch_blocked_counts(cur, project_ids)
 
     return {
         project_id: ProjectStats(
+            features=feature_counts.get(project_id, 0),
             tasks=task_counts.get(project_id, 0),
             bugs=bug_counts.get(project_id, 0),
             blocked=blocked_counts.get(project_id, 0),

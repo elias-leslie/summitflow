@@ -26,12 +26,18 @@ const typeColors: Record<string, string> = {
 function ActivityRow({ event }: { event: ActivityEvent }) {
   const icon = typeIcons[event.type] ?? '○'
   const color = typeColors[event.type] ?? 'text-slate-400'
+  const status = event.metadata.status ?? null
 
   return (
     <div className="flex items-start gap-2 py-1.5 border-b border-slate-800 last:border-0">
       <span className={`text-xs mt-0.5 ${color}`}>{icon}</span>
       <div className="flex-1 min-w-0">
         <p className="text-xs text-slate-300 truncate">{event.message}</p>
+        {status && (
+          <p className="mt-0.5 text-[11px] text-slate-500 uppercase tracking-wide">
+            {status}
+          </p>
+        )}
       </div>
       {event.timestamp && (
         <span className="text-xs text-slate-500 whitespace-nowrap">
@@ -112,6 +118,11 @@ export function RecentActivityCard({ projectId }: RecentActivityCardProps) {
             <ActivityRow key={`${event.type}-${event.timestamp}-${i}`} event={event} />
           ))}
         </div>
+        {data.total > data.items.length && (
+          <div className="mt-3 border-t border-slate-800 pt-3 text-xs text-slate-500">
+            Showing {data.items.length} of {data.total} recent events
+          </div>
+        )}
       </CardContent>
     </Card>
   )

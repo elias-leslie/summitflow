@@ -19,11 +19,14 @@ export function HealthTab({ projectId }: HealthTabProps) {
   const {
     health,
     healthLoading,
+    healthError,
     unfixedResults,
+    unfixedResultsError,
+    recentResultsError,
     metrics,
   } = useHealthData(projectId)
 
-  const { pipelineData, pipelineLoading } = usePipelineData(projectId)
+  const { pipelineData, pipelineLoading, pipelineError } = usePipelineData(projectId)
 
   if (healthLoading && pipelineLoading) {
     return (
@@ -35,24 +38,34 @@ export function HealthTab({ projectId }: HealthTabProps) {
 
   return (
     <div className="space-y-6">
-      {/* Infrastructure Status Bar — system + DB/Redis health */}
       <InfraStatusBar />
 
-      {/* Autonomous Execution Status Bar */}
+      {(healthError || pipelineError || unfixedResultsError || recentResultsError) && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+          <div className="font-medium text-amber-100">Some health data is unavailable</div>
+          <div className="mt-1 text-xs text-amber-300/90">
+            {String(
+              healthError ||
+                pipelineError ||
+                unfixedResultsError ||
+                recentResultsError,
+            )}
+          </div>
+        </div>
+      )}
+
       {pipelineLoading ? (
         <Skeleton className="h-16 w-full" />
       ) : pipelineData ? (
         <AutonomousStatusBar autonomous={pipelineData.autonomous} />
       ) : null}
 
-      {/* Quality Gate Status — per-check pass/fail badges */}
       <QualityGateStatus checks={health?.checks} />
 
-      {/* Pipeline Health Dashboard */}
       {pipelineLoading ? (
         <div className="space-y-4">
           <Skeleton className="h-64 w-full" />
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <Skeleton className="h-48 w-full" />
             <Skeleton className="h-48 w-full" />
             <Skeleton className="h-48 w-full" />
@@ -63,12 +76,8 @@ export function HealthTab({ projectId }: HealthTabProps) {
         <PipelineHealthDashboard data={pipelineData} />
       ) : null}
 
-      {/* Quality Health Section */}
-      <div className="grid grid-cols-2 gap-4">
-        {/* Needs Attention */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <NeedsAttentionCard items={unfixedResults?.items ?? []} />
-
-        {/* Fix Pipeline */}
         <FixPipelineCard
           detected={metrics.detected}
           flashFixed={metrics.flashFixed}
@@ -78,7 +87,6 @@ export function HealthTab({ projectId }: HealthTabProps) {
         />
       </div>
 
-      {/* Recent Activity */}
       <RecentActivityCard projectId={projectId} />
     </div>
   )

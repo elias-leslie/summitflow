@@ -1,44 +1,47 @@
 import { useQuery } from '@tanstack/react-query'
+import { buildQueryString, fetchWithErrorHandling } from '@/lib/api'
 import type {
   CheckResultsResponse,
   HealthSummary,
 } from './HealthTypes'
 
 export function useHealthData(projectId: string) {
-  // Fetch health summary
-  const { data: health, isLoading: healthLoading } = useQuery({
+  const { data: health, isLoading: healthLoading, error: healthError } = useQuery({
     queryKey: ['quality-health', projectId],
-    queryFn: async () => {
-      const res = await fetch(`/api/projects/${projectId}/quality/health`)
-      if (!res.ok) throw new Error('Failed to fetch health')
-      return res.json() as Promise<HealthSummary>
-    },
+    queryFn: () =>
+      fetchWithErrorHandling<HealthSummary>(
+        `/api/projects/${projectId}/quality/health`,
+        {
+          errorMessage: 'Failed to fetch quality health',
+        },
+      ),
     refetchInterval: 30000,
   })
 
-  // Fetch recent results (activity feed)
-  const { data: recentResults } = useQuery({
+  const recentQuery = buildQueryString({ limit: 50 })
+  const unfixedQuery = buildQueryString({ unfixed_only: true, limit: 10 })
+
+  const { data: recentResults, error: recentResultsError } = useQuery({
     queryKey: ['quality-results', projectId, 'recent'],
-    queryFn: async () => {
-      const res = await fetch(
-        `/api/projects/${projectId}/quality/results?limit=50`,
-      )
-      if (!res.ok) throw new Error('Failed to fetch results')
-      return res.json() as Promise<CheckResultsResponse>
-    },
+    queryFn: () =>
+      fetchWithErrorHandling<CheckResultsResponse>(
+        `/api/projects/${projectId}/quality/results${recentQuery}`,
+        {
+          errorMessage: 'Failed to fetch recent quality results',
+        },
+      ),
     refetchInterval: 30000,
   })
 
-  // Fetch unfixed (needs attention)
-  const { data: unfixedResults } = useQuery({
+  const { data: unfixedResults, error: unfixedResultsError } = useQuery({
     queryKey: ['quality-results', projectId, 'unfixed'],
-    queryFn: async () => {
-      const res = await fetch(
-        `/api/projects/${projectId}/quality/results?unfixed_only=true&limit=10`,
-      )
-      if (!res.ok) throw new Error('Failed to fetch unfixed')
-      return res.json() as Promise<CheckResultsResponse>
-    },
+    queryFn: () =>
+      fetchWithErrorHandling<CheckResultsResponse>(
+        `/api/projects/${projectId}/quality/results${unfixedQuery}`,
+        {
+          errorMessage: 'Failed to fetch unfixed quality issues',
+        },
+      ),
     refetchInterval: 30000,
   })
 
@@ -78,8 +81,11 @@ export function useHealthData(projectId: string) {
   return {
     health,
     healthLoading,
+    healthError,
     recentResults,
+    recentResultsError,
     unfixedResults,
+    unfixedResultsError,
     metrics: {
       fixedToday,
       inProgress,

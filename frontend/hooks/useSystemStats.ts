@@ -1,6 +1,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
+import { fetchWithErrorHandling } from '@/lib/api'
 
 interface DiskUsage {
     total_gb: number
@@ -32,11 +33,9 @@ export interface SystemStats {
 }
 
 async function fetchSystemStats(): Promise<SystemStats> {
-    const response = await fetch('/api/system/stats')
-    if (!response.ok) {
-        throw new Error('Failed to fetch system stats')
-    }
-    return response.json()
+    return fetchWithErrorHandling<SystemStats>('/api/system/stats', {
+        errorMessage: 'Failed to fetch system stats',
+    })
 }
 
 export function useSystemStats() {

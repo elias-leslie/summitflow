@@ -18,6 +18,14 @@ interface ProjectCardProps {
   project: ProjectWithStats
 }
 
+function getProjectHost(baseUrl: string): string {
+  try {
+    return new URL(baseUrl).host
+  } catch {
+    return baseUrl
+  }
+}
+
 export function ProjectCard({ project }: ProjectCardProps) {
   const router = useRouter()
   const [showHealth, setShowHealth] = useState(false)
@@ -58,6 +66,41 @@ export function ProjectCard({ project }: ProjectCardProps) {
   const gradient = gradients[firstLetter] ?? gradients.default
 
   const { stats } = project
+  const projectHost = getProjectHost(project.base_url)
+  const metrics = [
+    {
+      key: 'features' as const,
+      label: 'Features',
+      title: 'View active features',
+      count: stats.features,
+      icon: Target,
+      activeClass: 'text-blue-400 hover:text-blue-300',
+    },
+    {
+      key: 'tasks' as const,
+      label: 'Tasks',
+      title: 'View active tasks',
+      count: stats.tasks,
+      icon: ListTodo,
+      activeClass: 'text-purple-400 hover:text-purple-300',
+    },
+    {
+      key: 'bugs' as const,
+      label: 'Bugs',
+      title: 'View active bugs',
+      count: stats.bugs,
+      icon: Bug,
+      activeClass: 'text-amber-400 hover:text-amber-300',
+    },
+    {
+      key: 'blocked' as const,
+      label: 'Blocked',
+      title: 'View blocked tasks',
+      count: stats.blocked,
+      icon: AlertCircle,
+      activeClass: 'text-rose-400 hover:text-rose-300',
+    },
+  ]
 
   // Handle stat click - navigate to project with appropriate tab/filter
   const handleStatClick = (
@@ -69,14 +112,12 @@ export function ProjectCard({ project }: ProjectCardProps) {
 
     switch (type) {
       case 'features':
-        router.push(`/projects/${project.id}?tab=features`)
+        router.push(`/projects/${project.id}?tab=tasks&status=active&taskType=feature`)
         break
       case 'tasks':
-        // Show active non-bug tasks (matches dashboard count)
-        router.push(`/projects/${project.id}?tab=tasks&status=active`)
+        router.push(`/projects/${project.id}?tab=tasks&status=active&taskType=task`)
         break
       case 'bugs':
-        // Show active bugs only (matches dashboard count)
         router.push(
           `/projects/${project.id}?tab=tasks&status=active&taskType=bug`,
         )
@@ -89,17 +130,17 @@ export function ProjectCard({ project }: ProjectCardProps) {
   }
 
   return (
-    <Link
-      href={`/projects/${project.id}`}
+    <article
       className={clsx(
         'card-elevated p-5 group transition-all duration-300',
         'hover:border-phosphor-500/50 hover:translate-y-[-2px]',
       )}
       onMouseEnter={() => setShowHealth(true)}
+      onFocusCapture={() => setShowHealth(true)}
+      onTouchStart={() => setShowHealth(true)}
     >
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
-          {/* Project avatar - logo or fallback to gradient letter */}
           {project.logo_url ? (
             <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-800 flex items-center justify-center">
               <Image
@@ -123,23 +164,35 @@ export function ProjectCard({ project }: ProjectCardProps) {
             </div>
           )}
           <div>
-            <h3 className="font-medium text-white group-hover:text-phosphor-400 transition-colors">
+            <Link
+              href={`/projects/${project.id}`}
+              className="font-medium text-white transition-colors hover:text-phosphor-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phosphor-500/60 rounded-sm"
+            >
               {project.name}
-            </h3>
-            {/* Active checkpoint indicator */}
+            </Link>
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+              <span className="font-mono">{projectHost}</span>
+              {project.root_path ? (
+                <span
+                  className="max-w-[240px] truncate font-mono text-slate-600"
+                  title={project.root_path}
+                >
+                  {project.root_path}
+                </span>
+              ) : null}
+            </div>
             {checkpoint && (
               <div className="flex items-center gap-1.5 mt-1 text-xs text-cyan-400">
                 <Database className="w-3 h-3" />
+                <span>Active checkpoint</span>
                 <span className="font-mono">{checkpoint.task_id}</span>
-                <span className="text-slate-500">({checkpoint.age})</span>
+                <span className="text-slate-500">{checkpoint.age}</span>
               </div>
             )}
           </div>
         </div>
 
-        {/* Health status with glow */}
         <div className="flex items-center gap-2">
-          {/* Quality gate indicator */}
           {qualityLoading ? (
             <div className="w-3 h-3 border border-slate-600 border-t-purple-500 rounded-full animate-spin" />
           ) : qualityGate ? (
@@ -155,16 +208,21 @@ export function ProjectCard({ project }: ProjectCardProps) {
                   ? 'Quality gate passing'
                   : `Quality gate: ${qualityGate.total_unfixed} unfixed issues`
               }
+              aria-label={
+                qualityGate.overall_pass
+                  ? 'Quality gate passing'
+                  : `Quality gate has ${qualityGate.total_unfixed} unfixed issues`
+              }
               data-testid="quality-gate-indicator"
             />
           ) : (
             <div
               className="w-3 h-3 rounded-full bg-slate-700"
+              aria-label="Quality gate status unavailable"
               data-testid="quality-gate-indicator"
             />
           )}
 
-          {/* Service health indicator */}
           {healthLoading ? (
             <div className="w-3 h-3 border border-slate-600 border-t-phosphor-500 rounded-full animate-spin" />
           ) : health ? (
@@ -177,83 +235,49 @@ export function ProjectCard({ project }: ProjectCardProps) {
               )}
               title={
                 health.healthy
-                  ? 'Service healthy'
-                  : `Service error: ${health.error}`
+                  ? `Service healthy${health.response_time_ms ? ` (${Math.round(health.response_time_ms)}ms)` : ''}`
+                  : `Service error: ${health.error || 'Unhealthy'}`
+              }
+              aria-label={
+                health.healthy
+                  ? 'Project service healthy'
+                  : `Project service unhealthy${health.error ? `: ${health.error}` : ''}`
               }
               data-testid="project-health-indicator"
             />
           ) : (
             <div
               className="w-3 h-3 rounded-full bg-slate-600"
+              aria-label="Project health status unavailable"
               data-testid="project-health-indicator"
             />
           )}
         </div>
       </div>
 
-      {/* Stats row */}
       <div className="mt-4 pt-3 border-t border-slate-800">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            {/* Features */}
-            <button
-              onClick={(e) => handleStatClick(e, 'features')}
-              className={clsx(
-                'flex items-center gap-1 text-xs transition-colors',
-                stats.features > 0
-                  ? 'text-blue-400 hover:text-blue-300'
-                  : 'text-slate-500 hover:text-slate-400',
-              )}
-              title="View features"
-            >
-              <Target className="w-3 h-3" />
-              <span className="tabular-nums">{stats.features}</span>
-            </button>
-
-            {/* Tasks */}
-            <button
-              onClick={(e) => handleStatClick(e, 'tasks')}
-              className={clsx(
-                'flex items-center gap-1 text-xs transition-colors',
-                stats.tasks > 0
-                  ? 'text-purple-400 hover:text-purple-300'
-                  : 'text-slate-500 hover:text-slate-400',
-              )}
-              title="View tasks"
-            >
-              <ListTodo className="w-3 h-3" />
-              <span className="tabular-nums">{stats.tasks}</span>
-            </button>
-
-            {/* Bugs */}
-            <button
-              onClick={(e) => handleStatClick(e, 'bugs')}
-              className={clsx(
-                'flex items-center gap-1 text-xs transition-colors',
-                stats.bugs > 0
-                  ? 'text-amber-400 hover:text-amber-300'
-                  : 'text-slate-500 hover:text-slate-400',
-              )}
-              title="View bugs"
-            >
-              <Bug className="w-3 h-3" />
-              <span className="tabular-nums">{stats.bugs}</span>
-            </button>
-
-            {/* Blocked */}
-            <button
-              onClick={(e) => handleStatClick(e, 'blocked')}
-              className={clsx(
-                'flex items-center gap-1 text-xs transition-colors',
-                stats.blocked > 0
-                  ? 'text-rose-400 hover:text-rose-300'
-                  : 'text-slate-500 hover:text-slate-400',
-              )}
-              title="View blocked"
-            >
-              <AlertCircle className="w-3 h-3" />
-              <span className="tabular-nums">{stats.blocked}</span>
-            </button>
+            {metrics.map((metric) => {
+              const Icon = metric.icon
+              return (
+                <button
+                  key={metric.key}
+                  onClick={(e) => handleStatClick(e, metric.key)}
+                  className={clsx(
+                    'flex items-center gap-1 text-xs transition-colors',
+                    metric.count > 0
+                      ? metric.activeClass
+                      : 'text-slate-500 hover:text-slate-400',
+                  )}
+                  title={metric.title}
+                  aria-label={`${metric.label}: ${metric.count}`}
+                >
+                  <Icon className="w-3 h-3" />
+                  <span className="tabular-nums">{metric.count}</span>
+                </button>
+              )
+            })}
           </div>
 
           <span className="text-xs text-slate-500 flex items-center gap-1">
@@ -262,6 +286,6 @@ export function ProjectCard({ project }: ProjectCardProps) {
           </span>
         </div>
       </div>
-    </Link>
+    </article>
   )
 }
