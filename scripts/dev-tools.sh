@@ -1124,10 +1124,33 @@ EOF
         # Sync pass result to quality gate
         sync_quality_result "$tool_name" "pass" 0
     else
+        # Detect invalid argument errors (exit code 2 for most CLIs, 4 for pytest)
+        # and output patterns like "unexpected argument" / "unrecognized arguments"
+        local is_arg_error=0
+        local clean_output
+        clean_output=$(echo "$output" | strip_ansi)
+        if echo "$clean_output" | grep -qiE '(unexpected argument|unrecognized arguments|invalid option|unknown option)'; then
+            is_arg_error=1
+        fi
+
+        if [[ $is_arg_error -eq 1 ]]; then
+            # Show the tool's own error message plus valid dt-level flags
+            local bad_flag
+            bad_flag=$(echo "$clean_output" | grep -oiE "'--?[a-zA-Z0-9_-]+'" | head -1)
+            echo "$label:ERROR:invalid_flag${bad_flag:+:$bad_flag}"
+            echo "$clean_output" | head -3
+            echo ""
+            echo "dt $tool_name accepts these flags before '--':"
+            echo "  --changed-only, -d   Only check changed files"
+            echo ""
+            echo "Flags after '--' are forwarded to $binary. See '$binary --help'."
+            return 1
+        fi
+
         # Rotate previous failures before writing new one
         rotate_details "$details_file"
         echo "$output" | strip_ansi > "$details_file"
-        # Include first line of output as hint for quick diagnosis (e.g., invalid flag errors)
+        # Include first line of output as hint for quick diagnosis
         local hint=""
         if [[ -n "$output" ]]; then
             hint=$(echo "$output" | strip_ansi | head -1 | cut -c1-120)
