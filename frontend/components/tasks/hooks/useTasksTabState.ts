@@ -1,6 +1,7 @@
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
 import type { Task } from '@/lib/api'
+import { buildUrlWithUpdatedSearchParams } from '@/lib/search-params'
 
 interface UseTasksTabStateProps {
   refetch: () => void
@@ -28,16 +29,7 @@ export function useTasksTabState({
   // Helper to update URL params
   const updateUrlParams = useCallback(
     (params: Record<string, string | null>) => {
-      const newParams = new URLSearchParams(searchParams.toString())
-      Object.entries(params).forEach(([key, value]) => {
-        if (value === null) {
-          newParams.delete(key)
-        } else {
-          newParams.set(key, value)
-        }
-      })
-      const query = newParams.toString()
-      router.replace(`${pathname}${query ? `?${query}` : ''}`, {
+      router.replace(buildUrlWithUpdatedSearchParams(pathname, searchParams, params), {
         scroll: false,
       })
     },
@@ -49,14 +41,16 @@ export function useTasksTabState({
     if (urlTaskId) {
       setModalTaskId(urlTaskId)
       setModalOpen(true)
+      return
     }
+    setModalTaskId(null)
+    setSelectedTask(null)
+    setModalOpen(false)
   }, [urlTaskId])
 
   // Handle URL modal param changes
   useEffect(() => {
-    if (urlModal === 'create-task') {
-      setShowCreate(true)
-    }
+    setShowCreate(urlModal === 'create-task')
   }, [urlModal])
 
   // Task lifecycle handlers

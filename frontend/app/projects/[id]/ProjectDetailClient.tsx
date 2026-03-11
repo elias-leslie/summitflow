@@ -3,8 +3,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { AlertCircle } from 'lucide-react'
 import Link from 'next/link'
-import { useParams, useRouter, useSearchParams } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { useCallback, useEffect, useState } from 'react'
 import { BlockedTasksAlert } from '@/components/dashboard'
 import { EscalationPanel } from '@/components/execution/EscalationPanel'
 import { ExplorerTab } from '@/components/explorer/ExplorerTab'
@@ -26,10 +26,12 @@ import {
 } from '@/lib/api'
 import { executeTask } from '@/lib/api/tasks'
 import { type TabId, useTabPersistence } from '@/lib/hooks/useTabPersistence'
+import { buildUrlWithUpdatedSearchParams } from '@/lib/search-params'
 
 export function ProjectDetailClient() {
   const params = useParams()
   const searchParams = useSearchParams()
+  const pathname = usePathname()
   const router = useRouter()
   const projectId = params.id as string
 
@@ -65,15 +67,25 @@ export function ProjectDetailClient() {
     taskInitialFilters.type = urlTaskType as TaskFilterValues['type']
   }
 
+  const updateUrlParams = useCallback(
+    (params: Record<string, string | null>) => {
+      router.replace(
+        buildUrlWithUpdatedSearchParams(pathname, searchParams, params),
+        { scroll: false },
+      )
+    },
+    [pathname, router, searchParams],
+  )
+
   // Update URL when explorer type changes (without full navigation)
   const handleExplorerTypeChange = (type: ExplorerType) => {
     setExplorerType(type)
-    const newUrl = `/projects/${projectId}?tab=explorer&type=${type}`
-    router.replace(newUrl, { scroll: false })
+    updateUrlParams({ tab: 'explorer', type })
   }
 
   // Auto-open task from URL query param
   const urlTaskId = searchParams.get('task')
+  const urlModal = searchParams.get('modal')
 
   // View mode (board | table) for unified tasks tab
   const { viewMode, setViewMode } = useViewMode(projectId)
@@ -91,8 +103,16 @@ export function ProjectDetailClient() {
     if (urlTaskId) {
       setSelectedTaskId(urlTaskId)
       setModalOpen(true)
+      return
     }
+    setSelectedTaskId(null)
+    setSelectedTask(null)
+    setModalOpen(false)
   }, [urlTaskId])
+
+  useEffect(() => {
+    setCreateTaskDialogOpen(viewMode === 'board' && urlModal === 'create-task')
+  }, [urlModal, viewMode])
 
   const {
     data: project,
@@ -105,7 +125,7 @@ export function ProjectDetailClient() {
 
   // Tasks for Kanban (fetch with feature context)
   const { data: kanbanTasksData, refetch: refetchKanbanTasks } = useQuery({
-    queryKey: ['tasks-kanban', projectId],
+    queryKey: ['tasks', projectId, 'kanban'],
     queryFn: () => fetchTasks(projectId, { include: 'feature', limit: 500 }),
     staleTime: 30000,
     enabled: activeTab === 'tasks' && viewMode === 'board',
@@ -133,6 +153,7 @@ export function ProjectDetailClient() {
       setSelectedTaskId(task.id)
       setSelectedTask(task)
       setModalOpen(true)
+      updateUrlParams({ task: task.id })
     }
   }
 
@@ -149,13 +170,18 @@ export function ProjectDetailClient() {
 
   const handleNewTask = () => {
     setCreateTaskDialogOpen(true)
+    updateUrlParams({ modal: 'create-task' })
   }
 
   const handleCreateDialogChange = (open: boolean) => {
     setCreateTaskDialogOpen(open)
+    updateUrlParams({ modal: open ? 'create-task' : null })
+  }
+
+  const handleTaskModalOpenChange = (open: boolean) => {
+    setModalOpen(open)
     if (!open) {
-      // Refetch tasks when dialog closes (after create)
-      refetchKanbanTasks()
+      updateUrlParams({ task: null })
     }
   }
 
@@ -203,6 +229,7 @@ export function ProjectDetailClient() {
                 <BlockedTasksAlert projectId={projectId} onTaskClick={(taskId) => {
                   setSelectedTaskId(taskId)
                   setModalOpen(true)
+                  updateUrlParams({ task: taskId })
                 }} />
                 <TaskKanbanBoard
                   tasks={kanbanTasks}
@@ -215,7 +242,7 @@ export function ProjectDetailClient() {
                   taskId={selectedTaskId}
                   projectId={projectId}
                   open={modalOpen}
-                  onOpenChange={setModalOpen}
+                  onOpenChange={handleTaskModalOpenChange}
                   onTaskUpdate={handleTaskUpdate}
                   initialTask={selectedTask}
                 />
