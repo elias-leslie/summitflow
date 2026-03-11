@@ -109,43 +109,23 @@ def save_state(state: dict[str, object]) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _parse_transcript_line(line: str) -> tuple[str, str] | None:
-    """Return (type, payload_json_str) or None if line is not valid JSON."""
-    try:
-        obj = json.loads(line)
-    except json.JSONDecodeError:
-        return None
-    return obj.get("type"), obj.get("payload") or {}
-
-
-def _apply_transcript_line(
-    line: str, session_id: str, cwd: str, model: str
-) -> tuple[str, str, str]:
-    """Parse one transcript line and return updated (session_id, cwd, model)."""
-    parsed = _parse_transcript_line(line)
-    if parsed is None:
-        return session_id, cwd, model
-    obj_type, payload = parsed
-    if obj_type == "session_meta":
-        session_id = payload.get("id") or session_id
-        cwd = payload.get("cwd") or cwd
-    elif obj_type == "turn_context" and not model:
-        model = payload.get("model") or model
-    return session_id, cwd, model
-
-
-def _extract_transcript_fields(path: Path) -> tuple[str, str, str]:
-    session_id = cwd = model = ""
-    for line in path.open(encoding="utf-8"):
-        session_id, cwd, model = _apply_transcript_line(line, session_id, cwd, model)
-        if session_id and cwd and model:
-            break
-    return session_id, cwd, model
-
-
 def read_transcript_info(path: Path) -> TranscriptInfo | None:
+    session_id = cwd = model = ""
     try:
-        session_id, cwd, model = _extract_transcript_fields(path)
+        for line in path.open(encoding="utf-8"):
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            obj_type = obj.get("type")
+            payload = obj.get("payload") or {}
+            if obj_type == "session_meta":
+                session_id = payload.get("id") or session_id
+                cwd = payload.get("cwd") or cwd
+            elif obj_type == "turn_context" and not model:
+                model = payload.get("model") or model
+            if session_id and cwd and model:
+                break
     except OSError as exc:
         log(f"[WARN] Failed to read transcript {path}: {exc}")
         return None
@@ -186,10 +166,6 @@ def iter_recent_transcripts(recent_hours: int) -> list[TranscriptInfo]:
 # ---------------------------------------------------------------------------
 
 
-def _git_run(args: list[str]) -> str:
-    return subprocess.run(args, capture_output=True, text=True, check=False).stdout.strip()
-
-
 def build_project_context(cwd: Path) -> dict[str, object] | None:
     try:
         project_dir = subprocess.check_output(
@@ -200,11 +176,15 @@ def build_project_context(cwd: Path) -> dict[str, object] | None:
     except subprocess.CalledProcessError:
         return None
     project_path = Path(project_dir)
-    branch = _git_run(["git", "-C", str(project_path), "rev-parse", "--abbrev-ref", "HEAD"])
-    raw_log = _git_run([
-        "git", "-C", str(project_path), "log", "--oneline",
-        f"--since={GIT_LOG_SINCE}", "--no-merges", "--format=%h %s",
-    ])
+    branch = subprocess.run(
+        ["git", "-C", str(project_path), "rev-parse", "--abbrev-ref", "HEAD"],
+        capture_output=True, text=True, check=False,
+    ).stdout.strip()
+    raw_log = subprocess.run(
+        ["git", "-C", str(project_path), "log", "--oneline",
+         f"--since={GIT_LOG_SINCE}", "--no-merges", "--format=%h %s"],
+        capture_output=True, text=True, check=False,
+    ).stdout.strip()
     git_lines = [
         ln for ln in raw_log.splitlines()
         if not ln.startswith(" chore: auto-fix") and "chore(.index" not in ln
@@ -251,24 +231,20 @@ def post_json(
         return None, str(exc)
 
 
-# ---------------------------------------------------------------------------
-# Sync logic
-# ---------------------------------------------------------------------------
-
-
-def _api_call(
-    api_url: str,
-    endpoint: str,
-    body: dict[str, object] | None,
-    client_id: str,
-    client_secret: str,
-    label: str,
+def _checked_post(
+    api_url: str, endpoint: str, body: dict[str, object] | None,
+    client_id: str, client_secret: str, label: str,
 ) -> tuple[bool, str, str]:
-    """Return (ok, payload, error_msg)."""
+    """Return (ok, response_body, error_msg)."""
     status, payload = post_json(api_url, endpoint, body, client_id, client_secret)
     if status != 200:
         return False, payload, f"{label} failed status={status} body={payload[:300]}"
     return True, payload, ""
+
+
+# ---------------------------------------------------------------------------
+# State management
+# ---------------------------------------------------------------------------
 
 
 def update_state_entry(
@@ -291,75 +267,20 @@ def update_state_entry(
     }
 
 
-def _provider_meta(info: TranscriptInfo, project: dict[str, object]) -> dict[str, object]:
-    return {
-        "transcript_path": str(info.path),
-        "repo_root": project["repo_root"],
-        "worktree_path": str(info.cwd),
-        "host": os.uname().nodename,
-    }
+def should_sync(info: TranscriptInfo, state: dict[str, object], force: bool) -> bool:
+    if force:
+        return True
+    entries = state.get("transcripts") or {}
+    assert isinstance(entries, dict)
+    entry = entries.get(str(info.path))
+    if not isinstance(entry, dict):
+        return True
+    return entry.get("mtime") != info.mtime or entry.get("size") != info.size
 
 
-def _upsert_session(
-    api_url: str, client_id: str, client_secret: str,
-    info: TranscriptInfo, project: dict[str, object], meta: dict[str, object],
-) -> tuple[bool, str]:
-    ok, _, err = _api_call(api_url, ENDPOINT_UPSERT, {
-        "session_id": info.session_id, "project_id": project["project_id"],
-        "provider": "codex", "model": f"codex/{info.model}",
-        "session_type": "agent", "cwd": str(info.cwd),
-        "current_branch": project["branch"],
-        "scope_confidence": "unknown", "provider_metadata": meta,
-    }, client_id, client_secret, "session upsert")
-    return ok, err
-
-
-def _ingest_transcript(
-    api_url: str, client_id: str, client_secret: str,
-    info: TranscriptInfo, state: dict[str, object],
-) -> tuple[bool, str, dict[str, object]]:
-    ts = state.get("transcripts") or {}
-    assert isinstance(ts, dict)
-    checkpoint = (ts.get(str(info.path)) or {}).get("checkpoint")  # type: ignore[union-attr]
-    ok, payload, err = _api_call(
-        api_url, ENDPOINT_TRANSCRIPT.format(sid=info.session_id),
-        {"provider": "codex", "transcript_path": str(info.path), "checkpoint": checkpoint},
-        client_id, client_secret, "transcript ingest",
-    )
-    if not ok:
-        return False, err, {}
-    return True, "", json.loads(payload)
-
-
-def _send_heartbeat(
-    api_url: str, client_id: str, client_secret: str,
-    info: TranscriptInfo, project: dict[str, object], meta: dict[str, object],
-) -> tuple[bool, str]:
-    ok, _, err = _api_call(api_url, ENDPOINT_HEARTBEAT.format(sid=info.session_id), {
-        "cwd": str(info.cwd), "current_branch": project["branch"],
-        "phase": "waiting_for_model", "status": "active",
-        "summary": f"Transcript sync heartbeat for {info.session_id}",
-        "last_event_type": "heartbeat", "provider_metadata": meta,
-    }, client_id, client_secret, "heartbeat")
-    return ok, err
-
-
-def _finalize_and_close(
-    api_url: str, client_id: str, client_secret: str,
-    info: TranscriptInfo, project: dict[str, object], close_session: bool,
-) -> tuple[bool, str]:
-    ok, _, err = _api_call(api_url, ENDPOINT_FINALIZE.format(sid=info.session_id), {
-        "branch": project["branch"],
-        "git_context": project["git_context"],
-        "is_worktree": project["is_worktree"],
-    }, client_id, client_secret, "finalize")
-    if not ok:
-        return False, err
-    if close_session:
-        ok, _, err = _api_call(api_url, ENDPOINT_CLOSE.format(sid=info.session_id), None, client_id, client_secret, "close")
-        if not ok:
-            return False, err
-    return True, ""
+# ---------------------------------------------------------------------------
+# Sync logic
+# ---------------------------------------------------------------------------
 
 
 def sync_transcript(
@@ -375,44 +296,69 @@ def sync_transcript(
     if project is None:
         return False, f"skip non-git cwd={info.cwd}"
 
-    meta = _provider_meta(info, project)
+    meta: dict[str, object] = {
+        "transcript_path": str(info.path),
+        "repo_root": project["repo_root"],
+        "worktree_path": str(info.cwd),
+        "host": os.uname().nodename,
+    }
 
-    ok, err = _upsert_session(api_url, client_id, client_secret, info, project, meta)
+    ok, _, err = _checked_post(api_url, ENDPOINT_UPSERT, {
+        "session_id": info.session_id, "project_id": project["project_id"],
+        "provider": "codex", "model": f"codex/{info.model}",
+        "session_type": "agent", "cwd": str(info.cwd),
+        "current_branch": project["branch"],
+        "scope_confidence": "unknown", "provider_metadata": meta,
+    }, client_id, client_secret, "session upsert")
     if not ok:
         return False, err
 
-    ok, err, ingest_data = _ingest_transcript(api_url, client_id, client_secret, info, state)
+    ts = state.get("transcripts") or {}
+    assert isinstance(ts, dict)
+    checkpoint = (ts.get(str(info.path)) or {}).get("checkpoint")  # type: ignore[union-attr]
+    ok, payload, err = _checked_post(
+        api_url, ENDPOINT_TRANSCRIPT.format(sid=info.session_id),
+        {"provider": "codex", "transcript_path": str(info.path), "checkpoint": checkpoint},
+        client_id, client_secret, "transcript ingest",
+    )
     if not ok:
         return False, err
 
+    ingest_data = json.loads(payload)
     update_state_entry(
         state, info, "synced",
         f"appended={ingest_data.get('events_appended', 0)} skipped={ingest_data.get('events_skipped', 0)}",
         checkpoint=str(ingest_data["next_checkpoint"]) if ingest_data.get("next_checkpoint") else None,
     )
 
-    ok, err = _send_heartbeat(api_url, client_id, client_secret, info, project, meta)
+    ok, _, err = _checked_post(api_url, ENDPOINT_HEARTBEAT.format(sid=info.session_id), {
+        "cwd": str(info.cwd), "current_branch": project["branch"],
+        "phase": "waiting_for_model", "status": "active",
+        "summary": f"Transcript sync heartbeat for {info.session_id}",
+        "last_event_type": "heartbeat", "provider_metadata": meta,
+    }, client_id, client_secret, "heartbeat")
     if not ok:
         return False, err
 
-    ok, err = _finalize_and_close(api_url, client_id, client_secret, info, project, close_session)
+    ok, _, err = _checked_post(api_url, ENDPOINT_FINALIZE.format(sid=info.session_id), {
+        "branch": project["branch"],
+        "git_context": project["git_context"],
+        "is_worktree": project["is_worktree"],
+    }, client_id, client_secret, "finalize")
     if not ok:
         return False, err
+
+    if close_session:
+        ok, _, err = _checked_post(
+            api_url, ENDPOINT_CLOSE.format(sid=info.session_id),
+            None, client_id, client_secret, "close",
+        )
+        if not ok:
+            return False, err
 
     if verbose:
         log(f"[INFO] Synced session={info.session_id} project={project['project_id']} transcript={info.path} close={close_session}")
     return True, "ok"
-
-
-def should_sync(info: TranscriptInfo, state: dict[str, object], force: bool) -> bool:
-    if force:
-        return True
-    entries = state.get("transcripts") or {}
-    assert isinstance(entries, dict)
-    entry = entries.get(str(info.path))
-    if not isinstance(entry, dict):
-        return True
-    return entry.get("mtime") != info.mtime or entry.get("size") != info.size
 
 
 # ---------------------------------------------------------------------------
