@@ -92,7 +92,7 @@ async def scan_projects_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
     execution_timeout="1200s",
     retries=3,
     backoff_factor=2.0,
-    on_crons=["0 * * * *"],
+    on_crons=["*/15 * * * *"],
     concurrency=ConcurrencyExpression(
         expression="'summitflow-refresh-precision-indexes'",
         max_runs=1,
