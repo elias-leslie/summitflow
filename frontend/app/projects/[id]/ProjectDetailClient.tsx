@@ -1,10 +1,11 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertCircle } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import { BlockedTasksAlert } from '@/components/dashboard'
 import { EscalationPanel } from '@/components/execution/EscalationPanel'
 import { ExplorerTab } from '@/components/explorer/ExplorerTab'
@@ -27,12 +28,18 @@ import {
 import { executeTask } from '@/lib/api/tasks'
 import { type TabId, useTabPersistence } from '@/lib/hooks/useTabPersistence'
 import { buildUrlWithUpdatedSearchParams } from '@/lib/search-params'
+import {
+  invalidateTaskQueries,
+  syncTaskInTaskLists,
+  taskQueryKeys,
+} from '@/lib/task-cache'
 
 export function ProjectDetailClient() {
   const params = useParams()
   const searchParams = useSearchParams()
   const pathname = usePathname()
   const router = useRouter()
+  const queryClient = useQueryClient()
   const projectId = params.id as string
 
   // Tab persistence hook (handles localStorage and URL sync)
@@ -124,8 +131,8 @@ export function ProjectDetailClient() {
   })
 
   // Tasks for Kanban (fetch with feature context)
-  const { data: kanbanTasksData, refetch: refetchKanbanTasks } = useQuery({
-    queryKey: ['tasks', projectId, 'kanban'],
+  const { data: kanbanTasksData } = useQuery({
+    queryKey: taskQueryKeys.kanban(projectId),
     queryFn: () => fetchTasks(projectId, { include: 'feature', limit: 500 }),
     staleTime: 30000,
     enabled: activeTab === 'tasks' && viewMode === 'board',
@@ -138,10 +145,12 @@ export function ProjectDetailClient() {
     newStatus: TaskStatus,
   ) => {
     try {
-      await updateTaskStatus(projectId, taskId, newStatus)
-      refetchKanbanTasks()
+      const updated = await updateTaskStatus(projectId, taskId, newStatus)
+      syncTaskInTaskLists(queryClient, projectId, updated)
+      void invalidateTaskQueries(queryClient, projectId)
     } catch (err) {
       console.error('Failed to update task status:', err)
+      toast.error('Failed to update task status')
     }
   }
 
@@ -159,13 +168,21 @@ export function ProjectDetailClient() {
 
   const handleApproveAndResume = async (_message?: string) => {
     if (!escalationTask) return
-    await executeTask(projectId, escalationTask.id)
-    refetchKanbanTasks()
+    try {
+      await executeTask(projectId, escalationTask.id)
+      void invalidateTaskQueries(queryClient, projectId)
+      setEscalationOpen(false)
+      toast.success('Task resumed')
+    } catch (err) {
+      console.error('Failed to resume task:', err)
+      toast.error('Failed to resume task')
+    }
   }
 
   const handleTaskUpdate = (task: Task) => {
     setSelectedTask(task)
-    refetchKanbanTasks()
+    syncTaskInTaskLists(queryClient, projectId, task)
+    void invalidateTaskQueries(queryClient, projectId)
   }
 
   const handleNewTask = () => {

@@ -1,8 +1,15 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Clock, Play } from 'lucide-react'
+import { useState } from 'react'
+import { toast } from 'sonner'
 import { fetchBlockedTasks, updateTaskStatus, type Task } from '@/lib/api'
+import {
+  invalidateTaskQueries,
+  syncTaskInTaskLists,
+  taskQueryKeys,
+} from '@/lib/task-cache'
 
 interface BlockedTasksAlertProps {
   projectId: string
@@ -22,8 +29,10 @@ export function BlockedTasksAlert({
   projectId,
   onTaskClick,
 }: BlockedTasksAlertProps) {
+  const queryClient = useQueryClient()
+  const [retryingTaskId, setRetryingTaskId] = useState<string | null>(null)
   const { data, refetch } = useQuery({
-    queryKey: ['tasks', projectId, 'blocked'],
+    queryKey: taskQueryKeys.blocked(projectId),
     queryFn: () => fetchBlockedTasks(projectId, 20),
     staleTime: 30000,
   })
@@ -38,11 +47,17 @@ export function BlockedTasksAlert({
   })
 
   const handleUnblock = async (task: Task) => {
+    setRetryingTaskId(task.id)
     try {
-      await updateTaskStatus(projectId, task.id, 'queue')
+      const updated = await updateTaskStatus(projectId, task.id, 'queue')
+      syncTaskInTaskLists(queryClient, projectId, updated)
+      void invalidateTaskQueries(queryClient, projectId)
       refetch()
+      toast.success('Task re-queued')
     } catch {
-      // Silently fail - user can retry
+      toast.error('Failed to re-queue task')
+    } finally {
+      setRetryingTaskId(null)
     }
   }
 
@@ -77,6 +92,7 @@ export function BlockedTasksAlert({
                   e.stopPropagation()
                   handleUnblock(task)
                 }}
+                disabled={retryingTaskId === task.id}
                 className="p-1 rounded text-slate-500 hover:text-phosphor-400 hover:bg-slate-800 transition-colors"
                 title="Re-queue task"
               >

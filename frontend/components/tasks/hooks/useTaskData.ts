@@ -39,22 +39,32 @@ export function useTaskData({
 
   // Fetch task when modal opens
   useEffect(() => {
-    if (open && taskId) {
-      if (initialTask && initialTask.id === taskId) {
-        setTask(initialTask)
-        setIsLoading(false)
-      } else {
-        setIsLoading(true)
-        setError(null)
-        fetchTask(projectId, taskId)
-          .then((data) => setTask(data))
-          .catch((err) => {
-            console.error('Failed to fetch task:', err)
-            setError('Failed to load task details')
-          })
-          .finally(() => setIsLoading(false))
-      }
+    if (!open || !taskId) {
+      setTask(null)
+      setSubtasks([])
+      setIsLoading(false)
+      setError(null)
+      return
     }
+
+    setSubtasks([])
+    if (initialTask && initialTask.id === taskId) {
+      setTask(initialTask)
+      setIsLoading(false)
+      setError(null)
+      return
+    }
+
+    setTask(null)
+    setIsLoading(true)
+    setError(null)
+    fetchTask(projectId, taskId)
+      .then((data) => setTask(data))
+      .catch((err) => {
+        console.error('Failed to fetch task:', err)
+        setError('Failed to load task details')
+      })
+      .finally(() => setIsLoading(false))
   }, [open, taskId, projectId, initialTask])
 
   // Fetch subtasks when task is loaded

@@ -1,6 +1,8 @@
 'use client'
 
+import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useState } from 'react'
+import { toast } from 'sonner'
 import {
   type Subtask,
   type Task,
@@ -9,6 +11,10 @@ import {
   updateTask,
   updateTaskStatus,
 } from '@/lib/api/tasks'
+import {
+  invalidateTaskQueries,
+  syncTaskInTaskLists,
+} from '@/lib/task-cache'
 
 interface UseTaskActionsOptions {
   task: Task | null
@@ -34,6 +40,7 @@ export function useTaskActions({
   setTask,
   setSubtasks,
 }: UseTaskActionsOptions): UseTaskActionsReturn {
+  const queryClient = useQueryClient()
   const [isTogglingAutonomous, setIsTogglingAutonomous] = useState(false)
 
   const handleStatusChange = useCallback(
@@ -43,11 +50,15 @@ export function useTaskActions({
         const updated = await updateTaskStatus(projectId, task.id, newStatus)
         setTask(updated)
         onTaskUpdate?.(updated)
+        syncTaskInTaskLists(queryClient, projectId, updated)
+        void invalidateTaskQueries(queryClient, projectId)
+        toast.success(`Status updated to ${newStatus.replace('_', ' ')}`)
       } catch (err) {
         console.error('Failed to update status:', err)
+        toast.error('Failed to update task status')
       }
     },
-    [task, projectId, onTaskUpdate, setTask],
+    [task, projectId, onTaskUpdate, queryClient, setTask],
   )
 
   const handleSubtaskToggle = useCallback(
@@ -90,12 +101,20 @@ export function useTaskActions({
       })
       setTask(updated)
       onTaskUpdate?.(updated)
+      syncTaskInTaskLists(queryClient, projectId, updated)
+      void invalidateTaskQueries(queryClient, projectId)
+      toast.success(
+        updated.autonomous
+          ? 'Autonomous execution enabled'
+          : 'Autonomous execution disabled',
+      )
     } catch (err) {
       console.error('Failed to toggle autonomous:', err)
+      toast.error('Failed to update autonomous mode')
     } finally {
       setIsTogglingAutonomous(false)
     }
-  }, [task, projectId, onTaskUpdate, setTask])
+  }, [task, projectId, onTaskUpdate, queryClient, setTask])
 
   const handleAgentOverrideChange = useCallback(
     async (agentSlug: string | null) => {
@@ -106,11 +125,17 @@ export function useTaskActions({
         })
         setTask(updated)
         onTaskUpdate?.(updated)
+        syncTaskInTaskLists(queryClient, projectId, updated)
+        void invalidateTaskQueries(queryClient, projectId)
+        toast.success(
+          agentSlug ? 'Agent override updated' : 'Agent override cleared',
+        )
       } catch (err) {
         console.error('Failed to update agent override:', err)
+        toast.error('Failed to update agent override')
       }
     },
-    [task, projectId, onTaskUpdate, setTask],
+    [task, projectId, onTaskUpdate, queryClient, setTask],
   )
 
   return {

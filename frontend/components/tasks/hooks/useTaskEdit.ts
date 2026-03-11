@@ -1,7 +1,13 @@
 'use client'
 
+import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useState } from 'react'
+import { toast } from 'sonner'
 import { type Task, updateTask } from '@/lib/api/tasks'
+import {
+  invalidateTaskQueries,
+  syncTaskInTaskLists,
+} from '@/lib/task-cache'
 
 interface UseTaskEditOptions {
   task: Task | null
@@ -28,6 +34,7 @@ export function useTaskEdit({
   onTaskUpdate,
   setTask,
 }: UseTaskEditOptions): UseTaskEditReturn {
+  const queryClient = useQueryClient()
   const [isEditing, setIsEditing] = useState(false)
   const [editTitle, setEditTitle] = useState('')
   const [editDescription, setEditDescription] = useState('')
@@ -54,11 +61,15 @@ export function useTaskEdit({
       })
       setTask(updated)
       onTaskUpdate?.(updated)
+      syncTaskInTaskLists(queryClient, projectId, updated)
+      void invalidateTaskQueries(queryClient, projectId)
       setIsEditing(false)
+      toast.success('Task details saved')
     } catch (err) {
       console.error('Failed to update task:', err)
+      toast.error('Failed to save task details')
     }
-  }, [task, projectId, editTitle, editDescription, onTaskUpdate, setTask])
+  }, [task, projectId, editTitle, editDescription, onTaskUpdate, queryClient, setTask])
 
   const resetEditState = useCallback(() => {
     setIsEditing(false)

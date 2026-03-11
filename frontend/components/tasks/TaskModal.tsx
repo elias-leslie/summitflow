@@ -3,6 +3,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 import { useState } from 'react'
+import { toast } from 'sonner'
 import { ConfirmDeleteDialog } from '@/components/shared/ConfirmDeleteDialog'
 import { TaskModalContent } from '@/components/tasks/TaskModalContent'
 import { TaskModalHeader } from '@/components/tasks/TaskModalHeader'
@@ -10,6 +11,10 @@ import { useTaskModal } from '@/components/tasks/useTaskModal'
 import { Dialog, DialogClose, DialogContent } from '@/components/ui/dialog'
 import type { Task } from '@/lib/api/tasks'
 import { deleteTask } from '@/lib/api/tasks'
+import {
+  invalidateTaskQueries,
+  removeTaskFromTaskLists,
+} from '@/lib/task-cache'
 
 interface TaskModalProps {
   taskId: string | null
@@ -76,10 +81,16 @@ export function TaskModal({
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteTask(projectId, id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tasks', projectId] })
+    onSuccess: (_, deletedTaskId) => {
+      removeTaskFromTaskLists(queryClient, projectId, deletedTaskId)
+      void invalidateTaskQueries(queryClient, projectId)
       onOpenChange(false)
       setDeleteConfirm(false)
+      toast.success('Task deleted')
+    },
+    onError: (err) => {
+      console.error('Failed to delete task:', err)
+      toast.error('Failed to delete task')
     },
   })
 

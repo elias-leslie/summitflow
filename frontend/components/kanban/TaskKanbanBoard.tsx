@@ -15,6 +15,7 @@ import {
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
+import { toast } from 'sonner'
 import { useExecutionWebSocket } from '@/hooks/useExecutionWebSocket'
 import type { Task, TaskStatus } from '@/lib/api'
 import { deleteTask, executeTask } from '@/lib/api/tasks'
@@ -28,6 +29,10 @@ import {
   type TaskKanbanColumn,
 } from './columnConfig'
 import { useRowCollapse } from './hooks/useRowCollapse'
+import {
+  invalidateTaskQueries,
+  removeTaskFromTaskLists,
+} from '@/lib/task-cache'
 
 // ============================================================================
 // Types
@@ -144,10 +149,11 @@ export function TaskKanbanBoard({
     setExecutingTaskId(taskId)
     try {
       await executeTask(projectId, taskId)
-      // Task is now queued for execution via orchestrator
+      void invalidateTaskQueries(queryClient, projectId)
+      toast.success('Task queued for execution')
     } catch (error) {
       console.error('Execute now failed:', error)
-      // Could show toast notification here
+      toast.error('Failed to queue task')
     } finally {
       setExecutingTaskId(null)
     }
@@ -155,9 +161,15 @@ export function TaskKanbanBoard({
 
   const deleteMutation = useMutation({
     mutationFn: (taskId: string) => deleteTask(projectId, taskId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tasks', projectId] })
+    onSuccess: (_, taskId) => {
+      removeTaskFromTaskLists(queryClient, projectId, taskId)
+      void invalidateTaskQueries(queryClient, projectId)
       setDeleteConfirmTask(null)
+      toast.success('Task deleted')
+    },
+    onError: (error) => {
+      console.error('Delete task failed:', error)
+      toast.error('Failed to delete task')
     },
   })
 

@@ -13,6 +13,7 @@ import {
 } from './taskIdeationTypes'
 import type { Complexity, IdeationTaskData, IdeationTaskResponse } from './taskIdeationTypes'
 import type { TaskType } from '@/lib/api/tasks-types'
+import { invalidateTaskQueries } from '@/lib/task-cache'
 
 function extractCreateTaskTool(messages: ChatMessage[]): IdeationTaskData | null {
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -107,7 +108,7 @@ export function useTaskIdeation(projectId: string, onOpenChange: (open: boolean)
 
       const result: IdeationTaskResponse = await response.json()
 
-      queryClient.invalidateQueries({ queryKey: ['tasks', projectId] })
+      void invalidateTaskQueries(queryClient, projectId)
 
       toast.success(`Task created: ${result.task_id}`, {
         description: result.dispatched

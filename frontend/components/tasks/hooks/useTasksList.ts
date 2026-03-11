@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useCallback } from 'react'
 import { fetchBlockedTasks, fetchTasks, type Task } from '@/lib/api'
+import { taskQueryKeys } from '@/lib/task-cache'
 import type { TaskFilterValues } from '../TaskFilters'
 
 function mergeBlockedTasks(tasks: Task[], dependencyBlockedTasks: Task[]): Task[] {
@@ -31,7 +32,7 @@ export function useTasksList(
     isFetching: tasksFetching,
     refetch: refetchTasks,
   } = useQuery({
-    queryKey: ['tasks', projectId, 'all'],
+    queryKey: taskQueryKeys.all(projectId),
     queryFn: () => fetchTasks(projectId, { limit: 500 }),
     staleTime: 30000,
   })
@@ -43,7 +44,7 @@ export function useTasksList(
     isFetching: blockedFetching,
     refetch: refetchBlocked,
   } = useQuery({
-    queryKey: ['tasks', projectId, 'blocked'],
+    queryKey: taskQueryKeys.blocked(projectId),
     queryFn: () => fetchBlockedTasks(projectId, 500),
     staleTime: 30000,
     enabled: filters.status === 'blocked', // Only fetch when filter is blocked
