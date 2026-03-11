@@ -22,6 +22,7 @@ from app.workflows.scheduled import (
     monitor_browser_wf,
     monitor_systemd_wf,
     prod_smoke_test_wf,
+    refresh_precision_indexes_wf,
     reset_claims_wf,
     scan_projects_wf,
     scheduled_backups_wf,
@@ -57,10 +58,11 @@ def main() -> None:
             review_wf,
             merge_cleanup_wf,
             escalation_wf,
-            # Scheduled (12)
+            # Scheduled (13)
             work_pickup_wf,
             reset_claims_wf,
             scan_projects_wf,
+            refresh_precision_indexes_wf,
             scheduled_backups_wf,
             stale_cleanup_wf,
             task_generation_wf,

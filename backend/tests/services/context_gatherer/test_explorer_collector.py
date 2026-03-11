@@ -166,3 +166,49 @@ def test_collect_precision_code_search_context_skips_fallback_fetch_on_symbol_hi
     mock_entries.assert_not_called()
     assert result.metadata["used_symbol_first"] is True
     assert result.metadata["used_fallback"] is False
+
+
+def test_collect_precision_code_search_context_refreshes_stale_file_index() -> None:
+    with (
+        patch(
+            "app.services.context_gatherer.precision_code_search.explorer_service.get_stats",
+            return_value={"total": 12, "last_scanned": "2026-03-10T17:00:00+00:00"},
+        ),
+        patch(
+            "app.services.context_gatherer.precision_code_search.get_symbol_stats",
+            return_value={"count": 4, "last_updated": "2026-03-10T17:00:00+00:00"},
+        ),
+        patch(
+            "app.services.context_gatherer.precision_code_search.explorer_service.scan"
+        ) as mock_scan,
+        patch(
+            "app.services.context_gatherer.precision_code_search.search_symbols",
+            return_value=[],
+        ),
+        patch(
+            "app.services.context_gatherer.precision_code_search.get_entries",
+            return_value=[],
+        ),
+    ):
+        mock_scan.return_value.success = True
+        mock_scan.return_value.entries_found = 12
+        mock_scan.return_value.entries_saved = 12
+        mock_scan.return_value.duration_ms = 100
+
+        result = collect_precision_code_search_context("project-1", ["get_file_tree"])
+
+    mock_scan.assert_called_once_with("project-1", "file")
+    assert result.metadata["refreshed_index"] is True
+
+
+def test_collect_precision_code_search_context_skips_refresh_for_workflow_meta_queries() -> None:
+    with patch(
+        "app.services.context_gatherer.precision_code_search.explorer_service.scan"
+    ) as mock_scan:
+        result = collect_precision_code_search_context(
+            "project-1",
+            ["Confirm workflow cleanup status and closeout coordination."],
+        )
+
+    mock_scan.assert_not_called()
+    assert result.metadata["skipped_reason"] == "workflow_meta_low_signal"

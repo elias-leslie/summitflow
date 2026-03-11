@@ -49,8 +49,10 @@ def extract_symbols(file_path: Path, rel_path: str) -> list[SymbolRecord]:
     try:
         source = file_path.read_text(encoding="utf-8")
         if ext == ".py":
-            return _extract_python_symbols(source, rel_path)
-        return _extract_typescript_symbols(source, rel_path, "tsx" if ext == ".tsx" else "typescript")
+            return _dedupe_symbol_ids(_extract_python_symbols(source, rel_path))
+        return _dedupe_symbol_ids(
+            _extract_typescript_symbols(source, rel_path, "tsx" if ext == ".tsx" else "typescript")
+        )
     except (OSError, UnicodeDecodeError, SyntaxError):
         return []
 
@@ -226,6 +228,16 @@ def _byte_index(offsets: list[int], lineno: int | None, col_offset: int | None) 
 
 def _content_hash(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def _dedupe_symbol_ids(symbols: list[SymbolRecord]) -> list[SymbolRecord]:
+    seen: set[str] = set()
+    for symbol in symbols:
+        symbol_id = symbol["symbol_id"]
+        if symbol_id in seen:
+            symbol["symbol_id"] = f"{symbol_id}@{symbol['start_line']}"
+        seen.add(symbol["symbol_id"])
+    return symbols
 
 
 def _keywords(*parts: str | None) -> list[str]:

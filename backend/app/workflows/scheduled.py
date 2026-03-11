@@ -1,6 +1,6 @@
 """Scheduled (cron) workflows for SummitFlow.
 
-10 active cron workflows on Hatchet schedule (2 disabled: systemd monitor, browser monitor).
+11 active cron workflows on Hatchet schedule (2 disabled: systemd monitor, browser monitor).
 All use ConcurrencyExpression with CANCEL_IN_PROGRESS to prevent overlapping runs.
 """
 
@@ -84,6 +84,30 @@ async def scan_projects_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
 
     dispatch = _make_dispatch_callback()
     return await asyncio.to_thread(scan_all_projects, dry_run=False, dispatch=dispatch)
+
+
+@hatchet.task(
+    name="summitflow-refresh-precision-indexes",
+    input_validator=EmptyInput,
+    execution_timeout="1200s",
+    retries=3,
+    backoff_factor=2.0,
+    on_crons=["0 * * * *"],
+    concurrency=ConcurrencyExpression(
+        expression="'summitflow-refresh-precision-indexes'",
+        max_runs=1,
+        limit_strategy=ConcurrencyLimitStrategy.CANCEL_IN_PROGRESS,
+    ),
+)
+async def refresh_precision_indexes_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
+    from ..tasks.explorer_tasks import scan_all_projects
+
+    return await asyncio.to_thread(
+        scan_all_projects,
+        entry_type="file",
+        dry_run=False,
+        dispatch=None,
+    )
 
 
 @hatchet.task(

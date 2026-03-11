@@ -122,6 +122,26 @@ def get_symbol(project_id: str, symbol_id: str) -> dict[str, Any] | None:
         return _row_to_symbol(row) if row else None
 
 
+def get_symbol_stats(project_id: str) -> dict[str, Any]:
+    """Return aggregate symbol index stats for a project."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT COUNT(*), MAX(updated_at)
+            FROM explorer_symbols
+            WHERE project_id = %s
+            """,
+            (project_id,),
+        )
+        row = cur.fetchone()
+    count = row[0] if row else 0
+    last_updated = to_iso_string(row[1]) if row else None
+    return {
+        "count": count,
+        "last_updated": last_updated,
+    }
+
+
 def list_related_entries_for_file(project_id: str, file_path: str) -> list[dict[str, Any]]:
     """List page and endpoint entries whose source file matches the symbol file."""
     with get_connection() as conn, conn.cursor() as cur:

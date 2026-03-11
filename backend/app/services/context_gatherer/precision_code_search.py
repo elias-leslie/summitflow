@@ -4,10 +4,16 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from ...storage.explorer import get_symbol, list_related_entries_for_file, search_symbols
+from ...storage.explorer import (
+    get_symbol,
+    get_symbol_stats,
+    list_related_entries_for_file,
+    search_symbols,
+)
 from ...storage.explorer_entries import get_entries
 from .. import explorer as explorer_service
 from .token_utils import MAX_EXPLORER_TOKENS, estimate_tokens, truncate_to_tokens
@@ -17,6 +23,7 @@ logger = logging.getLogger(__name__)
 _SEARCH_LIMIT = 5
 _SOURCE_SYMBOL_LIMIT = 2
 _RELATED_ENTRY_LIMIT = 2
+_PRECISION_INDEX_MAX_AGE = timedelta(minutes=90)
 PRECISION_CODE_SEARCH_GUIDANCE = (
     "Use the Precision Code Search block as the first code-navigation pass. "
     "Only broaden to file-wide or text search if these indexed symbols are insufficient, stale, or clearly unrelated."
@@ -57,6 +64,9 @@ _WORKFLOW_META_TERMS = {
     "dispatch",
     "readiness",
     "reconciliation",
+    "cleanup",
+    "status",
+    "coordination",
     "friction",
     "signal",
     "temporary",
@@ -100,6 +110,60 @@ _CODE_SIGNAL_TERMS = {
 class PrecisionCodeSearchResult:
     prompt_context: str
     metadata: dict[str, Any]
+
+
+def _parse_iso_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed
+
+
+def _should_refresh_precision_index(project_id: str) -> bool:
+    file_stats = explorer_service.get_stats(project_id, entry_type="file")
+    symbol_stats = get_symbol_stats(project_id)
+
+    file_total = int(file_stats.get("total") or 0)
+    symbol_count = int(symbol_stats.get("count") or 0)
+    if file_total == 0 or symbol_count == 0:
+        return True
+
+    file_last_scanned = _parse_iso_datetime(file_stats.get("last_scanned"))
+    symbol_last_updated = _parse_iso_datetime(symbol_stats.get("last_updated"))
+    stale_before = datetime.now(UTC) - _PRECISION_INDEX_MAX_AGE
+
+    return (
+        file_last_scanned is None
+        or symbol_last_updated is None
+        or file_last_scanned < stale_before
+        or symbol_last_updated < stale_before
+    )
+
+
+def _refresh_precision_index(project_id: str) -> bool:
+    logger.info("precision_code_search_refresh_start", extra={"project_id": project_id})
+    result = explorer_service.scan(project_id, "file")
+    if not result.success:
+        logger.warning(
+            "precision_code_search_refresh_failed",
+            extra={"project_id": project_id, "error": result.error},
+        )
+        return False
+    logger.info(
+        "precision_code_search_refresh_complete",
+        extra={
+            "project_id": project_id,
+            "entries_found": result.entries_found,
+            "entries_saved": result.entries_saved,
+            "duration_ms": result.duration_ms,
+        },
+    )
+    return True
 
 
 def _normalize_queries(queries: list[str] | tuple[str, ...] | str) -> list[str]:
@@ -379,6 +443,10 @@ def collect_precision_code_search_context(
             metadata={"query_count": len(normalized_queries), "skipped_reason": "workflow_meta_low_signal"},
         )
 
+    refreshed_index = False
+    if _should_refresh_precision_index(project_id):
+        refreshed_index = _refresh_precision_index(project_id)
+
     query_terms = _extract_query_terms(normalized_queries)
     symbols = _search_symbol_matches(project_id, normalized_queries)
     symbol_section = _build_symbol_section(project_id, symbols) if symbols else ""
@@ -394,6 +462,7 @@ def collect_precision_code_search_context(
     metadata = {
         "query_count": len(normalized_queries),
         "symbol_count": len(symbols),
+        "refreshed_index": refreshed_index,
         "used_symbol_first": used_symbol_first,
         "used_fallback": used_fallback,
         "naive_file_tokens": naive_file_tokens,

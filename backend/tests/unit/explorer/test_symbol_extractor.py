@@ -106,3 +106,26 @@ export type FileNode = {
         file_path.write_text("# Notes", encoding="utf-8")
 
         assert extract_symbols(file_path, "docs/notes.md") == []
+
+    def test_dedupes_duplicate_symbol_ids_with_line_suffix(self, tmp_path: Path) -> None:
+        """Duplicate qualified names in a file should get unique symbol ids."""
+        code = """
+class Memory:
+    @property
+    def injection_tier(self) -> str:
+        return "low"
+
+    @injection_tier.setter
+    def injection_tier(self, value: str) -> None:
+        self._tier = value
+"""
+        file_path = tmp_path / "memory.py"
+        file_path.write_text(code, encoding="utf-8")
+
+        symbols = extract_symbols(file_path, "backend/app/models/memory.py")
+
+        assert [symbol["symbol_id"] for symbol in symbols] == [
+            "backend/app/models/memory.py::Memory#class",
+            "backend/app/models/memory.py::Memory.injection_tier#method",
+            "backend/app/models/memory.py::Memory.injection_tier#method@8",
+        ]

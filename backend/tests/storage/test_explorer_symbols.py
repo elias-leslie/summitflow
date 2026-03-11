@@ -229,3 +229,24 @@ class TestLookupAndSearch:
         assert [row["symbol_id"] for row in rows] == [
             "frontend/app/projects/[id]/files/FilesClient.tsx::FilesClient#function"
         ]
+
+
+class TestSymbolStats:
+    """Tests for aggregate symbol index stats."""
+
+    def test_get_symbol_stats_returns_count_and_last_updated(self, cleanup_symbols: str) -> None:
+        explorer_symbols.replace_file_symbols(
+            cleanup_symbols,
+            "backend/app/api/files.py",
+            [
+                _make_symbol(
+                    symbol_id="backend/app/api/files.py::get_file_tree#function",
+                    name="get_file_tree",
+                )
+            ],
+        )
+
+        stats = explorer_symbols.get_symbol_stats(cleanup_symbols)
+
+        assert stats["count"] == 1
+        assert stats["last_updated"] is not None
