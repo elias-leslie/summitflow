@@ -40,24 +40,13 @@ PROJECT_DIR=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 PROJECT_NAME=$(basename "$PROJECT_DIR")
 MAIN_REPO_DIR="$PROJECT_DIR"
 
-# Detect SummitFlow worktree pattern: ~/.local/share/st/worktrees/<project>/<task>/
-# If in a worktree, use the MAIN repo for venv (worktrees don't have their own venv)
-WORKTREE_PATTERN="$HOME/.local/share/st/worktrees"
-if [[ "$PROJECT_DIR" == "$WORKTREE_PATTERN"/* ]]; then
-    # Extract project name from worktree path (the directory after worktrees/)
-    WORKTREE_REL="${PROJECT_DIR#$WORKTREE_PATTERN/}"
-    PROJECT_NAME="${WORKTREE_REL%%/*}"
-    # Get main repo path from SummitFlow project registry
-    MAIN_REPO_DIR="$HOME/$PROJECT_NAME"
-    if [[ ! -d "$MAIN_REPO_DIR" ]]; then
-        # Fallback: check common locations
-        for candidate in "/home/kasadis/$PROJECT_NAME" "/home/kasadis/projects/$PROJECT_NAME"; do
-            if [[ -d "$candidate" ]]; then
-                MAIN_REPO_DIR="$candidate"
-                break
-            fi
-        done
-    fi
+# Detect ANY git worktree (Claude Code .claude/worktrees, SummitFlow st worktrees, etc.)
+# Use `git worktree list` to find the primary checkout — it's always listed first.
+# If we're in a linked worktree, use the primary checkout for venv (worktrees share it).
+_primary_worktree=$(git worktree list 2>/dev/null | head -1 | awk '{print $1}')
+if [[ -n "$_primary_worktree" && "$_primary_worktree" != "$PROJECT_DIR" ]]; then
+    MAIN_REPO_DIR="$_primary_worktree"
+    PROJECT_NAME=$(basename "$MAIN_REPO_DIR")
 fi
 
 # Use main repo for venv (tools), but PROJECT_DIR for backend (code to lint)
@@ -907,31 +896,30 @@ normalize_tool_args() {
     for arg in "$@"; do
         local normalized="$arg"
 
-        # pytest runs from backend/ when backend/tests exists, so explicit paths
-        # like backend/tests/foo.py must be rewritten to tests/foo.py first.
-        if [[ "$tool_name" == "pytest" && "$dir_type" == "test" && "$PWD" == "$BACKEND_PATH" ]]; then
+        # Tools with working_dir=backend or test cd into backend/, so explicit
+        # paths like backend/app/foo.py must be rewritten to app/foo.py.
+        # This applies to all backend tools (ruff, types, etc.), not just pytest.
+        if [[ "$arg" != -* && ("$dir_type" == "backend" || ("$dir_type" == "test" && "$tool_name" == "pytest")) ]]; then
             local path_part="$arg"
             local suffix=""
 
-            if [[ "$arg" != -* ]]; then
-                if [[ "$arg" == *"::"* ]]; then
-                    path_part="${arg%%::*}"
-                    suffix="::${arg#*::}"
+            if [[ "$arg" == *"::"* ]]; then
+                path_part="${arg%%::*}"
+                suffix="::${arg#*::}"
+            fi
+
+            if [[ "$path_part" == */* || "$path_part" == *.py || "$path_part" == /* ]]; then
+                normalized="$path_part"
+
+                if [[ "$normalized" == "$PROJECT_DIR/"* ]]; then
+                    normalized="${normalized#$PROJECT_DIR/}"
                 fi
 
-                if [[ "$path_part" == */* || "$path_part" == *.py || "$path_part" == /* ]]; then
-                    normalized="$path_part"
-
-                    if [[ "$normalized" == "$PROJECT_DIR/"* ]]; then
-                        normalized="${normalized#$PROJECT_DIR/}"
-                    fi
-
-                    if [[ "$normalized" == backend/* ]]; then
-                        normalized="${normalized#backend/}"
-                    fi
-
-                    normalized="${normalized}${suffix}"
+                if [[ "$normalized" == backend/* ]]; then
+                    normalized="${normalized#backend/}"
                 fi
+
+                normalized="${normalized}${suffix}"
             fi
         fi
 
