@@ -286,6 +286,80 @@ def should_sync(info: TranscriptInfo, state: dict[str, object], force: bool) -> 
 # ---------------------------------------------------------------------------
 
 
+def _get_checkpoint(state: dict[str, object], info: TranscriptInfo) -> str | None:
+    ts = state.get("transcripts") or {}
+    if not isinstance(ts, dict):
+        return None
+    return (ts.get(str(info.path)) or {}).get("checkpoint")  # type: ignore[union-attr]
+
+
+def _build_meta(info: TranscriptInfo, project: dict[str, object]) -> dict[str, object]:
+    return {
+        "transcript_path": str(info.path),
+        "repo_root": project["repo_root"],
+        "worktree_path": str(info.cwd),
+        "host": os.uname().nodename,
+    }
+
+
+def _upsert_session(
+    api_url: str, client_id: str, client_secret: str,
+    info: TranscriptInfo, project: dict[str, object],
+) -> tuple[bool, str]:
+    ok, _, err = _checked_post(api_url, ENDPOINT_UPSERT, {
+        "session_id": info.session_id, "project_id": project["project_id"],
+        "provider": "codex", "model": f"codex/{info.model}",
+        "session_type": "agent", "cwd": str(info.cwd),
+        "current_branch": project["branch"],
+        "scope_confidence": "unknown",
+        "provider_metadata": _build_meta(info, project),
+    }, client_id, client_secret, "session upsert")
+    return ok, err
+
+
+def _ingest_transcript(
+    api_url: str, client_id: str, client_secret: str,
+    info: TranscriptInfo, state: dict[str, object],
+) -> tuple[bool, dict[str, object] | None, str]:
+    checkpoint = _get_checkpoint(state, info)
+    ok, payload, err = _checked_post(
+        api_url, ENDPOINT_TRANSCRIPT.format(sid=info.session_id),
+        {"provider": "codex", "transcript_path": str(info.path), "checkpoint": checkpoint},
+        client_id, client_secret, "transcript ingest",
+    )
+    if not ok:
+        return False, None, err
+    try:
+        return True, json.loads(payload), ""
+    except json.JSONDecodeError as exc:
+        return False, None, f"transcript ingest returned invalid JSON: {exc}"
+
+
+def _send_heartbeat(
+    api_url: str, client_id: str, client_secret: str,
+    info: TranscriptInfo, project: dict[str, object], meta: dict[str, object],
+) -> tuple[bool, str]:
+    ok, _, err = _checked_post(api_url, ENDPOINT_HEARTBEAT.format(sid=info.session_id), {
+        "cwd": str(info.cwd), "current_branch": project["branch"],
+        "phase": "waiting_for_model", "status": "active",
+        "summary": f"Transcript sync heartbeat for {info.session_id}",
+        "last_event_type": "heartbeat", "provider_metadata": meta,
+    }, client_id, client_secret, "heartbeat")
+    return ok, err
+
+
+def _finalize_session(
+    api_url: str, client_id: str, client_secret: str,
+    info: TranscriptInfo, project: dict[str, object],
+) -> tuple[bool, str]:
+    ok, _, err = _checked_post(api_url, ENDPOINT_FINALIZE.format(sid=info.session_id), {
+        "branch": project["branch"],
+        "git_context": project["git_context"],
+        "is_worktree": project["is_worktree"],
+    }, client_id, client_secret, "finalize")
+    return ok, err
+
+
 def sync_transcript(
     info: TranscriptInfo,
     state: dict[str, object],
@@ -299,59 +373,27 @@ def sync_transcript(
     if project is None:
         return False, f"skip non-git cwd={info.cwd}"
 
-    meta: dict[str, object] = {
-        "transcript_path": str(info.path),
-        "repo_root": project["repo_root"],
-        "worktree_path": str(info.cwd),
-        "host": os.uname().nodename,
-    }
-
-    ok, _, err = _checked_post(api_url, ENDPOINT_UPSERT, {
-        "session_id": info.session_id, "project_id": project["project_id"],
-        "provider": "codex", "model": f"codex/{info.model}",
-        "session_type": "agent", "cwd": str(info.cwd),
-        "current_branch": project["branch"],
-        "scope_confidence": "unknown", "provider_metadata": meta,
-    }, client_id, client_secret, "session upsert")
+    ok, err = _upsert_session(api_url, client_id, client_secret, info, project)
     if not ok:
         return False, err
 
-    ts = state.get("transcripts") or {}
-    if not isinstance(ts, dict):
-        ts = {}
-    checkpoint = (ts.get(str(info.path)) or {}).get("checkpoint")  # type: ignore[union-attr]
-    ok, payload, err = _checked_post(
-        api_url, ENDPOINT_TRANSCRIPT.format(sid=info.session_id),
-        {"provider": "codex", "transcript_path": str(info.path), "checkpoint": checkpoint},
-        client_id, client_secret, "transcript ingest",
-    )
+    ok, ingest_data, err = _ingest_transcript(api_url, client_id, client_secret, info, state)
     if not ok:
         return False, err
 
-    try:
-        ingest_data = json.loads(payload)
-    except json.JSONDecodeError as exc:
-        return False, f"transcript ingest returned invalid JSON: {exc}"
+    assert ingest_data is not None
     update_state_entry(
         state, info, "synced",
         f"appended={ingest_data.get('events_appended', 0)} skipped={ingest_data.get('events_skipped', 0)}",
         checkpoint=str(ingest_data["next_checkpoint"]) if ingest_data.get("next_checkpoint") else None,
     )
 
-    ok, _, err = _checked_post(api_url, ENDPOINT_HEARTBEAT.format(sid=info.session_id), {
-        "cwd": str(info.cwd), "current_branch": project["branch"],
-        "phase": "waiting_for_model", "status": "active",
-        "summary": f"Transcript sync heartbeat for {info.session_id}",
-        "last_event_type": "heartbeat", "provider_metadata": meta,
-    }, client_id, client_secret, "heartbeat")
+    meta = _build_meta(info, project)
+    ok, err = _send_heartbeat(api_url, client_id, client_secret, info, project, meta)
     if not ok:
         return False, err
 
-    ok, _, err = _checked_post(api_url, ENDPOINT_FINALIZE.format(sid=info.session_id), {
-        "branch": project["branch"],
-        "git_context": project["git_context"],
-        "is_worktree": project["is_worktree"],
-    }, client_id, client_secret, "finalize")
+    ok, err = _finalize_session(api_url, client_id, client_secret, info, project)
     if not ok:
         return False, err
 
