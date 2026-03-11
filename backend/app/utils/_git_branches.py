@@ -60,17 +60,12 @@ def _get_active_worktrees(project_id: str | None = None) -> list:
 
 def get_worktree_branches(project_id: str | None = None) -> dict[str, str]:
     """Get a mapping of branch names to worktree paths."""
-    worktree_branches: dict[str, str] = {}
-    for worktree in _get_active_worktrees(project_id):
-        worktree_branches[worktree.branch] = str(worktree.path)
-    return worktree_branches
+    return {wt.branch: str(wt.path) for wt in _get_active_worktrees(project_id)}
 
 
 def get_all_branches(repo_path: Path) -> list[BranchInfo]:
     """Get list of all local branches with worktree indicators."""
-    from ..api.models.git_models import (
-        BranchInfo,
-    )
+    from ..api.models.git_models import BranchInfo
 
     worktree_branches = get_worktree_branches(_get_repo_project_id(repo_path))
 
@@ -149,10 +144,9 @@ def prune_worktree_registrations(repo_path: Path) -> None:
 def list_prunable_task_branches(repo_path: Path) -> list[str]:
     """Return orphan task branches that are already merged into the base branch."""
     branches = get_all_branches(repo_path)
-    task_branches = [branch for branch in branches if branch.task_id]
-    orphan_branches = [branch for branch in task_branches if not branch.has_worktree]
+    orphan_branches = [b for b in branches if b.task_id and not b.has_worktree]
     merged_branches = _get_merged_branches(repo_path, _detect_base_branch(repo_path))
-    return [branch.name for branch in orphan_branches if branch.name in merged_branches]
+    return [b.name for b in orphan_branches if b.name in merged_branches]
 
 
 def prune_prunable_task_branches(repo_path: Path) -> list[str]:
@@ -167,31 +161,39 @@ def prune_prunable_task_branches(repo_path: Path) -> list[str]:
 
 def list_equivalent_orphan_task_branches(repo_path: Path) -> list[str]:
     """Return orphan task branches whose tree matches the base branch exactly."""
-    branches = get_all_branches(repo_path)
     base_branch = _detect_base_branch(repo_path)
-    equivalent: list[str] = []
-    for branch in branches:
-        if not branch.task_id or branch.has_worktree:
-            continue
-        if not _branch_diff_paths(repo_path, branch.name, base_branch):
-            equivalent.append(branch.name)
-    return equivalent
+    return [
+        b.name
+        for b in get_all_branches(repo_path)
+        if b.task_id and not b.has_worktree and not _branch_diff_paths(repo_path, b.name, base_branch)
+    ]
+
+
+def _get_current_branch(repo_path: Path) -> str:
+    """Return the current HEAD branch name, or empty string on failure."""
+    result = run_git(["rev-parse", "--abbrev-ref", "HEAD"], repo_path)
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def _delete_branch_force(repo_path: Path, branch_name: str, base_branch: str, current_branch: str) -> tuple[bool, str]:
+    """Force-delete a branch, checking out base first if it is current. Returns (deleted, updated_current)."""
+    if current_branch == branch_name:
+        checkout = run_git(["checkout", base_branch], repo_path)
+        if checkout.returncode != 0:
+            return False, current_branch
+        current_branch = base_branch
+    result = run_git(["branch", "-D", branch_name], repo_path)
+    return result.returncode == 0, current_branch
 
 
 def prune_equivalent_orphan_task_branches(repo_path: Path) -> list[str]:
     """Delete orphan task branches whose tree matches base exactly."""
     removed: list[str] = []
     base_branch = _detect_base_branch(repo_path)
-    current_branch_result = run_git(["rev-parse", "--abbrev-ref", "HEAD"], repo_path)
-    current_branch = current_branch_result.stdout.strip() if current_branch_result.returncode == 0 else ""
+    current_branch = _get_current_branch(repo_path)
     for branch_name in list_equivalent_orphan_task_branches(repo_path):
-        if current_branch == branch_name:
-            checkout_result = run_git(["checkout", base_branch], repo_path)
-            if checkout_result.returncode != 0:
-                continue
-            current_branch = base_branch
-        result = run_git(["branch", "-D", branch_name], repo_path)
-        if result.returncode == 0:
+        deleted, current_branch = _delete_branch_force(repo_path, branch_name, base_branch, current_branch)
+        if deleted:
             removed.append(branch_name)
     return removed
 
@@ -200,45 +202,48 @@ def list_closed_orphan_task_branches(repo_path: Path) -> list[str]:
     """Return orphan task branches whose linked task is already terminal."""
     from app.storage import tasks as task_store
 
-    branches = get_all_branches(repo_path)
-    closed_branches: list[str] = []
-    for branch in branches:
+    closed: list[str] = []
+    for branch in get_all_branches(repo_path):
         if not branch.task_id or branch.has_worktree:
             continue
         task = task_store.get_task(branch.task_id)
         if task and task.get("status") in _CLOSED_TASK_STATUSES:
-            closed_branches.append(branch.name)
-    return closed_branches
+            closed.append(branch.name)
+    return closed
 
 
 def prune_closed_orphan_task_branches(repo_path: Path) -> list[str]:
     """Delete orphan task branches when the linked task is already closed."""
     removed: list[str] = []
     base_branch = _detect_base_branch(repo_path)
-    current_branch_result = run_git(["rev-parse", "--abbrev-ref", "HEAD"], repo_path)
-    current_branch = current_branch_result.stdout.strip() if current_branch_result.returncode == 0 else ""
-
+    current_branch = _get_current_branch(repo_path)
     for branch_name in list_closed_orphan_task_branches(repo_path):
-        if current_branch == branch_name:
-            checkout_result = run_git(["checkout", base_branch], repo_path)
-            if checkout_result.returncode != 0:
-                continue
-            current_branch = base_branch
-        result = run_git(["branch", "-D", branch_name], repo_path)
-        if result.returncode == 0:
+        deleted, current_branch = _delete_branch_force(repo_path, branch_name, base_branch, current_branch)
+        if deleted:
             removed.append(branch_name)
     return removed
+
+
+def _resolve_orphan_branch(task: dict | None, task_status: str | None) -> str:
+    """Determine resolution label for an orphan branch given its task and status."""
+    if task is None:
+        return "salvage"
+    if task_status in _REVIEW_TASK_STATUSES:
+        return "review"
+    if task_status in _CLOSED_TASK_STATUSES:
+        return "salvage"
+    return "review"
 
 
 def assess_orphan_task_branches(repo_path: Path) -> list[OrphanBranchAssessment]:
     """Classify orphan task branches that still need resolution."""
     from app.storage import tasks as task_store
 
-    assessments: list[OrphanBranchAssessment] = []
     base_branch = _detect_base_branch(repo_path)
     merged_branch_names = _get_merged_branches(repo_path, base_branch)
     equivalent_branch_names = set(list_equivalent_orphan_task_branches(repo_path))
 
+    assessments: list[OrphanBranchAssessment] = []
     for branch in get_all_branches(repo_path):
         if not branch.task_id or branch.has_worktree:
             continue
@@ -248,28 +253,18 @@ def assess_orphan_task_branches(repo_path: Path) -> list[OrphanBranchAssessment]
         diff_paths = _branch_diff_paths(repo_path, branch.name, base_branch)
         task = task_store.get_task(branch.task_id)
         task_status = task.get("status") if task else None
-        has_node_modules_artifact = any(path == "node_modules" or path.startswith("node_modules/") for path in diff_paths)
-
-        if task is None:
-            resolution = "salvage"
-        elif task_status in _REVIEW_TASK_STATUSES:
-            resolution = "review"
-        elif task_status in _CLOSED_TASK_STATUSES:
-            resolution = "salvage"
-        else:
-            resolution = "review"
-
-        assessments.append(
-            OrphanBranchAssessment(
-                branch_name=branch.name,
-                task_id=branch.task_id,
-                resolution=resolution,
-                task_status=task_status,
-                commits_ahead=_branch_commits_ahead(repo_path, branch.name, base_branch),
-                files_changed=len(diff_paths),
-                has_node_modules_artifact=has_node_modules_artifact,
-            )
+        has_node_modules = any(
+            p == "node_modules" or p.startswith("node_modules/") for p in diff_paths
         )
+        assessments.append(OrphanBranchAssessment(
+            branch_name=branch.name,
+            task_id=branch.task_id,
+            resolution=_resolve_orphan_branch(task, task_status),
+            task_status=task_status,
+            commits_ahead=_branch_commits_ahead(repo_path, branch.name, base_branch),
+            files_changed=len(diff_paths),
+            has_node_modules_artifact=has_node_modules,
+        ))
     return assessments
 
 
@@ -282,28 +277,26 @@ def build_repo_workspace_summary(repo_path: Path) -> RepoWorkspaceSummary:
     project_id = _get_repo_project_id(repo_path)
     branches = get_all_branches(repo_path)
     active_worktrees = _get_active_worktrees(project_id) if project_id else []
-    dirty_worktrees = sum(1 for worktree in active_worktrees if has_uncommitted_changes(worktree.path))
-    task_branches = [branch for branch in branches if branch.task_id]
-    orphan_branches = [branch for branch in task_branches if not branch.has_worktree]
-    prunable_branch_names = set(list_prunable_task_branches(repo_path))
-    prunable_branches = [
-        branch for branch in orphan_branches if branch.name in prunable_branch_names
-    ]
+    dirty_worktrees = sum(1 for wt in active_worktrees if has_uncommitted_changes(wt.path))
+    task_branches = [b for b in branches if b.task_id]
+    orphan_branches = [b for b in task_branches if not b.has_worktree]
+    prunable_names = set(list_prunable_task_branches(repo_path))
+    prunable_branches = [b for b in orphan_branches if b.name in prunable_names]
     orphan_assessments = assess_orphan_task_branches(repo_path)
 
     return RepoWorkspaceSummary(
         active_worktrees=len(active_worktrees),
         dirty_worktrees=dirty_worktrees,
-        branches_with_worktrees=sum(1 for branch in task_branches if branch.has_worktree),
+        branches_with_worktrees=sum(1 for b in task_branches if b.has_worktree),
         task_branches=len(task_branches),
         orphan_branches=len(orphan_branches),
         prunable_branches=len(prunable_branches),
         needs_cleanup=bool(dirty_worktrees or orphan_branches or prunable_branches),
-        worktree_task_ids=[worktree.task_id for worktree in active_worktrees[:2]],
-        orphan_branch_names=[branch.name for branch in orphan_branches[:5]],
-        prunable_branch_names=[branch.name for branch in prunable_branches[:5]],
-        salvage_task_ids=[item.task_id for item in orphan_assessments if item.resolution == "salvage"][:5],
-        review_orphan_task_ids=[item.task_id for item in orphan_assessments if item.resolution == "review"][:5],
+        worktree_task_ids=[wt.task_id for wt in active_worktrees[:2]],
+        orphan_branch_names=[b.name for b in orphan_branches[:5]],
+        prunable_branch_names=[b.name for b in prunable_branches[:5]],
+        salvage_task_ids=[a.task_id for a in orphan_assessments if a.resolution == "salvage"][:5],
+        review_orphan_task_ids=[a.task_id for a in orphan_assessments if a.resolution == "review"][:5],
     )
 
 
