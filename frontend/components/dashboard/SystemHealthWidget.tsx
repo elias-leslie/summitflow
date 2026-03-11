@@ -157,7 +157,6 @@ export function SystemHealthWidget({ className }: SystemHealthWidgetProps) {
                             <div className={getStatusDotClass(overallStatus)} />
                             <span
                                 className="text-[10px] text-slate-500 uppercase tracking-wider font-mono"
-                                title={formatDate(data.timestamp)}
                             >
                                 Updated {formatDate(data.timestamp)}
                             </span>

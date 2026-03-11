@@ -17,17 +17,18 @@ if [ -z "$PROJECT_DIR" ]; then
 fi
 export PROJECT_DIR PROJECT_NAME IS_WORKTREE WORKTREE_TASK_ID
 case "$PROJECT_NAME" in
-    summitflow) export SERVICE_PREFIX="summitflow" FRONTEND_PORT=3001 BACKEND_PORT=8001 HAS_CELERY=false HAS_HATCHET=true HAS_REDIS=false ;;
-    terminal) export SERVICE_PREFIX="summitflow-terminal" FRONTEND_PORT=3002 BACKEND_PORT=8002 HAS_CELERY=false HAS_REDIS=false ;;
-    portfolio-ai) export SERVICE_PREFIX="portfolio" FRONTEND_PORT=3000 BACKEND_PORT=8000 HAS_CELERY=true HAS_REDIS=true ;;
-    agent-hub) export SERVICE_PREFIX="agent-hub" FRONTEND_PORT=3003 BACKEND_PORT=8003 HAS_CELERY=false HAS_HATCHET=true HAS_REDIS=false ;;
-    monkey-fight) export SERVICE_PREFIX="monkey-fight" FRONTEND_PORT=4001 BACKEND_PORT=0 HAS_CELERY=false HAS_REDIS=false HAS_BACKEND=false IS_VITE=true ;;
-    *) export SERVICE_PREFIX=$(echo "$PROJECT_NAME" | tr '-' '_') FRONTEND_PORT=3000 BACKEND_PORT=8000 HAS_CELERY=false HAS_REDIS=false ;;
+    summitflow) export SERVICE_PREFIX="summitflow" FRONTEND_PORT=3001 BACKEND_PORT=8001 WORKER_SERVICES="summitflow-hatchet-worker" AUXILIARY_SERVICES="" ;;
+    terminal) export SERVICE_PREFIX="summitflow-terminal" FRONTEND_PORT=3002 BACKEND_PORT=8002 WORKER_SERVICES="" AUXILIARY_SERVICES="" ;;
+    portfolio-ai) export SERVICE_PREFIX="portfolio" FRONTEND_PORT=3000 BACKEND_PORT=8000 WORKER_SERVICES="portfolio-hatchet-worker" AUXILIARY_SERVICES="portfolio-redis" ;;
+    agent-hub) export SERVICE_PREFIX="agent-hub" FRONTEND_PORT=3003 BACKEND_PORT=8003 WORKER_SERVICES="agent-hub-hatchet-worker" AUXILIARY_SERVICES="" ;;
+    monkey-fight) export SERVICE_PREFIX="monkey-fight" FRONTEND_PORT=4001 BACKEND_PORT=0 WORKER_SERVICES="" AUXILIARY_SERVICES="" HAS_BACKEND=false IS_VITE=true ;;
+    *) export SERVICE_PREFIX=$(echo "$PROJECT_NAME" | tr '-' '_') FRONTEND_PORT=3000 BACKEND_PORT=8000 WORKER_SERVICES="" AUXILIARY_SERVICES="" ;;
 esac
 export BACKEND_SERVICE="${SERVICE_PREFIX}-backend" FRONTEND_SERVICE="${SERVICE_PREFIX}-frontend"
-export CELERY_SERVICE="${SERVICE_PREFIX}-celery" CELERY_BEAT_SERVICE="${SERVICE_PREFIX}-celery-beat" HATCHET_SERVICE="${SERVICE_PREFIX}-hatchet-worker" REDIS_SERVICE="${SERVICE_PREFIX}-redis"
+export MANAGED_SERVICES="$BACKEND_SERVICE $FRONTEND_SERVICE $WORKER_SERVICES $AUXILIARY_SERVICES"
 [ "$PROJECT_NAME" = "terminal" ] && export BACKEND_SERVICE="summitflow-terminal" FRONTEND_SERVICE="summitflow-terminal-frontend"
 [ "$PROJECT_NAME" = "monkey-fight" ] && export FRONTEND_SERVICE="monkey-fight"
+export MANAGED_SERVICES="$BACKEND_SERVICE $FRONTEND_SERVICE $WORKER_SERVICES $AUXILIARY_SERVICES"
 log() { printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*"; }
 log_success() { printf "${GREEN}[%s] ✓ %s${NC}\n" "$(date '+%H:%M:%S')" "$*"; }
 log_warn() { printf "${YELLOW}[%s] ⚠ %s${NC}\n" "$(date '+%H:%M:%S')" "$*"; }

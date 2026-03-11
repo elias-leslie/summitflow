@@ -32,7 +32,7 @@ interface SummaryBarProps {
 const typeLabels: Record<ExplorerType, { singular: string; plural: string }> = {
   files: { singular: 'file', plural: 'files' },
   database: { singular: 'table', plural: 'tables' },
-  celery: { singular: 'task', plural: 'tasks' },
+  tasks: { singular: 'task', plural: 'tasks' },
   api: { singular: 'endpoint', plural: 'endpoints' },
   pages: { singular: 'page', plural: 'pages' },
   dependencies: { singular: 'dependency', plural: 'dependencies' },

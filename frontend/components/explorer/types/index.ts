@@ -92,7 +92,7 @@ export const typeConfigs: Record<ExplorerEntryType, ExplorerTypeConfig> = {
   },
   task: {
     entryType: 'task',
-    uiType: 'celery',
+    uiType: 'tasks',
     label: 'Tasks',
     icon: Zap,
     colorClass: 'text-yellow-500',
@@ -148,7 +148,7 @@ export const typeConfigs: Record<ExplorerEntryType, ExplorerTypeConfig> = {
 export const uiTypeToEntryType: Record<UIExplorerType, ExplorerEntryType> = {
   files: 'file',
   database: 'table',
-  celery: 'task',
+  tasks: 'task',
   api: 'endpoint',
   pages: 'page',
   dependencies: 'dependency',
@@ -161,7 +161,7 @@ export const uiTypeToEntryType: Record<UIExplorerType, ExplorerEntryType> = {
 export const entryTypeToUiType: Record<ExplorerEntryType, UIExplorerType> = {
   file: 'files',
   table: 'database',
-  task: 'celery',
+  task: 'tasks',
   endpoint: 'api',
   page: 'pages',
   dependency: 'dependencies',

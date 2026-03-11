@@ -58,7 +58,7 @@ show_status() {
     echo ""
     echo "Services:"
 
-    for svc in "$BACKEND_SERVICE" "$FRONTEND_SERVICE" "$CELERY_SERVICE" "$CELERY_BEAT_SERVICE" "$HATCHET_SERVICE" "$REDIS_SERVICE"; do
+    for svc in $MANAGED_SERVICES; do
         if service_exists "$svc"; then
             local status=$(systemctl --user is-active "$svc" 2>/dev/null || echo "unknown")
             local icon="✗"
@@ -132,21 +132,11 @@ main() {
         # Backend
         restart_service "$BACKEND_SERVICE" || ((errors++))
 
-        # Celery (if exists - portfolio-ai)
-        if [ "$HAS_CELERY" = true ]; then
-            restart_service "$CELERY_SERVICE" || ((errors++))
-            restart_service "$CELERY_BEAT_SERVICE" || ((errors++))
-        fi
-
-        # Hatchet worker (if exists - summitflow, agent-hub)
-        if [ "$HAS_HATCHET" = true ]; then
-            restart_service "$HATCHET_SERVICE" || ((errors++))
-        fi
-
-        # Redis (if exists)
-        if [ "$HAS_REDIS" = true ]; then
-            restart_service "$REDIS_SERVICE" || ((errors++))
-        fi
+        # Project-specific workers/support services are declared centrally in rebuild-utils.sh.
+        for svc in $WORKER_SERVICES $AUXILIARY_SERVICES; do
+            [ -n "$svc" ] || continue
+            restart_service "$svc" || ((errors++))
+        done
     fi
 
     # Frontend service (unless backend-only)

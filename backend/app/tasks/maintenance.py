@@ -8,7 +8,6 @@ from typing import Any
 
 from ..logging_config import get_logger
 from ..storage import backups as backup_store
-from ..storage import celery_results as celery_store
 from ..storage import events as event_store
 from ..storage import maintenance_runs as maintenance_store
 from ..storage import notifications as notification_store
@@ -81,10 +80,6 @@ def run_daily_maintenance(
             "event_retention",
             event_store.cleanup_old_events,
         )
-        celery_results_deleted = _run_step(
-            "celery_result_retention",
-            celery_store.cleanup_old_celery_results,
-        )
         maintenance_runs_deleted = _run_step(
             "maintenance_run_retention",
             maintenance_store.cleanup_old_maintenance_runs,
@@ -111,7 +106,6 @@ def run_daily_maintenance(
                 _deleted_count(notifications_deleted),
                 _deleted_count(qcr_deleted),
                 _deleted_count(events_deleted),
-                _deleted_count(celery_results_deleted),
                 _deleted_count(maintenance_runs_deleted),
                 _deleted_count(stale_backups_deleted),
                 _deleted_count(expired_backups_deleted),
@@ -128,7 +122,6 @@ def run_daily_maintenance(
                     notifications_deleted,
                     qcr_deleted,
                     events_deleted,
-                    celery_results_deleted,
                     maintenance_runs_deleted,
                     stale_backups_deleted,
                     expired_backups_deleted,
@@ -142,7 +135,6 @@ def run_daily_maintenance(
             "notifications_deleted": notifications_deleted,
             "quality_results_deleted": qcr_deleted,
             "events_deleted": events_deleted,
-            "celery_results_deleted": celery_results_deleted,
             "maintenance_runs_deleted": maintenance_runs_deleted,
             "stale_backups_deleted": stale_backups_deleted,
             "expired_backups_deleted": expired_backups_deleted,
@@ -161,16 +153,15 @@ def run_daily_maintenance(
             "daily_maintenance_completed",
             status=result["status"],
             rows_cleaned=rows_cleaned,
-            stale_tasks=task_cleanup.get("cancelled_count", 0) if isinstance(task_cleanup, dict) else 0,
-            stale_running_scans_failed=stale_scan_failures if isinstance(stale_scan_failures, int) else 0,
-            scan_history_deleted=scan_history_deleted if isinstance(scan_history_deleted, int) else 0,
+            stale_tasks=_deleted_count(task_cleanup.get("cancelled_count", 0) if isinstance(task_cleanup, dict) else task_cleanup),
+            stale_running_scans_failed=_deleted_count(stale_scan_failures),
+            scan_history_deleted=_deleted_count(scan_history_deleted),
             notifications_deleted=_deleted_count(notifications_deleted),
             quality_results_deleted=_deleted_count(qcr_deleted),
             events_deleted=_deleted_count(events_deleted),
-            celery_results_deleted=_deleted_count(celery_results_deleted),
             maintenance_runs_deleted=_deleted_count(maintenance_runs_deleted),
-            stale_backups_deleted=stale_backups_deleted if isinstance(stale_backups_deleted, int) else 0,
-            expired_backups_deleted=expired_backups_deleted if isinstance(expired_backups_deleted, int) else 0,
+            stale_backups_deleted=_deleted_count(stale_backups_deleted),
+            expired_backups_deleted=_deleted_count(expired_backups_deleted),
         )
         return result
     except Exception as exc:

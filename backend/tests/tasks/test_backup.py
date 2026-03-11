@@ -290,13 +290,10 @@ class TestScheduledBackups:
         assert source["last_run_at"] is None
         assert source["next_run_at"] is not None
 
-    def test_run_scheduled_backups_continues_after_one_source_fails(
-        self, cleanup_project: str, conn: Any
-    ) -> None:
-        """One failing source should not block later due sources in the same sweep."""
-        from app.tasks.backup import run_scheduled_backups
-
-        second_source_id = f"{cleanup_project}-secondary"
+    @pytest.fixture()
+    def secondary_source(self, cleanup_project: str, conn: Any):
+        """Insert a secondary backup source and guarantee its removal after the test."""
+        source_id = f"{cleanup_project}-secondary"
         with conn.cursor() as cur:
             cur.execute(
                 """
@@ -306,8 +303,22 @@ class TestScheduledBackups:
                 VALUES (%s, %s, %s, 'project', %s, TRUE, 'daily', NOW() - INTERVAL '1 hour')
                 ON CONFLICT (id) DO NOTHING
                 """,
-                (second_source_id, "Secondary Source", "/tmp/test-project-2", cleanup_project),
+                (source_id, "Secondary Source", "/tmp/test-project-2", cleanup_project),
             )
+            conn.commit()
+        yield source_id
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM backup_sources WHERE id = %s", (source_id,))
+            conn.commit()
+
+    def test_run_scheduled_backups_continues_after_one_source_fails(
+        self, cleanup_project: str, conn: Any, secondary_source: str
+    ) -> None:
+        """One failing source should not block later due sources in the same sweep."""
+        from app.tasks.backup import run_scheduled_backups
+
+        second_source_id = secondary_source
+        with conn.cursor() as cur:
             cur.execute(
                 "UPDATE backup_sources SET enabled = TRUE, last_run_at = NULL, next_run_at = NOW() - INTERVAL '1 hour' WHERE id = %s",
                 (cleanup_project,),
@@ -332,7 +343,3 @@ class TestScheduledBackups:
         assert second_source is not None
         assert first_source["last_run_at"] is None
         assert second_source["last_run_at"] is not None
-
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM backup_sources WHERE id = %s", (second_source_id,))
-            conn.commit()

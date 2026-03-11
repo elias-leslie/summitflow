@@ -9,7 +9,6 @@ This module handles:
 
 from __future__ import annotations
 
-from ._helpers import row_to_scan as _row_to_scan
 from ._maintenance import cleanup_old_scan_history, fail_stale_running_scans
 from ._reads import (
     get_latest_scan,
@@ -21,7 +20,6 @@ from ._reads import (
 from ._writes import record_scan_complete, record_scan_start
 
 __all__ = [
-    "_row_to_scan",
     "cleanup_old_scan_history",
     "fail_stale_running_scans",
     "get_latest_scan",

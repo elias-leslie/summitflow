@@ -1,8 +1,6 @@
 """Task scanner for Explorer.
 
-Scans scheduled background workflows and produces entries for explorer_entries table.
-Hatchet cron workflows are the canonical source; legacy Celery beat files remain
-as a fallback for older projects.
+Scans scheduled Hatchet workflows and produces entries for explorer_entries table.
 
 Metadata schema (per architecture doc):
 {
@@ -28,7 +26,7 @@ from ..base import BaseScanner, get_project_config
 from ..health import calculate_health_for_entry
 from ..models import ExplorerEntryCreate
 from .task_categorization import categorize_task
-from .task_schedule import format_interval, get_beat_schedule
+from .task_schedule import format_interval, get_task_schedule
 
 logger = get_logger(__name__)
 
@@ -42,7 +40,7 @@ class TaskScanner(BaseScanner):
         super().__init__(project_id, config)
         self.root_path: Path | None = None
         self.backend_dir: str = "backend"
-        self.beat_schedule_endpoint: str | None = None
+        self.task_schedule_endpoint: str | None = None
         self._task_stats: dict[str, dict[str, Any]] = {}
 
 
@@ -65,28 +63,28 @@ class TaskScanner(BaseScanner):
                 self.root_path = Path(self.config["root_path"])
             if self.config.get("backend_dir"):
                 self.backend_dir = self.config["backend_dir"]
-            if self.config.get("beat_schedule_endpoint"):
-                self.beat_schedule_endpoint = self.config["beat_schedule_endpoint"]
+            if self.config.get("task_schedule_endpoint"):
+                self.task_schedule_endpoint = self.config["task_schedule_endpoint"]
 
         logger.info(f"Task scan started for {self.project_id}")
 
-        # Get scheduled workflow/beat definitions
-        beat_schedule = get_beat_schedule(
+        # Get scheduled workflow definitions
+        task_schedule = get_task_schedule(
             self.project_id,
-            self.beat_schedule_endpoint,
+            self.task_schedule_endpoint,
             self.root_path,
             self.backend_dir,
         )
-        if not beat_schedule:
-            logger.warning(f"No beat schedule found for {self.project_id}")
+        if not task_schedule:
+            logger.warning(f"No scheduled workflows found for {self.project_id}")
             return []
 
-        # Execution telemetry is not yet wired for Hatchet/Celery parity.
+        # Execution telemetry is not yet wired for per-workflow runtime metrics.
         self._task_stats = {}
 
         entries: list[ExplorerEntryCreate] = []
 
-        for task_name, task_config in beat_schedule.items() if beat_schedule else []:
+        for task_name, task_config in task_schedule.items() if task_schedule else []:
             try:
                 entry = self._scan_task(task_name, task_config)
                 if entry:
@@ -138,8 +136,7 @@ class TaskScanner(BaseScanner):
                 "schedule_value": schedule_value,
                 "schedule_human": schedule_human,
                 "category": category,
-                "scheduler": task_config.get("scheduler")
-                or ("hatchet" if task_config.get("workflow_name") else "celery"),
+                "scheduler": task_config.get("scheduler", "hatchet"),
                 "workflow_name": task_config.get("workflow_name"),
                 "source_file": task_config.get("source_file"),
                 "execution_timeout": task_config.get("execution_timeout"),

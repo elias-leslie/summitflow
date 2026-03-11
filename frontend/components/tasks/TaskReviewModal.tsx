@@ -2,7 +2,7 @@
 
 import { Check, FileText, Loader2, MessageSquare, Trash2 } from 'lucide-react'
 import { motion } from 'motion/react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogClose, DialogContent } from '@/components/ui/dialog'
 import {
@@ -38,6 +38,14 @@ export function TaskReviewModal({
   const [isDiscarding, setIsDiscarding] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'preview' | 'chat'>('preview')
+  const isMountedRef = useRef(true)
+
+  useEffect(() => {
+    isMountedRef.current = true
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [])
 
   // Fetch subtasks when modal opens
   useEffect(() => {
@@ -84,9 +92,15 @@ export function TaskReviewModal({
       // Refresh subtasks if task was updated
       getSubtasks(projectId, updatedTask.id)
         .then((response) => {
+          if (!isMountedRef.current) {
+            return
+          }
           setSubtasks(response.subtasks)
         })
         .catch((err) => {
+          if (!isMountedRef.current) {
+            return
+          }
           setSubtasks([])
           setError(
             err instanceof Error

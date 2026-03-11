@@ -53,7 +53,7 @@ const typeConfig: Record<
     activeClass: 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300',
     glowClass: 'shadow-[0_0_12px_rgba(34,211,238,0.4)]',
   },
-  celery: {
+  tasks: {
     icon: Zap,
     label: 'Tasks',
     color: 'text-orange-400',
@@ -113,7 +113,7 @@ export function TypeNavigator({
   const types: ExplorerType[] = [
     'files',
     'database',
-    'celery',
+    'tasks',
     'api',
     'pages',
     'dependencies',

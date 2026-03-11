@@ -40,19 +40,19 @@ export function HealthTab({ projectId }: HealthTabProps) {
     <div className="space-y-6">
       <InfraStatusBar />
 
-      {(healthError || pipelineError || unfixedResultsError || recentResultsError) && (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
-          <div className="font-medium text-amber-100">Some health data is unavailable</div>
-          <div className="mt-1 text-xs text-amber-300/90">
-            {String(
-              healthError ||
-                pipelineError ||
-                unfixedResultsError ||
-                recentResultsError,
-            )}
+      {(() => {
+        const errors = [healthError, pipelineError, unfixedResultsError, recentResultsError].filter(Boolean)
+        return errors.length > 0 ? (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+            <div className="font-medium text-amber-100">Some health data is unavailable</div>
+            <div className="mt-1 text-xs text-amber-300/90 space-y-0.5">
+              {errors.map((err, i) => (
+                <div key={i}>{String(err)}</div>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        ) : null
+      })()}
 
       {pipelineLoading ? (
         <Skeleton className="h-16 w-full" />

@@ -8,7 +8,7 @@
 export type ExplorerType =
   | 'files'
   | 'database'
-  | 'celery'
+  | 'tasks'
   | 'api'
   | 'pages'
   | 'dependencies'

@@ -55,3 +55,10 @@ async def scan_projects_wf(input, ctx):
     assert entries[0].metadata["execution_timeout"] == "1200s"
     assert entries[0].metadata["retries"] == 2
     assert entries[0].metadata["source_file"] == "backend/app/workflows/scheduled.py"
+
+    assert entries[1].metadata["scheduler"] == "hatchet"
+    assert entries[1].metadata["schedule_type"] == "cron"
+    assert entries[1].metadata["schedule_value"] == "0 */6 * * *"
+    assert entries[1].metadata["execution_timeout"] == "1800s"
+    assert entries[1].metadata["retries"] == 3
+    assert entries[1].metadata["source_file"] == "backend/app/workflows/scheduled.py"

@@ -69,7 +69,7 @@ export function useTaskData({
         setError(getErrorMessage(err, 'Failed to load task details'))
       })
       .finally(() => setIsLoading(false))
-  }, [open, taskId, projectId, initialTask])
+  }, [open, taskId, projectId, initialTask?.id])
 
   // Fetch subtasks when task is loaded
   useEffect(() => {

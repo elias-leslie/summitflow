@@ -13,6 +13,7 @@ export function usePipelineData(projectId: string) {
         },
       ),
     refetchInterval: 30000,
+    enabled: !!projectId,
   })
 
   return {

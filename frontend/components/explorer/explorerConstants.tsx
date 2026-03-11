@@ -18,7 +18,7 @@ import type { ExplorerType } from './types'
 export const uiTypeToApiType: Record<ExplorerType, ExplorerEntryType> = {
   files: 'file',
   database: 'table',
-  celery: 'task',
+  tasks: 'task',
   api: 'endpoint',
   pages: 'page',
   dependencies: 'dependency',
@@ -28,7 +28,7 @@ export const uiTypeToApiType: Record<ExplorerType, ExplorerEntryType> = {
 export const typeIcons: Record<ExplorerType, React.ReactNode> = {
   files: <Folder className="w-5 h-5" />,
   database: <Database className="w-5 h-5" />,
-  celery: <Zap className="w-5 h-5" />,
+  tasks: <Zap className="w-5 h-5" />,
   api: <Globe className="w-5 h-5" />,
   pages: <FileText className="w-5 h-5" />,
   dependencies: <Package className="w-5 h-5" />,
@@ -38,7 +38,7 @@ export const typeIcons: Record<ExplorerType, React.ReactNode> = {
 export const typeTitles: Record<ExplorerType, string> = {
   files: 'Files Explorer',
   database: 'Database Tables',
-  celery: 'Scheduled Jobs',
+  tasks: 'Scheduled Jobs',
   api: 'API Endpoints',
   pages: 'Frontend Pages',
   dependencies: 'Dependencies',
@@ -48,7 +48,7 @@ export const typeTitles: Record<ExplorerType, string> = {
 export const explorerTypes: ExplorerType[] = [
   'files',
   'database',
-  'celery',
+  'tasks',
   'api',
   'pages',
   'dependencies',

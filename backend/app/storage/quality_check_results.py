@@ -219,8 +219,8 @@ def cleanup_old_results(
                 RETURNING status, fixed_at
             )
             SELECT
-                COUNT(*) FILTER (WHERE status = 'pass') AS pass_deleted,
-                COUNT(*) FILTER (WHERE status = 'skipped') AS skipped_deleted,
+                COUNT(*) FILTER (WHERE status = 'pass' AND fixed_at IS NULL) AS pass_deleted,
+                COUNT(*) FILTER (WHERE status = 'skipped' AND fixed_at IS NULL) AS skipped_deleted,
                 COUNT(*) FILTER (WHERE fixed_at IS NOT NULL) AS fixed_deleted
             FROM deleted
             """,

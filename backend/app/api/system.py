@@ -17,6 +17,8 @@ from ..storage import maintenance_runs as maintenance_store
 
 router = APIRouter(prefix="/api/system", tags=["system"])
 
+MONITORED_MAINTENANCE_WORKFLOWS = ("daily_maintenance", "scheduled_backups")
+
 
 class DiskUsageResponse(BaseModel):
     """Disk usage information."""
@@ -119,7 +121,7 @@ def get_maintenance_status(
     latest = {
         workflow_name: MaintenanceRunResponse(**run)
         for workflow_name, run in maintenance_store.get_latest_maintenance_runs(
-            ("daily_maintenance", "scheduled_backups")
+            MONITORED_MAINTENANCE_WORKFLOWS
         ).items()
     }
     recent = [

@@ -1,5 +1,5 @@
 /**
- * TaskDetail - Detail panel for Celery tasks
+ * TaskDetail - Detail panel for scheduled tasks
  *
  * Shows schedule, stats, dependencies, table interactions.
  */

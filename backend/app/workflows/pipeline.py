@@ -69,6 +69,8 @@ def _make_dispatch_callback() -> Any:
         try:
             try:
                 loop.run_until_complete(_trigger_workflow(stage, task_id, project_id))
+            except ValueError:
+                raise
             except Exception:
                 logger.exception("dispatch_callback_failed", stage=stage, task_id=task_id)
         finally:

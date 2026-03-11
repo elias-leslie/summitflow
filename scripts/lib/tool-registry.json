@@ -161,7 +161,7 @@
       "component_id": "sf.scripts"
     },
     {
-      "pattern": "(pkill|killall)\\b.*(uvicorn|gunicorn|next|hatchet|celery)",
+      "pattern": "(pkill|killall)\\b.*(uvicorn|gunicorn|next|hatchet)",
       "message": "Never kill service processes directly. Use restart.sh to restart services or worktree-services.sh stop <task-id> for worktree services.",
       "component_id": "sf.scripts"
     },

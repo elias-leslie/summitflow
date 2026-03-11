@@ -72,7 +72,10 @@ def _scan_entry_type(project_id: str, entry_type: str) -> ScanResult:
 
 def _parse_started_at(value: str | None) -> datetime:
     if value:
-        return datetime.fromisoformat(value)
+        parsed = datetime.fromisoformat(value)
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=UTC)
+        return parsed
     return datetime.now(UTC)
 
 

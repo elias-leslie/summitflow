@@ -1,5 +1,5 @@
 /**
- * TaskRow - Row content renderer for Celery tasks
+ * TaskRow - Row content renderer for scheduled tasks
  *
  * Renders task name with icon, schedule, success rate, and avg duration.
  */

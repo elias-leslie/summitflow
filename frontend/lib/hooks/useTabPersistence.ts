@@ -4,7 +4,7 @@ type TabId = 'tasks' | 'explorer' | 'health'
 export type ExplorerType =
   | 'files'
   | 'database'
-  | 'celery'
+  | 'tasks'
   | 'api'
   | 'pages'
   | 'dependencies'
@@ -14,7 +14,7 @@ const VALID_TABS: TabId[] = ['tasks', 'explorer', 'health']
 const VALID_EXPLORER_TYPES: ExplorerType[] = [
   'files',
   'database',
-  'celery',
+  'tasks',
   'api',
   'pages',
   'dependencies',

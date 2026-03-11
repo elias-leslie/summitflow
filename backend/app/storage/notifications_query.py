@@ -139,7 +139,7 @@ def cleanup_old_notifications(
     max_dismissed_age_days: int = 14,
     max_pending_age_days: int = 90,
 ) -> dict[str, int]:
-    """Delete old non-pending notifications by status-specific retention windows."""
+    """Delete old notifications by status-specific retention windows."""
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """

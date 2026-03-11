@@ -16,14 +16,14 @@ vi.mock('react-window', () => ({
     rowCount,
     rowProps,
   }: {
-    rowComponent: (props: { index: number; style: React.CSSProperties; items: unknown[] }) => ReactNode
+    rowComponent: (props: { index: number; style: React.CSSProperties; items: unknown[]; nowMs: number }) => ReactNode
     rowCount: number
-    rowProps: { items: unknown[] }
+    rowProps: { items: unknown[]; nowMs: number }
   }) => (
     <div>
       {Array.from({ length: rowCount }, (_, index) => (
         <div key={index}>
-          {RowComponent({ index, style: {}, items: rowProps.items })}
+          {RowComponent({ index, style: {}, items: rowProps.items, nowMs: rowProps.nowMs })}
         </div>
       ))}
     </div>

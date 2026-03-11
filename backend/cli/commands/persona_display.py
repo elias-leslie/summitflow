@@ -7,7 +7,9 @@ from typing import Any
 
 def field_status(persona: dict[str, Any], field: str) -> str:
     val = persona.get(field)
-    return f"set ({len(val)} chars)" if val else "unset"
+    if not val:
+        return "unset"
+    return f"set ({len(val)} chars)" if isinstance(val, str) else "set"
 
 
 def print_persona(persona: dict[str, Any]) -> None:
@@ -59,11 +61,13 @@ def get_dispatch_hint(client: Any, project_id: str | None) -> str | None:
     if not project_id:
         return None
     payload = client.get(client._global_url(f"/projects/{project_id}/pulse"))
-    running_tasks = payload.get("running_tasks", []) if isinstance(payload, dict) else []
+    if not isinstance(payload, dict):
+        return None
+    running_tasks = payload.get("running_tasks", [])
     if not running_tasks:
         return None
-    active_owners = payload.get("active_owners", []) if isinstance(payload, dict) else []
-    active_sessions = payload.get("active_sessions", []) if isinstance(payload, dict) else []
+    active_owners = payload.get("active_owners", [])
+    active_sessions = payload.get("active_sessions", [])
     task = running_tasks[0] if isinstance(running_tasks[0], dict) else {}
     owner = active_owners[0] if active_owners and isinstance(active_owners[0], dict) else {}
     session = active_sessions[0] if active_sessions and isinstance(active_sessions[0], dict) else {}

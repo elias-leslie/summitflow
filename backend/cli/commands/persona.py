@@ -215,14 +215,14 @@ def heartbeat(
 
 def _handle_heartbeat_trigger_error(e: Exception) -> None:
     """Translate heartbeat trigger HTTP errors to user-friendly messages."""
-    error_msg = str(e)
-    if "409" in error_msg:
+    status_code = getattr(getattr(e, "response", None), "status_code", None)
+    if status_code == 409:
         print("Heartbeat already running")
         return
-    if "400" in error_msg:
+    if status_code == 400:
         output_error("Onboarding not complete")
         raise typer.Exit(1) from e
-    if "403" in error_msg:
+    if status_code == 403:
         output_error("Heartbeat permission is off")
         raise typer.Exit(1) from e
     output_error(f"Trigger failed: {e}")

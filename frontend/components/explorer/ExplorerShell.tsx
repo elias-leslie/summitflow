@@ -96,7 +96,7 @@ export function ExplorerShell({
     return {
       files: typeSummaries.file?.total || 0,
       database: typeSummaries.table?.total || 0,
-      celery: typeSummaries.task?.total || 0,
+      tasks: typeSummaries.task?.total || 0,
       api: typeSummaries.endpoint?.total || 0,
       pages: typeSummaries.page?.total || 0,
       dependencies: typeSummaries.dependency?.total || 0,

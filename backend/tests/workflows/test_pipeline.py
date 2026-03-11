@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from unittest.mock import MagicMock
-
 
 def test_dispatch_callback_logs_unknown_stage(mocker) -> None:
     from app.workflows.pipeline import _make_dispatch_callback

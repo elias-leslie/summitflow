@@ -765,6 +765,18 @@ class TestBackupCommands:
         """Set ST_PROJECT_ID for all backup tests."""
         monkeypatch.setenv("ST_PROJECT_ID", "summitflow")
 
+    @pytest.fixture()
+    def mock_backup_config(self):
+        """Shared Config fixture for backup command tests."""
+        from cli.config import Config
+
+        return Config(
+            api_base="http://localhost:8000",
+            project_id="summitflow",
+            project_root="/tmp/test-project",
+            source="test",
+        )
+
     def test_backup_list(self) -> None:
         """Test st backup list command."""
         from cli.commands.backup import app as backup_app
@@ -822,18 +834,12 @@ class TestBackupCommands:
         assert "--dry-run" in result.output
         assert "--source" in result.output
 
-    def test_backup_create_compact_without_task_id_uses_message(self) -> None:
+    def test_backup_create_compact_without_task_id_uses_message(self, mock_backup_config) -> None:
         """Backup create should not print `None` when the backend omits task_id."""
         from cli.commands.backup import app as backup_app
-        from cli.config import Config
         from cli.output import set_compact_output
 
-        mock_config = Config(
-            api_base="http://localhost:8000",
-            project_id="summitflow",
-            project_root="/home/kasadis/summitflow",
-            source="test",
-        )
+        mock_config = mock_backup_config
 
         with (
             patch("cli.commands.backup._get_project_api") as mock_api_factory,
@@ -856,18 +862,12 @@ class TestBackupCommands:
         assert "QUEUED | project:summitflow | Backup task queued for project summitflow" in result.output
         assert "None" not in result.output
 
-    def test_backup_restore_dry_run_compact_without_task_id_uses_backup_id(self) -> None:
+    def test_backup_restore_dry_run_compact_without_task_id_uses_backup_id(self, mock_backup_config) -> None:
         """Backup restore dry-run should emit the backup id when no task_id exists."""
         from cli.commands.backup import app as backup_app
-        from cli.config import Config
         from cli.output import set_compact_output
 
-        mock_config = Config(
-            api_base="http://localhost:8000",
-            project_id="summitflow",
-            project_root="/home/kasadis/summitflow",
-            source="test",
-        )
+        mock_config = mock_backup_config
 
         with (
             patch("cli.commands.backup._get_project_api") as mock_api_factory,

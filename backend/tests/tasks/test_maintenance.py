@@ -32,10 +32,6 @@ def test_run_daily_maintenance_records_observable_summary(mocker) -> None:
         return_value={"user_deleted": 6, "internal_deleted": 2, "total_deleted": 8},
     )
     mocker.patch(
-        "app.tasks.maintenance.celery_store.cleanup_old_celery_results",
-        return_value={"taskmeta_deleted": 7, "tasksetmeta_deleted": 0},
-    )
-    mocker.patch(
         "app.tasks.maintenance.maintenance_store.cleanup_old_maintenance_runs",
         return_value=9,
     )
@@ -52,11 +48,10 @@ def test_run_daily_maintenance_records_observable_summary(mocker) -> None:
     result = run_daily_maintenance()
 
     assert result["status"] == "success"
-    assert result["rows_cleaned"] == 46
+    assert result["rows_cleaned"] == 39
     assert result["events_deleted"]["total_deleted"] == 8
-    assert result["celery_results_deleted"]["taskmeta_deleted"] == 7
     assert result["maintenance_runs_deleted"] == 9
     record_run.assert_called_once()
     assert record_run.call_args.args[:2] == ("daily_maintenance", "success")
-    assert record_run.call_args.kwargs["rows_cleaned"] == 46
+    assert record_run.call_args.kwargs["rows_cleaned"] == 39
     assert record_run.call_args.kwargs["summary"]["events_deleted"]["user_deleted"] == 6

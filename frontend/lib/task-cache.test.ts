@@ -32,7 +32,6 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     labels: overrides.labels ?? [],
     task_type: overrides.task_type ?? 'task',
     parent_task_id: overrides.parent_task_id ?? null,
-    ...overrides,
   }
 }
 

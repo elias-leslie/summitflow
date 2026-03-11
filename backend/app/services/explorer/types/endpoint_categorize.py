@@ -13,7 +13,7 @@ _CATEGORY_RULES: list[tuple[tuple[str, ...], str]] = [
     (("/metrics", "/stats", "/analytics"), "analytics"),
     (("/config", "/settings"), "config"),
     (("/file", "/upload", "/download"), "files"),
-    (("/celery", "/task", "/job"), "tasks"),
+    (("/task", "/job"), "tasks"),
     (("/feature", "/capability"), "features"),
     (("/project",), "projects"),
     (("/sitemap", "/endpoint"), "sitemap"),

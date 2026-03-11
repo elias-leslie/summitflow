@@ -105,8 +105,8 @@ def _create_tasks_table(cur: psycopg.Cursor) -> None:
             priority INTEGER DEFAULT 2,
             task_type VARCHAR(20) DEFAULT 'task',
             parent_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
-            capability_id INTEGER,
-            feature_id INTEGER,
+            capability_id INTEGER,  -- intentionally denormalized; no capabilities table exists
+            feature_id INTEGER,     -- intentionally denormalized; no features table exists
             -- Autonomous execution fields
             claimed_by TEXT,
             claimed_at TIMESTAMPTZ,

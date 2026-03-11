@@ -72,6 +72,8 @@ def cleanup_old_scan_history(
                 """
             )
 
+        # SAFETY: reference_clauses contains only hardcoded SQL literals assembled above;
+        # it must never include user-supplied input to avoid SQL injection.
         reference_sql = " AND ".join(clause.strip() for clause in reference_clauses)
         cur.execute(
             f"""

@@ -14,6 +14,11 @@ def _safe_int(value: int | float | str | None) -> int:
     """Convert value to int safely; returns 0 for non-numeric or invalid values."""
     if isinstance(value, (int, float)):
         return int(value)
+    if isinstance(value, str):
+        try:
+            return int(float(value))
+        except (ValueError, TypeError):
+            return 0
     return 0
 
 
@@ -35,8 +40,8 @@ def format_compact_subtask(subtask: dict[str, object]) -> str:
     passes = "PASS" if subtask.get("passes") else "____"
     description = truncate(str(subtask.get("description") or ""), 40)
     step_summary = subtask.get("step_summary") or {}
-    done = _safe_int(step_summary.get("completed", 0))  # type: ignore[union-attr]
-    total = _safe_int(step_summary.get("total", 0))  # type: ignore[union-attr]
+    done = _safe_int(step_summary.get("completed", 0))
+    total = _safe_int(step_summary.get("total", 0))
     return f"{subtask_id:5} {passes} {description:40} [{done}/{total}]"
 
 

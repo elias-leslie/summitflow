@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from app.storage.celery_results import cleanup_old_celery_results
 from app.storage.connection import generate_prefixed_id, get_connection
 from app.storage.events import cleanup_old_events
 from app.storage.maintenance_runs import cleanup_old_maintenance_runs, record_maintenance_run
@@ -85,39 +84,6 @@ def _insert_event(
             VALUES (%s, %s, %s, 'log', 'test', 'info', %s, %s, '{}'::jsonb, %s)
             """,
             (project_id, trace_id, f"span-{message}", visibility, message, timestamp),
-        )
-        conn.commit()
-
-
-def _ensure_celery_result_tables(conn: Any) -> None:
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS celery_taskmeta (
-                id INTEGER PRIMARY KEY,
-                task_id VARCHAR UNIQUE,
-                status VARCHAR,
-                result BYTEA,
-                date_done TIMESTAMP,
-                traceback TEXT,
-                name VARCHAR,
-                args BYTEA,
-                kwargs BYTEA,
-                worker VARCHAR,
-                retries INTEGER,
-                queue VARCHAR
-            )
-            """
-        )
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS celery_tasksetmeta (
-                id INTEGER PRIMARY KEY,
-                taskset_id VARCHAR UNIQUE,
-                result BYTEA,
-                date_done TIMESTAMP
-            )
-            """
         )
         conn.commit()
 
@@ -317,62 +283,6 @@ class TestEventRetention:
             conn.commit()
 
         assert remaining == ["active-old-internal", "completed-newer-user"]
-
-
-class TestCeleryResultRetention:
-    """Celery result cleanup covers task and task-group metadata tables."""
-
-    def test_cleanup_old_celery_results_prunes_old_taskmeta_and_tasksetmeta(self) -> None:
-        with get_connection() as conn:
-            _ensure_celery_result_tables(conn)
-            with conn.cursor() as cur:
-                cur.execute("DELETE FROM celery_taskmeta WHERE id = ANY(%s::int[])", ([900001, 900002],))
-                cur.execute(
-                    "DELETE FROM celery_tasksetmeta WHERE id = ANY(%s::int[])",
-                    ([910001, 910002],),
-                )
-                cur.execute(
-                    """
-                    INSERT INTO celery_taskmeta (id, task_id, status, date_done)
-                    VALUES
-                        (900001, 'taskmeta-old', 'SUCCESS', NOW() - INTERVAL '45 days'),
-                        (900002, 'taskmeta-new', 'SUCCESS', NOW() - INTERVAL '5 days')
-                    """
-                )
-                cur.execute(
-                    """
-                    INSERT INTO celery_tasksetmeta (id, taskset_id, date_done)
-                    VALUES
-                        (910001, 'taskset-old', NOW() - INTERVAL '45 days'),
-                        (910002, 'taskset-new', NOW() - INTERVAL '5 days')
-                    """
-                )
-                conn.commit()
-
-        result = cleanup_old_celery_results(max_task_age_days=30, max_group_age_days=30)
-
-        assert result == {
-            "taskmeta_deleted": 1,
-            "tasksetmeta_deleted": 1,
-        }
-
-        with get_connection() as conn, conn.cursor() as cur:
-            cur.execute(
-                "SELECT id FROM celery_taskmeta WHERE id = ANY(%s::int[]) ORDER BY id",
-                ([900001, 900002],),
-            )
-            remaining_taskmeta = [row[0] for row in cur.fetchall()]
-            cur.execute(
-                "SELECT id FROM celery_tasksetmeta WHERE id = ANY(%s::int[]) ORDER BY id",
-                ([910001, 910002],),
-            )
-            remaining_tasksetmeta = [row[0] for row in cur.fetchall()]
-            cur.execute("DELETE FROM celery_taskmeta WHERE id = ANY(%s::int[])", ([900002],))
-            cur.execute("DELETE FROM celery_tasksetmeta WHERE id = ANY(%s::int[])", ([910002],))
-            conn.commit()
-
-        assert remaining_taskmeta == [900002]
-        assert remaining_tasksetmeta == [910002]
 
 
 class TestMaintenanceRunRetention:

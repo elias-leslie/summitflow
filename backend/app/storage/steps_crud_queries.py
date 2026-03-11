@@ -108,6 +108,10 @@ def execute_delete_all_steps(subtask_id: str) -> int:
 
 def _shift_steps_up(cur: Any, subtask_id: str, position: int) -> int:
     """Shift all steps at or after position up by 1; returns count of shifted steps."""
+    # Two-phase update: first add a large offset to move all affected rows out of range,
+    # then normalize back to the target values. This avoids unique constraint violations
+    # that would occur if we incremented step_number by 1 directly (colliding with the
+    # next row before it is shifted).
     cur.execute(
         """
         UPDATE task_subtask_steps

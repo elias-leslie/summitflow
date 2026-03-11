@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+from pytest_mock import MockerFixture
+
 from app.tasks.explorer_tasks import scan_all_projects
 
 
@@ -58,7 +60,7 @@ def test_scan_all_projects_reports_error_duration() -> None:
     assert result["details"][0]["duration_ms"] >= 0
 
 
-def test_scan_all_projects_logs_post_scan_dispatch_failure_without_failing_scan(mocker) -> None:
+def test_scan_all_projects_logs_post_scan_dispatch_failure_without_failing_scan(mocker: MockerFixture) -> None:
     dispatch = mocker.Mock(side_effect=RuntimeError("missing target"))
     logger = mocker.patch("app.tasks.explorer_tasks.logger")
 

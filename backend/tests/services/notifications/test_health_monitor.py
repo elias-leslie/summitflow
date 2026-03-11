@@ -58,3 +58,49 @@ class TestHealthMonitor:
         assert result["action"] == "no_change"
         mock_notify.assert_not_called()
         mock_set_status.assert_called_once_with("healthy")
+
+    @patch("app.services.notifications.health_monitor._set_last_status")
+    @patch("app.services.notifications.health_monitor._send_transition_notification")
+    @patch("app.services.notifications.health_monitor._get_last_status", return_value="healthy")
+    @patch("app.main._check_cache_health")
+    @patch("app.main._check_database_health")
+    def test_healthy_to_unhealthy_transition_triggers_alert(
+        self,
+        mock_db: MagicMock,
+        mock_cache: MagicMock,
+        mock_last_status: MagicMock,
+        mock_notify: MagicMock,
+        mock_set_status: MagicMock,
+    ) -> None:
+        """Transition from healthy to unhealthy should send a notification."""
+        mock_db.return_value = SimpleNamespace(status="unhealthy", message="DB unavailable")
+        mock_cache.return_value = SimpleNamespace(status="healthy", message="ok")
+
+        result = check_and_notify()
+
+        assert result["status"] == "unhealthy"
+        mock_notify.assert_called_once()
+        mock_set_status.assert_called_once_with("unhealthy")
+
+    @patch("app.services.notifications.health_monitor._set_last_status")
+    @patch("app.services.notifications.health_monitor._send_transition_notification")
+    @patch("app.services.notifications.health_monitor._get_last_status", return_value="unhealthy")
+    @patch("app.main._check_cache_health")
+    @patch("app.main._check_database_health")
+    def test_unhealthy_to_healthy_transition_triggers_recovery_notification(
+        self,
+        mock_db: MagicMock,
+        mock_cache: MagicMock,
+        mock_last_status: MagicMock,
+        mock_notify: MagicMock,
+        mock_set_status: MagicMock,
+    ) -> None:
+        """Transition from unhealthy to healthy should send a recovery notification."""
+        mock_db.return_value = SimpleNamespace(status="healthy", message="ok")
+        mock_cache.return_value = SimpleNamespace(status="healthy", message="ok")
+
+        result = check_and_notify()
+
+        assert result["status"] == "healthy"
+        mock_notify.assert_called_once()
+        mock_set_status.assert_called_once_with("healthy")

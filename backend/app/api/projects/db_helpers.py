@@ -1,7 +1,9 @@
 """Database helper functions for projects API."""
 
 from datetime import UTC, datetime
+from typing import Any
 
+import psycopg
 from fastapi import HTTPException
 
 from ...storage.connection import get_connection
@@ -35,12 +37,12 @@ def get_project_from_db(project_id: str) -> ProjectResponse:
 
 
 def _fetch_active_type_counts(
-    cur: object,
+    cur: psycopg.Cursor[Any],
     project_ids: list[str],
     task_type: str,
 ) -> dict[str, int]:
     """Fetch active task counts for a specific task type per project."""
-    cur.execute(  # type: ignore[union-attr]
+    cur.execute(
         """
         SELECT project_id, COUNT(*) as count
         FROM tasks
@@ -51,27 +53,27 @@ def _fetch_active_type_counts(
         """,
         (project_ids, task_type),
     )
-    return {row[0]: row[1] for row in cur.fetchall()}  # type: ignore[union-attr]
+    return {row[0]: row[1] for row in cur.fetchall()}
 
 
-def _fetch_feature_counts(cur: object, project_ids: list[str]) -> dict[str, int]:
+def _fetch_feature_counts(cur: psycopg.Cursor[Any], project_ids: list[str]) -> dict[str, int]:
     """Fetch active feature counts per project."""
     return _fetch_active_type_counts(cur, project_ids, "feature")
 
 
-def _fetch_task_counts(cur: object, project_ids: list[str]) -> dict[str, int]:
+def _fetch_task_counts(cur: psycopg.Cursor[Any], project_ids: list[str]) -> dict[str, int]:
     """Fetch active regular task counts per project."""
     return _fetch_active_type_counts(cur, project_ids, "task")
 
 
-def _fetch_bug_counts(cur: object, project_ids: list[str]) -> dict[str, int]:
+def _fetch_bug_counts(cur: psycopg.Cursor[Any], project_ids: list[str]) -> dict[str, int]:
     """Fetch active bug counts per project."""
     return _fetch_active_type_counts(cur, project_ids, "bug")
 
 
-def _fetch_blocked_counts(cur: object, project_ids: list[str]) -> dict[str, int]:
+def _fetch_blocked_counts(cur: psycopg.Cursor[Any], project_ids: list[str]) -> dict[str, int]:
     """Fetch blocked task counts per project."""
-    cur.execute(  # type: ignore[union-attr]
+    cur.execute(
         """
         SELECT t.project_id, COUNT(DISTINCT t.id) as count
         FROM tasks t
@@ -85,7 +87,7 @@ def _fetch_blocked_counts(cur: object, project_ids: list[str]) -> dict[str, int]
         """,
         (project_ids,),
     )
-    return {row[0]: row[1] for row in cur.fetchall()}  # type: ignore[union-attr]
+    return {row[0]: row[1] for row in cur.fetchall()}
 
 
 def fetch_project_stats(project_ids: list[str]) -> dict[str, ProjectStats]:

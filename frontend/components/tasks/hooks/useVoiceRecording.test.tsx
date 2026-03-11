@@ -1,5 +1,5 @@
 import { renderHook, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useVoiceRecording } from './useVoiceRecording'
 
 const apiConfigMocks = vi.hoisted(() => ({
@@ -11,8 +11,18 @@ vi.mock('@/lib/api-config', () => ({
 }))
 
 describe('useVoiceRecording', () => {
+  let originalMediaDevices: MediaDevices
+
   beforeEach(() => {
     vi.clearAllMocks()
+    originalMediaDevices = navigator.mediaDevices
+  })
+
+  afterEach(() => {
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: originalMediaDevices,
+    })
   })
 
   it('stops the microphone stream when voice transport is unavailable', async () => {

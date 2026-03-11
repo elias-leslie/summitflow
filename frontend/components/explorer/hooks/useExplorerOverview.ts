@@ -33,6 +33,6 @@ export function useExplorerOverview(
     overview: query.data,
     isLoading: query.isLoading,
     error: query.error instanceof Error ? query.error.message : null,
-    refetch: () => query.refetch(),
+    refetch: query.refetch,
   }
 }

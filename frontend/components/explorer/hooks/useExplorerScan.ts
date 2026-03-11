@@ -61,14 +61,12 @@ export function useExplorerScan(
       if (status.status === 'completed') {
         setScanCompletedAt(Date.now())
         finishScan()
-        void queryClient.invalidateQueries({ queryKey: scanHistoryKeys.all })
-        void queryClient.invalidateQueries({ queryKey: overviewKeys.all })
-        void queryClient.invalidateQueries({
-          queryKey: explorerKeys.entries(projectId),
-        })
-        void queryClient.invalidateQueries({
-          queryKey: explorerKeys.stats(projectId),
-        })
+        void Promise.all([
+          queryClient.invalidateQueries({ queryKey: scanHistoryKeys.all }),
+          queryClient.invalidateQueries({ queryKey: overviewKeys.all }),
+          queryClient.invalidateQueries({ queryKey: explorerKeys.entries(projectId) }),
+          queryClient.invalidateQueries({ queryKey: explorerKeys.stats(projectId) }),
+        ])
         return
       }
 
@@ -138,10 +136,9 @@ export function useExplorerScan(
     void resumeScanIfNeeded()
     return () => {
       cancelled = true
+      clearPendingPoll()
     }
-  }, [pollScanStatus, projectId])
-
-  useEffect(() => clearPendingPoll, [clearPendingPoll])
+  }, [clearPendingPoll, pollScanStatus, projectId])
 
   return {
     isScanning,

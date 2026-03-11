@@ -255,7 +255,9 @@ def update_state_entry(
     checkpoint: str | None = None,
 ) -> None:
     transcripts = state.setdefault("transcripts", {})
-    assert isinstance(transcripts, dict)
+    if not isinstance(transcripts, dict):
+        state["transcripts"] = {}
+        transcripts = state["transcripts"]
     transcripts[str(info.path)] = {
         "session_id": info.session_id,
         "mtime": info.mtime,
@@ -271,7 +273,8 @@ def should_sync(info: TranscriptInfo, state: dict[str, object], force: bool) -> 
     if force:
         return True
     entries = state.get("transcripts") or {}
-    assert isinstance(entries, dict)
+    if not isinstance(entries, dict):
+        return True  # Treat malformed state as needing sync
     entry = entries.get(str(info.path))
     if not isinstance(entry, dict):
         return True
@@ -314,7 +317,8 @@ def sync_transcript(
         return False, err
 
     ts = state.get("transcripts") or {}
-    assert isinstance(ts, dict)
+    if not isinstance(ts, dict):
+        ts = {}
     checkpoint = (ts.get(str(info.path)) or {}).get("checkpoint")  # type: ignore[union-attr]
     ok, payload, err = _checked_post(
         api_url, ENDPOINT_TRANSCRIPT.format(sid=info.session_id),
@@ -324,7 +328,10 @@ def sync_transcript(
     if not ok:
         return False, err
 
-    ingest_data = json.loads(payload)
+    try:
+        ingest_data = json.loads(payload)
+    except json.JSONDecodeError as exc:
+        return False, f"transcript ingest returned invalid JSON: {exc}"
     update_state_entry(
         state, info, "synced",
         f"appended={ingest_data.get('events_appended', 0)} skipped={ingest_data.get('events_skipped', 0)}",

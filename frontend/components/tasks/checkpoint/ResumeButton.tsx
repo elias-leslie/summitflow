@@ -36,6 +36,10 @@ export function ResumeButton({
       )
       if (response.ok) {
         const data = await response.json()
+        if (typeof data.resume_prompt !== 'string') {
+          toast.error('Invalid response from server')
+          return null
+        }
         setResumePrompt(data.resume_prompt)
         return data.resume_prompt
       }

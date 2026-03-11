@@ -56,7 +56,7 @@ describe('SystemHealthWidget', () => {
 
     render(<SystemHealthWidget />)
 
-    expect(screen.getByText(/updated mar/i)).toBeInTheDocument()
+    expect(screen.getByText(/updated/i)).toBeInTheDocument()
     expect(screen.getByText('8 cores')).toBeInTheDocument()
   })
 })

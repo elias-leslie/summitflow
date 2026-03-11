@@ -42,6 +42,8 @@ def record_maintenance_run(
     error_message: str | None = None,
 ) -> dict[str, Any] | None:
     """Persist one maintenance workflow run for operator visibility."""
+    if started_at.tzinfo is None:
+        raise ValueError("started_at must be timezone-aware")
     if summary is None:
         summary = {}
     if finished_at is None:

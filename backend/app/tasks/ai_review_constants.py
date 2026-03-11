@@ -43,7 +43,6 @@ MEDIUM_RISK_FILE_PATTERNS = [
     r"config",
     r"settings",
     r"middleware",
-    r"celery",
     r"redis",
 ]
 

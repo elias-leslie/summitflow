@@ -41,7 +41,7 @@ export interface ScanHistoryEntry {
   scan_type: string // 'file', 'page', 'endpoint', 'database', 'task', 'full'
 
   // Trigger metadata
-  triggered_by: string // 'manual', 'scheduled', 'project_create', 'refactor_it', 'audit_it'
+  triggered_by: 'manual' | 'scheduled' | 'project_create' | 'refactor_it' | 'audit_it'
   triggered_by_session: string | null
   triggered_by_user: string | null
   trigger_context: Record<string, unknown>

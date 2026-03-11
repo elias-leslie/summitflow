@@ -30,7 +30,7 @@ const features = [
     icon: <FileCode2 className="w-6 h-6" />,
     title: 'Code Explorer',
     description:
-      'Navigate your codebase with intelligent analysis. View files, database tables, API endpoints, and Celery tasks.',
+      'Navigate your codebase with intelligent analysis. View files, database tables, API endpoints, and scheduled tasks.',
     color: 'cyan',
   },
   {

@@ -93,7 +93,10 @@ class PageScanner(BaseScanner):
             if source.get("frontend_dir"):
                 self.frontend_dir = source["frontend_dir"]
             if source.get("frontend_port"):
-                self.frontend_port = int(source["frontend_port"])
+                try:
+                    self.frontend_port = int(source["frontend_port"])
+                except (ValueError, TypeError):
+                    self.frontend_port = None
             if source.get("base_url"):
                 self.page_base_url = str(source["base_url"]).rstrip("/")
         if not self.root_path:
