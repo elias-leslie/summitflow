@@ -41,31 +41,59 @@ export function TaskReviewModal({
 
   // Fetch subtasks when modal opens
   useEffect(() => {
-    if (open && task.id) {
-      getSubtasks(projectId, task.id)
-        .then((response) => {
-          setSubtasks(response.subtasks)
-        })
-        .catch((err) => {
-          console.error('Failed to fetch subtasks:', err)
-        })
+    if (!open || !task.id) {
+      return
+    }
+
+    let cancelled = false
+    setError(null)
+
+    getSubtasks(projectId, task.id)
+      .then((response) => {
+        if (cancelled) {
+          return
+        }
+        setSubtasks(response.subtasks)
+      })
+      .catch((err) => {
+        if (cancelled) {
+          return
+        }
+        setSubtasks([])
+        setError(
+          err instanceof Error ? err.message : 'Failed to load subtasks',
+        )
+      })
+
+    return () => {
+      cancelled = true
     }
   }, [open, projectId, task.id])
 
   // Update task when it changes
   useEffect(() => {
     setTask(initialTask)
+    setSubtasks([])
+    setError(null)
   }, [initialTask])
 
   const handleTaskUpdated = useCallback(
     (updatedTask: Task) => {
       setTask(updatedTask)
+      setError(null)
       // Refresh subtasks if task was updated
       getSubtasks(projectId, updatedTask.id)
         .then((response) => {
           setSubtasks(response.subtasks)
         })
-        .catch(console.error)
+        .catch((err) => {
+          setSubtasks([])
+          setError(
+            err instanceof Error
+              ? err.message
+              : 'Failed to refresh subtasks',
+          )
+        })
     },
     [projectId],
   )

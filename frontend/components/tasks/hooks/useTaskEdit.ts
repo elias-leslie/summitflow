@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
 import { type Task, updateTask } from '@/lib/api/tasks'
 import { useTaskMutationSync } from '@/lib/task-mutation-sync'
+import { getErrorMessage } from '@/lib/utils'
 
 interface UseTaskEditOptions {
   task: Task | null
@@ -61,8 +62,7 @@ export function useTaskEdit({
       setIsEditing(false)
       toast.success('Task details saved')
     } catch (err) {
-      console.error('Failed to update task:', err)
-      toast.error('Failed to save task details')
+      toast.error(getErrorMessage(err, 'Failed to save task details'))
     }
   }, [editDescription, editTitle, onTaskUpdate, projectId, setTask, syncUpdatedTask, task])
 

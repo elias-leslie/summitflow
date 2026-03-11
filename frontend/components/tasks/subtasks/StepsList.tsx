@@ -1,10 +1,11 @@
 'use client'
 
-import { Loader2 } from 'lucide-react'
+import { AlertCircle, Loader2 } from 'lucide-react'
 import { motion } from 'motion/react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Step, Subtask } from '@/lib/api/tasks'
 import { getSteps, updateStep } from '@/lib/api/tasks'
+import { getErrorMessage } from '@/lib/utils'
 import { StepItem } from './StepItem'
 
 export interface StepsListProps {
@@ -26,18 +27,21 @@ export function StepsList({
   const [optimisticUpdates, setOptimisticUpdates] = useState<Set<number>>(
     new Set(),
   )
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   // Fetch steps if not already loaded
   const fetchStepsIfNeeded = useCallback(async () => {
     if (subtask.steps_from_table?.length) {
       setSteps(subtask.steps_from_table)
       setIsLoading(false)
+      setErrorMessage(null)
       return
     }
 
     // If no table steps, check if we have legacy steps
     if (!subtask.steps?.length) {
       setIsLoading(false)
+      setErrorMessage(null)
       return
     }
 
@@ -45,10 +49,10 @@ export function StepsList({
       setIsLoading(true)
       const fetchedSteps = await getSteps(projectId, taskId, subtask.subtask_id)
       setSteps(fetchedSteps)
+      setErrorMessage(null)
     } catch (error) {
-      console.error('Failed to fetch steps:', error)
-      // Fallback: convert legacy steps to display format
       setSteps([])
+      setErrorMessage(getErrorMessage(error, 'Failed to load steps'))
     } finally {
       setIsLoading(false)
     }
@@ -77,6 +81,7 @@ export function StepsList({
         setSteps((prev) =>
           prev.map((s) => (s.step_number === stepNumber ? updated : s)),
         )
+        setErrorMessage(null)
         // Clear optimistic update on success
         setOptimisticUpdates((prev) => {
           const next = new Set(prev)
@@ -84,7 +89,7 @@ export function StepsList({
           return next
         })
       } catch (error) {
-        console.error('Failed to update step:', error)
+        setErrorMessage(getErrorMessage(error, 'Failed to update step'))
         // Revert optimistic update on failure
         setOptimisticUpdates((prev) => {
           const next = new Set(prev)
@@ -140,8 +145,24 @@ export function StepsList({
 
   if (steps.length === 0) {
     return (
-      <div className="pl-11 pr-4 pb-3">
-        <span className="text-2xs text-slate-600">No steps defined</span>
+      <div className="pl-11 pr-4 pb-3 space-y-2">
+        {errorMessage ? (
+          <div className="flex items-start gap-2 rounded-md border border-rose-900/60 bg-rose-950/20 p-2">
+            <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-rose-400" />
+            <div className="min-w-0">
+              <p className="text-2xs text-rose-300">{errorMessage}</p>
+              <button
+                type="button"
+                onClick={() => void fetchStepsIfNeeded()}
+                className="mt-1 text-2xs text-rose-200 underline underline-offset-2 hover:text-white"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
+        ) : (
+          <span className="text-2xs text-slate-600">No steps defined</span>
+        )}
       </div>
     )
   }
@@ -177,6 +198,12 @@ export function StepsList({
           />
         ))}
       </ul>
+      {errorMessage && (
+        <div className="mt-2 flex items-center gap-1.5 text-2xs text-rose-400">
+          <AlertCircle className="h-3 w-3" />
+          <span>{errorMessage}</span>
+        </div>
+      )}
     </div>
   )
 }

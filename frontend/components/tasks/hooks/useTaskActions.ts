@@ -14,6 +14,7 @@ import {
   formatTaskStatus,
   useTaskMutationSync,
 } from '@/lib/task-mutation-sync'
+import { getErrorMessage } from '@/lib/utils'
 
 interface UseTaskActionsOptions {
   task: Task | null
@@ -52,8 +53,7 @@ export function useTaskActions({
         syncUpdatedTask(updated)
         toast.success(`Status updated to ${formatTaskStatus(newStatus)}`)
       } catch (err) {
-        console.error('Failed to update status:', err)
-        toast.error('Failed to update task status')
+        toast.error(getErrorMessage(err, 'Failed to update task status'))
       }
     },
     [task, onTaskUpdate, projectId, setTask, syncUpdatedTask],
@@ -75,8 +75,7 @@ export function useTaskActions({
           ),
         )
       } catch (err) {
-        console.error('Failed to update subtask:', err)
-        throw err
+        throw new Error(getErrorMessage(err, 'Failed to update subtask'))
       }
     },
     [task, projectId, setSubtasks],
@@ -106,8 +105,7 @@ export function useTaskActions({
           : 'Autonomous execution disabled',
       )
     } catch (err) {
-      console.error('Failed to toggle autonomous:', err)
-      toast.error('Failed to update autonomous mode')
+      toast.error(getErrorMessage(err, 'Failed to update autonomous mode'))
     } finally {
       setIsTogglingAutonomous(false)
     }
@@ -127,8 +125,7 @@ export function useTaskActions({
           agentSlug ? 'Agent override updated' : 'Agent override cleared',
         )
       } catch (err) {
-        console.error('Failed to update agent override:', err)
-        toast.error('Failed to update agent override')
+        toast.error(getErrorMessage(err, 'Failed to update agent override'))
       }
     },
     [task, onTaskUpdate, projectId, setTask, syncUpdatedTask],

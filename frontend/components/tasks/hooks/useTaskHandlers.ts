@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import { deleteTask, deleteTasks } from '@/lib/api/tasks'
 import type { Task } from '@/lib/api'
 import { useTaskMutationSync } from '@/lib/task-mutation-sync'
+import { getErrorMessage } from '@/lib/utils'
 
 export function useTaskHandlers(projectId: string) {
   const { syncDeletedTask, syncUpdatedTask } = useTaskMutationSync(projectId)
@@ -19,8 +20,7 @@ export function useTaskHandlers(projectId: string) {
       toast.success('Task deleted')
     },
     onError: (error) => {
-      console.error('Failed to delete task:', error)
-      toast.error('Failed to delete task')
+      toast.error(getErrorMessage(error, 'Failed to delete task'))
     },
   })
 
@@ -36,8 +36,7 @@ export function useTaskHandlers(projectId: string) {
       )
     },
     onError: (error) => {
-      console.error('Failed to delete tasks:', error)
-      toast.error('Failed to delete selected tasks')
+      toast.error(getErrorMessage(error, 'Failed to delete selected tasks'))
     },
   })
 

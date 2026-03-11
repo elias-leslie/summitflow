@@ -15,6 +15,7 @@ interface FeedbackDetailActionsProps {
   currentStatus: string
   statusMutation: UseMutationResult<unknown, Error, StatusMutationData>
   deleteMutation: UseMutationResult<unknown, Error, void>
+  onDelete: () => void
 }
 
 // ============================================================================
@@ -25,6 +26,7 @@ export function FeedbackDetailActions({
   currentStatus,
   statusMutation,
   deleteMutation,
+  onDelete,
 }: FeedbackDetailActionsProps) {
   const [resolutionNote, setResolutionNote] = useState('')
   const [showResolveInput, setShowResolveInput] = useState(false)
@@ -39,12 +41,6 @@ export function FeedbackDetailActions({
         },
       },
     )
-  }
-
-  const handleDelete = () => {
-    if (window.confirm('Delete this feedback item? This cannot be undone.')) {
-      deleteMutation.mutate()
-    }
   }
 
   return (
@@ -65,6 +61,7 @@ export function FeedbackDetailActions({
               />
               <div className="flex items-center gap-2">
                 <button
+                  type="button"
                   onClick={handleResolveConfirm}
                   disabled={statusMutation.isPending}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/20 text-emerald-400
@@ -79,6 +76,7 @@ export function FeedbackDetailActions({
                   Confirm
                 </button>
                 <button
+                  type="button"
                   onClick={() => setShowResolveInput(false)}
                   className="px-3 py-1.5 text-xs text-slate-400 hover:text-slate-300"
                 >
@@ -92,6 +90,7 @@ export function FeedbackDetailActions({
                 <>
                   {currentStatus === 'open' && (
                     <button
+                      type="button"
                       onClick={() => statusMutation.mutate({ status: 'acknowledged' })}
                       disabled={statusMutation.isPending}
                       className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 text-amber-400
@@ -103,6 +102,7 @@ export function FeedbackDetailActions({
                     </button>
                   )}
                   <button
+                    type="button"
                     onClick={() => setShowResolveInput(true)}
                     disabled={statusMutation.isPending}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 text-emerald-400
@@ -113,6 +113,7 @@ export function FeedbackDetailActions({
                     Resolve
                   </button>
                   <button
+                    type="button"
                     onClick={() => statusMutation.mutate({ status: 'wont_fix' })}
                     disabled={statusMutation.isPending}
                     className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-500
@@ -124,6 +125,7 @@ export function FeedbackDetailActions({
               )}
               {(currentStatus === 'resolved' || currentStatus === 'wont_fix') && (
                 <button
+                  type="button"
                   onClick={() => statusMutation.mutate({ status: 'archived' })}
                   disabled={statusMutation.isPending}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-700/40 text-slate-300
@@ -141,7 +143,8 @@ export function FeedbackDetailActions({
       {/* Delete — always available */}
       <div className="px-5 py-3 border-t border-slate-700/50">
         <button
-          onClick={handleDelete}
+          type="button"
+          onClick={onDelete}
           disabled={deleteMutation.isPending}
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-rose-500/60
                      hover:text-rose-400 hover:bg-rose-500/10 rounded-md

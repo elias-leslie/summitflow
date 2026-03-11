@@ -21,6 +21,7 @@ interface TaskModalContentProps {
   projectId: string
   subtasks: Subtask[]
   isLoadingSubtasks: boolean
+  subtasksError: string | null
   isEditing: boolean
   editDescription: string
   isExecuting: boolean
@@ -54,6 +55,7 @@ export function TaskModalContent({
   projectId,
   subtasks,
   isLoadingSubtasks,
+  subtasksError,
   isEditing,
   editDescription,
   isExecuting,
@@ -187,6 +189,15 @@ export function TaskModalContent({
         <div className="flex items-center justify-center py-4">
           <Loader2 className="w-5 h-5 animate-spin text-slate-500" />
         </div>
+      ) : subtasksError ? (
+        <CollapsibleSection
+          title="Subtasks"
+          isOpen={subtasksOpen}
+          onToggle={onSubtasksToggle}
+          testId="subtasks-toggle"
+        >
+          <p className="text-sm text-rose-400">{subtasksError}</p>
+        </CollapsibleSection>
       ) : subtasks.length > 0 ? (
         <CollapsibleSection
           title={`Subtasks (${subtasks.filter((s) => s.passes).length}/${subtasks.length})`}

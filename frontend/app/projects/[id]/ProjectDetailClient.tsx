@@ -30,6 +30,7 @@ import { type TabId, useTabPersistence } from '@/lib/hooks/useTabPersistence'
 import { buildUrlWithUpdatedSearchParams } from '@/lib/search-params'
 import { taskQueryKeys } from '@/lib/task-cache'
 import { useTaskMutationSync } from '@/lib/task-mutation-sync'
+import { getErrorMessage } from '@/lib/utils'
 
 export function ProjectDetailClient() {
   const params = useParams()
@@ -145,8 +146,7 @@ export function ProjectDetailClient() {
       const updated = await updateTaskStatus(projectId, taskId, newStatus)
       syncUpdatedTask(updated)
     } catch (err) {
-      console.error('Failed to update task status:', err)
-      toast.error('Failed to update task status')
+      toast.error(getErrorMessage(err, 'Failed to update task status'))
     }
   }
 
@@ -170,8 +170,7 @@ export function ProjectDetailClient() {
       setEscalationOpen(false)
       toast.success('Task resumed')
     } catch (err) {
-      console.error('Failed to resume task:', err)
-      toast.error('Failed to resume task')
+      toast.error(getErrorMessage(err, 'Failed to resume task'))
     }
   }
 

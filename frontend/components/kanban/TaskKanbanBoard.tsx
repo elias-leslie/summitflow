@@ -30,6 +30,7 @@ import {
 } from './columnConfig'
 import { useRowCollapse } from './hooks/useRowCollapse'
 import { useTaskMutationSync } from '@/lib/task-mutation-sync'
+import { getErrorMessage } from '@/lib/utils'
 
 // ============================================================================
 // Types
@@ -149,8 +150,7 @@ export function TaskKanbanBoard({
       invalidateTasks()
       toast.success('Task queued for execution')
     } catch (error) {
-      console.error('Execute now failed:', error)
-      toast.error('Failed to queue task')
+      toast.error(getErrorMessage(error, 'Failed to queue task'))
     } finally {
       setExecutingTaskId(null)
     }
@@ -164,8 +164,7 @@ export function TaskKanbanBoard({
       toast.success('Task deleted')
     },
     onError: (error) => {
-      console.error('Delete task failed:', error)
-      toast.error('Failed to delete task')
+      toast.error(getErrorMessage(error, 'Failed to delete task'))
     },
   })
 

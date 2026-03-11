@@ -125,6 +125,7 @@ export function SubtasksSection({
             <div key={phase}>
               {/* Phase Header */}
               <button
+                type="button"
                 onClick={() => togglePhase(phase)}
                 data-testid={`phase-${phase}`}
                 className="w-full flex items-center gap-3 px-4 py-2.5 bg-slate-800/50 hover:bg-slate-800 transition-colors"
@@ -177,6 +178,7 @@ export function SubtasksSection({
                               <div className="flex items-start gap-3 px-4 py-2.5">
                                 {/* Checkbox */}
                                 <button
+                                  type="button"
                                   onClick={() => handleTogglePass(subtask)}
                                   disabled={isUpdating}
                                   className="mt-0.5 flex-shrink-0"
@@ -210,6 +212,7 @@ export function SubtasksSection({
                                   {/* Steps Toggle with progress */}
                                   {stepInfo && stepInfo.total > 0 && (
                                     <button
+                                      type="button"
                                       onClick={() => toggleSubtask(subtask.id)}
                                       data-testid={`steps-toggle-${subtask.subtask_id}`}
                                       className="mt-1 flex items-center gap-2 text-2xs text-slate-500 hover:text-slate-400 transition-colors group"

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import { useTaskHandlers } from './hooks/useTaskHandlers'
 import { useTaskSelection } from './hooks/useTaskSelection'
 import { useTaskSort } from './hooks/useTaskSort'
@@ -10,6 +11,7 @@ import { loadFilters, saveFilters, type TaskFilterValues } from './TaskFilters'
 import { TasksTabHeader } from './TasksTabHeader'
 import { TasksTabModals } from './TasksTabModals'
 import { TasksTabTable } from './TasksTabTable'
+import { getErrorMessage } from '@/lib/utils'
 
 interface TasksTabProps {
   projectId: string
@@ -126,7 +128,7 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
         enrichingTask={enrichingTask}
         onEnrichmentComplete={handleEnrichmentComplete}
         onEnrichmentError={(err) => {
-          console.error('Enrichment error:', err)
+          toast.error(getErrorMessage(err, 'Failed to enrich task'))
           setEnrichingTask(null)
         }}
         onEnrichmentDismiss={() => setEnrichingTask(null)}

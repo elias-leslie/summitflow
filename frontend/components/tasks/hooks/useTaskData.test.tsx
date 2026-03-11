@@ -101,4 +101,28 @@ describe('useTaskData', () => {
       expect(result.current.isLoading).toBe(false)
     })
   })
+
+  it('surfaces subtask fetch failures separately from task load failures', async () => {
+    const task = makeTask()
+
+    taskApiMocks.fetchTask.mockResolvedValue(task)
+    taskApiMocks.getSubtasksWithSteps.mockRejectedValue(
+      new Error('Subtasks unavailable'),
+    )
+
+    const { result } = renderHook(() =>
+      useTaskData({
+        taskId: task.id,
+        projectId: 'summitflow',
+        open: true,
+        initialTask: null,
+      }),
+    )
+
+    await waitFor(() => {
+      expect(result.current.task?.id).toBe(task.id)
+      expect(result.current.subtasksError).toBe('Subtasks unavailable')
+      expect(result.current.subtasks).toEqual([])
+    })
+  })
 })

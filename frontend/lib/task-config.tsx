@@ -1,6 +1,6 @@
 /**
  * Shared task configuration for priority colors, task types, and status display.
- * Used across TaskModal, TaskCard, TaskDetailDrawer, and other task components.
+ * Used across TaskModal, TaskCard, and other task components.
  *
  * This is a barrel file — all exports come from the sibling modules:
  *   - task-config-priority.ts  (priority colors & config)

@@ -12,6 +12,7 @@ import { Dialog, DialogClose, DialogContent } from '@/components/ui/dialog'
 import type { Task } from '@/lib/api/tasks'
 import { deleteTask } from '@/lib/api/tasks'
 import { useTaskMutationSync } from '@/lib/task-mutation-sync'
+import { getErrorMessage } from '@/lib/utils'
 
 interface TaskModalProps {
   taskId: string | null
@@ -37,6 +38,7 @@ export function TaskModal({
     isLoading,
     isLoadingSubtasks,
     error,
+    subtasksError,
     isEditing,
     editTitle,
     editDescription,
@@ -85,8 +87,7 @@ export function TaskModal({
       toast.success('Task deleted')
     },
     onError: (err) => {
-      console.error('Failed to delete task:', err)
-      toast.error('Failed to delete task')
+      toast.error(getErrorMessage(err, 'Failed to delete task'))
     },
   })
 
@@ -145,6 +146,7 @@ export function TaskModal({
               projectId={projectId}
               subtasks={subtasks}
               isLoadingSubtasks={isLoadingSubtasks}
+              subtasksError={subtasksError}
               isEditing={isEditing}
               editDescription={editDescription}
               isExecuting={isExecuting}

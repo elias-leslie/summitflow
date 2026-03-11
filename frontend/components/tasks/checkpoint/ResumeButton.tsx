@@ -2,6 +2,7 @@
 
 import { CheckCircle, Copy } from 'lucide-react'
 import { useState } from 'react'
+import { toast } from 'sonner'
 import { buildApiUrl } from '@/lib/api-config'
 import { Button } from '@/components/ui/button'
 
@@ -20,8 +21,10 @@ export function ResumeButton({
   const [resumePrompt, setResumePrompt] = useState<string | null>(null)
   const [loadingPrompt, setLoadingPrompt] = useState(false)
 
-  const fetchResumePrompt = async () => {
-    if (resumePrompt) return
+  const fetchResumePrompt = async (): Promise<string | null> => {
+    if (resumePrompt) {
+      return resumePrompt
+    }
 
     setLoadingPrompt(true)
     try {
@@ -34,23 +37,35 @@ export function ResumeButton({
       if (response.ok) {
         const data = await response.json()
         setResumePrompt(data.resume_prompt)
+        return data.resume_prompt
       }
+      toast.error('Failed to load resume prompt')
     } catch (error) {
-      console.error('Failed to fetch resume prompt:', error)
+      toast.error(
+        error instanceof Error ? error.message : 'Failed to load resume prompt',
+      )
     } finally {
       setLoadingPrompt(false)
     }
+
+    return null
   }
 
   const handleCopyPrompt = async () => {
-    if (!resumePrompt) {
-      await fetchResumePrompt()
+    const prompt = resumePrompt ?? (await fetchResumePrompt())
+    if (!prompt) {
+      return
     }
-    if (resumePrompt) {
-      await navigator.clipboard.writeText(resumePrompt)
+
+    try {
+      await navigator.clipboard.writeText(prompt)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
-      onResume?.(resumePrompt)
+      onResume?.(prompt)
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : 'Failed to copy resume prompt',
+      )
     }
   }
 

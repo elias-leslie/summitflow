@@ -8,6 +8,10 @@ import {
 } from 'vitest'
 import * as NotificationBellModule from './NotificationBell'
 
+const sonnerMocks = vi.hoisted(() => ({
+  error: vi.fn(),
+}))
+
 const apiMocks = vi.hoisted(() => ({
   dismissNotification: vi.fn(),
   fetchNotificationCount: vi.fn(),
@@ -20,6 +24,10 @@ vi.mock('@/lib/api', () => ({
   fetchNotificationCount: apiMocks.fetchNotificationCount,
   fetchNotifications: apiMocks.fetchNotifications,
   markNotificationRead: apiMocks.markNotificationRead,
+}))
+
+vi.mock('sonner', () => ({
+  toast: sonnerMocks,
 }))
 
 vi.mock('./PushNotificationToggle', () => ({
@@ -51,6 +59,7 @@ describe('NotificationBell', () => {
       pending_count: 1,
     })
     apiMocks.markNotificationRead.mockResolvedValue({})
+    apiMocks.dismissNotification.mockResolvedValue({})
 
     window.history.replaceState({}, '', '/')
   })
@@ -92,5 +101,55 @@ describe('NotificationBell', () => {
         '/chat?project_id=agent-hub&task_id=task-123&notification_id=notif-123',
       )
     })
+  })
+
+  it('dismisses a notification without navigating', async () => {
+    const navigateSpy = vi
+      .spyOn(NotificationBellModule.browserNavigator, 'go')
+      .mockImplementation(() => {})
+
+    render(<NotificationBellModule.NotificationBell projectId="agent-hub" />)
+
+    fireEvent.click(screen.getByTitle('Notifications'))
+
+    await screen.findByText('Task failed')
+    fireEvent.click(screen.getByTitle('Dismiss'))
+
+    await waitFor(() => {
+      expect(apiMocks.dismissNotification).toHaveBeenCalledWith(
+        'agent-hub',
+        'notif-123',
+      )
+    })
+    expect(navigateSpy).not.toHaveBeenCalled()
+  })
+
+  it('routes view-all actions through chat with project context', async () => {
+    const navigateSpy = vi
+      .spyOn(NotificationBellModule.browserNavigator, 'go')
+      .mockImplementation(() => {})
+
+    render(<NotificationBellModule.NotificationBell projectId="agent-hub" />)
+
+    fireEvent.click(screen.getByTitle('Notifications'))
+
+    await screen.findByText('Task failed')
+    fireEvent.click(screen.getByRole('button', { name: 'View all notifications' }))
+
+    expect(navigateSpy).toHaveBeenCalledWith('/chat?project_id=agent-hub')
+  })
+
+  it('shows a retry state when notifications fail to load', async () => {
+    apiMocks.fetchNotifications.mockRejectedValueOnce(new Error('boom'))
+
+    render(<NotificationBellModule.NotificationBell projectId="agent-hub" />)
+
+    fireEvent.click(screen.getByTitle('Notifications'))
+
+    await screen.findByText('Failed to load notifications')
+    expect(
+      screen.getByRole('button', { name: 'Try again' }),
+    ).toBeInTheDocument()
+    expect(sonnerMocks.error).not.toHaveBeenCalled()
   })
 })

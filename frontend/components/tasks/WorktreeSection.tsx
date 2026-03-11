@@ -3,6 +3,8 @@
 import clsx from 'clsx'
 import { Copy, GitBranch, Layers } from 'lucide-react'
 import { useState } from 'react'
+import { toast } from 'sonner'
+import { getErrorMessage } from '@/lib/utils'
 
 interface WorktreeSectionProps {
   worktree: {
@@ -24,7 +26,7 @@ export function WorktreeSection({ worktree }: WorktreeSectionProps) {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch (err) {
-      console.error('Failed to copy path:', err)
+      toast.error(getErrorMessage(err, 'Failed to copy worktree path'))
     }
   }
 
@@ -85,6 +87,7 @@ export function WorktreeSection({ worktree }: WorktreeSectionProps) {
           {displayPath}
         </code>
         <button
+          type="button"
           onClick={handleCopyPath}
           className={clsx(
             'flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors',

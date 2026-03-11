@@ -23,6 +23,7 @@ interface UseTaskModalReturn {
   isLoading: boolean
   isLoadingSubtasks: boolean
   error: string | null
+  subtasksError: string | null
 
   // Edit state
   isEditing: boolean
@@ -76,6 +77,7 @@ export function useTaskModal({
     isLoading,
     isLoadingSubtasks,
     error,
+    subtasksError,
   } = useTaskData({ taskId, projectId, open, initialTask })
 
   // Edit functionality
@@ -137,6 +139,7 @@ export function useTaskModal({
     isLoading,
     isLoadingSubtasks,
     error,
+    subtasksError,
     isEditing,
     editTitle,
     editDescription,

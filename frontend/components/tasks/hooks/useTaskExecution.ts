@@ -9,6 +9,7 @@ import {
   updateTaskStatus,
 } from '@/lib/api/tasks'
 import { useTaskMutationSync } from '@/lib/task-mutation-sync'
+import { getErrorMessage } from '@/lib/utils'
 
 interface UseTaskExecutionOptions {
   task: Task | null
@@ -48,11 +49,9 @@ export function useTaskExecution({
       syncUpdatedTask(updated)
       toast.success('Task queued for execution')
     } catch (err) {
-      console.error('Failed to start execution:', err)
-      setExecutionError(
-        err instanceof Error ? err.message : 'Failed to start execution',
-      )
-      toast.error('Failed to start execution')
+      const message = getErrorMessage(err, 'Failed to start execution')
+      setExecutionError(message)
+      toast.error(message)
     } finally {
       setIsExecuting(false)
     }
@@ -68,8 +67,7 @@ export function useTaskExecution({
       syncUpdatedTask(updated)
       toast.success('Task paused')
     } catch (err) {
-      console.error('Failed to stop execution:', err)
-      toast.error('Failed to pause task')
+      toast.error(getErrorMessage(err, 'Failed to pause task'))
     } finally {
       setIsStopping(false)
     }

@@ -1,10 +1,17 @@
-import { AlertCircle, ArrowDown, ArrowUp, GitBranch, Check } from 'lucide-react'
+import {
+  AlertCircle,
+  ArrowDown,
+  ArrowUp,
+  Check,
+  GitBranch,
+  type LucideIcon,
+} from 'lucide-react'
 import type { RepoStatus } from '@/lib/api'
 import { THEME } from './theme'
 
 export interface StateInfo {
   label: string
-  icon: any
+  icon: LucideIcon
   color: string
   bg: string
 }

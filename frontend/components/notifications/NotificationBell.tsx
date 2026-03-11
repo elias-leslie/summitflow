@@ -10,6 +10,7 @@ import {
   X,
 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import {
   dismissNotification,
   fetchNotificationCount,
@@ -63,6 +64,7 @@ export function NotificationBell({
   const [pendingCount, setPendingCount] = useState(0)
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   // Redirect push notification deep link (?notification_id=X) to /chat
   // Only redirects if we're NOT already on /chat (avoids infinite loop)
@@ -101,12 +103,13 @@ export function NotificationBell({
   // Fetch notifications when dropdown opens
   const loadNotifications = useCallback(async () => {
     setLoading(true)
+    setLoadError(null)
     try {
       const data = await fetchNotifications(projectId, { limit: 10 })
       setNotifications(data.items)
       setPendingCount(data.pending_count)
     } catch {
-      // Silently fail
+      setLoadError('Failed to load notifications')
     } finally {
       setLoading(false)
     }
@@ -131,7 +134,7 @@ export function NotificationBell({
         )
         setPendingCount((prev) => Math.max(0, prev - 1))
       } catch {
-        // Silently fail
+        toast.error('Failed to mark notification as read')
       }
     }
     // Navigate to persona chat with context
@@ -146,7 +149,7 @@ export function NotificationBell({
       setNotifications((prev) => prev.filter((n) => n.id !== notificationId))
       setPendingCount((prev) => Math.max(0, prev - 1))
     } catch {
-      // Silently fail
+      toast.error('Failed to dismiss notification')
     }
   }
 
@@ -154,8 +157,12 @@ export function NotificationBell({
     <div className={clsx('relative', className)}>
       {/* Bell Button */}
       <button
+        type="button"
         onClick={handleToggle}
         className="btn-ghost p-2 rounded-lg relative"
+        aria-label="Notifications"
+        aria-expanded={isOpen}
+        aria-haspopup="dialog"
         title="Notifications"
       >
         <Bell className="w-4 h-4" />
@@ -198,6 +205,18 @@ export function NotificationBell({
                 <div className="p-4 text-center text-slate-500 text-sm">
                   Loading...
                 </div>
+              ) : loadError ? (
+                <div className="p-6 text-center">
+                  <AlertCircle className="w-8 h-8 text-rose-500 mx-auto mb-2" />
+                  <p className="text-slate-300 text-sm">{loadError}</p>
+                  <button
+                    type="button"
+                    onClick={() => void loadNotifications()}
+                    className="mt-3 text-xs text-phosphor-400 hover:text-phosphor-300"
+                  >
+                    Try again
+                  </button>
+                </div>
               ) : notifications.length === 0 ? (
                 <div className="p-8 text-center">
                   <CheckCircle className="w-8 h-8 text-slate-600 mx-auto mb-2" />
@@ -214,7 +233,7 @@ export function NotificationBell({
                       key={notification.id}
                       onClick={() => handleNotificationClick(notification)}
                       className={clsx(
-                        'px-4 py-3 border-b border-slate-800 hover:bg-slate-800/50 cursor-pointer transition-colors',
+                        'group px-4 py-3 border-b border-slate-800 hover:bg-slate-800/50 cursor-pointer transition-colors',
                         notification.status === 'pending' &&
                           'bg-slate-800/30',
                       )}
@@ -254,6 +273,7 @@ export function NotificationBell({
                           </span>
                         </div>
                         <button
+                          type="button"
                           onClick={(e) => handleDismiss(e, notification.id)}
                           className="p-1 hover:bg-slate-700 rounded opacity-0 group-hover:opacity-100 transition-opacity"
                           title="Dismiss"
@@ -271,9 +291,10 @@ export function NotificationBell({
             {notifications.length > 0 && (
               <div className="px-4 py-2 border-t border-slate-700 bg-slate-900/50">
                 <button
+                  type="button"
                   onClick={() => {
                     setIsOpen(false)
-                    window.location.href = '/chat'
+                    browserNavigator.go(buildChatUrl({ projectId }))
                   }}
                   className="text-xs text-phosphor-400 hover:text-phosphor-300"
                 >

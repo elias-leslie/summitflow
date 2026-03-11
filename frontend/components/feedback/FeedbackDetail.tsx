@@ -2,6 +2,9 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
+import { useState } from 'react'
+import { toast } from 'sonner'
+import { ConfirmDeleteDialog } from '@/components/shared/ConfirmDeleteDialog'
 import {
   deleteFeedbackItem,
   fetchFeedbackItem,
@@ -23,6 +26,7 @@ interface FeedbackDetailProps {
 
 export function FeedbackDetail({ itemId, onClose }: FeedbackDetailProps) {
   const queryClient = useQueryClient()
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   const { data: item, isLoading } = useQuery({
     queryKey: ['feedback-item', itemId],
@@ -36,21 +40,25 @@ export function FeedbackDetail({ itemId, onClose }: FeedbackDetailProps) {
       queryClient.invalidateQueries({ queryKey: ['feedback-item', itemId] })
       queryClient.invalidateQueries({ queryKey: ['feedback-items'] })
       queryClient.invalidateQueries({ queryKey: ['feedback-summary'] })
+      toast.success('Feedback updated')
     },
     onError: (error: Error) => {
-      console.error('Failed to update feedback status:', error.message)
+      toast.error(error.message || 'Failed to update feedback')
     },
   })
 
   const deleteMutation = useMutation({
     mutationFn: () => deleteFeedbackItem(itemId),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['feedback-item', itemId] })
       queryClient.invalidateQueries({ queryKey: ['feedback-items'] })
       queryClient.invalidateQueries({ queryKey: ['feedback-summary'] })
+      toast.success('Feedback deleted')
+      setShowDeleteConfirm(false)
       onClose()
     },
     onError: (error: Error) => {
-      console.error('Failed to delete feedback item:', error.message)
+      toast.error(error.message || 'Failed to delete feedback')
     },
   })
 
@@ -83,7 +91,18 @@ export function FeedbackDetail({ itemId, onClose }: FeedbackDetailProps) {
         currentStatus={item.status}
         statusMutation={statusMutation}
         deleteMutation={deleteMutation}
+        onDelete={() => setShowDeleteConfirm(true)}
       />
+      {showDeleteConfirm && (
+        <ConfirmDeleteDialog
+          entityType="feedback"
+          entityName={item.title}
+          isDeleting={deleteMutation.isPending}
+          isError={deleteMutation.isError}
+          onConfirm={() => deleteMutation.mutate()}
+          onCancel={() => setShowDeleteConfirm(false)}
+        />
+      )}
     </div>
   )
 }

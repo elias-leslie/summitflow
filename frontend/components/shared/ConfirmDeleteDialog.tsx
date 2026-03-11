@@ -26,11 +26,17 @@ interface MockupsBulkDeleteProps {
   count: number
 }
 
+interface FeedbackDeleteProps {
+  entityType: 'feedback'
+  entityName: string
+}
+
 type EntityProps =
   | TaskDeleteProps
   | TasksBulkDeleteProps
   | MockupDeleteProps
   | MockupsBulkDeleteProps
+  | FeedbackDeleteProps
 
 interface CommonProps {
   isDeleting: boolean
@@ -227,6 +233,8 @@ function getTitle(props: EntityProps): string {
       const count = props.count
       return `Delete ${count} mockup${count > 1 ? 's' : ''}?`
     }
+    case 'feedback':
+      return 'Delete Feedback'
   }
 }
 
@@ -242,6 +250,8 @@ function getDescription(props: EntityProps): string {
       const count = props.count
       return `This action cannot be undone. The selected mockup${count > 1 ? 's' : ''} will be permanently deleted.`
     }
+    case 'feedback':
+      return `Are you sure you want to delete "${props.entityName}"?`
   }
 }
 
@@ -251,6 +261,8 @@ function getWarning(props: EntityProps): string {
       return 'This will permanently delete the task and all its subtasks, criteria, and dependencies. This cannot be undone.'
     case 'tasks':
       return 'This will permanently delete all selected tasks and their subtasks, criteria, and dependencies. This cannot be undone.'
+    case 'feedback':
+      return 'This will permanently delete the feedback item and its votes. This cannot be undone.'
     default:
       return ''
   }
@@ -266,6 +278,8 @@ function getErrorMessage(props: EntityProps): string {
       return 'Failed to delete mockup. Please try again.'
     case 'mockups':
       return 'Failed to delete mockups. Please try again.'
+    case 'feedback':
+      return 'Failed to delete feedback. Please try again.'
   }
 }
 
@@ -278,5 +292,7 @@ function getDeleteLabel(props: EntityProps): string {
       return `Delete ${props.taskIds.size}`
     case 'mockups':
       return `Delete ${props.count}`
+    case 'feedback':
+      return 'Delete'
   }
 }
