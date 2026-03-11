@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-import logging
 import subprocess
 
 from app.storage import tasks as task_store
 
+from ....logging_config import get_logger
 from .git_operations import revert_merge_commit
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _log_validation_failure(task_id: str, output: str) -> None:

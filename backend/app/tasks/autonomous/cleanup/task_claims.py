@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import logging
 from typing import TypedDict
 
 from app.storage import tasks as task_store
 
-logger = logging.getLogger(__name__)
+from ....logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class ClaimResetResult(TypedDict):

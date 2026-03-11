@@ -6,10 +6,11 @@ objectives, acceptance criteria, and implementation subtasks.
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from ..logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 def _mark_enrichment_failed(task_id: str, error: Exception) -> None:

@@ -7,11 +7,12 @@ for code quality analysis.
 from __future__ import annotations
 
 import ast
-import logging
 from pathlib import Path
 from typing import TypedDict
 
-logger = logging.getLogger(__name__)
+from ....logging_config import get_logger
+
+logger = get_logger(__name__)
 
 _FuncNode = ast.FunctionDef | ast.AsyncFunctionDef
 _NESTING_TYPES = (ast.If, ast.For, ast.While, ast.With, ast.Try, ast.Match, ast.AsyncFor, ast.AsyncWith)

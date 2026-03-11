@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-import logging
 from typing import cast
 
 from app.services.task_issue_mapper import link_issue_to_task
 from app.storage import tasks as task_store
 from app.storage.task_spirit import approve_plan, create_task_spirit
 
-logger = logging.getLogger(__name__)
+from ...logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 _ISSUE_LABELS: dict[str, str] = {

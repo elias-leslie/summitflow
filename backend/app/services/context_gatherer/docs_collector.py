@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 
+from ...logging_config import get_logger
 from ...storage.projects import get_project_root_path
 from .token_utils import MAX_DOCS_TOKENS, estimate_tokens, truncate_to_tokens
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _DOC_FILES = ["CLAUDE.md", "AGENTS.md", "README.md"]
 

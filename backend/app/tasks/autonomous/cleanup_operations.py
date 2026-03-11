@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from app.storage import log_task_event
@@ -15,7 +14,9 @@ from app.tasks.autonomous.violation_handlers import (
     get_violation_title,
 )
 
-logger = logging.getLogger(__name__)
+from ...logging_config import get_logger
+
+logger = get_logger(__name__)
 
 VIOLATION_TIER_MAP: dict[str, int] = {
     "god_table": 2,

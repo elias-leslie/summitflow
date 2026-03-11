@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from ...logging_config import get_logger
 from ...storage.explorer import (
     get_symbol,
     get_symbol_stats,
@@ -23,7 +23,7 @@ from ._precision_query import (
 )
 from .token_utils import MAX_EXPLORER_TOKENS, estimate_tokens, truncate_to_tokens
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _SEARCH_LIMIT = 5
 _SOURCE_SYMBOL_LIMIT = 2

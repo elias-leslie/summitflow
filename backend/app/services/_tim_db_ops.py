@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import logging
-
 from psycopg import Connection
 
 from app.services._tim_constants import (
@@ -14,7 +12,9 @@ from app.services._tim_constants import (
 )
 from app.storage.connection import get_connection
 
-logger = logging.getLogger(__name__)
+from ..logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 def db_link_issue_to_task(

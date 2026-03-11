@@ -7,16 +7,16 @@ Tracks last-known state in Redis to detect changes.
 from __future__ import annotations
 
 import json
-import logging
 import time
 from typing import cast
 
 import redis
 
 from ...config import REDIS_URL
+from ...logging_config import get_logger
 from ...storage.notifications import NotificationSeverity, create_notification
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Redis keys and TTL
 _REDIS_KEY = "johnny:health:last_status"

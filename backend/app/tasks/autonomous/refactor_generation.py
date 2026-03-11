@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from app.services.explorer import scan
@@ -19,7 +18,9 @@ from app.tasks.autonomous.step_builders import build_refactor_steps, calculate_t
 from app.tasks.autonomous.task_builders import create_refactor_task
 from app.tasks.explorer_resolution import check_and_close_resolved_issues
 
-logger = logging.getLogger(__name__)
+from ...logging_config import get_logger
+
+logger = get_logger(__name__)
 
 _SIZE_ISSUES = {"oversized", "large_file", "bloat_critical", "bloat_warning"}
 

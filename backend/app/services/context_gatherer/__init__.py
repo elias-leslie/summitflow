@@ -6,9 +6,9 @@ explorer entries, and capabilities to provide rich context for AI task enrichmen
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
+from ...logging_config import get_logger
 from .design_collector import gather_design_standards_context
 from .docs_collector import gather_docs_context
 from .explorer_collector import gather_explorer_context
@@ -21,7 +21,7 @@ from .precision_code_search import (
 from .rules_collector import gather_rules_context
 from .token_utils import estimate_tokens
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Re-export public API
 __all__ = [

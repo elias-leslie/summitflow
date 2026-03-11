@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import logging
 import subprocess
 
 from app.services._tim_constants import (
@@ -17,7 +16,9 @@ from app.services._tim_constants import (
     TASK_TITLE_MAX_LEN,
 )
 
-logger = logging.getLogger(__name__)
+from ..logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 def run_st_command(args: list[str]) -> tuple[bool, str]:

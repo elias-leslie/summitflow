@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Literal, TypedDict
 
 from app.services.worktree import get_task_worktree, remove_task_worktree
 from cli.commands.cleanup_git import has_uncommitted_changes
 
-logger = logging.getLogger(__name__)
+from ....logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class WorktreeCleanupSuccess(TypedDict):

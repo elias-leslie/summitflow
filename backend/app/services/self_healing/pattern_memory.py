@@ -7,13 +7,13 @@ and retrieving similar patterns to inform future fix attempts.
 from __future__ import annotations
 
 import hashlib
-import logging
 from dataclasses import dataclass
 from typing import Any
 
+from ...logging_config import get_logger
 from .memory_client import FixPattern, MemoryClient, SearchResult
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass

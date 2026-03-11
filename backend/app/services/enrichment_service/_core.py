@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import json
-import logging
 from typing import Any
 
+from ...logging_config import get_logger
 from ..context_gatherer import gather_all_context
 from .models import (
     AcceptanceCriterion,
@@ -15,7 +15,7 @@ from .models import (
 )
 from .parsers import build_enrichment_prompt, load_prompt, parse_enrichment_response
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _build_enriched_task(data: dict[str, Any]) -> EnrichedTask:

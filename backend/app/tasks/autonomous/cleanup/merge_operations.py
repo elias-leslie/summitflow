@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 import subprocess
 from datetime import UTC, datetime
 
@@ -13,11 +12,12 @@ from app.storage.projects import get_project_root_path
 from app.storage.tasks.status import update_task_status
 from app.storage.tasks.update import update_task_fields
 
+from ....logging_config import get_logger
 from .git_operations import checkout_base_branch, delete_task_branch, merge_task_branch
 from .merge_types import MergeResult
 from .validation import auto_rollback, run_post_merge_validation
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _err(task_id: str, msg: str) -> MergeResult:

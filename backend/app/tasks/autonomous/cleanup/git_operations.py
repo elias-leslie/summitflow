@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import logging
 import re
 import subprocess
 from dataclasses import dataclass
 
-logger = logging.getLogger(__name__)
+from ....logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 def _format_merge_error(result: subprocess.CompletedProcess[str], task_branch: str) -> str:

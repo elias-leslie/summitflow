@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from app.tasks.autonomous._issue_builder import (
@@ -23,7 +22,9 @@ from app.tasks.autonomous._task_core import (
     link_task_to_issue,
 )
 
-logger = logging.getLogger(__name__)
+from ...logging_config import get_logger
+
+logger = get_logger(__name__)
 
 __all__ = [
     "_build_issue_aware_done_when",

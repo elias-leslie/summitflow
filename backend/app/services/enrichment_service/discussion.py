@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import json
-import logging
 from typing import Any
 
+from ...logging_config import get_logger
 from ..context_gatherer import (
     PRECISION_CODE_SEARCH_GUIDANCE,
     collect_precision_code_search_context,
@@ -13,7 +13,7 @@ from ..context_gatherer import (
 from .models import DiscussionResponse
 from .parsers import load_prompt, parse_enrichment_response
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _fetch_task_if_needed(task_id: str, current_task: dict[str, Any] | None) -> dict[str, Any]:

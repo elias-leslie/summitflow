@@ -11,14 +11,15 @@ Implements the moltbot pattern:
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from ..logging_config import get_logger
+
+logger = get_logger(__name__)
 
 # Cache TTL in seconds (default 60s matches moltbot)
 HEALTH_CACHE_TTL_SECONDS = int(os.environ.get("HEALTH_CACHE_TTL_SECONDS", "60"))

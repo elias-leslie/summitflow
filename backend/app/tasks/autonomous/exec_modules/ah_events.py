@@ -6,17 +6,17 @@ in the Agent Hub timeline alongside regular execution events.
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 import httpx
 
+from ....logging_config import get_logger
 from ....services._agent_hub_config import (
     AGENT_HUB_URL,
     build_agent_hub_headers,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _TIMEOUT = 5  # seconds — don't block pipeline on slow Agent Hub
 

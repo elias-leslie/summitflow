@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
+from ...logging_config import get_logger
 from .token_utils import MAX_DESIGN_TOKENS, truncate_to_tokens
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _group_rules_by_category(

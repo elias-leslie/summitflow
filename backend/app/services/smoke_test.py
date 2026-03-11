@@ -9,15 +9,15 @@ to avoid notification spam.
 from __future__ import annotations
 
 import json
-import logging
 from typing import Any
 from urllib.request import Request, urlopen
 
 import redis
 
 from ..config import REDIS_URL
+from ..logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _REDIS_KEY = "smoke_test:last_status"
 _REDIS_TTL = 3600  # 1 hour — re-notify if still failing after TTL expires

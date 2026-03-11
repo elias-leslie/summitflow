@@ -5,13 +5,14 @@ Provides functions for analyzing table columns, freshness, and completeness.
 
 from __future__ import annotations
 
-import logging
 from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import text
 
-logger = logging.getLogger(__name__)
+from ....logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 def _get_non_null_count(table_name: str, col_name: str, conn: Any) -> int | None:

@@ -5,7 +5,6 @@ Routes notifications to Agent Hub's shared push delivery based on severity.
 
 from __future__ import annotations
 
-import logging
 import os
 from typing import Any
 from urllib.parse import urlencode
@@ -17,7 +16,9 @@ from app.services._agent_hub_config import (
     build_agent_hub_headers,
 )
 
-logger = logging.getLogger(__name__)
+from ...logging_config import get_logger
+
+logger = get_logger(__name__)
 
 FRONTEND_URL = os.getenv("SUMMITFLOW_FRONTEND_URL", "https://dev.summitflow.dev")
 

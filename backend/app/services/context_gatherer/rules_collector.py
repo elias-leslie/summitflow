@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 
+from ...logging_config import get_logger
 from ...storage.projects import get_project_root_path
 from .token_utils import MAX_RULES_TOKENS, estimate_tokens
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def gather_rules_context(project_id: str) -> str:

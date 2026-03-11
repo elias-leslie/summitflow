@@ -6,7 +6,6 @@ delegating to specialized modules for different task types.
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from app.tasks.autonomous.cleanup_operations import (
@@ -18,7 +17,9 @@ from app.tasks.autonomous.refactor_generation import (
     regenerate_refactor_tasks_impl,
 )
 
-logger = logging.getLogger(__name__)
+from ...logging_config import get_logger
+
+logger = get_logger(__name__)
 
 # Re-export cleanup and schema operations for backward compatibility
 __all__ = [

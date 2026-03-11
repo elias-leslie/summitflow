@@ -6,8 +6,7 @@ Extracted from files.py for focused responsibility.
 
 from __future__ import annotations
 
-import logging
-
+from ....logging_config import get_logger
 from .file_constants import (
     REFACTOR_HIGH_COMPLEXITY,
     REFACTOR_HIGH_LINES,
@@ -15,7 +14,7 @@ from .file_constants import (
     REFACTOR_MEDIUM_LINES,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def calculate_complexity_score(lines: int, function_count: int, class_count: int) -> float:

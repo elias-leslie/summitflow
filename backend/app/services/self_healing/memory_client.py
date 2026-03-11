@@ -7,19 +7,19 @@ Agent Hub knowledge graph for storing and retrieving fix patterns.
 from __future__ import annotations
 
 import inspect
-import logging
 from dataclasses import dataclass
 from typing import Any, cast
 
 import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
 
+from ...logging_config import get_logger
 from .._agent_hub_config import (
     AGENT_HUB_URL,
     build_agent_hub_headers,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 DEFAULT_TIMEOUT = 10.0
 SOURCE_CLIENT = "summitflow"

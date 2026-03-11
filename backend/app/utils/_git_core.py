@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -10,7 +9,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ..api.models.git_models import RepoStatus, SyncResult
 
-logger = logging.getLogger(__name__)
+from ..logging_config import get_logger
+
+logger = get_logger(__name__)
 
 CONFIG_REPOS = [Path.home() / ".claude"]
 WORKTREES_BASE_DIR = Path.home() / ".summitflow" / "worktrees"

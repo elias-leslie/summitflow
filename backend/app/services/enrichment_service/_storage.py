@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-import logging
 from datetime import UTC, datetime
 from typing import Any
 
 from ...constants import CLAUDE_OPUS_FULL
+from ...logging_config import get_logger
 from .models import EnrichedTask
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 ENRICHMENT_STATUS_REVIEW = "review"
 
 

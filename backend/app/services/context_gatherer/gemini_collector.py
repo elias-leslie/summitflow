@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import hashlib
-import logging
 import time
 
+from ...logging_config import get_logger
 from ...storage.projects import get_project_root_path
 from .token_utils import MAX_GEMINI_TOKENS, truncate_to_tokens
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Simple in-memory cache for Gemini responses (keyed by project_id + query hash)
 _gemini_cache: dict[str, tuple[str, float]] = {}

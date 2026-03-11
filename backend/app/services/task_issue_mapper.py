@@ -9,8 +9,6 @@ Implementation split across private submodules:
   _tim_db_ops.py      - database read/write helpers
 """
 
-import logging
-
 from psycopg import Connection
 
 from app.services._tim_constants import QAIssue  # re-exported for callers
@@ -35,7 +33,9 @@ __all__ = [
     "link_issue_to_task",
 ]
 
-logger = logging.getLogger(__name__)
+from ..logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 def create_task_for_issue(issue: QAIssue) -> str | None:
