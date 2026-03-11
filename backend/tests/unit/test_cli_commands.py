@@ -825,9 +825,20 @@ class TestBackupCommands:
     def test_backup_create_compact_without_task_id_uses_message(self) -> None:
         """Backup create should not print `None` when the backend omits task_id."""
         from cli.commands.backup import app as backup_app
+        from cli.config import Config
         from cli.output import set_compact_output
 
-        with patch("cli.commands.backup._get_project_api") as mock_api_factory:
+        mock_config = Config(
+            api_base="http://localhost:8000",
+            project_id="summitflow",
+            project_root="/home/kasadis/summitflow",
+            source="test",
+        )
+
+        with (
+            patch("cli.commands.backup._get_project_api") as mock_api_factory,
+            patch("cli.commands.backup.get_config", return_value=mock_config),
+        ):
             mock_api = MagicMock()
             mock_api.create_backup.return_value = {
                 "status": "queued",
@@ -848,9 +859,20 @@ class TestBackupCommands:
     def test_backup_restore_dry_run_compact_without_task_id_uses_backup_id(self) -> None:
         """Backup restore dry-run should emit the backup id when no task_id exists."""
         from cli.commands.backup import app as backup_app
+        from cli.config import Config
         from cli.output import set_compact_output
 
-        with patch("cli.commands.backup._get_project_api") as mock_api_factory:
+        mock_config = Config(
+            api_base="http://localhost:8000",
+            project_id="summitflow",
+            project_root="/home/kasadis/summitflow",
+            source="test",
+        )
+
+        with (
+            patch("cli.commands.backup._get_project_api") as mock_api_factory,
+            patch("cli.commands.backup.get_config", return_value=mock_config),
+        ):
             mock_api = MagicMock()
             mock_api.get_backup.return_value = {"id": "bkp-123"}
             mock_api.restore_backup.return_value = {
