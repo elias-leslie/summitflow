@@ -21,8 +21,8 @@ import {
   type ActivityEventType,
   fetchActivity,
 } from '@/lib/api/activity'
-import { formatDate } from '@/lib/format'
-import { POLL_STANDARD, STALE_STANDARD } from '@/lib/polling'
+import { formatDate, formatTimeAgo } from '@/lib/format'
+import { POLL_SLOW, POLL_STANDARD, STALE_STANDARD } from '@/lib/polling'
 import { getErrorMessage } from '@/lib/utils'
 
 const PAGE_SIZE = 50
@@ -72,21 +72,6 @@ const eventConfig: Record<
   },
 }
 
-function formatRelativeTime(timestamp: string | null, nowMs: number): string {
-  if (!timestamp) return ''
-  const date = new Date(timestamp)
-  const diffMs = nowMs - date.getTime()
-  const diffSec = Math.floor(diffMs / 1000)
-  const diffMin = Math.floor(diffSec / 60)
-  const diffHr = Math.floor(diffMin / 60)
-  const diffDays = Math.floor(diffHr / 24)
-
-  if (diffSec < 60) return 'Just now'
-  if (diffMin < 60) return `${diffMin}m ago`
-  if (diffHr < 24) return `${diffHr}h ago`
-  if (diffDays < 7) return `${diffDays}d ago`
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-}
 
 function getStatusBadgeClass(status: string): string {
   if (status === 'completed') {
@@ -106,14 +91,12 @@ function getStatusBadgeClass(status: string): string {
 
 interface ActivityRowProps {
   items: ActivityEvent[]
-  nowMs: number
 }
 
 function ActivityRow({
   index,
   style,
   items,
-  nowMs,
 }: RowComponentProps<ActivityRowProps>): ReactElement | null {
   const event = items[index]
   if (!event) return null
@@ -154,7 +137,7 @@ function ActivityRow({
         </p>
       </div>
       <span className="flex-shrink-0 font-mono text-xs text-slate-500">
-        {formatRelativeTime(event.timestamp, nowMs)}
+        {formatTimeAgo(event.timestamp)}
       </span>
     </div>
   )
@@ -181,7 +164,8 @@ export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedP
   const containerRef = useRef<HTMLDivElement>(null)
   const [listHeight, setListHeight] = useState(400)
   const [typeFilter, setTypeFilter] = useState<ActivityEventType | 'all'>(defaultFilter)
-  const [now, setNow] = useState(() => Date.now())
+  // Tick counter to force re-renders so relative timestamps update
+  const [, setTick] = useState(0)
 
   const {
     data,
@@ -223,7 +207,7 @@ export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedP
   }, [])
 
   useEffect(() => {
-    const intervalId = window.setInterval(() => setNow(Date.now()), 60000)
+    const intervalId = window.setInterval(() => setTick((t) => t + 1), POLL_SLOW)
     return () => window.clearInterval(intervalId)
   }, [])
 
@@ -231,7 +215,7 @@ export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedP
   const items = pages.flatMap((page) => page.items)
   const total = pages[0]?.total ?? items.length
   const lastUpdated =
-    dataUpdatedAt > 0 ? formatRelativeTime(new Date(dataUpdatedAt).toISOString(), now) : 'never'
+    dataUpdatedAt > 0 ? formatTimeAgo(new Date(dataUpdatedAt).toISOString(), 'never') : 'never'
   const emptyLabel =
     typeFilter === 'all'
       ? 'No recent activity'
@@ -250,6 +234,7 @@ export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedP
               const Icon = filter.icon
               return (
                 <button
+                  type="button"
                   key={filter.value}
                   onClick={() => setTypeFilter(filter.value)}
                   aria-pressed={typeFilter === filter.value}
@@ -319,7 +304,7 @@ export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedP
             rowComponent={ActivityRow}
             rowCount={items.length}
             rowHeight={64}
-            rowProps={{ items, nowMs: now }}
+            rowProps={{ items }}
             style={{ height: listHeight }}
           />
           <div className="border-t border-slate-800 p-3 text-center">

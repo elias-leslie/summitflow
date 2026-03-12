@@ -9,7 +9,7 @@ import {
   X,
 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ExecutionTimeline } from '@/components/tasks/ExecutionTimeline'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -38,8 +38,9 @@ export function EscalationPanel({
 }: EscalationPanelProps) {
   const [message, setMessage] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const nextId = useRef(0)
   const [chatMessages, setChatMessages] = useState<
-    Array<{ role: 'user' | 'system'; content: string }>
+    Array<{ id: number; role: 'user' | 'system'; content: string }>
   >([])
 
   const handleApprove = async () => {
@@ -54,7 +55,7 @@ export function EscalationPanel({
 
   const handleSendMessage = () => {
     if (!message.trim()) return
-    setChatMessages((prev) => [...prev, { role: 'user', content: message }])
+    setChatMessages((prev) => [...prev, { id: nextId.current++, role: 'user', content: message }])
     setMessage('')
   }
 
@@ -176,9 +177,9 @@ export function EscalationPanel({
               )}
 
               <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                {chatMessages.map((msg, i) => (
+                {chatMessages.map((msg) => (
                   <div
-                    key={`${msg.role}-${i}-${msg.content?.slice(0, 12)}`}
+                    key={msg.id}
                     className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                   >
                     <div

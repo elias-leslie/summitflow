@@ -180,6 +180,7 @@ export function NotificationBell({
           {/* Backdrop */}
           <div
             className="fixed inset-0 z-40"
+            role="presentation"
             onClick={() => setIsOpen(false)}
           />
 
@@ -232,7 +233,15 @@ export function NotificationBell({
                   return (
                     <div
                       key={notification.id}
+                      role="button"
+                      tabIndex={0}
                       onClick={() => handleNotificationClick(notification)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          handleNotificationClick(notification)
+                        }
+                      }}
                       className={clsx(
                         'group px-4 py-3 border-b border-slate-800 hover:bg-slate-800/50 cursor-pointer transition-colors',
                         notification.status === 'pending' &&

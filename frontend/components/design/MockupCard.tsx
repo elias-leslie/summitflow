@@ -103,7 +103,10 @@ export function MockupCard({
   if (viewMode === 'list') {
     return (
       <div
+        role="button"
+        tabIndex={0}
         onClick={onClick}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } }}
         className={`card p-4 flex items-center gap-4 cursor-pointer transition-colors ${
           selectMode && isSelected
             ? 'bg-outrun-500/10 border-outrun-500/50 ring-2 ring-outrun-500/30'
@@ -167,7 +170,10 @@ export function MockupCard({
   // Grid view
   return (
     <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } }}
       className={`card overflow-hidden cursor-pointer transition-all group ${
         selectMode && isSelected
           ? 'ring-2 ring-outrun-500 bg-outrun-500/5'

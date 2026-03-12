@@ -9,7 +9,7 @@ import {
   subscribe,
   unsubscribe,
 } from '@agent-hub/push-client'
-import { PUSH_NOTIFICATION_TIMEOUT } from '@/lib/polling'
+import { FEEDBACK_TIMEOUT, PUSH_NOTIFICATION_TIMEOUT } from '@/lib/polling'
 
 type PushState = 'loading' | 'unsupported' | 'denied' | 'subscribed' | 'unsubscribed'
 
@@ -35,7 +35,7 @@ export function PushNotificationToggle() {
       }
     }
     // Timeout fallback in case SW ready hangs
-    const timeout = setTimeout(() => setState('unsubscribed'), 3000)
+    const timeout = setTimeout(() => setState('unsubscribed'), FEEDBACK_TIMEOUT + 1000)
     check().finally(() => clearTimeout(timeout))
   }, [])
 
@@ -94,6 +94,7 @@ function ToggleButton({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       disabled={disabled}
       className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${

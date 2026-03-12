@@ -2,9 +2,13 @@
 
 import { AlertCircle, Bot, Loader2, RefreshCw, Send, User } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { type DiscussionMessage, discussTask, type Task } from '@/lib/api/tasks'
+
+interface IdentifiedMessage extends DiscussionMessage {
+  _key: string
+}
 import { getErrorMessage } from '@/lib/utils'
 
 interface DiscussionChatProps {
@@ -20,7 +24,12 @@ export function DiscussionChat({
   initialHistory = [],
   onTaskUpdated,
 }: DiscussionChatProps) {
-  const [messages, setMessages] = useState<DiscussionMessage[]>(initialHistory)
+  const idPrefix = useId()
+  const nextId = useRef(0)
+  const makeKey = () => `${idPrefix}-${nextId.current++}`
+  const [messages, setMessages] = useState<IdentifiedMessage[]>(
+    initialHistory.map((m) => ({ ...m, _key: `init-${nextId.current++}` })),
+  )
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -39,10 +48,11 @@ export function DiscussionChat({
     const trimmedInput = input.trim()
     if (!trimmedInput || isLoading) return
 
-    const userMessage: DiscussionMessage = {
+    const userMessage: IdentifiedMessage = {
       role: 'user',
       content: trimmedInput,
       timestamp: new Date().toISOString(),
+      _key: makeKey(),
     }
 
     setMessages((prev) => [...prev, userMessage])
@@ -54,10 +64,11 @@ export function DiscussionChat({
       const response = await discussTask(projectId, taskId, trimmedInput)
 
       // Add agent response
-      const agentMessage: DiscussionMessage = {
+      const agentMessage: IdentifiedMessage = {
         role: 'assistant',
         content: response.response,
         timestamp: new Date().toISOString(),
+        _key: makeKey(),
       }
       setMessages((prev) => [...prev, agentMessage])
 
@@ -109,7 +120,7 @@ export function DiscussionChat({
         <AnimatePresence mode="popLayout">
           {messages.map((message) => (
             <motion.div
-              key={`${message.role}-${message.timestamp}`}
+              key={message._key}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}

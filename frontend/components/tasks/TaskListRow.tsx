@@ -43,10 +43,13 @@ export function TaskListRow({
   return (
     <tr
       className={cn(
-        'border-b border-slate-800 hover:bg-slate-800/30 transition-colors',
+        'border-b border-slate-800 hover:bg-slate-800/30 transition-colors cursor-pointer',
         isExpanded && 'bg-slate-800/50',
         isSelected && 'bg-blue-500/10',
       )}
+      onClick={onToggle}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle() } }}
+      tabIndex={0}
     >
       {/* Checkbox */}
       {onToggleSelect && (
@@ -61,7 +64,7 @@ export function TaskListRow({
       )}
 
       {/* Expand */}
-      <td className="w-8 px-2 py-3 cursor-pointer" onClick={onToggle}>
+      <td className="w-8 px-2 py-3">
         {isExpanded ? (
           <ChevronDown className="w-4 h-4 text-slate-500" />
         ) : (
@@ -70,7 +73,7 @@ export function TaskListRow({
       </td>
 
       {/* Priority */}
-      <td className="px-3 py-3 cursor-pointer" onClick={onToggle}>
+      <td className="px-3 py-3">
         <span
           className={`text-xs px-1.5 py-0.5 rounded border mono font-medium ${priorityStyle.className}`}
         >
@@ -79,7 +82,7 @@ export function TaskListRow({
       </td>
 
       {/* Type */}
-      <td className="px-3 py-3 cursor-pointer" onClick={onToggle}>
+      <td className="px-3 py-3">
         <span className={`flex items-center gap-1.5 ${typeStyle.className}`}>
           <TypeIcon className="h-3.5 w-3.5" />
           <span className="text-xs">{typeStyle.label}</span>
@@ -87,12 +90,12 @@ export function TaskListRow({
       </td>
 
       {/* ID */}
-      <td className="px-3 py-3 cursor-pointer" onClick={onToggle}>
+      <td className="px-3 py-3">
         <span className="text-xs mono text-slate-500">{task.id}</span>
       </td>
 
       {/* Title + Warning */}
-      <td className="px-3 py-3 cursor-pointer" onClick={onToggle}>
+      <td className="px-3 py-3">
         <div className="flex items-center gap-2">
           <span className="text-sm text-slate-200 line-clamp-1">
             {task.title}
@@ -106,7 +109,7 @@ export function TaskListRow({
       </td>
 
       {/* Progress Indicators */}
-      <td className="px-3 py-3 cursor-pointer" onClick={onToggle}>
+      <td className="px-3 py-3">
         <div className="flex items-center gap-3">
           {/* Criteria Progress */}
           {task.acceptance_criteria && task.acceptance_criteria.length > 0 && (
@@ -125,7 +128,7 @@ export function TaskListRow({
       </td>
 
       {/* Status */}
-      <td className="px-3 py-3 cursor-pointer" onClick={onToggle}>
+      <td className="px-3 py-3">
         <span className={`flex items-center gap-1.5 ${statusStyle.className}`}>
           <StatusIcon className="h-3.5 w-3.5" />
           <span className="text-xs capitalize">{task.status}</span>
@@ -133,7 +136,7 @@ export function TaskListRow({
       </td>
 
       {/* Created */}
-      <td className="px-3 py-3 cursor-pointer" onClick={onToggle}>
+      <td className="px-3 py-3">
         <span className="text-xs text-slate-500">
           {task.created_at ? formatTimeAgo(task.created_at) : '-'}
         </span>
@@ -143,6 +146,7 @@ export function TaskListRow({
       {onDelete && (
         <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
           <button
+            type="button"
             onClick={() => onDelete(task.id)}
             className="p-1 rounded hover:bg-red-500/20 text-slate-500 hover:text-red-400 transition-colors"
             title="Delete task"

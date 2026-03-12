@@ -68,7 +68,15 @@ export function CriteriaProgress({
   return (
     <div className="relative">
       <div
+        role={expandable ? 'button' : undefined}
+        tabIndex={expandable ? 0 : undefined}
         onClick={handleClick}
+        onKeyDown={expandable ? (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            handleClick(e as unknown as React.MouseEvent)
+          }
+        } : undefined}
         className={`inline-flex items-center gap-1.5 group ${expandable ? 'cursor-pointer' : 'cursor-default'}`}
         title={expandable ? 'Click to expand' : tooltipContent}
         data-testid="criteria-expand"
@@ -115,7 +123,15 @@ export function CriteriaProgress({
           {criteria.map((c, i) => (
             <div
               key={c.id ?? `criterion-expanded-${i}`}
+              role="button"
+              tabIndex={0}
               onClick={(e) => handleCriterionClick(e, c)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  handleCriterionClick(e as unknown as React.MouseEvent, c)
+                }
+              }}
               className="flex items-start gap-2 p-2 rounded hover:bg-slate-700/50 cursor-pointer border-b border-slate-700/50 last:border-0"
             >
               {c.verified ? (

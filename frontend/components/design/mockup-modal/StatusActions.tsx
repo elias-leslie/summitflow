@@ -20,6 +20,7 @@ export function StatusActions({
       <div className="flex flex-wrap gap-2">
         {mockup.status === 'generated' && (
           <button
+            type="button"
             onClick={() => onStatusChange('pending_approval')}
             disabled={updating}
             className="btn-secondary flex items-center gap-2"
@@ -36,6 +37,7 @@ export function StatusActions({
           mockup.status === 'pending_approval') && (
           <>
             <button
+              type="button"
               onClick={() => onStatusChange('approved')}
               disabled={updating}
               className="btn-primary flex items-center gap-2"
@@ -48,6 +50,7 @@ export function StatusActions({
               Approve
             </button>
             <button
+              type="button"
               onClick={() => onStatusChange('rejected')}
               disabled={updating}
               className="btn-secondary text-rose-400 hover:bg-rose-500/10 flex items-center gap-2"
@@ -63,6 +66,7 @@ export function StatusActions({
         )}
         {mockup.status === 'approved' && (
           <button
+            type="button"
             onClick={() => onStatusChange('applied')}
             disabled={updating}
             className="btn-primary flex items-center gap-2"

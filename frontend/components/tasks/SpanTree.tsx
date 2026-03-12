@@ -161,9 +161,17 @@ function SpanNodeRow({
   return (
     <>
       <div
+        role="button"
+        tabIndex={0}
         className={`flex items-center gap-2 py-1.5 px-2 rounded-md cursor-pointer hover:bg-slate-700/30 transition-colors border ${levelBg}`}
         style={{ marginLeft: `${depth * 20}px` }}
         onClick={handleClick}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            handleClick()
+          }
+        }}
       >
         {/* Expand/collapse */}
         <span className="w-4 shrink-0">

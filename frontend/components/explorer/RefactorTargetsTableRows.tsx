@@ -44,6 +44,7 @@ export function SortableHeader({
 
   return (
     <button
+      type="button"
       onClick={() => onSort(field)}
       className={cn(
         'flex items-center gap-1 hover:text-slate-200 transition-colors',
@@ -105,8 +106,11 @@ export function TargetRow({
     <div className={cn('border-b border-slate-700/30', style.bg)}>
       {/* Main row */}
       <div
+        role="button"
+        tabIndex={0}
         className="grid grid-cols-[2rem_1fr_5rem_5rem_4rem_5rem] gap-2 px-3 py-2 items-center cursor-pointer hover:bg-slate-700/20 transition-colors"
         onClick={onToggle}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle() } }}
       >
         <div>
           {isExpanded ? (
@@ -284,6 +288,7 @@ export function TargetRow({
               )}
               {onFileSelect && (
                 <button
+                  type="button"
                   onClick={(e) => {
                     e.stopPropagation()
                     onFileSelect(target.path)

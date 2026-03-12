@@ -39,6 +39,7 @@ export function AnimatedLogo() {
 
   return (
     <button
+      type="button"
       onClick={handleLogoClick}
       className="flex items-center flex-shrink-0 group focus:outline-none"
       aria-label="Go to dashboard"

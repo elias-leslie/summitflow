@@ -32,6 +32,7 @@ export function TaskCardActions({
     <>
       {onDelete && (
         <button
+          type="button"
           onClick={(e) => {
             e.stopPropagation()
             onDelete(taskId)
@@ -53,6 +54,7 @@ export function TaskCardActions({
       {isIdea && onExecuteNow && (
         <div className="mt-3 pt-2 border-t border-slate-700/50">
           <button
+            type="button"
             onClick={(e) => {
               e.stopPropagation()
               onExecuteNow(taskId)
@@ -77,6 +79,7 @@ export function TaskCardActions({
 
       {canExpand && (
         <button
+          type="button"
           onClick={onExpandToggle}
           className="mt-3 flex items-center justify-center gap-1 w-full py-1 text-xs text-slate-400 hover:text-slate-200 transition-colors"
         >

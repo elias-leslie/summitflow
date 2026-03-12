@@ -39,7 +39,6 @@ class TaskValidationResult:
 
 
 
-
 def _check_task_exists_in_project(
     task_id: str, project_id: str
 ) -> tuple[dict[str, Any] | None, TaskValidationResult | None]:

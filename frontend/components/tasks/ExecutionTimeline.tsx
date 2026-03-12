@@ -173,9 +173,9 @@ export function ExecutionTimeline({
           </div>
         ) : (
           <div className="py-2">
-            {allEvents.map((message, idx) => (
+            {allEvents.map((message) => (
               <TimelineEvent
-                key={`${getEventKey(message)}-${idx}`}
+                key={getEventKey(message)}
                 message={message}
               />
             ))}

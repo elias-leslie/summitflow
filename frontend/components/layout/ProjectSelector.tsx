@@ -97,6 +97,7 @@ export function ProjectSelector({ onProjectChange }: ProjectSelectorProps) {
   return (
     <div className="relative" ref={dropdownRef}>
       <button
+        type="button"
         onClick={() => setIsDropdownOpen(!isDropdownOpen)}
         className={clsx(
           'flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all cursor-pointer',
@@ -131,6 +132,7 @@ export function ProjectSelector({ onProjectChange }: ProjectSelectorProps) {
         <div className="absolute top-full left-0 mt-1 w-64 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl z-[100] max-h-80 overflow-y-auto">
           {/* Dashboard link */}
           <button
+            type="button"
             onClick={handleViewDashboard}
             className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left text-outrun-400 hover:bg-slate-800 transition-colors border-b border-slate-700"
           >
@@ -147,6 +149,7 @@ export function ProjectSelector({ onProjectChange }: ProjectSelectorProps) {
             ) : (
               projects?.map((project) => (
                 <button
+                  type="button"
                   key={project.id}
                   onClick={() => handleSelectProject(project.id)}
                   className={clsx(

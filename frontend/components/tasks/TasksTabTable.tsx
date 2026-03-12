@@ -72,8 +72,11 @@ export function TasksTabTable({
             </th>
             <th className="w-8 px-2 py-2"></th>
             <th
+              role="button"
+              tabIndex={0}
               className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-16 cursor-pointer hover:text-slate-200 select-none"
               onClick={() => onSort('priority')}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSort('priority') } }}
             >
               Pri
               <SortIndicator
@@ -83,8 +86,11 @@ export function TasksTabTable({
               />
             </th>
             <th
+              role="button"
+              tabIndex={0}
               className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-20 cursor-pointer hover:text-slate-200 select-none"
               onClick={() => onSort('type')}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSort('type') } }}
             >
               Type
               <SortIndicator
@@ -97,8 +103,11 @@ export function TasksTabTable({
               ID
             </th>
             <th
+              role="button"
+              tabIndex={0}
               className="px-3 py-2 text-left text-xs font-medium text-slate-400 cursor-pointer hover:text-slate-200 select-none"
               onClick={() => onSort('title')}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSort('title') } }}
             >
               Title
               <SortIndicator
@@ -111,8 +120,11 @@ export function TasksTabTable({
               Progress
             </th>
             <th
+              role="button"
+              tabIndex={0}
               className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-24 cursor-pointer hover:text-slate-200 select-none"
               onClick={() => onSort('status')}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSort('status') } }}
             >
               Status
               <SortIndicator
@@ -122,8 +134,11 @@ export function TasksTabTable({
               />
             </th>
             <th
+              role="button"
+              tabIndex={0}
               className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-24 cursor-pointer hover:text-slate-200 select-none"
               onClick={() => onSort('created_at')}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSort('created_at') } }}
             >
               Created
               <SortIndicator

@@ -21,6 +21,7 @@ export function TasksViewToolbar({
       {/* Board | Table toggle */}
       <div className="flex items-center gap-1 rounded-lg bg-slate-800/50 p-0.5">
         <button
+          type="button"
           onClick={() => onViewModeChange('board')}
           className={cn(
             'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors',
@@ -33,6 +34,7 @@ export function TasksViewToolbar({
           Board
         </button>
         <button
+          type="button"
           onClick={() => onViewModeChange('table')}
           className={cn(
             'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors',
