@@ -6,7 +6,7 @@ Provides worktree cleanup, orphan inspection, and minimal salvage recovery.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 
@@ -133,7 +133,7 @@ def _build_repo_cleanup_entry(repo_path: Path) -> RepoEntry:
     )
 
 
-def build_cleanup_status_payload(all_projects: bool) -> dict[str, object]:
+def build_cleanup_status_payload(all_projects: bool) -> dict[str, Any]:
     """Build the canonical cross-repo cleanup summary payload."""
     project_id = get_project_id(all_projects)
     worktrees = get_active_worktrees(project_id)
@@ -347,7 +347,7 @@ def cleanup_status(
         format_cleanup_status_compact(result, all_projects)
     else:
         output_json(result)
-    if fail_on_residue and result["summary"]["repos_needing_cleanup"] > 0:  # type: ignore[index]
+    if fail_on_residue and result["summary"]["repos_needing_cleanup"] > 0:
         raise typer.Exit(2)
 
 

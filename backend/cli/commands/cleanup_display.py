@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TypedDict
+from typing import Any, TypedDict
 
 import typer
 
@@ -69,7 +69,7 @@ def print_repo_compact(repo: RepoEntry) -> None:
     )
 
 
-def format_cleanup_status_compact(data: dict[str, object], all_projects: bool) -> None:
+def format_cleanup_status_compact(data: dict[str, Any], all_projects: bool) -> None:
     """Emit TOON summary for cleanup status."""
     summary = data["summary"]
     assert isinstance(summary, dict)
@@ -89,7 +89,7 @@ def format_cleanup_status_compact(data: dict[str, object], all_projects: bool) -
     repositories = data["repositories"]
     assert isinstance(repositories, list)
     for repo in repositories:
-        print_repo_compact(repo)  # type: ignore[arg-type]
+        print_repo_compact(repo)
 
 
 def print_git_residue_report(

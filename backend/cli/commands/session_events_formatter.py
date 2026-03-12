@@ -43,9 +43,9 @@ def _summarize_memory_cite(
 ) -> str:
     cited_uuids = [str(uuid) for uuid in (tool_input.get("uuids") or []) if uuid]
     total_cited = len(cited_uuids)
-    selected_total = len(selected_reference_uuids or set())
-    if selected_total > 0:
-        selected_hits = sum(1 for uuid in cited_uuids if uuid in selected_reference_uuids)  # type: ignore[operator]
+    if selected_reference_uuids:
+        selected_total = len(selected_reference_uuids)
+        selected_hits = sum(1 for uuid in cited_uuids if uuid in selected_reference_uuids)
         return f"cited={total_cited} selected_cited={selected_hits}/{selected_total}"
     return f"cited={total_cited}"
 

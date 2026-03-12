@@ -99,11 +99,12 @@ def build_payload(
     images: list[str] | None = None, timeout_seconds: float | None = None,
 ) -> dict[str, Any]:
     """Build request payload for /api/complete."""
+    content: str | list[dict[str, Any]]
     if images:
-        content: list[dict[str, Any]] = [encode_image(img) for img in images]
+        content = [encode_image(img) for img in images]
         content.append({"type": "text", "text": message})
     else:
-        content = message  # type: ignore[assignment]
+        content = message
     payload: dict[str, Any] = {
         "project_id": project_id,
         "messages": [{"role": "user", "content": content}],
