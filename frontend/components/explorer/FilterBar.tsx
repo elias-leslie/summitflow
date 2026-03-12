@@ -31,6 +31,7 @@ export function FilterBar({
       <span className="text-xs text-slate-500 mr-2">FILTER:</span>
       {filters.map((f) => (
         <button
+          type="button"
           key={f.value}
           onClick={() => onFilterChange(f.value)}
           className={cn(

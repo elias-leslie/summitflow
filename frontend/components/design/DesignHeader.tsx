@@ -52,7 +52,7 @@ export function DesignHeader({
 
       <div className="flex flex-wrap items-center gap-3">
         {!selectMode && (
-          <button onClick={onPrimaryAction} className="btn-primary flex items-center gap-2">
+          <button type="button" onClick={onPrimaryAction} className="btn-primary flex items-center gap-2">
             <Sparkles className="h-4 w-4" />
             {primaryActionLabel}
           </button>
@@ -60,6 +60,7 @@ export function DesignHeader({
 
         {hasItems && (
           <button
+            type="button"
             onClick={() => (selectMode ? onCancelSelectMode() : onSelectModeToggle())}
             className={`flex items-center gap-2 rounded-lg border px-3 py-2 transition ${
               selectMode
@@ -75,6 +76,7 @@ export function DesignHeader({
         {!selectMode && (
           <div className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/80 p-1">
             <button
+              type="button"
               onClick={() => onViewModeChange('grid')}
               className={`rounded-lg p-2 ${
                 viewMode === 'grid'
@@ -85,6 +87,7 @@ export function DesignHeader({
               <Grid3X3 className="h-4 w-4" />
             </button>
             <button
+              type="button"
               onClick={() => onViewModeChange('list')}
               className={`rounded-lg p-2 ${
                 viewMode === 'list'

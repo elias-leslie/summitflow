@@ -80,6 +80,7 @@ export function GitClient() {
         </div>
 
         <button
+          type="button"
           onClick={() => refetch()}
           className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-md border border-slate-700 transition-all shadow-lg hover:shadow-cyan-500/10 hover:border-cyan-500/30"
         >

@@ -33,6 +33,7 @@ export function TabNavigation({
         <nav className="flex gap-1">
           {tabs.map((tab) => (
             <button
+              type="button"
               key={tab.id}
               onClick={() => onTabChange(tab.id)}
               className={`

@@ -139,6 +139,7 @@ export function TypeNavigator({
 
           return (
             <button
+              type="button"
               key={type}
               onClick={() => onTypeChange(type)}
               className={cn(
@@ -186,6 +187,7 @@ export function TypeNavigator({
 
           return (
             <button
+              type="button"
               key={filter}
               onClick={() => onFilterChange(filter)}
               className={cn(

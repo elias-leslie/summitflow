@@ -62,6 +62,7 @@ export function FeedbackList({
 
         return (
           <button
+            type="button"
             key={item.id}
             onClick={() => onItemClick(item.id)}
             className={clsx(

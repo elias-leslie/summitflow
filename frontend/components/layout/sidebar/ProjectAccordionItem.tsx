@@ -44,6 +44,7 @@ export function ProjectAccordionItem({
     >
       {/* Project header */}
       <button
+        type="button"
         onClick={onToggleExpand}
         data-testid={`project-accordion-${project.id}`}
         className={clsx(

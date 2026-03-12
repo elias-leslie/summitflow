@@ -24,6 +24,7 @@ export function BulkActionBar({
         </div>
         <div className="h-6 w-px bg-slate-700" />
         <button
+          type="button"
           onClick={onDelete}
           disabled={isDeleting}
           className="flex items-center gap-2 px-4 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg transition-all border border-rose-500/30 hover:border-rose-500/50 disabled:opacity-50"

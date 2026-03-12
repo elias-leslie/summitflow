@@ -65,6 +65,7 @@ export function DataList<T>({
 
         {columns.map((col) => (
           <button
+            type="button"
             key={col.key}
             onClick={() => onSort(col.key)}
             className={cn(

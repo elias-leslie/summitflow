@@ -30,8 +30,8 @@ HEALTH_URLS: dict[str, str] = {
     "portfolio-ai": "http://localhost:8000/health",
     "terminal": "http://localhost:8002/health",
 }
-# Legacy alias — used by autonomous review actions and tests
-PROD_HEALTH_URLS = HEALTH_URLS
+# Legacy alias — referenced by autonomous review actions and tests
+PROD_HEALTH_URLS: dict[str, str] = HEALTH_URLS
 
 
 def check_health(project_id: str, url: str) -> dict[str, Any]:

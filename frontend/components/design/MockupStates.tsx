@@ -35,7 +35,7 @@ export function ErrorState({
         <p className="text-slate-400 text-sm mb-4">
           {error instanceof Error ? error.message : 'Unknown error'}
         </p>
-        <button onClick={onRetry} className="btn-primary">
+        <button type="button" onClick={onRetry} className="btn-primary">
           Retry
         </button>
       </div>

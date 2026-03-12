@@ -136,9 +136,11 @@ export function DashboardClient() {
                   {Math.min(startIndex + 1, totalProjects)}-{Math.min(endIndex, totalProjects)} of {totalProjects}
                 </span>
                 <button
+                  type="button"
                   onClick={handlePrevPage}
                   disabled={page === 0}
                   className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  aria-label="Previous page"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
@@ -146,9 +148,11 @@ export function DashboardClient() {
                   {page + 1} / {totalPages}
                 </span>
                 <button
+                  type="button"
                   onClick={handleNextPage}
                   disabled={page === totalPages - 1}
                   className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  aria-label="Next page"
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>

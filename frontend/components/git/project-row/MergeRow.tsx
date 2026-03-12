@@ -21,6 +21,7 @@ export function MergeRow({ merge }: { merge: MergedTaskSummary }) {
   return (
     <>
       <button
+        type="button"
         onClick={() => setDiffOpen(true)}
         className={clsx(
           'w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-left transition-all',

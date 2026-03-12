@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
 from ...logging_config import get_logger
@@ -21,7 +22,7 @@ from .storage_helpers import MOCKUP_BASE_DIR
 logger = get_logger(__name__)
 
 
-def get_design_standard(project_id: str, standards_id: str) -> dict | None:
+def get_design_standard(project_id: str, standards_id: str) -> dict[str, Any] | None:
     """Get design standard by ID."""
     from ..storage.design_standards import get_base_standard, get_project_standard
 

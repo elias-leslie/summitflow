@@ -42,6 +42,7 @@ function DiffFileSection({ file }: { file: DiffFile }) {
     <div className="border border-slate-800 rounded-md overflow-hidden">
       {/* File header */}
       <button
+        type="button"
         onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center gap-2 px-3 py-2 bg-slate-900/60 hover:bg-slate-800/60 transition-colors text-left"
       >
@@ -148,7 +149,7 @@ export function DiffPanel({
                 </span>
               </div>
               <Dialog.Close asChild>
-                <button aria-label="Close diff" className="p-1.5 rounded-md text-slate-500 hover:text-white hover:bg-slate-800 transition-colors">
+                <button type="button" aria-label="Close diff" className="p-1.5 rounded-md text-slate-500 hover:text-white hover:bg-slate-800 transition-colors">
                   <X className="w-4 h-4" />
                 </button>
               </Dialog.Close>

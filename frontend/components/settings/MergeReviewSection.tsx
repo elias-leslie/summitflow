@@ -44,8 +44,10 @@ export function MergeReviewSection({
             </p>
           </div>
           <button
+            type="button"
             onClick={onAutoMergeToggle}
             disabled={isPending}
+            aria-label={settings.auto_merge_enabled ? 'Disable auto-merge' : 'Enable auto-merge'}
             className={clsx(
               'relative w-12 h-6 rounded-full transition-colors',
               settings.auto_merge_enabled ? 'bg-phosphor-500' : 'bg-slate-600',
@@ -73,8 +75,10 @@ export function MergeReviewSection({
             </p>
           </div>
           <button
+            type="button"
             onClick={onRequireReviewToggle}
             disabled={isPending}
+            aria-label={settings.require_review ? 'Disable required review' : 'Enable required review'}
             className={clsx(
               'relative w-12 h-6 rounded-full transition-colors',
               settings.require_review ? 'bg-phosphor-500' : 'bg-slate-600',

@@ -21,11 +21,13 @@ from ...utils.git_helpers import (
     revert_to_snapshot,
 )
 from ..models.git_models import (
+    CommitInfo,
     ConflictInfo,
     DiffStats,
     MergedTaskSummary,
     ProjectDashboardResponse,
     RecentMergesResponse,
+    SnapshotInfo,
     TaskDiffResponse,
 )
 from .db_helpers import get_project_path, query_conflicts, query_recent_merges
@@ -292,7 +294,7 @@ async def build_project_dashboard(
 
 
 def _resolve_conflict_response(
-    task_id: str, project_id: str, worktree: Any, files: list[Any], status: str
+    task_id: str, project_id: str, worktree: Any, files: list[str], status: str
 ) -> dict[str, object]:
     return {
         "task_id": task_id,
@@ -372,23 +374,23 @@ def handle_finalize_task_merge(task_id: str, task: dict[str, Any]) -> MergeResul
 # --- Collection helpers ---
 
 
-def collect_recent_commits(limit: int, project_id: str | None) -> list[Any]:
+def collect_recent_commits(limit: int, project_id: str | None) -> list[CommitInfo]:
     """Collect recent commits across managed repos or for a specific project."""
     if project_id:
         try:
             return list(get_recent_commits(get_project_path(project_id), limit=limit))
         except HTTPException:
             return []
-    all_commits: list[Any] = []
+    all_commits: list[CommitInfo] = []
     for repo_path in get_managed_repos():
         all_commits.extend(get_recent_commits(repo_path, limit=limit))
     all_commits.sort(key=lambda c: c.date, reverse=True)
     return all_commits[:limit]
 
 
-def collect_snapshots(project_id: str | None) -> list[Any]:
+def collect_snapshots(project_id: str | None) -> list[SnapshotInfo]:
     """Collect pre-merge snapshots across managed repos or for a specific project."""
-    all_snapshots: list[Any] = []
+    all_snapshots: list[SnapshotInfo] = []
     if project_id:
         try:
             all_snapshots = list(list_snapshots(get_project_path(project_id)))

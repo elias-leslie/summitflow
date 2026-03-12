@@ -38,6 +38,7 @@ export default function Error({ error, reset }: ErrorProps) {
           </p>
         )}
         <button
+          type="button"
           onClick={reset}
           className="btn-primary inline-flex items-center gap-2"
         >

@@ -90,6 +90,7 @@ export function ComponentSummary({
 
           return (
             <button
+              type="button"
               key={componentId}
               onClick={() =>
                 onComponentClick(isActive ? undefined : componentId)

@@ -52,6 +52,7 @@ export function MockupGrid({
       {totalCount > pageSize && (
         <div className="flex items-center justify-center gap-4 mt-6 pb-4">
           <button
+            type="button"
             onClick={() => onPageChange(Math.max(0, page - 1))}
             disabled={page === 0}
             className="btn-secondary disabled:opacity-50"
@@ -62,6 +63,7 @@ export function MockupGrid({
             Page {page + 1} of {Math.ceil(totalCount / pageSize)}
           </span>
           <button
+            type="button"
             onClick={() => onPageChange(page + 1)}
             disabled={(page + 1) * pageSize >= totalCount}
             className="btn-secondary disabled:opacity-50"

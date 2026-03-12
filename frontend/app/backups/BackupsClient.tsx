@@ -132,6 +132,7 @@ function CreateBackupModal({
                 Select Sources
               </span>
               <button
+                type="button"
                 onClick={toggleAll}
                 className="text-xs text-phosphor-400 hover:text-phosphor-300 transition-colors"
               >
@@ -184,12 +185,14 @@ function CreateBackupModal({
 
         <div className="flex items-center justify-end gap-3 mt-6">
           <button
+            type="button"
             onClick={onClose}
             className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200 transition-colors"
           >
             Cancel
           </button>
           <button
+            type="button"
             onClick={handleCreate}
             disabled={count === 0 || isPending}
             className={clsx(
@@ -559,6 +562,7 @@ export function BackupsClient() {
           </p>
         </div>
         <button
+          type="button"
           onClick={() => setShowCreateModal(true)}
           className="flex items-center gap-2 px-4 py-2 bg-phosphor-600 text-white rounded-md
                      text-sm font-medium hover:bg-phosphor-500 transition-colors"
@@ -666,6 +670,7 @@ export function BackupsClient() {
       {/* Backup Schedules */}
       <section className="mb-8" data-testid="backup-schedules-section">
         <button
+          type="button"
           onClick={() => setShowSchedules(!showSchedules)}
           className="flex items-center gap-2 text-sm text-slate-300 hover:text-slate-100 mb-4"
         >
@@ -719,6 +724,7 @@ export function BackupsClient() {
             <AlertCircle className="w-8 h-8 text-red-400 mx-auto mb-3" />
             <p className="text-red-400">Failed to load backups</p>
             <button
+              type="button"
               onClick={() => refetchBackups()}
               className="mt-3 text-sm text-slate-400 hover:text-slate-200"
             >

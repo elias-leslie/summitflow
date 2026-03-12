@@ -124,6 +124,7 @@ export function BackupScheduleConfig({ sourceId }: BackupScheduleConfigProps) {
             </div>
           </div>
           <button
+            type="button"
             onClick={() => setEnabled(!enabled)}
             className={clsx(
               'relative w-12 h-6 rounded-full transition-colors',
@@ -146,6 +147,7 @@ export function BackupScheduleConfig({ sourceId }: BackupScheduleConfigProps) {
           <div className="grid grid-cols-3 gap-3">
             {FREQUENCY_OPTIONS.map((option) => (
               <button
+                type="button"
                 key={option.value}
                 onClick={() => setFrequency(option.value)}
                 disabled={!enabled}
@@ -232,6 +234,7 @@ export function BackupScheduleConfig({ sourceId }: BackupScheduleConfigProps) {
             </span>
           )}
           <button
+            type="button"
             onClick={handleSave}
             disabled={saving || !hasChanges}
             className={clsx(

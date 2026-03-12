@@ -93,6 +93,7 @@ export function DesignStandardsPanel({
     >
       {/* Header */}
       <button
+        type="button"
         onClick={() => setIsExpanded(!isExpanded)}
         className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-800/30 transition-colors border-b border-slate-700/30"
       >

@@ -13,7 +13,7 @@ from .task_second_opinion import assess_second_opinion_readiness
 _NONTRIVIAL_TASK_TYPES = {"feature", "task", "refactor", "debt", "regression"}
 
 
-def _has_scope_context(context: Any) -> bool:
+def _has_scope_context(context: dict[str, Any] | None) -> bool:
     if not isinstance(context, dict):
         return False
     for key in ("files_to_modify", "files_to_create"):

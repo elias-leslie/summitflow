@@ -85,6 +85,7 @@ export function TimelineFilters({
 
           return (
             <button
+              type="button"
               key={chip.id}
               onClick={() => onFilterChange(chip.id, chip.eventTypes)}
               className={`
@@ -121,6 +122,7 @@ export function TimelineFilters({
         />
         {searchTerm && (
           <button
+            type="button"
             onClick={() => onSearchChange('')}
             aria-label="Clear search"
             className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"

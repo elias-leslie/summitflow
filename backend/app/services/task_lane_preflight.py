@@ -183,7 +183,7 @@ def _fetch_live_project_inventory(
                 specialist_rows = [r for r in specialists if isinstance(r, dict)] if isinstance(specialists, list) else []
                 return owner_sessions, specialist_rows
             sessions_raw = payload.get("sessions")
-            sessions_list: list[dict[str, object]] = list(sessions_raw) if isinstance(sessions_raw, list) else []
+            sessions_list: list[dict[str, object]] = [r for r in sessions_raw if isinstance(r, dict)] if isinstance(sessions_raw, list) else []
             return sessions_list, []
 
         legacy_response = client.get(
@@ -194,8 +194,8 @@ def _fetch_live_project_inventory(
         legacy_response.raise_for_status()
         payload = legacy_response.json()
         sessions_raw = payload.get("sessions", [])
-        sessions_list = list(sessions_raw) if isinstance(sessions_raw, list) else []
-        return sessions_list, []
+        sessions_list_legacy: list[dict[str, object]] = [r for r in sessions_raw if isinstance(r, dict)] if isinstance(sessions_raw, list) else []
+        return sessions_list_legacy, []
 
 
 # -- Specialist summarization --

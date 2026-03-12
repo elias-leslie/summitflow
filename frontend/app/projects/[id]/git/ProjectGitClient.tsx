@@ -65,7 +65,7 @@ export function ProjectGitClient() {
           <p className="text-slate-400 mb-6">
             Could not connect to git status service.
           </p>
-          <button onClick={() => refetch()} className="btn-primary">
+          <button type="button" onClick={() => refetch()} className="btn-primary">
             Retry
           </button>
         </div>

@@ -49,6 +49,7 @@ export function SnapshotEntry({ snapshot }: { snapshot: SnapshotInfo }) {
           {confirming ? (
             <div className="flex items-center gap-1.5">
               <button
+                type="button"
                 disabled={revertMut.isPending}
                 onClick={() => revertMut.mutate()}
                 className={clsx(
@@ -61,6 +62,7 @@ export function SnapshotEntry({ snapshot }: { snapshot: SnapshotInfo }) {
                 {revertMut.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Confirm'}
               </button>
               <button
+                type="button"
                 disabled={revertMut.isPending}
                 onClick={() => setConfirming(false)}
                 className="px-2 py-1 rounded text-[10px] text-slate-500 hover:text-slate-300"
@@ -70,6 +72,7 @@ export function SnapshotEntry({ snapshot }: { snapshot: SnapshotInfo }) {
             </div>
           ) : (
             <button
+              type="button"
               onClick={() => setConfirming(true)}
               className="flex items-center gap-1 px-2 py-1 rounded text-[10px] text-slate-500 hover:text-amber-400 hover:bg-amber-500/10 transition-all"
             >

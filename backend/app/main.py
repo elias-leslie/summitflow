@@ -45,6 +45,8 @@ from .logging_config import SyslogPrefixFormatter, configure_logging, get_logger
 from .schemas.health import ComponentHealth, DetailedHealthResponse
 from .storage.connection import init_schema
 
+_APP_VERSION = "0.1.0"
+
 # Configure structured logging (skip in test mode - tests configure their own logging)
 if not os.getenv("PYTEST_CURRENT_TEST"):
     configure_logging()
@@ -74,8 +76,6 @@ _app_start_time = time.time()
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Initialize database, connection pool, and services on startup."""
-    import os
-
     from .storage.connection import close_pool, open_pool
 
     # Skip heavy DB init during pytest (tests mock the DB anyway)
@@ -91,7 +91,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 app = FastAPI(
     title="SummitFlow",
     description="AI-assisted software development platform",
-    version="0.1.0",
+    version=_APP_VERSION,
     redirect_slashes=False,  # Prevent 307 redirects that expose backend URL
     lifespan=lifespan,
 )
@@ -176,7 +176,7 @@ async def _fetch_detailed_health() -> DetailedHealthResponse:
         uptime_seconds=uptime_seconds,
         database=db_health,
         cache=cache_health,
-        version="0.1.0",
+        version=_APP_VERSION,
     )
 
 

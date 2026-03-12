@@ -74,6 +74,7 @@ export function CheckpointStatus({
           </div>
         </div>
         <button
+          type="button"
           onClick={() => setIsExpanded(!isExpanded)}
           className="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-300 transition-colors"
         >

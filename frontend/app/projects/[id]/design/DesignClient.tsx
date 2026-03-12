@@ -28,6 +28,7 @@ export function DesignClient(): React.ReactElement {
           </div>
           <div className="flex flex-wrap gap-2">
             <button
+              type="button"
               onClick={() => setActiveView('ui-design')}
               className={`rounded-full px-4 py-2 text-sm transition ${
                 activeView === 'ui-design'
@@ -38,6 +39,7 @@ export function DesignClient(): React.ReactElement {
               UI Design
             </button>
             <button
+              type="button"
               onClick={() => setActiveView('asset-studio')}
               className={`rounded-full px-4 py-2 text-sm transition ${
                 activeView === 'asset-studio'

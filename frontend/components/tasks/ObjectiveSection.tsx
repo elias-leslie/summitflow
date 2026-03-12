@@ -42,6 +42,7 @@ export function ObjectiveSection({
         </div>
         {!readOnly && onEdit && !isEditing && objective && (
           <button
+            type="button"
             onClick={() => setIsEditing(true)}
             className="p-1 rounded hover:bg-slate-800 text-slate-500 hover:text-slate-300 transition-colors"
           >
@@ -100,6 +101,7 @@ export function ObjectiveSection({
             <p className="text-sm text-amber-400">No objective defined</p>
             {!readOnly && onEdit && (
               <button
+                type="button"
                 onClick={() => setIsEditing(true)}
                 className="ml-auto text-xs text-amber-400 hover:text-amber-300 underline"
               >

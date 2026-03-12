@@ -106,6 +106,7 @@ export function ProjectRow({ repo, isConfigRepo = false }: ProjectRowProps) {
       <div className="flex flex-wrap items-center gap-3 px-5 py-3.5">
         {!isConfigRepo ? (
           <button
+            type="button"
             onClick={() => setExpanded(!expanded)}
             className="shrink-0 text-slate-500 hover:text-white transition-colors"
           >
@@ -186,6 +187,7 @@ export function ProjectRow({ repo, isConfigRepo = false }: ProjectRowProps) {
         </div>
 
         <button
+          type="button"
           disabled={syncMutation.isPending}
           onClick={(e) => {
             e.stopPropagation()

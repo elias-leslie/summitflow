@@ -197,6 +197,7 @@ export function TaskPreview({
               return (
                 <div key={phase} className="rounded-lg overflow-hidden">
                   <button
+                    type="button"
                     onClick={() => togglePhase(phase)}
                     className="w-full flex items-center gap-3 px-3 py-2 hover:bg-slate-800/50 transition-colors"
                   >

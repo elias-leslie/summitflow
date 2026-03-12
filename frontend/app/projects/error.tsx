@@ -38,6 +38,7 @@ export default function ProjectsError({ error, reset }: ErrorProps) {
         )}
         <div className="flex items-center justify-center gap-3">
           <button
+            type="button"
             onClick={reset}
             className="btn-primary inline-flex items-center gap-2"
           >

@@ -70,6 +70,7 @@ export function SyncResultBlock({ result }: { result: SyncResult }) {
         </div>
       )}
       <button
+        type="button"
         onClick={() => setShowLog(!showLog)}
         className="flex items-center gap-1 text-[9px] text-slate-500 hover:text-slate-300 uppercase tracking-wider"
       >

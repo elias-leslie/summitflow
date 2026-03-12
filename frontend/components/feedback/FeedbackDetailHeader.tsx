@@ -44,6 +44,7 @@ export function FeedbackDetailHeader({
         <h2 className="text-lg font-semibold text-slate-100 leading-tight">{title}</h2>
       </div>
       <button
+        type="button"
         onClick={onClose}
         aria-label="Close"
         className="flex-shrink-0 p-1.5 text-slate-500 hover:text-slate-300 transition-colors"

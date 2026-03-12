@@ -41,16 +41,6 @@ class CPUUsageDict(TypedDict):
     status: str
 
 
-class PoolStatsDict(TypedDict):
-    """Database connection pool statistics."""
-
-    pool_size: int
-    checked_out: int
-    overflow: int
-    percent_used: float
-    status: str
-
-
 def get_disk_usage() -> DiskUsageDict:
     """Get disk usage statistics for root filesystem.
 

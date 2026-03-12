@@ -22,6 +22,7 @@ export function CollapsibleSection({
   return (
     <div className={className}>
       <button
+        type="button"
         onClick={onToggle}
         className="flex items-center gap-2 w-full text-left text-sm font-medium text-slate-400 hover:text-slate-300 transition-colors py-1"
         data-testid={testId}

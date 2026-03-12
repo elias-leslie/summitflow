@@ -96,6 +96,7 @@ export function SummaryBar({
       <div className="flex items-center gap-4 flex-1">
         {metrics.map((metric, idx) => (
           <button
+            type="button"
             key={metric.key}
             onClick={() => onFilterChange(metric.key)}
             aria-pressed={activeFilter === metric.key}
@@ -155,6 +156,7 @@ export function SummaryBar({
 
       <div className="flex items-center gap-2">
         <button
+          type="button"
           onClick={onScan}
           disabled={isScanning}
           className={cn(
@@ -178,6 +180,7 @@ export function SummaryBar({
           )}
         </button>
         <button
+          type="button"
           onClick={onFullScan}
           disabled={isScanning}
           title="Run a full explorer scan"

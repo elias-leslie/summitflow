@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from ...schemas.tasks import (
@@ -16,15 +17,15 @@ from ...storage.tasks.execution_mode import is_autonomous_mode
 from .helpers import get_step_count_for_task
 
 
-def _format_datetime(val: Any) -> str | None:
+def _format_datetime(val: str | datetime | None) -> str | None:
     if val is None:
         return None
     if isinstance(val, str):
         return val
-    return val.isoformat() if hasattr(val, "isoformat") else str(val)
+    return val.isoformat()
 
 
-def _none_if_blank(value: Any) -> Any:
+def _none_if_blank(value: str | None) -> str | None:
     """Normalize empty strings in task spirit fields to null API values."""
     if isinstance(value, str) and not value.strip():
         return None

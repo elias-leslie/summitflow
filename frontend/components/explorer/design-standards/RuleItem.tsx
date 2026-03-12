@@ -28,6 +28,7 @@ export function RuleItem({ rule }: RuleItemProps) {
   return (
     <div className="bg-slate-900/30">
       <button
+        type="button"
         onClick={() => setShowDetails(!showDetails)}
         className="w-full flex items-center justify-between px-3 py-2 hover:bg-slate-800/30 transition-colors text-left"
       >

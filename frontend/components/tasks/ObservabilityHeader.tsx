@@ -62,6 +62,7 @@ export function ObservabilityHeader({
             { mode: 'replay' as const, icon: Play, label: 'Replay' },
           ]).map(({ mode, icon: Icon, label }) => (
             <button
+              type="button"
               key={mode}
               onClick={() => onViewModeChange(mode)}
               className={`flex items-center gap-1 px-2 py-1 rounded text-2xs font-medium transition-colors ${
@@ -87,6 +88,7 @@ export function ObservabilityHeader({
           </span>
         )}
         <button
+          type="button"
           onClick={onRefresh}
           disabled={isLoading}
           className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-300 px-2 py-1 rounded bg-slate-800/50 hover:bg-slate-700/50 transition-colors disabled:opacity-50"

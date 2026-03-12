@@ -77,7 +77,7 @@ function cacheFirstAsset(request, url) {
     if (cached) {
       fetch(request, { credentials: 'same-origin' })
         .then((res) => { if (!isCfAccessRedirect(res) && res.ok) storeInCache(CACHE_NAME, request, res) })
-        .catch(() => {})
+        .catch((err) => { console.warn('SW: background cache update failed:', err.message) })
       return cached
     }
     return fetch(request, { credentials: 'same-origin' })

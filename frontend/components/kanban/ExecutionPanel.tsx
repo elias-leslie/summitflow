@@ -123,6 +123,7 @@ export function ExecutionPanel({
         {/* Log Viewer */}
         <div className="rounded-md bg-slate-950/50 border border-slate-800">
           <button
+            type="button"
             onClick={() => setShowLogs(!showLogs)}
             className="w-full flex items-center justify-between px-2 py-1.5 text-xs text-slate-400 hover:bg-slate-800/50 transition-colors"
           >
@@ -170,6 +171,7 @@ export function ExecutionPanel({
           />
 
           <button
+            type="button"
             onClick={handleSend}
             disabled={
               !chatInput.trim() || !connected || execution.status !== 'running'
@@ -181,6 +183,7 @@ export function ExecutionPanel({
           </button>
 
           <button
+            type="button"
             onClick={onStop}
             disabled={execution.status !== 'running'}
             className="p-2 rounded-md bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"

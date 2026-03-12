@@ -1,6 +1,9 @@
 """Auto-Fix API - Endpoints for automated quality issue fixes."""
 
+from typing import Any
+
 from fastapi import APIRouter
+from psycopg import Connection
 
 from ..storage.connection import get_connection
 from .dependencies import validate_project_exists
@@ -9,7 +12,7 @@ from .quality_gate_models import AutoFixRequest, AutoFixResponse
 router = APIRouter()
 
 
-def _run_fix_by_type(conn, project_id: str, request: AutoFixRequest) -> dict:
+def _run_fix_by_type(conn: Connection[Any], project_id: str, request: AutoFixRequest) -> dict[str, int]:
     """Dispatch fix logic based on check_type.
 
     Returns a results dict with fixed/failed/escalated counts.
@@ -45,7 +48,7 @@ def _run_fix_by_type(conn, project_id: str, request: AutoFixRequest) -> dict:
     return results
 
 
-def _build_fix_message(results: dict) -> str:
+def _build_fix_message(results: dict[str, int]) -> str:
     """Build a human-readable summary message from fix results."""
     total_attempts = results["fixed"] + results["failed"] + results["escalated"]
     if total_attempts == 0:

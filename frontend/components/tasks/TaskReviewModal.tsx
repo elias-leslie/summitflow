@@ -160,6 +160,7 @@ export function TaskReviewModal({
         {/* Mobile Tab Switcher */}
         <div className="flex md:hidden border-b border-slate-800">
           <button
+            type="button"
             onClick={() => setActiveTab('preview')}
             className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors ${
               activeTab === 'preview'
@@ -171,6 +172,7 @@ export function TaskReviewModal({
             Preview
           </button>
           <button
+            type="button"
             onClick={() => setActiveTab('chat')}
             className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors ${
               activeTab === 'chat'

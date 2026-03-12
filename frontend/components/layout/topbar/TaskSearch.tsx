@@ -100,6 +100,7 @@ export function TaskSearch() {
           <div className="absolute top-full left-0 right-0 mt-1 bg-slate-800 border border-slate-700 rounded-lg shadow-xl overflow-hidden z-50">
             {searchResults.map((task, index) => (
               <button
+                type="button"
                 key={task.id}
                 onClick={() => navigateToTask(task)}
                 className={`w-full px-3 py-2 flex items-center gap-2 text-left hover:bg-slate-700/50 transition-colors ${

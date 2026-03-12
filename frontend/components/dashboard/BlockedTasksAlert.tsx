@@ -44,6 +44,7 @@ export function BlockedTasksAlert({
           {getErrorMessage(error, 'Failed to load blocked tasks')}
         </div>
         <button
+          type="button"
           onClick={() => refetch()}
           className="mt-2 text-xs text-rose-300 hover:text-rose-200"
         >
@@ -117,6 +118,7 @@ export function BlockedTasksAlert({
                 {formatTimeAgo(task.created_at)}
               </span>
               <button
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation()
                   handleUnblock(task)

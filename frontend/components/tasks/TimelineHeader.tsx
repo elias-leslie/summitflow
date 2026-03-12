@@ -32,6 +32,7 @@ export function TimelineHeader({
           </span>
         ) : error ? (
           <button
+            type="button"
             onClick={onReconnect}
             className="flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-300 transition-colors px-2 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20"
           >

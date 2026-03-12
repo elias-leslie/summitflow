@@ -96,6 +96,7 @@ export function AgentSelector({
           <div className="absolute top-full left-0 mt-1 z-50 min-w-[180px] bg-slate-800 border border-slate-700 rounded-md shadow-lg py-1">
             {/* Auto option */}
             <button
+              type="button"
               className={`w-full px-3 py-2 text-left text-sm hover:bg-slate-700 flex items-center justify-between ${
                 !agentOverride ? 'text-cyan-400' : 'text-slate-300'
               }`}
@@ -115,6 +116,7 @@ export function AgentSelector({
             {/* Agent options */}
             {codingAgents.map((agent) => (
               <button
+                type="button"
                 key={agent.slug}
                 className={`w-full px-3 py-2 text-left text-sm hover:bg-slate-700 ${
                   agentOverride === agent.slug ? 'text-cyan-400' : 'text-slate-300'

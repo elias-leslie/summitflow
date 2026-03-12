@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from ...logging_config import get_logger
 from ...storage.explorer import (
@@ -409,7 +410,7 @@ def _retrieve_and_assemble(
 ) -> tuple[
     list[dict[str, object]],
     str,
-    dict[str, object],
+    dict[str, Any],
     str,
     str,
     bool,

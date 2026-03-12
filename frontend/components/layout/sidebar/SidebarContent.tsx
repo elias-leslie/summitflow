@@ -66,9 +66,11 @@ export function SidebarContent() {
       {/* Collapse Toggle */}
       <div className="p-2 border-t border-slate-700/50">
         <button
+          type="button"
           onClick={toggleCollapsed}
           className="w-full flex items-center justify-center p-2 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 transition-colors"
           title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           {isCollapsed ? (
             <ChevronRight className="w-5 h-5" />

@@ -32,7 +32,7 @@ _DEFAULT_PROJECT_ID = "summitflow"
 _PUSH_DELIVERED_KEY = "delivered"
 
 
-def _log_push_response(resp: httpx.Response, notification_id: Any) -> None:
+def _log_push_response(resp: httpx.Response, notification_id: str) -> None:
     """Log outcome of an Agent Hub push response."""
     if resp.status_code != _HTTP_OK:
         logger.warning(

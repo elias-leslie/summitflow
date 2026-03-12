@@ -61,6 +61,7 @@ export function QualityGateSection({
           <div className="flex gap-2">
             {QUALITY_MODES.map(mode => (
               <button
+                type="button"
                 key={mode.value}
                 onClick={() => onModeChange(mode.value)}
                 disabled={isPending}
@@ -92,6 +93,7 @@ export function QualityGateSection({
         <div className="flex flex-wrap gap-2">
           {QUALITY_TOOLS.map(tool => (
             <button
+              type="button"
               key={tool.value}
               onClick={() => handleToolToggle(tool.value)}
               disabled={isPending}
@@ -119,8 +121,10 @@ export function QualityGateSection({
             </p>
           </div>
           <button
+            type="button"
             onClick={onFixEnabledToggle}
             disabled={isPending}
+            aria-label={settings.quality_gate_fix_enabled ? 'Disable auto-fix' : 'Enable auto-fix'}
             className={clsx(
               'relative w-12 h-6 rounded-full transition-colors',
               settings.quality_gate_fix_enabled ? 'bg-phosphor-500' : 'bg-slate-600',

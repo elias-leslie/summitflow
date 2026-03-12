@@ -282,6 +282,7 @@ export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedP
             {getErrorMessage(error, 'Activity feed is temporarily unavailable')}
           </p>
           <button
+            type="button"
             onClick={() => refetch()}
             className="mt-3 text-xs text-slate-400 hover:text-slate-200"
           >

@@ -82,6 +82,7 @@ export function PreviewArea({
       <div className="flex items-center gap-2 mt-3 flex-shrink-0">
         {canCompare && (
           <button
+            type="button"
             onClick={onToggleComparison}
             className={`btn-secondary flex items-center gap-2 ${showComparison ? 'bg-amber-500/20 text-amber-400' : ''}`}
           >
@@ -111,6 +112,7 @@ export function PreviewArea({
           </>
         )}
         <button
+          type="button"
           onClick={onToggleHistory}
           className={`btn-secondary flex items-center gap-2 ${showHistory ? 'bg-outrun-500/20' : ''}`}
         >
@@ -119,6 +121,7 @@ export function PreviewArea({
         </button>
         <div className="flex-1" />
         <button
+          type="button"
           onClick={onDelete}
           className="btn-secondary flex items-center gap-2 text-rose-400 hover:bg-rose-500/10 border-rose-500/30"
         >

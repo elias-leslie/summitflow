@@ -136,6 +136,7 @@ export function ReplayControls({
       {/* Transport controls */}
       <div className="flex items-center gap-0.5">
         <button
+          type="button"
           onClick={handleSkipToStart}
           className="p-1 text-slate-500 hover:text-slate-300 transition-colors rounded hover:bg-slate-700/50"
           title="Skip to start"
@@ -143,6 +144,7 @@ export function ReplayControls({
           <SkipBack className="h-3.5 w-3.5" />
         </button>
         <button
+          type="button"
           onClick={handleStepBack}
           disabled={currentIndex <= 0}
           className="p-1 text-slate-500 hover:text-slate-300 transition-colors rounded hover:bg-slate-700/50 disabled:opacity-30 disabled:cursor-not-allowed"
@@ -151,6 +153,7 @@ export function ReplayControls({
           <ChevronLeft className="h-3.5 w-3.5" />
         </button>
         <button
+          type="button"
           onClick={handlePlayPause}
           className={`p-1.5 rounded transition-colors ${
             isPlaying
@@ -166,6 +169,7 @@ export function ReplayControls({
           )}
         </button>
         <button
+          type="button"
           onClick={handleStepForward}
           disabled={currentIndex >= totalEvents - 1}
           className="p-1 text-slate-500 hover:text-slate-300 transition-colors rounded hover:bg-slate-700/50 disabled:opacity-30 disabled:cursor-not-allowed"
@@ -174,6 +178,7 @@ export function ReplayControls({
           <ChevronRight className="h-3.5 w-3.5" />
         </button>
         <button
+          type="button"
           onClick={handleSkipToEnd}
           className="p-1 text-slate-500 hover:text-slate-300 transition-colors rounded hover:bg-slate-700/50"
           title="Skip to end"
@@ -184,6 +189,7 @@ export function ReplayControls({
 
       {/* Speed control */}
       <button
+        type="button"
         onClick={cycleSpeed}
         className="text-2xs px-1.5 py-0.5 bg-slate-800/60 rounded text-slate-400 hover:text-slate-300 hover:bg-slate-700/60 transition-colors font-mono tabular-nums shrink-0"
         title="Playback speed"

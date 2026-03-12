@@ -21,6 +21,7 @@ export function CommitEntry({ commit, projectId }: { commit: CommitInfo; project
   return (
     <>
       <button
+        type="button"
         onClick={() => {
           if (!diffData) refetch()
           setDiffOpen(true)

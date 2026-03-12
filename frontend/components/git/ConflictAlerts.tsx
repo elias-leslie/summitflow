@@ -111,6 +111,7 @@ function ConflictCard({ conflict }: { conflict: ConflictInfo }) {
         {/* Actions */}
         <div className="flex items-center gap-2">
           <button
+            type="button"
             disabled={isWorking}
             onClick={() => retryMut.mutate()}
             className={clsx(
@@ -128,6 +129,7 @@ function ConflictCard({ conflict }: { conflict: ConflictInfo }) {
             Retry Merge
           </button>
           <button
+            type="button"
             disabled={isWorking}
             onClick={() => dismissMut.mutate()}
             className={clsx(

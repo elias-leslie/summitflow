@@ -95,6 +95,7 @@ export function FeedbackStats({
 
         return (
           <button
+            type="button"
             key={card.key}
             onClick={handleClick}
             className={clsx(

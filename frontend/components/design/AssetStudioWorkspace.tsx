@@ -278,6 +278,7 @@ export function AssetStudioWorkspace({
               >
                 {assets.map((asset) => (
                   <button
+                    type="button"
                     key={asset.asset_id}
                     onClick={() => setSelectedAsset(asset)}
                     className={`card overflow-hidden text-left transition hover:ring-1 hover:ring-cyan-400/30 ${
@@ -327,6 +328,7 @@ export function AssetStudioWorkspace({
               {totalCount > pageSize && (
                 <div className="mt-6 flex items-center justify-center gap-4 pb-4">
                   <button
+                    type="button"
                     onClick={() => setPage(Math.max(0, page - 1))}
                     disabled={page === 0}
                     className="btn-secondary disabled:opacity-50"
@@ -337,6 +339,7 @@ export function AssetStudioWorkspace({
                     Page {page + 1} of {totalPages}
                   </span>
                   <button
+                    type="button"
                     onClick={() => setPage(page + 1)}
                     disabled={(page + 1) * pageSize >= totalCount}
                     className="btn-secondary disabled:opacity-50"
@@ -452,7 +455,7 @@ function AssetInspector({
           <p className="text-xs uppercase tracking-[0.22em] text-cyan-300">{asset.workflow}</p>
           <h3 className="mt-1 text-xl font-semibold text-white">{asset.name}</h3>
         </div>
-        <button onClick={onClose} aria-label="Close" className="text-slate-500 hover:text-white">
+        <button type="button" onClick={onClose} aria-label="Close" className="text-slate-500 hover:text-white">
           <X className="h-4 w-4" />
         </button>
       </div>
@@ -508,17 +511,18 @@ function AssetInspector({
       )}
 
       <div className="mt-5 flex flex-wrap gap-2">
-        <button onClick={() => onStatusChange('approved')} disabled={isUpdating} className="btn-primary">
+        <button type="button" onClick={() => onStatusChange('approved')} disabled={isUpdating} className="btn-primary">
           Approve
         </button>
-        <button onClick={() => onStatusChange('rejected')} disabled={isUpdating} className="btn-secondary">
+        <button type="button" onClick={() => onStatusChange('rejected')} disabled={isUpdating} className="btn-secondary">
           Reject
         </button>
-        <button onClick={() => onStatusChange('archived')} disabled={isUpdating} className="btn-secondary">
+        <button type="button" onClick={() => onStatusChange('archived')} disabled={isUpdating} className="btn-secondary">
           Archive
         </button>
         {asset.asset_type === 'sprite_sheet' && (
           <button
+            type="button"
             onClick={onExport}
             disabled={isExporting}
             className="btn-secondary flex items-center gap-2"
@@ -527,7 +531,7 @@ function AssetInspector({
             Export Frames
           </button>
         )}
-        <button onClick={onDelete} className="btn-secondary text-rose-300">
+        <button type="button" onClick={onDelete} className="btn-secondary text-rose-300">
           Delete
         </button>
       </div>

@@ -28,12 +28,14 @@ export function RestoreFooter({
     return (
       <div className="px-6 py-4 border-t border-slate-700 flex justify-between">
         <button
+          type="button"
           onClick={onClose}
           className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200 transition-colors"
         >
           Cancel
         </button>
         <button
+          type="button"
           onClick={onContinue}
           className="flex items-center gap-2 px-4 py-2 text-sm bg-yellow-600 text-white
                      hover:bg-yellow-500 rounded-md transition-colors font-medium"
@@ -49,12 +51,14 @@ export function RestoreFooter({
     return (
       <div className="px-6 py-4 border-t border-slate-700 flex justify-between">
         <button
+          type="button"
           onClick={onBack}
           className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200 transition-colors"
         >
           Back
         </button>
         <button
+          type="button"
           onClick={onRestore}
           disabled={!isConfirmValid}
           className={clsx(
@@ -85,6 +89,7 @@ export function RestoreFooter({
     return (
       <div className="px-6 py-4 border-t border-slate-700 flex justify-end">
         <button
+          type="button"
           onClick={onClose}
           className="px-4 py-2 text-sm bg-slate-700 text-slate-200
                      hover:bg-slate-600 rounded-md transition-colors font-medium"

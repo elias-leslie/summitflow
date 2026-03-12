@@ -100,6 +100,7 @@ export function CriterionDetailModal({
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
             aria-label="Close"
             className="p-1 text-slate-500 hover:text-slate-300 transition-colors"
@@ -149,6 +150,7 @@ export function CriterionDetailModal({
         {canVerify && (
           <div className="p-4 border-t border-slate-700 bg-slate-800/50">
             <button
+              type="button"
               onClick={handleVerify}
               disabled={isVerifying}
               className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-600/20 hover:bg-amber-600/30 border border-amber-600/30 text-amber-400 rounded transition-colors disabled:opacity-50"

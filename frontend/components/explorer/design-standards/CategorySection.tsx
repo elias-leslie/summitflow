@@ -30,6 +30,7 @@ export function CategorySection({
   return (
     <div className="border border-slate-700/50 rounded overflow-hidden">
       <button
+        type="button"
         onClick={onToggle}
         className="w-full flex items-center justify-between px-3 py-2 bg-slate-800/50 hover:bg-slate-800/80 transition-colors"
       >

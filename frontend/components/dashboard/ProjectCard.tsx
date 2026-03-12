@@ -329,6 +329,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
               const Icon = metric.icon
               return (
                 <button
+                  type="button"
                   key={metric.key}
                   onClick={(e) => handleStatClick(e, metric.key)}
                   className={clsx(

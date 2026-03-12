@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from ...logging_config import get_logger
+from ...schemas.task_response_models import WorktreeResponse
 from ...storage import tasks as task_store
 from ...storage.steps import STEP_STATUS_PLAN_DEFECT, get_steps_for_subtask
 from ...storage.subtasks import get_subtasks_for_task
@@ -14,10 +15,9 @@ from ...storage.subtasks import get_subtasks_for_task
 logger = get_logger(__name__)
 
 
-def _build_worktree_response(task_id: str) -> Any | None:
+def _build_worktree_response(task_id: str) -> WorktreeResponse | None:
     """Build WorktreeResponse from worktree info, or return None if not found."""
     from ...cli.lib.worktree import get_worktree_info
-    from ...schemas.tasks import WorktreeResponse
     worktree_info = get_worktree_info(task_id)
     if not worktree_info:
         return None
@@ -28,7 +28,7 @@ def _build_worktree_response(task_id: str) -> Any | None:
     )
 
 
-def get_worktree_response(task_id: str) -> Any | None:
+def get_worktree_response(task_id: str) -> WorktreeResponse | None:
     """Get worktree info for a task if it exists, or None."""
     try:
         return _build_worktree_response(task_id)

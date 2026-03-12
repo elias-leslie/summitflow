@@ -209,6 +209,7 @@ export function DiscussionChat({
               <AlertCircle className="w-4 h-4 text-red-400" />
               <span className="text-xs text-red-400 flex-1">{error}</span>
               <button
+                type="button"
                 onClick={handleRetry}
                 className="p-1 hover:bg-red-900/50 rounded transition-colors"
               >

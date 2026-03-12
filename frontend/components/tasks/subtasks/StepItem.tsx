@@ -72,6 +72,7 @@ export function StepItem({
       )}
       <div className="flex items-start gap-2.5">
         <button
+          type="button"
           onClick={() => onToggle(step.step_number, !passes)}
           disabled={isUpdating}
           className="mt-0.5 flex-shrink-0 focus:outline-none focus:ring-1 focus:ring-blue-500/50 rounded"
@@ -119,6 +120,7 @@ export function StepItem({
             )}
             {hasSpec && (
               <button
+                type="button"
                 onClick={() => setIsSpecExpanded(!isSpecExpanded)}
                 data-testid={`spec-btn-${step.step_number}`}
                 className={`flex-shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded transition-all duration-150 ${
@@ -150,6 +152,7 @@ export function StepItem({
                 <div className="mt-2 ml-6 relative group/spec">
                   {/* Copy button - more visible on hover */}
                   <button
+                    type="button"
                     onClick={handleCopy}
                     className={`absolute top-2 right-2 p-1.5 rounded-md transition-all duration-150 z-10 ${
                       copied

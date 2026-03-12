@@ -92,6 +92,7 @@ export function DataRow({
           {/* Expand/collapse chevron */}
           {hasChildren || renderDetail ? (
             <button
+              type="button"
               onClick={(e) => {
                 e.stopPropagation()
                 onToggle(id)

@@ -38,6 +38,7 @@ export function TurnGroup({
   return (
     <div className="border-b border-slate-700/50">
       <button
+        type="button"
         onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center gap-2 px-3 py-2 bg-slate-900/60 hover:bg-slate-800/60 transition-colors sticky top-0 z-10"
       >

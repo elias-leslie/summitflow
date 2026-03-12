@@ -57,6 +57,7 @@ export function FeedbackFilterBar({
             const isActive = filters.feedback_type === type
             return (
               <button
+                type="button"
                 key={type}
                 onClick={() =>
                   onFiltersChange({

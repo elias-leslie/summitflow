@@ -111,6 +111,7 @@ export function EscalationPanel({
               )}
             </div>
             <button
+              type="button"
               onClick={onClose}
               aria-label="Close"
               className="p-2 rounded-md hover:bg-slate-800 transition-colors"
