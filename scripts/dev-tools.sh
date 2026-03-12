@@ -466,7 +466,16 @@ run_tests() {
         echo "OK:$summary"
     else
         echo "$output" > "$details_file"
-        echo "FAIL:$summary|details:$details_file"
+        # Extract failing test names for inline display
+        local failed_tests
+        failed_tests=$(echo "$output" | grep -E '^FAILED ' | sed 's/^FAILED //' | sed 's/ -.*$//' | head -5) || true
+        if [[ -n "$failed_tests" ]]; then
+            local failed_inline
+            failed_inline=$(echo "$failed_tests" | tr '\n' ',' | sed 's/,$//')
+            echo "FAIL:$summary|failed:$failed_inline|details:$details_file"
+        else
+            echo "FAIL:$summary|details:$details_file"
+        fi
         return 1
     fi
 }
@@ -1163,12 +1172,19 @@ EOF
             local bad_flag
             bad_flag=$(echo "$clean_output" | grep -oiE "'--?[a-zA-Z0-9_-]+'" | head -1)
             echo "$label:ERROR:invalid_flag${bad_flag:+:$bad_flag}"
-            echo "$clean_output" | head -3
+            echo ""
+            echo "Tool error output:"
+            echo "$clean_output" | head -5
             echo ""
             echo "dt $tool_name accepts these flags before '--':"
+            echo "  --check, -c          Full quality gate"
+            echo "  --quick, -q          Fast lint+types"
             echo "  --changed-only, -d   Only check changed files"
+            echo "  --fix, -f            Auto-fix + deps"
             echo ""
-            echo "Flags after '--' are forwarded to $binary. See '$binary --help'."
+            echo "To pass flags directly to $binary, put them after '--':"
+            echo "  dt $tool_name -- --your-flag"
+            echo "  Run '$binary --help' for $binary-specific options."
             return 1
         fi
 

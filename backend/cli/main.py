@@ -241,6 +241,21 @@ app.command("pulse")(pulse.pulse)
 app.command("search")(search.search)
 app.command("exec-log")(exec_monitor.exec_log_command)
 
+
+@app.command("progress", hidden=True)
+def progress_alias(
+    task_id: Annotated[str | None, typer.Argument(help="Task ID")] = None,
+) -> None:
+    """Alias hint: use 'st sync-progress' or 'st subtask pass' instead."""
+    typer.echo(
+        "Command 'st progress' does not exist. Did you mean:\n"
+        "  st sync-progress <task-id>              Sync passed subtasks from completed steps\n"
+        "  st subtask pass <subtask-id> -t <task>   Mark individual subtask complete",
+        err=True,
+    )
+    raise typer.Exit(1)
+
+
 # Register checkpoint-aware commands (override old claim from tasks.py)
 # These are defined with @app.command() in their modules, so access via module.app
 for cmd in claim.app.registered_commands:
