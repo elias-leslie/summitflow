@@ -20,6 +20,9 @@ from .persona_display import (
 from .persona_display import (
     print_persona as _print_persona,
 )
+from .persona_display import (
+    print_preview_detail as _print_preview_detail,
+)
 from .persona_helpers import (
     api_call as _api,
 )
@@ -199,44 +202,11 @@ def preview(
     if as_json:
         output_json(preview_data)
         return
-
     full_context = preview_data.get("full_context") or preview_data.get("combined_prompt") or ""
     if combined_only:
         print(full_context)
         return
-
-    print(
-        f"{preview_data.get('name', 'Persona')} preview | "
-        f"mode={preview_data.get('task_type') or mode} | "
-        f"sections={len(preview_data.get('sections') or [])} | "
-        f"mandates={preview_data.get('mandate_count', 0)} | "
-        f"guardrails={preview_data.get('guardrail_count', 0)}"
-    )
-    if project:
-        print(f"project={project}")
-    if phase:
-        print(f"phase={phase}")
-    if preview_data.get("memory_query"):
-        print(f"memory_query={preview_data['memory_query']}")
-
-    for section in preview_data.get("sections") or []:
-        print(
-            "\n"
-            f"=== {section.get('label', 'Section')} | "
-            f"{section.get('placement', 'system')} | "
-            f"{section.get('source_kind', 'unknown')} | "
-            f"{section.get('source_id', '-')}"
-            f" | {section.get('estimated_tokens', 0)} tok ==="
-        )
-        print(section.get("content", ""))
-
-    if preview_data.get("loaded_memory_uuids"):
-        print("\n=== Loaded Memory UUIDs ===")
-        for uuid in preview_data["loaded_memory_uuids"]:
-            print(uuid)
-
-    print("\n=== Full Context ===")
-    print(full_context)
+    _print_preview_detail(preview_data, mode, project, phase, full_context)
 
 
 @app.command()

@@ -87,3 +87,45 @@ def maybe_report_dispatch(client: Any, project: str | None, reported: bool) -> b
         print(f"\n  {hint}", end="", flush=True)
         return True
     return reported
+
+
+def print_preview_detail(
+    preview_data: dict[str, Any],
+    mode: str,
+    project: str | None,
+    phase: str | None,
+    full_context: str,
+) -> None:
+    """Print the full preview detail: header, sections, memory UUIDs, and context."""
+    print(
+        f"{preview_data.get('name', 'Persona')} preview | "
+        f"mode={preview_data.get('task_type') or mode} | "
+        f"sections={len(preview_data.get('sections') or [])} | "
+        f"mandates={preview_data.get('mandate_count', 0)} | "
+        f"guardrails={preview_data.get('guardrail_count', 0)}"
+    )
+    if project:
+        print(f"project={project}")
+    if phase:
+        print(f"phase={phase}")
+    if preview_data.get("memory_query"):
+        print(f"memory_query={preview_data['memory_query']}")
+
+    for section in preview_data.get("sections") or []:
+        print(
+            "\n"
+            f"=== {section.get('label', 'Section')} | "
+            f"{section.get('placement', 'system')} | "
+            f"{section.get('source_kind', 'unknown')} | "
+            f"{section.get('source_id', '-')}"
+            f" | {section.get('estimated_tokens', 0)} tok ==="
+        )
+        print(section.get("content", ""))
+
+    if preview_data.get("loaded_memory_uuids"):
+        print("\n=== Loaded Memory UUIDs ===")
+        for uuid in preview_data["loaded_memory_uuids"]:
+            print(uuid)
+
+    print("\n=== Full Context ===")
+    print(full_context)
