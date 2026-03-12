@@ -43,7 +43,6 @@ class TaskScanner(BaseScanner):
         self.task_schedule_endpoint: str | None = None
         self._task_stats: dict[str, dict[str, Any]] = {}
 
-
     def scan(self) -> list[ExplorerEntryCreate]:
         """Scan scheduled workflow definitions and return task entries."""
         # Get project config
@@ -84,7 +83,7 @@ class TaskScanner(BaseScanner):
 
         entries: list[ExplorerEntryCreate] = []
 
-        for task_name, task_config in task_schedule.items() if task_schedule else []:
+        for task_name, task_config in task_schedule.items():
             try:
                 entry = self._scan_task(task_name, task_config)
                 if entry:
@@ -94,7 +93,6 @@ class TaskScanner(BaseScanner):
 
         logger.info("Task scan found %d tasks", len(entries))
         return entries
-
 
     def _scan_task(
         self,

@@ -113,9 +113,8 @@ def _compute_python_ast_flags(file_path: Path) -> dict[str, bool]:
             flags["has_large_classes"] = True
         if result["max_nesting"] > CODE_HEALTH_THRESHOLDS["max_nesting_depth"]:
             flags["deep_nesting"] = True
-    except (SyntaxError, FileNotFoundError, Exception):
-        # Skip AST analysis for unparseable files
-        pass
+    except Exception:
+        pass  # Skip AST analysis for unparseable files
     return flags
 
 
