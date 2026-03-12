@@ -59,4 +59,23 @@ describe('SystemHealthWidget', () => {
     expect(screen.getByText(/updated/i)).toBeInTheDocument()
     expect(screen.getByText('8 cores')).toBeInTheDocument()
   })
+
+  it('renders an explicit empty state when no metrics are returned', () => {
+    useSystemStatsMock.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+      isFetching: false,
+    })
+
+    render(<SystemHealthWidget />)
+
+    expect(screen.getByText('No live metrics yet')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'Refresh to fetch CPU, memory, and disk usage for this environment.',
+      ),
+    ).toBeInTheDocument()
+  })
 })

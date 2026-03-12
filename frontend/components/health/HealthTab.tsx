@@ -8,6 +8,7 @@ import { NeedsAttentionCard } from './NeedsAttentionCard'
 import { PipelineHealthDashboard } from './PipelineHealthDashboard'
 import { QualityGateStatus } from './QualityGateStatus'
 import { RecentActivityCard } from './RecentActivityCard'
+import { summarizeError } from './HealthUtils'
 import { useHealthData } from './useHealthData'
 import { usePipelineData } from './usePipelineData'
 
@@ -47,7 +48,7 @@ export function HealthTab({ projectId }: HealthTabProps) {
             <div className="font-medium text-amber-100">Some health data is unavailable</div>
             <div className="mt-1 text-xs text-amber-300/90 space-y-0.5">
               {errors.map((err, i) => (
-                <div key={i}>{String(err)}</div>
+                <div key={i}>{summarizeError(err, 'Health data unavailable')}</div>
               ))}
             </div>
           </div>
@@ -60,7 +61,7 @@ export function HealthTab({ projectId }: HealthTabProps) {
         <AutonomousStatusBar autonomous={pipelineData.autonomous} />
       ) : null}
 
-      <QualityGateStatus checks={health?.checks} />
+      <QualityGateStatus health={health} />
 
       {pipelineLoading ? (
         <div className="space-y-4">
@@ -77,7 +78,11 @@ export function HealthTab({ projectId }: HealthTabProps) {
       ) : null}
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <NeedsAttentionCard items={unfixedResults?.items ?? []} />
+        <NeedsAttentionCard
+          items={unfixedResults?.items ?? []}
+          hasChecks={Boolean(health && Object.keys(health.checks).length > 0)}
+          totalUnfixed={health?.total_unfixed ?? unfixedResults?.items.length ?? 0}
+        />
         <FixPipelineCard
           detected={metrics.detected}
           flashFixed={metrics.flashFixed}

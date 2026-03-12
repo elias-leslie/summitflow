@@ -39,9 +39,19 @@ export function FixPipelineCard({
 
   return (
     <div className="card rounded-xl p-4">
-      <h3 className="text-sm font-semibold text-slate-300 mb-3">
-        Fix Pipeline (Last 7 Days)
-      </h3>
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-300">
+            Fix Pipeline (Last 7 Days)
+          </h3>
+          <p className="mt-1 text-xs text-slate-500">
+            Resolution mix across automated fixes, escalations, and still-open findings.
+          </p>
+        </div>
+        <div className="rounded-full border border-phosphor-500/20 bg-phosphor-500/10 px-2 py-1 text-[11px] text-phosphor-300">
+          {autoFixRate}% auto-resolved
+        </div>
+      </div>
       <div className="space-y-2">
         <div className="flex items-center gap-3">
           <div className="w-24 text-xs text-slate-500">Detected</div>
@@ -68,7 +78,7 @@ export function FixPipelineCard({
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <div className="w-24 text-xs text-slate-500">Sonnet Fixed</div>
+          <div className="w-24 text-xs text-slate-500">Claude Fixed</div>
           <div className="flex-1 bg-slate-800 rounded-full h-2">
             <div
               className="bg-cyan-500 rounded-full h-2"
@@ -92,7 +102,7 @@ export function FixPipelineCard({
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <div className="w-24 text-xs text-slate-500">Open Issues</div>
+          <div className="w-24 text-xs text-slate-500">Still Open</div>
           <div className="flex-1 bg-slate-800 rounded-full h-2">
             <div
               className="bg-slate-500 rounded-full h-2"
@@ -104,10 +114,19 @@ export function FixPipelineCard({
           </div>
         </div>
       </div>
-      <div className="mt-3 pt-3 border-t border-slate-800 text-center">
-        <span className="text-xs text-slate-500">
-          {autoFixRate}% resolved automatically
-        </span>
+      <div className="mt-3 grid grid-cols-2 gap-2 border-t border-slate-800 pt-3 text-xs">
+        <div className="rounded-lg bg-slate-950/50 px-3 py-2 text-slate-400">
+          Automated
+          <div className="mt-1 text-sm font-medium text-slate-200">
+            {flashFixed + sonnetFixed}
+          </div>
+        </div>
+        <div className="rounded-lg bg-slate-950/50 px-3 py-2 text-slate-400">
+          Manual Follow-up
+          <div className="mt-1 text-sm font-medium text-slate-200">
+            {escalatedCount + unresolvedCount}
+          </div>
+        </div>
       </div>
     </div>
   )

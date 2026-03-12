@@ -91,14 +91,26 @@ describe('NeedsAttentionCard', () => {
 
     expect(screen.getByText('Escalated')).toBeInTheDocument()
     expect(screen.getByText('+1 more unresolved issues')).toBeInTheDocument()
-    expect(screen.getByText('app/page.tsx')).toBeInTheDocument()
+    expect(screen.getByText('frontend/app/page.tsx')).toBeInTheDocument()
+    expect(screen.getByText('Escalated issues are shown first, followed by the most severe open findings.')).toBeInTheDocument()
   })
 
   it('renders the all-clear state for an empty array', () => {
-    render(<NeedsAttentionCard items={[]} />)
+    render(<NeedsAttentionCard items={[]} hasChecks />)
 
     expect(screen.getByText('All Clear')).toBeInTheDocument()
     expect(screen.queryByText('Needs Attention')).not.toBeInTheDocument()
+  })
+
+  it('renders a no-findings-yet state when no checks have been recorded', () => {
+    render(<NeedsAttentionCard items={[]} hasChecks={false} />)
+
+    expect(screen.getByText('No Findings Yet')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'Quality findings will appear here after the first recorded check run.',
+      ),
+    ).toBeInTheDocument()
   })
 
   it('marks every item as Escalated when all have escalation task ids', () => {

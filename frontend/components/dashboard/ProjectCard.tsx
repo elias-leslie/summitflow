@@ -192,6 +192,34 @@ export function ProjectCard({ project }: ProjectCardProps) {
                 <span className="text-slate-500">{checkpoint.age}</span>
               </div>
             )}
+            {showHealth && (health || qualityGate) && (
+              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                <span className={clsx(
+                  'text-slate-500',
+                  health?.healthy === false && 'text-rose-300',
+                )}>
+                  Service:{' '}
+                  {health
+                    ? health.healthy
+                      ? health.response_time_ms != null
+                        ? `${Math.round(health.response_time_ms)}ms`
+                        : 'healthy'
+                      : health.error || 'unhealthy'
+                    : 'pending'}
+                </span>
+                <span className={clsx(
+                  'text-slate-500',
+                  qualityGate && !qualityGate.overall_pass && 'text-amber-300',
+                )}>
+                  Quality:{' '}
+                  {qualityGate
+                    ? qualityGate.overall_pass
+                      ? 'passing'
+                      : `${qualityGate.total_unfixed} open`
+                    : 'pending'}
+                </span>
+              </div>
+            )}
           </div>
         </div>
 

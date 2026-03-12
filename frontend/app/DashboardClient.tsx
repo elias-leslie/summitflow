@@ -5,10 +5,12 @@ import {
   Activity,
   AlertCircle,
   Archive,
+  Bug,
   ChevronLeft,
   ChevronRight,
   FolderKanban,
   Info,
+  ListTodo,
   MessageSquare,
   Plus,
 } from 'lucide-react'
@@ -31,7 +33,16 @@ export function DashboardClient() {
   })
 
   const projects = data?.projects ?? []
-  const totalProjects = projects.length
+  const totalProjects = data?.total ?? projects.length
+  const dashboardTotals = projects.reduce(
+    (totals, project) => {
+      totals.tasks += project.stats.tasks
+      totals.bugs += project.stats.bugs
+      totals.blocked += project.stats.blocked
+      return totals
+    },
+    { tasks: 0, bugs: 0, blocked: 0 },
+  )
   const totalPages = useClampedPagination({
     page,
     setPage,
@@ -53,7 +64,7 @@ export function DashboardClient() {
           <Info className="w-5 h-5 text-outrun-500" />
           Quick Access
         </h2>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <Link
             href="/chat"
             className="card p-4 flex items-center gap-3 hover:border-phosphor-500/50 hover:bg-phosphor-500/5 transition-all group"
@@ -78,7 +89,33 @@ export function DashboardClient() {
               <div className="text-xs text-slate-500">DB snapshots</div>
             </div>
           </Link>
+          <Link
+            href="/feedback"
+            className="card p-4 flex items-center gap-3 hover:border-amber-500/50 hover:bg-amber-500/5 transition-all group"
+          >
+            <div className="p-2 rounded-lg bg-amber-500/20 text-amber-400 group-hover:bg-amber-500/30 transition-colors">
+              <AlertCircle className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="text-sm font-medium text-white">Feedback</div>
+              <div className="text-xs text-slate-500">Signals and fixes</div>
+            </div>
+          </Link>
           <SystemHealthWidget />
+        </div>
+      </section>
+
+      <section className="animate-in" style={{ animationDelay: '0.03s' }}>
+        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+          <SummaryCard label="Tracked Projects" value={totalProjects} icon={FolderKanban} />
+          <SummaryCard label="Open Tasks" value={dashboardTotals.tasks} icon={ListTodo} />
+          <SummaryCard label="Open Bugs" value={dashboardTotals.bugs} icon={Bug} />
+          <SummaryCard
+            label="Blocked Work"
+            value={dashboardTotals.blocked}
+            icon={AlertCircle}
+            tone="rose"
+          />
         </div>
       </section>
 
@@ -93,6 +130,9 @@ export function DashboardClient() {
             {/* Pagination controls */}
             {totalPages > 1 && (
               <div className="flex items-center gap-2 text-sm">
+                <span className="text-slate-500">
+                  {Math.min(startIndex + 1, totalProjects)}-{Math.min(endIndex, totalProjects)} of {totalProjects}
+                </span>
                 <button
                   onClick={handlePrevPage}
                   disabled={page === 0}
@@ -125,6 +165,7 @@ export function DashboardClient() {
           projects={visibleProjects}
           isLoading={isLoading}
           error={error}
+          totalProjects={totalProjects}
         />
       </section>
 
@@ -144,9 +185,15 @@ interface ProjectsGridProps {
   projects: ProjectWithStats[]
   isLoading: boolean
   error: Error | null
+  totalProjects: number
 }
 
-function ProjectsGrid({ projects, isLoading, error }: ProjectsGridProps) {
+function ProjectsGrid({
+  projects,
+  isLoading,
+  error,
+  totalProjects,
+}: ProjectsGridProps) {
   if (isLoading) {
     return (
       <div className="card p-8 text-center">
@@ -174,7 +221,7 @@ function ProjectsGrid({ projects, isLoading, error }: ProjectsGridProps) {
         <FolderKanban className="w-10 h-10 text-slate-600 mx-auto mb-3" />
         <p className="text-slate-400 mb-1">No projects registered</p>
         <p className="text-sm text-slate-500 mb-4">
-          Add your first project to start tracking
+          Add your first project to start tracking health, quality, tasks, and automation
         </p>
         <Link
           href="/projects/new"
@@ -188,10 +235,52 @@ function ProjectsGrid({ projects, isLoading, error }: ProjectsGridProps) {
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      {projects.map((project) => (
-        <ProjectCard key={project.id} project={project} />
-      ))}
+    <div className="space-y-3">
+      {totalProjects > 0 && (
+        <p className="text-xs text-slate-500">
+          Hover a card to load live health and quality signals for that project.
+        </p>
+      )}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {projects.map((project) => (
+          <ProjectCard key={project.id} project={project} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+interface SummaryCardProps {
+  label: string
+  value: number
+  icon: typeof FolderKanban
+  tone?: 'default' | 'rose'
+}
+
+function SummaryCard({
+  label,
+  value,
+  icon: Icon,
+  tone = 'default',
+}: SummaryCardProps) {
+  const valueClass =
+    tone === 'rose' && value > 0 ? 'text-rose-300' : 'text-white'
+
+  return (
+    <div className="card rounded-xl p-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-xs uppercase tracking-wide text-slate-500">
+            {label}
+          </div>
+          <div className={`mt-2 text-2xl font-semibold ${valueClass}`}>
+            {value}
+          </div>
+        </div>
+        <div className="rounded-lg bg-slate-900/80 p-2 text-slate-400">
+          <Icon className="w-4 h-4" />
+        </div>
+      </div>
     </div>
   )
 }

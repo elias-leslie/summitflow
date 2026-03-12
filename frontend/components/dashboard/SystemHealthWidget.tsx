@@ -163,7 +163,14 @@ export function SystemHealthWidget({ className }: SystemHealthWidgetProps) {
                         </div>
                     </div>
                 </>
-            ) : null}
+            ) : (
+                <div className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-center">
+                    <div className="text-xs font-medium text-slate-300">No live metrics yet</div>
+                    <div className="mt-1 text-[11px] text-slate-500">
+                        Refresh to fetch CPU, memory, and disk usage for this environment.
+                    </div>
+                </div>
+            )}
         </Card>
     )
 }

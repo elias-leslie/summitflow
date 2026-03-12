@@ -216,26 +216,35 @@ export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedP
       className={clsx('card overflow-hidden', className)}
       data-testid="activity-feed"
     >
-      <div className="flex items-center gap-1 px-3 py-2 border-b border-slate-800">
-        {TYPE_FILTERS.map((f) => {
-          const Icon = f.icon
-          return (
-            <button
-              key={f.value}
-              onClick={() => setTypeFilter(f.value)}
-              aria-pressed={typeFilter === f.value}
-              className={clsx(
-                'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs transition-colors',
-                typeFilter === f.value
-                  ? 'bg-slate-700 text-white'
-                  : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/50',
-              )}
-            >
-              <Icon className="w-3 h-3" />
-              {f.label}
-            </button>
-          )
-        })}
+      <div className="border-b border-slate-800 px-3 py-2">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-1">
+            {TYPE_FILTERS.map((f) => {
+              const Icon = f.icon
+              return (
+                <button
+                  key={f.value}
+                  onClick={() => setTypeFilter(f.value)}
+                  aria-pressed={typeFilter === f.value}
+                  className={clsx(
+                    'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs transition-colors',
+                    typeFilter === f.value
+                      ? 'bg-slate-700 text-white'
+                      : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/50',
+                  )}
+                >
+                  <Icon className="w-3 h-3" />
+                  {f.label}
+                </button>
+              )
+            })}
+          </div>
+          <div className="text-[11px] text-slate-500">
+            {isLoading
+              ? 'Loading latest activity'
+              : `${data?.total ?? items.length} item${(data?.total ?? items.length) === 1 ? '' : 's'}${typeFilter === 'all' ? '' : ` in ${TYPE_FILTERS.find((filter) => filter.value === typeFilter)?.label.toLowerCase()}`}`}
+          </div>
+        </div>
       </div>
       {isLoading ? (
         <div className="p-8 text-center">

@@ -9,6 +9,9 @@ interface AutonomousStatusBarProps {
 
 export function AutonomousStatusBar({ autonomous }: AutonomousStatusBarProps) {
   const { running_count, max_concurrent, queue_depth, next_scheduled } = autonomous
+  const availableSlots = Math.max(max_concurrent - running_count, 0)
+  const atCapacity = running_count >= max_concurrent
+  const hasBacklog = queue_depth > 0
 
   // Format next scheduled time
   const formatNextScheduled = (timestamp: string | null) => {
@@ -24,10 +27,21 @@ export function AutonomousStatusBar({ autonomous }: AutonomousStatusBarProps) {
     return date.toLocaleDateString()
   }
 
+  const statusLabel = running_count > 0
+    ? atCapacity
+      ? 'At capacity'
+      : 'Running'
+    : hasBacklog
+      ? 'Queued'
+      : 'Idle'
+
+  const statusTone =
+    running_count > 0 ? 'bg-phosphor-500 animate-pulse' : hasBacklog ? 'bg-amber-500' : 'bg-slate-600'
+
   return (
     <div className="card rounded-xl p-4">
       <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4">
           <h3 className="text-sm font-semibold text-slate-300">Autonomous Execution</h3>
 
           {/* Running/Concurrency indicator */}
@@ -36,6 +50,9 @@ export function AutonomousStatusBar({ autonomous }: AutonomousStatusBarProps) {
             <Badge variant={running_count > 0 ? 'phosphor' : 'slate'}>
               {running_count}/{max_concurrent}
             </Badge>
+            <span className="text-[11px] text-slate-500">
+              {availableSlots} slot{availableSlots === 1 ? '' : 's'} free
+            </span>
           </div>
 
           {/* Queue depth */}
@@ -57,13 +74,9 @@ export function AutonomousStatusBar({ autonomous }: AutonomousStatusBarProps) {
 
         {/* Status indicator */}
         <div className="flex items-center gap-2">
-          <span
-            className={`w-2 h-2 rounded-full ${
-              running_count > 0 ? 'bg-phosphor-500 animate-pulse' : 'bg-slate-600'
-            }`}
-          />
+          <span className={`w-2 h-2 rounded-full ${statusTone}`} />
           <span className="text-xs text-slate-500">
-            {running_count > 0 ? 'Active' : 'Idle'}
+            {statusLabel}
           </span>
         </div>
       </div>

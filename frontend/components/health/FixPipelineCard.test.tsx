@@ -28,8 +28,10 @@ describe('FixPipelineCard', () => {
       />,
     )
 
-    expect(screen.getByText('Open Issues')).toBeInTheDocument()
+    expect(screen.getByText('Still Open')).toBeInTheDocument()
     expect(screen.getByText('4 (40%)')).toBeInTheDocument()
     expect(screen.getByText('3 (30%)')).toBeInTheDocument()
+    expect(screen.getByText('50% auto-resolved')).toBeInTheDocument()
+    expect(screen.getByText('Manual Follow-up')).toBeInTheDocument()
   })
 })

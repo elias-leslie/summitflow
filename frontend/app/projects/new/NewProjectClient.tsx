@@ -10,13 +10,31 @@ import { Label } from '@/components/ui/label'
 import { createProject } from '@/lib/api'
 
 function generateProjectId(name: string): string {
-  return name
+  return normalizeProjectId(name)
+}
+
+function normalizeProjectId(value: string): string {
+  return value
     .toLowerCase()
     .replace(/[^a-z0-9\s-]/g, '')
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '')
     .slice(0, 50)
+}
+
+function normalizeBaseUrl(value: string): string {
+  return value.trim().replace(/\/+$/, '')
+}
+
+function normalizeHealthEndpoint(value: string): string {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  if (/^https?:\/\//.test(trimmed)) {
+    return trimmed.replace(/\/+$/, '')
+  }
+
+  return `/${trimmed.replace(/^\/+/, '')}`
 }
 
 export function NewProjectClient() {
@@ -33,6 +51,7 @@ export function NewProjectClient() {
     mutationFn: createProject,
     onSuccess: (project) => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
+      queryClient.invalidateQueries({ queryKey: ['projects-with-stats'] })
       router.push(`/projects/${project.id}`)
     },
     onError: (error: Error) => {
@@ -40,36 +59,81 @@ export function NewProjectClient() {
     },
   })
 
+  const clearError = (field: string) => {
+    setErrors((current) => {
+      if (!(field in current) && !('submit' in current)) {
+        return current
+      }
+
+      const next = { ...current }
+      delete next[field]
+      delete next.submit
+      return next
+    })
+  }
+
   const handleNameChange = (value: string) => {
+    clearError('name')
     setName(value)
     if (!projectId || projectId === generateProjectId(name)) {
       setProjectId(generateProjectId(value))
     }
   }
 
+  const handleProjectIdChange = (value: string) => {
+    clearError('projectId')
+    setProjectId(normalizeProjectId(value))
+  }
+
+  const handleBaseUrlChange = (value: string) => {
+    clearError('baseUrl')
+    setBaseUrl(value)
+  }
+
+  const handleHealthEndpointChange = (value: string) => {
+    clearError('healthEndpoint')
+    setHealthEndpoint(value)
+  }
+
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {}
+    const normalizedProjectId = normalizeProjectId(projectId)
+    const normalizedBaseUrl = normalizeBaseUrl(baseUrl)
+    const normalizedHealthEndpoint = normalizeHealthEndpoint(healthEndpoint)
 
     if (!name.trim()) {
       newErrors.name = 'Project name is required'
     }
-    if (!projectId.trim()) {
+    if (!normalizedProjectId) {
       newErrors.projectId = 'Project ID is required'
-    } else if (!/^[a-z0-9-]+$/.test(projectId)) {
+    } else if (!/^[a-z0-9-]+$/.test(normalizedProjectId)) {
       newErrors.projectId =
         'Project ID must be lowercase alphanumeric with hyphens'
     }
-    if (!baseUrl.trim()) {
+    if (!normalizedBaseUrl) {
       newErrors.baseUrl = 'Base URL is required'
     } else {
       try {
-        new URL(baseUrl)
+        new URL(normalizedBaseUrl)
       } catch {
         newErrors.baseUrl = 'Invalid URL format'
       }
     }
 
+    if (
+      normalizedHealthEndpoint &&
+      !normalizedHealthEndpoint.startsWith('/') &&
+      !/^https?:\/\//.test(normalizedHealthEndpoint)
+    ) {
+      newErrors.healthEndpoint = 'Health endpoint must start with / or be a full URL'
+    }
+
     setErrors(newErrors)
+    if (Object.keys(newErrors).length === 0) {
+      setProjectId(normalizedProjectId)
+      setBaseUrl(normalizedBaseUrl)
+      setHealthEndpoint(normalizedHealthEndpoint || '/api/health')
+    }
     return Object.keys(newErrors).length === 0
   }
 
@@ -78,12 +142,22 @@ export function NewProjectClient() {
     if (!validate()) return
 
     mutation.mutate({
-      id: projectId,
+      id: normalizeProjectId(projectId),
       name: name.trim(),
-      base_url: baseUrl.trim(),
-      health_endpoint: healthEndpoint.trim() || undefined,
+      base_url: normalizeBaseUrl(baseUrl),
+      health_endpoint: normalizeHealthEndpoint(healthEndpoint) || undefined,
     })
   }
+
+  const normalizedBaseUrl = normalizeBaseUrl(baseUrl)
+  const normalizedHealthEndpoint = normalizeHealthEndpoint(healthEndpoint)
+  const healthPreview = normalizedHealthEndpoint
+    ? normalizedHealthEndpoint.startsWith('http')
+      ? normalizedHealthEndpoint
+      : normalizedBaseUrl
+        ? `${normalizedBaseUrl}${normalizedHealthEndpoint}`
+        : normalizedHealthEndpoint
+    : 'Disabled'
 
   return (
     <div className="p-6 space-y-6 max-w-2xl mx-auto">
@@ -141,7 +215,7 @@ export function NewProjectClient() {
           <Input
             id="projectId"
             value={projectId}
-            onChange={(e) => setProjectId(e.target.value.toLowerCase())}
+            onChange={(e) => handleProjectIdChange(e.target.value)}
             placeholder="my-awesome-project"
             className={`mono ${errors.projectId ? 'border-red-500/50' : ''}`}
           />
@@ -161,7 +235,7 @@ export function NewProjectClient() {
             id="baseUrl"
             type="url"
             value={baseUrl}
-            onChange={(e) => setBaseUrl(e.target.value)}
+            onChange={(e) => handleBaseUrlChange(e.target.value)}
             placeholder="https://example.com"
             className={errors.baseUrl ? 'border-red-500/50' : ''}
           />
@@ -171,6 +245,11 @@ export function NewProjectClient() {
           {errors.baseUrl && (
             <p className="text-xs text-red-400">{errors.baseUrl}</p>
           )}
+          {normalizedBaseUrl && (
+            <p className="text-xs text-phosphor-400">
+              Normalized to <span className="mono">{normalizedBaseUrl}</span>
+            </p>
+          )}
         </div>
 
         {/* Health Endpoint */}
@@ -179,13 +258,34 @@ export function NewProjectClient() {
           <Input
             id="healthEndpoint"
             value={healthEndpoint}
-            onChange={(e) => setHealthEndpoint(e.target.value)}
+            onChange={(e) => handleHealthEndpointChange(e.target.value)}
             placeholder="/api/health"
-            className="mono"
+            className={`mono ${errors.healthEndpoint ? 'border-red-500/50' : ''}`}
           />
           <p className="text-xs text-slate-500">
             Endpoint for health checks (optional)
           </p>
+          {errors.healthEndpoint && (
+            <p className="text-xs text-red-400">{errors.healthEndpoint}</p>
+          )}
+        </div>
+
+        <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+          <p className="text-xs font-medium text-slate-300">Registration Preview</p>
+          <div className="mt-2 grid gap-2 text-xs text-slate-500 md:grid-cols-2">
+            <div>
+              <span className="text-slate-400">Project ID</span>
+              <div className="mt-1 font-mono text-slate-300">
+                {projectId || 'not-set'}
+              </div>
+            </div>
+            <div>
+              <span className="text-slate-400">Health Check</span>
+              <div className="mt-1 font-mono text-slate-300 break-all">
+                {healthPreview}
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Submit Button */}

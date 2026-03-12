@@ -6,6 +6,13 @@ import type { ProjectWithStats } from '@/lib/api'
 import { ProjectCard } from './ProjectCard'
 
 const pushMock = vi.fn()
+const apiMocks = vi.hoisted(() => ({
+  fetchProjectHealth: vi.fn(),
+  fetchQualityGateHealth: vi.fn(),
+}))
+const checkpointMocks = vi.hoisted(() => ({
+  getActiveCheckpoint: vi.fn(),
+}))
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({
@@ -33,12 +40,12 @@ vi.mock('next/image', () => ({
 }))
 
 vi.mock('@/lib/api', () => ({
-  fetchProjectHealth: vi.fn(),
-  fetchQualityGateHealth: vi.fn(),
+  fetchProjectHealth: apiMocks.fetchProjectHealth,
+  fetchQualityGateHealth: apiMocks.fetchQualityGateHealth,
 }))
 
 vi.mock('@/lib/api/checkpoints', () => ({
-  getActiveCheckpoint: vi.fn(),
+  getActiveCheckpoint: checkpointMocks.getActiveCheckpoint,
 }))
 
 function renderCard(project: ProjectWithStats) {
@@ -75,6 +82,19 @@ describe('ProjectCard', () => {
 
   beforeEach(() => {
     pushMock.mockReset()
+    apiMocks.fetchProjectHealth.mockResolvedValue({
+      project_id: 'summitflow',
+      healthy: true,
+      response_time_ms: 42,
+      checked_at: '2026-03-12T09:00:00Z',
+    })
+    apiMocks.fetchQualityGateHealth.mockResolvedValue({
+      project_id: 'summitflow',
+      overall_pass: false,
+      total_unfixed: 3,
+      checks: {},
+    })
+    checkpointMocks.getActiveCheckpoint.mockResolvedValue(null)
   })
 
   afterEach(() => {
@@ -100,5 +120,14 @@ describe('ProjectCard', () => {
       'href',
       '/projects/summitflow',
     )
+  })
+
+  it('surfaces live service and quality summaries after hover loads checks', async () => {
+    renderCard(project)
+
+    fireEvent.mouseEnter(screen.getByRole('article'))
+
+    expect(await screen.findByText('Service: 42ms')).toBeInTheDocument()
+    expect(screen.getByText('Quality: 3 open')).toBeInTheDocument()
   })
 })

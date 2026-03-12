@@ -1,10 +1,11 @@
 'use client'
 
+import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { formatTimeAgo } from '@/lib/format'
 import { fetchActivity, type ActivityEvent } from '@/lib/api/activity'
 import { POLL_STANDARD, STALE_STANDARD } from '@/lib/polling'
-import { useQuery } from '@tanstack/react-query'
-import { formatTimeAgo } from '@/lib/format'
+import { summarizeError } from './HealthUtils'
 
 interface RecentActivityCardProps {
   projectId: string
@@ -28,15 +29,23 @@ function ActivityRow({ event }: { event: ActivityEvent }) {
   const icon = typeIcons[event.type] ?? '○'
   const color = typeColors[event.type] ?? 'text-slate-400'
   const status = event.metadata.status ?? null
+  const metaParts = [
+    status,
+    event.metadata.agent_type,
+    event.metadata.tests_passed != null || event.metadata.tests_failed != null
+      ? `${event.metadata.tests_passed ?? 0}/${event.metadata.tests_failed ?? 0} tests`
+      : null,
+    event.metadata.backup_type,
+  ].filter(Boolean)
 
   return (
     <div className="flex items-start gap-2 py-1.5 border-b border-slate-800 last:border-0">
       <span className={`text-xs mt-0.5 ${color}`}>{icon}</span>
       <div className="flex-1 min-w-0">
         <p className="text-xs text-slate-300 truncate">{event.message}</p>
-        {status && (
+        {metaParts.length > 0 && (
           <p className="mt-0.5 text-[11px] text-slate-500 uppercase tracking-wide">
-            {status}
+            {metaParts.join(' · ')}
           </p>
         )}
       </div>
@@ -50,7 +59,7 @@ function ActivityRow({ event }: { event: ActivityEvent }) {
 }
 
 export function RecentActivityCard({ projectId }: RecentActivityCardProps) {
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ['activity', projectId],
     queryFn: () => fetchActivity({ project_id: projectId, limit: 8 }),
     staleTime: STALE_STANDARD,
@@ -66,7 +75,10 @@ export function RecentActivityCard({ projectId }: RecentActivityCardProps) {
         <CardContent>
           <div className="flex flex-col items-center justify-center py-6 text-center">
             <span className="text-amber-500 text-lg mb-1">!</span>
-            <span className="text-xs text-slate-500">Failed to load activity</span>
+            <span className="text-xs text-slate-400">Failed to load activity</span>
+            <span className="mt-1 text-[11px] text-slate-500">
+              {summarizeError(error, 'Activity service unavailable')}
+            </span>
           </div>
         </CardContent>
       </Card>
@@ -102,7 +114,10 @@ export function RecentActivityCard({ projectId }: RecentActivityCardProps) {
         <CardContent>
           <div className="flex flex-col items-center justify-center py-6 text-center">
             <span className="text-slate-600 text-lg mb-1">○</span>
-            <span className="text-xs text-slate-500">No recent activity</span>
+            <span className="text-xs text-slate-400">No recent activity</span>
+            <span className="mt-1 text-[11px] text-slate-500">
+              New task, git, session, and backup events will appear here.
+            </span>
           </div>
         </CardContent>
       </Card>

@@ -59,6 +59,7 @@ describe('ActivityFeed', () => {
     await waitFor(() => {
       expect(screen.getByText('No recent git activity')).toBeInTheDocument()
     })
+    expect(screen.getByText('0 items in git')).toBeInTheDocument()
   })
 
   it('shows the fetch error detail and keeps retry available', async () => {

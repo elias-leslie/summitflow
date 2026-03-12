@@ -1,18 +1,26 @@
 // Types for Health Tab API responses
 
+export type QualityCheckStatus =
+  | 'pass'
+  | 'passing'
+  | 'fail'
+  | 'error'
+  | 'skipped'
+  | 'warning'
+  | 'unknown'
+
+export interface HealthCheckSummary {
+  status: QualityCheckStatus | string
+  error_count: number
+  warning_count: number
+  last_run: string
+}
+
 export interface HealthSummary {
   project_id: string
   overall_pass: boolean
   total_unfixed: number
-  checks: Record<
-    string,
-    {
-      status: string
-      error_count: number
-      warning_count: number
-      last_run: string
-    }
-  >
+  checks: Record<string, HealthCheckSummary>
 }
 
 export interface CheckResult {
