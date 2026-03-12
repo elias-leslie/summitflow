@@ -92,7 +92,8 @@ class RecoveryManager:
             "timestamp": datetime.now(UTC).isoformat(),
         }
 
-        self._state.setdefault("attempt_history", []).append(attempt)
+        history: list[dict[str, Any]] = self._state.setdefault("attempt_history", [])  # type: ignore[assignment]
+        history.append(attempt)
         self._save_state()
 
         logger.info(
@@ -151,7 +152,8 @@ class RecoveryManager:
             commit_sha: Git commit SHA
         """
         if commit_sha and commit_sha not in self.good_commits:
-            self._state.setdefault("good_commits", []).append(commit_sha)
+            commits: list[str] = self._state.setdefault("good_commits", [])  # type: ignore[assignment]
+            commits.append(commit_sha)
             self._save_state()
             logger.info("marked_good_commit", commit_sha=commit_sha)
 
@@ -172,7 +174,7 @@ class RecoveryManager:
         Returns:
             List of attempt dicts.
         """
-        history: list[dict[str, Any]] = self._state.get("attempt_history", [])
+        history: list[dict[str, Any]] = self._state.get("attempt_history", [])  # type: ignore[assignment]
 
         if capability_id:
             return [a for a in history if a.get("capability_id") == capability_id]

@@ -6,7 +6,8 @@ from typing import Annotated, Any
 
 import typer
 
-from ..output import output_error
+from ..output import output_error, output_json
+from .agents_api import agent_preview_api
 from .persona_display import (
     get_dispatch_hint as _get_dispatch_hint,
 )
@@ -173,6 +174,69 @@ def instructions(
         print(f"Heartbeat instructions updated (version {result.get('version', '?')})")
         return
     print(text if text else "(No heartbeat instructions set)")
+
+
+@app.command()
+def preview(
+    mode: Annotated[str, _Opt("--mode", "-m", help="Preview mode: chat, heartbeat, wake, review")] = "heartbeat",
+    project: Annotated[str | None, _Opt("--project", "-P", help="Optional project scope")] = None,
+    phase: Annotated[str | None, _Opt("--phase", help="Optional phase/event hint")] = None,
+    prompt_input: Annotated[str | None, _Opt("--input", help="Optional prompt input placeholder")] = None,
+    as_json: Annotated[bool, _Opt("--json", help="Print raw JSON response")] = False,
+    combined_only: Annotated[bool, _Opt("--combined-only", help="Print only the full combined context")] = False,
+) -> None:
+    """Show the effective runtime prompt/context preview for Jenny."""
+    preview_data = _api(
+        lambda: agent_preview_api(
+            "persona",
+            task_type=mode,
+            project_id=project,
+            phase=phase,
+            prompt_input=prompt_input,
+        ),
+        "Failed to fetch persona preview",
+    )
+    if as_json:
+        output_json(preview_data)
+        return
+
+    full_context = preview_data.get("full_context") or preview_data.get("combined_prompt") or ""
+    if combined_only:
+        print(full_context)
+        return
+
+    print(
+        f"{preview_data.get('name', 'Persona')} preview | "
+        f"mode={preview_data.get('task_type') or mode} | "
+        f"sections={len(preview_data.get('sections') or [])} | "
+        f"mandates={preview_data.get('mandate_count', 0)} | "
+        f"guardrails={preview_data.get('guardrail_count', 0)}"
+    )
+    if project:
+        print(f"project={project}")
+    if phase:
+        print(f"phase={phase}")
+    if preview_data.get("memory_query"):
+        print(f"memory_query={preview_data['memory_query']}")
+
+    for section in preview_data.get("sections") or []:
+        print(
+            "\n"
+            f"=== {section.get('label', 'Section')} | "
+            f"{section.get('placement', 'system')} | "
+            f"{section.get('source_kind', 'unknown')} | "
+            f"{section.get('source_id', '-')}"
+            f" | {section.get('estimated_tokens', 0)} tok ==="
+        )
+        print(section.get("content", ""))
+
+    if preview_data.get("loaded_memory_uuids"):
+        print("\n=== Loaded Memory UUIDs ===")
+        for uuid in preview_data["loaded_memory_uuids"]:
+            print(uuid)
+
+    print("\n=== Full Context ===")
+    print(full_context)
 
 
 @app.command()

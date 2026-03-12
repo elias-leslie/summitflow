@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from fastapi import HTTPException
 
@@ -329,7 +329,7 @@ async def handle_resolve_conflict(task_id: str) -> dict[str, object]:
     if (not isinstance(conflict_info, dict) or not conflict_info) and status == "blocked":
         merge_result: MergeResult = merge_and_cleanup_task_worktree(task_id, str(task["project_id"]))
         if str(merge_result.get("status") or "") != "conflicted":
-            return merge_result
+            return cast(dict[str, object], merge_result)
         task = task_store.get_task(task_id) or task
         conflict_info = task.get("conflict_info") or {}
     if not isinstance(conflict_info, dict) or not conflict_info:

@@ -133,6 +133,7 @@ def _get_diff_text(project_path: str) -> str:
         )
         return r.stdout[:5000] if r.stdout else "(no changes)"
     except Exception:
+        logger.debug("Failed to generate diff for review", exc_info=True)
         return "(could not generate diff)"
 
 

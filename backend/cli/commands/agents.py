@@ -9,7 +9,7 @@ from typing import Annotated, Any
 import typer
 
 from ..output import output_error, output_json
-from .agents_api import agents_api
+from .agents_api import agent_preview_api, agents_api
 
 app = typer.Typer(help="Agent management (Agent Hub)")
 
@@ -81,6 +81,63 @@ def get_agent(
     """Get one agent by slug."""
     agent = agents_api("GET", f"/{slug}")
     _print_agent(agent)
+
+
+@app.command("preview")
+def preview_agent(
+    slug: Annotated[str, typer.Argument(help="Agent slug")],
+    mode: Annotated[str, typer.Option("--mode", "-m", help="Preview mode: chat, heartbeat, wake, review")] = "chat",
+    project: Annotated[str | None, typer.Option("--project", "-P", help="Optional project scope")] = None,
+    phase: Annotated[str | None, typer.Option("--phase", help="Optional phase/event hint")] = None,
+    prompt_input: Annotated[str | None, typer.Option("--input", help="Optional task input placeholder")] = None,
+    as_json: Annotated[bool, typer.Option("--json", help="Print raw JSON response")] = False,
+    full_context_only: Annotated[bool, typer.Option("--full-context-only", help="Print only the effective full context")] = False,
+) -> None:
+    """Show the effective runtime prompt/context preview for an agent."""
+    preview = agent_preview_api(
+        slug,
+        task_type=mode,
+        project_id=project,
+        phase=phase,
+        prompt_input=prompt_input,
+    )
+    if as_json:
+        output_json(preview)
+        return
+
+    full_context = preview.get("full_context") or preview.get("combined_prompt") or ""
+    if full_context_only:
+        print(full_context)
+        return
+
+    print(
+        f"{preview.get('name', slug)} preview | "
+        f"mode={preview.get('task_type') or mode} | "
+        f"sections={len(preview.get('sections') or [])} | "
+        f"mandates={preview.get('mandate_count', 0)} | "
+        f"guardrails={preview.get('guardrail_count', 0)}"
+    )
+    if preview.get("memory_query"):
+        print(f"memory_query={preview['memory_query']}")
+
+    for section in preview.get("sections") or []:
+        print(
+            "\n"
+            f"=== {section.get('label', 'Section')} | "
+            f"{section.get('placement', 'system')} | "
+            f"{section.get('source_kind', 'unknown')} | "
+            f"{section.get('source_id', '-')}"
+            f" | {section.get('estimated_tokens', 0)} tok ==="
+        )
+        print(section.get("content", ""))
+
+    if preview.get("loaded_memory_uuids"):
+        print("\n=== Loaded Memory UUIDs ===")
+        for uuid in preview["loaded_memory_uuids"]:
+            print(uuid)
+
+    print("\n=== Full Context ===")
+    print(full_context)
 
 
 @app.command("update")

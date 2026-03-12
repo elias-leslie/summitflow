@@ -75,3 +75,32 @@ class TestPersonaInstructionsCommand:
 
         assert result.exit_code == 1
         assert "--edit, --set, and --export are mutually exclusive" in result.output
+
+
+class TestPersonaPreviewCommand:
+    def test_preview_uses_shared_agent_preview_api(self) -> None:
+        preview = {
+            "name": "Jenny",
+            "task_type": "heartbeat",
+            "sections": [],
+            "mandate_count": 0,
+            "guardrail_count": 0,
+            "full_context": "FULL",
+            "combined_prompt": "COMBINED",
+        }
+
+        with (
+            patch("cli.commands.persona.agent_preview_api", return_value=preview) as mock_preview,
+            patch("cli.commands.persona._api", side_effect=lambda fn, _: fn()),
+        ):
+            result = runner.invoke(app, ["preview", "--combined-only"])
+
+        assert result.exit_code == 0
+        assert result.output.strip() == "FULL"
+        mock_preview.assert_called_once_with(
+            "persona",
+            task_type="heartbeat",
+            project_id=None,
+            phase=None,
+            prompt_input=None,
+        )

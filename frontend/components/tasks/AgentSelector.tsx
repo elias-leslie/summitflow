@@ -41,7 +41,10 @@ export function AgentSelector({
       setIsLoadingAgents(true)
       fetchCodingAgents()
         .then((data) => setCodingAgents(data.agents))
-        .catch(() => setCodingAgents([]))
+        .catch((err) => {
+          console.error('Failed to fetch coding agents:', err)
+          setCodingAgents([])
+        })
         .finally(() => setIsLoadingAgents(false))
     }
   }, [autonomous, codingAgents.length])

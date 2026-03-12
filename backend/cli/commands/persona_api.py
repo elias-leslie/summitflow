@@ -97,3 +97,4 @@ def get_activity(time_range: str = "24h", page_size: int = 10) -> dict[str, Any]
     )
     resp.raise_for_status()
     return resp.json()
+

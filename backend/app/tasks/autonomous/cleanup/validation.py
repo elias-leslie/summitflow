@@ -205,4 +205,3 @@ def save_rollback_learning(
         )
     except Exception:
         logger.debug("Failed to save rollback learning to memory system", exc_info=True)
-        pass  # Non-critical

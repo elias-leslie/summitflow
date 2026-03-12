@@ -108,7 +108,7 @@ def _parse_agents(data: object) -> CodingAgentsListResponse:
     """Parse raw Agent Hub response data into CodingAgentsListResponse."""
     raw: list[dict[str, Any]] = []
     if isinstance(data, dict):
-        raw = data.get("agents", [])
+        raw = data.get("agents") or []
     return CodingAgentsListResponse(
         agents=[
             CodingAgentResponse(

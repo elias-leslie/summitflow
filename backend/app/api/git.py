@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from fastapi import APIRouter, HTTPException, Query
 
 from ..storage import tasks as task_store
@@ -170,7 +172,7 @@ async def retry_merge(task_id: str) -> dict[str, object]:
     if task["status"] != "conflicted":
         raise HTTPException(status_code=400, detail="Task is not in conflicted state")
     update_task_fields(task_id, conflict_info=None)
-    return merge_and_cleanup_task_worktree(task_id, task["project_id"])
+    return cast(dict[str, object], merge_and_cleanup_task_worktree(task_id, task["project_id"]))
 
 
 @router.post("/git/tasks/{task_id}/resolve-conflict", tags=["git"])
@@ -185,7 +187,7 @@ async def finalize_task_merge(task_id: str) -> dict[str, object]:
     task = task_store.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    return handle_finalize_task_merge(task_id, task)
+    return cast(dict[str, object], handle_finalize_task_merge(task_id, task))
 
 
 @router.post("/git/tasks/{task_id}/dismiss-conflict", tags=["git"])

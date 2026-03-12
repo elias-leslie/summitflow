@@ -73,8 +73,13 @@ function buildSpanTree(events: Event[]): SpanNode[] {
   // Build parent-child relationships
   for (const node of nodeMap.values()) {
     const parentId = node.event.parent_span_id
-    if (parentId && nodeMap.has(parentId)) {
-      nodeMap.get(parentId)!.children.push(node)
+    if (parentId) {
+      const parent = nodeMap.get(parentId)
+      if (parent) {
+        parent.children.push(node)
+      } else {
+        roots.push(node)
+      }
     } else {
       roots.push(node)
     }

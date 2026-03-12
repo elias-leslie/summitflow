@@ -196,6 +196,5 @@ export function ExecutionTimeline({
   )
 }
 
-// Export helper types and methods for external use
+// Export helper types for external use
 export type { TimelineMessage }
-export { getWebSocketUrl } from '@/hooks/useExecutionWebSocket'
