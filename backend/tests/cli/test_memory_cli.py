@@ -10,7 +10,7 @@ import typer
 from typer.testing import CliRunner
 
 from cli.commands.memory import app
-from cli.commands.memory_crud import save_impl, update_impl
+from cli.commands.memory_crud import revisions_impl, save_impl, update_impl
 from cli.commands.memory_formatters import format_list_compact
 
 runner = CliRunner()
@@ -201,6 +201,23 @@ class TestMemoryTagOptions:
             None,
         )
 
+    def test_save_forwards_change_reason_to_impl(self) -> None:
+        with patch("cli.commands.memory.save_impl") as mock_save_impl:
+            result = runner.invoke(
+                app,
+                [
+                    "save",
+                    "**Topic**: Tag finance memories.",
+                    "--summary",
+                    "Tag finance memory",
+                    "--change-reason",
+                    "dedupe stale guidance",
+                ],
+            )
+
+        assert result.exit_code == 0
+        assert mock_save_impl.call_args.args[-1] == "dedupe stale guidance"
+
     def test_update_forwards_tags_to_impl(self) -> None:
         """`st memory update --tags` should wire tag replacement through the CLI."""
         with patch("cli.commands.memory.update_impl") as mock_update_impl:
@@ -217,6 +234,70 @@ class TestMemoryTagOptions:
         assert result.exit_code == 0
         args = mock_update_impl.call_args.args
         assert args == ("abc12345", None, None, None, None, None, "finance-relevant", False)
+
+    def test_update_forwards_change_reason_to_impl(self) -> None:
+        with patch("cli.commands.memory.update_impl") as mock_update_impl:
+            result = runner.invoke(
+                app,
+                [
+                    "update",
+                    "abc12345",
+                    "--summary",
+                    "Fresh summary",
+                    "--change-reason",
+                    "refresh duplicate wording",
+                ],
+            )
+
+        assert result.exit_code == 0
+        assert mock_update_impl.call_args.args[-1] == "refresh duplicate wording"
+
+    def test_delete_forwards_change_reason_to_impl(self) -> None:
+        with patch("cli.commands.memory.delete_impl") as mock_delete_impl:
+            result = runner.invoke(
+                app,
+                [
+                    "delete",
+                    "abc12345",
+                    "--change-reason",
+                    "remove duplicate memory",
+                ],
+            )
+
+        assert result.exit_code == 0
+        assert mock_delete_impl.call_args.kwargs["change_reason"] == "remove duplicate memory"
+
+    def test_revisions_forwards_to_impl(self) -> None:
+        with patch("cli.commands.memory.revisions_impl") as mock_revisions_impl:
+            result = runner.invoke(
+                app,
+                [
+                    "revisions",
+                    "abc12345",
+                    "--limit",
+                    "7",
+                ],
+            )
+
+        assert result.exit_code == 0
+        assert mock_revisions_impl.call_args.args[1:] == ("abc12345", 7)
+
+    def test_restore_forwards_change_reason_to_impl(self) -> None:
+        with patch("cli.commands.memory.restore_impl") as mock_restore_impl:
+            result = runner.invoke(
+                app,
+                [
+                    "restore",
+                    "abc12345",
+                    "rev98765",
+                    "--change-reason",
+                    "rollback bad curator edit",
+                ],
+            )
+
+        assert result.exit_code == 0
+        assert mock_restore_impl.call_args.args == ("abc12345", "rev98765")
+        assert mock_restore_impl.call_args.kwargs["change_reason"] == "rollback bad curator edit"
 
     def test_update_impl_rejects_tags_and_clear_tags_together(self) -> None:
         """Tag replacement and clearing are mutually exclusive."""
@@ -255,6 +336,25 @@ class TestMemoryTagOptions:
             )
 
         mock_replace_tags.assert_called_once_with("abc12345", ["finance-relevant", "portfolio"])
+
+    def test_delete_impl_forwards_query_params(self) -> None:
+        with patch("cli.commands.memory_crud.agent_hub_request", return_value={"success": True}) as mock_request:
+            from cli.commands.memory_crud import _delete_single
+
+            _delete_single("abc12345", change_reason="remove duplicate memory")
+
+        assert mock_request.call_args.kwargs["params"] == {"change_reason": "remove duplicate memory"}
+
+    def test_revisions_impl_uses_history_endpoint(self) -> None:
+        out = SimpleNamespace(is_compact=True)
+        with (
+            patch("cli.commands.memory_crud.agent_hub_request", return_value={"revisions": []}) as mock_request,
+            patch("cli.commands.memory_crud.format_revisions_compact"),
+        ):
+            revisions_impl(out, "abc12345", 9)
+
+        assert mock_request.call_args.args[:2] == ("GET", "/api/memory/episode/abc12345/revisions")
+        assert mock_request.call_args.kwargs["params"] == {"limit": 9}
 
     def test_update_impl_preserves_existing_tags_when_updating_in_place(self) -> None:
         """Content/tier updates should preserve tags on the existing episode UUID."""

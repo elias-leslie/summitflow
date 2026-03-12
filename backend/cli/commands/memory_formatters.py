@@ -176,6 +176,32 @@ def format_batch_tier_compact(result: dict[str, Any]) -> None:
                 typer.echo(f"  FAIL:{r['uuid'][:8]}:{r.get('error', 'unknown')}")
 
 
+def format_revisions_compact(memory_uuid: str, result: dict[str, Any]) -> None:
+    """Format memory revision history in TOON style."""
+    revisions = result.get("revisions", [])
+    typer.echo(f"REVISIONS[{len(revisions)}]:memory={memory_uuid[:8]}")
+    for revision in revisions:
+        revision_id = str(revision.get("id", "?"))[:8]
+        action = revision.get("action", "?")
+        version = revision.get("version", "?")
+        created_at = revision.get("created_at", "?")
+        changed_by = revision.get("changed_by") or "-"
+        change_reason = revision.get("change_reason") or "-"
+        typer.echo(
+            f"  {revision_id} [{action}] v{version} at={created_at} by={changed_by}"
+        )
+        typer.echo(f"    reason={change_reason}")
+        summary = revision.get("summary")
+        if summary:
+            typer.echo(f"    summary={summary}")
+
+
+def format_restore_compact(memory_uuid: str, revision_id: str, result: dict[str, Any]) -> None:
+    """Format a successful restore in TOON style."""
+    version = result.get("version", "?")
+    typer.echo(f"RESTORED:{memory_uuid[:8]}:rev={revision_id[:8]}:version={version}")
+
+
 def format_orphaned_cleanup_compact(result: dict[str, Any]) -> None:
     """Format orphaned edge cleanup results in TOON style."""
     updated = result.get("edges_updated", 0)

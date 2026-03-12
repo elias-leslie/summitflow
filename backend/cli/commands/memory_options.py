@@ -72,6 +72,11 @@ ContextOpt = Annotated[
     typer.Option("--context", help="Optional context about the learning source"),
 ]
 
+ChangeReasonOpt = Annotated[
+    str | None,
+    typer.Option("--change-reason", help="Optional reason recorded in memory revision history"),
+]
+
 PinnedOpt = Annotated[
     bool,
     typer.Option("--pinned", "-p", help="Pin episode (always inject regardless of budget)"),
@@ -149,6 +154,7 @@ CursorOpt = Annotated[
 UUIDsArg = Annotated[list[str], typer.Argument(help="Episode UUID(s) to retrieve")]
 UUIDsDeleteArg = Annotated[list[str], typer.Argument(help="Episode UUID(s) to delete")]
 UUIDArg = Annotated[str, typer.Argument(help="Episode UUID to update")]
+RevisionArg = Annotated[str, typer.Argument(help="Revision UUID to inspect or restore")]
 UUIDsOptArg = Annotated[
     list[str] | None,
     typer.Argument(help="Specific UUIDs to export (optional)"),
@@ -156,6 +162,11 @@ UUIDsOptArg = Annotated[
 UUIDsBatchArg = Annotated[
     list[str] | None,
     typer.Argument(help="UUIDs to update (when using --tier)"),
+]
+
+HistoryLimitOpt = Annotated[
+    int,
+    typer.Option("--limit", "-l", help="Max revisions to return (1-100)"),
 ]
 
 # Batch operation options

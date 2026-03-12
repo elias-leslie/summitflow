@@ -24,6 +24,8 @@ from .memory_formatters import (
     format_batch_get_compact,
     format_get_compact,
     format_list_compact,
+    format_restore_compact,
+    format_revisions_compact,
     format_save_compact,
     format_search_compact,
     format_stats_compact,
@@ -53,11 +55,12 @@ def save_impl(
     tags: str | None,
     scope: str,
     scope_id: str | None,
+    change_reason: str | None = None,
 ) -> None:
     summary = validate_save_inputs(tier, confidence, summary)
     validate_episode_content_present(content)
     validate_content_format(content, summary, tier)
-    payload = build_save_payload(content, summary, tier, confidence, context, pinned, trigger_types)
+    payload = build_save_payload(content, summary, tier, confidence, context, pinned, trigger_types, change_reason)
     result = agent_hub_request(
         "POST", "/api/memory/save-learning", json=payload,
         scope=scope, scope_id=scope_id, tool_name="st memory save",
@@ -135,21 +138,27 @@ def get_impl(out: OutputContext, uuids: list[str]) -> None:
         output_json(result)
 
 
-def delete_impl(uuids: list[str]) -> None:
+def delete_impl(uuids: list[str], *, change_reason: str | None = None) -> None:
     if len(uuids) == 1:
-        _delete_single(uuids[0])
+        _delete_single(uuids[0], change_reason=change_reason)
         return
     result = agent_hub_request(
-        "POST", "/api/memory/bulk-delete", json={"ids": uuids}, tool_name="st memory delete"
+        "POST",
+        "/api/memory/bulk-delete",
+        json={"ids": uuids, "change_reason": change_reason},
+        tool_name="st memory delete",
     )
     for error in result.get("errors", []):
         typer.echo(f"Failed: {error['id'][:8]} - {error.get('error', 'Unknown')}")
     typer.echo(f"\nDeleted: {result.get('deleted', 0)}, Failed: {result.get('failed', 0)}")
 
 
-def _delete_single(uuid: str) -> None:
+def _delete_single(uuid: str, *, change_reason: str | None = None) -> None:
     result = agent_hub_request(
-        "DELETE", f"/api/memory/episode/{uuid}", tool_name="st memory delete"
+        "DELETE",
+        f"/api/memory/episode/{uuid}",
+        params={"change_reason": change_reason} if change_reason else None,
+        tool_name="st memory delete",
     )
     if result.get("success"):
         typer.echo(f"Deleted: {uuid[:8]}")
@@ -168,6 +177,7 @@ def update_impl(
     pinned: bool | None,
     tags: str | None,
     clear_tags: bool,
+    change_reason: str | None = None,
 ) -> None:
     if tags and clear_tags:
         typer.echo("Error: Specify only one of --tags or --clear-tags")
@@ -211,21 +221,69 @@ def update_impl(
     if content_or_tier_changed:
         assert existing is not None
         new_content = content if content is not None else str(existing.get("content", ""))
-        update_episode_content_or_tier(
-            target_uuid,
-            content=new_content,
-            tier=effective_tier,
-        )
+        if change_reason is None:
+            update_episode_content_or_tier(
+                target_uuid,
+                content=new_content,
+                tier=effective_tier,
+            )
+        else:
+            update_episode_content_or_tier(
+                target_uuid,
+                content=new_content,
+                tier=effective_tier,
+                change_reason=change_reason,
+            )
         replace_episode_tags(target_uuid, replacement_tags if replacement_tags is not None else existing_tags)
 
     if properties_changed:
         normalized_trigger_types = None
         if trigger_types is not None:
             normalized_trigger_types = ",".join(parse_csv_values(trigger_types) or [])
-        patch_episode_properties(target_uuid, normalized_summary, normalized_trigger_types, pinned)
+        if change_reason is None:
+            patch_episode_properties(
+                target_uuid,
+                normalized_summary,
+                normalized_trigger_types,
+                pinned,
+            )
+        else:
+            patch_episode_properties(
+                target_uuid,
+                normalized_summary,
+                normalized_trigger_types,
+                pinned,
+                change_reason=change_reason,
+            )
 
     if not content_or_tier_changed and tags_changed:
         replace_episode_tags(target_uuid, replacement_tags or [])
 
     if not content_or_tier_changed and not properties_changed and not tags_changed:
         typer.echo("No changes made.")
+
+
+def revisions_impl(out: OutputContext, uuid: str, limit: int) -> None:
+    """Fetch immutable revision history for one memory episode."""
+    result = agent_hub_request(
+        "GET",
+        f"/api/memory/episode/{uuid}/revisions",
+        params={"limit": limit},
+        tool_name="st memory revisions",
+    )
+    if out.is_compact:
+        format_revisions_compact(uuid, result)
+    else:
+        output_json(result)
+
+
+def restore_impl(uuid: str, revision_id: str, *, change_reason: str | None = None) -> None:
+    """Restore a memory episode to one historical revision."""
+    payload = {"change_reason": change_reason} if change_reason else {}
+    result = agent_hub_request(
+        "POST",
+        f"/api/memory/episode/{uuid}/revisions/{revision_id}/restore",
+        json=payload,
+        tool_name="st memory restore",
+    )
+    format_restore_compact(uuid, revision_id, result)

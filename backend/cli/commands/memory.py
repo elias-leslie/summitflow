@@ -16,6 +16,8 @@ from .memory_commands import (
     get_impl,
     import_impl,
     list_impl,
+    restore_impl,
+    revisions_impl,
     save_impl,
     search_impl,
     seed_impl,
@@ -24,6 +26,7 @@ from .memory_commands import (
 )
 from .memory_options import (
     BatchTierOpt,
+    ChangeReasonOpt,
     ClearTagsOpt,
     ConfidenceOpt,
     ContentArg,
@@ -33,6 +36,7 @@ from .memory_options import (
     CursorOpt,
     DryRunOpt,
     FullExportOpt,
+    HistoryLimitOpt,
     InputFileOpt,
     InputPathArg,
     JsonInputOpt,
@@ -43,6 +47,7 @@ from .memory_options import (
     PinnedOpt,
     PinnedUpdateOpt,
     QueryArg,
+    RevisionArg,
     ScopeIdOpt,
     ScopeOpt,
     SearchLimitOpt,
@@ -127,13 +132,30 @@ def save(
     tags: TagsOpt = None,
     scope: ScopeOpt = "global",
     scope_id: ScopeIdOpt = None,
+    change_reason: ChangeReasonOpt = None,
 ) -> None:
     """Save a learning to the memory system."""
     resolved_content = _resolve_content(content, content_file, require_value=True)
     assert resolved_content is not None
-    save_impl(
-        ctx.obj, resolved_content, summary, tier, confidence, context, pinned, trigger_types, tags, scope, scope_id
-    )
+    if change_reason is None:
+        save_impl(
+            ctx.obj, resolved_content, summary, tier, confidence, context, pinned, trigger_types, tags, scope, scope_id
+        )
+    else:
+        save_impl(
+            ctx.obj,
+            resolved_content,
+            summary,
+            tier,
+            confidence,
+            context,
+            pinned,
+            trigger_types,
+            tags,
+            scope,
+            scope_id,
+            change_reason,
+        )
 
 
 @app.command("format")
@@ -202,9 +224,12 @@ def get(ctx: typer.Context, uuids: UUIDsArg) -> None:
 
 
 @app.command()
-def delete(uuids: UUIDsDeleteArg) -> None:
+def delete(
+    uuids: UUIDsDeleteArg,
+    change_reason: ChangeReasonOpt = None,
+) -> None:
     """Delete one or more episodes from memory."""
-    delete_impl(uuids)
+    delete_impl(uuids, change_reason=change_reason)
 
 
 @app.command()
@@ -218,10 +243,44 @@ def update(
     pinned: PinnedUpdateOpt = None,
     tags: TagsUpdateOpt = None,
     clear_tags: ClearTagsOpt = False,
+    change_reason: ChangeReasonOpt = None,
 ) -> None:
     """Update an episode in place (content/tier and properties)."""
     resolved_content = _resolve_content(content, content_file, require_value=False)
-    update_impl(uuid, resolved_content, tier, summary, trigger_types, pinned, tags, clear_tags)
+    if change_reason is None:
+        update_impl(uuid, resolved_content, tier, summary, trigger_types, pinned, tags, clear_tags)
+    else:
+        update_impl(
+            uuid,
+            resolved_content,
+            tier,
+            summary,
+            trigger_types,
+            pinned,
+            tags,
+            clear_tags,
+            change_reason,
+        )
+
+
+@app.command("revisions")
+def revisions(
+    ctx: typer.Context,
+    uuid: UUIDArg,
+    limit: HistoryLimitOpt = 20,
+) -> None:
+    """List immutable revision history for one episode."""
+    revisions_impl(ctx.obj, uuid, limit)
+
+
+@app.command()
+def restore(
+    uuid: UUIDArg,
+    revision_id: RevisionArg,
+    change_reason: ChangeReasonOpt = None,
+) -> None:
+    """Restore an episode to a historical revision."""
+    restore_impl(uuid, revision_id, change_reason=change_reason)
 
 
 @app.command("batch-tier")

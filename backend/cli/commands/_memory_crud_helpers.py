@@ -59,6 +59,7 @@ def build_save_payload(
     context: str | None,
     pinned: bool,
     trigger_types: str | None,
+    change_reason: str | None,
 ) -> dict[str, object]:
     """Build the payload dict for save-learning request."""
     payload: dict[str, object] = {
@@ -75,6 +76,8 @@ def build_save_payload(
         parsed_trigger_types = parse_csv_values(trigger_types)
         if parsed_trigger_types:
             payload["trigger_task_types"] = parsed_trigger_types
+    if change_reason:
+        payload["change_reason"] = change_reason
     return payload
 
 
@@ -110,6 +113,7 @@ def update_episode_content_or_tier(
     *,
     content: str | None,
     tier: str | None,
+    change_reason: str | None = None,
 ) -> None:
     """Patch episode content and/or tier in place while preserving UUID."""
     payload: dict[str, object] = {}
@@ -117,6 +121,8 @@ def update_episode_content_or_tier(
         payload["content"] = content
     if tier is not None:
         payload["injection_tier"] = tier
+    if change_reason:
+        payload["change_reason"] = change_reason
 
     result = agent_hub_request(
         "PATCH",
@@ -138,6 +144,8 @@ def patch_episode_properties(
     summary: str | None,
     trigger_types: str | None,
     pinned: bool | None,
+    *,
+    change_reason: str | None = None,
 ) -> None:
     """Patch episode properties and echo results."""
     props: dict[str, object] = {}
@@ -147,6 +155,8 @@ def patch_episode_properties(
         props["trigger_task_types"] = parse_csv_values(trigger_types) or []
     if pinned is not None:
         props["pinned"] = pinned
+    if change_reason:
+        props["change_reason"] = change_reason
 
     patch_result = agent_hub_request(
         "PATCH",

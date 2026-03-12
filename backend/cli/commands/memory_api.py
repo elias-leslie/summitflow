@@ -42,7 +42,7 @@ def _dispatch(client: httpx.Client, method: str, url: str, **kw: Any) -> httpx.R
     if method == "GET":
         return client.get(url, params=kw.get("params"), headers=kw["headers"])
     if method == "DELETE":
-        return client.delete(url, headers=kw["headers"])
+        return client.delete(url, params=kw.get("params"), headers=kw["headers"])
     if method == "PUT":
         return client.put(url, json=kw.get("json"), headers=kw["headers"])
     if method == "PATCH":

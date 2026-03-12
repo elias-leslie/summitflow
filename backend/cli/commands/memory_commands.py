@@ -21,6 +21,8 @@ from .memory_crud import (
     delete_impl,
     get_impl,
     list_impl,
+    restore_impl,
+    revisions_impl,
     save_impl,
     search_impl,
     stats_impl,
@@ -37,6 +39,8 @@ __all__ = [
     "get_impl",
     "import_impl",
     "list_impl",
+    "restore_impl",
+    "revisions_impl",
     "save_impl",
     "search_impl",
     "seed_impl",
@@ -63,10 +67,11 @@ def save(
     tags: str | None,
     scope: str,
     scope_id: str | None,
+    change_reason: str | None,
 ) -> None:
     """Save a new memory episode."""
     save_impl(
-        out, content, summary, tier, confidence, context, pinned, trigger_types, tags, scope, scope_id
+        out, content, summary, tier, confidence, context, pinned, trigger_types, tags, scope, scope_id, change_reason
     )
 
 
@@ -99,9 +104,9 @@ def get(out: OutputContext, uuids: list[str]) -> None:
     get_impl(out, uuids)
 
 
-def delete(uuids: list[str]) -> None:
+def delete(uuids: list[str], *, change_reason: str | None = None) -> None:
     """Delete memory episode(s)."""
-    delete_impl(uuids)
+    delete_impl(uuids, change_reason=change_reason)
 
 
 def update(
@@ -113,9 +118,20 @@ def update(
     pinned: bool | None,
     tags: str | None,
     clear_tags: bool,
+    change_reason: str | None,
 ) -> None:
     """Update a memory episode."""
-    update_impl(uuid, content, tier, summary, trigger_types, pinned, tags, clear_tags)
+    update_impl(uuid, content, tier, summary, trigger_types, pinned, tags, clear_tags, change_reason)
+
+
+def revisions(out: OutputContext, uuid: str, limit: int) -> None:
+    """List memory revision history."""
+    revisions_impl(out, uuid, limit)
+
+
+def restore(uuid: str, revision_id: str, change_reason: str | None) -> None:
+    """Restore a memory episode revision."""
+    restore_impl(uuid, revision_id, change_reason=change_reason)
 
 
 def batch_tier(
