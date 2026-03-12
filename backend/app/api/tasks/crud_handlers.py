@@ -13,7 +13,13 @@ from typing import Any
 from fastapi import HTTPException
 
 from ...logging_config import get_logger
-from ...schemas.tasks import BatchTaskCreate, BatchTaskRequest, BatchTaskResponse, BatchTaskResult, TaskResponse
+from ...schemas.tasks import (
+    BatchTaskCreate,
+    BatchTaskRequest,
+    BatchTaskResponse,
+    BatchTaskResult,
+    TaskResponse,
+)
 from ...services.task_execution_readiness import sync_task_execution_readiness
 from ...services.task_second_opinion import ensure_second_opinion_tracking
 from ...storage import tasks as task_store
