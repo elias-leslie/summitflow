@@ -43,6 +43,15 @@ ENDPOINT_HEARTBEAT = "/session-ingestion/sessions/{sid}/heartbeat?include_sessio
 ENDPOINT_FINALIZE = "/session-ingestion/sessions/{sid}/finalize"
 ENDPOINT_CLOSE = "/sessions/{sid}/close"
 
+REQUEST_SOURCE = "codex-transcript-sync"
+SOURCE_CLIENT = "summitflow/codex-session-sync"
+PROVIDER = "codex"
+SESSION_TYPE = "agent"
+SCOPE_CONFIDENCE = "unknown"
+HEARTBEAT_PHASE = "waiting_for_model"
+HEARTBEAT_STATUS = "active"
+HEARTBEAT_EVENT_TYPE = "heartbeat"
+
 # ---------------------------------------------------------------------------
 # Data model
 # ---------------------------------------------------------------------------
@@ -215,8 +224,8 @@ def post_json(
         HEADER_CONTENT_TYPE: "application/json",
         HEADER_CLIENT_ID: client_id,
         HEADER_CLIENT_SECRET: client_secret,
-        HEADER_REQUEST_SOURCE: "codex-transcript-sync",
-        HEADER_SOURCE_CLIENT: "summitflow/codex-session-sync",
+        HEADER_REQUEST_SOURCE: REQUEST_SOURCE,
+        HEADER_SOURCE_CLIENT: SOURCE_CLIENT,
         HEADER_SOURCE_PATH: str(Path(__file__)),
     }
     data = json.dumps(body).encode("utf-8") if body is not None else None
@@ -286,13 +295,6 @@ def should_sync(info: TranscriptInfo, state: dict[str, object], force: bool) -> 
 # ---------------------------------------------------------------------------
 
 
-def _get_checkpoint(state: dict[str, object], info: TranscriptInfo) -> str | None:
-    ts = state.get("transcripts") or {}
-    if not isinstance(ts, dict):
-        return None
-    return (ts.get(str(info.path)) or {}).get("checkpoint")  # type: ignore[union-attr]
-
-
 def _build_meta(info: TranscriptInfo, project: dict[str, object]) -> dict[str, object]:
     return {
         "transcript_path": str(info.path),
@@ -308,10 +310,10 @@ def _upsert_session(
 ) -> tuple[bool, str]:
     ok, _, err = _checked_post(api_url, ENDPOINT_UPSERT, {
         "session_id": info.session_id, "project_id": project["project_id"],
-        "provider": "codex", "model": f"codex/{info.model}",
-        "session_type": "agent", "cwd": str(info.cwd),
+        "provider": PROVIDER, "model": f"{PROVIDER}/{info.model}",
+        "session_type": SESSION_TYPE, "cwd": str(info.cwd),
         "current_branch": project["branch"],
-        "scope_confidence": "unknown",
+        "scope_confidence": SCOPE_CONFIDENCE,
         "provider_metadata": _build_meta(info, project),
     }, client_id, client_secret, "session upsert")
     return ok, err
@@ -321,10 +323,11 @@ def _ingest_transcript(
     api_url: str, client_id: str, client_secret: str,
     info: TranscriptInfo, state: dict[str, object],
 ) -> tuple[bool, dict[str, object] | None, str]:
-    checkpoint = _get_checkpoint(state, info)
+    _ts = state.get("transcripts") or {}
+    checkpoint = ((_ts.get(str(info.path)) or {}).get("checkpoint") if isinstance(_ts, dict) else None)
     ok, payload, err = _checked_post(
         api_url, ENDPOINT_TRANSCRIPT.format(sid=info.session_id),
-        {"provider": "codex", "transcript_path": str(info.path), "checkpoint": checkpoint},
+        {"provider": PROVIDER, "transcript_path": str(info.path), "checkpoint": checkpoint},
         client_id, client_secret, "transcript ingest",
     )
     if not ok:
@@ -341,9 +344,9 @@ def _send_heartbeat(
 ) -> tuple[bool, str]:
     ok, _, err = _checked_post(api_url, ENDPOINT_HEARTBEAT.format(sid=info.session_id), {
         "cwd": str(info.cwd), "current_branch": project["branch"],
-        "phase": "waiting_for_model", "status": "active",
+        "phase": HEARTBEAT_PHASE, "status": HEARTBEAT_STATUS,
         "summary": f"Transcript sync heartbeat for {info.session_id}",
-        "last_event_type": "heartbeat", "provider_metadata": meta,
+        "last_event_type": HEARTBEAT_EVENT_TYPE, "provider_metadata": meta,
     }, client_id, client_secret, "heartbeat")
     return ok, err
 
