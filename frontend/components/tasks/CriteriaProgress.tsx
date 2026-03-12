@@ -50,7 +50,7 @@ export function CriteriaProgress({
     )
     .join('\n')
 
-  const handleClick = (e: React.MouseEvent) => {
+  const handleClick = (e: React.MouseEvent | React.KeyboardEvent) => {
     if (expandable) {
       e.stopPropagation()
       setIsExpanded(!isExpanded)
@@ -58,7 +58,7 @@ export function CriteriaProgress({
   }
 
   const handleCriterionClick = (
-    e: React.MouseEvent,
+    e: React.MouseEvent | React.KeyboardEvent,
     criterion: TaskAcceptanceCriterion,
   ) => {
     e.stopPropagation()
@@ -74,7 +74,7 @@ export function CriteriaProgress({
         onKeyDown={expandable ? (e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault()
-            handleClick(e as unknown as React.MouseEvent)
+            handleClick(e)
           }
         } : undefined}
         className={`inline-flex items-center gap-1.5 group ${expandable ? 'cursor-pointer' : 'cursor-default'}`}
@@ -129,7 +129,7 @@ export function CriteriaProgress({
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault()
-                  handleCriterionClick(e as unknown as React.MouseEvent, c)
+                  handleCriterionClick(e, c)
                 }
               }}
               className="flex items-start gap-2 p-2 rounded hover:bg-slate-700/50 cursor-pointer border-b border-slate-700/50 last:border-0"

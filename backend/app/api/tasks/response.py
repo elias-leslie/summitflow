@@ -84,6 +84,15 @@ def _parse_subtask_summary(task: dict[str, Any]) -> SubtaskSummary | None:
     )
 
 
+def _flatten_steps(steps: list[Any] | None) -> list[str]:
+    """Convert steps from storage format (list of dicts or strings) to flat string list."""
+    if not steps:
+        return []
+    if isinstance(steps[0], dict):
+        return [step["description"] for step in steps]
+    return list(steps)
+
+
 def _parse_subtasks(task: dict[str, Any]) -> list[SubtaskResponse] | None:
     if task.get("subtasks") is None:
         return None
@@ -91,9 +100,7 @@ def _parse_subtasks(task: dict[str, Any]) -> list[SubtaskResponse] | None:
         SubtaskResponse(
             id=s["id"], task_id=s["task_id"], subtask_id=s["subtask_id"],
             phase=s.get("phase"), description=s["description"],
-            steps=[step["description"] for step in s.get("steps", [])]
-            if s.get("steps") and isinstance(s["steps"][0], dict)
-            else s.get("steps", []),
+            steps=_flatten_steps(s.get("steps")),
             passes=s.get("passes", False),
             passed_at=_format_datetime(s.get("passed_at")),
             display_order=s.get("display_order", 0),

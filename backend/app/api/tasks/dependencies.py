@@ -20,6 +20,19 @@ from .helpers import get_task_or_404, verify_task_project
 router = APIRouter()
 
 
+def _to_dependency_response(d: dict[str, Any]) -> DependencyResponse:
+    """Convert a raw dependency dict to a DependencyResponse."""
+    return DependencyResponse(
+        id=d["id"],
+        task_id=d["task_id"],
+        depends_on_task_id=d["depends_on_task_id"],
+        dependency_type=d["dependency_type"],
+        created_at=d["created_at"].isoformat() if d["created_at"] else None,
+        depends_on_title=d.get("depends_on_title"),
+        depends_on_status=d.get("depends_on_status"),
+    )
+
+
 @router.get(
     "/projects/{project_id}/tasks/{task_id}/dependencies", response_model=list[DependencyResponse]
 )
@@ -36,18 +49,7 @@ async def get_task_dependencies(project_id: str, task_id: str) -> list[Dependenc
     verify_task_project(task_id, project_id)
 
     deps = dep_store.get_dependencies(task_id)
-    return [
-        DependencyResponse(
-            id=d["id"],
-            task_id=d["task_id"],
-            depends_on_task_id=d["depends_on_task_id"],
-            dependency_type=d["dependency_type"],
-            created_at=d["created_at"].isoformat() if d["created_at"] else None,
-            depends_on_title=d.get("depends_on_title"),
-            depends_on_status=d.get("depends_on_status"),
-        )
-        for d in deps
-    ]
+    return [_to_dependency_response(d) for d in deps]
 
 
 @router.post(
@@ -147,15 +149,4 @@ async def get_task_dependencies_global(task_id: str) -> list[DependencyResponse]
     get_task_or_404(task_id)
 
     deps = dep_store.get_dependencies(task_id)
-    return [
-        DependencyResponse(
-            id=d["id"],
-            task_id=d["task_id"],
-            depends_on_task_id=d["depends_on_task_id"],
-            dependency_type=d["dependency_type"],
-            created_at=d["created_at"].isoformat() if d["created_at"] else None,
-            depends_on_title=d.get("depends_on_title"),
-            depends_on_status=d.get("depends_on_status"),
-        )
-        for d in deps
-    ]
+    return [_to_dependency_response(d) for d in deps]
