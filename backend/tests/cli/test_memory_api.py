@@ -10,12 +10,12 @@ def test_format_error_payload_prefers_message_details_and_hint() -> None:
         {
             "error": "validation_error",
             "message": "Content validation failed",
-            "details": [{"message": "Header must start with **Mandate**:"}],
-            "hint": "Use exact tier headers.",
+            "details": [{"message": "Episode must start with a bold topic header like **Git Safety**:"}],
+            "hint": "Use a compact topic header.",
         },
         "fallback",
     )
 
     assert rendered == (
-        "Content validation failed | Header must start with **Mandate**: | Use exact tier headers."
+        "Content validation failed | Episode must start with a bold topic header like **Git Safety**: | Use a compact topic header."
     )

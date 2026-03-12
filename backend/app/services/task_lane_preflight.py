@@ -549,6 +549,7 @@ def _apply_scoped_conflict(
     overlap_id, overlap_paths, overlap_kind = _find_scope_overlap(target_scope, scoped)
 
     if overlap_kind == "read":
+        assert overlap_id is not None
         chosen = next(s for s in lane_sessions if _lane_task_id(s) == overlap_id)
         _assign_owner(result, chosen)
         result.conflicting_tasks = [overlap_id]

@@ -28,7 +28,7 @@ def _display_dry_run_results(
     )
 
     if content_changes:
-        typer.echo("Content changes (delete+recreate):")
+        typer.echo("Content/tier updates (in place):")
         for c in content_changes:
             typer.echo(f"  {c['uuid'][:8]}: content changed")
 

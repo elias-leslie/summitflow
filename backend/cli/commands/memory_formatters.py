@@ -7,6 +7,25 @@ from typing import Any
 import typer
 
 
+def _format_meta_line(record: dict[str, Any]) -> str | None:
+    """Render compact metadata for list/search/get views."""
+    meta_parts: list[str] = []
+    if record.get("pinned"):
+        meta_parts.append("pinned")
+
+    trigger_types = [str(item) for item in record.get("trigger_task_types", []) if item]
+    if trigger_types:
+        meta_parts.append(f"triggers={','.join(trigger_types)}")
+
+    tags = [str(item) for item in record.get("tags", []) if item]
+    if tags:
+        preview = ",".join(tags[:3])
+        suffix = "+" if len(tags) > 3 else ""
+        meta_parts.append(f"tags={preview}{suffix}")
+
+    return " | ".join(meta_parts) if meta_parts else None
+
+
 def format_stats_compact(stats: dict[str, Any]) -> None:
     """Format memory stats in TOON style."""
     total = stats.get("total", stats.get("total_count", 0))
@@ -53,9 +72,12 @@ def format_list_compact(result: dict[str, Any]) -> None:
     for ep in episodes:
         uuid = ep.get("uuid", "?")[:8]
         tier = ep.get("category") or ep.get("injection_tier", "?")
-        summary = ep.get("summary", "")
+        summary = ep.get("summary") or "-"
         content = ep.get("content", "")
         print(f"  {uuid} [{tier}] summary={summary}")
+        meta = _format_meta_line(ep)
+        if meta:
+            print(f"    {meta}")
         print(f"    {content}")
 
 
@@ -68,9 +90,14 @@ def format_search_compact(result: dict[str, Any]) -> None:
 
     for r in results:
         uuid = r.get("uuid", "?")[:8]
+        tier = r.get("category") or r.get("injection_tier", "?")
         score = r.get("relevance_score", 0.0)
+        summary = r.get("summary") or "-"
         content = r.get("content", "")
-        print(f"  {uuid} {score:.2f}")
+        print(f"  {uuid} [{tier}] {score:.2f} summary={summary}")
+        meta = _format_meta_line(r)
+        if meta:
+            print(f"    {meta}")
         print(f"    {content}")
 
 
@@ -85,6 +112,7 @@ def format_get_compact(result: dict[str, Any]) -> None:
     summary = result.get("summary")
     trigger_types = result.get("trigger_task_types", [])
     pinned = result.get("pinned", False)
+    tags = result.get("tags", [])
 
     typer.echo(f"{uuid_short} [{tier}] loaded={loaded} helpful={helpful} harmful={harmful}")
     if summary:
@@ -93,6 +121,8 @@ def format_get_compact(result: dict[str, Any]) -> None:
         typer.echo(f"Triggers: {', '.join(trigger_types)}")
     if pinned:
         typer.echo("Pinned: yes")
+    if tags:
+        typer.echo(f"Tags: {', '.join(str(tag) for tag in tags)}")
     typer.echo("")
     typer.echo(content)
 
@@ -114,11 +144,17 @@ def format_batch_get_compact(result: dict[str, Any]) -> None:
         harmful = ep.get("harmful_count", 0)
         loaded = ep.get("loaded_count", 0)
         summary = ep.get("summary")
+        trigger_types = ep.get("trigger_task_types", [])
+        tags = ep.get("tags", [])
 
         typer.echo("")
         typer.echo(f"{uuid_short} [{tier}] loaded={loaded} helpful={helpful} harmful={harmful}")
         if summary:
             typer.echo(f"Summary: {summary}")
+        if trigger_types:
+            typer.echo(f"Triggers: {', '.join(str(item) for item in trigger_types)}")
+        if tags:
+            typer.echo(f"Tags: {', '.join(str(tag) for tag in tags)}")
         typer.echo(content)
 
     if missing:

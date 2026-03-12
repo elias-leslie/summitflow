@@ -7,6 +7,49 @@ import typer
 from .memory_api import agent_hub_request
 from .memory_validation import validate_summary_length
 
+VALID_TIERS = ("mandate", "guardrail", "reference")
+
+
+def parse_csv_values(raw: str | None) -> list[str] | None:
+    """Parse comma-separated values, preserving order while deduplicating."""
+    if raw is None:
+        return None
+    values: list[str] = []
+    seen: set[str] = set()
+    for part in raw.split(","):
+        cleaned = part.strip()
+        if not cleaned or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        values.append(cleaned)
+    return values
+
+
+def validate_tier(tier: str) -> str:
+    """Validate tier value and return the normalized string."""
+    from ..output import output_error
+
+    normalized = tier.strip()
+    if normalized not in VALID_TIERS:
+        output_error(f"Invalid tier: {tier}. Must be mandate, guardrail, or reference.")
+        raise typer.Exit(1)
+    return normalized
+
+
+def validate_summary_input(summary: str, *, required: bool) -> str:
+    """Normalize summary text and enforce presence and max length."""
+    from ..output import output_error
+
+    normalized = summary.strip()
+    if required and not normalized:
+        output_error("--summary is required. Provide a short action phrase (~35 chars).")
+        raise typer.Exit(1)
+    if not normalized:
+        output_error("Summary cannot be blank.")
+        raise typer.Exit(1)
+    validate_summary_length(normalized)
+    return normalized
+
 
 def build_save_payload(
     content: str,
@@ -29,34 +72,26 @@ def build_save_payload(
     if pinned:
         payload["pinned"] = True
     if trigger_types:
-        payload["trigger_task_types"] = [t.strip() for t in trigger_types.split(",")]
+        parsed_trigger_types = parse_csv_values(trigger_types)
+        if parsed_trigger_types:
+            payload["trigger_task_types"] = parsed_trigger_types
     return payload
 
 
 def parse_tags_csv(tags: str | None) -> list[str] | None:
-    """Parse comma-separated tags into a deduplicated sorted list."""
-    if tags is None:
-        return None
-    parsed = sorted({tag.strip() for tag in tags.split(",") if tag.strip()})
-    return parsed
+    """Parse comma-separated tags into a deduplicated list."""
+    return parse_csv_values(tags)
 
 
 def validate_save_inputs(tier: str, confidence: int, summary: str) -> str:
     """Validate save inputs and return stripped summary, raise on error."""
     from ..output import output_error
 
-    if tier not in ("mandate", "guardrail", "reference"):
-        output_error(f"Invalid tier: {tier}. Must be mandate, guardrail, or reference.")
-        raise typer.Exit(1)
+    validate_tier(tier)
     if confidence < 0 or confidence > 100:
         output_error(f"Invalid confidence: {confidence}. Must be 0-100.")
         raise typer.Exit(1)
-    if not summary or not summary.strip():
-        output_error("--summary is required. Provide a short action phrase (~35 chars).")
-        raise typer.Exit(1)
-    stripped = summary.strip()
-    validate_summary_length(stripped)
-    return stripped
+    return validate_summary_input(summary, required=True)
 
 
 def fetch_existing_episode(uuid: str) -> dict[str, object]:
@@ -106,10 +141,10 @@ def patch_episode_properties(
 ) -> None:
     """Patch episode properties and echo results."""
     props: dict[str, object] = {}
-    if summary:
+    if summary is not None:
         props["summary"] = summary
-    if trigger_types:
-        props["trigger_task_types"] = [t.strip() for t in trigger_types.split(",")]
+    if trigger_types is not None:
+        props["trigger_task_types"] = parse_csv_values(trigger_types) or []
     if pinned is not None:
         props["pinned"] = pinned
 
@@ -124,9 +159,9 @@ def patch_episode_properties(
         typer.echo(f"Warning: Failed to update properties: {patch_result.get('message', 'Unknown')}")
         return
 
-    if summary:
+    if summary is not None:
         typer.echo(f"  Summary: {summary}")
-    if trigger_types:
+    if trigger_types is not None:
         typer.echo(f"  Trigger types: {props['trigger_task_types']}")
     if pinned is not None:
         typer.echo(f"  Pinned: {pinned}")

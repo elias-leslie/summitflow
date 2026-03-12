@@ -79,7 +79,7 @@ class TestMemorySaveContentInput:
     def test_save_accepts_content_from_file(self, tmp_path: Path) -> None:
         """`--content-file` should load content for save."""
         content_file = tmp_path / "episode.md"
-        content_file.write_text("**Mandate**: Use dt for all quality checks.\n", encoding="utf-8")
+        content_file.write_text("**Quality Checks**: Use dt for all quality checks.\n", encoding="utf-8")
 
         with patch("cli.commands.memory.save_impl") as mock_save_impl:
             result = runner.invoke(
@@ -95,7 +95,7 @@ class TestMemorySaveContentInput:
 
         assert result.exit_code == 0
         args = mock_save_impl.call_args.args
-        assert args[1] == "**Mandate**: Use dt for all quality checks.\n"
+        assert args[1] == "**Quality Checks**: Use dt for all quality checks.\n"
 
     def test_save_accepts_content_from_stdin(self) -> None:
         """`--content-file -` should read save content from stdin."""
@@ -109,12 +109,12 @@ class TestMemorySaveContentInput:
                     "--summary",
                     "Use dt for checks",
                 ],
-                input="**Mandate**: Use dt for all quality checks.\n",
+                input="**Quality Checks**: Use dt for all quality checks.\n",
             )
 
         assert result.exit_code == 0
         args = mock_save_impl.call_args.args
-        assert args[1] == "**Mandate**: Use dt for all quality checks.\n"
+        assert args[1] == "**Quality Checks**: Use dt for all quality checks.\n"
 
     def test_save_rejects_inline_and_file_content_together(self, tmp_path: Path) -> None:
         """`save` should reject inline content combined with --content-file."""
@@ -149,21 +149,23 @@ class TestMemoryFormatCommand:
                 "format",
                 "--tier",
                 "mandate",
+                "--topic",
+                "Memory Headers",
                 "--instruction",
-                "Use exact tier headers for every memory episode",
+                "Use compact topic headers for every memory episode",
                 "--prohibition",
-                "Never use custom bold topics for mandate content",
+                "Never repeat tier names inside the episode body",
                 "--why",
-                "retrieval and citation depend on clear authority cues",
+                "tier already exists as metadata and the body should stay compact",
             ],
         )
 
         assert result.exit_code == 0
-        assert "summary: exact tier headers for every memory" in result.output.lower()
+        assert "summary: compact topic headers for every" in result.output.lower()
         assert "CONTENT:" in result.output
-        assert "**Mandate**: Use exact tier headers for every memory episode." in result.output
-        assert "Never use custom bold topics for mandate content." in result.output
-        assert "Why: retrieval and citation depend on clear authority cues." in result.output
+        assert "**Memory Headers**: Use compact topic headers for every memory episode." in result.output
+        assert "Never repeat tier names inside the episode body." in result.output
+        assert "Why: tier already exists as metadata and the body should stay compact." in result.output
 
 
 class TestMemoryTagOptions:
@@ -272,6 +274,70 @@ class TestMemoryTagOptions:
             tier="reference",
         )
         mock_replace_tags.assert_called_once_with("abc12345", ["finance-relevant"])
+
+    def test_update_impl_skips_tag_fetch_for_summary_only_changes(self) -> None:
+        """Summary-only updates should not fetch or rewrite tags."""
+        with (
+            patch("cli.commands.memory_crud.fetch_existing_episode") as mock_fetch_existing,
+            patch("cli.commands.memory_crud.fetch_episode_tags") as mock_fetch_tags,
+            patch("cli.commands.memory_crud.patch_episode_properties") as mock_patch_properties,
+            patch("cli.commands.memory_crud.replace_episode_tags") as mock_replace_tags,
+        ):
+            update_impl("abc12345", None, None, "Updated summary", None, None, None, False)
+
+        mock_fetch_existing.assert_not_called()
+        mock_fetch_tags.assert_not_called()
+        mock_patch_properties.assert_called_once_with("abc12345", "Updated summary", None, None)
+        mock_replace_tags.assert_not_called()
+
+    def test_update_impl_rejects_invalid_tier(self) -> None:
+        """Tier updates should validate allowed tier values."""
+        with patch("cli.commands.memory_crud.fetch_existing_episode") as mock_fetch_existing:
+            try:
+                update_impl("abc12345", None, "bad-tier", None, None, None, None, False)
+            except typer.Exit as exc:
+                assert exc.exit_code == 1
+            else:
+                raise AssertionError("Expected typer.Exit for invalid tier")
+
+        mock_fetch_existing.assert_not_called()
+
+    def test_update_impl_rejects_blank_summary(self) -> None:
+        """Blank summaries should fail instead of writing whitespace."""
+        with patch("cli.commands.memory_crud.fetch_existing_episode") as mock_fetch_existing:
+            try:
+                update_impl("abc12345", None, None, "   ", None, None, None, False)
+            except typer.Exit as exc:
+                assert exc.exit_code == 1
+            else:
+                raise AssertionError("Expected typer.Exit for blank summary")
+
+        mock_fetch_existing.assert_not_called()
+
+    def test_save_impl_rejects_blank_content(self) -> None:
+        """Blank content should fail before any API call."""
+        out = SimpleNamespace(is_compact=True)
+        with patch("cli.commands.memory_crud.agent_hub_request") as mock_request:
+            try:
+                save_impl(out, "   ", "Use dt for checks", "reference", 80, None, False, None, None, "global", None)
+            except typer.Exit as exc:
+                assert exc.exit_code == 1
+            else:
+                raise AssertionError("Expected typer.Exit for blank content")
+
+        mock_request.assert_not_called()
+
+    def test_update_impl_rejects_blank_content(self) -> None:
+        """Blank content updates should fail before loading the episode."""
+        with patch("cli.commands.memory_crud.fetch_existing_episode") as mock_fetch_existing:
+            try:
+                update_impl("abc12345", "   ", None, None, None, None, None, False)
+            except typer.Exit as exc:
+                assert exc.exit_code == 1
+            else:
+                raise AssertionError("Expected typer.Exit for blank content")
+
+        mock_fetch_existing.assert_not_called()
 
 
 class TestMemoryListFormatting:

@@ -139,6 +139,10 @@ def save(
 @app.command("format")
 def format_cmd(
     tier: TierOpt = "reference",
+    topic: Annotated[
+        str,
+        typer.Option("--topic", help="Required compact topic header, without markdown or colon"),
+    ] = ...,
     instruction: Annotated[
         str,
         typer.Option("--instruction", help="Required primary instruction sentence"),
@@ -157,7 +161,7 @@ def format_cmd(
     ] = None,
 ) -> None:
     """Generate a standard memory episode body and compact summary."""
-    content = build_episode_content(tier, instruction, prohibition, why)
+    content = build_episode_content(topic, instruction, prohibition, why)
     resolved_summary = (summary.strip() if summary else suggest_summary(instruction)) or "Memory episode"
     validate_content_format(content, resolved_summary, tier)
     typer.echo(f"SUMMARY: {resolved_summary}")

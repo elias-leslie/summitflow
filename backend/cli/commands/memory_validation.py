@@ -10,19 +10,12 @@ import typer
 from ..output import output_error
 
 # FORMAT_STANDARD validation patterns
-HEADER_PATTERNS = {
-    "mandate": re.compile(r"^\*\*Mandate\*\*:"),
-    "guardrail": re.compile(r"^\*\*Guardrail\*\*:"),
-    "reference": re.compile(r"^\*\*Reference\*\*:"),
-}
-HEADER_LABELS = {
-    "mandate": "Mandate",
-    "guardrail": "Guardrail",
-    "reference": "Reference",
-}
+TOPIC_HEADER_PATTERN = re.compile(r"^\*\*[^*\n][^*\n]{0,78}\*\*:")
 CUSTOM_DELIMITER_PATTERN = re.compile(r"(?<![\|])\s*::\s*|(?<!\|)\s*->\s*(?!\|)")
 LIST_PATTERN = re.compile(r"(?m)^\s*(?:[-*]|\d+\.)\s+")
-MULTI_HEADER_PATTERN = re.compile(r"(?m)^\*\*(?:Mandate|Guardrail|Reference)\*\*:")
+MULTI_HEADER_PATTERN = re.compile(r"(?m)^\*\*[^*\n][^*\n]{0,78}\*\*:")
+HEADER_EXTRACT_PATTERN = re.compile(r"^\*\*(?P<topic>[^*\n][^*\n]{0,78})\*\*:")
+RESERVED_TIER_HEADERS = {"Mandate", "Guardrail", "Reference"}
 CONVERSATIONAL_PATTERNS = [
     "please",
     "thank you",
@@ -46,7 +39,7 @@ FORMAT_STANDARD for memory episodes:
 
 | # | Rule | Check |
 |---|------|-------|
-| 1 | Tier header | Must start with **Mandate**:, **Guardrail**:, or **Reference**: matching tier |
+| 1 | Topic header | Must start with **Topic**: where Topic is a compact specific subject, not a tier label |
 | 2 | Imperative mood | Commands not suggestions |
 | 3 | Strong verb first | Lead with do / never / use / check / follow / avoid |
 | 4 | One atomic rule | Single concept per episode |
@@ -56,9 +49,10 @@ FORMAT_STANDARD for memory episodes:
 | 8 | Summary | 10-40 chars |
 
 Example of GOOD format:
-  **Mandate**: Use dt for all quality checks. Never run raw pytest or ruff. Why: hooks enforce dt path.
+  **Quality Checks**: Use dt for all quality checks. Never run raw pytest or ruff. Why: hooks enforce dt path.
 
 Example of BAD format:
+  **Mandate**: Use dt for all quality checks.
   When working with git, you should remember to always commit first.
   Please don't use git stash because it might cause lost work.
 """
@@ -86,7 +80,7 @@ IMPERATIVE_VERBS = (
 )
 IMPERATIVE_PATTERNS = [
     re.compile(
-        rf"^\*\*(?:Mandate|Guardrail|Reference)\*\*:\s*(?:{'|'.join(IMPERATIVE_VERBS)})\b"
+        rf"^\*\*[^*\n][^*\n]{{0,78}}\*\*:\s*(?:{'|'.join(IMPERATIVE_VERBS)})\b"
     ),
 ]
 
@@ -101,17 +95,34 @@ def _normalize_sentence(text: str) -> str:
     return cleaned
 
 
+def _normalize_topic(topic: str) -> str:
+    """Collapse internal whitespace and reject invalid topic text."""
+    cleaned = re.sub(r"\s+", " ", topic.strip())
+    if not cleaned:
+        raise typer.BadParameter("Topic is required")
+    if "**" in cleaned or ":" in cleaned or "\n" in cleaned:
+        raise typer.BadParameter("Topic must be plain text without bold markers, colons, or newlines")
+    if len(cleaned) > 79:
+        raise typer.BadParameter("Topic must be 79 characters or fewer")
+    return cleaned
+
+
+def validate_episode_content_present(content: str) -> str:
+    """Require non-empty episode content and return the original string."""
+    if not content.strip():
+        output_error("Content is required and cannot be blank.")
+        raise typer.Exit(1)
+    return content
+
+
 def build_episode_content(
-    tier: str,
+    topic: str,
     instruction: str,
     prohibition: str | None = None,
     why: str | None = None,
 ) -> str:
     """Build a standard memory episode body from structured parts."""
-    header = HEADER_LABELS.get(tier)
-    if header is None:
-        raise typer.BadParameter(f"Unsupported tier: {tier}")
-
+    cleaned_topic = _normalize_topic(topic)
     parts = [_normalize_sentence(instruction)]
     if prohibition:
         parts.append(_normalize_sentence(prohibition))
@@ -119,7 +130,7 @@ def build_episode_content(
         parts.append(_normalize_sentence(f"Why: {why}"))
 
     body = " ".join(part for part in parts if part)
-    return f"**{header}**: {body}"
+    return f"**{cleaned_topic}**: {body}"
 
 
 def suggest_summary(instruction: str, limit: int = 40) -> str:
@@ -142,6 +153,9 @@ def suggest_summary(instruction: str, limit: int = 40) -> str:
 def format_guidance_hints(content: str, summary: str) -> list[str]:
     """Return soft guidance hints that should not block saving."""
     hints: list[str] = []
+    header_match = HEADER_EXTRACT_PATTERN.match(content)
+    if header_match and len(header_match.group("topic")) > 35:
+        hints.append("Topic header is long; prefer 35 chars or fewer when possible.")
     sentence_count = len(re.findall(r"[.!?](?:\s|$)", content))
     if sentence_count > 3:
         hints.append(f"Content is {sentence_count} sentences; prefer 3 or fewer when possible.")
@@ -162,14 +176,15 @@ def validate_format_standard(content: str, summary: str, tier: str) -> tuple[lis
     """Validate content against FORMAT_STANDARD. Returns blocking errors and soft hints."""
     errors: list[str] = []
     hints: list[str] = []
+    header_match = HEADER_EXTRACT_PATTERN.match(content)
 
-    # Rule 1: Header format - must match tier
-    header_pattern = HEADER_PATTERNS.get(tier)
-    if header_pattern is None:
+    # Rule 1: Header format - must be a bold topic, tier is separate metadata
+    if tier not in {"mandate", "guardrail", "reference"}:
         errors.append(f"[1] header: Unsupported tier {tier}")
-    elif not header_pattern.match(content):
-        expected = {"mandate": "**Mandate**:", "guardrail": "**Guardrail**:", "reference": "**Reference**:"}[tier]
-        errors.append(f"[1] header: Must start with {expected}")
+    elif not TOPIC_HEADER_PATTERN.match(content):
+        errors.append("[1] header: Must start with a bold topic header like **Git Safety**:")
+    elif header_match and header_match.group("topic").strip() in RESERVED_TIER_HEADERS:
+        errors.append("[1] header: Use a specific topic header, not **Mandate**/**Guardrail**/**Reference**")
 
     # Rule 2/3: Strong imperative opening
     if not any(pattern.match(content) for pattern in IMPERATIVE_PATTERNS):
@@ -215,6 +230,7 @@ def validate_summary_length(summary: str) -> None:
 
 def validate_content_format(content: str, summary: str, tier: str) -> None:
     """Validate content format and raise error if invalid."""
+    validate_episode_content_present(content)
     format_errors, hints = validate_format_standard(content, summary, tier)
     if format_errors:
         output_error("FORMAT_STANDARD violations detected:")

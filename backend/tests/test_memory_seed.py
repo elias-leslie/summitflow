@@ -331,12 +331,14 @@ class TestUpsertSkillEpisode:
     """Tests for _upsert_skill_episode create/update logic."""
 
     @patch("cli.commands.memory_seed._find_existing_by_tag")
+    @patch("cli.commands.memory_seed.replace_episode_tags")
     @patch("cli.commands.memory_seed.agent_hub_request")
     def test_upsert_skill_episode_creates_new_episode(
-        self, mock_request: MagicMock, mock_find: MagicMock
+        self, mock_request: MagicMock, mock_replace_tags: MagicMock, mock_find: MagicMock
     ) -> None:
         """Test that new episode is created when none exists."""
         mock_find.return_value = None
+        mock_request.return_value = {"uuid": "ep-123"}
         frontmatter: dict[str, Any] = {
             "tier": "guardrail",
             "summary": "Test skill",
@@ -350,21 +352,34 @@ class TestUpsertSkillEpisode:
         assert action == "created"
         mock_request.assert_called_once()
         call_args = mock_request.call_args
-        assert call_args[0] == ("POST", "/api/memory/save")
+        assert call_args[0] == ("POST", "/api/memory/save-learning")
         assert call_args[1]["json"]["content"] == "Test content"
         assert call_args[1]["json"]["injection_tier"] == "guardrail"
-        assert "skill:test" in call_args[1]["json"]["tags"]
+        assert "tags" not in call_args[1]["json"]
+        mock_replace_tags.assert_called_once_with("ep-123", ["autocode", "skill:test"])
 
     @patch("cli.commands.memory_seed._find_existing_by_tag")
-    @patch("cli.commands.memory_seed.agent_hub_request")
+    @patch("cli.commands.memory_seed.fetch_episode_tags")
+    @patch("cli.commands.memory_seed.fetch_existing_episode")
     def test_upsert_skill_episode_returns_unchanged_for_identical_content(
-        self, mock_request: MagicMock, mock_find: MagicMock
+        self,
+        mock_fetch_existing: MagicMock,
+        mock_fetch_tags: MagicMock,
+        mock_find: MagicMock,
     ) -> None:
         """Test that unchanged is returned when content matches."""
         mock_find.return_value = {
             "uuid": "ep-123",
-            "content": "Test content",
         }
+        mock_fetch_existing.return_value = {
+            "uuid": "ep-123",
+            "content": "Test content",
+            "summary": "skill:test",
+            "injection_tier": "reference",
+            "trigger_task_types": [],
+            "pinned": False,
+        }
+        mock_fetch_tags.return_value = ["skill:test"]
         frontmatter: dict[str, Any] = {}
 
         action = _upsert_skill_episode(
@@ -372,18 +387,37 @@ class TestUpsertSkillEpisode:
         )
 
         assert action == "unchanged"
-        mock_request.assert_not_called()
+        mock_fetch_existing.assert_called_once_with("ep-123")
+        mock_fetch_tags.assert_called_once_with("ep-123")
 
     @patch("cli.commands.memory_seed._find_existing_by_tag")
-    @patch("cli.commands.memory_seed.agent_hub_request")
+    @patch("cli.commands.memory_seed.replace_episode_tags")
+    @patch("cli.commands.memory_seed.patch_episode_properties")
+    @patch("cli.commands.memory_seed.update_episode_content_or_tier")
+    @patch("cli.commands.memory_seed.fetch_episode_tags")
+    @patch("cli.commands.memory_seed.fetch_existing_episode")
     def test_upsert_skill_episode_updates_when_content_differs(
-        self, mock_request: MagicMock, mock_find: MagicMock
+        self,
+        mock_fetch_existing: MagicMock,
+        mock_fetch_tags: MagicMock,
+        mock_update_episode: MagicMock,
+        mock_patch_properties: MagicMock,
+        mock_replace_tags: MagicMock,
+        mock_find: MagicMock,
     ) -> None:
         """Test that episode is updated when content changes."""
         mock_find.return_value = {
             "uuid": "ep-123",
-            "content": "Old content",
         }
+        mock_fetch_existing.return_value = {
+            "uuid": "ep-123",
+            "content": "Old content",
+            "summary": "skill:test",
+            "injection_tier": "reference",
+            "trigger_task_types": [],
+            "pinned": False,
+        }
+        mock_fetch_tags.return_value = ["skill:test"]
         frontmatter: dict[str, Any] = {}
 
         action = _upsert_skill_episode(
@@ -391,13 +425,13 @@ class TestUpsertSkillEpisode:
         )
 
         assert action == "updated"
-        assert mock_request.call_count == 2
-        # First call: DELETE
-        delete_call = mock_request.call_args_list[0]
-        assert delete_call[0] == ("DELETE", "/api/memory/ep-123")
-        # Second call: POST
-        post_call = mock_request.call_args_list[1]
-        assert post_call[0] == ("POST", "/api/memory/save")
+        mock_update_episode.assert_called_once_with(
+            "ep-123",
+            content="New content",
+            tier="reference",
+        )
+        mock_patch_properties.assert_not_called()
+        mock_replace_tags.assert_not_called()
 
     @patch("cli.commands.memory_seed._find_existing_by_tag")
     @patch("cli.commands.memory_seed.agent_hub_request")
@@ -416,15 +450,27 @@ class TestUpsertSkillEpisode:
         mock_request.assert_not_called()
 
     @patch("cli.commands.memory_seed._find_existing_by_tag")
-    @patch("cli.commands.memory_seed.agent_hub_request")
+    @patch("cli.commands.memory_seed.fetch_episode_tags")
+    @patch("cli.commands.memory_seed.fetch_existing_episode")
     def test_upsert_skill_episode_dry_run_shows_would_update(
-        self, mock_request: MagicMock, mock_find: MagicMock
+        self,
+        mock_fetch_existing: MagicMock,
+        mock_fetch_tags: MagicMock,
+        mock_find: MagicMock,
     ) -> None:
         """Test that dry_run shows would_update for changed content."""
         mock_find.return_value = {
             "uuid": "ep-123",
-            "content": "Old content",
         }
+        mock_fetch_existing.return_value = {
+            "uuid": "ep-123",
+            "content": "Old content",
+            "summary": "skill:test",
+            "injection_tier": "reference",
+            "trigger_task_types": [],
+            "pinned": False,
+        }
+        mock_fetch_tags.return_value = ["skill:test"]
         frontmatter: dict[str, Any] = {}
 
         action = _upsert_skill_episode(
@@ -432,15 +478,18 @@ class TestUpsertSkillEpisode:
         )
 
         assert action == "would_update"
-        mock_request.assert_not_called()
+        mock_fetch_existing.assert_called_once_with("ep-123")
+        mock_fetch_tags.assert_called_once_with("ep-123")
 
     @patch("cli.commands.memory_seed._find_existing_by_tag")
+    @patch("cli.commands.memory_seed.replace_episode_tags")
     @patch("cli.commands.memory_seed.agent_hub_request")
     def test_upsert_skill_episode_merges_skill_tag_with_frontmatter_tags(
-        self, mock_request: MagicMock, mock_find: MagicMock
+        self, mock_request: MagicMock, mock_replace_tags: MagicMock, mock_find: MagicMock
     ) -> None:
         """Test that skill tag is merged with frontmatter tags."""
         mock_find.return_value = None
+        mock_request.return_value = {"uuid": "ep-123"}
         frontmatter: dict[str, Any] = {
             "tags": ["autocode", "quality"],
         }
@@ -449,19 +498,17 @@ class TestUpsertSkillEpisode:
             "skill:test", "Content", frontmatter, "global", None, dry_run=False
         )
 
-        call_args = mock_request.call_args
-        tags = call_args[1]["json"]["tags"]
-        assert "skill:test" in tags
-        assert "autocode" in tags
-        assert "quality" in tags
+        mock_replace_tags.assert_called_once_with("ep-123", ["autocode", "quality", "skill:test"])
 
     @patch("cli.commands.memory_seed._find_existing_by_tag")
+    @patch("cli.commands.memory_seed.replace_episode_tags")
     @patch("cli.commands.memory_seed.agent_hub_request")
     def test_upsert_skill_episode_uses_default_tier_reference(
-        self, mock_request: MagicMock, mock_find: MagicMock
+        self, mock_request: MagicMock, mock_replace_tags: MagicMock, mock_find: MagicMock
     ) -> None:
         """Test that default tier is reference when not specified."""
         mock_find.return_value = None
+        mock_request.return_value = {"uuid": "ep-123"}
         frontmatter: dict[str, Any] = {}
 
         _upsert_skill_episode(
@@ -472,12 +519,14 @@ class TestUpsertSkillEpisode:
         assert call_args[1]["json"]["injection_tier"] == "reference"
 
     @patch("cli.commands.memory_seed._find_existing_by_tag")
+    @patch("cli.commands.memory_seed.replace_episode_tags")
     @patch("cli.commands.memory_seed.agent_hub_request")
     def test_upsert_skill_episode_includes_trigger_task_types_when_present(
-        self, mock_request: MagicMock, mock_find: MagicMock
+        self, mock_request: MagicMock, mock_replace_tags: MagicMock, mock_find: MagicMock
     ) -> None:
         """Test that trigger_task_types are included in payload."""
         mock_find.return_value = None
+        mock_request.return_value = {"uuid": "ep-123"}
         frontmatter: dict[str, Any] = {
             "trigger_task_types": ["feature", "refactor"],
         }
@@ -490,12 +539,14 @@ class TestUpsertSkillEpisode:
         assert call_args[1]["json"]["trigger_task_types"] == ["feature", "refactor"]
 
     @patch("cli.commands.memory_seed._find_existing_by_tag")
+    @patch("cli.commands.memory_seed.replace_episode_tags")
     @patch("cli.commands.memory_seed.agent_hub_request")
     def test_upsert_skill_episode_includes_pinned_when_true(
-        self, mock_request: MagicMock, mock_find: MagicMock
+        self, mock_request: MagicMock, mock_replace_tags: MagicMock, mock_find: MagicMock
     ) -> None:
         """Test that pinned flag is included when true."""
         mock_find.return_value = None
+        mock_request.return_value = {"uuid": "ep-123"}
         frontmatter: dict[str, Any] = {
             "pinned": True,
         }
@@ -508,12 +559,14 @@ class TestUpsertSkillEpisode:
         assert call_args[1]["json"]["pinned"]
 
     @patch("cli.commands.memory_seed._find_existing_by_tag")
+    @patch("cli.commands.memory_seed.replace_episode_tags")
     @patch("cli.commands.memory_seed.agent_hub_request")
     def test_upsert_skill_episode_omits_pinned_when_false(
-        self, mock_request: MagicMock, mock_find: MagicMock
+        self, mock_request: MagicMock, mock_replace_tags: MagicMock, mock_find: MagicMock
     ) -> None:
         """Test that pinned is omitted from payload when false."""
         mock_find.return_value = None
+        mock_request.return_value = {"uuid": "ep-123"}
         frontmatter: dict[str, Any] = {
             "pinned": False,
         }
@@ -526,12 +579,14 @@ class TestUpsertSkillEpisode:
         assert "pinned" not in call_args[1]["json"]
 
     @patch("cli.commands.memory_seed._find_existing_by_tag")
+    @patch("cli.commands.memory_seed.replace_episode_tags")
     @patch("cli.commands.memory_seed.agent_hub_request")
     def test_upsert_skill_episode_uses_skill_tag_as_default_summary(
-        self, mock_request: MagicMock, mock_find: MagicMock
+        self, mock_request: MagicMock, mock_replace_tags: MagicMock, mock_find: MagicMock
     ) -> None:
         """Test that skill tag is used as summary when not provided."""
         mock_find.return_value = None
+        mock_request.return_value = {"uuid": "ep-123"}
         frontmatter: dict[str, Any] = {}
 
         _upsert_skill_episode(
@@ -542,12 +597,14 @@ class TestUpsertSkillEpisode:
         assert call_args[1]["json"]["summary"] == "skill:test"
 
     @patch("cli.commands.memory_seed._find_existing_by_tag")
+    @patch("cli.commands.memory_seed.replace_episode_tags")
     @patch("cli.commands.memory_seed.agent_hub_request")
     def test_upsert_skill_episode_sets_confidence_to_90(
-        self, mock_request: MagicMock, mock_find: MagicMock
+        self, mock_request: MagicMock, mock_replace_tags: MagicMock, mock_find: MagicMock
     ) -> None:
         """Test that confidence is set to 90 for seeded episodes."""
         mock_find.return_value = None
+        mock_request.return_value = {"uuid": "ep-123"}
         frontmatter: dict[str, Any] = {}
 
         _upsert_skill_episode(
@@ -556,6 +613,57 @@ class TestUpsertSkillEpisode:
 
         call_args = mock_request.call_args
         assert call_args[1]["json"]["confidence"] == 90
+
+    @patch("cli.commands.memory_seed._find_existing_by_tag")
+    @patch("cli.commands.memory_seed.replace_episode_tags")
+    @patch("cli.commands.memory_seed.patch_episode_properties")
+    @patch("cli.commands.memory_seed.update_episode_content_or_tier")
+    @patch("cli.commands.memory_seed.fetch_episode_tags")
+    @patch("cli.commands.memory_seed.fetch_existing_episode")
+    def test_upsert_skill_episode_updates_metadata_without_recreating(
+        self,
+        mock_fetch_existing: MagicMock,
+        mock_fetch_tags: MagicMock,
+        mock_update_episode: MagicMock,
+        mock_patch_properties: MagicMock,
+        mock_replace_tags: MagicMock,
+        mock_find: MagicMock,
+    ) -> None:
+        """Metadata-only changes should patch the existing episode in place."""
+        mock_find.return_value = {"uuid": "ep-123"}
+        mock_fetch_existing.return_value = {
+            "uuid": "ep-123",
+            "content": "Content",
+            "summary": "Old summary",
+            "injection_tier": "reference",
+            "trigger_task_types": ["bug"],
+            "pinned": False,
+        }
+        mock_fetch_tags.return_value = ["skill:test"]
+
+        action = _upsert_skill_episode(
+            "skill:test",
+            "Content",
+            {
+                "summary": "Fresh summary",
+                "trigger_task_types": ["feature", "refactor"],
+                "pinned": True,
+                "tags": ["quality"],
+            },
+            "global",
+            None,
+            dry_run=False,
+        )
+
+        assert action == "updated"
+        mock_update_episode.assert_not_called()
+        mock_patch_properties.assert_called_once_with(
+            "ep-123",
+            "Fresh summary",
+            "feature,refactor",
+            True,
+        )
+        mock_replace_tags.assert_called_once_with("ep-123", ["quality", "skill:test"])
 
 
 class TestSeedImpl:
@@ -601,7 +709,7 @@ class TestSeedImpl:
 
     @patch("cli.commands.memory_seed._upsert_skill_episode")
     def test_seed_impl_dry_run_previews_without_writing(
-        self, mock_upsert: MagicMock, tmp_path: Path
+        self, mock_upsert: MagicMock, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """Test that dry_run=True passes through to upsert."""
         (tmp_path / "test.md").write_text("---\ntier: guardrail\n---\nContent")
@@ -612,6 +720,9 @@ class TestSeedImpl:
         mock_upsert.assert_called_once()
         # dry_run is 6th positional argument (index 5)
         assert mock_upsert.call_args[0][5]
+        out = capsys.readouterr().out
+        assert "WOULD_CREATE test.md" in out
+        assert "Dry run complete: 1 created, 0 updated, 0 unchanged, 0 failed" in out
 
     @patch("cli.commands.memory_seed._upsert_skill_episode")
     def test_seed_impl_skips_files_with_empty_body(

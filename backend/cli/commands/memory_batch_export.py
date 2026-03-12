@@ -16,10 +16,15 @@ MINIMAL_EXPORT_FIELDS = [
     "name",
     "content",
     "category",
+    "injection_tier",
     "summary",
     "scope",
     "scope_id",
     "pinned",
+    "trigger_task_types",
+    "tags",
+    "auto_inject",
+    "display_order",
 ]
 SPLIT_THRESHOLD = 25
 
@@ -144,9 +149,11 @@ def _export_to_file_or_stdout(
     full: bool,
 ) -> None:
     """Export episodes to a single file or stdout."""
+    from datetime import UTC
+
     filtered = [_filter_episode_fields(ep, full) for ep in episodes]
     export_data = {
-        "exported_at": datetime.datetime.now().isoformat(),
+        "exported_at": datetime.datetime.now(UTC).isoformat(),
         "count": len(filtered),
         "episodes": filtered,
     }

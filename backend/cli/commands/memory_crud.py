@@ -10,11 +10,14 @@ from ._memory_crud_helpers import (
     build_save_payload,
     fetch_episode_tags,
     fetch_existing_episode,
+    parse_csv_values,
     parse_tags_csv,
     patch_episode_properties,
     replace_episode_tags,
     update_episode_content_or_tier,
     validate_save_inputs,
+    validate_summary_input,
+    validate_tier,
 )
 from .memory_api import agent_hub_request
 from .memory_formatters import (
@@ -25,7 +28,7 @@ from .memory_formatters import (
     format_search_compact,
     format_stats_compact,
 )
-from .memory_validation import validate_content_format, validate_summary_length
+from .memory_validation import validate_content_format, validate_episode_content_present
 
 
 def stats_impl(out: OutputContext, scope: str, scope_id: str | None) -> None:
@@ -52,6 +55,7 @@ def save_impl(
     scope_id: str | None,
 ) -> None:
     summary = validate_save_inputs(tier, confidence, summary)
+    validate_episode_content_present(content)
     validate_content_format(content, summary, tier)
     payload = build_save_payload(content, summary, tier, confidence, context, pinned, trigger_types)
     result = agent_hub_request(
@@ -169,30 +173,44 @@ def update_impl(
         typer.echo("Error: Specify only one of --tags or --clear-tags")
         raise typer.Exit(1)
 
-    if not any([content, tier, summary, trigger_types, pinned is not None, tags is not None, clear_tags]):
+    if not any(
+        [content is not None, tier is not None, summary is not None, trigger_types is not None, pinned is not None, tags is not None, clear_tags]
+    ):
         typer.echo(
             "Error: Must specify at least one of: --content, --tier, --summary, --trigger-types, --pinned, --tags, --clear-tags"
         )
         raise typer.Exit(1)
 
-    if summary:
-        validate_summary_length(summary)
+    if content is not None:
+        validate_episode_content_present(content)
 
-    existing = fetch_existing_episode(uuid)
-    existing_tags = fetch_episode_tags(uuid)
+    normalized_summary = validate_summary_input(summary, required=False) if summary is not None else None
+    normalized_tier = validate_tier(tier) if tier is not None else None
     replacement_tags = [] if clear_tags else parse_tags_csv(tags)
-    effective_tier = tier if tier else str(existing.get("injection_tier", "reference"))
-    content_or_tier_changed = bool(content or tier)
-    properties_changed = bool(summary or trigger_types or pinned is not None)
+    content_or_tier_changed = content is not None or normalized_tier is not None
+    properties_changed = normalized_summary is not None or trigger_types is not None or pinned is not None
     tags_changed = replacement_tags is not None or clear_tags
 
-    if content:
-        validate_content_format(content, summary or str(existing.get("summary", "")), effective_tier)
-
-    target_uuid = str(existing.get("uuid", uuid))
+    existing: dict[str, object] | None = None
+    existing_tags: list[str] = []
+    effective_tier = normalized_tier
 
     if content_or_tier_changed:
-        new_content = content if content else str(existing.get("content", ""))
+        existing = fetch_existing_episode(uuid)
+        effective_tier = normalized_tier or str(existing.get("injection_tier", "reference"))
+
+    if content is not None:
+        assert existing is not None
+        validate_content_format(content, normalized_summary or str(existing.get("summary", "")), effective_tier)
+
+    target_uuid = str(existing.get("uuid", uuid)) if existing else uuid
+
+    if content_or_tier_changed and replacement_tags is None:
+        existing_tags = fetch_episode_tags(uuid)
+
+    if content_or_tier_changed:
+        assert existing is not None
+        new_content = content if content is not None else str(existing.get("content", ""))
         update_episode_content_or_tier(
             target_uuid,
             content=new_content,
@@ -201,7 +219,10 @@ def update_impl(
         replace_episode_tags(target_uuid, replacement_tags if replacement_tags is not None else existing_tags)
 
     if properties_changed:
-        patch_episode_properties(target_uuid, summary, trigger_types, pinned)
+        normalized_trigger_types = None
+        if trigger_types is not None:
+            normalized_trigger_types = ",".join(parse_csv_values(trigger_types) or [])
+        patch_episode_properties(target_uuid, normalized_summary, normalized_trigger_types, pinned)
 
     if not content_or_tier_changed and tags_changed:
         replace_episode_tags(target_uuid, replacement_tags or [])

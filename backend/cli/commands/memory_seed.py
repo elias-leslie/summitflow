@@ -13,6 +13,17 @@ from typing import Any, cast
 import typer
 
 from ..output import output_error
+from ._memory_crud_helpers import (
+    build_save_payload,
+    fetch_episode_tags,
+    fetch_existing_episode,
+    parse_csv_values,
+    patch_episode_properties,
+    replace_episode_tags,
+    update_episode_content_or_tier,
+    validate_save_inputs,
+    validate_tier,
+)
 from .memory_api import agent_hub_request
 
 _HUB_TOOL = "st memory seed"
@@ -52,6 +63,47 @@ def _build_skill_tag(filename: str) -> str:
     return f"skill:{Path(filename).stem}"
 
 
+def _normalize_frontmatter_list(value: Any) -> list[str]:
+    """Normalize a frontmatter field into a stable string list."""
+    if value is None:
+        return []
+    if isinstance(value, list):
+        items = [str(item).strip() for item in value]
+    else:
+        items = parse_csv_values(str(value)) or []
+    return [item for item in items if item]
+
+
+def _build_seed_spec(skill_tag: str, content: str, fm: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """Build normalized payload and tags for a seeded episode."""
+    tier = validate_tier(str(fm.get("tier", "reference")))
+    summary = validate_save_inputs(tier, 90, str(fm.get("summary") or skill_tag))
+    trigger_types = _normalize_frontmatter_list(fm.get("trigger_task_types"))
+    tags = _normalize_frontmatter_list(fm.get("tags"))
+    if skill_tag not in tags:
+        tags.append(skill_tag)
+
+    payload = build_save_payload(
+        content=content,
+        summary=summary,
+        tier=tier,
+        confidence=90,
+        context=None,
+        pinned=bool(fm.get("pinned")),
+        trigger_types=",".join(trigger_types) if trigger_types else None,
+    )
+    return payload, tags
+
+
+def _results_bucket(action: str) -> str:
+    """Map action labels to results summary buckets."""
+    if action == "would_create":
+        return "created"
+    if action == "would_update":
+        return "updated"
+    return action
+
+
 def _find_existing_by_tag(skill_tag: str, scope: str, scope_id: str | None) -> dict[str, Any] | None:
     """Search for an existing episode with the given skill tag."""
     try:
@@ -67,45 +119,63 @@ def _find_existing_by_tag(skill_tag: str, scope: str, scope_id: str | None) -> d
     return None
 
 
-def _build_episode_payload(skill_tag: str, content: str, fm: dict[str, Any]) -> dict[str, Any]:
-    """Build the API payload for saving an episode."""
-    tags = list(fm.get("tags", []))
-    if skill_tag not in tags:
-        tags.append(skill_tag)
-    payload: dict[str, Any] = {
-        "content": content, "injection_tier": fm.get("tier", "reference"),
-        "confidence": 90, "summary": fm.get("summary", skill_tag), "tags": tags,
-    }
-    if fm.get("trigger_task_types"):
-        payload["trigger_task_types"] = fm["trigger_task_types"]
-    if fm.get("pinned"):
-        payload["pinned"] = True
-    return payload
-
-
 def _upsert_skill_episode(
     skill_tag: str, content: str, frontmatter: dict[str, Any],
     scope: str, scope_id: str | None, dry_run: bool,
 ) -> str:
     """Upsert a skill episode. Returns action: 'created', 'updated', or 'unchanged'."""
     existing = _find_existing_by_tag(skill_tag, scope, scope_id)
-    if existing:
-        if existing.get("content", "").strip() == content.strip():
-            return "unchanged"
+    payload, tags = _build_seed_spec(skill_tag, content, frontmatter)
+
+    if not existing:
         if dry_run:
-            return "would_update"
-        agent_hub_request(
-            "DELETE", f"/api/memory/{existing['uuid']}",
-            scope=scope, scope_id=scope_id, tool_name=_HUB_TOOL,
+            return "would_create"
+        result = agent_hub_request(
+            "POST",
+            "/api/memory/save-learning",
+            json=payload,
+            scope=scope,
+            scope_id=scope_id,
+            tool_name=_HUB_TOOL,
         )
-    elif dry_run:
-        return "would_create"
-    agent_hub_request(
-        "POST", "/api/memory/save",
-        json=_build_episode_payload(skill_tag, content, frontmatter),
-        scope=scope, scope_id=scope_id, tool_name=_HUB_TOOL,
-    )
-    return "updated" if existing else "created"
+        if tags and result.get("uuid"):
+            replace_episode_tags(str(result["uuid"]), tags)
+        return "created"
+
+    episode_uuid = str(existing["uuid"])
+    existing_full = fetch_existing_episode(episode_uuid)
+    existing_tags = fetch_episode_tags(episode_uuid)
+    desired_trigger_types = list(payload.get("trigger_task_types", []))
+    desired_pinned = bool(payload.get("pinned", False))
+    content_changed = str(existing_full.get("content", "")).strip() != content.strip()
+    tier_changed = str(existing_full.get("injection_tier", "reference")) != str(payload["injection_tier"])
+    summary_changed = str(existing_full.get("summary", "")) != str(payload["summary"])
+    trigger_types_changed = list(existing_full.get("trigger_task_types") or []) != desired_trigger_types
+    pinned_changed = bool(existing_full.get("pinned", False)) != desired_pinned
+    tags_changed = existing_tags != tags
+
+    if not any([content_changed, tier_changed, summary_changed, trigger_types_changed, pinned_changed, tags_changed]):
+        return "unchanged"
+
+    if dry_run:
+        return "would_update"
+
+    if content_changed or tier_changed:
+        update_episode_content_or_tier(
+            episode_uuid,
+            content=content,
+            tier=str(payload["injection_tier"]),
+        )
+    if summary_changed or trigger_types_changed or pinned_changed:
+        patch_episode_properties(
+            episode_uuid,
+            str(payload["summary"]) if summary_changed else None,
+            ",".join(desired_trigger_types) if trigger_types_changed else None,
+            desired_pinned if pinned_changed else None,
+        )
+    if tags_changed:
+        replace_episode_tags(episode_uuid, tags)
+    return "updated"
 
 
 def _process_md_file(
@@ -119,8 +189,8 @@ def _process_md_file(
             typer.echo(f"  SKIP {md_file.name}: empty body")
             return
         action = _upsert_skill_episode(skill_tag, body, frontmatter, scope, scope_id, dry_run)
-        typer.echo(f"  {action.replace('would_', '').upper()} {md_file.name} [{skill_tag}]")
-        key = action.replace("would_", "")
+        typer.echo(f"  {action.upper()} {md_file.name} [{skill_tag}]")
+        key = _results_bucket(action)
         results[key] = results.get(key, 0) + 1
     except Exception as e:
         typer.echo(f"  FAILED {md_file.name}: {e}")
@@ -147,7 +217,8 @@ def seed_impl(
     results: dict[str, int] = {"created": 0, "updated": 0, "unchanged": 0, "failed": 0}
     for md_file in md_files:
         _process_md_file(md_file, scope, scope_id, dry_run, results)
+    prefix = "Dry run complete" if dry_run else "Seed complete"
     typer.echo(
-        f"\nSeed complete: {results['created']} created, {results['updated']} updated, "
+        f"\n{prefix}: {results['created']} created, {results['updated']} updated, "
         f"{results['unchanged']} unchanged, {results['failed']} failed"
     )
