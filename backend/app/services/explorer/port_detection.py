@@ -12,7 +12,6 @@ logger = get_logger(__name__)
 
 # Shared infrastructure ports (standard, rarely change)
 INFRASTRUCTURE_PORTS = {
-    "neo4j": 7687,
     "postgres": 5432,
     "redis": 6379,
 }

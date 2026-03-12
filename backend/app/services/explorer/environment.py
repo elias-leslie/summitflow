@@ -92,7 +92,11 @@ def _read_node_info(package_path: Path, root: Path) -> dict[str, Any]:
     if "node" in engines:
         info["node_version"] = engines["node"]
 
-    info["package_manager"] = _detect_package_manager(root)
+    package_manager = content.get("packageManager")
+    if isinstance(package_manager, str) and package_manager:
+        info["package_manager"] = package_manager.split("@", 1)[0]
+    else:
+        info["package_manager"] = _detect_package_manager(root)
     return info
 
 

@@ -187,6 +187,32 @@ class TestGenerateIndex:
         assert parsed["explorer"]["symbol_count"] == 44
         assert parsed["explorer"]["entry_counts"] == {"file": 12, "page": 2}
 
+    def test_generate_index_excludes_stale_neo4j_infrastructure(self) -> None:
+        """Test generated index only includes active shared infrastructure ports."""
+        with (
+            patch("app.services.explorer.index_generator.storage") as mock_storage,
+            patch("app.services.explorer.index_generator.get_environment") as mock_env,
+            patch("app.services.explorer.index_generator.get_services") as mock_services,
+            patch("app.services.explorer.index_generator.get_cli_info") as mock_cli,
+            patch("app.services.explorer.index_generator.get_project_urls") as mock_urls,
+            patch("app.services.explorer.index_generator.get_explorer_summary") as mock_explorer,
+        ):
+            mock_storage.get_entries.return_value = []
+            mock_env.return_value = {}
+            mock_services.return_value = {
+                "backend_port": 8001,
+                "frontend_port": 3001,
+                "infrastructure": {"postgres": 5432, "redis": 6379},
+            }
+            mock_cli.return_value = {}
+            mock_urls.return_value = {}
+            mock_explorer.return_value = {}
+
+            result = generate_index("test-project")
+
+        parsed = yaml.safe_load(result)
+        assert parsed["services"]["infrastructure"] == {"postgres": 5432, "redis": 6379}
+
 
 class TestWriteIndexFile:
     """Tests for write_index_file function."""
