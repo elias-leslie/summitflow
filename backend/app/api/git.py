@@ -170,8 +170,7 @@ async def retry_merge(task_id: str) -> dict[str, object]:
     if task["status"] != "conflicted":
         raise HTTPException(status_code=400, detail="Task is not in conflicted state")
     update_task_fields(task_id, conflict_info=None)
-    result: dict[str, object] = merge_and_cleanup_task_worktree(task_id, task["project_id"])  # type: ignore[assignment]
-    return result
+    return merge_and_cleanup_task_worktree(task_id, task["project_id"])
 
 
 @router.post("/git/tasks/{task_id}/resolve-conflict", tags=["git"])

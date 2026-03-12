@@ -34,7 +34,7 @@ export function TaskReviewModal({
 }: TaskReviewModalProps) {
   const [task, setTask] = useState<Task>(initialTask)
   const [subtasks, setSubtasks] = useState<Subtask[]>([])
-  const [discussionHistory] = useState<never[]>([])
+  const discussionHistory: never[] = []
   const [isAccepting, setIsAccepting] = useState(false)
   const [isDiscarding, setIsDiscarding] = useState(false)
   const [error, setError] = useState<string | null>(null)

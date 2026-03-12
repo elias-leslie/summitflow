@@ -12,6 +12,7 @@ from fastapi import HTTPException
 from ...storage import tasks as task_store
 from ...storage.tasks.update import update_task_fields
 from ...tasks.autonomous.cleanup.merge_operations import merge_and_cleanup_task_worktree
+from ...tasks.autonomous.cleanup.merge_types import MergeResult
 from ...utils.git_helpers import (
     get_managed_repos,
     get_recent_commits,
@@ -326,7 +327,7 @@ async def handle_resolve_conflict(task_id: str) -> dict[str, object]:
         )
     conflict_info = task.get("conflict_info") or {}
     if (not isinstance(conflict_info, dict) or not conflict_info) and status == "blocked":
-        merge_result: dict[str, object] = merge_and_cleanup_task_worktree(task_id, str(task["project_id"]))  # type: ignore[assignment]
+        merge_result: MergeResult = merge_and_cleanup_task_worktree(task_id, str(task["project_id"]))
         if str(merge_result.get("status") or "") != "conflicted":
             return merge_result
         task = task_store.get_task(task_id) or task
@@ -353,7 +354,7 @@ async def handle_resolve_conflict(task_id: str) -> dict[str, object]:
     return _resolve_conflict_response(task_id, project_id, worktree, files, "dispatched_for_conflict_resolution")
 
 
-def handle_finalize_task_merge(task_id: str, task: dict[str, Any]) -> dict[str, object]:
+def handle_finalize_task_merge(task_id: str, task: dict[str, Any]) -> MergeResult:
     """Validate status and execute finalize merge/cleanup for a residue task."""
     status = str(task.get("status") or "")
     if status in {"running", "pending", "queue", "paused", "ai_reviewing"}:
@@ -365,7 +366,7 @@ def handle_finalize_task_merge(task_id: str, task: dict[str, Any]) -> dict[str, 
         raise HTTPException(status_code=400, detail=f"Task status {status!r} is not eligible for finalize")
     if status == "conflicted":
         update_task_fields(task_id, conflict_info=None)
-    return merge_and_cleanup_task_worktree(task_id, task["project_id"])  # type: ignore[return-value]
+    return merge_and_cleanup_task_worktree(task_id, task["project_id"])
 
 
 # --- Collection helpers ---

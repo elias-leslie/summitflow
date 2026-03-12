@@ -36,7 +36,7 @@ def _format_batch_error(err_msg: str, item: BatchTaskCreate) -> str:
     return err_msg
 
 
-async def _save_task_spirit(task_id: str, item: object) -> None:
+async def _save_task_spirit(task_id: str, item: BatchTaskCreate) -> None:
     """Persist spirit fields to the task_spirit table, if any are set."""
     from ...storage.task_spirit import upsert_task_spirit
 
@@ -49,13 +49,13 @@ async def _save_task_spirit(task_id: str, item: object) -> None:
             upsert_task_spirit,
             task_id=task_id,
             objective=getattr(item, "objective", None) or "",
-            **item.model_dump(include={"spirit_anti", "decisions", "constraints", "done_when", "complexity"}),  # type: ignore[attr-defined]
+            **item.model_dump(include={"spirit_anti", "decisions", "constraints", "done_when", "complexity"}),
         )
     except Exception as e:
         logger.warning("Failed to create task_spirit for task %s: %s", task_id, e)
 
 
-async def _create_subtasks_with_deps(task_id: str, item: object) -> list[dict[str, Any]] | None:
+async def _create_subtasks_with_deps(task_id: str, item: BatchTaskCreate) -> list[dict[str, Any]] | None:
     """Bulk-create subtasks and their dependencies. Returns created subtask list or None."""
     from ...storage.subtasks import bulk_add_subtask_dependencies, bulk_create_subtasks
 
@@ -94,12 +94,12 @@ async def _create_subtasks_with_deps(task_id: str, item: object) -> list[dict[st
     return created_subs if created_subs else None
 
 
-async def _create_single_task(project_id: str, item: object) -> TaskResponse:
+async def _create_single_task(project_id: str, item: BatchTaskCreate) -> TaskResponse:
     """Create one task with its spirit fields and subtasks; return its TaskResponse."""
     task = await asyncio.to_thread(
         task_store.create_task,
         project_id=project_id,
-        **item.model_dump(  # type: ignore[attr-defined]
+        **item.model_dump(
             include={
                 "title", "description", "capability_id", "priority",
                 "task_type", "parent_task_id", "complexity", "execution_mode", "autonomous",
