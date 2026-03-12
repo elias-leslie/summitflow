@@ -59,12 +59,14 @@ export async function throwFromResponse(
   res: Response,
   defaultMessage: string,
 ): Promise<never> {
+  let detail: string | undefined
   try {
     const error = await res.json()
-    throw new Error(error.detail || defaultMessage)
+    detail = error.detail
   } catch {
-    throw new Error(defaultMessage)
+    // JSON parse failed — fall through to default
   }
+  throw new Error(detail || defaultMessage)
 }
 
 /**
