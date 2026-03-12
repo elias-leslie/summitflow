@@ -13,7 +13,7 @@ from ..output import output_error, output_json
 from .cleanup_git import get_repo_root
 
 _PROTECTED_NAMES = frozenset({".git", ".st", "node_modules"})
-_GLOB_CHARS = frozenset({"*", "?", "["})
+_GLOB_CHARS = frozenset({"*", "?"})
 
 
 @dataclass(frozen=True)
@@ -40,7 +40,11 @@ def _get_project_root() -> Path:
 
 
 def _looks_like_glob(raw_path: str) -> bool:
-    """Return True if the user passed glob-like characters."""
+    """Return True if the user passed glob-like characters (``*`` or ``?``).
+
+    Brackets are intentionally excluded because Next.js uses ``[param]``
+    route segments that are valid literal path components.
+    """
     return any(char in raw_path for char in _GLOB_CHARS)
 
 

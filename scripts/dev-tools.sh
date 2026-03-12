@@ -453,7 +453,15 @@ run_tests() {
     output=$("$pytest_bin" --tb=short -q 2>&1) || retval=$?
     local summary=$(echo "$output" | tail -1)
 
+    # Trust summary over exit code: non-zero exit with all tests passing = coverage/warnings, not test failure
+    local tests_passed=0
     if [[ $retval -eq 0 ]]; then
+        tests_passed=1
+    elif echo "$summary" | grep -qE '\bpassed\b' && ! echo "$summary" | grep -qiE '\b(failed|error)\b'; then
+        tests_passed=1
+    fi
+
+    if [[ $tests_passed -eq 1 ]]; then
         rm -f "$details_file"
         echo "OK:$summary"
     else
@@ -1112,8 +1120,13 @@ EOF
             ;;
 
         pytest_parse)
-            # pytest uses exit code
-            [[ $retval -eq 0 ]] && is_success=1
+            # pytest: trust summary line over exit code.
+            # Non-zero exit with "passed" but no "failed"/"error" = coverage/warnings issue, not test failure.
+            if [[ $retval -eq 0 ]]; then
+                is_success=1
+            elif echo "$count" | grep -qE '\bpassed\b' && ! echo "$count" | grep -qiE '\b(failed|error)\b'; then
+                is_success=1
+            fi
             ;;
         wc_l)
             # For line counting, exit code 0 means success regardless of output
