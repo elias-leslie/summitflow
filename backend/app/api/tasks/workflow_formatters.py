@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Any
 
 from ...services.task_execution_readiness import TaskExecutionReadiness
-from ...services.task_lane_preflight import TaskLaneConflictCheck
+from ...services.task_lane_preflight import TaskLaneConflictCheck, TaskLaneConflictCheckDict
 from ...storage.events import get_events_by_trace
 from ...storage.steps import get_steps_for_subtask
 
@@ -195,7 +195,7 @@ def build_context_json(
     lane_check: TaskLaneConflictCheck | dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build JSON context response."""
-    lane_payload: dict[str, Any] | None = None
+    lane_payload: TaskLaneConflictCheckDict | dict[str, Any] | None = None
     if lane_check is not None:
         lane_payload = lane_check.to_dict() if isinstance(lane_check, TaskLaneConflictCheck) else lane_check
     return {
