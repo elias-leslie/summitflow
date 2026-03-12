@@ -145,6 +145,103 @@ def close_session(
     output_json(result)
 
 
+def _list_all_active_sessions(
+    client: STClient,
+    *,
+    project_id: str | None,
+    page_size: int = 100,
+) -> list[dict[str, object]]:
+    sessions: list[dict[str, object]] = []
+    page = 1
+    while True:
+        batch = client.list_sessions(
+            status="active",
+            limit=page_size,
+            page=page,
+            project_id=project_id,
+        )
+        if not batch:
+            break
+        sessions.extend(batch)
+        if len(batch) < page_size:
+            break
+        page += 1
+    return sessions
+
+
+def _reapable_sessions(sessions: list[dict[str, object]]) -> list[dict[str, object]]:
+    result: list[dict[str, object]] = []
+    for session in sessions:
+        live = session.get("live_activity")
+        if not isinstance(live, dict):
+            continue
+        if bool(live.get("reapable")) or live.get("lifecycle_state") == "reapable":
+            result.append(session)
+    return result
+
+
+@app.command("reap")
+def reap_sessions(
+    project_id: Annotated[str | None, typer.Option("--project")] = None,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Preview reapable sessions without closing them"),
+    ] = False,
+) -> None:
+    """Close only sessions already marked reapable by Agent Hub lifecycle state."""
+    client = STClient(require_project=False)
+    target_project_id = project_id or getattr(client, "project_id", None)
+
+    try:
+        candidates = _reapable_sessions(
+            _list_all_active_sessions(client, project_id=target_project_id)
+        )
+    except APIError as e:
+        handle_api_error(e)
+        return
+
+    if dry_run:
+        output_json(
+            {
+                "project_id": target_project_id,
+                "dry_run": True,
+                "reapable_count": len(candidates),
+                "reapable_sessions": [
+                    {
+                        "id": session.get("id"),
+                        "project_id": session.get("project_id"),
+                        "agent_slug": session.get("agent_slug"),
+                        "session_type": session.get("session_type"),
+                        "reapable_reason": (
+                            session.get("live_activity", {}).get("reapable_reason")
+                            if isinstance(session.get("live_activity"), dict)
+                            else None
+                        ),
+                    }
+                    for session in candidates
+                ],
+            }
+        )
+        return
+
+    closed: list[dict[str, object]] = []
+    for session in candidates:
+        session_id = session.get("id")
+        if not isinstance(session_id, str) or not session_id:
+            continue
+        closed.append(client.close_session(session_id))
+
+    output_json(
+        {
+            "project_id": target_project_id,
+            "dry_run": False,
+            "reapable_count": len(candidates),
+            "closed_count": len(closed),
+            "closed_sessions": closed,
+        }
+    )
+
+
 @app.command("ownership")
 def list_ownership(
     project_id: Annotated[str | None, typer.Option("--project")] = None,

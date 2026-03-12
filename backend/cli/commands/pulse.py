@@ -72,6 +72,23 @@ def _format_session(session: dict[str, Any]) -> str:
     return "SES " + " | ".join(details)
 
 
+def _format_stale_session(session: dict[str, Any]) -> str:
+    live = session.get("live_activity") if isinstance(session.get("live_activity"), dict) else {}
+    model = session.get("effective_model") or session.get("requested_model") or "unknown"
+    state = live.get("lifecycle_state") or live.get("health") or session.get("status") or "unknown"
+    details = [
+        str(session.get("lane_role") or "observer"),
+        str(session.get("agent_slug") or session.get("session_type") or "?"),
+        str(session.get("id") or "?")[:8],
+        str(model).split("/")[-1],
+        str(state),
+    ]
+    reapable_reason = live.get("reapable_reason")
+    if isinstance(reapable_reason, str) and reapable_reason:
+        details.append(f"reason={reapable_reason}")
+    return "STALE " + " | ".join(details)
+
+
 def _format_task(task: dict[str, Any]) -> str:
     return "RUN " + " | ".join(
         [
@@ -101,12 +118,14 @@ def _print_compact(payloads: list[dict[str, Any]]) -> None:
         project_id = payload.get("project_id", "?")
         print(
             "PULSE:{project}|tasks={tasks}|owners={owners}|specialists={specialists}|"
-            "sessions={sessions}|worktrees={worktrees}|dirty={dirty}|cleanup={cleanup_needed}|stranded={stranded}".format(
+            "sessions={sessions}|stale={stale}|reapable={reapable}|worktrees={worktrees}|dirty={dirty}|cleanup={cleanup_needed}|stranded={stranded}".format(
                 project=project_id,
                 tasks=summary.get("running_tasks", 0),
                 owners=summary.get("active_owners", 0),
                 specialists=summary.get("active_specialists", 0),
                 sessions=summary.get("active_sessions", 0),
+                stale=summary.get("stale_sessions", 0),
+                reapable=summary.get("reapable_sessions", 0),
                 worktrees=cleanup.get("active_worktrees", 0),
                 dirty=cleanup.get("dirty_worktrees", 0),
                 cleanup_needed="yes" if cleanup.get("needs_cleanup") else "no",
@@ -125,6 +144,9 @@ def _print_compact(payloads: list[dict[str, Any]]) -> None:
         for session in payload.get("active_sessions", [])[:4]:
             if isinstance(session, dict):
                 print(_format_session(session))
+        for session in payload.get("stale_sessions", [])[:4]:
+            if isinstance(session, dict):
+                print(_format_stale_session(session))
 
 
 @app.command()

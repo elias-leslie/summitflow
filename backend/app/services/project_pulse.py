@@ -14,8 +14,9 @@ from app.storage.tasks.queries import list_tasks
 _TIMEOUT = 10.0
 _TASK_LIMIT = 8
 _SESSION_LIMIT = 25
-_OBSERVER_FRESH_MINUTES = 90
 _STRANDED_TASK_MINUTES = 2
+_LIVE_LIFECYCLE_STATES = {"active", "quiet", "stalled"}
+_STALE_LIFECYCLE_STATES = {"dead_candidate", "reapable"}
 
 
 async def _agent_hub_get(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -28,7 +29,7 @@ async def _agent_hub_get(path: str, params: dict[str, Any] | None = None) -> dic
         return payload if isinstance(payload, dict) else {}
 
 
-def _parse_iso_timestamp(value: Any) -> datetime | None:
+def _parse_iso_timestamp(value: str | None) -> datetime | None:
     """Parse an ISO timestamp from Agent Hub session payloads."""
     if not isinstance(value, str) or not value.strip():
         return None
@@ -44,7 +45,11 @@ def _parse_iso_timestamp(value: Any) -> datetime | None:
     return parsed.astimezone(UTC)
 
 
-def _normalize_active_session(session: dict[str, Any], owner_session_ids: set[str], specialist_session_ids: set[str]) -> dict[str, Any]:
+def _normalize_active_session(
+    session: dict[str, Any],
+    owner_session_ids: set[str],
+    specialist_session_ids: set[str],
+) -> dict[str, Any]:
     """Return the session fields relevant for coordination summaries."""
     session_id = str(session.get("id") or "")
     if session_id in owner_session_ids:
@@ -82,16 +87,31 @@ def _normalize_active_session(session: dict[str, Any], owner_session_ids: set[st
     }
 
 
-def _include_active_session(session: dict[str, Any]) -> bool:
-    """Keep only sessions that are plausibly live enough for coordination."""
+def _classify_session_coordination_bucket(session: dict[str, Any]) -> str | None:
+    """Classify a raw session for pulse summaries."""
     live_activity = session.get("live_activity")
     if isinstance(live_activity, dict):
-        return True
+        lifecycle_state = str(live_activity.get("lifecycle_state") or "").strip()
+        if lifecycle_state in _LIVE_LIFECYCLE_STATES:
+            return "active"
+        if lifecycle_state in _STALE_LIFECYCLE_STATES:
+            return "stale"
+
+        health = str(live_activity.get("health") or "").strip()
+        if health in _LIVE_LIFECYCLE_STATES:
+            return "active"
+        if health in {"completed", "failed", "error"}:
+            return None
+
     updated_at = _parse_iso_timestamp(session.get("updated_at"))
     if updated_at is None:
-        return False
-    age_minutes = (datetime.now(UTC) - updated_at).total_seconds() / 60
-    return age_minutes <= _OBSERVER_FRESH_MINUTES
+        return None
+    age_seconds = (datetime.now(UTC) - updated_at).total_seconds()
+    if age_seconds <= 30 * 60:
+        return "active"
+    if age_seconds >= 6 * 60 * 60:
+        return "stale"
+    return None
 
 
 def _normalize_running_task(task: dict[str, Any]) -> dict[str, Any]:
@@ -152,10 +172,23 @@ async def build_project_pulse(project_id: str) -> dict[str, Any]:
         if isinstance(session, dict) and session.get("task_id")
     }
 
-    active_sessions = [
-        _normalize_active_session(session, owner_session_ids, specialist_session_ids)
-        for session in raw_sessions
-        if isinstance(session, dict) and _include_active_session(session)
+    active_sessions: list[dict[str, Any]] = []
+    stale_sessions: list[dict[str, Any]] = []
+    for session in raw_sessions:
+        if not isinstance(session, dict):
+            continue
+        normalized = _normalize_active_session(session, owner_session_ids, specialist_session_ids)
+        bucket = _classify_session_coordination_bucket(session)
+        if bucket == "active":
+            active_sessions.append(normalized)
+        elif bucket == "stale":
+            stale_sessions.append(normalized)
+
+    reapable_sessions = [
+        session
+        for session in stale_sessions
+        if isinstance(session.get("live_activity"), dict)
+        and bool(session["live_activity"].get("reapable"))
     ]
     running_tasks = [
         _normalize_running_task(task)
@@ -175,6 +208,8 @@ async def build_project_pulse(project_id: str) -> dict[str, Any]:
             "active_owners": len(active_owners),
             "active_specialists": len(active_specialists),
             "active_sessions": len(active_sessions),
+            "stale_sessions": len(stale_sessions),
+            "reapable_sessions": len(reapable_sessions),
             "active_worktrees": cleanup["active_worktrees"],
             "dirty_worktrees": cleanup["dirty_worktrees"],
             "needs_cleanup": cleanup["needs_cleanup"],
@@ -185,5 +220,6 @@ async def build_project_pulse(project_id: str) -> dict[str, Any]:
         "active_owners": active_owners,
         "active_specialists": active_specialists,
         "active_sessions": active_sessions,
+        "stale_sessions": stale_sessions,
         "cleanup": cleanup,
     }

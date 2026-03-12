@@ -259,6 +259,105 @@ class TestSessionCommands:
             {"id": "sess-2", "status": "active", "agent_slug": None},
         ]
 
+    def test_reap_dry_run_only_outputs_reapable_sessions(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from cli.commands import sessions as sessions_cmd
+
+        captured: dict[str, object] = {}
+
+        class _DummyClient:
+            project_id = "agent-hub"
+
+            def __init__(self, require_project: bool = False) -> None:
+                self.require_project = require_project
+
+            def list_sessions(self, **kwargs: object) -> list[dict[str, object]]:
+                assert kwargs["status"] == "active"
+                return [
+                    {
+                        "id": "sess-1",
+                        "project_id": "agent-hub",
+                        "agent_slug": "debugger",
+                        "session_type": "agent",
+                        "live_activity": {
+                            "lifecycle_state": "reapable",
+                            "reapable": True,
+                            "reapable_reason": "heartbeat_only+no_lane",
+                        },
+                    },
+                    {
+                        "id": "sess-2",
+                        "project_id": "agent-hub",
+                        "agent_slug": "debugger",
+                        "session_type": "agent",
+                        "live_activity": {"lifecycle_state": "stalled", "reapable": False},
+                    },
+                ]
+
+        monkeypatch.setattr(sessions_cmd, "STClient", _DummyClient)
+        monkeypatch.setattr(
+            sessions_cmd,
+            "output_json",
+            lambda payload: captured.setdefault("payload", payload),
+        )
+
+        sessions_cmd.reap_sessions(dry_run=True)
+
+        assert captured["payload"] == {
+            "project_id": "agent-hub",
+            "dry_run": True,
+            "reapable_count": 1,
+            "reapable_sessions": [
+                {
+                    "id": "sess-1",
+                    "project_id": "agent-hub",
+                    "agent_slug": "debugger",
+                    "session_type": "agent",
+                    "reapable_reason": "heartbeat_only+no_lane",
+                }
+            ],
+        }
+
+    def test_reap_closes_each_reapable_session(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from cli.commands import sessions as sessions_cmd
+
+        captured: dict[str, object] = {}
+
+        class _DummyClient:
+            project_id = "agent-hub"
+
+            def __init__(self, require_project: bool = False) -> None:
+                self.require_project = require_project
+
+            def list_sessions(self, **kwargs: object) -> list[dict[str, object]]:
+                assert kwargs["page"] == 1
+                return [
+                    {
+                        "id": "sess-1",
+                        "project_id": "agent-hub",
+                        "live_activity": {"lifecycle_state": "reapable", "reapable": True},
+                    }
+                ]
+
+            def close_session(self, session_id: str) -> dict[str, object]:
+                return {"id": session_id, "status": "completed"}
+
+        monkeypatch.setattr(sessions_cmd, "STClient", _DummyClient)
+        monkeypatch.setattr(
+            sessions_cmd,
+            "output_json",
+            lambda payload: captured.setdefault("payload", payload),
+        )
+
+        sessions_cmd.reap_sessions(dry_run=False)
+
+        assert captured["payload"] == {
+            "project_id": "agent-hub",
+            "dry_run": False,
+            "reapable_count": 1,
+            "closed_count": 1,
+            "closed_sessions": [{"id": "sess-1", "status": "completed"}],
+        }
+
 
 class TestOwnershipCommand:
     """Tests for `st sessions ownership`."""

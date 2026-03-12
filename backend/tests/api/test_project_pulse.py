@@ -14,6 +14,8 @@ def test_get_project_pulse_returns_aggregated_coordination_payload(client) -> No
             "active_owners": 1,
             "active_specialists": 0,
             "active_sessions": 2,
+            "stale_sessions": 1,
+            "reapable_sessions": 1,
             "active_worktrees": 1,
             "dirty_worktrees": 0,
             "needs_cleanup": False,
@@ -22,6 +24,7 @@ def test_get_project_pulse_returns_aggregated_coordination_payload(client) -> No
         "active_owners": [{"session_id": "sess-owner", "task_id": "task-1"}],
         "active_specialists": [],
         "active_sessions": [{"id": "sess-owner"}, {"id": "sess-observer"}],
+        "stale_sessions": [{"id": "sess-stale"}],
         "cleanup": {"project_id": "agent-hub", "active_worktrees": 1, "dirty_worktrees": 0, "needs_cleanup": False},
     }
 
@@ -35,5 +38,6 @@ def test_get_project_pulse_returns_aggregated_coordination_payload(client) -> No
     body = response.json()
     assert body["project_id"] == "agent-hub"
     assert body["summary"]["active_sessions"] == 2
+    assert body["summary"]["stale_sessions"] == 1
     assert body["running_tasks"][0]["id"] == "task-1"
     mock_build.assert_awaited_once_with("agent-hub")
