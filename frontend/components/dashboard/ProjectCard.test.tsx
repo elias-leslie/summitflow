@@ -120,6 +120,14 @@ describe('ProjectCard', () => {
       'href',
       '/projects/summitflow',
     )
+    expect(screen.getByRole('link', { name: /settings/i })).toHaveAttribute(
+      'href',
+      '/projects/summitflow/settings',
+    )
+    expect(screen.getByRole('link', { name: /open app/i })).toHaveAttribute(
+      'href',
+      'https://dev.summitflow.dev',
+    )
   })
 
   it('surfaces live service and quality summaries after hover loads checks', async () => {
@@ -129,5 +137,14 @@ describe('ProjectCard', () => {
 
     expect(await screen.findByText('Service: 42ms')).toBeInTheDocument()
     expect(screen.getByText('Quality: 3 open')).toBeInTheDocument()
+  })
+
+  it('flags projects that are missing a root path', () => {
+    renderCard({
+      ...project,
+      root_path: undefined,
+    })
+
+    expect(screen.getByText('No root path')).toBeInTheDocument()
   })
 })

@@ -72,9 +72,12 @@ describe('NewProjectClient', () => {
     fireEvent.change(screen.getByLabelText('Health Endpoint'), {
       target: { value: 'healthz' },
     })
+    fireEvent.change(screen.getByLabelText('Root Path'), {
+      target: { value: '/tmp/my-project///' },
+    })
 
-    expect(screen.getByText('Normalized to')).toBeInTheDocument()
     expect(screen.getByText('https://example.com/healthz')).toBeInTheDocument()
+    expect(screen.getByText('/tmp/my-project')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Create Project' }))
 
@@ -86,6 +89,28 @@ describe('NewProjectClient', () => {
       name: 'My Project!!',
       base_url: 'https://example.com',
       health_endpoint: '/healthz',
+      root_path: '/tmp/my-project',
     })
+  })
+
+  it('blocks submission when the root path is relative', async () => {
+    renderClient()
+
+    fireEvent.change(screen.getByLabelText('Project Name *'), {
+      target: { value: 'My Project' },
+    })
+    fireEvent.change(screen.getByLabelText('Base URL *'), {
+      target: { value: 'https://example.com' },
+    })
+    fireEvent.change(screen.getByLabelText('Root Path'), {
+      target: { value: 'relative/path' },
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create Project' }))
+
+    expect(
+      await screen.findByText('Root path must be an absolute path'),
+    ).toBeInTheDocument()
+    expect(apiMocks.createProject).not.toHaveBeenCalled()
   })
 })

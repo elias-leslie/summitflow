@@ -9,6 +9,8 @@ import { fetchWithErrorHandling } from './utils'
 import type {
   Project,
   ProjectHealth,
+  ProjectServicesResponse,
+  ProjectUpdate,
   ProjectsWithStatsResponse,
   QualityGateHealth,
   ProjectAgentConfig,
@@ -48,12 +50,25 @@ export async function createProject(project: {
   name: string
   base_url: string
   health_endpoint?: string
+  root_path?: string
 }): Promise<Project> {
   return fetchWithErrorHandling('/api/projects', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(project),
     errorMessage: 'Failed to create project',
+  })
+}
+
+export async function updateProject(
+  id: string,
+  project: ProjectUpdate,
+): Promise<Project> {
+  return fetchWithErrorHandling(`/api/projects/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(project),
+    errorMessage: 'Failed to update project',
   })
 }
 
@@ -64,6 +79,14 @@ export async function createProject(project: {
 export async function fetchProjectHealth(id: string): Promise<ProjectHealth> {
   return fetchWithErrorHandling(`/api/projects/${id}/health`, {
     errorMessage: 'Failed to check project health',
+  })
+}
+
+export async function fetchProjectServices(
+  id: string,
+): Promise<ProjectServicesResponse> {
+  return fetchWithErrorHandling(`/api/projects/${id}/services`, {
+    errorMessage: 'Failed to fetch project services',
   })
 }
 

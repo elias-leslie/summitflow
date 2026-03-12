@@ -36,12 +36,13 @@ export function DashboardClient() {
   const totalProjects = data?.total ?? projects.length
   const dashboardTotals = projects.reduce(
     (totals, project) => {
+      totals.features += project.stats.features
       totals.tasks += project.stats.tasks
       totals.bugs += project.stats.bugs
       totals.blocked += project.stats.blocked
       return totals
     },
-    { tasks: 0, bugs: 0, blocked: 0 },
+    { features: 0, tasks: 0, bugs: 0, blocked: 0 },
   )
   const totalPages = useClampedPagination({
     page,
@@ -106,9 +107,10 @@ export function DashboardClient() {
       </section>
 
       <section className="animate-in" style={{ animationDelay: '0.03s' }}>
-        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
           <SummaryCard label="Tracked Projects" value={totalProjects} icon={FolderKanban} />
-          <SummaryCard label="Open Tasks" value={dashboardTotals.tasks} icon={ListTodo} />
+          <SummaryCard label="Active Features" value={dashboardTotals.features} icon={Info} />
+          <SummaryCard label="Active Tasks" value={dashboardTotals.tasks} icon={ListTodo} />
           <SummaryCard label="Open Bugs" value={dashboardTotals.bugs} icon={Bug} />
           <SummaryCard
             label="Blocked Work"
@@ -238,7 +240,7 @@ function ProjectsGrid({
     <div className="space-y-3">
       {totalProjects > 0 && (
         <p className="text-xs text-slate-500">
-          Hover a card to load live health and quality signals for that project.
+          Hover, focus, or tap a card to load live health and quality signals for that project.
         </p>
       )}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

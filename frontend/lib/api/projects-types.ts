@@ -33,6 +33,13 @@ export interface ProjectWithStats {
   stats: ProjectStats
 }
 
+export interface ProjectUpdate {
+  name?: string
+  base_url?: string
+  health_endpoint?: string
+  root_path?: string
+}
+
 export interface ProjectsWithStatsResponse {
   projects: ProjectWithStats[]
   total: number
@@ -45,6 +52,23 @@ export interface ProjectHealth {
   response_time_ms?: number
   error?: string
   checked_at: string
+}
+
+export interface ProjectServiceConfig {
+  name: string
+  command: string
+  port: number
+  worktree_port_base: number
+  worktree_port_range: number
+  cwd?: string | null
+  env_file?: string | null
+  build_command?: string | null
+}
+
+export interface ProjectServicesResponse {
+  project_id: string
+  config_source: 'file' | 'default'
+  services: Record<string, ProjectServiceConfig>
 }
 
 export interface QualityGateHealth {

@@ -2,7 +2,16 @@
 
 import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
-import { AlertCircle, Bug, Clock, Database, ListTodo, Target } from 'lucide-react'
+import {
+  AlertCircle,
+  Bug,
+  Clock,
+  Database,
+  ExternalLink,
+  ListTodo,
+  Settings2,
+  Target,
+} from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -182,7 +191,29 @@ export function ProjectCard({ project }: ProjectCardProps) {
                 >
                   {project.root_path}
                 </span>
-              ) : null}
+              ) : (
+                <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-300">
+                  No root path
+                </span>
+              )}
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+              <Link
+                href={`/projects/${project.id}/settings`}
+                className="inline-flex items-center gap-1 rounded-full border border-slate-700 px-2 py-1 text-slate-400 transition-colors hover:border-slate-500 hover:text-slate-200"
+              >
+                <Settings2 className="w-3 h-3" />
+                Settings
+              </Link>
+              <a
+                href={project.base_url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 rounded-full border border-slate-700 px-2 py-1 text-slate-400 transition-colors hover:border-slate-500 hover:text-slate-200"
+              >
+                <ExternalLink className="w-3 h-3" />
+                Open app
+              </a>
             </div>
             {checkpoint && (
               <div className="flex items-center gap-1.5 mt-1 text-xs text-cyan-400">
@@ -218,6 +249,11 @@ export function ProjectCard({ project }: ProjectCardProps) {
                       : `${qualityGate.total_unfixed} open`
                     : 'pending'}
                 </span>
+                {!project.root_path && (
+                  <span className="text-amber-300">
+                    Config: root path missing
+                  </span>
+                )}
               </div>
             )}
           </div>

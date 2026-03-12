@@ -1,16 +1,19 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { useInfiniteQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import {
   Activity,
   Archive,
   Bot,
   CheckCircle2,
+  ChevronDown,
   GitCommit,
   Loader2,
+  RefreshCw,
   XCircle,
 } from 'lucide-react'
+import Link from 'next/link'
 import { type ReactElement, useEffect, useRef, useState } from 'react'
 import { List, type RowComponentProps } from 'react-window'
 import {
@@ -21,6 +24,8 @@ import {
 import { formatDate } from '@/lib/format'
 import { POLL_STANDARD, STALE_STANDARD } from '@/lib/polling'
 import { getErrorMessage } from '@/lib/utils'
+
+const PAGE_SIZE = 50
 
 const eventConfig: Record<
   ActivityEventType,
@@ -83,6 +88,22 @@ function formatRelativeTime(timestamp: string | null, nowMs: number): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
+function getStatusBadgeClass(status: string): string {
+  if (status === 'completed') {
+    return 'bg-green-500/20 text-green-400'
+  }
+  if (status === 'failed') {
+    return 'bg-red-500/20 text-red-400'
+  }
+  if (status === 'blocked') {
+    return 'bg-amber-500/20 text-amber-300'
+  }
+  if (status === 'cancelled') {
+    return 'bg-slate-600 text-slate-300'
+  }
+  return 'bg-slate-600 text-slate-400'
+}
+
 interface ActivityRowProps {
   items: ActivityEvent[]
   nowMs: number
@@ -104,46 +125,35 @@ function ActivityRow({
   return (
     <div
       style={style}
-      className="px-4 flex items-center gap-3 hover:bg-slate-800/30 transition-colors border-b border-slate-800/50"
+      className="flex items-center gap-3 border-b border-slate-800/50 px-4 hover:bg-slate-800/30 transition-colors"
       data-testid={`activity-item-${event.type}`}
       title={event.timestamp ? formatDate(event.timestamp) : undefined}
     >
-      <div
-        className={clsx(
-          'p-2 rounded-lg flex-shrink-0',
-          config.color.bg,
-        )}
-      >
+      <div className={clsx('flex-shrink-0 rounded-lg p-2', config.color.bg)}>
         {isFailed ? (
-          <XCircle className="w-4 h-4 text-red-400" />
+          <XCircle className="h-4 w-4 text-red-400" />
         ) : (
-          <Icon className={clsx('w-4 h-4', config.color.text)} />
+          <Icon className={clsx('h-4 w-4', config.color.text)} />
         )}
       </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm text-slate-300 truncate">{event.message}</p>
-        <p className="text-xs text-slate-500 mt-0.5">
-          <span className="mr-2 uppercase tracking-wide text-slate-600">
-            {config.label}
-          </span>
-          <span className="font-mono">{event.project_id}</span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm text-slate-300">{event.message}</p>
+        <p className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+          <span className="uppercase tracking-wide text-slate-600">{config.label}</span>
+          <Link
+            href={`/projects/${event.project_id}`}
+            className="font-mono text-slate-400 hover:text-phosphor-300"
+          >
+            {event.project_id}
+          </Link>
           {event.metadata.status && (
-            <span
-              className={clsx(
-                'ml-2 px-1.5 py-0.5 rounded text-xs',
-                event.metadata.status === 'completed'
-                  ? 'bg-green-500/20 text-green-400'
-                  : event.metadata.status === 'failed'
-                    ? 'bg-red-500/20 text-red-400'
-                    : 'bg-slate-600 text-slate-400',
-              )}
-            >
+            <span className={clsx('rounded px-1.5 py-0.5 text-xs', getStatusBadgeClass(event.metadata.status))}>
               {event.metadata.status}
             </span>
           )}
         </p>
       </div>
-      <span className="text-xs text-slate-500 font-mono flex-shrink-0">
+      <span className="flex-shrink-0 font-mono text-xs text-slate-500">
         {formatRelativeTime(event.timestamp, nowMs)}
       </span>
     </div>
@@ -173,18 +183,31 @@ export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedP
   const [typeFilter, setTypeFilter] = useState<ActivityEventType | 'all'>(defaultFilter)
   const [now, setNow] = useState(() => Date.now())
 
-  const { data, isLoading, error, refetch } = useQuery({
+  const {
+    data,
+    isLoading,
+    error,
+    refetch,
+    isRefetching,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    dataUpdatedAt,
+  } = useInfiniteQuery({
     queryKey: ['activity-feed', typeFilter],
-    queryFn: () =>
+    queryFn: ({ pageParam }) =>
       fetchActivity({
-        limit: 100,
+        limit: PAGE_SIZE,
+        offset: pageParam,
         types: typeFilter === 'all' ? undefined : [typeFilter],
       }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) =>
+      lastPage.has_more ? lastPage.offset + lastPage.items.length : undefined,
     staleTime: STALE_STANDARD,
     refetchInterval: POLL_STANDARD * 2,
   })
 
-  // Calculate height to fill available space
   useEffect(() => {
     const updateHeight = () => {
       if (containerRef.current) {
@@ -204,7 +227,11 @@ export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedP
     return () => window.clearInterval(intervalId)
   }, [])
 
-  const items = data?.items ?? []
+  const pages = data?.pages ?? []
+  const items = pages.flatMap((page) => page.items)
+  const total = pages[0]?.total ?? items.length
+  const lastUpdated =
+    dataUpdatedAt > 0 ? formatRelativeTime(new Date(dataUpdatedAt).toISOString(), now) : 'never'
   const emptyLabel =
     typeFilter === 'all'
       ? 'No recent activity'
@@ -219,41 +246,52 @@ export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedP
       <div className="border-b border-slate-800 px-3 py-2">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-1">
-            {TYPE_FILTERS.map((f) => {
-              const Icon = f.icon
+            {TYPE_FILTERS.map((filter) => {
+              const Icon = filter.icon
               return (
                 <button
-                  key={f.value}
-                  onClick={() => setTypeFilter(f.value)}
-                  aria-pressed={typeFilter === f.value}
+                  key={filter.value}
+                  onClick={() => setTypeFilter(filter.value)}
+                  aria-pressed={typeFilter === filter.value}
                   className={clsx(
-                    'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs transition-colors',
-                    typeFilter === f.value
+                    'flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs transition-colors',
+                    typeFilter === filter.value
                       ? 'bg-slate-700 text-white'
-                      : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/50',
+                      : 'text-slate-500 hover:bg-slate-800/50 hover:text-slate-300',
                   )}
                 >
-                  <Icon className="w-3 h-3" />
-                  {f.label}
+                  <Icon className="h-3 w-3" />
+                  {filter.label}
                 </button>
               )
             })}
           </div>
-          <div className="text-[11px] text-slate-500">
+          <button
+            type="button"
+            onClick={() => refetch()}
+            className="inline-flex items-center gap-1 text-[11px] text-slate-500 transition-colors hover:text-slate-300"
+          >
+            <RefreshCw className={clsx('h-3 w-3', (isRefetching || isFetchingNextPage) && 'animate-spin')} />
+            Refresh
+          </button>
+        </div>
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
+          <span>
             {isLoading
               ? 'Loading latest activity'
-              : `${data?.total ?? items.length} item${(data?.total ?? items.length) === 1 ? '' : 's'}${typeFilter === 'all' ? '' : ` in ${TYPE_FILTERS.find((filter) => filter.value === typeFilter)?.label.toLowerCase()}`}`}
-          </div>
+              : `${total} item${total === 1 ? '' : 's'}${typeFilter === 'all' ? '' : ` in ${TYPE_FILTERS.find((filter) => filter.value === typeFilter)?.label.toLowerCase()}`}`}
+          </span>
+          <span>Updated {lastUpdated}</span>
         </div>
       </div>
       {isLoading ? (
         <div className="p-8 text-center">
-          <Loader2 className="w-8 h-8 text-slate-500 mx-auto animate-spin" />
-          <p className="text-sm text-slate-500 mt-3">Loading activity...</p>
+          <Loader2 className="mx-auto h-8 w-8 animate-spin text-slate-500" />
+          <p className="mt-3 text-sm text-slate-500">Loading activity...</p>
         </div>
       ) : error ? (
         <div className="p-8 text-center">
-          <XCircle className="w-10 h-10 text-red-400 mx-auto mb-3" />
+          <XCircle className="mx-auto mb-3 h-10 w-10 text-red-400" />
           <p className="text-sm text-red-400">Failed to load activity</p>
           <p className="mt-1 text-xs text-slate-500">
             {getErrorMessage(error, 'Activity feed is temporarily unavailable')}
@@ -267,9 +305,9 @@ export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedP
         </div>
       ) : items.length === 0 ? (
         <div className="p-8 text-center">
-          <Activity className="w-10 h-10 text-slate-600 mx-auto mb-3" />
+          <Activity className="mx-auto mb-3 h-10 w-10 text-slate-600" />
           <p className="text-sm text-slate-500">{emptyLabel}</p>
-          <p className="text-xs text-slate-600 mt-1">
+          <p className="mt-1 text-xs text-slate-600">
             {typeFilter === 'all'
               ? 'Activity will appear here as you use SummitFlow'
               : 'Try another filter to inspect a different activity stream'}
@@ -284,13 +322,31 @@ export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedP
             rowProps={{ items, nowMs: now }}
             style={{ height: listHeight }}
           />
-          {data?.has_more && (
-            <div className="p-3 text-center border-t border-slate-800">
-              <p className="text-xs text-slate-500">
-                Showing {items.length} of {data.total} events
-              </p>
-            </div>
-          )}
+          <div className="border-t border-slate-800 p-3 text-center">
+            <p className="text-xs text-slate-500">
+              Showing {items.length} of {total} events
+            </p>
+            {hasNextPage && (
+              <button
+                type="button"
+                onClick={() => fetchNextPage()}
+                disabled={isFetchingNextPage}
+                className="mt-2 inline-flex items-center gap-1 text-xs text-phosphor-400 transition-colors hover:text-phosphor-300 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isFetchingNextPage ? (
+                  <>
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Loading older activity...
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="h-3 w-3" />
+                    Load older activity
+                  </>
+                )}
+              </button>
+            )}
+          </div>
         </>
       )}
     </div>
