@@ -8,9 +8,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from app.logging_config import get_logger
 from app.storage.projects import get_project_root_path, list_projects
 
 from .checkpoint_models import BranchInfo, CheckpointResponse
+
+logger = get_logger(__name__)
 
 
 def _get_task_branches(task_id: str, project_path: Path) -> list[dict[str, str]]:
@@ -34,8 +37,8 @@ def _get_task_branches(task_id: str, project_path: Path) -> list[dict[str, str]]
                 branches.append({"branch": branch, "subtask_id": subtask_id, "type": "subtask"})
             else:
                 branches.append({"branch": branch, "subtask_id": "", "type": "task"})
-    except subprocess.CalledProcessError:
-        pass
+    except subprocess.CalledProcessError as exc:
+        logger.debug("Failed to list task branches", task_id=task_id, error=str(exc))
     return branches
 
 

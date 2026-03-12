@@ -16,13 +16,16 @@ from fastapi import APIRouter, HTTPException
 
 from ...logging_config import get_logger
 from ...schemas.tasks import TaskResponse, TaskStatusUpdate, TaskUpdate
-from ...services.task_execution_readiness import sync_task_execution_readiness
-from ...services.task_second_opinion import ensure_second_opinion_tracking
 from ...services.task_validation import validate_task_ready
 from ...storage import log_task_event
 from ...storage import tasks as task_store
 from ...storage.tasks.execution_mode import is_manual_only_mode
-from .helpers import dispatch_autonomous_task, get_step_verification_status, verify_task_project
+from .helpers import (
+    dispatch_autonomous_task,
+    get_step_verification_status,
+    refresh_task_tracking,
+    verify_task_project,
+)
 from .response import task_to_response
 
 logger = get_logger(__name__)
@@ -59,20 +62,7 @@ async def update_task(project_id: str, task_id: str, update: TaskUpdate) -> Task
     # Update task_spirit table
     if spirit_updates:
         await asyncio.to_thread(update_task_spirit, task_id, **spirit_updates)
-    refreshed = await asyncio.to_thread(task_store.get_task, task_id)
-    if refreshed:
-        updated = refreshed
-    await asyncio.to_thread(
-        ensure_second_opinion_tracking,
-        task_id,
-        updated,
-        None,
-        source="task-update",
-    )
-    await asyncio.to_thread(sync_task_execution_readiness, task_id, "task-update")
-    refreshed = await asyncio.to_thread(task_store.get_task, task_id)
-    if refreshed:
-        updated = refreshed
+    updated = await refresh_task_tracking(task_id, "task-update")
 
     return task_to_response(updated)
 

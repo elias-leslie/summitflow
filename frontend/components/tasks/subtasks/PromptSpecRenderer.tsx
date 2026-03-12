@@ -11,15 +11,14 @@ function HighlightTemplateVars({ text }: { text: string }) {
   return (
     <>
       {parts.map((part, i) => {
-        const key = `${i}-${part.length}`
         if (part.match(/^\{\{?\w+\}?\}$/)) {
           return (
-            <span key={key} className="text-purple-400 font-semibold">
+            <span key={i} className="text-purple-400 font-semibold">
               {part}
             </span>
           )
         }
-        return <span key={key}>{part}</span>
+        return <span key={i}>{part}</span>
       })}
     </>
   )

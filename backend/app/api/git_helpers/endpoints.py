@@ -9,6 +9,7 @@ from typing import Any, cast
 
 from fastapi import HTTPException
 
+from ...logging_config import get_logger
 from ...storage import tasks as task_store
 from ...storage.tasks.update import update_task_fields
 from ...tasks.autonomous.cleanup.merge_operations import merge_and_cleanup_task_worktree
@@ -32,6 +33,8 @@ from ..models.git_models import (
 )
 from .db_helpers import get_project_path, query_conflicts, query_recent_merges
 from .worktree_helpers import collect_worktrees, enrich_snapshots
+
+_logger = get_logger(__name__)
 
 
 async def execute_smart_sync(project_root: Path) -> dict[str, Any]:
@@ -134,8 +137,8 @@ def _get_commit_metadata(sha: str, repo_path: Path) -> tuple[str, list[str]]:
             title = lines[0] if lines else sha
             parents = lines[1].split() if len(lines) > 1 and lines[1] else []
             return title, parents
-    except (subprocess.TimeoutExpired, OSError):
-        pass
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        _logger.debug("Failed to get commit metadata", sha=sha, error=str(exc))
     return sha, []
 
 
@@ -395,8 +398,8 @@ def collect_snapshots(project_id: str | None) -> list[SnapshotInfo]:
         try:
             all_snapshots = list(list_snapshots(get_project_path(project_id)))
             enrich_snapshots(all_snapshots, project_id)
-        except HTTPException:
-            pass
+        except HTTPException as exc:
+            _logger.debug("Snapshot collection failed for project", project_id=project_id, status=exc.status_code)
     else:
         for repo_path in get_managed_repos():
             all_snapshots.extend(list_snapshots(repo_path))

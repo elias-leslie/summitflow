@@ -138,6 +138,29 @@ async def dispatch_autonomous_task(task_id: str, new_status: str, project_id: st
         logger.warning("Failed to dispatch autonomous task", task_id=task_id, error=str(e))
 
 
+async def refresh_task_tracking(task_id: str, source: str) -> dict[str, Any]:
+    """Refresh task, sync second-opinion tracking and execution readiness, return updated task.
+
+    Consolidates the repeated pattern of:
+    1. Refresh task from storage
+    2. Ensure second-opinion tracking
+    3. Sync execution readiness
+    4. Return freshly loaded task
+    """
+    import asyncio
+
+    from ...services.task_execution_readiness import sync_task_execution_readiness
+    from ...services.task_second_opinion import ensure_second_opinion_tracking
+
+    task = await asyncio.to_thread(task_store.get_task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found after mutation")
+    await asyncio.to_thread(ensure_second_opinion_tracking, task_id, task, None, source=source)
+    await asyncio.to_thread(sync_task_execution_readiness, task_id, source)
+    refreshed = await asyncio.to_thread(task_store.get_task, task_id)
+    return refreshed if refreshed else task
+
+
 def abort_running_task(task_id: str) -> None:
     """Emergency stop - signal abort for a running task."""
     logger.info("Task abort requested", task_id=task_id)
