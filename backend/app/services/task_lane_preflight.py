@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import PurePosixPath
-from typing import Any, TypedDict
+from typing import TypedDict
 
 import httpx
 
@@ -98,7 +98,7 @@ class TaskLaneConflictCheck:
     owner_location: str | None = None
     active_specialists: list[_SpecialistSummary] = field(default_factory=list)
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> TaskLaneConflictCheckDict:
         return {
             "issues": self.issues,
             "suggestions": self.suggestions,
@@ -133,13 +133,16 @@ class _LaneScope:
 # -- Agent Hub inventory fetch --
 
 
-def _owner_to_session(owner: dict[str, Any]) -> dict[str, object]:
+def _owner_list(owner: dict[str, object], key: str) -> list[object]:
+    """Return a list value from an owner dict, defaulting to empty list."""
+    val = owner.get(key)
+    if isinstance(val, list):
+        return list(val)
+    return []
+
+
+def _owner_to_session(owner: dict[str, object]) -> dict[str, object]:
     """Convert a live-ownership record to the normalized session shape."""
-
-    def _lst(key: str) -> list:
-        val = owner.get(key)
-        return val if isinstance(val, list) else []
-
     return {
         "id": owner.get("session_id"),
         "external_id": owner.get("task_id"),
@@ -150,10 +153,10 @@ def _owner_to_session(owner: dict[str, Any]) -> dict[str, object]:
         "workstream_status": owner.get("workstream_status"),
         "workstream_note": owner.get("workstream_note"),
         "ownership_kind": owner.get("ownership_kind"),
-        "scope_paths": _lst("scope_paths"),
-        "declared_scope_paths": _lst("declared_scope_paths"),
-        "observed_read_paths": _lst("observed_read_paths"),
-        "observed_write_paths": _lst("observed_write_paths"),
+        "scope_paths": _owner_list(owner, "scope_paths"),
+        "declared_scope_paths": _owner_list(owner, "declared_scope_paths"),
+        "observed_read_paths": _owner_list(owner, "observed_read_paths"),
+        "observed_write_paths": _owner_list(owner, "observed_write_paths"),
         "scope_confidence": owner.get("scope_confidence"),
         "created_at": owner.get("created_at"),
         "updated_at": owner.get("updated_at"),
@@ -172,15 +175,16 @@ def _fetch_live_project_inventory(
         )
         if ownership_response.status_code != 404:
             ownership_response.raise_for_status()
-            payload = ownership_response.json()
+            payload: dict[str, object] = ownership_response.json()
             owners = payload.get("active_owners")
             specialists = payload.get("active_specialists")
             if isinstance(owners, list):
                 owner_sessions = [_owner_to_session(o) for o in owners if isinstance(o, dict)]
                 specialist_rows = [r for r in specialists if isinstance(r, dict)] if isinstance(specialists, list) else []
                 return owner_sessions, specialist_rows
-            sessions = payload.get("sessions")
-            return (sessions, []) if isinstance(sessions, list) else ([], [])
+            sessions_raw = payload.get("sessions")
+            sessions_list: list[dict[str, object]] = list(sessions_raw) if isinstance(sessions_raw, list) else []
+            return sessions_list, []
 
         legacy_response = client.get(
             f"{AGENT_HUB_URL}{_LEGACY_SESSIONS_PATH}",
@@ -189,8 +193,9 @@ def _fetch_live_project_inventory(
         )
         legacy_response.raise_for_status()
         payload = legacy_response.json()
-        sessions = payload.get("sessions", [])
-        return (sessions if isinstance(sessions, list) else [], [])
+        sessions_raw = payload.get("sessions", [])
+        sessions_list = list(sessions_raw) if isinstance(sessions_raw, list) else []
+        return sessions_list, []
 
 
 # -- Specialist summarization --
@@ -238,12 +243,6 @@ def _summarize_active_specialists(
 
 
 # -- Session metadata helpers --
-
-
-def _is_live_lane_session(session: dict[str, object]) -> bool:
-    if session.get("workstream_status") in _RETIRED_WORKSTREAMS:
-        return False
-    return bool(session.get("external_id") or session.get("current_branch"))
 
 
 def _lane_task_id(session: dict[str, object]) -> str | None:
@@ -376,19 +375,15 @@ def _load_live_lane_scope(session: dict[str, object], task_id: str) -> _LaneScop
 # -- Conflict detection --
 
 
-def _assign_owner(result: TaskLaneConflictCheck, session: dict[str, object]) -> None:
-    """Populate owner fields on result from the given session."""
+def _apply_same_task_conflict(
+    result: TaskLaneConflictCheck, task_id: str, project_id: str, sessions: list[dict[str, object]]
+) -> None:
+    session = sessions[0]
     result.owner_session_id = str(session.get("id") or "")
     branch = session.get("current_branch")
     result.owner_branch = branch if isinstance(branch, str) else None
     result.owner_location = _lane_summary(session)
 
-
-def _apply_same_task_conflict(
-    result: TaskLaneConflictCheck, task_id: str, project_id: str, sessions: list[dict[str, object]]
-) -> None:
-    session = sessions[0]
-    _assign_owner(result, session)
     target_status = _task_status(task_id)
     if target_status in _TERMINAL_TASK_STATUSES:
         result.overlap_kind = _STALE_SAME_TASK
@@ -428,7 +423,10 @@ def _apply_unscoped_conflict(
     """Handle both unscoped-target and unscoped-lane conflicts."""
     chosen = lane_sessions[0]
     chosen_task_id = _lane_task_id(chosen)
-    _assign_owner(result, chosen)
+    result.owner_session_id = str(chosen.get("id") or "")
+    branch = chosen.get("current_branch")
+    result.owner_branch = branch if isinstance(branch, str) else None
+    result.owner_location = _lane_summary(chosen)
     lane_preview = "; ".join(_lane_summary(s) for s in lane_sessions[:2])
     result.conflicting_tasks = [chosen_task_id] if chosen_task_id else []
     result.overlap_kind = overlap_kind
@@ -454,7 +452,10 @@ def _apply_write_overlap_conflict(
 ) -> None:
     """Handle exact-file or shared-plumbing write overlap."""
     owner_session = next(s for s in lane_sessions if _lane_task_id(s) == overlap_id)
-    _assign_owner(result, owner_session)
+    result.owner_session_id = str(owner_session.get("id") or "")
+    branch = owner_session.get("current_branch")
+    result.owner_branch = branch if isinstance(branch, str) else None
+    result.owner_location = _lane_summary(owner_session)
     result.conflicting_tasks = [overlap_id]
     result.overlap_paths = overlaps
     result.disposition = _BLOCK
@@ -515,7 +516,7 @@ def _find_scope_overlap(
     target_scope: _TaskScope,
     scoped: list[tuple[str, _LaneScope]],
 ) -> tuple[str | None, list[str], str | None]:
-    """Return (overlap_id, overlap_paths, kind) for the highest-priority overlap: write > plumbing > read."""
+    """Return (overlap_id, overlap_paths, kind) for highest-priority overlap: write > plumbing > read."""
     target_shared = sorted(
         p for p in target_scope.paths if any(p.startswith(pfx) for pfx in _SHARED_PLUMBING_PREFIXES)
     )
@@ -551,7 +552,10 @@ def _apply_scoped_conflict(
     if overlap_kind == "read":
         assert overlap_id is not None
         chosen = next(s for s in lane_sessions if _lane_task_id(s) == overlap_id)
-        _assign_owner(result, chosen)
+        result.owner_session_id = str(chosen.get("id") or "")
+        branch = chosen.get("current_branch")
+        result.owner_branch = branch if isinstance(branch, str) else None
+        result.owner_location = _lane_summary(chosen)
         result.conflicting_tasks = [overlap_id]
         result.overlap_kind = _READ_OVERLAP
         result.overlap_paths = overlap_paths
@@ -593,7 +597,10 @@ def _apply_other_lane_conflict(
 
     if stale_sessions:
         stale_session = stale_sessions[0]
-        _assign_owner(result, stale_session)
+        result.owner_session_id = str(stale_session.get("id") or "")
+        branch = stale_session.get("current_branch")
+        result.owner_branch = branch if isinstance(branch, str) else None
+        result.owner_location = _lane_summary(stale_session)
         result.overlap_kind = _STALE_LANE
         result.disposition = _RECONCILE
         result.conflicting_tasks = [t for s in stale_sessions if (t := _lane_task_id(s))]
@@ -636,7 +643,9 @@ def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflict
     same_task_sessions: list[dict[str, object]] = []
     other_lane_sessions: list[dict[str, object]] = []
     for session in sessions:
-        if not _is_live_lane_session(session):
+        if session.get("workstream_status") in _RETIRED_WORKSTREAMS:
+            continue
+        if not (session.get("external_id") or session.get("current_branch")):
             continue
         lane_id = _lane_task_id(session)
         if lane_id == task_id:
