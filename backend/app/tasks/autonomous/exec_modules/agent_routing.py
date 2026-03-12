@@ -18,7 +18,6 @@ from ._routing_maps import (
 )
 
 logger = get_logger(__name__)
-VALID_SUBTASK_TYPES: set[str] = set(SUBTASK_TYPE_AGENT_MAP.keys())
 
 # Routing defaults and supervisor constants
 DEFAULT_AGENT = "coder"
