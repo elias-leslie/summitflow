@@ -1,9 +1,9 @@
 """Integration tests for memory client.
 
 These tests require Agent Hub to be running at localhost:8003.
-Memory operations can be slow (30-120s) due to Neo4j and LLM calls.
+Memory operations can be slow (30-120s) due to embedding and LLM calls.
 
-Tests create episodes and clean them up afterwards to avoid polluting the graph.
+Tests create episodes and clean them up afterwards to avoid polluting shared memory.
 
 Run with: dt pytest -- -m slow backend/tests/integration/test_memory_client.py
 """
@@ -55,7 +55,7 @@ async def test_health_check(client: MemoryClient) -> None:
     """Test that health check returns healthy status."""
     result = await client.health_check()
     assert result["status"] == "healthy"
-    assert result["neo4j"] == "connected"
+    assert result["database"] == "connected"
 
 
 @pytest.mark.asyncio

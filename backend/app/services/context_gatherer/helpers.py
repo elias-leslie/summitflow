@@ -35,7 +35,7 @@ def is_frontend_task(raw_request: str) -> bool:
 def gather_memory_context(project_id: str, limit: int = 10) -> str:
     """Gather context from memory system.
 
-    Memory system has been moved to Agent Hub with Graphiti knowledge graph.
+    Memory system has been moved to Agent Hub's shared semantic memory service.
     This function returns empty string for backward compatibility.
 
     Args:
@@ -45,5 +45,5 @@ def gather_memory_context(project_id: str, limit: int = 10) -> str:
     Returns:
         Empty string - memory now handled by Agent Hub.
     """
-    # Memory system removed - functionality moved to Agent Hub with Graphiti
+    # Memory system removed - functionality moved to Agent Hub
     return ""

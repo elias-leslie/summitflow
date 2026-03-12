@@ -1,7 +1,7 @@
 """Memory client for Agent Hub memory API integration.
 
 This client provides SummitFlow's self-healing system with access to the
-Agent Hub knowledge graph for storing and retrieving fix patterns.
+Agent Hub memory API for storing and retrieving fix patterns.
 """
 
 from __future__ import annotations
@@ -80,7 +80,7 @@ class MemoryClient:
         """Check if the memory API is healthy.
 
         Returns:
-            Health status dict with 'status' and 'neo4j' keys
+            Health status dict with 'status' and backend connectivity keys
 
         Raises:
             httpx.HTTPError: If the health check fails
