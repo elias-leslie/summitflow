@@ -97,7 +97,7 @@ class EndpointScanner(BaseScanner):
         source_file = str(route_file.relative_to(self.root_path)) if self.root_path else "unknown"
         entries = []
         for method, path in re.findall(_ROUTE_PATTERN, content):
-            if any(x in path for x in _SKIP_PATHS):
+            if path in _SKIP_PATHS:
                 continue
             full_path = build_full_path(router_prefix, path)
             function_name = self._extract_function_name(content, method, path)
