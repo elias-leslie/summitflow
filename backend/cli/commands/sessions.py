@@ -62,7 +62,7 @@ def sessions_callback(
     limit: Annotated[int, typer.Option("--limit")] = 20,
     agent_slug: Annotated[str | None, typer.Option("--agent")] = None,
     parent_session_id: Annotated[str | None, typer.Option("--parent-session")] = None,
-    project_id: Annotated[str | None, typer.Option("--project")] = None,
+    project_id: Annotated[str | None, typer.Option("--project", "-P")] = None,
 ) -> None:
     """List agent sessions when no subcommand is provided."""
     if ctx.invoked_subcommand is not None:
@@ -90,7 +90,7 @@ def list_sessions(
     limit: Annotated[int, typer.Option("--limit")] = 20,
     agent_slug: Annotated[str | None, typer.Option("--agent")] = None,
     parent_session_id: Annotated[str | None, typer.Option("--parent-session")] = None,
-    project_id: Annotated[str | None, typer.Option("--project")] = None,
+    project_id: Annotated[str | None, typer.Option("--project", "-P")] = None,
 ) -> None:
     """List agent sessions.
 
@@ -182,7 +182,7 @@ def _reapable_sessions(sessions: list[dict[str, object]]) -> list[dict[str, obje
 
 @app.command("reap")
 def reap_sessions(
-    project_id: Annotated[str | None, typer.Option("--project")] = None,
+    project_id: Annotated[str | None, typer.Option("--project", "-P")] = None,
     dry_run: Annotated[
         bool,
         typer.Option("--dry-run", help="Preview reapable sessions without closing them"),
@@ -244,7 +244,7 @@ def reap_sessions(
 
 @app.command("ownership")
 def list_ownership(
-    project_id: Annotated[str | None, typer.Option("--project")] = None,
+    project_id: Annotated[str | None, typer.Option("--project", "-P")] = None,
 ) -> None:
     """List live active ownership lanes across projects or for one project."""
     render_ownership_list(STClient(require_project=False), project_id)
@@ -252,7 +252,7 @@ def list_ownership(
 
 @app.command("overlap")
 def list_overlaps(
-    project_id: Annotated[str | None, typer.Option("--project")] = None,
+    project_id: Annotated[str | None, typer.Option("--project", "-P")] = None,
 ) -> None:
     """List current scope overlaps across active ownership lanes."""
     render_overlap_list(STClient(require_project=False), project_id)

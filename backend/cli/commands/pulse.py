@@ -153,7 +153,7 @@ def _print_compact(payloads: list[dict[str, Any]]) -> None:
 def pulse(
     project_id: Annotated[
         str | None,
-        typer.Option("--project", help="Show pulse for one project instead of the global overview"),
+        typer.Option("--project", "-P", help="Show pulse for one project instead of the global overview"),
     ] = None,
     all_projects: Annotated[
         bool,

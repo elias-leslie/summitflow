@@ -1119,6 +1119,10 @@ EOF
             # For line counting, exit code 0 means success regardless of output
             [[ $retval -eq 0 ]] && is_success=1 && count=0
             ;;
+        biome_parse|grep_error_ts)
+            # biome/tsc: trust issue count over exit code (npm warnings cause non-zero exit)
+            [[ "$count" == "0" ]] && is_success=1
+            ;;
         *)
             # Others use count == 0 AND exit code
             [[ $retval -eq 0 && "$count" == "0" ]] && is_success=1
