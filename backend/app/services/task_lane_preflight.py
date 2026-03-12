@@ -51,6 +51,11 @@ _READ_OVERLAP = "read_overlap"
 _UNSCOPED_LANE = "unscoped_lane"
 _UNSCOPED_TARGET = "unscoped_target"
 
+# Ownership / scope confidence literals
+_OWNERSHIP_KIND_STALE = "stale"
+_SCOPE_CONFIDENCE_OBSERVED_READ = "observed_read"
+_UNKNOWN_TASK = "unknown task"
+
 # -- Public result types --
 
 
@@ -283,7 +288,7 @@ def _lane_summary(session: dict[str, object]) -> str:
 
 
 def _is_stale_lane_session(session: dict[str, object]) -> bool:
-    if session.get("ownership_kind") == "stale":
+    if session.get("ownership_kind") == _OWNERSHIP_KIND_STALE:
         return True
     raw = session.get("updated_at") or session.get("created_at")
     if not isinstance(raw, str) or not raw:
@@ -354,7 +359,7 @@ def _load_live_lane_scope(session: dict[str, object], task_id: str) -> _LaneScop
     scope_confidence = str(session.get("scope_confidence") or "unknown")
 
     if scope_paths:
-        if scope_confidence == "observed_read" and not write_paths:
+        if scope_confidence == _SCOPE_CONFIDENCE_OBSERVED_READ and not write_paths:
             read_paths = read_paths | scope_paths
         elif not write_paths:
             write_paths = write_paths | scope_paths
@@ -466,27 +471,71 @@ def _apply_write_overlap_conflict(
             "Do not run parallel coding lanes in adapters/tooling/orchestration areas; finish or retire "
             "the active lane first."
         )
+        return
+
+    is_plumbing_overlap = any(
+        p.startswith(prefix) for p in overlaps for prefix in _SHARED_PLUMBING_PREFIXES
+    )
+    if is_plumbing_overlap:
+        result.overlap_kind = _SHARED_PLUMBING
+        result.shared_plumbing = True
+        result.issues.append(
+            f"Another active coding lane overlaps shared plumbing files in project {project_id}: "
+            f"{overlap_id} ({preview})"
+        )
     else:
-        is_plumbing_overlap = any(
-            p.startswith(prefix) for p in overlaps for prefix in _SHARED_PLUMBING_PREFIXES
+        result.overlap_kind = _EXACT_FILE
+        result.issues.append(
+            f"Another active coding lane overlaps exact files in project {project_id}: "
+            f"{overlap_id} ({preview})"
         )
-        if is_plumbing_overlap:
-            result.overlap_kind = _SHARED_PLUMBING
-            result.shared_plumbing = True
-            result.issues.append(
-                f"Another active coding lane overlaps shared plumbing files in project {project_id}: "
-                f"{overlap_id} ({preview})"
-            )
+    result.suggestions.append(
+        f"Exact-file overlap with {overlap_id}: {preview}. "
+        "Finish or retire the active lane before dispatching another coding task."
+    )
+
+
+def _classify_lane_scopes(
+    lane_sessions: list[dict[str, object]],
+) -> tuple[list[tuple[str, _LaneScope]], list[str]]:
+    """Partition lane sessions into (scoped list, unscoped_ids list)."""
+    scoped: list[tuple[str, _LaneScope]] = []
+    unscoped_ids: list[str] = []
+    for session in lane_sessions:
+        lane_id = _lane_task_id(session)
+        scope = _load_live_lane_scope(session, lane_id) if lane_id else None
+        if scope is None:
+            unscoped_ids.append(lane_id or _UNKNOWN_TASK)
         else:
-            result.overlap_kind = _EXACT_FILE
-            result.issues.append(
-                f"Another active coding lane overlaps exact files in project {project_id}: "
-                f"{overlap_id} ({preview})"
+            scoped.append((lane_id or _UNKNOWN_TASK, scope))
+    return scoped, unscoped_ids
+
+
+def _find_scope_overlap(
+    target_scope: _TaskScope,
+    scoped: list[tuple[str, _LaneScope]],
+) -> tuple[str | None, list[str], str | None]:
+    """Return (overlap_id, overlap_paths, kind) for the highest-priority overlap: write > plumbing > read."""
+    target_shared = sorted(
+        p for p in target_scope.paths if any(p.startswith(pfx) for pfx in _SHARED_PLUMBING_PREFIXES)
+    )
+    read_id: str | None = None
+    read_paths: list[str] = []
+    for lane_id, scope in scoped:
+        write_overlaps = sorted(target_scope.paths & scope.write_paths)
+        if write_overlaps:
+            return lane_id, write_overlaps, "exact"
+        if target_shared:
+            active_shared = sorted(
+                p for p in scope.write_paths if any(p.startswith(pfx) for pfx in _SHARED_PLUMBING_PREFIXES)
             )
-        result.suggestions.append(
-            f"Exact-file overlap with {overlap_id}: {preview}. "
-            "Finish or retire the active lane before dispatching another coding task."
-        )
+            if active_shared:
+                return lane_id, sorted(set(target_shared) | set(active_shared)), "plumbing"
+        if not read_paths:
+            read_overlaps = sorted(target_scope.paths & scope.read_paths)
+            if read_overlaps:
+                read_id, read_paths = lane_id, read_overlaps
+    return (read_id, read_paths, "read") if read_id else (None, [], None)
 
 
 def _apply_scoped_conflict(
@@ -496,54 +545,10 @@ def _apply_scoped_conflict(
     lane_sessions: list[dict[str, object]],
     target_scope: _TaskScope,
 ) -> None:
-    # Classify lane sessions into scoped and unscoped
-    scoped: list[tuple[str, _LaneScope]] = []
-    unscoped_ids: list[str] = []
-    for session in lane_sessions:
-        lane_id = _lane_task_id(session)
-        scope = _load_live_lane_scope(session, lane_id) if lane_id else None
-        if scope is None:
-            unscoped_ids.append(lane_id or "unknown task")
-        else:
-            scoped.append((lane_id or "unknown task", scope))
+    scoped, unscoped_ids = _classify_lane_scopes(lane_sessions)
+    overlap_id, overlap_paths, overlap_kind = _find_scope_overlap(target_scope, scoped)
 
-    # Identify which target paths touch shared plumbing
-    target_shared = sorted(
-        p for p in target_scope.paths if any(p.startswith(pfx) for pfx in _SHARED_PLUMBING_PREFIXES)
-    )
-
-    # Find highest-priority scope overlap: write > plumbing > read
-    overlap_id: str | None = None
-    overlap_paths: list[str] = []
-    overlap_kind: str | None = None
-    read_id: str | None = None
-    read_paths: list[str] = []
-
-    for lane_id, scope in scoped:
-        write_overlaps = sorted(target_scope.paths & scope.write_paths)
-        if write_overlaps:
-            overlap_id, overlap_paths, overlap_kind = lane_id, write_overlaps, "exact"
-            break
-        if target_shared:
-            active_shared = sorted(
-                p for p in scope.write_paths if any(p.startswith(pfx) for pfx in _SHARED_PLUMBING_PREFIXES)
-            )
-            if active_shared:
-                overlap_id, overlap_paths, overlap_kind = (
-                    lane_id,
-                    sorted(set(target_shared) | set(active_shared)),
-                    "plumbing",
-                )
-                break
-        if not read_paths:
-            read_overlaps = sorted(target_scope.paths & scope.read_paths)
-            if read_overlaps:
-                read_id, read_paths = lane_id, read_overlaps
-
-    if overlap_id is None and read_id:
-        overlap_id, overlap_paths, overlap_kind = read_id, read_paths, "read"
-
-    if overlap_id is not None and overlap_kind == "read":
+    if overlap_kind == "read":
         chosen = next(s for s in lane_sessions if _lane_task_id(s) == overlap_id)
         _assign_owner(result, chosen)
         result.conflicting_tasks = [overlap_id]
@@ -565,7 +570,7 @@ def _apply_scoped_conflict(
         )
     elif not scoped and unscoped_ids:
         chosen_id = sorted(unscoped_ids)[0]
-        chosen_sessions = [s for s in lane_sessions if (_lane_task_id(s) or "unknown task") == chosen_id]
+        chosen_sessions = [s for s in lane_sessions if (_lane_task_id(s) or _UNKNOWN_TASK) == chosen_id]
         _apply_unscoped_conflict(
             result, _UNSCOPED_LANE, chosen_id, project_id, chosen_sessions or lane_sessions,
             "Active lane scope unavailable",
