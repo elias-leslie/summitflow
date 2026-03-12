@@ -8,18 +8,14 @@ import typer
 
 from .._output_state import is_compact
 from ..client import APIError, STClient
-from ..config import get_config_optional
 from ..output import handle_api_error, output_json
 
 app = typer.Typer(help="Cross-agent coordination pulse")
 
 
-def _resolve_project_ids(client: STClient, all_projects: bool) -> list[str]:
+def _resolve_project_ids(client: STClient, project_id: str | None) -> list[str]:
     """Return the project ids to query for pulse data."""
-    if not all_projects:
-        project_id = get_config_optional().project_id
-        if not project_id:
-            raise typer.Exit(1)
+    if project_id:
         return [project_id]
 
     payload = client.get(client._global_url("/projects"))
@@ -133,19 +129,24 @@ def _print_compact(payloads: list[dict[str, Any]]) -> None:
 
 @app.command()
 def pulse(
+    project_id: Annotated[
+        str | None,
+        typer.Option("--project", help="Show pulse for one project instead of the global overview"),
+    ] = None,
     all_projects: Annotated[
         bool,
-        typer.Option("--all", help="Show pulse for all managed projects"),
+        typer.Option("--all", help="Show pulse for all managed projects (default; compatibility alias)"),
     ] = False,
 ) -> None:
     """Show the canonical live coordination pulse."""
-    client = STClient(require_project=not all_projects)
+    if project_id and all_projects:
+        raise typer.BadParameter("Use either --project or --all, not both.")
+
+    client = STClient(require_project=False)
     try:
         payloads = [
-            client.get(client._url("/pulse") if not all_projects else client._global_url(f"/projects/{project_id}/pulse"))
-            if not all_projects and index == 0
-            else client.get(client._global_url(f"/projects/{project_id}/pulse"))
-            for index, project_id in enumerate(_resolve_project_ids(client, all_projects))
+            client.get(client._global_url(f"/projects/{resolved_project_id}/pulse"))
+            for resolved_project_id in _resolve_project_ids(client, project_id)
         ]
     except APIError as e:
         handle_api_error(e)

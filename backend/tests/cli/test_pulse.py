@@ -52,11 +52,8 @@ def test_pulse_compact_renders_canonical_summary() -> None:
         "stranded_tasks": [],
     }
 
-    with patch("cli.commands.pulse.STClient", return_value=mock_client), patch(
-        "cli.commands.pulse.get_config_optional",
-        return_value=MagicMock(project_id="agent-hub"),
-    ):
-        result = runner.invoke(app, ["pulse"])
+    with patch("cli.commands.pulse.STClient", return_value=mock_client):
+        result = runner.invoke(app, ["pulse", "--project", "agent-hub"])
 
     assert result.exit_code == 0
     assert "PULSE:agent-hub|tasks=1|owners=1|specialists=0|sessions=2|worktrees=1|dirty=0|cleanup=no|stranded=0" in result.output
@@ -98,11 +95,8 @@ def test_pulse_compact_labels_task_worktree_owner_more_usefully() -> None:
         "stranded_tasks": [],
     }
 
-    with patch("cli.commands.pulse.STClient", return_value=mock_client), patch(
-        "cli.commands.pulse.get_config_optional",
-        return_value=MagicMock(project_id="agent-hub"),
-    ):
-        result = runner.invoke(app, ["pulse"])
+    with patch("cli.commands.pulse.STClient", return_value=mock_client):
+        result = runner.invoke(app, ["pulse", "--project", "agent-hub"])
 
     assert result.exit_code == 0
     assert "OWN task-2 | refactor | sess-own | kind=task_worktree" in result.output
@@ -134,12 +128,68 @@ def test_pulse_compact_surfaces_stranded_running_tasks() -> None:
         ],
     }
 
-    with patch("cli.commands.pulse.STClient", return_value=mock_client), patch(
-        "cli.commands.pulse.get_config_optional",
-        return_value=MagicMock(project_id="agent-hub"),
-    ):
-        result = runner.invoke(app, ["pulse"])
+    with patch("cli.commands.pulse.STClient", return_value=mock_client):
+        result = runner.invoke(app, ["pulse", "--project", "agent-hub"])
 
     assert result.exit_code == 0
     assert "PULSE:agent-hub|tasks=1|owners=0|specialists=0|sessions=0|worktrees=1|dirty=1|cleanup=yes|stranded=1" in result.output
     assert "STRANDED task-3 | running | no_owner_session | Refactor tool handlers" in result.output
+
+
+def test_pulse_defaults_to_cross_project_overview() -> None:
+    mock_client = MagicMock()
+    mock_client.get.side_effect = [
+        [{"id": "summitflow"}, {"id": "agent-hub"}],
+        {
+            "project_id": "summitflow",
+            "summary": {
+                "running_tasks": 0,
+                "active_owners": 0,
+                "active_specialists": 0,
+                "active_sessions": 1,
+                "stranded_tasks": 0,
+            },
+            "cleanup": {
+                "active_worktrees": 0,
+                "dirty_worktrees": 0,
+                "needs_cleanup": False,
+            },
+            "running_tasks": [],
+            "active_owners": [],
+            "active_sessions": [],
+            "stranded_tasks": [],
+        },
+        {
+            "project_id": "agent-hub",
+            "summary": {
+                "running_tasks": 1,
+                "active_owners": 1,
+                "active_specialists": 0,
+                "active_sessions": 2,
+                "stranded_tasks": 0,
+            },
+            "cleanup": {
+                "active_worktrees": 0,
+                "dirty_worktrees": 0,
+                "needs_cleanup": False,
+            },
+            "running_tasks": [],
+            "active_owners": [],
+            "active_sessions": [],
+            "stranded_tasks": [],
+        },
+    ]
+
+    with patch("cli.commands.pulse.STClient", return_value=mock_client):
+        result = runner.invoke(app, ["pulse"])
+
+    assert result.exit_code == 0
+    assert "PULSE:summitflow|tasks=0|owners=0|specialists=0|sessions=1|worktrees=0|dirty=0|cleanup=no|stranded=0" in result.output
+    assert "PULSE:agent-hub|tasks=1|owners=1|specialists=0|sessions=2|worktrees=0|dirty=0|cleanup=no|stranded=0" in result.output
+
+
+def test_pulse_rejects_project_and_all_together() -> None:
+    result = runner.invoke(app, ["pulse", "--project", "agent-hub", "--all"])
+
+    assert result.exit_code != 0
+    assert "Use either --project or --all, not both." in result.output

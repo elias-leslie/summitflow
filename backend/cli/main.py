@@ -166,7 +166,7 @@ CLEANUP (worktree maintenance):
   cleanup worktrees --force                # cleanup all worktrees (with confirmation)
   cleanup worktrees --stale-days N         # configure stale threshold (default: 7)
   cleanup status                           # quick worktree status overview
-  pulse                                    # canonical live coordination summary
+  pulse [--project P]                      # cross-project coordination summary (default); drill down with --project
   cleanup path <path> [<path>...]          # safe repo-local file cleanup
   cleanup path <dir> --recursive           # safe repo-local directory cleanup
   cleanup path <path> --dry-run            # preview cleanup without deleting
