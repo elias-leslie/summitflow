@@ -63,7 +63,7 @@ export const SORT_OPTIONS = [
 // ============================================================================
 
 export const COMPONENT_GROUPS: Record<string, string[]> = {
-  SummitFlow: ['sf.cli', 'sf.cli.memory', 'sf.dt', 'sf.quality', 'sf.worktree', 'sf.api', 'sf.storage', 'sf.workflows', 'sf.explorer', 'sf.frontend', 'sf.scripts'],
+  SummitFlow: ['sf.cli', 'sf.cli.memory', 'sf.dt', 'sf.quality', 'sf.worktree', 'sf.api', 'sf.search', 'sf.storage', 'sf.workflows', 'sf.explorer', 'sf.frontend', 'sf.scripts'],
   'Agent Hub': ['ah.memory', 'ah.memory.tiers', 'ah.memory.continuity', 'ah.memory.citations', 'ah.memory.learning', 'ah.completion', 'ah.adapters', 'ah.sessions', 'ah.sdk', 'ah.orchestration', 'ah.hooks'],
   'Cross-Cutting': ['xc.tool_registry', 'xc.error_handling', 'xc.documentation', 'xc.testing'],
 }

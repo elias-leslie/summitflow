@@ -26,7 +26,7 @@ Then report:
 - Any improvement ideas? st feedback report <component> "idea" --type idea --session {feedback_session_id} --vote-if-match
 - What worked well? st feedback report <component> "what worked" --type praise --session {feedback_session_id} --vote-if-match
 
-Components: sf.cli, sf.dt, sf.quality, sf.worktree, sf.api, ah.memory, ah.sessions, ah.hooks, xc.tool_registry, xc.error_handling
+Components: sf.cli, sf.dt, sf.quality, sf.worktree, sf.api, sf.search, ah.memory, ah.sessions, ah.hooks, xc.tool_registry, xc.error_handling
 
 If this session is read-only or cannot execute `st` commands, do not pretend feedback was filed. Summarize the friction or praise plainly in your final response instead.
 
