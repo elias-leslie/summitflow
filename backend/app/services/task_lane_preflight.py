@@ -367,14 +367,19 @@ def _load_live_lane_scope(session: dict[str, object], task_id: str) -> _LaneScop
 # ---------------------------------------------------------------------------
 
 
-def _apply_same_task_conflict(
-    result: TaskLaneConflictCheck, task_id: str, project_id: str, sessions: list[dict[str, object]]
-) -> None:
-    session = sessions[0]
+def _assign_owner(result: TaskLaneConflictCheck, session: dict[str, object]) -> None:
+    """Populate owner fields on result from the given session."""
     result.owner_session_id = str(session.get("id") or "")
     branch = session.get("current_branch")
     result.owner_branch = branch if isinstance(branch, str) else None
     result.owner_location = _lane_summary(session)
+
+
+def _apply_same_task_conflict(
+    result: TaskLaneConflictCheck, task_id: str, project_id: str, sessions: list[dict[str, object]]
+) -> None:
+    session = sessions[0]
+    _assign_owner(result, session)
     target_status = _task_status(task_id)
     if target_status in _TERMINAL_TASK_STATUSES:
         result.overlap_kind = "stale_same_task"
@@ -410,10 +415,7 @@ def _apply_stale_lane_conflict(
     stale_sessions: list[dict[str, object]],
 ) -> None:
     stale = stale_sessions[0]
-    result.owner_session_id = str(stale.get("id") or "")
-    branch = stale.get("current_branch")
-    result.owner_branch = branch if isinstance(branch, str) else None
-    result.owner_location = _lane_summary(stale)
+    _assign_owner(result, stale)
     result.overlap_kind = "stale_lane"
     result.disposition = "reconcile"
     result.conflicting_tasks = [t for s in stale_sessions if (t := _lane_task_id(s))]
@@ -441,10 +443,7 @@ def _apply_unscoped_conflict(
     """Handle both unscoped-target and unscoped-lane conflicts."""
     chosen = lane_sessions[0]
     chosen_task_id = _lane_task_id(chosen)
-    result.owner_session_id = str(chosen.get("id") or "")
-    branch = chosen.get("current_branch")
-    result.owner_branch = branch if isinstance(branch, str) else None
-    result.owner_location = _lane_summary(chosen)
+    _assign_owner(result, chosen)
     lane_preview = "; ".join(_lane_summary(s) for s in lane_sessions[:2])
     result.conflicting_tasks = [chosen_task_id] if chosen_task_id else []
     result.overlap_kind = overlap_kind
@@ -470,10 +469,7 @@ def _apply_write_overlap_conflict(
 ) -> None:
     """Handle exact-file or shared-plumbing write overlap."""
     winning = next(s for s in lane_sessions if _lane_task_id(s) == overlap_id)
-    result.owner_session_id = str(winning.get("id") or "")
-    branch = winning.get("current_branch")
-    result.owner_branch = branch if isinstance(branch, str) else None
-    result.owner_location = _lane_summary(winning)
+    _assign_owner(result, winning)
     result.conflicting_tasks = [overlap_id]
     result.overlap_paths = overlaps
     result.disposition = "block"
@@ -521,10 +517,7 @@ def _apply_read_overlap_warning(
     overlap_paths: list[str],
 ) -> None:
     chosen = next(s for s in lane_sessions if _lane_task_id(s) == overlap_id)
-    result.owner_session_id = str(chosen.get("id") or "")
-    branch = chosen.get("current_branch")
-    result.owner_branch = branch if isinstance(branch, str) else None
-    result.owner_location = _lane_summary(chosen)
+    _assign_owner(result, chosen)
     result.conflicting_tasks = [overlap_id]
     result.overlap_kind = "read_overlap"
     result.overlap_paths = overlap_paths
@@ -540,6 +533,50 @@ def _apply_read_overlap_warning(
     )
 
 
+def _classify_lane_sessions(
+    lane_sessions: list[dict[str, object]],
+) -> tuple[list[tuple[str, _LaneScope]], list[str]]:
+    """Return (scoped_entries, unscoped_ids) for each live lane session."""
+    scoped: list[tuple[str, _LaneScope]] = []
+    unscoped: list[str] = []
+    for session in lane_sessions:
+        lid = _lane_task_id(session)
+        scope = _load_live_lane_scope(session, lid) if lid else None
+        if scope is None:
+            unscoped.append(lid or "unknown task")
+        else:
+            scoped.append((lid or "unknown task", scope))
+    return scoped, unscoped
+
+
+def _find_scope_overlap(
+    target_scope: _TaskScope,
+    scoped_entries: list[tuple[str, _LaneScope]],
+    target_shared: list[str],
+) -> tuple[str, list[str], str] | None:
+    """Return (overlap_id, paths, kind) for the highest-priority overlap, or None.
+
+    Priority: exact write > shared plumbing > read-only.
+    """
+    read_id: str | None = None
+    read_paths: list[str] = []
+    for lid, scope in scoped_entries:
+        write_overlaps = sorted(target_scope.paths & scope.write_paths)
+        if write_overlaps:
+            return lid, write_overlaps, "exact"
+        if target_shared:
+            active_shared = sorted(
+                p for p in scope.write_paths if any(p.startswith(pfx) for pfx in _SHARED_PLUMBING_PREFIXES)
+            )
+            if active_shared:
+                return lid, sorted(set(target_shared) | set(active_shared)), "plumbing"
+        if not read_paths:
+            read_overlaps = sorted(target_scope.paths & scope.read_paths)
+            if read_overlaps:
+                read_id, read_paths = lid, read_overlaps
+    return (read_id, read_paths, "read") if read_id else None
+
+
 def _apply_scoped_conflict(
     result: TaskLaneConflictCheck,
     task_id: str,
@@ -547,51 +584,17 @@ def _apply_scoped_conflict(
     lane_sessions: list[dict[str, object]],
     target_scope: _TaskScope,
 ) -> None:
-    # Classify sessions into scoped/unscoped (inlined from _classify_lane_sessions)
-    scoped_entries: list[tuple[str, _LaneScope]] = []
-    unscoped_ids: list[str] = []
-    for session in lane_sessions:
-        lid = _lane_task_id(session)
-        scope = _load_live_lane_scope(session, lid) if lid else None
-        if scope is None:
-            unscoped_ids.append(lid or "unknown task")
-        else:
-            scoped_entries.append((lid or "unknown task", scope))
-
-    # Find first overlap among scoped entries (inlined from _find_scope_overlap)
+    scoped_entries, unscoped_ids = _classify_lane_sessions(lane_sessions)
     target_shared = sorted(
         p for p in target_scope.paths if any(p.startswith(pfx) for pfx in _SHARED_PLUMBING_PREFIXES)
     )
-    exact_id: str | None = None
-    exact_paths: list[str] = []
-    plumbing_id: str | None = None
-    plumbing_paths: list[str] = []
-    read_id: str | None = None
-    read_paths: list[str] = []
-    for lid, scope in scoped_entries:
-        write_overlaps = sorted(target_scope.paths & scope.write_paths)
-        if write_overlaps:
-            exact_id, exact_paths = lid, write_overlaps
-            break
-        if target_shared:
-            active_shared = sorted(
-                p for p in scope.write_paths if any(p.startswith(pfx) for pfx in _SHARED_PLUMBING_PREFIXES)
-            )
-            if active_shared:
-                plumbing_id = lid
-                plumbing_paths = sorted(set(target_shared) | set(active_shared))
-                break
-        if not read_paths:
-            read_overlaps = sorted(target_scope.paths & scope.read_paths)
-            if read_overlaps:
-                read_id, read_paths = lid, read_overlaps
-
-    if exact_id:
-        _apply_write_overlap_conflict(result, project_id, lane_sessions, exact_id, exact_paths, False)
-    elif plumbing_id:
-        _apply_write_overlap_conflict(result, project_id, lane_sessions, plumbing_id, plumbing_paths, True)
-    elif read_id:
-        _apply_read_overlap_warning(result, project_id, lane_sessions, read_id, read_paths)
+    overlap = _find_scope_overlap(target_scope, scoped_entries, target_shared)
+    if overlap:
+        oid, paths, kind = overlap
+        if kind == "read":
+            _apply_read_overlap_warning(result, project_id, lane_sessions, oid, paths)
+        else:
+            _apply_write_overlap_conflict(result, project_id, lane_sessions, oid, paths, kind == "plumbing")
     elif not scoped_entries and unscoped_ids:
         chosen_id = sorted(unscoped_ids)[0]
         chosen_sessions = [s for s in lane_sessions if (_lane_task_id(s) or "unknown task") == chosen_id]
