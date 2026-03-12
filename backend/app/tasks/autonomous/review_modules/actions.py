@@ -78,10 +78,10 @@ def create_fix_subtask(task_id: str, review_result: dict[str, object]) -> None:
     """Create fix subtask from reviewer feedback."""
     from ....storage.subtasks import create_subtask
 
-    concerns = review_result.get("concerns", [])
+    concerns: list[str] = list(review_result.get("concerns") or [])
     recommendation = review_result.get("recommendation", "Address reviewer concerns")
     description = f"Fix: {recommendation}\n\nReviewer concerns:\n" + "\n".join(
-        f"- {c}" for c in concerns  # type: ignore[union-attr]
+        f"- {c}" for c in concerns
     )
     create_subtask(
         task_id=task_id, subtask_id="99.1", description=description[:500],
@@ -96,10 +96,10 @@ def handle_plan_defect(task_id: str, review_result: dict[str, object]) -> None:
     from ....storage.subtasks import create_subtask
 
     recommendation = review_result.get("recommendation", "Implementation correct, verification fixed")
-    fix_steps = review_result.get("fix_steps", []) or []
+    fix_steps: list[object] = list(review_result.get("fix_steps") or [])
     steps_list = [
         {"description": fix if isinstance(fix, str) else str(fix)}
-        for fix in fix_steps  # type: ignore[union-attr]
+        for fix in fix_steps
     ] or [{"description": "Verify correct implementation with fixed command"}]
     create_subtask(
         task_id=task_id, subtask_id="98.1",

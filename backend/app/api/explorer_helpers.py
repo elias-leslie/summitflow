@@ -131,6 +131,7 @@ def format_stats_response(stats: dict[str, Any]) -> dict[str, Any]:
         "lastScanned": stats["last_scanned"],
     }
 
+
 def add_stale_metadata_warning(result: dict[str, Any], project_id: str) -> None:
     """Add stale metadata warning to result if applicable (in-place)."""
     stale_count = explorer_storage.count_stale_metadata_entries(project_id)

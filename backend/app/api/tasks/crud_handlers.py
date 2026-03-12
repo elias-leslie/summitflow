@@ -13,7 +13,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from ...logging_config import get_logger
-from ...schemas.tasks import BatchTaskRequest, BatchTaskResponse, BatchTaskResult, TaskResponse
+from ...schemas.tasks import BatchTaskCreate, BatchTaskRequest, BatchTaskResponse, BatchTaskResult, TaskResponse
 from ...services.task_execution_readiness import sync_task_execution_readiness
 from ...services.task_second_opinion import ensure_second_opinion_tracking
 from ...storage import tasks as task_store
@@ -24,15 +24,15 @@ from .response import task_to_response
 logger = get_logger(__name__)
 
 
-def _format_batch_error(err_msg: str, item: object) -> str:
+def _format_batch_error(err_msg: str, item: BatchTaskCreate) -> str:
     """Return a human-friendly error string for a batch create failure."""
     lower = err_msg.lower()
     if "violates foreign key constraint" not in lower:
         return err_msg
     if "capability_id" in lower:
-        return f"Capability with id {item.capability_id} not found"  # type: ignore[attr-defined]
+        return f"Capability with id {item.capability_id} not found"
     if "parent_task_id" in lower:
-        return f"Parent task {item.parent_task_id} not found"  # type: ignore[attr-defined]
+        return f"Parent task {item.parent_task_id} not found"
     return err_msg
 
 

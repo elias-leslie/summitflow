@@ -97,7 +97,8 @@ def sync_ports_to_db(project_id: str, backend_port: int | None, frontend_port: i
         conn.commit()
 
     logger.debug(
-        f"Synced ports to DB for {project_id}: backend={backend_port}, frontend={frontend_port}"
+        "Synced ports to DB for %s: backend=%s, frontend=%s",
+        project_id, backend_port, frontend_port,
     )
 
 

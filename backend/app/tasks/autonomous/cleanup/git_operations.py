@@ -158,7 +158,8 @@ def delete_task_branch(
     )
     if result.returncode != 0:
         logger.warning(
-            f"Failed to delete branch {task_branch}: {result.stderr}",
+            "Failed to delete branch %s: %s",
+            task_branch, result.stderr,
             extra={"task_id": task_id},
         )
         return False

@@ -84,16 +84,16 @@ class BaseScanner(ABC):
         )
         if deleted_count > 0:
             logger.info(
-                f"Cleaned up {deleted_count} stale {self.entry_type} entries "
-                f"for {self.project_id}"
+                "Cleaned up %d stale %s entries for %s",
+                deleted_count, self.entry_type, self.project_id,
             )
         self.post_save_cleanup(current_paths)
 
         duration_ms = int((time.time() - start_time) * 1000)
         logger.info(
-            f"Scan complete: {self.entry_type} for {self.project_id} - "
-            f"found {len(entries)}, saved {saved_count}, "
-            f"deleted {deleted_count} stale in {duration_ms}ms"
+            "Scan complete: %s for %s - found %d, saved %d, deleted %d stale in %dms",
+            self.entry_type, self.project_id, len(entries), saved_count,
+            deleted_count, duration_ms,
         )
         return ScanResult(
             success=True,

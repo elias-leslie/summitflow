@@ -10,6 +10,7 @@ This avoids CORS issues and keeps credentials server-side.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from typing import Any
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -105,16 +106,16 @@ class CodingAgentsListResponse(BaseModel):
 
 def _parse_agents(data: object) -> CodingAgentsListResponse:
     """Parse raw Agent Hub response data into CodingAgentsListResponse."""
-    raw: list[object] = []
+    raw: list[dict[str, Any]] = []
     if isinstance(data, dict):
-        raw = data.get("agents", [])  # type: ignore[assignment]
+        raw = data.get("agents", [])
     return CodingAgentsListResponse(
         agents=[
             CodingAgentResponse(
-                slug=agent["slug"],  # type: ignore[index]
-                name=agent["name"],  # type: ignore[index]
-                description=agent.get("description"),  # type: ignore[union-attr]
-                is_coding_agent=agent.get("is_coding_agent", True),  # type: ignore[union-attr]
+                slug=agent["slug"],
+                name=agent["name"],
+                description=agent.get("description"),
+                is_coding_agent=agent.get("is_coding_agent", True),
             )
             for agent in raw
         ]

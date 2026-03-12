@@ -75,7 +75,7 @@ def calculate_health_for_entry(entry_type: str, metadata: dict[str, Any]) -> str
     if http_status:
         if http_status >= 500:
             return "error"
-        if http_status >= 400 or http_status == 404:
+        if http_status >= 400:
             return "warning"
         if http_status >= 200 and http_status < 300:
             return "healthy"
