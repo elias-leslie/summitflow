@@ -4,7 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
+import logging
 import subprocess
 import sys
 import time
@@ -14,12 +17,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import lib.ensure_backend_venv  # noqa: E402, F401  (venv re-exec + sys.path side-effect)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+QUIET_LOGS = True
 
 from app.services.context_gatherer import collect_precision_code_search_context
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--verbose", action="store_true", help="Keep application logs enabled")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     search_parser = subparsers.add_parser("search", help="Render prompt-ready Precision Code Search context")
@@ -47,9 +52,23 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def configure_logging(verbose: bool) -> None:
+    """Suppress application logs unless explicitly requested."""
+    global QUIET_LOGS
+    QUIET_LOGS = not verbose
+    if verbose:
+        return
+    for name in ("root", "app", "httpx"):
+        logging.getLogger(name).setLevel(logging.WARNING)
+
+
 def run_precision_search(project_id: str, query: str, budget: int) -> tuple[float, dict[str, object]]:
     started = time.perf_counter()
-    result = collect_precision_code_search_context(project_id, [query], budget_tokens=budget)
+    if QUIET_LOGS:
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            result = collect_precision_code_search_context(project_id, [query], budget_tokens=budget)
+    else:
+        result = collect_precision_code_search_context(project_id, [query], budget_tokens=budget)
     duration_ms = (time.perf_counter() - started) * 1000
     payload = {
         "query": query,
@@ -142,6 +161,7 @@ def handle_profile(args: argparse.Namespace) -> int:
 
 def main() -> int:
     args = parse_args()
+    configure_logging(args.verbose)
     if args.command == "search":
         return handle_search(args)
     if args.command == "profile":
