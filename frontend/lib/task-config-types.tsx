@@ -43,7 +43,7 @@ export const taskTypeConfig: Record<TaskType, TaskTypeConfig> = {
   bug: {
     icon: <Bug className="h-4 w-4" />,
     label: 'Bug',
-    className: 'bg-red-500/20 text-red-400 border-red-500/30',
+    className: 'bg-rose-500/20 text-rose-400 border-rose-500/30',
   },
   task: {
     icon: <CheckSquare className="h-4 w-4" />,
@@ -53,7 +53,7 @@ export const taskTypeConfig: Record<TaskType, TaskTypeConfig> = {
   refactor: {
     icon: <RefreshCw className="h-4 w-4" />,
     label: 'Refactor',
-    className: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
+    className: 'bg-phosphor-500/20 text-phosphor-400 border-phosphor-500/30',
   },
   debt: {
     icon: <AlertTriangle className="h-4 w-4" />,
@@ -80,7 +80,7 @@ export const taskTypeConfigSmall: Record<TaskType, TaskTypeConfigSmall> = {
   },
   bug: {
     icon: <Bug className="h-3.5 w-3.5" />,
-    className: 'text-red-400',
+    className: 'text-rose-400',
   },
   task: {
     icon: <CheckSquare className="h-3.5 w-3.5" />,
@@ -88,7 +88,7 @@ export const taskTypeConfigSmall: Record<TaskType, TaskTypeConfigSmall> = {
   },
   refactor: {
     icon: <RefreshCw className="h-3.5 w-3.5" />,
-    className: 'text-cyan-400',
+    className: 'text-phosphor-400',
   },
   debt: {
     icon: <AlertTriangle className="h-3.5 w-3.5" />,
@@ -159,7 +159,7 @@ export const taskStatusCardConfig: Record<TaskStatus, TaskStatusCardConfig> = {
   },
   failed: {
     icon: <X className="h-3.5 w-3.5" />,
-    className: 'text-red-400',
+    className: 'text-rose-400',
     title: 'Task failed',
   },
   cancelled: {
@@ -206,7 +206,7 @@ export const typeConfig: Record<
   refactor: {
     icon: RefreshCw,
     label: 'Refactor',
-    className: 'text-cyan-400',
+    className: 'text-phosphor-400',
   },
   debt: {
     icon: AlertTriangle,

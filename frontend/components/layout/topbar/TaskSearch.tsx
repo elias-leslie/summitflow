@@ -89,7 +89,8 @@ export function TaskSearch() {
         <input
           ref={inputRef}
           type="text"
-          placeholder=""
+          placeholder={isSearchFocused ? 'Search tasks by title or ID...' : ''}
+          aria-label="Search tasks"
           value={searchValue}
           onChange={(e) => setSearchValue(e.target.value)}
           onKeyDown={handleKeyDown}
@@ -119,10 +120,12 @@ export function TaskSearch() {
                 <span
                   className={`text-xs px-1.5 py-0.5 rounded ${
                     task.status === 'completed'
-                      ? 'bg-green-500/20 text-green-400'
+                      ? 'bg-phosphor-500/20 text-phosphor-400'
                       : task.status === 'running'
-                        ? 'bg-blue-500/20 text-blue-400'
-                        : 'bg-slate-500/20 text-slate-400'
+                        ? 'bg-outrun-500/20 text-outrun-400'
+                        : task.status === 'failed'
+                          ? 'bg-rose-500/20 text-rose-400'
+                          : 'bg-slate-500/20 text-slate-400'
                   }`}
                 >
                   {task.status}

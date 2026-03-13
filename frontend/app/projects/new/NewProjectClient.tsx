@@ -165,7 +165,7 @@ export function NewProjectClient() {
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
         <form onSubmit={handleSubmit} className="card space-y-5 p-6">
           {errors.submit && (
-            <div className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-400">
+            <div className="flex items-center gap-2 rounded-lg border border-rose-500/20 bg-rose-500/10 p-3 text-sm text-rose-400">
               <AlertCircle className="h-4 w-4 shrink-0" />
               {errors.submit}
             </div>
@@ -179,9 +179,9 @@ export function NewProjectClient() {
               onChange={(e) => handleNameChange(e.target.value)}
               placeholder="My Awesome Project"
               aria-invalid={Boolean(errors.name)}
-              className={errors.name ? 'border-red-500/50' : ''}
+              className={errors.name ? 'border-rose-500/50' : ''}
             />
-            {errors.name && <p className="text-xs text-red-400">{errors.name}</p>}
+            {errors.name && <p className="text-xs text-rose-400">{errors.name}</p>}
           </div>
 
           <div className="space-y-2">
@@ -192,13 +192,13 @@ export function NewProjectClient() {
               onChange={(e) => handleProjectIdChange(e.target.value)}
               placeholder="my-awesome-project"
               aria-invalid={Boolean(errors.projectId)}
-              className={`mono ${errors.projectId ? 'border-red-500/50' : ''}`}
+              className={`mono ${errors.projectId ? 'border-rose-500/50' : ''}`}
             />
             <p className="text-xs text-slate-500">
               Stable slug used for APIs, tasks, and navigation. Auto-generated from the name until you override it.
             </p>
             {errors.projectId && (
-              <p className="text-xs text-red-400">{errors.projectId}</p>
+              <p className="text-xs text-rose-400">{errors.projectId}</p>
             )}
           </div>
 
@@ -211,13 +211,13 @@ export function NewProjectClient() {
               onChange={(e) => handleBaseUrlChange(e.target.value)}
               placeholder="https://example.com"
               aria-invalid={Boolean(errors.baseUrl)}
-              className={errors.baseUrl ? 'border-red-500/50' : ''}
+              className={errors.baseUrl ? 'border-rose-500/50' : ''}
             />
             <p className="text-xs text-slate-500">
               Root URL used for health checks and operator links.
             </p>
             {errors.baseUrl && (
-              <p className="text-xs text-red-400">{errors.baseUrl}</p>
+              <p className="text-xs text-rose-400">{errors.baseUrl}</p>
             )}
           </div>
 
@@ -229,13 +229,13 @@ export function NewProjectClient() {
               onChange={(e) => handleHealthEndpointChange(e.target.value)}
               placeholder={DEFAULT_HEALTH_ENDPOINT}
               aria-invalid={Boolean(errors.healthEndpoint)}
-              className={`mono ${errors.healthEndpoint ? 'border-red-500/50' : ''}`}
+              className={`mono ${errors.healthEndpoint ? 'border-rose-500/50' : ''}`}
             />
             <p className="text-xs text-slate-500">
               Relative path or full URL for service checks. Leave the default unless the app exposes a different route.
             </p>
             {errors.healthEndpoint && (
-              <p className="text-xs text-red-400">{errors.healthEndpoint}</p>
+              <p className="text-xs text-rose-400">{errors.healthEndpoint}</p>
             )}
           </div>
 
@@ -247,13 +247,13 @@ export function NewProjectClient() {
               onChange={(e) => handleRootPathChange(e.target.value)}
               placeholder="/home/kasadis/my-project"
               aria-invalid={Boolean(errors.rootPath)}
-              className={`mono ${errors.rootPath ? 'border-red-500/50' : ''}`}
+              className={`mono ${errors.rootPath ? 'border-rose-500/50' : ''}`}
             />
             <p className="text-xs text-slate-500">
               Strongly recommended. Enables file browsing, service config discovery, and safer project-aware automation.
             </p>
             {errors.rootPath && (
-              <p className="text-xs text-red-400">{errors.rootPath}</p>
+              <p className="text-xs text-rose-400">{errors.rootPath}</p>
             )}
           </div>
 
@@ -324,7 +324,7 @@ export function NewProjectClient() {
                 Health checks start working as soon as the base URL and endpoint are correct.
               </p>
               <div className="flex items-start gap-2 rounded-lg border border-slate-800 bg-slate-950/50 p-3">
-                <FolderTree className="mt-0.5 h-4 w-4 text-cyan-400" />
+                <FolderTree className="mt-0.5 h-4 w-4 text-phosphor-400" />
                 <div>
                   <p className="text-slate-300">Root path unlocks the rest</p>
                   <p className="mt-1">

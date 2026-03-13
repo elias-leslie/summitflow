@@ -64,8 +64,8 @@ export function GitClient() {
       <section className="flex flex-col md:flex-row md:items-end justify-between gap-4 animate-in fade-in slide-in-from-top-4 duration-500">
         <div>
           <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3 mb-2">
-            <div className="p-2 rounded bg-pink-500/10 border border-pink-500/20">
-              <GitBranch className="w-6 h-6 text-pink-500" />
+            <div className="p-2 rounded bg-outrun-500/10 border border-outrun-500/20">
+              <GitBranch className="w-6 h-6 text-outrun-500" />
             </div>
             Git Operations
           </h1>
@@ -82,7 +82,7 @@ export function GitClient() {
         <button
           type="button"
           onClick={() => refetch()}
-          className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-md border border-slate-700 transition-all shadow-lg hover:shadow-cyan-500/10 hover:border-cyan-500/30"
+          className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-md border border-slate-700 transition-all shadow-lg hover:shadow-phosphor-500/10 hover:border-phosphor-500/30"
         >
           <RefreshCw className={clsx('w-4 h-4', isLoading && 'animate-spin')} />
           <span>Refresh All</span>
@@ -96,10 +96,10 @@ export function GitClient() {
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
           <SummaryCard icon={GitBranch} label="Repos To Check" value={reposNeedingCleanup} tone="text-rose-300" />
           <SummaryCard icon={AlertTriangle} label="Dirty Repos" value={dirtyRepos} tone="text-orange-300" />
-          <SummaryCard icon={Layers} label="Active Worktrees" value={activeWorktrees} tone="text-cyan-300" />
+          <SummaryCard icon={Layers} label="Active Worktrees" value={activeWorktrees} tone="text-phosphor-300" />
           <SummaryCard icon={AlertTriangle} label="Dirty Worktrees" value={dirtyWorktrees} tone="text-orange-300" />
           <SummaryCard icon={Unplug} label="Orphan Branches" value={orphanBranches} tone="text-amber-300" />
-          <SummaryCard icon={Scissors} label="Prunable Branches" value={prunableBranches} tone="text-pink-300" />
+          <SummaryCard icon={Scissors} label="Prunable Branches" value={prunableBranches} tone="text-outrun-300" />
         </section>
       )}
 
@@ -120,7 +120,7 @@ export function GitClient() {
       {isLoading && (
         <div className="h-64 flex items-center justify-center border border-dashed border-slate-800 rounded-xl bg-slate-900/20">
           <div className="flex flex-col items-center gap-3 text-slate-500">
-            <RefreshCw className="w-8 h-8 animate-spin text-cyan-500" />
+            <RefreshCw className="w-8 h-8 animate-spin text-phosphor-500" />
             <p>Scanning workspaces...</p>
           </div>
         </div>
@@ -128,8 +128,8 @@ export function GitClient() {
 
       {/* Error State */}
       {isError && (
-        <div className="p-6 rounded-xl bg-red-500/10 border border-red-500/20 text-red-200 flex items-center gap-3">
-          <XCircle className="w-6 h-6 text-red-500" />
+        <div className="p-6 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-200 flex items-center gap-3">
+          <XCircle className="w-6 h-6 text-rose-500" />
           <div>
             <h3 className="font-semibold text-white">Connection Failed</h3>
             <p className="text-sm opacity-80">Unable to reach the Git service. Please verify the backend is running.</p>

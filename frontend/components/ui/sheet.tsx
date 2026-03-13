@@ -79,6 +79,8 @@ export function SheetContent({
 
   return (
     <motion.div
+      role="dialog"
+      aria-modal="true"
       initial={{ x: isRight ? '100%' : '-100%' }}
       animate={{ x: 0 }}
       exit={{ x: isRight ? '100%' : '-100%' }}

@@ -216,7 +216,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
               </a>
             </div>
             {checkpoint && (
-              <div className="flex items-center gap-1.5 mt-1 text-xs text-cyan-400">
+              <div className="flex items-center gap-1.5 mt-1 text-xs text-phosphor-400">
                 <Database className="w-3 h-3" />
                 <span>Active checkpoint</span>
                 <span className="font-mono">{checkpoint.task_id}</span>

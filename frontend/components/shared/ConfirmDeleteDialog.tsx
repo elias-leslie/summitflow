@@ -151,7 +151,7 @@ export function ConfirmDeleteDialog(props: ConfirmDeleteDialogProps) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start gap-3 mb-4">
-          <AlertCircle className="w-6 h-6 text-red-400 shrink-0 mt-0.5" />
+          <AlertCircle className="w-6 h-6 text-rose-400 shrink-0 mt-0.5" />
           <div>
             <h3 className="text-lg font-semibold text-slate-100 mb-2">
               {title}
@@ -181,7 +181,7 @@ export function ConfirmDeleteDialog(props: ConfirmDeleteDialogProps) {
               </div>
             )}
 
-            <p className="text-sm text-red-400">{warning}</p>
+            <p className="text-sm text-rose-400">{warning}</p>
           </div>
         </div>
 
@@ -198,7 +198,7 @@ export function ConfirmDeleteDialog(props: ConfirmDeleteDialogProps) {
             type="button"
             onClick={onConfirm}
             disabled={isDeleting}
-            className="flex items-center gap-2 px-4 py-2 text-sm bg-red-600 text-white hover:bg-red-500 rounded-md transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 px-4 py-2 text-sm bg-rose-600 text-white hover:bg-rose-500 rounded-md transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isDeleting ? (
               <>
@@ -212,7 +212,7 @@ export function ConfirmDeleteDialog(props: ConfirmDeleteDialogProps) {
         </div>
 
         {isError && (
-          <p className="mt-3 text-sm text-red-400">{errorMessage}</p>
+          <p className="mt-3 text-sm text-rose-400">{errorMessage}</p>
         )}
       </div>
     </div>

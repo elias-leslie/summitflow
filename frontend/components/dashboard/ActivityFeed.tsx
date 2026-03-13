@@ -65,8 +65,8 @@ const eventConfig: Record<
   git: {
     icon: GitCommit,
     color: {
-      text: 'text-cyan-400',
-      bg: 'bg-cyan-500/10',
+      text: 'text-phosphor-400',
+      bg: 'bg-phosphor-500/10',
     },
     label: 'Git',
   },
@@ -78,7 +78,7 @@ function getStatusBadgeClass(status: string): string {
     return 'bg-green-500/20 text-green-400'
   }
   if (status === 'failed') {
-    return 'bg-red-500/20 text-red-400'
+    return 'bg-rose-500/20 text-rose-400'
   }
   if (status === 'blocked') {
     return 'bg-amber-500/20 text-amber-300'

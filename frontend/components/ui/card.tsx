@@ -13,9 +13,9 @@ export function Card({ children, className, onClick }: CardProps) {
   return (
     <div
       className={clsx(
-        'rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm',
+        'rounded-lg border border-slate-800 bg-slate-900 shadow-sm',
         onClick &&
-          'cursor-pointer hover:border-slate-300 dark:hover:border-slate-700 transition-colors',
+          'cursor-pointer hover:border-slate-700 transition-colors',
         className,
       )}
       onClick={onClick}
@@ -43,7 +43,7 @@ export function CardTitle({ children, className }: CardTitleProps) {
   return (
     <h3
       className={clsx(
-        'text-lg font-semibold text-slate-900 dark:text-slate-100',
+        'text-lg font-semibold text-slate-100',
         className,
       )}
     >

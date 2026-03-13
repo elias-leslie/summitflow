@@ -30,7 +30,7 @@ const variants: Record<BadgeVariant, string> = {
   slate: 'bg-slate-800 text-slate-400 border border-slate-700',
   outline: 'bg-transparent text-slate-400 border border-slate-600',
   secondary:
-    'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700',
+    'bg-slate-800 text-slate-400 border border-slate-700',
 }
 
 export function Badge({
@@ -44,10 +44,13 @@ export function Badge({
       className={clsx(
         'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium mono',
         variants[variant],
-        onClick && 'cursor-pointer',
+        onClick && 'cursor-pointer hover:opacity-80 transition-opacity',
         className,
       )}
       onClick={onClick}
+      onKeyDown={onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
     >
       {children}
     </span>

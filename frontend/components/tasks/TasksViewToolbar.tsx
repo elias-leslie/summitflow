@@ -26,7 +26,7 @@ export function TasksViewToolbar({
           className={cn(
             'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors',
             viewMode === 'board'
-              ? 'bg-cyan-500/20 text-cyan-400'
+              ? 'bg-phosphor-500/20 text-phosphor-400'
               : 'text-slate-400 hover:text-slate-300',
           )}
         >
@@ -39,7 +39,7 @@ export function TasksViewToolbar({
           className={cn(
             'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors',
             viewMode === 'table'
-              ? 'bg-cyan-500/20 text-cyan-400'
+              ? 'bg-phosphor-500/20 text-phosphor-400'
               : 'text-slate-400 hover:text-slate-300',
           )}
         >

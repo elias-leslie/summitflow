@@ -337,6 +337,11 @@ body::before {
   @apply transition-all duration-200;
 }
 
+/* Content container for pages */
+.content-container {
+  @apply max-w-7xl mx-auto px-6;
+}
+
 /* Monospace text */
 .mono {
   font-family: var(--font-mono), monospace;

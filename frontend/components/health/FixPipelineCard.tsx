@@ -81,11 +81,11 @@ export function FixPipelineCard({
           <div className="w-24 text-xs text-slate-500">Claude Fixed</div>
           <div className="flex-1 bg-slate-800 rounded-full h-2">
             <div
-              className="bg-cyan-500 rounded-full h-2"
+              className="bg-phosphor-500 rounded-full h-2"
               style={{ width: `${percentage(sonnetFixed)}%` }}
             />
           </div>
-          <div className="text-xs text-cyan-400 w-14 text-right tabular-nums">
+          <div className="text-xs text-phosphor-400 w-14 text-right tabular-nums">
             {sonnetFixed} ({percentage(sonnetFixed)}%)
           </div>
         </div>

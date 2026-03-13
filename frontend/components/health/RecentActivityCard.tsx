@@ -20,7 +20,7 @@ const typeIcons: Record<string, string> = {
 
 const typeColors: Record<string, string> = {
   task: 'text-phosphor-400',
-  session: 'text-cyan-400',
+  session: 'text-phosphor-400',
   backup: 'text-amber-400',
   git: 'text-violet-400',
 }

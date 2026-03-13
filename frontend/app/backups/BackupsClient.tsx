@@ -220,7 +220,7 @@ function CreateBackupModal({
         </div>
 
         {error && (
-          <p className="mt-3 text-sm text-red-400">{error}</p>
+          <p className="mt-3 text-sm text-rose-400">{error}</p>
         )}
       </div>
     </div>
@@ -650,8 +650,8 @@ export function BackupsClient() {
 
         <div className="p-4 bg-slate-800/50 rounded-lg border border-slate-700">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-red-500/20 rounded-lg">
-              <XCircle className="w-5 h-5 text-red-400" />
+            <div className="p-2 bg-rose-500/20 rounded-lg">
+              <XCircle className="w-5 h-5 text-rose-400" />
             </div>
             <div>
               <p className="text-2xl font-semibold text-slate-100">
@@ -720,9 +720,9 @@ export function BackupsClient() {
             <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
           </div>
         ) : backupsError ? (
-          <div className="p-6 bg-red-500/10 border border-red-500/30 rounded-lg text-center">
-            <AlertCircle className="w-8 h-8 text-red-400 mx-auto mb-3" />
-            <p className="text-red-400">Failed to load backups</p>
+          <div className="p-6 bg-rose-500/10 border border-rose-500/30 rounded-lg text-center">
+            <AlertCircle className="w-8 h-8 text-rose-400 mx-auto mb-3" />
+            <p className="text-rose-400">Failed to load backups</p>
             <button
               type="button"
               onClick={() => refetchBackups()}

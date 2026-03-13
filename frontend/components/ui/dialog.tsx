@@ -75,6 +75,8 @@ export function DialogContent({
 }: DialogContentProps) {
   return (
     <motion.div
+      role="dialog"
+      aria-modal="true"
       initial={{ opacity: 0, scale: 0.95, x: '-50%', y: 'calc(-50% + 10px)' }}
       animate={{ opacity: 1, scale: 1, x: '-50%', y: '-50%' }}
       exit={{ opacity: 0, scale: 0.95, x: '-50%', y: 'calc(-50% + 10px)' }}

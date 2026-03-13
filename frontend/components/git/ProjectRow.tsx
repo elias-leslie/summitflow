@@ -39,7 +39,7 @@ function WorkspaceBadge({
   title: string
 }) {
   const tones = {
-    cyan: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/20',
+    cyan: 'bg-phosphor-500/10 text-phosphor-300 border-phosphor-500/20',
     amber: 'bg-amber-500/10 text-amber-300 border-amber-500/20',
     rose: 'bg-rose-500/10 text-rose-300 border-rose-500/20',
   }
@@ -118,7 +118,7 @@ export function ProjectRow({ repo, isConfigRepo = false }: ProjectRowProps) {
 
         <span className="font-semibold text-white tracking-tight text-[15px]">{repo.name}</span>
 
-        <span className="text-xs font-mono text-cyan-400 px-2 py-0.5 rounded bg-cyan-500/8 border border-cyan-500/15 shrink-0">
+        <span className="text-xs font-mono text-phosphor-400 px-2 py-0.5 rounded bg-phosphor-500/8 border border-phosphor-500/15 shrink-0">
           {repo.branch}
         </span>
 
@@ -172,7 +172,7 @@ export function ProjectRow({ repo, isConfigRepo = false }: ProjectRowProps) {
             {repo.uncommitted} change{repo.uncommitted !== 1 ? 's' : ''}
           </span>
           {repo.ahead > 0 && (
-            <span className="text-cyan-400 flex items-center gap-0.5">
+            <span className="text-phosphor-400 flex items-center gap-0.5">
               <ArrowUp className="w-3 h-3" />{repo.ahead}
             </span>
           )}
