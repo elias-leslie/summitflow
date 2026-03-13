@@ -79,6 +79,10 @@ def search(
         bool,
         typer.Option("--json", "-j", help="Emit full JSON payload"),
     ] = False,
+    file: Annotated[
+        str | None,
+        typer.Option("--file", "-f", help="List all symbols in a specific file"),
+    ] = None,
     hint: Annotated[
         bool,
         typer.Option("--hint/--no-hint", help="Show refinement hints when results are poor"),
@@ -105,6 +109,23 @@ def search(
         raise typer.Exit(1)
 
     client = STClient()
+
+    if file:
+        params = urlencode({"file_path": file, "limit": limit})
+        try:
+            result = client.get(client._url(f"/explorer/symbols/by-file?{params}"))
+        except APIError as e:
+            handle_api_error(e)
+            return
+        if raw_json:
+            output_json(result)
+            return
+        if is_compact():
+            _print_file_symbols_compact(file, result)
+        else:
+            output_json(result)
+        return
+
     try:
         if text:
             params = urlencode({"q": q, "limit": limit})
@@ -113,7 +134,7 @@ def search(
             params = urlencode({"q": q, "limit": limit})
             result = client.get(client._url(f"/explorer/symbols/search?{params}"))
         else:
-            params = urlencode({"q": q, "budget": budget})
+            params = urlencode({"q": q, "budget": budget, "limit": limit})
             result = client.get(client._url(f"/explorer/precision-search?{params}"))
     except APIError as e:
         handle_api_error(e)
@@ -199,3 +220,27 @@ def _print_symbols_compact(query: str, result: dict) -> None:
             f"- `{item.get('qualified_name', item.get('name', 'unknown'))}` "
             f"({item.get('kind', 'unknown')}) {item.get('file_path', 'unknown')}:{item.get('start_line', '?')}"
         )
+
+
+def _print_file_symbols_compact(file_path: str, result: dict) -> None:
+    """Print TOON-style compact output for file symbol listing."""
+    items = result.get("items", [])
+    count = result.get("count", len(items) if isinstance(items, list) else 0)
+
+    if not items:
+        print(f"SEARCH:--file {file_path}|mode=empty|symbols=0|tokens=0")
+        return
+
+    print(f"SEARCH:--file {file_path}|mode=file-symbols|symbols={count}")
+    print()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        kind = item.get("kind", "unknown")
+        name = item.get("qualified_name", item.get("name", "unknown"))
+        line = item.get("start_line", "?")
+        sig = item.get("signature", "")
+        summary = item.get("summary", "")
+        detail = sig or summary
+        suffix = f" - {detail}" if detail else ""
+        print(f"- `{name}` ({kind}) :{line}{suffix}")

@@ -190,3 +190,79 @@ def test_search_text_mode_calls_text_endpoint_and_renders_matches() -> None:
     mock_client.return_value.get.assert_called_once_with(
         "http://testserver/explorer/text/search?q=special+fallback+token&limit=20"
     )
+
+
+def test_search_file_mode_calls_file_symbols_endpoint() -> None:
+    payload = {
+        "file_path": "backend/app/api/explorer.py",
+        "count": 2,
+        "items": [
+            {
+                "qualified_name": "list_entries",
+                "name": "list_entries",
+                "kind": "function",
+                "start_line": 37,
+                "signature": "async def list_entries(project_id: str, ...)",
+                "summary": "List explorer entries with filtering.",
+            },
+            {
+                "qualified_name": "precision_search",
+                "name": "precision_search",
+                "kind": "function",
+                "start_line": 97,
+                "signature": "async def precision_search(project_id: str, ...)",
+                "summary": "Full Precision Code Search.",
+            },
+        ],
+    }
+
+    with (
+        patch("cli.commands.search.STClient", return_value=_mock_client(payload)) as mock_client,
+        patch("cli.commands.search.is_compact", return_value=True),
+    ):
+        result = runner.invoke(app, ["dummy", "--file", "backend/app/api/explorer.py"])
+
+    assert result.exit_code == 0
+    assert "SEARCH:--file backend/app/api/explorer.py|mode=file-symbols|symbols=2" in result.output
+    assert "`list_entries`" in result.output
+    assert "`precision_search`" in result.output
+    mock_client.return_value.get.assert_called_once()
+    call_url = mock_client.return_value.get.call_args[0][0]
+    assert "/explorer/symbols/by-file?" in call_url
+    assert "file_path=backend" in call_url
+
+
+def test_search_file_mode_empty_result() -> None:
+    payload = {"file_path": "nonexistent.py", "count": 0, "items": []}
+
+    with (
+        patch("cli.commands.search.STClient", return_value=_mock_client(payload)),
+        patch("cli.commands.search.is_compact", return_value=True),
+    ):
+        result = runner.invoke(app, ["dummy", "--file", "nonexistent.py"])
+
+    assert result.exit_code == 0
+    assert "mode=empty" in result.output
+
+
+def test_search_precision_passes_limit() -> None:
+    payload = {
+        "prompt_context": "Precision Code Search: symbol-first\n\n## Relevant Symbols",
+        "metadata": {
+            "symbol_count": 3,
+            "used_symbol_first": True,
+            "estimated_tokens_saved": 800,
+            "final_tokens": 400,
+        },
+    }
+
+    with (
+        patch("cli.commands.search.STClient", return_value=_mock_client(payload)) as mock_client,
+        patch("cli.commands.search.is_compact", return_value=True),
+    ):
+        result = runner.invoke(app, ["my_function", "--limit", "10"])
+
+    assert result.exit_code == 0
+    call_url = mock_client.return_value.get.call_args[0][0]
+    assert "limit=10" in call_url
+    assert "/explorer/precision-search?" in call_url

@@ -35,6 +35,41 @@ _STOP_WORDS = {
     "ergonomics",
     "context",
     "task-system",
+    "how",
+    "does",
+    "what",
+    "where",
+    "when",
+    "why",
+    "which",
+    "find",
+    "show",
+    "list",
+    "get",
+    "all",
+    "can",
+    "not",
+    "have",
+    "been",
+    "should",
+    "about",
+    "there",
+    "after",
+    "before",
+    "between",
+    "through",
+    "during",
+    "each",
+    "every",
+    "some",
+    "other",
+    "logic",
+    "algorithm",
+    "implementation",
+    "handling",
+    "processing",
+    "returns",
+    "results",
 }
 _WORKFLOW_META_TERMS = {
     "workflow",
@@ -168,6 +203,24 @@ def is_import_query(queries: list[str]) -> bool:
     return bool(
         re.match(r"^(?:from\s+\S+\s+)?import\s+\S", combined)
     )
+
+
+def is_natural_language_query(queries: list[str]) -> bool:
+    """Detect queries that are plain English with no code identifiers.
+
+    Queries like 'scoring logic', 'search ranking algorithm', 'CREATE TABLE foo'
+    should route to text search since they won't match symbol names.
+    """
+    combined = " ".join(queries).strip()
+    # SQL DDL patterns should go to text search
+    if re.match(r"(?i)^(CREATE|ALTER|DROP|INSERT|UPDATE|DELETE|SELECT)\s", combined):
+        return True
+    # If query contains code markers (underscores, dots, camelCase, backticks), it's code
+    if re.search(r"[_`]|[a-z][A-Z]|\.\w", combined):
+        return False
+    # All-lowercase multi-word queries with no code signals → natural language
+    words = combined.split()
+    return len(words) >= 2 and combined == combined.lower() and not has_explicit_code_signal(queries)
 
 
 def extract_query_terms(queries: list[str]) -> list[str]:

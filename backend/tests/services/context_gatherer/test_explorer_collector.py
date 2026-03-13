@@ -198,80 +198,82 @@ def test_collect_precision_code_search_context_ranks_multi_term_matches_by_cover
     def _search_side_effect(project_id: str, query: str, limit: int = 5) -> list[dict[str, object]]:
         assert project_id == "project-1"
         assert limit >= 5
-        if query == "quality health":
+        quality_symbols = [
+            {
+                "symbol_id": "backend/app/tasks/autonomous/exec_modules/quality_gates.py::auto_fix_quality#function",
+                "qualified_name": "auto_fix_quality",
+                "name": "auto_fix_quality",
+                "kind": "function",
+                "file_path": "backend/app/tasks/autonomous/exec_modules/quality_gates.py",
+                "start_line": 112,
+                "end_line": 141,
+                "signature": "def auto_fix_quality(project_path: str, project_id: str) -> bool",
+                "summary": "Run dt --fix to attempt auto-fixing quality issues.",
+            },
+            {
+                "symbol_id": "frontend/components/health/NeedsAttentionCard.test.tsx::createMockQualityCheck#function",
+                "qualified_name": "createMockQualityCheck",
+                "name": "createMockQualityCheck",
+                "kind": "function",
+                "file_path": "frontend/components/health/NeedsAttentionCard.test.tsx",
+                "start_line": 8,
+                "end_line": 20,
+                "signature": "function createMockQualityCheck(overrides: Partial<CheckResult> = {}): CheckResult",
+                "summary": "Build a mock quality check result for frontend tests.",
+            },
+            {
+                "symbol_id": "backend/app/tasks/autonomous/exec_modules/ah_events.py::emit_quality_gate_result#function",
+                "qualified_name": "emit_quality_gate_result",
+                "name": "emit_quality_gate_result",
+                "kind": "function",
+                "file_path": "backend/app/tasks/autonomous/exec_modules/ah_events.py",
+                "start_line": 108,
+                "end_line": 125,
+                "signature": "def emit_quality_gate_result(task_id: str, passed: bool, detail: str = '') -> None",
+                "summary": "Emit a quality gate pass or fail event.",
+            },
+            {
+                "symbol_id": "frontend/lib/api/projects.ts::fetchQualityGateHealth#function",
+                "qualified_name": "fetchQualityGateHealth",
+                "name": "fetchQualityGateHealth",
+                "kind": "function",
+                "file_path": "frontend/lib/api/projects.ts",
+                "start_line": 70,
+                "end_line": 74,
+                "signature": "export async function fetchQualityGateHealth(id: string): Promise<QualityGateHealth>",
+                "summary": "Fetch quality gate health for a project.",
+            },
+            {
+                "symbol_id": "backend/app/storage/agent_configs_quality.py::get_quality_gate_fix_enabled#function",
+                "qualified_name": "get_quality_gate_fix_enabled",
+                "name": "get_quality_gate_fix_enabled",
+                "kind": "function",
+                "file_path": "backend/app/storage/agent_configs_quality.py",
+                "start_line": 40,
+                "end_line": 50,
+                "signature": "def get_quality_gate_fix_enabled(project_id: str) -> bool",
+                "summary": "Check if auto-fix is enabled for quality gates.",
+            },
+        ]
+        health_symbols = [
+            {
+                "symbol_id": "backend/app/api/quality_gate.py::get_health_summary#function",
+                "qualified_name": "get_health_summary",
+                "name": "get_health_summary",
+                "kind": "function",
+                "file_path": "backend/app/api/quality_gate.py",
+                "start_line": 24,
+                "end_line": 35,
+                "signature": "async def get_health_summary(project_id: str) -> HealthSummaryResponse",
+                "summary": "Get quality gate health summary for a project.",
+            }
+        ]
+        if query in ("quality health api", "api"):
             return []
         if query == "quality":
-            return [
-                {
-                    "symbol_id": "backend/app/tasks/autonomous/exec_modules/quality_gates.py::auto_fix_quality#function",
-                    "qualified_name": "auto_fix_quality",
-                    "name": "auto_fix_quality",
-                    "kind": "function",
-                    "file_path": "backend/app/tasks/autonomous/exec_modules/quality_gates.py",
-                    "start_line": 112,
-                    "end_line": 141,
-                    "signature": "def auto_fix_quality(project_path: str, project_id: str) -> bool",
-                    "summary": "Run dt --fix to attempt auto-fixing quality issues.",
-                },
-                {
-                    "symbol_id": "frontend/components/health/NeedsAttentionCard.test.tsx::createMockQualityCheck#function",
-                    "qualified_name": "createMockQualityCheck",
-                    "name": "createMockQualityCheck",
-                    "kind": "function",
-                    "file_path": "frontend/components/health/NeedsAttentionCard.test.tsx",
-                    "start_line": 8,
-                    "end_line": 20,
-                    "signature": "function createMockQualityCheck(overrides: Partial<CheckResult> = {}): CheckResult",
-                    "summary": "Build a mock quality check result for frontend tests.",
-                },
-                {
-                    "symbol_id": "backend/app/tasks/autonomous/exec_modules/ah_events.py::emit_quality_gate_result#function",
-                    "qualified_name": "emit_quality_gate_result",
-                    "name": "emit_quality_gate_result",
-                    "kind": "function",
-                    "file_path": "backend/app/tasks/autonomous/exec_modules/ah_events.py",
-                    "start_line": 108,
-                    "end_line": 125,
-                    "signature": "def emit_quality_gate_result(task_id: str, passed: bool, detail: str = '') -> None",
-                    "summary": "Emit a quality gate pass or fail event.",
-                },
-                {
-                    "symbol_id": "frontend/lib/api/projects.ts::fetchQualityGateHealth#function",
-                    "qualified_name": "fetchQualityGateHealth",
-                    "name": "fetchQualityGateHealth",
-                    "kind": "function",
-                    "file_path": "frontend/lib/api/projects.ts",
-                    "start_line": 70,
-                    "end_line": 74,
-                    "signature": "export async function fetchQualityGateHealth(id: string): Promise<QualityGateHealth>",
-                    "summary": "Fetch quality gate health for a project.",
-                },
-                {
-                    "symbol_id": "backend/app/storage/agent_configs_quality.py::get_quality_gate_fix_enabled#function",
-                    "qualified_name": "get_quality_gate_fix_enabled",
-                    "name": "get_quality_gate_fix_enabled",
-                    "kind": "function",
-                    "file_path": "backend/app/storage/agent_configs_quality.py",
-                    "start_line": 40,
-                    "end_line": 50,
-                    "signature": "def get_quality_gate_fix_enabled(project_id: str) -> bool",
-                    "summary": "Check if auto-fix is enabled for quality gates.",
-                },
-            ]
+            return quality_symbols
         if query == "health":
-            return [
-                {
-                    "symbol_id": "backend/app/api/quality_gate.py::get_health_summary#function",
-                    "qualified_name": "get_health_summary",
-                    "name": "get_health_summary",
-                    "kind": "function",
-                    "file_path": "backend/app/api/quality_gate.py",
-                    "start_line": 24,
-                    "end_line": 35,
-                    "signature": "async def get_health_summary(project_id: str) -> HealthSummaryResponse",
-                    "summary": "Get quality gate health summary for a project.",
-                }
-            ]
+            return health_symbols
         raise AssertionError(f"Unexpected query term: {query}")
 
     with (
@@ -317,7 +319,7 @@ def test_collect_precision_code_search_context_ranks_multi_term_matches_by_cover
             else None
         )
 
-        result = collect_precision_code_search_context("project-1", ["quality health"])
+        result = collect_precision_code_search_context("project-1", ["quality health api"])
 
     assert result.metadata["used_symbol_first"]
     assert result.metadata["symbol_count"] == 5
@@ -401,3 +403,77 @@ def test_collect_precision_code_search_context_tracks_fresh_index_telemetry() ->
     assert result.metadata["file_total"] == 12
     assert result.metadata["file_last_scanned"] == "3026-03-10T17:00:00+00:00"
     assert result.metadata["symbol_last_updated"] == "3026-03-10T17:00:00+00:00"
+
+
+def test_collect_precision_code_search_context_respects_symbol_limit() -> None:
+    """symbol_limit parameter should control how many symbols are returned."""
+
+    def _search_side_effect(project_id: str, query: str, limit: int = 50) -> list[dict[str, object]]:
+        return [
+            {
+                "symbol_id": f"sym_{i}",
+                "qualified_name": f"func_{i}",
+                "name": f"func_{i}",
+                "kind": "function",
+                "file_path": f"backend/mod{i}.py",
+                "start_line": i * 10,
+                "end_line": i * 10 + 5,
+                "signature": f"def func_{i}()",
+                "summary": f"Function {i}",
+            }
+            for i in range(10)
+        ]
+
+    with (
+        patch(
+            "app.services.context_gatherer.precision_code_search.search_symbols",
+            side_effect=_search_side_effect,
+        ),
+        patch(
+            "app.services.context_gatherer.precision_code_search.list_related_entries_for_file",
+            return_value=[],
+        ),
+        patch(
+            "app.services.context_gatherer.precision_code_search.get_symbol",
+            return_value=None,
+        ),
+        patch(
+            "app.services.context_gatherer.precision_code_search._estimate_naive_file_tokens_for_symbols",
+            return_value=5000,
+        ),
+    ):
+        result_default = collect_precision_code_search_context("project-1", ["func"])
+        result_limited = collect_precision_code_search_context("project-1", ["func"], symbol_limit=3)
+
+    assert result_default.metadata["symbol_count"] == 5  # default _SEARCH_LIMIT
+    assert result_limited.metadata["symbol_count"] == 3
+
+
+def test_collect_precision_code_search_context_routes_natural_language_to_text() -> None:
+    """Natural language queries like 'scoring logic' should auto-route to text search."""
+    with (
+        patch(
+            "app.services.context_gatherer.precision_code_search.search_symbols",
+        ) as mock_symbols,
+        patch(
+            "app.services.context_gatherer.precision_code_search.search_text",
+            return_value={
+                "items": [
+                    {
+                        "path": "backend/app/storage/explorer_symbols.py",
+                        "line": 237,
+                        "content": "CASE WHEN LOWER(name) = %s THEN 100",
+                        "language": "python",
+                    }
+                ],
+                "count": 1,
+                "files_searched": 5,
+                "truncated": False,
+            },
+        ),
+    ):
+        result = collect_precision_code_search_context("project-1", ["scoring logic"])
+
+    mock_symbols.assert_not_called()
+    assert result.metadata["used_fallback"] is True
+    assert result.metadata["fallback_mode"] == "text"

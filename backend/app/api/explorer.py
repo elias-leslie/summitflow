@@ -98,6 +98,7 @@ async def precision_search(
     project_id: str,
     q: str = Query(..., min_length=1, description="Search query (symbol name, function, class, endpoint)"),
     budget: int = Query(1200, ge=100, le=10000, description="Token budget for prompt context"),
+    limit: int = Query(5, ge=1, le=20, description="Maximum symbol results"),
 ) -> dict[str, Any]:
     """Full Precision Code Search: symbol-first retrieval with fallback and token budgeting."""
     validate_project_exists(project_id)
@@ -105,7 +106,7 @@ async def precision_search(
         collect_precision_code_search_context,
     )
 
-    result = collect_precision_code_search_context(project_id, [q], budget_tokens=budget)
+    result = collect_precision_code_search_context(project_id, [q], budget_tokens=budget, symbol_limit=limit)
     return {
         "query": q,
         "prompt_context": result.prompt_context,
@@ -149,6 +150,22 @@ async def search_symbols(
         "query": q,
         "count": len(rows),
         "items": rows,
+    }
+
+
+@router.get("/{project_id}/explorer/symbols/by-file")
+async def list_file_symbols(
+    project_id: str,
+    file_path: str = Query(..., min_length=1, description="Relative file path within the project"),
+    limit: int = Query(100, ge=1, le=500, description="Maximum symbols to return"),
+) -> dict[str, Any]:
+    """List all symbols in a specific file, ordered by source position."""
+    validate_project_exists(project_id)
+    rows = explorer_storage.list_symbols_for_file(project_id, file_path)
+    return {
+        "file_path": file_path,
+        "count": len(rows[:limit]),
+        "items": rows[:limit],
     }
 
 

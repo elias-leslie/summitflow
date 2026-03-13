@@ -7,6 +7,7 @@ from app.services.context_gatherer._precision_query import (
     extract_query_terms,
     has_path_segments,
     is_import_query,
+    is_natural_language_query,
     is_short_or_generic,
     split_path_and_symbol_terms,
 )
@@ -192,3 +193,33 @@ class TestExtractQueryTermsWithVariants:
     def test_snake_case_generates_camel_variant(self) -> None:
         terms = extract_query_terms(["file_scanner"])
         assert any("FileScanner" in t for t in terms)
+
+
+class TestIsNaturalLanguageQuery:
+    """Detect plain English queries that should route to text search."""
+
+    def test_detects_sql_ddl(self) -> None:
+        assert is_natural_language_query(["CREATE TABLE explorer_symbols"]) is True
+        assert is_natural_language_query(["SELECT id FROM tasks"]) is True
+        assert is_natural_language_query(["ALTER TABLE explorer_entries"]) is True
+
+    def test_detects_natural_language(self) -> None:
+        assert is_natural_language_query(["scoring logic"]) is True
+        assert is_natural_language_query(["search ranking algorithm"]) is True
+        assert is_natural_language_query(["endpoint router mounting"]) is False  # "endpoint" is a code signal
+
+    def test_rejects_code_identifiers(self) -> None:
+        assert is_natural_language_query(["_search_symbol_matches"]) is False
+        assert is_natural_language_query(["TaskOperationsMixin"]) is False
+        assert is_natural_language_query(["search_symbols"]) is False
+
+    def test_rejects_backtick_queries(self) -> None:
+        assert is_natural_language_query(["`precision_search`"]) is False
+
+    def test_rejects_single_word(self) -> None:
+        # Single words aren't clearly natural language
+        assert is_natural_language_query(["performance"]) is False
+
+    def test_rejects_code_signal_queries(self) -> None:
+        assert is_natural_language_query(["api endpoint routing"]) is False
+        assert is_natural_language_query(["python class hierarchy"]) is False

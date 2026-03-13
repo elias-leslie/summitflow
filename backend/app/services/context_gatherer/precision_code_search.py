@@ -20,6 +20,7 @@ from ..explorer.text_search import search_text
 from ._precision_query import (
     extract_query_terms,
     is_import_query,
+    is_natural_language_query,
     looks_like_workflow_meta_query,
     normalize_queries,
     split_path_and_symbol_terms,
@@ -220,7 +221,7 @@ def _has_primary_match(row: dict[str, object], normalized_terms: list[str]) -> b
     ) > 0
 
 
-def _search_symbol_matches(project_id: str, queries: list[str]) -> list[dict[str, object]]:
+def _search_symbol_matches(project_id: str, queries: list[str], *, symbol_limit: int = _SEARCH_LIMIT) -> list[dict[str, object]]:
     candidates: dict[str, dict[str, object]] = {}
     query_terms = extract_query_terms(queries)
 
@@ -245,7 +246,7 @@ def _search_symbol_matches(project_id: str, queries: list[str]) -> list[dict[str
         key=lambda row: _symbol_match_rank(row, normalized_queries, normalized_terms),
         reverse=True,
     )
-    return ranked[:_SEARCH_LIMIT]
+    return ranked[:symbol_limit]
 
 
 def _normalize_match_text(value: object) -> str:
@@ -437,6 +438,8 @@ def _retrieve_and_assemble(
     project_id: str,
     normalized_queries: list[str],
     budget_tokens: int,
+    *,
+    symbol_limit: int = _SEARCH_LIMIT,
 ) -> tuple[
     list[dict[str, object]],
     str,
@@ -452,15 +455,15 @@ def _retrieve_and_assemble(
     index_status = _get_precision_index_status(project_id)
     refreshed_index = _refresh_precision_index(project_id) if index_status["should_refresh"] else False
 
-    # Import queries (e.g. "import httpx") skip symbol search entirely
-    force_text = is_import_query(normalized_queries)
+    # Import queries (e.g. "import httpx") or natural language skip symbol search entirely
+    force_text = is_import_query(normalized_queries) or is_natural_language_query(normalized_queries)
 
     # Split path segments from symbol terms so each routes to the right search
     path_terms, symbol_terms = split_path_and_symbol_terms(normalized_queries)
 
     # Search symbols using only non-path terms (or all queries if no split)
     symbol_queries = symbol_terms if symbol_terms else normalized_queries
-    symbols = [] if force_text else _search_symbol_matches(project_id, symbol_queries)
+    symbols = [] if force_text else _search_symbol_matches(project_id, symbol_queries, symbol_limit=symbol_limit)
     symbol_section = _build_symbol_section(project_id, symbols) if symbols else ""
 
     # Text fallback: use path terms if available (more targeted), else full query
@@ -504,6 +507,7 @@ def collect_precision_code_search_context(
     queries: list[str] | tuple[str, ...] | str,
     *,
     budget_tokens: int = MAX_EXPLORER_TOKENS,
+    symbol_limit: int = _SEARCH_LIMIT,
 ) -> PrecisionCodeSearchResult:
     """Build symbol-first retrieval context with explicit fallback and telemetry."""
     normalized_queries = normalize_queries(queries)
@@ -516,7 +520,7 @@ def collect_precision_code_search_context(
         )
 
     symbols, symbol_section, text_results, text_section, truncated_body, used_symbol_first, used_fallback, index_status, refreshed_index = (
-        _retrieve_and_assemble(project_id, normalized_queries, budget_tokens)
+        _retrieve_and_assemble(project_id, normalized_queries, budget_tokens, symbol_limit=symbol_limit)
     )
 
     metadata = _build_result_metadata(
