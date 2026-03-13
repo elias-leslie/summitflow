@@ -56,9 +56,9 @@ def _generate_hint(query: str, mode: str, metadata: dict) -> str | None:
 @app.command()
 def search(
     query: Annotated[
-        list[str],
+        list[str] | None,
         typer.Argument(help="Search query (symbol name, function, class, endpoint)"),
-    ],
+    ] = None,
     budget: Annotated[
         int,
         typer.Option("--budget", "-b", help="Token budget for prompt context"),
@@ -100,8 +100,8 @@ def search(
         st search router endpoint --budget 2000
         st search scan_history --json
     """
-    q = " ".join(query).strip()
-    if not q:
+    q = " ".join(query).strip() if query else ""
+    if not q and not file:
         typer.echo("Error: empty query", err=True)
         raise typer.Exit(1)
     if text and symbols:
