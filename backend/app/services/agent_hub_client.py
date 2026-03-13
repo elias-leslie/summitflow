@@ -86,6 +86,7 @@ class AgentHubLLMClient(LLMClient):
         memory_group_id: str | None = None,
         session_id: str | None = None,
         enable_caching: bool = True,
+        **kwargs: object,
     ) -> LLMResponse:
         """Generate completion via Agent Hub; raises RuntimeError on failure."""
         effective_use_memory = use_memory if use_memory is not None else self.use_memory
