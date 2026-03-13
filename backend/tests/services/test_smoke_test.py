@@ -6,7 +6,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 from app.services.smoke_test import (
-    PROD_HEALTH_URLS,
+    HEALTH_URLS,
     run_all_smoke_tests,
 )
 
@@ -20,8 +20,8 @@ class TestRunAllSmokeTests:
 
         result = run_all_smoke_tests()
 
-        assert result["total"] == len(PROD_HEALTH_URLS)
-        assert result["healthy"] == len(PROD_HEALTH_URLS)
+        assert result["total"] == len(HEALTH_URLS)
+        assert result["healthy"] == len(HEALTH_URLS)
         assert result["failures"] == []
 
     @patch("app.services.smoke_test.check_health")
@@ -35,7 +35,7 @@ class TestRunAllSmokeTests:
 
         result = run_all_smoke_tests()
 
-        assert result["total"] == len(PROD_HEALTH_URLS)
+        assert result["total"] == len(HEALTH_URLS)
         assert len(result["failures"]) == 1
         assert result["failures"][0]["project"] == "summitflow"
 
@@ -46,9 +46,9 @@ class TestRunAllSmokeTests:
         result = run_all_smoke_tests()
 
         assert result["healthy"] == 0
-        assert len(result["failures"]) == len(PROD_HEALTH_URLS)
+        assert len(result["failures"]) == len(HEALTH_URLS)
 
     def test_prod_health_urls_complete(self) -> None:
         """Verify all expected projects have health URLs."""
         expected = {"summitflow", "agent-hub", "portfolio-ai", "terminal"}
-        assert set(PROD_HEALTH_URLS.keys()) == expected
+        assert set(HEALTH_URLS.keys()) == expected

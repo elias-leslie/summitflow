@@ -91,6 +91,7 @@ def _build_seed_spec(skill_tag: str, content: str, fm: dict[str, Any]) -> tuple[
         context=None,
         pinned=bool(fm.get("pinned")),
         trigger_types=",".join(trigger_types) if trigger_types else None,
+        change_reason=None,
     )
     return payload, tags
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from app.services.smoke_test import PROD_HEALTH_URLS
+from app.services.smoke_test import HEALTH_URLS
 from app.tasks.autonomous.review_modules.actions import (
     _deploy_and_verify,
     auto_merge,
@@ -35,7 +35,7 @@ class TestDeployAndVerify:
         assert mock_log.call_count == 2
         mock_log.assert_any_call("task-1", "Auto-deploy: rebuild.sh succeeded")
         mock_log.assert_any_call(
-            "task-1", f"Production verified: {PROD_HEALTH_URLS['summitflow']}"
+            "task-1", f"Production verified: {HEALTH_URLS['summitflow']}"
         )
 
     @patch("app.tasks.autonomous.review_modules.actions.log_task_event")

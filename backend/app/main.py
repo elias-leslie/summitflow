@@ -7,7 +7,6 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import cast
 
-import redis
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -39,7 +38,7 @@ from .api import (
     tdd,
     ws_execution,
 )
-from .config import REDIS_URL, settings
+from .config import settings
 from .exception_handlers import setup_exception_handlers
 from .logging_config import SyslogPrefixFormatter, configure_logging, get_logger
 from .schemas.health import ComponentHealth, DetailedHealthResponse
@@ -238,11 +237,11 @@ def _check_database_health() -> ComponentHealth:
 
 def _check_cache_health() -> ComponentHealth:
     """Check Redis cache connectivity and response time."""
+    from .services.redis_pool import get_redis
+
     start_time = time.time()
     try:
-        # Connect to Redis DB 1 (shared with rate limiter and pub/sub)
-        r = redis.from_url(f"{REDIS_URL}/1")
-        r.ping()
+        get_redis().ping()
         response_time_ms = (time.time() - start_time) * 1000
         return ComponentHealth(
             status="healthy",

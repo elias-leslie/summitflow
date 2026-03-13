@@ -8,7 +8,7 @@ from typing import cast
 
 from ....logging_config import get_logger
 from ....services.agent_hub_client import get_sync_client
-from ....services.smoke_test import PROD_HEALTH_URLS
+from ....services.smoke_test import HEALTH_URLS
 from ....storage import log_task_event
 from ....storage import tasks as task_store
 from ....storage.projects import get_project_root_path
@@ -59,7 +59,7 @@ def _deploy_and_verify(task_id: str, project_id: str) -> None:
         log_task_event(task_id, f"Auto-deploy failed: {result.stderr[-200:]}", level="error")
         return
     log_task_event(task_id, "Auto-deploy: rebuild.sh succeeded")
-    prod_url = PROD_HEALTH_URLS.get(project_id)
+    prod_url = HEALTH_URLS.get(project_id)
     if not prod_url:
         return
     try:

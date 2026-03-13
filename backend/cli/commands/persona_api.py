@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 import httpx
 
 from ..config import get_agent_hub_url
+from ..lib.credentials import load_credentials
 
 
 def _get_url(path: str = "") -> str:
@@ -16,19 +16,11 @@ def _get_url(path: str = "") -> str:
 
 
 def _get_headers() -> dict[str, str]:
-    """Load auth headers from ~/.env.local for Agent Hub access control."""
-    env_file = Path.home() / ".env.local"
-    client_id = ""
-    if env_file.exists():
-        for line in env_file.read_text().splitlines():
-            if "=" in line and not line.startswith("#"):
-                key, val = line.split("=", 1)
-                if key.strip() == "SUMMITFLOW_CLIENT_ID":
-                    client_id = val.strip()
-                    break
+    """Build auth headers for Agent Hub access control."""
+    client_id, request_source = load_credentials(default_source="st-persona")
     return {
         "X-Client-Id": client_id,
-        "X-Request-Source": "st-persona",
+        "X-Request-Source": request_source,
     }
 
 

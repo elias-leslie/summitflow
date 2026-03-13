@@ -10,11 +10,9 @@ import json
 import time
 from typing import cast
 
-import redis
-
-from ...config import REDIS_URL
 from ...logging_config import get_logger
 from ...storage.notifications import NotificationSeverity, create_notification
+from ..redis_pool import get_redis
 
 logger = get_logger(__name__)
 
@@ -118,7 +116,7 @@ def check_and_notify() -> dict[str, str]:
 def _get_last_status() -> str | None:
     """Read last known health status from Redis."""
     try:
-        r = redis.from_url(f"{REDIS_URL}/1")
+        r = get_redis()
         raw = r.get(_REDIS_KEY)
         if raw:
             data = json.loads(raw)
@@ -131,7 +129,7 @@ def _get_last_status() -> str | None:
 def _set_last_status(status: str) -> None:
     """Store current health status in Redis."""
     try:
-        r = redis.from_url(f"{REDIS_URL}/1")
+        r = get_redis()
         r.set(_REDIS_KEY, json.dumps({"status": status}), ex=_REDIS_TTL)
     except Exception:
         logger.debug("Could not store health status in Redis")

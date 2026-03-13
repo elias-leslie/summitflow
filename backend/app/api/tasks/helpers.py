@@ -162,5 +162,13 @@ async def refresh_task_tracking(task_id: str, source: str) -> dict[str, Any]:
 
 
 def abort_running_task(task_id: str) -> None:
-    """Emergency stop - signal abort for a running task."""
+    """Emergency stop - publish abort signal via Redis pub/sub for running task."""
+    from ...services.pubsub import publish_ws_event
+
     logger.info("Task abort requested", task_id=task_id)
+    published = publish_ws_event(
+        task_id,
+        {"type": "stop_signal", "data": {"source": "status_change"}},
+    )
+    if not published:
+        logger.warning("Failed to publish abort signal", task_id=task_id)

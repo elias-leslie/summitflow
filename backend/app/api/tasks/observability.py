@@ -6,8 +6,6 @@ observability, including thinking blocks, tool calls, memory events, etc.
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
 from typing import Any
 
 import httpx
@@ -15,7 +13,11 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from ...logging_config import get_logger
-from ...services._agent_hub_config import AGENT_HUB_URL, build_agent_hub_headers
+from ...services._agent_hub_config import (
+    AGENT_HUB_URL,
+    SUMMITFLOW_CLIENT_ID,
+    build_agent_hub_headers,
+)
 from ...storage.tasks.core import get_agent_hub_sessions
 from .helpers import verify_task_project
 
@@ -98,23 +100,11 @@ class AgentHubEventsResponse(BaseModel):
     max_turn: int
 
 
-def _load_client_id() -> str:
-    """Load Agent Hub client ID from ~/.env.local."""
-    env_file = Path.home() / ".env.local"
-    creds: dict[str, str] = {}
-    if env_file.exists():
-        for line in env_file.read_text().splitlines():
-            if "=" in line and not line.startswith("#"):
-                key, val = line.split("=", 1)
-                creds[key.strip()] = val.strip()
-    client_id = (
-        os.getenv("SUMMITFLOW_CLIENT_ID")
-        or creds.get("SUMMITFLOW_CLIENT_ID")
-        or creds.get("CONSULT_CLIENT_ID")
-    )
-    if not client_id:
+def _get_client_id() -> str:
+    """Get Agent Hub client ID from centralized config."""
+    if not SUMMITFLOW_CLIENT_ID:
         raise HTTPException(status_code=500, detail="Missing SUMMITFLOW_CLIENT_ID credential for Agent Hub")
-    return client_id
+    return SUMMITFLOW_CLIENT_ID
 
 
 def _fetch_session_events(
@@ -125,7 +115,7 @@ def _fetch_session_events(
     page_size: int = 500,
 ) -> dict[str, Any]:
     """Fetch events from Agent Hub for a single session."""
-    client_id = _load_client_id()
+    client_id = _get_client_id()
     headers = build_agent_hub_headers(
         client_id=client_id,
         default_request_source=DEFAULT_REQUEST_SOURCE,
@@ -156,7 +146,7 @@ def _fetch_session_events(
 
 def _fetch_session_summary(session_id: str) -> dict[str, Any] | None:
     """Fetch a single Agent Hub session summary."""
-    client_id = _load_client_id()
+    client_id = _get_client_id()
     headers = build_agent_hub_headers(
         client_id=client_id,
         default_request_source=DEFAULT_REQUEST_SOURCE,

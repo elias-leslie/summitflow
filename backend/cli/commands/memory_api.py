@@ -3,38 +3,17 @@
 from __future__ import annotations
 
 import json as jsonlib
-from pathlib import Path
 from typing import Any, cast
 
 import httpx
 import typer
 
 from ..config import get_agent_hub_url
+from ..lib.credentials import load_credentials
 from ..output import output_error
 from ._http_errors import raise_connect_error, raise_timeout_error
 
 _HTTP_TIMEOUT_READ = 90.0
-
-
-def load_credentials() -> tuple[str, str]:
-    """Load credentials from ~/.env.local."""
-    env_file = Path.home() / ".env.local"
-    if not env_file.exists():
-        output_error("~/.env.local not found - required for Agent Hub authentication")
-        raise typer.Exit(1)
-
-    creds: dict[str, str] = {}
-    for line in env_file.read_text().splitlines():
-        if "=" in line and not line.startswith("#"):
-            key, val = line.split("=", 1)
-            creds[key.strip()] = val.strip()
-
-    client_id = creds.get("SUMMITFLOW_CLIENT_ID")
-    if not client_id:
-        output_error("Missing SUMMITFLOW_CLIENT_ID in ~/.env.local")
-        raise typer.Exit(1)
-
-    return client_id, "st-memory"
 
 
 def _dispatch(client: httpx.Client, method: str, url: str, **kw: Any) -> httpx.Response:
@@ -103,7 +82,7 @@ def agent_hub_request(
     tool_name: str = "st memory",
 ) -> dict[str, Any]:
     """Make a request to Agent Hub API with proper authentication."""
-    client_id, request_source = load_credentials()
+    client_id, request_source = load_credentials(default_source="st-memory")
     headers = {
         "X-Client-Id": client_id,
         "X-Request-Source": request_source,

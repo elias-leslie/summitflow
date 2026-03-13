@@ -8,9 +8,9 @@ import httpx
 import typer
 
 from ..config import get_agent_hub_url
+from ..lib.credentials import load_credentials
 from ..output import output_error
 from ._http_errors import raise_connect_error, raise_timeout_error
-from .memory_api import load_credentials
 
 
 def _dispatch_request(
@@ -49,11 +49,11 @@ def feedback_request(
     json: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Make a request to Agent Hub feedback API with proper authentication."""
-    client_id, _ = load_credentials()
+    client_id, request_source = load_credentials(default_source="st-feedback")
 
     headers = {
         "X-Client-Id": client_id,
-        "X-Request-Source": "st-feedback",
+        "X-Request-Source": request_source,
         "X-Source-Client": "st-cli",
         "X-Tool-Name": "st feedback",
     }

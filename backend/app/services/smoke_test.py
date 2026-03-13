@@ -12,10 +12,8 @@ import json
 from typing import Any
 from urllib.request import Request, urlopen
 
-import redis
-
-from ..config import REDIS_URL
 from ..logging_config import get_logger
+from .redis_pool import get_redis
 
 logger = get_logger(__name__)
 
@@ -30,8 +28,6 @@ HEALTH_URLS: dict[str, str] = {
     "portfolio-ai": "http://localhost:8000/health",
     "terminal": "http://localhost:8002/health",
 }
-# Legacy alias — referenced by autonomous review actions and tests
-PROD_HEALTH_URLS: dict[str, str] = HEALTH_URLS
 
 
 def check_health(project_id: str, url: str) -> dict[str, Any]:
@@ -58,8 +54,7 @@ def check_health(project_id: str, url: str) -> dict[str, Any]:
 def _get_last_status() -> str | None:
     """Read last known smoke test status from Redis."""
     try:
-        r = redis.from_url(f"{REDIS_URL}/1")
-        raw = r.get(_REDIS_KEY)
+        raw = get_redis().get(_REDIS_KEY)
         if raw:
             data = json.loads(raw)
             return data.get("status")
@@ -71,8 +66,7 @@ def _get_last_status() -> str | None:
 def _set_last_status(status: str) -> None:
     """Store current smoke test status in Redis."""
     try:
-        r = redis.from_url(f"{REDIS_URL}/1")
-        r.set(_REDIS_KEY, json.dumps({"status": status}), ex=_REDIS_TTL)
+        get_redis().set(_REDIS_KEY, json.dumps({"status": status}), ex=_REDIS_TTL)
     except Exception:
         logger.debug("Could not store smoke test status in Redis")
 

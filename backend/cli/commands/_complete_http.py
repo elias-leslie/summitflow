@@ -13,6 +13,7 @@ import httpx
 import typer
 
 from ..config import get_agent_hub_url
+from ..lib.credentials import load_credentials
 from ..output import output_error
 from ._http_errors import raise_connect_error, raise_timeout_error
 
@@ -23,25 +24,6 @@ _IMAGE_MIME_TYPES = {
     ".gif": "image/gif",
     ".webp": "image/webp",
 }
-
-
-def load_credentials() -> tuple[str, str]:
-    """Load credentials from ~/.env.local."""
-    env_file = Path.home() / ".env.local"
-    if not env_file.exists():
-        output_error("~/.env.local not found")
-        raise typer.Exit(1)
-    creds: dict[str, str] = {}
-    for line in env_file.read_text().splitlines():
-        if "=" in line and not line.startswith("#"):
-            key, val = line.split("=", 1)
-            creds[key.strip()] = val.strip()
-    client_id = creds.get("SUMMITFLOW_CLIENT_ID") or creds.get("CONSULT_CLIENT_ID")
-    request_source = creds.get("SUMMITFLOW_REQUEST_SOURCE", "st-complete")
-    if not client_id:
-        output_error("Missing CONSULT_CLIENT_ID or SUMMITFLOW_CLIENT_ID in ~/.env.local")
-        raise typer.Exit(1)
-    return client_id, request_source
 
 
 def handle_error_response(response: httpx.Response) -> None:
@@ -223,7 +205,7 @@ def call_complete(
     images: list[str] | None = None,
 ) -> dict[str, Any]:
     """Call /api/complete endpoint."""
-    client_id, request_source = load_credentials()
+    client_id, request_source = load_credentials(default_source="st-complete")
     agent_hub_url = get_agent_hub_url()
     headers = build_headers(client_id, request_source, source_client, skip_cache)
     payload = build_payload(

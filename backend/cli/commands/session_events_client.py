@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, cast
 
 import httpx
@@ -10,15 +9,9 @@ import typer
 
 from ..client import APIError, STClient
 from ..config import get_agent_hub_url
+from ..lib.credentials import load_credentials
 from ..output import handle_api_error, output_error
 from ._http_errors import raise_connect_error, raise_timeout_error
-
-# Credential keys
-_ENV_FILE = ".env.local"
-_KEY_CLIENT_ID = "SUMMITFLOW_CLIENT_ID"
-_KEY_CLIENT_ID_LEGACY = "CONSULT_CLIENT_ID"
-_KEY_REQUEST_SOURCE = "SUMMITFLOW_REQUEST_SOURCE"
-_DEFAULT_REQUEST_SOURCE = "st-session-events"
 
 # HTTP headers
 _HEADER_CLIENT_ID = "X-Client-Id"
@@ -29,31 +22,6 @@ _SESSIONS_EVENTS_PATH = "/api/sessions/{session_id}/events"
 
 # HTTP config
 _HTTP_TIMEOUT = 30.0
-
-
-def load_credentials() -> tuple[str, str]:
-    """Load credentials from ~/.env.local."""
-    env_file = Path.home() / _ENV_FILE
-    if not env_file.exists():
-        output_error(f"~/{_ENV_FILE} not found")
-        raise typer.Exit(1)
-
-    creds: dict[str, str] = {}
-    for line in env_file.read_text().splitlines():
-        if "=" in line and not line.startswith("#"):
-            key, val = line.split("=", 1)
-            creds[key.strip()] = val.strip()
-
-    client_id = creds.get(_KEY_CLIENT_ID) or creds.get(_KEY_CLIENT_ID_LEGACY)
-    request_source = creds.get(_KEY_REQUEST_SOURCE, _DEFAULT_REQUEST_SOURCE)
-
-    if not client_id:
-        output_error(
-            f"Missing {_KEY_CLIENT_ID_LEGACY} or {_KEY_CLIENT_ID} in ~/{_ENV_FILE}"
-        )
-        raise typer.Exit(1)
-
-    return client_id, request_source
 
 
 def _parse_error_detail(response: httpx.Response) -> str:
@@ -81,7 +49,7 @@ def get_session_events(
     page_size: int = 100,
 ) -> dict[str, Any]:
     """Fetch session events from Agent Hub directly by session ID."""
-    client_id, request_source = load_credentials()
+    client_id, request_source = load_credentials(default_source="st-session-events")
 
     headers = {
         _HEADER_CLIENT_ID: client_id,
