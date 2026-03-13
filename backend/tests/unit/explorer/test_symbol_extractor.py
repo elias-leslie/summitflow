@@ -129,3 +129,90 @@ class Memory:
             "backend/app/models/memory.py::Memory.injection_tier#method",
             "backend/app/models/memory.py::Memory.injection_tier#method@8",
         ]
+
+
+class TestExtractModuleLevelConstants:
+    """Module-level UPPER_CASE constants should be indexed as symbols."""
+
+    def test_extracts_simple_constant(self, tmp_path: Path) -> None:
+        code = '''
+SKIP_DIRS = frozenset({"__pycache__", "node_modules"})
+
+MAX_FILE_SIZE = 500_000
+'''
+        file_path = tmp_path / "constants.py"
+        file_path.write_text(code, encoding="utf-8")
+
+        symbols = extract_symbols(file_path, "backend/app/constants.py")
+        names = [s["name"] for s in symbols]
+        assert "SKIP_DIRS" in names
+        assert "MAX_FILE_SIZE" in names
+
+    def test_constant_has_correct_kind(self, tmp_path: Path) -> None:
+        code = "DEFAULT_LIMIT = 50\n"
+        file_path = tmp_path / "config.py"
+        file_path.write_text(code, encoding="utf-8")
+
+        symbols = extract_symbols(file_path, "backend/config.py")
+        const = next(s for s in symbols if s["name"] == "DEFAULT_LIMIT")
+        assert const["kind"] == "constant"
+
+    def test_skips_private_underscored_constants(self, tmp_path: Path) -> None:
+        code = '_INTERNAL_LIMIT = 10\n_CACHE_TTL = 300\nPUBLIC_CONST = "yes"\n'
+        file_path = tmp_path / "config.py"
+        file_path.write_text(code, encoding="utf-8")
+
+        symbols = extract_symbols(file_path, "backend/config.py")
+        names = [s["name"] for s in symbols]
+        # Private constants with single underscore prefix are still indexed
+        # (they're commonly searched for, like _SEARCH_LIMIT, _STOP_WORDS)
+        assert "_INTERNAL_LIMIT" in names
+        assert "PUBLIC_CONST" in names
+
+    def test_skips_lowercase_assignments(self, tmp_path: Path) -> None:
+        code = "logger = get_logger(__name__)\napp = typer.Typer()\n"
+        file_path = tmp_path / "cli.py"
+        file_path.write_text(code, encoding="utf-8")
+
+        symbols = extract_symbols(file_path, "backend/cli.py")
+        names = [s["name"] for s in symbols]
+        assert "logger" not in names
+        assert "app" not in names
+
+
+class TestExtractDecorators:
+    """Decorators should be captured in symbol metadata."""
+
+    def test_captures_pytest_fixture_decorator(self, tmp_path: Path) -> None:
+        code = '''
+import pytest
+
+@pytest.fixture
+def db_connection():
+    """Database connection fixture."""
+    return "conn"
+'''
+        file_path = tmp_path / "conftest.py"
+        file_path.write_text(code, encoding="utf-8")
+
+        symbols = extract_symbols(file_path, "backend/tests/conftest.py")
+        fixture = next(s for s in symbols if s["name"] == "db_connection")
+        assert "pytest.fixture" in (fixture.get("decorators") or [])
+
+    def test_captures_multiple_decorators(self, tmp_path: Path) -> None:
+        code = '''
+import pytest
+
+@pytest.fixture(scope="session")
+@pytest.mark.slow
+def heavy_setup():
+    pass
+'''
+        file_path = tmp_path / "conftest.py"
+        file_path.write_text(code, encoding="utf-8")
+
+        symbols = extract_symbols(file_path, "backend/tests/conftest.py")
+        func = next(s for s in symbols if s["name"] == "heavy_setup")
+        decorators = func.get("decorators") or []
+        assert any("pytest.fixture" in d for d in decorators)
+        assert any("pytest.mark.slow" in d for d in decorators)

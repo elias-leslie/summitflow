@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import TypedDict, cast
 
 _FuncNode = ast.FunctionDef | ast.AsyncFunctionDef
+_CONSTANT_NAME_RE = re.compile(r"^_?[A-Z][A-Z0-9_]+$")
 _TS_DECL_RE = re.compile(
     r"(?P<signature>"
     r"(?:export\s+)?interface\s+(?P<interface>[A-Z]\w*)"
@@ -38,6 +39,7 @@ class SymbolRecord(TypedDict):
     content_hash: str
     summary: str | None
     keywords: list[str]
+    decorators: list[str]
 
 
 def extract_symbols(file_path: Path, rel_path: str) -> list[SymbolRecord]:
@@ -73,6 +75,11 @@ def _extract_python_symbols(source: str, rel_path: str) -> list[SymbolRecord]:
                 symbols.append(_python_symbol(child, source, rel_path, offsets, parents, kind))
             elif isinstance(child, (ast.If, ast.With, ast.For, ast.AsyncFor, ast.While, ast.Try, ast.Match)):
                 visit(child, parents)
+            # Module-level constants (UPPER_CASE or _UPPER_CASE assignments)
+            elif not parents and isinstance(child, ast.Assign):
+                for target in child.targets:
+                    if isinstance(target, ast.Name) and _CONSTANT_NAME_RE.match(target.id):
+                        symbols.append(_python_constant(child, target.id, source, rel_path, offsets))
 
     visit(tree, [])
     return symbols
@@ -93,6 +100,7 @@ def _python_symbol(
     signature = _python_signature(node)
     doc = ast.get_docstring(node)
     segment = source[start:end]
+    decorators = _extract_decorators(node)
     return cast(SymbolRecord, {
         "symbol_id": f"{rel_path}::{qualified_name}#{kind}",
         "qualified_name": qualified_name,
@@ -106,8 +114,54 @@ def _python_symbol(
         "byte_length": max(0, end - start),
         "content_hash": _content_hash(segment),
         "summary": doc.splitlines()[0].strip() if doc else None,
-        "keywords": _keywords(qualified_name, signature, doc),
+        "keywords": _keywords(qualified_name, signature, doc, *decorators),
+        "decorators": decorators,
     })
+
+
+def _python_constant(
+    node: ast.Assign,
+    name: str,
+    source: str,
+    rel_path: str,
+    offsets: list[int],
+) -> SymbolRecord:
+    start = _byte_index(offsets, node.lineno, node.col_offset)
+    end = _byte_index(offsets, node.end_lineno, node.end_col_offset)
+    segment = source[start:end]
+    # Use the first line as signature
+    first_line = segment.split("\n", 1)[0].strip()
+    return cast(SymbolRecord, {
+        "symbol_id": f"{rel_path}::{name}#constant",
+        "qualified_name": name,
+        "name": name,
+        "kind": "constant",
+        "signature": first_line,
+        "language": "python",
+        "start_line": node.lineno,
+        "end_line": node.end_lineno or node.lineno,
+        "byte_offset": start,
+        "byte_length": max(0, end - start),
+        "content_hash": _content_hash(segment),
+        "summary": None,
+        "keywords": _keywords(name, first_line, None),
+        "decorators": [],
+    })
+
+
+def _extract_decorators(node: ast.ClassDef | _FuncNode) -> list[str]:
+    """Extract decorator names from a class or function node."""
+    decorators: list[str] = []
+    for decorator in node.decorator_list:
+        try:
+            # Handle @name, @module.name, @module.name(args)
+            if isinstance(decorator, ast.Call):
+                decorators.append(ast.unparse(decorator.func))
+            else:
+                decorators.append(ast.unparse(decorator))
+        except Exception:
+            continue
+    return decorators
 
 
 def _python_signature(node: ast.ClassDef | _FuncNode) -> str:
@@ -149,6 +203,7 @@ def _extract_typescript_symbols(source: str, rel_path: str, language: str) -> li
                 "content_hash": _content_hash(segment),
                 "summary": None,
                 "keywords": _keywords(name, signature, None),
+                "decorators": [],
             })
         )
     return symbols

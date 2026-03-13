@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import re
+
+_CAMEL_SPLIT_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
+
 _STOP_WORDS = {
     "the",
     "and",
@@ -129,26 +133,75 @@ def split_path_and_symbol_terms(queries: list[str]) -> tuple[list[str], list[str
     return path_terms, symbol_terms
 
 
+def expand_case_variants(term: str) -> list[str]:
+    """Generate CamelCase and snake_case variants of a term.
+
+    'SymbolExtractor' -> ['SymbolExtractor', 'symbol_extractor']
+    'symbol_extractor' -> ['symbol_extractor', 'SymbolExtractor']
+    'Router' (single word) -> ['Router']
+    """
+    variants = [term]
+
+    # CamelCase -> snake_case
+    parts = _CAMEL_SPLIT_RE.split(term)
+    if len(parts) > 1:
+        snake = "_".join(p.lower() for p in parts)
+        if snake != term and snake not in variants:
+            variants.append(snake)
+        return variants
+
+    # snake_case -> CamelCase
+    if "_" in term:
+        segments = term.split("_")
+        if len(segments) > 1:
+            camel = "".join(seg.capitalize() for seg in segments)
+            if camel != term and camel not in variants:
+                variants.append(camel)
+
+    return variants
+
+
+def is_import_query(queries: list[str]) -> bool:
+    """Detect 'import X' or 'from X import Y' patterns that should route to text search."""
+    combined = " ".join(queries).strip()
+    # Match "import foo" but not "import_plan_file" (underscore-joined identifiers)
+    return bool(
+        re.match(r"^(?:from\s+\S+\s+)?import\s+\S", combined)
+    )
+
+
 def extract_query_terms(queries: list[str]) -> list[str]:
     terms: list[str] = []
     seen: set[str] = set()
 
+    def _add(candidate: str) -> bool:
+        lowered = candidate.lower()
+        if lowered in seen:
+            return False
+        terms.append(candidate)
+        seen.add(lowered)
+        return len(terms) >= _MAX_TERMS
+
     for query in queries:
         if len(query) <= 80:
-            lowered = query.lower()
-            if lowered not in seen:
-                terms.append(query)
-                seen.add(lowered)
+            if _add(query):
+                return terms
+            # Generate case variants for the full query (e.g. "file_scanner" -> "FileScanner")
+            for variant in expand_case_variants(query):
+                if variant != query and variant.lower() not in seen and _add(variant):
+                    return terms
 
         for token in query.replace("`", " ").replace(",", " ").split():
             candidate = token.strip("()[]{}:.;'\"")
             lowered = candidate.lower()
             if len(candidate) < 3 or lowered in seen or lowered in _STOP_WORDS:
                 continue
-            terms.append(candidate)
-            seen.add(lowered)
-            if len(terms) >= _MAX_TERMS:
+            if _add(candidate):
                 return terms
+            # Generate case variants for multi-word identifiers
+            for variant in expand_case_variants(candidate):
+                if variant != candidate and variant.lower() not in seen and _add(variant):
+                    return terms
 
     return terms
 

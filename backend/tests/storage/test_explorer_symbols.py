@@ -231,6 +231,53 @@ class TestLookupAndSearch:
         ]
 
 
+class TestSearchSymbolsByFilePath:
+    """Search should match file_path so module-name queries find symbols."""
+
+    def test_search_by_module_name_finds_symbols_in_file(self, cleanup_symbols: str) -> None:
+        """Searching 'test_precision_query' should find symbols in that file."""
+        explorer_symbols.replace_file_symbols(
+            cleanup_symbols,
+            "backend/tests/services/test_precision_query.py",
+            [
+                _make_symbol(
+                    symbol_id="backend/tests/services/test_precision_query.py::TestHasPathSegments#class",
+                    name="TestHasPathSegments",
+                    kind="class",
+                    summary="Tests for path segment detection.",
+                ),
+                _make_symbol(
+                    symbol_id="backend/tests/services/test_precision_query.py::TestHasPathSegments.test_detects_slash_paths#method",
+                    name="test_detects_slash_paths",
+                    qualified_name="TestHasPathSegments.test_detects_slash_paths",
+                    kind="method",
+                ),
+            ],
+        )
+
+        results = explorer_symbols.search_symbols(cleanup_symbols, "test_precision_query")
+        assert len(results) >= 1
+        assert all("test_precision_query" in r["file_path"] for r in results)
+
+    def test_search_conftest_finds_conftest_symbols(self, cleanup_symbols: str) -> None:
+        """Searching 'conftest' should find symbols in conftest.py files."""
+        explorer_symbols.replace_file_symbols(
+            cleanup_symbols,
+            "backend/tests/conftest.py",
+            [
+                _make_symbol(
+                    symbol_id="backend/tests/conftest.py::db_connection#function",
+                    name="db_connection",
+                    summary="Database connection fixture.",
+                ),
+            ],
+        )
+
+        results = explorer_symbols.search_symbols(cleanup_symbols, "conftest")
+        assert len(results) >= 1
+        assert results[0]["file_path"] == "backend/tests/conftest.py"
+
+
 class TestSymbolStats:
     """Tests for aggregate symbol index stats."""
 

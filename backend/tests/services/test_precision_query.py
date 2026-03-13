@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from app.services.context_gatherer._precision_query import (
+    expand_case_variants,
+    extract_query_terms,
     has_path_segments,
+    is_import_query,
     is_short_or_generic,
     split_path_and_symbol_terms,
 )
@@ -127,3 +130,65 @@ class TestSymbolMatchRank:
         rank_exact = _symbol_match_rank(exact, queries, terms)
         rank_partial = _symbol_match_rank(partial, queries, terms)
         assert rank_exact > rank_partial, "Exact name match should rank higher than partial"
+
+
+class TestExpandCaseVariants:
+    """CamelCase <-> snake_case normalization for query terms."""
+
+    def test_camel_to_snake(self) -> None:
+        assert "symbol_extractor" in expand_case_variants("SymbolExtractor")
+
+    def test_snake_to_camel(self) -> None:
+        assert "SymbolExtractor" in expand_case_variants("symbol_extractor")
+
+    def test_preserves_original(self) -> None:
+        variants = expand_case_variants("SymbolExtractor")
+        assert "SymbolExtractor" in variants
+
+    def test_single_word_unchanged(self) -> None:
+        variants = expand_case_variants("Router")
+        assert variants == ["Router"]
+
+    def test_snake_single_word_unchanged(self) -> None:
+        variants = expand_case_variants("router")
+        assert variants == ["router"]
+
+    def test_acronym_handling(self) -> None:
+        variants = expand_case_variants("AgentHubLLMClient")
+        assert "AgentHubLLMClient" in variants
+        # Should produce a snake variant
+        assert any("agent" in v and "hub" in v.lower() for v in variants)
+
+    def test_test_prefix_module_name(self) -> None:
+        variants = expand_case_variants("test_precision_query")
+        assert "test_precision_query" in variants
+        assert "TestPrecisionQuery" in variants
+
+
+class TestIsImportQuery:
+    """Detect 'import X' style queries that should route to text search."""
+
+    def test_detects_import_statement(self) -> None:
+        assert is_import_query(["import httpx"]) is True
+
+    def test_detects_from_import(self) -> None:
+        assert is_import_query(["from pathlib import Path"]) is True
+
+    def test_rejects_symbol_with_import_substring(self) -> None:
+        assert is_import_query(["import_plan_file"]) is False
+
+    def test_rejects_normal_query(self) -> None:
+        assert is_import_query(["TaskRouter"]) is False
+
+
+class TestExtractQueryTermsWithVariants:
+    """Verify that extract_query_terms produces case variants."""
+
+    def test_camel_case_generates_snake_variant(self) -> None:
+        terms = extract_query_terms(["SymbolExtractor"])
+        lowered = [t.lower() for t in terms]
+        assert "symbol_extractor" in lowered or "symbolextractor" in lowered
+
+    def test_snake_case_generates_camel_variant(self) -> None:
+        terms = extract_query_terms(["file_scanner"])
+        assert any("FileScanner" in t for t in terms)

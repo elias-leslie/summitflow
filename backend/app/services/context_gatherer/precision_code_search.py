@@ -19,6 +19,7 @@ from .. import explorer as explorer_service
 from ..explorer.text_search import search_text
 from ._precision_query import (
     extract_query_terms,
+    is_import_query,
     looks_like_workflow_meta_query,
     normalize_queries,
     split_path_and_symbol_terms,
@@ -451,12 +452,15 @@ def _retrieve_and_assemble(
     index_status = _get_precision_index_status(project_id)
     refreshed_index = _refresh_precision_index(project_id) if index_status["should_refresh"] else False
 
+    # Import queries (e.g. "import httpx") skip symbol search entirely
+    force_text = is_import_query(normalized_queries)
+
     # Split path segments from symbol terms so each routes to the right search
     path_terms, symbol_terms = split_path_and_symbol_terms(normalized_queries)
 
     # Search symbols using only non-path terms (or all queries if no split)
     symbol_queries = symbol_terms if symbol_terms else normalized_queries
-    symbols = _search_symbol_matches(project_id, symbol_queries)
+    symbols = [] if force_text else _search_symbol_matches(project_id, symbol_queries)
     symbol_section = _build_symbol_section(project_id, symbols) if symbols else ""
 
     # Text fallback: use path terms if available (more targeted), else full query

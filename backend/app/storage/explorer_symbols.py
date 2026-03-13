@@ -221,12 +221,13 @@ def search_symbols(
         "LOWER(symbol_id) = %s OR "
         "LOWER(name) LIKE LOWER(%s) OR "
         "LOWER(qualified_name) LIKE LOWER(%s) OR "
+        "LOWER(file_path) LIKE LOWER(%s) OR "
         "LOWER(signature) LIKE LOWER(%s) OR "
         "LOWER(COALESCE(summary, '')) LIKE LOWER(%s) OR "
         "ARRAY_TO_STRING(keywords, ' ') ILIKE %s"
         ")"
     )
-    params.extend([exact, exact, fuzzy, fuzzy, fuzzy, fuzzy, fuzzy])
+    params.extend([exact, exact, fuzzy, fuzzy, fuzzy, fuzzy, fuzzy, fuzzy])
 
     query_sql = sql.SQL(
         """
@@ -238,6 +239,7 @@ def search_symbols(
                    WHEN LOWER(symbol_id) = %s THEN 95
                    WHEN LOWER(name) LIKE LOWER(%s) THEN 80
                    WHEN LOWER(qualified_name) LIKE LOWER(%s) THEN 70
+                   WHEN LOWER(file_path) LIKE LOWER(%s) THEN 60
                    WHEN LOWER(COALESCE(summary, '')) LIKE LOWER(%s) THEN 50
                    WHEN LOWER(signature) LIKE LOWER(%s) THEN 40
                    WHEN ARRAY_TO_STRING(keywords, ' ') ILIKE %s THEN 30
@@ -250,7 +252,7 @@ def search_symbols(
         """
     ).format(where_clause=sql.SQL(" AND ").join(sql.SQL(c) for c in conditions))
 
-    ranking_params = [exact, exact, fuzzy, fuzzy, fuzzy, fuzzy, fuzzy]
+    ranking_params = [exact, exact, fuzzy, fuzzy, fuzzy, fuzzy, fuzzy, fuzzy]
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(query_sql, (*ranking_params, *params, limit))
