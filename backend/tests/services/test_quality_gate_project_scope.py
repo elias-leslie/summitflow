@@ -42,7 +42,7 @@ def test_process_successful_fix_passes_project_id_to_pattern_storage() -> None:
             conn=conn,
             result_id=123,
             project_id="agent-hub",
-            agent_slug="fixer",
+            agent_slug="debugger",
             check_type="ruff",
             check_name="F401",
             error_message="unused import",
@@ -81,7 +81,7 @@ def test_apply_and_verify_passes_check_result_project_id_to_verification(tmp_pat
             file_rel_path="test.py",
             file_content="import os\n",
             new_content="",
-            agent_slug="fixer",
+            agent_slug="debugger",
             level="WORKER",
         )
 

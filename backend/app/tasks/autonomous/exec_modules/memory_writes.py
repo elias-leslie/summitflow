@@ -72,7 +72,7 @@ def save_qa_fix_pattern(
     concern: str,
     fix_iteration: int,
 ) -> None:
-    """Save QA fix pattern after a fixer resolves a reviewer concern."""
+    """Save QA fix pattern after the debugger resolves a reviewer concern."""
     try:
         client = get_sync_client()
         content = (

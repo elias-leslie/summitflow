@@ -27,8 +27,7 @@ GEMINI_IMAGE = "gemini-3-pro-image-preview"
 AGENT_WORKER = "agent:coder"  # Code generation worker (Flash-based with Sonnet fallback)
 AGENT_SUPERVISOR = "agent:supervisor"  # Supervisor for coordination (Sonnet-based)
 AGENT_REVIEWER = "agent:reviewer"  # Code review (Opus-based)
-AGENT_FIXER = "agent:fixer"  # Error fixing (Sonnet-based with escalation)
-AGENT_QA = "agent:qa"  # QA supervisor for task quality review (Opus-based)
+AGENT_DEBUGGER = "agent:debugger"  # Bug fixing with root cause analysis
 AGENT_TRIAGER = "agent:triager"  # Task triage and clarity assessment (Flash-based)
 
 # Default models for each use case
@@ -63,8 +62,7 @@ VALID_AGENT_MODELS = (
     AGENT_WORKER,
     AGENT_SUPERVISOR,
     AGENT_REVIEWER,
-    AGENT_FIXER,
-    AGENT_QA,
+    AGENT_DEBUGGER,
     AGENT_TRIAGER,
 )
 

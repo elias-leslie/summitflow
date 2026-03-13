@@ -137,17 +137,19 @@ def _get_diff_text(project_path: str) -> str:
         return "(could not generate diff)"
 
 
-def _run_fixer(task_id: str, project_id: str, project_path: str, fix_prompt: str, iteration: int) -> bool:
-    """Invoke fixer agent; return False on failure."""
+def _run_debugger(
+    task_id: str, project_id: str, project_path: str, fix_prompt: str, iteration: int
+) -> bool:
+    """Invoke debugger agent; return False on failure."""
     try:
         get_sync_client().complete(
             messages=[{"role": "user", "content": fix_prompt}],
-            agent_slug="fixer", project_id=project_id,
+            agent_slug="debugger", project_id=project_id,
             working_dir=project_path, execute_tools=True, max_turns=25,
         )
         return True
     except Exception as e:
-        logger.warning("QA loop fixer failed", task_id=task_id, iteration=iteration, error=str(e))
+        logger.warning("QA loop debugger failed", task_id=task_id, iteration=iteration, error=str(e))
         return False
 
 
@@ -174,7 +176,7 @@ def _run_reviewer(
 def run_qa_loop(
     task_id: str, project_id: str, review_result: dict[str, object], project_path: str
 ) -> str:
-    """Run tight QA loop: fixer fixes issues, reviewer re-reviews until APPROVED or exhausted."""
+    """Run tight QA loop: debugger fixes issues, reviewer re-reviews until APPROVED or exhausted."""
     issue_tracker: dict[str, int] = {}
     for iteration in range(1, MAX_QA_LOOP_ITERATIONS + 1):
         concerns = list(review_result.get("concerns", []))
@@ -188,7 +190,7 @@ def run_qa_loop(
             f"Recommendation: {recommendation}\n\nConcerns:\n{concerns_text}"
             "\n\nFix these issues. Run verify commands after each fix."
         )
-        if not _run_fixer(task_id, project_id, project_path, fix_prompt, iteration):
+        if not _run_debugger(task_id, project_id, project_path, fix_prompt, iteration):
             return "ESCALATE"
         try:
             review_result, verdict = _run_reviewer(

@@ -239,12 +239,12 @@ class TestHandleNeedsFix:
 
 
 class TestRunQALoop:
-    """Tests for the tight QA fixer-reviewer loop."""
+    """Tests for the tight QA debugger-reviewer loop."""
 
     def _mock_client(self, review_responses: list[str]) -> MagicMock:
         """Create a mock Agent Hub client with sequential review responses."""
         client = MagicMock()
-        # Fix calls return nothing meaningful, review calls return content
+        # Debugger calls return nothing meaningful, review calls return content
         responses = []
         for text in review_responses:
             fix_resp = MagicMock()
@@ -272,7 +272,7 @@ class TestRunQALoop:
         )
 
         assert result == "APPROVED"
-        assert client.complete.call_count == 2  # fixer + reviewer
+        assert client.complete.call_count == 2  # debugger + reviewer
         mock_save.assert_called_once()
 
     @patch("app.tasks.autonomous.review_modules.actions.save_qa_fix_pattern")
@@ -295,7 +295,7 @@ class TestRunQALoop:
         )
 
         assert result == "APPROVED"
-        assert client.complete.call_count == 4  # 2 iterations * (fixer + reviewer)
+        assert client.complete.call_count == 4  # 2 iterations * (debugger + reviewer)
 
     @patch("app.tasks.autonomous.review_modules.actions.log_task_event")
     @patch("app.tasks.autonomous.review_modules.actions.get_sync_client")
@@ -340,12 +340,12 @@ class TestRunQALoop:
         )
 
         assert result == "NEEDS_FIX"
-        # MAX_QA_LOOP_ITERATIONS * 2 calls (fixer + reviewer each)
+        # MAX_QA_LOOP_ITERATIONS * 2 calls (debugger + reviewer each)
         assert client.complete.call_count == MAX_QA_LOOP_ITERATIONS * 2
 
     @patch("app.tasks.autonomous.review_modules.actions.log_task_event")
     @patch("app.tasks.autonomous.review_modules.actions.get_sync_client")
-    def test_fixer_exception_escalates(
+    def test_debugger_exception_escalates(
         self, mock_get_client: MagicMock, mock_log: MagicMock,
         tmp_path: Any,
     ) -> None:
@@ -368,7 +368,7 @@ class TestRunQALoop:
         tmp_path: Any,
     ) -> None:
         client = MagicMock()
-        # Fixer succeeds, reviewer throws
+        # Debugger succeeds, reviewer throws
         fix_resp = MagicMock()
         fix_resp.content = "Fixed."
         client.complete.side_effect = [fix_resp, RuntimeError("Reviewer failed")]
