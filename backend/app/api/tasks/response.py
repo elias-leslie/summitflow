@@ -71,7 +71,7 @@ def _parse_blockers(task: dict[str, Any]) -> tuple[list[BlockerInfo] | None, boo
         BlockerInfo(id=b["id"], title=b["title"], status=b["status"], priority=b["priority"])
         for b in task["blockers"]
     ]
-    return blockers, len(blockers) > 0
+    return blockers, bool(blockers)
 
 
 def _parse_subtask_summary(task: dict[str, Any]) -> SubtaskSummary | None:

@@ -133,7 +133,7 @@ def validate_task_ready(task_id: str, project_id: str) -> TaskValidationResult:
         }
 
     return TaskValidationResult(
-        ready=len(issues) == 0,
+        ready=not issues,
         issues=issues,
         suggestions=suggestions,
         lane_conflict=lane_conflict,

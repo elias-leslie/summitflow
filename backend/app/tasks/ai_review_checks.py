@@ -44,7 +44,7 @@ def detect_api_contract_changes(diff: str) -> tuple[bool, list[str]]:
                 detected.append(line.strip()[:80])
                 break
 
-    return len(detected) > 0, detected
+    return bool(detected), detected
 
 
 def _check_test_failures(result: dict[str, Any], pytest_result: dict[str, Any]) -> None:

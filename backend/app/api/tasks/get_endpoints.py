@@ -53,7 +53,7 @@ async def check_completion_readiness(task_id: str) -> dict[str, Any]:
             }
         )
 
-    return {"ready": len(gates) == 0, "gates": gates}
+    return {"ready": not gates, "gates": gates}
 
 
 @router.get("/tasks/{task_id}", response_model=None)

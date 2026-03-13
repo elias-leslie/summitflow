@@ -139,11 +139,10 @@ def _auto_merge_pr(task_id: str, pr_url: str, project_path: Path) -> bool:
             logger.info("pr_auto_merged", task_id=task_id, pr_url=pr_url)
             log_task_event(task_id, f"PR merged: {pr_url}")
             return True
-        else:
-            error = result.stderr.strip() or "Unknown error"
-            logger.warning("pr_auto_merge_failed", task_id=task_id, pr_url=pr_url, error=error)
-            log_task_event(task_id, f"Auto-merge failed: {error}")
-            return False
+        error = result.stderr.strip() or "Unknown error"
+        logger.warning("pr_auto_merge_failed", task_id=task_id, pr_url=pr_url, error=error)
+        log_task_event(task_id, f"Auto-merge failed: {error}")
+        return False
 
     except subprocess.TimeoutExpired:
         logger.warning("pr_auto_merge_timeout", task_id=task_id, pr_url=pr_url)

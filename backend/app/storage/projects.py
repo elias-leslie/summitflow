@@ -73,8 +73,8 @@ def find_project_by_cwd(cwd: str) -> dict[str, Any] | None:
 
 def _apply_working_dir_pythonpath(env: dict[str, str], working_dir: str) -> None:
     """Inject worktree backend dir into PYTHONPATH if it exists."""
-    backend_dir = os.path.join(working_dir, "backend")
-    if not os.path.isdir(backend_dir):
+    backend_dir = str(Path(working_dir) / "backend")
+    if not Path(backend_dir).is_dir():
         return
     existing = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = f"{backend_dir}:{existing}" if existing else backend_dir

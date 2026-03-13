@@ -361,15 +361,14 @@ def fix_test_failure(
             fix_type=fix_data.get("fix_type"),
         )
         return "fixed"
-    else:
-        logger.info("test_fix_did_not_pass", result_id=result_id)
-        # Check if we should escalate
-        updated = qcr_store.get_check_result(conn, result_id)
-        if updated and updated.get("fix_attempts", 0) >= MAX_FIX_ATTEMPTS:
-            # Create blocking task for manual review
-            escalate_to_supervisor(conn, result_id)
-            return "escalated"
-        return "failed"
+    logger.info("test_fix_did_not_pass", result_id=result_id)
+    # Check if we should escalate
+    updated = qcr_store.get_check_result(conn, result_id)
+    if updated and updated.get("fix_attempts", 0) >= MAX_FIX_ATTEMPTS:
+        # Create blocking task for manual review
+        escalate_to_supervisor(conn, result_id)
+        return "escalated"
+    return "failed"
 
 
 def fix_failing_tests(

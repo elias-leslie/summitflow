@@ -126,7 +126,7 @@ async def validate_element(
         project_id, request.element_data, request.category
     )
     return ValidationResponse(
-        compliant=len(violations) == 0,
+        compliant=not violations,
         violations=[
             ViolationResponse(
                 rule_id=v["rule_id"],
