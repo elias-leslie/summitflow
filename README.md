@@ -24,7 +24,7 @@ Key capabilities:
 | Caching | Redis |
 | Workflows | Hatchet (pipeline, scheduled, utility workflows) |
 | CLI | Typer + Rich (`st` command) |
-| Quality | Ruff, Mypy, pytest, Vitest, Biome |
+| Quality | Ruff, Ty, pytest, Vitest, Biome |
 
 ## Architecture
 
@@ -158,6 +158,13 @@ pip install -e ".[dev]"   # CLI included in backend package
 st --help
 ```
 
+### Environment
+
+Runtime settings are read from `~/.env.local` by default. Use
+[`.env.example`](.env.example) as the placeholder reference for local setup.
+Only `DATABASE_URL` is required for the backend to boot; the rest are optional
+overrides for local integrations and background services.
+
 ### Register a Project
 
 ```bash
@@ -209,4 +216,16 @@ dt -q -d              # Quick check on changed files
 
 ## License
 
-Private project - All rights reserved
+Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+## Security
+
+Please report suspected vulnerabilities privately as described in
+[SECURITY.md](SECURITY.md).
+
+## Commercial
+
+Commercial use is permitted under the Apache 2.0 license.
+
+For commercial support, custom work, partnership discussions, or private
+licensing for future versions, contact `summitflow42@gmail.com`.
