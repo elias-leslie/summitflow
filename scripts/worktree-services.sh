@@ -30,6 +30,16 @@ API_BASE_URL="${ST_API_URL:-http://localhost:8001}"
 # Worktrees base directory (per-project paths)
 WORKTREES_BASE="${ST_WORKTREES_BASE:-${HOME}/.local/share/st/worktrees}"
 
+load_shared_env() {
+    local env_file="${HOME}/.env.local"
+    if [ -f "$env_file" ]; then
+        set -a
+        # shellcheck disable=SC1090
+        source "$env_file"
+        set +a
+    fi
+}
+
 usage() {
     echo "Worktree Service Manager (Config-Driven)"
     echo ""
@@ -310,6 +320,7 @@ start_service() {
         export PORT="$port"
         export WORKTREE_MODE=1
         export WORKTREE_TASK_ID="$task_id"
+        load_shared_env
 
         # Run the service
         nohup bash -c "$final_command" > "${log_dir}/${service_name}.log" 2>&1 &
