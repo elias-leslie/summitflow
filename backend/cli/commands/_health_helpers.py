@@ -95,11 +95,3 @@ def build_results_query(limit: int, check_type: str | None, status_filter: str |
     if unfixed:
         params.append("unfixed_only=true")
     return "&".join(params)
-
-
-def extract_error_detail(response: Any) -> str:
-    """Extract error detail from an HTTP response object."""
-    try:
-        return response.json().get("detail", response.text)
-    except Exception:
-        return response.text

@@ -11,7 +11,7 @@ from ..client import APIError, STClient
 from ..config import get_agent_hub_url
 from ..lib.credentials import load_credentials
 from ..output import handle_api_error, output_error
-from ._http_errors import raise_connect_error, raise_timeout_error
+from ._http_errors import parse_error_detail, raise_connect_error, raise_timeout_error
 
 # HTTP headers
 _HEADER_CLIENT_ID = "X-Client-Id"
@@ -24,19 +24,11 @@ _SESSIONS_EVENTS_PATH = "/api/sessions/{session_id}/events"
 _HTTP_TIMEOUT = 30.0
 
 
-def _parse_error_detail(response: httpx.Response) -> str:
-    """Extract a human-readable error detail from a failed response."""
-    try:
-        return response.json().get("detail", response.text)
-    except Exception:
-        return response.text
-
-
 def _check_response(response: httpx.Response) -> dict[str, Any]:
     """Validate HTTP response and return parsed JSON body."""
     if response.status_code < 400:
         return cast(dict[str, Any], response.json())
-    detail = _parse_error_detail(response)
+    detail = parse_error_detail(response)
     output_error(f"API error ({response.status_code}): {detail}")
     raise typer.Exit(1) from None
 

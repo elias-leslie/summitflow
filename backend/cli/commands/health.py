@@ -12,11 +12,11 @@ from ..output_context import OutputContext
 from ._health_helpers import (
     build_results_query,
     build_sync_payload,
-    extract_error_detail,
     format_health_compact,
     format_results_compact,
     print_sync_compact,
 )
+from ._http_errors import parse_error_detail
 
 app = typer.Typer(help="Quality gate health and status")
 
@@ -129,7 +129,7 @@ def sync(
         response = client._client.post(client._url("/quality/sync"), json=payload)
 
         if response.status_code >= 400:
-            output_error(f"API error: {extract_error_detail(response)}")
+            output_error(f"API error: {parse_error_detail(response)}")
             raise typer.Exit(1) from None
 
         data = response.json()

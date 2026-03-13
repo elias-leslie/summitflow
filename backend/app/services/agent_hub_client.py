@@ -5,8 +5,6 @@ get_sync_client, get_async_client, and Agent Hub config constants."""
 
 from __future__ import annotations
 
-from typing import Any
-
 from agent_hub import AgentHubClient
 
 from ..logging_config import get_logger
@@ -86,7 +84,8 @@ class AgentHubLLMClient(LLMClient):
         task_id: str | None = None,
         use_memory: bool | None = None,
         memory_group_id: str | None = None,
-        **kwargs: Any,
+        session_id: str | None = None,
+        enable_caching: bool = True,
     ) -> LLMResponse:
         """Generate completion via Agent Hub; raises RuntimeError on failure."""
         effective_use_memory = use_memory if use_memory is not None else self.use_memory
@@ -101,10 +100,10 @@ class AgentHubLLMClient(LLMClient):
                 messages=msgs,
                 temperature=temperature,
                 project_id=self.project_id,
-                session_id=kwargs.get("session_id"),
+                session_id=session_id,
                 purpose=purpose,
                 external_id=task_id,
-                enable_caching=kwargs.get("enable_caching", True),
+                enable_caching=enable_caching,
                 use_memory=effective_use_memory,
                 memory_group_id=effective_memory_group,
             )

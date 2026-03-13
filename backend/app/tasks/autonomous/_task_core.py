@@ -259,8 +259,8 @@ def build_architecture_description(
         f"**Total Violations:** {violations_count}\n\n"
         f"### Files to fix:\n"
     )
-    for affected_file in affected_files[:15]:
-        description += f"- {affected_file}\n"
+    file_lines = [f"- {f}\n" for f in affected_files[:15]]
     if len(affected_files) > 15:
-        description += f"- ... and {len(affected_files) - 15} more files\n"
+        file_lines.append(f"- ... and {len(affected_files) - 15} more files\n")
+    description += "".join(file_lines)
     return description

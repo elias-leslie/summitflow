@@ -6,7 +6,7 @@ project_permissions. This service handles execution behavior settings only.
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any
 
 from ..storage.agent_configs import get_agent_config, update_agent_config
 from .autonomous_models import (
@@ -17,23 +17,22 @@ from .autonomous_models import (
 
 def _parse_core_settings(config: dict[str, Any]) -> dict[str, Any]:
     """Parse execution behavior settings from config."""
-    freq_raw = config.get("autonomous_frequency_minutes", 30)
-    frequency_minutes = int(cast(int, freq_raw) if freq_raw else 30)
+    frequency_minutes = int(config.get("autonomous_frequency_minutes", 30) or 30)
     auto_merge_tiers_raw = config.get("autonomous_auto_merge_tiers")
-    auto_merge_tiers = list(cast(list[int], auto_merge_tiers_raw)) if auto_merge_tiers_raw else [1]
+    auto_merge_tiers = list(auto_merge_tiers_raw) if auto_merge_tiers_raw else [1]
     task_types_raw = config.get("autonomous_task_types")
-    task_types = list(cast(list[str], task_types_raw)) if task_types_raw else ["auto-generated"]
+    task_types = list(task_types_raw) if task_types_raw else ["auto-generated"]
     max_tasks_per_day_raw = config.get("autonomous_max_tasks_per_day")
-    max_tasks_per_day = int(str(max_tasks_per_day_raw)) if max_tasks_per_day_raw else None
+    max_tasks_per_day = int(max_tasks_per_day_raw) if max_tasks_per_day_raw else None
     allowed_types_raw = config.get("autonomous_allowed_types")
-    allowed_types = list(cast(list[str], allowed_types_raw)) if allowed_types_raw else None
+    allowed_types = list(allowed_types_raw) if allowed_types_raw else None
     return {
         "frequency_minutes": frequency_minutes,
         "auto_merge_tiers": auto_merge_tiers,
         "task_types": task_types,
         "max_concurrent": int(config.get("autonomous_max_concurrent", 1)),
         "max_tasks_per_day": max_tasks_per_day,
-        "cooldown_minutes": int(str(config.get("autonomous_cooldown_minutes", 0))),
+        "cooldown_minutes": int(config.get("autonomous_cooldown_minutes", 0) or 0),
         "allowed_types": allowed_types,
     }
 

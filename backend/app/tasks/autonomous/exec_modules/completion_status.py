@@ -275,9 +275,9 @@ def handle_status_transition_error(
     """Log, block, and notify on a status-transition failure."""
     error_msg = f"Failed to transition status: {type(error).__name__}: {error!s}"
     if context:
-        error_msg += f"\nTask ID: {task_id}\nProject ID: {project_id}"
-        for key, value in context.items():
-            error_msg += f"\n{key}: {value}"
+        parts = [error_msg, f"Task ID: {task_id}", f"Project ID: {project_id}"]
+        parts.extend(f"{key}: {value}" for key, value in context.items())
+        error_msg = "\n".join(parts)
 
     emit_log(task_id, "error", error_msg, project_id=project_id)
     task_store.update_task_status(task_id, "blocked")

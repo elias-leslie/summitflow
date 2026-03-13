@@ -10,23 +10,15 @@ import typer
 from ..config import get_agent_hub_url
 from ..output import output_error, output_json
 from ..output_context import OutputContext
-from ._http_errors import raise_connect_error, raise_timeout_error
+from ._http_errors import parse_error_detail, raise_connect_error, raise_timeout_error
 
 app = typer.Typer(help="Tool usage metrics (Agent Hub)")
-
-
-def _parse_error_detail(response: httpx.Response) -> str:
-    """Extract error detail from an HTTP error response."""
-    try:
-        return response.json().get("detail", response.text)
-    except Exception:
-        return response.text
 
 
 def _handle_response(response: httpx.Response, agent_hub_url: str) -> dict[str, Any]:
     """Validate and parse a successful HTTP response."""
     if response.status_code >= 400:
-        detail = _parse_error_detail(response)
+        detail = parse_error_detail(response)
         output_error(f"API error ({response.status_code}): {detail}")
         raise typer.Exit(1) from None
     return cast(dict[str, Any], response.json())

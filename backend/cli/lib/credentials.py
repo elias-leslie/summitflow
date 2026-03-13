@@ -61,13 +61,3 @@ def load_credentials(default_source: str = "st-cli") -> tuple[str, str]:
 
     request_source = creds.get(_KEY_REQUEST_SOURCE, default_source)
     return client_id, request_source
-
-
-def get_client_id() -> str:
-    """Get just the client ID (convenience wrapper).
-
-    Raises:
-        typer.Exit: If credentials are missing.
-    """
-    client_id, _ = load_credentials()
-    return client_id

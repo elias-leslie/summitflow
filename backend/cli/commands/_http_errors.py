@@ -10,6 +10,18 @@ import typer
 from ..output import output_error
 
 
+def parse_error_detail(response: "httpx.Response") -> str:
+    """Extract a human-readable error detail from a failed HTTP response.
+
+    Shared across CLI commands to avoid duplicating this pattern.
+    """
+    try:
+        body = response.json()
+        return body.get("detail") or body.get("message") or response.text
+    except Exception:
+        return response.text
+
+
 def _extract_root_error_message(error: BaseException) -> str:
     """Return the deepest useful exception message."""
     current: BaseException = error

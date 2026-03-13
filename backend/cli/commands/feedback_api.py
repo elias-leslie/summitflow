@@ -10,7 +10,7 @@ import typer
 from ..config import get_agent_hub_url
 from ..lib.credentials import load_credentials
 from ..output import output_error
-from ._http_errors import raise_connect_error, raise_timeout_error
+from ._http_errors import parse_error_detail, raise_connect_error, raise_timeout_error
 
 
 def _dispatch_request(
@@ -30,15 +30,6 @@ def _dispatch_request(
     if method == "DELETE":
         return client.delete(url, headers=headers)
     return client.post(url, json=json, headers=headers)
-
-
-def _extract_error_detail(response: httpx.Response) -> str:
-    """Extract a human-readable error detail from a failed response."""
-    try:
-        err = response.json()
-        return err.get("detail") or err.get("message") or response.text
-    except Exception:
-        return response.text
 
 
 def feedback_request(
@@ -68,7 +59,7 @@ def feedback_request(
             )
 
         if response.status_code >= 400:
-            detail = _extract_error_detail(response)
+            detail = parse_error_detail(response)
             output_error(f"{detail}")
             raise typer.Exit(1) from None
 

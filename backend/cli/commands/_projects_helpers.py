@@ -11,11 +11,11 @@ import httpx
 import typer
 
 from ..output import output_error, output_json, output_success
+from ._http_errors import parse_error_detail
 
 logger = logging.getLogger(__name__)
 
 # Constants
-DEFAULT_API_BASE = "http://localhost:8001/api"
 ENV_API_BASE = "ST_API_BASE"
 ENV_PROJECT_ID = "ST_PROJECT_ID"
 DEFAULT_HEALTH_ENDPOINT = "/health"
@@ -27,9 +27,12 @@ UPDATE_FIELDS_MSG = (
 )
 
 
+_DEFAULT_API_BASE = "http://localhost:8001/api"
+
+
 def get_api_base() -> str:
     """Return the configured API base URL."""
-    return os.getenv(ENV_API_BASE, DEFAULT_API_BASE)
+    return os.getenv(ENV_API_BASE, _DEFAULT_API_BASE)
 
 
 def projects_api(
@@ -57,10 +60,7 @@ def projects_api(
             if response.status_code == 204:
                 return None
             if response.status_code >= 400:
-                try:
-                    detail = response.json().get("detail", response.text)
-                except Exception:
-                    detail = response.text
+                detail = parse_error_detail(response)
                 output_error(f"{response.status_code}: {detail}")
                 raise typer.Exit(1)
             return response.json()

@@ -12,6 +12,8 @@ import {
 import { useEffect, useRef, useState } from 'react'
 import { fetchProjects } from '@/lib/api'
 
+const PROJECT_STORAGE_KEY = 'summitflow_selected_project'
+
 interface ProjectSelectorProps {
   onProjectChange?: (projectId: string | null) => void
 }
@@ -38,11 +40,11 @@ export function ProjectSelector({ onProjectChange }: ProjectSelectorProps) {
     const urlProjectId = params.id as string | undefined
     if (urlProjectId) {
       setSelectedProjectId(urlProjectId)
-      localStorage.setItem('summitflow_selected_project', urlProjectId)
+      localStorage.setItem(PROJECT_STORAGE_KEY, urlProjectId)
     } else if (pathname === '/') {
       // On dashboard - clear selection
       setSelectedProjectId(null)
-      localStorage.removeItem('summitflow_selected_project')
+      localStorage.removeItem(PROJECT_STORAGE_KEY)
     }
   }, [params.id, pathname])
 
@@ -65,7 +67,7 @@ export function ProjectSelector({ onProjectChange }: ProjectSelectorProps) {
   const handleSelectProject = (projectId: string | null) => {
     setSelectedProjectId(projectId)
     if (projectId) {
-      localStorage.setItem('summitflow_selected_project', projectId)
+      localStorage.setItem(PROJECT_STORAGE_KEY, projectId)
       // Navigate to project page if not already there
       if (!pathname.startsWith(`/projects/${projectId}`)) {
         // Preserve current tab and sub-context when switching projects
@@ -83,7 +85,7 @@ export function ProjectSelector({ onProjectChange }: ProjectSelectorProps) {
         router.push(targetUrl)
       }
     } else {
-      localStorage.removeItem('summitflow_selected_project')
+      localStorage.removeItem(PROJECT_STORAGE_KEY)
     }
     setIsDropdownOpen(false)
     onProjectChange?.(projectId)
