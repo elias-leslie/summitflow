@@ -10,7 +10,7 @@ import typer
 from ..output import output_error
 
 
-def parse_error_detail(response: "httpx.Response") -> str:
+def parse_error_detail(response: httpx.Response) -> str:
     """Extract a human-readable error detail from a failed HTTP response.
 
     Shared across CLI commands to avoid duplicating this pattern.
