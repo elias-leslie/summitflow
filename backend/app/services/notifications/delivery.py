@@ -105,6 +105,6 @@ async def deliver(notification: dict[str, Any]) -> None:
                 json=_build_payload(notification),
                 headers=headers,
             )
-        _log_push_response(resp, notification.get("id"))
+        _log_push_response(resp, notification.get("id") or "")
     except Exception:
         logger.exception("Failed to deliver notification via Agent Hub push")

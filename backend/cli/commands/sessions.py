@@ -180,6 +180,34 @@ def _reapable_sessions(sessions: list[dict[str, object]]) -> list[dict[str, obje
     return result
 
 
+def _output_dry_run(
+    project_id: str | None,
+    candidates: list[dict[str, object]],
+) -> None:
+    """Render the dry-run preview of reapable sessions as JSON."""
+    output_json(
+        {
+            "project_id": project_id,
+            "dry_run": True,
+            "reapable_count": len(candidates),
+            "reapable_sessions": [
+                {
+                    "id": session.get("id"),
+                    "project_id": session.get("project_id"),
+                    "agent_slug": session.get("agent_slug"),
+                    "session_type": session.get("session_type"),
+                    "reapable_reason": (
+                        session.get("live_activity", {}).get("reapable_reason")
+                        if isinstance(session.get("live_activity"), dict)
+                        else None
+                    ),
+                }
+                for session in candidates
+            ],
+        }
+    )
+
+
 @app.command("reap")
 def reap_sessions(
     project_id: Annotated[str | None, typer.Option("--project", "-P")] = None,
@@ -201,35 +229,19 @@ def reap_sessions(
         return
 
     if dry_run:
-        output_json(
-            {
-                "project_id": target_project_id,
-                "dry_run": True,
-                "reapable_count": len(candidates),
-                "reapable_sessions": [
-                    {
-                        "id": session.get("id"),
-                        "project_id": session.get("project_id"),
-                        "agent_slug": session.get("agent_slug"),
-                        "session_type": session.get("session_type"),
-                        "reapable_reason": (
-                            session.get("live_activity", {}).get("reapable_reason")
-                            if isinstance(session.get("live_activity"), dict)
-                            else None
-                        ),
-                    }
-                    for session in candidates
-                ],
-            }
-        )
+        _output_dry_run(target_project_id, candidates)
         return
 
     closed: list[dict[str, object]] = []
+    failed: list[dict[str, object]] = []
     for session in candidates:
         session_id = session.get("id")
         if not isinstance(session_id, str) or not session_id:
             continue
-        closed.append(client.close_session(session_id))
+        try:
+            closed.append(client.close_session(session_id))
+        except APIError as e:
+            failed.append({"id": session_id, "error": str(e.detail)})
 
     output_json(
         {
@@ -238,6 +250,8 @@ def reap_sessions(
             "reapable_count": len(candidates),
             "closed_count": len(closed),
             "closed_sessions": closed,
+            "failed_count": len(failed),
+            "failed_sessions": failed,
         }
     )
 

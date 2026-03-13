@@ -5,11 +5,11 @@ import { AnimatePresence, motion } from 'motion/react'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { type DiscussionMessage, discussTask, type Task } from '@/lib/api/tasks'
+import { getErrorMessage } from '@/lib/utils'
 
 interface IdentifiedMessage extends DiscussionMessage {
   _key: string
 }
-import { getErrorMessage } from '@/lib/utils'
 
 interface DiscussionChatProps {
   projectId: string
@@ -27,7 +27,7 @@ export function DiscussionChat({
   const idPrefix = useId()
   const nextId = useRef(0)
   const makeKey = () => `${idPrefix}-${nextId.current++}`
-  const [messages, setMessages] = useState<IdentifiedMessage[]>(
+  const [messages, setMessages] = useState<IdentifiedMessage[]>(() =>
     initialHistory.map((m) => ({ ...m, _key: `init-${nextId.current++}` })),
   )
   const [input, setInput] = useState('')

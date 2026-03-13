@@ -77,6 +77,13 @@ export function MockupCard({
   selectMode = false,
   isSelected = false,
 }: MockupCardProps) {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      onClick()
+    }
+  }
+
   const status =
     statusConfig[mockup.status as keyof typeof statusConfig] ??
     statusConfig.generated
@@ -106,7 +113,7 @@ export function MockupCard({
         role="button"
         tabIndex={0}
         onClick={onClick}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } }}
+        onKeyDown={handleKeyDown}
         className={`card p-4 flex items-center gap-4 cursor-pointer transition-colors ${
           selectMode && isSelected
             ? 'bg-outrun-500/10 border-outrun-500/50 ring-2 ring-outrun-500/30'
@@ -173,7 +180,7 @@ export function MockupCard({
       role="button"
       tabIndex={0}
       onClick={onClick}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } }}
+      onKeyDown={handleKeyDown}
       className={`card overflow-hidden cursor-pointer transition-all group ${
         selectMode && isSelected
           ? 'ring-2 ring-outrun-500 bg-outrun-500/5'

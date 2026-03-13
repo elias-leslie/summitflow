@@ -52,7 +52,7 @@ HEARTBEAT_PHASE = "waiting_for_model"
 HEARTBEAT_STATUS = "active"
 HEARTBEAT_EVENT_TYPE = "heartbeat"
 
-GIT_FILTER_PREFIXES = (" chore: auto-fix", "chore(.index")
+GIT_FILTER_PREFIXES = ("chore: auto-fix", "chore(.index")
 
 
 # ---------------------------------------------------------------------------
@@ -146,12 +146,15 @@ def _parse_jsonl_line(line: str) -> dict[str, object] | None:
 def _scan_transcript_headers(path: Path) -> tuple[str, str, str]:
     """Return (session_id, cwd, model) from early lines of a transcript."""
     session_id = cwd = model = ""
-    for line in path.open(encoding="utf-8"):
-        obj = _parse_jsonl_line(line)
-        if obj is not None:
-            session_id, cwd, model = _parse_transcript_line(obj, session_id, cwd, model)
-        if session_id and cwd and model:
-            break
+    with path.open(encoding="utf-8") as f:
+        for i, line in enumerate(f):
+            if i >= 100:
+                break
+            obj = _parse_jsonl_line(line)
+            if obj is not None:
+                session_id, cwd, model = _parse_transcript_line(obj, session_id, cwd, model)
+            if session_id and cwd and model:
+                break
     return session_id, cwd, model
 
 
@@ -356,10 +359,12 @@ def sync_transcript(
     except json.JSONDecodeError as exc:
         return False, f"transcript ingest returned invalid JSON: {exc}"
 
+    next_cp = ingest_data.get("next_checkpoint")
+    checkpoint = str(next_cp) if next_cp else None
     update_state_entry(
         state, info, "synced",
         f"appended={ingest_data.get('events_appended', 0)} skipped={ingest_data.get('events_skipped', 0)}",
-        checkpoint=str(ingest_data["next_checkpoint"]) if ingest_data.get("next_checkpoint") else None,
+        checkpoint=checkpoint,
     )
 
     ok, _, err = _checked_post(api_url, ENDPOINT_HEARTBEAT.format(sid=info.session_id), {

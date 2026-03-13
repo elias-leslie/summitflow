@@ -33,6 +33,13 @@ export function TasksTabTable({
   onTaskClick,
   onDeleteClick,
 }: TasksTabTableProps) {
+  const handleSortKeyDown = (field: SortField) => (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      onSort(field)
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="rounded-lg border border-slate-700 bg-slate-900/50 overflow-hidden">
@@ -76,7 +83,7 @@ export function TasksTabTable({
               tabIndex={0}
               className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-16 cursor-pointer hover:text-slate-200 select-none"
               onClick={() => onSort('priority')}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSort('priority') } }}
+              onKeyDown={handleSortKeyDown('priority')}
             >
               Pri
               <SortIndicator
@@ -90,7 +97,7 @@ export function TasksTabTable({
               tabIndex={0}
               className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-20 cursor-pointer hover:text-slate-200 select-none"
               onClick={() => onSort('type')}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSort('type') } }}
+              onKeyDown={handleSortKeyDown('type')}
             >
               Type
               <SortIndicator
@@ -107,7 +114,7 @@ export function TasksTabTable({
               tabIndex={0}
               className="px-3 py-2 text-left text-xs font-medium text-slate-400 cursor-pointer hover:text-slate-200 select-none"
               onClick={() => onSort('title')}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSort('title') } }}
+              onKeyDown={handleSortKeyDown('title')}
             >
               Title
               <SortIndicator
@@ -124,7 +131,7 @@ export function TasksTabTable({
               tabIndex={0}
               className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-24 cursor-pointer hover:text-slate-200 select-none"
               onClick={() => onSort('status')}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSort('status') } }}
+              onKeyDown={handleSortKeyDown('status')}
             >
               Status
               <SortIndicator
@@ -138,7 +145,7 @@ export function TasksTabTable({
               tabIndex={0}
               className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-24 cursor-pointer hover:text-slate-200 select-none"
               onClick={() => onSort('created_at')}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSort('created_at') } }}
+              onKeyDown={handleSortKeyDown('created_at')}
             >
               Created
               <SortIndicator

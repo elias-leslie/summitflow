@@ -16,6 +16,7 @@ from ..config import REDIS_URL
 
 # Module-level pool — lazy-initialized on first use
 _pool: redis.ConnectionPool | None = None
+_client: redis.Redis | None = None
 
 # Redis DB 1 is the SummitFlow application database
 _REDIS_DB = 1
@@ -27,10 +28,11 @@ def get_redis() -> redis.Redis:
     Returns:
         redis.Redis instance backed by a shared ConnectionPool.
     """
-    global _pool
-    if _pool is None:
+    global _pool, _client
+    if _client is None:
         _pool = redis.ConnectionPool.from_url(
             f"{REDIS_URL}/{_REDIS_DB}",
             max_connections=10,
         )
-    return redis.Redis(connection_pool=_pool)
+        _client = redis.Redis(connection_pool=_pool)
+    return _client

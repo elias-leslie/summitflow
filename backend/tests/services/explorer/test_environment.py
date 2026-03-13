@@ -21,3 +21,37 @@ def test_read_node_info_prefers_package_manager_field(tmp_path: Path) -> None:
     info = _read_node_info(package_json, tmp_path)
 
     assert info == {"node_version": "24", "package_manager": "pnpm"}
+
+
+def test_read_node_info_fallback_to_lockfile_detection(tmp_path: Path) -> None:
+    """When packageManager field is missing, fallback to lockfile detection."""
+    package_json = tmp_path / "package.json"
+    package_json.write_text(
+        json.dumps(
+            {
+                "engines": {"node": "20"},
+            }
+        )
+    )
+    (tmp_path / "pnpm-lock.yaml").touch()
+
+    info = _read_node_info(package_json, tmp_path)
+
+    assert info == {"node_version": "20", "package_manager": "pnpm"}
+
+
+def test_read_node_info_raw_package_manager_without_version(tmp_path: Path) -> None:
+    """When packageManager has no @version suffix, ensure it returns that raw value."""
+    package_json = tmp_path / "package.json"
+    package_json.write_text(
+        json.dumps(
+            {
+                "engines": {"node": "18"},
+                "packageManager": "yarn",
+            }
+        )
+    )
+
+    info = _read_node_info(package_json, tmp_path)
+
+    assert info == {"node_version": "18", "package_manager": "yarn"}

@@ -30,7 +30,7 @@ def _parse_core_settings(config: dict[str, Any]) -> dict[str, Any]:
         "frequency_minutes": frequency_minutes,
         "auto_merge_tiers": auto_merge_tiers,
         "task_types": task_types,
-        "max_concurrent": int(config.get("autonomous_max_concurrent", 1)),
+        "max_concurrent": int(config.get("autonomous_max_concurrent") or 1),
         "max_tasks_per_day": max_tasks_per_day,
         "cooldown_minutes": int(config.get("autonomous_cooldown_minutes", 0) or 0),
         "allowed_types": allowed_types,

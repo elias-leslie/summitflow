@@ -11,7 +11,7 @@ import {
 } from '@/lib/api'
 import { GitPageHeader } from './GitPageHeader'
 import { GitRepoCard } from './GitRepoCard'
-import { POLL_FAST, POLL_STANDARD, STALE_STANDARD } from '@/lib/polling'
+import { POLL_STANDARD, STALE_STANDARD, TOAST_DISMISS_MS } from '@/lib/polling'
 import { GitSyncToast } from './GitSyncToast'
 
 export function ProjectGitClient() {
@@ -37,7 +37,7 @@ export function ProjectGitClient() {
     onSuccess: (data) => {
       setSyncResults(data.results)
       queryClient.invalidateQueries({ queryKey: ['git-status', projectId] })
-      setTimeout(() => setSyncResults(null), POLL_FAST)
+      setTimeout(() => setSyncResults(null), TOAST_DISMISS_MS)
     },
   })
 

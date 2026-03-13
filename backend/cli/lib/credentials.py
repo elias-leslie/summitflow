@@ -28,10 +28,13 @@ def _read_env_local() -> dict[str, str]:
         return {}
     creds: dict[str, str] = {}
     for line in env_file.read_text().splitlines():
+        line = line.strip()
+        if line.startswith("export "):
+            line = line[7:]
         if "=" in line and not line.startswith("#"):
             key, val = line.split("=", 1)
             key = key.strip()
-            val = val.strip()
+            val = val.strip().strip("'\"")
             if key and val:
                 creds[key] = val
     return creds

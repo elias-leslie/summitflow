@@ -36,6 +36,13 @@ export function TimelineEvent({ message }: { message: TimelineMessage }) {
   const [expanded, setExpanded] = useState(false)
   const { time, isRecent } = formatTimestamp(message.timestamp)
 
+  const handleKeyToggle = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      setExpanded(!expanded)
+    }
+  }
+
   // Log message
   if (message.type === 'log') {
     const level = message.data.level as string
@@ -60,7 +67,7 @@ export function TimelineEvent({ message }: { message: TimelineMessage }) {
         tabIndex={hasDetails ? 0 : undefined}
         className={`group flex gap-3 py-2 px-3 ${config.bg} hover:bg-slate-700/30 transition-colors border-b border-slate-800/30 ${hasDetails ? 'cursor-pointer' : ''}`}
         onClick={() => hasDetails && setExpanded(!expanded)}
-        onKeyDown={hasDetails ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded(!expanded) } } : undefined}
+        onKeyDown={hasDetails ? handleKeyToggle : undefined}
       >
         <span className={`text-2xs mono shrink-0 w-14 tabular-nums ${isRecent ? 'text-cyan-500' : 'text-slate-600'}`}>
           {time}
@@ -222,7 +229,7 @@ export function TimelineEvent({ message }: { message: TimelineMessage }) {
         tabIndex={details ? 0 : undefined}
         className={`flex gap-3 py-2.5 px-3 bg-red-950/30 border-l-2 border-red-500 border-b border-slate-800/30 ${details ? 'cursor-pointer' : ''}`}
         onClick={() => details && setExpanded(!expanded)}
-        onKeyDown={details ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded(!expanded) } } : undefined}
+        onKeyDown={details ? handleKeyToggle : undefined}
       >
         <span className={`text-2xs mono shrink-0 w-14 tabular-nums ${isRecent ? 'text-cyan-500' : 'text-slate-600'}`}>
           {time}

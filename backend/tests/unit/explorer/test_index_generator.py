@@ -212,6 +212,7 @@ class TestGenerateIndex:
 
         parsed = yaml.safe_load(result)
         assert parsed["services"]["infrastructure"] == {"postgres": 5432, "redis": 6379}
+        assert "neo4j" not in parsed["services"]["infrastructure"]
 
 
 class TestWriteIndexFile:

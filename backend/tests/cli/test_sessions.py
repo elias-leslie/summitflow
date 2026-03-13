@@ -356,7 +356,42 @@ class TestSessionCommands:
             "reapable_count": 1,
             "closed_count": 1,
             "closed_sessions": [{"id": "sess-1", "status": "completed"}],
+            "failed_count": 0,
+            "failed_sessions": [],
         }
+
+    def test_list_all_active_sessions_paginates_multiple_pages(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from cli.commands import sessions as sessions_cmd
+
+        class _DummyClient:
+            def list_sessions(self, **kwargs: object) -> list[dict[str, object]]:
+                page = kwargs.get("page", 1)
+                limit = kwargs.get("limit", 100)
+                # Return different sessions for each page
+                if page == 1:
+                    return [
+                        {"id": f"sess-{i}", "project_id": "agent-hub"}
+                        for i in range(1, limit + 1)
+                    ]
+                elif page == 2:
+                    return [
+                        {"id": f"sess-{i}", "project_id": "agent-hub"}
+                        for i in range(limit + 1, limit + 51)
+                    ]
+                else:
+                    return []
+
+        monkeypatch.setattr(sessions_cmd, "STClient", _DummyClient)
+
+        client = _DummyClient()
+        result = sessions_cmd._list_all_active_sessions(client, project_id="agent-hub", page_size=100)
+
+        # Should combine sessions from both pages (100 from page 1 + 50 from page 2)
+        assert len(result) == 150
+        assert result[0]["id"] == "sess-1"
+        assert result[99]["id"] == "sess-100"
+        assert result[100]["id"] == "sess-101"
+        assert result[149]["id"] == "sess-150"
 
 
 class TestOwnershipCommand:

@@ -44,6 +44,9 @@ export const FEEDBACK_TIMEOUT = 2_000
 /** Duration to show push notification timeout warnings. */
 export const PUSH_NOTIFICATION_TIMEOUT = 10_000
 
+/** Duration to dismiss toast notifications. */
+export const TOAST_DISMISS_MS = 5_000
+
 // --- GC times ---
 /** Garbage-collection time for explorer queries (5 minutes). */
 export const GC_EXPLORER = 300_000

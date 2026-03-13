@@ -43,7 +43,7 @@ export function TaskListRow({
   return (
     <tr
       className={cn(
-        'border-b border-slate-800 hover:bg-slate-800/30 transition-colors cursor-pointer',
+        'border-b border-slate-800 hover:bg-slate-800/30 focus-visible:bg-slate-800/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-phosphor-500/50 transition-colors cursor-pointer',
         isExpanded && 'bg-slate-800/50',
         isSelected && 'bg-blue-500/10',
       )}

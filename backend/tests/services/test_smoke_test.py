@@ -48,7 +48,7 @@ class TestRunAllSmokeTests:
         assert result["healthy"] == 0
         assert len(result["failures"]) == len(HEALTH_URLS)
 
-    def test_prod_health_urls_complete(self) -> None:
+    def test_health_urls_complete(self) -> None:
         """Verify all expected projects have health URLs."""
         expected = {"summitflow", "agent-hub", "portfolio-ai", "terminal"}
         assert set(HEALTH_URLS.keys()) == expected

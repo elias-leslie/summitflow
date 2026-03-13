@@ -172,6 +172,7 @@ function SpanNodeRow({
             handleClick()
           }
         }}
+        {...(hasChildren && { 'aria-expanded': expanded })}
       >
         {/* Expand/collapse */}
         <span className="w-4 shrink-0">

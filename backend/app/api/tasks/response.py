@@ -89,7 +89,7 @@ def _flatten_steps(steps: list[Any] | None) -> list[str]:
     if not steps:
         return []
     if isinstance(steps[0], dict):
-        return [step["description"] for step in steps]
+        return [step.get("description", "") for step in steps if isinstance(step, dict)]
     return list(steps)
 
 
