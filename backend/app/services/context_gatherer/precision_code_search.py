@@ -21,6 +21,7 @@ from ._precision_query import (
     extract_query_terms,
     looks_like_workflow_meta_query,
     normalize_queries,
+    split_path_and_symbol_terms,
 )
 from .token_utils import MAX_EXPLORER_TOKENS, estimate_tokens, truncate_to_tokens
 
@@ -206,6 +207,18 @@ def _format_symbol_related(entry: dict[str, object]) -> str | None:
     return None
 
 
+def _has_primary_match(row: dict[str, object], normalized_terms: list[str]) -> bool:
+    """Return True if the symbol matches on name, qualified_name, or file_path — not just summary/keywords."""
+    name = _normalize_match_text(row.get("name"))
+    qualified_name = _normalize_match_text(row.get("qualified_name"))
+    file_path = _normalize_match_text(row.get("file_path"))
+    return (
+        _match_term_count(name, normalized_terms)
+        + _match_term_count(qualified_name, normalized_terms)
+        + _match_term_count(file_path, normalized_terms)
+    ) > 0
+
+
 def _search_symbol_matches(project_id: str, queries: list[str]) -> list[dict[str, object]]:
     candidates: dict[str, dict[str, object]] = {}
     query_terms = extract_query_terms(queries)
@@ -220,8 +233,14 @@ def _search_symbol_matches(project_id: str, queries: list[str]) -> list[dict[str
 
     normalized_queries = [_normalize_match_text(query) for query in queries]
     normalized_terms = [_normalize_match_text(term) for term in query_terms]
+
+    # Filter out summary/keyword-only matches (incidental mentions)
+    primary_candidates = [r for r in candidates.values() if _has_primary_match(r, normalized_terms)]
+    # Fall back to all candidates only if filtering removes everything
+    pool = primary_candidates or list(candidates.values())
+
     ranked = sorted(
-        candidates.values(),
+        pool,
         key=lambda row: _symbol_match_rank(row, normalized_queries, normalized_terms),
         reverse=True,
     )
@@ -243,7 +262,7 @@ def _symbol_match_rank(
     row: dict[str, object],
     normalized_queries: list[str],
     normalized_terms: list[str],
-) -> tuple[int, int, int, int, int, str]:
+) -> tuple[int, int, int, int, int, int, str]:
     name = _normalize_match_text(row.get("name"))
     qualified_name = _normalize_match_text(row.get("qualified_name"))
     signature = _normalize_match_text(row.get("signature"))
@@ -252,21 +271,31 @@ def _symbol_match_rank(
     raw_keywords = row.get("keywords", [])
     keyword_values = raw_keywords if isinstance(raw_keywords, list | tuple | set) else []
     keywords = " ".join(_normalize_match_text(keyword) for keyword in keyword_values)
-    blob = " ".join(part for part in (name, qualified_name, signature, summary, file_path, keywords) if part)
 
-    query_phrase_hits = sum(1 for query in normalized_queries if query and query in blob)
-    distinct_term_hits = _match_term_count(blob, normalized_terms)
+    # Primary: name/qualified_name hits — the strongest signal of relevance
     name_term_hits = _match_term_count(name, normalized_terms)
     qualified_term_hits = _match_term_count(qualified_name, normalized_terms)
-    path_term_hits = _match_term_count(file_path, normalized_terms)
     exact_name_hits = sum(1 for query in normalized_queries if query and query == name)
+    # File path hits are secondary — relevant but weaker than name
+    path_term_hits = _match_term_count(file_path, normalized_terms)
+    # Summary/keyword/signature hits are tertiary — often incidental mentions
+    summary_term_hits = _match_term_count(summary, normalized_terms)
+    sig_term_hits = _match_term_count(signature, normalized_terms)
+    kw_term_hits = _match_term_count(keywords, normalized_terms)
+
+    # Whether the symbol has ANY name/path match (vs summary-only)
+    has_primary_match = int(name_term_hits + qualified_term_hits + path_term_hits > 0)
+
+    blob = " ".join(part for part in (name, qualified_name, signature, summary, file_path, keywords) if part)
+    query_phrase_hits = sum(1 for query in normalized_queries if query and query in blob)
 
     return (
-        distinct_term_hits,
-        query_phrase_hits,
-        exact_name_hits,
-        name_term_hits + qualified_term_hits,
-        path_term_hits + _match_term_count(summary, normalized_terms),
+        has_primary_match,                          # filter: demote summary-only matches
+        exact_name_hits,                            # exact name match is strongest
+        name_term_hits + qualified_term_hits,       # name/qualified hits
+        query_phrase_hits,                          # full query phrase in any field
+        path_term_hits,                             # file path relevance
+        summary_term_hits + sig_term_hits + kw_term_hits,  # weak signals last
         str(row.get("qualified_name", "")),
     )
 
@@ -422,12 +451,20 @@ def _retrieve_and_assemble(
     index_status = _get_precision_index_status(project_id)
     refreshed_index = _refresh_precision_index(project_id) if index_status["should_refresh"] else False
 
-    symbols = _search_symbol_matches(project_id, normalized_queries)
+    # Split path segments from symbol terms so each routes to the right search
+    path_terms, symbol_terms = split_path_and_symbol_terms(normalized_queries)
+
+    # Search symbols using only non-path terms (or all queries if no split)
+    symbol_queries = symbol_terms if symbol_terms else normalized_queries
+    symbols = _search_symbol_matches(project_id, symbol_queries)
     symbol_section = _build_symbol_section(project_id, symbols) if symbols else ""
+
+    # Text fallback: use path terms if available (more targeted), else full query
+    text_query = " ".join(path_terms) if path_terms and not symbol_section else " ".join(normalized_queries)
     text_results = (
         {"count": 0, "files_searched": 0, "items": [], "truncated": False}
         if symbol_section
-        else search_text(project_id, " ".join(normalized_queries), limit=_ENTRY_LIMIT)
+        else search_text(project_id, text_query, limit=_ENTRY_LIMIT)
     )
     text_section = "" if symbol_section else _build_text_section(text_results)
 

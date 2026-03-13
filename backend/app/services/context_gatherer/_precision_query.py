@@ -81,6 +81,7 @@ _CODE_SIGNAL_TERMS = {
 
 _EXPLICIT_CODE_MARKERS = ("backend/", "frontend/", ".py", ".ts", ".tsx", "`", "::", "()")
 _MAX_TERMS = 12
+_PATH_EXTENSIONS = {".py", ".ts", ".tsx", ".js", ".jsx", ".css", ".json", ".yaml", ".yml", ".toml", ".md"}
 
 
 def normalize_queries(queries: list[str] | tuple[str, ...] | str) -> list[str]:
@@ -98,6 +99,34 @@ def normalize_queries(queries: list[str] | tuple[str, ...] | str) -> list[str]:
             normalized.append(query)
             seen.add(lowered)
     return normalized
+
+
+def _is_path_token(token: str) -> bool:
+    """Return True if the token looks like a file path or path fragment."""
+    if "/" in token or "\\" in token:
+        return True
+    return any(token.endswith(ext) for ext in _PATH_EXTENSIONS)
+
+
+def split_path_and_symbol_terms(queries: list[str]) -> tuple[list[str], list[str]]:
+    """Split query terms into (path_terms, symbol_terms).
+
+    Path segments like 'frontend/src' or 'explorer.py' are separated from
+    conceptual symbol terms like 'ShowPreview' so each can be routed to
+    the appropriate search mode.
+    """
+    path_terms: list[str] = []
+    symbol_terms: list[str] = []
+    for query in queries:
+        for token in query.split():
+            cleaned = token.strip("()[]{}:.;'\"")
+            if not cleaned:
+                continue
+            if _is_path_token(cleaned):
+                path_terms.append(cleaned)
+            else:
+                symbol_terms.append(cleaned)
+    return path_terms, symbol_terms
 
 
 def extract_query_terms(queries: list[str]) -> list[str]:
@@ -144,3 +173,29 @@ def fallback_match_terms(query_terms: list[str]) -> list[str]:
         if term.lower() not in _CODE_SIGNAL_TERMS and term.lower() not in _STOP_WORDS
     ]
     return specific_terms or [term.lower() for term in query_terms]
+
+
+# ---------------------------------------------------------------------------
+# Query quality classification for hint generation
+# ---------------------------------------------------------------------------
+
+_PATH_MARKERS = ("/", "\\", ".py", ".ts", ".tsx", ".js", ".jsx", ".css", ".json")
+
+
+def has_path_segments(queries: list[str]) -> bool:
+    """Detect path-qualified queries like 'Show Preview frontend/src'."""
+    combined = " ".join(queries)
+    return any(marker in combined for marker in _PATH_MARKERS)
+
+
+def is_short_or_generic(queries: list[str]) -> bool:
+    """Detect very short or generic queries unlikely to match symbols well."""
+    combined = " ".join(queries).strip()
+    terms = [t for t in combined.split() if t.lower() not in _STOP_WORDS]
+    if not terms:
+        return True
+    # All terms are 3 chars or fewer (e.g. "dnd", "ui")
+    if all(len(t) <= 3 for t in terms):
+        return True
+    # Single generic word that isn't a code identifier (no underscores, camelCase, etc.)
+    return len(terms) == 1 and terms[0].isalpha() and terms[0].islower() and len(terms[0]) <= 6

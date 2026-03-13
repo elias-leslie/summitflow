@@ -77,6 +77,91 @@ def test_search_compact_output_reports_empty_results() -> None:
     assert "SEARCH:missing_symbol|mode=empty|symbols=0|tokens=0" in result.output
 
 
+def test_search_empty_result_shows_hint() -> None:
+    payload = {
+        "prompt_context": "",
+        "metadata": {
+            "symbol_count": 0,
+            "used_symbol_first": False,
+            "estimated_tokens_saved": 0,
+            "final_tokens": 0,
+        },
+    }
+
+    with (
+        patch("cli.commands.search.STClient", return_value=_mock_client(payload)),
+        patch("cli.commands.search.is_compact", return_value=True),
+    ):
+        result = runner.invoke(app, ["missing_symbol"])
+
+    assert result.exit_code == 0
+    assert "hint:" in result.output
+
+
+def test_search_empty_result_no_hint_flag_suppresses_hint() -> None:
+    payload = {
+        "prompt_context": "",
+        "metadata": {
+            "symbol_count": 0,
+            "used_symbol_first": False,
+            "estimated_tokens_saved": 0,
+            "final_tokens": 0,
+        },
+    }
+
+    with (
+        patch("cli.commands.search.STClient", return_value=_mock_client(payload)),
+        patch("cli.commands.search.is_compact", return_value=True),
+    ):
+        result = runner.invoke(app, ["missing_symbol", "--no-hint"])
+
+    assert result.exit_code == 0
+    assert "hint:" not in result.output
+
+
+def test_search_path_query_shows_path_hint() -> None:
+    payload = {
+        "prompt_context": "",
+        "metadata": {
+            "symbol_count": 0,
+            "used_symbol_first": False,
+            "estimated_tokens_saved": 0,
+            "final_tokens": 0,
+        },
+    }
+
+    with (
+        patch("cli.commands.search.STClient", return_value=_mock_client(payload)),
+        patch("cli.commands.search.is_compact", return_value=True),
+    ):
+        result = runner.invoke(app, ["Show Preview frontend/src"])
+
+    assert result.exit_code == 0
+    assert "path terms" in result.output
+
+
+def test_search_text_fallback_shows_hint() -> None:
+    payload = {
+        "prompt_context": "Precision Code Search: text-fallback\n\n## Relevant Text Matches\n\n- file.py:1 - mode",
+        "metadata": {
+            "symbol_count": 0,
+            "used_symbol_first": False,
+            "used_fallback": True,
+            "estimated_tokens_saved": 0,
+            "final_tokens": 100,
+        },
+    }
+
+    with (
+        patch("cli.commands.search.STClient", return_value=_mock_client(payload)),
+        patch("cli.commands.search.is_compact", return_value=True),
+    ):
+        result = runner.invoke(app, ["campaign mode"])
+
+    assert result.exit_code == 0
+    assert "fell back to text search" in result.output
+
+
 def test_search_text_mode_calls_text_endpoint_and_renders_matches() -> None:
     payload = {
         "query": "special fallback token",

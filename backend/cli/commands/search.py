@@ -14,6 +14,45 @@ from ..output import handle_api_error, output_json
 app = typer.Typer(help="Precision Code Search")
 
 
+# ---------------------------------------------------------------------------
+# Hint generation
+# ---------------------------------------------------------------------------
+
+_HINT_PREFIX = "hint: "
+
+
+def _generate_hint(query: str, mode: str, metadata: dict) -> str | None:
+    """Return an actionable refinement hint based on result quality, or None."""
+    from app.services.context_gatherer._precision_query import (
+        has_path_segments,
+        is_short_or_generic,
+    )
+
+    queries = [query]
+
+    if mode == "empty":
+        if has_path_segments(queries):
+            return "path terms reduce symbol precision. Try `st search --text <query>` or just the symbol name."
+        if is_short_or_generic(queries):
+            return "query is too short/generic for symbol matching. Try a specific function, class, or variable name."
+        return "no symbols or text matched. Try `st search --text <query>` for content search, or refine to a specific identifier."
+
+    if mode == "text-fallback":
+        if has_path_segments(queries):
+            return "fell back to text search (no symbol match). Path-qualified terms are noisy — try just the symbol name."
+        return "fell back to text search (no symbol match). Narrower symbol/function names give better results."
+
+    # Symbol-first with low match quality — check if results look incidental
+    symbol_count = metadata.get("symbol_count", 0)
+    if mode == "symbol-first" and symbol_count > 0:
+        if has_path_segments(queries):
+            return "path terms in symbol search may favor incidental mentions. Try `st search --text <query>` for file-content matches."
+        if is_short_or_generic(queries):
+            return "short/generic query may produce incidental symbol matches. Verify relevance or try a more specific identifier."
+
+    return None
+
+
 @app.command()
 def search(
     query: Annotated[
@@ -40,6 +79,10 @@ def search(
         bool,
         typer.Option("--json", "-j", help="Emit full JSON payload"),
     ] = False,
+    hint: Annotated[
+        bool,
+        typer.Option("--hint/--no-hint", help="Show refinement hints when results are poor"),
+    ] = True,
 ) -> None:
     """Search codebase symbols, endpoints, and tables with Precision Code Search.
 
@@ -86,12 +129,14 @@ def search(
         elif symbols:
             _print_symbols_compact(q, result)
         else:
-            _print_precision_compact(q, result.get("prompt_context", ""), result.get("metadata", {}))
+            _print_precision_compact(q, result.get("prompt_context", ""), result.get("metadata", {}), show_hint=hint)
     else:
         output_json(result)
 
 
-def _print_precision_compact(query: str, prompt_context: str, metadata: dict) -> None:
+def _print_precision_compact(
+    query: str, prompt_context: str, metadata: dict, *, show_hint: bool = True
+) -> None:
     """Print TOON-style compact output for agent consumption."""
     symbol_count = metadata.get("symbol_count", 0)
     mode = "symbol-first" if metadata.get("used_symbol_first") else "text-fallback"
@@ -100,12 +145,20 @@ def _print_precision_compact(query: str, prompt_context: str, metadata: dict) ->
 
     if not prompt_context:
         print(f"SEARCH:{query}|mode=empty|symbols=0|tokens=0")
+        if show_hint:
+            hint_text = _generate_hint(query, "empty", metadata)
+            if hint_text:
+                print(f"{_HINT_PREFIX}{hint_text}")
         return
 
     print(
         f"SEARCH:{query}|mode={mode}|symbols={symbol_count}"
         f"|tokens={final_tokens}|saved={tokens_saved}"
     )
+    if show_hint:
+        hint_text = _generate_hint(query, mode, metadata)
+        if hint_text:
+            print(f"{_HINT_PREFIX}{hint_text}")
     print()
     print(prompt_context)
 
