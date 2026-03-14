@@ -1,10 +1,11 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { Search } from 'lucide-react'
+import { Search, X } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { fetchTasks, type Task } from '@/lib/api'
+import { useIsLg } from '@/hooks/useMediaQuery'
 import { STALE_GIT } from '@/lib/polling'
 import { useSelectedProject } from '../ProjectSelector'
 import { typeIcons } from './constants'
@@ -14,9 +15,11 @@ export function TaskSearch() {
   const [isSearchFocused, setIsSearchFocused] = useState(false)
   const [searchValue, setSearchValue] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
+  const [isOpen, setIsOpen] = useState(false)
   const selectedProjectId = useSelectedProject()
   const searchRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const isLg = useIsLg()
 
   const { data: tasksData } = useQuery({
     queryKey: ['tasks', selectedProjectId, 'search'],
@@ -43,6 +46,12 @@ export function TaskSearch() {
   }, [searchResults])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      setSearchValue('')
+      setIsOpen(false)
+      inputRef.current?.blur()
+      return
+    }
     if (!searchResults.length) return
 
     if (e.key === 'ArrowDown') {
@@ -54,15 +63,13 @@ export function TaskSearch() {
     } else if (e.key === 'Enter' && searchResults[selectedIndex]) {
       e.preventDefault()
       navigateToTask(searchResults[selectedIndex])
-    } else if (e.key === 'Escape') {
-      setSearchValue('')
-      inputRef.current?.blur()
     }
   }
 
   const navigateToTask = (task: Task) => {
     router.push(`/projects/${task.project_id}?task=${task.id}`)
     setSearchValue('')
+    setIsOpen(false)
     inputRef.current?.blur()
   }
 
@@ -70,14 +77,118 @@ export function TaskSearch() {
     const handleClickOutside = (e: MouseEvent) => {
       if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
         setIsSearchFocused(false)
+        setIsOpen(false)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  // Focus input when popover opens
+  useEffect(() => {
+    if (isOpen && inputRef.current) {
+      inputRef.current.focus()
+    }
+  }, [isOpen])
+
+  const showPopover = !isLg
+
+  const resultsDropdown = (
+    <>
+      {isSearchFocused && searchValue && searchResults.length > 0 && (
+        <div className="absolute top-full left-0 right-0 mt-1 bg-slate-800 border border-slate-700 rounded-lg shadow-xl overflow-hidden z-50">
+          {searchResults.map((task, index) => (
+            <button
+              type="button"
+              key={task.id}
+              onClick={() => navigateToTask(task)}
+              className={`w-full px-3 py-2 flex items-center gap-2 text-left hover:bg-slate-700/50 transition-colors ${
+                index === selectedIndex ? 'bg-slate-700/50' : ''
+              }`}
+            >
+              {typeIcons[task.task_type] || typeIcons.task}
+              <div className="flex-1 min-w-0">
+                <div className="text-sm text-slate-200 truncate">
+                  {task.title}
+                </div>
+                <div className="text-xs text-slate-500 truncate">{task.id}</div>
+              </div>
+              <span
+                className={`text-xs px-1.5 py-0.5 rounded ${
+                  task.status === 'completed'
+                    ? 'bg-phosphor-500/20 text-phosphor-400'
+                    : task.status === 'running'
+                      ? 'bg-outrun-500/20 text-outrun-400'
+                      : task.status === 'failed'
+                        ? 'bg-rose-500/20 text-rose-400'
+                        : 'bg-slate-500/20 text-slate-400'
+                }`}
+              >
+                {task.status}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+      {isSearchFocused && searchValue && searchResults.length === 0 && (
+        <div className="absolute top-full left-0 right-0 mt-1 bg-slate-800 border border-slate-700 rounded-lg shadow-xl p-3 z-50">
+          <span className="text-sm text-slate-500">No tasks found</span>
+        </div>
+      )}
+    </>
+  )
+
+  // Compact: icon button that opens a popover with the search field
+  if (showPopover) {
+    return (
+      <div className="hidden md:block relative" ref={searchRef}>
+        {!isOpen ? (
+          <button
+            type="button"
+            onClick={() => setIsOpen(true)}
+            className="p-2.5 rounded-lg text-slate-400 hover:bg-slate-800/50 hover:text-slate-300 transition-all duration-200"
+            aria-label="Search tasks"
+          >
+            <Search className="w-5 h-5" />
+          </button>
+        ) : (
+          <div className="absolute right-0 top-1/2 -translate-y-1/2 z-50">
+            <div className="relative">
+              <div className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 shadow-xl">
+                <Search className="w-4 h-4 text-slate-500 flex-shrink-0" />
+                <input
+                  ref={inputRef}
+                  type="text"
+                  placeholder="Search tasks..."
+                  aria-label="Search tasks"
+                  value={searchValue}
+                  onChange={(e) => setSearchValue(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  onFocus={() => setIsSearchFocused(true)}
+                  className="bg-transparent text-sm text-slate-200 placeholder-slate-500 outline-none w-56"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchValue('')
+                    setIsOpen(false)
+                  }}
+                  className="p-0.5 rounded text-slate-500 hover:text-slate-300 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              {resultsDropdown}
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // Desktop: inline search field (original behavior)
   return (
-    <div className="hidden md:block" ref={searchRef}>
+    <div ref={searchRef}>
       <div
         className={`relative transition-all duration-300 ${
           isSearchFocused ? 'scale-[1.02]' : ''
@@ -97,48 +208,7 @@ export function TaskSearch() {
           className={`input ${!isSearchFocused && !searchValue ? 'pl-12' : 'pl-4'} pr-4 py-2 text-sm bg-slate-800/80 border-slate-700 w-56 focus:w-72 focus:border-outrun-500/50 transition-all duration-300`}
           onFocus={() => setIsSearchFocused(true)}
         />
-        {isSearchFocused && searchValue && searchResults.length > 0 && (
-          <div className="absolute top-full left-0 right-0 mt-1 bg-slate-800 border border-slate-700 rounded-lg shadow-xl overflow-hidden z-50">
-            {searchResults.map((task, index) => (
-              <button
-                type="button"
-                key={task.id}
-                onClick={() => navigateToTask(task)}
-                className={`w-full px-3 py-2 flex items-center gap-2 text-left hover:bg-slate-700/50 transition-colors ${
-                  index === selectedIndex ? 'bg-slate-700/50' : ''
-                }`}
-              >
-                {typeIcons[task.task_type] || typeIcons.task}
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm text-slate-200 truncate">
-                    {task.title}
-                  </div>
-                  <div className="text-xs text-slate-500 truncate">
-                    {task.id}
-                  </div>
-                </div>
-                <span
-                  className={`text-xs px-1.5 py-0.5 rounded ${
-                    task.status === 'completed'
-                      ? 'bg-phosphor-500/20 text-phosphor-400'
-                      : task.status === 'running'
-                        ? 'bg-outrun-500/20 text-outrun-400'
-                        : task.status === 'failed'
-                          ? 'bg-rose-500/20 text-rose-400'
-                          : 'bg-slate-500/20 text-slate-400'
-                  }`}
-                >
-                  {task.status}
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
-        {isSearchFocused && searchValue && searchResults.length === 0 && (
-          <div className="absolute top-full left-0 right-0 mt-1 bg-slate-800 border border-slate-700 rounded-lg shadow-xl p-3 z-50">
-            <span className="text-sm text-slate-500">No tasks found</span>
-          </div>
-        )}
+        {resultsDropdown}
       </div>
     </div>
   )

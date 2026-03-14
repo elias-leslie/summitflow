@@ -1,6 +1,6 @@
 'use client'
 
-import { Info, MessageSquare } from 'lucide-react'
+import { MessageSquare } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, usePathname } from 'next/navigation'
 import { useMemo } from 'react'
@@ -38,14 +38,6 @@ export function TopBar() {
             title={personaName}
           >
             <MessageSquare className="w-5 h-5" />
-          </Link>
-          <Link
-            href="/about"
-            data-testid="topbar-about"
-            className="p-2.5 rounded-lg text-slate-400 hover:bg-outrun-500/10 hover:text-outrun-400 transition-all duration-200"
-            title="About SummitFlow"
-          >
-            <Info className="w-5 h-5" />
           </Link>
           <NotificationBell projectId={notificationProjectId} />
         </div>

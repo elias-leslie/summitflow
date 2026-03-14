@@ -3,6 +3,7 @@
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
+import { useIsLg } from '@/hooks/useMediaQuery'
 import {
   LOGO_CONTAINER_WIDTH,
   LOGO_HEIGHT,
@@ -15,6 +16,7 @@ export function AnimatedLogo() {
   const router = useRouter()
   const [isExpanded, setIsExpanded] = useState(false)
   const collapseTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const isLg = useIsLg()
 
   useEffect(() => {
     if (isExpanded) {
@@ -32,10 +34,13 @@ export function AnimatedLogo() {
 
   const handleLogoClick = () => {
     router.push('/')
-    if (!isExpanded) {
+    if (!isExpanded && isLg) {
       setIsExpanded(true)
     }
   }
+
+  // Below lg: compact icon-only logo
+  const compact = !isLg
 
   return (
     <button
@@ -44,8 +49,9 @@ export function AnimatedLogo() {
       className="flex items-center flex-shrink-0 group focus:outline-none"
       aria-label="Go to dashboard"
       style={{
-        width: LOGO_CONTAINER_WIDTH,
+        width: compact ? LOGO_SQUARE_SIZE : LOGO_CONTAINER_WIDTH,
         height: LOGO_HEIGHT,
+        transition: 'width 0.3s ease-out',
       }}
     >
       <div
@@ -85,30 +91,33 @@ export function AnimatedLogo() {
           />
         </div>
 
-        <div
-          className="overflow-hidden flex-shrink-0"
-          style={{
-            maxWidth: isExpanded ? 0 : 140,
-            marginLeft: isExpanded ? 0 : 12,
-            transition:
-              'max-width 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94), margin-left 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
-          }}
-        >
-          <span
-            className="font-semibold text-xl tracking-tight whitespace-nowrap block"
+        {!compact && (
+          <div
+            className="overflow-hidden flex-shrink-0"
             style={{
-              background:
-                'linear-gradient(90deg, #fff200 0%, #ff6600 50%, #ff0066 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              backgroundClip: 'text',
-              transform: isExpanded ? 'translateX(-20px)' : 'translateX(0)',
-              transition: 'transform 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+              maxWidth: isExpanded ? 0 : 140,
+              marginLeft: isExpanded ? 0 : 12,
+              transition:
+                'max-width 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94), margin-left 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
             }}
           >
-            SummitFlow
-          </span>
-        </div>
+            <span
+              className="font-semibold text-xl tracking-tight whitespace-nowrap block"
+              style={{
+                background:
+                  'linear-gradient(90deg, #fff200 0%, #ff6600 50%, #ff0066 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                backgroundClip: 'text',
+                transform: isExpanded ? 'translateX(-20px)' : 'translateX(0)',
+                transition:
+                  'transform 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+              }}
+            >
+              SummitFlow
+            </span>
+          </div>
+        )}
       </div>
 
       <div
