@@ -56,6 +56,14 @@ def _parse_backup_line(line: str, result: dict[str, Any]) -> None:
         result["location"] = line.split(":", 1)[1].strip()
         return
 
+    if line.startswith("Archive:"):
+        result["archive_name"] = line.split(":", 1)[1].strip()
+        return
+
+    if line.startswith("Pending:"):
+        result["pending_path"] = line.split(":", 1)[1].strip()
+        return
+
     if not line.startswith("Verification:"):
         return
 

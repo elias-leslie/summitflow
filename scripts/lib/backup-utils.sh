@@ -249,7 +249,7 @@ upload_pending_backups() {
     # First check if SMB is available at all
     if ! test_smb_connection_quiet; then
         log_warn "SMB still unavailable, will retry later"
-        return 1
+        return 0
     fi
 
     local uploaded=0

@@ -82,13 +82,13 @@ def _run_backup(
         result = subprocess.run(
             cmd, cwd=project_dir, capture_output=True, text=True, timeout=BACKUP_TIMEOUT
         )
+        parsed_output = parse_backup_output(result.stdout)
         if result.returncode == 0:
-            return _handle_backup_success(backup_id, project_id, result.stdout)
-        if "SMB unavailable" in result.stdout or "pending" in result.stdout.lower():
-            backup_store.update_backup_status(backup_id, "completed", location="pending_upload")
-            logger.info("create_backup_pending_upload", backup_id=backup_id, project_id=project_id)
-            return {"status": "completed", "backup_id": backup_id, "location": "pending_upload",
-                    "message": "Backup saved locally, pending SMB upload"}
+            if parsed_output.get("pending_path"):
+                return _handle_backup_pending(backup_id, project_id, parsed_output)
+            return _handle_backup_success(backup_id, project_id, parsed_output)
+        if parsed_output.get("pending_path") or "SMB unavailable" in result.stdout or "pending" in result.stdout.lower():
+            return _handle_backup_pending(backup_id, project_id, parsed_output)
         error_msg = build_script_error_message(result)
         logger.error("create_backup_script_failed", backup_id=backup_id,
                      returncode=result.returncode, error=error_msg[:200])
@@ -101,13 +101,21 @@ def _run_backup(
         return _handle_backup_failure(backup_id, str(e), project_id)
 
 
-def _handle_backup_success(backup_id: str, project_id: str, stdout: str) -> dict[str, object]:
+def _handle_backup_success(
+    backup_id: str,
+    project_id: str,
+    parsed_output: dict[str, object],
+) -> dict[str, object]:
     """Handle successful backup completion."""
-    size_info = parse_backup_output(stdout)
-    verification = size_info.pop("verification", None)
+    size_info = dict(parsed_output)
+    verification_raw = size_info.pop("verification", None)
+    verification = verification_raw if isinstance(verification_raw, dict) else None
+    archive_name = str(size_info.pop("archive_name", "") or "")
+    size_info.pop("pending_path", None)
     vkw = build_verification_kwargs(verification) if verification else {}
     backup_store.update_backup_status(
         backup_id, "completed",
+        name=archive_name or None,
         size_bytes=size_info.get("total_bytes"),
         db_size_bytes=size_info.get("db_bytes"),
         files_size_bytes=size_info.get("files_bytes"),
@@ -120,6 +128,44 @@ def _handle_backup_success(backup_id: str, project_id: str, stdout: str) -> dict
         verified=verification.get("verified") if verification else None,
     )
     return {"status": "completed", "backup_id": backup_id, "project_id": project_id, **size_info}
+
+
+def _handle_backup_pending(
+    backup_id: str,
+    project_id: str,
+    parsed_output: dict[str, object],
+) -> dict[str, object]:
+    """Handle backups that completed locally but are still pending SMB upload."""
+    size_info = dict(parsed_output)
+    verification_raw = size_info.pop("verification", None)
+    verification = verification_raw if isinstance(verification_raw, dict) else None
+    archive_name = str(size_info.pop("archive_name", "") or "")
+    pending_path = str(size_info.get("pending_path", "") or "")
+    vkw = build_verification_kwargs(verification) if verification else {}
+    backup_store.update_backup_status(
+        backup_id,
+        "completed",
+        name=archive_name or None,
+        size_bytes=size_info.get("total_bytes"),
+        db_size_bytes=size_info.get("db_bytes"),
+        files_size_bytes=size_info.get("files_bytes"),
+        location=pending_path or "pending_upload",
+        **vkw,
+    )
+    logger.info(
+        "create_backup_pending_upload",
+        backup_id=backup_id,
+        project_id=project_id,
+        pending_path=pending_path or None,
+    )
+    return {
+        "status": "completed",
+        "backup_id": backup_id,
+        "project_id": project_id,
+        "location": pending_path or "pending_upload",
+        "message": "Backup saved locally, pending SMB upload",
+        **size_info,
+    }
 
 
 def _handle_backup_failure(backup_id: str, error_msg: str, project_id: str) -> dict[str, object]:

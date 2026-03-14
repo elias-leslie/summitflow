@@ -101,7 +101,7 @@ export function BackupScheduleConfig({ sourceId }: BackupScheduleConfigProps) {
         Backup Schedule
       </h3>
       <p className="text-sm text-slate-400 mb-6">
-        Configure automatic backups for this source.
+        Configure automatic backups for this source. Manual backups can still be created anytime.
       </p>
 
       <div className="space-y-6">
@@ -118,7 +118,7 @@ export function BackupScheduleConfig({ sourceId }: BackupScheduleConfigProps) {
               </p>
               <p className="text-xs text-slate-400">
                 {enabled
-                  ? 'Backups will run automatically'
+                  ? 'Automatic runs follow this source schedule'
                   : 'Automatic backups are disabled'}
               </p>
             </div>

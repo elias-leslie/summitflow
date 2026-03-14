@@ -56,7 +56,8 @@ def restore_backup(
         logger.error("restore_backup_failed", error=error_msg)
         return {"status": "failed", "error": error_msg}
 
-    cmd = _build_restore_command(backup_id, backup_file, dry_run, db_only, files_only)
+    backup_record = backup_store.get_backup(backup_id) if backup_id else None
+    cmd = _build_restore_command(backup_record, backup_file, dry_run, db_only, files_only)
 
     try:
         result = subprocess.run(
@@ -83,7 +84,7 @@ def restore_backup(
 
 
 def _build_restore_command(
-    backup_id: str | None,
+    backup: dict[str, Any] | None,
     backup_file: str | None,
     dry_run: bool,
     db_only: bool,
@@ -95,10 +96,15 @@ def _build_restore_command(
     if backup_file:
         cmd.extend(["--file", backup_file])
     else:
-        if backup_id:
-            # Fetch record for reference; script finds archive via --latest
-            backup_store.get_backup(backup_id)
-        cmd.append("--latest")
+        archive_name = _resolve_archive_name(backup)
+        location = str(backup.get("location") or "") if backup else ""
+
+        if location and not location.startswith("//") and Path(location).exists():
+            cmd.extend(["--file", location])
+        elif archive_name:
+            cmd.extend(["--name", archive_name])
+        else:
+            cmd.append("--latest")
 
     if dry_run:
         cmd.append("--dry-run")
@@ -108,6 +114,22 @@ def _build_restore_command(
         cmd.append("--files-only")
 
     return cmd
+
+
+def _resolve_archive_name(backup: dict[str, Any] | None) -> str | None:
+    """Resolve the archive filename for a backup record."""
+    if not backup:
+        return None
+
+    location = str(backup.get("location") or "")
+    if location and location != "pending_upload":
+        return Path(location).name
+
+    name = str(backup.get("name") or "")
+    if name.endswith(".tar.gz"):
+        return name
+
+    return None
 
 
 def _handle_restore_success(source_id: str, dry_run: bool, stdout: str) -> dict[str, Any]:

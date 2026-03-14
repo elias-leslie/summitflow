@@ -134,6 +134,7 @@ def list_backups(
 def update_backup_status(
     backup_id: str,
     status: str,
+    name: str | None = None,
     size_bytes: int | None = None,
     db_size_bytes: int | None = None,
     files_size_bytes: int | None = None,
@@ -150,6 +151,7 @@ def update_backup_status(
     Args:
         backup_id: Backup ID
         status: New status ('pending', 'running', 'completed', 'failed')
+        name: Actual archive name
         size_bytes: Total backup size
         db_size_bytes: Database dump size
         files_size_bytes: Project files size
@@ -167,6 +169,7 @@ def update_backup_status(
     verification_json_str = json.dumps(verification_json) if verification_json else None
     updates, params = build_backup_updates(
         status=status,
+        name=name,
         size_bytes=size_bytes,
         db_size_bytes=db_size_bytes,
         files_size_bytes=files_size_bytes,

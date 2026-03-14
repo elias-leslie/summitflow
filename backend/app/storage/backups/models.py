@@ -52,6 +52,7 @@ def row_to_backup(row: tuple[Any, ...]) -> dict[str, Any]:
 
 def build_backup_updates(
     status: str,
+    name: str | None = None,
     size_bytes: int | None = None,
     db_size_bytes: int | None = None,
     files_size_bytes: int | None = None,
@@ -67,6 +68,7 @@ def build_backup_updates(
 
     Args:
         status: New backup status
+        name: Actual archive name
         size_bytes: Total backup size
         db_size_bytes: Database dump size
         files_size_bytes: Project files size
@@ -83,6 +85,10 @@ def build_backup_updates(
     """
     updates = ["status = %s"]
     params: list[Any] = [status]
+
+    if name is not None:
+        updates.append("name = %s")
+        params.append(name)
 
     if size_bytes is not None:
         updates.append("size_bytes = %s")

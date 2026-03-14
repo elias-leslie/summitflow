@@ -1,7 +1,7 @@
 #!/bin/bash
 #
-# backup-all.sh - Back up all managed repos in sequence
-# Discovers repos from SummitFlow API + CONFIG_REPOS, runs backup.sh in each.
+# backup-all.sh - Back up all registered backup sources in sequence
+# Discovers sources from SummitFlow backup_sources API, runs backup.sh in each.
 # Replaces per-project systemd service/timer pairs with a single invocation.
 #
 # Usage:
@@ -14,12 +14,11 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SUMMITFLOW_API="http://localhost:8001/api/projects"
-CONFIG_REPOS=("$HOME/.claude" "$HOME/persona-sandbox")
+SUMMITFLOW_API="http://localhost:8001/api/backup-sources"
 FALLBACK_FILE="$HOME/.claude/config/managed-repos.txt"
 STAGGER_DELAY=60  # seconds between backups
 
-# Discover all managed repos (same logic as commit.sh)
+# Discover all registered backup source paths.
 get_managed_repos() {
     local repos=()
 
@@ -27,12 +26,12 @@ get_managed_repos() {
     if api_response=$(curl -sf --connect-timeout 2 "$SUMMITFLOW_API" 2>/dev/null); then
         if command -v jq &>/dev/null; then
             while IFS= read -r path; do
-                [[ -d "$path/.git" ]] && repos+=("$path")
-            done < <(echo "$api_response" | jq -r '.[].root_path // empty')
+                [[ -d "$path" ]] && repos+=("$path")
+            done < <(echo "$api_response" | jq -r '.[].path // empty')
         else
             while IFS= read -r path; do
-                [[ -d "$path/.git" ]] && repos+=("$path")
-            done < <(echo "$api_response" | grep -o '"root_path":"[^"]*"' | sed 's/"root_path":"//;s/"$//')
+                [[ -d "$path" ]] && repos+=("$path")
+            done < <(echo "$api_response" | grep -o '"path":"[^"]*"' | sed 's/"path":"//;s/"$//')
         fi
     else
         if [[ -f "$FALLBACK_FILE" ]]; then
@@ -40,20 +39,24 @@ get_managed_repos() {
                 [[ "$line" =~ ^[[:space:]]*# ]] && continue
                 [[ -z "${line// }" ]] && continue
                 local expanded="${line/#\~/$HOME}"
-                [[ -d "$expanded/.git" ]] && repos+=("$expanded")
+                [[ -d "$expanded" ]] && repos+=("$expanded")
             done < "$FALLBACK_FILE"
         fi
     fi
-
-    for config_repo in "${CONFIG_REPOS[@]}"; do
-        [[ -d "$config_repo/.git" ]] && repos+=("$config_repo")
-    done
 
     printf '%s\n' "${repos[@]}" | awk '!seen[$0]++'
 }
 
 main() {
     local passthrough_args=("$@")
+    local status_only=false
+
+    for arg in "${passthrough_args[@]}"; do
+        if [[ "$arg" == "--status" ]]; then
+            status_only=true
+            break
+        fi
+    done
 
     mapfile -t repos < <(get_managed_repos)
 
@@ -74,7 +77,7 @@ main() {
         local repo_name
         repo_name=$(basename "$repo")
 
-        if ! $first; then
+        if ! $first && ! $status_only; then
             echo ""
             echo "--- Stagger delay: ${STAGGER_DELAY}s ---"
             sleep "$STAGGER_DELAY"
