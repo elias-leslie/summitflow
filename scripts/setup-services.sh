@@ -5,8 +5,6 @@
 # This script:
 # 1. Symlinks systemd user services
 # 2. Enables systemd user services
-# 3. Installs nginx config (requires sudo)
-# 4. Reloads nginx (requires sudo)
 
 set -e
 
@@ -43,34 +41,6 @@ systemctl --user enable summitflow-frontend.service
 echo "  ✓ Systemd services configured"
 echo ""
 
-# Step 5: Install nginx config (requires sudo)
-echo "Step 2: Installing nginx configuration..."
-echo "  (This requires sudo access)"
-
-if [ -f /etc/nginx/sites-available/summitflow ]; then
-    echo "  Nginx config already exists, backing up..."
-    sudo cp /etc/nginx/sites-available/summitflow /etc/nginx/sites-available/summitflow.bak
-fi
-
-sudo cp "$SUMMITFLOW_DIR/scripts/nginx/summitflow.conf" /etc/nginx/sites-available/summitflow
-
-# Step 6: Enable nginx site
-if [ ! -L /etc/nginx/sites-enabled/summitflow ]; then
-    echo "  Enabling nginx site..."
-    sudo ln -sf /etc/nginx/sites-available/summitflow /etc/nginx/sites-enabled/summitflow
-fi
-
-# Step 7: Test nginx config
-echo "  Testing nginx configuration..."
-sudo nginx -t
-
-# Step 8: Reload nginx
-echo "  Reloading nginx..."
-sudo systemctl reload nginx
-
-echo "  ✓ Nginx configured"
-echo ""
-
 echo "================================"
 echo "✓ Setup complete!"
 echo "================================"
@@ -84,5 +54,4 @@ echo ""
 echo "Access URLs:"
 echo "  - Local Backend:  http://localhost:8001"
 echo "  - Local Frontend: http://localhost:3001"
-echo "  - HTTPS:          https://localhost:444"
 echo ""
