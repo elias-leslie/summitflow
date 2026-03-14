@@ -110,8 +110,8 @@ def get_sparkline_data(project_id: str, days: int = 30) -> dict[str, Any]:
             """
             SELECT DATE(started_at) as scan_date,
                    COUNT(*) as scan_count,
-                   AVG((metrics->>'complexity')::float) as avg_complexity,
-                   SUM(CASE WHEN (metrics->>'high_priority_count')::int > 0 THEN 1 ELSE 0 END)
+                   AVG(NULLIF(metrics->>'complexity', '')::float) as avg_complexity,
+                   SUM(CASE WHEN NULLIF(metrics->>'high_priority_count', '')::int > 0 THEN 1 ELSE 0 END)
             FROM scan_history
             WHERE project_id = %s AND started_at >= %s AND status = 'completed'
             GROUP BY DATE(started_at)
@@ -144,7 +144,7 @@ def _fetch_complexity_trend(cur: Any, project_id: str) -> str:
                 CASE WHEN started_at >= NOW() - INTERVAL '7 days' THEN 'recent'
                      WHEN started_at >= NOW() - INTERVAL '14 days' THEN 'previous'
                 END as period,
-                AVG((metrics->>'complexity')::float) as avg_complexity
+                AVG(NULLIF(metrics->>'complexity', '')::float) as avg_complexity
             FROM scan_history
             WHERE project_id = %s AND started_at >= NOW() - INTERVAL '14 days'
                   AND status = 'completed' AND metrics->>'complexity' IS NOT NULL

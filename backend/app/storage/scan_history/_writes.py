@@ -78,7 +78,9 @@ def record_scan_start(
         )
         row = cur.fetchone()
         conn.commit()
-        return row[0] if row else 0
+        if not row:
+            raise RuntimeError(f"scan_history INSERT for {project_id}/{scan_type} returned no ID")
+        return row[0]
 
 
 def record_scan_complete(

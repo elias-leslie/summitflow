@@ -521,7 +521,10 @@ class TestWorkProductDetection:
         """A branch commit beyond main counts as work product."""
         from app.tasks.autonomous.exec_modules.steps import _has_work_product
 
-        mock_run.return_value = MagicMock(stdout="abc123 change\n")
+        mock_run.side_effect = [
+            MagicMock(returncode=0, stdout="refs/remotes/origin/main\n"),  # detect base branch
+            MagicMock(returncode=0, stdout="abc123 change\n"),  # git log main..HEAD
+        ]
 
         assert _has_work_product("/tmp/test-worktree")
 
@@ -534,11 +537,27 @@ class TestWorkProductDetection:
         from app.tasks.autonomous.exec_modules.steps import _has_work_product
 
         mock_run.side_effect = [
-            MagicMock(stdout=""),
-            MagicMock(stdout=" M terminal/api/handlers/websocket_resize.py\n"),
+            MagicMock(returncode=0, stdout="refs/remotes/origin/main\n"),  # detect base branch
+            MagicMock(returncode=0, stdout=""),  # git log (no commits)
+            MagicMock(stdout=" M terminal/api/handlers/websocket_resize.py\n"),  # git status
         ]
 
         assert _has_work_product("/tmp/test-worktree")
+
+    @patch("app.tasks.autonomous.exec_modules.steps.subprocess.run")
+    def test_has_work_product_detects_master_branch(self, mock_run: MagicMock) -> None:
+        """Repos using 'master' as default branch should be detected."""
+        from app.tasks.autonomous.exec_modules.steps import _has_work_product
+
+        mock_run.side_effect = [
+            MagicMock(returncode=0, stdout="refs/remotes/origin/master\n"),  # detect master
+            MagicMock(returncode=0, stdout="abc123 fix\n"),  # git log master..HEAD
+        ]
+
+        assert _has_work_product("/tmp/test-worktree")
+        # Verify git log used "master" not "main"
+        log_call = mock_run.call_args_list[1]
+        assert "master..HEAD" in log_call[0][0]
 
     @patch("app.tasks.autonomous.exec_modules.git_work_product.emit_log")
     @patch("app.tasks.autonomous.exec_modules.git_work_product.has_unpublished_commits")
@@ -613,8 +632,9 @@ class TestWorkProductDetection:
         from app.tasks.autonomous.exec_modules.steps import _has_work_product
 
         mock_run.side_effect = [
-            MagicMock(stdout=""),
-            MagicMock(stdout=""),
+            MagicMock(returncode=0, stdout="refs/remotes/origin/main\n"),  # detect base branch
+            MagicMock(returncode=0, stdout=""),  # git log (no commits)
+            MagicMock(stdout=""),  # git status (clean)
         ]
 
         assert not _has_work_product("/tmp/test-worktree")
@@ -634,8 +654,9 @@ class TestWorkProductDetection:
         from app.tasks.autonomous.exec_modules.steps import run_execution_quality_check
 
         mock_run.side_effect = [
-            MagicMock(stdout=""),
-            MagicMock(stdout=""),
+            MagicMock(returncode=0, stdout="refs/remotes/origin/main\n"),  # detect base branch
+            MagicMock(returncode=0, stdout=""),  # git log (no commits)
+            MagicMock(stdout=""),  # git status (clean)
         ]
         mock_get_task.return_value = {
             "id": "task-1",

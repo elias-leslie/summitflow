@@ -48,19 +48,19 @@ def _set_subtask_passes(
     steps = get_steps_for_subtask(table_id)
     validate_steps_complete(subtask_id, steps)
 
+    passed_at = datetime.now(UTC)
+
     with get_connection() as conn, conn.cursor() as cur:
+        # Lock the row to prevent TOCTOU race between read and update
         cur.execute(
-            "SELECT citations_acknowledged_at FROM task_subtasks WHERE id = %s",
+            "SELECT citations_acknowledged_at FROM task_subtasks WHERE id = %s FOR UPDATE",
             (table_id,),
         )
         row = cur.fetchone()
         acknowledged_at = row[0] if row else None
 
-    validate_citations_acknowledged(table_id, subtask_id, acknowledged_at)
+        validate_citations_acknowledged(table_id, subtask_id, acknowledged_at)
 
-    passed_at = datetime.now(UTC)
-
-    with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             f"""
             UPDATE task_subtasks

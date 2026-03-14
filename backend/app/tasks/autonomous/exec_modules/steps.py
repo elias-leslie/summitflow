@@ -94,6 +94,18 @@ def _auto_mark_steps(
     return step_results
 
 
+def _detect_base_branch(project_path: str) -> str:
+    """Detect the default branch (main, master, etc.) for a repository."""
+    result = subprocess.run(
+        ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
+        cwd=project_path, capture_output=True, text=True, timeout=5,
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        # Output: refs/remotes/origin/main → extract "main"
+        return result.stdout.strip().rsplit("/", 1)[-1]
+    return "main"
+
+
 def _has_work_product(project_path: str) -> bool:
     """Check if the worktree contains branch-local work to verify.
 
@@ -102,11 +114,12 @@ def _has_work_product(project_path: str) -> bool:
     product alongside branch-local commits.
     """
     try:
+        base_branch = _detect_base_branch(project_path)
         commits = subprocess.run(
-            ["git", "log", "--oneline", "main..HEAD"],
+            ["git", "log", "--oneline", f"{base_branch}..HEAD"],
             cwd=project_path, capture_output=True, text=True, timeout=10,
         )
-        if commits.stdout and commits.stdout.strip():
+        if commits.returncode == 0 and commits.stdout and commits.stdout.strip():
             return True
 
         status = subprocess.run(
