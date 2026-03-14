@@ -96,3 +96,15 @@ export async function dismissNotification(
     },
   )
 }
+
+export async function dismissAllNotifications(
+  projectId: string,
+): Promise<{ dismissed: number }> {
+  return fetchWithErrorHandling(
+    `/api/projects/${projectId}/notifications/dismiss-all`,
+    {
+      method: 'POST',
+      errorMessage: 'Failed to dismiss all notifications',
+    },
+  )
+}

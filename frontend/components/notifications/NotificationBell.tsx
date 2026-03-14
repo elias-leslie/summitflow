@@ -12,6 +12,7 @@ import {
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import {
+  dismissAllNotifications,
   dismissNotification,
   fetchNotificationCount,
   fetchNotifications,
@@ -193,9 +194,27 @@ export function NotificationBell({
               </h3>
               <div className="flex items-center gap-2">
                 {pendingCount > 0 && (
-                  <span className="text-xs text-slate-400">
-                    {pendingCount} pending
-                  </span>
+                  <>
+                    <span className="text-xs text-slate-400">
+                      {pendingCount} pending
+                    </span>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await dismissAllNotifications(projectId)
+                          setNotifications([])
+                          setPendingCount(0)
+                          toast.success('All notifications dismissed')
+                        } catch {
+                          toast.error('Failed to dismiss notifications')
+                        }
+                      }}
+                      className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
+                    >
+                      Dismiss all
+                    </button>
+                  </>
                 )}
                 <PushNotificationToggle />
               </div>

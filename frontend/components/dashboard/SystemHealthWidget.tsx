@@ -82,7 +82,7 @@ export function SystemHealthWidget({ className }: SystemHealthWidgetProps) {
                 </div>
             ) : data ? (
                 <>
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-3 gap-2 min-w-0">
                         <div className="flex flex-col gap-1.5">
                             <div className="flex items-center justify-between">
                                 <span className="text-xs text-slate-500 flex items-center gap-1">
@@ -145,7 +145,7 @@ export function SystemHealthWidget({ className }: SystemHealthWidgetProps) {
                         </div>
                     </div>
 
-                    <div className="pt-2 mt-auto flex items-center justify-between border-t border-slate-800/50">
+                    <div className="pt-2 mt-auto flex flex-wrap items-center justify-between gap-1 border-t border-slate-800/50">
                         <span className={cn(
                             'badge-outrun',
                             overallStatus === 'warning' && 'bg-amber-500/20 text-amber-400 border-amber-500/30',

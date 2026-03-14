@@ -102,7 +102,7 @@ export function DashboardClient() {
               <div className="text-xs text-slate-500">Signals and fixes</div>
             </div>
           </Link>
-          <SystemHealthWidget />
+          <SystemHealthWidget className="col-span-2 md:col-span-1" />
         </div>
       </section>
 
