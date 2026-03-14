@@ -24,6 +24,7 @@ export function TopBar() {
     <>
       <header className="h-16 flex-shrink-0 bg-slate-900 border-b border-slate-700/50 flex items-center px-6 gap-4">
         <AnimatedLogo />
+        <div className="flex-1" />
         <Navigation />
         <div className="flex-1" />
         <TaskSearch />

@@ -13,7 +13,7 @@ export function Navigation() {
   const personaName = usePersonaName()
 
   return (
-    <nav className="flex items-center gap-1 ml-4">
+    <nav className="flex items-center gap-1">
       {navItems.map((item) => {
         const Icon = item.icon
         const isExternal = 'external' in item && item.external
