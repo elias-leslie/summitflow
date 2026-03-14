@@ -22,7 +22,7 @@ dependencies = [
     "rich>=13.0.0",
     "radon>=6.0.0",
     "jsonschema>=4.21.0",
-    "agent-hub-client @ file:///home/kasadis/agent-hub/packages/agent-hub-client",
+    "agent-hub-client @ git+https://github.com/summitflow-solutions/agent-hub.git#subdirectory=packages/agent-hub-client",
     "croniter>=3.0.0",
     "pytz>=2024.1",
     "psutil>=6.0.0",
