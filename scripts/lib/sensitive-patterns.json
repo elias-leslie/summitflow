@@ -1,0 +1,33 @@
+{
+  "block_rules": [
+    {
+      "id": "local-home-path",
+      "pattern": "(?:file://)?/home/kasadis/",
+      "description": "Local absolute home paths should not be committed",
+      "runtime_block": false
+    },
+    {
+      "id": "private-key-header",
+      "pattern": "-----BEGIN (?:RSA |EC |OPENSSH |DSA |)?PRIVATE KEY-----",
+      "description": "Private key material should not be committed",
+      "runtime_block": true
+    }
+  ],
+  "warn_rules": [
+    {
+      "id": "summitflow-domain",
+      "pattern": "\\b(?:[A-Za-z0-9-]+\\.)*summitflow\\.dev\\b",
+      "description": "SummitFlow domains should be intentionally reviewed before commit"
+    },
+    {
+      "id": "summitflow-email",
+      "pattern": "\\b[A-Za-z0-9._%+-]+@summitflow\\.dev\\b",
+      "description": "Company email addresses should be intentionally reviewed before commit"
+    },
+    {
+      "id": "private-ip",
+      "pattern": "\\b(?:10(?:\\.\\d{1,3}){3}|192\\.168(?:\\.\\d{1,3}){2}|172\\.(?:1[6-9]|2\\d|3[0-1])(?:\\.\\d{1,3}){2})\\b",
+      "description": "Private network addresses should be intentionally reviewed before commit"
+    }
+  ]
+}
