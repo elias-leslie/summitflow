@@ -13,7 +13,7 @@ export function Navigation() {
   const personaName = usePersonaName()
 
   return (
-    <nav className="flex items-center gap-1">
+    <nav className="flex items-center justify-evenly gap-1 w-full max-w-md lg:max-w-lg">
       {navItems.map((item) => {
         const Icon = item.icon
         const isExternal = 'external' in item && item.external
