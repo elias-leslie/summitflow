@@ -65,7 +65,7 @@ export function DashboardClient() {
           <Info className="w-5 h-5 text-outrun-500" />
           Quick Access
         </h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <Link
             href="/chat"
             className="card p-4 flex items-center gap-3 hover:border-phosphor-500/50 hover:bg-phosphor-500/5 transition-all group"
@@ -102,7 +102,7 @@ export function DashboardClient() {
               <div className="text-xs text-slate-500">Signals and fixes</div>
             </div>
           </Link>
-          <SystemHealthWidget className="col-span-2 md:col-span-1" />
+          <SystemHealthWidget className="col-span-2 lg:col-span-1" />
         </div>
       </section>
 
