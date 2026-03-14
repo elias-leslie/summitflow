@@ -14,7 +14,7 @@ from ..models import ExplorerEntryCreate
 
 logger = get_logger(__name__)
 
-MONOREPO_ROOT = Path("/home/kasadis")
+MONOREPO_ROOT = Path.home()
 _EMPTY_VULNS: dict[str, int] = {"critical": 0, "high": 0, "medium": 0, "low": 0}
 _LOCKFILES = ["pnpm-lock.yaml", "package-lock.json", "yarn.lock", "bun.lockb"]
 

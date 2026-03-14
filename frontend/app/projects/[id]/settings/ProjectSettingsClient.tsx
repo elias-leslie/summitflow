@@ -474,7 +474,7 @@ export function ProjectSettingsClient() {
                 }}
                 aria-invalid={Boolean(errors.rootPath)}
                 className={`mono ${errors.rootPath ? 'border-red-500/50' : ''}`}
-                placeholder="/home/kasadis/summitflow"
+                placeholder="/home/user/projects/my-project"
               />
               <p className="text-xs text-slate-500">
                 Required for file browsing, project-specific service discovery, and path-aware automation.

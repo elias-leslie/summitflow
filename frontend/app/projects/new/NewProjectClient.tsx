@@ -245,7 +245,7 @@ export function NewProjectClient() {
               id="rootPath"
               value={rootPath}
               onChange={(e) => handleRootPathChange(e.target.value)}
-              placeholder="/home/kasadis/my-project"
+              placeholder="/home/user/projects/my-project"
               aria-invalid={Boolean(errors.rootPath)}
               className={`mono ${errors.rootPath ? 'border-rose-500/50' : ''}`}
             />

@@ -104,8 +104,8 @@ def upgrade() -> None:
     # 6. Add non-project sources
     op.execute("""
         INSERT INTO backup_sources (id, name, path, source_type) VALUES
-            ('.claude', 'Claude Config', '/home/kasadis/.claude', 'config'),
-            ('persona-sandbox', 'Persona Sandbox', '/home/kasadis/persona-sandbox', 'workspace')
+            ('.claude', 'Claude Config', '/home/user/.claude', 'config'),
+            ('persona-sandbox', 'Persona Sandbox', '/home/user/persona-sandbox', 'workspace')
         ON CONFLICT (id) DO NOTHING
     """)
 
