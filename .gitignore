@@ -57,7 +57,7 @@ secrets.json
 
 # Project data
 data/
-backups/
+/backups/
 backup-index.json
 
 # Dev tools

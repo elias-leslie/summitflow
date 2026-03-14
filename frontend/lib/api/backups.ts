@@ -1,5 +1,16 @@
 import { buildQueryString, fetchWithErrorHandling } from './utils'
 
+export interface BackupVerification {
+  verified: boolean
+  verified_at: string
+  errors: string[]
+  tree: Record<string, { count: number }>
+  total_files: number
+  checksum: string
+  has_db?: boolean
+  expects_db?: boolean
+}
+
 export interface Backup {
   id: string
   project_id: string
@@ -19,14 +30,7 @@ export interface Backup {
   verified_at: string | null
   checksum: string | null
   total_files: number | null
-  verification_json: {
-    verified: boolean
-    verified_at: string
-    errors: string[]
-    tree: Record<string, { count: number }>
-    total_files: number
-    checksum: string
-  } | null
+  verification_json: BackupVerification | null
   source_id: string
 }
 
@@ -51,6 +55,13 @@ export interface StorageSummary {
   total_count: number
   total_bytes: number
   by_status: Record<string, number>
+}
+
+export function backupHasDatabase(backup: Backup): boolean {
+  if (typeof backup.verification_json?.has_db === 'boolean') {
+    return backup.verification_json.has_db
+  }
+  return (backup.db_size_bytes ?? 0) > 0
 }
 
 type RestoreOptions = { dry_run?: boolean; db_only?: boolean; files_only?: boolean }

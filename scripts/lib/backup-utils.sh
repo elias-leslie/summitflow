@@ -123,6 +123,20 @@ log_info() {
     printf "${BLUE}[%s] ℹ %s${NC}\n" "$(date '+%Y-%m-%d %H:%M:%S')" "$*"
 }
 
+backup_expects_database() {
+    case "${BACKUP_EXPECTS_DATABASE:-auto}" in
+        true)
+            return 0
+            ;;
+        false)
+            return 1
+            ;;
+        *)
+            [ -n "${DB_PASSWORD:-}" ]
+            ;;
+    esac
+}
+
 # Check if SMB credentials file exists, create if needed
 ensure_smb_credentials() {
     if [ ! -f "$CREDENTIALS_FILE" ]; then
@@ -499,20 +513,31 @@ verify_backup() {
             printf "}"
         }')
 
-    local total_files checksum has_db
+    local total_files checksum has_db expects_db has_db_json
     local db_dump_name="${BACKUP_DB_DUMP_NAME:-database.sql.gz}"
     total_files=$(tar -tzf "$archive_path" | grep -v '/$' | wc -l | tr -d ' ')
     checksum=$(sha256sum "$archive_path" | cut -d' ' -f1)
-    has_db=$(tar -tzf "$archive_path" | grep -c "$db_dump_name" || echo "0")
+    has_db=$(tar -tzf "$archive_path" | grep -Ec "$db_dump_name" || true)
+    has_db="${has_db:-0}"
+    if backup_expects_database; then
+        expects_db="true"
+    else
+        expects_db="false"
+    fi
+    if [ "$has_db" -gt 0 ]; then
+        has_db_json="true"
+    else
+        has_db_json="false"
+    fi
 
     local verified="true"
     local errors="[]"
-    if [ "$has_db" -eq 0 ]; then
+    if [ "$has_db" -eq 0 ] && [ "$expects_db" = "true" ]; then
         verified="false"
         errors="[\"Critical: $db_dump_name missing\"]"
     fi
 
-    echo "{\"verified\":$verified,\"verified_at\":\"$(date -Iseconds)\",\"errors\":$errors,\"tree\":$tree_json,\"total_files\":$total_files,\"checksum\":\"sha256:$checksum\",\"has_db\":$([ "$has_db" -gt 0 ] && echo "true" || echo "false")}"
+    echo "{\"verified\":$verified,\"verified_at\":\"$(date -Iseconds)\",\"errors\":$errors,\"tree\":$tree_json,\"total_files\":$total_files,\"checksum\":\"sha256:$checksum\",\"has_db\":$has_db_json,\"expects_db\":$expects_db}"
 }
 
 # Get backup count from index
@@ -836,6 +861,7 @@ EOF
 
 # Export functions for subshells
 export -f log log_success log_warn log_error log_info
+export -f backup_expects_database
 export -f ensure_smb_credentials test_smb_connection test_smb_connection_quiet
 export -f smb_upload smb_download smb_delete smb_list_backups
 export -f upload_with_retry save_to_pending upload_pending_backups

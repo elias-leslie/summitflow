@@ -106,6 +106,32 @@ cleanup() {
 }
 trap cleanup EXIT
 
+print_archive_preview() {
+    local archive="$1"
+    local skip_pattern="${2:-}"
+    local limit="${3:-20}"
+    local entry=""
+    local shown=0
+    local omitted=0
+
+    while IFS= read -r entry; do
+        if [ -n "$skip_pattern" ] && [[ "$entry" == *"$skip_pattern" ]]; then
+            continue
+        fi
+
+        if [ "$shown" -lt "$limit" ]; then
+            echo "$entry"
+            shown=$((shown + 1))
+        else
+            omitted=$((omitted + 1))
+        fi
+    done < <(tar -tzf "$archive")
+
+    if [ "$omitted" -gt 0 ]; then
+        echo "  ... (truncated $omitted more entries)"
+    fi
+}
+
 list_local_backup_paths() {
     if [ ! -d "$LOCAL_BACKUP_DIR" ]; then
         return 0
@@ -255,8 +281,21 @@ verify_archive() {
     echo "  Project files: $([ "$has_project_files" -gt 0 ] && echo "✓" || echo "✗")"
 
     if [ "$has_db" -eq 0 ] && [ "$DB_ONLY" = true ]; then
-        log_error "Archive does not contain database dump"
+        log_error "Archive does not contain a database dump — cannot use --db-only"
         return 1
+    fi
+
+    # If the source does not expect a database, force files-only mode
+    # regardless of what the archive contains (catches old placeholder dumps)
+    if ! backup_expects_database; then
+        if [ "$DB_ONLY" = true ]; then
+            log_error "Source '$PROJECT_NAME' does not use a database — cannot use --db-only"
+            return 1
+        fi
+        if [ "$FILES_ONLY" != true ]; then
+            log_info "Source '$PROJECT_NAME' does not use a database — using files-only restore"
+            FILES_ONLY=true
+        fi
     fi
 
     return 0
@@ -324,8 +363,7 @@ restore_files() {
     if [ "$DRY_RUN" = true ]; then
         log_info "[DRY RUN] Would restore files from: $archive"
         log_info "[DRY RUN] Files to restore:"
-        tar -tzf "$archive" | grep -v "$BACKUP_DB_DUMP_NAME" | head -20
-        echo "  ... (truncated)"
+        print_archive_preview "$archive" "$BACKUP_DB_DUMP_NAME" 20
         return 0
     fi
 

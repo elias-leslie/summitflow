@@ -28,6 +28,7 @@ import { StatusBadge } from '@/components/backup/StatusBadge'
 import {
   type Backup,
   type BackupSource,
+  backupHasDatabase,
   createSourceBackup,
   fetchAllBackups,
   fetchBackupSources,
@@ -319,6 +320,8 @@ function BackupExpandedRow({
   sourceName: string
   sourceType: BackupSource['source_type'] | undefined
 }) {
+  const hasDatabase = backupHasDatabase(backup)
+
   return (
     <tr>
       <td colSpan={7} className="px-4 py-0">
@@ -345,9 +348,9 @@ function BackupExpandedRow({
             </div>
           </div>
 
-          {(backup.db_size_bytes || backup.files_size_bytes) && (
+          {(hasDatabase || backup.files_size_bytes != null || backup.size_bytes != null) && (
             <div className="flex items-center gap-6 text-sm">
-              {backup.db_size_bytes != null && (
+              {hasDatabase && backup.db_size_bytes != null && (
                 <div className="flex items-center gap-2">
                   <Database className="w-3.5 h-3.5 text-blue-400" />
                   <span className="text-slate-400">Database:</span>
@@ -359,6 +362,13 @@ function BackupExpandedRow({
                   <HardDrive className="w-3.5 h-3.5 text-purple-400" />
                   <span className="text-slate-400">Files:</span>
                   <span className="text-slate-200">{formatBytes(backup.files_size_bytes)}</span>
+                </div>
+              )}
+              {!hasDatabase && (
+                <div className="flex items-center gap-2">
+                  <HardDrive className="w-3.5 h-3.5 text-purple-400" />
+                  <span className="text-slate-400">Backup:</span>
+                  <span className="text-slate-200">Files only</span>
                 </div>
               )}
             </div>

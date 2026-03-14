@@ -1,5 +1,5 @@
 import { Database, HardDrive, ShieldCheck, ShieldX } from 'lucide-react'
-import type { Backup } from '@/lib/api/backups'
+import { backupHasDatabase, type Backup } from '@/lib/api/backups'
 import { formatBytes, formatDate } from '@/lib/format'
 
 interface PreviewStepProps {
@@ -7,19 +7,29 @@ interface PreviewStepProps {
 }
 
 export function PreviewStep({ backup }: PreviewStepProps) {
+  const hasDatabase = backupHasDatabase(backup)
+
   return (
     <div className="space-y-4">
       <div className="p-4 bg-slate-700/50 rounded-lg space-y-3">
         <h3 className="text-sm font-medium text-slate-300 mb-3">
           Backup selected for restore:
         </h3>
-        <div className="flex items-center gap-3 text-sm">
-          <Database className="w-4 h-4 text-blue-400" />
-          <span className="text-slate-300">Database</span>
-          <span className="text-slate-500">
-            ({formatBytes(backup.db_size_bytes)})
-          </span>
-        </div>
+        {hasDatabase ? (
+          <div className="flex items-center gap-3 text-sm">
+            <Database className="w-4 h-4 text-blue-400" />
+            <span className="text-slate-300">Database snapshot</span>
+            <span className="text-slate-500">
+              ({formatBytes(backup.db_size_bytes)})
+            </span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3 text-sm">
+            <Database className="w-4 h-4 text-slate-500" />
+            <span className="text-slate-300">Files-only backup</span>
+            <span className="text-slate-500">(no database captured)</span>
+          </div>
+        )}
         <div className="flex items-center gap-3 text-sm">
           <HardDrive className="w-4 h-4 text-purple-400" />
           <span className="text-slate-300">Project Files</span>
@@ -83,7 +93,10 @@ export function PreviewStep({ backup }: PreviewStepProps) {
       <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
         <p className="text-sm text-yellow-300">
           <strong>Warning:</strong> Restoring will overwrite your current
-          database and project files using this exact backup record. This action cannot be undone.
+          {hasDatabase
+            ? ' database and project files'
+            : ' project files'}
+          {' '}using this exact backup record. This action cannot be undone.
         </p>
       </div>
     </div>

@@ -108,12 +108,26 @@ def _build_restore_command(
 
     if dry_run:
         cmd.append("--dry-run")
+
+    # If the backup record shows no database, force files-only to avoid
+    # attempting DB restore on old archives with placeholder dumps.
+    if not db_only and backup and not _backup_has_database(backup):
+        files_only = True
+
     if db_only:
         cmd.append("--db-only")
     if files_only:
         cmd.append("--files-only")
 
     return cmd
+
+
+def _backup_has_database(backup: dict[str, Any]) -> bool:
+    """Check whether a backup record contains a real database dump."""
+    vj = backup.get("verification_json") or {}
+    if isinstance(vj.get("has_db"), bool):
+        return vj["has_db"]
+    return (backup.get("db_size_bytes") or 0) > 0
 
 
 def _resolve_archive_name(backup: dict[str, Any] | None) -> str | None:

@@ -31,6 +31,7 @@ BACKUP_TABLES=()           # Empty = full DB dump; set to table names for select
 BACKUP_DB_DUMP_NAME="database.sql.gz"  # Filename inside the archive
 BACKUP_EXTRA_EXCLUDES=()   # Additional tar exclusions beyond BACKUP_EXCLUDES
 QUICK_MODE_ENABLED=true    # Set to false to disable --quick support
+BACKUP_EXPECTS_DATABASE="auto"  # auto=true when DB credentials exist
 
 # Load project-specific config if it exists
 # Projects can override: BACKUP_TABLES, BACKUP_DB_DUMP_NAME,
@@ -155,8 +156,6 @@ dump_database() {
     if [ -z "$DB_PASSWORD" ]; then
         log_warn "No database credentials found for $PROJECT_NAME - skipping DB dump"
         log_info "To enable DB backups, add ${PROJECT_NAME^^}_DB_URL to ~/.env.local"
-        # Create empty placeholder so archive creation doesn't fail
-        echo "-- No database for this project" | gzip > "$dump_file"
         return 2
     fi
 
@@ -218,12 +217,6 @@ create_archive() {
         exclude_args+=(--exclude="$ex")
     done
 
-    # Ensure database dump is in staging dir with correct name
-    local staging_dump="$STAGING_DIR/$BACKUP_DB_DUMP_NAME"
-    if [ "$db_dump" != "$staging_dump" ]; then
-        cp "$db_dump" "$staging_dump"
-    fi
-
     # Create archive of entire project (minus exclusions)
     tar --create \
         --file="$tar_path" \
@@ -231,11 +224,17 @@ create_archive() {
         --transform="s|^|${PROJECT_NAME}/|" \
         . 2>/dev/null || true
 
-    # Add database dump to archive
-    tar --append \
-        --file="$tar_path" \
-        --transform="s|^|${PROJECT_NAME}/|" \
-        -C "$STAGING_DIR" "$BACKUP_DB_DUMP_NAME"
+    if [ -n "$db_dump" ] && [ -f "$db_dump" ]; then
+        local staging_dump="$STAGING_DIR/$BACKUP_DB_DUMP_NAME"
+        if [ "$db_dump" != "$staging_dump" ]; then
+            cp "$db_dump" "$staging_dump"
+        fi
+
+        tar --append \
+            --file="$tar_path" \
+            --transform="s|^|${PROJECT_NAME}/|" \
+            -C "$STAGING_DIR" "$BACKUP_DB_DUMP_NAME"
+    fi
 
     # Compress
     gzip -f "$tar_path"
@@ -371,7 +370,12 @@ main() {
         echo ""
         echo "  Archive: $ARCHIVE_NAME"
         echo "  Size: $(numfmt --to=iec $archive_size 2>/dev/null || echo "$archive_size bytes")"
-        echo "  DB Size: $(numfmt --to=iec $db_size 2>/dev/null || echo "$db_size bytes")"
+        if [ "$db_dump_result" -eq 2 ]; then
+            echo "  DB Size: 0 bytes"
+            echo "  Database: not configured (files-only backup)"
+        else
+            echo "  DB Size: $(numfmt --to=iec $db_size 2>/dev/null || echo "$db_size bytes")"
+        fi
         echo "  Location: //$SMB_HOST/$SMB_SHARE/$SMB_PATH/$ARCHIVE_NAME"
         if [ "$KEEP_LOCAL" = true ]; then
             echo "  Local: $PROJECT_DIR/backups/$ARCHIVE_NAME"
@@ -390,7 +394,12 @@ main() {
         echo ""
         echo "  Archive: $ARCHIVE_NAME"
         echo "  Size: $(numfmt --to=iec $archive_size 2>/dev/null || echo "$archive_size bytes")"
-        echo "  DB Size: $(numfmt --to=iec $db_size 2>/dev/null || echo "$db_size bytes")"
+        if [ "$db_dump_result" -eq 2 ]; then
+            echo "  DB Size: 0 bytes"
+            echo "  Database: not configured (files-only backup)"
+        else
+            echo "  DB Size: $(numfmt --to=iec $db_size 2>/dev/null || echo "$db_size bytes")"
+        fi
         echo "  Pending: $PENDING_BACKUP_DIR/$ARCHIVE_NAME"
         echo ""
         echo "  Will auto-upload when SMB is available"
