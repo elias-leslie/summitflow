@@ -84,7 +84,7 @@ def test_permission_prompt_flow():
     print(f"Created session: {session_id}")
     print("  tools_enabled=True, write_enabled=True, yolo_mode=False")
 
-    test_file = "/home/kasadis/summitflow/test-permission-prompt.txt"
+    test_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "test-permission-prompt.txt")
     message = f"Please create a file at {test_file} with content 'Testing permission prompt flow'."
 
     print(f"\nSending message: {message[:50]}...")

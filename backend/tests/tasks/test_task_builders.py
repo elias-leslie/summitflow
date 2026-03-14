@@ -160,7 +160,7 @@ class TestCreateRefactorTask:
         task_id, issue_id = create_refactor_task(
             project_id="summitflow",
             relative_path="backend/app/tasks/autonomous/task_generation.py",
-            file_path="/home/kasadis/summitflow/backend/app/tasks/autonomous/task_generation.py",
+            file_path="/home/testuser/summitflow/backend/app/tasks/autonomous/task_generation.py",
             reason="High complexity score",
             complexity=18.0,
             lines=420,

@@ -238,7 +238,7 @@ class TestContextEndpoint:
             disposition="block",
             owner_session_id="sess-123",
             owner_branch="task-999/main",
-            owner_location="repo /home/kasadis/summitflow",
+            owner_location="repo /home/testuser/summitflow",
         )
 
         response = client.post(
@@ -269,7 +269,7 @@ class TestContextEndpoint:
             "disposition": "block",
             "owner_session_id": "sess-123",
             "owner_branch": "task-999/main",
-            "owner_location": "repo /home/kasadis/summitflow",
+            "owner_location": "repo /home/testuser/summitflow",
             "active_specialists": [],
         }
 

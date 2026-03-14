@@ -17,14 +17,14 @@ describe('project-registration', () => {
         projectId: 'Summit Flow!!',
         baseUrl: 'https://example.com///',
         healthEndpoint: 'healthz',
-        rootPath: '/home/kasadis/summitflow///',
+        rootPath: '/home/testuser/summitflow///',
       }),
     ).toEqual({
       name: 'SummitFlow',
       projectId: 'summit-flow',
       baseUrl: 'https://example.com',
       healthEndpoint: '/healthz',
-      rootPath: '/home/kasadis/summitflow',
+      rootPath: '/home/testuser/summitflow',
     })
   })
 

@@ -69,7 +69,7 @@ class TestTaskLaneConflicts:
                         "id": "sess-2",
                         "external_id": "task-999",
                         "current_branch": "task-999/main",
-                        "working_dir": "/home/kasadis/summitflow",
+                        "working_dir": "/home/testuser/summitflow",
                         "is_worktree": False,
                     }
                 ]
@@ -80,7 +80,7 @@ class TestTaskLaneConflicts:
 
         assert result.issues
         assert result.conflicting_tasks == ["task-999"]
-        assert "repo /home/kasadis/summitflow" in result.suggestions[0]
+        assert "repo /home/testuser/summitflow" in result.suggestions[0]
 
     @patch("app.services.task_lane_preflight.task_store.get_task")
     def test_branch_named_lane_blocks_when_external_id_missing(

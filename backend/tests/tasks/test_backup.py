@@ -91,7 +91,7 @@ class TestParseFunctions:
         Size: 123M
         DB Size: 45M
         Location: //10.0.0.1/share/backup.tar.gz
-        Pending: /home/kasadis/.local/share/backup-pending/summitflow-20260314-102435.tar.gz
+        Pending: /tmp/backup-pending/summitflow-20260314-102435.tar.gz
         """
         result = _parse_backup_output(output)
 
@@ -100,7 +100,7 @@ class TestParseFunctions:
         assert result["db_bytes"] == (45 * 1024 * 1024)
         assert result["location"] == "//10.0.0.1/share/backup.tar.gz"
         assert result["pending_path"] == (
-            "/home/kasadis/.local/share/backup-pending/summitflow-20260314-102435.tar.gz"
+            "/tmp/backup-pending/summitflow-20260314-102435.tar.gz"
         )
 
     def test_calculate_next_run_daily(self) -> None:

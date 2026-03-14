@@ -2,8 +2,8 @@
   "block_rules": [
     {
       "id": "local-home-path",
-      "pattern": "(?:file://)?/home/kasadis/",
-      "description": "Local absolute home paths should not be committed",
+      "pattern": "(?:file://)?/home/[a-zA-Z0-9_-]+/",
+      "description": "Local absolute home paths should not be committed (configure pattern for your username)",
       "runtime_block": false
     },
     {

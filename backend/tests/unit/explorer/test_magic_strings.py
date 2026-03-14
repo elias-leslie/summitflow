@@ -21,7 +21,7 @@ class TestMagicStringPatterns:
         """Test hardcoded_paths pattern matches expected strings."""
         pattern = MAGIC_STRING_PATTERNS["hardcoded_paths"]
         assert pattern.search('"/home/user/project"')
-        assert pattern.search('"/Users/kasadis/code"')
+        assert pattern.search('"/Users/testuser/code"')
         assert pattern.search('"/var/log/app.log"')
         assert not pattern.search('"./relative/path"')
         assert not pattern.search('"src/app"')

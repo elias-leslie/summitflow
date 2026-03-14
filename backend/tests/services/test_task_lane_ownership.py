@@ -119,7 +119,7 @@ class TestTaskLaneOwnership:
                         "id": "sess-legacy",
                         "external_id": "task-999",
                         "current_branch": "task-999/main",
-                        "working_dir": "/home/kasadis/summitflow",
+                        "working_dir": "/home/testuser/summitflow",
                         "is_worktree": False,
                     }
                 ]
@@ -131,4 +131,4 @@ class TestTaskLaneOwnership:
 
         assert result.issues
         assert result.conflicting_tasks == ["task-999"]
-        assert "repo /home/kasadis/summitflow" in result.suggestions[0]
+        assert "repo /home/testuser/summitflow" in result.suggestions[0]

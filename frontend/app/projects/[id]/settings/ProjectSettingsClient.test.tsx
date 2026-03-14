@@ -100,7 +100,7 @@ describe('ProjectSettingsClient', () => {
       name: 'SummitFlow Ops',
       base_url: 'https://dev.summitflow.dev',
       health_endpoint: '/healthz',
-      root_path: '/home/kasadis/summitflow',
+      root_path: '/home/testuser/summitflow',
       created_at: '2026-03-12T09:00:00Z',
     })
   })
@@ -128,7 +128,7 @@ describe('ProjectSettingsClient', () => {
       name: 'SummitFlow',
       base_url: 'https://dev.summitflow.dev',
       health_endpoint: '/health',
-      root_path: '/home/kasadis/summitflow',
+      root_path: '/home/testuser/summitflow',
       created_at: '2026-03-12T09:00:00Z',
     })
 
@@ -153,7 +153,7 @@ describe('ProjectSettingsClient', () => {
       name: 'SummitFlow',
       base_url: 'https://dev.summitflow.dev',
       health_endpoint: '/health',
-      root_path: '/home/kasadis/summitflow',
+      root_path: '/home/testuser/summitflow',
       created_at: '2026-03-12T09:00:00Z',
     })
 
@@ -171,7 +171,7 @@ describe('ProjectSettingsClient', () => {
       target: { value: 'healthz' },
     })
     fireEvent.change(screen.getByLabelText('Root Path'), {
-      target: { value: '/home/kasadis/summitflow///' },
+      target: { value: '/home/testuser/summitflow///' },
     })
 
     fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
@@ -181,7 +181,7 @@ describe('ProjectSettingsClient', () => {
         name: 'SummitFlow Ops',
         base_url: 'https://dev.summitflow.dev',
         health_endpoint: '/healthz',
-        root_path: '/home/kasadis/summitflow',
+        root_path: '/home/testuser/summitflow',
       })
     })
     expect(

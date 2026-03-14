@@ -70,7 +70,7 @@ describe('ProjectCard', () => {
     name: 'SummitFlow',
     base_url: 'https://dev.summitflow.dev',
     health_endpoint: '/health',
-    root_path: '/home/kasadis/summitflow',
+    root_path: '/home/testuser/summitflow',
     created_at: '2026-03-10T12:00:00Z',
     stats: {
       features: 3,
@@ -115,7 +115,7 @@ describe('ProjectCard', () => {
     renderCard(project)
 
     expect(screen.getByText('dev.summitflow.dev')).toBeInTheDocument()
-    expect(screen.getByTitle('/home/kasadis/summitflow')).toBeInTheDocument()
+    expect(screen.getByTitle('/home/testuser/summitflow')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'SummitFlow' })).toHaveAttribute(
       'href',
       '/projects/summitflow',

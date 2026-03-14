@@ -27,7 +27,7 @@ import pytest
 from app.storage import tasks as task_store
 
 TEST_PROJECT_ID = "test-project"
-SUMMITFLOW_DIR = Path("/home/kasadis/summitflow")
+SUMMITFLOW_DIR = Path(__file__).resolve().parents[3]
 
 
 def _backend_available() -> bool:
