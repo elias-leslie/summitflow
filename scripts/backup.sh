@@ -11,7 +11,7 @@
 #   ./scripts/backup.sh --local      # Local only (no transfer)
 #   ./scripts/backup.sh --status     # Show status only
 #
-# Destination: //192.168.8.128/davion-gem/project-backups/$PROJECT_NAME/
+# Destination: //$SMB_HOST/$SMB_SHARE/project-backups/$PROJECT_NAME/
 # Local backups: $PROJECT_DIR/backups/
 # Retention: 30 versions (SMB), 5 versions (local)
 

@@ -90,7 +90,7 @@ class TestParseFunctions:
         Archive: summitflow-20260314-102435.tar.gz
         Size: 123M
         DB Size: 45M
-        Location: //192.168.8.128/share/backup.tar.gz
+        Location: //10.0.0.1/share/backup.tar.gz
         Pending: /home/kasadis/.local/share/backup-pending/summitflow-20260314-102435.tar.gz
         """
         result = _parse_backup_output(output)
@@ -98,7 +98,7 @@ class TestParseFunctions:
         assert result["archive_name"] == "summitflow-20260314-102435.tar.gz"
         assert result["total_bytes"] == (123 * 1024 * 1024)
         assert result["db_bytes"] == (45 * 1024 * 1024)
-        assert result["location"] == "//192.168.8.128/share/backup.tar.gz"
+        assert result["location"] == "//10.0.0.1/share/backup.tar.gz"
         assert result["pending_path"] == (
             "/home/kasadis/.local/share/backup-pending/summitflow-20260314-102435.tar.gz"
         )
@@ -373,7 +373,7 @@ class TestRestoreBackup:
             "id": "bkp-1",
             "project_id": "summitflow",
             "source_id": "summitflow",
-            "location": "//192.168.8.128/davion-gem/project-backups/summitflow/summitflow-20260314-102435.tar.gz",
+            "location": "//10.0.0.1/nas-share/project-backups/summitflow/summitflow-20260314-102435.tar.gz",
             "name": "stale-name",
         }
 

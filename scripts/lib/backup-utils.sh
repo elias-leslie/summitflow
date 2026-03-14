@@ -19,9 +19,13 @@ fi
 export PROJECT_DIR
 export PROJECT_NAME=$(basename "$PROJECT_DIR")
 
-# Configuration - derived from project name
-export SMB_HOST="192.168.8.128"
-export SMB_SHARE="davion-gem"
+# SMB configuration - override via environment or ~/.env.local
+# Set SMB_HOST and SMB_SHARE in ~/.env.local for your NAS/SMB target
+if [ -f "$HOME/.env.local" ] && [ -z "${SMB_HOST:-}" ]; then
+    eval "$(grep -E '^(SMB_HOST|SMB_SHARE|SMB_USER)=' "$HOME/.env.local" 2>/dev/null)" || true
+fi
+export SMB_HOST="${SMB_HOST:-nas.local}"
+export SMB_SHARE="${SMB_SHARE:-backups}"
 export SMB_PATH="project-backups/$PROJECT_NAME"
 export SMB_USER="${SMB_USER:-backup-svc}"
 export CREDENTIALS_FILE="$HOME/.smbcredentials"
