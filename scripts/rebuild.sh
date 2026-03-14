@@ -156,9 +156,9 @@ main() {
         verify_frontend || ((errors++))
     fi
 
-    # Regenerate project index (keeps .index.yaml ports in sync with systemd)
-    # Only if backend was rebuilt and SummitFlow API is available
+    # Post-rebuild sync tasks (only when backend rebuilt successfully)
     if [ "$FRONTEND_ONLY" = false ] && [ "$HAS_BACKEND" != false ] && [ $errors -eq 0 ]; then
+        # Regenerate project index (keeps .index.yaml ports in sync with systemd)
         local summitflow_api="${ST_API_BASE:-http://localhost:8001/api}"
         log "Regenerating project index..."
         local index_result=$(curl -s -X POST "$summitflow_api/projects/$PROJECT_NAME/explorer/regenerate-index" 2>/dev/null)
@@ -167,6 +167,17 @@ main() {
         else
             # Non-fatal - index regeneration is optional
             log "Index regeneration skipped (API may not be SummitFlow)"
+        fi
+
+        # Re-export seed data from DB (keeps seed_data.json in sync for new installs)
+        local export_script="$PROJECT_DIR/backend/scripts/export_seeds.py"
+        if [ -f "$export_script" ]; then
+            log "Syncing seed data from database..."
+            if "$PROJECT_DIR/backend/.venv/bin/python" -m scripts.export_seeds 2>/dev/null; then
+                log_success "Seed data synced"
+            else
+                log "Seed export skipped (non-fatal)"
+            fi
         fi
     fi
 
