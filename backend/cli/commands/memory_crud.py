@@ -220,17 +220,19 @@ def update_impl(
 
     if content_or_tier_changed:
         assert existing is not None
-        new_content = content if content is not None else str(existing.get("content", ""))
+        # Only send content when it actually changed — sending unchanged content
+        # with a new tier triggers content re-validation against the new tier's rules.
+        patch_content = content if content is not None else None
         if change_reason is None:
             update_episode_content_or_tier(
                 target_uuid,
-                content=new_content,
+                content=patch_content,
                 tier=effective_tier,
             )
         else:
             update_episode_content_or_tier(
                 target_uuid,
-                content=new_content,
+                content=patch_content,
                 tier=effective_tier,
                 change_reason=change_reason,
             )

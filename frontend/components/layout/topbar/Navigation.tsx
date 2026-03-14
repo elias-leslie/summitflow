@@ -13,7 +13,7 @@ export function Navigation() {
   const personaName = usePersonaName()
 
   return (
-    <nav className="hidden lg:flex items-center gap-1 ml-4">
+    <nav className="flex items-center gap-1 ml-4">
       {navItems.map((item) => {
         const Icon = item.icon
         const isExternal = 'external' in item && item.external
@@ -31,8 +31,11 @@ export function Navigation() {
         }
         const ac = activeStyles[item.activeColor] ?? activeStyles.indigo
 
+        const label = item.id === 'chat' ? personaName : item.label
+
         const className = clsx(
-          'group flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200',
+          'group flex items-center gap-2 rounded-lg text-sm font-medium transition-all duration-200',
+          'p-2 lg:px-3 lg:py-1.5',
           isActive
             ? `${ac.bg} ${ac.text}`
             : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-300',
@@ -48,10 +51,10 @@ export function Navigation() {
         const content = (
           <>
             <Icon className={iconClassName} />
-            <span>{item.id === 'chat' ? personaName : item.label}</span>
+            <span className="hidden lg:inline">{label}</span>
             {item.id === 'git' && <GitStatusIndicator state={gitHealth} />}
             {isExternal && (
-              <ExternalLink className="w-3 h-3 text-slate-600 group-hover:text-slate-500" />
+              <ExternalLink className="w-3 h-3 text-slate-600 group-hover:text-slate-500 hidden lg:block" />
             )}
           </>
         )
@@ -64,6 +67,7 @@ export function Navigation() {
               target="_blank"
               rel="noopener noreferrer"
               className={className}
+              title={label}
             >
               {content}
             </a>
@@ -71,7 +75,7 @@ export function Navigation() {
         }
 
         return (
-          <Link key={item.id} href={item.href} className={className}>
+          <Link key={item.id} href={item.href} className={className} title={label}>
             {content}
           </Link>
         )
