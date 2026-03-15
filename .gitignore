@@ -33,6 +33,7 @@ Thumbs.db
 .env
 .env.local
 .env*.local
+docker/compose/.env
 
 # Logs
 *.log

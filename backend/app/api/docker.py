@@ -13,18 +13,34 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Header, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 router = APIRouter()
 
+_INTERNAL_SECRET = os.environ.get("INTERNAL_SERVICE_SECRET", "")
+
+
+async def _require_auth(x_internal_secret: str = Header(default="")) -> None:
+    """Require internal service secret for mutating Docker endpoints."""
+    if not _INTERNAL_SECRET:
+        return  # Auth not configured — allow (dev mode)
+    if x_internal_secret != _INTERNAL_SECRET:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+
+def _sanitize_note(note: str) -> str:
+    """Whitelist note parameter to safe characters."""
+    return re.sub(r"[^a-zA-Z0-9_ -]", "", note)[:100]
+
 # Compose project name — used to filter containers belonging to our stack
-COMPOSE_PROJECT = os.environ.get("COMPOSE_PROJECT_NAME", "compose")
+COMPOSE_PROJECT = os.environ.get("COMPOSE_PROJECT_NAME", "summitflow-stack")
 BACKUP_DIR = Path(os.environ.get("BACKUP_DIR", str(Path.home() / "docker-backups")))
 
 
@@ -227,7 +243,7 @@ async def get_logs(
     return {"logs": stdout + stderr}
 
 
-@router.post("/restart/{service}", response_model=ActionResult)
+@router.post("/restart/{service}", response_model=ActionResult, dependencies=[Depends(_require_auth)])
 async def restart_service(service: str) -> ActionResult:
     """Restart a container."""
     container_name = _find_container_name(service)
@@ -237,7 +253,7 @@ async def restart_service(service: str) -> ActionResult:
     return ActionResult(success=True, message=f"Restarted {service}")
 
 
-@router.post("/stop/{service}", response_model=ActionResult)
+@router.post("/stop/{service}", response_model=ActionResult, dependencies=[Depends(_require_auth)])
 async def stop_service(service: str) -> ActionResult:
     """Stop a container."""
     container_name = _find_container_name(service)
@@ -247,7 +263,7 @@ async def stop_service(service: str) -> ActionResult:
     return ActionResult(success=True, message=f"Stopped {service}")
 
 
-@router.post("/start/{service}", response_model=ActionResult)
+@router.post("/start/{service}", response_model=ActionResult, dependencies=[Depends(_require_auth)])
 async def start_service(service: str) -> ActionResult:
     """Start a container."""
     container_name = _find_container_name(service)
@@ -257,13 +273,15 @@ async def start_service(service: str) -> ActionResult:
     return ActionResult(success=True, message=f"Started {service}")
 
 
-@router.post("/backup", response_model=ActionResult)
+@router.post("/backup", response_model=ActionResult, dependencies=[Depends(_require_auth)])
 async def create_backup(note: str = "") -> ActionResult:
     """Create an infrastructure backup via the unified backup system.
 
     Delegates to the backup workflow, creating an infrastructure source if needed.
     Falls back to local pg_dumpall if the workflow system is unavailable.
     """
+    note = _sanitize_note(note)
+
     try:
         from ..storage import backups as backup_store
 

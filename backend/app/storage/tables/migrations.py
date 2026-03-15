@@ -105,24 +105,31 @@ def _add_missing_columns(cur: psycopg.Cursor) -> None:
 def _try_add_column(cur: psycopg.Cursor, table: str, column: str) -> None:
     """Try to add a column to a table, ignoring errors if it already exists.
 
+    Uses a SAVEPOINT so that a failed ALTER TABLE doesn't abort the entire
+    transaction — allowing subsequent column additions to proceed.
+
     Args:
         cur: Database cursor
         table: Table name (from controlled internal list)
         column: Column definition SQL (from controlled internal list)
     """
+    column_name = column.split()[0]
+    savepoint = f"sp_add_{table}_{column_name}"
     try:
+        cur.execute(sql.SQL("SAVEPOINT {}").format(sql.Identifier(savepoint)))
         # Note: table and column names come from controlled internal list, not user input
         query = sql.SQL("ALTER TABLE {} ADD COLUMN IF NOT EXISTS {}").format(
             sql.Identifier(table),
             sql.SQL(column),
         )
         cur.execute(query)
+        cur.execute(sql.SQL("RELEASE SAVEPOINT {}").format(sql.Identifier(savepoint)))
     except psycopg.errors.DuplicateColumn:
         # Expected with IF NOT EXISTS on older PostgreSQL versions
-        pass
+        cur.execute(sql.SQL("ROLLBACK TO SAVEPOINT {}").format(sql.Identifier(savepoint)))
     except Exception as e:
-        # Log unexpected errors (type mismatches, constraint failures, etc.)
-        column_name = column.split()[0]
+        # Rollback to savepoint so the transaction can continue
+        cur.execute(sql.SQL("ROLLBACK TO SAVEPOINT {}").format(sql.Identifier(savepoint)))
         logger.warning("Failed to add column %s to %s: %s", column_name, table, e)
 
 

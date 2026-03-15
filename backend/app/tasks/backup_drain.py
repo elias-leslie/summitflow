@@ -9,6 +9,7 @@ from typing import Any
 
 from ..logging_config import get_logger
 from ..storage import backups as backup_store
+from .backup_utils import build_storage_env
 
 logger = get_logger(__name__)
 
@@ -82,12 +83,16 @@ def _run_upload_script() -> dict[str, Any]:
         logger.error("pending_upload_script_missing", path=str(PENDING_UPLOAD_SCRIPT))
         return {"ok": False, "message": f"Script not found: {PENDING_UPLOAD_SCRIPT}"}
 
+    # Resolve default storage backend for pending uploads
+    env = {**os.environ, **build_storage_env("default")}
+
     try:
         result = subprocess.run(
             ["bash", str(PENDING_UPLOAD_SCRIPT)],
             capture_output=True,
             text=True,
             timeout=DRAIN_TIMEOUT,
+            env=env,
         )
         ok = result.returncode == 0
         output = result.stdout + result.stderr

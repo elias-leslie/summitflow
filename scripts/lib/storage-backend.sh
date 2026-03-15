@@ -28,12 +28,27 @@ if [ -z "$_sb_db_url" ]; then
     return 0 2>/dev/null || exit 0
 fi
 
-# Query the storage_backends table
+# Validate STORAGE_BACKEND_ID is UUID-only (prevent SQL injection)
+if ! [[ "$STORAGE_BACKEND_ID" =~ ^[0-9a-fA-F-]+$ ]]; then
+    echo "Warning: Invalid STORAGE_BACKEND_ID format (must be UUID)" >&2
+    return 0 2>/dev/null || exit 0
+fi
+
+# Query the storage_backends table using positional parameter
 _sb_config=$(psql "$_sb_db_url" -t -A -c "
     SELECT config::text FROM storage_backends
-    WHERE id = '$STORAGE_BACKEND_ID' AND enabled = true
+    WHERE id = \$1 AND enabled = true
     LIMIT 1
-" 2>/dev/null)
+" --set=1="$STORAGE_BACKEND_ID" 2>/dev/null)
+
+# Fallback for psql versions without --set positional params
+if [ -z "$_sb_config" ]; then
+    _sb_config=$(psql "$_sb_db_url" -t -A -c "
+        SELECT config::text FROM storage_backends
+        WHERE id = '$STORAGE_BACKEND_ID' AND enabled = true
+        LIMIT 1
+    " 2>/dev/null)
+fi
 
 if [ -z "$_sb_config" ]; then
     echo "Warning: Storage backend '$STORAGE_BACKEND_ID' not found or disabled" >&2

@@ -98,6 +98,18 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# ─── Docker detection ─────────────────────────────────────────
+COMPOSE_PROJECT="summitflow-stack"
+USE_DOCKER=false
+
+if [ -S /var/run/docker.sock ] && docker compose -p "$COMPOSE_PROJECT" ps --status running -q 2>/dev/null | grep -q .; then
+    USE_DOCKER=true
+fi
+
+_docker_psql() {
+    docker compose -p "$COMPOSE_PROJECT" exec -T postgres psql -U admin "$@"
+}
+
 # Cleanup function
 cleanup() {
     if [ -d "$RESTORE_STAGING" ]; then
@@ -312,6 +324,52 @@ restore_database() {
         return 0
     fi
 
+    if [ "$USE_DOCKER" = true ]; then
+        _restore_database_docker "$db_dump"
+    else
+        _restore_database_native "$db_dump"
+    fi
+}
+
+_restore_database_docker() {
+    local db_dump="$1"
+
+    # Stop app services (leave postgres running)
+    log "Stopping app services (Docker)..."
+    local api_svc="${PROJECT_NAME}-api"
+    local worker_svc="${PROJECT_NAME}-worker"
+    docker compose -p "$COMPOSE_PROJECT" stop "$api_svc" "$worker_svc" 2>/dev/null || true
+
+    log "Dropping existing database..."
+    _docker_psql -d postgres -c "DROP DATABASE IF EXISTS ${DB_NAME}_restore;" 2>/dev/null || true
+    _docker_psql -d postgres -c "CREATE DATABASE ${DB_NAME}_restore;" 2>/dev/null
+
+    log "Restoring from dump..."
+    if gunzip -c "$db_dump" | _docker_psql -d "${DB_NAME}_restore" >/dev/null 2>&1; then
+        log "Swapping databases..."
+        _docker_psql -d postgres -c "DROP DATABASE IF EXISTS ${DB_NAME}_old;" 2>/dev/null || true
+        _docker_psql -d postgres -c "ALTER DATABASE $DB_NAME RENAME TO ${DB_NAME}_old;" 2>/dev/null || true
+        _docker_psql -d postgres -c "ALTER DATABASE ${DB_NAME}_restore RENAME TO $DB_NAME;" 2>/dev/null
+
+        log_success "Database restored successfully"
+
+        _docker_psql -d postgres -c "DROP DATABASE IF EXISTS ${DB_NAME}_old;" 2>/dev/null || true
+    else
+        log_error "Database restore failed"
+        _docker_psql -d postgres -c "DROP DATABASE IF EXISTS ${DB_NAME}_restore;" 2>/dev/null || true
+        return 1
+    fi
+
+    # Restart app services
+    log "Restarting app services (Docker)..."
+    docker compose -p "$COMPOSE_PROJECT" start "$api_svc" "$worker_svc" 2>/dev/null || true
+
+    return 0
+}
+
+_restore_database_native() {
+    local db_dump="$1"
+
     # Stop services that use the database
     log "Stopping services..."
     systemctl --user stop ${PROJECT_NAME}-backend 2>/dev/null || true
@@ -378,7 +436,11 @@ restore_files() {
 
     # Stop services
     log "Stopping services..."
-    systemctl --user stop ${PROJECT_NAME}-backend ${PROJECT_NAME}-frontend 2>/dev/null || true
+    if [ "$USE_DOCKER" = true ]; then
+        docker compose -p "$COMPOSE_PROJECT" stop "${PROJECT_NAME}-api" "${PROJECT_NAME}-web" "${PROJECT_NAME}-worker" 2>/dev/null || true
+    else
+        systemctl --user stop ${PROJECT_NAME}-backend ${PROJECT_NAME}-frontend 2>/dev/null || true
+    fi
 
     # Backup current state (just in case)
     local pre_restore_backup="$PROJECT_DIR/backups/.pre-restore-$(date +%Y%m%d-%H%M%S)"
@@ -403,7 +465,11 @@ restore_files() {
 
     # Restart services
     log "Restarting services..."
-    bash "$PROJECT_DIR/scripts/restart.sh" 2>/dev/null || true
+    if [ "$USE_DOCKER" = true ]; then
+        docker compose -p "$COMPOSE_PROJECT" start "${PROJECT_NAME}-api" "${PROJECT_NAME}-web" "${PROJECT_NAME}-worker" 2>/dev/null || true
+    else
+        bash "$PROJECT_DIR/scripts/restart.sh" 2>/dev/null || true
+    fi
 
     return 0
 }

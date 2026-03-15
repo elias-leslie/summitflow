@@ -215,3 +215,29 @@ def get_storage_config(source_id: str) -> dict[str, Any] | None:
             return row[0] if isinstance(row[0], dict) else None
 
     return None
+
+
+def build_storage_env(source_id: str) -> dict[str, str]:
+    """Resolve storage backend config and return as env var overrides.
+
+    Returns a dict of SMB_HOST, SMB_SHARE, etc. that can be passed as
+    extra env vars to subprocess calls. Returns empty dict if no backend
+    is configured (scripts will use their own env/file-based config).
+    """
+    config = get_storage_config(source_id)
+    if not config:
+        return {}
+
+    env_map: dict[str, str] = {}
+    if config.get("host"):
+        env_map["SMB_HOST"] = config["host"]
+    if config.get("share"):
+        env_map["SMB_SHARE"] = config["share"]
+    if config.get("path"):
+        env_map["SMB_PATH"] = config["path"]
+    if config.get("user"):
+        env_map["SMB_USER"] = config["user"]
+    if config.get("credentials_file"):
+        env_map["CREDENTIALS_FILE"] = config["credentials_file"]
+
+    return env_map

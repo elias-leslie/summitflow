@@ -218,11 +218,20 @@ create_archive() {
     done
 
     # Create archive of entire project (minus exclusions)
-    tar --create \
+    local tar_stderr
+    tar_stderr=$(mktemp)
+    if ! tar --create \
         --file="$tar_path" \
         "${exclude_args[@]}" \
         --transform="s|^|${PROJECT_NAME}/|" \
-        . 2>/dev/null || true
+        . 2>"$tar_stderr"; then
+        local tar_err
+        tar_err=$(cat "$tar_stderr")
+        rm -f "$tar_stderr"
+        log_error "tar failed: $tar_err"
+        return 1
+    fi
+    rm -f "$tar_stderr"
 
     if [ -n "$db_dump" ] && [ -f "$db_dump" ]; then
         local staging_dump="$STAGING_DIR/$BACKUP_DB_DUMP_NAME"

@@ -75,11 +75,18 @@ main() {
 
     log "Creating pg_dumpall..."
 
-    # Try Docker container first (only if Docker socket is available), fall back to direct connection
+    # Try Docker container first — check compose project is running, fall back to direct connection
     local pg_container="${POSTGRES_CONTAINER:-}"
     local use_docker=false
 
     if [ -S /var/run/docker.sock ]; then
+        # Prefer compose project-aware detection
+        if docker compose -p summitflow-stack ps --status running -q 2>/dev/null | grep -q .; then
+            if [ -z "$pg_container" ]; then
+                pg_container=$(docker compose -p summitflow-stack ps --format '{{.Name}}' postgres 2>/dev/null | head -1)
+            fi
+        fi
+        # Fallback to label-based detection
         if [ -z "$pg_container" ]; then
             pg_container=$(docker ps --filter "label=com.docker.compose.service=postgres" --format "{{.Names}}" 2>/dev/null | head -1)
         fi
@@ -136,9 +143,12 @@ main() {
     local tar_path="${archive_path%.gz}"
 
     cd "$STAGING_DIR"
-    tar --create --file="$tar_path" \
+    if ! tar --create --file="$tar_path" \
         --transform="s|^|infrastructure/|" \
-        "$BACKUP_DB_DUMP_NAME" configs/ 2>/dev/null || true
+        "$BACKUP_DB_DUMP_NAME" configs/ 2>/dev/null; then
+        log_error "Failed to create tar archive"
+        exit 1
+    fi
 
     gzip -f "$tar_path"
     log_success "Archive created: $(du -h "$archive_path" | cut -f1)"

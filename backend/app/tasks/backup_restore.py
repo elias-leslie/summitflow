@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 from typing import Any
 
 from ..logging_config import get_logger
 from ..storage import backups as backup_store
-from .backup_utils import get_project_root, get_source_path
+from .backup_utils import build_storage_env, get_project_root, get_source_path
 
 logger = get_logger(__name__)
 
-SCRIPT_DIR = Path.home() / "summitflow" / "scripts"
+_HOST_ROOT = os.environ.get("BACKUP_HOST_ROOT")
+SCRIPT_DIR = Path(_HOST_ROOT) / "summitflow" / "scripts" if _HOST_ROOT else Path.home() / "summitflow" / "scripts"
 RESTORE_SCRIPT = SCRIPT_DIR / "restore.sh"
 
 
@@ -59,6 +61,9 @@ def restore_backup(
     backup_record = backup_store.get_backup(backup_id) if backup_id else None
     cmd = _build_restore_command(backup_record, backup_file, dry_run, db_only, files_only)
 
+    # Resolve storage backend config and inject as env vars
+    env = {**os.environ, **build_storage_env(resolved_id)}
+
     try:
         result = subprocess.run(
             cmd,
@@ -66,6 +71,7 @@ def restore_backup(
             capture_output=True,
             text=True,
             timeout=1800,  # 30 minute timeout for restore
+            env=env,
         )
 
         if result.returncode == 0:

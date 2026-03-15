@@ -61,12 +61,18 @@ COPY --from=builder /app/alembic ./alembic
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONUNBUFFERED=1
 
+# Create non-root user for runtime
+RUN useradd -m -s /bin/bash appuser \
+    && chown -R appuser:appuser /app
+
 # Allow git to operate on mounted host repos (different UID)
 RUN git config --global --add safe.directory '*'
 
 # Copy and use entrypoint script
 COPY docker/scripts/entrypoint-backend.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
+
+USER appuser
 
 EXPOSE 8001
 ENV PORT=8001

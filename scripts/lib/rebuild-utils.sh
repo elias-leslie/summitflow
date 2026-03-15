@@ -42,7 +42,7 @@ _compose_all_services() {
     local prefix
     prefix=$(_project_to_prefix "${1:-$PROJECT_NAME}")
     # Query running containers' service labels — no config parsing, no env vars required
-    docker ps --filter "label=com.docker.compose.project=compose" \
+    docker ps --filter "label=com.docker.compose.project=summitflow-stack" \
               --format '{{.Label "com.docker.compose.service"}}' 2>/dev/null \
         | grep "^${prefix}" | sort -u | tr '\n' ' '
 }

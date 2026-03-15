@@ -12,6 +12,7 @@ from ..storage.notifications import create_notification
 from .backup_lock import acquire_backup_lock, release_backup_lock
 from .backup_utils import (
     build_script_error_message,
+    build_storage_env,
     build_verification_kwargs,
     get_project_root,
     get_source_path,
@@ -95,9 +96,12 @@ def _run_backup(
     if retention_days is not None:
         cmd.extend(["--retention-days", str(retention_days)])
 
+    # Resolve storage backend config and inject as env vars
+    env = {**os.environ, **build_storage_env(source_id or project_id)}
+
     try:
         result = subprocess.run(
-            cmd, cwd=project_dir, capture_output=True, text=True, timeout=BACKUP_TIMEOUT
+            cmd, cwd=project_dir, capture_output=True, text=True, timeout=BACKUP_TIMEOUT, env=env
         )
         parsed_output = parse_backup_output(result.stdout)
         if result.returncode == 0:

@@ -25,16 +25,21 @@ async def backup_health() -> BackupHealthResponse:
         pending_upload_count = row.get("pending_upload_count", 0)
         total_pending_upload += pending_upload_count
 
+        last_restore_test_ok = row.get("last_restore_test_ok")
+
         # Health logic:
         # - red: most recent backup failed
         # - yellow: pending upload, never succeeded, or restore never tested
-        # - green: most recent backup succeeded
+        # - green: most recent backup succeeded AND restore test passed
         if last_status == "failed":
             health_status = "red"
         elif last_status == "completed_pending_upload":
             health_status = "yellow"
-        elif last_success:
+        elif last_success and last_restore_test_ok is True:
             health_status = "green"
+        elif last_success:
+            # Backup succeeded but restore never tested (or test failed)
+            health_status = "yellow"
         else:
             health_status = "yellow"
 

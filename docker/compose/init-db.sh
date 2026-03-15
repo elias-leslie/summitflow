@@ -41,8 +41,14 @@ apply_schema() {
   fi
 }
 
+# Apply schemas to production databases
 apply_schema summitflow summitflow_app "$INIT_DIR/summitflow-schema.sql"
 apply_schema agent_hub agent_hub_app "$INIT_DIR/agent-hub-schema.sql"
 apply_schema portfolio_ai portfolio_app "$INIT_DIR/portfolio-ai-schema.sql"
 
-echo "Database initialization complete."
+# Apply schemas to test databases
+apply_schema summitflow_test summitflow_app "$INIT_DIR/summitflow-schema.sql"
+apply_schema agent_hub_test agent_hub_app "$INIT_DIR/agent-hub-schema.sql"
+apply_schema portfolio_ai_test portfolio_app "$INIT_DIR/portfolio-ai-schema.sql"
+
+echo "Database initialization complete (production + test databases)."

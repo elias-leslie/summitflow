@@ -7,6 +7,8 @@
 #
 # Profiles: infra, summitflow, agent-hub, terminal, portfolio, monkey-fight, browser, full
 
+name: summitflow-stack
+
 services:
   # ─── Infrastructure ──────────────────────────────────────────────
   postgres:
@@ -37,12 +39,12 @@ services:
   redis:
     image: redis:7-bookworm
     profiles: [infra, summitflow, agent-hub, portfolio, full]
-    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf", "--requirepass", "${REDIS_PASSWORD:-changeme}"]
     volumes:
       - redis-data:/data
       - ./redis.conf:/usr/local/etc/redis/redis.conf:ro
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-changeme}", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -51,7 +53,7 @@ services:
     restart: unless-stopped
 
   hatchet:
-    image: ghcr.io/hatchet-dev/hatchet/hatchet-lite:latest
+    image: ghcr.io/hatchet-dev/hatchet/hatchet-lite:${HATCHET_TAG:-latest}
     profiles: [infra, summitflow, agent-hub, portfolio, full]
     depends_on:
       postgres:
@@ -87,7 +89,7 @@ services:
     environment:
       DATABASE_URL: "postgresql://summitflow_app:${SF_DB_PASSWORD:-changeme}@postgres:5432/summitflow"
       DATABASE_ADMIN_URL: "postgresql://admin:${POSTGRES_PASSWORD}@postgres:5432/summitflow"
-      REDIS_URL: "redis://redis:6379/1"
+      REDIS_URL: "redis://:${REDIS_PASSWORD:-changeme}@redis:6379/1"
       PORT: "8001"
       HATCHET_CLIENT_TOKEN: "${HATCHET_CLIENT_TOKEN}"
       HATCHET_CLIENT_TLS_STRATEGY: "none"
@@ -103,7 +105,7 @@ services:
       COMPOSE_DIR: "/compose"
       BACKUP_DIR: "/app/docker-backups"
       BACKUP_HOST_ROOT: "/host-home"
-      HOST_HOME_PATH: "/home/kasadis"
+      HOST_HOME_PATH: "${HOST_HOME_PATH:?Set HOST_HOME_PATH in .env}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -116,7 +118,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - .:/compose:ro
-      - /home/kasadis:/host-home
+      - ${HOST_HOME_PATH:?}:/host-home
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 10s
@@ -137,6 +139,11 @@ services:
       AGENT_HUB_API_URL: "http://agent-hub-api:8003"
       SUMMITFLOW_CLIENT_ID: "${SUMMITFLOW_CLIENT_ID}"
       SUMMITFLOW_REQUEST_SOURCE: "summitflow"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
   summitflow-worker:
@@ -146,7 +153,7 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: "postgresql://summitflow_app:${SF_DB_PASSWORD:-changeme}@postgres:5432/summitflow"
-      REDIS_URL: "redis://redis:6379/1"
+      REDIS_URL: "redis://:${REDIS_PASSWORD:-changeme}@redis:6379/1"
       HATCHET_CLIENT_TOKEN: "${HATCHET_CLIENT_TOKEN}"
       HATCHET_CLIENT_TLS_STRATEGY: "none"
       HATCHET_CLIENT_HOST_PORT: "hatchet:7077"
@@ -159,10 +166,10 @@ services:
       PORTFOLIO_HEALTH_URL: "http://portfolio-api:8000/health"
       TERMINAL_HEALTH_URL: "http://terminal-api:8002/health"
       BACKUP_HOST_ROOT: "/host-home"
-      HOST_HOME_PATH: "/home/kasadis"
+      HOST_HOME_PATH: "${HOST_HOME_PATH:?Set HOST_HOME_PATH in .env}"
       HOME: "/host-home"
-      SMB_HOST: "192.168.8.128"
-      SMB_SHARE: "davion-gem"
+      SMB_HOST: "${SMB_HOST:?Set SMB_HOST in .env}"
+      SMB_SHARE: "${SMB_SHARE:?Set SMB_SHARE in .env}"
       PGHOST: "postgres"
       PGUSER: "admin"
       PGPASSWORD: "${POSTGRES_PASSWORD}"
@@ -172,7 +179,7 @@ services:
       summitflow-api:
         condition: service_healthy
     volumes:
-      - /home/kasadis:/host-home
+      - ${HOST_HOME_PATH:?}:/host-home
       - hatchet-config:/config:ro
       - wal-archive:/var/lib/postgresql/wal-archive:ro
     restart: unless-stopped
@@ -184,7 +191,7 @@ services:
     env_file: .env
     environment:
       AGENT_HUB_DB_URL: "postgresql://agent_hub_app:${AH_DB_PASSWORD:-changeme}@postgres:5432/agent_hub"
-      AGENT_HUB_REDIS_URL: "redis://redis:6379/2"
+      AGENT_HUB_REDIS_URL: "redis://:${REDIS_PASSWORD:-changeme}@redis:6379/2"
       PORT: "8003"
       HATCHET_CLIENT_TOKEN: "${HATCHET_CLIENT_TOKEN}"
       HATCHET_CLIENT_TLS_STRATEGY: "none"
@@ -222,6 +229,11 @@ services:
       AGENT_HUB_DASHBOARD_CLIENT_ID: "${AGENT_HUB_DASHBOARD_CLIENT_ID}"
       AGENT_HUB_DASHBOARD_REQUEST_SOURCE: "agent-hub-dashboard"
       INTERNAL_SERVICE_SECRET: "${INTERNAL_SERVICE_SECRET}"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3003/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
   agent-hub-worker:
@@ -231,7 +243,7 @@ services:
     env_file: .env
     environment:
       AGENT_HUB_DB_URL: "postgresql://agent_hub_app:${AH_DB_PASSWORD:-changeme}@postgres:5432/agent_hub"
-      AGENT_HUB_REDIS_URL: "redis://redis:6379/2"
+      AGENT_HUB_REDIS_URL: "redis://:${REDIS_PASSWORD:-changeme}@redis:6379/2"
       HATCHET_CLIENT_TOKEN: "${HATCHET_CLIENT_TOKEN}"
       HATCHET_CLIENT_TLS_STRATEGY: "none"
       HATCHET_CLIENT_HOST_PORT: "hatchet:7077"
@@ -276,6 +288,11 @@ services:
       - "3002:3002"
     environment:
       API_URL: "http://terminal-api:8002"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
   # ─── Portfolio AI ────────────────────────────────────────────────
@@ -285,7 +302,7 @@ services:
     env_file: .env
     environment:
       PORTFOLIO_DB_URL: "postgresql://portfolio_app:${PA_DB_PASSWORD:-changeme}@postgres:5432/portfolio_ai"
-      REDIS_URL: "redis://redis:6379/0"
+      REDIS_URL: "redis://:${REDIS_PASSWORD:-changeme}@redis:6379/0"
       PORT: "8000"
       HATCHET_CLIENT_TOKEN: "${HATCHET_CLIENT_TOKEN}"
       HATCHET_CLIENT_TLS_STRATEGY: "none"
@@ -294,7 +311,7 @@ services:
       PORTFOLIO_CLIENT_ID: "${PORTFOLIO_CLIENT_ID}"
       PORTFOLIO_CLIENT_SECRET: "${PORTFOLIO_CLIENT_SECRET}"
       PORTFOLIO_REQUEST_SOURCE: "portfolio-ai"
-      BACKEND_URL: "http://localhost:8000"
+      BACKEND_URL: "http://portfolio-api:8000"
       FRONTEND_URL: "http://portfolio-web:3000"
     command: ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
     depends_on:
@@ -324,6 +341,11 @@ services:
       - "3000:3000"
     environment:
       API_URL: "http://portfolio-api:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
   portfolio-worker:
@@ -333,7 +355,7 @@ services:
     env_file: .env
     environment:
       PORTFOLIO_DB_URL: "postgresql://portfolio_app:${PA_DB_PASSWORD:-changeme}@postgres:5432/portfolio_ai"
-      REDIS_URL: "redis://redis:6379/0"
+      REDIS_URL: "redis://:${REDIS_PASSWORD:-changeme}@redis:6379/0"
       HATCHET_CLIENT_TOKEN: "${HATCHET_CLIENT_TOKEN}"
       HATCHET_CLIENT_TLS_STRATEGY: "none"
       HATCHET_CLIENT_HOST_PORT: "hatchet:7077"
@@ -358,6 +380,11 @@ services:
       MONKEY_FIGHT_CLIENT_ID: "${MONKEY_FIGHT_CLIENT_ID}"
       MONKEY_FIGHT_CLIENT_SECRET: "${MONKEY_FIGHT_CLIENT_SECRET}"
       MONKEY_FIGHT_REQUEST_SOURCE: "monkey-fight"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4001/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
   # ─── Agent Browser ──────────────────────────────────────────────

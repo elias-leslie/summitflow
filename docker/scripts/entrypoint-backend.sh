@@ -6,10 +6,12 @@ set -e
 # and stamps alembic_version. Alembic then only runs incremental upgrades.
 if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
   echo "Running database migrations..."
-  alembic upgrade head 2>&1 || {
-    echo "WARNING: Alembic migrations failed (may be OK on fresh Docker deploy)"
-    echo "Schema was loaded from init-db.sh dump. Continuing..."
-  }
+  if ! alembic upgrade head 2>&1; then
+    echo "ERROR: Alembic migrations failed."
+    echo "This may indicate a schema mismatch. Check database state and migration history."
+    echo "To skip migrations, set RUN_MIGRATIONS=false"
+    exit 1
+  fi
 fi
 
 # If CMD args provided (e.g. worker command), run those instead of uvicorn
