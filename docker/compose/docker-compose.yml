@@ -265,12 +265,13 @@ services:
   terminal-web:
     image: ghcr.io/summitflow-solutions/terminal-web:${TAG:-latest}
     profiles: [terminal, full]
-    depends_on:
-      - terminal-api
     ports:
       - "3002:3002"
     environment:
-      API_URL: "http://terminal-api:8002"
+      # terminal-api runs on the host, not in Docker
+      API_URL: "http://host.docker.internal:8002"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3002/').then(r=>{if(!r.ok)throw r.status;process.exit(0)}).catch(()=>process.exit(1))"]
       interval: 10s
