@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from app.storage.projects import get_project_root_path
 from app.utils._git_branches import build_repo_workspace_summary
+from app.utils._git_core import _translate_path
 from cli.commands.cleanup_git import has_uncommitted_changes
 from cli.lib.worktree import get_active_worktrees
 
@@ -26,7 +26,7 @@ def build_project_cleanup_status(project_id: str) -> dict[str, Any]:
             "needs_cleanup": False,
         }
 
-    repo_path = Path(root_path)
+    repo_path = _translate_path(root_path)
     workspace_summary = build_repo_workspace_summary(repo_path)
     active_worktrees = get_active_worktrees(project_id)
     dirty_worktrees = sum(
