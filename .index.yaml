@@ -1,5 +1,5 @@
 project: summitflow
-generated_at: 2026-03-15 17:15 UTC
+generated_at: 2026-03-15 17:16 UTC
 environment:
   python_version: '>=3.13'
   venv_path: backend/.venv
@@ -30,11 +30,11 @@ explorer:
     architecture: 1
     dependency: 85
     endpoint: 57
-    file: 1716
+    file: 1717
     page: 15
     table: 39
     task: 10
-  symbol_count: 7994
+  symbol_count: 7999
   stale_metadata_count: 0
 pages:
 - / (app)
@@ -164,7 +164,7 @@ tasks:
 folders:
   (root): 29 files - tests
   .claude: 3 files
-  .dev-tools: 17 files
+  .dev-tools: 18 files - tests
   .github: 3 files
   .st: 20 files
   assets: 2 files

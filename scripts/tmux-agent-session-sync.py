@@ -11,10 +11,11 @@ from pathlib import Path
 from typing import Any
 from urllib import error, request
 
-TERMINAL_API = os.environ.get("TERMINAL_API", "http://localhost:8002/api/terminal/sessions")
 AGENT_HUB_API = os.environ.get("AGENT_HUB_API", "http://localhost:8003/api")
 ENV_FILE = Path.home() / ".env.local"
 STATE_PATH = Path.home() / ".local" / "state" / "tmux-agent-session-sync" / "state.json"
+# Prefixes that identify agent tmux sessions (convention: {mode}-{project})
+AGENT_PREFIXES = ("claude-", "codex-")
 
 
 def _load_credentials() -> tuple[str, str]:
@@ -58,16 +59,6 @@ def _api_request(
         return exc.code, exc.read().decode("utf-8")
     except Exception as exc:  # noqa: BLE001
         return None, str(exc)
-
-
-def _get_json(url: str) -> dict[str, Any]:
-    status, payload = _api_request(url, request_source="tmux-agent-session-sync")
-    if status != 200:
-        raise RuntimeError(f"GET {url} failed: status={status} body={payload[:200]}")
-    decoded = json.loads(payload)
-    if not isinstance(decoded, dict):
-        raise RuntimeError(f"Unexpected JSON payload from {url}")
-    return decoded
 
 
 def _state() -> dict[str, Any]:
@@ -114,29 +105,69 @@ def _session_id(tmux_session_name: str) -> str:
     return f"tmux:{tmux_session_name}"
 
 
+def _discover_agent_tmux_sessions() -> list[dict[str, Any]]:
+    """Discover agent tmux sessions directly from the host tmux server."""
+    try:
+        result = subprocess.run(
+            ["tmux", "list-sessions", "-F", "#{session_name}"],
+            capture_output=True, text=True, timeout=5, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    if result.returncode != 0:
+        return []
+
+    sessions = []
+    for name in result.stdout.strip().splitlines():
+        name = name.strip()
+        if not any(name.startswith(p) for p in AGENT_PREFIXES):
+            continue
+        # Convention: {mode}-{project} e.g. claude-summitflow, codex-agent-hub
+        parts = name.split("-", 1)
+        if len(parts) != 2 or not parts[1]:
+            continue
+        mode, project_id = parts[0], parts[1]
+
+        # Get working directory from the active pane
+        try:
+            pane_result = subprocess.run(
+                ["tmux", "display-message", "-t", name, "-p", "#{pane_current_path}"],
+                capture_output=True, text=True, timeout=5, check=False,
+            )
+            working_dir = pane_result.stdout.strip() or None
+        except (OSError, subprocess.TimeoutExpired):
+            working_dir = None
+
+        # Fallback: derive from project name
+        if not working_dir:
+            candidate = Path.home() / project_id
+            working_dir = str(candidate) if candidate.is_dir() else None
+
+        sessions.append({
+            "tmux_session_name": name,
+            "project_id": project_id,
+            "mode": mode,
+            "working_dir": working_dir,
+        })
+    return sessions
+
+
 def main() -> int:
     client_id, client_secret = _load_credentials()
     if not client_id or not client_secret:
         return 0
 
-    sessions_payload = _get_json(TERMINAL_API)
-    items = sessions_payload.get("items", [])
-    if not isinstance(items, list):
-        return 0
-
-    external_sessions = [row for row in items if isinstance(row, dict) and row.get("is_external")]
+    external_sessions = _discover_agent_tmux_sessions()
     active_session_ids: list[str] = []
 
     for session in external_sessions:
-        project_id = session.get("project_id")
-        tmux_session_name = session.get("tmux_session_name")
+        project_id = session["project_id"]
+        tmux_session_name = session["tmux_session_name"]
         working_dir = session.get("working_dir")
-        if not isinstance(project_id, str) or not project_id or not isinstance(tmux_session_name, str):
-            continue
 
-        current_branch = _git_value(working_dir if isinstance(working_dir, str) else None, ["rev-parse", "--abbrev-ref", "HEAD"])
-        repo_root = _git_value(working_dir if isinstance(working_dir, str) else None, ["rev-parse", "--show-toplevel"])
-        provider, model, session_type = _provider_for_mode(str(session.get("mode") or ""))
+        current_branch = _git_value(working_dir, ["rev-parse", "--abbrev-ref", "HEAD"])
+        repo_root = _git_value(working_dir, ["rev-parse", "--show-toplevel"])
+        provider, model, session_type = _provider_for_mode(session["mode"])
         session_id = _session_id(tmux_session_name)
         active_session_ids.append(session_id)
 
