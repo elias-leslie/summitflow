@@ -42,7 +42,12 @@ async def execute_smart_sync(project_root: Path) -> dict[str, Any]:
     import asyncio
     from asyncio import subprocess as aio_subprocess
 
-    script_path = Path.home() / "summitflow" / "scripts" / "commit.sh"
+    import os
+    _host_root = os.environ.get("BACKUP_HOST_ROOT")
+    if _host_root:
+        script_path = Path(_host_root) / "summitflow" / "scripts" / "commit.sh"
+    else:
+        script_path = Path.home() / "summitflow" / "scripts" / "commit.sh"
 
     try:
         proc = await asyncio.create_subprocess_exec(

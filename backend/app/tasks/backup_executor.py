@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -19,7 +20,8 @@ from .backup_utils import (
 
 logger = get_logger(__name__)
 
-SCRIPT_DIR = Path.home() / "summitflow" / "scripts"
+_HOST_ROOT = os.environ.get("BACKUP_HOST_ROOT")
+SCRIPT_DIR = Path(_HOST_ROOT) / "summitflow" / "scripts" if _HOST_ROOT else Path.home() / "summitflow" / "scripts"
 BACKUP_SCRIPT = SCRIPT_DIR / "backup.sh"
 BACKUP_TIMEOUT = 600
 

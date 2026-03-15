@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -12,6 +13,12 @@ if TYPE_CHECKING:
 from ..logging_config import get_logger
 
 logger = get_logger(__name__)
+
+# Docker path translation: when running in Docker, host paths in the DB
+# (e.g. /home/kasadis/summitflow) need to be mapped to the container mount
+# (e.g. /host-home/summitflow). Set HOST_HOME_PATH + BACKUP_HOST_ROOT.
+_HOST_HOME_PATH = os.environ.get("HOST_HOME_PATH", "")
+_DOCKER_HOME_MOUNT = os.environ.get("BACKUP_HOST_ROOT", "")
 
 CONFIG_REPOS = [Path.home() / ".claude"]
 WORKTREES_BASE_DIR = Path.home() / ".summitflow" / "worktrees"
@@ -79,11 +86,18 @@ def _query_db_root_paths() -> list[str]:
         return []
 
 
+def _translate_path(raw: str) -> Path:
+    """Translate host path to Docker mount path if running in Docker."""
+    if _HOST_HOME_PATH and _DOCKER_HOME_MOUNT and raw.startswith(_HOST_HOME_PATH):
+        return Path(_DOCKER_HOME_MOUNT + raw[len(_HOST_HOME_PATH):])
+    return Path(raw)
+
+
 def _collect_db_repos() -> list[Path]:
     """Return valid git repo paths from the database."""
     repos: list[Path] = []
     for raw in _query_db_root_paths():
-        path = Path(raw)
+        path = _translate_path(raw)
         if is_valid_git_repo(path):
             repos.append(path)
     return repos

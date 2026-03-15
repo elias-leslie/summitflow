@@ -1,0 +1,85 @@
+name: Docker Integration Tests
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 1' # Weekly Monday 6am UTC
+
+permissions:
+  contents: read
+  packages: read
+
+env:
+  POSTGRES_PASSWORD: test-integration-pw
+  SF_DB_PASSWORD: test-sf-pw
+  AH_DB_PASSWORD: test-ah-pw
+  PA_DB_PASSWORD: test-pa-pw
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create .env file
+        working-directory: docker/compose
+        run: |
+          cat > .env <<EOF
+          POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
+          SF_DB_PASSWORD=${{ env.SF_DB_PASSWORD }}
+          AH_DB_PASSWORD=${{ env.AH_DB_PASSWORD }}
+          PA_DB_PASSWORD=${{ env.PA_DB_PASSWORD }}
+          TAG=latest
+          EOF
+
+      - name: Validate compose syntax
+        working-directory: docker/compose
+        run: docker compose --profile full config --quiet
+
+      - name: Start infrastructure
+        working-directory: docker/compose
+        run: docker compose --profile infra up -d --wait
+
+      - name: Start SummitFlow stack
+        working-directory: docker/compose
+        run: docker compose --profile summitflow up -d --wait
+
+      - name: Health check — SummitFlow API
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8001/health; then
+              echo " OK"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Health check failed"
+          docker compose -f docker/compose/docker-compose.yml logs summitflow-api
+          exit 1
+
+      - name: Health check — SummitFlow Web
+        run: |
+          for i in $(seq 1 15); do
+            if curl -sf http://localhost:3001 > /dev/null; then
+              echo "OK"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Health check failed"
+          exit 1
+
+      - name: Show container status
+        if: always()
+        working-directory: docker/compose
+        run: docker compose --profile summitflow ps
+
+      - name: Collect logs on failure
+        if: failure()
+        working-directory: docker/compose
+        run: docker compose --profile summitflow logs --tail 100
+
+      - name: Tear down
+        if: always()
+        working-directory: docker/compose
+        run: docker compose --profile summitflow down --volumes

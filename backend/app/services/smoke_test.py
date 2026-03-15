@@ -9,6 +9,7 @@ to avoid notification spam.
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
 from urllib.request import Request, urlopen
 
@@ -20,13 +21,12 @@ logger = get_logger(__name__)
 _REDIS_KEY = "smoke_test:last_status"
 _REDIS_TTL = 3600  # 1 hour — re-notify if still failing after TTL expires
 
-# Local health endpoints (services run on same machine)
-# Applied: [M:3bc20b6c] — service port map
+# Health endpoints — configurable via env vars for Docker (service names) vs native (localhost)
 HEALTH_URLS: dict[str, str] = {
-    "summitflow": "http://localhost:8001/health",
-    "agent-hub": "http://localhost:8003/health",
-    "portfolio-ai": "http://localhost:8000/health",
-    "terminal": "http://localhost:8002/health",
+    "summitflow": os.getenv("SUMMITFLOW_HEALTH_URL", "http://localhost:8001/health"),
+    "agent-hub": os.getenv("AGENT_HUB_HEALTH_URL", "http://localhost:8003/health"),
+    "portfolio-ai": os.getenv("PORTFOLIO_HEALTH_URL", "http://localhost:8000/health"),
+    "terminal": os.getenv("TERMINAL_HEALTH_URL", "http://localhost:8002/health"),
 }
 
 

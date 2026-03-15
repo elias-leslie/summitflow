@@ -10,7 +10,8 @@
     "restart\\.sh\\b",
     "rebuild\\.sh\\b",
     "shutdown\\.sh\\b",
-    "worktree-services\\.sh\\b"
+    "worktree-services\\.sh\\b",
+    "st\\s+docker\\b"
   ],
   "tools": [
     {
@@ -152,6 +153,13 @@
         "fallback_global": true,
         "pass_path": false
       }
+    }
+  ],
+  "docker_redirects": [
+    {
+      "pattern": "docker\\s+(compose|run|exec|build|logs|ps)\\b",
+      "message": "Use 'st docker' commands for Docker lifecycle. Commands: st docker status, st docker up, st docker down, st docker logs <service>, st docker restart <service>, st docker build, st docker backup/restore, st docker metrics.",
+      "component_id": "sf.docker"
     }
   ],
   "service_redirects": [

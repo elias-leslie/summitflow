@@ -22,6 +22,7 @@ from .api import (
     context,
     design_assets,
     design_standards,
+    docker,
     events,
     explorer,
     files,
@@ -132,6 +133,7 @@ app.include_router(events.router, prefix="/api", tags=["events"])
 app.include_router(pipeline.router, prefix="/api", tags=["pipeline"])
 app.include_router(system.router, tags=["system"])
 app.include_router(ws_execution.router, tags=["execution"])
+app.include_router(docker.router, prefix="/api/docker", tags=["docker"])
 
 
 # Global exception handlers for consistent error responses

@@ -18,7 +18,11 @@ from app.config import DATABASE_URL as _app_db_url
 config = context.config
 
 # Use DATABASE_URL from env (if explicitly set) or from app config
+# Ensure psycopg3 driver is used — psycopg pool uses postgresql:// but
+# SQLAlchemy needs postgresql+psycopg:// to avoid falling back to psycopg2
 database_url = os.environ.get("DATABASE_URL") or _app_db_url
+if database_url.startswith("postgresql://"):
+    database_url = database_url.replace("postgresql://", "postgresql+psycopg://", 1)
 config.set_main_option("sqlalchemy.url", database_url)
 
 # Interpret the config file for Python logging.

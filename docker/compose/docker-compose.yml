@@ -1,0 +1,373 @@
+# SummitFlow Ecosystem — Docker Compose
+#
+# Usage:
+#   docker compose --profile summitflow up -d     # SummitFlow + infra
+#   docker compose --profile agent-hub up -d      # Agent Hub + infra
+#   docker compose --profile full up -d           # Everything
+#
+# Profiles: infra, summitflow, agent-hub, terminal, portfolio, monkey-fight, browser, full
+
+services:
+  # ─── Infrastructure ──────────────────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg16
+    profiles: [infra, summitflow, agent-hub, terminal, portfolio, full]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+      - ./summitflow-schema.sql:/docker-entrypoint-initdb.d/summitflow-schema.sql:ro
+      - ./agent-hub-schema.sql:/docker-entrypoint-initdb.d/agent-hub-schema.sql:ro
+      - ./portfolio-ai-schema.sql:/docker-entrypoint-initdb.d/portfolio-ai-schema.sql:ro
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
+      SF_DB_PASSWORD: "${SF_DB_PASSWORD:-changeme}"
+      AH_DB_PASSWORD: "${AH_DB_PASSWORD:-changeme}"
+      PA_DB_PASSWORD: "${PA_DB_PASSWORD:-changeme}"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-bookworm
+    profiles: [infra, summitflow, agent-hub, portfolio, full]
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    volumes:
+      - redis-data:/data
+      - ./redis.conf:/usr/local/etc/redis/redis.conf:ro
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+  hatchet:
+    image: ghcr.io/hatchet-dev/hatchet/hatchet-lite:latest
+    profiles: [infra, summitflow, agent-hub, portfolio, full]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgresql://admin:${POSTGRES_PASSWORD}@postgres:5432/hatchet"
+      SERVER_AUTH_COOKIE_DOMAIN: "localhost"
+      SERVER_AUTH_COOKIE_INSECURE: "true"
+      SERVER_AUTH_SET_EMAIL_VERIFIED: "true"
+      SERVER_URL: "http://localhost:8888"
+      SERVER_GRPC_INSECURE: "true"
+      SERVER_GRPC_BIND_ADDRESS: "0.0.0.0"
+      SERVER_GRPC_PORT: "7077"
+      SERVER_GRPC_BROADCAST_ADDRESS: "hatchet:7077"
+    volumes:
+      - hatchet-config:/config
+    ports:
+      - "7077:7077"
+      - "8888:8888"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  # ─── SummitFlow ──────────────────────────────────────────────────
+  summitflow-api:
+    image: ghcr.io/summitflow-solutions/summitflow-api:${TAG:-latest}
+    profiles: [summitflow, full]
+    env_file: .env
+    environment:
+      DATABASE_URL: "postgresql://summitflow_app:${SF_DB_PASSWORD:-changeme}@postgres:5432/summitflow"
+      REDIS_URL: "redis://redis:6379/1"
+      PORT: "8001"
+      HATCHET_CLIENT_TOKEN: "${HATCHET_CLIENT_TOKEN}"
+      HATCHET_CLIENT_TLS_STRATEGY: "none"
+      HATCHET_CLIENT_HOST_PORT: "hatchet:7077"
+      AGENT_HUB_URL: "http://agent-hub-api:8003"
+      SUMMITFLOW_CLIENT_ID: "${SUMMITFLOW_CLIENT_ID}"
+      SUMMITFLOW_CLIENT_SECRET: "${SUMMITFLOW_CLIENT_SECRET}"
+      SUMMITFLOW_REQUEST_SOURCE: "summitflow"
+      SUMMITFLOW_HEALTH_URL: "http://summitflow-api:8001/health"
+      AGENT_HUB_HEALTH_URL: "http://agent-hub-api:8003/health"
+      PORTFOLIO_HEALTH_URL: "http://portfolio-api:8000/health"
+      TERMINAL_HEALTH_URL: "http://terminal-api:8002/health"
+      COMPOSE_DIR: "/compose"
+      BACKUP_DIR: "/app/docker-backups"
+      BACKUP_HOST_ROOT: "/host-home"
+      HOST_HOME_PATH: "/home/kasadis"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      hatchet:
+        condition: service_healthy
+    ports:
+      - "8001:8001"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - .:/compose:ro
+      - /home/kasadis:/host-home
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  summitflow-web:
+    image: ghcr.io/summitflow-solutions/summitflow-web:${TAG:-latest}
+    profiles: [summitflow, full]
+    depends_on:
+      - summitflow-api
+    ports:
+      - "3001:3001"
+    environment:
+      API_URL: "http://summitflow-api:8001"
+      AGENT_HUB_URL: "http://agent-hub-api:8003"
+      AGENT_HUB_API_URL: "http://agent-hub-api:8003"
+      SUMMITFLOW_CLIENT_ID: "${SUMMITFLOW_CLIENT_ID}"
+      SUMMITFLOW_REQUEST_SOURCE: "summitflow"
+    restart: unless-stopped
+
+  summitflow-worker:
+    image: ghcr.io/summitflow-solutions/summitflow-api:${TAG:-latest}
+    profiles: [summitflow, full]
+    command: ["python", "-m", "app.worker"]
+    env_file: .env
+    environment:
+      DATABASE_URL: "postgresql://summitflow_app:${SF_DB_PASSWORD:-changeme}@postgres:5432/summitflow"
+      REDIS_URL: "redis://redis:6379/1"
+      HATCHET_CLIENT_TOKEN: "${HATCHET_CLIENT_TOKEN}"
+      HATCHET_CLIENT_TLS_STRATEGY: "none"
+      HATCHET_CLIENT_HOST_PORT: "hatchet:7077"
+      AGENT_HUB_URL: "http://agent-hub-api:8003"
+      SUMMITFLOW_CLIENT_ID: "${SUMMITFLOW_CLIENT_ID}"
+      SUMMITFLOW_CLIENT_SECRET: "${SUMMITFLOW_CLIENT_SECRET}"
+      SUMMITFLOW_REQUEST_SOURCE: "summitflow"
+      SUMMITFLOW_HEALTH_URL: "http://summitflow-api:8001/health"
+      AGENT_HUB_HEALTH_URL: "http://agent-hub-api:8003/health"
+      PORTFOLIO_HEALTH_URL: "http://portfolio-api:8000/health"
+      TERMINAL_HEALTH_URL: "http://terminal-api:8002/health"
+      BACKUP_HOST_ROOT: "/host-home"
+      HOST_HOME_PATH: "/home/kasadis"
+      HOME: "/host-home"
+      SMB_HOST: "192.168.8.128"
+      SMB_SHARE: "davion-gem"
+      PGHOST: "postgres"
+      PGPASSWORD: "${SF_DB_PASSWORD:-changeme}"
+    depends_on:
+      hatchet:
+        condition: service_healthy
+      summitflow-api:
+        condition: service_healthy
+    volumes:
+      - /home/kasadis:/host-home
+    restart: unless-stopped
+
+  # ─── Agent Hub ───────────────────────────────────────────────────
+  agent-hub-api:
+    image: ghcr.io/summitflow-solutions/agent-hub-api:${TAG:-latest}
+    profiles: [agent-hub, full]
+    env_file: .env
+    environment:
+      AGENT_HUB_DB_URL: "postgresql://agent_hub_app:${AH_DB_PASSWORD:-changeme}@postgres:5432/agent_hub"
+      AGENT_HUB_REDIS_URL: "redis://redis:6379/2"
+      PORT: "8003"
+      HATCHET_CLIENT_TOKEN: "${HATCHET_CLIENT_TOKEN}"
+      HATCHET_CLIENT_TLS_STRATEGY: "none"
+      HATCHET_CLIENT_HOST_PORT: "hatchet:7077"
+      AGENT_HUB_ENCRYPTION_KEY: "${AGENT_HUB_ENCRYPTION_KEY}"
+      AGENT_HUB_SECRET_KEY: "${AGENT_HUB_SECRET_KEY}"
+      INTERNAL_SERVICE_SECRET: "${INTERNAL_SERVICE_SECRET}"
+    command: ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8003}"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      hatchet:
+        condition: service_healthy
+    ports:
+      - "8003:8003"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  agent-hub-web:
+    image: ghcr.io/summitflow-solutions/agent-hub-web:${TAG:-latest}
+    profiles: [agent-hub, full]
+    depends_on:
+      - agent-hub-api
+    ports:
+      - "3003:3003"
+    environment:
+      AGENT_HUB_API_URL: "http://agent-hub-api:8003"
+      SUMMITFLOW_API_URL: "http://summitflow-api:8001"
+      AGENT_HUB_DASHBOARD_CLIENT_ID: "${AGENT_HUB_DASHBOARD_CLIENT_ID}"
+      AGENT_HUB_DASHBOARD_REQUEST_SOURCE: "agent-hub-dashboard"
+      INTERNAL_SERVICE_SECRET: "${INTERNAL_SERVICE_SECRET}"
+    restart: unless-stopped
+
+  agent-hub-worker:
+    image: ghcr.io/summitflow-solutions/agent-hub-api:${TAG:-latest}
+    profiles: [agent-hub, full]
+    command: ["python", "-m", "app.worker"]
+    env_file: .env
+    environment:
+      AGENT_HUB_DB_URL: "postgresql://agent_hub_app:${AH_DB_PASSWORD:-changeme}@postgres:5432/agent_hub"
+      AGENT_HUB_REDIS_URL: "redis://redis:6379/2"
+      HATCHET_CLIENT_TOKEN: "${HATCHET_CLIENT_TOKEN}"
+      HATCHET_CLIENT_TLS_STRATEGY: "none"
+      HATCHET_CLIENT_HOST_PORT: "hatchet:7077"
+      AGENT_HUB_ENCRYPTION_KEY: "${AGENT_HUB_ENCRYPTION_KEY}"
+      AGENT_HUB_SECRET_KEY: "${AGENT_HUB_SECRET_KEY}"
+      INTERNAL_SERVICE_SECRET: "${INTERNAL_SERVICE_SECRET}"
+    depends_on:
+      hatchet:
+        condition: service_healthy
+      agent-hub-api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ─── Terminal ────────────────────────────────────────────────────
+  terminal-api:
+    image: ghcr.io/summitflow-solutions/terminal-api:${TAG:-latest}
+    profiles: [terminal, full]
+    env_file: .env
+    environment:
+      DATABASE_URL: "postgresql://summitflow_app:${SF_DB_PASSWORD:-changeme}@postgres:5432/summitflow"
+      PORT: "8002"
+      SUMMITFLOW_API_BASE: "http://summitflow-api:8001/api"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8002:8002"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    init: true  # Proper PID 1 for PTY children
+    restart: unless-stopped
+
+  terminal-web:
+    image: ghcr.io/summitflow-solutions/terminal-web:${TAG:-latest}
+    profiles: [terminal, full]
+    depends_on:
+      - terminal-api
+    ports:
+      - "3002:3002"
+    environment:
+      API_URL: "http://terminal-api:8002"
+    restart: unless-stopped
+
+  # ─── Portfolio AI ────────────────────────────────────────────────
+  portfolio-api:
+    image: ghcr.io/summitflow-solutions/portfolio-api:${TAG:-latest}
+    profiles: [portfolio, full]
+    env_file: .env
+    environment:
+      PORTFOLIO_DB_URL: "postgresql://portfolio_app:${PA_DB_PASSWORD:-changeme}@postgres:5432/portfolio_ai"
+      REDIS_URL: "redis://redis:6379/0"
+      PORT: "8000"
+      HATCHET_CLIENT_TOKEN: "${HATCHET_CLIENT_TOKEN}"
+      HATCHET_CLIENT_TLS_STRATEGY: "none"
+      HATCHET_CLIENT_HOST_PORT: "hatchet:7077"
+      AGENT_HUB_URL: "http://agent-hub-api:8003"
+      PORTFOLIO_CLIENT_ID: "${PORTFOLIO_CLIENT_ID}"
+      PORTFOLIO_CLIENT_SECRET: "${PORTFOLIO_CLIENT_SECRET}"
+      PORTFOLIO_REQUEST_SOURCE: "portfolio-ai"
+      BACKEND_URL: "http://localhost:8000"
+      FRONTEND_URL: "http://portfolio-web:3000"
+    command: ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      hatchet:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - portfolio-models:/app/.cache  # ML model cache persistence
+    restart: unless-stopped
+
+  portfolio-web:
+    image: ghcr.io/summitflow-solutions/portfolio-web:${TAG:-latest}
+    profiles: [portfolio, full]
+    depends_on:
+      - portfolio-api
+    ports:
+      - "3000:3000"
+    environment:
+      API_URL: "http://portfolio-api:8000"
+    restart: unless-stopped
+
+  portfolio-worker:
+    image: ghcr.io/summitflow-solutions/portfolio-api:${TAG:-latest}
+    profiles: [portfolio, full]
+    command: ["python", "-m", "app.worker"]
+    env_file: .env
+    environment:
+      PORTFOLIO_DB_URL: "postgresql://portfolio_app:${PA_DB_PASSWORD:-changeme}@postgres:5432/portfolio_ai"
+      REDIS_URL: "redis://redis:6379/0"
+      HATCHET_CLIENT_TOKEN: "${HATCHET_CLIENT_TOKEN}"
+      HATCHET_CLIENT_TLS_STRATEGY: "none"
+      HATCHET_CLIENT_HOST_PORT: "hatchet:7077"
+    depends_on:
+      hatchet:
+        condition: service_healthy
+      portfolio-api:
+        condition: service_healthy
+    volumes:
+      - portfolio-models:/app/.cache
+    restart: unless-stopped
+
+  # ─── Monkey Fight ────────────────────────────────────────────────
+  monkey-fight:
+    image: ghcr.io/summitflow-solutions/monkey-fight:${TAG:-latest}
+    profiles: [monkey-fight, full]
+    ports:
+      - "4001:4001"
+    environment:
+      API_TARGET: "http://summitflow-api:8001"
+      AGENT_HUB_TARGET: "http://agent-hub-api:8003"
+      MONKEY_FIGHT_CLIENT_ID: "${MONKEY_FIGHT_CLIENT_ID}"
+      MONKEY_FIGHT_CLIENT_SECRET: "${MONKEY_FIGHT_CLIENT_SECRET}"
+      MONKEY_FIGHT_REQUEST_SOURCE: "monkey-fight"
+    restart: unless-stopped
+
+  # ─── Agent Browser ──────────────────────────────────────────────
+  agent-browser:
+    image: ghcr.io/summitflow-solutions/agent-browser:${TAG:-latest}
+    profiles: [browser, full]
+    shm_size: '2gb'
+    security_opt:
+      - seccomp=unconfined
+    environment:
+      AGENT_BROWSER_SESSION: default
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redis-data:
+  hatchet-config:
+  portfolio-models:

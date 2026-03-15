@@ -32,7 +32,8 @@ def get_project_root(project_id: str) -> Path:
     if not project_root:
         raise HTTPException(status_code=400, detail="Project has no root_path configured")
 
-    return Path(project_root)
+    from ...utils._git_core import _translate_path
+    return _translate_path(project_root)
 
 
 def get_project_root_with_fallback(project_id: str) -> Path:
@@ -67,7 +68,8 @@ def get_project_root_with_fallback(project_id: str) -> Path:
     if not project_root:
         raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
 
-    return Path(project_root)
+    from ...utils._git_core import _translate_path
+    return _translate_path(project_root)
 
 
 def get_project_path(project_id: str) -> Path:
@@ -77,7 +79,8 @@ def get_project_path(project_id: str) -> Path:
     path = get_project_root_path(project_id)
     if not path:
         raise HTTPException(status_code=404, detail=f"Project root not found: {project_id}")
-    return Path(path)
+    from ...utils._git_core import _translate_path
+    return _translate_path(path)
 
 
 def query_conflicts(project_id: str | None = None) -> list[dict[str, Any]]:

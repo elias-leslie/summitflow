@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   Archive,
   ArrowDownCircle,
+  Boxes,
   Bug,
   CheckSquare,
   GitBranch,
@@ -63,5 +64,12 @@ export const navItems = [
     href: '/chat',
     icon: MessageSquare,
     activeColor: 'phosphor',
+  },
+  {
+    id: 'docker',
+    label: 'Docker',
+    href: '/docker',
+    icon: Boxes,
+    activeColor: 'cyan',
   },
 ] as const

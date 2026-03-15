@@ -1,0 +1,178 @@
+project: summitflow
+generated_at: 2026-03-15 12:31 UTC
+environment:
+  python_version: '>=3.13'
+  venv_path: backend/.venv
+  package_manager: pnpm
+services:
+  backend_port: 8001
+  frontend_port: 3001
+  infrastructure:
+    postgres: 5432
+    redis: 6379
+urls:
+  frontend: http://localhost:3001
+  api: http://localhost:8001/api
+cli:
+  primary_command: st
+  help_command: st --help
+  common_commands:
+  - 'st work <task-id>  # Set active task context'
+  - 'st context         # Show current task details'
+  - 'st step pass <subtask> <N>  # Mark step as passed'
+  - 'st subtask pass    # Mark subtask as passed'
+  - 'st done <task-id>  # Complete task (merge + cleanup)'
+explorer:
+  scan_status: completed
+  last_completed_scan: '2026-03-15T12:16:03.761825+00:00'
+  last_scan_type: file
+  entry_counts:
+    architecture: 1
+    dependency: 85
+    endpoint: 57
+    file: 1690
+    page: 15
+    table: 39
+    task: 10
+  symbol_count: 7885
+  stale_metadata_count: 0
+pages:
+- / (app)
+- /backups (backups)
+- /backups/:sourceId (backups/:sourceId)
+- /backups/:sourceId/restore/:backupId (restore/:backupId)
+- /chat (chat)
+- /feedback (feedback)
+- /git (git)
+- /projects/:id (projects/:id)
+- /projects/:id/backups (backups)
+- /projects/:id/backups/:backupId/restore (restore)
+- /projects/:id/design (design)
+- /projects/:id/files (files)
+- /projects/:id/git (git)
+- /projects/:id/settings (settings)
+- /projects/new (new)
+endpoints:
+- DELETE /projects/{project_id}/design-assets/{asset_id} (delete_design_asset)
+- DELETE /projects/{project_id}/design-standards/{standard_id} (delete_project_standard)
+- DELETE /projects/{project_id}/design-standards/{standard_id}/rules/{rule_id} (delete_rule)
+- DELETE /projects/{project_id}/mockups/{mockup_id} (delete_mockup)
+- GET /activity (get_activity_feed)
+- GET /agent-hub/models (list_models)
+- GET /agent-hub/ownership/projects/{project_id}/live (get_project_live_ownership)
+- GET /agent-hub/preferences (get_preferences)
+- GET /agent-hub/sessions/{session_id} (get_session)
+- GET /projects/{project_id}/design-assets/{asset_id}/image (get_design_asset_image)
+- GET /projects/{project_id}/events (get_events)
+- GET /projects/{project_id}/events/by-trace/{trace_id} (get_events_for_trace)
+- GET /projects/{project_id}/mockups/{mockup_id}/image (get_mockup_image)
+- GET /projects/{project_id}/mockups/{mockup_id}/screenshot (get_mockup_screenshot)
+- GET /projects/{project_id}/quality/health (get_health_summary)
+- GET /projects/{project_id}/quality/results (list_check_results)
+- GET /projects/{project_id}/tdd/component-suggestions (get_component_suggestions)
+- GET /projects/{project_id}/tdd/suggestions (get_suggestions)
+- GET /schemas (list_schemas)
+- GET /schemas/{schema_name} (get_schema)
+- GET /{project_id}/analysis/coverage-gaps (get_coverage_gaps)
+- GET /{project_id}/explorer (list_entries)
+- GET /{project_id}/explorer/children (get_children)
+- GET /{project_id}/explorer/entry/{entry_id} (get_entry_by_id)
+- GET /{project_id}/explorer/overview (get_overview)
+- GET /{project_id}/explorer/precision-search (precision_search)
+- GET /{project_id}/explorer/refactor-targets (get_refactor_targets)
+- GET /{project_id}/explorer/scan-comparison (get_scan_comparison)
+- GET /{project_id}/explorer/scan-history (get_scan_history)
+- GET /{project_id}/explorer/scan/status (get_scan_status)
+- GET /{project_id}/explorer/stats (get_stats)
+- GET /{project_id}/explorer/symbols/by-file (list_file_symbols)
+- GET /{project_id}/explorer/symbols/detail (get_symbol_detail)
+- GET /{project_id}/explorer/symbols/search (search_symbols)
+- GET /{project_id}/explorer/text/search (search_text)
+- GET /{project_id}/explorer/{entry_type}/{path:path} (get_entry)
+- GET /{project_id}/files/content (get_file_content)
+- GET /{project_id}/files/tree (get_file_tree)
+- GET /{project_id}/refactor-sessions/active (get_active_session)
+- GET /{project_id}/refactor-sessions/{task_id} (get_session)
+- PATCH /{project_id}/refactor-sessions/{task_id} (update_session)
+- POST /agent-hub/complete (proxy_complete)
+- POST /agent-hub/sessions/{session_id}/close (close_session)
+- POST /explorer/regenerate-all-indexes (regenerate_all_indexes)
+- POST /projects/{project_id}/errors/console (capture_console_error)
+- POST /projects/{project_id}/quality/auto-fix (trigger_auto_fix)
+- POST /projects/{project_id}/quality/results (create_check_result)
+- POST /projects/{project_id}/quality/results/{result_id}/fix-attempt (record_fix_attempt)
+- POST /projects/{project_id}/quality/results/{result_id}/mark-fixed (mark_result_fixed)
+- POST /projects/{project_id}/quality/sync (sync_results)
+- POST /{project_id}/explorer/health-check (trigger_health_check)
+- POST /{project_id}/explorer/regenerate-index (regenerate_index)
+- POST /{project_id}/explorer/regenerate-refactor-tasks (regenerate_refactor_tasks)
+- POST /{project_id}/explorer/scan (trigger_scan)
+- POST /{project_id}/refactor-sessions (create_session)
+- POST /{project_id}/refactor-sessions/{task_id}/complete (complete_session)
+- PUT /agent-hub/preferences (update_preferences)
+tables:
+- agent_sessions
+- agent_tools
+- artifacts
+- backup_sources
+- backups
+- design_asset_exports
+- design_assets
+- design_rules
+- design_standards
+- events
+- explorer_entries
+- explorer_relationships
+- explorer_sub_elements
+- explorer_symbols
+- maintenance_runs
+- mockups
+- notifications
+- projects
+- qa_issues
+- quality_check_results
+- refactor_sessions
+- scan_history
+- scan_states
+- sitemap_entries
+- subtask_citations
+- subtask_dependencies
+- subtask_summaries
+- task_dependencies
+- task_labels
+- task_spirit
+- task_subtask_steps
+- task_subtasks
+- tasks
+- terminal_alembic_version
+- terminal_maintenance_runs
+- terminal_panes
+- terminal_project_settings
+- terminal_sessions
+- user_prompts
+tasks:
+- health_monitor_wf (cron(*/1 * * * *))
+- prod_smoke_test_wf (cron(*/15 * * * *))
+- refresh_precision_indexes_wf (cron(*/15 * * * *))
+- reset_claims_wf (cron(*/15 * * * *))
+- scan_projects_wf (cron(0 */6 * * *))
+- scheduled_backups_wf (cron(30 * * * *))
+- self_healing_wf (cron(*/15 * * * *))
+- stale_cleanup_wf (cron(0 4 * * *))
+- task_generation_wf (cron(0 4 * * 1))
+- work_pickup_wf (cron(15 */2 * * *))
+folders:
+  (root): 29 files - tests
+  .claude: 3 files
+  .dev-tools: 14 files
+  .github: 3 files
+  .st: 20 files
+  assets: 2 files
+  backend: 966 files - api, components, services, tests
+  docker: 23 files
+  docs: 61 files
+  frontend: 510 files - api, components, services, tests
+  scripts: 52 files - services, tests
+  skills: 3 files
+  tasks: 2 files - tests
+  tests: 2 files - tests

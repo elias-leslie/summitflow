@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -11,6 +12,17 @@ from ..logging_config import get_logger
 from ..storage.connection import get_connection
 
 logger = get_logger(__name__)
+
+# Docker path translation for host-mounted directories
+_HOST_HOME_PATH = os.environ.get("HOST_HOME_PATH", "")
+_DOCKER_HOME_MOUNT = os.environ.get("BACKUP_HOST_ROOT", "")
+
+
+def _translate_path(raw: str | None) -> str | None:
+    """Translate host path to Docker mount path if running in Docker."""
+    if raw and _HOST_HOME_PATH and _DOCKER_HOME_MOUNT and raw.startswith(_HOST_HOME_PATH):
+        return _DOCKER_HOME_MOUNT + raw[len(_HOST_HOME_PATH):]
+    return raw
 
 
 def get_source_path(source_id: str) -> str | None:
@@ -21,7 +33,7 @@ def get_source_path(source_id: str) -> str | None:
             (source_id,),
         )
         row = cur.fetchone()
-        return row[0] if row and row[0] else None
+        return _translate_path(row[0]) if row and row[0] else None
 
 
 def get_project_root(project_id: str) -> str | None:
@@ -37,7 +49,7 @@ def get_project_root(project_id: str) -> str | None:
             (project_id,),
         )
         row = cur.fetchone()
-        return row[0] if row and row[0] else None
+        return _translate_path(row[0]) if row and row[0] else None
 
 
 def _parse_backup_line(line: str, result: dict[str, Any]) -> None:

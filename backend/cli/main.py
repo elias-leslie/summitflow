@@ -18,6 +18,7 @@ from .commands import (
     complete,
     deps,
     design,
+    docker,
     done,
     exec_monitor,
     feedback,
@@ -171,6 +172,23 @@ CLEANUP (worktree maintenance):
   cleanup path <dir> --recursive           # safe repo-local directory cleanup
   cleanup path <path> --dry-run            # preview cleanup without deleting
 
+DOCKER:
+  docker status                              # container health grid (TOON format)
+  docker up [--profile X] [--dev] [-d]       # start compose stack
+  docker down [--volumes]                    # stop compose stack
+  docker restart [service]                   # restart one or all containers
+  docker logs <service> [-f] [-n N]          # tail container logs
+  docker build [--push] [--tag X]            # build all Docker images
+  docker pull                                # pull latest images
+  docker shell <service>                     # interactive shell in container
+  docker backup [--note X]                   # pg_dumpall from Docker postgres
+  docker restore <archive>                   # restore from SQL dump
+  docker env-create <name> [--profile X]     # create ephemeral test environment
+  docker env-list                            # list test environments
+  docker env-destroy <name|--all>            # tear down test environment
+  docker env-exec <name> <cmd>               # run command in test environment
+  docker metrics                             # CPU/memory per container
+
 EXAMPLES:
   st -P summitflow create "Fix bug" -t bug -p 2  # create task (explicit project)
   st -P agent-hub bug "Fix auth"           # create bug (explicit project)
@@ -237,6 +255,7 @@ app.add_typer(refactor.app, name="refactor")
 app.add_typer(feedback.app, name="feedback")
 app.add_typer(persona.app, name="persona")
 app.add_typer(agents.app, name="agents")
+app.add_typer(docker.app, name="docker")
 app.command("pulse")(pulse.pulse)
 app.command("search")(search.search)
 app.command("exec-log")(exec_monitor.exec_log_command)

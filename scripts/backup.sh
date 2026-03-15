@@ -178,7 +178,7 @@ dump_database() {
             log_success "Copied existing backup ($(du -h "$dump_file" | cut -f1))"
         else
             log_warn "No existing backup found, creating fresh dump..."
-            pg_dump -U "$DB_USER" -h localhost "$DB_NAME" "${table_args[@]}" | gzip > "$dump_file"
+            pg_dump -U "$DB_USER" -h "${PGHOST:-localhost}" "$DB_NAME" "${table_args[@]}" | gzip > "$dump_file"
         fi
     else
         if [ ${#BACKUP_TABLES[@]} -gt 0 ]; then
@@ -186,7 +186,7 @@ dump_database() {
         else
             log "Creating fresh PostgreSQL dump..."
         fi
-        if pg_dump -U "$DB_USER" -h localhost "$DB_NAME" "${table_args[@]}" | gzip > "$dump_file"; then
+        if pg_dump -U "$DB_USER" -h "${PGHOST:-localhost}" "$DB_NAME" "${table_args[@]}" | gzip > "$dump_file"; then
             log_success "Database dump created ($(du -h "$dump_file" | cut -f1))"
         else
             log_error "Database dump failed"

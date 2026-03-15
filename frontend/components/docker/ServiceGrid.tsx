@@ -1,0 +1,45 @@
+'use client'
+
+import { useQuery } from '@tanstack/react-query'
+import { dockerApi } from '@/lib/api/docker'
+import { ServiceCard } from './ServiceCard'
+
+export function ServiceGrid() {
+  const { data: containers, isLoading } = useQuery({
+    queryKey: ['docker', 'status'],
+    queryFn: dockerApi.getStatus,
+    refetchInterval: 10_000,
+  })
+
+  if (isLoading) {
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div
+            key={i}
+            className="h-32 rounded-lg bg-neutral-800/50 animate-pulse"
+          />
+        ))}
+      </div>
+    )
+  }
+
+  if (!containers?.length) {
+    return (
+      <div className="rounded-lg border border-neutral-700 bg-neutral-800/30 p-8 text-center">
+        <p className="text-neutral-400">No Docker containers found.</p>
+        <p className="text-sm text-neutral-500 mt-1">
+          Start the stack with: <code className="text-amber-400">st docker up</code>
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      {containers.map((c) => (
+        <ServiceCard key={c.name} container={c} />
+      ))}
+    </div>
+  )
+}

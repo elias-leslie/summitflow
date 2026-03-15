@@ -60,6 +60,9 @@ data/
 /backups/
 backup-index.json
 
+# Docker migration dumps (large pg dumps, data lives in Docker volumes)
+docker/compose/migration-dumps/
+
 # Dev tools
 .dev-tools/
 
