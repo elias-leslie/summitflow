@@ -277,6 +277,10 @@ services:
       timeout: 5s
       retries: 5
     init: true  # Proper PID 1 for PTY children
+    volumes:
+      # Mount host Claude Code + Codex OAuth credentials into container
+      - ${HOST_HOME_PATH:?}/.claude:/home/appuser/.claude
+      - ${HOST_HOME_PATH:?}/.codex:/home/appuser/.codex
     restart: unless-stopped
 
   terminal-web:
