@@ -140,7 +140,7 @@ services:
       SUMMITFLOW_CLIENT_ID: "${SUMMITFLOW_CLIENT_ID}"
       SUMMITFLOW_REQUEST_SOURCE: "summitflow"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3001/"]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/').then(r=>{if(!r.ok)throw r.status;process.exit(0)}).catch(()=>process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -230,7 +230,7 @@ services:
       AGENT_HUB_DASHBOARD_REQUEST_SOURCE: "agent-hub-dashboard"
       INTERNAL_SERVICE_SECRET: "${INTERNAL_SERVICE_SECRET}"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3003/"]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3003/').then(r=>{if(!r.ok)throw r.status;process.exit(0)}).catch(()=>process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -289,7 +289,7 @@ services:
     environment:
       API_URL: "http://terminal-api:8002"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3002/"]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3002/').then(r=>{if(!r.ok)throw r.status;process.exit(0)}).catch(()=>process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -342,7 +342,7 @@ services:
     environment:
       API_URL: "http://portfolio-api:8000"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/').then(r=>{if(!r.ok)throw r.status;process.exit(0)}).catch(()=>process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -381,7 +381,7 @@ services:
       MONKEY_FIGHT_CLIENT_SECRET: "${MONKEY_FIGHT_CLIENT_SECRET}"
       MONKEY_FIGHT_REQUEST_SOURCE: "monkey-fight"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4001/"]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:4001/').then(r=>{if(!r.ok)throw r.status;process.exit(0)}).catch(()=>process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 5
