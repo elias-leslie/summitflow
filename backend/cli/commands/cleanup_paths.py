@@ -13,6 +13,11 @@ from ..output import output_error, output_json
 from .cleanup_git import get_repo_root
 
 _PROTECTED_NAMES = frozenset({".git", ".st", "node_modules"})
+_FORBIDDEN_ROOTS = frozenset({
+    "/", "/bin", "/boot", "/dev", "/etc", "/home", "/lib", "/lib64",
+    "/opt", "/proc", "/root", "/run", "/sbin", "/srv", "/sys", "/tmp",
+    "/usr", "/var",
+})
 _GLOB_CHARS = frozenset({"*", "?"})
 
 
@@ -57,6 +62,41 @@ def _count_entries(path: Path) -> int:
     return 1 + sum(1 for _ in path.rglob("*"))
 
 
+def _validate_non_repo_path(target: Path, raw_path: str, recursive: bool) -> CleanupTarget:
+    """Validate a path outside any git repo against safety checks."""
+    home = Path.home().resolve()
+
+    if target == home or target == home.parent:
+        output_error(f"Refusing to cleanup home directory or its parent: {raw_path}")
+        raise typer.Exit(1)
+
+    target_str = str(target)
+    if target_str in _FORBIDDEN_ROOTS or any(target_str == r for r in _FORBIDDEN_ROOTS):
+        output_error(f"Refusing to cleanup system directory: {raw_path}")
+        raise typer.Exit(1)
+
+    if not target_str.startswith(str(home)):
+        output_error(f"Refusing to cleanup path outside home directory: {raw_path}")
+        raise typer.Exit(1)
+
+    if not target.exists() and not target.is_symlink():
+        output_error(f"Path does not exist: {raw_path}")
+        raise typer.Exit(1)
+
+    if target.is_dir() and not recursive:
+        output_error(f"Directory cleanup requires --recursive: {raw_path}")
+        raise typer.Exit(1)
+
+    path_type = "directory" if target.is_dir() else "file"
+    relative_str = str(target.relative_to(home))
+    return CleanupTarget(
+        raw_path=raw_path,
+        absolute_path=target,
+        relative_path=relative_str,
+        path_type=path_type,
+    )
+
+
 def validate_cleanup_target(raw_path: str, repo_root: Path, recursive: bool) -> CleanupTarget:
     """Validate a cleanup path before deletion."""
     cleaned = raw_path.strip()
@@ -76,8 +116,8 @@ def validate_cleanup_target(raw_path: str, repo_root: Path, recursive: bool) -> 
     try:
         relative = target.relative_to(repo_root)
     except ValueError:
-        output_error(f"Path is outside the repository root: {raw_path}")
-        raise typer.Exit(1) from None
+        # Path is outside the repo — validate as non-repo path
+        return _validate_non_repo_path(target, raw_path, recursive)
 
     if target == repo_root:
         output_error("Refusing to cleanup the repository root.")

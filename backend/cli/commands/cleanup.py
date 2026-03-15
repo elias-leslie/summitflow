@@ -353,9 +353,9 @@ def cleanup_status(
 
 @app.command("path")
 def cleanup_path(
-    paths: Annotated[list[str], typer.Argument(help="Literal repo-relative path(s) to remove")],
+    paths: Annotated[list[str], typer.Argument(help="Path(s) to remove (repo-relative or absolute)")],
     recursive: Annotated[bool, typer.Option("--recursive", help="Allow directory deletion")] = False,
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Show what would be deleted without deleting it")] = False,
 ) -> None:
-    """Safely remove repo-local paths with guardrails."""
+    """Safely remove paths with guardrails. Supports repo-local and non-repo paths under home."""
     cleanup_paths_command(paths, recursive=recursive, dry_run=dry_run)
