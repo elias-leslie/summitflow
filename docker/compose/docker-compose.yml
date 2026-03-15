@@ -277,13 +277,18 @@ services:
       timeout: 5s
       retries: 5
     init: true  # Proper PID 1 for PTY children
+    group_add:
+      - "${DOCKER_GID:-990}"
     volumes:
-      # Mount host home so Terminal can access project repos at their real paths
+      # Mount host home — project repos, env config, SSH keys, tool credentials
       - ${HOST_HOME_PATH:?}:${HOST_HOME_PATH:?}
-      # Mount Claude Code + Codex OAuth credentials into container appuser home
       - ${HOST_HOME_PATH:?}/.claude:/home/appuser/.claude
       - ${HOST_HOME_PATH:?}/.claude.json:/home/appuser/.claude.json
       - ${HOST_HOME_PATH:?}/.codex:/home/appuser/.codex
+      - ${HOST_HOME_PATH:?}/.ssh:/home/appuser/.ssh:ro
+      - ${HOST_HOME_PATH:?}/.env.local:/home/appuser/.env.local:ro
+      # Docker socket for compose/build commands from agent sessions
+      - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
 
   terminal-web:
