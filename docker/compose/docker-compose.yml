@@ -267,11 +267,9 @@ services:
     profiles: [terminal, full]
     ports:
       - "3002:3002"
-    environment:
-      # terminal-api runs on the host, not in Docker
-      API_URL: "http://host.docker.internal:8002"
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      # terminal-api runs on the host — alias so baked Next.js rewrites resolve
+      - "terminal-api:host-gateway"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3002/').then(r=>{if(!r.ok)throw r.status;process.exit(0)}).catch(()=>process.exit(1))"]
       interval: 10s
