@@ -103,3 +103,61 @@ class StorageSummaryResponse(BaseModel):
     total_count: int
     total_bytes: int
     by_status: dict[str, int]
+
+
+# ─── Storage Backend Models ─────────────────────────────────────
+
+
+class StorageBackendCreate(BaseModel):
+    """Request model for creating a storage backend."""
+
+    name: str
+    backend_type: str = "smb"
+    config: dict[str, object] | None = None
+    is_default: bool = False
+
+
+class StorageBackendUpdate(BaseModel):
+    """Request model for updating a storage backend."""
+
+    name: str | None = None
+    config: dict[str, object] | None = None
+    is_default: bool | None = None
+    enabled: bool | None = None
+
+
+class StorageBackendResponse(BaseModel):
+    """Response model for a storage backend."""
+
+    id: str
+    name: str
+    backend_type: str
+    config: dict[str, object]
+    is_default: bool
+    enabled: bool
+    last_test_at: datetime | None = None
+    last_test_ok: bool | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+# ─── Backup Health Models ────────────────────────────────────────
+
+
+class BackupHealthItem(BaseModel):
+    """Health status for a single backup source."""
+
+    source_id: str
+    source_name: str
+    source_type: str
+    enabled: bool
+    health_status: str  # green | yellow | red
+    last_success_at: str | None = None
+    next_run_at: str | None = None
+    failure_count_7d: int = 0
+
+
+class BackupHealthResponse(BaseModel):
+    """Response model for backup health summary."""
+
+    sources: list[BackupHealthItem]

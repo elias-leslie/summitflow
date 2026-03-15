@@ -4,7 +4,6 @@ import { useQuery } from '@tanstack/react-query'
 import { dockerApi } from '@/lib/api/docker'
 import { ServiceGrid } from '@/components/docker/ServiceGrid'
 import { MetricsPanel } from '@/components/docker/MetricsPanel'
-import { BackupPanel } from '@/components/docker/BackupPanel'
 
 export default function DockerPage() {
   const { data: health } = useQuery({
@@ -22,7 +21,7 @@ export default function DockerPage() {
             Docker Management
           </h1>
           <p className="text-sm text-neutral-400 mt-1">
-            Container status, logs, metrics, and backup/restore
+            Container status, logs, and metrics
           </p>
         </div>
         {health && (
@@ -52,11 +51,8 @@ export default function DockerPage() {
       {/* Service Grid */}
       <ServiceGrid />
 
-      {/* Metrics + Backup panels */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <MetricsPanel />
-        <BackupPanel />
-      </div>
+      {/* Metrics */}
+      <MetricsPanel />
     </div>
   )
 }

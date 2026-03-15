@@ -14,6 +14,7 @@ services:
     profiles: [infra, summitflow, agent-hub, terminal, portfolio, full]
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - wal-archive:/var/lib/postgresql/wal-archive
       - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
       - ./summitflow-schema.sql:/docker-entrypoint-initdb.d/summitflow-schema.sql:ro
       - ./agent-hub-schema.sql:/docker-entrypoint-initdb.d/agent-hub-schema.sql:ro
@@ -85,6 +86,7 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: "postgresql://summitflow_app:${SF_DB_PASSWORD:-changeme}@postgres:5432/summitflow"
+      DATABASE_ADMIN_URL: "postgresql://admin:${POSTGRES_PASSWORD}@postgres:5432/summitflow"
       REDIS_URL: "redis://redis:6379/1"
       PORT: "8001"
       HATCHET_CLIENT_TOKEN: "${HATCHET_CLIENT_TOKEN}"
@@ -162,7 +164,8 @@ services:
       SMB_HOST: "192.168.8.128"
       SMB_SHARE: "davion-gem"
       PGHOST: "postgres"
-      PGPASSWORD: "${SF_DB_PASSWORD:-changeme}"
+      PGUSER: "admin"
+      PGPASSWORD: "${POSTGRES_PASSWORD}"
     depends_on:
       hatchet:
         condition: service_healthy
@@ -170,6 +173,7 @@ services:
         condition: service_healthy
     volumes:
       - /home/kasadis:/host-home
+      - hatchet-config:/config:ro
     restart: unless-stopped
 
   # ─── Agent Hub ───────────────────────────────────────────────────
@@ -371,3 +375,4 @@ volumes:
   redis-data:
   hatchet-config:
   portfolio-models:
+  wal-archive:

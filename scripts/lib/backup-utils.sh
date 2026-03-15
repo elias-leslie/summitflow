@@ -19,6 +19,10 @@ fi
 export PROJECT_DIR
 export PROJECT_NAME=$(basename "$PROJECT_DIR")
 
+# Storage backend integration — resolve SMB config from DB if STORAGE_BACKEND_ID is set
+SCRIPT_DIR_BU="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR_BU/storage-backend.sh" 2>/dev/null || true
+
 # SMB configuration - override via environment or ~/.env.local
 # Set SMB_HOST and SMB_SHARE in ~/.env.local for your NAS/SMB target
 if [ -f "$HOME/.env.local" ] && [ -z "${SMB_HOST:-}" ]; then

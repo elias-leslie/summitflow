@@ -57,12 +57,6 @@ class HealthSummary(BaseModel):
     stopped: int
 
 
-class BackupInfo(BaseModel):
-    filename: str
-    size_mb: float
-    created: str
-
-
 class ActionResult(BaseModel):
     success: bool
     message: str
@@ -265,62 +259,61 @@ async def start_service(service: str) -> ActionResult:
 
 @router.post("/backup", response_model=ActionResult)
 async def create_backup(note: str = "") -> ActionResult:
-    """Create a database backup from Docker postgres."""
-    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    suffix = f"-{note.replace(' ', '-')}" if note else ""
-    filename = f"docker-pgdump-{timestamp}{suffix}.sql"
-    filepath = BACKUP_DIR / filename
+    """Create an infrastructure backup via the unified backup system.
 
-    postgres_container = _find_container_name("postgres")
-    stdout, stderr, rc = await _run_docker(
-        "docker", "exec", postgres_container, "pg_dumpall", "-U", "admin"
-    )
-    if rc != 0:
-        return ActionResult(success=False, message=f"Backup failed: {stderr}")
+    Delegates to the backup workflow, creating an infrastructure source if needed.
+    Falls back to local pg_dumpall if the workflow system is unavailable.
+    """
+    try:
+        from ..storage import backups as backup_store
 
-    filepath.write_text(stdout)
-    size_mb = filepath.stat().st_size / (1024 * 1024)
-    return ActionResult(
-        success=True, message=f"Backup created: {filename} ({size_mb:.1f} MB)"
-    )
+        # Ensure infrastructure source exists
+        source = backup_store.get_source("infrastructure")
+        if not source:
+            backup_store.create_source(
+                source_id="infrastructure",
+                name="Infrastructure",
+                path="/",
+                source_type="infrastructure",
+            )
 
+        # Dispatch via workflow
+        from ..workflows.models import BackupInput
+        from ..workflows.utility import backup_create_wf
 
-@router.get("/backups", response_model=list[BackupInfo])
-async def list_backups() -> list[BackupInfo]:
-    """List available backup files."""
-    if not BACKUP_DIR.exists():
-        return []
-
-    backups = []
-    for f in sorted(BACKUP_DIR.glob("docker-pgdump-*.sql"), reverse=True):
-        stat = f.stat()
-        backups.append(
-            BackupInfo(
-                filename=f.name,
-                size_mb=round(stat.st_size / (1024 * 1024), 2),
-                created=datetime.fromtimestamp(stat.st_mtime).isoformat(),
+        await backup_create_wf.aio_run_no_wait(
+            BackupInput(
+                project_id="infrastructure",
+                source_id="infrastructure",
+                note=note or None,
+                backup_type="manual",
+                keep_local=False,
             )
         )
-    return backups
+        return ActionResult(
+            success=True,
+            message="Infrastructure backup queued. Track progress at /backups?source=infrastructure",
+        )
+    except Exception as e:
+        # Fallback to direct pg_dumpall for resilience
+        BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        suffix = f"-{note.replace(' ', '-')}" if note else ""
+        filename = f"docker-pgdump-{timestamp}{suffix}.sql"
+        filepath = BACKUP_DIR / filename
 
+        postgres_container = _find_container_name("postgres")
+        stdout, stderr, rc = await _run_docker(
+            "docker", "exec", postgres_container, "pg_dumpall", "-U", "admin"
+        )
+        if rc != 0:
+            return ActionResult(success=False, message=f"Backup failed: {stderr}")
 
-@router.post("/restore", response_model=ActionResult)
-async def restore_backup(filename: str) -> ActionResult:
-    """Restore databases from a backup file."""
-    filepath = BACKUP_DIR / filename
-    if not filepath.exists():
-        raise HTTPException(status_code=404, detail=f"Backup not found: {filename}")
-
-    sql = filepath.read_bytes()
-    postgres_container = _find_container_name("postgres")
-    _, stderr, rc = await _run_docker(
-        "docker", "exec", "-i", postgres_container, "psql", "-U", "admin",
-        stdin_data=sql,
-    )
-    if rc != 0:
-        return ActionResult(success=False, message=f"Restore errors: {stderr}")
-    return ActionResult(success=True, message=f"Restored from {filename}")
+        filepath.write_text(stdout)
+        size_mb = filepath.stat().st_size / (1024 * 1024)
+        return ActionResult(
+            success=True, message=f"Backup created: {filename} ({size_mb:.1f} MB) [fallback: {e}]"
+        )
 
 
 @router.get("/health", response_model=HealthSummary)

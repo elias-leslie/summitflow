@@ -173,3 +173,59 @@ def get_latest_backup(
         row = cur.fetchone()
 
     return row_to_backup(row) if row else None
+
+
+def get_backup_health_summary() -> list[dict[str, Any]]:
+    """Get per-source backup health: last success, failure count (7d), next scheduled.
+
+    Returns:
+        List of dicts with source_id, source_name, source_type, last_success_at,
+        failure_count_7d, next_run_at, enabled
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                bs.id,
+                bs.name,
+                bs.source_type,
+                bs.enabled,
+                bs.next_run_at,
+                (
+                    SELECT MAX(b.completed_at)
+                    FROM backups b
+                    WHERE b.source_id = bs.id AND b.status = 'completed'
+                ) AS last_success_at,
+                (
+                    SELECT COUNT(*)
+                    FROM backups b
+                    WHERE b.source_id = bs.id
+                      AND b.status = 'failed'
+                      AND b.created_at >= NOW() - INTERVAL '7 days'
+                ) AS failure_count_7d,
+                (
+                    SELECT b.status
+                    FROM backups b
+                    WHERE b.source_id = bs.id
+                    ORDER BY b.created_at DESC
+                    LIMIT 1
+                ) AS last_backup_status
+            FROM backup_sources bs
+            ORDER BY bs.source_type, bs.name
+            """
+        )
+        rows = cur.fetchall()
+
+    return [
+        {
+            "source_id": row[0],
+            "source_name": row[1],
+            "source_type": row[2],
+            "enabled": row[3],
+            "next_run_at": row[4].isoformat() if row[4] else None,
+            "last_success_at": row[5].isoformat() if row[5] else None,
+            "failure_count_7d": int(row[6]) if row[6] else 0,
+            "last_backup_status": row[7],
+        }
+        for row in rows
+    ]

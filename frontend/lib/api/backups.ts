@@ -39,10 +39,10 @@ export interface BackupSource {
   id: string
   name: string
   path: string
-  source_type: 'project' | 'config' | 'workspace'
+  source_type: 'project' | 'config' | 'workspace' | 'infrastructure'
   project_id: string | null
   enabled: boolean
-  frequency: 'daily' | 'weekly' | 'monthly'
+  frequency: 'daily' | 'weekly' | 'monthly' | 'hourly'
   retention_days: number
   last_run_at: string | null
   next_run_at: string | null
@@ -141,6 +141,14 @@ export function fetchAllBackups(options?: BackupListOptions & { source_id?: stri
   return fetchWithErrorHandling<BackupListResponse>(`/api/backups${backupListQuery(options)}`, { errorMessage: 'Failed to fetch backups' })
 }
 
+export function createBackupSource(data: {
+  id: string; name: string; path: string; source_type?: string; project_id?: string
+}): Promise<BackupSource> {
+  return fetchWithErrorHandling<BackupSource>('/api/backup-sources', {
+    method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(data), errorMessage: 'Failed to create backup source',
+  })
+}
+
 export function fetchBackupSources(sourceType?: string): Promise<BackupSource[]> {
   const query = sourceType ? `?source_type=${sourceType}` : ''
   return fetchWithErrorHandling<BackupSource[]>(`/api/backup-sources${query}`, { errorMessage: 'Failed to fetch backup sources' })
@@ -176,4 +184,111 @@ export function fetchSourceBackups(sourceId: string, options?: BackupListOptions
     `/api/backup-sources/${sourceId}/backups${backupListQuery(options)}`,
     { errorMessage: 'Failed to fetch source backups' },
   )
+}
+
+// ─── Storage Backends ───────────────────────────────────────────
+
+export interface StorageBackend {
+  id: string
+  name: string
+  backend_type: string
+  config: Record<string, unknown>
+  is_default: boolean
+  enabled: boolean
+  last_test_at: string | null
+  last_test_ok: boolean | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface StorageStatus {
+  configured: boolean
+  backend_count: number
+  default_backend_id: string | null
+  default_backend_name: string | null
+}
+
+export interface BackupHealthItem {
+  source_id: string
+  source_name: string
+  source_type: string
+  enabled: boolean
+  health_status: 'green' | 'yellow' | 'red'
+  last_success_at: string | null
+  next_run_at: string | null
+  failure_count_7d: number
+}
+
+export interface BackupHealthResponse {
+  sources: BackupHealthItem[]
+}
+
+export function fetchStorageBackends(): Promise<StorageBackend[]> {
+  return fetchWithErrorHandling<StorageBackend[]>('/api/backup-storage', { errorMessage: 'Failed to fetch storage backends' })
+}
+
+export function fetchStorageStatus(): Promise<StorageStatus> {
+  return fetchWithErrorHandling<StorageStatus>('/api/backup-storage/status', { errorMessage: 'Failed to fetch storage status' })
+}
+
+export function createStorageBackend(data: {
+  name: string; backend_type?: string; config?: Record<string, unknown>; is_default?: boolean
+}): Promise<StorageBackend> {
+  return fetchWithErrorHandling<StorageBackend>('/api/backup-storage', {
+    method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(data), errorMessage: 'Failed to create storage backend',
+  })
+}
+
+export function updateStorageBackend(id: string, data: {
+  name?: string; config?: Record<string, unknown>; is_default?: boolean; enabled?: boolean
+}): Promise<StorageBackend> {
+  return fetchWithErrorHandling<StorageBackend>(`/api/backup-storage/${id}`, {
+    method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify(data), errorMessage: 'Failed to update storage backend',
+  })
+}
+
+export function deleteStorageBackend(id: string): Promise<{ deleted: boolean }> {
+  return fetchWithErrorHandling(`/api/backup-storage/${id}`, { method: 'DELETE', errorMessage: 'Failed to delete storage backend' })
+}
+
+export function testStorageBackend(id: string): Promise<{ success: boolean; message: string }> {
+  return fetchWithErrorHandling(`/api/backup-storage/${id}/test`, {
+    method: 'POST', errorMessage: 'Failed to test storage backend',
+  })
+}
+
+export function fetchBackupHealth(): Promise<BackupHealthResponse> {
+  return fetchWithErrorHandling<BackupHealthResponse>('/api/backups/health', { errorMessage: 'Failed to fetch backup health' })
+}
+
+// ─── WAL Archiving ──────────────────────────────────────────────
+
+export interface WalStatus {
+  archive_mode: string
+  archive_command: string
+  current_lsn: string
+  enabled: boolean
+  pending_restart?: boolean
+  archived_count?: number
+  last_archived_wal?: string
+  last_archived_time?: string
+  failed_count?: number
+  last_failed_wal?: string
+  last_failed_time?: string
+}
+
+export function fetchWalStatus(): Promise<WalStatus> {
+  return fetchWithErrorHandling<WalStatus>('/api/backups/wal/status', { errorMessage: 'Failed to fetch WAL status' })
+}
+
+export function enableWalArchiving(): Promise<WalStatus> {
+  return fetchWithErrorHandling<WalStatus>('/api/backups/wal/enable', {
+    method: 'POST', errorMessage: 'Failed to enable WAL archiving',
+  })
+}
+
+export function disableWalArchiving(): Promise<WalStatus> {
+  return fetchWithErrorHandling<WalStatus>('/api/backups/wal/disable', {
+    method: 'POST', errorMessage: 'Failed to disable WAL archiving',
+  })
 }

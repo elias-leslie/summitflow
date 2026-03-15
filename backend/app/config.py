@@ -26,6 +26,7 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = ""
+    database_admin_url: str = ""
 
     @field_validator("database_url")
     @classmethod

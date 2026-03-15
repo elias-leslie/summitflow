@@ -1,0 +1,161 @@
+"""Infrastructure backup execution logic."""
+
+from __future__ import annotations
+
+import os
+import subprocess
+from pathlib import Path
+
+from ..logging_config import get_logger
+from ..storage import backups as backup_store
+from ..storage.notifications import create_notification
+from .backup_lock import acquire_backup_lock, release_backup_lock
+from .backup_utils import (
+    build_script_error_message,
+    build_verification_kwargs,
+    parse_backup_output,
+)
+
+logger = get_logger(__name__)
+
+_HOST_ROOT = os.environ.get("BACKUP_HOST_ROOT")
+SCRIPT_DIR = Path(_HOST_ROOT) / "summitflow" / "scripts" if _HOST_ROOT else Path.home() / "summitflow" / "scripts"
+INFRA_BACKUP_SCRIPT = SCRIPT_DIR / "infra-backup.sh"
+INFRA_BACKUP_TIMEOUT = 900  # 15 minutes — pg_dumpall can be slow
+
+
+def create_infra_backup(
+    source_id: str = "infrastructure",
+    note: str | None = None,
+    backup_type: str = "manual",
+    keep_local: bool = False,
+    retention_days: int | None = None,
+) -> dict[str, object]:
+    """Create an infrastructure backup (pg_dumpall + configs).
+
+    Same lock/record/subprocess/parse pattern as backup_executor.py.
+    """
+    logger.info("create_infra_backup_started", source_id=source_id, backup_type=backup_type)
+
+    if not acquire_backup_lock(source_id):
+        logger.info("create_infra_backup_skipped_locked", source_id=source_id)
+        return {"status": "skipped", "error": f"Backup already running for {source_id}"}
+
+    try:
+        return _run_infra_backup(source_id, note, backup_type, keep_local, retention_days)
+    finally:
+        release_backup_lock(source_id)
+
+
+def _run_infra_backup(
+    source_id: str,
+    note: str | None,
+    backup_type: str,
+    keep_local: bool,
+    retention_days: int | None,
+) -> dict[str, object]:
+    """Execute infrastructure backup with lock held."""
+    # Use a pseudo project_id for infrastructure
+    project_id = "infrastructure"
+
+    backup_record = backup_store.create_backup_record(
+        project_id=project_id, backup_type=backup_type, note=note, source_id=source_id
+    )
+    backup_id = backup_record["id"]
+    backup_store.update_backup_status(backup_id, "running")
+
+    cmd = ["bash", str(INFRA_BACKUP_SCRIPT)]
+    if keep_local:
+        cmd.append("--keep-local")
+    if retention_days is not None:
+        cmd.extend(["--retention-days", str(retention_days)])
+
+    # Set env for Docker pg_dumpall
+    env = dict(os.environ)
+    if _HOST_ROOT:
+        env["PROJECT_DIR"] = _HOST_ROOT + "/summitflow"
+
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=INFRA_BACKUP_TIMEOUT, env=env
+        )
+        parsed_output = parse_backup_output(result.stdout)
+
+        if result.returncode == 0:
+            if parsed_output.get("pending_path"):
+                return _handle_pending(backup_id, parsed_output)
+            return _handle_success(backup_id, parsed_output)
+
+        if parsed_output.get("pending_path") or "SMB unavailable" in result.stdout:
+            return _handle_pending(backup_id, parsed_output)
+
+        error_msg = build_script_error_message(result)
+        logger.error("create_infra_backup_script_failed", backup_id=backup_id, error=error_msg[:200])
+        return _handle_failure(backup_id, error_msg)
+
+    except subprocess.TimeoutExpired:
+        return _handle_failure(backup_id, f"Infrastructure backup timed out after {INFRA_BACKUP_TIMEOUT // 60} minutes")
+    except Exception as e:
+        return _handle_failure(backup_id, str(e))
+
+
+def _handle_success(backup_id: str, parsed: dict[str, object]) -> dict[str, object]:
+    """Handle successful infrastructure backup."""
+    info = dict(parsed)
+    verification_raw = info.pop("verification", None)
+    verification = verification_raw if isinstance(verification_raw, dict) else None
+    archive_name = str(info.pop("archive_name", "") or "")
+    info.pop("pending_path", None)
+    vkw = build_verification_kwargs(verification) if verification else {}
+
+    backup_store.update_backup_status(
+        backup_id, "completed",
+        name=archive_name or None,
+        size_bytes=info.get("total_bytes"),
+        db_size_bytes=info.get("db_bytes"),
+        files_size_bytes=info.get("files_bytes"),
+        location=info.get("location"),
+        **vkw,
+    )
+    logger.info("create_infra_backup_completed", backup_id=backup_id)
+    return {"status": "completed", "backup_id": backup_id, **info}
+
+
+def _handle_pending(backup_id: str, parsed: dict[str, object]) -> dict[str, object]:
+    """Handle infrastructure backup pending SMB upload."""
+    info = dict(parsed)
+    verification_raw = info.pop("verification", None)
+    verification = verification_raw if isinstance(verification_raw, dict) else None
+    archive_name = str(info.pop("archive_name", "") or "")
+    pending_path = str(info.get("pending_path", "") or "")
+    vkw = build_verification_kwargs(verification) if verification else {}
+
+    backup_store.update_backup_status(
+        backup_id, "completed",
+        name=archive_name or None,
+        size_bytes=info.get("total_bytes"),
+        db_size_bytes=info.get("db_bytes"),
+        files_size_bytes=info.get("files_bytes"),
+        location=pending_path or "pending_upload",
+        **vkw,
+    )
+    logger.info("create_infra_backup_pending", backup_id=backup_id, pending_path=pending_path)
+    return {"status": "completed", "backup_id": backup_id, "location": pending_path or "pending_upload", **info}
+
+
+def _handle_failure(backup_id: str, error_msg: str) -> dict[str, object]:
+    """Handle infrastructure backup failure."""
+    backup_store.update_backup_status(backup_id, "failed", error_message=error_msg)
+    logger.error("create_infra_backup_failed", backup_id=backup_id, error=error_msg[:200])
+    try:
+        create_notification(
+            project_id="infrastructure",
+            notification_type="system",
+            title="Infrastructure backup failed",
+            message=error_msg[:500],
+            severity="error",
+            metadata={"backup_id": backup_id, "source_id": "infrastructure"},
+        )
+    except Exception:
+        logger.warning("infra_backup_failure_notification_failed", backup_id=backup_id)
+    return {"status": "failed", "backup_id": backup_id, "error": error_msg}

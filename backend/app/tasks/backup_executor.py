@@ -38,6 +38,21 @@ def create_backup(
     resolved_source_id = source_id or project_id
     logger.info("create_backup_started", source_id=resolved_source_id, backup_type=backup_type)
 
+    # Route infrastructure sources to dedicated handler
+    from .backup_utils import get_source_type
+
+    source_type = get_source_type(resolved_source_id)
+    if source_type == "infrastructure":
+        from .backup_infra import create_infra_backup
+
+        return create_infra_backup(
+            source_id=resolved_source_id,
+            note=note,
+            backup_type=backup_type,
+            keep_local=keep_local,
+            retention_days=retention_days,
+        )
+
     backup_dir = get_source_path(resolved_source_id) if source_id else None
     if not backup_dir:
         backup_dir = get_project_root(project_id)

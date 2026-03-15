@@ -86,7 +86,7 @@ async def update_backup_source(
         raise HTTPException(status_code=404, detail=f"Source {source_id} not found")
 
     fields = request.model_dump(exclude_unset=True)
-    if fields.get("frequency") and fields["frequency"] not in ("daily", "weekly", "monthly"):
+    if fields.get("frequency") and fields["frequency"] not in ("daily", "weekly", "monthly", "hourly"):
         raise HTTPException(
             status_code=400,
             detail="frequency must be 'daily', 'weekly', or 'monthly'",

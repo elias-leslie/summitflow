@@ -161,6 +161,7 @@ def build_verification_kwargs(verification: dict[str, Any]) -> dict[str, Any]:
 
 
 _FREQUENCY_DELTAS: dict[str, timedelta] = {
+    "hourly": timedelta(hours=1),
     "daily": timedelta(days=1),
     "weekly": timedelta(weeks=1),
     "monthly": timedelta(days=30),
@@ -172,3 +173,45 @@ def calculate_next_run(frequency: str) -> datetime:
     now = datetime.now(UTC)
     delta = _FREQUENCY_DELTAS.get(frequency, timedelta(days=1))
     return now + delta
+
+
+def get_source_type(source_id: str) -> str | None:
+    """Get the source_type for a backup source."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT source_type FROM backup_sources WHERE id = %s",
+            (source_id,),
+        )
+        row = cur.fetchone()
+        return str(row[0]) if row and row[0] else None
+
+
+def get_storage_config(source_id: str) -> dict[str, Any] | None:
+    """Resolve SMB config: source → default backend → env/files.
+
+    Checks if the source has a storage_backend_id, then falls back to the
+    default backend, then returns None (caller uses env/file-based config).
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        # Check source-specific backend
+        cur.execute(
+            """
+            SELECT sb.config FROM storage_backends sb
+            JOIN backup_sources bs ON bs.storage_backend_id = sb.id
+            WHERE bs.id = %s AND sb.enabled = TRUE
+            """,
+            (source_id,),
+        )
+        row = cur.fetchone()
+        if row and row[0]:
+            return row[0] if isinstance(row[0], dict) else None
+
+        # Fall back to default backend
+        cur.execute(
+            "SELECT config FROM storage_backends WHERE is_default = TRUE AND enabled = TRUE LIMIT 1"
+        )
+        row = cur.fetchone()
+        if row and row[0]:
+            return row[0] if isinstance(row[0], dict) else None
+
+    return None

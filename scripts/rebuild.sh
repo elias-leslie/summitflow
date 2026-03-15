@@ -2,7 +2,7 @@
 #
 # Universal Rebuild Script
 # Clears caches, rebuilds, restarts services, verifies health
-# Works for any project - auto-detects project from PWD/git root
+# Works for any project — auto-detects systemd vs Docker runtime
 #
 # Usage:
 #   ./scripts/rebuild.sh              # Full rebuild (frontend + all services)
@@ -40,15 +40,42 @@ for arg in "$@"; do
             echo "  --status, -s    Show service status"
             echo ""
             echo "Project: $PROJECT_NAME ($PROJECT_DIR)"
-            echo "Services: $SERVICE_PREFIX-*"
-            echo "Ports: backend=$BACKEND_PORT, frontend=$FRONTEND_PORT"
             exit 0
             ;;
     esac
 done
 
-# Show status function
-show_status() {
+# ─── Status ──────────────────────────────────────────────────────
+
+show_status_docker() {
+    set +e  # Don't exit on docker compose ps failures
+    echo ""
+    echo "========================================"
+    echo "$PROJECT_NAME Service Status (Docker)"
+    echo "========================================"
+    echo ""
+    local services
+    services=$(_compose_all_services)
+    for svc in $services; do
+        local state health
+        state=$(docker compose -f "$_COMPOSE_FILE" ps --format '{{.State}}' "$svc" 2>/dev/null)
+        [ -z "$state" ] && state="not found"
+        health=$(docker compose -f "$_COMPOSE_FILE" ps --format '{{.Health}}' "$svc" 2>/dev/null)
+        local icon="✗"; [ "$state" = "running" ] && icon="✓"
+        printf "  %-30s %s %s %s\n" "$svc" "$icon" "$state" "${health:+($health)}"
+    done
+    echo ""
+    echo "Ports: backend=$BACKEND_PORT, frontend=$FRONTEND_PORT"
+    if [ "$DOCKER_DEV" = true ]; then
+        echo "Mode: docker (dev overlay)"
+    else
+        echo "Mode: docker (production images)"
+    fi
+    echo ""
+    set -e
+}
+
+show_status_native() {
     echo ""
     echo "========================================"
     echo "$PROJECT_NAME Service Status"
@@ -57,16 +84,13 @@ show_status() {
     echo "Project: $PROJECT_NAME ($PROJECT_DIR)"
     echo ""
     echo "Services:"
-
     for svc in $MANAGED_SERVICES; do
         if service_exists "$svc"; then
             local status=$(systemctl --user is-active "$svc" 2>/dev/null || echo "unknown")
-            local icon="✗"
-            [ "$status" = "active" ] && icon="✓"
+            local icon="✗"; [ "$status" = "active" ] && icon="✓"
             printf "  %-35s %s %s\n" "$svc" "$icon" "$status"
         fi
     done
-
     echo ""
     echo "Ports:"
     if [ "$HAS_BACKEND" != false ] && [ "$BACKEND_PORT" -gt 0 ]; then
@@ -75,7 +99,6 @@ show_status() {
     fi
     printf "  Frontend (%-5d): " "$FRONTEND_PORT"
     ss -tlnp 2>/dev/null | grep -q ":$FRONTEND_PORT " && echo "✓ listening" || echo "✗ not bound"
-
     echo ""
     echo "Health:"
     if [ "$HAS_BACKEND" != false ] && [ "$BACKEND_PORT" -gt 0 ]; then
@@ -85,19 +108,117 @@ show_status() {
     printf "  Frontend: "
     local http_status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "http://localhost:$FRONTEND_PORT/" 2>/dev/null)
     [[ "$http_status" =~ ^(2|3)[0-9][0-9]$ ]] && echo "✓ serving (HTTP $http_status)" || echo "✗ not serving (HTTP $http_status)"
-
     echo ""
 }
 
-# Main rebuild function
-main() {
+# ─── Docker rebuild ──────────────────────────────────────────────
+
+main_docker() {
     local start_time=$(date +%s)
     local errors=0
 
-    if [ "$STATUS_ONLY" = true ]; then
-        show_status
-        exit 0
+    local all_services=$(_compose_all_services)
+    local api_svc=$(_compose_api_service)
+    local web_svc=$(_compose_web_service)
+
+    echo ""
+    echo "========================================"
+    echo "$PROJECT_NAME Rebuild (Docker)"
+    echo "========================================"
+    echo ""
+    echo "Project: $PROJECT_NAME"
+    echo "Mode: $([ "$RESTART_ONLY" = true ] && echo "restart" || ([ "$FRONTEND_ONLY" = true ] && echo "frontend" || ([ "$BACKEND_ONLY" = true ] && echo "backend" || echo "full")))"
+    local runtime_desc="docker"
+    if [ "$DOCKER_DEV" = true ] && [ "$DOCKER_IMAGE_STALE" = true ]; then
+        runtime_desc="docker (dev — image stale, rebuilding)"
+    elif [ "$DOCKER_DEV" = true ]; then
+        runtime_desc="docker (dev — hot reload)"
+    else
+        runtime_desc="docker (production images)"
     fi
+    echo "Runtime: $runtime_desc"
+    echo ""
+
+    # In dev mode with a stale image, escalate to full build+recreate
+    local needs_build=false
+    if [ "$DOCKER_DEV" = true ] && [ "$DOCKER_IMAGE_STALE" = true ]; then
+        needs_build=true
+    elif [ "$DOCKER_DEV" = false ]; then
+        needs_build=true
+    fi
+
+    if [ "$needs_build" = false ]; then
+        # Dev overlay, image is fresh: bind-mounted source, hot reload. Just restart + migrate.
+        if [ "$RESTART_ONLY" = true ]; then
+            docker_restart_services "$all_services" || ((errors++))
+        elif [ "$FRONTEND_ONLY" = true ]; then
+            docker_restart_services "$web_svc" || ((errors++))
+        elif [ "$BACKEND_ONLY" = true ]; then
+            local backend_svcs="$api_svc"
+            # Include worker if it exists
+            for s in $all_services; do [[ "$s" == *worker* ]] && backend_svcs="$backend_svcs $s"; done
+            docker_restart_services "$backend_svcs" || ((errors++))
+            docker_run_migration || true
+        else
+            docker_restart_services "$all_services" || ((errors++))
+            docker_run_migration || true
+        fi
+    else
+        # Production images: build → recreate → migrate
+        if [ "$RESTART_ONLY" = true ]; then
+            docker_restart_services "$all_services" || ((errors++))
+        elif [ "$FRONTEND_ONLY" = true ]; then
+            docker_build_and_recreate "$web_svc" || ((errors++))
+        elif [ "$BACKEND_ONLY" = true ]; then
+            local backend_svcs="$api_svc"
+            for s in $all_services; do [[ "$s" == *worker* ]] && backend_svcs="$backend_svcs $s"; done
+            docker_build_and_recreate "$backend_svcs" || ((errors++))
+            docker_run_migration || true
+        else
+            docker_build_and_recreate "$all_services" || ((errors++))
+            docker_run_migration || true
+        fi
+    fi
+
+    # Verify health
+    echo ""
+    log "Verifying services..."
+    if [ "$FRONTEND_ONLY" = false ] && [ "$HAS_BACKEND" != false ]; then
+        verify_backend || ((errors++))
+    fi
+    if [ "$BACKEND_ONLY" = false ]; then
+        verify_frontend || ((errors++))
+    fi
+
+    # Post-rebuild sync (only for summitflow backend)
+    if [ "$FRONTEND_ONLY" = false ] && [ "$PROJECT_NAME" = "summitflow" ] && [ $errors -eq 0 ]; then
+        local summitflow_api="${ST_API_BASE:-http://localhost:8001/api}"
+        log "Regenerating project index..."
+        local index_result=$(curl -s -X POST "$summitflow_api/projects/$PROJECT_NAME/explorer/regenerate-index" 2>/dev/null)
+        echo "$index_result" | grep -q '"status":"success"' && log_success "Index regenerated" || log "Index regeneration skipped"
+    fi
+
+    local end_time=$(date +%s)
+    local duration=$((end_time - start_time))
+
+    echo ""
+    echo "========================================"
+    [ $errors -eq 0 ] && log_success "Rebuild complete (${duration}s)" || log_error "Rebuild completed with $errors error(s) (${duration}s)"
+    echo "========================================"
+    echo ""
+    echo "URLs:"
+    [ "$FRONTEND_ONLY" = false ] && [ "$BACKEND_PORT" -gt 0 ] && echo "  Backend:  http://localhost:$BACKEND_PORT"
+    [ "$BACKEND_ONLY" = false ] && echo "  Frontend: http://localhost:$FRONTEND_PORT"
+    echo ""
+
+    return $errors
+}
+
+# ─── Native (systemd) rebuild ────────────────────────────────────
+
+main_native() {
+    local start_time=$(date +%s)
+    local errors=0
 
     if [ "$IS_WORKTREE" = true ]; then
         log_error "rebuild.sh targets shared project services, not task worktree services."
@@ -106,8 +227,6 @@ main() {
         echo "  bash ~/summitflow/scripts/worktree-services.sh start ${WORKTREE_TASK_ID} --project ${PROJECT_NAME}"
         echo "  bash ~/summitflow/scripts/worktree-services.sh status ${WORKTREE_TASK_ID} --project ${PROJECT_NAME}"
         echo "  bash ~/summitflow/scripts/worktree-services.sh ports ${WORKTREE_TASK_ID} --project ${PROJECT_NAME}"
-        echo ""
-        echo "The 'ports' command prints the local preview URLs for that worktree."
         echo ""
         exit 1
     fi
@@ -129,17 +248,13 @@ main() {
 
     # Restart services
     if [ "$FRONTEND_ONLY" = false ] && [ "$HAS_BACKEND" != false ]; then
-        # Backend
         restart_service "$BACKEND_SERVICE" || ((errors++))
-
-        # Project-specific workers/support services are declared centrally in rebuild-utils.sh.
         for svc in $WORKER_SERVICES $AUXILIARY_SERVICES; do
             [ -n "$svc" ] || continue
             restart_service "$svc" || ((errors++))
         done
     fi
 
-    # Frontend service (unless backend-only)
     if [ "$BACKEND_ONLY" = false ]; then
         restart_service "$FRONTEND_SERVICE" || ((errors++))
     fi
@@ -147,29 +262,24 @@ main() {
     # Verify health
     echo ""
     log "Verifying services..."
-
     if [ "$FRONTEND_ONLY" = false ] && [ "$HAS_BACKEND" != false ]; then
         verify_backend || ((errors++))
     fi
-
     if [ "$BACKEND_ONLY" = false ]; then
         verify_frontend || ((errors++))
     fi
 
     # Post-rebuild sync tasks (only when backend rebuilt successfully)
     if [ "$FRONTEND_ONLY" = false ] && [ "$HAS_BACKEND" != false ] && [ $errors -eq 0 ]; then
-        # Regenerate project index (keeps .index.yaml ports in sync with systemd)
         local summitflow_api="${ST_API_BASE:-http://localhost:8001/api}"
         log "Regenerating project index..."
         local index_result=$(curl -s -X POST "$summitflow_api/projects/$PROJECT_NAME/explorer/regenerate-index" 2>/dev/null)
         if echo "$index_result" | grep -q '"status":"success"'; then
             log_success "Index regenerated"
         else
-            # Non-fatal - index regeneration is optional
             log "Index regeneration skipped (API may not be SummitFlow)"
         fi
 
-        # Re-export seed data from DB (keeps seed_data.json in sync for new installs)
         local export_script="$PROJECT_DIR/backend/scripts/export_seeds.py"
         if [ -f "$export_script" ]; then
             log "Syncing seed data from database..."
@@ -181,7 +291,6 @@ main() {
         fi
     fi
 
-    # Summary
     local end_time=$(date +%s)
     local duration=$((end_time - start_time))
 
@@ -202,4 +311,22 @@ main() {
     return $errors
 }
 
-main "$@"
+# ─── Entry point ─────────────────────────────────────────────────
+
+detect_docker
+
+if [ "$STATUS_ONLY" = true ]; then
+    if [ "$RUNTIME_MODE" = "docker" ]; then
+        show_status_docker
+    else
+        show_status_native
+    fi
+    exit 0
+fi
+
+log_info "Detected runtime: $RUNTIME_MODE"
+if [ "$RUNTIME_MODE" = "docker" ]; then
+    main_docker
+else
+    main_native
+fi

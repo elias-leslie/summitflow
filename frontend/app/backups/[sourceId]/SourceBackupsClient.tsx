@@ -32,11 +32,12 @@ import {
 } from '@/lib/api/backups'
 import { formatBytes, formatDate } from '@/lib/format'
 
-const SOURCE_TYPE_STYLES = {
+const SOURCE_TYPE_STYLES: Record<string, string> = {
   project: 'bg-blue-500/15 text-blue-400 border-blue-500/25',
   config: 'bg-amber-500/15 text-amber-400 border-amber-500/25',
   workspace: 'bg-purple-500/15 text-purple-400 border-purple-500/25',
-} as const
+  infrastructure: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25',
+}
 
 function SourceTypeBadge({ type }: { type: BackupSource['source_type'] }) {
   return (

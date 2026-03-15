@@ -40,9 +40,8 @@ _logger = get_logger(__name__)
 async def execute_smart_sync(project_root: Path) -> dict[str, Any]:
     """Execute smart sync operation using commit.sh script."""
     import asyncio
-    from asyncio import subprocess as aio_subprocess
-
     import os
+    from asyncio import subprocess as aio_subprocess
     _host_root = os.environ.get("BACKUP_HOST_ROOT")
     if _host_root:
         script_path = Path(_host_root) / "summitflow" / "scripts" / "commit.sh"

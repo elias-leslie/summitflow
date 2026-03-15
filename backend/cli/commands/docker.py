@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -254,10 +253,7 @@ def shell(
     )
 
 
-# ─── Backup & Restore ───────────────────────────────────────────
-
-BACKUP_DIR = Path.home() / "docker-backups"
-
+# ─── Backup & Restore (delegated to unified backup system) ──────
 
 @app.command()
 def backup(
@@ -266,56 +262,39 @@ def backup(
         typer.Option("--note", help="Backup note/description"),
     ] = "",
 ) -> None:
-    """Create a database backup from Docker postgres."""
-    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    suffix = f"-{note.replace(' ', '-')}" if note else ""
-    filename = f"docker-pgdump-{timestamp}{suffix}.sql"
-    filepath = BACKUP_DIR / filename
+    """Create an infrastructure backup via the unified backup system.
 
-    typer.echo(f"Creating backup: {filepath}")
-    result = subprocess.run(
-        compose_cmd("exec", "-T", "postgres", "pg_dumpall", "-U", "admin"),
-        capture_output=True,
-    )
-    if result.returncode != 0:
-        typer.echo(f"Backup failed: {result.stderr.decode()}", err=True)
-        raise typer.Exit(1)
+    Equivalent to: st backup infra create
+    """
+    typer.echo("Delegating to unified backup system...")
+    typer.echo("Tip: Use 'st backup infra create' directly for full options.\n")
 
-    filepath.write_bytes(result.stdout)
-    size_mb = filepath.stat().st_size / (1024 * 1024)
-    typer.echo(f"Backup complete: {filepath} ({size_mb:.1f} MB)")
+    from ..output_context import OutputContext
+    from .backup_infra import create_infra_backup as _create
+
+    ctx = typer.Context(app, obj=OutputContext())
+    _create(ctx, note=note or None, keep_local=False)
 
 
 @app.command()
 def restore(
-    archive: Annotated[
-        Path,
-        typer.Argument(help="Path to SQL dump file"),
+    backup_id: Annotated[
+        str,
+        typer.Argument(help="Backup ID to restore (from 'st backup infra list')"),
     ],
 ) -> None:
-    """Restore databases from a backup file."""
-    if not archive.exists():
-        typer.echo(f"File not found: {archive}", err=True)
-        raise typer.Exit(1)
+    """Restore from an infrastructure backup.
 
-    confirm = typer.confirm(
-        f"This will overwrite all databases with data from {archive.name}. Continue?"
-    )
-    if not confirm:
-        raise typer.Abort()
+    Equivalent to: st backup restore <id> --source infrastructure
+    """
+    typer.echo("Delegating to unified backup system...")
+    typer.echo("Tip: Use 'st backup restore <id> --source infrastructure' directly.\n")
 
-    typer.echo(f"Restoring from: {archive}")
-    with open(archive, "rb") as f:
-        result = subprocess.run(
-            compose_cmd("exec", "-T", "postgres", "psql", "-U", "admin"),
-            stdin=f,
-            capture_output=True,
-        )
-    if result.returncode != 0:
-        typer.echo(f"Restore had errors: {result.stderr.decode()}", err=True)
-    else:
-        typer.echo("Restore complete.")
+    from ..output_context import OutputContext
+    from .backup import restore_backup as _restore
+
+    ctx = typer.Context(app, obj=OutputContext())
+    _restore(ctx, backup_id=backup_id, dry_run=False, source="infrastructure")
 
 
 # ─── Ephemeral Test Environments ─────────────────────────────────

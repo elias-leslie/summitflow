@@ -31,12 +31,6 @@ export interface HealthSummary {
   stopped: number
 }
 
-export interface BackupInfo {
-  filename: string
-  size_mb: number
-  created: string
-}
-
 export interface ActionResult {
   success: boolean
   message: string
@@ -54,7 +48,6 @@ export const dockerApi = {
   getHealth: () => fetchJson<HealthSummary>('/api/docker/health'),
   getLogs: (service: string, tail = 100) =>
     fetchJson<{ logs: string }>(`/api/docker/logs/${service}?tail=${tail}`),
-  getBackups: () => fetchJson<BackupInfo[]>('/api/docker/backups'),
 
   restart: (service: string) =>
     fetchJson<ActionResult>(`/api/docker/restart/${service}`, { method: 'POST' }),
@@ -62,17 +55,6 @@ export const dockerApi = {
     fetchJson<ActionResult>(`/api/docker/stop/${service}`, { method: 'POST' }),
   start: (service: string) =>
     fetchJson<ActionResult>(`/api/docker/start/${service}`, { method: 'POST' }),
-
-  backup: (note = '') =>
-    fetchJson<ActionResult>(`/api/docker/backup?note=${encodeURIComponent(note)}`, {
-      method: 'POST',
-    }),
-  restore: (filename: string) =>
-    fetchJson<ActionResult>('/api/docker/restore', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filename }),
-    }),
 
   /** SSE log stream URL for EventSource */
   logStreamUrl: (service: string, tail = 100) =>

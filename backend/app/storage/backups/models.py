@@ -7,9 +7,10 @@ from typing import Any
 # Base SELECT columns for backup queries
 BACKUP_COLUMNS = """id, project_id, name, backup_type, status, size_bytes, db_size_bytes,
        files_size_bytes, location, note, created_at, started_at, completed_at, error_message,
-       verified, verified_at, checksum, total_files, verification_json, source_id"""
+       verified, verified_at, checksum, total_files, verification_json, source_id,
+       storage_backend_id, wal_start_lsn, wal_end_lsn"""
 
-EXPECTED_BACKUP_COLUMNS = 20
+EXPECTED_BACKUP_COLUMNS = 23
 
 
 def row_to_backup(row: tuple[Any, ...]) -> dict[str, Any]:
@@ -47,6 +48,9 @@ def row_to_backup(row: tuple[Any, ...]) -> dict[str, Any]:
         "total_files": row[17],
         "verification_json": row[18],
         "source_id": row[19],
+        "storage_backend_id": row[20],
+        "wal_start_lsn": row[21],
+        "wal_end_lsn": row[22],
     }
 
 

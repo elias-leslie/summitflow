@@ -21,8 +21,16 @@ from .backup_formatters import (
     output_sources,
     output_task_queued,
 )
+from .backup_infra import app as infra_app
+from .backup_storage import app as storage_app
+from .backup_wal import app as wal_app
 
 app = typer.Typer(help="Backup management commands")
+
+# Register sub-command groups
+app.add_typer(storage_app, name="storage")
+app.add_typer(infra_app, name="infra")
+app.add_typer(wal_app, name="wal")
 
 
 @app.callback()
