@@ -185,6 +185,18 @@ async def restore_source_backup(
     )
 
 
+@router.post("/backup-sources/{source_id}/restore-test")
+async def restore_test_source(source_id: str) -> dict:
+    """Run a dry-run restore test for a specific source."""
+    source = backup_store.get_source(source_id)
+    if not source:
+        raise HTTPException(status_code=404, detail=f"Source {source_id} not found")
+
+    from ...tasks.backup_restore_test import test_restore_for_source
+
+    return test_restore_for_source(source_id)
+
+
 @router.get("/backup-sources/{source_id}/backups", response_model=BackupListResponse)
 async def list_source_backups(
     source_id: str,

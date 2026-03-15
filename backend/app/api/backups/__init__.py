@@ -28,6 +28,7 @@ from .models import (
     StorageBackendResponse,
     StorageBackendUpdate,
     StorageSummaryResponse,
+    WalHealthSummary,
 )
 from .project_endpoints import router as project_router
 from .source_endpoints import router as source_router
@@ -60,5 +61,6 @@ __all__ = [
     "StorageBackendResponse",
     "StorageBackendUpdate",
     "StorageSummaryResponse",
+    "WalHealthSummary",
     "router",
 ]

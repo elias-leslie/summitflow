@@ -218,6 +218,28 @@ def delete_backup(
         handle_api_error(e)
 
 
+@app.command("drain-pending")
+def drain_pending(
+    ctx: typer.Context,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Show pending without uploading")] = False,
+) -> None:
+    """Upload pending backups to SMB and reconcile DB records."""
+    from app.tasks.backup_drain import drain_pending_backups
+
+    try:
+        result = drain_pending_backups(dry_run=dry_run)
+        if ctx.obj.is_compact:
+            status = result.get("status", "unknown")
+            promoted = result.get("promoted", 0)
+            remaining = result.get("remaining", 0)
+            print(f"DRAIN {status}|promoted:{promoted}|remaining:{remaining}")
+        else:
+            output_json(result)
+    except Exception as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1) from None
+
+
 @app.command("sources")
 def list_sources(
     ctx: typer.Context,

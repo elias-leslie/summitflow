@@ -1,6 +1,6 @@
 """Scheduled (cron) workflows for SummitFlow.
 
-11 active cron workflows on Hatchet schedule (2 disabled: systemd monitor, browser monitor).
+14 active cron workflows on Hatchet schedule (2 disabled: systemd monitor, browser monitor).
 All use ConcurrencyExpression with CANCEL_IN_PROGRESS to prevent overlapping runs.
 """
 
@@ -281,3 +281,59 @@ async def health_monitor_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
     from ..services.notifications.health_monitor import check_and_notify
 
     return await asyncio.to_thread(check_and_notify)
+
+
+@hatchet.task(
+    name="summitflow-pending-drain",
+    input_validator=EmptyInput,
+    execution_timeout="600s",
+    retries=2,
+    backoff_factor=2.0,
+    on_crons=["*/15 * * * *"],
+    concurrency=ConcurrencyExpression(
+        expression="'summitflow-pending-drain'",
+        max_runs=1,
+        limit_strategy=ConcurrencyLimitStrategy.CANCEL_IN_PROGRESS,
+    ),
+)
+async def pending_drain_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
+    from ..tasks.backup_drain import drain_pending_backups
+
+    return await asyncio.to_thread(drain_pending_backups)
+
+
+@hatchet.task(
+    name="summitflow-wal-cleanup",
+    input_validator=EmptyInput,
+    execution_timeout="120s",
+    retries=2,
+    backoff_factor=2.0,
+    on_crons=["0 5 * * *"],
+    concurrency=ConcurrencyExpression(
+        expression="'summitflow-wal-cleanup'",
+        max_runs=1,
+        limit_strategy=ConcurrencyLimitStrategy.CANCEL_IN_PROGRESS,
+    ),
+)
+async def wal_cleanup_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
+    from ..tasks.backup_wal_cleanup import cleanup_wal_archive
+
+    return await asyncio.to_thread(cleanup_wal_archive)
+
+
+@hatchet.task(
+    name="summitflow-restore-tests",
+    input_validator=EmptyInput,
+    execution_timeout="1800s",
+    retries=1,
+    on_crons=["0 6 * * 0"],
+    concurrency=ConcurrencyExpression(
+        expression="'summitflow-restore-tests'",
+        max_runs=1,
+        limit_strategy=ConcurrencyLimitStrategy.CANCEL_IN_PROGRESS,
+    ),
+)
+async def restore_tests_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
+    from ..tasks.backup_restore_test import run_restore_tests
+
+    return await asyncio.to_thread(run_restore_tests)

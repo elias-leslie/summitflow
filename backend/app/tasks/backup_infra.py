@@ -131,7 +131,7 @@ def _handle_pending(backup_id: str, parsed: dict[str, object]) -> dict[str, obje
     vkw = build_verification_kwargs(verification) if verification else {}
 
     backup_store.update_backup_status(
-        backup_id, "completed",
+        backup_id, "completed_pending_upload",
         name=archive_name or None,
         size_bytes=info.get("total_bytes"),
         db_size_bytes=info.get("db_bytes"),
@@ -140,7 +140,7 @@ def _handle_pending(backup_id: str, parsed: dict[str, object]) -> dict[str, obje
         **vkw,
     )
     logger.info("create_infra_backup_pending", backup_id=backup_id, pending_path=pending_path)
-    return {"status": "completed", "backup_id": backup_id, "location": pending_path or "pending_upload", **info}
+    return {"status": "completed_pending_upload", "backup_id": backup_id, "location": pending_path or "pending_upload", **info}
 
 
 def _handle_failure(backup_id: str, error_msg: str) -> dict[str, object]:

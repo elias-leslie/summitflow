@@ -16,7 +16,7 @@ export interface Backup {
   project_id: string
   name: string
   backup_type: 'manual' | 'scheduled'
-  status: 'pending' | 'running' | 'completed' | 'failed'
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'completed_pending_upload'
   size_bytes: number | null
   db_size_bytes: number | null
   files_size_bytes: number | null
@@ -217,10 +217,23 @@ export interface BackupHealthItem {
   last_success_at: string | null
   next_run_at: string | null
   failure_count_7d: number
+  pending_upload_count: number
+  last_restore_tested_at: string | null
+  last_restore_test_ok: boolean | null
+}
+
+export interface WalHealthSummary {
+  enabled: boolean
+  archive_segment_count: number
+  archive_size_bytes: number
+  last_archived_time: string | null
+  failed_count: number
 }
 
 export interface BackupHealthResponse {
   sources: BackupHealthItem[]
+  pending_upload_count: number
+  wal: WalHealthSummary | null
 }
 
 export function fetchStorageBackends(): Promise<StorageBackend[]> {

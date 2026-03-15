@@ -53,7 +53,7 @@ def cleanup_expired_backup_records(default_retention_days: int = 14, min_keep: i
         cur.execute(
             """
             DELETE FROM backups
-            WHERE status = 'completed'
+            WHERE status IN ('completed', 'completed_pending_upload')
               AND created_at < NOW() - INTERVAL '1 day' * COALESCE(
                 (SELECT bs.retention_days FROM backup_sources bs
                  WHERE bs.id = backups.source_id),
@@ -64,7 +64,7 @@ def cleanup_expired_backup_records(default_retention_days: int = 14, min_keep: i
                   SELECT id, ROW_NUMBER() OVER (
                     PARTITION BY source_id ORDER BY created_at DESC
                   ) AS rn
-                  FROM backups WHERE status = 'completed'
+                  FROM backups WHERE status IN ('completed', 'completed_pending_upload')
                 ) ranked WHERE rn <= %s
               )
             RETURNING id
@@ -106,7 +106,8 @@ def get_storage_summary(
             SELECT
                 COUNT(*) as total_count,
                 COALESCE(SUM(size_bytes), 0) as total_bytes,
-                COUNT(*) FILTER (WHERE status = 'completed') as completed_count,
+                COUNT(*) FILTER (WHERE status IN ('completed', 'completed_pending_upload')) as completed_count,
+                COUNT(*) FILTER (WHERE status = 'completed_pending_upload') as pending_upload_count,
                 COUNT(*) FILTER (WHERE status = 'pending') as pending_count,
                 COUNT(*) FILTER (WHERE status = 'running') as running_count,
                 COUNT(*) FILTER (WHERE status = 'failed') as failed_count
@@ -128,16 +129,19 @@ def get_storage_summary(
     if row[2]:
         by_status["completed"] = int(row[2])
     if row[3]:
-        by_status["pending"] = int(row[3])
+        by_status["completed_pending_upload"] = int(row[3])
     if row[4]:
-        by_status["running"] = int(row[4])
+        by_status["pending"] = int(row[4])
     if row[5]:
-        by_status["failed"] = int(row[5])
+        by_status["running"] = int(row[5])
+    if row[6]:
+        by_status["failed"] = int(row[6])
 
     return {
         "total_count": int(row[0]) if row[0] else 0,
         "total_bytes": int(row[1]) if row[1] else 0,
         "by_status": by_status,
+        "pending_upload_count": int(row[3]) if row[3] else 0,
     }
 
 
@@ -166,7 +170,7 @@ def get_latest_backup(
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             f"SELECT {BACKUP_COLUMNS} FROM backups "
-            f"WHERE {where} AND status = 'completed' "
+            f"WHERE {where} AND status IN ('completed', 'completed_pending_upload') "
             "ORDER BY completed_at DESC LIMIT 1",
             (param,),
         )
@@ -194,7 +198,8 @@ def get_backup_health_summary() -> list[dict[str, Any]]:
                 (
                     SELECT MAX(b.completed_at)
                     FROM backups b
-                    WHERE b.source_id = bs.id AND b.status = 'completed'
+                    WHERE b.source_id = bs.id
+                      AND b.status IN ('completed', 'completed_pending_upload')
                 ) AS last_success_at,
                 (
                     SELECT COUNT(*)
@@ -209,7 +214,15 @@ def get_backup_health_summary() -> list[dict[str, Any]]:
                     WHERE b.source_id = bs.id
                     ORDER BY b.created_at DESC
                     LIMIT 1
-                ) AS last_backup_status
+                ) AS last_backup_status,
+                (
+                    SELECT COUNT(*)
+                    FROM backups b
+                    WHERE b.source_id = bs.id
+                      AND b.status = 'completed_pending_upload'
+                ) AS pending_upload_count,
+                bs.last_restore_tested_at,
+                bs.last_restore_test_ok
             FROM backup_sources bs
             ORDER BY bs.source_type, bs.name
             """
@@ -226,6 +239,61 @@ def get_backup_health_summary() -> list[dict[str, Any]]:
             "last_success_at": row[5].isoformat() if row[5] else None,
             "failure_count_7d": int(row[6]) if row[6] else 0,
             "last_backup_status": row[7],
+            "pending_upload_count": int(row[8]) if row[8] else 0,
+            "last_restore_tested_at": row[9].isoformat() if row[9] else None,
+            "last_restore_test_ok": row[10],
         }
         for row in rows
     ]
+
+
+def update_source_restore_test(
+    source_id: str,
+    ok: bool,
+    error: str | None = None,
+) -> None:
+    """Record the result of a restore test for a backup source."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE backup_sources
+            SET last_restore_tested_at = NOW(),
+                last_restore_test_ok = %s,
+                last_restore_test_error = %s
+            WHERE id = %s
+            """,
+            (ok, error, source_id),
+        )
+        conn.commit()
+
+
+def promote_pending_upload(backup_id: str, location: str | None = None) -> bool:
+    """Promote a completed_pending_upload backup to completed after successful upload."""
+    with get_connection() as conn, conn.cursor() as cur:
+        updates = ["status = 'completed'"]
+        params: list[Any] = []
+        if location:
+            updates.append("location = %s")
+            params.append(location)
+        params.append(backup_id)
+        cur.execute(
+            f"UPDATE backups SET {', '.join(updates)} "
+            "WHERE id = %s AND status = 'completed_pending_upload' "
+            "RETURNING id",
+            params,
+        )
+        row = cur.fetchone()
+        conn.commit()
+    return row is not None
+
+
+def get_pending_upload_backups() -> list[dict[str, Any]]:
+    """Get all backups with completed_pending_upload status."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"SELECT {BACKUP_COLUMNS} FROM backups "
+            "WHERE status = 'completed_pending_upload' "
+            "ORDER BY created_at ASC",
+        )
+        rows = cur.fetchall()
+    return [row_to_backup(row) for row in rows]

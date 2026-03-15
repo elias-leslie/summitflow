@@ -161,7 +161,7 @@ def _handle_backup_pending(
     vkw = build_verification_kwargs(verification) if verification else {}
     backup_store.update_backup_status(
         backup_id,
-        "completed",
+        "completed_pending_upload",
         name=archive_name or None,
         size_bytes=size_info.get("total_bytes"),
         db_size_bytes=size_info.get("db_bytes"),
@@ -176,7 +176,7 @@ def _handle_backup_pending(
         pending_path=pending_path or None,
     )
     return {
-        "status": "completed",
+        "status": "completed_pending_upload",
         "backup_id": backup_id,
         "project_id": project_id,
         "location": pending_path or "pending_upload",

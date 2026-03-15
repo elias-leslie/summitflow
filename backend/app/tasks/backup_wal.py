@@ -103,6 +103,21 @@ def get_wal_status() -> dict[str, Any]:
             "last_failed_time": archiver_row[5].isoformat() if archiver_row[5] else None,
         })
 
+    # Include archive directory info if accessible
+    try:
+        from .backup_wal_cleanup import get_wal_archive_info
+
+        archive_info = get_wal_archive_info()
+        if archive_info.get("accessible"):
+            result["archive_segment_count"] = archive_info["segment_count"]
+            result["archive_size_bytes"] = archive_info["total_size_bytes"]
+            if archive_info.get("oldest_segment"):
+                result["archive_oldest_segment"] = archive_info["oldest_segment"]
+            if archive_info.get("newest_segment"):
+                result["archive_newest_segment"] = archive_info["newest_segment"]
+    except Exception:
+        pass  # Archive dir may not be mounted
+
     return result
 
 

@@ -61,6 +61,30 @@ def wal_enable(
         raise typer.Exit(1) from None
 
 
+@app.command("cleanup")
+def wal_cleanup(
+    ctx: typer.Context,
+    retention_days: Annotated[
+        int, typer.Option("--retention-days", "-r", help="Delete segments older than N days")
+    ] = 7,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Show eligible without deleting")] = False,
+) -> None:
+    """Clean up old WAL archive segments."""
+    from app.tasks.backup_wal_cleanup import cleanup_wal_archive
+
+    try:
+        result = cleanup_wal_archive(retention_days=retention_days, dry_run=dry_run)
+        if ctx.obj.is_compact:
+            status = result.get("status", "unknown")
+            deleted = result.get("deleted_count", result.get("eligible_count", 0))
+            print(f"WAL_CLEANUP {status}|deleted:{deleted}|retention:{retention_days}d")
+        else:
+            output_json(result)
+    except Exception as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1) from None
+
+
 @app.command("disable")
 def wal_disable(ctx: typer.Context) -> None:
     """Disable WAL archiving."""

@@ -51,7 +51,7 @@ def _process_due_source(source: dict[str, Any]) -> dict[str, Any]:
     )
 
     status = str(result.get("status", "unknown"))
-    if status != "completed":
+    if status not in ("completed", "completed_pending_upload"):
         logger.warning(
             "scheduled_backup_source_failed",
             source_id=source_id,

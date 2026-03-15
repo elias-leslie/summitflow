@@ -1,9 +1,9 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { CheckCircle2, AlertTriangle, XCircle, Loader2, Activity } from 'lucide-react'
+import { CheckCircle2, AlertTriangle, XCircle, Loader2, Activity, Upload, ShieldCheck } from 'lucide-react'
 import { clsx } from 'clsx'
-import { type BackupHealthItem, fetchBackupHealth } from '@/lib/api/backups'
+import { type BackupHealthItem, type BackupHealthResponse, fetchBackupHealth } from '@/lib/api/backups'
 import { formatDate } from '@/lib/format'
 
 const HEALTH_ICONS = {
@@ -60,6 +60,23 @@ export function HealthCard({ item, action }: { item: BackupHealthItem; action?: 
             {item.failure_count_7d} failure{item.failure_count_7d > 1 ? 's' : ''} (7d)
           </div>
         )}
+        {item.pending_upload_count > 0 && (
+          <div className="flex items-center gap-1 text-amber-400">
+            <Upload className="w-3 h-3" />
+            {item.pending_upload_count} pending upload{item.pending_upload_count > 1 ? 's' : ''}
+          </div>
+        )}
+        {item.last_restore_tested_at ? (
+          <div className={clsx('flex items-center gap-1', item.last_restore_test_ok ? 'text-green-400' : 'text-red-400')}>
+            <ShieldCheck className="w-3 h-3" />
+            Restore {item.last_restore_test_ok ? 'OK' : 'failed'}: {formatDate(item.last_restore_tested_at)}
+          </div>
+        ) : (
+          <div className="text-slate-500 flex items-center gap-1">
+            <ShieldCheck className="w-3 h-3" />
+            Restore never tested
+          </div>
+        )}
         {!item.enabled && (
           <div className="text-slate-500">Scheduling disabled</div>
         )}
@@ -69,12 +86,19 @@ export function HealthCard({ item, action }: { item: BackupHealthItem; action?: 
   )
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB']
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
+  return `${(bytes / 1024 ** i).toFixed(i > 0 ? 1 : 0)} ${units[i]}`
+}
+
 interface BackupHealthDashboardProps {
   sources?: BackupHealthItem[]
 }
 
 export function BackupHealthDashboard({ sources: externalSources }: BackupHealthDashboardProps) {
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error } = useQuery<BackupHealthResponse>({
     queryKey: ['backup-health'],
     queryFn: fetchBackupHealth,
     refetchInterval: 30_000,
@@ -99,6 +123,8 @@ export function BackupHealthDashboard({ sources: externalSources }: BackupHealth
   const greenCount = sources.filter(s => s.health_status === 'green').length
   const yellowCount = sources.filter(s => s.health_status === 'yellow').length
   const redCount = sources.filter(s => s.health_status === 'red').length
+  const pendingUploadCount = data?.pending_upload_count ?? 0
+  const wal = data?.wal
 
   return (
     <section className="mb-8">
@@ -121,8 +147,31 @@ export function BackupHealthDashboard({ sources: externalSources }: BackupHealth
               <XCircle className="w-3 h-3 text-red-400" />{redCount}
             </span>
           )}
+          {pendingUploadCount > 0 && (
+            <span className="flex items-center gap-1 text-amber-400">
+              <Upload className="w-3 h-3" />{pendingUploadCount} pending
+            </span>
+          )}
         </div>
       </div>
+
+      {wal && (
+        <div className="mb-3 p-2 rounded border border-slate-700/50 bg-slate-800/30 text-xs text-slate-400 flex items-center gap-4">
+          <span className={clsx('font-medium', wal.enabled ? 'text-green-400' : 'text-slate-500')}>
+            WAL: {wal.enabled ? 'ON' : 'OFF'}
+          </span>
+          {wal.archive_segment_count > 0 && (
+            <span>{wal.archive_segment_count} segments ({formatBytes(wal.archive_size_bytes)})</span>
+          )}
+          {wal.last_archived_time && (
+            <span>Last: {formatDate(wal.last_archived_time)}</span>
+          )}
+          {(wal.failed_count ?? 0) > 0 && (
+            <span className="text-red-400">{wal.failed_count} failed</span>
+          )}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
         {sources.map(item => (
           <HealthCard key={item.source_id} item={item} />

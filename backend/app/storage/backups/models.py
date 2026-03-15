@@ -137,7 +137,7 @@ def build_backup_updates(
     # Update timestamps based on status
     if status == "running":
         updates.append("started_at = NOW()")
-    elif status in ("completed", "failed"):
+    elif status in ("completed", "completed_pending_upload", "failed"):
         updates.append("completed_at = NOW()")
 
     return updates, params

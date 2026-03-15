@@ -155,9 +155,24 @@ class BackupHealthItem(BaseModel):
     last_success_at: str | None = None
     next_run_at: str | None = None
     failure_count_7d: int = 0
+    pending_upload_count: int = 0
+    last_restore_tested_at: str | None = None
+    last_restore_test_ok: bool | None = None
+
+
+class WalHealthSummary(BaseModel):
+    """WAL archiving health summary."""
+
+    enabled: bool = False
+    archive_segment_count: int = 0
+    archive_size_bytes: int = 0
+    last_archived_time: str | None = None
+    failed_count: int = 0
 
 
 class BackupHealthResponse(BaseModel):
     """Response model for backup health summary."""
 
     sources: list[BackupHealthItem]
+    pending_upload_count: int = 0
+    wal: WalHealthSummary | None = None

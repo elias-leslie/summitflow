@@ -1,7 +1,7 @@
 'use client'
 
 import { clsx } from 'clsx'
-import { CheckCircle2, Clock, RefreshCw, XCircle } from 'lucide-react'
+import { CheckCircle2, Clock, RefreshCw, Upload, XCircle } from 'lucide-react'
 import type { Backup } from '@/lib/api/backups'
 
 const STATUS_CONFIG = {
@@ -16,6 +16,10 @@ const STATUS_CONFIG = {
   completed: {
     icon: CheckCircle2,
     className: 'bg-green-500/20 text-green-400 border-green-500/30',
+  },
+  completed_pending_upload: {
+    icon: Upload,
+    className: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
   },
   failed: {
     icon: XCircle,
