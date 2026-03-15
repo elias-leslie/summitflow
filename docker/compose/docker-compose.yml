@@ -278,7 +278,9 @@ services:
       retries: 5
     init: true  # Proper PID 1 for PTY children
     volumes:
-      # Mount host Claude Code + Codex OAuth credentials into container
+      # Mount host home so Terminal can access project repos at their real paths
+      - ${HOST_HOME_PATH:?}:${HOST_HOME_PATH:?}
+      # Mount Claude Code + Codex OAuth credentials into container appuser home
       - ${HOST_HOME_PATH:?}/.claude:/home/appuser/.claude
       - ${HOST_HOME_PATH:?}/.claude.json:/home/appuser/.claude.json
       - ${HOST_HOME_PATH:?}/.codex:/home/appuser/.codex
