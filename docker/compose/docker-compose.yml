@@ -280,6 +280,7 @@ services:
     volumes:
       # Mount host Claude Code + Codex OAuth credentials into container
       - ${HOST_HOME_PATH:?}/.claude:/home/appuser/.claude
+      - ${HOST_HOME_PATH:?}/.claude.json:/home/appuser/.claude.json
       - ${HOST_HOME_PATH:?}/.codex:/home/appuser/.codex
     restart: unless-stopped
 
