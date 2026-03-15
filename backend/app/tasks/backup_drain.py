@@ -110,9 +110,13 @@ def _reconcile_pending_records(pending_records: list[dict[str, Any]]) -> int:
     pending_dir = Path(os.environ.get("HOME", str(Path.home()))) / ".local" / "share" / "backup-pending"
     promoted = 0
 
+    smb_host = os.environ.get("SMB_HOST", "")
+    smb_share = os.environ.get("SMB_SHARE", "")
+
     for record in pending_records:
         location = record.get("location", "")
         name = record.get("name", "")
+        source_id = record.get("source_id", "")
 
         # Check if the file is still in the pending directory
         still_pending = False
@@ -121,8 +125,14 @@ def _reconcile_pending_records(pending_records: list[dict[str, Any]]) -> int:
         elif name:
             still_pending = (pending_dir / name).exists()
 
-        if not still_pending and backup_store.promote_pending_upload(record["id"]):
+        if not still_pending:
+            # Compute SMB location for the promoted record
+            smb_location = None
+            if smb_host and smb_share and name and source_id:
+                smb_location = f"//{smb_host}/{smb_share}/project-backups/{source_id}/{name}"
+
+            if backup_store.promote_pending_upload(record["id"], location=smb_location):
                 promoted += 1
-                logger.info("promoted_pending_backup", backup_id=record["id"])
+                logger.info("promoted_pending_backup", backup_id=record["id"], location=smb_location)
 
     return promoted
