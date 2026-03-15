@@ -77,9 +77,8 @@ def run_git(repo_root: Path, *args: str) -> str:
         ["git", "-C", str(repo_root), *args],
         check=True,
         capture_output=True,
-        text=True,
     )
-    return proc.stdout
+    return proc.stdout.decode("utf-8", errors="replace")
 
 
 def staged_diff(repo_root: Path) -> str:

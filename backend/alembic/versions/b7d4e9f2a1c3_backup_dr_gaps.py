@@ -20,7 +20,10 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # 1. Expand backups.status CHECK to include completed_pending_upload
+    # 1. Widen status column and expand CHECK to include completed_pending_upload
+    op.execute("""
+        ALTER TABLE backups ALTER COLUMN status TYPE VARCHAR(30)
+    """)
     op.execute("""
         ALTER TABLE backups DROP CONSTRAINT IF EXISTS backups_status_check
     """)
