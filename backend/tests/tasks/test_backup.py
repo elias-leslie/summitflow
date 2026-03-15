@@ -195,12 +195,13 @@ class TestCreateBackupTask:
 
             result = create_backup(project_id=cleanup_project)
 
-        assert result["status"] == "completed"
+        assert result["status"] == "completed_pending_upload"
         assert result["location"] == "/tmp/test-backup.tar.gz"
 
         backup = backup_store.get_backup(result["backup_id"])
         assert backup is not None
         assert backup["location"] == "/tmp/test-backup.tar.gz"
+        assert backup["status"] == "completed_pending_upload"
         assert backup["name"] == "test-backup.tar.gz"
 
     @patch("app.tasks.backup_executor.create_notification")
