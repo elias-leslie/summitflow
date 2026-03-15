@@ -400,7 +400,20 @@ services:
 
 volumes:
   pgdata:
+    # On existing installs migrating from project name "compose", set these to
+    # external with the old volume names to preserve data. On fresh installs,
+    # remove the name/external lines.
+    name: compose_pgdata
+    external: true
   redis-data:
+    name: compose_redis-data
+    external: true
   hatchet-config:
+    name: compose_hatchet-config
+    external: true
   portfolio-models:
+    name: compose_portfolio-models
+    external: true
   wal-archive:
+    name: compose_wal-archive
+    external: true
