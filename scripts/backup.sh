@@ -316,6 +316,14 @@ main() {
         exit 1
     fi
 
+    # Fail loudly if DB dump was skipped but project expects a database
+    if [ $db_dump_result -eq 2 ] && backup_expects_database; then
+        log_error "CRITICAL: Database dump skipped — no credentials found for $PROJECT_NAME"
+        log_error "Expected ${_env_var_name} or DATABASE_URL in ~/.env.local"
+        log_error "Backup will NOT include database. Aborting to prevent data loss."
+        exit 1
+    fi
+
     local db_size
     db_size=$(stat -c%s "$db_dump" 2>/dev/null || stat -f%z "$db_dump" 2>/dev/null || echo "0")
 

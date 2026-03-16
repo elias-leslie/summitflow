@@ -41,10 +41,10 @@ export MIN_BACKUPS=3
 # Derive env var name from project: portfolio-ai -> PORTFOLIO_AI_DB_URL
 _env_var_name=$(echo "${PROJECT_NAME}" | tr '[:lower:]-' '[:upper:]_')_DB_URL
 if [ -f "$HOME/.env.local" ]; then
-    _db_url=$(grep "^${_env_var_name}=" "$HOME/.env.local" 2>/dev/null | cut -d'=' -f2- || true)
+    _db_url=$(grep "^${_env_var_name}=" "$HOME/.env.local" 2>/dev/null | cut -d'=' -f2- | tr -d '"' || true)
     if [ -z "$_db_url" ]; then
         # Fallback: look for DATABASE_URL that contains project name
-        _db_url=$(grep "^DATABASE_URL=.*${PROJECT_NAME}" "$HOME/.env.local" 2>/dev/null | cut -d'=' -f2- || true)
+        _db_url=$(grep "^DATABASE_URL=.*${PROJECT_NAME}" "$HOME/.env.local" 2>/dev/null | cut -d'=' -f2- | tr -d '"' || true)
     fi
     if [ -n "$_db_url" ]; then
         _db_userpass=$(echo "$_db_url" | sed -n 's|postgresql://\([^@]*\)@.*|\1|p')
@@ -140,7 +140,13 @@ backup_expects_database() {
             return 1
             ;;
         *)
-            [ -n "${DB_PASSWORD:-}" ]
+            # Check if credentials were loaded successfully
+            [ -n "${DB_PASSWORD:-}" ] && return 0
+            # Also check if .env.local has a DB URL for this project (may have failed to parse)
+            if [ -f "$HOME/.env.local" ]; then
+                grep -qE "^(${_env_var_name}|DATABASE_URL)=.*postgresql://" "$HOME/.env.local" 2>/dev/null && return 0
+            fi
+            return 1
             ;;
     esac
 }

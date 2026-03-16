@@ -20,7 +20,7 @@ fi
 # Resolve DATABASE_URL for psql
 _sb_db_url="${DATABASE_URL:-}"
 if [ -z "$_sb_db_url" ] && [ -f "$HOME/.env.local" ]; then
-    _sb_db_url=$(grep "^DATABASE_URL=" "$HOME/.env.local" 2>/dev/null | cut -d'=' -f2- || true)
+    _sb_db_url=$(grep "^DATABASE_URL=" "$HOME/.env.local" 2>/dev/null | cut -d'=' -f2- | tr -d '"' || true)
 fi
 
 if [ -z "$_sb_db_url" ]; then
