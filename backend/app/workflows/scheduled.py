@@ -2,6 +2,12 @@
 
 14 active cron workflows on Hatchet schedule (2 disabled: systemd monitor, browser monitor).
 All use ConcurrencyExpression with CANCEL_IN_PROGRESS to prevent overlapping runs.
+
+Schedule philosophy (2026-03-16 tuning):
+  - Health/smoke: */5 to */30 min — enough for alerting, not so frequent it drains CPU
+  - Explorer/indexes: */2h — batch git ops on 6000+ files are the biggest CPU cost
+  - Cleanup/maintenance: daily or weekly — no urgency
+  - Claims reset: */15 min — lightweight DB query, kept frequent for task flow
 """
 
 from __future__ import annotations
@@ -92,7 +98,7 @@ async def scan_projects_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
     execution_timeout="1200s",
     retries=3,
     backoff_factor=2.0,
-    on_crons=["*/15 * * * *"],
+    on_crons=["10 */2 * * *"],
     concurrency=ConcurrencyExpression(
         expression="'summitflow-refresh-precision-indexes'",
         max_runs=1,
@@ -219,7 +225,7 @@ async def monitor_browser_wf(input: MonitorInput, ctx: Context) -> dict[str, Any
     execution_timeout="900s",
     retries=3,
     backoff_factor=2.0,
-    on_crons=["*/15 * * * *"],
+    on_crons=["*/30 * * * *"],
     concurrency=ConcurrencyExpression(
         expression="'summitflow-self-healing'",
         max_runs=1,
@@ -238,7 +244,7 @@ async def self_healing_wf(input: SelfHealingInput, ctx: Context) -> dict[str, An
     input_validator=EmptyInput,
     execution_timeout="60s",
     retries=1,
-    on_crons=["*/15 * * * *"],
+    on_crons=["*/30 * * * *"],
     concurrency=ConcurrencyExpression(
         expression="'summitflow-prod-smoke-test'",
         max_runs=1,
@@ -270,7 +276,7 @@ async def prod_smoke_test_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
     input_validator=EmptyInput,
     execution_timeout="60s",
     retries=1,
-    on_crons=["*/1 * * * *"],
+    on_crons=["*/5 * * * *"],
     concurrency=ConcurrencyExpression(
         expression="'summitflow-health-monitor'",
         max_runs=1,
@@ -289,7 +295,7 @@ async def health_monitor_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
     execution_timeout="600s",
     retries=2,
     backoff_factor=2.0,
-    on_crons=["*/15 * * * *"],
+    on_crons=["*/30 * * * *"],
     concurrency=ConcurrencyExpression(
         expression="'summitflow-pending-drain'",
         max_runs=1,
