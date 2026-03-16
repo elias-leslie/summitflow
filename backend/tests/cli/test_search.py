@@ -140,6 +140,32 @@ def test_search_path_query_shows_path_hint() -> None:
     assert "path terms" in result.output
 
 
+def test_search_empty_after_text_fallback_shows_files_searched() -> None:
+    """When both symbol and text search ran but found nothing, hint shows files searched count."""
+    payload = {
+        "prompt_context": "",
+        "metadata": {
+            "symbol_count": 0,
+            "used_symbol_first": False,
+            "used_fallback": False,
+            "estimated_tokens_saved": 0,
+            "final_tokens": 0,
+            "text_files_searched": 1504,
+            "text_match_count": 0,
+        },
+    }
+
+    with (
+        patch("cli.commands.search.STClient", return_value=_mock_client(payload)),
+        patch("cli.commands.search.is_compact", return_value=True),
+    ):
+        result = runner.invoke(app, ["xyznonexistent12345"])
+
+    assert result.exit_code == 0
+    assert "searched 1504 files" in result.output
+    assert "st search --text" not in result.output
+
+
 def test_search_text_fallback_shows_hint() -> None:
     payload = {
         "prompt_context": "Precision Code Search: text-fallback\n\n## Relevant Text Matches\n\n- file.py:1 - mode",

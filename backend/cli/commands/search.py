@@ -31,11 +31,16 @@ def _generate_hint(query: str, mode: str, metadata: dict) -> str | None:
     queries = [query]
 
     if mode == "empty":
+        used_fallback = metadata.get("used_fallback", False)
+        files_searched = metadata.get("text_files_searched", 0)
         if has_path_segments(queries):
-            return "path terms reduce symbol precision. Try `st search --text <query>` or just the symbol name."
+            return "path terms reduce symbol precision. Try just the symbol name, or `st search --file <path>` to list symbols in a file."
         if is_short_or_generic(queries):
             return "query is too short/generic for symbol matching. Try a specific function, class, or variable name."
-        return "no symbols or text matched. Try `st search --text <query>` for content search, or refine to a specific identifier."
+        # Text fallback already ran and found nothing — don't suggest --text again
+        if used_fallback or files_searched > 0:
+            return f"searched {files_searched} files — no symbol or text matches. Try a shorter/different identifier, or `st search --file <path>` to browse symbols in a known file."
+        return "no symbol matches. Try `st search --text <query>` for content search, or refine to a specific identifier."
 
     if mode == "text-fallback":
         if has_path_segments(queries):
