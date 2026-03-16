@@ -171,6 +171,9 @@ def _build_class_checks(relative_path: str, issues: list[str]) -> list[str]:
 
 def _build_structural_checks(relative_path: str, issues: list[str]) -> list[str]:
     """Build AST-based verification commands for each structural issue."""
+    # Python AST checks only apply to .py files — skip for JS/TS/etc.
+    if not relative_path.endswith(".py"):
+        return []
     return _build_function_checks(relative_path, issues) + _build_class_checks(relative_path, issues)
 
 
