@@ -71,6 +71,9 @@ RUN useradd -m -s /bin/bash appuser \
 # Allow git to operate on mounted host repos (different UID)
 RUN git config --global --add safe.directory '*'
 
+# Add GitHub SSH host keys so git push/fetch works from container
+RUN mkdir -p /etc/ssh && ssh-keyscan github.com >> /etc/ssh/ssh_known_hosts 2>/dev/null
+
 # Copy and use entrypoint script
 COPY docker/scripts/entrypoint-backend.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

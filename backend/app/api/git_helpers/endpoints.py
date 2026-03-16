@@ -60,6 +60,11 @@ async def execute_smart_sync(project_root: Path) -> dict[str, Any]:
             f"{_host_root}/.cargo/bin",
         ]
         env["PATH"] = ":".join(host_bin_dirs) + ":" + env.get("PATH", "")
+        # SSH resolves ~ from passwd, not $HOME — point it at the host user's SSH config
+        ssh_dir = f"{_host_root}/.ssh"
+        env["GIT_SSH_COMMAND"] = (
+            f"ssh -i {ssh_dir}/id_ed25519 -o UserKnownHostsFile={ssh_dir}/known_hosts"
+        )
 
     try:
         proc = await asyncio.create_subprocess_exec(
