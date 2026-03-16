@@ -183,7 +183,42 @@ wait_for_service() {
   return 1
 }
 
-wait_for_service "Hatchet" "http://localhost:8888" 90
+apply_hatchet_tuning() {
+  local server_file="hatchet-config/server.yaml"
+  local database_file="hatchet-config/database.yaml"
+  local changed=0
+
+  if [ ! -f "$server_file" ] || [ ! -f "$database_file" ]; then
+    echo "  WARNING: Hatchet config files not found; skipping runtime tuning."
+    return 0
+  fi
+
+  update_yaml_value() {
+    local file="$1" key="$2" value="$3"
+    if grep -qE "^[[:space:]]*${key}: ${value}\$" "$file"; then
+      return 0
+    fi
+    sed -i -E "s|^([[:space:]]*${key}:).*|\1 ${value}|" "$file"
+    changed=1
+  }
+
+  update_yaml_value "$server_file" "schedulerConcurrencyPollingMinInterval" "1000000000"
+  update_yaml_value "$database_file" "maxConns" "20"
+  update_yaml_value "$database_file" "maxQueueConns" "20"
+  update_yaml_value "$database_file" "minQueueConns" "3"
+
+  if [ "$changed" -eq 0 ]; then
+    echo "Hatchet runtime tuning already applied"
+    return 0
+  fi
+
+  echo "Recreating Hatchet with tuned runtime config..."
+  docker compose up -d --force-recreate hatchet
+  wait_for_service "Hatchet" "http://localhost:8888/ready" 90
+}
+
+wait_for_service "Hatchet" "http://localhost:8888/ready" 90
+apply_hatchet_tuning
 
 # ─── Generate Hatchet Client Token ────────────────────────────
 

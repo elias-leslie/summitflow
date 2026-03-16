@@ -27,10 +27,11 @@ unset PORT HATCHET_CLIENT_TOKEN HATCHET_COOKIE_SECRET \
       AGENT_HUB_SECRET_KEY 2>/dev/null || true
 
 # ─── Compose paths ──────────────────────────────────────────────
-_COMPOSE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/docker/compose"
+_SUMMITFLOW_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+_COMPOSE_DIR="$_SUMMITFLOW_ROOT/docker/compose"
 _COMPOSE_FILE="$_COMPOSE_DIR/docker-compose.yml"
 _COMPOSE_DEV_FILE="$_COMPOSE_DIR/docker-compose.dev.yml"
-export _COMPOSE_DIR _COMPOSE_FILE _COMPOSE_DEV_FILE
+export _SUMMITFLOW_ROOT _COMPOSE_DIR _COMPOSE_FILE _COMPOSE_DEV_FILE
 
 # ─── Dynamic service discovery from compose ─────────────────────
 # The compose file is the single source of truth. No hardcoded service names.
@@ -126,13 +127,15 @@ detect_docker() {
     # Resolve ports from compose config
     _resolve_ports
 
-    # Detect dev overlay (any bind mount under /app/ = dev mode)
+    # Detect dev overlay (only bind mounts under /app/ = dev mode).
+    # Named volumes such as /app/.cache are valid in production and must not
+    # trigger hot-reload mode.
     local api_svc container
     api_svc=$(_compose_api_service)
     [ -z "$api_svc" ] && return
     container=$(docker compose -f "$_COMPOSE_FILE" ps -q "$api_svc" 2>/dev/null | head -1)
     [ -z "$container" ] && return
-    if docker inspect "$container" --format '{{range .Mounts}}{{.Destination}}{{"\n"}}{{end}}' 2>/dev/null | grep -qE '^/app/.+'; then
+    if docker inspect "$container" --format '{{range .Mounts}}{{.Type}} {{.Destination}}{{"\n"}}{{end}}' 2>/dev/null | grep -qE '^bind /app/.+'; then
         export DOCKER_DEV=true
     fi
 
@@ -223,6 +226,40 @@ docker_run_migration() {
     [ ${PIPESTATUS[0]} -eq 0 ] && log_success "Migrations applied" || log_warn "Migration returned non-zero (may already be up to date)"
 }
 
+docker_reapply_hatchet_tuning() {
+    [ "$PROJECT_NAME" != "summitflow" ] && return 0
+    [ ! -f "$_SUMMITFLOW_ROOT/scripts/tune-hatchet-config.py" ] && return 0
+    [ ! -d "$_COMPOSE_DIR/hatchet-config" ] && return 0
+
+    local hatchet_id
+    hatchet_id=$(docker compose -f "$_COMPOSE_FILE" ps -q hatchet 2>/dev/null | head -1)
+    [ -z "$hatchet_id" ] && return 0
+
+    local tune_output
+    tune_output=$(python3 "$_SUMMITFLOW_ROOT/scripts/tune-hatchet-config.py") || {
+        log_warn "Hatchet config tuning failed"
+        return 1
+    }
+
+    if printf '%s\n' "$tune_output" | grep -q ': updated'; then
+        log "Recreating Hatchet with tuned runtime config..."
+        docker compose -f "$_COMPOSE_FILE" up -d --force-recreate hatchet 2>&1 | tail -20
+        [ ${PIPESTATUS[0]} -ne 0 ] && { log_error "Hatchet recreate failed"; return 1; }
+        log_success "Hatchet recreated"
+
+        local ready_url="http://localhost:8888/ready"
+        for _i in $(seq 1 45); do
+            curl -sf "$ready_url" &>/dev/null && { log_success "Hatchet OK"; return 0; }
+            sleep 2
+        done
+
+        log_error "Hatchet health verification failed"
+        return 1
+    fi
+
+    return 0
+}
+
 # ─── Logging ─────────────────────────────────────────────────────
 log() { printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*"; }
 log_success() { printf "${GREEN}[%s] ✓ %s${NC}\n" "$(date '+%H:%M:%S')" "$*"; }
@@ -241,4 +278,4 @@ verify_frontend() { local p="${1:-$FRONTEND_PORT}"; [ "$p" -eq 0 ] 2>/dev/null &
 
 export -f log log_success log_warn log_error log_info
 export -f service_exists restart_service clear_build_cache clear_nextjs_cache build_frontend verify_backend verify_frontend
-export -f detect_docker _detect_stale_image _project_to_prefix _compose_all_services _compose_api_service _compose_web_service _compose_service_port _resolve_ports docker_build_and_recreate docker_restart_services docker_run_migration
+export -f detect_docker _detect_stale_image _project_to_prefix _compose_all_services _compose_api_service _compose_web_service _compose_service_port _resolve_ports docker_build_and_recreate docker_restart_services docker_run_migration docker_reapply_hatchet_tuning

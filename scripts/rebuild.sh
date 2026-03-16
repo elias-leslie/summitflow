@@ -180,6 +180,10 @@ main_docker() {
         fi
     fi
 
+    if [ "$FRONTEND_ONLY" = false ]; then
+        docker_reapply_hatchet_tuning || ((errors++))
+    fi
+
     # Verify health
     echo ""
     log "Verifying services..."
