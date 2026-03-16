@@ -24,7 +24,7 @@ RUN sed -i 's|"@agent-hub/chat-ui": "workspace:\*"|"@agent-hub/chat-ui": "file:/
 # Override transitive passport-client dep (chat-ui depends on it)
 RUN echo '{"overrides":{"@agent-hub/passport-client":"file:/tmp/workspace-packages/agent-hub-passport-client-0.1.0.tgz"}}' > /tmp/override.json && \
     node -e "const p=require('./package.json'); const o=JSON.parse(require('fs').readFileSync('/tmp/override.json')); p.pnpm={...p.pnpm,...o}; require('fs').writeFileSync('package.json',JSON.stringify(p,null,2))" && \
-    pnpm install --no-frozen-lockfile
+    CI=true pnpm install --no-frozen-lockfile
 
 # Build with standalone output
 ENV NEXT_TELEMETRY_DISABLED=1

@@ -1,15 +1,30 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
+import { useMemo } from 'react'
 import { dockerApi } from '@/lib/api/docker'
 import { ServiceCard } from './ServiceCard'
 
 export function ServiceGrid() {
-  const { data: containers, isLoading } = useQuery({
+  const {
+    data: containers,
+    error,
+    isLoading,
+  } = useQuery({
     queryKey: ['docker', 'status'],
     queryFn: dockerApi.getStatus,
     refetchInterval: 10_000,
   })
+  const { data: metrics, isLoading: isMetricsLoading } = useQuery({
+    queryKey: ['docker', 'metrics'],
+    queryFn: dockerApi.getMetrics,
+    refetchInterval: 15_000,
+  })
+
+  const metricsByContainerName = useMemo(
+    () => new Map((metrics ?? []).map((metric) => [metric.name, metric])),
+    [metrics],
+  )
 
   if (isLoading) {
     return (
@@ -24,12 +39,24 @@ export function ServiceGrid() {
     )
   }
 
+  if (error) {
+    return (
+      <div className="rounded-lg border border-red-500/40 bg-red-950/20 p-8 text-center">
+        <p className="text-red-300">Docker status is unavailable.</p>
+        <p className="mt-1 text-sm text-red-200/80">
+          {error instanceof Error ? error.message : 'Unknown Docker API error'}
+        </p>
+      </div>
+    )
+  }
+
   if (!containers?.length) {
     return (
       <div className="rounded-lg border border-neutral-700 bg-neutral-800/30 p-8 text-center">
         <p className="text-neutral-400">No Docker containers found.</p>
         <p className="text-sm text-neutral-500 mt-1">
-          Start the stack with: <code className="text-amber-400">st docker up</code>
+          Start the stack with:{' '}
+          <code className="text-amber-400">st docker up</code>
         </p>
       </div>
     )
@@ -38,7 +65,12 @@ export function ServiceGrid() {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
       {containers.map((c) => (
-        <ServiceCard key={c.name} container={c} />
+        <ServiceCard
+          key={c.name}
+          container={c}
+          metric={metricsByContainerName.get(c.name)}
+          metricsLoading={isMetricsLoading}
+        />
       ))}
     </div>
   )

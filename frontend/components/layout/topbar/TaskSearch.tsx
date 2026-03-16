@@ -4,13 +4,17 @@ import { useQuery } from '@tanstack/react-query'
 import { Search, X } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useIsXl } from '@/hooks/useMediaQuery'
 import { fetchTasks, type Task } from '@/lib/api'
-import { useIsLg } from '@/hooks/useMediaQuery'
 import { STALE_GIT } from '@/lib/polling'
 import { useSelectedProject } from '../ProjectSelector'
 import { typeIcons } from './constants'
 
-export function TaskSearch() {
+interface TaskSearchProps {
+  onExpandedChange?: (isExpanded: boolean) => void
+}
+
+export function TaskSearch({ onExpandedChange }: TaskSearchProps) {
   const router = useRouter()
   const [isSearchFocused, setIsSearchFocused] = useState(false)
   const [searchValue, setSearchValue] = useState('')
@@ -19,7 +23,7 @@ export function TaskSearch() {
   const selectedProjectId = useSelectedProject()
   const searchRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-  const isLg = useIsLg()
+  const isXl = useIsXl()
 
   const { data: tasksData } = useQuery({
     queryKey: ['tasks', selectedProjectId, 'search'],
@@ -91,7 +95,26 @@ export function TaskSearch() {
     }
   }, [isOpen])
 
-  const showPopover = !isLg
+  const showPopover = !isXl
+  const isInlineExpanded = !showPopover && (isSearchFocused || !!searchValue)
+  const isSearchExpanded = showPopover ? isOpen : isInlineExpanded
+
+  useEffect(() => {
+    setIsOpen(false)
+
+    if (showPopover) {
+      setIsSearchFocused(false)
+      inputRef.current?.blur()
+    }
+  }, [showPopover])
+
+  useEffect(() => {
+    onExpandedChange?.(isSearchExpanded)
+
+    return () => {
+      onExpandedChange?.(false)
+    }
+  }, [isSearchExpanded, onExpandedChange])
 
   const resultsDropdown = (
     <>
@@ -152,41 +175,39 @@ export function TaskSearch() {
             <Search className="w-5 h-5" />
           </button>
         ) : (
-          <div className="absolute right-0 top-1/2 -translate-y-1/2 z-50">
-            <div className="relative">
-              <div className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 shadow-xl">
-                <Search className="w-4 h-4 text-slate-500 flex-shrink-0" />
-                <input
-                  ref={inputRef}
-                  type="text"
-                  placeholder="Search tasks..."
-                  aria-label="Search tasks"
-                  value={searchValue}
-                  onChange={(e) => setSearchValue(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  onFocus={() => setIsSearchFocused(true)}
-                  className="bg-transparent text-sm text-slate-200 placeholder-slate-500 outline-none w-56"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearchValue('')
-                    setIsOpen(false)
-                  }}
-                  className="p-0.5 rounded text-slate-500 hover:text-slate-300 transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              {resultsDropdown}
+          <div className="relative z-50">
+            <div className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 shadow-xl">
+              <Search className="w-4 h-4 text-slate-500 flex-shrink-0" />
+              <input
+                ref={inputRef}
+                type="text"
+                placeholder="Search tasks..."
+                aria-label="Search tasks"
+                value={searchValue}
+                onChange={(e) => setSearchValue(e.target.value)}
+                onKeyDown={handleKeyDown}
+                onFocus={() => setIsSearchFocused(true)}
+                className="w-48 bg-transparent text-sm text-slate-200 placeholder-slate-500 outline-none lg:w-56"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchValue('')
+                  setIsOpen(false)
+                }}
+                className="p-0.5 rounded text-slate-500 hover:text-slate-300 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
+            {resultsDropdown}
           </div>
         )}
       </div>
     )
   }
 
-  // Desktop: inline search field (original behavior)
+  // Wide desktop: inline search field
   return (
     <div ref={searchRef}>
       <div

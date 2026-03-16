@@ -1,7 +1,9 @@
 .git
 .venv
 node_modules
+frontend/node_modules
 .next
+frontend/.next
 dist
 __pycache__
 *.pyc

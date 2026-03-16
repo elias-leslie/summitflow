@@ -114,16 +114,24 @@ def _parse_json_lines(text: str) -> list[dict[str, Any]]:
     return results
 
 
+def _docker_error(detail: str, stderr: str, stdout: str = "") -> HTTPException:
+    """Build a concise HTTP error for Docker CLI failures."""
+    message = (stderr or stdout or detail).strip()
+    return HTTPException(status_code=503, detail=f"{detail}: {message}")
+
+
 # ─── Endpoints ───────────────────────────────────────────────────
 
 
 @router.get("/status", response_model=list[ContainerStatus])
 async def get_status() -> list[ContainerStatus]:
     """Get all container statuses."""
-    stdout, _, rc = await _run_docker(
+    stdout, stderr, rc = await _run_docker(
         "docker", "ps", "--all", "--format", "json", *_project_filter()
     )
-    if rc != 0 or not stdout.strip():
+    if rc != 0:
+        raise _docker_error("Docker status unavailable", stderr, stdout)
+    if not stdout.strip():
         return []
 
     containers = _parse_json_lines(stdout)
@@ -175,17 +183,21 @@ async def get_status() -> list[ContainerStatus]:
 async def get_metrics() -> list[ContainerMetrics]:
     """Get CPU/memory per container."""
     # Get container IDs for our project first
-    id_stdout, _, rc = await _run_docker(
+    id_stdout, id_stderr, rc = await _run_docker(
         "docker", "ps", "-q", *_project_filter()
     )
-    if rc != 0 or not id_stdout.strip():
+    if rc != 0:
+        raise _docker_error("Docker metrics unavailable", id_stderr, id_stdout)
+    if not id_stdout.strip():
         return []
 
     container_ids = id_stdout.strip().split()
-    stdout, _, rc = await _run_docker(
+    stdout, stderr, rc = await _run_docker(
         "docker", "stats", "--no-stream", "--format", "json", *container_ids
     )
-    if rc != 0 or not stdout.strip():
+    if rc != 0:
+        raise _docker_error("Docker metrics unavailable", stderr, stdout)
+    if not stdout.strip():
         return []
 
     containers = _parse_json_lines(stdout)
@@ -337,10 +349,12 @@ async def create_backup(note: str = "") -> ActionResult:
 @router.get("/health", response_model=HealthSummary)
 async def health_summary() -> HealthSummary:
     """Aggregated health summary of all containers."""
-    stdout, _, rc = await _run_docker(
+    stdout, stderr, rc = await _run_docker(
         "docker", "ps", "--all", "--format", "json", *_project_filter()
     )
-    if rc != 0 or not stdout.strip():
+    if rc != 0:
+        raise _docker_error("Docker health unavailable", stderr, stdout)
+    if not stdout.strip():
         return HealthSummary(total=0, healthy=0, unhealthy=0, running=0, stopped=0)
 
     containers = _parse_json_lines(stdout)

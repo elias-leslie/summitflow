@@ -1,7 +1,7 @@
 'use client'
 
 import { useParams, usePathname } from 'next/navigation'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { NotificationBell } from '@/components/notifications'
 import { DEFAULT_PROJECT_ID, getProjectIdOrDefault } from '@/lib/project-config'
 
@@ -12,6 +12,7 @@ import { TaskSearch } from './topbar/TaskSearch'
 export function TopBar() {
   const pathname = usePathname()
   const params = useParams<{ id?: string }>()
+  const [isSearchExpanded, setIsSearchExpanded] = useState(false)
   const notificationProjectId = useMemo(() => {
     if (pathname?.startsWith('/projects/')) {
       return getProjectIdOrDefault(params.id)
@@ -24,11 +25,11 @@ export function TopBar() {
     <>
       <header className="h-16 flex-shrink-0 bg-slate-900 border-b border-slate-700/50 flex items-center px-6 gap-4">
         <AnimatedLogo />
-        <div className="flex-1" />
-        <Navigation />
-        <div className="flex-1" />
-        <TaskSearch />
+        <div className="flex min-w-0 flex-1 justify-center">
+          <Navigation compact={isSearchExpanded} />
+        </div>
         <div className="flex items-center gap-1 flex-shrink-0">
+          <TaskSearch onExpandedChange={setIsSearchExpanded} />
           <NotificationBell projectId={notificationProjectId} />
         </div>
       </header>

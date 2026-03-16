@@ -3,7 +3,7 @@
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
-import { useIsLg } from '@/hooks/useMediaQuery'
+import { useIsXl } from '@/hooks/useMediaQuery'
 import {
   LOGO_CONTAINER_WIDTH,
   LOGO_HEIGHT,
@@ -16,7 +16,7 @@ export function AnimatedLogo() {
   const router = useRouter()
   const [isExpanded, setIsExpanded] = useState(false)
   const collapseTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-  const isLg = useIsLg()
+  const isXl = useIsXl()
 
   useEffect(() => {
     if (isExpanded) {
@@ -34,13 +34,13 @@ export function AnimatedLogo() {
 
   const handleLogoClick = () => {
     router.push('/')
-    if (!isExpanded && isLg) {
+    if (!isExpanded && isXl) {
       setIsExpanded(true)
     }
   }
 
-  // Below lg: compact icon-only logo
-  const compact = !isLg
+  // Below xl: compact icon-only logo
+  const compact = !isXl
 
   return (
     <button

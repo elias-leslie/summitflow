@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import type { ContainerStatus } from '@/lib/api/docker'
+import { useState } from 'react'
+import type { ContainerMetrics, ContainerStatus } from '@/lib/api/docker'
 import { dockerApi } from '@/lib/api/docker'
 import { LogViewer } from './LogViewer'
 
@@ -19,7 +19,30 @@ function statusLabel(state: string, health: string): string {
   return state
 }
 
-export function ServiceCard({ container }: { container: ContainerStatus }) {
+interface ServiceCardProps {
+  container: ContainerStatus
+  metric?: ContainerMetrics
+  metricsLoading?: boolean
+}
+
+function MetricStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-md bg-neutral-950/40 px-2 py-1.5">
+      <div className="text-[10px] uppercase tracking-[0.14em] text-neutral-500">
+        {label}
+      </div>
+      <div className="truncate text-xs text-neutral-200" title={value}>
+        {value}
+      </div>
+    </div>
+  )
+}
+
+export function ServiceCard({
+  container,
+  metric,
+  metricsLoading = false,
+}: ServiceCardProps) {
   const [showLogs, setShowLogs] = useState(false)
   const queryClient = useQueryClient()
 
@@ -80,6 +103,22 @@ export function ServiceCard({ container }: { container: ContainerStatus }) {
         <p className="text-xs text-neutral-500 mb-3 truncate">
           {container.status}
         </p>
+
+        {isRunning && (
+          <div className="mb-3 rounded-lg border border-neutral-700/80 bg-neutral-900/60 p-2">
+            {metric ? (
+              <div className="grid grid-cols-3 gap-2">
+                <MetricStat label="CPU" value={metric.cpu_percent} />
+                <MetricStat label="Memory" value={metric.mem_usage} />
+                <MetricStat label="Mem %" value={metric.mem_percent} />
+              </div>
+            ) : (
+              <p className="text-xs text-neutral-500">
+                {metricsLoading ? 'Loading metrics...' : 'Metrics unavailable'}
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Actions */}
         <div className="flex gap-2">

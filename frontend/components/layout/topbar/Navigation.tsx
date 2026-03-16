@@ -4,16 +4,23 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useGitHealth } from '@/hooks/useGitHealth'
 import { usePersonaName } from '@/hooks/usePersonaName'
-import { GitStatusIndicator } from './GitStatusIndicator'
 import { navItems } from './constants'
+import { GitStatusIndicator } from './GitStatusIndicator'
 
-export function Navigation() {
+export function Navigation({ compact = false }: { compact?: boolean }) {
   const pathname = usePathname()
   const gitHealth = useGitHealth()
   const personaName = usePersonaName()
+  const labelClassName = compact ? 'hidden' : 'hidden lg:inline'
+  const externalIconClassName = compact ? 'hidden' : 'hidden lg:block'
 
   return (
-    <nav className="flex items-center justify-evenly gap-1 w-full max-w-md lg:max-w-lg">
+    <nav
+      className={clsx(
+        'flex min-w-0 w-full items-center justify-center gap-1 overflow-hidden transition-all duration-300',
+        compact ? 'max-w-sm lg:max-w-md' : 'max-w-md lg:max-w-lg',
+      )}
+    >
       {navItems.map((item) => {
         const Icon = item.icon
         const isExternal = 'external' in item && item.external
@@ -36,7 +43,7 @@ export function Navigation() {
 
         const className = clsx(
           'group flex items-center gap-2 rounded-lg text-sm font-medium transition-all duration-200',
-          'p-2 lg:px-3 lg:py-1.5',
+          compact ? 'p-2' : 'p-2 lg:px-3 lg:py-1.5',
           isActive
             ? `${ac.bg} ${ac.text}`
             : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-300',
@@ -44,18 +51,21 @@ export function Navigation() {
 
         const iconClassName = clsx(
           'w-4 h-4 transition-colors duration-200',
-          isActive
-            ? ac.text
-            : 'text-slate-500 group-hover:text-slate-400',
+          isActive ? ac.text : 'text-slate-500 group-hover:text-slate-400',
         )
 
         const content = (
           <>
             <Icon className={iconClassName} />
-            <span className="hidden lg:inline">{label}</span>
+            <span className={labelClassName}>{label}</span>
             {item.id === 'git' && <GitStatusIndicator state={gitHealth} />}
             {isExternal && (
-              <ExternalLink className="w-3 h-3 text-slate-600 group-hover:text-slate-500 hidden lg:block" />
+              <ExternalLink
+                className={clsx(
+                  'h-3 w-3 text-slate-600 group-hover:text-slate-500',
+                  externalIconClassName,
+                )}
+              />
             )}
           </>
         )
@@ -76,7 +86,12 @@ export function Navigation() {
         }
 
         return (
-          <Link key={item.id} href={item.href} className={className} title={label}>
+          <Link
+            key={item.id}
+            href={item.href}
+            className={className}
+            title={label}
+          >
             {content}
           </Link>
         )

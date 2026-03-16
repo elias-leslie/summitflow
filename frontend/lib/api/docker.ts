@@ -38,7 +38,19 @@ export interface ActionResult {
 
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(buildApiUrl(path), init)
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`)
+  if (!res.ok) {
+    let detail = ''
+    try {
+      const payload = await res.json()
+      detail =
+        typeof payload?.detail === 'string'
+          ? payload.detail
+          : JSON.stringify(payload)
+    } catch {
+      detail = res.statusText
+    }
+    throw new Error(`${res.status}: ${detail}`)
+  }
   return res.json()
 }
 
@@ -50,7 +62,9 @@ export const dockerApi = {
     fetchJson<{ logs: string }>(`/api/docker/logs/${service}?tail=${tail}`),
 
   restart: (service: string) =>
-    fetchJson<ActionResult>(`/api/docker/restart/${service}`, { method: 'POST' }),
+    fetchJson<ActionResult>(`/api/docker/restart/${service}`, {
+      method: 'POST',
+    }),
   stop: (service: string) =>
     fetchJson<ActionResult>(`/api/docker/stop/${service}`, { method: 'POST' }),
   start: (service: string) =>

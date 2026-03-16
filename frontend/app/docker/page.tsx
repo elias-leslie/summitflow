@@ -1,9 +1,8 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { dockerApi } from '@/lib/api/docker'
 import { ServiceGrid } from '@/components/docker/ServiceGrid'
-import { MetricsPanel } from '@/components/docker/MetricsPanel'
+import { dockerApi } from '@/lib/api/docker'
 
 export default function DockerPage() {
   const { data: health } = useQuery({
@@ -26,23 +25,15 @@ export default function DockerPage() {
         </div>
         {health && (
           <div className="flex items-center gap-3 text-sm">
-            <span className="text-neutral-400">
-              {health.total} containers
-            </span>
+            <span className="text-neutral-400">{health.total} containers</span>
             {health.healthy > 0 && (
-              <span className="text-emerald-400">
-                {health.healthy} healthy
-              </span>
+              <span className="text-emerald-400">{health.healthy} healthy</span>
             )}
             {health.unhealthy > 0 && (
-              <span className="text-red-400">
-                {health.unhealthy} unhealthy
-              </span>
+              <span className="text-red-400">{health.unhealthy} unhealthy</span>
             )}
             {health.stopped > 0 && (
-              <span className="text-neutral-500">
-                {health.stopped} stopped
-              </span>
+              <span className="text-neutral-500">{health.stopped} stopped</span>
             )}
           </div>
         )}
@@ -50,9 +41,6 @@ export default function DockerPage() {
 
       {/* Service Grid */}
       <ServiceGrid />
-
-      {/* Metrics */}
-      <MetricsPanel />
     </div>
   )
 }
