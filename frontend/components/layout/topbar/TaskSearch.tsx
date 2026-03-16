@@ -110,11 +110,13 @@ export function TaskSearch({ onExpandedChange }: TaskSearchProps) {
 
   useEffect(() => {
     onExpandedChange?.(isSearchExpanded)
+  }, [isSearchExpanded, onExpandedChange])
 
+  useEffect(() => {
     return () => {
       onExpandedChange?.(false)
     }
-  }, [isSearchExpanded, onExpandedChange])
+  }, [onExpandedChange])
 
   const resultsDropdown = (
     <>

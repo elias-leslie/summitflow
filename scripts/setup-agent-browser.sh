@@ -6,6 +6,7 @@ MANAGED_ROOT="${HOME}/.local/share/agent-browser-managed"
 BIN_DIR="${HOME}/.local/bin"
 USER_UNIT_DIR="${HOME}/.config/systemd/user"
 WRAPPER_SRC="${HOME}/summitflow/scripts/agent-browser-wrapper.js"
+CANONICAL_BROWSE_SRC="${HOME}/summitflow/scripts/browse"
 REAPER_SRC="${HOME}/summitflow/scripts/agent-browser-idle-reaper.js"
 SERVICE_SRC="${HOME}/summitflow/scripts/systemd/agent-browser-idle-reaper.service"
 TIMER_SRC="${HOME}/summitflow/scripts/systemd/agent-browser-idle-reaper.timer"
@@ -46,7 +47,8 @@ cd "${MANAGED_ROOT}"
 npm install "agent-browser@${VERSION}"
 
 ln -sfnT "${WRAPPER_SRC}" "${BIN_DIR}/agent-browser"
-chmod +x "${WRAPPER_SRC}" "${REAPER_SRC}"
+ln -sfnT "${CANONICAL_BROWSE_SRC}" "${BIN_DIR}/browse"
+chmod +x "${WRAPPER_SRC}" "${CANONICAL_BROWSE_SRC}" "${REAPER_SRC}"
 
 cp "${SERVICE_SRC}" "${USER_UNIT_DIR}/agent-browser-idle-reaper.service"
 cp "${TIMER_SRC}" "${USER_UNIT_DIR}/agent-browser-idle-reaper.timer"
@@ -58,4 +60,5 @@ systemctl --user restart agent-browser-idle-reaper.timer
 prune_legacy_skill_bundle
 
 echo "agent-browser wrapper: ${BIN_DIR}/agent-browser"
+echo "browse wrapper: ${BIN_DIR}/browse"
 echo "agent-browser package: $(node -p "require('${MANAGED_ROOT}/node_modules/agent-browser/package.json').version")"

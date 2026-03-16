@@ -223,7 +223,7 @@ class TestBuildRefactorSteps:
         browser_step = next(
             s for s in steps if "browser" in s["description"].lower() or "console" in s["description"].lower()
         )
-        assert browser_step["spec"]["verify_commands"] == ["~/.local/bin/agent-browser console"]
+        assert browser_step["spec"]["verify_commands"] == ["~/.local/bin/browse console"]
 
     def test_no_issues_falls_back_to_refactor_step(self) -> None:
         """Empty issues list falls back to refactor step."""

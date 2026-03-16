@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+# browse - Browser automation CLI for SummitFlow agents and operators.
+#
+# Canonical SummitFlow wrapper for remote browser automation.
+# Routes DOM-style work to Lightpanda and visual capture to Chrome.
+
+set -euo pipefail
+
+HOST="${BROWSE_HOST:-192.168.8.234}"
+AGENT_BROWSER_BIN="${HOME}/.local/bin/agent-browser"
+
+cdp_ws() {
+    local port="$1"
+    local raw ws
+    raw=$(curl -sf --connect-timeout 2 "http://${HOST}:${port}/json/version" 2>/dev/null) || return 1
+    ws=$(echo "$raw" | jq -r '.webSocketDebuggerUrl // empty' 2>/dev/null) || return 1
+    [[ -z "$ws" ]] && return 1
+    echo "$ws" | sed "s|0\.0\.0\.0:[0-9]*|${HOST}:${port}|; s|127\.0\.0\.1:[0-9]*|${HOST}:${port}|"
+}
+
+engine_up() {
+    curl -sf --connect-timeout 2 "http://${HOST}:$1/json/version" >/dev/null 2>&1
+}
+
+case "${1:-}" in
+    health)
+        printf "%-12s %-6s %-6s %s\n" "ENGINE" "PORT" "STATUS" "DETAILS"
+        for endpoint in "chrome:9222" "lightpanda:9223"; do
+            name="${endpoint%%:*}"
+            port="${endpoint##*:}"
+            if engine_up "$port"; then
+                details=$(curl -sf "http://${HOST}:${port}/json/version" | jq -r '.Browser // .webSocketDebuggerUrl' 2>/dev/null)
+                printf "%-12s %-6s %-6s %s\n" "$name" "$port" "UP" "$details"
+            else
+                printf "%-12s %-6s %-6s %s\n" "$name" "$port" "DOWN" "-"
+            fi
+        done
+        exit 0
+        ;;
+    update)
+        current=$("$AGENT_BROWSER_BIN" --version 2>/dev/null | grep -oP '[\d.]+' | head -1)
+        latest=$(npm view agent-browser version 2>/dev/null || echo "?")
+        echo "agent-browser: installed=${current} latest=${latest}"
+        if [[ "$current" != "$latest" && "$latest" != "?" ]]; then
+            echo "  UPDATE: bash ~/summitflow/scripts/setup-agent-browser.sh ${latest}"
+        fi
+        echo ""
+        echo "Browser engines are managed on the test VM:"
+        echo "  docker pull lightpanda/browser:nightly && docker restart lightpanda"
+        echo "  Rebuild Chrome image from summitflow/docker/agent-browser.Dockerfile"
+        exit 0
+        ;;
+esac
+
+ENGINE="${BROWSE_ENGINE:-}"
+while [[ "${1:-}" == --* ]]; do
+    case "$1" in
+        --chrome)
+            ENGINE=chrome
+            shift
+            ;;
+        --lp)
+            ENGINE=lightpanda
+            shift
+            ;;
+        --engine)
+            ENGINE="${2:-chrome}"
+            shift 2
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
+if [[ -z "$ENGINE" ]]; then
+    for arg in "$@"; do
+        case "$arg" in
+            screenshot|pdf|inspect|trace|record)
+                ENGINE=chrome
+                break
+                ;;
+        esac
+    done
+fi
+
+if [[ -z "$ENGINE" ]]; then
+    if engine_up 9223; then
+        ENGINE=lightpanda
+    elif engine_up 9222; then
+        ENGINE=chrome
+    else
+        echo "ERROR: No browsers available on ${HOST}" >&2
+        exit 1
+    fi
+fi
+
+if [[ "$ENGINE" == "lightpanda" ]]; then
+    WS=$(cdp_ws 9223 2>/dev/null) || WS=$(cdp_ws 9222 2>/dev/null) || {
+        echo "ERROR: No browsers available on ${HOST}" >&2
+        exit 1
+    }
+else
+    WS=$(cdp_ws 9222 2>/dev/null) || WS=$(cdp_ws 9223 2>/dev/null) || {
+        echo "ERROR: No browsers available on ${HOST}" >&2
+        exit 1
+    }
+fi
+
+"$AGENT_BROWSER_BIN" --cdp "$WS" "$@"
+EXIT_CODE=$?
+
+case "${1:-}" in
+    screenshot|pdf|close)
+        for port in 9222 9223; do
+            curl -sf "http://${HOST}:${port}/json/list" 2>/dev/null \
+                | jq -r '.[].id' 2>/dev/null \
+                | while read -r tab_id; do
+                    curl -sf "http://${HOST}:${port}/json/close/${tab_id}" >/dev/null 2>&1
+                done
+        done
+        ;;
+esac
+
+exit $EXIT_CODE

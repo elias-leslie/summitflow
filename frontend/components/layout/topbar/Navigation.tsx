@@ -7,18 +7,29 @@ import { usePersonaName } from '@/hooks/usePersonaName'
 import { navItems } from './constants'
 import { GitStatusIndicator } from './GitStatusIndicator'
 
-export function Navigation({ compact = false }: { compact?: boolean }) {
+interface NavigationProps {
+  compact?: boolean
+  dense?: boolean
+  measure?: boolean
+}
+
+export function Navigation({
+  compact = false,
+  dense = false,
+  measure = false,
+}: NavigationProps) {
   const pathname = usePathname()
   const gitHealth = useGitHealth()
   const personaName = usePersonaName()
-  const labelClassName = compact ? 'hidden' : 'hidden lg:inline'
-  const externalIconClassName = compact ? 'hidden' : 'hidden lg:block'
+  const labelClassName = compact ? 'hidden' : 'inline'
+  const externalIconClassName = compact || dense ? 'hidden' : 'block'
 
   return (
     <nav
       className={clsx(
-        'flex min-w-0 w-full items-center justify-center gap-1 overflow-hidden transition-all duration-300',
-        compact ? 'max-w-sm lg:max-w-md' : 'max-w-md lg:max-w-lg',
+        'flex min-w-0 items-center transition-all duration-300',
+        measure ? 'w-max gap-1 whitespace-nowrap' : 'w-full overflow-hidden',
+        dense ? 'justify-start gap-0' : 'justify-center gap-1',
       )}
     >
       {navItems.map((item) => {
@@ -42,8 +53,9 @@ export function Navigation({ compact = false }: { compact?: boolean }) {
         const label = item.id === 'chat' ? personaName : item.label
 
         const className = clsx(
-          'group flex items-center gap-2 rounded-lg text-sm font-medium transition-all duration-200',
-          compact ? 'p-2' : 'p-2 lg:px-3 lg:py-1.5',
+          'group flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg font-medium transition-all duration-200',
+          dense ? 'gap-1 text-xs' : 'text-sm',
+          compact ? 'p-2' : dense ? 'px-1.5 py-1.5' : 'px-3 py-1.5',
           isActive
             ? `${ac.bg} ${ac.text}`
             : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-300',

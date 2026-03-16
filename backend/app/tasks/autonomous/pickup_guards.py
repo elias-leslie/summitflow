@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import subprocess
+import os
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -16,9 +16,7 @@ from app.storage.connection import get_connection
 _AGENT_HUB_URL = f"{AGENT_HUB_URL}/api/projects/{{project_id}}/execution-permission"
 _REDIS_URL = f"{REDIS_URL}/1"
 _REDIS_TIMEOUT = 3
-_BACKEND_SERVICE = "summitflow-backend"
 _HTTP_TIMEOUT = 5.0
-_SUBPROCESS_TIMEOUT = 5
 _DISPATCHABLE_STATUSES = ("queue", "pending", "blocked")
 
 
@@ -116,19 +114,20 @@ def check_system_health(project_id: str) -> dict[str, Any] | None:
     except Exception as e:
         failing.append("redis")
         details["redis"] = f"unhealthy: {e}"
-    # Backend (systemd)
+    # Backend (HTTP health check — works in both Docker and systemd runtimes)
     try:
-        result = subprocess.run(
-            ["systemctl", "--user", "is-active", _BACKEND_SERVICE],
-            capture_output=True, text=True, timeout=_SUBPROCESS_TIMEOUT,
-        )
-        if result.stdout.strip() == "active":
+        import httpx
+        backend_url = os.getenv("ST_API_BASE", "http://localhost:8001/api")
+        health_url = backend_url.rstrip("/api").rstrip("/") + "/health"
+        resp = httpx.get(health_url, timeout=_HTTP_TIMEOUT)
+        if resp.status_code == 200:
             details["backend"] = "healthy"
         else:
             failing.append("backend")
-            details["backend"] = f"unhealthy: {result.stdout.strip()}"
-    except Exception:
-        details["backend"] = "check_unavailable"
+            details["backend"] = f"unhealthy: status={resp.status_code}"
+    except Exception as e:
+        failing.append("backend")
+        details["backend"] = f"unhealthy: {e}"
     if failing:
         return {"status": "unhealthy", "failing_services": failing, "details": details}
     return None

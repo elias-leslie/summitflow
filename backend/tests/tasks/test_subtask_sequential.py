@@ -51,7 +51,8 @@ def test_subtask_execution_order_sequential() -> None:
          patch("app.tasks.autonomous.exec_modules.execution_loop.assert_task_runnable"), \
          patch("app.tasks.autonomous.exec_modules.execution_loop.emit_progress"), \
          patch("app.tasks.autonomous.exec_modules.execution_loop.emit_log"), \
-         patch("app.tasks.autonomous.exec_modules.execution_loop.has_uncommitted_changes", return_value=False):
+         patch("app.tasks.autonomous.exec_modules.execution_loop.has_uncommitted_changes", return_value=False), \
+         patch("app.tasks.autonomous.exec_modules.execution_loop._check_health_or_wait", return_value=True):
 
         results, completed_count = execute_subtask_loop(
             task_id=task_id,
@@ -104,7 +105,8 @@ def test_subtask_execution_stops_on_failure_when_orchestrator_decides() -> None:
          patch("app.tasks.autonomous.exec_modules.execution_loop.emit_progress"), \
          patch("app.tasks.autonomous.exec_modules.execution_loop.emit_log"), \
          patch("app.tasks.autonomous.exec_modules.execution_loop.has_uncommitted_changes", return_value=False), \
-         patch("app.tasks.autonomous.exec_modules.execution_loop._handle_subtask_failure", return_value=False):
+         patch("app.tasks.autonomous.exec_modules.execution_loop._handle_subtask_failure", return_value=False), \
+         patch("app.tasks.autonomous.exec_modules.execution_loop._check_health_or_wait", return_value=True):
 
         results, _ = execute_subtask_loop(
             task_id=task_id,
@@ -156,7 +158,8 @@ def test_subtask_execution_continues_on_failure_when_orchestrator_decides() -> N
          patch("app.tasks.autonomous.exec_modules.execution_loop.emit_progress"), \
          patch("app.tasks.autonomous.exec_modules.execution_loop.emit_log"), \
          patch("app.tasks.autonomous.exec_modules.execution_loop.has_uncommitted_changes", return_value=False), \
-         patch("app.tasks.autonomous.exec_modules.execution_loop._handle_subtask_failure", return_value=True):
+         patch("app.tasks.autonomous.exec_modules.execution_loop._handle_subtask_failure", return_value=True), \
+         patch("app.tasks.autonomous.exec_modules.execution_loop._check_health_or_wait", return_value=True):
 
         results, _ = execute_subtask_loop(
             task_id=task_id,

@@ -10,6 +10,7 @@ from typing import Any
 import httpx
 import typer
 
+from ..config import _DEFAULT_API_BASE
 from ..output import output_error, output_json, output_success
 from ._http_errors import parse_error_detail
 
@@ -25,9 +26,6 @@ UPDATE_FIELDS_MSG = (
     "At least one field must be provided "
     "(--name, --base-url, --root-path, --health-endpoint)"
 )
-
-
-_DEFAULT_API_BASE = "http://localhost:8001/api"
 
 
 def get_api_base() -> str:

@@ -6,9 +6,14 @@ catches ~70% of issues before they reach main.
 
 from __future__ import annotations
 
+import shutil
 import subprocess
+from pathlib import Path
 
 from ..output import output_warning
+
+# Resolve dt path once — ~/bin/dt may not be on PATH in worktree subprocesses
+_DT_PATH = shutil.which("dt") or str(Path.home() / "bin" / "dt")
 
 
 def run_qa_gate(worktree_path: str) -> tuple[bool, str]:
@@ -16,8 +21,8 @@ def run_qa_gate(worktree_path: str) -> tuple[bool, str]:
     combined_output: list[str] = []
 
     for cmd, timeout in [
-        (["dt", "-q", "-d"], 120),
-        (["dt", "pytest"], 300),
+        ([_DT_PATH, "-q", "-d"], 120),
+        ([_DT_PATH, "pytest"], 300),
     ]:
         try:
             result = subprocess.run(

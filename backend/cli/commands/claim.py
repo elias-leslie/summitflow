@@ -45,6 +45,13 @@ def _claim_task(
     task_id = str(task.get("id", task_id))
     project_id = task.get("project_id", "")
 
+    # Validate status before allocating worktree/ports
+    status = task.get("status", "")
+    claimable = ("queue", "pending", "blocked")
+    if status not in claimable and not force:
+        output_error(f"Task {task_id} cannot be claimed (status={status}). Expected one of: {', '.join(claimable)}")
+        raise typer.Exit(1)
+
     existing = get_snapshot_info(task_id)
     if existing and not force:
         return handle_existing_checkpoint(task_id, existing)
