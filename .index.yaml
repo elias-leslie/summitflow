@@ -1,5 +1,5 @@
 project: summitflow
-generated_at: 2026-03-16 01:30 UTC
+generated_at: 2026-03-16 01:46 UTC
 environment:
   python_version: '>=3.13'
   venv_path: backend/.venv
@@ -24,7 +24,7 @@ cli:
   - 'st done <task-id>  # Complete task (merge + cleanup)'
 explorer:
   scan_status: completed
-  last_completed_scan: '2026-03-16T01:15:47.855404+00:00'
+  last_completed_scan: '2026-03-16T01:30:47.390176+00:00'
   last_scan_type: file
   entry_counts:
     architecture: 1

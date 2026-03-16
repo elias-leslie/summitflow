@@ -190,6 +190,10 @@ main_docker() {
         verify_frontend || ((errors++))
     fi
 
+    # Auto-recover Hatchet token if workers are crash-looping
+    sleep 3  # Give workers time to attempt connection
+    hatchet_ensure_valid_token || log_warn "Hatchet token recovery skipped"
+
     # Post-rebuild sync (only for summitflow backend)
     if [ "$FRONTEND_ONLY" = false ] && [ "$PROJECT_NAME" = "summitflow" ] && [ $errors -eq 0 ]; then
         local summitflow_api="${ST_API_BASE:-http://localhost:8001/api}"

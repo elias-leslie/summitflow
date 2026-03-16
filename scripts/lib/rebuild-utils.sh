@@ -238,6 +238,83 @@ build_frontend() { local d="$PROJECT_DIR/frontend"; [ ! -d "$d" ] && d="$PROJECT
 verify_backend() { local p="${1:-$BACKEND_PORT}"; [ "$p" -eq 0 ] 2>/dev/null && return 0; log "Checking backend ($p)..."; for i in $(seq 1 10); do curl -s "http://localhost:$p/health" &>/dev/null && { log_success "Backend OK"; return 0; }; sleep 1; done; log_error "Backend failed"; return 1; }
 verify_frontend() { local p="${1:-$FRONTEND_PORT}"; [ "$p" -eq 0 ] 2>/dev/null && return 0; log "Checking frontend ($p)..."; for i in $(seq 1 30); do local s=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "http://localhost:$p/" 2>/dev/null); [[ "$s" =~ ^(2|3)[0-9][0-9]$ ]] && { log_success "Frontend OK ($s)"; return 0; }; sleep 1; done; log_error "Frontend failed"; return 1; }
 
+# ─── Hatchet token auto-recovery ───────────────────────────────
+# Detects invalid Hatchet tokens and regenerates from the running
+# Hatchet container. Writes the new token to compose .env and
+# restarts affected workers. Prevents the recurring "invalid auth
+# token" crash loop after Hatchet key rotation or volume recreation.
+
+hatchet_ensure_valid_token() {
+    [ "$RUNTIME_MODE" != "docker" ] && return 0
+    [ ! -f "$_COMPOSE_FILE" ] && return 0
+
+    # Find a worker service to test
+    local test_svc=""
+    for svc in $(_compose_all_services); do
+        [[ "$svc" == *worker* ]] && { test_svc="$svc"; break; }
+    done
+    [ -z "$test_svc" ] && return 0
+
+    # Check if any worker is crash-looping with "invalid auth token"
+    local recent_logs
+    recent_logs=$(docker compose -f "$_COMPOSE_FILE" logs --tail 5 "$test_svc" 2>/dev/null)
+    if ! echo "$recent_logs" | grep -q "invalid auth token"; then
+        return 0
+    fi
+
+    log_warn "Hatchet token invalid — auto-regenerating..."
+
+    # Extract tenant ID from current token in .env
+    local env_file="$_COMPOSE_DIR/.env"
+    local current_token
+    current_token=$(grep '^HATCHET_CLIENT_TOKEN=' "$env_file" 2>/dev/null | cut -d= -f2- | tr -d '"')
+    local tenant_id=""
+
+    if [ -n "$current_token" ]; then
+        # Decode JWT payload to get tenant (sub claim)
+        tenant_id=$(echo "$current_token" | cut -d. -f2 | base64 -d 2>/dev/null \
+            | grep -oP '"sub"\s*:\s*"[0-9a-f-]+"' | grep -oP '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
+    fi
+
+    if [ -z "$tenant_id" ]; then
+        log_error "Cannot extract tenant ID from existing token. Manual token generation required."
+        return 1
+    fi
+
+    # Generate new token (10-year expiry)
+    local new_token
+    new_token=$(docker compose -f "$_COMPOSE_FILE" exec -T hatchet \
+        /hatchet-admin token create --config /config \
+        --tenant-id "$tenant_id" --expiresIn 87600h 2>/dev/null \
+        | grep -oE 'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+')
+
+    if [ -z "$new_token" ]; then
+        log_error "Hatchet token generation failed. Is the Hatchet container healthy?"
+        return 1
+    fi
+
+    # Update .env file
+    sed -i "s|^HATCHET_CLIENT_TOKEN=.*|HATCHET_CLIENT_TOKEN=\"$new_token\"|" "$env_file"
+    log_success "Hatchet token regenerated and saved to .env"
+
+    # Force-recreate all workers to pick up the new token
+    local worker_svcs=""
+    for svc in $(docker compose -f "$_COMPOSE_FILE" config --services 2>/dev/null); do
+        [[ "$svc" == *worker* ]] && worker_svcs="$worker_svcs $svc"
+    done
+    # Also recreate API services that use the token
+    for svc in $(docker compose -f "$_COMPOSE_FILE" config --services 2>/dev/null); do
+        [[ "$svc" == *-api ]] && worker_svcs="$worker_svcs $svc"
+    done
+
+    if [ -n "$worker_svcs" ]; then
+        log "Recreating services with new Hatchet token:$worker_svcs"
+        # shellcheck disable=SC2086
+        docker compose -f "$_COMPOSE_FILE" up -d --force-recreate $worker_svcs 2>&1 | tail -5
+        log_success "Services recreated with valid Hatchet token"
+    fi
+}
+
 export -f log log_success log_warn log_error log_info
 export -f service_exists restart_service clear_build_cache clear_nextjs_cache build_frontend verify_backend verify_frontend
-export -f detect_docker _detect_stale_image _project_to_prefix _compose_all_services _compose_api_service _compose_web_service _compose_service_port _resolve_ports docker_build_and_recreate docker_restart_services docker_run_migration
+export -f detect_docker _detect_stale_image _project_to_prefix _compose_all_services _compose_api_service _compose_web_service _compose_service_port _resolve_ports docker_build_and_recreate docker_restart_services docker_run_migration hatchet_ensure_valid_token
