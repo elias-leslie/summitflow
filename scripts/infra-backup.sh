@@ -124,12 +124,6 @@ main() {
     local compose_env="$PROJECT_DIR/docker/compose/.env"
     [ -f "$compose_env" ] && cp "$compose_env" "$STAGING_DIR/configs/compose-env"
 
-    # Hatchet config (if mounted volume is accessible)
-    local hatchet_config="/config"
-    if [ -d "$hatchet_config" ]; then
-        cp -r "$hatchet_config" "$STAGING_DIR/configs/hatchet-config" 2>/dev/null || true
-    fi
-
     # SMB credentials (if present)
     [ -f "$HOME/.smbcredentials" ] && cp "$HOME/.smbcredentials" "$STAGING_DIR/configs/smbcredentials"
 

@@ -34,6 +34,8 @@ Thumbs.db
 .env.local
 .env*.local
 docker/compose/.env
+docker/compose/hatchet-config/
+docker/compose/hatchet-keys/
 
 # Logs
 *.log

@@ -1,73 +1,76 @@
 #!/usr/bin/env bash
-# benchmark-browsers.sh — Compare Chrome CDP page load performance
-# Runs against production frontend URLs from the test VM
-# Usage: benchmark-browsers.sh [--host 192.168.8.234]
+# benchmark-browsers.sh — Compare Chrome vs Lightpanda CDP performance
+# Runs Puppeteer-based tests on the Proxmox test VM against production frontends
+#
+# Usage:
+#   benchmark-browsers.sh                     # Run full benchmark
+#   benchmark-browsers.sh --iterations 5      # Custom iteration count
+#   benchmark-browsers.sh --chrome-only       # Skip Lightpanda
+#   benchmark-browsers.sh --lightpanda-only   # Skip Chrome
 
-set -uo pipefail
+set -euo pipefail
 
-TEST_HOST="${1:-192.168.8.234}"
-CHROME_CDP="ws://${TEST_HOST}:9222"
-PROD_HOST="192.168.8.244"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
-# Frontend URLs to test
-declare -A URLS=(
-    ["summitflow"]="http://${PROD_HOST}:3001"
-    ["portfolio"]="http://${PROD_HOST}:3003"
-    ["agent-hub"]="http://${PROD_HOST}:3002"
-    ["monkey-fight"]="http://${PROD_HOST}:3000"
-)
+# Load config
+ENV_FILE="${PROJECT_DIR}/docker/compose/.env"
+if [[ -f "$ENV_FILE" ]]; then
+    eval "$(grep -E '^TEST_VM_HOST=' "$ENV_FILE" | sed 's/^/export /')"
+fi
 
-echo "Browser Benchmark — $(date)"
-echo "Chrome CDP: ${CHROME_CDP}"
-echo "Production: ${PROD_HOST}"
-echo ""
-printf "%-15s %-8s %-10s %-10s %-8s\n" "App" "Status" "Load(ms)" "DOM Nodes" "Errors"
-printf "%-15s %-8s %-10s %-10s %-8s\n" "---" "---" "---" "---" "---"
+TEST_HOST="${TEST_VM_HOST:-192.168.8.234}"
+ITERATIONS=3
+RUN_CHROME=true
+RUN_LIGHTPANDA=true
 
-for app in "${!URLS[@]}"; do
-    url="${URLS[$app]}"
-
-    # Use CDP to navigate and measure
-    result=$(ssh kasadis@"${TEST_HOST}" "node -e '
-const WebSocket = require(\"ws\");
-const ws = new WebSocket(\"ws://127.0.0.1:9222/json/new\");
-// This is a placeholder — full CDP automation requires puppeteer or similar
-// For now, just verify connectivity
-const http = require(\"http\");
-const start = Date.now();
-http.get(\"${url}\", (res) => {
-    let data = \"\";
-    res.on(\"data\", (chunk) => data += chunk);
-    res.on(\"end\", () => {
-        const elapsed = Date.now() - start;
-        console.log(JSON.stringify({
-            status: res.statusCode,
-            loadMs: elapsed,
-            bodySize: data.length,
-            errors: 0
-        }));
-        process.exit(0);
-    });
-}).on(\"error\", (e) => {
-    console.log(JSON.stringify({status: 0, loadMs: 0, bodySize: 0, errors: 1}));
-    process.exit(1);
-});
-setTimeout(() => process.exit(1), 10000);
-' 2>/dev/null")
-
-    if [[ -n "$result" ]]; then
-        status=$(echo "$result" | jq -r '.status')
-        load_ms=$(echo "$result" | jq -r '.loadMs')
-        body_size=$(echo "$result" | jq -r '.bodySize')
-        errors=$(echo "$result" | jq -r '.errors')
-        printf "%-15s %-8s %-10s %-10s %-8s\n" "$app" "$status" "${load_ms}ms" "${body_size}B" "$errors"
-    else
-        printf "%-15s %-8s %-10s %-10s %-8s\n" "$app" "FAIL" "-" "-" "1"
-    fi
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --iterations)     ITERATIONS="$2"; shift 2 ;;
+        --chrome-only)    RUN_LIGHTPANDA=false; shift ;;
+        --lightpanda-only) RUN_CHROME=false; shift ;;
+        --host)           TEST_HOST="$2"; shift 2 ;;
+        *) echo "Unknown: $1"; exit 1 ;;
+    esac
 done
 
+echo "Browser Benchmark — $(date)"
+echo "Test VM: ${TEST_HOST} | Iterations: ${ITERATIONS}"
 echo ""
 
-# Container resource usage
-echo "Container Resources:"
-ssh kasadis@"${TEST_HOST}" "docker stats --no-stream --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}' 2>/dev/null" || echo "  (could not read docker stats)"
+# Run the Puppeteer benchmark on the test VM
+BROWSERS=""
+[[ "$RUN_CHROME" == true ]] && BROWSERS="${BROWSERS}chrome,"
+[[ "$RUN_LIGHTPANDA" == true ]] && BROWSERS="${BROWSERS}lightpanda,"
+BROWSERS="${BROWSERS%,}"
+
+RAW=$(ssh "kasadis@${TEST_HOST}" "cd ~/benchmark && ITERATIONS=${ITERATIONS} BROWSERS=${BROWSERS} node run.js 2>&1")
+
+# Parse and display results
+echo "$RAW" | jq -r 'select(.event == "stats_before") | "Container Resources (before):\n" + (.stats | map("  \(.name): \(.cpu) CPU, \(.mem) RAM") | join("\n"))' 2>/dev/null || true
+echo ""
+
+# Results table
+echo "Per-page results:"
+printf "%-12s %-15s %-4s %-8s %-8s %-8s %-8s %-8s %-8s\n" "Browser" "Page" "Iter" "Load" "DOM-Q" "JS-Eval" "Extract" "Total" "Nodes"
+printf "%-12s %-15s %-4s %-8s %-8s %-8s %-8s %-8s %-8s\n" "-------" "----" "----" "----" "-----" "-------" "-------" "-----" "-----"
+echo "$RAW" | jq -r 'select(.event == "result" and .status == "ok") | [.browser, .page, .iteration, (.loadMs|tostring)+"ms", (.domQueryMs|tostring)+"ms", (.jsEvalMs|tostring)+"ms", (.extractMs|tostring)+"ms", (.totalMs|tostring)+"ms", .domNodes] | @tsv' 2>/dev/null \
+    | while IFS=$'\t' read -r browser page iter load domq jseval extract total nodes; do
+        printf "%-12s %-15s %-4s %-8s %-8s %-8s %-8s %-8s %-8s\n" "$browser" "$page" "$iter" "$load" "$domq" "$jseval" "$extract" "$total" "$nodes"
+    done
+
+# Errors
+ERRORS=$(echo "$RAW" | jq -r 'select(.event == "result" and .status != "ok") | "\(.browser) \(.page) iter\(.iteration): \(.error // .status)"' 2>/dev/null || true)
+if [[ -n "$ERRORS" ]]; then
+    echo ""
+    echo "Errors:"
+    echo "$ERRORS" | sed 's/^/  /'
+fi
+
+# Summary
+echo ""
+echo "Summary:"
+echo "$RAW" | jq -r 'select(.event == "summary") | "  \(.browser): \(.runs // 0) runs, avg \(.avgTotalMs // "-")ms total | load=\(.avgLoadMs // "-")ms dom=\(.avgDomQueryMs // "-")ms js=\(.avgJsEvalMs // "-")ms extract=\(.avgExtractMs // "-")ms | nodes=\(.avgDomNodes // "-") text=\(.avgBodyText // "-")B html=\(.avgBodyHtml // "-")B | mem: \(.memBefore // "?") → \(.memAfter // "?")"' 2>/dev/null || true
+
+echo ""
+echo "$RAW" | jq -r 'select(.event == "stats_after") | "Container Resources (after):\n" + (.stats | map("  \(.name): \(.cpu) CPU, \(.mem) RAM") | join("\n"))' 2>/dev/null || true

@@ -21,7 +21,8 @@ export PROJECT_DIR PROJECT_NAME IS_WORKTREE WORKTREE_TASK_ID
 # ─── Sanitize environment for Docker Compose ──────────────────
 # Unset vars that leak from .env.local / systemd and conflict with
 # container-level PORT, HATCHET_CLIENT_TOKEN, etc.
-unset PORT HATCHET_CLIENT_TOKEN DATABASE_URL REDIS_URL AGENT_HUB_DB_URL \
+unset PORT HATCHET_CLIENT_TOKEN HATCHET_COOKIE_SECRET \
+      DATABASE_URL REDIS_URL AGENT_HUB_DB_URL \
       AGENT_HUB_REDIS_URL PORTFOLIO_DB_URL INTERNAL_SERVICE_SECRET \
       AGENT_HUB_SECRET_KEY 2>/dev/null || true
 

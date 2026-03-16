@@ -52,33 +52,58 @@ services:
       - "6379:6379"
     restart: unless-stopped
 
-  hatchet:
-    image: ghcr.io/hatchet-dev/hatchet/hatchet-lite:${HATCHET_TAG:-latest}
+  hatchet-migrate:
+    image: ghcr.io/hatchet-dev/hatchet/hatchet-migrate:${HATCHET_TAG:-latest}
     profiles: [infra, summitflow, agent-hub, portfolio, full]
+    environment:
+      DATABASE_URL: "postgresql://admin:${POSTGRES_PASSWORD:-changeme}@postgres:5432/hatchet"
     depends_on:
       postgres:
         condition: service_healthy
+
+  hatchet-setup-config:
+    image: ghcr.io/hatchet-dev/hatchet/hatchet-admin:${HATCHET_TAG:-latest}
+    profiles: [infra, summitflow, agent-hub, portfolio, full]
+    command: /hatchet/hatchet-admin quickstart --skip certs --generated-config-dir /hatchet/config --overwrite=false
     environment:
-      DATABASE_URL: "postgresql://admin:${POSTGRES_PASSWORD}@postgres:5432/hatchet"
+      DATABASE_URL: "postgresql://admin:${POSTGRES_PASSWORD:-changeme}@postgres:5432/hatchet"
       SERVER_AUTH_COOKIE_DOMAIN: "localhost"
-      SERVER_AUTH_COOKIE_INSECURE: "true"
-      SERVER_AUTH_SET_EMAIL_VERIFIED: "true"
+      SERVER_AUTH_COOKIE_INSECURE: "t"
+      SERVER_AUTH_SET_EMAIL_VERIFIED: "t"
       SERVER_URL: "http://localhost:8888"
-      SERVER_GRPC_INSECURE: "true"
+      SERVER_GRPC_INSECURE: "t"
       SERVER_GRPC_BIND_ADDRESS: "0.0.0.0"
-      SERVER_GRPC_PORT: "7077"
-      SERVER_GRPC_BROADCAST_ADDRESS: "hatchet:7077"
+      SERVER_GRPC_BROADCAST_ADDRESS: "hatchet:7070"
+      SERVER_MSGQUEUE_KIND: "postgres"
+      SERVER_LOGGER_LEVEL: "warn"
     volumes:
-      # IMPORTANT: This volume holds Hatchet's signing keys. If lost,
-      # all client tokens are invalidated. Never run `docker compose down -v`
-      # or `docker volume rm` on this volume. rebuild.sh auto-recovers
-      # tokens if they become invalid after key rotation.
-      - hatchet-config:/config
+      - ./hatchet-config:/hatchet/config
+    depends_on:
+      hatchet-migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+
+  hatchet:
+    image: ghcr.io/hatchet-dev/hatchet/hatchet-engine:${HATCHET_TAG:-latest}
+    profiles: [infra, summitflow, agent-hub, portfolio, full]
+    command: /hatchet/hatchet-engine --config /hatchet/config
+    environment:
+      DATABASE_URL: "postgresql://admin:${POSTGRES_PASSWORD:-changeme}@postgres:5432/hatchet"
+      SERVER_GRPC_BIND_ADDRESS: "0.0.0.0"
+      SERVER_GRPC_INSECURE: "t"
+    volumes:
+      - ./hatchet-config:/hatchet/config
+    depends_on:
+      hatchet-setup-config:
+        condition: service_completed_successfully
+      hatchet-migrate:
+        condition: service_completed_successfully
     ports:
-      - "7077:7077"
-      - "8888:8888"
+      - "7070:7070"
+      - "8888:8733"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/api/ready"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:8733/ready"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -96,7 +121,7 @@ services:
       PORT: "8001"
       HATCHET_CLIENT_TOKEN: "${HATCHET_CLIENT_TOKEN}"
       HATCHET_CLIENT_TLS_STRATEGY: "none"
-      HATCHET_CLIENT_HOST_PORT: "hatchet:7077"
+      HATCHET_CLIENT_HOST_PORT: "hatchet:7070"
       AGENT_HUB_URL: "http://agent-hub-api:8003"
       SUMMITFLOW_CLIENT_ID: "${SUMMITFLOW_CLIENT_ID}"
       SUMMITFLOW_CLIENT_SECRET: "${SUMMITFLOW_CLIENT_SECRET}"
@@ -158,7 +183,7 @@ services:
       REDIS_URL: "redis://:${REDIS_PASSWORD:-changeme}@redis:6379/1"
       HATCHET_CLIENT_TOKEN: "${HATCHET_CLIENT_TOKEN}"
       HATCHET_CLIENT_TLS_STRATEGY: "none"
-      HATCHET_CLIENT_HOST_PORT: "hatchet:7077"
+      HATCHET_CLIENT_HOST_PORT: "hatchet:7070"
       AGENT_HUB_URL: "http://agent-hub-api:8003"
       SUMMITFLOW_CLIENT_ID: "${SUMMITFLOW_CLIENT_ID}"
       SUMMITFLOW_CLIENT_SECRET: "${SUMMITFLOW_CLIENT_SECRET}"
@@ -182,7 +207,6 @@ services:
         condition: service_healthy
     volumes:
       - ${HOST_HOME_PATH:?}:${HOST_HOME_PATH:?}
-      - hatchet-config:/config:ro
       - wal-archive:/var/lib/postgresql/wal-archive:ro
     restart: unless-stopped
 
@@ -196,13 +220,16 @@ services:
       PORT: "8003"
       HATCHET_CLIENT_TOKEN: "${HATCHET_CLIENT_TOKEN}"
       HATCHET_CLIENT_TLS_STRATEGY: "none"
-      HATCHET_CLIENT_HOST_PORT: "hatchet:7077"
+      HATCHET_CLIENT_HOST_PORT: "hatchet:7070"
       AGENT_HUB_ENCRYPTION_KEY: "${AGENT_HUB_ENCRYPTION_KEY}"
       AGENT_HUB_SECRET_KEY: "${AGENT_HUB_SECRET_KEY}"
       INTERNAL_SERVICE_SECRET: "${INTERNAL_SERVICE_SECRET}"
       VAPID_PUBLIC_KEY: "${VAPID_PUBLIC_KEY:-}"
       VAPID_PRIVATE_KEY: "${VAPID_PRIVATE_KEY:-}"
       VAPID_SUBJECT: "${VAPID_SUBJECT:-mailto:admin@summitflow.dev}"
+      HOME: "${HOST_HOME_PATH:?}"
+      HOST_HOME_PATH: "${HOST_HOME_PATH:?Set HOST_HOME_PATH in .env}"
+      PATH: "/app/.venv/bin:${HOST_HOME_PATH:?}/.local/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
     command: ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port 8003"]
     depends_on:
       postgres:
@@ -213,6 +240,8 @@ services:
         condition: service_healthy
     ports:
       - "8003:8003"
+    volumes:
+      - ${HOST_HOME_PATH:?}:${HOST_HOME_PATH:?}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
       interval: 10s
@@ -249,18 +278,23 @@ services:
       AGENT_HUB_REDIS_URL: "redis://:${REDIS_PASSWORD:-changeme}@redis:6379/2"
       HATCHET_CLIENT_TOKEN: "${HATCHET_CLIENT_TOKEN}"
       HATCHET_CLIENT_TLS_STRATEGY: "none"
-      HATCHET_CLIENT_HOST_PORT: "hatchet:7077"
+      HATCHET_CLIENT_HOST_PORT: "hatchet:7070"
       AGENT_HUB_ENCRYPTION_KEY: "${AGENT_HUB_ENCRYPTION_KEY}"
       AGENT_HUB_SECRET_KEY: "${AGENT_HUB_SECRET_KEY}"
       INTERNAL_SERVICE_SECRET: "${INTERNAL_SERVICE_SECRET}"
       VAPID_PUBLIC_KEY: "${VAPID_PUBLIC_KEY:-}"
       VAPID_PRIVATE_KEY: "${VAPID_PRIVATE_KEY:-}"
       VAPID_SUBJECT: "${VAPID_SUBJECT:-mailto:admin@summitflow.dev}"
+      HOME: "${HOST_HOME_PATH:?}"
+      HOST_HOME_PATH: "${HOST_HOME_PATH:?Set HOST_HOME_PATH in .env}"
+      PATH: "/app/.venv/bin:${HOST_HOME_PATH:?}/.local/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
     depends_on:
       hatchet:
         condition: service_healthy
       agent-hub-api:
         condition: service_healthy
+    volumes:
+      - ${HOST_HOME_PATH:?}:${HOST_HOME_PATH:?}
     restart: unless-stopped
 
   # ─── Terminal ────────────────────────────────────────────────────
@@ -293,7 +327,7 @@ services:
       PORT: "8000"
       HATCHET_CLIENT_TOKEN: "${HATCHET_CLIENT_TOKEN}"
       HATCHET_CLIENT_TLS_STRATEGY: "none"
-      HATCHET_CLIENT_HOST_PORT: "hatchet:7077"
+      HATCHET_CLIENT_HOST_PORT: "hatchet:7070"
       AGENT_HUB_URL: "http://agent-hub-api:8003"
       PORTFOLIO_CLIENT_ID: "${PORTFOLIO_CLIENT_ID}"
       PORTFOLIO_CLIENT_SECRET: "${PORTFOLIO_CLIENT_SECRET}"
@@ -344,7 +378,11 @@ services:
       REDIS_URL: "redis://:${REDIS_PASSWORD:-changeme}@redis:6379/0"
       HATCHET_CLIENT_TOKEN: "${HATCHET_CLIENT_TOKEN}"
       HATCHET_CLIENT_TLS_STRATEGY: "none"
-      HATCHET_CLIENT_HOST_PORT: "hatchet:7077"
+      HATCHET_CLIENT_HOST_PORT: "hatchet:7070"
+      AGENT_HUB_URL: "http://agent-hub-api:8003"
+      PORTFOLIO_CLIENT_ID: "${PORTFOLIO_CLIENT_ID}"
+      PORTFOLIO_CLIENT_SECRET: "${PORTFOLIO_CLIENT_SECRET}"
+      PORTFOLIO_REQUEST_SOURCE: "portfolio-ai"
     depends_on:
       hatchet:
         condition: service_healthy
@@ -387,6 +425,5 @@ services:
 volumes:
   pgdata:
   redis-data:
-  hatchet-config:
   portfolio-models:
   wal-archive:
