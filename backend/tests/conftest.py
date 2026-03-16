@@ -23,7 +23,7 @@ from dotenv import load_dotenv
 # Load env vars FIRST
 _env_file = Path.home() / ".env.local"
 if _env_file.exists():
-    load_dotenv(_env_file)
+    load_dotenv(_env_file, override=True)
 
 _db_url = os.environ.get("DATABASE_URL", "")
 _test_db_url = os.environ.get("TEST_DATABASE_URL", "")
