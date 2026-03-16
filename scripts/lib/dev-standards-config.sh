@@ -65,6 +65,14 @@ PROJECT_VENV_MAP=(
 )
 export PROJECT_VENV_MAP
 
+# Docker container names for alembic fallback (project → container name)
+DOCKER_SERVICE_MAP=(
+    "summitflow:summitflow-stack-summitflow-api-1"
+    "agent-hub:summitflow-stack-agent-hub-api-1"
+    "portfolio-ai:summitflow-stack-portfolio-api-1"
+)
+export DOCKER_SERVICE_MAP
+
 # =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
