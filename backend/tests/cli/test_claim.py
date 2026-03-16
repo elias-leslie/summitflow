@@ -19,7 +19,7 @@ class TestClaimTask:
     def test_claim_task_success_claims_before_snapshot(self) -> None:
         """Task claim should acquire the backend claim lock before snapshot creation."""
         client = MagicMock()
-        client.get_task.return_value = {"id": "task-1", "project_id": "summitflow"}
+        client.get_task.return_value = {"id": "task-1", "project_id": "summitflow", "status": "pending"}
         client.claim_task.return_value = {
             "id": "task-1",
             "status": "running",
@@ -49,7 +49,7 @@ class TestClaimTask:
 
     def test_claim_task_normalizes_short_id_before_local_checkpoint_ops(self) -> None:
         client = MagicMock()
-        client.get_task.return_value = {"id": "task-1", "project_id": "summitflow"}
+        client.get_task.return_value = {"id": "task-1", "project_id": "summitflow", "status": "pending"}
         client.claim_task.return_value = {
             "id": "task-1",
             "status": "running",
@@ -77,7 +77,7 @@ class TestClaimTask:
     def test_claim_task_snapshot_failure_releases_lock(self) -> None:
         """A failed snapshot/worktree creation should release the claimed task lock."""
         client = MagicMock()
-        client.get_task.return_value = {"id": "task-1", "project_id": "summitflow"}
+        client.get_task.return_value = {"id": "task-1", "project_id": "summitflow", "status": "pending"}
         client.claim_task.return_value = {
             "id": "task-1",
             "status": "running",
@@ -131,7 +131,7 @@ class TestClaimTaskErrorsAndAdoption:
     def test_claim_task_release_failure_warns_user(self) -> None:
         """Release failure after snapshot error should be surfaced as a warning."""
         client = MagicMock()
-        client.get_task.return_value = {"id": "task-1", "project_id": "summitflow"}
+        client.get_task.return_value = {"id": "task-1", "project_id": "summitflow", "status": "pending"}
         client.claim_task.return_value = {
             "id": "task-1",
             "status": "running",
@@ -158,7 +158,7 @@ class TestClaimTaskErrorsAndAdoption:
 
     def test_claim_task_adopts_dirty_changes_into_worktree(self) -> None:
         client = MagicMock()
-        client.get_task.return_value = {"id": "task-1", "project_id": "summitflow"}
+        client.get_task.return_value = {"id": "task-1", "project_id": "summitflow", "status": "pending"}
 
         with (
             patch("cli.commands.claim.get_snapshot_info", return_value=None),
@@ -180,7 +180,7 @@ class TestClaimTaskErrorsAndAdoption:
 
     def test_claim_task_adoption_failure_releases_lock(self) -> None:
         client = MagicMock()
-        client.get_task.return_value = {"id": "task-1", "project_id": "summitflow"}
+        client.get_task.return_value = {"id": "task-1", "project_id": "summitflow", "status": "pending"}
         client.claim_task.return_value = {
             "id": "task-1",
             "status": "running",

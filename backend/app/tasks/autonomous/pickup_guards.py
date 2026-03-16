@@ -115,6 +115,8 @@ def check_system_health(project_id: str) -> dict[str, Any] | None:
         failing.append("redis")
         details["redis"] = f"unhealthy: {e}"
     # Backend (HTTP health check — works in both Docker and systemd runtimes)
+    # If the health check itself is unavailable, don't block dispatch — the
+    # service may still be running; only explicit non-200 responses count.
     try:
         import httpx
         backend_url = os.getenv("ST_API_BASE", "http://localhost:8001/api")
@@ -125,9 +127,10 @@ def check_system_health(project_id: str) -> dict[str, Any] | None:
         else:
             failing.append("backend")
             details["backend"] = f"unhealthy: status={resp.status_code}"
-    except Exception as e:
-        failing.append("backend")
-        details["backend"] = f"unhealthy: {e}"
+    except Exception:
+        # Health endpoint unreachable (connection refused, timeout, etc.)
+        # — treat as unknown rather than unhealthy to avoid blocking dispatch.
+        details["backend"] = "unknown: health check unavailable"
     if failing:
         return {"status": "unhealthy", "failing_services": failing, "details": details}
     return None

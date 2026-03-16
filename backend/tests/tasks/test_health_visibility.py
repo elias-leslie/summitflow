@@ -20,10 +20,10 @@ class TestCheckSystemHealth:
 
     @patch("app.tasks.autonomous.pickup_guards.get_connection")
     @patch("redis.Redis.from_url")
-    @patch("app.tasks.autonomous.pickup_guards.subprocess.run")
+    @patch("httpx.get")
     def test_returns_none_when_all_services_healthy(
         self,
-        mock_subprocess: MagicMock,
+        mock_httpx_get: MagicMock,
         mock_redis: MagicMock,
         mock_get_conn: MagicMock,
     ) -> None:
@@ -41,7 +41,7 @@ class TestCheckSystemHealth:
         mock_redis_client.ping.return_value = True
         mock_redis.return_value = mock_redis_client
 
-        mock_subprocess.return_value = MagicMock(stdout="active\n")
+        mock_httpx_get.return_value = MagicMock(status_code=200)
 
         # Act
         result = check_system_health("test-project")
@@ -53,10 +53,10 @@ class TestCheckSystemHealth:
 
     @patch("app.tasks.autonomous.pickup_guards.get_connection")
     @patch("redis.Redis.from_url")
-    @patch("app.tasks.autonomous.pickup_guards.subprocess.run")
+    @patch("httpx.get")
     def test_returns_error_dict_when_postgres_down(
         self,
-        mock_subprocess: MagicMock,
+        mock_httpx_get: MagicMock,
         mock_redis: MagicMock,
         mock_get_conn: MagicMock,
     ) -> None:
@@ -68,7 +68,7 @@ class TestCheckSystemHealth:
         mock_redis_client.ping.return_value = True
         mock_redis.return_value = mock_redis_client
 
-        mock_subprocess.return_value = MagicMock(stdout="active\n")
+        mock_httpx_get.return_value = MagicMock(status_code=200)
 
         # Act
         result = check_system_health("test-project")
@@ -82,10 +82,10 @@ class TestCheckSystemHealth:
 
     @patch("app.tasks.autonomous.pickup_guards.get_connection")
     @patch("redis.Redis.from_url")
-    @patch("app.tasks.autonomous.pickup_guards.subprocess.run")
+    @patch("httpx.get")
     def test_returns_error_dict_when_redis_down(
         self,
-        mock_subprocess: MagicMock,
+        mock_httpx_get: MagicMock,
         mock_redis: MagicMock,
         mock_get_conn: MagicMock,
     ) -> None:
@@ -101,7 +101,7 @@ class TestCheckSystemHealth:
 
         mock_redis.side_effect = Exception("Connection timeout")
 
-        mock_subprocess.return_value = MagicMock(stdout="active\n")
+        mock_httpx_get.return_value = MagicMock(status_code=200)
 
         # Act
         result = check_system_health("test-project")
@@ -115,10 +115,10 @@ class TestCheckSystemHealth:
 
     @patch("app.tasks.autonomous.pickup_guards.get_connection")
     @patch("redis.Redis.from_url")
-    @patch("app.tasks.autonomous.pickup_guards.subprocess.run")
+    @patch("httpx.get")
     def test_returns_error_dict_when_backend_inactive(
         self,
-        mock_subprocess: MagicMock,
+        mock_httpx_get: MagicMock,
         mock_redis: MagicMock,
         mock_get_conn: MagicMock,
     ) -> None:
@@ -136,7 +136,7 @@ class TestCheckSystemHealth:
         mock_redis_client.ping.return_value = True
         mock_redis.return_value = mock_redis_client
 
-        mock_subprocess.return_value = MagicMock(stdout="inactive\n")
+        mock_httpx_get.return_value = MagicMock(status_code=503)
 
         # Act
         result = check_system_health("test-project")
@@ -146,14 +146,14 @@ class TestCheckSystemHealth:
         assert result["status"] == "unhealthy"
         assert "backend" in result["failing_services"]
         assert "backend" in result["details"]
-        assert "inactive" in result["details"]["backend"]
+        assert "status=503" in result["details"]["backend"]
 
     @patch("app.tasks.autonomous.pickup_guards.get_connection")
     @patch("redis.Redis.from_url")
-    @patch("app.tasks.autonomous.pickup_guards.subprocess.run")
+    @patch("httpx.get")
     def test_returns_error_dict_with_multiple_failing_services(
         self,
-        mock_subprocess: MagicMock,
+        mock_httpx_get: MagicMock,
         mock_redis: MagicMock,
         mock_get_conn: MagicMock,
     ) -> None:
@@ -161,7 +161,7 @@ class TestCheckSystemHealth:
         # Arrange - postgres and redis both fail
         mock_get_conn.side_effect = Exception("postgres down")
         mock_redis.side_effect = Exception("redis down")
-        mock_subprocess.return_value = MagicMock(stdout="active\n")
+        mock_httpx_get.return_value = MagicMock(status_code=200)
 
         # Act
         result = check_system_health("test-project")
@@ -175,10 +175,10 @@ class TestCheckSystemHealth:
 
     @patch("app.tasks.autonomous.pickup_guards.get_connection")
     @patch("redis.Redis.from_url")
-    @patch("app.tasks.autonomous.pickup_guards.subprocess.run")
+    @patch("httpx.get")
     def test_backend_check_unavailable_does_not_block(
         self,
-        mock_subprocess: MagicMock,
+        mock_httpx_get: MagicMock,
         mock_redis: MagicMock,
         mock_get_conn: MagicMock,
     ) -> None:
@@ -196,7 +196,7 @@ class TestCheckSystemHealth:
         mock_redis_client.ping.return_value = True
         mock_redis.return_value = mock_redis_client
 
-        mock_subprocess.side_effect = Exception("systemctl unavailable")
+        mock_httpx_get.side_effect = Exception("connection refused")
 
         # Act
         result = check_system_health("test-project")
