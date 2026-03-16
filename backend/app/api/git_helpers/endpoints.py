@@ -48,6 +48,19 @@ async def execute_smart_sync(project_root: Path) -> dict[str, Any]:
     else:
         script_path = Path.home() / "summitflow" / "scripts" / "commit.sh"
 
+    # When running inside a container with BACKUP_HOST_ROOT, ensure PATH
+    # includes the host user's bin dirs so commit.sh finds dt, ruff, st, etc.
+    env = None
+    if _host_root:
+        env = os.environ.copy()
+        env["HOME"] = _host_root
+        host_bin_dirs = [
+            f"{_host_root}/.local/bin",
+            f"{_host_root}/bin",
+            f"{_host_root}/.cargo/bin",
+        ]
+        env["PATH"] = ":".join(host_bin_dirs) + ":" + env.get("PATH", "")
+
     try:
         proc = await asyncio.create_subprocess_exec(
             str(script_path),
@@ -56,6 +69,7 @@ async def execute_smart_sync(project_root: Path) -> dict[str, Any]:
             "--task",
             "smart-sync",
             cwd=project_root,
+            env=env,
             stdout=aio_subprocess.PIPE,
             stderr=aio_subprocess.PIPE,
         )

@@ -37,7 +37,8 @@ COPY backend/alembic ./alembic
 FROM python:3.13-slim-bookworm
 
 # Install curl for healthchecks, git for Git Operations page,
-# Docker CLI (official) for Docker dashboard API
+# Docker CLI (official) for Docker dashboard API,
+# Node.js LTS for frontend quality gates (biome, tsc via npx)
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl ca-certificates git jq smbclient gnupg \
     && install -m 0755 -d /etc/apt/keyrings \
@@ -45,7 +46,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian bookworm stable" > /etc/apt/sources.list.d/docker.list \
     && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/keyrings/pgdg.gpg \
     && echo "deb [signed-by=/etc/apt/keyrings/pgdg.gpg] http://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
-    && apt-get update && apt-get install -y --no-install-recommends docker-ce-cli postgresql-client-16 \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get update && apt-get install -y --no-install-recommends \
+        docker-ce-cli postgresql-client-16 nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

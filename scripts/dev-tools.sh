@@ -518,10 +518,15 @@ quick_check() {
         echo "TYPES:OK:skipped_no_python"
     fi
 
-    # Frontend tools if project has frontend
+    # Frontend tools if project has frontend (skip if --changed-only and no frontend files changed)
     if has_frontend "$project_dir"; then
-        run_tool_toon biome || { ((errors++)) || true; }
-        run_tool_toon tsc || { ((errors++)) || true; }
+        if [[ "$CHANGED_ONLY" == "1" ]] && [[ -z "$(get_changed_ts_files)" ]]; then
+            echo "BIOME:OK:no_frontend_changes"
+            echo "TSC:OK:no_frontend_changes"
+        else
+            run_tool_toon biome || { ((errors++)) || true; }
+            run_tool_toon tsc || { ((errors++)) || true; }
+        fi
     else
         echo "BIOME:OK:skipped_no_frontend"
         echo "TSC:OK:skipped_no_frontend"

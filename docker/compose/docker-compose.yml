@@ -107,7 +107,7 @@ services:
       TERMINAL_HEALTH_URL: "http://terminal-api:8002/health"
       COMPOSE_DIR: "/compose"
       BACKUP_DIR: "/app/docker-backups"
-      BACKUP_HOST_ROOT: "/host-home"
+      BACKUP_HOST_ROOT: "${HOST_HOME_PATH:?}"
       HOST_HOME_PATH: "${HOST_HOME_PATH:?Set HOST_HOME_PATH in .env}"
     depends_on:
       postgres:
@@ -121,7 +121,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - .:/compose:ro
-      - ${HOST_HOME_PATH:?}:/host-home
+      - ${HOST_HOME_PATH:?}:${HOST_HOME_PATH:?}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 10s
@@ -167,9 +167,9 @@ services:
       AGENT_HUB_HEALTH_URL: "http://agent-hub-api:8003/health"
       PORTFOLIO_HEALTH_URL: "http://portfolio-api:8000/health"
       TERMINAL_HEALTH_URL: "http://terminal-api:8002/health"
-      BACKUP_HOST_ROOT: "/host-home"
+      BACKUP_HOST_ROOT: "${HOST_HOME_PATH:?}"
       HOST_HOME_PATH: "${HOST_HOME_PATH:?Set HOST_HOME_PATH in .env}"
-      HOME: "/host-home"
+      HOME: "${HOST_HOME_PATH:?}"
       SMB_HOST: "${SMB_HOST:?Set SMB_HOST in .env}"
       SMB_SHARE: "${SMB_SHARE:?Set SMB_SHARE in .env}"
       PGHOST: "postgres"
@@ -181,7 +181,7 @@ services:
       summitflow-api:
         condition: service_healthy
     volumes:
-      - ${HOST_HOME_PATH:?}:/host-home
+      - ${HOST_HOME_PATH:?}:${HOST_HOME_PATH:?}
       - hatchet-config:/config:ro
       - wal-archive:/var/lib/postgresql/wal-archive:ro
     restart: unless-stopped
