@@ -101,6 +101,10 @@ class TestFinalizeTaskEndpoint:
             "app.api.git.task_store.get_task",
             return_value={"id": "task-1", "project_id": "agent-hub", "status": "completed"},
         )
+        mocker.patch(
+            "app.storage.subtasks.get_subtasks_for_task",
+            return_value=[{"subtask_id": "1.1", "passes": True}],
+        )
         merge = mocker.patch("app.api.git_helpers.endpoints.merge_and_cleanup_task_worktree")
         merge.return_value = {"task_id": "task-1", "status": "merged"}
 
@@ -109,6 +113,25 @@ class TestFinalizeTaskEndpoint:
         assert response.status_code == 200
         assert response.json()["status"] == "merged"
         merge.assert_called_once_with("task-1", "agent-hub")
+
+    def test_finalize_rejects_failed_subtasks(self, mocker: MockerFixture) -> None:
+        mocker.patch(
+            "app.api.git.task_store.get_task",
+            return_value={"id": "task-1", "project_id": "agent-hub", "status": "completed"},
+        )
+        mocker.patch(
+            "app.storage.subtasks.get_subtasks_for_task",
+            return_value=[
+                {"subtask_id": "1.1", "passes": True},
+                {"subtask_id": "1.2", "passes": False},
+            ],
+        )
+
+        response = client.post("/api/git/tasks/task-1/finalize")
+
+        assert response.status_code == 400
+        body = response.json()
+        assert "1.2" in str(body)
 
 
 class TestPREndpoints:

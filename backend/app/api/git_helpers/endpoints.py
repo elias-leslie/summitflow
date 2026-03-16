@@ -384,6 +384,8 @@ async def handle_resolve_conflict(task_id: str) -> dict[str, object]:
 
 def handle_finalize_task_merge(task_id: str, task: dict[str, Any]) -> MergeResult:
     """Validate status and execute finalize merge/cleanup for a residue task."""
+    from ...storage.subtasks import get_subtasks_for_task
+
     status = str(task.get("status") or "")
     if status in {"running", "pending", "queue", "paused", "ai_reviewing"}:
         raise HTTPException(
@@ -392,6 +394,15 @@ def handle_finalize_task_merge(task_id: str, task: dict[str, Any]) -> MergeResul
         )
     if status not in {"completed", "conflicted"}:
         raise HTTPException(status_code=400, detail=f"Task status {status!r} is not eligible for finalize")
+    # Block merge when subtasks have failures — prevents merging incomplete work
+    subtasks = get_subtasks_for_task(task_id)
+    failed = [s for s in subtasks if s.get("passes") is False]
+    if failed:
+        failed_ids = [s.get("subtask_id", "?") for s in failed]
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot finalize: {len(failed)} subtask(s) failed ({', '.join(failed_ids)}). Fix or skip them first.",
+        )
     if status == "conflicted":
         update_task_fields(task_id, conflict_info=None)
     return merge_and_cleanup_task_worktree(task_id, task["project_id"])
