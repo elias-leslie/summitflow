@@ -422,40 +422,6 @@ body::before {
   animation-fill-mode: both;
 }
 
-.stagger-1 {
-  animation-delay: 0.05s;
-}
-.stagger-2 {
-  animation-delay: 0.1s;
-}
-.stagger-3 {
-  animation-delay: 0.15s;
-}
-.stagger-4 {
-  animation-delay: 0.2s;
-}
-.stagger-5 {
-  animation-delay: 0.25s;
-}
-
-/* Terminal-style cursor blink */
-@keyframes blink {
-  0%,
-  50% {
-    opacity: 1;
-  }
-  51%,
-  100% {
-    opacity: 0;
-  }
-}
-
-.cursor-blink::after {
-  content: "";
-  animation: blink 1s step-end infinite;
-  color: var(--outrun-pink);
-}
-
 /* ============================================================================
    Explorer Component Styles
    ============================================================================ */
@@ -481,37 +447,6 @@ body::before {
 
 .explorer-row.expanded {
   @apply bg-slate-800/30;
-}
-
-/* Detail panel slide animation */
-.detail-panel-enter {
-  animation: slideDown 0.2s ease-out;
-}
-
-@keyframes slideDown {
-  from {
-    opacity: 0;
-    transform: translateY(-8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* Status pulse for attention states */
-@keyframes status-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
-}
-
-.status-pulse {
-  animation: status-pulse 2s ease-in-out infinite;
 }
 
 /* Pulse glow for running task cards */
