@@ -69,6 +69,10 @@ services:
       SERVER_GRPC_PORT: "7077"
       SERVER_GRPC_BROADCAST_ADDRESS: "hatchet:7077"
     volumes:
+      # IMPORTANT: This volume holds Hatchet's signing keys. If lost,
+      # all client tokens are invalidated. Never run `docker compose down -v`
+      # or `docker volume rm` on this volume. rebuild.sh auto-recovers
+      # tokens if they become invalid after key rotation.
       - hatchet-config:/config
     ports:
       - "7077:7077"

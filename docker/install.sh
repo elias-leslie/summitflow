@@ -133,7 +133,9 @@ PORTFOLIO_REQUEST_SOURCE=portfolio-ai
 MONKEY_FIGHT_CLIENT_ID=
 MONKEY_FIGHT_REQUEST_SOURCE=monkey-fight
 
-# ─── Hatchet (auto-generated below) ─────────────────────────────
+# ─── Hatchet ──────────────────────────────────────────────────
+# Signing keys live in the hatchet-config Docker volume. Tokens remain
+# valid as long as the volume persists. NEVER run docker compose down -v.
 HATCHET_CLIENT_TOKEN=
 
 # ─── Optional API Keys ──────────────────────────────────────────
@@ -175,12 +177,11 @@ wait_for_service "Hatchet" "http://localhost:8888/api/ready" 90
 
 # ─── Auto-generate Hatchet Token ─────────────────────────────────
 
+# ─── Generate Hatchet Client Token ────────────────────────────
+
 echo ""
 echo "Generating Hatchet client token..."
 
-# Discover tenant ID: Hatchet seeds a default tenant on first boot.
-# Extract it by generating a temporary token (which embeds the tenant in the JWT sub claim),
-# or by querying the database directly.
 TENANT_ID=""
 
 # Method 1: Try generating a token without tenant-id (some versions auto-select the default)
@@ -189,7 +190,6 @@ TEMP_TOKEN=$(docker compose exec -T hatchet /hatchet-admin token create \
   | grep -oE 'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+')
 
 if [ -n "$TEMP_TOKEN" ]; then
-  # Extract tenant ID from JWT sub claim
   TENANT_ID=$(echo "$TEMP_TOKEN" | cut -d. -f2 | base64 -d 2>/dev/null \
     | jq -r '.sub // empty' 2>/dev/null)
 fi
@@ -205,7 +205,6 @@ if [ -z "$TENANT_ID" ]; then
   echo "  After installation, generate a token manually:"
   echo "    docker compose exec hatchet /hatchet-admin token create --config /config --tenant-id <UUID>"
 else
-  # Generate a long-lived token (10 years)
   HATCHET_TOKEN=$(docker compose exec -T hatchet /hatchet-admin token create \
     --config /config --tenant-id "$TENANT_ID" --expiresIn 87600h 2>/dev/null \
     | grep -oE 'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+')
