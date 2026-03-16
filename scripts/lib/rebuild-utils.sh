@@ -31,7 +31,46 @@ _SUMMITFLOW_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 _COMPOSE_DIR="$_SUMMITFLOW_ROOT/docker/compose"
 _COMPOSE_FILE="$_COMPOSE_DIR/docker-compose.yml"
 _COMPOSE_DEV_FILE="$_COMPOSE_DIR/docker-compose.dev.yml"
-export _SUMMITFLOW_ROOT _COMPOSE_DIR _COMPOSE_FILE _COMPOSE_DEV_FILE
+_RUNTIME_MODE_FILE="$_COMPOSE_DIR/.runtime-mode"
+export _SUMMITFLOW_ROOT _COMPOSE_DIR _COMPOSE_FILE _COMPOSE_DEV_FILE _RUNTIME_MODE_FILE
+
+# Return compose file flags appropriate for current mode.
+# In dev mode (DOCKER_DEV=true), includes the dev overlay so bind mounts
+# and CMD overrides are preserved across rebuilds and restarts.
+_compose_files() {
+    local files=("-f" "$_COMPOSE_FILE")
+    if [ "$DOCKER_DEV" = "true" ] && [ -f "$_COMPOSE_DEV_FILE" ]; then
+        files+=("-f" "$_COMPOSE_DEV_FILE")
+    fi
+    echo "${files[@]}"
+}
+
+# Persist runtime mode (dev/prod) so detect_docker can recover after stop
+_persist_runtime_mode() {
+    if [ "$DOCKER_DEV" = "true" ]; then
+        echo "dev" > "$_RUNTIME_MODE_FILE"
+    else
+        echo "prod" > "$_RUNTIME_MODE_FILE"
+    fi
+}
+
+# Bring up a stopped Docker stack using persisted mode
+docker_start_stack() {
+    [ ! -f "$_COMPOSE_FILE" ] && { log_error "No compose file found"; return 1; }
+
+    # Restore dev mode from persisted state if available
+    if [ -f "$_RUNTIME_MODE_FILE" ] && [ "$(cat "$_RUNTIME_MODE_FILE")" = "dev" ]; then
+        export DOCKER_DEV=true
+    fi
+
+    local compose_args
+    read -ra compose_args <<< "$(_compose_files)"
+
+    log "Starting Docker stack (mode: $([ "$DOCKER_DEV" = "true" ] && echo dev || echo prod))..."
+    docker compose "${compose_args[@]}" up -d 2>&1
+    log_success "Stack started"
+    _persist_runtime_mode
+}
 
 # ─── Dynamic service discovery from compose ─────────────────────
 # The compose file is the single source of truth. No hardcoded service names.
@@ -121,7 +160,15 @@ detect_docker() {
     [ ! -f "$_COMPOSE_FILE" ] && return
     local running
     running=$(docker compose -f "$_COMPOSE_FILE" ps --status running -q 2>/dev/null)
-    [ -z "$running" ] && return
+    if [ -z "$running" ]; then
+        # No running containers — check if this is a stopped Docker stack
+        # by looking for persisted runtime mode or any stopped containers
+        if [ -f "$_RUNTIME_MODE_FILE" ]; then
+            export RUNTIME_MODE="docker-stopped"
+            [ "$(cat "$_RUNTIME_MODE_FILE")" = "dev" ] && export DOCKER_DEV=true
+        fi
+        return
+    fi
     export RUNTIME_MODE="docker"
 
     # Resolve ports from compose config
@@ -189,7 +236,7 @@ docker_build_and_recreate() {
     local services="$1"
     [ -z "$services" ] && { log_error "No compose services for $PROJECT_NAME"; return 1; }
 
-    # Use dev overlay for build only (has build: context directives)
+    # Always use dev overlay for build (has build: context directives)
     local build_files=("-f" "$_COMPOSE_FILE")
     [ -f "$_COMPOSE_DEV_FILE" ] && build_files+=("-f" "$_COMPOSE_DEV_FILE")
 
@@ -201,19 +248,26 @@ docker_build_and_recreate() {
     [ ${PIPESTATUS[0]} -ne 0 ] && { log_error "Build failed"; return 1; }
     log_success "Images built"
 
-    # Recreate with prod compose only (dev overlay changes CMD/volumes)
-    log "Recreating containers..."
+    # Recreate with mode-appropriate compose files — dev overlay preserves
+    # bind mounts and CMD overrides when DOCKER_DEV=true
+    local compose_args
+    read -ra compose_args <<< "$(_compose_files)"
+    log "Recreating containers (mode: $([ "$DOCKER_DEV" = "true" ] && echo dev || echo prod))..."
     # shellcheck disable=SC2086
-    docker compose -f "$_COMPOSE_FILE" up -d --no-deps $services 2>&1
+    docker compose "${compose_args[@]}" up -d --no-deps $services 2>&1
     log_success "Containers recreated"
+    _persist_runtime_mode
 }
 
 docker_restart_services() {
     local services="$1"
     [ -z "$services" ] && return 0
+
+    local compose_args
+    read -ra compose_args <<< "$(_compose_files)"
     log "Restarting: $services"
     # shellcheck disable=SC2086
-    docker compose -f "$_COMPOSE_FILE" restart $services 2>&1
+    docker compose "${compose_args[@]}" restart $services 2>&1
     log_success "Restarted"
 }
 
@@ -221,8 +275,11 @@ docker_run_migration() {
     local api_svc
     api_svc=$(_compose_api_service)
     [ -z "$api_svc" ] && return 0
+
+    local compose_args
+    read -ra compose_args <<< "$(_compose_files)"
     log "Running migrations ($api_svc)..."
-    docker compose -f "$_COMPOSE_FILE" exec -T "$api_svc" alembic upgrade head 2>&1 | tail -5
+    docker compose "${compose_args[@]}" exec -T "$api_svc" alembic upgrade head 2>&1 | tail -5
     [ ${PIPESTATUS[0]} -eq 0 ] && log_success "Migrations applied" || log_warn "Migration returned non-zero (may already be up to date)"
 }
 
@@ -278,4 +335,4 @@ verify_frontend() { local p="${1:-$FRONTEND_PORT}"; [ "$p" -eq 0 ] 2>/dev/null &
 
 export -f log log_success log_warn log_error log_info
 export -f service_exists restart_service clear_build_cache clear_nextjs_cache build_frontend verify_backend verify_frontend
-export -f detect_docker _detect_stale_image _project_to_prefix _compose_all_services _compose_api_service _compose_web_service _compose_service_port _resolve_ports docker_build_and_recreate docker_restart_services docker_run_migration docker_reapply_hatchet_tuning
+export -f detect_docker _detect_stale_image _project_to_prefix _compose_all_services _compose_api_service _compose_web_service _compose_service_port _resolve_ports _compose_files _persist_runtime_mode docker_start_stack docker_build_and_recreate docker_restart_services docker_run_migration docker_reapply_hatchet_tuning

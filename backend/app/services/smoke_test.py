@@ -21,13 +21,24 @@ logger = get_logger(__name__)
 _REDIS_KEY = "smoke_test:last_status"
 _REDIS_TTL = 3600  # 1 hour — re-notify if still failing after TTL expires
 
-# Health endpoints — configurable via env vars for Docker (service names) vs native (localhost)
-HEALTH_URLS: dict[str, str] = {
-    "summitflow": os.getenv("SUMMITFLOW_HEALTH_URL", "http://localhost:8001/health"),
-    "agent-hub": os.getenv("AGENT_HUB_HEALTH_URL", "http://localhost:8003/health"),
-    "portfolio-ai": os.getenv("PORTFOLIO_HEALTH_URL", "http://localhost:8000/health"),
-    "terminal": os.getenv("TERMINAL_HEALTH_URL", "http://localhost:8002/health"),
-}
+# Health endpoints — only check services whose URL is explicitly configured.
+# SummitFlow self-health always checked; other services only if their env var
+# is set (partial profiles won't set vars for services they don't include).
+def _build_health_urls() -> dict[str, str]:
+    urls: dict[str, str] = {
+        "summitflow": os.getenv("SUMMITFLOW_HEALTH_URL", "http://localhost:8001/health"),
+    }
+    for name, env_var in (
+        ("agent-hub", "AGENT_HUB_HEALTH_URL"),
+        ("portfolio-ai", "PORTFOLIO_HEALTH_URL"),
+        ("terminal", "TERMINAL_HEALTH_URL"),
+    ):
+        if url := os.getenv(env_var):
+            urls[name] = url
+    return urls
+
+
+HEALTH_URLS: dict[str, str] = _build_health_urls()
 
 
 def check_health(project_id: str, url: str) -> dict[str, Any]:

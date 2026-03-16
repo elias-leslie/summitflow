@@ -166,6 +166,8 @@ echo "─── Phase 3: Health verification ───────────�
 PASS=0
 FAIL=0
 
+REMOTE_INSTALL_DIR="${INSTALL_DIR:-\$HOME/summitflow-docker}"
+
 check_service() {
     local name="$1" url="$2"
     local status
@@ -179,8 +181,22 @@ check_service() {
     fi
 }
 
-check_service "PostgreSQL"      "http://localhost:5432" || true  # won't HTTP but docker ps will show
-check_service "Redis"           "http://localhost:6379" || true
+# Infrastructure services use native protocol checks, not HTTP
+check_infra() {
+    local name="$1" cmd="$2"
+    local result
+    result=$(ssh "kasadis@${VM_IP}" "cd ${REMOTE_INSTALL_DIR} && ${cmd}" 2>/dev/null) || result=""
+    if [[ -n "$result" ]]; then
+        printf "  ✓ %-20s OK\n" "$name"
+        ((PASS++))
+    else
+        printf "  ✗ %-20s FAIL\n" "$name"
+        ((FAIL++))
+    fi
+}
+
+check_infra "PostgreSQL" "docker compose exec -T postgres pg_isready -U admin"
+check_infra "Redis" "docker compose exec -T redis redis-cli -a \$(grep REDIS_PASSWORD .env | cut -d= -f2) ping"
 check_service "Hatchet"         "http://localhost:8888"
 check_service "SummitFlow API"  "http://localhost:8001/health"
 check_service "SummitFlow Web"  "http://localhost:3001"
@@ -192,7 +208,7 @@ check_service "Portfolio Web"   "http://localhost:3000"
 # Check docker containers
 echo ""
 echo "  Docker containers:"
-ssh "kasadis@${VM_IP}" 'docker compose -f ~/summitflow/docker/compose/docker-compose.yml --profile full ps --format "table {{.Name}}\t{{.Status}}" 2>/dev/null' | sed 's/^/    /'
+ssh "kasadis@${VM_IP}" "cd ${REMOTE_INSTALL_DIR} && docker compose ps --format 'table {{.Name}}\t{{.Status}}' 2>/dev/null" | sed 's/^/    /'
 
 echo ""
 echo "─── Phase 4: Results ───────────────────────────────"

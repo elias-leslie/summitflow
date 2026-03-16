@@ -34,6 +34,7 @@ Thumbs.db
 .env.local
 .env*.local
 docker/compose/.env
+docker/compose/.runtime-mode
 docker/compose/hatchet-config/
 docker/compose/hatchet-keys/
 

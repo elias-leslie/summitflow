@@ -67,6 +67,11 @@ services:
       - ../../../terminal/frontend/app:/app/app:cached
       - ../../../terminal/frontend/components:/app/components:cached
     command: ["pnpm", "dev", "--hostname", "0.0.0.0", "--port", "3002"]
+    # In dev mode terminal-api runs as a container (not on the host), so
+    # drop the host-gateway alias and route via Docker network instead.
+    extra_hosts: !reset []
+    environment:
+      API_URL: "http://terminal-api:8002"
 
   # ─── Portfolio AI ────────────────────────────────────────────────
   portfolio-api:

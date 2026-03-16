@@ -114,6 +114,8 @@ services:
   summitflow-api:
     image: ghcr.io/summitflow-solutions/summitflow-api:${TAG:-latest}
     profiles: [summitflow, full]
+    group_add:
+      - "${DOCKER_GID:-990}"
     environment:
       DATABASE_URL: "postgresql://summitflow_app:${SF_DB_PASSWORD:-changeme}@postgres:5432/summitflow"
       DATABASE_ADMIN_URL: "postgresql://admin:${POSTGRES_PASSWORD}@postgres:5432/summitflow"
@@ -127,9 +129,11 @@ services:
       SUMMITFLOW_CLIENT_SECRET: "${SUMMITFLOW_CLIENT_SECRET}"
       SUMMITFLOW_REQUEST_SOURCE: "summitflow"
       SUMMITFLOW_HEALTH_URL: "http://summitflow-api:8001/health"
-      AGENT_HUB_HEALTH_URL: "http://agent-hub-api:8003/health"
-      PORTFOLIO_HEALTH_URL: "http://portfolio-api:8000/health"
-      TERMINAL_HEALTH_URL: "http://terminal-api:8002/health"
+      # Non-self health URLs only set when services are expected to be running.
+      # Partial profiles leave these unset; smoke tests skip unconfigured services.
+      AGENT_HUB_HEALTH_URL: "${AGENT_HUB_HEALTH_URL:-}"
+      PORTFOLIO_HEALTH_URL: "${PORTFOLIO_HEALTH_URL:-}"
+      TERMINAL_HEALTH_URL: "${TERMINAL_HEALTH_URL:-}"
       COMPOSE_DIR: "/compose"
       BACKUP_DIR: "/app/docker-backups"
       BACKUP_HOST_ROOT: "${HOST_HOME_PATH:?}"
@@ -189,9 +193,9 @@ services:
       SUMMITFLOW_CLIENT_SECRET: "${SUMMITFLOW_CLIENT_SECRET}"
       SUMMITFLOW_REQUEST_SOURCE: "summitflow"
       SUMMITFLOW_HEALTH_URL: "http://summitflow-api:8001/health"
-      AGENT_HUB_HEALTH_URL: "http://agent-hub-api:8003/health"
-      PORTFOLIO_HEALTH_URL: "http://portfolio-api:8000/health"
-      TERMINAL_HEALTH_URL: "http://terminal-api:8002/health"
+      AGENT_HUB_HEALTH_URL: "${AGENT_HUB_HEALTH_URL:-}"
+      PORTFOLIO_HEALTH_URL: "${PORTFOLIO_HEALTH_URL:-}"
+      TERMINAL_HEALTH_URL: "${TERMINAL_HEALTH_URL:-}"
       BACKUP_HOST_ROOT: "${HOST_HOME_PATH:?}"
       HOST_HOME_PATH: "${HOST_HOME_PATH:?Set HOST_HOME_PATH in .env}"
       HOME: "${HOST_HOME_PATH:?}"

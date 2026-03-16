@@ -24,10 +24,17 @@ echo ""
 echo "Step 1: Setting up systemd user services..."
 mkdir -p "$USER_SYSTEMD_DIR"
 
-# Step 2: Create symlinks for service files
+# Step 2: Create symlinks for all service files found in scripts/systemd/
 echo "  Creating symlinks..."
-ln -sf "$SUMMITFLOW_DIR/scripts/systemd/summitflow-backend.service" "$USER_SYSTEMD_DIR/summitflow-backend.service"
-ln -sf "$SUMMITFLOW_DIR/scripts/systemd/summitflow-frontend.service" "$USER_SYSTEMD_DIR/summitflow-frontend.service"
+SERVICES_LINKED=0
+for svc_file in "$SUMMITFLOW_DIR"/scripts/systemd/*.service; do
+    [ -f "$svc_file" ] || continue
+    svc_name="$(basename "$svc_file")"
+    ln -sf "$svc_file" "$USER_SYSTEMD_DIR/$svc_name"
+    echo "    $svc_name"
+    SERVICES_LINKED=$((SERVICES_LINKED + 1))
+done
+echo "  Linked $SERVICES_LINKED service files"
 
 # Step 3: Reload systemd user daemon
 echo "  Reloading systemd user daemon..."
@@ -35,8 +42,11 @@ systemctl --user daemon-reload
 
 # Step 4: Enable services
 echo "  Enabling services..."
-systemctl --user enable summitflow-backend.service
-systemctl --user enable summitflow-frontend.service
+for svc_file in "$SUMMITFLOW_DIR"/scripts/systemd/*.service; do
+    [ -f "$svc_file" ] || continue
+    svc_name="$(basename "$svc_file")"
+    systemctl --user enable "$svc_name" 2>/dev/null && echo "    enabled $svc_name" || echo "    skipped $svc_name (may require dependencies)"
+done
 
 echo "  ✓ Systemd services configured"
 echo ""

@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 from app.services.smoke_test import (
     HEALTH_URLS,
+    _build_health_urls,
     run_all_smoke_tests,
 )
 
@@ -48,7 +49,49 @@ class TestRunAllSmokeTests:
         assert result["healthy"] == 0
         assert len(result["failures"]) == len(HEALTH_URLS)
 
-    def test_health_urls_complete(self) -> None:
-        """Verify all expected projects have health URLs."""
-        expected = {"summitflow", "agent-hub", "portfolio-ai", "terminal"}
-        assert set(HEALTH_URLS.keys()) == expected
+
+class TestBuildHealthUrls:
+    """Tests for dynamic health URL construction based on env vars."""
+
+    def test_always_includes_summitflow(self) -> None:
+        urls = _build_health_urls()
+        assert "summitflow" in urls
+
+    @patch.dict("os.environ", {}, clear=False)
+    def test_no_optional_services_without_env(self) -> None:
+        """Without env vars, only summitflow self-health is included."""
+        import os
+
+        # Ensure the optional vars are not set
+        for var in ("AGENT_HUB_HEALTH_URL", "PORTFOLIO_HEALTH_URL", "TERMINAL_HEALTH_URL"):
+            os.environ.pop(var, None)
+
+        urls = _build_health_urls()
+        assert set(urls.keys()) == {"summitflow"}
+
+    @patch.dict(
+        "os.environ",
+        {
+            "AGENT_HUB_HEALTH_URL": "http://agent-hub-api:8003/health",
+            "PORTFOLIO_HEALTH_URL": "http://portfolio-api:8000/health",
+            "TERMINAL_HEALTH_URL": "http://terminal-api:8002/health",
+        },
+    )
+    def test_all_services_with_env(self) -> None:
+        """When all env vars are set, all services are included."""
+        urls = _build_health_urls()
+        assert set(urls.keys()) == {"summitflow", "agent-hub", "portfolio-ai", "terminal"}
+
+    @patch.dict(
+        "os.environ",
+        {"AGENT_HUB_HEALTH_URL": "http://agent-hub-api:8003/health"},
+    )
+    def test_partial_profile(self) -> None:
+        """Only services with explicit env vars are included."""
+        import os
+
+        os.environ.pop("PORTFOLIO_HEALTH_URL", None)
+        os.environ.pop("TERMINAL_HEALTH_URL", None)
+
+        urls = _build_health_urls()
+        assert set(urls.keys()) == {"summitflow", "agent-hub"}
