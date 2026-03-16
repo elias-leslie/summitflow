@@ -11,7 +11,8 @@
     "rebuild\\.sh\\b",
     "shutdown\\.sh\\b",
     "worktree-services\\.sh\\b",
-    "st\\s+docker\\b"
+    "st\\s+docker\\b",
+    "commit\\.sh\\b"
   ],
   "tools": [
     {
