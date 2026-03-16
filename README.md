@@ -181,21 +181,20 @@ curl -X POST http://localhost:8001/api/projects \
 
 SummitFlow `scripts/` is the canonical source for shared development scripts. Other projects (portfolio-ai, agent-hub, terminal) symlink to these:
 
-- `rebuild.sh` - Build and restart all services
-- `backup.sh` - Database backup to NAS
-- `restore.sh` - Database restore from backup
+- `rebuild.sh` - Build and restart services (auto-detects Docker vs native)
+- `backup.sh` - Database + files backup to SMB share
+- `restore.sh` - Restore from local or SMB backup
 - `dev-tools.sh` - Quality tool wrapper (`dt` CLI for ruff, types, pytest, biome)
 - `commit.sh` - Multi-repo commit handler
 
 ## Services
 
-Managed via systemd user services:
+All services run as Docker containers via a single Compose file (`docker/compose/docker-compose.yml`) with profile-based selection (`--profile full` for everything). Infrastructure (PostgreSQL, Redis, Hatchet) and application services (API, web, worker for each project) share the same stack.
 
 ```bash
-scripts/start.sh      # Start all services
-scripts/restart.sh    # Restart services
-scripts/status.sh     # Check service status
-scripts/rebuild.sh    # Full rebuild and restart
+scripts/rebuild.sh            # Full rebuild and restart (auto-detects Docker)
+scripts/rebuild.sh --restart  # Restart only (no rebuild)
+scripts/rebuild.sh --status   # Check service health
 ```
 
 ## Testing

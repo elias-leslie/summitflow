@@ -85,7 +85,6 @@ services:
   summitflow-api:
     image: ghcr.io/summitflow-solutions/summitflow-api:${TAG:-latest}
     profiles: [summitflow, full]
-    env_file: .env
     environment:
       DATABASE_URL: "postgresql://summitflow_app:${SF_DB_PASSWORD:-changeme}@postgres:5432/summitflow"
       DATABASE_ADMIN_URL: "postgresql://admin:${POSTGRES_PASSWORD}@postgres:5432/summitflow"
@@ -150,7 +149,6 @@ services:
     image: ghcr.io/summitflow-solutions/summitflow-api:${TAG:-latest}
     profiles: [summitflow, full]
     command: ["python", "-m", "app.worker"]
-    env_file: .env
     environment:
       DATABASE_URL: "postgresql://summitflow_app:${SF_DB_PASSWORD:-changeme}@postgres:5432/summitflow"
       REDIS_URL: "redis://:${REDIS_PASSWORD:-changeme}@redis:6379/1"
@@ -188,7 +186,6 @@ services:
   agent-hub-api:
     image: ghcr.io/summitflow-solutions/agent-hub-api:${TAG:-latest}
     profiles: [agent-hub, full]
-    env_file: .env
     environment:
       AGENT_HUB_DB_URL: "postgresql://agent_hub_app:${AH_DB_PASSWORD:-changeme}@postgres:5432/agent_hub"
       AGENT_HUB_REDIS_URL: "redis://:${REDIS_PASSWORD:-changeme}@redis:6379/2"
@@ -199,7 +196,7 @@ services:
       AGENT_HUB_ENCRYPTION_KEY: "${AGENT_HUB_ENCRYPTION_KEY}"
       AGENT_HUB_SECRET_KEY: "${AGENT_HUB_SECRET_KEY}"
       INTERNAL_SERVICE_SECRET: "${INTERNAL_SERVICE_SECRET}"
-    command: ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8003}"]
+    command: ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port 8003"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -240,7 +237,6 @@ services:
     image: ghcr.io/summitflow-solutions/agent-hub-api:${TAG:-latest}
     profiles: [agent-hub, full]
     command: ["python", "-m", "app.worker"]
-    env_file: .env
     environment:
       AGENT_HUB_DB_URL: "postgresql://agent_hub_app:${AH_DB_PASSWORD:-changeme}@postgres:5432/agent_hub"
       AGENT_HUB_REDIS_URL: "redis://:${REDIS_PASSWORD:-changeme}@redis:6379/2"
@@ -281,7 +277,6 @@ services:
   portfolio-api:
     image: ghcr.io/summitflow-solutions/portfolio-api:${TAG:-latest}
     profiles: [portfolio, full]
-    env_file: .env
     environment:
       PORTFOLIO_DB_URL: "postgresql://portfolio_app:${PA_DB_PASSWORD:-changeme}@postgres:5432/portfolio_ai"
       REDIS_URL: "redis://:${REDIS_PASSWORD:-changeme}@redis:6379/0"
@@ -295,7 +290,7 @@ services:
       PORTFOLIO_REQUEST_SOURCE: "portfolio-ai"
       BACKEND_URL: "http://portfolio-api:8000"
       FRONTEND_URL: "http://portfolio-web:3000"
-    command: ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+    command: ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port 8000"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -334,7 +329,6 @@ services:
     image: ghcr.io/summitflow-solutions/portfolio-api:${TAG:-latest}
     profiles: [portfolio, full]
     command: ["python", "-m", "app.worker"]
-    env_file: .env
     environment:
       PORTFOLIO_DB_URL: "postgresql://portfolio_app:${PA_DB_PASSWORD:-changeme}@postgres:5432/portfolio_ai"
       REDIS_URL: "redis://:${REDIS_PASSWORD:-changeme}@redis:6379/0"
@@ -382,20 +376,7 @@ services:
 
 volumes:
   pgdata:
-    # On existing installs migrating from project name "compose", set these to
-    # external with the old volume names to preserve data. On fresh installs,
-    # remove the name/external lines.
-    name: compose_pgdata
-    external: true
   redis-data:
-    name: compose_redis-data
-    external: true
   hatchet-config:
-    name: compose_hatchet-config
-    external: true
   portfolio-models:
-    name: compose_portfolio-models
-    external: true
   wal-archive:
-    name: compose_wal-archive
-    external: true

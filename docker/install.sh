@@ -24,6 +24,7 @@ check_command() {
 check_command docker
 check_command curl
 check_command openssl
+check_command jq
 
 # Verify Docker Compose v2
 if ! docker compose version &>/dev/null; then
@@ -122,20 +123,17 @@ AGENT_HUB_ENCRYPTION_KEY=$AGENT_HUB_ENCRYPTION_KEY
 AGENT_HUB_SECRET_KEY=$AGENT_HUB_SECRET_KEY
 INTERNAL_SERVICE_SECRET=$INTERNAL_SERVICE_SECRET
 
-# ─── Client Credentials (fill in after first boot) ──────────────
-# Generate these in the Agent Hub dashboard after services are running.
+# ─── Client Credentials (auto-generated below) ──────────────────
 SUMMITFLOW_CLIENT_ID=
-SUMMITFLOW_CLIENT_SECRET=
+SUMMITFLOW_REQUEST_SOURCE=summitflow
 AGENT_HUB_DASHBOARD_CLIENT_ID=
-AGENT_HUB_DASHBOARD_CLIENT_SECRET=
+AGENT_HUB_DASHBOARD_REQUEST_SOURCE=agent-hub-dashboard
 PORTFOLIO_CLIENT_ID=
-PORTFOLIO_CLIENT_SECRET=
+PORTFOLIO_REQUEST_SOURCE=portfolio-ai
 MONKEY_FIGHT_CLIENT_ID=
-MONKEY_FIGHT_CLIENT_SECRET=
+MONKEY_FIGHT_REQUEST_SOURCE=monkey-fight
 
-# ─── Hatchet ────────────────────────────────────────────────────
-# Generate after first boot:
-#   docker compose exec hatchet /hatchet-admin token create --config /config --tenant-id <UUID>
+# ─── Hatchet (auto-generated below) ─────────────────────────────
 HATCHET_CLIENT_TOKEN=
 
 # ─── Optional API Keys ──────────────────────────────────────────
@@ -159,14 +157,105 @@ docker compose --profile "$PROFILE" up -d
 
 echo ""
 echo "Waiting for services to become healthy..."
-for i in $(seq 1 60); do
-  if curl -sf http://localhost:8001/health &>/dev/null; then
-    break
-  fi
-  sleep 2
-done
 
-# ─── Post-boot: Hatchet Token ──────────────────────────────────
+wait_for_service() {
+  local name="$1" url="$2" max_wait="${3:-120}"
+  for i in $(seq 1 "$max_wait"); do
+    if curl -sf "$url" &>/dev/null; then
+      echo "  $name is healthy"
+      return 0
+    fi
+    sleep 2
+  done
+  echo "  WARNING: $name did not become healthy within ${max_wait}s"
+  return 1
+}
+
+wait_for_service "Hatchet" "http://localhost:8888/api/ready" 90
+
+# ─── Auto-generate Hatchet Token ─────────────────────────────────
+
+echo ""
+echo "Generating Hatchet client token..."
+TENANT_ID=$(docker compose exec -T hatchet /hatchet-admin tenant list --config /config 2>/dev/null \
+  | grep -oP '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -1)
+
+if [ -z "$TENANT_ID" ]; then
+  echo "  WARNING: Could not discover Hatchet tenant ID. You'll need to generate the token manually."
+  echo "  Run: docker compose exec hatchet /hatchet-admin token create --config /config --tenant-id <UUID>"
+else
+  HATCHET_TOKEN=$(docker compose exec -T hatchet /hatchet-admin token create \
+    --config /config --tenant-id "$TENANT_ID" --expiresIn 87600h 2>/dev/null | tr -d '[:space:]')
+
+  if [ -n "$HATCHET_TOKEN" ]; then
+    sed -i "s|^HATCHET_CLIENT_TOKEN=.*|HATCHET_CLIENT_TOKEN=$HATCHET_TOKEN|" .env
+    echo "  Hatchet token generated and saved to .env"
+  else
+    echo "  WARNING: Hatchet token generation failed. Generate manually."
+  fi
+fi
+
+# Restart services that need the Hatchet token
+echo "Restarting services with Hatchet token..."
+docker compose --profile "$PROFILE" up -d
+
+# Wait for Agent Hub API to be ready (needed for client credential creation)
+if [[ "$CHOICE" == "2" || "$CHOICE" == "3" ]]; then
+  wait_for_service "Agent Hub API" "http://localhost:8003/health" 60
+fi
+
+wait_for_service "SummitFlow API" "http://localhost:8001/health" 60
+
+# ─── Auto-generate Client Credentials ────────────────────────────
+
+create_client() {
+  local display_name="$1" env_var="$2" client_type="${3:-external}"
+  local response
+  response=$(curl -sf -X POST "http://localhost:8003/api/access-control/clients" \
+    -H "Content-Type: application/json" \
+    -d "{\"display_name\": \"$display_name\", \"client_type\": \"$client_type\"}" 2>/dev/null)
+
+  if [ $? -eq 0 ] && [ -n "$response" ]; then
+    local client_id
+    client_id=$(echo "$response" | jq -r '.client_id // empty')
+    if [ -n "$client_id" ]; then
+      sed -i "s|^${env_var}=.*|${env_var}=$client_id|" .env
+      echo "  Created client '$display_name' → $client_id"
+      return 0
+    fi
+  fi
+  echo "  WARNING: Failed to create client '$display_name'"
+  return 1
+}
+
+if [[ "$CHOICE" == "2" || "$CHOICE" == "3" ]]; then
+  echo ""
+  echo "Creating client credentials in Agent Hub..."
+  create_client "summitflow" "SUMMITFLOW_CLIENT_ID" "internal"
+  create_client "agent-hub-dashboard" "AGENT_HUB_DASHBOARD_CLIENT_ID" "internal"
+
+  if [[ "$CHOICE" == "3" ]]; then
+    create_client "portfolio-ai" "PORTFOLIO_CLIENT_ID" "internal"
+    create_client "monkey-fight" "MONKEY_FIGHT_CLIENT_ID" "external"
+  fi
+
+  # Restart services to pick up new client IDs
+  echo "Restarting services with client credentials..."
+  docker compose --profile "$PROFILE" up -d
+fi
+
+# ─── Final Health Check ──────────────────────────────────────────
+
+echo ""
+echo "Running final health checks..."
+sleep 5
+wait_for_service "SummitFlow API" "http://localhost:8001/health" 30 || true
+
+if [[ "$CHOICE" == "2" || "$CHOICE" == "3" ]]; then
+  wait_for_service "Agent Hub API" "http://localhost:8003/health" 30 || true
+fi
+
+# ─── Done ─────────────────────────────────────────────────────────
 
 echo ""
 echo "============================================"
@@ -187,18 +276,8 @@ if [[ "$CHOICE" == "3" ]]; then
 fi
 
 echo ""
-echo "─── Post-Boot Steps ────────────────────────"
-echo ""
-echo "1. Generate Hatchet token:"
-echo "   docker compose exec hatchet /hatchet-admin token create --config /config --tenant-id <UUID>"
-echo "   Then add to .env as HATCHET_CLIENT_TOKEN and restart workers:"
-echo "   docker compose restart summitflow-worker agent-hub-worker portfolio-worker"
-echo ""
-echo "2. Set up client credentials in Agent Hub, then update .env with"
-echo "   the CLIENT_ID and CLIENT_SECRET values for each project."
-echo ""
-echo "3. (Optional) Configure SMB backup target:"
-echo "   Set SMB_HOST and SMB_SHARE in .env"
+echo "(Optional) Configure SMB backup target:"
+echo "  Set SMB_HOST and SMB_SHARE in .env"
 echo ""
 echo "Management:"
 echo "  Status:  docker compose ps"
