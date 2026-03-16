@@ -144,7 +144,8 @@ backup_expects_database() {
             [ -n "${DB_PASSWORD:-}" ] && return 0
             # Also check if .env.local has a DB URL for this project (may have failed to parse)
             if [ -f "$HOME/.env.local" ]; then
-                grep -qE "^(${_env_var_name}|DATABASE_URL)=.*postgresql://" "$HOME/.env.local" 2>/dev/null && return 0
+                grep -qE "^${_env_var_name}=.*postgresql://" "$HOME/.env.local" 2>/dev/null && return 0
+                grep -qE "^DATABASE_URL=.*${PROJECT_NAME}" "$HOME/.env.local" 2>/dev/null && return 0
             fi
             return 1
             ;;
