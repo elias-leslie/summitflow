@@ -96,6 +96,9 @@ BACKUP_EXCLUDES=(
 
     # Node modules (anywhere)
     "node_modules"
+
+    # Hatchet container-generated config (root-owned, regenerated on startup)
+    "docker/compose/hatchet-config"
 )
 
 # Load .backupignore if present (per-repo exclusions, like .gitignore for backups)
