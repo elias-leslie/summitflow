@@ -78,3 +78,4 @@ references/
 .qna-session/
 .tmp/
 .task-findings.md
+.index.yaml
