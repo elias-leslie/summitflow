@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # commit.sh - Unified commit and sync for all managed repos
-# Version: 1.2.0
+# Version: 1.3.0
 # Usage: commit.sh [OPTIONS]
 #
 # Commits current repo by default. Use --all for multi-repo orchestration.
