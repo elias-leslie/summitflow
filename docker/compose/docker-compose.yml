@@ -200,6 +200,9 @@ services:
       AGENT_HUB_ENCRYPTION_KEY: "${AGENT_HUB_ENCRYPTION_KEY}"
       AGENT_HUB_SECRET_KEY: "${AGENT_HUB_SECRET_KEY}"
       INTERNAL_SERVICE_SECRET: "${INTERNAL_SERVICE_SECRET}"
+      VAPID_PUBLIC_KEY: "${VAPID_PUBLIC_KEY:-}"
+      VAPID_PRIVATE_KEY: "${VAPID_PRIVATE_KEY:-}"
+      VAPID_SUBJECT: "${VAPID_SUBJECT:-mailto:admin@summitflow.dev}"
     command: ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port 8003"]
     depends_on:
       postgres:
@@ -250,6 +253,9 @@ services:
       AGENT_HUB_ENCRYPTION_KEY: "${AGENT_HUB_ENCRYPTION_KEY}"
       AGENT_HUB_SECRET_KEY: "${AGENT_HUB_SECRET_KEY}"
       INTERNAL_SERVICE_SECRET: "${INTERNAL_SERVICE_SECRET}"
+      VAPID_PUBLIC_KEY: "${VAPID_PUBLIC_KEY:-}"
+      VAPID_PRIVATE_KEY: "${VAPID_PRIVATE_KEY:-}"
+      VAPID_SUBJECT: "${VAPID_SUBJECT:-mailto:admin@summitflow.dev}"
     depends_on:
       hatchet:
         condition: service_healthy

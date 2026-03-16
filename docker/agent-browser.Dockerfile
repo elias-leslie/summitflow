@@ -7,18 +7,20 @@
 
 FROM node:20-slim
 
-# Install Chrome for Testing and dependencies
+# Install Chrome dependencies, socat (CDP proxy), and curl (healthcheck)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget gnupg ca-certificates fonts-liberation \
     libasound2 libatk-bridge2.0-0 libatk1.0-0 libcups2 \
     libdbus-1-3 libdrm2 libgbm1 libgtk-3-0 libnspr4 libnss3 \
     libx11-xcb1 libxcomposite1 libxdamage1 libxrandr2 \
-    xdg-utils \
+    xdg-utils socat curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Chrome for Testing via npx
+# Install Chrome for Testing via npx, then resolve the binary path
 RUN npx @puppeteer/browsers install chrome@stable \
-    && npx @puppeteer/browsers install chromedriver@stable
+    && npx @puppeteer/browsers install chromedriver@stable \
+    && CHROME_BIN=$(find / -name 'chrome' -type f -path '*/chrome-linux64/*' 2>/dev/null | head -1) \
+    && ln -s "$CHROME_BIN" /usr/local/bin/chrome
 
 # Create non-root user for Chrome
 RUN groupadd -r browser && useradd -r -g browser -G audio,video browser \
@@ -28,9 +30,8 @@ RUN groupadd -r browser && useradd -r -g browser -G audio,video browser \
 USER browser
 WORKDIR /home/browser
 
-ENV CHROME_FLAGS="--no-sandbox --disable-dev-shm-usage --disable-gpu --headless=new --remote-debugging-port=9222 --remote-debugging-address=0.0.0.0"
-
 EXPOSE 9222
 
-# Default: start Chrome in headless mode with remote debugging
-CMD ["sh", "-c", "find /root -name 'chrome' -type f 2>/dev/null | head -1 | xargs -I{} {} $CHROME_FLAGS"]
+# socat proxies CDP from 0.0.0.0:9222 to Chrome's localhost:9223
+# (Chrome ignores --remote-debugging-address in newer versions)
+CMD ["sh", "-c", "chrome --no-sandbox --disable-dev-shm-usage --disable-gpu --headless=new --remote-debugging-port=9223 --remote-allow-origins=* & sleep 2 && socat TCP-LISTEN:9222,fork,reuseaddr TCP:127.0.0.1:9223"]
