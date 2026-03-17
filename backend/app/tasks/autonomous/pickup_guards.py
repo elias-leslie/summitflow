@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import os
 from datetime import datetime, timedelta
 from typing import Any
 
-from app.config import REDIS_URL
+from app.config import DEFAULT_API_BASE, REDIS_URL
 from app.services._agent_hub_config import AGENT_HUB_URL
 from app.storage import agent_configs
 from app.storage import tasks as task_store
@@ -119,7 +118,7 @@ def check_system_health(project_id: str) -> dict[str, Any] | None:
     # service may still be running; only explicit non-200 responses count.
     try:
         import httpx
-        backend_url = os.getenv("ST_API_BASE", "http://localhost:8001/api")
+        backend_url = DEFAULT_API_BASE
         health_url = backend_url.rstrip("/api").rstrip("/") + "/health"
         resp = httpx.get(health_url, timeout=_HTTP_TIMEOUT)
         if resp.status_code == 200:

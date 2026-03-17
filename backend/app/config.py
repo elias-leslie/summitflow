@@ -5,6 +5,7 @@ Uses pydantic-settings for validated configuration with environment variable sup
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 
@@ -76,3 +77,4 @@ def get_settings() -> Settings:
 settings = get_settings()
 DATABASE_URL = settings.database_url
 REDIS_URL = settings.redis_url
+DEFAULT_API_BASE = os.getenv("ST_API_BASE", "http://localhost:8001/api")
