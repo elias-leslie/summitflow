@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 from app.api.git_helpers.worktree_helpers import collect_worktrees
 from app.api.models.git_models import BranchInfo
+from app.utils._git_core import _resolve_project_id
 from app.utils._git_branches import (
     assess_orphan_task_branches,
     build_repo_workspace_summary,
@@ -64,7 +65,7 @@ class TestBuildRepoWorkspaceSummary:
             side_effect=[1, 2],
         )
 
-        summary = build_repo_workspace_summary(repo_path)
+        summary = build_repo_workspace_summary(repo_path, project_id="summitflow")
 
         assert summary.active_worktrees == 2
         assert summary.dirty_worktrees == 1
@@ -76,6 +77,59 @@ class TestBuildRepoWorkspaceSummary:
         assert summary.worktree_task_ids == ["task-123", "task-999"]
         assert summary.salvage_task_ids == []
         assert summary.review_orphan_task_ids == ["task-789"]
+
+    def test_uses_explicit_project_id_for_worktree_lookup(self, mocker) -> None:
+        repo_path = Path("/repos/custom-folder")
+        mock_branches = mocker.patch(
+            "app.utils._git_branches.get_all_branches",
+            return_value=[],
+        )
+        mock_worktrees = mocker.patch(
+            "app.utils._git_branches._get_active_worktrees",
+            return_value=[],
+        )
+        mocker.patch(
+            "app.utils._git_branches.list_prunable_task_branches",
+            return_value=[],
+        )
+        mocker.patch(
+            "app.utils._git_branches.assess_orphan_task_branches",
+            return_value=[],
+        )
+
+        build_repo_workspace_summary(repo_path, project_id="project-alpha")
+
+        mock_branches.assert_called_once_with(repo_path, "project-alpha")
+        mock_worktrees.assert_called_once_with("project-alpha")
+
+
+class TestResolveProjectId:
+    """Tests for repository-to-project resolution."""
+
+    def test_returns_registered_project_id_only_for_project_roots(self, mocker) -> None:
+        mocker.patch(
+            "app.utils._git_core._query_db_project_roots",
+            return_value=[
+                ("summitflow", "/home/kasadis/summitflow"),
+                ("agent-hub", "/home/kasadis/agent-hub"),
+            ],
+        )
+        mocker.patch(
+            "app.utils._git_core._query_db_extra_repos",
+            return_value=[
+                (".claude", "/home/kasadis/.claude"),
+                ("persona-sandbox", "/home/kasadis/persona-sandbox"),
+            ],
+        )
+        mocker.patch(
+            "app.utils._git_core._load_repo_paths_from_file",
+            return_value=[Path("/home/kasadis/.codex")],
+        )
+
+        assert _resolve_project_id(Path("/home/kasadis/summitflow")) == "summitflow"
+        assert _resolve_project_id(Path("/home/kasadis/.claude")) is None
+        assert _resolve_project_id(Path("/home/kasadis/persona-sandbox")) is None
+        assert _resolve_project_id(Path("/home/kasadis/.codex")) is None
 
 
 class TestCollectWorktrees:

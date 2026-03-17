@@ -112,10 +112,23 @@ export interface WorktreeInfo {
   project_id?: string
 }
 
+export interface BranchInfo {
+  name: string
+  is_current: boolean
+  has_worktree: boolean
+  repo_name?: string | null
+  project_id?: string | null
+  worktree_path?: string | null
+  task_id?: string | null
+  last_commit_short?: string | null
+  last_commit_date?: string | null
+}
+
 // --- Project Dashboard Types ---
 
 export interface ProjectDashboardResponse {
   worktrees: WorktreeInfo[]
+  branches: BranchInfo[]
   recent_merges: MergedTaskSummary[]
   recent_commits: CommitInfo[]
   snapshots: SnapshotInfo[]
@@ -136,21 +149,30 @@ export async function fetchProjectDashboard(
 
 // --- Conflict API ---
 
-export async function fetchConflicts(): Promise<ConflictsResponse> {
+export async function fetchConflicts(
+  projectId?: string,
+): Promise<ConflictsResponse> {
+  const params = new URLSearchParams()
+  if (projectId) params.set('project_id', projectId)
+  const suffix = params.size > 0 ? `?${params.toString()}` : ''
   return fetchWithErrorHandling<ConflictsResponse>(
-    `${getApiBase()}/api/git/conflicts`,
+    `${getApiBase()}/api/git/conflicts${suffix}`,
     { errorMessage: 'Failed to fetch conflicts' },
   )
 }
 
-export async function retryMerge(taskId: string): Promise<Record<string, unknown>> {
+export async function retryMerge(
+  taskId: string,
+): Promise<Record<string, unknown>> {
   return fetchWithErrorHandling<Record<string, unknown>>(
     `${getApiBase()}/api/git/tasks/${taskId}/retry-merge`,
     { method: 'POST', errorMessage: 'Failed to retry merge' },
   )
 }
 
-export async function dismissConflict(taskId: string): Promise<{ status: string }> {
+export async function dismissConflict(
+  taskId: string,
+): Promise<{ status: string }> {
   return fetchWithErrorHandling<{ status: string }>(
     `${getApiBase()}/api/git/tasks/${taskId}/dismiss-conflict`,
     { method: 'POST', errorMessage: 'Failed to dismiss conflict' },
@@ -166,7 +188,9 @@ export async function fetchTaskDiff(taskId: string): Promise<TaskDiffResponse> {
   )
 }
 
-export async function fetchRecentMerges(limit = 20): Promise<RecentMergesResponse> {
+export async function fetchRecentMerges(
+  limit = 20,
+): Promise<RecentMergesResponse> {
   return fetchWithErrorHandling<RecentMergesResponse>(
     `${getApiBase()}/api/git/recent-merges?limit=${limit}`,
     { errorMessage: 'Failed to fetch recent merges' },
@@ -202,7 +226,9 @@ export async function fetchRecentCommits(
 
 // --- Snapshot API ---
 
-export async function fetchSnapshots(projectId?: string): Promise<SnapshotsResponse> {
+export async function fetchSnapshots(
+  projectId?: string,
+): Promise<SnapshotsResponse> {
   const params = projectId ? `?project_id=${projectId}` : ''
   return fetchWithErrorHandling<SnapshotsResponse>(
     `${getApiBase()}/api/git/snapshots${params}`,

@@ -19,8 +19,8 @@ logger = get_logger(__name__)
 # (e.g. /host-home/summitflow). Set HOST_HOME_PATH + BACKUP_HOST_ROOT.
 _HOST_HOME_PATH = os.environ.get("HOST_HOME_PATH", "")
 _DOCKER_HOME_MOUNT = os.environ.get("BACKUP_HOST_ROOT", "")
-
-CONFIG_REPOS = [Path.home() / ".claude"]
+FALLBACK_FILE = Path.home() / ".claude" / "config" / "managed-repos.txt"
+CONFIG_REPOS: list[Path] = []
 WORKTREES_BASE_DIR = Path.home() / ".summitflow" / "worktrees"
 
 # Git subcommands and arguments
@@ -32,6 +32,11 @@ _GIT_PUSH = ["push"]
 
 # SQL
 _SQL_SELECT_ROOT_PATHS = "SELECT root_path FROM projects WHERE root_path IS NOT NULL"
+_SQL_SELECT_PROJECT_ROOTS = "SELECT id, root_path FROM projects WHERE root_path IS NOT NULL"
+_SQL_SELECT_EXTRA_REPOS = (
+    "SELECT id, path FROM backup_sources "
+    "WHERE path IS NOT NULL AND source_type IN ('config', 'workspace')"
+)
 
 # Status and state values
 _STATUS_FAILED = "failed"
@@ -73,6 +78,25 @@ def is_valid_git_repo(path: Path) -> bool:
     return path.exists() and (path / ".git").exists()
 
 
+def _load_repo_paths_from_file(path: Path) -> list[Path]:
+    """Return valid git repo paths from a newline-delimited config file."""
+    if not path.exists():
+        return []
+
+    repos: list[Path] = []
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        candidate = Path(line).expanduser()
+        if is_valid_git_repo(candidate):
+            repos.append(candidate)
+    return repos
+
+
+CONFIG_REPOS = _load_repo_paths_from_file(FALLBACK_FILE)
+
+
 def _query_db_root_paths() -> list[str]:
     """Return raw root_path values from the projects table, or [] on error."""
     from ..storage.connection import get_connection
@@ -83,6 +107,32 @@ def _query_db_root_paths() -> list[str]:
             return [row[0] for row in cur.fetchall()]
     except Exception:
         logger.debug("Failed to query managed repos from database", exc_info=True)
+        return []
+
+
+def _query_db_project_roots() -> list[tuple[str, str]]:
+    """Return project ids and raw root_path values from the projects table, or [] on error."""
+    from ..storage.connection import get_connection
+
+    try:
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(_SQL_SELECT_PROJECT_ROOTS)
+            return [(str(row[0]), str(row[1])) for row in cur.fetchall()]
+    except Exception:
+        logger.debug("Failed to query project repo mapping from database", exc_info=True)
+        return []
+
+
+def _query_db_extra_repos() -> list[tuple[str, str]]:
+    """Return non-project managed repo ids and paths from backup_sources, or [] on error."""
+    from ..storage.connection import get_connection
+
+    try:
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(_SQL_SELECT_EXTRA_REPOS)
+            return [(str(row[0]), str(row[1])) for row in cur.fetchall()]
+    except Exception:
+        logger.debug("Failed to query config/workspace repos from backup_sources", exc_info=True)
         return []
 
 
@@ -103,10 +153,50 @@ def _collect_db_repos() -> list[Path]:
     return repos
 
 
+def _collect_db_extra_repos() -> list[Path]:
+    """Return valid config/workspace repo paths from backup_sources."""
+    repos: list[Path] = []
+    for _, raw in _query_db_extra_repos():
+        path = _translate_path(raw)
+        if is_valid_git_repo(path):
+            repos.append(path)
+    return repos
+
+
+def _resolve_project_id(repo_path: Path, project_id: str | None = None) -> str | None:
+    """Resolve the project id for a repo path when it is a registered project root.
+
+    Only repositories from the projects table should receive a project_id.
+    Config/workspace/backup repos are managed, but they are not project repos
+    and should remain unscoped so the UI can treat them separately.
+    """
+    if project_id:
+        return project_id
+
+    try:
+        candidate = repo_path.resolve()
+    except OSError:
+        candidate = repo_path
+
+    for db_project_id, raw_root in _query_db_project_roots():
+        translated_root = _translate_path(raw_root)
+        try:
+            root_path = translated_root.resolve()
+        except OSError:
+            root_path = translated_root
+        if candidate == root_path:
+            return db_project_id
+
+    return None
+
+
 def get_managed_repos() -> list[Path]:
-    """Get list of managed repos from database + config repos."""
+    """Get list of managed repos from DB-backed sources plus local fallback repos."""
     repos = _collect_db_repos()
-    for config_repo in CONFIG_REPOS:
+    for extra_repo in _collect_db_extra_repos():
+        if extra_repo not in repos:
+            repos.append(extra_repo)
+    for config_repo in _load_repo_paths_from_file(FALLBACK_FILE):
         if is_valid_git_repo(config_repo) and config_repo not in repos:
             repos.append(config_repo)
     return repos
@@ -164,7 +254,7 @@ def _classify_state(uncommitted: int, behind: int, ahead: int) -> str:
     return _STATE_CLEAN
 
 
-def get_repo_status(repo_path: Path) -> RepoStatus | None:
+def get_repo_status(repo_path: Path, project_id: str | None = None) -> RepoStatus | None:
     """Get status information for a git repository."""
     from ..api.models.git_models import RepoStatus
     from ._git_branches import build_repo_workspace_summary
@@ -179,16 +269,18 @@ def get_repo_status(repo_path: Path) -> RepoStatus | None:
     uncommitted = _count_uncommitted(repo_path)
     ahead, behind = _get_ahead_behind(repo_path, branch)
     state = _classify_state(uncommitted, behind, ahead)
+    resolved_project_id = _resolve_project_id(repo_path, project_id)
 
     return RepoStatus(
         path=str(repo_path),
         name=repo_path.name,
+        project_id=resolved_project_id,
         branch=branch,
         uncommitted=uncommitted,
         ahead=ahead,
         behind=behind,
         state=state,
-        workspace_summary=build_repo_workspace_summary(repo_path),
+        workspace_summary=build_repo_workspace_summary(repo_path, resolved_project_id),
     )
 
 

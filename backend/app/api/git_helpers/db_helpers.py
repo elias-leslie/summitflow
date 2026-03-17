@@ -37,7 +37,7 @@ def get_project_root(project_id: str) -> Path:
 
 
 def get_project_root_with_fallback(project_id: str) -> Path:
-    """Get project root from DB or CONFIG_REPOS fallback.
+    """Get project root from DB-backed sources or local fallback.
 
     Args:
         project_id: The project ID to look up
@@ -49,7 +49,7 @@ def get_project_root_with_fallback(project_id: str) -> Path:
         HTTPException: If project not found in DB or config
     """
     from ...storage.connection import get_connection
-    from ...utils.git_helpers import CONFIG_REPOS
+    from ...utils._git_core import FALLBACK_FILE, _load_repo_paths_from_file
 
     project_root = None
     with get_connection() as conn, conn.cursor() as cur:
@@ -57,10 +57,15 @@ def get_project_root_with_fallback(project_id: str) -> Path:
         row = cur.fetchone()
         if row:
             project_root = row[0]
+        if not project_root:
+            cur.execute("SELECT path FROM backup_sources WHERE id = %s", (project_id,))
+            row = cur.fetchone()
+            if row:
+                project_root = row[0]
 
-    # Check config repos if not in DB
+    # Check local managed-repos fallback if not in DB
     if not project_root:
-        for config_repo in CONFIG_REPOS:
+        for config_repo in _load_repo_paths_from_file(FALLBACK_FILE):
             if config_repo.name == project_id:
                 project_root = str(config_repo)
                 break

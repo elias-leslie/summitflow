@@ -10,6 +10,7 @@ class RepoStatus(BaseModel):
 
     path: str
     name: str
+    project_id: str | None = None
     branch: str
     uncommitted: int
     ahead: int
@@ -86,6 +87,8 @@ class BranchInfo(BaseModel):
     name: str
     is_current: bool
     has_worktree: bool
+    repo_name: str | None = None
+    project_id: str | None = None
     worktree_path: str | None = None
     task_id: str | None = None
     last_commit_short: str | None = None
@@ -226,6 +229,7 @@ class ProjectDashboardResponse(BaseModel):
     """Combined dashboard data for a single project."""
 
     worktrees: list[WorktreeInfo]
+    branches: list[BranchInfo]
     recent_merges: list[MergedTaskSummary]
     recent_commits: list[CommitInfo]
     snapshots: list[SnapshotInfo]

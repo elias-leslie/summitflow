@@ -14,7 +14,15 @@ from typing import Annotated
 
 import typer
 
-from ..runtime import COMPOSE_DIR, COMPOSE_FILE, compose_cmd
+from ..runtime import (
+    COMPOSE_ENV_FILE,
+    COMPOSE_FILE,
+    compose_env,
+    compose_cmd,
+    compose_cmd_for_mode,
+    read_docker_mode,
+    write_docker_mode,
+)
 
 app = typer.Typer(
     name="docker",
@@ -31,17 +39,18 @@ def _run(
     capture: bool = False,
     stream: bool = False,
     check: bool = True,
+    env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str] | None:
     """Run a subprocess, optionally capturing or streaming output."""
     if stream:
-        proc = subprocess.Popen(args, stdout=sys.stdout, stderr=sys.stderr)
+        proc = subprocess.Popen(args, stdout=sys.stdout, stderr=sys.stderr, env=env)
         try:
             proc.wait()
         except KeyboardInterrupt:
             proc.terminate()
         return None
 
-    result = subprocess.run(args, capture_output=capture, text=True)
+    result = subprocess.run(args, capture_output=capture, text=True, env=env)
     if check and result.returncode != 0:
         if capture and result.stderr:
             typer.echo(result.stderr, err=True)
@@ -53,7 +62,12 @@ def _compose_json(
     *args: str,
 ) -> list[dict]:
     """Run a docker compose command that returns JSON lines."""
-    result = _run(compose_cmd(*args, "--format", "json"), capture=True, check=False)
+    result = _run(
+        compose_cmd(*args, "--format", "json"),
+        capture=True,
+        check=False,
+        env=compose_env(),
+    )
     if not result or not result.stdout.strip():
         return []
     lines = []
@@ -72,10 +86,13 @@ def _compose_json(
 def status() -> None:
     """Show container health grid (TOON format)."""
     containers = _compose_json("ps", "--all")
+    mode = read_docker_mode()
     if not containers:
+        typer.echo(f"DOCKER:MODE:{mode}")
         typer.echo("DOCKER:STATUS\n  (no containers running)")
         return
 
+    typer.echo(f"DOCKER:MODE:{mode}")
     typer.echo("DOCKER:STATUS")
     for c in containers:
         name = c.get("Name", c.get("Service", "unknown"))
@@ -108,21 +125,27 @@ def up(
         bool,
         typer.Option("--dev", help="Use development override (bind mounts + hot reload)"),
     ] = False,
+    prod: Annotated[
+        bool,
+        typer.Option("--prod", help="Use production runtime images"),
+    ] = False,
     detach: Annotated[
         bool,
         typer.Option("--detach/--no-detach", "-d", help="Run in background"),
     ] = True,
 ) -> None:
     """Start the Docker compose stack."""
-    args = compose_cmd("--profile", profile)
-    if dev:
-        dev_file = COMPOSE_DIR / "docker-compose.dev.yml"
-        if dev_file.exists():
-            args = compose_cmd("-f", str(COMPOSE_FILE), "-f", str(dev_file), "--profile", profile)
+    if dev and prod:
+        raise typer.BadParameter("Choose either --dev or --prod, not both.")
+
+    mode = "dev" if dev else "prod" if prod else read_docker_mode()
+    write_docker_mode(mode)
+
+    args = compose_cmd_for_mode(mode, "--profile", profile)
     args.extend(["up"])
     if detach:
         args.append("-d")
-    _run(args, stream=True)
+    _run(args, stream=True, env=compose_env())
 
 
 @app.command()
@@ -139,7 +162,7 @@ def down(
         if not confirm:
             raise typer.Abort()
         args.append("--volumes")
-    _run(args, stream=True)
+    _run(args, stream=True, env=compose_env())
 
 
 @app.command()
@@ -153,7 +176,7 @@ def restart(
     args = compose_cmd("restart")
     if service:
         args.append(service)
-    _run(args, stream=True)
+    _run(args, stream=True, env=compose_env())
 
 
 # ─── Logs ────────────────────────────────────────────────────────
@@ -179,7 +202,7 @@ def logs(
     if follow:
         args.append("-f")
     args.append(service)
-    _run(args, stream=True)
+    _run(args, stream=True, env=compose_env())
 
 
 # ─── Build & Pull ───────────────────────────────────────────────
@@ -232,7 +255,7 @@ def build(
 @app.command()
 def pull() -> None:
     """Pull latest images for all services."""
-    _run(compose_cmd("pull"), stream=True)
+    _run(compose_cmd("pull"), stream=True, env=compose_env())
 
 
 # ─── Shell ───────────────────────────────────────────────────────
@@ -250,6 +273,7 @@ def shell(
         compose_cmd("exec", service, "/bin/bash"),
         stream=True,
         check=False,
+        env=compose_env(),
     )
 
 
@@ -319,6 +343,8 @@ def env_create(
     args = [
         "docker",
         "compose",
+        "--env-file",
+        str(COMPOSE_ENV_FILE),
         "-f",
         str(COMPOSE_FILE),
         "-p",
@@ -330,7 +356,7 @@ def env_create(
         args.extend(["--profile", "browser"])
     args.extend(["up", "-d"])
     typer.echo(f"Creating test environment: {name} (profile: {profile})")
-    _run(args, stream=True)
+    _run(args, stream=True, env=compose_env())
 
 
 @app.command("env-list")
@@ -397,9 +423,10 @@ def env_destroy(
                         if env_name.startswith(ENV_PREFIX):
                             typer.echo(f"Destroying: {env_name}")
                             _run(
-                                ["docker", "compose", "-p", env_name, "down", "--volumes"],
+                                ["docker", "compose", "--env-file", str(COMPOSE_ENV_FILE), "-p", env_name, "down", "--volumes"],
                                 stream=True,
                                 check=False,
+                                env=compose_env(),
                             )
                 except json.JSONDecodeError:
                     continue
@@ -412,8 +439,9 @@ def env_destroy(
     project_name = f"{ENV_PREFIX}{name}"
     typer.echo(f"Destroying test environment: {name}")
     _run(
-        ["docker", "compose", "-p", project_name, "down", "--volumes"],
+        ["docker", "compose", "--env-file", str(COMPOSE_ENV_FILE), "-p", project_name, "down", "--volumes"],
         stream=True,
+        env=compose_env(),
     )
 
 
@@ -428,9 +456,10 @@ def env_exec(
         typer.echo("Provide a command to run", err=True)
         raise typer.Exit(1)
     _run(
-        ["docker", "compose", "-p", project_name, "exec", *cmd],
+        ["docker", "compose", "--env-file", str(COMPOSE_ENV_FILE), "-p", project_name, "exec", *cmd],
         stream=True,
         check=False,
+        env=compose_env(),
     )
 
 

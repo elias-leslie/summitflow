@@ -3,6 +3,30 @@
 # Port: 3001
 # Requires: workspace packages (chat-ui, push-client) pre-packed as tarballs
 
+# ── Stage 0: Dev Runtime ─────────────────────────────────────────
+FROM node:20-slim AS dev
+
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+WORKDIR /app
+
+COPY frontend/ ./
+COPY docker/workspace-packages/*.tgz /tmp/workspace-packages/
+
+RUN sed -i 's|"@agent-hub/chat-ui": "workspace:\*"|"@agent-hub/chat-ui": "file:/tmp/workspace-packages/agent-hub-chat-ui-0.1.0.tgz"|g' package.json \
+    && sed -i 's|"@agent-hub/push-client": "workspace:\*"|"@agent-hub/push-client": "file:/tmp/workspace-packages/agent-hub-push-client-0.1.0.tgz"|g' package.json
+
+RUN echo '{"overrides":{"@agent-hub/passport-client":"file:/tmp/workspace-packages/agent-hub-passport-client-0.1.0.tgz"}}' > /tmp/override.json && \
+    node -e "const p=require('./package.json'); const o=JSON.parse(require('fs').readFileSync('/tmp/override.json')); p.pnpm={...p.pnpm,...o}; require('fs').writeFileSync('package.json',JSON.stringify(p,null,2))" && \
+    CI=true pnpm install --no-frozen-lockfile
+
+ENV NODE_ENV=development
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3001
+ENV HOSTNAME=0.0.0.0
+
+CMD ["pnpm", "dev", "--hostname", "0.0.0.0", "--port", "3001"]
+
 # ── Stage 1: Build ───────────────────────────────────────────────
 FROM node:20-slim AS builder
 

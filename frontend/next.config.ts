@@ -4,6 +4,11 @@ const nextConfig: NextConfig = {
   output: 'standalone',
   reactStrictMode: true,
   transpilePackages: ['@agent-hub/chat-ui', '@agent-hub/push-client'],
+  allowedDevOrigins: [
+    'dev.summitflow.dev',
+    '*.summitflow.dev',
+    '192.168.8.244',
+  ],
   // API routing via Next.js rewrites for CF Access compatibility
   // Browser requests /api/* and /ws/* -> Next.js rewrites -> localhost:8001
   // This enables same-origin routing, avoiding CF Access cookie issues

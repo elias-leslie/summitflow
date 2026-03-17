@@ -1,6 +1,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
+import { DockerModeCard } from '@/components/docker/DockerModeCard'
 import { ServiceGrid } from '@/components/docker/ServiceGrid'
 import { dockerApi } from '@/lib/api/docker'
 
@@ -38,6 +39,8 @@ export default function DockerPage() {
           </div>
         )}
       </div>
+
+      <DockerModeCard />
 
       {/* Service Grid */}
       <ServiceGrid />

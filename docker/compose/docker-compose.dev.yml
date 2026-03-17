@@ -14,7 +14,7 @@ services:
     volumes:
       - ../../../summitflow/backend/app:/app/app:cached
       - ../../../summitflow/backend/cli:/app/cli:cached
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001", "--reload"]
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001", "--reload", "--reload-dir", "/app/app", "--reload-dir", "/app/cli"]
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
       RUN_MIGRATIONS: "false"
@@ -23,11 +23,22 @@ services:
     build:
       context: ../../../summitflow
       dockerfile: docker/frontend.Dockerfile
+      target: dev
     volumes:
       - ../../../summitflow/frontend/app:/app/app:cached
       - ../../../summitflow/frontend/components:/app/components:cached
       - ../../../summitflow/frontend/lib:/app/lib:cached
     command: ["pnpm", "dev", "--hostname", "0.0.0.0", "--port", "3001"]
+
+  summitflow-worker:
+    build:
+      context: ../../../summitflow
+      dockerfile: docker/backend.Dockerfile
+    volumes:
+      - ../../../summitflow/backend/app:/app/app:cached
+      - ../../../summitflow/backend/cli:/app/cli:cached
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
 
   # ─── Agent Hub ───────────────────────────────────────────────────
   agent-hub-api:
@@ -36,7 +47,7 @@ services:
       dockerfile: docker/backend.Dockerfile
     volumes:
       - ../../../agent-hub/backend/app:/app/app:cached
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8003", "--reload"]
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8003", "--reload", "--reload-dir", "/app/app"]
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
 
@@ -44,9 +55,19 @@ services:
     build:
       context: ../../../agent-hub
       dockerfile: docker/frontend.Dockerfile
+      target: dev
     volumes:
       - ../../../agent-hub/frontend/src:/app/src:cached
     command: ["pnpm", "dev", "--hostname", "0.0.0.0", "--port", "3003"]
+
+  agent-hub-worker:
+    build:
+      context: ../../../agent-hub
+      dockerfile: docker/backend.Dockerfile
+    volumes:
+      - ../../../agent-hub/backend/app:/app/app:cached
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
 
   # ─── Terminal ────────────────────────────────────────────────────
   terminal-api:
@@ -55,7 +76,7 @@ services:
       dockerfile: docker/backend.Dockerfile
     volumes:
       - ../../../terminal/terminal:/app/terminal:cached
-    command: ["uvicorn", "terminal.main:app", "--host", "0.0.0.0", "--port", "8002", "--reload"]
+    command: ["uvicorn", "terminal.main:app", "--host", "0.0.0.0", "--port", "8002", "--reload", "--reload-dir", "/app/terminal"]
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
 
@@ -63,6 +84,7 @@ services:
     build:
       context: ../../../terminal
       dockerfile: docker/frontend.Dockerfile
+      target: dev
     volumes:
       - ../../../terminal/frontend/app:/app/app:cached
       - ../../../terminal/frontend/components:/app/components:cached
@@ -80,7 +102,7 @@ services:
       dockerfile: docker/backend.Dockerfile
     volumes:
       - ../../../portfolio-ai/backend/app:/app/app:cached
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/app"]
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
 
@@ -88,7 +110,17 @@ services:
     build:
       context: ../../../portfolio-ai
       dockerfile: docker/frontend.Dockerfile
+      target: dev
     volumes:
       - ../../../portfolio-ai/frontend/app:/app/app:cached
       - ../../../portfolio-ai/frontend/components:/app/components:cached
     command: ["pnpm", "dev", "--hostname", "0.0.0.0", "--port", "3000"]
+
+  portfolio-worker:
+    build:
+      context: ../../../portfolio-ai
+      dockerfile: docker/backend.Dockerfile
+    volumes:
+      - ../../../portfolio-ai/backend/app:/app/app:cached
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"

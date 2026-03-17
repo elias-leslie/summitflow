@@ -75,7 +75,7 @@ async def get_git_status() -> GitStatusResponse:
 async def get_project_git_status(project_id: str) -> GitStatusResponse:
     """Get git status for a specific project's repository."""
     repo_path = get_project_root(project_id)
-    repo_status = get_repo_status(repo_path)
+    repo_status = get_repo_status(repo_path, project_id=project_id)
     if not repo_status:
         return GitStatusResponse(repositories=[], total=0)
     return GitStatusResponse(repositories=[repo_status], total=1)
@@ -101,12 +101,21 @@ async def get_worktrees(
 
 
 @router.get("/git/branches", response_model=BranchesResponse, tags=["git"])
-async def get_branches() -> BranchesResponse:
-    """Get list of all branches with worktree indicators."""
-    managed_repos = get_managed_repos()
-    if not managed_repos:
-        return BranchesResponse(branches=[], count=0)
-    branches = get_all_branches(managed_repos[0])
+async def get_branches(
+    project_id: str | None = Query(default=None),
+) -> BranchesResponse:
+    """Get list of branches across managed repos, optionally filtered by project."""
+    if project_id:
+        repo_path = get_project_root(project_id)
+        branches = get_all_branches(repo_path, project_id=project_id)
+        return BranchesResponse(branches=branches, count=len(branches))
+
+    branches = [
+        branch
+        for repo_path in get_managed_repos()
+        for branch in get_all_branches(repo_path)
+    ]
+    branches.sort(key=lambda b: ((b.repo_name or "").lower(), not b.is_current, not b.has_worktree, b.name.lower()))
     return BranchesResponse(branches=branches, count=len(branches))
 
 

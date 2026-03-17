@@ -11,7 +11,6 @@ import httpx
 
 from app.config import DEFAULT_API_BASE
 
-CONFIG_REPOS = [Path.home() / ".claude"]
 FALLBACK_FILE = Path.home() / ".claude/config/managed-repos.txt"
 REMOTE_REF_TEMPLATE = "{branch}...origin/{branch}"
 ALREADY_UP_TO_DATE = "Already up to date"
@@ -21,19 +20,40 @@ def _get_summitflow_api_url() -> str:
     return f"{os.getenv('ST_API_BASE', DEFAULT_API_BASE)}/projects"
 
 
+def _get_backup_sources_api_url() -> str:
+    return f"{os.getenv('ST_API_BASE', DEFAULT_API_BASE)}/backup-sources"
+
+
 def _is_valid_git_path(path: Path) -> bool:
     return path.exists() and (path / ".git").exists()
 
 
 def _repos_from_api() -> list[Path]:
-    response = httpx.get(_get_summitflow_api_url(), timeout=2.0)
-    if response.status_code != 200:
-        return []
-    return [
+    repos: list[Path] = []
+
+    projects_response = httpx.get(_get_summitflow_api_url(), timeout=2.0)
+    if projects_response.status_code == 200:
+        repos.extend([
         Path(p["root_path"])
-        for p in response.json()
+        for p in projects_response.json()
         if p.get("root_path") and _is_valid_git_path(Path(p["root_path"]))
-    ]
+        ])
+
+    sources_response = httpx.get(_get_backup_sources_api_url(), timeout=2.0)
+    if sources_response.status_code == 200:
+        repos.extend([
+            Path(source["path"])
+            for source in sources_response.json()
+            if source.get("path")
+            and source.get("source_type") in {"config", "workspace"}
+            and _is_valid_git_path(Path(source["path"]))
+        ])
+
+    deduped: list[Path] = []
+    for repo in repos:
+        if repo not in deduped:
+            deduped.append(repo)
+    return deduped
 
 
 def _repos_from_fallback() -> list[Path]:
@@ -51,14 +71,15 @@ def _repos_from_fallback() -> list[Path]:
 
 
 def _get_managed_repos() -> list[Path]:
-    """Get managed repos from API (or fallback file) plus CONFIG_REPOS."""
+    """Get managed repos from API, falling back to the local managed-repos file."""
     try:
         repos = _repos_from_api()
     except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError):
         repos = _repos_from_fallback()
-    for repo in CONFIG_REPOS:
-        if _is_valid_git_path(repo) and repo not in repos:
-            repos.append(repo)
+    else:
+        for repo in _repos_from_fallback():
+            if repo not in repos:
+                repos.append(repo)
     return repos
 
 

@@ -14,9 +14,10 @@ import asyncio
 import json
 import os
 import re
+import shlex
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -25,6 +26,26 @@ from pydantic import BaseModel
 router = APIRouter()
 
 _INTERNAL_SECRET = os.environ.get("INTERNAL_SERVICE_SECRET", "")
+
+def _detect_repo_root(start_path: Path | None = None) -> Path:
+    current = (start_path or Path(__file__).resolve()).parent
+    for candidate in (current, *current.parents):
+        if (candidate / "scripts" / "rebuild.sh").exists():
+            return candidate
+    return Path(__file__).resolve().parents[3]
+
+
+_REPO_ROOT = _detect_repo_root()
+_HOST_HOME_PATH = Path(os.environ.get("HOST_HOME_PATH", str(Path.home())))
+_HOST_REPO_ROOT = Path(os.environ.get("HOST_REPO_ROOT", str(_HOST_HOME_PATH / "summitflow")))
+_DEFAULT_STACK_MODE = os.environ.get("SUMMITFLOW_DOCKER_DEFAULT_MODE", "dev")
+if _DEFAULT_STACK_MODE not in {"dev", "prod"}:
+    _DEFAULT_STACK_MODE = "dev"
+_COMPOSE_DIR = Path(os.environ.get("COMPOSE_DIR", str(_REPO_ROOT / "docker" / "compose")))
+_COMPOSE_FILE = _COMPOSE_DIR / "docker-compose.yml"
+_RUNTIME_MODE_FILE = _COMPOSE_DIR / ".runtime-mode"
+_INFRA_SERVICES = {"postgres", "redis", "hatchet", "hatchet-migrate", "hatchet-setup-config"}
+_DOCKER_SOCKET = Path("/var/run/docker.sock")
 
 
 async def _require_auth(x_internal_secret: str = Header(default="")) -> None:
@@ -78,6 +99,19 @@ class ActionResult(BaseModel):
     message: str
 
 
+class DockerRuntimeStatus(BaseModel):
+    runtime: Literal["docker", "docker-stopped", "native"]
+    current_mode: Literal["dev", "prod"]
+    configured_mode: Literal["dev", "prod"]
+    default_mode: Literal["dev", "prod"]
+    source: Literal["detected", "persisted", "default"]
+    is_running: bool
+
+
+class DockerRuntimeUpdate(BaseModel):
+    mode: Literal["dev", "prod"]
+
+
 # ─── Helpers ─────────────────────────────────────────────────────
 
 
@@ -90,6 +124,18 @@ async def _run_docker(*args: str, stdin_data: bytes | None = None) -> tuple[str,
         stderr=asyncio.subprocess.PIPE,
     )
     stdout, stderr = await proc.communicate(stdin_data)
+    return stdout.decode(), stderr.decode(), proc.returncode or 0
+
+
+async def _run_command(*args: str, cwd: Path | None = None) -> tuple[str, str, int]:
+    """Run a shell command asynchronously."""
+    proc = await asyncio.create_subprocess_exec(
+        *args,
+        cwd=str(cwd) if cwd else None,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await proc.communicate()
     return stdout.decode(), stderr.decode(), proc.returncode or 0
 
 
@@ -120,6 +166,170 @@ def _docker_error(detail: str, stderr: str, stdout: str = "") -> HTTPException:
     return HTTPException(status_code=503, detail=f"{detail}: {message}")
 
 
+def _service_from_container(container: dict[str, Any]) -> str:
+    labels = container.get("Labels", "")
+    for label in labels.split(","):
+        if label.startswith("com.docker.compose.service="):
+            return label.split("=", 1)[1]
+    return ""
+
+
+def _persisted_runtime_mode() -> tuple[Literal["dev", "prod"], Literal["persisted", "default"]]:
+    if _RUNTIME_MODE_FILE.exists():
+        raw = _RUNTIME_MODE_FILE.read_text().strip()
+        if raw in {"dev", "prod"}:
+            return raw, "persisted"
+    return _DEFAULT_STACK_MODE, "default"
+
+
+async def _project_containers(*, all_containers: bool = False) -> list[dict[str, Any]]:
+    args = ["docker", "ps"]
+    if all_containers:
+        args.append("--all")
+    args.extend(["--format", "json", *_project_filter()])
+    stdout, _stderr, rc = await _run_docker(*args)
+    if rc != 0 or not stdout.strip():
+        return []
+    return _parse_json_lines(stdout)
+
+
+async def _detect_running_mode(containers: list[dict[str, Any]]) -> Literal["dev", "prod"] | None:
+    for container in containers:
+        service = _service_from_container(container)
+        if not service or service in _INFRA_SERVICES:
+            continue
+        container_id = container.get("ID", "")
+        if not container_id:
+            continue
+        inspect_stdout, _inspect_stderr, rc = await _run_docker(
+            "docker",
+            "inspect",
+            container_id,
+            "--format",
+            '{{range .Mounts}}{{.Type}} {{.Destination}}{{"\\n"}}{{end}}',
+        )
+        if rc == 0 and re.search(r"^bind /app/.+", inspect_stdout, flags=re.MULTILINE):
+            return "dev"
+        return "prod"
+    return None
+
+
+def _rebuild_script_path() -> Path:
+    candidates = (
+        _HOST_REPO_ROOT / "scripts" / "rebuild.sh",
+        _HOST_HOME_PATH / _REPO_ROOT.name / "scripts" / "rebuild.sh",
+        _REPO_ROOT / "scripts" / "rebuild.sh",
+    )
+    for script in candidates:
+        if script.exists():
+            return script
+    return candidates[0]
+
+
+async def _helper_image_ref() -> str:
+    container_ref = os.environ.get("HOSTNAME", "").strip()
+    if container_ref:
+        stdout, _stderr, rc = await _run_docker(
+            "docker",
+            "inspect",
+            container_ref,
+            "--format",
+            "{{.Config.Image}}",
+        )
+        if rc == 0 and stdout.strip():
+            return stdout.strip()
+
+    for container in await _project_containers():
+        if _service_from_container(container) != "summitflow-api":
+            continue
+        container_id = container.get("ID", "")
+        if not container_id:
+            continue
+        stdout, _stderr, rc = await _run_docker(
+            "docker",
+            "inspect",
+            container_id,
+            "--format",
+            "{{.Config.Image}}",
+        )
+        if rc == 0 and stdout.strip():
+            return stdout.strip()
+
+    raise HTTPException(status_code=503, detail="Unable to resolve helper image for Docker mode switch")
+
+
+async def _launch_runtime_switch(mode: Literal["dev", "prod"], script_path: Path) -> str:
+    helper_image = await _helper_image_ref()
+    helper_name = f"{COMPOSE_PROJECT}-mode-switch"
+    quoted_script = shlex.quote(str(script_path))
+    docker_sock_gid = _DOCKER_SOCKET.stat().st_gid if _DOCKER_SOCKET.exists() else None
+
+    await _run_docker("docker", "rm", "-f", helper_name)
+    run_args = [
+        "docker",
+        "run",
+        "-d",
+        "--name",
+        helper_name,
+        "--entrypoint",
+        "bash",
+        "--network",
+        "host",
+    ]
+    if docker_sock_gid is not None:
+        run_args.extend(["--group-add", str(docker_sock_gid)])
+    run_args.extend(
+        [
+            "-v",
+            "/var/run/docker.sock:/var/run/docker.sock",
+            "-v",
+            f"{_HOST_HOME_PATH}:{_HOST_HOME_PATH}",
+            "-w",
+            str(script_path.parent.parent),
+            helper_image,
+            "-lc",
+            f"sleep 2 && exec bash {quoted_script} --{mode} --restart",
+        ]
+    )
+    stdout, stderr, rc = await _run_docker(*run_args)
+    if rc != 0 or not stdout.strip():
+        raise _docker_error(f"Failed to queue Docker mode switch to {mode}", stderr, stdout)
+
+    return helper_name
+
+
+async def _get_runtime_status() -> DockerRuntimeStatus:
+    configured_mode, source = _persisted_runtime_mode()
+    if not _COMPOSE_FILE.exists():
+        return DockerRuntimeStatus(
+            runtime="native",
+            current_mode=configured_mode,
+            configured_mode=configured_mode,
+            default_mode=_DEFAULT_STACK_MODE,
+            source=source,
+            is_running=False,
+        )
+
+    running_containers = await _project_containers()
+    is_running = bool(running_containers)
+    detected_mode = await _detect_running_mode(running_containers) if is_running else None
+    current_mode = detected_mode or configured_mode
+    current_source: Literal["detected", "persisted", "default"]
+    if detected_mode:
+        current_source = "detected"
+    else:
+        current_source = source
+
+    return DockerRuntimeStatus(
+        runtime="docker" if is_running else "docker-stopped",
+        current_mode=current_mode,
+        configured_mode=configured_mode,
+        default_mode=_DEFAULT_STACK_MODE,
+        source=current_source,
+        is_running=is_running,
+    )
+
+
 # ─── Endpoints ───────────────────────────────────────────────────
 
 
@@ -146,12 +356,7 @@ async def get_status() -> list[ContainerStatus]:
                     port_strs.append(part.split("->")[0].split(":")[-1])
 
         # Extract service name from compose label
-        labels = c.get("Labels", "")
-        service = ""
-        for label in labels.split(","):
-            if label.startswith("com.docker.compose.service="):
-                service = label.split("=", 1)[1]
-                break
+        service = _service_from_container(c)
 
         # Map docker ps State to compose-like state
         state = c.get("State", "unknown")
@@ -177,6 +382,30 @@ async def get_status() -> list[ContainerStatus]:
             )
         )
     return result
+
+
+@router.get("/runtime", response_model=DockerRuntimeStatus)
+async def get_runtime_status() -> DockerRuntimeStatus:
+    """Get the current Docker stack mode."""
+    return await _get_runtime_status()
+
+
+@router.post("/runtime", response_model=ActionResult, dependencies=[Depends(_require_auth)])
+async def update_runtime_mode(payload: DockerRuntimeUpdate) -> ActionResult:
+    """Switch the Docker stack between dev and prod modes."""
+    script_path = _rebuild_script_path()
+    if not script_path.exists():
+        raise HTTPException(status_code=500, detail="rebuild.sh not found")
+
+    runtime = await _get_runtime_status()
+    if runtime.current_mode == payload.mode and runtime.is_running:
+        return ActionResult(success=True, message=f"Docker stack already running in {payload.mode} mode")
+
+    helper_name = await _launch_runtime_switch(payload.mode, script_path)
+    return ActionResult(
+        success=True,
+        message=f"Queued Docker stack switch to {payload.mode} mode via {helper_name}",
+    )
 
 
 @router.get("/metrics", response_model=list[ContainerMetrics])

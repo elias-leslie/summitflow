@@ -36,6 +36,15 @@ export interface ActionResult {
   message: string
 }
 
+export interface DockerRuntimeStatus {
+  runtime: 'docker' | 'docker-stopped' | 'native'
+  current_mode: 'dev' | 'prod'
+  configured_mode: 'dev' | 'prod'
+  default_mode: 'dev' | 'prod'
+  source: 'detected' | 'persisted' | 'default'
+  is_running: boolean
+}
+
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(buildApiUrl(path), init)
   if (!res.ok) {
@@ -58,6 +67,7 @@ export const dockerApi = {
   getStatus: () => fetchJson<ContainerStatus[]>('/api/docker/status'),
   getMetrics: () => fetchJson<ContainerMetrics[]>('/api/docker/metrics'),
   getHealth: () => fetchJson<HealthSummary>('/api/docker/health'),
+  getRuntime: () => fetchJson<DockerRuntimeStatus>('/api/docker/runtime'),
   getLogs: (service: string, tail = 100) =>
     fetchJson<{ logs: string }>(`/api/docker/logs/${service}?tail=${tail}`),
 
@@ -69,6 +79,12 @@ export const dockerApi = {
     fetchJson<ActionResult>(`/api/docker/stop/${service}`, { method: 'POST' }),
   start: (service: string) =>
     fetchJson<ActionResult>(`/api/docker/start/${service}`, { method: 'POST' }),
+  switchRuntimeMode: (mode: 'dev' | 'prod') =>
+    fetchJson<ActionResult>('/api/docker/runtime', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode }),
+    }),
 
   /** SSE log stream URL for EventSource */
   logStreamUrl: (service: string, tail = 100) =>

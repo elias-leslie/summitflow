@@ -22,7 +22,7 @@
 set -uo pipefail
 
 SUMMITFLOW_API="${ST_API_BASE:-http://localhost:8001/api}/projects"
-CONFIG_REPOS=("$HOME/.claude" "$HOME/persona-sandbox")
+BACKUP_SOURCES_API="${ST_API_BASE:-http://localhost:8001/api}/backup-sources"
 FALLBACK_FILE="$HOME/.claude/config/managed-repos.txt"
 MAIN_BRANCHES=("main" "master")
 QUALITY_GATE_STATE="${QUALITY_GATE_STATE:-$HOME/.claude/hooks/.quality-gate-state.json}"
@@ -182,7 +182,7 @@ generate_simple_message() {
     local repo_name
     repo_name=$(resolve_repo_name "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
 
-    if [[ "$repo_name" == ".claude" ]]; then
+    if [[ "$repo_name" == ".claude" || "$repo_name" == ".codex" ]]; then
         if echo "$changed" | grep -q "^skills/"; then
             scope="skills"
         elif echo "$changed" | grep -q "^commands/"; then
@@ -295,7 +295,7 @@ run_quality_gates() {
 get_managed_repos() {
     local repos=()
 
-    local api_response
+    local api_response backup_sources_response
     if api_response=$(curl -sf --connect-timeout 2 "$SUMMITFLOW_API" 2>/dev/null); then
         if command -v jq &>/dev/null; then
             while IFS= read -r path; do
@@ -306,20 +306,28 @@ get_managed_repos() {
                 [[ -d "$path/.git" ]] && repos+=("$path")
             done < <(echo "$api_response" | grep -o '"root_path":"[^"]*"' | sed 's/"root_path":"//;s/"$//')
         fi
-    else
-        if [[ -f "$FALLBACK_FILE" ]]; then
-            while IFS= read -r line || [[ -n "$line" ]]; do
-                [[ "$line" =~ ^[[:space:]]*# ]] && continue
-                [[ -z "${line// }" ]] && continue
-                local expanded="${line/#\~/$HOME}"
-                [[ -d "$expanded/.git" ]] && repos+=("$expanded")
-            done < "$FALLBACK_FILE"
+    fi
+
+    if backup_sources_response=$(curl -sf --connect-timeout 2 "$BACKUP_SOURCES_API" 2>/dev/null); then
+        if command -v jq &>/dev/null; then
+            while IFS= read -r path; do
+                [[ -d "$path/.git" ]] && repos+=("$path")
+            done < <(echo "$backup_sources_response" | jq -r '.[] | select(.source_type == "config" or .source_type == "workspace") | .path // empty')
+        else
+            while IFS= read -r path; do
+                [[ -d "$path/.git" ]] && repos+=("$path")
+            done < <(echo "$backup_sources_response" | grep -o '"path":"[^"]*"' | sed 's/"path":"//;s/"$//')
         fi
     fi
 
-    for config_repo in "${CONFIG_REPOS[@]}"; do
-        [[ -d "$config_repo/.git" ]] && repos+=("$config_repo")
-    done
+    if [[ -f "$FALLBACK_FILE" ]]; then
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            [[ "$line" =~ ^[[:space:]]*# ]] && continue
+            [[ -z "${line// }" ]] && continue
+            local expanded="${line/#\~/$HOME}"
+            [[ -d "$expanded/.git" ]] && repos+=("$expanded")
+        done < "$FALLBACK_FILE"
+    fi
 
     local current_repo
     current_repo=$(git rev-parse --show-toplevel 2>/dev/null || echo "")

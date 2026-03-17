@@ -1,10 +1,18 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { GitCommitHorizontal, GitMerge, Layers, Loader2, Shield } from 'lucide-react'
+import {
+  GitBranch,
+  GitCommitHorizontal,
+  GitMerge,
+  Layers,
+  Loader2,
+  Shield,
+} from 'lucide-react'
 import { useState } from 'react'
 import { fetchProjectDashboard } from '@/lib/api/git-enhanced'
 import { POLL_SLOW, STALE_GIT } from '@/lib/polling'
+import { BranchRow } from './BranchRow'
 import { CommitEntry } from './CommitEntry'
 import { MergeRow } from './MergeRow'
 import { SectionLabel } from './SectionLabel'
@@ -35,11 +43,18 @@ export function DashboardContent({ projectId }: { projectId: string }) {
   if (!data) return null
 
   const hasWorktrees = data.worktrees.length > 0
+  const hasBranches = data.branches.length > 0
   const hasMerges = data.recent_merges.length > 0
   const hasCommits = data.recent_commits.length > 0
   const hasSnapshots = data.snapshots.length > 0
 
-  if (!hasWorktrees && !hasMerges && !hasCommits && !hasSnapshots) {
+  if (
+    !hasWorktrees &&
+    !hasBranches &&
+    !hasMerges &&
+    !hasCommits &&
+    !hasSnapshots
+  ) {
     return (
       <div className="text-center py-6 text-slate-600 text-sm">
         No activity data for this project.
@@ -51,7 +66,14 @@ export function DashboardContent({ projectId }: { projectId: string }) {
     <div className="space-y-5 animate-in fade-in duration-300">
       {hasWorktrees && (
         <div>
-          <SectionLabel icon={Layers} label="Worktrees" count={data.worktrees.length} color="text-phosphor-400" badgeBg="bg-phosphor-500/10" badgeBorder="border-phosphor-500/20" />
+          <SectionLabel
+            icon={Layers}
+            label="Worktrees"
+            count={data.worktrees.length}
+            color="text-phosphor-400"
+            badgeBg="bg-phosphor-500/10"
+            badgeBorder="border-phosphor-500/20"
+          />
           <div className="space-y-1.5">
             {data.worktrees.map((wt) => (
               <WorktreeCompact key={wt.task_id} worktree={wt} />
@@ -59,9 +81,33 @@ export function DashboardContent({ projectId }: { projectId: string }) {
           </div>
         </div>
       )}
+      {hasBranches && (
+        <div>
+          <SectionLabel
+            icon={GitBranch}
+            label="Branches"
+            count={data.branches.length}
+            color="text-cyan-300"
+            badgeBg="bg-cyan-500/10"
+            badgeBorder="border-cyan-500/20"
+          />
+          <div className="space-y-1.5">
+            {data.branches.map((branch) => (
+              <BranchRow key={branch.name} branch={branch} />
+            ))}
+          </div>
+        </div>
+      )}
       {hasMerges && (
         <div>
-          <SectionLabel icon={GitMerge} label="Merged Tasks" count={data.recent_merges.length} color="text-purple-400" badgeBg="bg-purple-500/10" badgeBorder="border-purple-500/20" />
+          <SectionLabel
+            icon={GitMerge}
+            label="Merged Tasks"
+            count={data.recent_merges.length}
+            color="text-purple-400"
+            badgeBg="bg-purple-500/10"
+            badgeBorder="border-purple-500/20"
+          />
           <div className="space-y-1.5">
             {data.recent_merges.map((merge) => (
               <MergeRow key={merge.task_id} merge={merge} />
@@ -71,10 +117,21 @@ export function DashboardContent({ projectId }: { projectId: string }) {
       )}
       {hasCommits && (
         <div>
-          <SectionLabel icon={GitCommitHorizontal} label="Recent Commits" count={data.recent_commits.length} color="text-phosphor-400" badgeBg="bg-phosphor-500/10" badgeBorder="border-phosphor-500/20" />
+          <SectionLabel
+            icon={GitCommitHorizontal}
+            label="Recent Commits"
+            count={data.recent_commits.length}
+            color="text-phosphor-400"
+            badgeBg="bg-phosphor-500/10"
+            badgeBorder="border-phosphor-500/20"
+          />
           <div className="rounded-md border border-slate-800/40 bg-slate-900/10 divide-y divide-slate-800/30 overflow-hidden">
             {data.recent_commits.slice(0, 15).map((commit) => (
-              <CommitEntry key={commit.sha} commit={commit} projectId={projectId} />
+              <CommitEntry
+                key={commit.sha}
+                commit={commit}
+                projectId={projectId}
+              />
             ))}
           </div>
         </div>

@@ -16,6 +16,7 @@ from ...tasks.autonomous.cleanup.merge_operations import merge_and_cleanup_task_
 from ...tasks.autonomous.cleanup.merge_types import MergeResult
 from ...utils.git_helpers import (
     get_managed_repos,
+    get_all_branches,
     get_recent_commits,
     get_task_diff,
     list_snapshots,
@@ -302,6 +303,7 @@ async def build_project_dashboard(
     """Build project dashboard response."""
     repo_path = get_project_path(project_id)
     worktrees = [w for w in collect_worktrees() if w.project_id == project_id]
+    branches = get_all_branches(repo_path, project_id=project_id)
     merges_resp = build_recent_merges_response(limit=10, project_id=project_id)
     commits = get_recent_commits(repo_path, limit=commits_limit)
     snapshots = list_snapshots(repo_path)
@@ -309,6 +311,7 @@ async def build_project_dashboard(
     conflicts = build_conflicts_response(project_id=project_id)
     return ProjectDashboardResponse(
         worktrees=worktrees,
+        branches=branches,
         recent_merges=merges_resp.merges,
         recent_commits=commits,
         snapshots=snapshots,

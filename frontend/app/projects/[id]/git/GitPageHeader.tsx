@@ -7,6 +7,12 @@ interface GitPageHeaderProps {
   dirtyCount: number
   isSyncing: boolean
   onSync: () => void
+  cleanLabel?: string
+  dirtyLabel?: string
+  actionLabel?: string
+  busyLabel?: string
+  title?: string
+  description?: string
 }
 
 export function GitPageHeader({
@@ -14,6 +20,12 @@ export function GitPageHeader({
   dirtyCount,
   isSyncing,
   onSync,
+  cleanLabel = 'Clean',
+  dirtyLabel = 'Modified',
+  actionLabel = 'Sync All',
+  busyLabel = 'Syncing...',
+  title = 'Repository Status',
+  description = 'Monitor and sync managed repositories',
 }: GitPageHeaderProps) {
   return (
     <header className="relative">
@@ -26,11 +38,9 @@ export function GitPageHeader({
       <div className="flex items-center justify-between">
         <div>
           <h1 className="display text-3xl font-bold text-white tracking-tight">
-            Repository Status
+            {title}
           </h1>
-          <p className="text-slate-400 mt-1">
-            Monitor and sync managed repositories
-          </p>
+          <p className="text-slate-400 mt-1">{description}</p>
         </div>
 
         {/* Sync All Button */}
@@ -49,7 +59,7 @@ export function GitPageHeader({
           ) : (
             <RefreshCw className="w-5 h-5" />
           )}
-          <span>{isSyncing ? 'Syncing...' : 'Sync All'}</span>
+          <span>{isSyncing ? busyLabel : actionLabel}</span>
 
           {/* Glow ring when syncing */}
           {isSyncing && (
@@ -62,11 +72,15 @@ export function GitPageHeader({
       <div className="mt-6 flex items-center gap-6">
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 rounded-full bg-phosphor-500 shadow-[0_0_8px_rgba(0,245,255,0.6)]" />
-          <span className="text-sm text-slate-300">{cleanCount} Clean</span>
+          <span className="text-sm text-slate-300">
+            {cleanCount} {cleanLabel}
+          </span>
         </div>
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 rounded-full bg-outrun-500 shadow-[0_0_8px_rgba(255,0,102,0.6)]" />
-          <span className="text-sm text-slate-300">{dirtyCount} Modified</span>
+          <span className="text-sm text-slate-300">
+            {dirtyCount} {dirtyLabel}
+          </span>
         </div>
       </div>
     </header>

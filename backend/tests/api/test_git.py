@@ -27,6 +27,7 @@ class TestGitStatus:
         mock_status.return_value = RepoStatus(
             path="/test/repo",
             name="repo",
+            project_id="summitflow",
             branch="main",
             uncommitted=0,
             ahead=0,
@@ -50,8 +51,184 @@ class TestGitStatus:
         assert "repositories" in data
         assert "total" in data
         assert isinstance(data["repositories"], list)
+        assert data["repositories"][0]["project_id"] == "summitflow"
         assert data["repositories"][0]["workspace_summary"]["active_worktrees"] == 1
         assert data["repositories"][0]["workspace_summary"]["dirty_worktrees"] == 1
+
+
+class TestGitBranches:
+    """Tests for GET /api/git/branches."""
+
+    def test_git_branches_aggregates_managed_repos(self, mocker: MockerFixture) -> None:
+        from pathlib import Path
+
+        from app.api.models.git_models import BranchInfo
+
+        mocker.patch(
+            "app.api.git.get_managed_repos",
+            return_value=[Path("/repos/alpha"), Path("/repos/beta")],
+        )
+        mock_branches = mocker.patch("app.api.git.get_all_branches")
+        mock_branches.side_effect = [
+            [
+                BranchInfo(
+                    name="main",
+                    is_current=True,
+                    has_worktree=False,
+                    repo_name="alpha",
+                    project_id="project-alpha",
+                ),
+            ],
+            [
+                BranchInfo(
+                    name="task-123/main",
+                    is_current=False,
+                    has_worktree=True,
+                    repo_name="beta",
+                    project_id="project-beta",
+                    task_id="task-123",
+                ),
+            ],
+        ]
+
+        response = client.get("/api/git/branches")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["count"] == 2
+        assert {branch["repo_name"] for branch in body["branches"]} == {"alpha", "beta"}
+        assert {branch["project_id"] for branch in body["branches"]} == {
+            "project-alpha",
+            "project-beta",
+        }
+
+
+class TestProjectDashboard:
+    """Tests for GET /api/git/projects/{project_id}/dashboard."""
+
+    def test_project_dashboard_returns_branch_data(self, mocker: MockerFixture) -> None:
+        from pathlib import Path
+
+        from app.api.models.git_models import (
+            BranchInfo,
+            CommitInfo,
+            ConflictInfo,
+            MergedTaskSummary,
+            RecentMergesResponse,
+            SnapshotInfo,
+            WorktreeInfo,
+        )
+
+        mocker.patch("app.api.git_helpers.endpoints.get_project_path", return_value=Path("/repos/custom-folder"))
+        mocker.patch(
+            "app.api.git_helpers.endpoints.collect_worktrees",
+            return_value=[
+                WorktreeInfo(
+                    task_id="task-1",
+                    path="/wt/task-1",
+                    branch="task-1/main",
+                    base_branch="main",
+                    is_active=True,
+                    project_id="project-123",
+                ),
+                WorktreeInfo(
+                    task_id="task-2",
+                    path="/wt/task-2",
+                    branch="task-2/main",
+                    base_branch="main",
+                    is_active=True,
+                    project_id="other-project",
+                ),
+            ],
+        )
+        mocker.patch(
+            "app.api.git_helpers.endpoints.get_all_branches",
+            return_value=[
+                BranchInfo(
+                    name="main",
+                    is_current=True,
+                    has_worktree=False,
+                    repo_name="custom-folder",
+                    project_id="project-123",
+                    last_commit_short="abc1234",
+                ),
+            ],
+        )
+        mocker.patch(
+            "app.api.git_helpers.endpoints.build_recent_merges_response",
+            return_value=RecentMergesResponse(
+                merges=[
+                    MergedTaskSummary(
+                        task_id="task-1",
+                        task_title="Ship feature",
+                        project_id="project-123",
+                        merged_at="2026-03-17T10:00:00Z",
+                        files_changed=3,
+                        additions=12,
+                        deletions=4,
+                    ),
+                ],
+                count=1,
+            ),
+        )
+        mocker.patch(
+            "app.api.git_helpers.endpoints.get_recent_commits",
+            return_value=[
+                CommitInfo(
+                    sha="abc123456789",
+                    short_sha="abc1234",
+                    message="Fix issue",
+                    author_name="Dev",
+                    author_email="dev@example.com",
+                    date="2026-03-17T11:00:00Z",
+                    repo_name="custom-folder",
+                    files_changed=2,
+                    insertions=10,
+                    deletions=1,
+                ),
+            ],
+        )
+        mocker.patch(
+            "app.api.git_helpers.endpoints.list_snapshots",
+            return_value=[
+                SnapshotInfo(
+                    task_id="task-1",
+                    task_title="",
+                    sha="def123456789",
+                    short_sha="def1234",
+                    created_at="2026-03-17T09:00:00Z",
+                    project_id="project-123",
+                    repo_name="custom-folder",
+                    is_current=False,
+                    commits_ahead=1,
+                ),
+            ],
+        )
+        enrich_snapshots = mocker.patch("app.api.git_helpers.endpoints.enrich_snapshots")
+        mocker.patch(
+            "app.api.git_helpers.endpoints.build_conflicts_response",
+            return_value=[
+                ConflictInfo(
+                    task_id="task-9",
+                    task_title="Resolve merge",
+                    project_id="project-123",
+                    conflicting_files=["backend/app/api/git.py"],
+                    task_branch="task-9/main",
+                    base_branch="main",
+                    detected_at="2026-03-17T12:00:00Z",
+                ),
+            ],
+        )
+
+        response = client.get("/api/git/projects/project-123/dashboard")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["worktrees"][0]["project_id"] == "project-123"
+        assert body["branches"][0]["project_id"] == "project-123"
+        assert body["branches"][0]["repo_name"] == "custom-folder"
+        assert body["conflicts"][0]["task_id"] == "task-9"
+        enrich_snapshots.assert_called_once()
 
 
 class TestGitSync:

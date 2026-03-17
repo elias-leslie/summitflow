@@ -11,10 +11,10 @@ import {
   X,
 } from 'lucide-react'
 import {
+  type ConflictInfo,
   dismissConflict,
   fetchConflicts,
   retryMerge,
-  type ConflictInfo,
 } from '@/lib/api/git-enhanced'
 import { formatTimeAgo } from '@/lib/format'
 import { POLL_STANDARD, STALE_STANDARD } from '@/lib/polling'
@@ -24,12 +24,22 @@ function ConflictCard({ conflict }: { conflict: ConflictInfo }) {
 
   const retryMut = useMutation({
     mutationFn: () => retryMerge(conflict.task_id),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ['git-conflicts'] }),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['git-conflicts'] })
+      queryClient.invalidateQueries({
+        queryKey: ['project-dashboard', conflict.project_id],
+      })
+    },
   })
 
   const dismissMut = useMutation({
     mutationFn: () => dismissConflict(conflict.task_id),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ['git-conflicts'] }),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['git-conflicts'] })
+      queryClient.invalidateQueries({
+        queryKey: ['project-dashboard', conflict.project_id],
+      })
+    },
   })
 
   const isWorking = retryMut.isPending || dismissMut.isPending
@@ -88,7 +98,8 @@ function ConflictCard({ conflict }: { conflict: ConflictInfo }) {
           <div className="flex items-center gap-1.5 mb-1.5">
             <FileWarning className="w-3 h-3 text-rose-500/60" />
             <span className="text-[10px] text-rose-400/60 uppercase tracking-wider font-medium">
-              {conflict.conflicting_files.length} Conflicting File{conflict.conflicting_files.length !== 1 ? 's' : ''}
+              {conflict.conflicting_files.length} Conflicting File
+              {conflict.conflicting_files.length !== 1 ? 's' : ''}
             </span>
           </div>
           <div className="space-y-0.5">
@@ -160,10 +171,10 @@ function ConflictCard({ conflict }: { conflict: ConflictInfo }) {
   )
 }
 
-export function ConflictAlerts() {
+export function ConflictAlerts({ projectId }: { projectId?: string }) {
   const { data, isLoading } = useQuery({
-    queryKey: ['git-conflicts'],
-    queryFn: fetchConflicts,
+    queryKey: ['git-conflicts', projectId ?? 'all'],
+    queryFn: () => fetchConflicts(projectId),
     staleTime: STALE_STANDARD,
     refetchInterval: POLL_STANDARD * 2,
   })
@@ -180,9 +191,7 @@ export function ConflictAlerts() {
             <AlertTriangle className="w-5 h-5 text-rose-400" />
             <div className="absolute inset-0 blur-md bg-rose-500/40" />
           </div>
-          <h2 className="font-semibold text-white">
-            Merge Conflicts
-          </h2>
+          <h2 className="font-semibold text-white">Merge Conflicts</h2>
           <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-400 border border-rose-500/30">
             {data.count}
           </span>

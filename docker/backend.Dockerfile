@@ -48,7 +48,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && echo "deb [signed-by=/etc/apt/keyrings/pgdg.gpg] http://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get update && apt-get install -y --no-install-recommends \
-        docker-ce-cli postgresql-client-16 nodejs \
+        docker-ce-cli docker-compose-plugin postgresql-client-16 nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

@@ -27,7 +27,7 @@ def build_project_cleanup_status(project_id: str) -> dict[str, Any]:
         }
 
     repo_path = _translate_path(root_path)
-    workspace_summary = build_repo_workspace_summary(repo_path)
+    workspace_summary = build_repo_workspace_summary(repo_path, project_id=project_id)
     active_worktrees = get_active_worktrees(project_id)
     dirty_worktrees = sum(
         1 for worktree in active_worktrees if has_uncommitted_changes(worktree.path)

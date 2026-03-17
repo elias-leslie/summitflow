@@ -31,8 +31,58 @@ _SUMMITFLOW_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 _COMPOSE_DIR="$_SUMMITFLOW_ROOT/docker/compose"
 _COMPOSE_FILE="$_COMPOSE_DIR/docker-compose.yml"
 _COMPOSE_DEV_FILE="$_COMPOSE_DIR/docker-compose.dev.yml"
+_COMPOSE_ENV_FILE="$_COMPOSE_DIR/.env"
 _RUNTIME_MODE_FILE="$_COMPOSE_DIR/.runtime-mode"
-export _SUMMITFLOW_ROOT _COMPOSE_DIR _COMPOSE_FILE _COMPOSE_DEV_FILE _RUNTIME_MODE_FILE
+_DEFAULT_RUNTIME_MODE="${SUMMITFLOW_DOCKER_DEFAULT_MODE:-dev}"
+[ "$_DEFAULT_RUNTIME_MODE" = "prod" ] || _DEFAULT_RUNTIME_MODE="dev"
+export _SUMMITFLOW_ROOT _COMPOSE_DIR _COMPOSE_FILE _COMPOSE_DEV_FILE _COMPOSE_ENV_FILE _RUNTIME_MODE_FILE _DEFAULT_RUNTIME_MODE
+
+_compose_env_var_names() {
+    [ -f "$_COMPOSE_ENV_FILE" ] || return 0
+    awk -F= '
+        /^[[:space:]]*#/ { next }
+        /^[[:space:]]*$/ { next }
+        /^[A-Za-z_][A-Za-z0-9_]*=/ { print $1 }
+    ' "$_COMPOSE_ENV_FILE"
+}
+
+_sanitize_compose_process_env() {
+    local key
+    while IFS= read -r key; do
+        [ -n "$key" ] && unset "$key"
+    done < <(_compose_env_var_names)
+}
+
+_docker_compose() {
+    local -a cmd=(docker compose)
+    if [ -f "$_COMPOSE_ENV_FILE" ]; then
+        cmd+=(--env-file "$_COMPOSE_ENV_FILE")
+    fi
+    cmd+=("$@")
+    "${cmd[@]}"
+}
+
+_sanitize_compose_process_env
+
+_runtime_mode_from_disk() {
+    if [ -f "$_RUNTIME_MODE_FILE" ]; then
+        local mode
+        mode=$(tr -d '[:space:]' < "$_RUNTIME_MODE_FILE")
+        if [ "$mode" = "dev" ] || [ "$mode" = "prod" ]; then
+            echo "$mode"
+            return
+        fi
+    fi
+    echo "$_DEFAULT_RUNTIME_MODE"
+}
+
+_set_docker_mode() {
+    if [ "$1" = "dev" ]; then
+        export DOCKER_DEV=true
+    else
+        export DOCKER_DEV=false
+    fi
+}
 
 # Return compose file flags appropriate for current mode.
 # In dev mode (DOCKER_DEV=true), includes the dev overlay so bind mounts
@@ -47,6 +97,7 @@ _compose_files() {
 
 # Persist runtime mode (dev/prod) so detect_docker can recover after stop
 _persist_runtime_mode() {
+    mkdir -p "$_COMPOSE_DIR"
     if [ "$DOCKER_DEV" = "true" ]; then
         echo "dev" > "$_RUNTIME_MODE_FILE"
     else
@@ -58,16 +109,14 @@ _persist_runtime_mode() {
 docker_start_stack() {
     [ ! -f "$_COMPOSE_FILE" ] && { log_error "No compose file found"; return 1; }
 
-    # Restore dev mode from persisted state if available
-    if [ -f "$_RUNTIME_MODE_FILE" ] && [ "$(cat "$_RUNTIME_MODE_FILE")" = "dev" ]; then
-        export DOCKER_DEV=true
-    fi
+    _set_docker_mode "$(_runtime_mode_from_disk)"
+    docker_validate_hatchet_token || return 1
 
     local compose_args
     read -ra compose_args <<< "$(_compose_files)"
 
     log "Starting Docker stack (mode: $([ "$DOCKER_DEV" = "true" ] && echo dev || echo prod))..."
-    docker compose "${compose_args[@]}" up -d 2>&1
+    _docker_compose "${compose_args[@]}" up -d 2>&1
     log_success "Stack started"
     _persist_runtime_mode
 }
@@ -89,10 +138,18 @@ _compose_all_services() {
     [ ! -f "$_COMPOSE_FILE" ] && return
     local prefix
     prefix=$(_project_to_prefix "${1:-$PROJECT_NAME}")
-    # Query running containers' service labels — no config parsing, no env vars required
-    docker ps --filter "label=com.docker.compose.project=summitflow-stack" \
+    # Query project containers directly so stopped stacks still resolve services.
+    docker ps --all --filter "label=com.docker.compose.project=summitflow-stack" \
               --format '{{.Label "com.docker.compose.service"}}' 2>/dev/null \
         | { grep "^${prefix}" || true; } | sort -u | tr '\n' ' '
+}
+
+_compose_stack_services() {
+    [ ! -f "$_COMPOSE_FILE" ] && return
+    docker ps --all --filter "label=com.docker.compose.project=summitflow-stack" \
+              --format '{{.Label "com.docker.compose.service"}}' 2>/dev/null \
+        | grep -vE '^(postgres|redis|hatchet|hatchet-migrate|hatchet-setup-config)$' \
+        | sort -u | tr '\n' ' '
 }
 
 _compose_api_service() {
@@ -111,10 +168,27 @@ _compose_web_service() {
     echo "$web"
 }
 
+_compose_mode_probe_service() {
+    local probe
+    probe=$(_compose_api_service "$@")
+    if [ -n "$probe" ]; then
+        echo "$probe"
+        return
+    fi
+
+    probe=$(_compose_web_service "$@")
+    if [ -n "$probe" ]; then
+        echo "$probe"
+        return
+    fi
+
+    _compose_all_services "$@" | tr ' ' '\n' | head -1
+}
+
 # Get published port for a compose service from running container
 _compose_service_port() {
     local svc="$1"
-    docker compose -f "$_COMPOSE_FILE" port "$svc" "${2:-8001}" 2>/dev/null | cut -d: -f2
+    _docker_compose -f "$_COMPOSE_FILE" port "$svc" "${2:-8001}" 2>/dev/null | cut -d: -f2
 }
 
 # Resolve ports from running containers
@@ -124,13 +198,13 @@ _resolve_ports() {
     api_svc=$(_compose_api_service)
     web_svc=$(_compose_web_service)
     if [ -n "$api_svc" ]; then
-        port=$(docker compose -f "$_COMPOSE_FILE" ps --format '{{.Publishers}}' "$api_svc" 2>/dev/null \
-            | grep -oP '\{0\.0\.0\.0 \K[0-9]+' | head -1)
+        port=$(_docker_compose -f "$_COMPOSE_FILE" ps --format '{{.Publishers}}' "$api_svc" 2>/dev/null \
+            | grep -oP '\{0\.0\.0\.0 \K[0-9]+' | head -1 || true)
         [ -n "$port" ] && BACKEND_PORT="$port"
     fi
     if [ -n "$web_svc" ]; then
-        port=$(docker compose -f "$_COMPOSE_FILE" ps --format '{{.Publishers}}' "$web_svc" 2>/dev/null \
-            | grep -oP '\{0\.0\.0\.0 \K[0-9]+' | head -1)
+        port=$(_docker_compose -f "$_COMPOSE_FILE" ps --format '{{.Publishers}}' "$web_svc" 2>/dev/null \
+            | grep -oP '\{0\.0\.0\.0 \K[0-9]+' | head -1 || true)
         [ -n "$port" ] && FRONTEND_PORT="$port"
     fi
     export BACKEND_PORT="${BACKEND_PORT:-0}" FRONTEND_PORT="${FRONTEND_PORT:-0}"
@@ -159,14 +233,10 @@ detect_docker() {
     export RUNTIME_MODE="native" DOCKER_DEV=false DOCKER_IMAGE_STALE=false
     [ ! -f "$_COMPOSE_FILE" ] && return
     local running
-    running=$(docker compose -f "$_COMPOSE_FILE" ps --status running -q 2>/dev/null)
+    running=$(_docker_compose -f "$_COMPOSE_FILE" ps --status running -q 2>/dev/null)
     if [ -z "$running" ]; then
-        # No running containers — check if this is a stopped Docker stack
-        # by looking for persisted runtime mode or any stopped containers
-        if [ -f "$_RUNTIME_MODE_FILE" ]; then
-            export RUNTIME_MODE="docker-stopped"
-            [ "$(cat "$_RUNTIME_MODE_FILE")" = "dev" ] && export DOCKER_DEV=true
-        fi
+        export RUNTIME_MODE="docker-stopped"
+        _set_docker_mode "$(_runtime_mode_from_disk)"
         return
     fi
     export RUNTIME_MODE="docker"
@@ -174,14 +244,20 @@ detect_docker() {
     # Resolve ports from compose config
     _resolve_ports
 
-    # Detect dev overlay (only bind mounts under /app/ = dev mode).
+    # Detect dev overlay from whichever project container is available first.
     # Named volumes such as /app/.cache are valid in production and must not
     # trigger hot-reload mode.
-    local api_svc container
-    api_svc=$(_compose_api_service)
-    [ -z "$api_svc" ] && return
-    container=$(docker compose -f "$_COMPOSE_FILE" ps -q "$api_svc" 2>/dev/null | head -1)
-    [ -z "$container" ] && return
+    local probe_svc container
+    probe_svc=$(_compose_mode_probe_service)
+    if [ -z "$probe_svc" ]; then
+        _set_docker_mode "$(_runtime_mode_from_disk)"
+        return
+    fi
+    container=$(_docker_compose -f "$_COMPOSE_FILE" ps -q "$probe_svc" 2>/dev/null | head -1)
+    if [ -z "$container" ]; then
+        _set_docker_mode "$(_runtime_mode_from_disk)"
+        return
+    fi
     if docker inspect "$container" --format '{{range .Mounts}}{{.Type}} {{.Destination}}{{"\n"}}{{end}}' 2>/dev/null | grep -qE '^bind /app/.+'; then
         export DOCKER_DEV=true
     fi
@@ -235,6 +311,7 @@ _detect_stale_image() {
 docker_build_and_recreate() {
     local services="$1"
     [ -z "$services" ] && { log_error "No compose services for $PROJECT_NAME"; return 1; }
+    docker_validate_hatchet_token || return 1
 
     # Always use dev overlay for build (has build: context directives)
     local build_files=("-f" "$_COMPOSE_FILE")
@@ -244,7 +321,7 @@ docker_build_and_recreate() {
     # --no-cache ensures source changes are always picked up (COPY layers don't
     # invalidate on content changes when the build context is large)
     # shellcheck disable=SC2086
-    docker compose "${build_files[@]}" build --no-cache $services 2>&1 | tail -20
+    _docker_compose "${build_files[@]}" build --no-cache $services 2>&1 | tail -20
     [ ${PIPESTATUS[0]} -ne 0 ] && { log_error "Build failed"; return 1; }
     log_success "Images built"
 
@@ -254,7 +331,7 @@ docker_build_and_recreate() {
     read -ra compose_args <<< "$(_compose_files)"
     log "Recreating containers (mode: $([ "$DOCKER_DEV" = "true" ] && echo dev || echo prod))..."
     # shellcheck disable=SC2086
-    docker compose "${compose_args[@]}" up -d --no-deps $services 2>&1
+    _docker_compose "${compose_args[@]}" up -d --no-deps $services 2>&1
     log_success "Containers recreated"
     _persist_runtime_mode
 }
@@ -267,8 +344,29 @@ docker_restart_services() {
     read -ra compose_args <<< "$(_compose_files)"
     log "Restarting: $services"
     # shellcheck disable=SC2086
-    docker compose "${compose_args[@]}" restart $services 2>&1
+    _docker_compose "${compose_args[@]}" restart $services 2>&1
     log_success "Restarted"
+}
+
+docker_recreate_services() {
+    local services="$1"
+    local build_first="${2:-false}"
+    [ -z "$services" ] && return 0
+    docker_validate_hatchet_token || return 1
+
+    local compose_args
+    read -ra compose_args <<< "$(_compose_files)"
+    log "Recreating containers (mode: $([ "$DOCKER_DEV" = "true" ] && echo dev || echo prod))..."
+    if [ "$build_first" = "true" ]; then
+        # Dev mode needs local build contexts; this uses cache unless infra changed.
+        # shellcheck disable=SC2086
+        _docker_compose "${compose_args[@]}" up -d --build --force-recreate --no-deps $services 2>&1
+    else
+        # shellcheck disable=SC2086
+        _docker_compose "${compose_args[@]}" up -d --force-recreate --no-deps $services 2>&1
+    fi
+    log_success "Containers recreated"
+    _persist_runtime_mode
 }
 
 docker_run_migration() {
@@ -279,8 +377,18 @@ docker_run_migration() {
     local compose_args
     read -ra compose_args <<< "$(_compose_files)"
     log "Running migrations ($api_svc)..."
-    docker compose "${compose_args[@]}" exec -T "$api_svc" alembic upgrade head 2>&1 | tail -5
+    _docker_compose "${compose_args[@]}" exec -T "$api_svc" alembic upgrade head 2>&1 | tail -5
     [ ${PIPESTATUS[0]} -eq 0 ] && log_success "Migrations applied" || log_warn "Migration returned non-zero (may already be up to date)"
+}
+
+docker_validate_hatchet_token() {
+    [ "$PROJECT_NAME" != "summitflow" ] && return 0
+    [ ! -f "$_SUMMITFLOW_ROOT/scripts/validate-hatchet-token.py" ] && return 0
+    local validation_output
+    validation_output=$(python3 "$_SUMMITFLOW_ROOT/scripts/validate-hatchet-token.py" 2>&1) || {
+        log_error "${validation_output:-Hatchet token validation failed}"
+        return 1
+    }
 }
 
 docker_reapply_hatchet_tuning() {
@@ -289,7 +397,7 @@ docker_reapply_hatchet_tuning() {
     [ ! -d "$_COMPOSE_DIR/hatchet-config" ] && return 0
 
     local hatchet_id
-    hatchet_id=$(docker compose -f "$_COMPOSE_FILE" ps -q hatchet 2>/dev/null | head -1)
+    hatchet_id=$(_docker_compose -f "$_COMPOSE_FILE" ps -q hatchet 2>/dev/null | head -1)
     [ -z "$hatchet_id" ] && return 0
 
     local tune_output
@@ -300,7 +408,7 @@ docker_reapply_hatchet_tuning() {
 
     if printf '%s\n' "$tune_output" | grep -q ': updated'; then
         log "Recreating Hatchet with tuned runtime config..."
-        docker compose -f "$_COMPOSE_FILE" up -d --force-recreate hatchet 2>&1 | tail -20
+        _docker_compose -f "$_COMPOSE_FILE" up -d --force-recreate hatchet 2>&1 | tail -20
         [ ${PIPESTATUS[0]} -ne 0 ] && { log_error "Hatchet recreate failed"; return 1; }
         log_success "Hatchet recreated"
 
@@ -335,4 +443,4 @@ verify_frontend() { local p="${1:-$FRONTEND_PORT}"; [ "$p" -eq 0 ] 2>/dev/null &
 
 export -f log log_success log_warn log_error log_info
 export -f service_exists restart_service clear_build_cache clear_nextjs_cache build_frontend verify_backend verify_frontend
-export -f detect_docker _detect_stale_image _project_to_prefix _compose_all_services _compose_api_service _compose_web_service _compose_service_port _resolve_ports _compose_files _persist_runtime_mode docker_start_stack docker_build_and_recreate docker_restart_services docker_run_migration docker_reapply_hatchet_tuning
+export -f _compose_env_var_names _sanitize_compose_process_env _docker_compose _runtime_mode_from_disk _set_docker_mode detect_docker _detect_stale_image _project_to_prefix _compose_all_services _compose_stack_services _compose_api_service _compose_web_service _compose_service_port _resolve_ports _compose_files _persist_runtime_mode docker_start_stack docker_build_and_recreate docker_restart_services docker_recreate_services docker_run_migration docker_validate_hatchet_token docker_reapply_hatchet_tuning

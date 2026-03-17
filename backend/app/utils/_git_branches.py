@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ..api.models.git_models import BranchInfo, RepoWorkspaceSummary, WorktreeInfo
 
-from ._git_core import run_git
+from ._git_core import _resolve_project_id, run_git
 
 _BASE_BRANCH_CANDIDATES = ["main", "master", "develop"]
 _CLOSED_TASK_STATUSES = frozenset({"completed", "cancelled", "abandoned"})
@@ -57,12 +57,12 @@ def get_worktree_branches(project_id: str | None = None) -> dict[str, str]:
     return {wt.branch: str(wt.path) for wt in _get_active_worktrees(project_id)}
 
 
-def get_all_branches(repo_path: Path) -> list[BranchInfo]:
+def get_all_branches(repo_path: Path, project_id: str | None = None) -> list[BranchInfo]:
     """Get list of all local branches with worktree indicators."""
     from ..api.models.git_models import BranchInfo
 
-    project_id = repo_path.name if not repo_path.name.startswith(".") else None
-    worktree_branches = get_worktree_branches(project_id)
+    resolved_project_id = _resolve_project_id(repo_path, project_id)
+    worktree_branches = get_worktree_branches(resolved_project_id)
 
     cr = run_git(["rev-parse", "--abbrev-ref", "HEAD"], repo_path)
     current_branch = cr.stdout.strip() if cr.returncode == 0 else ""
@@ -83,6 +83,8 @@ def get_all_branches(repo_path: Path) -> list[BranchInfo]:
             name=name,
             is_current=name == current_branch,
             has_worktree=name in worktree_branches,
+            repo_name=repo_path.name,
+            project_id=resolved_project_id,
             worktree_path=worktree_branches.get(name),
             task_id=extract_task_id_from_branch(name),
             last_commit_short=commit_short,
@@ -239,15 +241,17 @@ def assess_orphan_task_branches(repo_path: Path) -> list[OrphanBranchAssessment]
     return assessments
 
 
-def build_repo_workspace_summary(repo_path: Path) -> RepoWorkspaceSummary:
+def build_repo_workspace_summary(
+    repo_path: Path, project_id: str | None = None,
+) -> RepoWorkspaceSummary:
     """Build per-repository branch/worktree cleanup counters."""
     from cli.commands.cleanup_git import has_uncommitted_changes
 
     from ..api.models.git_models import RepoWorkspaceSummary
 
-    project_id = repo_path.name if not repo_path.name.startswith(".") else None
-    branches = get_all_branches(repo_path)
-    active_worktrees = _get_active_worktrees(project_id) if project_id else []
+    resolved_project_id = _resolve_project_id(repo_path, project_id)
+    branches = get_all_branches(repo_path, resolved_project_id)
+    active_worktrees = _get_active_worktrees(resolved_project_id) if resolved_project_id else []
     dirty_worktrees = sum(1 for wt in active_worktrees if has_uncommitted_changes(wt.path))
     task_branches = [b for b in branches if b.task_id]
     orphan_branches = [b for b in task_branches if not b.has_worktree]

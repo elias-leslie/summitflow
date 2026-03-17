@@ -1,7 +1,15 @@
 'use client'
 
 import clsx from 'clsx'
-import { AlertTriangle, GitBranch, Layers, RefreshCw, Scissors, Unplug, XCircle } from 'lucide-react'
+import {
+  AlertTriangle,
+  GitBranch,
+  Layers,
+  RefreshCw,
+  Scissors,
+  Unplug,
+  XCircle,
+} from 'lucide-react'
 import { ConflictAlerts } from '@/components/git/ConflictAlerts'
 import { ProjectRow } from '@/components/git/ProjectRow'
 import { useGitStatus } from './useGitStatus'
@@ -19,7 +27,12 @@ function SummaryCard({
 }) {
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-900/50 px-4 py-3">
-      <div className={clsx('mb-2 flex items-center gap-2 text-xs uppercase tracking-[0.2em]', tone)}>
+      <div
+        className={clsx(
+          'mb-2 flex items-center gap-2 text-xs uppercase tracking-[0.2em]',
+          tone,
+        )}
+      >
         <Icon className="h-4 w-4" />
         {label}
       </div>
@@ -31,16 +44,18 @@ function SummaryCard({
 export function GitClient() {
   const { data: gitStatus, isLoading, isError, refetch } = useGitStatus()
   const repos = gitStatus?.repositories ?? []
-  const configRepos = repos.filter((repo) => repo.name.startsWith('.'))
+  const configRepos = repos.filter((repo) => !repo.project_id)
   const needsAttention = (repo: (typeof repos)[number]) =>
     repo.state !== 'clean' ||
     (repo.workspace_summary?.dirty_worktrees ?? 0) > 0 ||
     (repo.workspace_summary?.orphan_branches ?? 0) > 0 ||
     (repo.workspace_summary?.prunable_branches ?? 0) > 0
-  const reposNeedingCleanup = repos.filter(
-    (repo) => needsAttention(repo),
+  const reposNeedingCleanup = repos.filter((repo) =>
+    needsAttention(repo),
   ).length
-  const dirtyRepos = repos.filter((repo) => repo.state === 'dirty' || repo.state === 'ahead').length
+  const dirtyRepos = repos.filter(
+    (repo) => repo.state === 'dirty' || repo.state === 'ahead',
+  ).length
   const activeWorktrees = repos.reduce(
     (sum, repo) => sum + (repo.workspace_summary?.active_worktrees ?? 0),
     0,
@@ -74,7 +89,8 @@ export function GitClient() {
           </p>
           {configRepos.length > 0 && (
             <p className="mt-2 text-sm text-slate-500">
-              Summary cards include managed config repos such as {configRepos.map((repo) => repo.name).join(', ')}.
+              Summary cards include managed config repos such as{' '}
+              {configRepos.map((repo) => repo.name).join(', ')}.
             </p>
           )}
         </div>
@@ -94,12 +110,42 @@ export function GitClient() {
 
       {gitStatus && !isLoading && (
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-          <SummaryCard icon={GitBranch} label="Repos To Check" value={reposNeedingCleanup} tone="text-rose-300" />
-          <SummaryCard icon={AlertTriangle} label="Dirty Repos" value={dirtyRepos} tone="text-orange-300" />
-          <SummaryCard icon={Layers} label="Active Worktrees" value={activeWorktrees} tone="text-phosphor-300" />
-          <SummaryCard icon={AlertTriangle} label="Dirty Worktrees" value={dirtyWorktrees} tone="text-orange-300" />
-          <SummaryCard icon={Unplug} label="Orphan Branches" value={orphanBranches} tone="text-amber-300" />
-          <SummaryCard icon={Scissors} label="Prunable Branches" value={prunableBranches} tone="text-outrun-300" />
+          <SummaryCard
+            icon={GitBranch}
+            label="Repos To Check"
+            value={reposNeedingCleanup}
+            tone="text-rose-300"
+          />
+          <SummaryCard
+            icon={AlertTriangle}
+            label="Dirty Repos"
+            value={dirtyRepos}
+            tone="text-orange-300"
+          />
+          <SummaryCard
+            icon={Layers}
+            label="Active Worktrees"
+            value={activeWorktrees}
+            tone="text-phosphor-300"
+          />
+          <SummaryCard
+            icon={AlertTriangle}
+            label="Dirty Worktrees"
+            value={dirtyWorktrees}
+            tone="text-orange-300"
+          />
+          <SummaryCard
+            icon={Unplug}
+            label="Orphan Branches"
+            value={orphanBranches}
+            tone="text-amber-300"
+          />
+          <SummaryCard
+            icon={Scissors}
+            label="Prunable Branches"
+            value={prunableBranches}
+            tone="text-outrun-300"
+          />
         </section>
       )}
 
@@ -110,7 +156,7 @@ export function GitClient() {
             <ProjectRow
               key={repo.path}
               repo={repo}
-              isConfigRepo={repo.name === '.claude'}
+              isConfigRepo={!repo.project_id}
             />
           ))}
         </section>
@@ -132,7 +178,10 @@ export function GitClient() {
           <XCircle className="w-6 h-6 text-rose-500" />
           <div>
             <h3 className="font-semibold text-white">Connection Failed</h3>
-            <p className="text-sm opacity-80">Unable to reach the Git service. Please verify the backend is running.</p>
+            <p className="text-sm opacity-80">
+              Unable to reach the Git service. Please verify the backend is
+              running.
+            </p>
           </div>
         </div>
       )}
@@ -143,9 +192,12 @@ export function GitClient() {
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-slate-800/50 mb-4">
             <GitBranch className="w-8 h-8 text-slate-600" />
           </div>
-          <h3 className="text-xl font-semibold text-white mb-2">No Repositories Found</h3>
+          <h3 className="text-xl font-semibold text-white mb-2">
+            No Repositories Found
+          </h3>
           <p className="text-slate-400 max-w-sm mx-auto">
-            Your workspace appears empty. Initialize a git repository to see it here.
+            Your workspace appears empty. Initialize a git repository to see it
+            here.
           </p>
         </div>
       )}

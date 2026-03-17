@@ -1,6 +1,13 @@
 'use client'
 
-import { GitBranch } from 'lucide-react'
+import clsx from 'clsx'
+import {
+  AlertTriangle,
+  GitBranch,
+  Layers,
+  Scissors,
+  Unplug,
+} from 'lucide-react'
 import type { RepoStatus } from '@/lib/api'
 import {
   getStateColor,
@@ -13,17 +20,75 @@ interface GitRepoCardProps {
   repo: RepoStatus
 }
 
+function WorkspacePill({
+  icon: Icon,
+  label,
+  tone,
+}: {
+  icon: typeof Layers
+  label: string
+  tone: 'cyan' | 'amber' | 'rose'
+}) {
+  const tones = {
+    cyan: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/20',
+    amber: 'bg-amber-500/10 text-amber-300 border-amber-500/20',
+    rose: 'bg-rose-500/10 text-rose-300 border-rose-500/20',
+  }
+
+  return (
+    <span
+      className={clsx(
+        'inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-mono uppercase tracking-wide',
+        tones[tone],
+      )}
+    >
+      <Icon className="h-3 w-3" />
+      {label}
+    </span>
+  )
+}
+
 export function GitRepoCard({ repo }: GitRepoCardProps) {
   const stateColor = getStateColor(repo.state)
   const hexColor = getStateHexColor(stateColor)
+  const workspaceSummary = repo.workspace_summary
+  const previewSections = [
+    {
+      label: 'Worktrees',
+      values: workspaceSummary?.worktree_task_ids ?? [],
+      tone: 'text-cyan-300 border-cyan-500/20 bg-cyan-500/10',
+    },
+    {
+      label: 'Orphans',
+      values: workspaceSummary?.orphan_branch_names ?? [],
+      tone: 'text-amber-300 border-amber-500/20 bg-amber-500/10',
+    },
+    {
+      label: 'Prunable',
+      values: workspaceSummary?.prunable_branch_names ?? [],
+      tone: 'text-rose-300 border-rose-500/20 bg-rose-500/10',
+    },
+    {
+      label: 'Salvage',
+      values: workspaceSummary?.salvage_task_ids ?? [],
+      tone: 'text-rose-300 border-rose-500/20 bg-rose-500/10',
+    },
+    {
+      label: 'Review',
+      values: workspaceSummary?.review_orphan_task_ids ?? [],
+      tone: 'text-amber-300 border-amber-500/20 bg-amber-500/10',
+    },
+  ].filter((section) => section.values.length > 0)
 
   return (
     <div
       className="relative group card p-5 transition-all duration-300 border-l-2 hover:shadow-[0_0_25px_var(--glow-color)]"
-      style={{
-        borderLeftColor: hexColor,
-        '--glow-color': `${hexColor}26`
-      } as React.CSSProperties}
+      style={
+        {
+          borderLeftColor: hexColor,
+          '--glow-color': `${hexColor}26`,
+        } as React.CSSProperties
+      }
     >
       {/* Glow orb */}
       <div
@@ -101,6 +166,64 @@ export function GitRepoCard({ repo }: GitRepoCardProps) {
           </div>
         </div>
       </div>
+
+      {workspaceSummary && (
+        <div className="mt-4 space-y-3 border-t border-slate-800/60 pt-4">
+          <div className="flex flex-wrap gap-2">
+            <WorkspacePill
+              icon={Layers}
+              label={`${workspaceSummary.active_worktrees} worktree${workspaceSummary.active_worktrees === 1 ? '' : 's'}`}
+              tone="cyan"
+            />
+            {workspaceSummary.dirty_worktrees > 0 && (
+              <WorkspacePill
+                icon={AlertTriangle}
+                label={`${workspaceSummary.dirty_worktrees} dirty`}
+                tone="rose"
+              />
+            )}
+            {workspaceSummary.orphan_branches > 0 && (
+              <WorkspacePill
+                icon={Unplug}
+                label={`${workspaceSummary.orphan_branches} orphan`}
+                tone="amber"
+              />
+            )}
+            {workspaceSummary.prunable_branches > 0 && (
+              <WorkspacePill
+                icon={Scissors}
+                label={`${workspaceSummary.prunable_branches} prune`}
+                tone="rose"
+              />
+            )}
+          </div>
+
+          {previewSections.length > 0 && (
+            <div className="space-y-2">
+              {previewSections.map((section) => (
+                <div key={section.label}>
+                  <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500">
+                    {section.label}
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    {section.values.map((value) => (
+                      <span
+                        key={`${section.label}-${value}`}
+                        className={clsx(
+                          'rounded-full border px-2 py-0.5 font-mono text-[10px]',
+                          section.tone,
+                        )}
+                      >
+                        {value}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

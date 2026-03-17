@@ -23,6 +23,7 @@ FRONTEND_ONLY=false
 BACKEND_ONLY=false
 RESTART_ONLY=false
 STATUS_ONLY=false
+DOCKER_MODE_OVERRIDE=""
 
 for arg in "$@"; do
     case $arg in
@@ -30,14 +31,18 @@ for arg in "$@"; do
         --backend|-b) BACKEND_ONLY=true ;;
         --restart|-r) RESTART_ONLY=true ;;
         --status|-s) STATUS_ONLY=true ;;
+        --dev) DOCKER_MODE_OVERRIDE="dev" ;;
+        --prod) DOCKER_MODE_OVERRIDE="prod" ;;
         --help|-h)
-            echo "Usage: $0 [--frontend] [--backend] [--restart] [--status]"
+            echo "Usage: $0 [--frontend] [--backend] [--restart] [--status] [--dev|--prod]"
             echo ""
             echo "Options:"
             echo "  --frontend, -f  Frontend only (rebuild + restart frontend)"
             echo "  --backend, -b   Backend only (restart backend + worker)"
             echo "  --restart, -r   Restart only (no rebuild)"
             echo "  --status, -s    Show service status"
+            echo "  --dev           Use Docker dev mode (bind mounts + hot reload)"
+            echo "  --prod          Use Docker prod mode (published/runtime images)"
             echo ""
             echo "Project: $PROJECT_NAME ($PROJECT_DIR)"
             exit 0
@@ -49,6 +54,8 @@ done
 
 show_status_docker() {
     set +e  # Don't exit on docker compose ps failures
+    local active_mode
+    active_mode=$([ "$DOCKER_DEV" = true ] && echo "dev overlay" || echo "production images")
     echo ""
     echo "========================================"
     echo "$PROJECT_NAME Service Status (Docker)"
@@ -56,21 +63,31 @@ show_status_docker() {
     echo ""
     local services
     services=$(_compose_all_services)
-    for svc in $services; do
-        local state health
-        state=$(docker compose -f "$_COMPOSE_FILE" ps --format '{{.State}}' "$svc" 2>/dev/null)
-        [ -z "$state" ] && state="not found"
-        health=$(docker compose -f "$_COMPOSE_FILE" ps --format '{{.Health}}' "$svc" 2>/dev/null)
-        local icon="✗"; [ "$state" = "running" ] && icon="✓"
-        printf "  %-30s %s %s %s\n" "$svc" "$icon" "$state" "${health:+($health)}"
-    done
+    if [ -n "$services" ]; then
+        for svc in $services; do
+            local state health
+            state=$(_docker_compose -f "$_COMPOSE_FILE" ps --format '{{.State}}' "$svc" 2>/dev/null)
+            [ -z "$state" ] && state="not found"
+            health=$(_docker_compose -f "$_COMPOSE_FILE" ps --format '{{.Health}}' "$svc" 2>/dev/null)
+            local icon="✗"; [ "$state" = "running" ] && icon="✓"
+            printf "  %-30s %s %s %s\n" "$svc" "$icon" "$state" "${health:+($health)}"
+        done
+    else
+        echo "  (no project containers created yet)"
+    fi
     echo ""
     echo "Ports: backend=$BACKEND_PORT, frontend=$FRONTEND_PORT"
-    if [ "$DOCKER_DEV" = true ]; then
-        echo "Mode: docker (dev overlay)"
+    if [ "$RUNTIME_MODE" = "docker-stopped" ]; then
+        echo "Stack: stopped"
     else
-        echo "Mode: docker (production images)"
+        echo "Stack: running"
     fi
+    if [ "$DOCKER_DEV" = true ]; then
+        echo "Mode: docker ($active_mode)"
+    else
+        echo "Mode: docker ($active_mode)"
+    fi
+    echo "Default mode: $_DEFAULT_RUNTIME_MODE"
     echo ""
     set -e
 }
@@ -118,8 +135,21 @@ main_docker() {
     local errors=0
 
     local all_services=$(_compose_all_services)
+    local stack_services=$(_compose_stack_services)
     local api_svc=$(_compose_api_service)
     local web_svc=$(_compose_web_service)
+    local detected_mode=$([ "$DOCKER_DEV" = true ] && echo "dev" || echo "prod")
+    local target_mode="$detected_mode"
+
+    if [ -n "$DOCKER_MODE_OVERRIDE" ]; then
+        target_mode="$DOCKER_MODE_OVERRIDE"
+        _set_docker_mode "$target_mode"
+    fi
+
+    local mode_switch_required=false
+    if [ "$detected_mode" != "$target_mode" ]; then
+        mode_switch_required=true
+    fi
 
     echo ""
     echo "========================================"
@@ -137,46 +167,59 @@ main_docker() {
         runtime_desc="docker (production images)"
     fi
     echo "Runtime: $runtime_desc"
+    if [ "$mode_switch_required" = true ]; then
+        echo "Switch: $detected_mode -> $target_mode"
+    fi
     echo ""
 
-    # In dev mode with a stale image, escalate to full build+recreate
-    local needs_build=false
-    if [ "$DOCKER_DEV" = true ] && [ "$DOCKER_IMAGE_STALE" = true ]; then
-        needs_build=true
-    elif [ "$DOCKER_DEV" = false ]; then
-        needs_build=true
-    fi
-
-    if [ "$needs_build" = false ]; then
-        # Dev overlay, image is fresh: bind-mounted source, hot reload. Just restart + migrate.
-        if [ "$RESTART_ONLY" = true ]; then
-            docker_restart_services "$all_services" || ((errors++))
-        elif [ "$FRONTEND_ONLY" = true ]; then
-            docker_restart_services "$web_svc" || ((errors++))
-        elif [ "$BACKEND_ONLY" = true ]; then
-            local backend_svcs="$api_svc"
-            # Include worker if it exists
-            for s in $all_services; do [[ "$s" == *worker* ]] && backend_svcs="$backend_svcs $s"; done
-            docker_restart_services "$backend_svcs" || ((errors++))
-            docker_run_migration || true
+    if [ "$mode_switch_required" = true ]; then
+        local switch_services="${stack_services:-$all_services}"
+        if [ "$target_mode" = "dev" ]; then
+            docker_recreate_services "$switch_services" false || ((errors++))
         else
-            docker_restart_services "$all_services" || ((errors++))
-            docker_run_migration || true
+            docker_recreate_services "$switch_services" false || ((errors++))
         fi
+        docker_run_migration || true
     else
-        # Production images: build → recreate → migrate
-        if [ "$RESTART_ONLY" = true ]; then
-            docker_restart_services "$all_services" || ((errors++))
-        elif [ "$FRONTEND_ONLY" = true ]; then
-            docker_build_and_recreate "$web_svc" || ((errors++))
-        elif [ "$BACKEND_ONLY" = true ]; then
-            local backend_svcs="$api_svc"
-            for s in $all_services; do [[ "$s" == *worker* ]] && backend_svcs="$backend_svcs $s"; done
-            docker_build_and_recreate "$backend_svcs" || ((errors++))
-            docker_run_migration || true
+        # In dev mode with a stale image, escalate to full build+recreate
+        local needs_build=false
+        if [ "$DOCKER_DEV" = true ] && [ "$DOCKER_IMAGE_STALE" = true ]; then
+            needs_build=true
+        elif [ "$DOCKER_DEV" = false ]; then
+            needs_build=true
+        fi
+
+        if [ "$needs_build" = false ]; then
+        # Dev overlay, image is fresh: bind-mounted source, hot reload. Just restart + migrate.
+            if [ "$RESTART_ONLY" = true ]; then
+                docker_restart_services "$all_services" || ((errors++))
+            elif [ "$FRONTEND_ONLY" = true ]; then
+                docker_restart_services "$web_svc" || ((errors++))
+            elif [ "$BACKEND_ONLY" = true ]; then
+                local backend_svcs="$api_svc"
+                # Include worker if it exists
+                for s in $all_services; do [[ "$s" == *worker* ]] && backend_svcs="$backend_svcs $s"; done
+                docker_restart_services "$backend_svcs" || ((errors++))
+                docker_run_migration || true
+            else
+                docker_restart_services "$all_services" || ((errors++))
+                docker_run_migration || true
+            fi
         else
-            docker_build_and_recreate "$all_services" || ((errors++))
-            docker_run_migration || true
+            # Production images: build → recreate → migrate
+            if [ "$RESTART_ONLY" = true ]; then
+                docker_restart_services "$all_services" || ((errors++))
+            elif [ "$FRONTEND_ONLY" = true ]; then
+                docker_build_and_recreate "$web_svc" || ((errors++))
+            elif [ "$BACKEND_ONLY" = true ]; then
+                local backend_svcs="$api_svc"
+                for s in $all_services; do [[ "$s" == *worker* ]] && backend_svcs="$backend_svcs $s"; done
+                docker_build_and_recreate "$backend_svcs" || ((errors++))
+                docker_run_migration || true
+            else
+                docker_build_and_recreate "$all_services" || ((errors++))
+                docker_run_migration || true
+            fi
         fi
     fi
 
@@ -318,9 +361,11 @@ main_native() {
 # ─── Entry point ─────────────────────────────────────────────────
 
 detect_docker
+DETECTED_RUNTIME_MODE="$RUNTIME_MODE"
+DETECTED_DOCKER_MODE=$([ "$DOCKER_DEV" = true ] && echo "dev" || echo "prod")
 
 if [ "$STATUS_ONLY" = true ]; then
-    if [ "$RUNTIME_MODE" = "docker" ]; then
+    if [ "$RUNTIME_MODE" = "docker" ] || [ "$RUNTIME_MODE" = "docker-stopped" ]; then
         show_status_docker
     else
         show_status_native
@@ -329,7 +374,21 @@ if [ "$STATUS_ONLY" = true ]; then
 fi
 
 log_info "Detected runtime: $RUNTIME_MODE"
-if [ "$RUNTIME_MODE" = "docker" ]; then
+if [ "$RUNTIME_MODE" = "docker-stopped" ]; then
+    if [ -n "$DOCKER_MODE_OVERRIDE" ] && [ "$DOCKER_MODE_OVERRIDE" != "$DETECTED_DOCKER_MODE" ]; then
+        log "Persisting Docker mode: $DOCKER_MODE_OVERRIDE"
+        _persist_runtime_mode
+    fi
+    docker_start_stack || exit 1
+    if [ "$RESTART_ONLY" = true ] && [ "$FRONTEND_ONLY" = false ] && [ "$BACKEND_ONLY" = false ]; then
+        detect_docker
+        show_status_docker
+        exit 0
+    fi
+    detect_docker
+fi
+
+if [ "$RUNTIME_MODE" = "docker" ] || [ "$RUNTIME_MODE" = "docker-stopped" ]; then
     main_docker
 else
     main_native

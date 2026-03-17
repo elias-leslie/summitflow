@@ -22,6 +22,7 @@ export interface RepoWorkspaceSummary {
 export interface RepoStatus {
   path: string
   name: string
+  project_id?: string | null
   branch: string
   uncommitted: number
   ahead: number
@@ -89,7 +90,9 @@ export async function syncRepositories(): Promise<GitSyncResponse> {
 /**
  * Pull changes for a specific project's repository.
  */
-export async function pullRepository(projectId: string): Promise<GitSyncResponse> {
+export async function pullRepository(
+  projectId: string,
+): Promise<GitSyncResponse> {
   return fetchWithErrorHandling<GitSyncResponse>(
     `${getApiBase()}/api/projects/${projectId}/git/pull`,
     {
@@ -102,7 +105,9 @@ export async function pullRepository(projectId: string): Promise<GitSyncResponse
 /**
  * Push changes for a specific project's repository.
  */
-export async function pushRepository(projectId: string): Promise<GitSyncResponse> {
+export async function pushRepository(
+  projectId: string,
+): Promise<GitSyncResponse> {
   return fetchWithErrorHandling<GitSyncResponse>(
     `${getApiBase()}/api/projects/${projectId}/git/push`,
     {
@@ -115,7 +120,9 @@ export async function pushRepository(projectId: string): Promise<GitSyncResponse
 /**
  * Fetch changes for a specific project's repository.
  */
-export async function fetchRepository(projectId: string): Promise<GitSyncResponse> {
+export async function fetchRepository(
+  projectId: string,
+): Promise<GitSyncResponse> {
   return fetchWithErrorHandling<GitSyncResponse>(
     `${getApiBase()}/api/projects/${projectId}/git/fetch`,
     {
@@ -136,7 +143,9 @@ export interface SmartSyncResponse {
   raw_output: string
 }
 
-export async function smartSyncProject(projectId: string): Promise<SmartSyncResponse> {
+export async function smartSyncProject(
+  projectId: string,
+): Promise<SmartSyncResponse> {
   return fetchWithErrorHandling<SmartSyncResponse>(
     `${getApiBase()}/api/projects/${projectId}/git/smart-sync`,
     {
