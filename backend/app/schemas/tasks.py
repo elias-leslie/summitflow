@@ -39,14 +39,7 @@ from .task_citations import (
 # Acceptance criteria
 from .task_criteria import (
     AcceptanceCriterion,
-    BatchCriterionResult,
-    BatchTaskCriteriaRequest,
-    BatchTaskCriteriaResponse,
-    BatchTaskCriterionCreate,
     CreateTaskCriterionRequest,
-    CriteriaValidateRequest,
-    CriteriaValidateResponse,
-    CriterionValidationResult,
     UpdateTaskCriterionRequest,
     VerifyTaskCriterionRequest,
 )
@@ -96,12 +89,8 @@ DiscussionResponse.model_rebuild()
 __all__ = [
     # Acceptance criteria
     "AcceptanceCriterion",
-    "BatchCriterionResult",
     # Batch operations
     "BatchTaskCreate",
-    "BatchTaskCriteriaRequest",
-    "BatchTaskCriteriaResponse",
-    "BatchTaskCriterionCreate",
     "BatchTaskRequest",
     "BatchTaskResponse",
     "BatchTaskResult",
@@ -118,9 +107,6 @@ __all__ = [
     "CleanupPromptRequest",
     "CleanupPromptResponse",
     "CreateTaskCriterionRequest",
-    "CriteriaValidateRequest",
-    "CriteriaValidateResponse",
-    "CriterionValidationResult",
     # Dependencies
     "DependencyCreate",
     "DependencyResponse",
