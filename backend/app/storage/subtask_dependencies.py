@@ -84,17 +84,6 @@ def get_dependencies(subtask_id: str) -> list[str]:
         return [row[0] for row in cur.fetchall()]
 
 
-def get_dependents(subtask_id: str) -> list[str]:
-    """Return subtask IDs that depend on subtask_id completing."""
-    with get_connection() as conn:
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT subtask_id FROM subtask_dependencies WHERE depends_on_subtask_id = %s",
-            (subtask_id,),
-        )
-        return [row[0] for row in cur.fetchall()]
-
-
 def get_blocking_dependencies(subtask_id: str) -> list[dict[str, Any]]:
     """Return incomplete dependencies blocking subtask_id."""
     with get_connection() as conn:

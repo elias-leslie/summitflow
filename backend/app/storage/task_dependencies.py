@@ -38,14 +38,6 @@ _SQL_GET_DEPS = """
     WHERE d.task_id = %s
     ORDER BY d.created_at
 """
-_SQL_GET_DEPENDENTS = """
-    SELECT d.id, d.task_id, d.depends_on_task_id, d.dependency_type, d.created_at,
-           t.title as dependent_title, t.status as dependent_status
-    FROM task_dependencies d
-    JOIN tasks t ON d.task_id = t.id
-    WHERE d.depends_on_task_id = %s
-    ORDER BY d.created_at
-"""
 _SQL_BLOCKERS = """
     SELECT t.id, t.title, t.status, t.priority
     FROM task_dependencies d
@@ -133,18 +125,6 @@ def get_dependencies(task_id: str) -> list[dict[str, Any]]:
     return [
         {"id": r[0], "task_id": r[1], "depends_on_task_id": r[2], "dependency_type": r[3],
          "created_at": r[4], "depends_on_title": r[5], "depends_on_status": r[6]}
-        for r in rows
-    ]
-
-
-def get_dependents(task_id: str) -> list[dict[str, Any]]:
-    """Get all tasks that depend on this task."""
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(_SQL_GET_DEPENDENTS, (task_id,))
-        rows = cur.fetchall()
-    return [
-        {"id": r[0], "task_id": r[1], "depends_on_task_id": r[2], "dependency_type": r[3],
-         "created_at": r[4], "dependent_title": r[5], "dependent_status": r[6]}
         for r in rows
     ]
 

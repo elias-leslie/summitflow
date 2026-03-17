@@ -21,7 +21,6 @@ from .notifications_helpers import (
 from .notifications_query import (
     cleanup_old_notifications,
     get_notification,
-    get_notifications_by_user_email,
     get_pending_count,
     list_notifications,
 )
@@ -51,7 +50,6 @@ __all__ = [
     "dismiss_all_for_project",
     "dismiss_notification",
     "get_notification",
-    "get_notifications_by_user_email",
     "get_pending_count",
     "list_notifications",
     "mark_as_read",

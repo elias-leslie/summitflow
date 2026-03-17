@@ -42,7 +42,6 @@ from .explorer_scan_state import (
 )
 from .explorer_symbols import (
     cleanup_stale_symbols,
-    delete_symbols_for_file,
     get_symbol,
     get_symbol_stats,
     list_related_entries_for_file,
@@ -59,7 +58,6 @@ __all__ = [
     "cleanup_stale_symbols",
     "count_stale_metadata_entries",
     "delete_entries",
-    "delete_symbols_for_file",
     "get_children",
     "get_coverage_gaps",
     "get_entries",

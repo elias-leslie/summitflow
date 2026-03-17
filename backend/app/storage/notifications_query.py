@@ -86,53 +86,6 @@ def get_pending_count(project_id: str) -> int:
     return row[0] if row else 0
 
 
-def get_notifications_by_user_email(
-    user_email: str,
-    status_filter: NotificationStatus | None = "pending",
-    mark_as_seen: bool = True,
-    limit: int = 20,
-) -> list[dict[str, Any]]:
-    """Get notifications for a specific user by email.
-
-    This is used by game clients to fetch user-specific notifications
-    (e.g., when their crowdsourced idea is implemented).
-
-    Args:
-        user_email: User's email address
-        status_filter: Filter by status (default: pending only)
-        mark_as_seen: Whether to mark returned notifications as read (default: True)
-        limit: Max results (default 20)
-
-    Returns:
-        List of notification dicts
-    """
-    with get_connection() as conn, conn.cursor() as cur:
-        if status_filter:
-            cur.execute(
-                _SELECT_COLS + "WHERE user_email = %s AND status = %s ORDER BY created_at DESC LIMIT %s",
-                (user_email, status_filter, limit),
-            )
-        else:
-            cur.execute(
-                _SELECT_COLS + "WHERE user_email = %s ORDER BY created_at DESC LIMIT %s",
-                (user_email, limit),
-            )
-
-        rows = cur.fetchall()
-        notifications = [_row_to_dict(row) for row in rows]
-
-        if mark_as_seen and notifications:
-            notification_ids = [n["id"] for n in notifications if n["status"] == "pending"]
-            if notification_ids:
-                cur.execute(
-                    "UPDATE notifications SET status = 'read', read_at = NOW() WHERE id = ANY(%s::text[])",
-                    (notification_ids,),
-                )
-                conn.commit()
-
-    return notifications
-
-
 def cleanup_old_notifications(
     *,
     max_read_age_days: int = 45,

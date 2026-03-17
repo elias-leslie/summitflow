@@ -37,13 +37,6 @@ _SELECT_COLS = """
 
 _SQL_GET_BY_ID = f"SELECT {_SELECT_COLS} FROM qa_issues WHERE id = %s"
 
-_SQL_GET_OPEN_FOR_PROJECT = f"""
-    SELECT {_SELECT_COLS}
-    FROM qa_issues
-    WHERE project_id = %s AND status = '{STATUS_OPEN}'
-    ORDER BY last_detected_at DESC
-"""
-
 _SQL_GET_LINKED_TO_TASKS = f"""
     SELECT {_SELECT_COLS}
     FROM qa_issues
@@ -104,23 +97,6 @@ def get_issue(issue_id: int, conn: Connection | None = None) -> dict[str, Any] |
             cur.execute(_SQL_GET_BY_ID, (issue_id,))
             row = cur.fetchone()
             return _row_to_dict(row) if row else None
-
-    if conn:
-        return _do(conn)
-    with get_connection() as c:
-        return _do(c)
-
-
-def get_open_issues_for_project(
-    project_id: str,
-    conn: Connection | None = None,
-) -> list[dict[str, Any]]:
-    """Get all open issues for a project."""
-
-    def _do(c: Connection) -> list[dict[str, Any]]:
-        with c.cursor() as cur:
-            cur.execute(_SQL_GET_OPEN_FOR_PROJECT, (project_id,))
-            return [_row_to_dict(row) for row in cur.fetchall()]
 
     if conn:
         return _do(conn)

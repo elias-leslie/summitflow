@@ -15,16 +15,6 @@ from .connection import get_connection
 logger = get_logger(__name__)
 
 
-def get_project_test_config(project_id: str) -> tuple[Any, ...] | None:
-    """Get project test configuration (root_path, test_config) or None."""
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            "SELECT root_path, test_config FROM projects WHERE id = %s",
-            (project_id,),
-        )
-        return cur.fetchone()
-
-
 def project_exists(project_id: str) -> bool:
     """Return True if project exists, False otherwise."""
     with get_connection() as conn, conn.cursor() as cur:
@@ -38,13 +28,6 @@ def get_project_root_path(project_id: str) -> str | None:
         cur.execute("SELECT root_path FROM projects WHERE id = %s", (project_id,))
         row = cur.fetchone()
         return row[0] if row else None
-
-
-def get_all_project_root_paths() -> list[str]:
-    """Return list of root paths for all registered projects."""
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("SELECT root_path FROM projects WHERE root_path IS NOT NULL")
-        return [row[0] for row in cur.fetchall()]
 
 
 def find_project_by_cwd(cwd: str) -> dict[str, Any] | None:

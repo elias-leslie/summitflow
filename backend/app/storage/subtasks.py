@@ -135,22 +135,6 @@ def get_subtask_dependencies(task_id: str, subtask_id: str) -> list[str]:
     return [tid.split("-")[-1] for tid in dep_table_ids]
 
 
-def is_subtask_blocked(task_id: str, subtask_id: str) -> bool:
-    """Check if a subtask is blocked by incomplete dependencies."""
-    from .subtask_dependencies import is_blocked
-
-    table_id = _generate_subtask_id(canonicalize_task_id(task_id), subtask_id)
-    return is_blocked(table_id)
-
-
-def get_blocking_subtasks(task_id: str, subtask_id: str) -> list[dict[str, Any]]:
-    """Get incomplete subtasks blocking this subtask."""
-    from .subtask_dependencies import get_blocking_dependencies
-
-    table_id = _generate_subtask_id(canonicalize_task_id(task_id), subtask_id)
-    return get_blocking_dependencies(table_id)
-
-
 def bulk_add_subtask_dependencies(
     task_id: str, dependencies: list[tuple[str, str]]
 ) -> list[dict[str, Any]]:

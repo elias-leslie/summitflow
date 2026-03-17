@@ -260,18 +260,6 @@ def search_symbols(
         return [_row_to_symbol(row[:-1]) for row in rows]
 
 
-def delete_symbols_for_file(project_id: str, file_path: str) -> int:
-    """Delete all symbols for a file."""
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            "DELETE FROM explorer_symbols WHERE project_id = %s AND file_path = %s",
-            (project_id, file_path),
-        )
-        deleted = cur.rowcount or 0
-        conn.commit()
-        return deleted
-
-
 def cleanup_stale_symbols(project_id: str, current_paths: set[str]) -> int:
     """Delete symbol rows for files missing from the current file scan snapshot."""
     with get_connection() as conn, conn.cursor() as cur:

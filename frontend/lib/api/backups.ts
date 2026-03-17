@@ -252,18 +252,6 @@ export function createStorageBackend(data: {
   })
 }
 
-export function updateStorageBackend(id: string, data: {
-  name?: string; config?: Record<string, unknown>; is_default?: boolean; enabled?: boolean
-}): Promise<StorageBackend> {
-  return fetchWithErrorHandling<StorageBackend>(`/api/backup-storage/${id}`, {
-    method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify(data), errorMessage: 'Failed to update storage backend',
-  })
-}
-
-export function deleteStorageBackend(id: string): Promise<{ deleted: boolean }> {
-  return fetchWithErrorHandling(`/api/backup-storage/${id}`, { method: 'DELETE', errorMessage: 'Failed to delete storage backend' })
-}
-
 export function testStorageBackend(id: string): Promise<{ success: boolean; message: string }> {
   return fetchWithErrorHandling(`/api/backup-storage/${id}/test`, {
     method: 'POST', errorMessage: 'Failed to test storage backend',
