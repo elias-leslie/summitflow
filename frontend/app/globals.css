@@ -322,31 +322,6 @@ body::before {
 }
 
 /* ============================================================================
-   xterm Terminal Overrides
-   ============================================================================ */
-
-/* Prevent xterm from being stretched by flex layouts */
-.xterm {
-  height: 100%;
-  overscroll-behavior: contain;
-}
-
-/* Ensure the viewport doesn't stretch the content */
-.xterm-viewport {
-  overflow-y: auto;
-}
-
-/* Ensure screen and canvas maintain proper sizing */
-.xterm-screen {
-  width: 100%;
-}
-
-/* The canvas should not be stretched - let FitAddon handle sizing */
-.xterm-screen canvas {
-  /* Remove any forced dimensions that could cause stretching */
-}
-
-/* ============================================================================
    ChatPanel (@agent-hub/chat-ui) — Outrun Theme Overrides
    Tailwind v4 doesn't generate dark: variants for the chat-ui package
    since it has no @source directive. Override light-mode classes directly.
