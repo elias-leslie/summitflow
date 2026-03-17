@@ -524,7 +524,65 @@ service_exists() { systemctl --user cat "$1" &>/dev/null; }
 restart_service() { local s="$1"; service_exists "$s" || { log_info "$s not found"; return 0; }; log "Restarting $s..."; systemctl --user restart "$s" && log_success "$s restarted" || { log_error "$s failed"; return 1; }; }
 clear_build_cache() { local d="$PROJECT_DIR/frontend"; [ ! -d "$d" ] && d="$PROJECT_DIR"; rm -rf "$d/.next" "$d/dist" "$d/node_modules/.vite" 2>/dev/null; log_success "Cache cleared"; }
 clear_nextjs_cache() { clear_build_cache; }
-build_frontend() { local d="$PROJECT_DIR/frontend"; [ ! -d "$d" ] && d="$PROJECT_DIR"; cd "$d" || return 1; log "Building..."; pnpm build 2>&1 | tail -15 && log_success "Built" || { log_error "Build failed"; return 1; }; }
+_frontend_dir() {
+    local d="$PROJECT_DIR/frontend"
+    [ -d "$d" ] || d="$PROJECT_DIR"
+    echo "$d"
+}
+
+_frontend_package_manager() {
+    local d="${1:-$(_frontend_dir)}"
+    if [ -f "$d/package-lock.json" ] || [ -f "$d/npm-shrinkwrap.json" ]; then
+        echo "npm"
+    else
+        echo "pnpm"
+    fi
+}
+
+ensure_frontend_dependencies() {
+    local d="${1:-$(_frontend_dir)}"
+    [ -f "$d/package.json" ] || return 0
+    [ -d "$d/node_modules" ] && return 0
+
+    local manager
+    manager=$(_frontend_package_manager "$d")
+
+    log "Installing frontend dependencies with $manager..."
+    (
+        cd "$d" || exit 1
+        if [ "$manager" = "npm" ]; then
+            npm ci
+        else
+            CI=true pnpm install
+        fi
+    ) 2>&1 | tail -20
+    [ ${PIPESTATUS[0]} -eq 0 ] && log_success "Frontend dependencies installed" || {
+        log_error "Frontend dependency install failed"
+        return 1
+    }
+}
+
+build_frontend() {
+    local d
+    d=$(_frontend_dir)
+    [ -f "$d/package.json" ] || { log_warn "No frontend package.json for $PROJECT_NAME"; return 0; }
+
+    ensure_frontend_dependencies "$d" || return 1
+
+    local manager
+    manager=$(_frontend_package_manager "$d")
+
+    log "Building frontend with $manager..."
+    (
+        cd "$d" || exit 1
+        if [ "$manager" = "npm" ]; then
+            npm run build
+        else
+            pnpm build
+        fi
+    ) 2>&1 | tail -20
+    [ ${PIPESTATUS[0]} -eq 0 ] && log_success "Built" || { log_error "Build failed"; return 1; }
+}
 _sanitize_native_process_env() {
     env -u DATABASE_URL \
         -u DATABASE_ADMIN_URL \
@@ -559,6 +617,6 @@ verify_backend() { local p="${1:-$BACKEND_PORT}"; [ "$p" -eq 0 ] 2>/dev/null && 
 verify_frontend() { local p="${1:-$FRONTEND_PORT}"; [ "$p" -eq 0 ] 2>/dev/null && return 0; log "Checking frontend ($p)..."; for i in $(seq 1 30); do local s=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "http://localhost:$p/" 2>/dev/null); [[ "$s" =~ ^(2|3)[0-9][0-9]$ ]] && { log_success "Frontend OK ($s)"; return 0; }; sleep 1; done; log_error "Frontend failed"; return 1; }
 
 export -f log log_success log_warn log_error log_info
-export -f service_exists restart_service clear_build_cache clear_nextjs_cache build_frontend run_native_migrations verify_backend verify_frontend
+export -f service_exists restart_service clear_build_cache clear_nextjs_cache _frontend_dir _frontend_package_manager ensure_frontend_dependencies build_frontend run_native_migrations verify_backend verify_frontend
 export -f _sanitize_native_process_env
 export -f _compose_env_var_names _sanitize_compose_process_env _docker_compose _runtime_mode_from_disk _set_docker_mode detect_docker _detect_stale_image _project_to_prefix _compose_all_services _compose_running_services _compose_stack_services _compose_api_service _compose_web_service _compose_service_port _resolve_ports _compose_files _persist_runtime_mode docker_start_stack docker_build_and_recreate docker_restart_services docker_recreate_services docker_run_migration docker_validate_hatchet_token docker_reapply_hatchet_tuning docker_ensure_infra

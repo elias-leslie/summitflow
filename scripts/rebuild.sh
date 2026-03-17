@@ -50,6 +50,56 @@ for arg in "$@"; do
     esac
 done
 
+selected_action_label() {
+    if [ "$RESTART_ONLY" = true ]; then
+        echo "restart"
+    elif [ "$FRONTEND_ONLY" = true ]; then
+        echo "frontend"
+    elif [ "$BACKEND_ONLY" = true ]; then
+        echo "backend"
+    else
+        echo "full"
+    fi
+}
+
+print_rebuild_header() {
+    local title="$1"
+    local runtime_desc="$2"
+    local switch_desc="${3:-}"
+    echo ""
+    echo "========================================"
+    echo "$title"
+    echo "========================================"
+    echo ""
+    echo "Project: $PROJECT_NAME"
+    echo "Mode: $(selected_action_label)"
+    echo "Runtime: $runtime_desc"
+    [ -n "$switch_desc" ] && echo "Switch: $switch_desc"
+    echo ""
+}
+
+print_rebuild_footer() {
+    local errors="$1"
+    local duration="$2"
+    echo ""
+    echo "========================================"
+    if [ "$errors" -eq 0 ]; then
+        log_success "Rebuild complete (${duration}s)"
+    else
+        log_error "Rebuild completed with $errors error(s) (${duration}s)"
+    fi
+    echo "========================================"
+    echo ""
+    echo "URLs:"
+    if [ "$FRONTEND_ONLY" = false ] && [ "$HAS_BACKEND" != false ] && [ "$BACKEND_PORT" -gt 0 ]; then
+        echo "  Backend:  http://localhost:$BACKEND_PORT"
+    fi
+    if [ "$BACKEND_ONLY" = false ] && [ "$FRONTEND_PORT" -gt 0 ]; then
+        echo "  Frontend: http://localhost:$FRONTEND_PORT"
+    fi
+    echo ""
+}
+
 # ─── Status ──────────────────────────────────────────────────────
 
 show_status_docker() {
@@ -166,13 +216,6 @@ main_docker() {
         mode_switch_required=true
     fi
 
-    echo ""
-    echo "========================================"
-    echo "$PROJECT_NAME Rebuild (Docker)"
-    echo "========================================"
-    echo ""
-    echo "Project: $PROJECT_NAME"
-    echo "Mode: $([ "$RESTART_ONLY" = true ] && echo "restart" || ([ "$FRONTEND_ONLY" = true ] && echo "frontend" || ([ "$BACKEND_ONLY" = true ] && echo "backend" || echo "full")))"
     local runtime_desc="docker"
     if [ "$DOCKER_DEV" = true ] && [ "$DOCKER_IMAGE_STALE" = true ]; then
         runtime_desc="docker (dev — image stale, rebuilding)"
@@ -181,11 +224,9 @@ main_docker() {
     else
         runtime_desc="docker (production images)"
     fi
-    echo "Runtime: $runtime_desc"
-    if [ "$mode_switch_required" = true ]; then
-        echo "Switch: $detected_mode -> $target_mode"
-    fi
-    echo ""
+    local switch_desc=""
+    [ "$mode_switch_required" = true ] && switch_desc="$detected_mode -> $target_mode"
+    print_rebuild_header "$PROJECT_NAME Rebuild (Docker)" "$runtime_desc" "$switch_desc"
 
     if [ "$mode_switch_required" = true ]; then
         local switch_services="${stack_services:-$all_services}"
@@ -263,15 +304,7 @@ main_docker() {
     local end_time=$(date +%s)
     local duration=$((end_time - start_time))
 
-    echo ""
-    echo "========================================"
-    [ $errors -eq 0 ] && log_success "Rebuild complete (${duration}s)" || log_error "Rebuild completed with $errors error(s) (${duration}s)"
-    echo "========================================"
-    echo ""
-    echo "URLs:"
-    [ "$FRONTEND_ONLY" = false ] && [ "$BACKEND_PORT" -gt 0 ] && echo "  Backend:  http://localhost:$BACKEND_PORT"
-    [ "$BACKEND_ONLY" = false ] && echo "  Frontend: http://localhost:$FRONTEND_PORT"
-    echo ""
+    print_rebuild_footer "$errors" "$duration"
 
     return $errors
 }
@@ -293,15 +326,7 @@ main_native() {
         exit 1
     fi
 
-    echo ""
-    echo "========================================"
-    echo "$PROJECT_NAME Rebuild"
-    echo "========================================"
-    echo ""
-    echo "Project: $PROJECT_NAME"
-    echo "Mode: $([ "$RESTART_ONLY" = true ] && echo "restart" || ([ "$FRONTEND_ONLY" = true ] && echo "frontend" || ([ "$BACKEND_ONLY" = true ] && echo "backend" || echo "full")))"
-    echo "Runtime: native apps + docker infra"
-    echo ""
+    print_rebuild_header "$PROJECT_NAME Rebuild" "native apps + docker infra"
 
     docker_ensure_infra || ((errors++))
 
@@ -363,19 +388,7 @@ main_native() {
     local end_time=$(date +%s)
     local duration=$((end_time - start_time))
 
-    echo ""
-    echo "========================================"
-    if [ $errors -eq 0 ]; then
-        log_success "Rebuild complete (${duration}s)"
-    else
-        log_error "Rebuild completed with $errors error(s) (${duration}s)"
-    fi
-    echo "========================================"
-    echo ""
-    echo "URLs:"
-    [ "$FRONTEND_ONLY" = false ] && echo "  Backend:  http://localhost:$BACKEND_PORT"
-    [ "$BACKEND_ONLY" = false ] && echo "  Frontend: http://localhost:$FRONTEND_PORT"
-    echo ""
+    print_rebuild_footer "$errors" "$duration"
 
     return $errors
 }

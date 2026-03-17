@@ -18,6 +18,7 @@ USER_SERVICES = {
     "ah-frontend": "agent-hub-frontend.service",
     "ah-worker": "agent-hub-hatchet-worker.service",
     "terminal": "summitflow-terminal.service",
+    "monkey-fight": "monkey-fight.service",
 }
 
 # System services (run without --user flag)

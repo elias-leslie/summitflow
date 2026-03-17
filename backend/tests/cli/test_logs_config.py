@@ -24,6 +24,8 @@ def test_get_service_list_all_includes_portfolio_ai() -> None:
     user_svcs, system_svcs = get_service_list("all")
 
     assert "portfolio-ai" in user_svcs
+    assert "monkey-fight" in user_svcs
+    assert USER_SERVICES["monkey-fight"] == "monkey-fight.service"
     assert set(system_svcs) == set(SYSTEM_SERVICES)
 
 
