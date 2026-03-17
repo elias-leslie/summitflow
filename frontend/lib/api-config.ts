@@ -8,7 +8,7 @@
  * This pattern is self-contained - no external dependencies required.
  */
 
-const PORTS = { frontend: 3001, backend: 8001 }
+const PORTS = { frontend: 3001, backend: 8001, agentHub: 8003 }
 const PROD_DOMAIN = 'dev.summitflow.dev'
 const PROD_API_DOMAIN = 'devapi.summitflow.dev'
 
@@ -108,7 +108,7 @@ export function getVoiceWsUrl(): string | null {
 
   // Development: direct to Agent Hub backend
   if (host === 'localhost' || host === '127.0.0.1') {
-    return `ws://localhost:8003/api/voice/ws?${params}`
+    return `ws://localhost:${PORTS.agentHub}/api/voice/ws?${params}`
   }
 
   // Production: same-origin WebSocket via CF tunnel + Next.js rewrite
@@ -133,7 +133,7 @@ export function getTtsBaseUrl(): string | null {
 
   // Development: direct to Agent Hub backend
   if (host === 'localhost' || host === '127.0.0.1') {
-    return 'http://localhost:8003'
+    return `http://localhost:${PORTS.agentHub}`
   }
 
   // Production: same-origin (rewrite proxies /api/voice/tts to Agent Hub)
