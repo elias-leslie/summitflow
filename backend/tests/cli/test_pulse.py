@@ -4,11 +4,19 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import pytest
 from typer.testing import CliRunner
 
 from cli.main import app
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def _stub_observability_refresh(monkeypatch: pytest.MonkeyPatch) -> None:
+    from cli.commands import pulse as pulse_cmd
+
+    monkeypatch.setattr(pulse_cmd, "refresh_agent_observability", lambda: None)
 
 
 def test_pulse_compact_renders_canonical_summary() -> None:
@@ -232,3 +240,38 @@ def test_pulse_rejects_project_and_all_together() -> None:
 
     assert result.exit_code != 0
     assert "Use either --project or --all, not both." in result.output
+
+
+def test_pulse_refreshes_observability_before_querying() -> None:
+    mock_client = MagicMock()
+    mock_client.get.return_value = {
+        "project_id": "agent-hub",
+        "summary": {
+            "running_tasks": 0,
+            "active_owners": 0,
+            "active_specialists": 0,
+            "active_sessions": 0,
+            "stale_sessions": 0,
+            "reapable_sessions": 0,
+            "stranded_tasks": 0,
+        },
+        "cleanup": {
+            "active_worktrees": 0,
+            "dirty_worktrees": 0,
+            "needs_cleanup": False,
+        },
+        "running_tasks": [],
+        "active_owners": [],
+        "active_sessions": [],
+        "stale_sessions": [],
+        "stranded_tasks": [],
+    }
+
+    with (
+        patch("cli.commands.pulse.refresh_agent_observability") as mock_refresh,
+        patch("cli.commands.pulse.STClient", return_value=mock_client),
+    ):
+        result = runner.invoke(app, ["pulse", "--project", "agent-hub"])
+
+    assert result.exit_code == 0
+    mock_refresh.assert_called_once_with()

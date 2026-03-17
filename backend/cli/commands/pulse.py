@@ -7,6 +7,7 @@ from typing import Annotated, Any
 import typer
 
 from .._output_state import is_compact
+from .._observability import refresh_agent_observability
 from ..client import APIError, STClient
 from ..output import handle_api_error, output_json
 
@@ -164,6 +165,7 @@ def pulse(
     if project_id and all_projects:
         raise typer.BadParameter("Use either --project or --all, not both.")
 
+    refresh_agent_observability()
     client = STClient(require_project=False)
     try:
         payloads = [

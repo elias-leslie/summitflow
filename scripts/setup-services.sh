@@ -3,8 +3,9 @@
 # RUN THIS AS YOUR USER (with sudo prompts when needed)
 #
 # This script:
-# 1. Symlinks systemd user services
-# 2. Enables systemd user services
+# 1. Symlinks systemd user units (.service + .timer)
+# 2. Enables long-running services
+# 3. Enables and starts timer-managed units
 
 set -e
 
@@ -24,31 +25,52 @@ echo ""
 echo "Step 1: Setting up systemd user services..."
 mkdir -p "$USER_SYSTEMD_DIR"
 
-# Step 2: Create symlinks for all service files found in scripts/systemd/
+# Step 2: Create symlinks for all unit files found in scripts/systemd/
 echo "  Creating symlinks..."
-SERVICES_LINKED=0
-for svc_file in "$SUMMITFLOW_DIR"/scripts/systemd/*.service; do
-    [ -f "$svc_file" ] || continue
-    svc_name="$(basename "$svc_file")"
-    ln -sf "$svc_file" "$USER_SYSTEMD_DIR/$svc_name"
-    echo "    $svc_name"
-    SERVICES_LINKED=$((SERVICES_LINKED + 1))
+UNITS_LINKED=0
+for unit_file in "$SUMMITFLOW_DIR"/scripts/systemd/*.{service,timer}; do
+    [ -f "$unit_file" ] || continue
+    unit_name="$(basename "$unit_file")"
+    ln -sf "$unit_file" "$USER_SYSTEMD_DIR/$unit_name"
+    echo "    $unit_name"
+    UNITS_LINKED=$((UNITS_LINKED + 1))
 done
-echo "  Linked $SERVICES_LINKED service files"
+echo "  Linked $UNITS_LINKED unit files"
 
 # Step 3: Reload systemd user daemon
 echo "  Reloading systemd user daemon..."
 systemctl --user daemon-reload
 
-# Step 4: Enable services
-echo "  Enabling services..."
+# Build a set of timer-managed service names so they are enabled via timers, not directly.
+declare -A TIMER_MANAGED_SERVICES=()
+for timer_file in "$SUMMITFLOW_DIR"/scripts/systemd/*.timer; do
+    [ -f "$timer_file" ] || continue
+    timer_name="$(basename "$timer_file" .timer)"
+    TIMER_MANAGED_SERVICES["$timer_name"]=1
+done
+
+# Step 4: Enable long-running services
+echo "  Enabling long-running services..."
 for svc_file in "$SUMMITFLOW_DIR"/scripts/systemd/*.service; do
     [ -f "$svc_file" ] || continue
     svc_name="$(basename "$svc_file")"
+    svc_base="${svc_name%.service}"
+    if [[ -n "${TIMER_MANAGED_SERVICES[$svc_base]:-}" ]]; then
+        echo "    skipped $svc_name (timer-managed)"
+        continue
+    fi
     systemctl --user enable "$svc_name" 2>/dev/null && echo "    enabled $svc_name" || echo "    skipped $svc_name (may require dependencies)"
 done
 
-echo "  ✓ Systemd services configured"
+# Step 5: Enable timers now so observability and maintenance jobs start immediately.
+echo "  Enabling timers..."
+for timer_file in "$SUMMITFLOW_DIR"/scripts/systemd/*.timer; do
+    [ -f "$timer_file" ] || continue
+    timer_name="$(basename "$timer_file")"
+    systemctl --user enable --now "$timer_name" 2>/dev/null && echo "    enabled $timer_name" || echo "    skipped $timer_name (may require dependencies)"
+done
+
+echo "  ✓ Systemd units configured"
 echo ""
 
 echo "================================"

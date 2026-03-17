@@ -165,6 +165,18 @@ Runtime settings are read from `~/.env.local` by default. Use
 Only `DATABASE_URL` is required for the backend to boot; the rest are optional
 overrides for local integrations and background services.
 
+### Agent Tooling Bootstrap
+
+To provision the shared local agent environment on a new machine, run:
+
+```bash
+bash ~/summitflow/scripts/setup-agent-tooling.sh
+```
+
+That bootstrap installs the Codex CLI and Claude Code, clones or updates the
+shared `codex-config` and `claude-config` repos, installs the Codex wrapper from
+the config repo, and enables the supporting user services and timers.
+
 ### Register a Project
 
 ```bash
@@ -186,10 +198,15 @@ SummitFlow `scripts/` is the canonical source for shared development scripts. Ot
 - `restore.sh` - Restore from local or SMB backup
 - `dev-tools.sh` - Quality tool wrapper (`dt` CLI for ruff, types, pytest, biome)
 - `commit.sh` - Multi-repo commit handler
+- `setup-agent-tooling.sh` - Bootstrap Claude Code, Codex CLI, config repos, and observability services
 
 ## Services
 
-All services run as Docker containers via a single Compose file (`docker/compose/docker-compose.yml`) with profile-based selection (`--profile full` for everything). Infrastructure (PostgreSQL, Redis, Hatchet) and application services (API, web, worker for each project) share the same stack.
+Current default runtime is hybrid:
+
+- First-party apps run as `systemd --user` services
+- Shared infra (`postgres`, `redis`, `hatchet`) stays in Docker
+- Full Docker app stacks remain available for parity and container checks
 
 ```bash
 scripts/rebuild.sh            # Full rebuild and restart (auto-detects Docker)

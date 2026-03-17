@@ -15,6 +15,13 @@ except ImportError as e:
 runner = CliRunner()
 
 
+@pytest.fixture(autouse=True)
+def _stub_observability_refresh(monkeypatch: pytest.MonkeyPatch) -> None:
+    from cli.commands import sessions as sessions_cmd
+
+    monkeypatch.setattr(sessions_cmd, "refresh_agent_observability", lambda: None)
+
+
 class TestSessionClientContract:
     """Tests for low-level session list response normalization."""
 
@@ -162,6 +169,19 @@ class TestSessionsListCommand:
             parent_session_id=None,
             project_id=None,
         )
+
+    def test_list_refreshes_observability_before_querying(self) -> None:
+        mock_client = MagicMock()
+        mock_client.list_sessions.return_value = []
+
+        with (
+            patch("cli.commands.sessions.refresh_agent_observability") as mock_refresh,
+            patch("cli.commands.sessions.STClient", return_value=mock_client),
+        ):
+            result = runner.invoke(app, ["sessions", "list", "--status", "active"])
+
+        assert result.exit_code == 0
+        mock_refresh.assert_called_once_with()
 
 
 class TestSessionsCommandAliases:

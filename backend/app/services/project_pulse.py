@@ -87,6 +87,83 @@ def _normalize_active_session(
     }
 
 
+def _session_provider(session: dict[str, Any]) -> str:
+    for key in ("effective_provider", "provider", "requested_provider"):
+        value = session.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return ""
+
+
+def _session_location(session: dict[str, Any]) -> str:
+    for key in ("worktree_path", "working_dir", "repo_root"):
+        value = session.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return ""
+
+
+def _session_freshness(session: dict[str, Any]) -> datetime:
+    live_activity = session.get("live_activity")
+    if isinstance(live_activity, dict):
+        last_heartbeat = _parse_iso_timestamp(live_activity.get("last_heartbeat_at"))
+        if last_heartbeat is not None:
+            return last_heartbeat
+    updated_at = _parse_iso_timestamp(session.get("updated_at"))
+    return updated_at or datetime.fromtimestamp(0, UTC)
+
+
+def _is_tmux_presence_session(session: dict[str, Any]) -> bool:
+    session_id = str(session.get("id") or "")
+    if session_id.startswith("tmux:"):
+        return True
+    model = str(session.get("effective_model") or session.get("model") or session.get("requested_model") or "")
+    if model.endswith("/external-tmux"):
+        return True
+    metadata = session.get("provider_metadata")
+    if isinstance(metadata, dict) and metadata.get("source") == "terminal_tmux_sync":
+        return True
+    return False
+
+
+def _active_session_dedupe_key(session: dict[str, Any]) -> tuple[str, str, str] | None:
+    provider = _session_provider(session)
+    location = _session_location(session)
+    branch = str(session.get("current_branch") or "")
+    if not provider or not location:
+        return None
+    return provider, location, branch
+
+
+def _should_prefer_active_session(candidate: dict[str, Any], current: dict[str, Any]) -> bool:
+    candidate_is_tmux = _is_tmux_presence_session(candidate)
+    current_is_tmux = _is_tmux_presence_session(current)
+    if candidate_is_tmux != current_is_tmux:
+        return not candidate_is_tmux
+    return _session_freshness(candidate) >= _session_freshness(current)
+
+
+def _dedupe_active_sessions(raw_sessions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    selected: dict[tuple[str, str, str], tuple[int, dict[str, Any]]] = {}
+    passthrough: list[tuple[int, dict[str, Any]]] = []
+
+    for index, session in enumerate(raw_sessions):
+        key = _active_session_dedupe_key(session)
+        if key is None:
+            passthrough.append((index, session))
+            continue
+        current = selected.get(key)
+        if current is None:
+            selected[key] = (index, session)
+            continue
+        if _should_prefer_active_session(session, current[1]):
+            selected[key] = (current[0], session)
+
+    ordered = list(selected.values()) + passthrough
+    ordered.sort(key=lambda item: item[0])
+    return [session for _, session in ordered]
+
+
 def _classify_session_coordination_bucket(session: dict[str, Any]) -> str | None:
     """Classify a raw session for pulse summaries."""
     live_activity = session.get("live_activity")
@@ -172,17 +249,23 @@ async def build_project_pulse(project_id: str) -> dict[str, Any]:
         if isinstance(session, dict) and session.get("task_id")
     }
 
-    active_sessions: list[dict[str, Any]] = []
+    active_raw_sessions: list[dict[str, Any]] = []
     stale_sessions: list[dict[str, Any]] = []
     for session in raw_sessions:
         if not isinstance(session, dict):
             continue
-        normalized = _normalize_active_session(session, owner_session_ids, specialist_session_ids)
         bucket = _classify_session_coordination_bucket(session)
         if bucket == "active":
-            active_sessions.append(normalized)
+            active_raw_sessions.append(session)
         elif bucket == "stale":
-            stale_sessions.append(normalized)
+            stale_sessions.append(
+                _normalize_active_session(session, owner_session_ids, specialist_session_ids)
+            )
+
+    active_sessions = [
+        _normalize_active_session(session, owner_session_ids, specialist_session_ids)
+        for session in _dedupe_active_sessions(active_raw_sessions)
+    ]
 
     reapable_sessions = [
         session

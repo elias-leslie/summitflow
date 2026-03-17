@@ -6,6 +6,7 @@ from typing import Annotated
 
 import typer
 
+from .._observability import refresh_agent_observability
 from ..client import APIError, STClient
 from ..output import handle_api_error, output_json
 from .sessions_overlap import render_overlap_list
@@ -33,6 +34,7 @@ def _render_session_list(
     project_id: str | None,
     include_unassigned: bool = True,
 ) -> None:
+    refresh_agent_observability()
     client = STClient()
     normalized_status = _normalize_status_filter(status_filter)
 
@@ -151,6 +153,7 @@ def _list_all_active_sessions(
     project_id: str | None,
     page_size: int = 100,
 ) -> list[dict[str, object]]:
+    refresh_agent_observability()
     sessions: list[dict[str, object]] = []
     page = 1
     while True:

@@ -14,6 +14,7 @@
 #   --force         Use --force-with-lease when pushing
 #   --skip-checks   Skip dt quality gates
 #   --msg "..."     Custom commit message
+#   --path <path>   Limit commit to one path (repeatable)
 #   --json          Output JSON instead of TOON
 #   --sync-only     Pull all repos without committing
 #   --task ID       Tag commit with task ID
@@ -35,6 +36,7 @@ CURRENT_ONLY=true
 CUSTOM_MSG=""
 JSON_OUTPUT=false
 TASK_ID=""
+COMMIT_PATHS=()
 LAST_STATUS=""
 JSON_RESULTS=()
 
@@ -54,6 +56,7 @@ while [[ $# -gt 0 ]]; do
         --force) FORCE=true; shift ;;
         --skip-checks|--skip-tests) SKIP_CHECKS=true; shift ;;
         --msg) CUSTOM_MSG="$2"; shift 2 ;;
+        --path) COMMIT_PATHS+=("$2"); shift 2 ;;
         --json) JSON_OUTPUT=true; shift ;;
         --task) TASK_ID="$2"; shift 2 ;;
         *) echo "ERROR:unknown_option:$1"; exit 1 ;;
@@ -70,6 +73,30 @@ is_main_branch() {
 
 is_dirty() {
     [[ -n "$(git status --porcelain 2>/dev/null)" ]]
+}
+
+has_commit_scope() {
+    [[ ${#COMMIT_PATHS[@]} -gt 0 ]]
+}
+
+scope_status() {
+    if has_commit_scope; then
+        git status --porcelain -- "${COMMIT_PATHS[@]}" 2>/dev/null
+    else
+        git status --porcelain 2>/dev/null
+    fi
+}
+
+scope_has_changes() {
+    [[ -n "$(scope_status)" ]]
+}
+
+scope_add_all() {
+    if has_commit_scope; then
+        git add -A -- "${COMMIT_PATHS[@]}" >/dev/null 2>&1
+    else
+        git add -A >/dev/null 2>&1
+    fi
 }
 
 is_project_repo() {
@@ -420,9 +447,13 @@ commit_project_repo() {
 
     local branch file_count
     branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
-    file_count=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+    file_count=$(scope_status | wc -l | tr -d ' ')
 
     if [[ "$file_count" -eq 0 ]]; then
+        if has_commit_scope; then
+            emit_result "SKIP" "$repo_name" "" "" "false" "" "no_matching_changes"
+            return 0
+        fi
         handle_push_only "$repo_name" "$branch"
         return $?
     fi
@@ -436,7 +467,7 @@ commit_project_repo() {
     layer=$(detect_layers)
     type=$(detect_type)
 
-    git add -A >/dev/null 2>&1
+    scope_add_all
 
     local gates=""
     if ! $SKIP_CHECKS; then
@@ -467,8 +498,8 @@ commit_project_repo() {
     commit_out=$(git commit -m "$message" 2>&1) || commit_status=$?
 
     if [[ $commit_status -ne 0 ]]; then
-        if [[ -n "$(git status --porcelain)" ]]; then
-            git add -A >/dev/null 2>&1
+        if scope_has_changes; then
+            scope_add_all
             commit_out=$(git commit -m "$message" 2>&1) || commit_status=$?
         fi
         if [[ $commit_status -ne 0 ]]; then
@@ -481,8 +512,8 @@ commit_project_repo() {
     local sha
     sha=$(git rev-parse --short HEAD)
 
-    if [[ -n "$(git status --porcelain)" ]]; then
-        git add -A >/dev/null 2>&1
+    if scope_has_changes; then
+        scope_add_all
         local followup_status=0
         git commit -m "style: auto-format from pre-commit hooks" >/dev/null 2>&1 || followup_status=$?
         if [[ $followup_status -eq 0 ]]; then
@@ -527,9 +558,13 @@ commit_config_repo() {
 
     local branch file_count
     branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
-    file_count=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+    file_count=$(scope_status | wc -l | tr -d ' ')
 
     if [[ "$file_count" -eq 0 ]]; then
+        if has_commit_scope; then
+            emit_result "SKIP" "$repo_name" "" "" "false" "" "no_matching_changes"
+            return 0
+        fi
         handle_push_only "$repo_name" "$branch"
         return $?
     fi
@@ -539,7 +574,7 @@ commit_config_repo() {
         return 0
     fi
 
-    git add -A >/dev/null 2>&1
+    scope_add_all
 
     local message
     message="${CUSTOM_MSG:-$(generate_simple_message)}"
@@ -548,8 +583,8 @@ commit_config_repo() {
     commit_out=$(git commit -m "$message" 2>&1) || commit_status=$?
 
     if [[ $commit_status -ne 0 ]]; then
-        if [[ -n "$(git status --porcelain)" ]]; then
-            git add -A >/dev/null 2>&1
+        if scope_has_changes; then
+            scope_add_all
             commit_out=$(git commit -m "$message" 2>&1) || commit_status=$?
         fi
         if [[ $commit_status -ne 0 ]]; then

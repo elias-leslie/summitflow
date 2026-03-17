@@ -374,15 +374,7 @@ main_native() {
             log "Index regeneration skipped (API may not be SummitFlow)"
         fi
 
-        local export_script="$PROJECT_DIR/backend/scripts/export_seeds.py"
-        if [ -f "$export_script" ]; then
-            log "Syncing seed data from database..."
-            if "$PROJECT_DIR/backend/.venv/bin/python" -m scripts.export_seeds 2>/dev/null; then
-                log_success "Seed data synced"
-            else
-                log "Seed export skipped (non-fatal)"
-            fi
-        fi
+        sync_seed_data_from_db
     fi
 
     local end_time=$(date +%s)

@@ -5,7 +5,7 @@
 #
 export GREEN='\033[0;32m' YELLOW='\033[1;33m' RED='\033[0;31m' BLUE='\033[0;34m' NC='\033[0m'
 export IS_WORKTREE=false WORKTREE_TASK_ID=""
-if [ -z "$PROJECT_DIR" ]; then
+if [ -z "${PROJECT_DIR:-}" ]; then
     PROJECT_DIR=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
     if [[ "$PROJECT_DIR" == *"/worktrees/"* ]]; then
         IS_WORKTREE=true
@@ -669,10 +669,28 @@ run_native_migrations() {
     ) 2>&1 | tail -10
     [ ${PIPESTATUS[0]} -eq 0 ] && log_success "Migrations applied" || { log_error "Migration failed"; return 1; }
 }
+
+sync_seed_data_from_db() {
+    [ "$HAS_BACKEND" = false ] && return 0
+
+    local export_script="$BACKEND_DIR/scripts/export_seeds.py"
+    [ -f "$export_script" ] || return 0
+
+    local venv_dir="$BACKEND_DIR/.venv"
+    [ ! -d "$venv_dir" ] && venv_dir="$PROJECT_DIR/.venv"
+    [ ! -x "$venv_dir/bin/python" ] && { log_warn "Python runtime not available for $PROJECT_NAME seed export"; return 0; }
+
+    log "Syncing seed data from database..."
+    (
+        cd "$BACKEND_DIR" &&
+        _sanitize_native_process_env "$venv_dir/bin/python" -m scripts.export_seeds
+    ) 2>&1 | tail -10
+    [ ${PIPESTATUS[0]} -eq 0 ] && log_success "Seed data synced" || log "Seed export skipped (non-fatal)"
+}
 verify_backend() { local p="${1:-$BACKEND_PORT}"; [ "$p" -eq 0 ] 2>/dev/null && return 0; log "Checking backend ($p)..."; for i in $(seq 1 10); do curl -s "http://localhost:$p/health" &>/dev/null && { log_success "Backend OK"; return 0; }; sleep 1; done; log_error "Backend failed"; return 1; }
 verify_frontend() { local p="${1:-$FRONTEND_PORT}"; [ "$p" -eq 0 ] 2>/dev/null && return 0; log "Checking frontend ($p)..."; for i in $(seq 1 30); do local s=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "http://localhost:$p/" 2>/dev/null); [[ "$s" =~ ^(2|3)[0-9][0-9]$ ]] && { log_success "Frontend OK ($s)"; return 0; }; sleep 1; done; log_error "Frontend failed"; return 1; }
 
 export -f log log_success log_warn log_error log_info
-export -f service_exists port_listener_pids kill_port_listeners restart_service clear_build_cache clear_nextjs_cache _frontend_dir _frontend_package_manager ensure_frontend_dependencies build_frontend run_native_migrations verify_backend verify_frontend
+export -f service_exists port_listener_pids kill_port_listeners restart_service clear_build_cache clear_nextjs_cache _frontend_dir _frontend_package_manager ensure_frontend_dependencies build_frontend run_native_migrations sync_seed_data_from_db verify_backend verify_frontend
 export -f _sanitize_native_process_env
 export -f _compose_env_var_names _sanitize_compose_process_env _docker_compose _runtime_mode_from_disk _set_docker_mode detect_docker _detect_stale_image _project_to_prefix _compose_all_services _compose_running_services _compose_stack_services _compose_api_service _compose_web_service _compose_service_port _resolve_ports _compose_files _persist_runtime_mode docker_start_stack docker_build_and_recreate docker_restart_services docker_recreate_services docker_run_migration docker_validate_hatchet_token docker_reapply_hatchet_tuning docker_ensure_infra
