@@ -64,7 +64,7 @@ def tail(
     ctx: typer.Context,
     service: Annotated[
         str | None,
-        typer.Option("--service", "-s", help="Filter by service (summitflow,agent-hub,redis,postgres,neo4j,all)"),
+        typer.Option("--service", "-s", help="Filter by service (summitflow,agent-hub,redis,postgres,all)"),
     ] = None,
     level: Annotated[
         str | None,

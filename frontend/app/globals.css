@@ -225,30 +225,6 @@ body::before {
   background-size: 32px 32px;
 }
 
-/* Outrun glow effects */
-.glow-outrun {
-  box-shadow:
-    0 0 20px var(--outrun-glow),
-    0 0 40px var(--outrun-glow),
-    inset 0 0 20px var(--outrun-glow);
-}
-
-.glow-outrun-sm {
-  box-shadow: 0 0 10px var(--outrun-glow);
-}
-
-.glow-outrun-text {
-  text-shadow: 0 0 10px var(--outrun-glow);
-}
-
-/* Sunset gradient glow */
-.glow-sunset {
-  box-shadow:
-    0 0 15px rgba(255, 242, 0, 0.2),
-    0 0 30px rgba(255, 102, 0, 0.15),
-    0 0 45px rgba(255, 0, 102, 0.1);
-}
-
 /* Status indicator dots */
 .status-dot {
   @apply w-2 h-2 rounded-full;
@@ -352,42 +328,12 @@ body::before {
   font-family: var(--font-display), system-ui, sans-serif;
 }
 
-/* Badge styles */
-.badge {
-  @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium;
-}
-
-.badge-outrun {
-  @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium;
-  @apply bg-outrun-500/10 text-outrun-400 border border-outrun-500/30;
-}
-
-.badge-amber {
-  @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium;
-  @apply bg-amber-500/10 text-amber-400 border border-amber-500/30;
-}
-
-.badge-rose {
-  @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium;
-  @apply bg-rose-500/10 text-rose-400 border border-rose-500/30;
-}
-
-.badge-slate {
-  @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium;
-  @apply bg-slate-700/50 text-slate-400 border border-slate-600;
-}
-
 /* Sunset gradient text */
 .text-sunset {
   background: linear-gradient(180deg, #fff200 0%, #ff6600 50%, #ff0066 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-}
-
-/* Table styles */
-.table-row {
-  @apply border-b border-slate-800 hover:bg-slate-800/30 transition-colors;
 }
 
 /* Scrollbar styling */
@@ -434,47 +380,6 @@ body::before {
   100% {
     transform: translateX(400%);
   }
-}
-
-/* Explorer row hover state */
-.explorer-row {
-  @apply transition-colors duration-100;
-}
-
-.explorer-row:hover {
-  @apply bg-slate-800/40;
-}
-
-.explorer-row.expanded {
-  @apply bg-slate-800/30;
-}
-
-/* Pulse glow for running task cards */
-@keyframes pulse-glow {
-  0%,
-  100% {
-    box-shadow:
-      0 0 8px rgba(0, 245, 255, 0.3),
-      0 0 16px rgba(0, 245, 255, 0.15);
-  }
-  50% {
-    box-shadow:
-      0 0 16px rgba(0, 245, 255, 0.5),
-      0 0 32px rgba(0, 245, 255, 0.25);
-  }
-}
-
-.animate-pulse-glow {
-  animation: pulse-glow 2s ease-in-out infinite;
-}
-
-/* Hide scrollbar utility */
-.scrollbar-hide {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-.scrollbar-hide::-webkit-scrollbar {
-  display: none;
 }
 
 /* ============================================================================

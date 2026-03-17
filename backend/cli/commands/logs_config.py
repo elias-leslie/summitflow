@@ -24,7 +24,6 @@ USER_SERVICES = {
 SYSTEM_SERVICES = {
     "redis": "redis-server.service",
     "postgres": "postgresql.service",
-    "neo4j": "neo4j.service",
 }
 
 # All services
