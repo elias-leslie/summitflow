@@ -74,64 +74,11 @@
   --spacing-indent-5: 2.5rem;
 
   /* Animations */
-  --animate-pulse-slow: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-  --animate-scan: scan 8s linear infinite;
-  --animate-glow: glow 2s ease-in-out infinite alternate;
   --animate-fade-in: fadeIn 0.5s ease-out;
   --animate-slide-up: slideUp 0.5s ease-out;
-  --animate-grid-scroll: gridScroll 20s linear infinite;
-  --animate-shimmer: shimmer 2s ease-in-out infinite;
-
-  /* Background images */
-  --bg-grid-pattern:
-    linear-gradient(to right, rgba(255, 0, 102, 0.15) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 0, 102, 0.15) 1px, transparent 1px);
-  --bg-scanline: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 2px,
-    rgba(0, 0, 0, 0.03) 2px,
-    rgba(0, 0, 0, 0.03) 4px
-  );
-  --bg-sunset-gradient: linear-gradient(
-    180deg,
-    #fff200 0%,
-    #ff6600 50%,
-    #ff0066 100%
-  );
-
-  /* Background sizes */
-  --bg-grid: 24px 24px;
-
-  /* Box shadows */
-  --shadow-outrun:
-    0 0 20px rgba(255, 0, 102, 0.3), 0 0 40px rgba(255, 0, 102, 0.1);
-  --shadow-outrun-sm: 0 0 10px rgba(255, 0, 102, 0.25);
-  --shadow-outrun-lg:
-    0 0 30px rgba(255, 0, 102, 0.4), 0 0 60px rgba(255, 0, 102, 0.2);
-  --shadow-sunset:
-    0 0 20px rgba(255, 102, 0, 0.3), 0 0 40px rgba(255, 0, 102, 0.2);
 }
 
 /* Keyframes */
-@keyframes scan {
-  0% {
-    transform: translateY(-100%);
-  }
-  100% {
-    transform: translateY(100vh);
-  }
-}
-
-@keyframes glow {
-  0% {
-    opacity: 0.5;
-  }
-  100% {
-    opacity: 1;
-  }
-}
-
 @keyframes fadeIn {
   0% {
     opacity: 0;
@@ -152,32 +99,7 @@
   }
 }
 
-@keyframes gridScroll {
-  0% {
-    transform: translateY(0);
-  }
-  100% {
-    transform: translateY(32px);
-  }
-}
-
-@keyframes shimmer {
-  0% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(100%);
-  }
-}
-
 :root {
-  /* Outrun color system */
-  --outrun-pink: #ff0066;
-  --outrun-orange: #ff6600;
-  --outrun-yellow: #fff200;
-  --outrun-purple: #1a0a2e;
-  --outrun-glow: rgba(255, 0, 102, 0.2);
-  --sunset-glow: rgba(255, 102, 0, 0.15);
   --slate-deep: #0a0612;
   --grid-color: rgba(255, 0, 102, 0.12);
 }
