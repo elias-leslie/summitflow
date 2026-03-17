@@ -12,6 +12,11 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SUMMITFLOW_DIR="$(dirname "$SCRIPT_DIR")"
 USER_SYSTEMD_DIR="$HOME/.config/systemd/user"
+SYSTEMCTL_USER_TIMEOUT="${SYSTEMCTL_USER_TIMEOUT:-20}"
+
+run_user_systemctl() {
+    timeout --foreground "$SYSTEMCTL_USER_TIMEOUT" systemctl --user "$@"
+}
 
 echo "================================"
 echo "SummitFlow Service Setup"
@@ -39,7 +44,10 @@ echo "  Linked $UNITS_LINKED unit files"
 
 # Step 3: Reload systemd user daemon
 echo "  Reloading systemd user daemon..."
-systemctl --user daemon-reload
+if ! run_user_systemctl daemon-reload; then
+    echo "  ERROR: systemctl --user daemon-reload failed or timed out" >&2
+    exit 1
+fi
 
 # Build a set of timer-managed service names so they are enabled via timers, not directly.
 declare -A TIMER_MANAGED_SERVICES=()
@@ -59,7 +67,7 @@ for svc_file in "$SUMMITFLOW_DIR"/scripts/systemd/*.service; do
         echo "    skipped $svc_name (timer-managed)"
         continue
     fi
-    systemctl --user enable "$svc_name" 2>/dev/null && echo "    enabled $svc_name" || echo "    skipped $svc_name (may require dependencies)"
+    run_user_systemctl enable "$svc_name" 2>/dev/null && echo "    enabled $svc_name" || echo "    skipped $svc_name (may require dependencies)"
 done
 
 # Step 5: Enable timers now so observability and maintenance jobs start immediately.
@@ -67,7 +75,7 @@ echo "  Enabling timers..."
 for timer_file in "$SUMMITFLOW_DIR"/scripts/systemd/*.timer; do
     [ -f "$timer_file" ] || continue
     timer_name="$(basename "$timer_file")"
-    systemctl --user enable --now "$timer_name" 2>/dev/null && echo "    enabled $timer_name" || echo "    skipped $timer_name (may require dependencies)"
+    run_user_systemctl enable --now "$timer_name" 2>/dev/null && echo "    enabled $timer_name" || echo "    skipped $timer_name (may require dependencies)"
 done
 
 echo "  ✓ Systemd units configured"
