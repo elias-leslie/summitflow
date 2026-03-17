@@ -144,6 +144,15 @@ _compose_all_services() {
         | { grep "^${prefix}" || true; } | sort -u | tr '\n' ' '
 }
 
+_compose_running_services() {
+    [ ! -f "$_COMPOSE_FILE" ] && return
+    local prefix
+    prefix=$(_project_to_prefix "${1:-$PROJECT_NAME}")
+    docker ps --filter "label=com.docker.compose.project=summitflow-stack" \
+              --format '{{.Label "com.docker.compose.service"}}' 2>/dev/null \
+        | { grep "^${prefix}" || true; } | sort -u | tr '\n' ' '
+}
+
 _compose_stack_services() {
     [ ! -f "$_COMPOSE_FILE" ] && return
     docker ps --all --filter "label=com.docker.compose.project=summitflow-stack" \
@@ -220,10 +229,47 @@ _resolve_systemd_services() {
     export SERVICE_PREFIX="$prefix"
     export BACKEND_SERVICE="${prefix}-backend"
     export FRONTEND_SERVICE="${prefix}-frontend"
-    # Special cases that predate this convention
-    [ "$PROJECT_NAME" = "terminal" ] && export BACKEND_SERVICE="summitflow-terminal" FRONTEND_SERVICE="summitflow-terminal-frontend"
-    [ "$PROJECT_NAME" = "monkey-fight" ] && export FRONTEND_SERVICE="monkey-fight"
-    export MANAGED_SERVICES="$BACKEND_SERVICE $FRONTEND_SERVICE"
+    export WORKER_SERVICES=""
+    export AUXILIARY_SERVICES=""
+    export HAS_BACKEND=true
+    export BACKEND_DIR="$PROJECT_DIR/backend"
+    export FRONTEND_DIR="$PROJECT_DIR/frontend"
+
+    case "$PROJECT_NAME" in
+        summitflow)
+            export WORKER_SERVICES="summitflow-hatchet-worker"
+            export BACKEND_PORT=8001 FRONTEND_PORT=3001
+            ;;
+        agent-hub)
+            export WORKER_SERVICES="agent-hub-hatchet-worker"
+            export BACKEND_PORT=8003 FRONTEND_PORT=3003
+            ;;
+        portfolio-ai)
+            export BACKEND_SERVICE="portfolio-backend"
+            export FRONTEND_SERVICE="portfolio-frontend"
+            export WORKER_SERVICES="portfolio-hatchet-worker"
+            export BACKEND_PORT=8000 FRONTEND_PORT=3000
+            ;;
+        terminal)
+            export BACKEND_SERVICE="summitflow-terminal"
+            export FRONTEND_SERVICE="summitflow-terminal-frontend"
+            export BACKEND_DIR="$PROJECT_DIR"
+            export BACKEND_PORT=8002 FRONTEND_PORT=3002
+            ;;
+        monkey-fight)
+            export BACKEND_SERVICE=""
+            export FRONTEND_SERVICE="monkey-fight"
+            export HAS_BACKEND=false
+            export BACKEND_PORT=0 FRONTEND_PORT=4001
+            export BACKEND_DIR="$PROJECT_DIR"
+            export FRONTEND_DIR="$PROJECT_DIR"
+            ;;
+        *)
+            export BACKEND_PORT=8000 FRONTEND_PORT=3000
+            ;;
+    esac
+
+    export MANAGED_SERVICES="$BACKEND_SERVICE $WORKER_SERVICES $AUXILIARY_SERVICES $FRONTEND_SERVICE"
 }
 _resolve_systemd_services
 
@@ -232,11 +278,9 @@ _resolve_systemd_services
 detect_docker() {
     export RUNTIME_MODE="native" DOCKER_DEV=false DOCKER_IMAGE_STALE=false
     [ ! -f "$_COMPOSE_FILE" ] && return
-    local running
-    running=$(_docker_compose -f "$_COMPOSE_FILE" ps --status running -q 2>/dev/null)
-    if [ -z "$running" ]; then
-        export RUNTIME_MODE="docker-stopped"
-        _set_docker_mode "$(_runtime_mode_from_disk)"
+    local running_services
+    running_services=$(_compose_running_services)
+    if [ -z "$running_services" ]; then
         return
     fi
     export RUNTIME_MODE="docker"
@@ -264,6 +308,49 @@ detect_docker() {
 
     # Check if image is stale (infrastructure files changed since image was built)
     _detect_stale_image "$container"
+}
+
+docker_ensure_infra() {
+    [ ! -f "$_COMPOSE_FILE" ] && return 0
+
+    local required_services=(postgres redis hatchet)
+    local missing_services=()
+    local svc
+
+    for svc in "${required_services[@]}"; do
+        if ! docker ps --filter "label=com.docker.compose.project=summitflow-stack" \
+                       --filter "label=com.docker.compose.service=$svc" \
+                       --format '{{.ID}}' 2>/dev/null | grep -q .; then
+            missing_services+=("$svc")
+        fi
+    done
+
+    [ ${#missing_services[@]} -eq 0 ] && return 0
+
+    log "Starting Docker infra: postgres redis hatchet"
+    _docker_compose -f "$_COMPOSE_FILE" up -d postgres redis hatchet-migrate hatchet-setup-config hatchet 2>&1
+    log_success "Docker infra started"
+
+    local pg_ready=false
+    local hatchet_ready=false
+    local _i
+    for _i in $(seq 1 45); do
+        if pg_isready -h localhost -p 5432 -U admin >/dev/null 2>&1; then
+            pg_ready=true
+        fi
+        if curl -sf http://localhost:8888/ready >/dev/null 2>&1; then
+            hatchet_ready=true
+        fi
+        if [ "$pg_ready" = true ] && [ "$hatchet_ready" = true ]; then
+            log_success "Docker infra healthy"
+            return 0
+        fi
+        sleep 2
+    done
+
+    [ "$pg_ready" = false ] && log_error "PostgreSQL did not become ready"
+    [ "$hatchet_ready" = false ] && log_error "Hatchet did not become ready"
+    return 1
 }
 
 # Check if Dockerfile or dependency files changed after the running image was built.
@@ -438,9 +525,40 @@ restart_service() { local s="$1"; service_exists "$s" || { log_info "$s not foun
 clear_build_cache() { local d="$PROJECT_DIR/frontend"; [ ! -d "$d" ] && d="$PROJECT_DIR"; rm -rf "$d/.next" "$d/dist" "$d/node_modules/.vite" 2>/dev/null; log_success "Cache cleared"; }
 clear_nextjs_cache() { clear_build_cache; }
 build_frontend() { local d="$PROJECT_DIR/frontend"; [ ! -d "$d" ] && d="$PROJECT_DIR"; cd "$d" || return 1; log "Building..."; pnpm build 2>&1 | tail -15 && log_success "Built" || { log_error "Build failed"; return 1; }; }
+_sanitize_native_process_env() {
+    env -u DATABASE_URL \
+        -u DATABASE_ADMIN_URL \
+        -u REDIS_URL \
+        -u AGENT_HUB_DB_URL \
+        -u AGENT_HUB_REDIS_URL \
+        -u PORTFOLIO_DB_URL \
+        -u PORTFOLIO_AI_DB_URL \
+        -u PORTFOLIO_REDIS_URL \
+        -u HATCHET_CLIENT_TOKEN \
+        -u HATCHET_CLIENT_HOST_PORT \
+        -u HATCHET_CLIENT_TLS_STRATEGY \
+        "$@"
+}
+
+run_native_migrations() {
+    [ "$HAS_BACKEND" = false ] && return 0
+    [ ! -f "$BACKEND_DIR/alembic.ini" ] && return 0
+
+    local venv_dir="$BACKEND_DIR/.venv"
+    [ ! -d "$venv_dir" ] && venv_dir="$PROJECT_DIR/.venv"
+    [ ! -x "$venv_dir/bin/alembic" ] && { log_warn "Alembic not available for $PROJECT_NAME"; return 0; }
+
+    log "Running migrations..."
+    (
+        cd "$BACKEND_DIR" &&
+        _sanitize_native_process_env "$venv_dir/bin/alembic" upgrade head
+    ) 2>&1 | tail -10
+    [ ${PIPESTATUS[0]} -eq 0 ] && log_success "Migrations applied" || { log_error "Migration failed"; return 1; }
+}
 verify_backend() { local p="${1:-$BACKEND_PORT}"; [ "$p" -eq 0 ] 2>/dev/null && return 0; log "Checking backend ($p)..."; for i in $(seq 1 10); do curl -s "http://localhost:$p/health" &>/dev/null && { log_success "Backend OK"; return 0; }; sleep 1; done; log_error "Backend failed"; return 1; }
 verify_frontend() { local p="${1:-$FRONTEND_PORT}"; [ "$p" -eq 0 ] 2>/dev/null && return 0; log "Checking frontend ($p)..."; for i in $(seq 1 30); do local s=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "http://localhost:$p/" 2>/dev/null); [[ "$s" =~ ^(2|3)[0-9][0-9]$ ]] && { log_success "Frontend OK ($s)"; return 0; }; sleep 1; done; log_error "Frontend failed"; return 1; }
 
 export -f log log_success log_warn log_error log_info
-export -f service_exists restart_service clear_build_cache clear_nextjs_cache build_frontend verify_backend verify_frontend
-export -f _compose_env_var_names _sanitize_compose_process_env _docker_compose _runtime_mode_from_disk _set_docker_mode detect_docker _detect_stale_image _project_to_prefix _compose_all_services _compose_stack_services _compose_api_service _compose_web_service _compose_service_port _resolve_ports _compose_files _persist_runtime_mode docker_start_stack docker_build_and_recreate docker_restart_services docker_recreate_services docker_run_migration docker_validate_hatchet_token docker_reapply_hatchet_tuning
+export -f service_exists restart_service clear_build_cache clear_nextjs_cache build_frontend run_native_migrations verify_backend verify_frontend
+export -f _sanitize_native_process_env
+export -f _compose_env_var_names _sanitize_compose_process_env _docker_compose _runtime_mode_from_disk _set_docker_mode detect_docker _detect_stale_image _project_to_prefix _compose_all_services _compose_running_services _compose_stack_services _compose_api_service _compose_web_service _compose_service_port _resolve_ports _compose_files _persist_runtime_mode docker_start_stack docker_build_and_recreate docker_restart_services docker_recreate_services docker_run_migration docker_validate_hatchet_token docker_reapply_hatchet_tuning docker_ensure_infra

@@ -102,12 +102,27 @@ show_status_native() {
     echo ""
     echo "Services:"
     for svc in $MANAGED_SERVICES; do
+        [ -n "$svc" ] || continue
         if service_exists "$svc"; then
             local status=$(systemctl --user is-active "$svc" 2>/dev/null || echo "unknown")
             local icon="✗"; [ "$status" = "active" ] && icon="✓"
             printf "  %-35s %s %s\n" "$svc" "$icon" "$status"
         fi
     done
+    if [ -f "$_COMPOSE_FILE" ]; then
+        echo ""
+        echo "Infra (Docker):"
+        local infra_lines
+        infra_lines=$(_docker_compose -f "$_COMPOSE_FILE" ps --format '{{.Service}} {{.State}} {{.Health}}' postgres redis hatchet 2>/dev/null || true)
+        if [ -n "$infra_lines" ]; then
+            while IFS= read -r line; do
+                [ -n "$line" ] || continue
+                printf "  %s\n" "$line"
+            done <<< "$infra_lines"
+        else
+            echo "  (infra not running)"
+        fi
+    fi
     echo ""
     echo "Ports:"
     if [ "$HAS_BACKEND" != false ] && [ "$BACKEND_PORT" -gt 0 ]; then
@@ -285,12 +300,19 @@ main_native() {
     echo ""
     echo "Project: $PROJECT_NAME"
     echo "Mode: $([ "$RESTART_ONLY" = true ] && echo "restart" || ([ "$FRONTEND_ONLY" = true ] && echo "frontend" || ([ "$BACKEND_ONLY" = true ] && echo "backend" || echo "full")))"
+    echo "Runtime: native apps + docker infra"
     echo ""
+
+    docker_ensure_infra || ((errors++))
 
     # Frontend rebuild (unless backend-only or restart-only)
     if [ "$BACKEND_ONLY" = false ] && [ "$RESTART_ONLY" = false ]; then
         clear_nextjs_cache || true
         build_frontend || { log_error "Frontend build failed"; ((errors++)); }
+    fi
+
+    if [ "$FRONTEND_ONLY" = false ] && [ "$HAS_BACKEND" != false ]; then
+        run_native_migrations || ((errors++))
     fi
 
     # Restart services
