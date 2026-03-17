@@ -342,7 +342,7 @@ main_native() {
 
     # Restart services
     if [ "$FRONTEND_ONLY" = false ] && [ "$HAS_BACKEND" != false ]; then
-        restart_service "$BACKEND_SERVICE" || ((errors++))
+        restart_service "$BACKEND_SERVICE" "$BACKEND_PORT" || ((errors++))
         for svc in $WORKER_SERVICES $AUXILIARY_SERVICES; do
             [ -n "$svc" ] || continue
             restart_service "$svc" || ((errors++))
@@ -350,7 +350,7 @@ main_native() {
     fi
 
     if [ "$BACKEND_ONLY" = false ]; then
-        restart_service "$FRONTEND_SERVICE" || ((errors++))
+        restart_service "$FRONTEND_SERVICE" "$FRONTEND_PORT" || ((errors++))
     fi
 
     # Verify health

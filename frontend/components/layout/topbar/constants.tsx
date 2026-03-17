@@ -67,7 +67,7 @@ export const navItems = [
   },
   {
     id: 'docker',
-    label: 'Docker',
+    label: 'Runtime',
     href: '/docker',
     icon: Boxes,
     activeColor: 'cyan',

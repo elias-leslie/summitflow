@@ -15,11 +15,11 @@ vi.mock('./ServiceCard', () => ({
 }))
 
 describe('ServiceGrid', () => {
-  it('renders a Docker error state when the status query fails', () => {
+  it('renders a runtime error state when the status query fails', () => {
     queryMocks.useQuery
       .mockReturnValueOnce({
         data: undefined,
-        error: new Error('503: Docker status unavailable'),
+        error: new Error('503: Runtime status unavailable'),
         isLoading: false,
       })
       .mockReturnValueOnce({
@@ -31,10 +31,10 @@ describe('ServiceGrid', () => {
     render(<ServiceGrid />)
 
     expect(
-      screen.getByText('Docker status is unavailable.'),
+      screen.getByText('Runtime status is unavailable.'),
     ).toBeInTheDocument()
     expect(
-      screen.getByText('503: Docker status unavailable'),
+      screen.getByText('503: Runtime status unavailable'),
     ).toBeInTheDocument()
   })
 })

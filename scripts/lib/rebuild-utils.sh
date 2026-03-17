@@ -521,7 +521,63 @@ log_info() { printf "${BLUE}[%s] ℹ %s${NC}\n" "$(date '+%H:%M:%S')" "$*"; }
 
 # ─── Systemd functions ───────────────────────────────────────────
 service_exists() { systemctl --user cat "$1" &>/dev/null; }
-restart_service() { local s="$1"; service_exists "$s" || { log_info "$s not found"; return 0; }; log "Restarting $s..."; systemctl --user restart "$s" && log_success "$s restarted" || { log_error "$s failed"; return 1; }; }
+port_listener_pids() {
+    local port="$1"
+    ss -ltnp "( sport = :$port )" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | sort -u
+}
+
+kill_port_listeners() {
+    local port="$1"
+    local pids
+    pids=$(port_listener_pids "$port")
+    [ -n "$pids" ] || return 0
+
+    log_warn "Clearing stale listeners on port $port: $(echo "$pids" | tr '\n' ' ')"
+    while IFS= read -r pid; do
+        [ -n "$pid" ] || continue
+        kill "$pid" 2>/dev/null || true
+    done <<< "$pids"
+
+    local _i
+    for _i in $(seq 1 10); do
+        pids=$(port_listener_pids "$port")
+        [ -z "$pids" ] && return 0
+        sleep 1
+    done
+
+    while IFS= read -r pid; do
+        [ -n "$pid" ] || continue
+        kill -9 "$pid" 2>/dev/null || true
+    done <<< "$pids"
+    sleep 1
+    pids=$(port_listener_pids "$port")
+    [ -z "$pids" ] || {
+        log_error "Port $port is still occupied"
+        return 1
+    }
+}
+
+restart_service() {
+    local s="$1"
+    local port="${2:-}"
+    service_exists "$s" || { log_info "$s not found"; return 0; }
+    log "Restarting $s..."
+
+    if [ -n "$port" ] && [ "$port" -gt 0 ] 2>/dev/null; then
+        systemctl --user stop "$s" >/dev/null 2>&1 || true
+        kill_port_listeners "$port" || return 1
+        systemctl --user start "$s" && log_success "$s restarted" || {
+            log_error "$s failed"
+            return 1
+        }
+        return 0
+    fi
+
+    systemctl --user restart "$s" && log_success "$s restarted" || {
+        log_error "$s failed"
+        return 1
+    }
+}
 clear_build_cache() { local d="$PROJECT_DIR/frontend"; [ ! -d "$d" ] && d="$PROJECT_DIR"; rm -rf "$d/.next" "$d/dist" "$d/node_modules/.vite" 2>/dev/null; log_success "Cache cleared"; }
 clear_nextjs_cache() { clear_build_cache; }
 _frontend_dir() {
@@ -617,6 +673,6 @@ verify_backend() { local p="${1:-$BACKEND_PORT}"; [ "$p" -eq 0 ] 2>/dev/null && 
 verify_frontend() { local p="${1:-$FRONTEND_PORT}"; [ "$p" -eq 0 ] 2>/dev/null && return 0; log "Checking frontend ($p)..."; for i in $(seq 1 30); do local s=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "http://localhost:$p/" 2>/dev/null); [[ "$s" =~ ^(2|3)[0-9][0-9]$ ]] && { log_success "Frontend OK ($s)"; return 0; }; sleep 1; done; log_error "Frontend failed"; return 1; }
 
 export -f log log_success log_warn log_error log_info
-export -f service_exists restart_service clear_build_cache clear_nextjs_cache _frontend_dir _frontend_package_manager ensure_frontend_dependencies build_frontend run_native_migrations verify_backend verify_frontend
+export -f service_exists port_listener_pids kill_port_listeners restart_service clear_build_cache clear_nextjs_cache _frontend_dir _frontend_package_manager ensure_frontend_dependencies build_frontend run_native_migrations verify_backend verify_frontend
 export -f _sanitize_native_process_env
 export -f _compose_env_var_names _sanitize_compose_process_env _docker_compose _runtime_mode_from_disk _set_docker_mode detect_docker _detect_stale_image _project_to_prefix _compose_all_services _compose_running_services _compose_stack_services _compose_api_service _compose_web_service _compose_service_port _resolve_ports _compose_files _persist_runtime_mode docker_start_stack docker_build_and_recreate docker_restart_services docker_recreate_services docker_run_migration docker_validate_hatchet_token docker_reapply_hatchet_tuning docker_ensure_infra

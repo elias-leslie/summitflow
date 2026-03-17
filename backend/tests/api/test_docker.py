@@ -13,6 +13,32 @@ from app.main import app
 client = TestClient(app)
 
 
+def _status(
+    *,
+    name: str,
+    service: str,
+    manager: str,
+    category: str,
+    state: str,
+    health: str = "",
+    status: str | None = None,
+    ports: list[str] | None = None,
+):
+    from app.api import docker as docker_api
+
+    return docker_api.ContainerStatus(
+        name=name,
+        service=service,
+        display_name=service,
+        manager=manager,
+        category=category,
+        state=state,
+        health=health,
+        status=status or state,
+        ports=ports or [],
+    )
+
+
 class TestDockerRuntime:
     """Tests for Docker runtime mode endpoints."""
 
@@ -101,6 +127,21 @@ class TestDockerRuntime:
         mocker.patch.object(docker_api, "_DEFAULT_STACK_MODE", "dev")
         mocker.patch.object(
             docker_api,
+            "_runtime_service_statuses",
+            new=mocker.AsyncMock(
+                return_value=[
+                    _status(
+                        name="summitflow-backend.service",
+                        service="summitflow-api",
+                        manager="systemd",
+                        category="app",
+                        state="stopped",
+                    )
+                ]
+            ),
+        )
+        mocker.patch.object(
+            docker_api,
             "_project_containers",
             new=mocker.AsyncMock(
                 return_value=[
@@ -122,6 +163,8 @@ class TestDockerRuntime:
         assert response.status_code == 200
         assert response.json() == {
             "runtime": "docker",
+            "apps_runtime": "docker",
+            "infra_runtime": "stopped",
             "current_mode": "dev",
             "configured_mode": "prod",
             "default_mode": "dev",
@@ -147,6 +190,11 @@ class TestDockerRuntime:
         mocker.patch.object(docker_api, "_DEFAULT_STACK_MODE", "dev")
         mocker.patch.object(
             docker_api,
+            "_runtime_service_statuses",
+            new=mocker.AsyncMock(return_value=[]),
+        )
+        mocker.patch.object(
+            docker_api,
             "_project_containers",
             new=mocker.AsyncMock(return_value=[]),
         )
@@ -156,6 +204,8 @@ class TestDockerRuntime:
         assert response.status_code == 200
         assert response.json() == {
             "runtime": "docker-stopped",
+            "apps_runtime": "stopped",
+            "infra_runtime": "stopped",
             "current_mode": "dev",
             "configured_mode": "dev",
             "default_mode": "dev",
@@ -181,6 +231,8 @@ class TestDockerRuntime:
             new=mocker.AsyncMock(
                 return_value=docker_api.DockerRuntimeStatus(
                     runtime="docker",
+                    apps_runtime="docker",
+                    infra_runtime="docker",
                     current_mode="prod",
                     configured_mode="prod",
                     default_mode="dev",
@@ -203,3 +255,73 @@ class TestDockerRuntime:
             "message": "Queued Docker stack switch to dev mode via summitflow-stack-mode-switch",
         }
         launch_switch.assert_awaited_once_with("dev", script_path)
+
+    def test_runtime_mode_switch_persists_preference_for_hybrid_runtime(
+        self,
+        mocker: MockerFixture,
+    ) -> None:
+        from app.api import docker as docker_api
+
+        mocker.patch.object(docker_api, "_INTERNAL_SECRET", "")
+        mocker.patch.object(
+            docker_api,
+            "_get_runtime_status",
+            new=mocker.AsyncMock(
+                return_value=docker_api.DockerRuntimeStatus(
+                    runtime="hybrid",
+                    apps_runtime="native",
+                    infra_runtime="docker",
+                    current_mode="dev",
+                    configured_mode="dev",
+                    default_mode="dev",
+                    source="persisted",
+                    is_running=True,
+                )
+            ),
+        )
+        write_mode = mocker.patch.object(docker_api, "_write_runtime_mode")
+        launch_switch = mocker.patch.object(
+            docker_api,
+            "_launch_runtime_switch",
+            new=mocker.AsyncMock(),
+        )
+
+        response = client.post("/api/docker/runtime", json={"mode": "prod"})
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "success": True,
+            "message": "Saved Docker parity preference: prod. Live services remain native apps with Docker infra.",
+        }
+        write_mode.assert_called_once_with("prod")
+        launch_switch.assert_not_called()
+
+    def test_restart_service_clears_native_ports_before_start(
+        self,
+        mocker: MockerFixture,
+    ) -> None:
+        from app.api import docker as docker_api
+
+        mocker.patch.object(
+            docker_api,
+            "_run_systemctl_user",
+            new=mocker.AsyncMock(
+                side_effect=[
+                    ("", "", 0),
+                    ("", "", 0),
+                ]
+            ),
+        )
+        clear_ports = mocker.patch.object(
+            docker_api,
+            "_clear_service_ports",
+            new=mocker.AsyncMock(),
+        )
+
+        result = asyncio.run(docker_api._service_action("summitflow-api", "restart"))
+
+        assert result == docker_api.ActionResult(
+            success=True,
+            message="Restarted summitflow-api",
+        )
+        clear_ports.assert_awaited_once()

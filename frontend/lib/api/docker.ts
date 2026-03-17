@@ -8,6 +8,9 @@ import { buildApiUrl } from '../api-config'
 export interface ContainerStatus {
   name: string
   service: string
+  display_name: string
+  manager: 'docker' | 'systemd'
+  category: 'app' | 'worker' | 'infra'
   state: string
   health: string
   status: string
@@ -16,6 +19,7 @@ export interface ContainerStatus {
 
 export interface ContainerMetrics {
   name: string
+  service: string
   cpu_percent: string
   mem_usage: string
   mem_percent: string
@@ -37,7 +41,9 @@ export interface ActionResult {
 }
 
 export interface DockerRuntimeStatus {
-  runtime: 'docker' | 'docker-stopped' | 'native'
+  runtime: 'docker' | 'docker-stopped' | 'native' | 'hybrid'
+  apps_runtime: 'docker' | 'native' | 'stopped'
+  infra_runtime: 'docker' | 'native' | 'stopped'
   current_mode: 'dev' | 'prod'
   configured_mode: 'dev' | 'prod'
   default_mode: 'dev' | 'prod'

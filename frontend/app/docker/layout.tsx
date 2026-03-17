@@ -1,8 +1,9 @@
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
-  title: 'Docker Management | SummitFlow',
-  description: 'Manage Docker containers for the SummitFlow ecosystem',
+  title: 'Runtime Management | SummitFlow',
+  description:
+    'Manage native services and Docker-backed infra for the SummitFlow ecosystem',
 }
 
 export default function DockerLayout({

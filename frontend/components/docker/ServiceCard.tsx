@@ -19,6 +19,10 @@ function statusLabel(state: string, health: string): string {
   return state
 }
 
+function managerLabel(manager: ContainerStatus['manager']): string {
+  return manager === 'systemd' ? 'native' : 'docker'
+}
+
 interface ServiceCardProps {
   container: ContainerStatus
   metric?: ContainerMetrics
@@ -73,15 +77,27 @@ export function ServiceCard({
     <>
       <div className="rounded-lg border border-neutral-700 bg-neutral-800/50 p-4 hover:border-neutral-600 transition-colors">
         {/* Header */}
-        <div className="flex items-center gap-2 mb-3">
+        <div className="mb-3 flex items-center gap-2">
           <div
             className={`w-2 h-2 rounded-full ${statusColor(container.state, container.health)}`}
           />
           <span className="font-medium text-white text-sm truncate">
-            {container.service}
+            {container.display_name}
           </span>
           <span className="ml-auto text-xs text-neutral-500">
             {statusLabel(container.state, container.health)}
+          </span>
+        </div>
+
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          <span className="rounded bg-slate-700/70 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.14em] text-slate-200">
+            {managerLabel(container.manager)}
+          </span>
+          <span className="rounded bg-neutral-700 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.14em] text-neutral-300">
+            {container.category}
+          </span>
+          <span className="rounded bg-neutral-700 px-1.5 py-0.5 text-[10px] text-neutral-400">
+            {container.service}
           </span>
         </div>
 

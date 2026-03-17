@@ -15,17 +15,19 @@ vi.mock('@tanstack/react-query', () => ({
 }))
 
 describe('DockerModeCard', () => {
-  it('renders the current stack mode and switch controls', () => {
+  it('renders the hybrid runtime state and saved docker preference controls', () => {
     queryMocks.useQueryClient.mockReturnValue({
       invalidateQueries: vi.fn(),
     })
     queryMocks.useQuery.mockReturnValue({
       data: {
-        runtime: 'docker',
+        runtime: 'hybrid',
+        apps_runtime: 'native',
+        infra_runtime: 'docker',
         current_mode: 'dev',
         configured_mode: 'dev',
         default_mode: 'dev',
-        source: 'detected',
+        source: 'persisted',
         is_running: true,
       },
       error: undefined,
@@ -42,11 +44,18 @@ describe('DockerModeCard', () => {
 
     render(<DockerModeCard />)
 
-    expect(screen.getByText('Stack Mode')).toBeInTheDocument()
-    expect(screen.getByText('Switch to Dev')).toBeDisabled()
-    expect(screen.getByText('Switch to Prod')).toBeEnabled()
+    expect(screen.getByText('Runtime Mode')).toBeInTheDocument()
+    expect(screen.getByText('Prefer Docker Dev')).toBeDisabled()
+    expect(screen.getByText('Prefer Docker Prod')).toBeEnabled()
     expect(
-      screen.getByText('Mode is being read from the running containers.'),
+      screen.getByText(
+        'Apps are running natively under systemd --user while PostgreSQL, Redis, and Hatchet stay in Docker.',
+      ),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'No app containers are running. This is the saved Docker parity preference.',
+      ),
     ).toBeInTheDocument()
   })
 

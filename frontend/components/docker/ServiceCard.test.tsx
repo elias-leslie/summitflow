@@ -30,14 +30,18 @@ describe('ServiceCard', () => {
       <ServiceCard
         container={{
           name: 'summitflow-stack-api-1',
-          service: 'api',
+          service: 'summitflow-api',
+          display_name: 'summitflow-api',
+          manager: 'systemd',
+          category: 'app',
           state: 'running',
           health: 'healthy',
           status: 'Up 10 minutes (healthy)',
           ports: ['8000'],
         }}
         metric={{
-          name: 'summitflow-stack-api-1',
+          name: 'summitflow-backend.service',
+          service: 'summitflow-api',
           cpu_percent: '3.5%',
           mem_usage: '120MiB / 2GiB',
           mem_percent: '5.8%',

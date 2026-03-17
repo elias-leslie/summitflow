@@ -21,8 +21,8 @@ export function ServiceGrid() {
     refetchInterval: 15_000,
   })
 
-  const metricsByContainerName = useMemo(
-    () => new Map((metrics ?? []).map((metric) => [metric.name, metric])),
+  const metricsByService = useMemo(
+    () => new Map((metrics ?? []).map((metric) => [metric.service, metric])),
     [metrics],
   )
 
@@ -42,9 +42,9 @@ export function ServiceGrid() {
   if (error) {
     return (
       <div className="rounded-lg border border-red-500/40 bg-red-950/20 p-8 text-center">
-        <p className="text-red-300">Docker status is unavailable.</p>
+        <p className="text-red-300">Runtime status is unavailable.</p>
         <p className="mt-1 text-sm text-red-200/80">
-          {error instanceof Error ? error.message : 'Unknown Docker API error'}
+          {error instanceof Error ? error.message : 'Unknown runtime API error'}
         </p>
       </div>
     )
@@ -53,10 +53,12 @@ export function ServiceGrid() {
   if (!containers?.length) {
     return (
       <div className="rounded-lg border border-neutral-700 bg-neutral-800/30 p-8 text-center">
-        <p className="text-neutral-400">No Docker containers found.</p>
+        <p className="text-neutral-400">No managed runtime services found.</p>
         <p className="text-sm text-neutral-500 mt-1">
-          Start the stack with:{' '}
-          <code className="text-amber-400">st docker up</code>
+          Start or rebuild services with:{' '}
+          <code className="text-amber-400">
+            ~/summitflow/scripts/rebuild.sh
+          </code>
         </p>
       </div>
     )
@@ -68,7 +70,7 @@ export function ServiceGrid() {
         <ServiceCard
           key={c.name}
           container={c}
-          metric={metricsByContainerName.get(c.name)}
+          metric={metricsByService.get(c.service)}
           metricsLoading={isMetricsLoading}
         />
       ))}
