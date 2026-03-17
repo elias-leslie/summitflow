@@ -11,6 +11,7 @@ from functools import lru_cache
 from pathlib import Path
 
 import httpx
+import yaml
 
 from app.config import DEFAULT_API_BASE
 from app.services._agent_hub_config import AGENT_HUB_URL as _RESOLVED_AGENT_HUB_URL
@@ -72,6 +73,56 @@ def _resolve_project_from_list(projects: list[object], cwd: Path) -> tuple[str |
     return None, None
 
 
+def _read_project_id_from_index(root: Path) -> str | None:
+    """Return project id from a repo-local `.index.yaml`, if present and valid."""
+    index_path = root / ".index.yaml"
+    if not index_path.exists():
+        return None
+
+    try:
+        data = yaml.safe_load(index_path.read_text())
+    except (OSError, yaml.YAMLError):
+        return None
+
+    if not isinstance(data, dict):
+        return None
+
+    project_id = data.get("project")
+    if isinstance(project_id, str):
+        project_id = project_id.strip()
+        if project_id:
+            return project_id
+    return None
+
+
+def _detect_project_from_local_metadata(cwd: Path) -> tuple[str | None, str | None]:
+    """Resolve project from repo-local metadata before falling back to API detection."""
+    candidates: list[Path] = []
+    seen: set[Path] = set()
+
+    canonical_root = canonical_repo_root(cwd)
+    if canonical_root is not None:
+        resolved_root = canonical_root.resolve()
+        candidates.append(resolved_root)
+        seen.add(resolved_root)
+
+    for candidate in (cwd, *cwd.parents):
+        resolved_candidate = candidate.resolve()
+        if resolved_candidate in seen:
+            continue
+        if not (resolved_candidate / ".index.yaml").exists():
+            continue
+        candidates.append(resolved_candidate)
+        seen.add(resolved_candidate)
+
+    for candidate in candidates:
+        project_id = _read_project_id_from_index(candidate)
+        if project_id:
+            return project_id, str(candidate)
+
+    return None, None
+
+
 def _parse_projects_response(response: httpx.Response) -> list[object] | str | None:
     """Parse /projects response. Returns list on success, str (error msg) on bad status, None on bad format."""
     if response.status_code != 200:
@@ -113,10 +164,15 @@ def _detect_project_from_cwd(api_base: str, max_retries: int = 3) -> tuple[str |
     Returns:
         Tuple of (project_id, root_path) or (None, None) if not found.
     """
+    cwd = Path.cwd().resolve()
+    project_id, root_path = _detect_project_from_local_metadata(cwd)
+    if project_id:
+        return project_id, root_path
+
     projects = _fetch_projects_with_retry(api_base, max_retries)
     if projects is None:
         return None, None
-    cwd = Path.cwd().resolve()
+
     project_id, root_path = _resolve_project_from_list(projects, cwd)
     if project_id:
         return project_id, root_path

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { dockerApi } from '@/lib/api/docker'
+import { runtimeApi } from '@/lib/api/runtime'
 
 interface LogViewerProps {
   service: string
@@ -16,8 +16,8 @@ export function LogViewer({ service, onClose }: LogViewerProps) {
   const eventSourceRef = useRef<EventSource | null>(null)
 
   const { data: initialLogs } = useQuery({
-    queryKey: ['docker', 'logs', service],
-    queryFn: () => dockerApi.getLogs(service, 200),
+    queryKey: ['runtime', 'logs', service],
+    queryFn: () => runtimeApi.getLogs(service, 200),
     enabled: !streaming,
   })
 
@@ -32,7 +32,7 @@ export function LogViewer({ service, onClose }: LogViewerProps) {
   useEffect(() => {
     if (!streaming) return
 
-    const es = new EventSource(dockerApi.logStreamUrl(service, 50))
+    const es = new EventSource(runtimeApi.logStreamUrl(service, 50))
     eventSourceRef.current = es
 
     es.onmessage = (event) => {

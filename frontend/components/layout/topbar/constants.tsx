@@ -68,7 +68,7 @@ export const navItems = [
   {
     id: 'docker',
     label: 'Runtime',
-    href: '/docker',
+    href: '/runtime',
     icon: Boxes,
     activeColor: 'cyan',
   },

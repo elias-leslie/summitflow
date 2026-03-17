@@ -9,6 +9,42 @@ from cli import config as config_mod
 
 
 class TestProjectDetection:
+    def test_detect_project_from_local_index_skips_api_lookup(self, tmp_path) -> None:
+        """Repo-local `.index.yaml` should avoid the `/projects` round-trip entirely."""
+        repo_root = tmp_path / "summitflow"
+        backend_dir = repo_root / "backend"
+        backend_dir.mkdir(parents=True)
+        (repo_root / ".index.yaml").write_text("project: summitflow\n")
+
+        with (
+            patch("cli.config.Path.cwd", return_value=backend_dir.resolve()),
+            patch.object(config_mod, "_fetch_projects_with_retry") as fetch_projects,
+        ):
+            project_id, root_path = config_mod._detect_project_from_cwd("http://localhost:8001/api")
+
+        assert project_id == "summitflow"
+        assert root_path == str(repo_root.resolve())
+        fetch_projects.assert_not_called()
+
+    def test_detect_project_from_canonical_index_skips_api_lookup(self, tmp_path) -> None:
+        """Detached/helper checkouts should use the canonical repo root metadata when available."""
+        repo_root = tmp_path / "summitflow"
+        repo_root.mkdir()
+        (repo_root / ".index.yaml").write_text("project: summitflow\n")
+        detached_checkout = tmp_path / "summitflow-merge-main"
+        detached_checkout.mkdir()
+
+        with (
+            patch("cli.config.Path.cwd", return_value=detached_checkout.resolve()),
+            patch.object(config_mod, "canonical_repo_root", return_value=repo_root.resolve()),
+            patch.object(config_mod, "_fetch_projects_with_retry") as fetch_projects,
+        ):
+            project_id, root_path = config_mod._detect_project_from_cwd("http://localhost:8001/api")
+
+        assert project_id == "summitflow"
+        assert root_path == str(repo_root.resolve())
+        fetch_projects.assert_not_called()
+
     def test_detect_project_from_cwd_detached_worktree_returns_canonical_root(self) -> None:
         """Detached helper worktrees should resolve to the canonical project root."""
         fake_home = Path("/home/testuser")

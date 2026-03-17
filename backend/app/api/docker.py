@@ -1,11 +1,8 @@
-"""Docker management API endpoints.
+"""Runtime management API endpoints.
 
-Provides container status, metrics, logs (SSE), restart/stop/start,
-and backup/restore functionality via the Docker CLI.
-
-Note: Inside Docker containers, only the Docker CLI (not compose plugin)
-is available. Uses plain `docker` commands with compose project label
-filters instead of `docker compose`.
+Provides hybrid runtime status, metrics, logs (SSE), restart/stop/start,
+Docker parity controls, backup/restore helpers, and Proxmox status for the
+SummitFlow ecosystem.
 """
 
 from __future__ import annotations
@@ -15,9 +12,10 @@ import json
 import os
 import re
 import shlex
+import ssl
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 
@@ -28,6 +26,24 @@ from pydantic import BaseModel
 router = APIRouter()
 
 _INTERNAL_SECRET = os.environ.get("INTERNAL_SERVICE_SECRET", "")
+
+
+def _float_env(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        return max(float(raw), 0.1)
+    except ValueError:
+        return default
+
+
+def _bool_env(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
 
 def _detect_repo_root(start_path: Path | None = None) -> Path:
     current = (start_path or Path(__file__).resolve()).parent
@@ -54,6 +70,10 @@ _USER_DBUS_ADDRESS = os.environ.get(
     "DBUS_SESSION_BUS_ADDRESS",
     f"unix:path={_USER_RUNTIME_DIR / 'bus'}",
 )
+_COMMAND_TIMEOUT_SECONDS = _float_env("SUMMITFLOW_RUNTIME_COMMAND_TIMEOUT", 8.0)
+_SYSTEMCTL_TIMEOUT_SECONDS = _float_env("SUMMITFLOW_RUNTIME_SYSTEMCTL_TIMEOUT", 0.75)
+_HTTP_PROBE_TIMEOUT_SECONDS = _float_env("SUMMITFLOW_RUNTIME_HTTP_PROBE_TIMEOUT", 0.75)
+_PROXMOX_TIMEOUT_SECONDS = _float_env("SUMMITFLOW_RUNTIME_PROXMOX_TIMEOUT", 5.0)
 
 _RUNTIME_SERVICE_DEFS: tuple[dict[str, Any], ...] = (
     {
@@ -190,7 +210,7 @@ _RUNTIME_SERVICE_MAP = {svc["service"]: svc for svc in _RUNTIME_SERVICE_DEFS}
 
 
 async def _require_auth(x_internal_secret: str = Header(default="")) -> None:
-    """Require internal service secret for mutating Docker endpoints."""
+    """Require internal service secret for mutating runtime endpoints."""
     if not _INTERNAL_SECRET:
         return  # Auth not configured — allow (dev mode)
     if x_internal_secret != _INTERNAL_SECRET:
@@ -209,7 +229,7 @@ BACKUP_DIR = Path(os.environ.get("BACKUP_DIR", str(Path.home() / "docker-backups
 # ─── Models ──────────────────────────────────────────────────────
 
 
-class ContainerStatus(BaseModel):
+class RuntimeServiceStatus(BaseModel):
     name: str
     service: str
     display_name: str
@@ -221,7 +241,7 @@ class ContainerStatus(BaseModel):
     ports: list[str]
 
 
-class ContainerMetrics(BaseModel):
+class RuntimeServiceMetrics(BaseModel):
     name: str
     service: str
     cpu_percent: str
@@ -244,7 +264,7 @@ class ActionResult(BaseModel):
     message: str
 
 
-class DockerRuntimeStatus(BaseModel):
+class RuntimeModeStatus(BaseModel):
     runtime: Literal["docker", "docker-stopped", "native", "hybrid"]
     apps_runtime: Literal["docker", "native", "stopped"]
     infra_runtime: Literal["docker", "native", "stopped"]
@@ -255,14 +275,75 @@ class DockerRuntimeStatus(BaseModel):
     is_running: bool
 
 
-class DockerRuntimeUpdate(BaseModel):
+class RuntimeModeUpdate(BaseModel):
     mode: Literal["dev", "prod"]
+
+
+class ProxmoxNodeStatus(BaseModel):
+    node: str
+    status: str
+    cpu_percent: float | None = None
+    memory_used_bytes: int | None = None
+    memory_total_bytes: int | None = None
+    uptime_seconds: int | None = None
+
+
+class ProxmoxGuestStatus(BaseModel):
+    vmid: int
+    name: str
+    node: str
+    type: Literal["qemu", "lxc"]
+    status: str
+    cpu_percent: float | None = None
+    memory_used_bytes: int | None = None
+    memory_total_bytes: int | None = None
+    uptime_seconds: int | None = None
+    tags: list[str]
+
+
+class ProxmoxStatus(BaseModel):
+    configured: bool
+    reachable: bool
+    api_url: str | None = None
+    error: str | None = None
+    nodes: list[ProxmoxNodeStatus]
+    guests: list[ProxmoxGuestStatus]
+
+
+# Backward-compatible aliases while the module and tests still use Docker names.
+ContainerStatus = RuntimeServiceStatus
+ContainerMetrics = RuntimeServiceMetrics
+DockerRuntimeStatus = RuntimeModeStatus
+DockerRuntimeUpdate = RuntimeModeUpdate
 
 
 # ─── Helpers ─────────────────────────────────────────────────────
 
 
-async def _run_docker(*args: str, stdin_data: bytes | None = None) -> tuple[str, str, int]:
+async def _communicate_with_timeout(
+    proc: asyncio.subprocess.Process,
+    *,
+    stdin_data: bytes | None = None,
+    timeout: float | None = None,
+) -> tuple[str, str, int]:
+    try:
+        stdout, stderr = await asyncio.wait_for(proc.communicate(stdin_data), timeout=timeout)
+    except TimeoutError:
+        proc.kill()
+        try:
+            stdout, stderr = await proc.communicate()
+        except Exception:
+            stdout, stderr = b"", b""
+        detail = f"Timed out after {timeout:.2f}s" if timeout is not None else "Timed out"
+        return stdout.decode(), detail, 124
+    return stdout.decode(), stderr.decode(), proc.returncode or 0
+
+
+async def _run_docker(
+    *args: str,
+    stdin_data: bytes | None = None,
+    timeout: float | None = None,
+) -> tuple[str, str, int]:
     """Run a docker command asynchronously."""
     proc = await asyncio.create_subprocess_exec(
         *args,
@@ -270,14 +351,14 @@ async def _run_docker(*args: str, stdin_data: bytes | None = None) -> tuple[str,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    stdout, stderr = await proc.communicate(stdin_data)
-    return stdout.decode(), stderr.decode(), proc.returncode or 0
+    return await _communicate_with_timeout(proc, stdin_data=stdin_data, timeout=timeout)
 
 
 async def _run_command(
     *args: str,
     cwd: Path | None = None,
     env: dict[str, str] | None = None,
+    timeout: float | None = _COMMAND_TIMEOUT_SECONDS,
 ) -> tuple[str, str, int]:
     """Run a shell command asynchronously."""
     proc = await asyncio.create_subprocess_exec(
@@ -287,8 +368,7 @@ async def _run_command(
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    stdout, stderr = await proc.communicate()
-    return stdout.decode(), stderr.decode(), proc.returncode or 0
+    return await _communicate_with_timeout(proc, timeout=timeout)
 
 
 def _systemctl_user_env() -> dict[str, str]:
@@ -298,12 +378,27 @@ def _systemctl_user_env() -> dict[str, str]:
     return env
 
 
-async def _run_systemctl_user(*args: str) -> tuple[str, str, int]:
-    return await _run_command("systemctl", "--user", *args, env=_systemctl_user_env())
+async def _run_systemctl_user(
+    *args: str,
+    timeout: float = _SYSTEMCTL_TIMEOUT_SECONDS,
+) -> tuple[str, str, int]:
+    return await _run_command(
+        "systemctl",
+        "--user",
+        *args,
+        env=_systemctl_user_env(),
+        timeout=timeout,
+    )
 
 
 async def _run_journalctl_user(*args: str) -> tuple[str, str, int]:
-    return await _run_command("journalctl", "--user", *args, env=_systemctl_user_env())
+    return await _run_command(
+        "journalctl",
+        "--user",
+        *args,
+        env=_systemctl_user_env(),
+        timeout=_COMMAND_TIMEOUT_SECONDS,
+    )
 
 
 def _parse_systemctl_show(text: str) -> dict[str, str]:
@@ -317,7 +412,7 @@ def _parse_systemctl_show(text: str) -> dict[str, str]:
 
 
 async def _systemd_unit_state(unit: str) -> dict[str, str]:
-    stdout, _stderr, _rc = await _run_systemctl_user(
+    stdout, stderr, rc = await _run_systemctl_user(
         "show",
         unit,
         "-p",
@@ -333,12 +428,35 @@ async def _systemd_unit_state(unit: str) -> dict[str, str]:
         "-p",
         "ExecMainStatus",
     )
-    return _parse_systemctl_show(stdout)
+    data = _parse_systemctl_show(stdout)
+    data.setdefault("Id", unit)
+    if rc == 124:
+        data.setdefault("LoadState", "unknown")
+        data.setdefault("ActiveState", "unknown")
+        data.setdefault("SubState", "timed-out")
+        data.setdefault("MainPID", "0")
+        data.setdefault("ExecMainStatus", "0")
+        if stderr:
+            data["Error"] = stderr
+        return data
+
+    if rc != 0 and not data:
+        return {
+            "Id": unit,
+            "LoadState": "unknown",
+            "ActiveState": "unknown",
+            "SubState": "unavailable",
+            "MainPID": "0",
+            "ExecMainStatus": "0",
+            "Error": stderr.strip() or f"systemctl returned {rc}",
+        }
+
+    return data
 
 
-def _sync_probe_http(url: str) -> tuple[bool, int | None]:
+def _sync_probe_http(url: str, timeout: float) -> tuple[bool, int | None]:
     try:
-        with urllib_request.urlopen(url, timeout=2) as response:
+        with urllib_request.urlopen(url, timeout=timeout) as response:
             return 200 <= response.status < 400, response.status
     except urllib_error.HTTPError as exc:
         return False, exc.code
@@ -349,7 +467,7 @@ def _sync_probe_http(url: str) -> tuple[bool, int | None]:
 async def _probe_http(url: str | None) -> tuple[bool, int | None]:
     if not url:
         return False, None
-    return await asyncio.to_thread(_sync_probe_http, url)
+    return await asyncio.to_thread(_sync_probe_http, url, _HTTP_PROBE_TIMEOUT_SECONDS)
 
 
 def _format_bytes(num_bytes: float) -> str:
@@ -463,8 +581,8 @@ def _persisted_runtime_mode() -> tuple[Literal["dev", "prod"], Literal["persiste
     if _RUNTIME_MODE_FILE.exists():
         raw = _RUNTIME_MODE_FILE.read_text().strip()
         if raw in {"dev", "prod"}:
-            return raw, "persisted"
-    return _DEFAULT_STACK_MODE, "default"
+            return cast(Literal["dev", "prod"], raw), "persisted"
+    return cast(Literal["dev", "prod"], _DEFAULT_STACK_MODE), "default"
 
 
 def _write_runtime_mode(mode: Literal["dev", "prod"]) -> None:
@@ -514,106 +632,127 @@ async def _docker_container_map(*, all_containers: bool = True) -> dict[str, dic
     return result
 
 
-async def _runtime_service_statuses() -> list[ContainerStatus]:
-    docker_containers = await _docker_container_map(all_containers=True)
-    statuses: list[ContainerStatus] = []
-
-    for svc in _RUNTIME_SERVICE_DEFS:
-        if svc["manager"] == "docker":
-            container = docker_containers.get(svc["container_service"])
-            if container:
-                status_str = container.get("Status", "")
-                health = ""
-                if "(healthy)" in status_str:
-                    health = "healthy"
-                elif "(unhealthy)" in status_str:
-                    health = "unhealthy"
-                elif "(health: starting)" in status_str:
-                    health = "starting"
-                state = container.get("State", "unknown")
-                statuses.append(
-                    ContainerStatus(
-                        name=container.get("Names", _find_container_name(svc["container_service"])),
-                        service=svc["service"],
-                        display_name=svc["display_name"],
-                        manager="docker",
-                        category=svc["category"],
-                        state=state,
-                        health=health,
-                        status=status_str or state,
-                        ports=list(svc["ports"]),
-                    )
-                )
-                continue
-
-            statuses.append(
-                ContainerStatus(
-                    name=_find_container_name(svc["container_service"]),
-                    service=svc["service"],
-                    display_name=svc["display_name"],
-                    manager="docker",
-                    category=svc["category"],
-                    state="stopped",
-                    health="",
-                    status="Docker infra not running",
-                    ports=list(svc["ports"]),
-                )
-            )
-            continue
-
-        unit_state = await _systemd_unit_state(svc["unit"])
-        active_state = unit_state.get("ActiveState", "unknown")
-        sub_state = unit_state.get("SubState", "unknown")
-        load_state = unit_state.get("LoadState", "unknown")
-        probe_ok, probe_status = await _probe_http(svc.get("probe_url"))
-
-        if probe_ok:
-            state = "running"
-            health = "healthy"
-            status = f"Serving HTTP {probe_status}"
-        elif active_state == "active":
-            state = "running"
-            health = "running" if svc["category"] == "worker" else ""
-            status = f"systemd {sub_state}"
-        elif active_state == "activating":
-            state = "starting"
-            health = "starting"
-            status = f"systemd {sub_state}"
-        elif active_state in {"inactive", "failed", "deactivating"}:
-            state = "stopped"
+async def _runtime_service_status(
+    svc: dict[str, Any],
+    docker_containers: dict[str, dict[str, Any]],
+) -> RuntimeServiceStatus:
+    if svc["manager"] == "docker":
+        container = docker_containers.get(svc["container_service"])
+        if container:
+            status_str = container.get("Status", "")
             health = ""
-            status = f"systemd {active_state}"
-        else:
-            state = active_state or "unknown"
-            health = ""
-            status = f"systemd {sub_state}" if sub_state else load_state
-
-        statuses.append(
-            ContainerStatus(
-                name=svc["unit"],
+            if "(healthy)" in status_str:
+                health = "healthy"
+            elif "(unhealthy)" in status_str:
+                health = "unhealthy"
+            elif "(health: starting)" in status_str:
+                health = "starting"
+            state = container.get("State", "unknown")
+            return RuntimeServiceStatus(
+                name=container.get("Names", _find_container_name(svc["container_service"])),
                 service=svc["service"],
                 display_name=svc["display_name"],
-                manager="systemd",
+                manager="docker",
                 category=svc["category"],
                 state=state,
                 health=health,
-                status=status,
+                status=status_str or state,
                 ports=list(svc["ports"]),
             )
+
+        return RuntimeServiceStatus(
+            name=_find_container_name(svc["container_service"]),
+            service=svc["service"],
+            display_name=svc["display_name"],
+            manager="docker",
+            category=svc["category"],
+            state="stopped",
+            health="",
+            status="Docker infra not running",
+            ports=list(svc["ports"]),
         )
 
-    return statuses
+    unit_state = await _systemd_unit_state(svc["unit"])
+    active_state = unit_state.get("ActiveState", "unknown")
+    sub_state = unit_state.get("SubState", "unknown")
+    load_state = unit_state.get("LoadState", "unknown")
+    probe_ok, probe_status = await _probe_http(svc.get("probe_url"))
+
+    if probe_ok:
+        state = "running"
+        health = "healthy"
+        status = f"Serving HTTP {probe_status}"
+    elif active_state == "active":
+        state = "running"
+        health = "running" if svc["category"] == "worker" else ""
+        status = f"systemd {sub_state}"
+    elif active_state == "activating":
+        state = "starting"
+        health = "starting"
+        status = f"systemd {sub_state}"
+    elif active_state in {"inactive", "failed", "deactivating"}:
+        state = "stopped"
+        health = ""
+        status = f"systemd {active_state}"
+    else:
+        state = active_state or "unknown"
+        health = ""
+        status = f"systemd {sub_state}" if sub_state else load_state
+
+    return RuntimeServiceStatus(
+        name=svc["unit"],
+        service=svc["service"],
+        display_name=svc["display_name"],
+        manager="systemd",
+        category=svc["category"],
+        state=state,
+        health=health,
+        status=status,
+        ports=list(svc["ports"]),
+    )
 
 
-async def _runtime_metrics() -> list[ContainerMetrics]:
-    metrics: list[ContainerMetrics] = []
+async def _runtime_service_statuses() -> list[RuntimeServiceStatus]:
+    docker_containers = await _docker_container_map(all_containers=True)
+    return list(
+        await asyncio.gather(
+            *[_runtime_service_status(svc, docker_containers) for svc in _RUNTIME_SERVICE_DEFS]
+        )
+    )
+
+
+async def _systemd_service_metric(svc: dict[str, Any]) -> RuntimeServiceMetrics | None:
+    unit_state = await _systemd_unit_state(svc["unit"])
+    main_pid_raw = unit_state.get("MainPID", "0")
+    try:
+        main_pid = int(main_pid_raw)
+    except ValueError:
+        return None
+    if main_pid <= 0:
+        return None
+    metric = await _ps_metrics(main_pid)
+    if metric is None:
+        return None
+    return RuntimeServiceMetrics(
+        name=svc["unit"],
+        service=svc["service"],
+        cpu_percent=metric.cpu_percent,
+        mem_usage=metric.mem_usage,
+        mem_percent=metric.mem_percent,
+        net_io=metric.net_io,
+        block_io=metric.block_io,
+    )
+
+
+async def _runtime_metrics() -> list[RuntimeServiceMetrics]:
+    metrics: list[RuntimeServiceMetrics] = []
     docker_containers = await _docker_container_map(all_containers=False)
     docker_container_names = {
         container.get("Names", ""): service
         for service, container in docker_containers.items()
     }
 
-    id_stdout, id_stderr, rc = await _run_docker("docker", "ps", "-q", *_project_filter())
+    id_stdout, _id_stderr, rc = await _run_docker("docker", "ps", "-q", *_project_filter())
     if rc == 0 and id_stdout.strip():
         container_ids = id_stdout.strip().split()
         stdout, _stderr, rc = await _run_docker(
@@ -629,7 +768,7 @@ async def _runtime_metrics() -> list[ContainerMetrics]:
                 name = c.get("Name", "")
                 service = docker_container_names.get(name, name)
                 metrics.append(
-                    ContainerMetrics(
+                    RuntimeServiceMetrics(
                         name=name,
                         service=service,
                         cpu_percent=c.get("CPUPerc", "0%"),
@@ -640,33 +779,166 @@ async def _runtime_metrics() -> list[ContainerMetrics]:
                     )
                 )
 
-    for svc in _RUNTIME_SERVICE_DEFS:
-        if svc["manager"] != "systemd":
+    systemd_metrics = await asyncio.gather(
+        *[_systemd_service_metric(svc) for svc in _RUNTIME_SERVICE_DEFS if svc["manager"] == "systemd"]
+    )
+    metrics.extend(metric for metric in systemd_metrics if metric is not None)
+
+    return metrics
+
+
+def _proxmox_config() -> dict[str, Any]:
+    return {
+        "api_url": os.environ.get("PROXMOX_API_URL", "").strip().rstrip("/"),
+        "token_id": os.environ.get("PROXMOX_TOKEN_ID", "").strip(),
+        "token_secret": os.environ.get("PROXMOX_TOKEN_SECRET", "").strip(),
+        "verify_ssl": _bool_env("PROXMOX_VERIFY_SSL", default=False),
+    }
+
+
+def _split_proxmox_tags(raw: str | None) -> list[str]:
+    if not raw:
+        return []
+    return [tag for tag in re.split(r"[;,]", raw) if tag]
+
+
+def _cpu_percent(value: Any) -> float | None:
+    try:
+        return round(float(value) * 100, 1)
+    except (TypeError, ValueError):
+        return None
+
+
+def _int_value(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _sync_proxmox_get_json(
+    api_url: str,
+    token_id: str,
+    token_secret: str,
+    path: str,
+    *,
+    verify_ssl: bool,
+) -> Any:
+    request = urllib_request.Request(
+        f"{api_url}/api2/json{path}",
+        headers={"Authorization": f"PVEAPIToken={token_id}={token_secret}"},
+    )
+    context = None if verify_ssl else ssl._create_unverified_context()
+    with urllib_request.urlopen(
+        request,
+        timeout=_PROXMOX_TIMEOUT_SECONDS,
+        context=context,
+    ) as response:
+        payload = json.load(response)
+    return payload.get("data")
+
+
+def _proxmox_error_message(exc: Exception) -> str:
+    if isinstance(exc, urllib_error.HTTPError):
+        return f"{exc.code} {exc.reason}"
+    if isinstance(exc, urllib_error.URLError):
+        return str(exc.reason)
+    return str(exc)
+
+
+async def _get_proxmox_status() -> ProxmoxStatus:
+    config = _proxmox_config()
+    api_url = config["api_url"]
+    token_id = config["token_id"]
+    token_secret = config["token_secret"]
+    verify_ssl = config["verify_ssl"]
+    configured = bool(api_url and token_id and token_secret)
+
+    if not configured:
+        return ProxmoxStatus(
+            configured=False,
+            reachable=False,
+            api_url=api_url or None,
+            error="Set PROXMOX_API_URL, PROXMOX_TOKEN_ID, and PROXMOX_TOKEN_SECRET to enable Proxmox status.",
+            nodes=[],
+            guests=[],
+        )
+
+    try:
+        node_rows, guest_rows = await asyncio.gather(
+            asyncio.to_thread(
+                _sync_proxmox_get_json,
+                api_url,
+                token_id,
+                token_secret,
+                "/cluster/resources?type=node",
+                verify_ssl=verify_ssl,
+            ),
+            asyncio.to_thread(
+                _sync_proxmox_get_json,
+                api_url,
+                token_id,
+                token_secret,
+                "/cluster/resources?type=vm",
+                verify_ssl=verify_ssl,
+            ),
+        )
+    except Exception as exc:
+        return ProxmoxStatus(
+            configured=True,
+            reachable=False,
+            api_url=api_url,
+            error=_proxmox_error_message(exc),
+            nodes=[],
+            guests=[],
+        )
+
+    nodes = [
+        ProxmoxNodeStatus(
+            node=str(row.get("node") or row.get("id") or "unknown"),
+            status=str(row.get("status") or "unknown"),
+            cpu_percent=_cpu_percent(row.get("cpu")),
+            memory_used_bytes=_int_value(row.get("mem")),
+            memory_total_bytes=_int_value(row.get("maxmem")),
+            uptime_seconds=_int_value(row.get("uptime")),
+        )
+        for row in (node_rows or [])
+        if isinstance(row, dict)
+    ]
+
+    guests: list[ProxmoxGuestStatus] = []
+    for row in guest_rows or []:
+        if not isinstance(row, dict):
             continue
-        unit_state = await _systemd_unit_state(svc["unit"])
-        main_pid_raw = unit_state.get("MainPID", "0")
-        try:
-            main_pid = int(main_pid_raw)
-        except ValueError:
+        vmid = _int_value(row.get("vmid"))
+        guest_type = str(row.get("type") or "")
+        if vmid is None or guest_type not in {"qemu", "lxc"}:
             continue
-        if main_pid <= 0:
-            continue
-        metric = await _ps_metrics(main_pid)
-        if metric is None:
-            continue
-        metrics.append(
-            ContainerMetrics(
-                name=svc["unit"],
-                service=svc["service"],
-                cpu_percent=metric.cpu_percent,
-                mem_usage=metric.mem_usage,
-                mem_percent=metric.mem_percent,
-                net_io=metric.net_io,
-                block_io=metric.block_io,
+        guests.append(
+            ProxmoxGuestStatus(
+                vmid=vmid,
+                name=str(row.get("name") or f"{guest_type}-{vmid}"),
+                node=str(row.get("node") or "unknown"),
+                type=guest_type,
+                status=str(row.get("status") or "unknown"),
+                cpu_percent=_cpu_percent(row.get("cpu")),
+                memory_used_bytes=_int_value(row.get("mem")),
+                memory_total_bytes=_int_value(row.get("maxmem")),
+                uptime_seconds=_int_value(row.get("uptime")),
+                tags=_split_proxmox_tags(row.get("tags")),
             )
         )
 
-    return metrics
+    nodes.sort(key=lambda node: node.node)
+    guests.sort(key=lambda guest: (guest.node, guest.vmid))
+
+    return ProxmoxStatus(
+        configured=True,
+        reachable=True,
+        api_url=api_url,
+        nodes=nodes,
+        guests=guests,
+    )
 
 
 def _service_definition(service: str) -> dict[str, Any]:
@@ -768,7 +1040,7 @@ async def _launch_runtime_switch(mode: Literal["dev", "prod"], script_path: Path
     return helper_name
 
 
-async def _get_runtime_status() -> DockerRuntimeStatus:
+async def _get_runtime_status() -> RuntimeModeStatus:
     configured_mode, source = _persisted_runtime_mode()
     statuses = await _runtime_service_statuses()
     native_statuses = [svc for svc in statuses if svc.manager == "systemd"]
@@ -779,7 +1051,7 @@ async def _get_runtime_status() -> DockerRuntimeStatus:
     infra_runtime: Literal["docker", "native", "stopped"] = "docker" if docker_running else "stopped"
 
     if not _COMPOSE_FILE.exists():
-        return DockerRuntimeStatus(
+        return RuntimeModeStatus(
             runtime="native",
             apps_runtime=apps_runtime,
             infra_runtime="stopped",
@@ -799,11 +1071,9 @@ async def _get_runtime_status() -> DockerRuntimeStatus:
     docker_app_running = bool(docker_app_containers)
     detected_mode = await _detect_running_mode(running_containers) if docker_app_running else None
     current_mode = detected_mode or configured_mode
-    current_source: Literal["detected", "persisted", "default"]
-    if detected_mode:
-        current_source = "detected"
-    else:
-        current_source = source
+    current_source: Literal["detected", "persisted", "default"] = (
+        "detected" if detected_mode else source
+    )
 
     if native_running and docker_running and not docker_app_running:
         runtime: Literal["docker", "docker-stopped", "native", "hybrid"] = "hybrid"
@@ -816,7 +1086,7 @@ async def _get_runtime_status() -> DockerRuntimeStatus:
     else:
         runtime = "docker-stopped"
 
-    return DockerRuntimeStatus(
+    return RuntimeModeStatus(
         runtime=runtime,
         apps_runtime=apps_runtime if runtime != "docker" else "docker",
         infra_runtime=infra_runtime,
@@ -832,17 +1102,33 @@ async def _service_action(service: str, action: Literal["start", "stop", "restar
     svc = _service_definition(service)
     if svc["manager"] == "systemd":
         if action == "restart":
-            await _run_systemctl_user("stop", svc["unit"])
+            await _run_systemctl_user("stop", svc["unit"], timeout=_COMMAND_TIMEOUT_SECONDS)
             await _clear_service_ports(svc)
-            _stdout, stderr, rc = await _run_systemctl_user("start", svc["unit"])
+            _stdout, stderr, rc = await _run_systemctl_user(
+                "start",
+                svc["unit"],
+                timeout=_COMMAND_TIMEOUT_SECONDS,
+            )
         elif action == "stop":
-            _stdout, stderr, rc = await _run_systemctl_user("stop", svc["unit"])
+            _stdout, stderr, rc = await _run_systemctl_user(
+                "stop",
+                svc["unit"],
+                timeout=_COMMAND_TIMEOUT_SECONDS,
+            )
             await _clear_service_ports(svc)
         elif action == "start":
             await _clear_service_ports(svc)
-            _stdout, stderr, rc = await _run_systemctl_user("start", svc["unit"])
+            _stdout, stderr, rc = await _run_systemctl_user(
+                "start",
+                svc["unit"],
+                timeout=_COMMAND_TIMEOUT_SECONDS,
+            )
         else:
-            _stdout, stderr, rc = await _run_systemctl_user(action, svc["unit"])
+            _stdout, stderr, rc = await _run_systemctl_user(
+                action,
+                svc["unit"],
+                timeout=_COMMAND_TIMEOUT_SECONDS,
+            )
         if rc != 0:
             return ActionResult(success=False, message=(stderr or f"Failed to {action} {service}").strip())
         return ActionResult(success=True, message=f"{_past_tense(action)} {service}")
@@ -857,20 +1143,26 @@ async def _service_action(service: str, action: Literal["start", "stop", "restar
 # ─── Endpoints ───────────────────────────────────────────────────
 
 
-@router.get("/status", response_model=list[ContainerStatus])
-async def get_status() -> list[ContainerStatus]:
+@router.get("/status", response_model=list[RuntimeServiceStatus])
+async def get_status() -> list[RuntimeServiceStatus]:
     """Get all managed runtime service statuses."""
     return await _runtime_service_statuses()
 
 
-@router.get("/runtime", response_model=DockerRuntimeStatus)
-async def get_runtime_status() -> DockerRuntimeStatus:
-    """Get the current Docker stack mode."""
+@router.get("/runtime", response_model=RuntimeModeStatus)
+async def get_runtime_status() -> RuntimeModeStatus:
+    """Get the current hybrid runtime mode and Docker parity preference."""
     return await _get_runtime_status()
 
 
+@router.get("/proxmox", response_model=ProxmoxStatus)
+async def get_proxmox_status() -> ProxmoxStatus:
+    """Get Proxmox node and guest status for runtime-adjacent infrastructure."""
+    return await _get_proxmox_status()
+
+
 @router.post("/runtime", response_model=ActionResult, dependencies=[Depends(_require_auth)])
-async def update_runtime_mode(payload: DockerRuntimeUpdate) -> ActionResult:
+async def update_runtime_mode(payload: RuntimeModeUpdate) -> ActionResult:
     """Switch live container mode or save the preferred Docker parity mode."""
     runtime = await _get_runtime_status()
     if runtime.runtime != "docker":
@@ -906,8 +1198,8 @@ async def update_runtime_mode(payload: DockerRuntimeUpdate) -> ActionResult:
     )
 
 
-@router.get("/metrics", response_model=list[ContainerMetrics])
-async def get_metrics() -> list[ContainerMetrics]:
+@router.get("/metrics", response_model=list[RuntimeServiceMetrics])
+async def get_metrics() -> list[RuntimeServiceMetrics]:
     """Get CPU/memory metrics for managed runtime services."""
     return await _runtime_metrics()
 

@@ -227,8 +227,8 @@ _resolve_systemd_services() {
     local prefix
     prefix=$(_project_to_prefix "$PROJECT_NAME")
     export SERVICE_PREFIX="$prefix"
-    export BACKEND_SERVICE="${prefix}-backend"
-    export FRONTEND_SERVICE="${prefix}-frontend"
+    export BACKEND_SERVICE="${prefix}-backend.service"
+    export FRONTEND_SERVICE="${prefix}-frontend.service"
     export WORKER_SERVICES=""
     export AUXILIARY_SERVICES=""
     export HAS_BACKEND=true
@@ -237,28 +237,28 @@ _resolve_systemd_services() {
 
     case "$PROJECT_NAME" in
         summitflow)
-            export WORKER_SERVICES="summitflow-hatchet-worker"
+            export WORKER_SERVICES="summitflow-hatchet-worker.service"
             export BACKEND_PORT=8001 FRONTEND_PORT=3001
             ;;
         agent-hub)
-            export WORKER_SERVICES="agent-hub-hatchet-worker"
+            export WORKER_SERVICES="agent-hub-hatchet-worker.service"
             export BACKEND_PORT=8003 FRONTEND_PORT=3003
             ;;
         portfolio-ai)
-            export BACKEND_SERVICE="portfolio-backend"
-            export FRONTEND_SERVICE="portfolio-frontend"
-            export WORKER_SERVICES="portfolio-hatchet-worker"
+            export BACKEND_SERVICE="portfolio-backend.service"
+            export FRONTEND_SERVICE="portfolio-frontend.service"
+            export WORKER_SERVICES="portfolio-hatchet-worker.service"
             export BACKEND_PORT=8000 FRONTEND_PORT=3000
             ;;
         terminal)
-            export BACKEND_SERVICE="summitflow-terminal"
-            export FRONTEND_SERVICE="summitflow-terminal-frontend"
+            export BACKEND_SERVICE="summitflow-terminal.service"
+            export FRONTEND_SERVICE="summitflow-terminal-frontend.service"
             export BACKEND_DIR="$PROJECT_DIR"
             export BACKEND_PORT=8002 FRONTEND_PORT=3002
             ;;
         monkey-fight)
             export BACKEND_SERVICE=""
-            export FRONTEND_SERVICE="monkey-fight"
+            export FRONTEND_SERVICE="monkey-fight.service"
             export HAS_BACKEND=false
             export BACKEND_PORT=0 FRONTEND_PORT=4001
             export BACKEND_DIR="$PROJECT_DIR"

@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
-import { dockerApi } from '@/lib/api/docker'
+import { type RuntimeServiceStatus, runtimeApi } from '@/lib/api/runtime'
 import { ServiceCard } from './ServiceCard'
 
 export function ServiceGrid() {
@@ -11,19 +11,60 @@ export function ServiceGrid() {
     error,
     isLoading,
   } = useQuery({
-    queryKey: ['docker', 'status'],
-    queryFn: dockerApi.getStatus,
+    queryKey: ['runtime', 'status'],
+    queryFn: runtimeApi.getStatus,
     refetchInterval: 10_000,
   })
   const { data: metrics, isLoading: isMetricsLoading } = useQuery({
-    queryKey: ['docker', 'metrics'],
-    queryFn: dockerApi.getMetrics,
+    queryKey: ['runtime', 'metrics'],
+    queryFn: runtimeApi.getMetrics,
     refetchInterval: 15_000,
   })
 
   const metricsByService = useMemo(
     () => new Map((metrics ?? []).map((metric) => [metric.service, metric])),
     [metrics],
+  )
+
+  const sections = useMemo(
+    () =>
+      [
+        {
+          id: 'native-apps',
+          title: 'Native App Services',
+          description: 'Services running under systemd --user.',
+          items:
+            containers?.filter(
+              (service) =>
+                service.manager === 'systemd' && service.category === 'app',
+            ) ?? [],
+        },
+        {
+          id: 'native-workers',
+          title: 'Native Workers',
+          description: 'Background workers running under systemd --user.',
+          items:
+            containers?.filter(
+              (service) =>
+                service.manager === 'systemd' && service.category === 'worker',
+            ) ?? [],
+        },
+        {
+          id: 'docker-infra',
+          title: 'Docker Infra',
+          description: 'Shared infrastructure that stays containerized.',
+          items:
+            containers?.filter((service) => service.manager === 'docker') ?? [],
+        },
+      ].filter(
+        (section): section is {
+          id: string
+          title: string
+          description: string
+          items: RuntimeServiceStatus[]
+        } => section.items.length > 0,
+      ),
+    [containers],
   )
 
   if (isLoading) {
@@ -65,14 +106,26 @@ export function ServiceGrid() {
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-      {containers.map((c) => (
-        <ServiceCard
-          key={c.name}
-          container={c}
-          metric={metricsByService.get(c.service)}
-          metricsLoading={isMetricsLoading}
-        />
+    <div className="space-y-6">
+      {sections.map((section) => (
+        <section key={section.id} className="space-y-3">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-300">
+              {section.title}
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">{section.description}</p>
+          </div>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {section.items.map((service) => (
+              <ServiceCard
+                key={service.name}
+                container={service}
+                metric={metricsByService.get(service.service)}
+                metricsLoading={isMetricsLoading}
+              />
+            ))}
+          </div>
+        </section>
       ))}
     </div>
   )

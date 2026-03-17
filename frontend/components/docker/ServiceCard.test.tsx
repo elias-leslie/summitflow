@@ -12,8 +12,8 @@ vi.mock('@tanstack/react-query', () => ({
   }),
 }))
 
-vi.mock('@/lib/api/docker', () => ({
-  dockerApi: {
+vi.mock('@/lib/api/runtime', () => ({
+  runtimeApi: {
     restart: vi.fn(),
     stop: vi.fn(),
     start: vi.fn(),

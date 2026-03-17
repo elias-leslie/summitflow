@@ -325,3 +325,182 @@ class TestDockerRuntime:
             message="Restarted summitflow-api",
         )
         clear_ports.assert_awaited_once()
+
+    def test_systemd_unit_state_marks_timeouts_as_unknown(
+        self,
+        mocker: MockerFixture,
+    ) -> None:
+        from app.api import docker as docker_api
+
+        mocker.patch.object(
+            docker_api,
+            "_run_systemctl_user",
+            new=mocker.AsyncMock(return_value=("", "Timed out after 0.75s", 124)),
+        )
+
+        result = asyncio.run(docker_api._systemd_unit_state("summitflow-backend.service"))
+
+        assert result == {
+            "Id": "summitflow-backend.service",
+            "LoadState": "unknown",
+            "ActiveState": "unknown",
+            "SubState": "timed-out",
+            "MainPID": "0",
+            "ExecMainStatus": "0",
+            "Error": "Timed out after 0.75s",
+        }
+
+    def test_runtime_service_status_uses_http_probe_when_systemctl_is_unavailable(
+        self,
+        mocker: MockerFixture,
+    ) -> None:
+        from app.api import docker as docker_api
+
+        mocker.patch.object(
+            docker_api,
+            "_systemd_unit_state",
+            new=mocker.AsyncMock(
+                return_value={
+                    "Id": "summitflow-backend.service",
+                    "LoadState": "unknown",
+                    "ActiveState": "unknown",
+                    "SubState": "timed-out",
+                    "MainPID": "0",
+                    "ExecMainStatus": "0",
+                }
+            ),
+        )
+        mocker.patch.object(
+            docker_api,
+            "_probe_http",
+            new=mocker.AsyncMock(return_value=(True, 200)),
+        )
+
+        result = asyncio.run(
+            docker_api._runtime_service_status(
+                docker_api._RUNTIME_SERVICE_MAP["summitflow-api"],
+                {},
+            )
+        )
+
+        assert result == docker_api.RuntimeServiceStatus(
+            name="summitflow-backend.service",
+            service="summitflow-api",
+            display_name="summitflow-api",
+            manager="systemd",
+            category="app",
+            state="running",
+            health="healthy",
+            status="Serving HTTP 200",
+            ports=["8001"],
+        )
+
+    def test_proxmox_status_returns_unconfigured_when_env_is_missing(
+        self,
+        mocker: MockerFixture,
+    ) -> None:
+        from app.api import docker as docker_api
+
+        mocker.patch.object(
+            docker_api,
+            "_proxmox_config",
+            return_value={
+                "api_url": "",
+                "token_id": "",
+                "token_secret": "",
+                "verify_ssl": False,
+            },
+        )
+
+        response = client.get("/api/docker/proxmox")
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "configured": False,
+            "reachable": False,
+            "api_url": None,
+            "error": "Set PROXMOX_API_URL, PROXMOX_TOKEN_ID, and PROXMOX_TOKEN_SECRET to enable Proxmox status.",
+            "nodes": [],
+            "guests": [],
+        }
+
+    def test_proxmox_status_lists_nodes_and_guests(
+        self,
+        mocker: MockerFixture,
+    ) -> None:
+        from app.api import docker as docker_api
+
+        mocker.patch.object(
+            docker_api,
+            "_proxmox_config",
+            return_value={
+                "api_url": "https://192.168.8.233:8006",
+                "token_id": "root@pam!automation",
+                "token_secret": "secret",
+                "verify_ssl": False,
+            },
+        )
+        mocker.patch.object(
+            docker_api,
+            "_sync_proxmox_get_json",
+            side_effect=[
+                [
+                    {
+                        "node": "davion-gem",
+                        "status": "online",
+                        "cpu": 0.125,
+                        "mem": 8589934592,
+                        "maxmem": 17179869184,
+                        "uptime": 1234,
+                    }
+                ],
+                [
+                    {
+                        "vmid": 100,
+                        "name": "test-vm",
+                        "node": "davion-gem",
+                        "type": "qemu",
+                        "status": "running",
+                        "cpu": 0.25,
+                        "mem": 4294967296,
+                        "maxmem": 8589934592,
+                        "uptime": 5678,
+                        "tags": "test;browser",
+                    }
+                ],
+            ],
+        )
+
+        response = client.get("/api/docker/proxmox")
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "configured": True,
+            "reachable": True,
+            "api_url": "https://192.168.8.233:8006",
+            "error": None,
+            "nodes": [
+                {
+                    "node": "davion-gem",
+                    "status": "online",
+                    "cpu_percent": 12.5,
+                    "memory_used_bytes": 8589934592,
+                    "memory_total_bytes": 17179869184,
+                    "uptime_seconds": 1234,
+                }
+            ],
+            "guests": [
+                {
+                    "vmid": 100,
+                    "name": "test-vm",
+                    "node": "davion-gem",
+                    "type": "qemu",
+                    "status": "running",
+                    "cpu_percent": 25.0,
+                    "memory_used_bytes": 4294967296,
+                    "memory_total_bytes": 8589934592,
+                    "uptime_seconds": 5678,
+                    "tags": ["test", "browser"],
+                }
+            ],
+        }

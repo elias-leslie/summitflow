@@ -3,9 +3,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { type DockerRuntimeStatus, dockerApi } from '@/lib/api/docker'
+import { type RuntimeModeStatus, runtimeApi } from '@/lib/api/runtime'
 
-function runtimeBadgeClass(runtime: DockerRuntimeStatus['runtime']): string {
+function runtimeBadgeClass(runtime: RuntimeModeStatus['runtime']): string {
   if (runtime === 'hybrid') {
     return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
   }
@@ -25,7 +25,7 @@ function modeDescription(mode: 'dev' | 'prod'): string {
 }
 
 function sourceDescription(
-  runtime: DockerRuntimeStatus,
+  runtime: RuntimeModeStatus,
   source: 'detected' | 'persisted' | 'default',
 ): string {
   if (source === 'detected') {
@@ -41,7 +41,7 @@ function sourceDescription(
     : 'No app containers are running. This is the default Docker parity preference.'
 }
 
-function runtimeDescription(runtime: DockerRuntimeStatus): string {
+function runtimeDescription(runtime: RuntimeModeStatus): string {
   if (runtime.runtime === 'hybrid') {
     return 'Apps are running natively under systemd --user while PostgreSQL, Redis, and Hatchet stay in Docker.'
   }
@@ -55,7 +55,7 @@ function runtimeDescription(runtime: DockerRuntimeStatus): string {
 }
 
 function actionLabel(
-  runtime: DockerRuntimeStatus,
+  runtime: RuntimeModeStatus,
   mode: 'dev' | 'prod',
 ): string {
   if (runtime.runtime === 'docker') {
@@ -74,20 +74,20 @@ export function DockerModeCard() {
     error,
     isLoading,
   } = useQuery({
-    queryKey: ['docker', 'runtime'],
-    queryFn: dockerApi.getRuntime,
+    queryKey: ['runtime', 'mode'],
+    queryFn: runtimeApi.getRuntime,
     refetchInterval: 10_000,
   })
 
   const switchModeMut = useMutation({
-    mutationFn: (mode: 'dev' | 'prod') => dockerApi.switchRuntimeMode(mode),
+    mutationFn: (mode: 'dev' | 'prod') => runtimeApi.switchRuntimeMode(mode),
     onMutate: (mode) => {
       setLastRequestedMode(mode)
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['docker', 'runtime'] })
-      queryClient.invalidateQueries({ queryKey: ['docker', 'status'] })
-      queryClient.invalidateQueries({ queryKey: ['docker', 'health'] })
+      queryClient.invalidateQueries({ queryKey: ['runtime', 'mode'] })
+      queryClient.invalidateQueries({ queryKey: ['runtime', 'status'] })
+      queryClient.invalidateQueries({ queryKey: ['runtime', 'health'] })
     },
   })
 
@@ -105,7 +105,7 @@ export function DockerModeCard() {
           <p className="text-sm text-red-200">
             {error instanceof Error
               ? error.message
-              : 'Docker runtime mode is unavailable.'}
+              : 'Runtime mode is unavailable.'}
           </p>
         </CardContent>
       </Card>
@@ -121,8 +121,9 @@ export function DockerModeCard() {
         <div>
           <CardTitle className="text-base">Runtime Mode</CardTitle>
           <p className="mt-1 text-sm text-slate-400">
-            Native apps are the default runtime. Docker mode here is the live
-            container mode only when app containers are actually running.
+            Native apps are the default runtime. Container mode here only
+            reflects live app containers when the Docker parity stack is
+            actually running.
           </p>
         </div>
         <div

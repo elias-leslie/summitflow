@@ -2,8 +2,11 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import type { ContainerMetrics, ContainerStatus } from '@/lib/api/docker'
-import { dockerApi } from '@/lib/api/docker'
+import type {
+  RuntimeServiceMetrics,
+  RuntimeServiceStatus,
+} from '@/lib/api/runtime'
+import { runtimeApi } from '@/lib/api/runtime'
 import { LogViewer } from './LogViewer'
 
 function statusColor(state: string, health: string): string {
@@ -19,13 +22,13 @@ function statusLabel(state: string, health: string): string {
   return state
 }
 
-function managerLabel(manager: ContainerStatus['manager']): string {
+function managerLabel(manager: RuntimeServiceStatus['manager']): string {
   return manager === 'systemd' ? 'native' : 'docker'
 }
 
 interface ServiceCardProps {
-  container: ContainerStatus
-  metric?: ContainerMetrics
+  container: RuntimeServiceStatus
+  metric?: RuntimeServiceMetrics
   metricsLoading?: boolean
 }
 
@@ -51,23 +54,23 @@ export function ServiceCard({
   const queryClient = useQueryClient()
 
   const restartMut = useMutation({
-    mutationFn: () => dockerApi.restart(container.service),
+    mutationFn: () => runtimeApi.restart(container.service),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['docker', 'status'] })
+      queryClient.invalidateQueries({ queryKey: ['runtime', 'status'] })
     },
   })
 
   const stopMut = useMutation({
-    mutationFn: () => dockerApi.stop(container.service),
+    mutationFn: () => runtimeApi.stop(container.service),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['docker', 'status'] })
+      queryClient.invalidateQueries({ queryKey: ['runtime', 'status'] })
     },
   })
 
   const startMut = useMutation({
-    mutationFn: () => dockerApi.start(container.service),
+    mutationFn: () => runtimeApi.start(container.service),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['docker', 'status'] })
+      queryClient.invalidateQueries({ queryKey: ['runtime', 'status'] })
     },
   })
 

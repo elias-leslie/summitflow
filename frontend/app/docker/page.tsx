@@ -2,13 +2,14 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { DockerModeCard } from '@/components/docker/DockerModeCard'
+import { ProxmoxStatusCard } from '@/components/docker/ProxmoxStatusCard'
 import { ServiceGrid } from '@/components/docker/ServiceGrid'
-import { dockerApi } from '@/lib/api/docker'
+import { runtimeApi } from '@/lib/api/runtime'
 
-export default function DockerPage() {
+export default function RuntimePage() {
   const { data: health } = useQuery({
-    queryKey: ['docker', 'health'],
-    queryFn: dockerApi.getHealth,
+    queryKey: ['runtime', 'health'],
+    queryFn: runtimeApi.getHealth,
     refetchInterval: 10_000,
   })
 
@@ -21,12 +22,15 @@ export default function DockerPage() {
             Runtime Management
           </h1>
           <p className="text-sm text-neutral-400 mt-1">
-            Native app services, Docker infra, logs, and metrics
+            Native app services, Docker infra, Proxmox guests, logs, and
+            metrics
           </p>
         </div>
         {health && (
           <div className="flex items-center gap-3 text-sm">
-            <span className="text-neutral-400">{health.total} services</span>
+            <span className="text-neutral-400">
+              {health.total} runtime services
+            </span>
             {health.healthy > 0 && (
               <span className="text-emerald-400">{health.healthy} healthy</span>
             )}
@@ -41,9 +45,8 @@ export default function DockerPage() {
       </div>
 
       <DockerModeCard />
-
-      {/* Service Grid */}
       <ServiceGrid />
+      <ProxmoxStatusCard />
     </div>
   )
 }
