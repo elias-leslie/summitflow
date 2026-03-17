@@ -10,7 +10,8 @@ from typing import Any
 import httpx
 import typer
 
-from ..config import _DEFAULT_API_BASE
+from app.config import DEFAULT_API_BASE
+
 from ..output import output_error, output_json, output_success
 from ._http_errors import parse_error_detail
 
@@ -30,7 +31,7 @@ UPDATE_FIELDS_MSG = (
 
 def get_api_base() -> str:
     """Return the configured API base URL."""
-    return os.getenv(ENV_API_BASE, _DEFAULT_API_BASE)
+    return os.getenv(ENV_API_BASE, DEFAULT_API_BASE)
 
 
 def projects_api(

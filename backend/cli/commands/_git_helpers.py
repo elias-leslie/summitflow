@@ -9,7 +9,7 @@ from typing import Any
 
 import httpx
 
-from ..config import _DEFAULT_API_BASE
+from app.config import DEFAULT_API_BASE
 
 CONFIG_REPOS = [Path.home() / ".claude"]
 FALLBACK_FILE = Path.home() / ".claude/config/managed-repos.txt"
@@ -18,7 +18,7 @@ ALREADY_UP_TO_DATE = "Already up to date"
 
 
 def _get_summitflow_api_url() -> str:
-    return f"{os.getenv('ST_API_BASE', _DEFAULT_API_BASE)}/projects"
+    return f"{os.getenv('ST_API_BASE', DEFAULT_API_BASE)}/projects"
 
 
 def _is_valid_git_path(path: Path) -> bool:

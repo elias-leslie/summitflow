@@ -19,7 +19,6 @@ dependencies = [
     "sqlalchemy>=2.0.0",
     "alembic>=1.13.0",
     "typer>=0.15.0",
-    "rich>=13.0.0",
     "radon>=6.0.0",
     "jsonschema>=4.21.0",
     "agent-hub-client @ git+https://github.com/summitflow-solutions/agent-hub.git#subdirectory=packages/agent-hub-client",
@@ -28,7 +27,6 @@ dependencies = [
     "psutil>=6.0.0",
     "structlog>=24.0.0",
     "python-json-logger>=2.0.0",
-    "pywebpush>=2.0.0",
 ]
 
 [project.scripts]

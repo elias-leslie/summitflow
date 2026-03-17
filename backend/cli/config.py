@@ -12,12 +12,12 @@ from pathlib import Path
 
 import httpx
 
+from app.config import DEFAULT_API_BASE
+from app.services._agent_hub_config import AGENT_HUB_URL as _RESOLVED_AGENT_HUB_URL
+
 from .lib.execution_context import canonical_repo_root
 
 logger = logging.getLogger(__name__)
-
-_DEFAULT_API_BASE = "http://localhost:8001/api"
-_DEFAULT_AGENT_HUB_URL = "http://localhost:8003"
 _RETRY_DELAY = 0.5
 _PROJECT_NOT_FOUND_MSG = (
     "Error: Could not determine project.\n\n"
@@ -31,7 +31,7 @@ _PROJECT_NOT_FOUND_MSG = (
 
 def get_agent_hub_url() -> str:
     """Get Agent Hub API URL (AGENT_HUB_URL env var, fallback localhost:8003)."""
-    return os.getenv("AGENT_HUB_URL", _DEFAULT_AGENT_HUB_URL)
+    return _RESOLVED_AGENT_HUB_URL
 
 
 @dataclass(frozen=True)
@@ -150,7 +150,7 @@ def get_config() -> Config:
 
     Priority: --project flag > ST_PROJECT_ID env > cwd auto-detect.
     """
-    api_base = os.getenv("ST_API_BASE", _DEFAULT_API_BASE)
+    api_base = os.getenv("ST_API_BASE", DEFAULT_API_BASE)
     project_id, project_root, source = _resolve_project(api_base)
     if project_id:
         return Config(api_base=api_base, project_id=project_id, project_root=project_root, source=source)
@@ -164,14 +164,14 @@ def get_config_optional() -> Config:
     Same as get_config() but returns Config with empty project_id instead of
     exiting. Useful for commands that operate without project context.
     """
-    api_base = os.getenv("ST_API_BASE", _DEFAULT_API_BASE)
+    api_base = os.getenv("ST_API_BASE", DEFAULT_API_BASE)
     project_id, project_root, source = _resolve_project(api_base)
     return Config(api_base=api_base, project_id=project_id or "", project_root=project_root, source=source)
 
 
 def get_available_projects() -> list[str]:
     """Fetch available project IDs from the API."""
-    api_base = os.getenv("ST_API_BASE", _DEFAULT_API_BASE)
+    api_base = os.getenv("ST_API_BASE", DEFAULT_API_BASE)
     projects = _fetch_projects_with_retry(api_base, max_retries=2)
     if not projects:
         return []
