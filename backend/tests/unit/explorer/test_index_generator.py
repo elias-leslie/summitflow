@@ -215,6 +215,42 @@ class TestGenerateIndex:
         assert "neo4j" not in parsed["services"]["infrastructure"]
 
 
+class TestGetProjectUrls:
+    """Tests for get_project_urls function."""
+
+    def test_port_derived_url_takes_precedence_over_base_url(self) -> None:
+        """Port-derived localhost URL should win over stale base_url."""
+        from app.services.explorer.index_generator import get_project_urls
+
+        with (
+            patch("app.services.explorer.base.get_project_config") as mock_config,
+            patch("app.services.explorer.index_generator.get_services") as mock_services,
+        ):
+            mock_config.return_value = {"base_url": "http://192.168.8.233:8000"}
+            mock_services.return_value = {"backend_port": 8000, "frontend_port": 3000}
+
+            urls = get_project_urls("portfolio-ai")
+
+        assert urls["frontend"] == "http://localhost:3000"
+        assert urls["api"] == "http://localhost:8000/api"
+
+    def test_base_url_used_when_no_frontend_port(self) -> None:
+        """base_url should be used as fallback when frontend_port is missing."""
+        from app.services.explorer.index_generator import get_project_urls
+
+        with (
+            patch("app.services.explorer.base.get_project_config") as mock_config,
+            patch("app.services.explorer.index_generator.get_services") as mock_services,
+        ):
+            mock_config.return_value = {"base_url": "https://example.com"}
+            mock_services.return_value = {"backend_port": 8000}
+
+            urls = get_project_urls("test-project")
+
+        assert urls["frontend"] == "https://example.com"
+        assert urls["api"] == "http://localhost:8000/api"
+
+
 class TestWriteIndexFile:
     """Tests for write_index_file function."""
 

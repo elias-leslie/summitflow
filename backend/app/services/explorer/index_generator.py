@@ -64,20 +64,25 @@ def get_background_tasks(project_id: str) -> list[str]:
 
 
 def get_project_urls(project_id: str) -> dict[str, str]:
-    """Get derived project URLs from project config and detected ports."""
+    """Get derived project URLs from detected ports (preferred) or project config.
+
+    Port-derived localhost URLs take precedence over base_url to avoid stale
+    or environment-specific values (e.g. Proxmox IPs, production domains).
+    """
     from .base import get_project_config
 
     project = get_project_config(project_id) or {}
     services = get_services(project_id)
 
     urls: dict[str, str] = {}
-    base_url = project.get("base_url")
-    if isinstance(base_url, str) and base_url:
-        urls["frontend"] = base_url.rstrip("/")
 
     frontend_port = services.get("frontend_port")
-    if frontend_port and "frontend" not in urls:
+    if frontend_port:
         urls["frontend"] = f"http://localhost:{frontend_port}"
+    else:
+        base_url = project.get("base_url")
+        if isinstance(base_url, str) and base_url:
+            urls["frontend"] = base_url.rstrip("/")
 
     backend_port = services.get("backend_port")
     if backend_port:
