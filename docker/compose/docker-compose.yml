@@ -168,7 +168,6 @@ services:
     environment:
       API_URL: "http://summitflow-api:8001"
       AGENT_HUB_URL: "http://agent-hub-api:8003"
-      AGENT_HUB_API_URL: "http://agent-hub-api:8003"
       SUMMITFLOW_CLIENT_ID: "${SUMMITFLOW_CLIENT_ID}"
       SUMMITFLOW_REQUEST_SOURCE: "summitflow"
     healthcheck:

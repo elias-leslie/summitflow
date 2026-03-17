@@ -14,7 +14,7 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SUMMITFLOW_API="http://localhost:8001/api/backup-sources"
+SUMMITFLOW_API="${ST_API_BASE:-http://localhost:8001/api}/backup-sources"
 FALLBACK_FILE="$HOME/.claude/config/managed-repos.txt"
 STAGGER_DELAY=60  # seconds between backups
 

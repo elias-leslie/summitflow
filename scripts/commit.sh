@@ -21,7 +21,7 @@
 
 set -uo pipefail
 
-SUMMITFLOW_API="http://localhost:8001/api/projects"
+SUMMITFLOW_API="${ST_API_BASE:-http://localhost:8001/api}/projects"
 CONFIG_REPOS=("$HOME/.claude" "$HOME/persona-sandbox")
 FALLBACK_FILE="$HOME/.claude/config/managed-repos.txt"
 MAIN_BRANCHES=("main" "master")
