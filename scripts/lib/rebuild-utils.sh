@@ -92,18 +92,18 @@ _compose_all_services() {
     # Query running containers' service labels — no config parsing, no env vars required
     docker ps --filter "label=com.docker.compose.project=summitflow-stack" \
               --format '{{.Label "com.docker.compose.service"}}' 2>/dev/null \
-        | grep "^${prefix}" | sort -u | tr '\n' ' '
+        | { grep "^${prefix}" || true; } | sort -u | tr '\n' ' '
 }
 
 _compose_api_service() {
-    _compose_all_services "$@" | tr ' ' '\n' | grep -E '\-api$' | head -1
+    _compose_all_services "$@" | tr ' ' '\n' | grep -E '\-api$' | head -1 || true
 }
 
 _compose_web_service() {
     local services
     services=$(_compose_all_services "$@")
     local web
-    web=$(echo "$services" | tr ' ' '\n' | grep -E '\-web$' | head -1)
+    web=$(echo "$services" | tr ' ' '\n' | grep -E '\-web$' | head -1 || true)
     # Standalone services (e.g. monkey-fight) have no -web suffix
     if [ -z "$web" ]; then
         web=$(echo "$services" | tr ' ' '\n' | head -1)
