@@ -63,51 +63,67 @@ class TestCheckAutonomousEnabled:
         assert "unreachable" in result["reason"]
 
 
+def _mock_healthy_infra() -> tuple:
+    """Return (mock_get_conn, mock_redis) configured for healthy postgres+redis."""
+    mock_conn = MagicMock()
+    mock_cursor = MagicMock()
+    mock_conn.__enter__ = lambda s: s
+    mock_conn.__exit__ = lambda s, *a: None
+    mock_conn.cursor.return_value.__enter__ = lambda s: mock_cursor
+    mock_conn.cursor.return_value.__exit__ = lambda s, *a: None
+    mock_redis_client = MagicMock()
+    mock_redis_client.ping.return_value = True
+    return mock_conn, mock_redis_client
+
+
 class TestCheckSystemHealth:
     """Tests for check_system_health backend HTTP check."""
 
     @patch("app.tasks.autonomous.pickup_guards.get_connection")
+    @patch("redis.Redis.from_url")
     @patch("httpx.get")
-    @patch("redis.Redis")
     def test_backend_healthy_via_http(
-        self, mock_redis_cls: MagicMock, mock_get: MagicMock, mock_conn: MagicMock
+        self, mock_get: MagicMock, mock_redis_from_url: MagicMock, mock_get_conn: MagicMock
     ) -> None:
         """Backend health check uses HTTP instead of systemctl."""
-        # Postgres healthy
-        mock_conn.return_value.__enter__ = lambda s: s
-        mock_conn.return_value.__exit__ = lambda s, *a: None
-        mock_conn.return_value.cursor.return_value.__enter__ = lambda s: s
-        mock_conn.return_value.cursor.return_value.__exit__ = lambda s, *a: None
+        mock_conn, mock_redis_client = _mock_healthy_infra()
+        mock_get_conn.return_value = mock_conn
+        mock_redis_from_url.return_value = mock_redis_client
 
-        # Redis healthy
-        mock_redis_cls.from_url.return_value.ping.return_value = True
-
-        # Backend HTTP health returns 200
-        resp = MagicMock()
-        resp.status_code = 200
-        mock_get.return_value = resp
+        mock_get.return_value = MagicMock(status_code=200)
 
         result = check_system_health("proj")
         assert result is None  # all healthy
 
     @patch("app.tasks.autonomous.pickup_guards.get_connection")
+    @patch("redis.Redis.from_url")
     @patch("httpx.get")
-    @patch("redis.Redis")
     def test_backend_unhealthy_via_http(
-        self, mock_redis_cls: MagicMock, mock_get: MagicMock, mock_conn: MagicMock
+        self, mock_get: MagicMock, mock_redis_from_url: MagicMock, mock_get_conn: MagicMock
     ) -> None:
         """Backend returns non-200 marks as unhealthy."""
-        mock_conn.return_value.__enter__ = lambda s: s
-        mock_conn.return_value.__exit__ = lambda s, *a: None
-        mock_conn.return_value.cursor.return_value.__enter__ = lambda s: s
-        mock_conn.return_value.cursor.return_value.__exit__ = lambda s, *a: None
+        mock_conn, mock_redis_client = _mock_healthy_infra()
+        mock_get_conn.return_value = mock_conn
+        mock_redis_from_url.return_value = mock_redis_client
 
-        mock_redis_cls.from_url.return_value.ping.return_value = True
-
-        resp = MagicMock()
-        resp.status_code = 503
-        mock_get.return_value = resp
+        mock_get.return_value = MagicMock(status_code=503)
 
         result = check_system_health("proj")
         assert result is not None
         assert "backend" in result["failing_services"]
+
+    @patch("app.tasks.autonomous.pickup_guards.get_connection")
+    @patch("redis.Redis.from_url")
+    @patch("httpx.get")
+    def test_backend_unavailable_does_not_block(
+        self, mock_get: MagicMock, mock_redis_from_url: MagicMock, mock_get_conn: MagicMock
+    ) -> None:
+        """Unreachable health endpoint treated as unknown, not unhealthy."""
+        mock_conn, mock_redis_client = _mock_healthy_infra()
+        mock_get_conn.return_value = mock_conn
+        mock_redis_from_url.return_value = mock_redis_client
+
+        mock_get.side_effect = ConnectionError("refused")
+
+        result = check_system_health("proj")
+        assert result is None  # should not block dispatch

@@ -12,6 +12,12 @@ const PORTS = { frontend: 3001, backend: 8001, agentHub: 8003 }
 const PROD_DOMAIN = 'dev.summitflow.dev'
 const PROD_API_DOMAIN = 'devapi.summitflow.dev'
 
+function isLocalDev(): boolean {
+  if (typeof window === 'undefined') return false
+  const host = window.location.hostname
+  return host === 'localhost' || host === '127.0.0.1'
+}
+
 /**
  * Get the base URL for SummitFlow backend API calls.
  *
@@ -23,16 +29,14 @@ export function getApiBaseUrl(): string {
     return process.env.API_URL || `http://localhost:${PORTS.backend}`
   }
 
-  const host = window.location.hostname
-
   // Development: localhost or 127.0.0.1
-  if (host === 'localhost' || host === '127.0.0.1') {
+  if (isLocalDev()) {
     return `http://localhost:${PORTS.backend}`
   }
 
   // Production: use same-origin to avoid CF Access CORS issues
   // Next.js rewrites /api/* to backend, so we don't need cross-origin URL
-  if (host === PROD_DOMAIN) {
+  if (window.location.hostname === PROD_DOMAIN) {
     return '' // Empty string = same-origin (uses current domain)
   }
 
@@ -57,16 +61,14 @@ export function getWsUrl(path: string): string {
     return apiUrl.replace(/^http/, 'ws') + path
   }
 
-  const host = window.location.hostname
-
   // Development: use localhost
-  if (host === 'localhost' || host === '127.0.0.1') {
+  if (isLocalDev()) {
     return `ws://localhost:${PORTS.backend}${path}`
   }
 
   // Production: connect directly to API domain for WebSocket
   // CF Tunnel routes devapi.summitflow.dev -> localhost:8001
-  if (host === PROD_DOMAIN) {
+  if (window.location.hostname === PROD_DOMAIN) {
     return `wss://${PROD_API_DOMAIN}${path}`
   }
 
@@ -103,16 +105,15 @@ export function getVoiceWsUrl(): string | null {
 
   if (typeof window === 'undefined') return null
 
-  const host = window.location.hostname
   const params = 'user_id=summitflow_user&app=summitflow&mode=transcribe'
 
   // Development: direct to Agent Hub backend
-  if (host === 'localhost' || host === '127.0.0.1') {
+  if (isLocalDev()) {
     return `ws://localhost:${PORTS.agentHub}/api/voice/ws?${params}`
   }
 
   // Production: same-origin WebSocket via CF tunnel + Next.js rewrite
-  if (host === PROD_DOMAIN) {
+  if (window.location.hostname === PROD_DOMAIN) {
     return `wss://${PROD_DOMAIN}/api/voice/ws?${params}`
   }
 
@@ -129,16 +130,14 @@ export function getVoiceWsUrl(): string | null {
 export function getTtsBaseUrl(): string | null {
   if (typeof window === 'undefined') return null
 
-  const host = window.location.hostname
-
   // Development: direct to Agent Hub backend
-  if (host === 'localhost' || host === '127.0.0.1') {
+  if (isLocalDev()) {
     return `http://localhost:${PORTS.agentHub}`
   }
 
   // Production: same-origin (rewrite proxies /api/voice/tts to Agent Hub)
   // Return explicit origin — useVoice checks !ttsBaseUrl, and '' is falsy
-  if (host === PROD_DOMAIN) {
+  if (window.location.hostname === PROD_DOMAIN) {
     return window.location.origin
   }
 
