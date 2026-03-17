@@ -1130,7 +1130,19 @@ EOF
     case "$count_method" in
         coderabbit_parse)
             # CodeRabbit exits 0 even with findings; success = no findings
-            [[ "$count" == "0" ]] && is_success=1
+            # But non-zero exit (rate limit, network error) must NOT be treated as success
+            if [[ $retval -eq 0 && "$count" == "0" ]]; then
+                is_success=1
+            elif [[ $retval -ne 0 ]]; then
+                # Preserve error info in count for FAIL output
+                local cr_error_hint=""
+                if echo "$output" | grep -qi "rate limit"; then
+                    cr_error_hint="rate_limited"
+                elif echo "$output" | grep -qi "error"; then
+                    cr_error_hint="error"
+                fi
+                count="${cr_error_hint:-error}"
+            fi
             ;;
 
         pytest_parse)
