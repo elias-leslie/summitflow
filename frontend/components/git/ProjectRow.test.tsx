@@ -90,7 +90,7 @@ function renderConfigRow() {
 }
 
 describe('ProjectRow', () => {
-  it('uses project_id for smart sync and dashboard expansion', async () => {
+  it('uses project_id for sync and dashboard expansion', async () => {
     apiMocks.smartSyncProject.mockResolvedValue({
       success: true,
       status: 'updated',
@@ -104,24 +104,26 @@ describe('ProjectRow', () => {
 
     renderRow()
 
-    const buttons = screen.getAllByRole('button')
-    fireEvent.click(buttons[0])
+    // Click the row header to expand
+    const row = screen.getByRole('button', { name: /repo-folder/i })
+    fireEvent.click(row)
     expect(screen.getByTestId('dashboard-content')).toHaveTextContent(
       'project-alpha',
     )
 
-    fireEvent.click(screen.getByRole('button', { name: /smart sync/i }))
+    // Click sync button (exact text match to avoid matching the row header)
+    fireEvent.click(screen.getByRole('button', { name: 'Sync' }))
 
     await waitFor(() => {
       expect(apiMocks.smartSyncProject).toHaveBeenCalledWith('project-alpha')
     })
   })
 
-  it('offers smart sync for config repos', () => {
+  it('offers sync for config repos', () => {
     renderConfigRow()
 
     expect(
-      screen.getByRole('button', { name: /smart sync/i }),
+      screen.getByRole('button', { name: 'Sync' }),
     ).toBeInTheDocument()
   })
 })

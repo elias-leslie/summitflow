@@ -14,29 +14,28 @@ import { ConflictAlerts } from '@/components/git/ConflictAlerts'
 import { ProjectRow } from '@/components/git/ProjectRow'
 import { useGitStatus } from './useGitStatus'
 
-function SummaryCard({
+function StatPill({
   icon: Icon,
-  label,
   value,
+  label,
   tone,
 }: {
   icon: typeof GitBranch
-  label: string
   value: number
+  label: string
   tone: string
 }) {
+  if (value === 0) return null
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/50 px-4 py-3">
-      <div
-        className={clsx(
-          'mb-2 flex items-center gap-2 text-xs uppercase tracking-[0.2em]',
-          tone,
-        )}
-      >
-        <Icon className="h-4 w-4" />
-        {label}
-      </div>
-      <div className="text-2xl font-semibold text-white">{value}</div>
+    <div
+      className={clsx(
+        'flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-mono tabular-nums',
+        tone,
+      )}
+    >
+      <Icon className="w-3 h-3" />
+      <span className="font-semibold">{value}</span>
+      <span className="opacity-60 hidden sm:inline">{label}</span>
     </div>
   )
 }
@@ -44,153 +43,133 @@ function SummaryCard({
 export function GitClient() {
   const { data: gitStatus, isLoading, isError, refetch } = useGitStatus()
   const repos = gitStatus?.repositories ?? []
-  const needsAttention = (repo: (typeof repos)[number]) =>
-    repo.state !== 'clean' ||
-    (repo.workspace_summary?.dirty_worktrees ?? 0) > 0 ||
-    (repo.workspace_summary?.orphan_branches ?? 0) > 0 ||
-    (repo.workspace_summary?.prunable_branches ?? 0) > 0
-  const reposNeedingCleanup = repos.filter((repo) =>
-    needsAttention(repo),
-  ).length
+
   const dirtyRepos = repos.filter(
-    (repo) => repo.state === 'dirty' || repo.state === 'ahead',
+    (r) => r.state === 'dirty' || r.state === 'ahead',
   ).length
   const activeWorktrees = repos.reduce(
-    (sum, repo) => sum + (repo.workspace_summary?.active_worktrees ?? 0),
+    (s, r) => s + (r.workspace_summary?.active_worktrees ?? 0),
     0,
   )
   const dirtyWorktrees = repos.reduce(
-    (sum, repo) => sum + (repo.workspace_summary?.dirty_worktrees ?? 0),
+    (s, r) => s + (r.workspace_summary?.dirty_worktrees ?? 0),
     0,
   )
   const orphanBranches = repos.reduce(
-    (sum, repo) => sum + (repo.workspace_summary?.orphan_branches ?? 0),
+    (s, r) => s + (r.workspace_summary?.orphan_branches ?? 0),
     0,
   )
   const prunableBranches = repos.reduce(
-    (sum, repo) => sum + (repo.workspace_summary?.prunable_branches ?? 0),
+    (s, r) => s + (r.workspace_summary?.prunable_branches ?? 0),
     0,
   )
+  const hasIssues =
+    dirtyRepos + dirtyWorktrees + orphanBranches + prunableBranches > 0
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl mx-auto">
-      {/* Header Section */}
-      <section className="flex flex-col md:flex-row md:items-end justify-between gap-4 animate-in fade-in slide-in-from-top-4 duration-500">
-        <div>
-          <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3 mb-2">
-            <div className="p-2 rounded bg-outrun-500/10 border border-outrun-500/20">
-              <GitBranch className="w-6 h-6 text-outrun-500" />
-            </div>
-            Git Operations
-          </h1>
-          <p className="text-slate-400 max-w-2xl">
-            Command center for version control across all managed workspaces.
-          </p>
+    <div className="p-6 space-y-5 max-w-6xl mx-auto">
+      {/* Header */}
+      <header className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="p-1.5 rounded-md bg-outrun-500/10 border border-outrun-500/20">
+            <GitBranch className="w-5 h-5 text-outrun-500" />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-white tracking-tight leading-none">
+              Git Operations
+            </h1>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {repos.length} workspace{repos.length !== 1 ? 's' : ''}
+            </p>
+          </div>
         </div>
 
         <button
           type="button"
           onClick={() => refetch()}
-          className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-md border border-slate-700 transition-all shadow-lg hover:shadow-phosphor-500/10 hover:border-phosphor-500/30"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-400 hover:text-white bg-slate-800/60 hover:bg-slate-800 rounded-md border border-slate-700/50 hover:border-slate-600 transition-all"
         >
-          <RefreshCw className={clsx('w-4 h-4', isLoading && 'animate-spin')} />
-          <span>Refresh All</span>
+          <RefreshCw
+            className={clsx('w-3.5 h-3.5', isLoading && 'animate-spin')}
+          />
+          Refresh
         </button>
-      </section>
+      </header>
 
-      {/* Conflict Alerts — highest urgency, top of page */}
+      {/* Conflict Alerts */}
       <ConflictAlerts />
 
-      {gitStatus && !isLoading && (
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-          <SummaryCard
-            icon={GitBranch}
-            label="Repos To Check"
-            value={reposNeedingCleanup}
-            tone="text-rose-300"
-          />
-          <SummaryCard
+      {/* Compact status strip — only renders when issues exist */}
+      {gitStatus && !isLoading && hasIssues && (
+        <div className="flex flex-wrap items-center gap-2">
+          <StatPill
             icon={AlertTriangle}
-            label="Dirty Repos"
             value={dirtyRepos}
-            tone="text-orange-300"
+            label="dirty"
+            tone="bg-pink-500/8 text-pink-400 border-pink-500/20"
           />
-          <SummaryCard
+          <StatPill
             icon={Layers}
-            label="Active Worktrees"
             value={activeWorktrees}
-            tone="text-phosphor-300"
+            label="worktrees"
+            tone="bg-phosphor-500/8 text-phosphor-400 border-phosphor-500/20"
           />
-          <SummaryCard
+          <StatPill
             icon={AlertTriangle}
-            label="Dirty Worktrees"
             value={dirtyWorktrees}
-            tone="text-orange-300"
+            label="dirty wt"
+            tone="bg-orange-500/8 text-orange-400 border-orange-500/20"
           />
-          <SummaryCard
+          <StatPill
             icon={Unplug}
-            label="Orphan Branches"
             value={orphanBranches}
-            tone="text-amber-300"
+            label="orphan"
+            tone="bg-amber-500/8 text-amber-400 border-amber-500/20"
           />
-          <SummaryCard
+          <StatPill
             icon={Scissors}
-            label="Prunable Branches"
             value={prunableBranches}
-            tone="text-outrun-300"
+            label="prunable"
+            tone="bg-rose-500/8 text-rose-400 border-rose-500/20"
           />
-        </section>
+        </div>
       )}
 
-      {/* Project Rows */}
+      {/* Repository list */}
       {gitStatus && !isLoading && (
-        <section className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
-          {gitStatus.repositories.map((repo) => (
-            <ProjectRow
-              key={repo.path}
-              repo={repo}
-            />
+        <div className="space-y-2">
+          {repos.map((repo) => (
+            <ProjectRow key={repo.path} repo={repo} />
           ))}
-        </section>
+        </div>
       )}
 
-      {/* Loading State */}
+      {/* Loading */}
       {isLoading && (
-        <div className="h-64 flex items-center justify-center border border-dashed border-slate-800 rounded-xl bg-slate-900/20">
-          <div className="flex flex-col items-center gap-3 text-slate-500">
-            <RefreshCw className="w-8 h-8 animate-spin text-phosphor-500" />
-            <p>Scanning workspaces...</p>
+        <div className="flex items-center justify-center py-20">
+          <div className="flex items-center gap-2.5 text-slate-500 text-sm">
+            <RefreshCw className="w-5 h-5 animate-spin text-phosphor-500" />
+            Scanning workspaces...
           </div>
         </div>
       )}
 
-      {/* Error State */}
+      {/* Error */}
       {isError && (
-        <div className="p-6 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-200 flex items-center gap-3">
-          <XCircle className="w-6 h-6 text-rose-500" />
+        <div className="p-4 rounded-lg bg-rose-500/8 border border-rose-500/20 text-rose-300 flex items-center gap-3 text-sm">
+          <XCircle className="w-5 h-5 text-rose-500 shrink-0" />
           <div>
-            <h3 className="font-semibold text-white">Connection Failed</h3>
-            <p className="text-sm opacity-80">
-              Unable to reach the Git service. Please verify the backend is
-              running.
-            </p>
+            <span className="font-medium text-white">Connection failed.</span>{' '}
+            Verify the backend is running.
           </div>
         </div>
       )}
 
-      {/* Empty State */}
+      {/* Empty */}
       {gitStatus?.repositories.length === 0 && (
-        <div className="text-center py-20">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-slate-800/50 mb-4">
-            <GitBranch className="w-8 h-8 text-slate-600" />
-          </div>
-          <h3 className="text-xl font-semibold text-white mb-2">
-            No Repositories Found
-          </h3>
-          <p className="text-slate-400 max-w-sm mx-auto">
-            Your workspace appears empty. Initialize a git repository to see it
-            here.
-          </p>
+        <div className="text-center py-20 text-slate-600">
+          <GitBranch className="w-8 h-8 mx-auto mb-3 opacity-40" />
+          <p className="text-sm">No repositories found</p>
         </div>
       )}
     </div>

@@ -31,11 +31,8 @@ export function DashboardContent({ projectId }: { projectId: string }) {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-8">
-        <div className="flex items-center gap-2 text-slate-500 text-sm">
-          <Loader2 className="w-4 h-4 animate-spin text-phosphor-500" />
-          Loading dashboard...
-        </div>
+      <div className="flex items-center justify-center py-6">
+        <Loader2 className="w-4 h-4 animate-spin text-slate-600" />
       </div>
     )
   }
@@ -56,14 +53,14 @@ export function DashboardContent({ projectId }: { projectId: string }) {
     !hasSnapshots
   ) {
     return (
-      <div className="text-center py-6 text-slate-600 text-sm">
-        No activity data for this project.
+      <div className="text-center py-4 text-slate-600 text-xs">
+        No activity data.
       </div>
     )
   }
 
   return (
-    <div className="space-y-5 animate-in fade-in duration-300">
+    <div className="space-y-4">
       {hasWorktrees && (
         <div>
           <SectionLabel
@@ -74,7 +71,7 @@ export function DashboardContent({ projectId }: { projectId: string }) {
             badgeBg="bg-phosphor-500/10"
             badgeBorder="border-phosphor-500/20"
           />
-          <div className="space-y-1.5">
+          <div className="space-y-1">
             {data.worktrees.map((wt) => (
               <WorktreeCompact key={wt.task_id} worktree={wt} />
             ))}
@@ -91,7 +88,7 @@ export function DashboardContent({ projectId }: { projectId: string }) {
             badgeBg="bg-cyan-500/10"
             badgeBorder="border-cyan-500/20"
           />
-          <div className="space-y-1.5">
+          <div className="space-y-1">
             {data.branches.map((branch) => (
               <BranchRow key={branch.name} branch={branch} />
             ))}
@@ -108,7 +105,7 @@ export function DashboardContent({ projectId }: { projectId: string }) {
             badgeBg="bg-purple-500/10"
             badgeBorder="border-purple-500/20"
           />
-          <div className="space-y-1.5">
+          <div className="space-y-1">
             {data.recent_merges.map((merge) => (
               <MergeRow key={merge.task_id} merge={merge} />
             ))}
@@ -125,7 +122,7 @@ export function DashboardContent({ projectId }: { projectId: string }) {
             badgeBg="bg-phosphor-500/10"
             badgeBorder="border-phosphor-500/20"
           />
-          <div className="rounded-md border border-slate-800/40 bg-slate-900/10 divide-y divide-slate-800/30 overflow-hidden">
+          <div className="rounded-md border border-slate-800/30 divide-y divide-slate-800/20 overflow-hidden">
             {data.recent_commits.slice(0, 15).map((commit) => (
               <CommitEntry
                 key={commit.sha}
@@ -149,7 +146,7 @@ export function DashboardContent({ projectId }: { projectId: string }) {
             onToggle={() => setSnapshotsOpen(!snapshotsOpen)}
           />
           {snapshotsOpen && (
-            <div className="space-y-1.5 animate-in fade-in duration-200">
+            <div className="space-y-1">
               {data.snapshots.map((snap) => (
                 <SnapshotEntry key={snap.task_id} snapshot={snap} />
               ))}

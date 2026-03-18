@@ -6,7 +6,6 @@ import {
   AlertTriangle,
   ArrowDown,
   ArrowUp,
-  ChevronDown,
   ChevronRight,
   Layers,
   Loader2,
@@ -14,7 +13,7 @@ import {
   Sparkles,
   Unplug,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { getStateInfo } from '@/app/git/utils'
 import { type RepoStatus, smartSyncProject } from '@/lib/api'
 import { DashboardContent } from './project-row/DashboardContent'
@@ -26,50 +25,17 @@ interface ProjectRowProps {
 
 const SYNC_RESULT_AUTO_DISMISS_MS = 12000
 
-function WorkspaceBadge({
-  tone,
-  icon: Icon,
-  label,
-  title,
-}: {
-  tone: 'cyan' | 'amber' | 'rose'
-  icon: typeof Layers
-  label: string
-  title: string
-}) {
-  const tones = {
-    cyan: 'bg-phosphor-500/10 text-phosphor-300 border-phosphor-500/20',
-    amber: 'bg-amber-500/10 text-amber-300 border-amber-500/20',
-    rose: 'bg-rose-500/10 text-rose-300 border-rose-500/20',
-  }
-
-  return (
-    <span
-      title={title}
-      className={clsx(
-        'inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-mono uppercase tracking-wide',
-        tones[tone],
-      )}
-    >
-      <Icon className="h-3 w-3" />
-      {label}
-    </span>
-  )
-}
-
 export function ProjectRow({ repo }: ProjectRowProps) {
   const [expanded, setExpanded] = useState(false)
   const [syncResult, setSyncResult] = useState<Awaited<
     ReturnType<typeof smartSyncProject>
   > | null>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
   const stateInfo = getStateInfo(repo.state)
   const StateIcon = stateInfo.icon
   const queryClient = useQueryClient()
   const workspaceSummary = repo.workspace_summary
   const repoKey = repo.project_id ?? repo.name
-  const worktreePreview = workspaceSummary?.worktree_task_ids.length
-    ? ` (${workspaceSummary.worktree_task_ids.join(', ')})`
-    : ''
 
   const syncMutation = useMutation({
     mutationFn: () => smartSyncProject(repoKey),
@@ -90,153 +56,180 @@ export function ProjectRow({ repo }: ProjectRowProps) {
 
   useEffect(() => {
     if (!syncResult) return undefined
-
-    const timeoutId = window.setTimeout(() => {
-      setSyncResult(null)
-    }, SYNC_RESULT_AUTO_DISMISS_MS)
-
-    return () => window.clearTimeout(timeoutId)
+    const id = window.setTimeout(() => setSyncResult(null), SYNC_RESULT_AUTO_DISMISS_MS)
+    return () => window.clearTimeout(id)
   }, [syncResult])
+
+  const wsBadges: Array<{
+    icon: typeof Layers
+    count: number
+    label: string
+    tone: string
+  }> = []
+  if (workspaceSummary) {
+    if (workspaceSummary.active_worktrees > 0)
+      wsBadges.push({
+        icon: Layers,
+        count: workspaceSummary.active_worktrees,
+        label: 'wt',
+        tone: 'text-phosphor-400',
+      })
+    if (workspaceSummary.dirty_worktrees > 0)
+      wsBadges.push({
+        icon: AlertTriangle,
+        count: workspaceSummary.dirty_worktrees,
+        label: 'dirty',
+        tone: 'text-rose-400',
+      })
+    if (workspaceSummary.orphan_branches > 0)
+      wsBadges.push({
+        icon: Unplug,
+        count: workspaceSummary.orphan_branches,
+        label: 'orphan',
+        tone: 'text-amber-400',
+      })
+    if (workspaceSummary.prunable_branches > 0)
+      wsBadges.push({
+        icon: Scissors,
+        count: workspaceSummary.prunable_branches,
+        label: 'prune',
+        tone: 'text-rose-400',
+      })
+  }
 
   return (
     <div
       className={clsx(
-        'rounded-xl border overflow-hidden transition-all duration-300',
-        'bg-gradient-to-br from-slate-900 to-[#0f0a18]',
-        'border-slate-800',
-        expanded && 'shadow-[0_0_30px_rgba(0,0,0,0.4)]',
+        'rounded-lg border overflow-hidden transition-all duration-200',
+        'bg-slate-900/40',
+        expanded
+          ? 'border-slate-700/80 shadow-lg shadow-black/20'
+          : 'border-slate-800/60 hover:border-slate-700/60',
       )}
     >
-      <div className="flex flex-wrap items-center gap-3 px-5 py-3.5">
-        <button
-          type="button"
-          onClick={() => setExpanded(!expanded)}
-          className="shrink-0 text-slate-500 hover:text-white transition-colors"
-        >
-          {expanded ? (
-            <ChevronDown className="w-4 h-4" />
-          ) : (
-            <ChevronRight className="w-4 h-4" />
+      {/* Header — entire row is clickable for expand */}
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => setExpanded(!expanded)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            setExpanded(!expanded)
+          }
+        }}
+        className="flex items-center gap-3 px-4 py-2.5 cursor-pointer select-none group"
+      >
+        {/* Chevron */}
+        <ChevronRight
+          className={clsx(
+            'w-3.5 h-3.5 text-slate-600 group-hover:text-slate-400 transition-all duration-200 shrink-0',
+            expanded && 'rotate-90',
           )}
-        </button>
+        />
 
-        <span className="font-semibold text-white tracking-tight text-[15px]">
+        {/* Repo name */}
+        <span className="font-semibold text-white text-sm tracking-tight shrink-0">
           {repo.name}
         </span>
 
-        <span className="text-xs font-mono text-phosphor-400 px-2 py-0.5 rounded bg-phosphor-500/8 border border-phosphor-500/15 shrink-0">
+        {/* Branch */}
+        <span className="text-[11px] font-mono text-slate-500 truncate min-w-0">
           {repo.branch}
         </span>
 
-        <span
-          className={clsx(
-            'flex items-center gap-1 text-xs shrink-0',
-            stateInfo.color,
-          )}
-        >
-          <StateIcon className="w-3 h-3" />
-          {stateInfo.label}
-        </span>
-
-        {workspaceSummary &&
-          workspaceSummary.active_worktrees > 0 && (
-            <WorkspaceBadge
-              tone="cyan"
-              icon={Layers}
-              label={`${workspaceSummary.active_worktrees} worktree${workspaceSummary.active_worktrees === 1 ? '' : 's'}`}
-              title={`Active worktrees${worktreePreview}`}
-            />
-          )}
-
-        {workspaceSummary &&
-          workspaceSummary.dirty_worktrees > 0 && (
-            <WorkspaceBadge
-              tone="rose"
-              icon={AlertTriangle}
-              label={`${workspaceSummary.dirty_worktrees} dirty wt`}
-              title={`${workspaceSummary.dirty_worktrees} worktree${workspaceSummary.dirty_worktrees === 1 ? '' : 's'} with uncommitted changes`}
-            />
-          )}
-
-        {workspaceSummary &&
-          workspaceSummary.orphan_branches > 0 && (
-            <WorkspaceBadge
-              tone="amber"
-              icon={Unplug}
-              label={`${workspaceSummary.orphan_branches} orphan`}
-              title={`${workspaceSummary.orphan_branches} task branch${workspaceSummary.orphan_branches === 1 ? '' : 'es'} without a worktree`}
-            />
-          )}
-
-        {workspaceSummary &&
-          workspaceSummary.prunable_branches > 0 && (
-            <WorkspaceBadge
-              tone="rose"
-              icon={Scissors}
-              label={`${workspaceSummary.prunable_branches} prune`}
-              title={`${workspaceSummary.prunable_branches} merged branch${workspaceSummary.prunable_branches === 1 ? '' : 'es'} can be cleaned up`}
-            />
-          )}
-
-        {repo.state === 'dirty' && (
-          <span className="w-2 h-2 rounded-full bg-pink-500 animate-pulse shadow-[0_0_8px_#ff0066] shrink-0" />
-        )}
-
-        <div className="flex items-center gap-3 text-[11px] font-mono text-slate-500 md:ml-auto shrink-0">
-          <span className={clsx(repo.uncommitted > 0 && 'text-pink-400')}>
-            {repo.uncommitted} change{repo.uncommitted !== 1 ? 's' : ''}
+        {/* Workspace badges — compact inline */}
+        {wsBadges.map((b) => (
+          <span
+            key={b.label}
+            className={clsx(
+              'hidden md:flex items-center gap-0.5 text-[10px] font-mono shrink-0',
+              b.tone,
+            )}
+            title={`${b.count} ${b.label}`}
+          >
+            <b.icon className="w-2.5 h-2.5" />
+            {b.count}
           </span>
+        ))}
+
+        {/* Right side — status cluster */}
+        <div className="flex items-center gap-2.5 ml-auto shrink-0">
+          {/* State pill */}
+          <span
+            className={clsx(
+              'flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md',
+              stateInfo.bg,
+              stateInfo.color,
+            )}
+          >
+            <StateIcon className="w-3 h-3" />
+            {stateInfo.label}
+            {repo.state === 'dirty' && repo.uncommitted > 0 && (
+              <span className="opacity-70">({repo.uncommitted})</span>
+            )}
+          </span>
+
+          {/* Ahead / behind */}
           {repo.ahead > 0 && (
-            <span className="text-phosphor-400 flex items-center gap-0.5">
+            <span className="text-phosphor-400 flex items-center gap-0.5 text-[11px] font-mono">
               <ArrowUp className="w-3 h-3" />
               {repo.ahead}
             </span>
           )}
           {repo.behind > 0 && (
-            <span className="text-amber-400 flex items-center gap-0.5">
+            <span className="text-amber-400 flex items-center gap-0.5 text-[11px] font-mono">
               <ArrowDown className="w-3 h-3" />
               {repo.behind}
             </span>
           )}
-          {repo.ahead === 0 && repo.behind === 0 && repo.state === 'clean' && (
-            <span className="text-slate-600">in sync</span>
-          )}
-        </div>
 
-        <button
-          type="button"
-          disabled={syncMutation.isPending}
-          onClick={(e) => {
-            e.stopPropagation()
-            syncMutation.mutate()
-          }}
-          className={clsx(
-            'shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all',
-            syncMutation.isPending
-              ? 'bg-slate-800 text-slate-400 cursor-not-allowed'
-              : 'bg-gradient-to-r from-pink-600/80 to-purple-600/80 hover:from-pink-500 hover:to-purple-500 text-white shadow-lg shadow-pink-500/10 hover:shadow-pink-500/25',
-          )}
-        >
-          {syncMutation.isPending ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-          ) : (
-            <Sparkles className="w-3.5 h-3.5" />
-          )}
-          {syncMutation.isPending ? 'Syncing...' : 'Smart Sync'}
-        </button>
+          {/* Sync button — stops propagation so it doesn't toggle expand */}
+          <button
+            type="button"
+            disabled={syncMutation.isPending}
+            onClick={(e) => {
+              e.stopPropagation()
+              syncMutation.mutate()
+            }}
+            className={clsx(
+              'flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all',
+              syncMutation.isPending
+                ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                : 'bg-outrun-500/12 text-outrun-400 border border-outrun-500/20 hover:bg-outrun-500/20 hover:border-outrun-500/40',
+            )}
+          >
+            {syncMutation.isPending ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              <Sparkles className="w-3 h-3" />
+            )}
+            {syncMutation.isPending ? 'Syncing' : 'Sync'}
+          </button>
+        </div>
       </div>
 
+      {/* Sync result */}
       {syncResult && (
-        <div className="px-5 pb-3">
+        <div className="px-4 pb-2.5">
           <SyncResultBlock result={syncResult} />
         </div>
       )}
 
-      {expanded && (
-        <div className="border-t border-slate-800/60 px-5 py-4">
-          <DashboardContent projectId={repoKey} />
+      {/* Expandable dashboard */}
+      <div
+        ref={contentRef}
+        className={clsx(
+          'grid transition-all duration-200 ease-out',
+          expanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0',
+        )}
+      >
+        <div className="overflow-hidden">
+          <div className="border-t border-slate-800/40 px-4 py-3">
+            <DashboardContent projectId={repoKey} />
+          </div>
         </div>
-      )}
+      </div>
     </div>
   )
 }
