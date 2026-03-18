@@ -15,8 +15,8 @@ from ...storage.tasks.update import update_task_fields
 from ...tasks.autonomous.cleanup.merge_operations import merge_and_cleanup_task_worktree
 from ...tasks.autonomous.cleanup.merge_types import MergeResult
 from ...utils.git_helpers import (
-    get_managed_repos,
     get_all_branches,
+    get_managed_repos,
     get_recent_commits,
     get_task_diff,
     list_snapshots,
@@ -32,7 +32,12 @@ from ..models.git_models import (
     SnapshotInfo,
     TaskDiffResponse,
 )
-from .db_helpers import get_project_path, get_project_root_with_fallback, query_conflicts, query_recent_merges
+from .db_helpers import (
+    get_project_path,
+    get_project_root_with_fallback,
+    query_conflicts,
+    query_recent_merges,
+)
 from .worktree_helpers import collect_worktrees, enrich_snapshots
 
 _logger = get_logger(__name__)

@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-
 SYSTEMD_DIR = Path(__file__).resolve().parents[3] / "scripts" / "systemd"
 APP_SERVICE_KILLMODES = {
     "summitflow-backend.service": "control-group",
