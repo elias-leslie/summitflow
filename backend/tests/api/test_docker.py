@@ -26,7 +26,7 @@ def _status(
 ):
     from app.api import docker as docker_api
 
-    return docker_api.ContainerStatus(
+    return docker_api.RuntimeServiceStatus(
         name=name,
         service=service,
         display_name=service,
@@ -229,7 +229,7 @@ class TestDockerRuntime:
             docker_api,
             "_get_runtime_status",
             new=mocker.AsyncMock(
-                return_value=docker_api.DockerRuntimeStatus(
+                return_value=docker_api.RuntimeModeStatus(
                     runtime="docker",
                     apps_runtime="docker",
                     infra_runtime="docker",
@@ -267,7 +267,7 @@ class TestDockerRuntime:
             docker_api,
             "_get_runtime_status",
             new=mocker.AsyncMock(
-                return_value=docker_api.DockerRuntimeStatus(
+                return_value=docker_api.RuntimeModeStatus(
                     runtime="hybrid",
                     apps_runtime="native",
                     infra_runtime="docker",
@@ -399,10 +399,10 @@ class TestDockerRuntime:
         self,
         mocker: MockerFixture,
     ) -> None:
-        from app.api import docker as docker_api
+        from app.api import _runtime_proxmox
 
         mocker.patch.object(
-            docker_api,
+            _runtime_proxmox,
             "_proxmox_config",
             return_value={
                 "api_url": "",
@@ -428,10 +428,10 @@ class TestDockerRuntime:
         self,
         mocker: MockerFixture,
     ) -> None:
-        from app.api import docker as docker_api
+        from app.api import _runtime_proxmox
 
         mocker.patch.object(
-            docker_api,
+            _runtime_proxmox,
             "_proxmox_config",
             return_value={
                 "api_url": "https://192.168.8.233:8006",
@@ -441,7 +441,7 @@ class TestDockerRuntime:
             },
         )
         mocker.patch.object(
-            docker_api,
+            _runtime_proxmox,
             "_sync_proxmox_get_json",
             side_effect=[
                 [
