@@ -1,10 +1,11 @@
 """Utility functions for backup API."""
 
-from datetime import datetime
-
 from fastapi import HTTPException
 
 from ...storage import backups as backup_store
+from ...utils.datetime_helpers import parse_iso_datetime
+
+__all__ = ["parse_iso_datetime", "validate_backup_access"]
 
 
 def validate_backup_access(project_id: str, backup_id: str) -> dict[str, object]:
@@ -29,17 +30,3 @@ def validate_backup_access(project_id: str, backup_id: str) -> dict[str, object]
             detail=f"Backup {backup_id} not found in project {project_id}",
         )
     return backup
-
-
-def parse_iso_datetime(value: object) -> datetime | None:
-    """Parse ISO datetime string or return None.
-
-    Args:
-        value: Value to parse (can be None)
-
-    Returns:
-        Parsed datetime or None
-    """
-    if value is None:
-        return None
-    return datetime.fromisoformat(str(value))

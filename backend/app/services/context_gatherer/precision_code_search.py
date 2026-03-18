@@ -15,6 +15,7 @@ from ...storage.explorer import (
     list_related_entries_for_file,
     search_symbols,
 )
+from ...utils.datetime_helpers import parse_iso_datetime
 from .. import explorer as explorer_service
 from ..explorer.text_search import search_text
 from ._precision_query import (
@@ -55,15 +56,6 @@ class PrecisionCodeSearchResult:
 # ---------------------------------------------------------------------------
 
 
-def _parse_iso_datetime(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    try:
-        parsed = datetime.fromisoformat(value)
-    except ValueError:
-        return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
-
 
 def _age_minutes(timestamp: datetime | None) -> int | None:
     if timestamp is None:
@@ -77,8 +69,8 @@ def _get_precision_index_status(project_id: str) -> dict[str, object]:
 
     file_total = int(file_stats.get("total") or 0)
     symbol_count = int(symbol_stats.get("count") or 0)
-    file_last_scanned = _parse_iso_datetime(file_stats.get("last_scanned"))
-    symbol_last_updated = _parse_iso_datetime(symbol_stats.get("last_updated"))
+    file_last_scanned = parse_iso_datetime(file_stats.get("last_scanned"))
+    symbol_last_updated = parse_iso_datetime(symbol_stats.get("last_updated"))
     stale_before = datetime.now(UTC) - _PRECISION_INDEX_MAX_AGE
 
     reasons: list[str] = []

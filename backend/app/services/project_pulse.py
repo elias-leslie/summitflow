@@ -10,6 +10,7 @@ import httpx
 from app.services._agent_hub_config import AGENT_HUB_URL, build_agent_hub_headers
 from app.services.workspace_status import build_project_cleanup_status
 from app.storage.tasks.queries import list_tasks
+from app.utils.datetime_helpers import parse_iso_datetime
 
 _TIMEOUT = 10.0
 _TASK_LIMIT = 8
@@ -28,21 +29,6 @@ async def _agent_hub_get(path: str, params: dict[str, Any] | None = None) -> dic
         payload = response.json()
         return payload if isinstance(payload, dict) else {}
 
-
-def _parse_iso_timestamp(value: str | None) -> datetime | None:
-    """Parse an ISO timestamp from Agent Hub session payloads."""
-    if not isinstance(value, str) or not value.strip():
-        return None
-    raw = value.strip()
-    if raw.endswith("Z"):
-        raw = raw[:-1] + "+00:00"
-    try:
-        parsed = datetime.fromisoformat(raw)
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
 
 
 def _normalize_active_session(
@@ -106,10 +92,10 @@ def _session_location(session: dict[str, Any]) -> str:
 def _session_freshness(session: dict[str, Any]) -> datetime:
     live_activity = session.get("live_activity")
     if isinstance(live_activity, dict):
-        last_heartbeat = _parse_iso_timestamp(live_activity.get("last_heartbeat_at"))
+        last_heartbeat = parse_iso_datetime(live_activity.get("last_heartbeat_at"))
         if last_heartbeat is not None:
             return last_heartbeat
-    updated_at = _parse_iso_timestamp(session.get("updated_at"))
+    updated_at = parse_iso_datetime(session.get("updated_at"))
     return updated_at or datetime.fromtimestamp(0, UTC)
 
 
@@ -178,7 +164,7 @@ def _classify_session_coordination_bucket(session: dict[str, Any]) -> str | None
         if health in {"completed", "failed", "error"}:
             return None
 
-    updated_at = _parse_iso_timestamp(session.get("updated_at"))
+    updated_at = parse_iso_datetime(session.get("updated_at"))
     if updated_at is None:
         return None
     age_seconds = (datetime.now(UTC) - updated_at).total_seconds()
@@ -208,7 +194,7 @@ def _task_is_stranded(task: dict[str, Any], owner_task_ids: set[str], specialist
         return False
     if task_id in owner_task_ids or task_id in specialist_task_ids:
         return False
-    updated_at = _parse_iso_timestamp(task.get("updated_at"))
+    updated_at = parse_iso_datetime(task.get("updated_at"))
     if updated_at is None:
         return True
     age_minutes = (datetime.now(UTC) - updated_at).total_seconds() / 60

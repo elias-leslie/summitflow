@@ -42,7 +42,6 @@ class Settings(BaseSettings):
 
     # Hatchet
     hatchet_client_token: str = ""
-    hatchet_client_tls_strategy: str = "none"
 
     # CORS
     cors_origins: list[str] = [
