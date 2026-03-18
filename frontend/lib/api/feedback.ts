@@ -67,13 +67,22 @@ interface FeedbackSummaryRaw {
   }[]
 }
 
+/** Per-component breakdown with type counts for health visualization */
+export interface ComponentBreakdown {
+  total: number
+  open: number
+  friction: number
+  idea: number
+  praise: number
+}
+
 /** Transformed shape used by frontend components */
 export interface FeedbackSummary {
   total: number
   by_type: Record<string, number>
   by_status: Record<string, number>
   top_unresolved: FeedbackSummaryRaw['top_unresolved']
-  by_component: Record<string, { total: number; open: number }>
+  by_component: Record<string, ComponentBreakdown>
 }
 
 /** Transform raw API response into frontend-friendly shape */
@@ -84,11 +93,14 @@ function transformSummary(raw: FeedbackSummaryRaw): FeedbackSummary {
     by_type[row.feedback_type] = (by_type[row.feedback_type] ?? 0) + row.count
     by_status[row.status] = (by_status[row.status] ?? 0) + row.count
   }
-  const by_component: Record<string, { total: number; open: number }> = {}
+  const by_component: Record<string, ComponentBreakdown> = {}
   for (const c of raw.by_component) {
     by_component[c.component_id] = {
       total: c.open_count + c.resolved_count + c.wont_fix_count + c.archived_count,
       open: c.open_count,
+      friction: c.friction_count ?? 0,
+      idea: c.idea_count ?? 0,
+      praise: c.praise_count ?? 0,
     }
   }
   return {

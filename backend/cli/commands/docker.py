@@ -17,9 +17,9 @@ import typer
 from ..runtime import (
     COMPOSE_ENV_FILE,
     COMPOSE_FILE,
-    compose_env,
     compose_cmd,
     compose_cmd_for_mode,
+    compose_env,
     read_docker_mode,
     write_docker_mode,
 )

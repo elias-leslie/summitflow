@@ -1,63 +1,82 @@
 'use client'
 
 import { clsx } from 'clsx'
-import {
-  Lightbulb,
-  Loader2,
-  MessageSquareWarning,
-  Sparkles,
-  TrendingUp,
-  Zap,
-} from 'lucide-react'
 import type { FeedbackStatusFilter, FeedbackSummary } from '@/lib/api/feedback'
 
-const STAT_CARDS = [
-  {
-    key: 'active',
-    label: 'Active',
-    icon: MessageSquareWarning,
-    getCount: (s: FeedbackSummary) => (s.by_status?.open ?? 0) + (s.by_status?.acknowledged ?? 0),
-    color: 'text-slate-200',
-    bg: 'bg-slate-500/20',
-    iconColor: 'text-slate-400',
-  },
-  {
-    key: 'friction',
-    label: 'Friction',
-    icon: Zap,
-    getCount: (s: FeedbackSummary) => s.by_type?.friction ?? 0,
-    color: 'text-rose-400',
-    bg: 'bg-rose-500/20',
-    iconColor: 'text-rose-400',
-  },
-  {
-    key: 'idea',
-    label: 'Ideas',
-    icon: Lightbulb,
-    getCount: (s: FeedbackSummary) => s.by_type?.idea ?? 0,
-    color: 'text-amber-400',
-    bg: 'bg-amber-500/20',
-    iconColor: 'text-amber-400',
-  },
-  {
-    key: 'improvement',
-    label: 'Improvements',
-    icon: TrendingUp,
-    getCount: (s: FeedbackSummary) => s.by_type?.improvement ?? 0,
-    color: 'text-blue-400',
-    bg: 'bg-blue-500/20',
-    iconColor: 'text-blue-400',
-  },
-  {
-    key: 'praise',
-    label: 'Praise',
-    icon: Sparkles,
-    getCount: (s: FeedbackSummary) => s.by_type?.praise ?? 0,
-    color: 'text-emerald-400',
-    bg: 'bg-emerald-500/20',
-    iconColor: 'text-emerald-400',
-  },
-] as const
+// ─── Stat Pill ───────────────────────────────────────────────────
+
+function StatPill({
+  value,
+  label,
+  tone,
+  isActive,
+  onClick,
+}: {
+  value: number
+  label: string
+  tone: string
+  isActive: boolean
+  onClick: () => void
+}) {
+  if (value === 0 && !isActive) return null
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={clsx(
+        'flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-mono tabular-nums transition-all',
+        isActive ? 'ring-1 ring-white/20 shadow-lg shadow-black/20' : '',
+        tone,
+      )}
+    >
+      <span className="font-semibold">{value}</span>
+      <span className="opacity-60">{label}</span>
+    </button>
+  )
+}
+
+// ─── Health Bar ──────────────────────────────────────────────────
+
+function FeedbackHealthBar({
+  summary,
+}: {
+  summary: FeedbackSummary | undefined
+}) {
+  if (!summary?.by_component) return null
+
+  const components = Object.entries(summary.by_component)
+    .filter(([, d]) => d.total > 0)
+    .sort((a, b) => b[1].total - a[1].total)
+
+  if (components.length === 0) return null
+
+  return (
+    <div className="flex gap-0.5 h-2 rounded-full overflow-hidden bg-slate-800/50">
+      {components.map(([id, data]) => {
+        const frictionRatio = data.total > 0 ? data.friction / data.total : 0
+        const praiseRatio = data.total > 0 ? data.praise / data.total : 0
+        const tone =
+          frictionRatio > 0.5
+            ? 'bg-red-500'
+            : praiseRatio > 0.5
+              ? 'bg-emerald-500'
+              : frictionRatio > 0.25
+                ? 'bg-amber-500'
+                : 'bg-blue-500'
+        return (
+          <div
+            key={id}
+            className={clsx('transition-colors duration-500', tone)}
+            style={{ flex: data.total }}
+            title={`${id}: ${data.friction} friction, ${data.idea} ideas, ${data.praise} praise`}
+          />
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── Main ────────────────────────────────────────────────────────
 
 interface FeedbackStatsProps {
   summary: FeedbackSummary | undefined
@@ -76,56 +95,67 @@ export function FeedbackStats({
   onTypeClick,
   onStatusClick,
 }: FeedbackStatsProps) {
-  return (
-    <section className="grid grid-cols-2 md:grid-cols-5 gap-3">
-      {STAT_CARDS.map((card) => {
-        const Icon = card.icon
-        const isActive =
-          (card.key === 'active' && activeStatus === 'active') ||
-          (card.key !== 'active' && activeType === card.key)
-        const handleClick = () => {
-          if (card.key === 'active') {
-            onTypeClick(undefined)
-            onStatusClick(activeStatus === 'active' ? undefined : 'active')
-          } else {
-            onStatusClick(undefined)
-            onTypeClick(activeType === card.key ? undefined : card.key)
-          }
-        }
+  if (isLoading || !summary) return null
 
-        return (
-          <button
-            type="button"
-            key={card.key}
-            onClick={handleClick}
-            className={clsx(
-              'p-4 rounded-lg border transition-all duration-200 text-left cursor-pointer',
-              'bg-slate-800/50 hover:bg-slate-800/80',
-              isActive
-                ? 'border-outrun-500/40 ring-1 ring-outrun-500/20'
-                : 'border-slate-700 hover:border-slate-600',
-            )}
-          >
-            <div className="flex items-center gap-3">
-              <div className={clsx('p-2 rounded-lg', card.bg)}>
-                <Icon className={clsx('w-4 h-4', card.iconColor)} />
-              </div>
-              <div>
-                <p className={clsx('text-xl font-semibold', card.color)}>
-                  {isLoading ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : summary ? (
-                    card.getCount(summary)
-                  ) : (
-                    '—'
-                  )}
-                </p>
-                <p className="text-xs text-slate-500">{card.label}</p>
-              </div>
-            </div>
-          </button>
-        )
-      })}
-    </section>
+  const active = (summary.by_status?.open ?? 0) + (summary.by_status?.acknowledged ?? 0)
+  const friction = summary.by_type?.friction ?? 0
+  const ideas = summary.by_type?.idea ?? 0
+  const improvements = summary.by_type?.improvement ?? 0
+  const praise = summary.by_type?.praise ?? 0
+
+  const handleClick = (key: string) => {
+    if (key === 'active') {
+      onTypeClick(undefined)
+      onStatusClick(activeStatus === 'active' ? undefined : 'active')
+    } else {
+      onStatusClick(undefined)
+      onTypeClick(activeType === key ? undefined : key)
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <FeedbackHealthBar summary={summary} />
+      <div className="flex flex-wrap items-center gap-2">
+        <StatPill
+          value={active}
+          label="active"
+          tone="bg-slate-500/8 text-slate-400 border-slate-500/20"
+          isActive={activeStatus === 'active' && !activeType}
+          onClick={() => handleClick('active')}
+        />
+        <StatPill
+          value={friction}
+          label="friction"
+          tone="bg-red-500/8 text-red-400 border-red-500/20"
+          isActive={activeType === 'friction'}
+          onClick={() => handleClick('friction')}
+        />
+        <StatPill
+          value={ideas}
+          label="ideas"
+          tone="bg-amber-500/8 text-amber-400 border-amber-500/20"
+          isActive={activeType === 'idea'}
+          onClick={() => handleClick('idea')}
+        />
+        <StatPill
+          value={improvements}
+          label="improvements"
+          tone="bg-blue-500/8 text-blue-400 border-blue-500/20"
+          isActive={activeType === 'improvement'}
+          onClick={() => handleClick('improvement')}
+        />
+        <StatPill
+          value={praise}
+          label="praise"
+          tone="bg-emerald-500/8 text-emerald-400 border-emerald-500/20"
+          isActive={activeType === 'praise'}
+          onClick={() => handleClick('praise')}
+        />
+        <span className="ml-auto text-[11px] text-slate-500">
+          {summary.total} total
+        </span>
+      </div>
+    </div>
   )
 }

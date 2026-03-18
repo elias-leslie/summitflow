@@ -10,6 +10,8 @@ Environment="NODE_ENV=production"
 Environment="PORT=3001"
 Environment="API_URL=http://localhost:8001"
 Environment="AGENT_HUB_URL=http://localhost:8003"
+Environment="SUMMITFLOW_CLIENT_ID=086e0410-0d54-4572-9775-7ecfb3baf5c4"
+Environment="SUMMITFLOW_REQUEST_SOURCE=summitflow"
 # Use bash -lc to source .bashrc/.profile for NVM/pnpm path resolution
 ExecStart=/bin/bash -lc "pnpm start --hostname 0.0.0.0 --port 3001"
 # Faster shutdown - don't wait 90s for WebSocket connections to close

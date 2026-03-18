@@ -7,12 +7,12 @@ from types import SimpleNamespace
 
 from app.api.git_helpers.worktree_helpers import collect_worktrees
 from app.api.models.git_models import BranchInfo
-from app.utils._git_core import _resolve_project_id
 from app.utils._git_branches import (
     assess_orphan_task_branches,
     build_repo_workspace_summary,
     prune_closed_orphan_task_branches,
 )
+from app.utils._git_core import _resolve_project_id
 
 
 class TestBuildRepoWorkspaceSummary:

@@ -6,8 +6,8 @@ from typing import Annotated, Any
 
 import typer
 
-from .._output_state import is_compact
 from .._observability import refresh_agent_observability
+from .._output_state import is_compact
 from ..client import APIError, STClient
 from ..output import handle_api_error, output_json
 

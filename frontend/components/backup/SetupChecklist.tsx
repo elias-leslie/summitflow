@@ -72,8 +72,8 @@ function computeSteps(
       title: 'Backup sources',
       description: hasSources
         ? failingCount > 0
-          ? `${sources.length} sources registered, but ${failingCount} ha${failingCount === 1 ? 's' : 've'} a failed last backup — check the history below`
-          : `${sources.length} sources registered, schedules active, latest backups succeeded`
+          ? `${sources.length} sources registered, but ${failingCount} ha${failingCount === 1 ? 's' : 've'} a failed last backup`
+          : `${sources.length} sources registered, schedules active`
         : 'Sources define what gets backed up: project code and databases, config, workspaces.',
       complete: hasSources && hasSchedules && failingCount === 0,
     },
@@ -84,8 +84,8 @@ function computeSteps(
       description: hasInfra
         ? infraHealthy
           ? 'PostgreSQL roles, databases, and server config are backed up'
-          : 'System backup source exists but last backup failed — check the history below'
-        : 'Backs up PostgreSQL roles (users/permissions), databases, and server config. Required for full disaster recovery.',
+          : 'System backup source exists but last backup failed'
+        : 'Backs up PostgreSQL roles, databases, and server config for full disaster recovery.',
       complete: infraHealthy,
     },
     {
@@ -96,7 +96,7 @@ function computeSteps(
         ? 'Active — database can be recovered to any point in time'
         : walStatus?.pending_restart
           ? 'Configured — PostgreSQL restart needed to activate'
-          : 'Logs every database write between backups. Without it, data written after the last backup is lost on failure. Only covers the database, not files.',
+          : 'Logs every database write between backups for point-in-time recovery.',
       complete: !!(walStatus?.enabled || walStatus?.pending_restart),
     },
   ]
@@ -141,7 +141,6 @@ export function SetupChecklist({
     setRunningAction('infra')
     setActionError(null)
     try {
-      // Create source if it doesn't exist, or just trigger a backup
       const hasInfra = sources.some((s) => s.source_type === 'infrastructure')
       if (!hasInfra) {
         const source = await createBackupSource({
@@ -193,13 +192,23 @@ export function SetupChecklist({
   }
 
   return (
-    <div className="mb-8 bg-slate-800/50 rounded-lg border border-slate-700 overflow-hidden">
+    <div
+      className={clsx(
+        'rounded-lg border-l-[3px] border border-slate-700/60 bg-slate-800/40 overflow-hidden',
+        allDone ? 'border-l-emerald-500' : 'border-l-phosphor-500',
+      )}
+    >
       {/* Header */}
-      <div className="px-5 py-4 border-b border-slate-700/50 flex items-center justify-between">
+      <div className="px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <ShieldCheck className="w-5 h-5 text-phosphor-400" />
+          <ShieldCheck
+            className={clsx(
+              'w-4 h-4',
+              allDone ? 'text-emerald-400' : 'text-phosphor-400',
+            )}
+          />
           <div>
-            <h2 className="text-sm font-semibold text-slate-100">
+            <h2 className="text-sm font-medium text-white">
               {allDone
                 ? 'Backup protection fully configured'
                 : doneCount === 0
@@ -207,20 +216,21 @@ export function SetupChecklist({
                   : `Backup setup — ${doneCount} of ${steps.length} complete`}
             </h2>
             {!allDone && (
-              <p className="text-xs text-slate-400 mt-0.5">
+              <p className="text-xs text-slate-500 mt-0.5">
                 Complete the steps below to fully protect your data
               </p>
             )}
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5">
+          {/* Progress dots */}
+          <div className="flex items-center gap-1">
             {steps.map((step) => (
               <div
                 key={step.id}
                 className={clsx(
-                  'w-2 h-2 rounded-full',
-                  step.complete ? 'bg-green-400' : 'bg-slate-600',
+                  'w-2 h-2 rounded-full transition-colors',
+                  step.complete ? 'bg-emerald-500' : 'bg-slate-600',
                 )}
               />
             ))}
@@ -229,7 +239,7 @@ export function SetupChecklist({
             <button
               type="button"
               onClick={() => setDismissed(true)}
-              className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
+              className="text-[11px] text-slate-500 hover:text-slate-300 transition-colors"
             >
               Dismiss
             </button>
@@ -238,18 +248,18 @@ export function SetupChecklist({
       </div>
 
       {/* Steps */}
-      <div className="divide-y divide-slate-700/30">
+      <div className="border-t border-slate-800/40">
         {steps.map((step) => (
           <div
             key={step.id}
             className={clsx(
-              'px-5 py-3.5 flex items-start gap-3',
-              step.complete && 'opacity-60',
+              'px-4 py-3 flex items-start gap-3 border-b border-slate-800/30 last:border-b-0',
+              step.complete && 'opacity-50',
             )}
           >
             <div className="mt-0.5 shrink-0">
               {step.complete ? (
-                <CheckCircle2 className="w-4 h-4 text-green-400" />
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
               ) : (
                 <span className="text-slate-500">{step.icon}</span>
               )}
@@ -274,15 +284,15 @@ export function SetupChecklist({
                 {step.id === 'storage' && (
                   <Link
                     href="/backups/setup"
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium bg-phosphor-600 text-white hover:bg-phosphor-500 transition-colors"
+                    className="flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded bg-phosphor-500/10 text-phosphor-400 hover:bg-phosphor-500/20 transition-colors"
                   >
                     Configure
                     <ArrowRight className="w-3 h-3" />
                   </Link>
                 )}
                 {step.id === 'sources' && (
-                  <span className="text-xs text-slate-500 italic">
-                    See history below
+                  <span className="text-[11px] text-slate-600 italic">
+                    See below
                   </span>
                 )}
                 {step.id === 'infra' && (
@@ -290,7 +300,7 @@ export function SetupChecklist({
                     type="button"
                     onClick={handleSetupInfra}
                     disabled={runningAction === 'infra'}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium bg-emerald-600 text-white hover:bg-emerald-500 transition-colors disabled:opacity-50"
+                    className="flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-40 transition-colors"
                   >
                     {runningAction === 'infra' ? (
                       <Loader2 className="w-3 h-3 animate-spin" />
@@ -307,7 +317,7 @@ export function SetupChecklist({
                     type="button"
                     onClick={handleEnableWal}
                     disabled={runningAction === 'wal'}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium bg-emerald-600 text-white hover:bg-emerald-500 transition-colors disabled:opacity-50"
+                    className="flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-40 transition-colors"
                   >
                     {runningAction === 'wal' ? (
                       <Loader2 className="w-3 h-3 animate-spin" />
@@ -323,24 +333,22 @@ export function SetupChecklist({
         ))}
       </div>
 
-      {/* Restore guidance — always visible, separate from action steps */}
-      <div className="px-5 py-3 border-t border-slate-700/50 bg-slate-800/30">
-        <p className="text-xs text-slate-500 leading-relaxed">
-          <span className="text-slate-400 font-medium">To restore:</span> expand
-          any backup in the history below and click Restore. For a full server
-          migration, restore the system backup first (recreates database roles),
-          then restore each project individually.
+      {/* Restore guidance */}
+      <div className="px-4 py-2.5 border-t border-slate-800/40 bg-slate-900/30">
+        <p className="text-[11px] text-slate-500 leading-relaxed">
+          <span className="text-slate-400 font-medium">To restore:</span>{' '}
+          expand any backup in the history below and click Restore.
         </p>
       </div>
 
       {/* Feedback */}
       {(actionError || actionNotice) && (
-        <div className="px-5 py-3 border-t border-slate-700/50">
+        <div className="px-4 py-2.5 border-t border-slate-800/40">
           {actionError && (
             <p className="text-xs text-rose-400">{actionError}</p>
           )}
           {actionNotice && !actionError && (
-            <p className="text-xs text-green-400">{actionNotice}</p>
+            <p className="text-xs text-emerald-400">{actionNotice}</p>
           )}
         </div>
       )}

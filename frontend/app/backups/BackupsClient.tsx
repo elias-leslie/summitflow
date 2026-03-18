@@ -7,14 +7,14 @@ import {
   Archive,
   ChevronDown,
   Eye,
-  Loader2,
   Plus,
+  RefreshCw,
   RotateCcw,
   ShieldCheck,
   ShieldX,
 } from 'lucide-react'
 import Link from 'next/link'
-import { Fragment, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BackupExpandedRow } from '@/components/backup/BackupExpandedRow'
 import { CreateBackupModal } from '@/components/backup/CreateBackupModal'
 import { SetupChecklist } from '@/components/backup/SetupChecklist'
@@ -35,14 +35,203 @@ import {
   fetchStorageStatus,
   fetchWalStatus,
 } from '@/lib/api/backups'
-import { formatBytes, formatDate } from '@/lib/format'
+import { formatBytes, formatDate, formatTimeAgo } from '@/lib/format'
+
+type ViewMode = 'list' | 'grid'
+const STORAGE_KEY = 'backups-view-mode'
+
+// ─── Backup Grid Card ────────────────────────────────────────────
+
+function BackupGridCard({
+  backup,
+  source,
+}: {
+  backup: Backup
+  source: BackupSource | undefined
+}) {
+  const accentClass =
+    backup.status === 'completed'
+      ? 'border-l-emerald-500'
+      : backup.status === 'failed'
+        ? 'border-l-red-500'
+        : backup.status === 'running'
+          ? 'border-l-blue-500'
+          : 'border-l-amber-500'
+
+  return (
+    <div
+      className={clsx(
+        'rounded-lg border-l-[3px] border border-slate-700/60 bg-slate-800/40 p-4 transition-colors hover:bg-slate-800/60',
+        accentClass,
+      )}
+    >
+      {/* Identity */}
+      <div className="mb-2.5 flex items-center gap-2">
+        <div
+          className={clsx(
+            'w-2 h-2 rounded-full shrink-0',
+            backup.status === 'completed'
+              ? 'bg-emerald-500'
+              : backup.status === 'failed'
+                ? 'bg-red-500'
+                : backup.status === 'running'
+                  ? 'bg-blue-500'
+                  : 'bg-amber-500',
+          )}
+        />
+        <span className="font-medium text-white text-sm truncate flex-1">
+          {source?.name ?? backup.source_id}
+        </span>
+        {backup.verified != null && (
+          <span title={backup.verified ? 'Verified' : 'Verification failed'}>
+            {backup.verified ? (
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+            ) : (
+              <ShieldX className="w-3.5 h-3.5 text-red-400" />
+            )}
+          </span>
+        )}
+      </div>
+
+      {/* Tags */}
+      <div className="mb-2.5 flex flex-wrap gap-1.5">
+        <StatusBadge status={backup.status} />
+        {source && <SourceTypeBadge type={source.source_type} />}
+        <span
+          className={clsx(
+            'rounded px-1.5 py-0.5 text-[10px] uppercase tracking-[0.14em] border',
+            backup.backup_type === 'scheduled'
+              ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
+              : 'bg-slate-700/70 text-slate-400 border-slate-600/40',
+          )}
+        >
+          {backup.backup_type}
+        </span>
+      </div>
+
+      {/* Metrics */}
+      <div className="grid grid-cols-2 gap-1.5">
+        <div className="min-w-0 rounded bg-slate-950/50 px-2 py-1.5">
+          <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
+            Size
+          </div>
+          <div className="truncate text-xs text-slate-200 font-mono">
+            {formatBytes(backup.size_bytes)}
+          </div>
+        </div>
+        <div className="min-w-0 rounded bg-slate-950/50 px-2 py-1.5">
+          <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
+            Created
+          </div>
+          <div className="truncate text-xs text-slate-200">
+            {formatTimeAgo(backup.created_at)}
+          </div>
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="mt-3 flex items-center gap-2">
+        <Link
+          href={`/backups/${backup.source_id}`}
+          className="text-[11px] px-2 py-1 rounded bg-slate-700/50 text-slate-400 hover:bg-slate-700/80 transition-colors flex items-center gap-1"
+        >
+          <Eye className="w-3 h-3" />
+          View
+        </Link>
+        {backup.status === 'completed' && (
+          <Link
+            href={`/backups/${backup.source_id}/restore/${backup.id}`}
+            className="text-[11px] px-2 py-1 rounded bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 transition-colors flex items-center gap-1"
+          >
+            <RotateCcw className="w-3 h-3" />
+            Restore
+          </Link>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── View Toggle ─────────────────────────────────────────────────
+
+function ViewToggle({
+  view,
+  onViewChange,
+}: {
+  view: ViewMode
+  onViewChange: (mode: ViewMode) => void
+}) {
+  return (
+    <div className="flex rounded-md border border-slate-700/60 overflow-hidden">
+      <button
+        onClick={() => onViewChange('grid')}
+        className={clsx(
+          'px-2.5 py-1 text-xs transition-colors',
+          view === 'grid'
+            ? 'bg-slate-700 text-white'
+            : 'bg-slate-900/50 text-slate-500 hover:text-slate-300',
+        )}
+        aria-label="Grid view"
+      >
+        <svg
+          className="w-3.5 h-3.5"
+          fill="none"
+          viewBox="0 0 16 16"
+          stroke="currentColor"
+          strokeWidth={1.5}
+        >
+          <rect x="1" y="1" width="6" height="6" rx="1" />
+          <rect x="9" y="1" width="6" height="6" rx="1" />
+          <rect x="1" y="9" width="6" height="6" rx="1" />
+          <rect x="9" y="9" width="6" height="6" rx="1" />
+        </svg>
+      </button>
+      <button
+        onClick={() => onViewChange('list')}
+        className={clsx(
+          'px-2.5 py-1 text-xs transition-colors',
+          view === 'list'
+            ? 'bg-slate-700 text-white'
+            : 'bg-slate-900/50 text-slate-500 hover:text-slate-300',
+        )}
+        aria-label="List view"
+      >
+        <svg
+          className="w-3.5 h-3.5"
+          fill="none"
+          viewBox="0 0 16 16"
+          stroke="currentColor"
+          strokeWidth={1.5}
+        >
+          <line x1="1" y1="3" x2="15" y2="3" />
+          <line x1="1" y1="8" x2="15" y2="8" />
+          <line x1="1" y1="13" x2="15" y2="13" />
+        </svg>
+      </button>
+    </div>
+  )
+}
+
+// ─── Main ────────────────────────────────────────────────────────
 
 export function BackupsClient() {
   const queryClient = useQueryClient()
   const [statusFilter, setStatusFilter] = useState('')
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [viewRaw, setViewRaw] = useState<ViewMode>('grid')
   const dispatchedAtRef = useRef(0)
+
+  // Restore view preference
+  useEffect(() => {
+    const stored = localStorage.getItem(STORAGE_KEY)
+    if (stored === 'list' || stored === 'grid') setViewRaw(stored)
+  }, [])
+
+  const setView = useCallback((mode: ViewMode) => {
+    setViewRaw(mode)
+    localStorage.setItem(STORAGE_KEY, mode)
+  }, [])
 
   // ─── Data ───────────────────────────────────────────────────────
 
@@ -135,7 +324,7 @@ export function BackupsClient() {
   // ─── Render ─────────────────────────────────────────────────────
 
   return (
-    <main className="content-container py-8">
+    <div className="p-6 space-y-5 max-w-7xl mx-auto">
       {showCreateModal && (
         <CreateBackupModal
           sources={sources}
@@ -145,24 +334,63 @@ export function BackupsClient() {
       )}
 
       {/* Header */}
-      <header className="mb-6 flex items-start justify-between">
-        <h1 className="text-2xl font-semibold text-slate-100 flex items-center gap-3">
-          <ShieldCheck className="w-6 h-6 text-slate-400" />
-          Backup Operations
-        </h1>
-        <button
-          type="button"
-          onClick={() => setShowCreateModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-phosphor-600 text-white rounded-md
-                     text-sm font-medium hover:bg-phosphor-500 transition-colors"
-          data-testid="backup-manual-trigger"
-        >
-          <Plus className="w-4 h-4" />
-          Create Backup
-        </button>
-      </header>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-white font-display">
+            Backup Operations
+          </h1>
+          <p className="text-sm text-slate-400 mt-0.5">
+            Sources, schedules, storage, and history
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          {healthData && (
+            <div className="hidden sm:flex items-center gap-3 text-sm mr-2">
+              {healthData.sources.filter((s) => s.health_status === 'green')
+                .length > 0 && (
+                <span className="text-emerald-400">
+                  {
+                    healthData.sources.filter(
+                      (s) => s.health_status === 'green',
+                    ).length
+                  }{' '}
+                  healthy
+                </span>
+              )}
+              {healthData.sources.filter((s) => s.health_status === 'red')
+                .length > 0 && (
+                <span className="text-red-400">
+                  {
+                    healthData.sources.filter(
+                      (s) => s.health_status === 'red',
+                    ).length
+                  }{' '}
+                  failing
+                </span>
+              )}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center gap-1.5 text-[11px] px-3 py-1.5 rounded-md bg-phosphor-500/12 text-phosphor-400 border border-phosphor-500/20 hover:bg-phosphor-500/20 hover:border-phosphor-500/40 transition-all font-medium"
+            data-testid="backup-manual-trigger"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Create Backup
+          </button>
+        </div>
+      </div>
 
-      {/* Setup Checklist — shows when backup protection has gaps */}
+      {/* Health bar + stat pills */}
+      <StatusRibbon
+        health={healthData}
+        storageSummary={storageSummary}
+        storageStatus={storageStatus}
+        isLoading={storageLoading || healthLoading}
+      />
+
+      {/* Setup Checklist */}
       <SetupChecklist
         storageStatus={storageStatus}
         sources={sources}
@@ -174,15 +402,7 @@ export function BackupsClient() {
         onWalRefresh={refreshWal}
       />
 
-      {/* Status Ribbon */}
-      <StatusRibbon
-        health={healthData}
-        storageSummary={storageSummary}
-        storageStatus={storageStatus}
-        isLoading={storageLoading || healthLoading}
-      />
-
-      {/* Sources & Schedules — unified management */}
+      {/* Sources & Schedules */}
       <SourcesManager
         sources={sources}
         healthItems={healthData?.sources ?? []}
@@ -191,95 +411,128 @@ export function BackupsClient() {
         onBackupTriggered={invalidateAll}
       />
 
-      {/* Protection & Storage — side-by-side cards */}
-      <section className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
-        <WalCard
-          walStatus={walStatus}
-          isLoading={walLoading}
-          onRefresh={refreshWal}
-        />
-        <StorageCard
-          backends={storageBackends}
-          storageStatus={storageStatus}
-          onRefresh={refreshStorage}
-        />
+      {/* Protection & Storage — collapsible cards */}
+      <section className="space-y-3">
+        <div>
+          <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-300">
+            Protection & Storage
+          </h2>
+          <p className="mt-0.5 text-xs text-slate-500">
+            WAL archiving and remote storage backends
+          </p>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+          <WalCard
+            walStatus={walStatus}
+            isLoading={walLoading}
+            onRefresh={refreshWal}
+          />
+          <StorageCard
+            backends={storageBackends}
+            storageStatus={storageStatus}
+            onRefresh={refreshStorage}
+          />
+        </div>
       </section>
 
       {/* Backup History */}
-      <section>
-        <div className="flex items-center gap-4 mb-4">
-          <h2 className="text-sm font-medium text-slate-300">
-            Backup History
-          </h2>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 py-1.5 bg-slate-700 border border-slate-600 rounded-md
-                       text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-phosphor-500"
-          >
-            <option value="">All</option>
-            <option value="completed">Completed</option>
-            <option value="running">Running</option>
-            <option value="pending">Pending</option>
-            <option value="failed">Failed</option>
-          </select>
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-300">
+              Backup History
+            </h2>
+            <p className="mt-0.5 text-xs text-slate-500">
+              All backups across sources
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="px-2 py-1 bg-slate-900/60 border border-slate-700/60 rounded text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-phosphor-500"
+            >
+              <option value="">All</option>
+              <option value="completed">Completed</option>
+              <option value="running">Running</option>
+              <option value="pending">Pending</option>
+              <option value="failed">Failed</option>
+            </select>
+            <ViewToggle view={viewRaw} onViewChange={setView} />
+          </div>
         </div>
 
         {backupsLoading ? (
-          <div className="flex items-center justify-center h-64">
-            <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
+          <div className="flex items-center justify-center py-20">
+            <div className="flex items-center gap-2.5 text-slate-500 text-sm">
+              <RefreshCw className="w-5 h-5 animate-spin text-phosphor-500" />
+              Loading backups...
+            </div>
           </div>
         ) : backupsError ? (
-          <div className="p-6 bg-rose-500/10 border border-rose-500/30 rounded-lg text-center">
-            <AlertCircle className="w-8 h-8 text-rose-400 mx-auto mb-3" />
-            <p className="text-rose-400">Failed to load backups</p>
-            <button
-              type="button"
-              onClick={() => refetchBackups()}
-              className="mt-3 text-sm text-slate-400 hover:text-slate-200"
-            >
-              Try again
-            </button>
+          <div className="p-4 rounded-lg bg-rose-500/8 border border-rose-500/20 text-rose-300 flex items-center gap-3 text-sm">
+            <AlertCircle className="w-5 h-5 text-rose-500 shrink-0" />
+            <div>
+              <span className="font-medium text-white">
+                Failed to load backups.
+              </span>{' '}
+              <button
+                type="button"
+                onClick={() => refetchBackups()}
+                className="text-rose-300 hover:text-white underline"
+              >
+                Try again
+              </button>
+            </div>
           </div>
         ) : backups.length === 0 ? (
-          <div className="p-12 bg-slate-800/50 rounded-lg border border-slate-700 text-center">
-            <Archive className="w-12 h-12 text-slate-500 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-slate-300 mb-2">
-              No backups found
-            </h3>
-            <p className="text-slate-400">
+          <div className="text-center py-20 text-slate-600">
+            <Archive className="w-8 h-8 mx-auto mb-3 opacity-40" />
+            <p className="text-sm">
               {statusFilter
                 ? `No backups with status "${statusFilter}"`
-                : 'Create your first backup using the button above.'}
+                : 'No backups yet'}
             </p>
           </div>
+        ) : viewRaw === 'grid' ? (
+          /* Grid view */
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {backups.map((backup) => (
+              <BackupGridCard
+                key={backup.id}
+                backup={backup}
+                source={sourceMap[backup.source_id]}
+              />
+            ))}
+          </div>
         ) : (
-          <div className="bg-slate-800/50 rounded-lg border border-slate-700 overflow-hidden">
+          /* List view */
+          <div className="rounded-lg border border-slate-700/60 bg-slate-800/40 overflow-hidden">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-slate-700 bg-slate-800/80">
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider w-8" />
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
+                <tr className="border-b border-slate-700/60 bg-slate-900/50">
+                  <th className="px-4 py-2.5 text-left text-[10px] font-medium text-slate-500 uppercase tracking-[0.14em] w-8" />
+                  <th className="px-4 py-2.5 text-left text-[10px] font-medium text-slate-500 uppercase tracking-[0.14em]">
                     Source
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
+                  <th className="px-4 py-2.5 text-left text-[10px] font-medium text-slate-500 uppercase tracking-[0.14em]">
                     Status
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
+                  <th className="px-4 py-2.5 text-left text-[10px] font-medium text-slate-500 uppercase tracking-[0.14em] hidden sm:table-cell">
                     Type
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
+                  <th className="px-4 py-2.5 text-left text-[10px] font-medium text-slate-500 uppercase tracking-[0.14em] hidden md:table-cell">
                     Size
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
+                  <th className="px-4 py-2.5 text-left text-[10px] font-medium text-slate-500 uppercase tracking-[0.14em] hidden lg:table-cell">
                     Created
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase tracking-wider">
+                  <th className="px-4 py-2.5 text-right text-[10px] font-medium text-slate-500 uppercase tracking-[0.14em]">
                     Actions
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-700/50">
+              <tbody className="divide-y divide-slate-800/60">
                 {backups.map((backup) => {
                   const isExpanded = expandedId === backup.id
                   const source = sourceMap[backup.source_id]
@@ -287,22 +540,22 @@ export function BackupsClient() {
                     <Fragment key={backup.id}>
                       <tr
                         className={clsx(
-                          'hover:bg-slate-700/30 transition-colors cursor-pointer',
-                          isExpanded && 'bg-slate-700/20',
+                          'hover:bg-slate-800/30 transition-colors cursor-pointer',
+                          isExpanded && 'bg-slate-800/20',
                         )}
                         onClick={() =>
                           setExpandedId(isExpanded ? null : backup.id)
                         }
                       >
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-2.5">
                           <ChevronDown
                             className={clsx(
-                              'w-4 h-4 text-slate-500 transition-transform',
+                              'w-3.5 h-3.5 text-slate-600 transition-transform',
                               isExpanded && 'rotate-180',
                             )}
                           />
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-2.5">
                           <Link
                             href={`/backups/${backup.source_id}`}
                             className="text-sm text-phosphor-400 hover:text-phosphor-300 inline-flex items-center gap-2"
@@ -314,7 +567,7 @@ export function BackupsClient() {
                             )}
                           </Link>
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-2.5">
                           <div className="flex items-center gap-1.5">
                             <StatusBadge status={backup.status} />
                             {backup.verified != null && (
@@ -326,7 +579,7 @@ export function BackupsClient() {
                                 }
                               >
                                 {backup.verified ? (
-                                  <ShieldCheck className="w-3.5 h-3.5 text-green-400" />
+                                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
                                 ) : (
                                   <ShieldX className="w-3.5 h-3.5 text-red-400" />
                                 )}
@@ -334,43 +587,47 @@ export function BackupsClient() {
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-2.5 hidden sm:table-cell">
                           <span
                             className={clsx(
-                              'text-xs px-2 py-0.5 rounded-full',
+                              'rounded px-1.5 py-0.5 text-[10px] uppercase tracking-[0.14em] border',
                               backup.backup_type === 'scheduled'
-                                ? 'bg-indigo-500/20 text-indigo-400'
-                                : 'bg-slate-600 text-slate-300',
+                                ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
+                                : 'bg-slate-700/70 text-slate-400 border-slate-600/40',
                             )}
                           >
                             {backup.backup_type}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-sm text-slate-300">
-                          {formatBytes(backup.size_bytes)}
+                        <td className="px-4 py-2.5 hidden md:table-cell">
+                          <span className="text-xs text-slate-300 font-mono">
+                            {formatBytes(backup.size_bytes)}
+                          </span>
                         </td>
-                        <td className="px-4 py-3 text-sm text-slate-400">
-                          {formatDate(backup.created_at)}
+                        <td className="px-4 py-2.5 hidden lg:table-cell">
+                          <span className="text-xs text-slate-400">
+                            {formatDate(backup.created_at)}
+                          </span>
                         </td>
-                        <td className="px-4 py-3 text-right">
+                        <td className="px-4 py-2.5 text-right">
                           <div
-                            className="flex items-center justify-end gap-2"
+                            className="flex items-center justify-end gap-1.5"
                             onClick={(e) => e.stopPropagation()}
                           >
                             <Link
                               href={`/backups/${backup.source_id}`}
-                              className="p-1.5 text-slate-400 hover:text-phosphor-400 transition-colors"
+                              className="p-1 text-slate-500 hover:text-phosphor-400 transition-colors"
                               title="View Source"
                             >
-                              <Eye className="w-4 h-4" />
+                              <Eye className="w-3.5 h-3.5" />
                             </Link>
                             {backup.status === 'completed' && (
                               <Link
                                 href={`/backups/${backup.source_id}/restore/${backup.id}`}
-                                className="p-1.5 text-slate-400 hover:text-yellow-400 transition-colors"
+                                className="p-1 text-slate-500 hover:text-amber-400 transition-colors"
                                 title="Restore"
                               >
-                                <RotateCcw className="w-4 h-4" />
+                                <RotateCcw className="w-3.5 h-3.5" />
                               </Link>
                             )}
                           </div>
@@ -391,6 +648,6 @@ export function BackupsClient() {
           </div>
         )}
       </section>
-    </main>
+    </div>
   )
 }

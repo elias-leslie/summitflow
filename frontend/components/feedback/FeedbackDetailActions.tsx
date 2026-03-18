@@ -5,10 +5,6 @@ import { useState } from 'react'
 import type { UseMutationResult } from '@tanstack/react-query'
 import type { FeedbackStatus } from '@/lib/api/feedback'
 
-// ============================================================================
-// Types
-// ============================================================================
-
 type StatusMutationData = { status: FeedbackStatus; resolution_note?: string }
 
 interface FeedbackDetailActionsProps {
@@ -17,10 +13,6 @@ interface FeedbackDetailActionsProps {
   deleteMutation: UseMutationResult<unknown, Error, void>
   onDelete: () => void
 }
-
-// ============================================================================
-// Component
-// ============================================================================
 
 export function FeedbackDetailActions({
   currentStatus,
@@ -47,7 +39,7 @@ export function FeedbackDetailActions({
     <>
       {/* Status actions */}
       {currentStatus !== 'archived' && (
-        <div className="px-5 pt-4 pb-2 border-t border-slate-700/50 space-y-3">
+        <div className="px-4 pt-3 pb-2 border-t border-slate-800/60 space-y-3">
           {showResolveInput ? (
             <div className="space-y-2">
               <input
@@ -55,18 +47,18 @@ export function FeedbackDetailActions({
                 value={resolutionNote}
                 onChange={(e) => setResolutionNote(e.target.value)}
                 placeholder="Resolution note (optional)"
-                className="w-full px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg
-                           text-sm text-slate-200 placeholder-slate-500
-                           focus:outline-none focus:border-emerald-500/40"
+                className="w-full px-2.5 py-1.5 bg-slate-900/60 border border-slate-700/60 rounded
+                           text-xs text-slate-200 placeholder-slate-500
+                           focus:outline-none focus:ring-1 focus:ring-emerald-500/40"
               />
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={handleResolveConfirm}
                   disabled={statusMutation.isPending}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/20 text-emerald-400
-                             border border-emerald-500/30 rounded-md text-xs font-medium
-                             hover:bg-emerald-500/30 transition-all disabled:opacity-50"
+                  className="flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded
+                             bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20
+                             disabled:opacity-40 transition-colors"
                 >
                   {statusMutation.isPending ? (
                     <Loader2 className="w-3 h-3 animate-spin" />
@@ -78,7 +70,7 @@ export function FeedbackDetailActions({
                 <button
                   type="button"
                   onClick={() => setShowResolveInput(false)}
-                  className="px-3 py-1.5 text-xs text-slate-400 hover:text-slate-300"
+                  className="text-[11px] px-2 py-1 text-slate-500 hover:text-slate-300 transition-colors"
                 >
                   Cancel
                 </button>
@@ -91,11 +83,13 @@ export function FeedbackDetailActions({
                   {currentStatus === 'open' && (
                     <button
                       type="button"
-                      onClick={() => statusMutation.mutate({ status: 'acknowledged' })}
+                      onClick={() =>
+                        statusMutation.mutate({ status: 'acknowledged' })
+                      }
                       disabled={statusMutation.isPending}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 text-amber-400
-                                 border border-amber-500/30 rounded-md text-xs font-medium
-                                 hover:bg-amber-500/20 transition-all disabled:opacity-50"
+                      className="flex items-center gap-1.5 text-[11px] px-2 py-1 rounded
+                                 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20
+                                 disabled:opacity-40 transition-colors"
                     >
                       <Clock className="w-3 h-3" />
                       Acknowledge
@@ -105,32 +99,37 @@ export function FeedbackDetailActions({
                     type="button"
                     onClick={() => setShowResolveInput(true)}
                     disabled={statusMutation.isPending}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 text-emerald-400
-                               border border-emerald-500/30 rounded-md text-xs font-medium
-                               hover:bg-emerald-500/20 transition-all disabled:opacity-50"
+                    className="flex items-center gap-1.5 text-[11px] px-2 py-1 rounded
+                               bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20
+                               disabled:opacity-40 transition-colors"
                   >
                     <Check className="w-3 h-3" />
                     Resolve
                   </button>
                   <button
                     type="button"
-                    onClick={() => statusMutation.mutate({ status: 'wont_fix' })}
+                    onClick={() =>
+                      statusMutation.mutate({ status: 'wont_fix' })
+                    }
                     disabled={statusMutation.isPending}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-500
-                               hover:text-slate-400 transition-all disabled:opacity-50"
+                    className="text-[11px] px-2 py-1 text-slate-500 hover:text-slate-400
+                               disabled:opacity-40 transition-colors"
                   >
                     Won&apos;t Fix
                   </button>
                 </>
               )}
-              {(currentStatus === 'resolved' || currentStatus === 'wont_fix') && (
+              {(currentStatus === 'resolved' ||
+                currentStatus === 'wont_fix') && (
                 <button
                   type="button"
-                  onClick={() => statusMutation.mutate({ status: 'archived' })}
+                  onClick={() =>
+                    statusMutation.mutate({ status: 'archived' })
+                  }
                   disabled={statusMutation.isPending}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-700/40 text-slate-300
-                             border border-slate-600/40 rounded-md text-xs font-medium
-                             hover:bg-slate-700/60 transition-all disabled:opacity-50"
+                  className="flex items-center gap-1.5 text-[11px] px-2 py-1 rounded
+                             bg-slate-700/40 text-slate-400 hover:bg-slate-700/60
+                             disabled:opacity-40 transition-colors"
                 >
                   Archive
                 </button>
@@ -140,15 +139,15 @@ export function FeedbackDetailActions({
         </div>
       )}
 
-      {/* Delete — always available */}
-      <div className="px-5 py-3 border-t border-slate-700/50">
+      {/* Delete */}
+      <div className="px-4 py-2.5 border-t border-slate-800/60">
         <button
           type="button"
           onClick={onDelete}
           disabled={deleteMutation.isPending}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-rose-500/60
-                     hover:text-rose-400 hover:bg-rose-500/10 rounded-md
-                     transition-all disabled:opacity-50"
+          className="flex items-center gap-1.5 text-[11px] px-2 py-1 rounded
+                     text-red-500/60 hover:text-red-400 hover:bg-red-500/10
+                     disabled:opacity-40 transition-colors"
         >
           {deleteMutation.isPending ? (
             <Loader2 className="w-3 h-3 animate-spin" />
