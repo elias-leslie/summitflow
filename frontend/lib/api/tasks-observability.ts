@@ -20,11 +20,9 @@ import type {
  */
 export async function fetchCodingAgents(): Promise<CodingAgentsResponse> {
   const apiBase = typeof window === 'undefined' ? getApiBase() : getAgentHubProxyBase()
-  const response = await fetch(`${apiBase}/agents`)
-  if (!response.ok) {
-    throw new Error('Failed to fetch coding agents')
-  }
-  return response.json()
+  return fetchWithErrorHandling<CodingAgentsResponse>(`${apiBase}/agents`, {
+    errorMessage: 'Failed to fetch coding agents',
+  })
 }
 
 // ============================================================================

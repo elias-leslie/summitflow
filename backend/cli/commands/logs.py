@@ -1,6 +1,6 @@
 """Log viewing commands using systemd journal.
 
-Provides unified log tailing across SummitFlow and Agent Hub services.
+Provides unified log tailing across SummitFlow, Agent Hub, and Portfolio AI services.
 """
 
 from __future__ import annotations
@@ -64,7 +64,7 @@ def tail(
     ctx: typer.Context,
     service: Annotated[
         str | None,
-        typer.Option("--service", "-s", help="Filter by service (summitflow,agent-hub,redis,postgres,all)"),
+        typer.Option("--service", "-s", help="Filter by service (summitflow,agent-hub,portfolio-ai,redis,postgres,all)"),
     ] = None,
     level: Annotated[
         str | None,

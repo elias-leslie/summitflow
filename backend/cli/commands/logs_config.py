@@ -11,6 +11,8 @@ from typing import Any
 USER_SERVICES = {
     "portfolio-ai": "portfolio-backend.service",
     "portfolio-companion": "portfolio-dev-companion.service",
+    "portfolio-web": "portfolio-frontend.service",
+    "portfolio-worker": "portfolio-hatchet-worker.service",
     "summitflow": "summitflow-backend.service",
     "sf-frontend": "summitflow-frontend.service",
     "sf-worker": "summitflow-hatchet-worker.service",

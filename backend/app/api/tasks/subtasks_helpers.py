@@ -83,7 +83,9 @@ def convert_steps_to_response_format(subtask: dict[str, Any]) -> dict[str, Any]:
         Subtask dict with steps in response format
     """
     if subtask.get("steps") and isinstance(subtask["steps"][0], dict):
-        subtask["steps"] = [s["description"] for s in subtask["steps"]]
+        subtask["steps"] = [
+            s.get("description", "") for s in subtask["steps"] if isinstance(s, dict)
+        ]
     elif "steps" not in subtask:
         subtask["steps"] = []
     return subtask

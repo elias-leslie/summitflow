@@ -5,7 +5,7 @@
  * Follows existing patterns from lib/api/explorer.ts.
  */
 
-import { buildQueryString } from './utils'
+import { buildQueryString, fetchWithErrorHandling } from './utils'
 
 // ============================================================================
 // Types - Aligned with backend Event schema
@@ -75,16 +75,10 @@ export async function getEvents(
     offset: filters.offset,
   })
 
-  const res = await fetch(
+  return fetchWithErrorHandling<EventsQueryResult>(
     `/api/projects/${projectId}/events${query}`,
+    { errorMessage: 'Failed to fetch events' },
   )
-  if (!res.ok) {
-    const error = await res
-      .json()
-      .catch(() => ({ detail: 'Failed to fetch events' }))
-    throw new Error(error.detail || 'Failed to fetch events')
-  }
-  return res.json()
 }
 
 export async function getEventsForTrace(
@@ -104,14 +98,9 @@ export async function getEventsForTrace(
     limit: options.limit,
   })
 
-  const res = await fetch(`/api/projects/${projectId}/events/by-trace/${traceId}${query}`)
-  if (!res.ok) {
-    const error = await res
-      .json()
-      .catch(() => ({ detail: 'Failed to fetch trace events' }))
-    throw new Error(error.detail || 'Failed to fetch trace events')
-  }
-
-  const result = (await res.json()) as { events: Event[] }
+  const result = await fetchWithErrorHandling<{ events: Event[] }>(
+    `/api/projects/${projectId}/events/by-trace/${traceId}${query}`,
+    { errorMessage: 'Failed to fetch trace events' },
+  )
   return result.events
 }

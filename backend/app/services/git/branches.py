@@ -41,7 +41,7 @@ def create_task_branch(
     task_id: str,
     feature_title: str,
     project_path: str | Path,
-) -> str | None:
+) -> str:
     """Create a git branch for a task.
 
     Creates a new branch from the current HEAD with the naming convention:
@@ -53,7 +53,7 @@ def create_task_branch(
         project_path: Path to the git repository
 
     Returns:
-        The created branch name, or None if creation failed
+        The created branch name.
 
     Raises:
         RuntimeError: If git operations fail

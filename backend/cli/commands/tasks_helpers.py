@@ -16,7 +16,10 @@ def build_subtasks_data(subtasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for st in subtasks:
         sid = st["id"]
         parts = sid.split(".")
-        order = int(parts[0]) * 100 + int(parts[1]) if len(parts) >= 2 else 0
+        try:
+            order = int(parts[0]) * 100 + int(parts[1]) if len(parts) >= 2 else 0
+        except ValueError:
+            order = 0
         entry: dict[str, Any] = {
             "subtask_id": sid, "phase": st.get("phase"),
             "description": st["description"], "steps": st.get("steps", []),

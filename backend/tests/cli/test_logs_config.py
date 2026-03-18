@@ -19,6 +19,16 @@ def test_get_service_list_includes_portfolio_ai_user_service() -> None:
     assert system_svcs == ["redis"]
 
 
+def test_get_service_list_includes_portfolio_web_and_worker() -> None:
+    """Portfolio frontend and worker logs should be reachable."""
+    user_svcs, system_svcs = get_service_list("portfolio-web,portfolio-worker")
+
+    assert USER_SERVICES["portfolio-web"] == "portfolio-frontend.service"
+    assert USER_SERVICES["portfolio-worker"] == "portfolio-hatchet-worker.service"
+    assert user_svcs == ["portfolio-web", "portfolio-worker"]
+    assert system_svcs == []
+
+
 def test_get_service_list_all_includes_portfolio_ai() -> None:
     """The all-services view should not silently omit Portfolio AI."""
     user_svcs, system_svcs = get_service_list("all")

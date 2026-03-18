@@ -71,7 +71,7 @@ def test_format_search_compact_shows_tier_summary_and_meta(capsys) -> None:
     )
 
     out = capsys.readouterr().out
-    assert "abc12345 [guardrail] 0.92 summary=Use compact headers" in out
+    assert "abc12345 [guardrail] 0.92 Use compact headers" in out
     assert "pinned | triggers=feature | tags=memory,cli" in out
 
 
