@@ -43,9 +43,9 @@ export function SystemHealthWidget({ className }: SystemHealthWidgetProps) {
   }
 
   const metrics = [
-    { label: 'CPU', percent: data.cpu.percent_used, status: data.cpu.status, detail: `${data.cpu.cores}c` },
-    { label: 'RAM', percent: data.memory.percent_used, status: data.memory.status, detail: `${data.memory.used_gb.toFixed(0)}/${data.memory.total_gb.toFixed(0)}G` },
-    { label: 'Disk', percent: data.disk.percent_used, status: data.disk.status, detail: `${data.disk.used_gb.toFixed(0)}/${data.disk.total_gb.toFixed(0)}G` },
+    { label: 'CPU', percent: data.cpu.percent_used, status: data.cpu.status },
+    { label: 'RAM', percent: data.memory.percent_used, status: data.memory.status },
+    { label: 'Disk', percent: data.disk.percent_used, status: data.disk.status },
   ] as const
 
   return (

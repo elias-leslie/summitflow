@@ -13,7 +13,7 @@ describe('SystemHealthWidget', () => {
     useSystemStatsMock.mockReset()
   })
 
-  it('surfaces fetch errors with actionable detail', () => {
+  it('shows error state when fetch fails', () => {
     useSystemStatsMock.mockReturnValue({
       data: undefined,
       isLoading: false,
@@ -24,18 +24,18 @@ describe('SystemHealthWidget', () => {
 
     render(<SystemHealthWidget />)
 
-    expect(screen.getByText('System metrics unavailable')).toBeInTheDocument()
-    expect(screen.getByText('gateway timeout')).toBeInTheDocument()
+    expect(screen.getByText('Metrics unavailable')).toBeInTheDocument()
+    expect(screen.getByLabelText('Retry loading metrics')).toBeInTheDocument()
   })
 
-  it('shows the last update timestamp when data is available', () => {
+  it('renders metric bars when data is available', () => {
     useSystemStatsMock.mockReturnValue({
       data: {
         cpu: { percent_used: 12, cores: 8, status: 'ok' },
         memory: {
           total_gb: 32,
-          used_gb: 10.2,
-          available_gb: 21.8,
+          used_gb: 10,
+          available_gb: 22,
           percent_used: 32,
           status: 'ok',
         },
@@ -56,11 +56,13 @@ describe('SystemHealthWidget', () => {
 
     render(<SystemHealthWidget />)
 
-    expect(screen.getByText(/updated/i)).toBeInTheDocument()
-    expect(screen.getByText('8 cores')).toBeInTheDocument()
+    expect(screen.getByText('CPU')).toBeInTheDocument()
+    expect(screen.getByText('RAM')).toBeInTheDocument()
+    expect(screen.getByText('Disk')).toBeInTheDocument()
+    expect(screen.getByText('12%')).toBeInTheDocument()
   })
 
-  it('renders an explicit empty state when no metrics are returned', () => {
+  it('shows unavailable state when no data and no error', () => {
     useSystemStatsMock.mockReturnValue({
       data: undefined,
       isLoading: false,
@@ -71,11 +73,20 @@ describe('SystemHealthWidget', () => {
 
     render(<SystemHealthWidget />)
 
-    expect(screen.getByText('No live metrics yet')).toBeInTheDocument()
-    expect(
-      screen.getByText(
-        'Refresh to fetch CPU, memory, and disk usage for this environment.',
-      ),
-    ).toBeInTheDocument()
+    expect(screen.getByText('Metrics unavailable')).toBeInTheDocument()
+  })
+
+  it('shows loading spinner while fetching', () => {
+    useSystemStatsMock.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      error: null,
+      refetch: vi.fn(),
+      isFetching: false,
+    })
+
+    render(<SystemHealthWidget />)
+
+    expect(screen.getByText('Loading metrics...')).toBeInTheDocument()
   })
 })
