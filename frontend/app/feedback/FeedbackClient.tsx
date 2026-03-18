@@ -22,18 +22,20 @@ export function FeedbackClient() {
   })
 
   // Fetch summary
-  const { data: summary, isLoading: summaryLoading } = useQuery({
+  const { data: summary, isLoading: summaryLoading, error: summaryError } = useQuery({
     queryKey: ['feedback-summary'],
     queryFn: () => fetchFeedbackSummary(),
     staleTime: STALE_GIT,
   })
 
   // Fetch items with filters
-  const { data: itemsData, isLoading: itemsLoading } = useQuery({
+  const { data: itemsData, isLoading: itemsLoading, error: itemsError } = useQuery({
     queryKey: ['feedback-items', filters],
     queryFn: () => fetchFeedbackItems(filters),
     staleTime: STALE_STANDARD,
   })
+
+  const error = summaryError || itemsError
 
   const handleFiltersChange = (partial: Partial<FeedbackFilters>) => {
     setFilters((prev) => ({ ...prev, ...partial }))
@@ -72,6 +74,13 @@ export function FeedbackClient() {
             </div>
           )}
         </div>
+
+        {/* Error state */}
+        {error && (
+          <div className="rounded-lg border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-300">
+            Failed to load feedback data. Verify the backend is running.
+          </div>
+        )}
 
         {/* Health bar + stat pills */}
         <FeedbackStats
