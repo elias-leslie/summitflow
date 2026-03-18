@@ -171,9 +171,20 @@ def restart(
         str | None,
         typer.Argument(help="Service to restart (all if omitted)"),
     ] = None,
+    recreate: Annotated[
+        bool,
+        typer.Option("--recreate", help="Force-recreate container from current image"),
+    ] = False,
 ) -> None:
-    """Restart one or all containers."""
-    args = compose_cmd("restart")
+    """Restart one or all containers.
+
+    Use --recreate to rebuild and recreate containers from the current image
+    (equivalent to docker compose up --force-recreate --build).
+    """
+    if recreate:
+        args = compose_cmd("up", "-d", "--force-recreate", "--build")
+    else:
+        args = compose_cmd("restart")
     if service:
         args.append(service)
     _run(args, stream=True, env=compose_env())

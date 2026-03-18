@@ -358,6 +358,12 @@ run_lint() {
         if [[ $retval -eq 0 ]]; then
             rm -f "$details_file"
             echo "OK:violations=0"
+        elif [[ $retval -eq 2 ]]; then
+            # Exit 2 = usage/configuration error (bad flag, invalid config)
+            echo "$output" > "$details_file"
+            echo "ERROR:ruff_usage_error|details:$details_file"
+            echo "  Hint: check ruff flags and config. Run 'ruff check --help' for valid options." >&2
+            return 1
         else
             local violations
             violations=$(echo "$output" | wc -l) || violations=0

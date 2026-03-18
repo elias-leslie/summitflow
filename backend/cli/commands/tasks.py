@@ -299,8 +299,19 @@ _REMOVED: list[tuple[str, str]] = [
     ("update", "st claim/done/abandon"),
 ]
 for _cmd, _replacement in _REMOVED:
-    def _make_stub(name: str = _cmd, repl: str = _replacement) -> None:
-        _removed_command(name, repl)
+
+    def _make_stub(
+        args: Annotated[list[str] | None, typer.Argument(hidden=True)] = None,
+        *,
+        name: str = _cmd,
+        repl: str = _replacement,
+    ) -> None:
+        hint = repl
+        if args:
+            # Substitute placeholder with the provided positional arg
+            task_id = args[0]
+            hint = repl.replace("<task-id>", task_id).replace("<id>", task_id)
+        _removed_command(name, hint)
 
     _make_stub.__doc__ = f"Removed: use {_replacement} instead."
     app.command(_cmd, hidden=True)(_make_stub)
