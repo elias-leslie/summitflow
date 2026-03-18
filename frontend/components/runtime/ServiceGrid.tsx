@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { clsx } from 'clsx'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { type RuntimeServiceStatus, runtimeApi } from '@/lib/api/runtime'
 import { ServiceCard } from './ServiceCard'
 import { ServiceListView } from './ServiceListView'
@@ -11,14 +11,14 @@ type ViewMode = 'grid' | 'list'
 
 const STORAGE_KEY = 'runtime-view-mode'
 
-function readStoredView(): ViewMode {
-  if (typeof window === 'undefined') return 'grid'
-  const stored = localStorage.getItem(STORAGE_KEY)
-  return stored === 'list' ? 'list' : 'grid'
-}
-
 export function ServiceGrid() {
-  const [view, setViewRaw] = useState<ViewMode>(readStoredView)
+  const [view, setViewRaw] = useState<ViewMode>('grid')
+
+  // Hydrate from localStorage after mount
+  useEffect(() => {
+    const stored = localStorage.getItem(STORAGE_KEY)
+    if (stored === 'list') setViewRaw('list')
+  }, [])
 
   const setView = useCallback((mode: ViewMode) => {
     setViewRaw(mode)
