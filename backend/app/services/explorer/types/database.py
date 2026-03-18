@@ -21,7 +21,7 @@ from .database_analysis import (
     extract_foreign_key_references,
 )
 from .database_categories import categorize_table
-from .database_config import SYSTEM_TABLES, get_db_url_for_project
+from .database_config import SYSTEM_TABLES, get_db_url_for_project, is_table_owned_by_project
 from .schema_violations import SchemaViolationDetector
 
 logger = get_logger(__name__)
@@ -67,9 +67,11 @@ class DatabaseScanner(BaseScanner):
         inspector: Any,
         entries: list[ExplorerEntryCreate],
     ) -> None:
-        """Iterate tables and append scanned entries, skipping system tables."""
+        """Iterate tables and append scanned entries, skipping system and unowned tables."""
         for table_name in inspector.get_table_names():
             if table_name in SYSTEM_TABLES:
+                continue
+            if not is_table_owned_by_project(self.project_id, table_name):
                 continue
             self._try_append_entry(table_name, conn, inspector, entries)
 
