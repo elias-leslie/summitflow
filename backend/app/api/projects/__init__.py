@@ -250,15 +250,3 @@ async def delete_project(project_id: str) -> dict[str, str]:
     return {"status": "deleted", "id": project_id}
 
 
-__all__ = [
-    "AgentConfigResponse",
-    "AgentConfigUpdate",
-    "ProjectCreate",
-    "ProjectHealthResponse",
-    "ProjectResponse",
-    "ProjectStats",
-    "ProjectUpdate",
-    "ProjectWithStats",
-    "ProjectsWithStatsResponse",
-    "router",
-]
