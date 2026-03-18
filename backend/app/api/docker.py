@@ -22,9 +22,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from ._runtime_proxmox import ProxmoxGuestStatus as ProxmoxGuestStatus
-from ._runtime_proxmox import ProxmoxNodeStatus as ProxmoxNodeStatus
-from ._runtime_proxmox import ProxmoxStatus as ProxmoxStatus
+from ._runtime_proxmox import ProxmoxStatus
 from ._runtime_proxmox import get_proxmox_status as _get_proxmox_status
 
 router = APIRouter()

@@ -53,11 +53,6 @@ export interface EnrichmentRequest {
   task_type?: TaskType
 }
 
-export interface CleanupPromptResponse {
-  cleaned_prompt: string
-  changes_made: string[]
-}
-
 export interface DiscussionMessage {
   role: 'user' | 'assistant'
   content: string
