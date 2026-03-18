@@ -128,14 +128,13 @@ export function SetupChecklist({
   const [runningAction, setRunningAction] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionNotice, setActionNotice] = useState<string | null>(null)
-  const [dismissed, setDismissed] = useState(false)
+  const [expanded, setExpanded] = useState(false)
 
   const steps = computeSteps(storageStatus, sources, healthItems, walStatus)
   const doneCount = steps.filter((s) => s.complete).length
   const allDone = doneCount === steps.length
 
   if (isLoading) return null
-  if (allDone && dismissed) return null
 
   const handleSetupInfra = async () => {
     setRunningAction('infra')
@@ -199,7 +198,14 @@ export function SetupChecklist({
       )}
     >
       {/* Header */}
-      <div className="px-4 py-3 flex items-center justify-between">
+      <button
+        type="button"
+        onClick={() => allDone && setExpanded((v) => !v)}
+        className={clsx(
+          'px-4 py-3 flex items-center justify-between w-full text-left',
+          allDone && 'cursor-pointer hover:bg-slate-800/30 transition-colors',
+        )}
+      >
         <div className="flex items-center gap-3">
           <ShieldCheck
             className={clsx(
@@ -236,19 +242,15 @@ export function SetupChecklist({
             ))}
           </div>
           {allDone && (
-            <button
-              type="button"
-              onClick={() => setDismissed(true)}
-              className="text-[11px] text-slate-500 hover:text-slate-300 transition-colors"
-            >
-              Dismiss
-            </button>
+            <span className="text-[11px] text-slate-500">
+              {expanded ? 'Hide' : 'Details'}
+            </span>
           )}
         </div>
-      </div>
+      </button>
 
-      {/* Steps */}
-      <div className="border-t border-slate-800/40">
+      {/* Steps — always show when incomplete, toggle when all done */}
+      {(!allDone || expanded) && <div className="border-t border-slate-800/40">
         {steps.map((step) => (
           <div
             key={step.id}
@@ -331,15 +333,17 @@ export function SetupChecklist({
             )}
           </div>
         ))}
-      </div>
+      </div>}
 
-      {/* Restore guidance */}
-      <div className="px-4 py-2.5 border-t border-slate-800/40 bg-slate-900/30">
-        <p className="text-[11px] text-slate-500 leading-relaxed">
-          <span className="text-slate-400 font-medium">To restore:</span>{' '}
-          expand any backup in the history below and click Restore.
-        </p>
-      </div>
+      {/* Restore guidance — only when expanded */}
+      {(!allDone || expanded) && (
+        <div className="px-4 py-2.5 border-t border-slate-800/40 bg-slate-900/30">
+          <p className="text-[11px] text-slate-500 leading-relaxed">
+            <span className="text-slate-400 font-medium">To restore:</span>{' '}
+            expand any backup in the history below and click Restore.
+          </p>
+        </div>
+      )}
 
       {/* Feedback */}
       {(actionError || actionNotice) && (
