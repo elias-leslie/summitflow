@@ -43,73 +43,64 @@ from .worktree_helpers import collect_worktrees, enrich_snapshots
 _logger = get_logger(__name__)
 
 
+def _smart_sync_env() -> tuple[Path, dict[str, str] | None]:
+    """Return (script_path, env) for the commit.sh smart-sync invocation."""
+    import os
+
+    host_root = os.environ.get("BACKUP_HOST_ROOT")
+    if host_root:
+        script_path = Path(host_root) / "summitflow" / "scripts" / "commit.sh"
+    else:
+        return Path.home() / "summitflow" / "scripts" / "commit.sh", None
+
+    env = os.environ.copy()
+    env["HOME"] = host_root
+    host_bin_dirs = [f"{host_root}/.local/bin", f"{host_root}/bin", f"{host_root}/.cargo/bin"]
+    env["PATH"] = ":".join(host_bin_dirs) + ":" + env.get("PATH", "")
+    ssh_dir = f"{host_root}/.ssh"
+    env["GIT_SSH_COMMAND"] = (
+        f"ssh -i {ssh_dir}/id_ed25519 -o UserKnownHostsFile={ssh_dir}/known_hosts"
+    )
+    return script_path, env
+
+
+def _parse_smart_sync_output(output: str, stderr_text: str, returncode: int) -> dict[str, Any]:
+    """Parse commit.sh JSON output into a normalized response dict."""
+    try:
+        data = json.loads(output)
+    except json.JSONDecodeError:
+        return {
+            "success": False, "status": "UNKNOWN", "gates": "",
+            "errors": [stderr_text[:200]], "message": "", "reason": "json_parse_failed",
+            "pushed": False, "raw_output": output + stderr_text,
+        }
+    repo_data = data.get("repos", [{}])[0] if data.get("repos") else {}
+    return {
+        "success": returncode == 0,
+        "status": repo_data.get("status", data.get("status", "UNKNOWN")),
+        "gates": repo_data.get("gates", ""),
+        "errors": [repo_data["reason"]] if repo_data.get("reason") else [],
+        "message": repo_data.get("message", ""),
+        "reason": repo_data.get("reason", ""),
+        "pushed": repo_data.get("pushed", False),
+        "raw_output": output,
+    }
+
+
 async def execute_smart_sync(project_root: Path) -> dict[str, Any]:
     """Execute smart sync operation using commit.sh script."""
     import asyncio
-    import os
     from asyncio import subprocess as aio_subprocess
-    _host_root = os.environ.get("BACKUP_HOST_ROOT")
-    if _host_root:
-        script_path = Path(_host_root) / "summitflow" / "scripts" / "commit.sh"
-    else:
-        script_path = Path.home() / "summitflow" / "scripts" / "commit.sh"
 
-    # When running inside a container with BACKUP_HOST_ROOT, ensure PATH
-    # includes the host user's bin dirs so commit.sh finds dt, ruff, st, etc.
-    env = None
-    if _host_root:
-        env = os.environ.copy()
-        env["HOME"] = _host_root
-        host_bin_dirs = [
-            f"{_host_root}/.local/bin",
-            f"{_host_root}/bin",
-            f"{_host_root}/.cargo/bin",
-        ]
-        env["PATH"] = ":".join(host_bin_dirs) + ":" + env.get("PATH", "")
-        # SSH resolves ~ from passwd, not $HOME — point it at the host user's SSH config
-        ssh_dir = f"{_host_root}/.ssh"
-        env["GIT_SSH_COMMAND"] = (
-            f"ssh -i {ssh_dir}/id_ed25519 -o UserKnownHostsFile={ssh_dir}/known_hosts"
-        )
-
+    script_path, env = _smart_sync_env()
     try:
         proc = await asyncio.create_subprocess_exec(
-            str(script_path),
-            "--json",
-            "--push",
-            "--task",
-            "smart-sync",
-            cwd=project_root,
-            env=env,
-            stdout=aio_subprocess.PIPE,
-            stderr=aio_subprocess.PIPE,
+            str(script_path), "--json", "--push", "--task", "smart-sync",
+            cwd=project_root, env=env,
+            stdout=aio_subprocess.PIPE, stderr=aio_subprocess.PIPE,
         )
         stdout, stderr = await proc.communicate()
-        output = stdout.decode()
-        try:
-            data = json.loads(output)
-        except json.JSONDecodeError:
-            return {
-                "success": False,
-                "status": "UNKNOWN",
-                "gates": "",
-                "errors": [stderr.decode()[:200]],
-                "message": "",
-                "reason": "json_parse_failed",
-                "pushed": False,
-                "raw_output": output + stderr.decode(),
-            }
-        repo_data = data.get("repos", [{}])[0] if data.get("repos") else {}
-        return {
-            "success": proc.returncode == 0,
-            "status": repo_data.get("status", data.get("status", "UNKNOWN")),
-            "gates": repo_data.get("gates", ""),
-            "errors": [repo_data["reason"]] if repo_data.get("reason") else [],
-            "message": repo_data.get("message", ""),
-            "reason": repo_data.get("reason", ""),
-            "pushed": repo_data.get("pushed", False),
-            "raw_output": output,
-        }
+        return _parse_smart_sync_output(stdout.decode(), stderr.decode(), proc.returncode or 0)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
 

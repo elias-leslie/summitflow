@@ -327,14 +327,11 @@ def _get_checkpoint(state: dict[str, object], info: TranscriptInfo) -> str | Non
     return entry.get("checkpoint") if isinstance(entry, dict) else None  # type: ignore[return-value]
 
 
-def sync_transcript(
-    info: TranscriptInfo, state: dict[str, object], api_url: str,
-    client_id: str, client_secret: str, close_session: bool, verbose: bool,
+def _upsert_session(
+    api_url: str, info: TranscriptInfo, project: dict[str, object],
+    client_id: str, client_secret: str,
 ) -> tuple[bool, str]:
-    project = build_project_context(info.cwd)
-    if project is None:
-        return False, f"skip non-git cwd={info.cwd}"
-
+    """Register or update the Agent Hub session."""
     ok, _, err = _checked_post(api_url, ENDPOINT_UPSERT, {
         "session_id": info.session_id, "project_id": project["project_id"],
         "provider": PROVIDER, "model": f"{PROVIDER}/{info.model}",
@@ -342,9 +339,14 @@ def sync_transcript(
         "current_branch": project["branch"], "scope_confidence": SCOPE_CONFIDENCE,
         "provider_metadata": _build_meta(info, project),
     }, client_id, client_secret, "session upsert")
-    if not ok:
-        return False, err
+    return ok, err
 
+
+def _ingest_transcript(
+    api_url: str, info: TranscriptInfo, state: dict[str, object],
+    client_id: str, client_secret: str,
+) -> tuple[bool, str, str | None]:
+    """Send transcript events and return (ok, error, checkpoint)."""
     ok, payload, err = _checked_post(
         api_url, ENDPOINT_TRANSCRIPT.format(sid=info.session_id),
         {"provider": PROVIDER, "transcript_path": str(info.path),
@@ -352,12 +354,11 @@ def sync_transcript(
         client_id, client_secret, "transcript ingest",
     )
     if not ok:
-        return False, err
-
+        return False, err, None
     try:
         ingest_data = json.loads(payload)
     except json.JSONDecodeError as exc:
-        return False, f"transcript ingest returned invalid JSON: {exc}"
+        return False, f"transcript ingest returned invalid JSON: {exc}", None
 
     next_cp = ingest_data.get("next_checkpoint")
     checkpoint = str(next_cp) if next_cp else None
@@ -366,7 +367,14 @@ def sync_transcript(
         f"appended={ingest_data.get('events_appended', 0)} skipped={ingest_data.get('events_skipped', 0)}",
         checkpoint=checkpoint,
     )
+    return True, "", checkpoint
 
+
+def _send_heartbeat_and_finalize(
+    api_url: str, info: TranscriptInfo, project: dict[str, object],
+    client_id: str, client_secret: str,
+) -> tuple[bool, str]:
+    """Send heartbeat and finalize calls."""
     ok, _, err = _checked_post(api_url, ENDPOINT_HEARTBEAT.format(sid=info.session_id), {
         "cwd": str(info.cwd), "current_branch": project["branch"],
         "phase": HEARTBEAT_PHASE, "status": HEARTBEAT_STATUS,
@@ -380,6 +388,26 @@ def sync_transcript(
         "branch": project["branch"], "git_context": project["git_context"],
         "is_worktree": project["is_worktree"],
     }, client_id, client_secret, "finalize")
+    return ok, err
+
+
+def sync_transcript(
+    info: TranscriptInfo, state: dict[str, object], api_url: str,
+    client_id: str, client_secret: str, close_session: bool, verbose: bool,
+) -> tuple[bool, str]:
+    project = build_project_context(info.cwd)
+    if project is None:
+        return False, f"skip non-git cwd={info.cwd}"
+
+    ok, err = _upsert_session(api_url, info, project, client_id, client_secret)
+    if not ok:
+        return False, err
+
+    ok, err, _checkpoint = _ingest_transcript(api_url, info, state, client_id, client_secret)
+    if not ok:
+        return False, err
+
+    ok, err = _send_heartbeat_and_finalize(api_url, info, project, client_id, client_secret)
     if not ok:
         return False, err
 
