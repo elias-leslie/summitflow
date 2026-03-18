@@ -15,7 +15,7 @@ interface FeedbackBoardProps {
   isLoading: boolean
   filters: FeedbackFilters
   onFiltersChange: (filters: Partial<FeedbackFilters>) => void
-  onItemClick: (id: string) => void
+  onItemClick: (id: string | null) => void
   selectedId: string | null
 }
 
