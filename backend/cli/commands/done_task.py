@@ -10,6 +10,7 @@ from .._client_base import APIError
 from ..client import STClient
 from ..lib.checkpoint import get_snapshot_info, remove_snapshot
 from ..lib.checkpoint_branches import merge_task_branch
+from ..lib.checkpoint_metadata import SnapshotMeta, save_snapshot_meta
 from ..output import output_error, output_success, output_warning
 from .done_git import git_stash_pop, git_stash_push, is_working_tree_clean
 from .done_subtask import auto_close_subtasks
@@ -235,6 +236,51 @@ def _complete_with_admin_close(
     }
 
 
+def _reconstruct_snapshot_info(
+    client: STClient,
+    task_id: str,
+) -> dict[str, str | int | None] | None:
+    """Attempt to reconstruct checkpoint metadata from task API and worktree.
+
+    When the .meta.json file is missing but the task is claimed and a worktree
+    still exists, rebuild the metadata so ``st done`` can proceed.
+    """
+    from ..lib.worktree import get_worktree_info
+
+    try:
+        task = client.get_task(task_id)
+    except APIError:
+        return None
+
+    project_id = task.get("project_id")
+    if not isinstance(project_id, str) or not project_id:
+        return None
+
+    # Only recover for tasks that are actually in progress.
+    if task.get("status") not in ("in_progress", "claimed"):
+        return None
+
+    wt_info = get_worktree_info(task_id, project_id)
+    if not wt_info:
+        return None
+
+    # Rebuild and persist the metadata so future commands work too.
+    meta = SnapshotMeta(
+        task_id=task_id,
+        project_id=project_id,
+        base_branch=wt_info.base_branch or "main",
+        created_at=task.get("created_at", ""),
+        claimed_by=task.get("claimed_by", "unknown"),
+        worktree_path=str(wt_info.path),
+    )
+    save_snapshot_meta(meta)
+    output_warning(
+        f"Checkpoint metadata was missing for {task_id} — reconstructed from worktree."
+    )
+
+    return get_snapshot_info(task_id)
+
+
 def complete_task(
     client: STClient,
     task_id: str,
@@ -254,6 +300,9 @@ def complete_task(
         already_completed = _complete_if_already_completed(client, task_id)
         if already_completed:
             return already_completed
+        # Try to reconstruct from task/worktree metadata before giving up.
+        snapshot_info = _reconstruct_snapshot_info(client, task_id)
+    if not snapshot_info:
         output_error(f"No checkpoint found for {task_id}. Was it claimed?")
         raise typer.Exit(1)
 

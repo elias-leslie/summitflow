@@ -11,7 +11,7 @@ from app.services.context_gatherer._precision_query import (
     is_short_or_generic,
     split_path_and_symbol_terms,
 )
-from app.services.context_gatherer.precision_code_search import _symbol_match_rank
+from app.services.context_gatherer._precision_ranking import symbol_match_rank as _symbol_match_rank
 
 
 class TestHasPathSegments:
