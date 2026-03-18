@@ -294,12 +294,52 @@ class TestCompleteTaskSmart:
         mock_publish.assert_not_called()
 
     @patch("cli.commands.done_task.get_snapshot_info", return_value=None)
-    def test_missing_snapshot_without_admin_still_fails(self, mock_snapshot: MagicMock) -> None:
+    @patch("cli.commands.done_task._reconstruct_snapshot_info", return_value=None)
+    def test_missing_snapshot_without_admin_still_fails(
+        self, mock_reconstruct: MagicMock, mock_snapshot: MagicMock
+    ) -> None:
         """Normal mode should still require a checkpoint."""
         client = self._setup_mocks()
 
         with pytest.raises(typer.Exit):
             complete_task(client, "task-123")
+
+    @patch("cli.commands.done_task.remove_snapshot")
+    @patch("cli.commands.done_task.merge_task_branch")
+    @patch("cli.commands.done_task.auto_close_subtasks")
+    @patch("cli.commands.done_task.sync_completed_subtasks")
+    @patch("cli.commands.done_task.is_working_tree_clean", return_value=True)
+    @patch("cli.commands.done_task._publish_completed_work")
+    @patch("cli.commands.done_task._reconstruct_snapshot_info")
+    @patch("cli.commands.done_task.get_snapshot_info", return_value=None)
+    def test_missing_metadata_reconstructs_from_worktree(
+        self,
+        mock_snapshot: MagicMock,
+        mock_reconstruct: MagicMock,
+        mock_publish: MagicMock,
+        mock_clean: MagicMock,
+        mock_sync: MagicMock,
+        mock_auto: MagicMock,
+        mock_merge: MagicMock,
+        mock_remove: MagicMock,
+    ) -> None:
+        """When metadata is missing but task is claimed with a worktree, reconstruct and proceed."""
+        mock_reconstruct.return_value = {
+            "task_id": "task-123",
+            "project_id": "test",
+            "base_branch": "main",
+            "worktree_path": "/tmp/wt/task-123",
+        }
+        client = self._setup_mocks()
+        client.get_subtasks.return_value = {"subtasks": []}
+        mock_sync.return_value = MagicMock(synced=[], syncable=[], skipped=[])
+
+        result = complete_task(client, "task-123")
+
+        mock_reconstruct.assert_called_once_with(client, "task-123")
+        assert result["merged"]
+        mock_merge.assert_called_once()
+        mock_publish.assert_called_once_with("task-123", "test")
 
     @patch("cli.commands.done_task.get_snapshot_info", return_value=None)
     @patch("cli.commands.done_task.output_error")
