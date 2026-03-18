@@ -1,6 +1,7 @@
-import { POLL_SLOW } from '@/lib/polling'
 import { useQuery } from '@tanstack/react-query'
 import { getAgentHubProxyBase } from '@/lib/agent-hub-proxy'
+import { fetchWithErrorHandling } from '@/lib/api'
+import { POLL_SLOW } from '@/lib/polling'
 
 interface PersonaResponse {
   name: string
@@ -13,13 +14,10 @@ interface PersonaResponse {
 export function usePersonaName(fallback = 'Persona'): string {
   const { data } = useQuery({
     queryKey: ['persona-name'],
-    queryFn: async (): Promise<string> => {
-      const base = getAgentHubProxyBase()
-      const res = await fetch(`${base}/persona`)
-      if (!res.ok) return fallback
-      const data: PersonaResponse = await res.json()
-      return data.name || fallback
-    },
+    queryFn: () =>
+      fetchWithErrorHandling<PersonaResponse>(`${getAgentHubProxyBase()}/persona`, {
+        errorMessage: 'Failed to fetch persona name',
+      }).then((res) => res.name || fallback),
     staleTime: POLL_SLOW,
   })
 
