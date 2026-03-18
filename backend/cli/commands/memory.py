@@ -134,7 +134,11 @@ def save(
     scope_id: ScopeIdOpt = None,
     change_reason: ChangeReasonOpt = None,
 ) -> None:
-    """Save a learning to the memory system."""
+    """Save a learning to the memory system.
+
+    Run 'st memory save --help' for options. Limits and example are shown
+    in error messages when validation fails.
+    """
     resolved_content = _resolve_content(content, content_file, require_value=True)
     assert resolved_content is not None
     if change_reason is None:

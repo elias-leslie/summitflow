@@ -34,6 +34,18 @@ CONVERSATIONAL_PATTERNS = [
     "i suggest",
 ]
 
+SAVE_EXAMPLE = """
+Example:
+  st memory save -s project --scope-id terminal -t guardrail -c 90 \\
+    -S "Never bypass quality gates" \\
+    "**Quality Gates**: Use dt for all checks. Never run raw pytest. Why: hooks enforce dt path."
+
+Limits:
+  -S summary : 10-40 chars (hard)
+  content    : <=3 sentences / <=280 chars (soft, warns)
+  content    : must start with **Topic**: then imperative verb
+"""
+
 FORMAT_STANDARD_HELP = """
 FORMAT_STANDARD for memory episodes:
 
@@ -55,7 +67,7 @@ Example of BAD format:
   **Mandate**: Use dt for all quality checks.
   When working with git, you should remember to always commit first.
   Please don't use git stash because it might cause lost work.
-"""
+""" + SAVE_EXAMPLE
 
 IMPERATIVE_VERBS = (
     "Use",
@@ -225,6 +237,7 @@ def validate_summary_length(summary: str) -> None:
     """Validate summary length and raise error if invalid."""
     if len(summary) > 40:
         output_error(f"Summary too long ({len(summary)} chars). Keep it under 40 chars.")
+        typer.echo(SAVE_EXAMPLE, err=True)
         raise typer.Exit(1)
 
 

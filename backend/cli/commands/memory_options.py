@@ -53,7 +53,7 @@ ContentFileOpt = Annotated[
 SummaryOpt = Annotated[
     str,
     typer.Option(
-        "--summary", "-S", help="REQUIRED: Short action phrase (~35 chars) for TOON index"
+        "--summary", "-S", help="REQUIRED: 10-40 chars max, action phrase for TOON index"
     ),
 ]
 
