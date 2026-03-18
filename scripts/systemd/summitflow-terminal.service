@@ -13,7 +13,7 @@ Environment="PORT=8002"
 EnvironmentFile=-%h/.env.local
 Restart=always
 RestartSec=10
-KillMode=process
+KillMode=mixed
 KillSignal=SIGTERM
 TimeoutStopSec=30
 StandardOutput=journal

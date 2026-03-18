@@ -22,7 +22,6 @@ import { SyncResultBlock } from './project-row/SyncResultBlock'
 
 interface ProjectRowProps {
   repo: RepoStatus
-  isConfigRepo?: boolean
 }
 
 const SYNC_RESULT_AUTO_DISMISS_MS = 12000
@@ -58,7 +57,7 @@ function WorkspaceBadge({
   )
 }
 
-export function ProjectRow({ repo, isConfigRepo = false }: ProjectRowProps) {
+export function ProjectRow({ repo }: ProjectRowProps) {
   const [expanded, setExpanded] = useState(false)
   const [syncResult, setSyncResult] = useState<Awaited<
     ReturnType<typeof smartSyncProject>
@@ -105,25 +104,21 @@ export function ProjectRow({ repo, isConfigRepo = false }: ProjectRowProps) {
         'rounded-xl border overflow-hidden transition-all duration-300',
         'bg-gradient-to-br from-slate-900 to-[#0f0a18]',
         'border-slate-800',
-        expanded && !isConfigRepo && 'shadow-[0_0_30px_rgba(0,0,0,0.4)]',
+        expanded && 'shadow-[0_0_30px_rgba(0,0,0,0.4)]',
       )}
     >
       <div className="flex flex-wrap items-center gap-3 px-5 py-3.5">
-        {!isConfigRepo ? (
-          <button
-            type="button"
-            onClick={() => setExpanded(!expanded)}
-            className="shrink-0 text-slate-500 hover:text-white transition-colors"
-          >
-            {expanded ? (
-              <ChevronDown className="w-4 h-4" />
-            ) : (
-              <ChevronRight className="w-4 h-4" />
-            )}
-          </button>
-        ) : (
-          <div className="w-4 shrink-0" />
-        )}
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          className="shrink-0 text-slate-500 hover:text-white transition-colors"
+        >
+          {expanded ? (
+            <ChevronDown className="w-4 h-4" />
+          ) : (
+            <ChevronRight className="w-4 h-4" />
+          )}
+        </button>
 
         <span className="font-semibold text-white tracking-tight text-[15px]">
           {repo.name}
@@ -143,8 +138,7 @@ export function ProjectRow({ repo, isConfigRepo = false }: ProjectRowProps) {
           {stateInfo.label}
         </span>
 
-        {!isConfigRepo &&
-          workspaceSummary &&
+        {workspaceSummary &&
           workspaceSummary.active_worktrees > 0 && (
             <WorkspaceBadge
               tone="cyan"
@@ -154,8 +148,7 @@ export function ProjectRow({ repo, isConfigRepo = false }: ProjectRowProps) {
             />
           )}
 
-        {!isConfigRepo &&
-          workspaceSummary &&
+        {workspaceSummary &&
           workspaceSummary.dirty_worktrees > 0 && (
             <WorkspaceBadge
               tone="rose"
@@ -165,8 +158,7 @@ export function ProjectRow({ repo, isConfigRepo = false }: ProjectRowProps) {
             />
           )}
 
-        {!isConfigRepo &&
-          workspaceSummary &&
+        {workspaceSummary &&
           workspaceSummary.orphan_branches > 0 && (
             <WorkspaceBadge
               tone="amber"
@@ -176,8 +168,7 @@ export function ProjectRow({ repo, isConfigRepo = false }: ProjectRowProps) {
             />
           )}
 
-        {!isConfigRepo &&
-          workspaceSummary &&
+        {workspaceSummary &&
           workspaceSummary.prunable_branches > 0 && (
             <WorkspaceBadge
               tone="rose"
@@ -207,34 +198,32 @@ export function ProjectRow({ repo, isConfigRepo = false }: ProjectRowProps) {
               {repo.behind}
             </span>
           )}
-          {repo.ahead === 0 && repo.behind === 0 && (
+          {repo.ahead === 0 && repo.behind === 0 && repo.state === 'clean' && (
             <span className="text-slate-600">in sync</span>
           )}
         </div>
 
-        {!isConfigRepo && (
-          <button
-            type="button"
-            disabled={syncMutation.isPending}
-            onClick={(e) => {
-              e.stopPropagation()
-              syncMutation.mutate()
-            }}
-            className={clsx(
-              'shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all',
-              syncMutation.isPending
-                ? 'bg-slate-800 text-slate-400 cursor-not-allowed'
-                : 'bg-gradient-to-r from-pink-600/80 to-purple-600/80 hover:from-pink-500 hover:to-purple-500 text-white shadow-lg shadow-pink-500/10 hover:shadow-pink-500/25',
-            )}
-          >
-            {syncMutation.isPending ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <Sparkles className="w-3.5 h-3.5" />
-            )}
-            {syncMutation.isPending ? 'Syncing...' : 'Smart Sync'}
-          </button>
-        )}
+        <button
+          type="button"
+          disabled={syncMutation.isPending}
+          onClick={(e) => {
+            e.stopPropagation()
+            syncMutation.mutate()
+          }}
+          className={clsx(
+            'shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all',
+            syncMutation.isPending
+              ? 'bg-slate-800 text-slate-400 cursor-not-allowed'
+              : 'bg-gradient-to-r from-pink-600/80 to-purple-600/80 hover:from-pink-500 hover:to-purple-500 text-white shadow-lg shadow-pink-500/10 hover:shadow-pink-500/25',
+          )}
+        >
+          {syncMutation.isPending ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          ) : (
+            <Sparkles className="w-3.5 h-3.5" />
+          )}
+          {syncMutation.isPending ? 'Syncing...' : 'Smart Sync'}
+        </button>
       </div>
 
       {syncResult && (
@@ -243,7 +232,7 @@ export function ProjectRow({ repo, isConfigRepo = false }: ProjectRowProps) {
         </div>
       )}
 
-      {expanded && !isConfigRepo && (
+      {expanded && (
         <div className="border-t border-slate-800/60 px-5 py-4">
           <DashboardContent projectId={repoKey} />
         </div>

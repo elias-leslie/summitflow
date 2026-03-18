@@ -64,7 +64,6 @@ function renderConfigRow() {
   return render(
     <QueryClientProvider client={queryClient}>
       <ProjectRow
-        isConfigRepo
         repo={{
           path: '/repos/.claude',
           name: '.claude',
@@ -118,11 +117,11 @@ describe('ProjectRow', () => {
     })
   })
 
-  it('does not offer smart sync for config repos', () => {
+  it('offers smart sync for config repos', () => {
     renderConfigRow()
 
     expect(
-      screen.queryByRole('button', { name: /smart sync/i }),
-    ).not.toBeInTheDocument()
+      screen.getByRole('button', { name: /smart sync/i }),
+    ).toBeInTheDocument()
   })
 })

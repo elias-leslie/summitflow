@@ -14,6 +14,9 @@ Environment="HATCHET_CLIENT_TLS_STRATEGY=none"
 ExecStart=%h/summitflow/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8001
 Restart=always
 RestartSec=10
+KillMode=control-group
+KillSignal=SIGTERM
+TimeoutStopSec=30
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=summitflow-backend

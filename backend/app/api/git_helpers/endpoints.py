@@ -32,7 +32,7 @@ from ..models.git_models import (
     SnapshotInfo,
     TaskDiffResponse,
 )
-from .db_helpers import get_project_path, query_conflicts, query_recent_merges
+from .db_helpers import get_project_path, get_project_root_with_fallback, query_conflicts, query_recent_merges
 from .worktree_helpers import collect_worktrees, enrich_snapshots
 
 _logger = get_logger(__name__)
@@ -301,7 +301,7 @@ async def build_project_dashboard(
     project_id: str, commits_limit: int = 15
 ) -> ProjectDashboardResponse:
     """Build project dashboard response."""
-    repo_path = get_project_path(project_id)
+    repo_path = get_project_root_with_fallback(project_id)
     worktrees = [w for w in collect_worktrees() if w.project_id == project_id]
     branches = get_all_branches(repo_path, project_id=project_id)
     merges_resp = build_recent_merges_response(limit=10, project_id=project_id)

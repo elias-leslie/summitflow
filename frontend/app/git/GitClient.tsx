@@ -44,7 +44,6 @@ function SummaryCard({
 export function GitClient() {
   const { data: gitStatus, isLoading, isError, refetch } = useGitStatus()
   const repos = gitStatus?.repositories ?? []
-  const configRepos = repos.filter((repo) => !repo.project_id)
   const needsAttention = (repo: (typeof repos)[number]) =>
     repo.state !== 'clean' ||
     (repo.workspace_summary?.dirty_worktrees ?? 0) > 0 ||
@@ -87,12 +86,6 @@ export function GitClient() {
           <p className="text-slate-400 max-w-2xl">
             Command center for version control across all managed workspaces.
           </p>
-          {configRepos.length > 0 && (
-            <p className="mt-2 text-sm text-slate-500">
-              Summary cards include managed config repos such as{' '}
-              {configRepos.map((repo) => repo.name).join(', ')}.
-            </p>
-          )}
         </div>
 
         <button
@@ -156,7 +149,6 @@ export function GitClient() {
             <ProjectRow
               key={repo.path}
               repo={repo}
-              isConfigRepo={!repo.project_id}
             />
           ))}
         </section>
