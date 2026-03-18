@@ -68,27 +68,7 @@ type RouteContext = { params: Promise<{ path: string[] }> }
 const config = resolveConfig()
 const auth = buildAuthHeaders(config)
 
-export async function GET(request: Request, { params }: RouteContext) {
-  const { path } = await params
-  const url = buildUpstreamUrl(config, path, new URL(request.url).searchParams.toString())
-  const response = await fetch(url, { headers: auth })
-  return new Response(response.body, {
-    status: response.status,
-    headers: {
-      'Content-Type': response.headers.get('Content-Type') ?? 'application/json',
-    },
-  })
-}
-
-export async function POST(request: Request, { params }: RouteContext) {
-  const { path } = await params
-  const url = buildUpstreamUrl(config, path)
-  const body = await request.text()
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...auth },
-    body,
-  })
+function proxyResponse(response: Response): Response {
   const contentType = response.headers.get('Content-Type') ?? 'application/json'
   const isSSE = contentType.includes('text/event-stream')
   return new Response(response.body, {
@@ -100,53 +80,42 @@ export async function POST(request: Request, { params }: RouteContext) {
   })
 }
 
-export async function PUT(request: Request, { params }: RouteContext) {
+async function proxyWithBody(
+  request: Request,
+  { params }: RouteContext,
+  method: string,
+): Promise<Response> {
   const { path } = await params
-  const url = buildUpstreamUrl(config, path)
+  const qs = method === 'DELETE' ? new URL(request.url).searchParams.toString() : undefined
+  const url = buildUpstreamUrl(config, path, qs)
   const body = await request.text()
   const response = await fetch(url, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', ...auth },
-    body,
-  })
-  return new Response(response.body, {
-    status: response.status,
-    headers: {
-      'Content-Type': response.headers.get('Content-Type') ?? 'application/json',
-    },
-  })
-}
-
-export async function PATCH(request: Request, { params }: RouteContext) {
-  const { path } = await params
-  const url = buildUpstreamUrl(config, path)
-  const body = await request.text()
-  const response = await fetch(url, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...auth },
-    body,
-  })
-  return new Response(response.body, {
-    status: response.status,
-    headers: {
-      'Content-Type': response.headers.get('Content-Type') ?? 'application/json',
-    },
-  })
-}
-
-export async function DELETE(request: Request, { params }: RouteContext) {
-  const { path } = await params
-  const url = buildUpstreamUrl(config, path, new URL(request.url).searchParams.toString())
-  const body = await request.text()
-  const response = await fetch(url, {
-    method: 'DELETE',
+    method,
     headers: body ? { 'Content-Type': 'application/json', ...auth } : auth,
     ...(body ? { body } : {}),
   })
-  return new Response(response.body, {
-    status: response.status,
-    headers: {
-      'Content-Type': response.headers.get('Content-Type') ?? 'application/json',
-    },
-  })
+  return proxyResponse(response)
+}
+
+export async function GET(request: Request, { params }: RouteContext) {
+  const { path } = await params
+  const url = buildUpstreamUrl(config, path, new URL(request.url).searchParams.toString())
+  const response = await fetch(url, { headers: auth })
+  return proxyResponse(response)
+}
+
+export async function POST(request: Request, context: RouteContext) {
+  return proxyWithBody(request, context, 'POST')
+}
+
+export async function PUT(request: Request, context: RouteContext) {
+  return proxyWithBody(request, context, 'PUT')
+}
+
+export async function PATCH(request: Request, context: RouteContext) {
+  return proxyWithBody(request, context, 'PATCH')
+}
+
+export async function DELETE(request: Request, context: RouteContext) {
+  return proxyWithBody(request, context, 'DELETE')
 }

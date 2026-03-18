@@ -8,27 +8,11 @@ interface SystemHealthWidgetProps {
   className?: string
 }
 
-function getBarColor(status: 'ok' | 'warning' | 'critical'): string {
-  switch (status) {
-    case 'ok':
-      return 'bg-neon-cyan'
-    case 'warning':
-      return 'bg-amber-400'
-    case 'critical':
-      return 'bg-rose-500'
-  }
-}
-
-function getTextColor(status: 'ok' | 'warning' | 'critical'): string {
-  switch (status) {
-    case 'ok':
-      return 'text-neon-cyan'
-    case 'warning':
-      return 'text-amber-400'
-    case 'critical':
-      return 'text-rose-500'
-  }
-}
+const STATUS_COLORS = {
+  ok: { bar: 'bg-neon-cyan', text: 'text-neon-cyan' },
+  warning: { bar: 'bg-amber-400', text: 'text-amber-400' },
+  critical: { bar: 'bg-rose-500', text: 'text-rose-500' },
+} as const
 
 export function SystemHealthWidget({ className }: SystemHealthWidgetProps) {
   const { data, isLoading, error, refetch, isFetching } = useSystemStats()
@@ -71,11 +55,11 @@ export function SystemHealthWidget({ className }: SystemHealthWidgetProps) {
           <span className="text-[11px] text-slate-500 w-7">{m.label}</span>
           <div className="w-14 h-1.5 bg-slate-800 rounded-full overflow-hidden">
             <div
-              className={cn('h-full rounded-full transition-all duration-700', getBarColor(m.status))}
+              className={cn('h-full rounded-full transition-all duration-700', STATUS_COLORS[m.status].bar)}
               style={{ width: `${Math.min(m.percent, 100)}%` }}
             />
           </div>
-          <span className={cn('text-[11px] font-mono tabular-nums w-8', getTextColor(m.status))}>
+          <span className={cn('text-[11px] font-mono tabular-nums w-8', STATUS_COLORS[m.status].text)}>
             {m.percent}%
           </span>
         </div>

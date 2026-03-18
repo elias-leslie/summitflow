@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -17,6 +18,16 @@ router = APIRouter()
 # Prefer BACKUP_HOST_ROOT (Docker mount) for persistent credential storage
 _HOST_ROOT = os.environ.get("BACKUP_HOST_ROOT")
 CREDENTIALS_DIR = Path(_HOST_ROOT) if _HOST_ROOT else Path(os.environ.get("HOME", str(Path.home())))
+
+
+def _write_smb_credentials(username: str, password: str) -> str:
+    """Write SMB credentials file and return its path."""
+    cred_file = CREDENTIALS_DIR / ".smbcredentials"
+    cred_file.write_text(
+        f"username={username}\npassword={password}\ndomain=WORKGROUP\n"
+    )
+    cred_file.chmod(0o600)
+    return str(cred_file)
 
 
 def _backend_to_response(backend: dict[str, object]) -> StorageBackendResponse:
@@ -51,14 +62,9 @@ async def create_storage_backend(request: StorageBackendCreate) -> StorageBacken
     # If SMB password provided, write credentials file
     password = config.pop("password", None)
     if password and request.backend_type == "smb":
-        cred_file = CREDENTIALS_DIR / ".smbcredentials"
-        cred_file.write_text(
-            f"username={config.get('user', 'backup-svc')}\n"
-            f"password={password}\n"
-            f"domain=WORKGROUP\n"
+        config["credentials_file"] = _write_smb_credentials(
+            config.get("user", "backup-svc"), password
         )
-        cred_file.chmod(0o600)
-        config["credentials_file"] = str(cred_file)
 
     backend = backup_store.create_backend(
         name=request.name,
@@ -107,14 +113,9 @@ async def update_storage_backend(
     if "config" in fields and isinstance(fields["config"], dict):
         password = fields["config"].pop("password", None)
         if password:
-            cred_file = CREDENTIALS_DIR / ".smbcredentials"
-            cred_file.write_text(
-                f"username={fields['config'].get('user', existing.get('config', {}).get('user', 'backup-svc'))}\n"
-                f"password={password}\n"
-                f"domain=WORKGROUP\n"
-            )
-            cred_file.chmod(0o600)
-            fields["config"]["credentials_file"] = str(cred_file)
+            existing_config = existing.get("config", {}) if isinstance(existing.get("config"), dict) else {}
+            username = fields["config"].get("user", existing_config.get("user", "backup-svc"))
+            fields["config"]["credentials_file"] = _write_smb_credentials(username, password)
 
     updated = backup_store.update_backend(backend_id, **fields)
     if not updated:
@@ -159,7 +160,7 @@ async def test_storage_backend(backend_id: str) -> dict[str, object]:
             message = f"Credentials file not found: {cred_file}"
         else:
             # Test by listing the configured path (root ls may be ACL-denied)
-            ls_cmd = f"cd {smb_path}; ls" if smb_path else "ls"
+            ls_cmd = f"cd {shlex.quote(smb_path)}; ls" if smb_path else "ls"
             try:
                 result = subprocess.run(
                     ["smbclient", f"//{host}/{share}", "-A", cred_file, "-c", ls_cmd],

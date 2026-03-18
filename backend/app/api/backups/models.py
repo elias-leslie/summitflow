@@ -1,8 +1,13 @@
 """Pydantic models for backup API requests and responses."""
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
+
+BackendType = Literal["smb"]
+SourceType = Literal["project", "system", "config", "infrastructure", "workspace"]
+Frequency = Literal["hourly", "daily", "weekly", "monthly"]
 
 
 class BackupCreate(BaseModel):
@@ -66,7 +71,7 @@ class BackupSourceCreate(BaseModel):
     id: str
     name: str
     path: str
-    source_type: str = "project"
+    source_type: SourceType = "project"
     project_id: str | None = None
 
 
@@ -75,7 +80,7 @@ class BackupSourceUpdate(BaseModel):
 
     name: str | None = None
     enabled: bool | None = None
-    frequency: str | None = None
+    frequency: Frequency | None = None
     retention_days: int | None = None
     path: str | None = None
 
@@ -112,7 +117,7 @@ class StorageBackendCreate(BaseModel):
     """Request model for creating a storage backend."""
 
     name: str
-    backend_type: str = "smb"
+    backend_type: BackendType = "smb"
     config: dict[str, object] | None = None
     is_default: bool = False
 
