@@ -94,7 +94,7 @@ def format_search_compact(result: dict[str, Any]) -> None:
         score = r.get("relevance_score", 0.0)
         summary = r.get("summary") or "-"
         content = r.get("content", "")
-        print(f"  {uuid} [{tier}] {score:.2f} summary={summary}")
+        print(f"  {uuid} [{tier}] {score:.2f} {summary}")
         meta = _format_meta_line(r)
         if meta:
             print(f"    {meta}")

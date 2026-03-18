@@ -102,10 +102,13 @@ def search_impl(
     query: str,
     limit: int,
     min_score: float,
+    tier: str | None,
     scope: str,
     scope_id: str | None,
 ) -> None:
     params: dict[str, object] = {"query": query, "limit": limit, "min_score": min_score}
+    if tier:
+        params["category"] = tier
     result = agent_hub_request(
         "GET", "/api/memory/search", params=params,
         scope=scope, scope_id=scope_id, tool_name="st memory search",

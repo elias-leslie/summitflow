@@ -53,13 +53,13 @@ ContentFileOpt = Annotated[
 SummaryOpt = Annotated[
     str,
     typer.Option(
-        "--summary", "-S", help="REQUIRED: 10-40 chars max, action phrase for TOON index"
+        "--summary", "-S", help="Action phrase for TOON index (10-40 chars)"
     ),
 ]
 
 SummaryUpdateOpt = Annotated[
     str | None,
-    typer.Option("--summary", "-S", help="Update summary (~35 chars for TOON index)"),
+    typer.Option("--summary", "-S", help="Update summary (10-40 chars for TOON index)"),
 ]
 
 ConfidenceOpt = Annotated[
@@ -153,8 +153,8 @@ CursorOpt = Annotated[
 # UUID options
 UUIDsArg = Annotated[list[str], typer.Argument(help="Episode UUID(s) to retrieve")]
 UUIDsDeleteArg = Annotated[list[str], typer.Argument(help="Episode UUID(s) to delete")]
-UUIDArg = Annotated[str, typer.Argument(help="Episode UUID to update")]
-RevisionArg = Annotated[str, typer.Argument(help="Revision UUID to inspect or restore")]
+UUIDArg = Annotated[str, typer.Argument(help="Episode UUID (full or 8-char prefix)")]
+RevisionArg = Annotated[str, typer.Argument(help="Revision UUID to restore to")]
 UUIDsOptArg = Annotated[
     list[str] | None,
     typer.Argument(help="Specific UUIDs to export (optional)"),

@@ -134,11 +134,7 @@ def save(
     scope_id: ScopeIdOpt = None,
     change_reason: ChangeReasonOpt = None,
 ) -> None:
-    """Save a learning to the memory system.
-
-    Run 'st memory save --help' for options. Limits and example are shown
-    in error messages when validation fails.
-    """
+    """Save a learning to the memory system."""
     resolved_content = _resolve_content(content, content_file, require_value=True)
     assert resolved_content is not None
     if change_reason is None:
@@ -214,11 +210,12 @@ def search(
     query: QueryArg,
     limit: SearchLimitOpt = 10,
     min_score: MinScoreOpt = 0.0,
+    tier: TierFilterOpt = None,
     scope: ScopeOpt = "global",
     scope_id: ScopeIdOpt = None,
 ) -> None:
     """Search memory for relevant episodes."""
-    search_impl(ctx.obj, query, limit, min_score, scope, scope_id)
+    search_impl(ctx.obj, query, limit, min_score, tier, scope, scope_id)
 
 
 @app.command()
