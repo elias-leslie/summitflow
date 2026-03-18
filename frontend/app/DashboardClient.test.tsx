@@ -23,6 +23,13 @@ vi.mock('next/link', () => ({
   ),
 }))
 
+vi.mock('motion/react', () => ({
+  motion: {
+    div: ({ children, ...props }: { children: ReactNode }) => <div {...props}>{children}</div>,
+    section: ({ children, ...props }: { children: ReactNode }) => <section {...props}>{children}</section>,
+  },
+}))
+
 vi.mock('@/hooks/usePersonaName', () => ({
   usePersonaName: () => 'Jenny',
 }))
@@ -79,16 +86,12 @@ describe('DashboardClient', () => {
   it('surfaces feature totals in the dashboard summary', async () => {
     renderClient()
 
-    const featureLabel = await screen.findByText('Active Features')
+    const featureLabel = await screen.findByText('Features')
     await screen.findByText('SummitFlow')
 
     expect(featureLabel).toBeInTheDocument()
-    expect(featureLabel.parentElement).toHaveTextContent('2')
-    expect(screen.getByText('Active Tasks')).toBeInTheDocument()
-    expect(
-      screen.getByText(
-        'Hover, focus, or tap a card to load live health and quality signals for that project.',
-      ),
-    ).toBeInTheDocument()
+    // The stat value '2' is in a sibling element within the same parent cell
+    expect(featureLabel.parentElement?.parentElement).toHaveTextContent('2')
+    expect(screen.getByText('Tasks')).toBeInTheDocument()
   })
 })

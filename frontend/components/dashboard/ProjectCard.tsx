@@ -38,29 +38,26 @@ function getProjectHost(baseUrl: string): string {
 
 export function ProjectCard({ project }: ProjectCardProps) {
   const router = useRouter()
-  const [showHealth, setShowHealth] = useState(false)
+  const [hovered, setHovered] = useState(false)
 
   const { data: health, isLoading: healthLoading } = useQuery({
     queryKey: ['project-health', project.id],
     queryFn: () => fetchProjectHealth(project.id),
-    enabled: showHealth,
     staleTime: STALE_STANDARD,
-    refetchInterval: showHealth ? POLL_STANDARD * 2 : false,
+    refetchInterval: hovered ? POLL_STANDARD * 2 : false,
   })
 
   const { data: qualityGate, isLoading: qualityLoading } = useQuery({
     queryKey: ['quality-gate-health', project.id],
     queryFn: () => fetchQualityGateHealth(project.id),
-    enabled: showHealth,
     staleTime: STALE_STANDARD,
-    refetchInterval: showHealth ? POLL_STANDARD * 2 : false,
+    refetchInterval: hovered ? POLL_STANDARD * 2 : false,
   })
 
   // Check for active checkpoint (running task)
   const { data: checkpoint } = useQuery({
     queryKey: ['active-checkpoint', project.id],
     queryFn: () => getActiveCheckpoint(project.id),
-    enabled: showHealth,
     staleTime: STALE_GIT,
   })
 
@@ -147,9 +144,9 @@ export function ProjectCard({ project }: ProjectCardProps) {
         'card-elevated p-5 group transition-all duration-300',
         'hover:border-phosphor-500/50 hover:translate-y-[-2px]',
       )}
-      onMouseEnter={() => setShowHealth(true)}
-      onFocusCapture={() => setShowHealth(true)}
-      onTouchStart={() => setShowHealth(true)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocusCapture={() => setHovered(true)}
     >
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
@@ -223,7 +220,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
                 <span className="text-slate-500">{checkpoint.age}</span>
               </div>
             )}
-            {showHealth && (health || qualityGate) && (
+            {(health || qualityGate) && (
               <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
                 <span className={clsx(
                   'text-slate-500',

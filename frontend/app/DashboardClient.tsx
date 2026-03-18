@@ -2,26 +2,31 @@
 
 import { useQuery } from '@tanstack/react-query'
 import {
-  Activity,
   AlertCircle,
   Archive,
   Bug,
   ChevronLeft,
   ChevronRight,
   FolderKanban,
-  Info,
   ListTodo,
   MessageSquare,
   Plus,
+  Target,
 } from 'lucide-react'
+import { motion } from 'motion/react'
 import Link from 'next/link'
 import { useState } from 'react'
 import { ActivityFeed, ProjectCard, SystemHealthWidget } from '@/components/dashboard'
 import { useClampedPagination } from '@/hooks/useClampedPagination'
-import { fetchProjectsWithStats, type ProjectWithStats } from '@/lib/api'
 import { usePersonaName } from '@/hooks/usePersonaName'
+import { fetchProjectsWithStats, type ProjectWithStats } from '@/lib/api'
 
 const PROJECTS_PER_PAGE = 9
+
+const fadeUp = {
+  initial: { opacity: 0, y: 14 },
+  animate: { opacity: 1, y: 0 },
+}
 
 export function DashboardClient() {
   const personaName = usePersonaName()
@@ -34,13 +39,13 @@ export function DashboardClient() {
 
   const projects = data?.projects ?? []
   const totalProjects = data?.total ?? projects.length
-  const dashboardTotals = projects.reduce(
-    (totals, project) => {
-      totals.features += project.stats.features
-      totals.tasks += project.stats.tasks
-      totals.bugs += project.stats.bugs
-      totals.blocked += project.stats.blocked
-      return totals
+  const totals = projects.reduce(
+    (acc, p) => {
+      acc.features += p.stats.features
+      acc.tasks += p.stats.tasks
+      acc.bugs += p.stats.bugs
+      acc.blocked += p.stats.blocked
+      return acc
     },
     { features: 0, tasks: 0, bugs: 0, blocked: 0 },
   )
@@ -57,81 +62,98 @@ export function DashboardClient() {
   const handlePrevPage = () => setPage((p) => Math.max(0, p - 1))
   const handleNextPage = () => setPage((p) => Math.min(totalPages - 1, p + 1))
 
+  const stats = [
+    { label: 'Projects', value: totalProjects, icon: FolderKanban, color: 'text-white' },
+    { label: 'Features', value: totals.features, icon: Target, color: 'text-white' },
+    { label: 'Tasks', value: totals.tasks, icon: ListTodo, color: 'text-white' },
+    { label: 'Bugs', value: totals.bugs, icon: Bug, color: totals.bugs > 0 ? 'text-amber-300' : 'text-white' },
+    { label: 'Blocked', value: totals.blocked, icon: AlertCircle, color: totals.blocked > 0 ? 'text-rose-300' : 'text-white' },
+  ]
+
+  const quickLinks = [
+    { href: '/chat', label: personaName, sub: 'AI concierge', icon: MessageSquare, hoverBorder: 'hover:border-phosphor-500/40', hoverBg: 'hover:bg-phosphor-500/5', iconColor: 'text-phosphor-400' },
+    { href: '/backups', label: 'Backups', sub: 'DB snapshots', icon: Archive, hoverBorder: 'hover:border-indigo-500/40', hoverBg: 'hover:bg-indigo-500/5', iconColor: 'text-indigo-400' },
+    { href: '/feedback', label: 'Feedback', sub: 'Signals & fixes', icon: AlertCircle, hoverBorder: 'hover:border-amber-500/40', hoverBg: 'hover:bg-amber-500/5', iconColor: 'text-amber-400' },
+  ]
+
   return (
-    <div className="p-6 space-y-8">
-      {/* Global Features Section */}
-      <section className="animate-in">
-        <h2 className="display font-semibold text-lg text-white flex items-center gap-2 mb-4">
-          <Info className="w-5 h-5 text-outrun-500" />
-          Quick Access
-        </h2>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <Link
-            href="/chat"
-            className="card p-4 flex items-center gap-3 hover:border-phosphor-500/50 hover:bg-phosphor-500/5 transition-all group"
-          >
-            <div className="p-2 rounded-lg bg-phosphor-500/20 text-phosphor-400 group-hover:bg-phosphor-500/30 transition-colors">
-              <MessageSquare className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="text-sm font-medium text-white">{personaName}</div>
-              <div className="text-xs text-slate-500">AI concierge</div>
-            </div>
-          </Link>
-          <Link
-            href="/backups"
-            className="card p-4 flex items-center gap-3 hover:border-indigo-500/50 hover:bg-indigo-500/5 transition-all group"
-          >
-            <div className="p-2 rounded-lg bg-indigo-500/20 text-indigo-400 group-hover:bg-indigo-500/30 transition-colors">
-              <Archive className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="text-sm font-medium text-white">Backups</div>
-              <div className="text-xs text-slate-500">DB snapshots</div>
-            </div>
-          </Link>
-          <Link
-            href="/feedback"
-            className="card p-4 flex items-center gap-3 hover:border-amber-500/50 hover:bg-amber-500/5 transition-all group"
-          >
-            <div className="p-2 rounded-lg bg-amber-500/20 text-amber-400 group-hover:bg-amber-500/30 transition-colors">
-              <AlertCircle className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="text-sm font-medium text-white">Feedback</div>
-              <div className="text-xs text-slate-500">Signals and fixes</div>
-            </div>
-          </Link>
-          <SystemHealthWidget className="col-span-2 lg:col-span-1" />
+    <div className="p-6 space-y-6 max-w-[1440px]">
+      {/* Hero: Title + System Health */}
+      <motion.div
+        {...fadeUp}
+        transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
+        className="flex flex-col sm:flex-row sm:items-end justify-between gap-4"
+      >
+        <div>
+          <h1 className="display text-[28px] font-extrabold text-white tracking-tight leading-none">
+            Command Center
+          </h1>
+          <p className="mt-1.5 text-sm text-slate-500">
+            {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+          </p>
         </div>
-      </section>
+        <SystemHealthWidget />
+      </motion.div>
 
-      <section className="animate-in" style={{ animationDelay: '0.03s' }}>
-        <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
-          <SummaryCard label="Tracked Projects" value={totalProjects} icon={FolderKanban} />
-          <SummaryCard label="Active Features" value={dashboardTotals.features} icon={Info} />
-          <SummaryCard label="Active Tasks" value={dashboardTotals.tasks} icon={ListTodo} />
-          <SummaryCard label="Open Bugs" value={dashboardTotals.bugs} icon={Bug} />
-          <SummaryCard
-            label="Blocked Work"
-            value={dashboardTotals.blocked}
-            icon={AlertCircle}
-            tone="rose"
-          />
+      {/* Stats Strip */}
+      <motion.div
+        {...fadeUp}
+        transition={{ duration: 0.4, delay: 0.04, ease: [0.25, 0.46, 0.45, 0.94] }}
+      >
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-px rounded-xl overflow-hidden bg-slate-800/60">
+          {stats.map((stat) => {
+            const Icon = stat.icon
+            return (
+              <div key={stat.label} className="bg-slate-900/90 px-4 py-3.5 flex items-center gap-3">
+                <div className="rounded-lg bg-slate-800 p-2">
+                  <Icon className="w-4 h-4 text-slate-500" />
+                </div>
+                <div>
+                  <div className={`text-2xl font-bold tabular-nums leading-none ${stat.color}`}>
+                    {stat.value}
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-1">{stat.label}</div>
+                </div>
+              </div>
+            )
+          })}
         </div>
-      </section>
+      </motion.div>
 
-      {/* All Projects Section */}
-      <section className="animate-in" style={{ animationDelay: '0.05s' }}>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="display font-semibold text-lg text-white flex items-center gap-2">
-            <FolderKanban className="w-5 h-5 text-phosphor-500" />
-            All Projects
-          </h2>
+      {/* Quick Links */}
+      <motion.div
+        {...fadeUp}
+        transition={{ duration: 0.4, delay: 0.07, ease: [0.25, 0.46, 0.45, 0.94] }}
+        className="flex flex-wrap items-center gap-3"
+      >
+        {quickLinks.map((link) => {
+          const Icon = link.icon
+          return (
+            <Link
+              key={link.href}
+              href={link.href}
+              className={`card px-4 py-3 flex items-center gap-3 transition-all ${link.hoverBorder} ${link.hoverBg}`}
+            >
+              <Icon className={`w-4 h-4 ${link.iconColor}`} />
+              <div>
+                <div className="text-sm font-medium text-white leading-none">{link.label}</div>
+                <div className="text-[11px] text-slate-500 mt-0.5">{link.sub}</div>
+              </div>
+            </Link>
+          )
+        })}
+      </motion.div>
+
+      {/* Projects */}
+      <motion.section
+        {...fadeUp}
+        transition={{ duration: 0.4, delay: 0.1, ease: [0.25, 0.46, 0.45, 0.94] }}
+      >
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="display font-semibold text-base text-white">Projects</h2>
           <div className="flex items-center gap-3">
-            {/* Pagination controls */}
             {totalPages > 1 && (
-              <div className="flex items-center gap-2 text-sm">
+              <div className="flex items-center gap-1.5 text-xs">
                 <span className="text-slate-500">
                   {Math.min(startIndex + 1, totalProjects)}-{Math.min(endIndex, totalProjects)} of {totalProjects}
                 </span>
@@ -139,31 +161,29 @@ export function DashboardClient() {
                   type="button"
                   onClick={handlePrevPage}
                   disabled={page === 0}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                   aria-label="Previous page"
                 >
-                  <ChevronLeft className="w-4 h-4" />
+                  <ChevronLeft className="w-3.5 h-3.5" />
                 </button>
-                <span className="text-slate-400 tabular-nums min-w-[60px] text-center">
-                  {page + 1} / {totalPages}
-                </span>
+                <span className="text-slate-500 tabular-nums">{page + 1}/{totalPages}</span>
                 <button
                   type="button"
                   onClick={handleNextPage}
                   disabled={page === totalPages - 1}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                   aria-label="Next page"
                 >
-                  <ChevronRight className="w-4 h-4" />
+                  <ChevronRight className="w-3.5 h-3.5" />
                 </button>
               </div>
             )}
             <Link
               href="/projects/new"
-              className="btn-primary text-sm flex items-center gap-2"
+              className="btn-primary text-xs flex items-center gap-1.5 px-3 py-1.5"
             >
-              <Plus className="w-4 h-4" />
-              Add Project
+              <Plus className="w-3.5 h-3.5" />
+              Add
             </Link>
           </div>
         </div>
@@ -171,18 +191,17 @@ export function DashboardClient() {
           projects={visibleProjects}
           isLoading={isLoading}
           error={error}
-          totalProjects={totalProjects}
         />
-      </section>
+      </motion.section>
 
-      {/* Recent Activity Section */}
-      <section className="animate-fade-in" style={{ animationDelay: '0.15s' }}>
-        <h2 className="display font-semibold text-lg text-white flex items-center gap-2 mb-4">
-          <Activity className="w-5 h-5 text-phosphor-500" />
-          Recent Activity
-        </h2>
+      {/* Activity */}
+      <motion.section
+        {...fadeUp}
+        transition={{ duration: 0.4, delay: 0.14, ease: [0.25, 0.46, 0.45, 0.94] }}
+      >
+        <h2 className="display font-semibold text-base text-white mb-3">Recent Activity</h2>
         <ActivityFeed />
-      </section>
+      </motion.section>
     </div>
   )
 }
@@ -191,14 +210,12 @@ interface ProjectsGridProps {
   projects: ProjectWithStats[]
   isLoading: boolean
   error: Error | null
-  totalProjects: number
 }
 
 function ProjectsGrid({
   projects,
   isLoading,
   error,
-  totalProjects,
 }: ProjectsGridProps) {
   if (isLoading) {
     return (
@@ -242,50 +259,10 @@ function ProjectsGrid({
 
   return (
     <div className="space-y-3">
-      {totalProjects > 0 && (
-        <p className="text-xs text-slate-500">
-          Hover, focus, or tap a card to load live health and quality signals for that project.
-        </p>
-      )}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {projects.map((project) => (
           <ProjectCard key={project.id} project={project} />
         ))}
-      </div>
-    </div>
-  )
-}
-
-interface SummaryCardProps {
-  label: string
-  value: number
-  icon: typeof FolderKanban
-  tone?: 'default' | 'rose'
-}
-
-function SummaryCard({
-  label,
-  value,
-  icon: Icon,
-  tone = 'default',
-}: SummaryCardProps) {
-  const valueClass =
-    tone === 'rose' && value > 0 ? 'text-rose-300' : 'text-white'
-
-  return (
-    <div className="card rounded-xl p-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-xs uppercase tracking-wide text-slate-500">
-            {label}
-          </div>
-          <div className={`mt-2 text-2xl font-semibold ${valueClass}`}>
-            {value}
-          </div>
-        </div>
-        <div className="rounded-lg bg-slate-900/80 p-2 text-slate-400">
-          <Icon className="w-4 h-4" />
-        </div>
       </div>
     </div>
   )

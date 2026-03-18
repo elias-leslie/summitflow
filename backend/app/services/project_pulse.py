@@ -121,9 +121,7 @@ def _is_tmux_presence_session(session: dict[str, Any]) -> bool:
     if model.endswith("/external-tmux"):
         return True
     metadata = session.get("provider_metadata")
-    if isinstance(metadata, dict) and metadata.get("source") == "terminal_tmux_sync":
-        return True
-    return False
+    return isinstance(metadata, dict) and metadata.get("source") == "terminal_tmux_sync"
 
 
 def _active_session_dedupe_key(session: dict[str, Any]) -> tuple[str, str, str] | None:

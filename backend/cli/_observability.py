@@ -27,9 +27,7 @@ def _sync_enabled() -> bool:
     if raw in {"0", "false", "no", "off"}:
         return False
     # Coordination tests should not shell out to the real host environment.
-    if os.environ.get("PYTEST_CURRENT_TEST"):
-        return False
-    return True
+    return not os.environ.get("PYTEST_CURRENT_TEST")
 
 
 def _sync_timeout_seconds() -> float:

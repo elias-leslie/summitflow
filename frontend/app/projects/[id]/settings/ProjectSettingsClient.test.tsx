@@ -134,14 +134,18 @@ describe('ProjectSettingsClient', () => {
 
     renderClient()
 
-    expect(await screen.findByText('Project Settings')).toBeInTheDocument()
+    expect(await screen.findByText('Settings')).toBeInTheDocument()
     expect(screen.getByDisplayValue('summitflow')).toBeInTheDocument()
     expect(await screen.findByText('123ms')).toBeInTheDocument()
     expect(await screen.findByText('3 open')).toBeInTheDocument()
-    expect(await screen.findByText('.st/services.yaml detected')).toBeInTheDocument()
+    // .st/services.yaml appears in both status strip and services list
+    expect((await screen.findAllByText('.st/services.yaml')).length).toBeGreaterThan(0)
     expect(
       screen.getByText('uv run uvicorn app.main:app --port {port}'),
     ).toBeInTheDocument()
+
+    // Automation tab shows autonomous settings
+    fireEvent.click(screen.getByRole('button', { name: /Automation/i }))
     expect(screen.getByTestId('autonomous-settings')).toHaveTextContent(
       'summitflow',
     )
@@ -159,7 +163,7 @@ describe('ProjectSettingsClient', () => {
 
     renderClient()
 
-    expect(await screen.findByText('Project Settings')).toBeInTheDocument()
+    expect(await screen.findByText('Settings')).toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText('Project Name *'), {
       target: { value: ' SummitFlow Ops ' },

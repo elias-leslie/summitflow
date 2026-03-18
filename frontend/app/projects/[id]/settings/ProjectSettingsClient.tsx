@@ -1,11 +1,12 @@
 'use client'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import clsx from 'clsx'
 import {
   AlertCircle,
   ArrowLeft,
+  Bot,
   ExternalLink,
-  FolderGit2,
   FolderTree,
   Gauge,
   HeartPulse,
@@ -13,7 +14,6 @@ import {
   RefreshCcw,
   Save,
   Settings2,
-  Sparkles,
 } from 'lucide-react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
@@ -38,12 +38,14 @@ import { getErrorMessage } from '@/lib/utils'
 
 type FormErrors = ProjectFormErrors & { submit?: string }
 type ErrorField = keyof FormErrors
+type SettingsTab = 'general' | 'automation'
 
 export function ProjectSettingsClient() {
   const params = useParams()
   const projectId = params.id as string
   const queryClient = useQueryClient()
 
+  const [activeTab, setActiveTab] = useState<SettingsTab>('general')
   const [name, setName] = useState('')
   const [baseUrl, setBaseUrl] = useState('')
   const [healthEndpoint, setHealthEndpoint] = useState('')
@@ -119,10 +121,7 @@ export function ProjectSettingsClient() {
 
   const clearError = (field: ErrorField) => {
     setErrors((current) => {
-      if (!(field in current) && !('submit' in current)) {
-        return current
-      }
-
+      if (!(field in current) && !('submit' in current)) return current
       const next = { ...current }
       delete next[field]
       delete next.submit
@@ -131,12 +130,7 @@ export function ProjectSettingsClient() {
     setSaveState(null)
   }
 
-  const currentValues = normalizeProjectFormValues({
-    name,
-    baseUrl,
-    healthEndpoint,
-    rootPath,
-  })
+  const currentValues = normalizeProjectFormValues({ name, baseUrl, healthEndpoint, rootPath })
   const persistedValues = normalizeProjectFormValues({
     name: project?.name ?? '',
     baseUrl: project?.base_url ?? '',
@@ -150,12 +144,7 @@ export function ProjectSettingsClient() {
       currentValues.healthEndpoint !== persistedValues.healthEndpoint ||
       currentValues.rootPath !== persistedValues.rootPath)
   const fieldErrors = validateProjectForm(
-    {
-      name,
-      baseUrl,
-      healthEndpoint,
-      rootPath,
-    },
+    { name, baseUrl, healthEndpoint, rootPath },
     { requireProjectId: false },
   )
   const canSave = hasChanges && Object.keys(fieldErrors).length === 0 && !mutation.isPending
@@ -164,12 +153,7 @@ export function ProjectSettingsClient() {
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault()
     const validationErrors = validateProjectForm(
-      {
-        name,
-        baseUrl,
-        healthEndpoint,
-        rootPath,
-      },
+      { name, baseUrl, healthEndpoint, rootPath },
       { requireProjectId: false },
     )
     setErrors(validationErrors)
@@ -215,16 +199,10 @@ export function ProjectSettingsClient() {
                 {getErrorMessage(error, 'The project settings request failed.')}
               </p>
               <div className="mt-4 flex items-center gap-3">
-                <Link
-                  href={`/projects/${projectId}`}
-                  className="text-sm text-phosphor-400 hover:text-phosphor-300"
-                >
+                <Link href={`/projects/${projectId}`} className="text-sm text-phosphor-400 hover:text-phosphor-300">
                   Back to project
                 </Link>
-                <Link
-                  href="/"
-                  className="text-sm text-slate-400 hover:text-slate-200"
-                >
+                <Link href="/" className="text-sm text-slate-400 hover:text-slate-200">
                   Dashboard
                 </Link>
               </div>
@@ -239,16 +217,11 @@ export function ProjectSettingsClient() {
     return (
       <main className="content-container py-8">
         <div className="card max-w-xl p-6">
-          <h1 className="text-lg font-semibold text-slate-100">
-            Project not found
-          </h1>
+          <h1 className="text-lg font-semibold text-slate-100">Project not found</h1>
           <p className="mt-1 text-sm text-slate-400">
             This project no longer exists or has not been registered yet.
           </p>
-          <Link
-            href="/"
-            className="mt-4 inline-flex text-sm text-phosphor-400 hover:text-phosphor-300"
-          >
+          <Link href="/" className="mt-4 inline-flex text-sm text-phosphor-400 hover:text-phosphor-300">
             Back to dashboard
           </Link>
         </div>
@@ -260,10 +233,16 @@ export function ProjectSettingsClient() {
     (left, right) => left.port - right.port,
   )
 
+  const tabs: { id: SettingsTab; label: string; icon: typeof Settings2 }[] = [
+    { id: 'general', label: 'General', icon: Settings2 },
+    { id: 'automation', label: 'Automation', icon: Bot },
+  ]
+
   return (
-    <main className="content-container py-8">
-      <header className="mb-8 flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
+    <main className="content-container py-8 max-w-4xl">
+      {/* Header */}
+      <header className="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
           <Link
             href={`/projects/${projectId}`}
             className="text-slate-400 transition-colors hover:text-slate-200"
@@ -271,59 +250,33 @@ export function ProjectSettingsClient() {
             <ArrowLeft className="h-5 w-5" />
           </Link>
           <div>
-            <h1 className="flex items-center gap-3 text-2xl font-semibold text-slate-100">
-              <Settings2 className="h-6 w-6 text-slate-400" />
-              Project Settings
+            <h1 className="display flex items-center gap-2.5 text-xl font-bold text-slate-100">
+              Settings
             </h1>
-            <p className="mt-1 text-sm text-slate-400">
-              {project.name} · registration, live health, and autonomous controls
-            </p>
+            <p className="mt-0.5 text-sm text-slate-500">{project.name}</p>
           </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <Link
-            href={`/projects/${projectId}`}
-            className="btn-secondary inline-flex items-center gap-2 text-sm"
-          >
-            <Sparkles className="h-4 w-4" />
-            Project Overview
-          </Link>
-          <Link
-            href={`/projects/${projectId}/git`}
-            className="btn-secondary inline-flex items-center gap-2 text-sm"
-          >
-            <FolderGit2 className="h-4 w-4" />
-            Git
-          </Link>
-          <Link
-            href={`/projects/${projectId}/files`}
-            className="btn-secondary inline-flex items-center gap-2 text-sm"
-          >
-            <FolderTree className="h-4 w-4" />
-            Files
-          </Link>
         </div>
       </header>
 
-      <section className="mb-6 grid gap-4 xl:grid-cols-4">
-        <StatusCard
+      {/* Status Strip */}
+      <div className="mb-6 grid grid-cols-2 lg:grid-cols-4 gap-px rounded-xl overflow-hidden bg-slate-800/60">
+        <StatusCell
           label="Project ID"
           value={project.id}
           helper={`Created ${new Date(project.created_at).toLocaleDateString()}`}
           icon={Gauge}
           mono
         />
-        <StatusCard
-          label="Health Check"
+        <StatusCell
+          label="Health"
           value={
             health
               ? health.healthy
                 ? health.response_time_ms != null
                   ? `${Math.round(health.response_time_ms)}ms`
                   : 'Healthy'
-                : health.error || `HTTP ${health.status_code ?? 'error'}`
-              : 'Not checked yet'
+                : health.error || `HTTP ${health.status_code ?? 'err'}`
+              : 'Not checked'
           }
           helper={healthPreview}
           icon={HeartPulse}
@@ -332,7 +285,7 @@ export function ProjectSettingsClient() {
           onAction={() => refetchHealth()}
           pending={healthRefreshing}
         />
-        <StatusCard
+        <StatusCell
           label="Quality Gate"
           value={
             qualityGate
@@ -341,31 +294,19 @@ export function ProjectSettingsClient() {
                 : `${qualityGate.total_unfixed} open`
               : 'Unavailable'
           }
-          helper={
-            qualityGate
-              ? qualityGate.overall_pass
-                ? 'No unfixed quality issues'
-                : 'Needs operator attention'
-              : 'Quality status not loaded'
-          }
+          helper={qualityGate ? (qualityGate.overall_pass ? 'No unfixed issues' : 'Needs attention') : 'Not loaded'}
           icon={AlertCircle}
-          tone={
-            qualityGate
-              ? qualityGate.overall_pass
-                ? 'emerald'
-                : 'amber'
-              : 'default'
-          }
+          tone={qualityGate ? (qualityGate.overall_pass ? 'emerald' : 'amber') : 'default'}
         />
-        <StatusCard
+        <StatusCell
           label="Services"
-          value={project.root_path ? `${serviceEntries.length} configured` : 'Root path required'}
+          value={project.root_path ? `${serviceEntries.length} configured` : 'No root path'}
           helper={
             project.root_path
               ? services?.config_source === 'file'
-                ? '.st/services.yaml detected'
-                : 'Using default service map'
-              : 'Add a root path to unlock service discovery'
+                ? '.st/services.yaml'
+                : 'Default map'
+              : 'Add root path to unlock'
           }
           icon={FolderTree}
           tone={project.root_path ? 'cyan' : 'amber'}
@@ -373,17 +314,40 @@ export function ProjectSettingsClient() {
           onAction={project.root_path ? () => refetchServices() : undefined}
           pending={servicesRefreshing}
         />
-      </section>
+      </div>
 
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
-        <div className="space-y-6">
+      {/* Tab Bar */}
+      <div className="flex items-center gap-1 mb-6 border-b border-slate-800">
+        {tabs.map((tab) => {
+          const Icon = tab.icon
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={clsx(
+                'flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px',
+                activeTab === tab.id
+                  ? 'border-outrun-500 text-white'
+                  : 'border-transparent text-slate-500 hover:text-slate-300 hover:border-slate-600',
+              )}
+            >
+              <Icon className="w-4 h-4" />
+              {tab.label}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === 'general' && (
+        <div className="space-y-6 animate-in">
+          {/* Registration Form */}
           <form onSubmit={handleSave} className="card space-y-5 rounded-xl p-6">
             <div>
-              <h2 className="text-lg font-semibold text-slate-100">
-                Registration Details
-              </h2>
+              <h2 className="text-base font-semibold text-slate-100">Registration Details</h2>
               <p className="mt-1 text-sm text-slate-400">
-                Keep these accurate so health checks, file surfaces, and operator links point at the real system.
+                Health checks, file surfaces, and operator links use these values.
               </p>
             </div>
 
@@ -405,10 +369,7 @@ export function ProjectSettingsClient() {
                 <Input
                   id="project-name"
                   value={name}
-                  onChange={(e) => {
-                    clearError('name')
-                    setName(e.target.value)
-                  }}
+                  onChange={(e) => { clearError('name'); setName(e.target.value) }}
                   aria-invalid={Boolean(errors.name)}
                   className={errors.name ? 'border-red-500/50' : ''}
                 />
@@ -417,15 +378,8 @@ export function ProjectSettingsClient() {
 
               <div className="space-y-2">
                 <Label htmlFor="project-id">Project ID</Label>
-                <Input
-                  id="project-id"
-                  value={project.id}
-                  disabled
-                  className="mono text-slate-400"
-                />
-                <p className="text-xs text-slate-500">
-                  Stable identifier. Change it through migration, not an inline rename.
-                </p>
+                <Input id="project-id" value={project.id} disabled className="mono text-slate-400" />
+                <p className="text-xs text-slate-500">Stable identifier, not editable inline.</p>
               </div>
 
               <div className="space-y-2">
@@ -433,16 +387,11 @@ export function ProjectSettingsClient() {
                 <Input
                   id="project-base-url"
                   value={baseUrl}
-                  onChange={(e) => {
-                    clearError('baseUrl')
-                    setBaseUrl(e.target.value)
-                  }}
+                  onChange={(e) => { clearError('baseUrl'); setBaseUrl(e.target.value) }}
                   aria-invalid={Boolean(errors.baseUrl)}
                   className={errors.baseUrl ? 'border-red-500/50' : ''}
                 />
-                {errors.baseUrl && (
-                  <p className="text-xs text-red-400">{errors.baseUrl}</p>
-                )}
+                {errors.baseUrl && <p className="text-xs text-red-400">{errors.baseUrl}</p>}
               </div>
 
               <div className="space-y-2">
@@ -450,16 +399,11 @@ export function ProjectSettingsClient() {
                 <Input
                   id="project-health-endpoint"
                   value={healthEndpoint}
-                  onChange={(e) => {
-                    clearError('healthEndpoint')
-                    setHealthEndpoint(e.target.value)
-                  }}
+                  onChange={(e) => { clearError('healthEndpoint'); setHealthEndpoint(e.target.value) }}
                   aria-invalid={Boolean(errors.healthEndpoint)}
                   className={`mono ${errors.healthEndpoint ? 'border-red-500/50' : ''}`}
                 />
-                {errors.healthEndpoint && (
-                  <p className="text-xs text-red-400">{errors.healthEndpoint}</p>
-                )}
+                {errors.healthEndpoint && <p className="text-xs text-red-400">{errors.healthEndpoint}</p>}
               </div>
             </div>
 
@@ -468,31 +412,22 @@ export function ProjectSettingsClient() {
               <Input
                 id="project-root-path"
                 value={rootPath}
-                onChange={(e) => {
-                  clearError('rootPath')
-                  setRootPath(e.target.value)
-                }}
+                onChange={(e) => { clearError('rootPath'); setRootPath(e.target.value) }}
                 aria-invalid={Boolean(errors.rootPath)}
                 className={`mono ${errors.rootPath ? 'border-red-500/50' : ''}`}
                 placeholder="/home/user/projects/my-project"
               />
               <p className="text-xs text-slate-500">
-                Required for file browsing, project-specific service discovery, and path-aware automation.
+                Required for file browsing, service discovery, and path-aware automation.
               </p>
-              {errors.rootPath && (
-                <p className="text-xs text-red-400">{errors.rootPath}</p>
-              )}
+              {errors.rootPath && <p className="text-xs text-red-400">{errors.rootPath}</p>}
             </div>
 
-            <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-4 text-sm text-slate-400">
+            <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3 text-sm">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Effective health check
-                  </p>
-                  <p className="mt-1 break-all font-mono text-slate-200">
-                    {healthPreview}
-                  </p>
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Effective health check</p>
+                  <p className="mt-0.5 break-all font-mono text-sm text-slate-200">{healthPreview}</p>
                 </div>
                 <a
                   href={currentValues.baseUrl || project.base_url}
@@ -500,8 +435,7 @@ export function ProjectSettingsClient() {
                   rel="noreferrer"
                   className="inline-flex items-center gap-1 text-xs text-phosphor-400 hover:text-phosphor-300"
                 >
-                  <ExternalLink className="h-3 w-3" />
-                  Open base URL
+                  <ExternalLink className="h-3 w-3" /> Open
                 </a>
               </div>
             </div>
@@ -513,15 +447,9 @@ export function ProjectSettingsClient() {
                 className="btn-primary inline-flex items-center gap-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {mutation.isPending ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Saving...
-                  </>
+                  <><Loader2 className="h-4 w-4 animate-spin" /> Saving...</>
                 ) : (
-                  <>
-                    <Save className="h-4 w-4" />
-                    Save Changes
-                  </>
+                  <><Save className="h-4 w-4" /> Save Changes</>
                 )}
               </button>
               <button
@@ -530,28 +458,26 @@ export function ProjectSettingsClient() {
                 disabled={!hasChanges || mutation.isPending}
                 className="btn-secondary inline-flex items-center gap-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <RefreshCcw className="h-4 w-4" />
-                Reset
+                <RefreshCcw className="h-4 w-4" /> Reset
               </button>
               <span className="text-xs text-slate-500">
-                {hasChanges ? 'Unsaved changes' : 'Registration details are in sync'}
+                {hasChanges ? 'Unsaved changes' : 'In sync'}
               </span>
             </div>
           </form>
 
+          {/* Services */}
           <div className="card rounded-xl p-6">
             <div className="mb-4">
-              <h2 className="text-lg font-semibold text-slate-100">
-                Service Configuration
-              </h2>
+              <h2 className="text-base font-semibold text-slate-100">Service Configuration</h2>
               <p className="mt-1 text-sm text-slate-400">
-                This is what SummitFlow will use when it needs to reason about running services for this project.
+                Services SummitFlow uses for reasoning about this project&apos;s runtime.
               </p>
             </div>
 
             {!project.root_path ? (
               <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-4 text-sm text-amber-200">
-                Add a root path above to enable `.st/services.yaml` discovery and default service mapping.
+                Add a root path above to enable service discovery.
               </div>
             ) : servicesError ? (
               <div className="rounded-lg border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-200">
@@ -559,46 +485,37 @@ export function ProjectSettingsClient() {
               </div>
             ) : serviceEntries.length === 0 ? (
               <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-4 text-sm text-slate-400">
-                No services were detected for this project yet.
+                No services detected yet.
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-2">
                 <div className="flex items-center justify-between text-xs text-slate-500">
                   <span>
                     Source:{' '}
                     <span className="text-slate-300">
-                      {services?.config_source === 'file'
-                        ? '.st/services.yaml'
-                        : 'default config'}
+                      {services?.config_source === 'file' ? '.st/services.yaml' : 'default config'}
                     </span>
                   </span>
                   <span>{serviceEntries.length} service{serviceEntries.length === 1 ? '' : 's'}</span>
                 </div>
                 {serviceEntries.map((service) => (
-                  <div
-                    key={service.name}
-                    className="rounded-lg border border-slate-800 bg-slate-950/50 p-4"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div key={service.name} className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
-                        <p className="text-sm font-medium text-slate-100">
-                          {service.name}
-                        </p>
-                        <p className="mt-1 text-xs text-slate-500">
+                        <p className="text-sm font-medium text-slate-100">{service.name}</p>
+                        <p className="text-xs text-slate-500">
                           Port {service.port} · worktree base {service.worktree_port_base}
                         </p>
                       </div>
                       {service.cwd && (
-                        <span className="rounded-full border border-slate-700 px-2 py-1 font-mono text-[11px] text-slate-400">
+                        <span className="rounded-full border border-slate-700 px-2 py-0.5 font-mono text-[11px] text-slate-400">
                           {service.cwd}
                         </span>
                       )}
                     </div>
-                    <p className="mt-3 break-all font-mono text-xs text-slate-300">
-                      {service.command}
-                    </p>
+                    <p className="mt-2 break-all font-mono text-xs text-slate-300">{service.command}</p>
                     {(service.build_command || service.env_file) && (
-                      <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                      <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
                         {service.build_command && <span>Build: {service.build_command}</span>}
                         {service.env_file && <span>Env: {service.env_file}</span>}
                       </div>
@@ -609,24 +526,24 @@ export function ProjectSettingsClient() {
             )}
           </div>
         </div>
+      )}
 
-        <div className="space-y-6">
-          <section className="animate-fade-in">
-            <div className="card rounded-xl p-6">
-              <p className="mb-4 text-sm text-slate-400">
-                Control autonomous execution, quality-gate behavior, and merge posture for{' '}
-                <span className="text-slate-200">{project.name}</span>.
-              </p>
-              <AutonomousSettingsPanel projectId={projectId} />
-            </div>
-          </section>
+      {activeTab === 'automation' && (
+        <div className="animate-in">
+          <div className="card rounded-xl p-6">
+            <p className="mb-5 text-sm text-slate-400">
+              Autonomous execution, quality gates, and merge posture for{' '}
+              <span className="text-slate-200">{project.name}</span>.
+            </p>
+            <AutonomousSettingsPanel projectId={projectId} />
+          </div>
         </div>
-      </section>
+      )}
     </main>
   )
 }
 
-interface StatusCardProps {
+interface StatusCellProps {
   label: string
   value: string
   helper: string
@@ -638,7 +555,7 @@ interface StatusCardProps {
   mono?: boolean
 }
 
-function StatusCard({
+function StatusCell({
   label,
   value,
   helper,
@@ -648,39 +565,36 @@ function StatusCard({
   onAction,
   pending = false,
   mono = false,
-}: StatusCardProps) {
-  const valueTone =
-    tone === 'emerald'
-      ? 'text-emerald-300'
-      : tone === 'rose'
-        ? 'text-rose-300'
-        : tone === 'amber'
-          ? 'text-amber-300'
-          : tone === 'cyan'
-            ? 'text-cyan-300'
-            : 'text-slate-100'
+}: StatusCellProps) {
+  const toneClasses: Record<string, string> = {
+    default: 'text-slate-100',
+    emerald: 'text-emerald-300',
+    rose: 'text-rose-300',
+    amber: 'text-amber-300',
+    cyan: 'text-cyan-300',
+  }
 
   return (
-    <div className="card rounded-xl p-4">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-500">
-          <Icon className="h-3.5 w-3.5" />
+    <div className="bg-slate-900/90 px-4 py-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-slate-500">
+          <Icon className="h-3 w-3" />
           {label}
         </div>
         {actionLabel && onAction ? (
           <button
             type="button"
             onClick={onAction}
-            className="text-[11px] text-slate-500 transition-colors hover:text-slate-300"
+            className="text-[10px] text-slate-600 transition-colors hover:text-slate-300"
           >
-            {pending ? 'Refreshing…' : actionLabel}
+            {pending ? 'Loading...' : actionLabel}
           </button>
         ) : null}
       </div>
-      <div className={`mt-2 text-sm ${mono ? 'font-mono' : ''} ${valueTone}`}>
+      <div className={clsx('mt-1 text-sm truncate', mono && 'font-mono', toneClasses[tone])}>
         {value}
       </div>
-      <div className="mt-1 break-all text-xs text-slate-500">{helper}</div>
+      <div className="mt-0.5 truncate text-[11px] text-slate-600">{helper}</div>
     </div>
   )
 }

@@ -1,10 +1,10 @@
 import type { Metadata, Viewport } from 'next'
 import {
-  IBM_Plex_Sans,
-  IBM_Plex_Mono,
+  Outfit,
+  Bricolage_Grotesque,
   JetBrains_Mono,
-  Space_Grotesk,
   Fira_Code,
+  IBM_Plex_Mono,
 } from 'next/font/google'
 import Script from 'next/script'
 import './globals.css'
@@ -13,18 +13,18 @@ import { Sidebar } from '@/components/layout/Sidebar'
 import { TopBar } from '@/components/layout/TopBar'
 import { Providers } from './providers'
 
-// Primary body font
-const ibmPlexSans = IBM_Plex_Sans({
+// Primary body font — warm geometric sans
+const outfit = Outfit({
   subsets: ['latin'],
   weight: ['400', '500', '600', '700'],
   variable: '--font-body',
   display: 'swap',
 })
 
-// Display font for headings
-const spaceGrotesk = Space_Grotesk({
+// Display font for headings — editorial, angular, characterful
+const bricolageGrotesque = Bricolage_Grotesque({
   subsets: ['latin'],
-  weight: ['500', '600', '700'],
+  weight: ['500', '600', '700', '800'],
   variable: '--font-display',
   display: 'swap',
 })
@@ -71,7 +71,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`dark ${ibmPlexSans.variable} ${spaceGrotesk.variable} ${jetbrainsMono.variable} ${firaCode.variable} ${ibmPlexMono.variable}`}
+      className={`dark ${outfit.variable} ${bricolageGrotesque.variable} ${jetbrainsMono.variable} ${firaCode.variable} ${ibmPlexMono.variable}`}
     >
       <head>
         <link

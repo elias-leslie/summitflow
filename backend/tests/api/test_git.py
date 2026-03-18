@@ -119,7 +119,7 @@ class TestProjectDashboard:
             WorktreeInfo,
         )
 
-        mocker.patch("app.api.git_helpers.endpoints.get_project_path", return_value=Path("/repos/custom-folder"))
+        mocker.patch("app.api.git_helpers.endpoints.get_project_root_with_fallback", return_value=Path("/repos/custom-folder"))
         mocker.patch(
             "app.api.git_helpers.endpoints.collect_worktrees",
             return_value=[
