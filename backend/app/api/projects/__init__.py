@@ -224,7 +224,7 @@ async def update_project(project_id: str, update: ProjectUpdate) -> ProjectRespo
         conn.commit()
 
     if not row:
-        raise HTTPException(status_code=500, detail="Failed to update project")
+        raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
 
     return ProjectResponse(
         id=row[0],

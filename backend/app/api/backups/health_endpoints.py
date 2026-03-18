@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter
 
 from ...storage import backups as backup_store
 from ...tasks.backup_wal import get_wal_status
 from .models import BackupHealthItem, BackupHealthResponse, WalHealthSummary
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -71,7 +75,7 @@ async def backup_health() -> BackupHealthResponse:
             failed_count=wal_data.get("failed_count", 0),
         )
     except Exception:
-        pass
+        logger.warning("Failed to retrieve WAL status", exc_info=True)
 
     return BackupHealthResponse(
         sources=items,
