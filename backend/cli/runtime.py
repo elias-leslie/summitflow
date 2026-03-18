@@ -13,9 +13,9 @@ COMPOSE_FILE = COMPOSE_DIR / "docker-compose.yml"
 COMPOSE_DEV_FILE = COMPOSE_DIR / "docker-compose.dev.yml"
 COMPOSE_ENV_FILE = COMPOSE_DIR / ".env"
 RUNTIME_MODE_FILE = COMPOSE_DIR / ".runtime-mode"
-DEFAULT_DOCKER_MODE = os.environ.get("SUMMITFLOW_DOCKER_DEFAULT_MODE", "dev")
+DEFAULT_DOCKER_MODE = os.environ.get("SUMMITFLOW_DOCKER_DEFAULT_MODE", "prod")
 if DEFAULT_DOCKER_MODE not in {"dev", "prod"}:
-    DEFAULT_DOCKER_MODE = "dev"
+    DEFAULT_DOCKER_MODE = "prod"
 
 RuntimeMode = Literal["native", "docker", "container"]
 DockerMode = Literal["dev", "prod"]

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { ProxmoxStatusCard } from './ProxmoxStatusCard'
 
@@ -11,7 +11,7 @@ vi.mock('@tanstack/react-query', () => ({
 }))
 
 describe('ProxmoxStatusCard', () => {
-  it('renders a configuration prompt when Proxmox access is not configured', () => {
+  it('renders a collapsed summary when Proxmox is not configured', () => {
     queryMocks.useQuery.mockReturnValue({
       data: {
         configured: false,
@@ -29,15 +29,10 @@ describe('ProxmoxStatusCard', () => {
     render(<ProxmoxStatusCard />)
 
     expect(screen.getByText('Proxmox')).toBeInTheDocument()
-    expect(screen.getByText('not configured')).toBeInTheDocument()
-    expect(
-      screen.getByText(
-        'Set PROXMOX_API_URL, PROXMOX_TOKEN_ID, and PROXMOX_TOKEN_SECRET to enable Proxmox status.',
-      ),
-    ).toBeInTheDocument()
+    expect(screen.getByText('Not configured')).toBeInTheDocument()
   })
 
-  it('renders node and guest status when Proxmox is reachable', () => {
+  it('renders node and guest status when expanded', () => {
     queryMocks.useQuery.mockReturnValue({
       data: {
         configured: true,
@@ -74,6 +69,12 @@ describe('ProxmoxStatusCard', () => {
     })
 
     render(<ProxmoxStatusCard />)
+
+    // Summary visible in collapsed state
+    expect(screen.getByText('1/1 nodes online, 1/1 guests running')).toBeInTheDocument()
+
+    // Expand by clicking
+    fireEvent.click(screen.getByText('Proxmox'))
 
     expect(screen.getByText('davion-gem')).toBeInTheDocument()
     expect(screen.getByText('browser-test-vm')).toBeInTheDocument()

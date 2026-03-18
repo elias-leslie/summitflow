@@ -41,7 +41,7 @@ function StatPill({
 }
 
 export function GitClient() {
-  const { data: gitStatus, isLoading, isError, refetch } = useGitStatus()
+  const { data: gitStatus, isLoading, isError } = useGitStatus()
   const repos = gitStatus?.repositories ?? []
 
   const dirtyRepos = repos.filter(
@@ -84,16 +84,6 @@ export function GitClient() {
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={() => refetch()}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-400 hover:text-white bg-slate-800/60 hover:bg-slate-800 rounded-md border border-slate-700/50 hover:border-slate-600 transition-all"
-        >
-          <RefreshCw
-            className={clsx('w-3.5 h-3.5', isLoading && 'animate-spin')}
-          />
-          Refresh
-        </button>
       </header>
 
       {/* Conflict Alerts */}

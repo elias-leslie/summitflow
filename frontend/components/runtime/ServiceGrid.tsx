@@ -1,0 +1,198 @@
+'use client'
+
+import { useQuery } from '@tanstack/react-query'
+import { clsx } from 'clsx'
+import { useCallback, useMemo, useState } from 'react'
+import { type RuntimeServiceStatus, runtimeApi } from '@/lib/api/runtime'
+import { ServiceCard } from './ServiceCard'
+import { ServiceListView } from './ServiceListView'
+
+type ViewMode = 'grid' | 'list'
+
+const STORAGE_KEY = 'runtime-view-mode'
+
+function readStoredView(): ViewMode {
+  if (typeof window === 'undefined') return 'grid'
+  const stored = localStorage.getItem(STORAGE_KEY)
+  return stored === 'list' ? 'list' : 'grid'
+}
+
+export function ServiceGrid() {
+  const [view, setViewRaw] = useState<ViewMode>(readStoredView)
+
+  const setView = useCallback((mode: ViewMode) => {
+    setViewRaw(mode)
+    localStorage.setItem(STORAGE_KEY, mode)
+  }, [])
+
+  const {
+    data: containers,
+    error,
+    isLoading,
+  } = useQuery({
+    queryKey: ['runtime', 'status'],
+    queryFn: runtimeApi.getStatus,
+    refetchInterval: 10_000,
+  })
+  const { data: metrics, isLoading: isMetricsLoading } = useQuery({
+    queryKey: ['runtime', 'metrics'],
+    queryFn: runtimeApi.getMetrics,
+    refetchInterval: 15_000,
+  })
+
+  const metricsByService = useMemo(
+    () => new Map((metrics ?? []).map((m) => [m.service, m])),
+    [metrics],
+  )
+
+  const sections = useMemo(
+    () =>
+      [
+        {
+          id: 'native-apps',
+          title: 'Native App Services',
+          description: 'Services running under systemd --user.',
+          items:
+            containers?.filter(
+              (s) => s.manager === 'systemd' && s.category === 'app',
+            ) ?? [],
+        },
+        {
+          id: 'native-workers',
+          title: 'Native Workers',
+          description: 'Background workers running under systemd --user.',
+          items:
+            containers?.filter(
+              (s) => s.manager === 'systemd' && s.category === 'worker',
+            ) ?? [],
+        },
+        {
+          id: 'docker-infra',
+          title: 'Docker Infra',
+          description: 'Shared infrastructure that stays containerized.',
+          items:
+            containers?.filter((s) => s.manager === 'docker') ?? [],
+        },
+      ].filter(
+        (section): section is {
+          id: string
+          title: string
+          description: string
+          items: RuntimeServiceStatus[]
+        } => section.items.length > 0,
+      ),
+    [containers],
+  )
+
+  if (isLoading) {
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div
+            key={i}
+            className="h-32 rounded-lg bg-slate-800/40 animate-pulse"
+          />
+        ))}
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-lg border border-red-500/40 bg-red-950/20 p-8 text-center">
+        <p className="text-red-300">Runtime status is unavailable.</p>
+        <p className="mt-1 text-sm text-red-200/80">
+          {error instanceof Error ? error.message : 'Unknown runtime API error'}
+        </p>
+      </div>
+    )
+  }
+
+  if (!containers?.length) {
+    return (
+      <div className="rounded-lg border border-slate-700 bg-slate-800/30 p-8 text-center">
+        <p className="text-slate-400">No managed runtime services found.</p>
+        <p className="text-sm text-slate-500 mt-1">
+          Start or rebuild services with:{' '}
+          <code className="text-amber-400">
+            ~/summitflow/scripts/rebuild.sh
+          </code>
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-5">
+      {/* View toggle */}
+      <div className="flex items-center justify-end">
+        <div className="flex rounded-md border border-slate-700/60 overflow-hidden">
+          <button
+            onClick={() => setView('grid')}
+            className={clsx(
+              'px-2.5 py-1 text-xs transition-colors',
+              view === 'grid'
+                ? 'bg-slate-700 text-white'
+                : 'bg-slate-900/50 text-slate-500 hover:text-slate-300',
+            )}
+            aria-label="Grid view"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className="inline-block">
+              <rect x="1" y="1" width="6" height="6" rx="1" stroke="currentColor" strokeWidth="1.5" />
+              <rect x="9" y="1" width="6" height="6" rx="1" stroke="currentColor" strokeWidth="1.5" />
+              <rect x="1" y="9" width="6" height="6" rx="1" stroke="currentColor" strokeWidth="1.5" />
+              <rect x="9" y="9" width="6" height="6" rx="1" stroke="currentColor" strokeWidth="1.5" />
+            </svg>
+          </button>
+          <button
+            onClick={() => setView('list')}
+            className={clsx(
+              'px-2.5 py-1 text-xs transition-colors',
+              view === 'list'
+                ? 'bg-slate-700 text-white'
+                : 'bg-slate-900/50 text-slate-500 hover:text-slate-300',
+            )}
+            aria-label="List view"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className="inline-block">
+              <line x1="1" y1="3" x2="15" y2="3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              <line x1="1" y1="8" x2="15" y2="8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              <line x1="1" y1="13" x2="15" y2="13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      {sections.map((section) => (
+        <section key={section.id} className="space-y-3">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-300">
+              {section.title}
+            </h2>
+            <p className="mt-0.5 text-xs text-slate-500">
+              {section.description}
+            </p>
+          </div>
+
+          {view === 'list' ? (
+            <ServiceListView
+              services={section.items}
+              metricsByService={metricsByService}
+            />
+          ) : (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {section.items.map((service) => (
+                <ServiceCard
+                  key={service.name}
+                  container={service}
+                  metric={metricsByService.get(service.service)}
+                  metricsLoading={isMetricsLoading}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+      ))}
+    </div>
+  )
+}

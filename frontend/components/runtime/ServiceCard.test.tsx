@@ -53,9 +53,9 @@ describe('ServiceCard', () => {
 
     expect(screen.getByText('CPU')).toBeInTheDocument()
     expect(screen.getByText('3.5%')).toBeInTheDocument()
-    expect(screen.getByText('Memory')).toBeInTheDocument()
+    expect(screen.getByText('Mem')).toBeInTheDocument()
     expect(screen.getByText('120MiB / 2GiB')).toBeInTheDocument()
-    expect(screen.getByText('Mem %')).toBeInTheDocument()
+    expect(screen.getByText('Mem%')).toBeInTheDocument()
     expect(screen.getByText('5.8%')).toBeInTheDocument()
   })
 })

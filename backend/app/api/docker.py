@@ -56,9 +56,9 @@ def _detect_repo_root(start_path: Path | None = None) -> Path:
 _REPO_ROOT = _detect_repo_root()
 _HOST_HOME_PATH = Path(os.environ.get("HOST_HOME_PATH", str(Path.home())))
 _HOST_REPO_ROOT = Path(os.environ.get("HOST_REPO_ROOT", str(_HOST_HOME_PATH / "summitflow")))
-_DEFAULT_STACK_MODE = os.environ.get("SUMMITFLOW_DOCKER_DEFAULT_MODE", "dev")
+_DEFAULT_STACK_MODE = os.environ.get("SUMMITFLOW_DOCKER_DEFAULT_MODE", "prod")
 if _DEFAULT_STACK_MODE not in {"dev", "prod"}:
-    _DEFAULT_STACK_MODE = "dev"
+    _DEFAULT_STACK_MODE = "prod"
 _COMPOSE_DIR = Path(os.environ.get("COMPOSE_DIR", str(_REPO_ROOT / "docker" / "compose")))
 _COMPOSE_FILE = _COMPOSE_DIR / "docker-compose.yml"
 _RUNTIME_MODE_FILE = _COMPOSE_DIR / ".runtime-mode"

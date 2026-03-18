@@ -14,6 +14,10 @@ vi.mock('./ServiceCard', () => ({
   ServiceCard: () => <div data-testid="service-card" />,
 }))
 
+vi.mock('./ServiceListView', () => ({
+  ServiceListView: () => <div data-testid="service-list" />,
+}))
+
 describe('ServiceGrid', () => {
   it('renders a runtime error state when the status query fails', () => {
     queryMocks.useQuery

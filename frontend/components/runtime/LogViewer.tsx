@@ -3,6 +3,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { runtimeApi } from '@/lib/api/runtime'
+import {
+  Sheet,
+  SheetBody,
+  SheetClose,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
 
 interface LogViewerProps {
   service: string
@@ -65,50 +74,43 @@ export function LogViewer({ service, onClose }: LogViewerProps) {
     : (initialLogs?.logs ?? '').split('\n').filter(Boolean)
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="w-[90vw] max-w-4xl h-[70vh] bg-neutral-900 border border-neutral-700 rounded-xl flex flex-col shadow-2xl">
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-700">
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-sm text-white">{service}</span>
-            <span className="text-xs text-neutral-500">logs</span>
-          </div>
-          <div className="flex items-center gap-2">
+    <Sheet open onOpenChange={(open) => !open && onClose()}>
+      <SheetContent className="max-w-lg flex flex-col">
+        <SheetHeader className="relative">
+          <SheetTitle>
+            <span className="font-mono text-sm">{service}</span>
+          </SheetTitle>
+          <SheetDescription>Service logs</SheetDescription>
+          <SheetClose onClose={onClose} />
+          <div className="flex gap-2 mt-2">
             <button
               onClick={toggleStream}
-              className={`text-xs px-3 py-1 rounded transition-colors ${
+              className={`text-xs px-2.5 py-1 rounded transition-colors ${
                 streaming
-                  ? 'bg-emerald-500/20 text-emerald-400'
-                  : 'bg-neutral-700 text-neutral-300 hover:bg-neutral-600'
+                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                  : 'bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700'
               }`}
             >
-              {streaming ? 'Stop streaming' : 'Stream'}
-            </button>
-            <button
-              onClick={onClose}
-              className="text-xs px-3 py-1 rounded bg-neutral-700 text-neutral-300 hover:bg-neutral-600 transition-colors"
-            >
-              Close
+              {streaming ? 'Stop streaming' : 'Stream live'}
             </button>
           </div>
-        </div>
+        </SheetHeader>
 
-        {/* Log content */}
-        <div
-          ref={scrollRef}
-          className="flex-1 overflow-auto p-4 font-mono text-xs leading-5 text-neutral-300"
-        >
-          {lines.length === 0 ? (
-            <p className="text-neutral-500">No logs available</p>
-          ) : (
-            lines.map((line, i) => (
-              <div key={i} className="hover:bg-neutral-800/50 px-1 -mx-1">
-                {line}
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-    </div>
+        <SheetBody className="flex-1 overflow-hidden p-0">
+          <div
+            ref={scrollRef}
+            className="h-full overflow-auto px-4 py-3 font-mono text-xs leading-5 text-slate-300"
+          >
+            {lines.length === 0 ? (
+              <p className="text-slate-500">No logs available</p>
+            ) : (
+              <pre className="whitespace-pre-wrap break-all">
+                {lines.join('\n')}
+              </pre>
+            )}
+          </div>
+        </SheetBody>
+      </SheetContent>
+    </Sheet>
   )
 }
