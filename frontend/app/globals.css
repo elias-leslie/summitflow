@@ -66,13 +66,6 @@
   --text-2xs: 0.625rem;
   --text-2xs--line-height: 0.875rem;
 
-  /* Custom spacing */
-  --spacing-indent-1: 0.5rem;
-  --spacing-indent-2: 1rem;
-  --spacing-indent-3: 1.5rem;
-  --spacing-indent-4: 2rem;
-  --spacing-indent-5: 2.5rem;
-
   /* Animations */
   --animate-fade-in: fadeIn 0.5s ease-out;
   --animate-slide-up: slideUp 0.5s ease-out;

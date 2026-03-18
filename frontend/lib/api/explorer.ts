@@ -317,33 +317,6 @@ export async function fetchExplorerOverview(
 }
 
 /**
- * Fetch a single explorer entry by type and path.
- */
-export async function fetchExplorerEntry(
-  projectId: string,
-  type: ExplorerEntryType,
-  path: string,
-): Promise<ExplorerEntry> {
-  return fetchWithErrorHandling<ExplorerEntry>(
-    `/api/projects/${projectId}/explorer/${type}/${encodeURIComponent(path)}`,
-    { errorMessage: `Entry not found: ${type}/${path}` },
-  )
-}
-
-/**
- * Fetch a single explorer entry by ID.
- */
-export async function fetchExplorerEntryById(
-  projectId: string,
-  entryId: number,
-): Promise<ExplorerEntry> {
-  return fetchWithErrorHandling<ExplorerEntry>(
-    `/api/projects/${projectId}/explorer/entry/${entryId}`,
-    { errorMessage: `Entry ${entryId} not found` },
-  )
-}
-
-/**
  * Fetch direct children of a path for tree navigation.
  */
 export async function fetchExplorerChildren(

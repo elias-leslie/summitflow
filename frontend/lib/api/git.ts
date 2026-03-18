@@ -103,21 +103,6 @@ export async function pullRepository(
 }
 
 /**
- * Push changes for a specific project's repository.
- */
-export async function pushRepository(
-  projectId: string,
-): Promise<GitSyncResponse> {
-  return fetchWithErrorHandling<GitSyncResponse>(
-    `${getApiBase()}/api/projects/${projectId}/git/push`,
-    {
-      method: 'POST',
-      errorMessage: 'Failed to push repository',
-    },
-  )
-}
-
-/**
  * Fetch changes for a specific project's repository.
  */
 export async function fetchRepository(

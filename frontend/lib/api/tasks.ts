@@ -32,7 +32,6 @@ export type {
   // Enrichment types
   EnrichmentStatus,
   EnrichmentRequest,
-  CleanupPromptResponse,
   DiscussionMessage,
   DiscussionResponse,
   // Subtasks & steps
@@ -84,7 +83,6 @@ export {
 export {
   // Enrichment workflow
   enrichTask,
-  cleanupPrompt,
   discussTask,
   acceptTask,
   // Subtasks
@@ -94,8 +92,6 @@ export {
   // Steps
   getSteps,
   updateStep,
-  // Acceptance criteria
-  getTaskCriteria,
 } from './tasks-enrichment'
 
 // ============================================================================

@@ -86,41 +86,6 @@ export interface QualityGateHealth {
   >
 }
 
-export interface ProjectAgentConfig {
-  claude_enabled: boolean
-  gemini_enabled: boolean
-  default_agent: string
-  claude_model: string
-  gemini_model: string
-  memory_enabled: boolean
-  observations_enabled: boolean
-  diary_enabled: boolean
-  patterns_enabled: boolean
-  checkpoints_enabled: boolean
-  context_injection_enabled: boolean
-  component_source: string
-  // Extraction throttle
-  extraction_enabled: boolean
-  extraction_rpm_limit: number
-}
-
-export interface ProjectAgentConfigUpdate {
-  claude_enabled?: boolean
-  gemini_enabled?: boolean
-  default_agent?: string
-  claude_model?: string
-  gemini_model?: string
-  memory_enabled?: boolean
-  observations_enabled?: boolean
-  diary_enabled?: boolean
-  patterns_enabled?: boolean
-  checkpoints_enabled?: boolean
-  context_injection_enabled?: boolean
-  component_source?: string
-  // Extraction throttle
-  extraction_enabled?: boolean
-  extraction_rpm_limit?: number
-}
 
 export interface AutonomousExecutionSettings {
   // Access control (enabled, hours) now managed by Agent Hub project permissions.

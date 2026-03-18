@@ -13,8 +13,6 @@ import type {
   ProjectUpdate,
   ProjectsWithStatsResponse,
   QualityGateHealth,
-  ProjectAgentConfig,
-  ProjectAgentConfigUpdate,
 } from './projects-types'
 
 // Re-export all types for backward compatibility
@@ -98,26 +96,3 @@ export async function fetchQualityGateHealth(
   })
 }
 
-// ============================================================================
-// Agent Configuration
-// ============================================================================
-
-export async function getAgentConfig(
-  projectId: string,
-): Promise<ProjectAgentConfig> {
-  return fetchWithErrorHandling(`/api/projects/${projectId}/agents`, {
-    errorMessage: 'Failed to fetch agent config',
-  })
-}
-
-export async function updateAgentConfig(
-  projectId: string,
-  config: ProjectAgentConfigUpdate,
-): Promise<ProjectAgentConfig> {
-  return fetchWithErrorHandling(`/api/projects/${projectId}/agents`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(config),
-    errorMessage: 'Failed to update agent config',
-  })
-}

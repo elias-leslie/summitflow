@@ -85,22 +85,3 @@ export async function fetchWithErrorHandling<T>(
   return res.json()
 }
 
-/**
- * Fetch JSON with timeout and error handling.
- * Combines timeout + error handling for common API patterns.
- */
-export async function fetchJsonWithTimeout<T>(
-  url: string,
-  options: RequestInit & { errorMessage?: string; timeoutMs?: number } = {},
-): Promise<T> {
-  const {
-    errorMessage = 'Request failed',
-    timeoutMs = 30000,
-    ...fetchOptions
-  } = options
-  const res = await fetchWithTimeout(url, fetchOptions, timeoutMs)
-  if (!res.ok) {
-    await throwFromResponse(res, errorMessage)
-  }
-  return res.json()
-}

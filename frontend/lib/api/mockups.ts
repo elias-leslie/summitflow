@@ -43,20 +43,6 @@ export interface MockupStats {
   avg_generation_time_ms: number | null
 }
 
-export interface MockupCreateRequest {
-  name: string
-  description?: string
-  mockup_type?: string
-  file_path?: string
-  content?: string
-  task_id?: string
-  page_path?: string
-  parent_mockup_id?: number
-  generator?: string
-  generation_prompt?: string
-  generation_time_ms?: number
-}
-
 export interface MockupFilters {
   limit?: number
   offset?: number
@@ -128,21 +114,6 @@ export async function fetchMockupHistory(
     `/api/projects/${projectId}/mockups/${mockupId}/history`,
     { errorMessage: 'Failed to fetch mockup history' },
   )
-}
-
-/**
- * Create a new mockup
- */
-export async function createMockup(
-  projectId: string,
-  data: MockupCreateRequest,
-): Promise<Mockup> {
-  return fetchWithErrorHandling<Mockup>(`/api/projects/${projectId}/mockups`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-    errorMessage: 'Failed to create mockup',
-  })
 }
 
 /**

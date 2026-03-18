@@ -57,11 +57,6 @@ export interface MergedTaskSummary {
   deletions: number
 }
 
-export interface RecentMergesResponse {
-  merges: MergedTaskSummary[]
-  count: number
-}
-
 // --- Commit Types ---
 
 export interface CommitInfo {
@@ -77,11 +72,6 @@ export interface CommitInfo {
   deletions: number
 }
 
-export interface RecentCommitsResponse {
-  commits: CommitInfo[]
-  count: number
-}
-
 // --- Snapshot Types ---
 
 export interface SnapshotInfo {
@@ -94,11 +84,6 @@ export interface SnapshotInfo {
   repo_name: string
   is_current: boolean
   commits_ahead: number
-}
-
-export interface SnapshotsResponse {
-  snapshots: SnapshotInfo[]
-  count: number
 }
 
 // --- Worktree Types ---
@@ -188,15 +173,6 @@ export async function fetchTaskDiff(taskId: string): Promise<TaskDiffResponse> {
   )
 }
 
-export async function fetchRecentMerges(
-  limit = 20,
-): Promise<RecentMergesResponse> {
-  return fetchWithErrorHandling<RecentMergesResponse>(
-    `${getApiBase()}/api/git/recent-merges?limit=${limit}`,
-    { errorMessage: 'Failed to fetch recent merges' },
-  )
-}
-
 // --- Single Commit Diff API ---
 
 export async function fetchCommitDiff(
@@ -207,32 +183,6 @@ export async function fetchCommitDiff(
   return fetchWithErrorHandling<TaskDiffResponse>(
     `${getApiBase()}/api/git/commits/${sha}/diff${params}`,
     { errorMessage: 'Failed to fetch commit diff' },
-  )
-}
-
-// --- Commit History API ---
-
-export async function fetchRecentCommits(
-  limit = 50,
-  projectId?: string,
-): Promise<RecentCommitsResponse> {
-  const params = new URLSearchParams({ limit: String(limit) })
-  if (projectId) params.set('project_id', projectId)
-  return fetchWithErrorHandling<RecentCommitsResponse>(
-    `${getApiBase()}/api/git/commits/recent?${params}`,
-    { errorMessage: 'Failed to fetch recent commits' },
-  )
-}
-
-// --- Snapshot API ---
-
-export async function fetchSnapshots(
-  projectId?: string,
-): Promise<SnapshotsResponse> {
-  const params = projectId ? `?project_id=${projectId}` : ''
-  return fetchWithErrorHandling<SnapshotsResponse>(
-    `${getApiBase()}/api/git/snapshots${params}`,
-    { errorMessage: 'Failed to fetch snapshots' },
   )
 }
 

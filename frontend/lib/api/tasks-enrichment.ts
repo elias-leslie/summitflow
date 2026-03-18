@@ -6,12 +6,10 @@ import { fetchWithErrorHandling } from './utils'
 import type {
   Task,
   EnrichmentRequest,
-  CleanupPromptResponse,
   DiscussionResponse,
   SubtasksResponse,
   Subtask,
   Step,
-  TaskAcceptanceCriterion,
 } from './tasks-types'
 
 // ============================================================================
@@ -35,24 +33,6 @@ export async function enrichTask(
     body: JSON.stringify(request),
     errorMessage: 'Failed to enrich task',
   })
-}
-
-/**
- * Clean up and refine a raw task prompt using AI.
- */
-export async function cleanupPrompt(
-  projectId: string,
-  rawRequest: string,
-): Promise<CleanupPromptResponse> {
-  return fetchWithErrorHandling(
-    `/api/projects/${projectId}/tasks/cleanup-prompt`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ raw_request: rawRequest }),
-      errorMessage: 'Failed to cleanup prompt',
-    },
-  )
 }
 
 /**
@@ -189,18 +169,4 @@ export async function updateStep(
 // Acceptance Criteria
 // ============================================================================
 
-/**
- * Get all acceptance criteria for a task.
- */
-export async function getTaskCriteria(
-  projectId: string,
-  taskId: string,
-): Promise<TaskAcceptanceCriterion[]> {
-  return fetchWithErrorHandling(
-    `/api/projects/${projectId}/tasks/${taskId}/criteria`,
-    {
-      errorMessage: 'Failed to fetch task criteria',
-    },
-  )
-}
 

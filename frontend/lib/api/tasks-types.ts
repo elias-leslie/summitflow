@@ -36,7 +36,6 @@ export type {
   Subtask,
   SubtasksResponse,
   EnrichmentRequest,
-  CleanupPromptResponse,
   DiscussionMessage,
   DiscussionResponse,
 } from './tasks-types-enrichment'
