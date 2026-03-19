@@ -1,13 +1,10 @@
 'use client'
 
 import {
-  AlertCircle,
   Ban,
-  OctagonX,
   CheckCircle2,
   Clock,
   DollarSign,
-  Eye,
   Loader2,
   RefreshCw,
   XCircle,
@@ -48,35 +45,10 @@ const statusIcons: Record<
     color: 'text-slate-400',
     bg: 'bg-slate-500/20',
   },
-  queue: {
-    icon: <Clock className="h-3 w-3" />,
-    color: 'text-sky-400',
-    bg: 'bg-sky-500/20',
-  },
   running: {
     icon: <Loader2 className="h-3 w-3 animate-spin" />,
     color: 'text-blue-400',
     bg: 'bg-blue-500/20',
-  },
-  paused: {
-    icon: <Clock className="h-3 w-3" />,
-    color: 'text-amber-400',
-    bg: 'bg-amber-500/20',
-  },
-  blocked: {
-    icon: <AlertCircle className="h-3 w-3" />,
-    color: 'text-red-400',
-    bg: 'bg-red-500/20',
-  },
-  conflicted: {
-    icon: <OctagonX className="h-3 w-3" />,
-    color: 'text-rose-400',
-    bg: 'bg-rose-500/20',
-  },
-  ai_reviewing: {
-    icon: <Eye className="h-3 w-3 animate-pulse" />,
-    color: 'text-cyan-400',
-    bg: 'bg-cyan-500/20',
   },
   completed: {
     icon: <CheckCircle2 className="h-3 w-3" />,
@@ -93,11 +65,6 @@ const statusIcons: Record<
     color: 'text-slate-400',
     bg: 'bg-slate-500/20',
   },
-  abandoned: {
-    icon: <Ban className="h-3 w-3" />,
-    color: 'text-slate-400',
-    bg: 'bg-slate-500/20',
-  },
 }
 
 // ============================================================================
@@ -106,7 +73,6 @@ const statusIcons: Record<
 
 function formatModelName(model?: string): string | null {
   if (!model) return null
-  // Normalize model names for display
   if (model.includes('haiku') || model.includes('flash')) return 'Flash'
   if (model.includes('sonnet')) return 'Sonnet'
   if (model.includes('opus')) return 'Opus'
@@ -130,7 +96,6 @@ function formatCost(cost?: number): string | null {
 
 function extractModelFromLog(progressLog?: string | null): string | undefined {
   if (!progressLog) return undefined
-  // Look for model mentions in progress log
   const modelPatterns = [
     /with\s+(claude-[a-z0-9-]+)/i,
     /with\s+(gemini-[a-z0-9-]+)/i,
@@ -155,19 +120,16 @@ export function ExecutionBadges({
 }: ExecutionBadgesProps) {
   const statusConfig = statusIcons[task.status] || statusIcons.pending
 
-  // Extract execution metadata from task (if available)
-  // Model extracted from progress_log since it's not stored in a dedicated field
   const metadata: ExecutionMetadata = {
     model: extractModelFromLog(task.progress_log),
     retryCount: task.total_sessions > 1 ? task.total_sessions : undefined,
-    cost: task.total_tokens_used ? task.total_tokens_used * 0.00001 : undefined, // Rough estimate
+    cost: task.total_tokens_used ? task.total_tokens_used * 0.00001 : undefined,
   }
 
   const modelName = formatModelName(metadata.model)
   const costDisplay = formatCost(metadata.cost)
 
   if (compact) {
-    // Compact view: just status icon
     return (
       <div
         className={`inline-flex items-center gap-1 ${className}`}
@@ -182,7 +144,6 @@ export function ExecutionBadges({
     )
   }
 
-  // Full view: status + model + retry + cost
   return (
     <div className={`inline-flex items-center gap-2 ${className}`}>
       {/* Status badge */}

@@ -21,6 +21,7 @@ export type {
   CapabilityContext,
   BlockerInfo,
   WorktreeInfo,
+  VerificationResult,
   Task,
   TaskListResponse,
   TaskDependency,

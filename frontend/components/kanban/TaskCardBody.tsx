@@ -13,7 +13,7 @@ interface TaskCardBodyProps {
 }
 
 export function TaskCardBody({ task, currentStep, canExpand }: TaskCardBodyProps) {
-  const statusConfig = getTaskStatusCardConfig(task.status)
+  const _statusConfig = getTaskStatusCardConfig(task.status)
   const capability = task.capability
   const hasCriteria = capability && capability.criteria_total > 0
   const allPassed =
@@ -37,16 +37,6 @@ export function TaskCardBody({ task, currentStep, canExpand }: TaskCardBodyProps
 
       {canExpand && <StepProgressIndicator status={task.status} />}
 
-      {task.status === 'ai_reviewing' && (
-        <div className="flex items-center gap-2 mb-2 py-1.5 px-2 -mx-1 rounded bg-slate-800/50">
-          <span
-            className={`flex items-center gap-1.5 ${statusConfig?.className || ''}`}
-          >
-            {statusConfig?.icon}
-            <span className="text-xs font-medium">{statusConfig?.title}</span>
-          </span>
-        </div>
-      )}
 
       <div className="flex items-center justify-between">
         {capability ? (

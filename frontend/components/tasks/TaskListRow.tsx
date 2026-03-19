@@ -1,4 +1,4 @@
-import { AlertCircle, ChevronDown, ChevronRight, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, Trash2 } from 'lucide-react'
 import type { Task } from '@/lib/api'
 import type { Subtask } from '@/lib/api/tasks'
 import { cn } from '@/lib/utils'
@@ -100,11 +100,6 @@ export function TaskListRow({
           <span className="text-sm text-slate-200 line-clamp-1">
             {task.title}
           </span>
-          {!task.objective && task.enrichment_status !== 'enriching' && (
-            <span title="No objective set">
-              <AlertCircle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
-            </span>
-          )}
         </div>
       </td>
 
@@ -135,10 +130,10 @@ export function TaskListRow({
         </span>
       </td>
 
-      {/* Created */}
+      {/* Updated */}
       <td className="px-3 py-3">
         <span className="text-xs text-slate-500">
-          {task.created_at ? formatTimeAgo(task.created_at) : '-'}
+          {task.updated_at ? formatTimeAgo(task.updated_at) : task.created_at ? formatTimeAgo(task.created_at) : '-'}
         </span>
       </td>
 

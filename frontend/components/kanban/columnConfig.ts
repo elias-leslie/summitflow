@@ -4,32 +4,28 @@ import type { TaskStatus } from '@/lib/api'
 // Types
 // ============================================================================
 
-// Kanban columns (6 columns: Ideas + Planning + Queue + Active + Blocked + Done)
+// Kanban columns (5 columns: Ideas + Planning + Active + Done)
 export type TaskKanbanColumn =
   | 'ideas'
   | 'planning'
-  | 'queue'
   | 'active'
-  | 'blocked'
   | 'done'
 
 export interface KanbanColumn {
   id: TaskKanbanColumn
   title: string
   color: string
-  icon: 'lightbulb' | 'pen-line' | 'clock' | 'zap' | 'shield-alert' | 'circle-check' | null
+  icon: 'lightbulb' | 'pen-line' | 'zap' | 'circle-check' | null
 }
 
 // ============================================================================
-// Column Configuration (6 columns: Ideas + Planning + Queue + Active + Blocked + Done)
+// Column Configuration (4 columns: Ideas + Planning + Active + Done)
 // ============================================================================
 
 export const COLUMNS: KanbanColumn[] = [
   { id: 'ideas', title: 'Ideas', color: 'yellow', icon: 'lightbulb' },
   { id: 'planning', title: 'Planning', color: 'slate', icon: 'pen-line' },
-  { id: 'queue', title: 'Queue', color: 'sky', icon: 'clock' },
   { id: 'active', title: 'Active', color: 'blue', icon: 'zap' },
-  { id: 'blocked', title: 'Blocked', color: 'orange', icon: 'shield-alert' },
   { id: 'done', title: 'Done', color: 'phosphor', icon: 'circle-check' },
 ]
 
@@ -40,10 +36,8 @@ export const COLUMNS: KanbanColumn[] = [
 const ROW_ORDER: Record<TaskKanbanColumn, number> = {
   ideas: 0,
   planning: 1,
-  queue: 2,
-  active: 3,
-  done: 4,
-  blocked: 5,
+  active: 2,
+  done: 3,
 }
 
 // Rows that always start collapsed and never persist expand state
@@ -54,7 +48,7 @@ export const ROWS: KanbanColumn[] = [...COLUMNS].sort(
 )
 
 // ============================================================================
-// Status Mapping (6 columns)
+// Status Mapping (4 columns)
 // ============================================================================
 
 // Map task status to Kanban column
@@ -62,29 +56,19 @@ export const ROWS: KanbanColumn[] = [...COLUMNS].sort(
 export const statusToColumn: Record<TaskStatus, TaskKanbanColumn> = {
   // Planning column
   pending: 'planning',
-  // Queue column (waiting for execution)
-  queue: 'queue',
-  // Active column (all running/transient states)
+  // Active column
   running: 'active',
-  paused: 'active',
-  ai_reviewing: 'active',
-  // Blocked column
-  blocked: 'blocked',
-  conflicted: 'blocked',
   // Done column
   completed: 'done',
   failed: 'done',
   cancelled: 'done',
-  abandoned: 'done',
 }
 
 // Map Kanban column to task status (for drag-drop)
 export const columnToStatus: Record<TaskKanbanColumn, TaskStatus> = {
   ideas: 'pending',
   planning: 'pending',
-  queue: 'queue',
   active: 'running',
-  blocked: 'blocked',
   done: 'completed',
 }
 

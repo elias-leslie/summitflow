@@ -5,7 +5,7 @@ import type { Task } from '@/lib/api'
 import { SortIndicator } from './SortIndicator'
 import { TaskListRow } from './TaskListRow'
 
-type SortField = 'priority' | 'type' | 'title' | 'status' | 'created_at'
+type SortField = 'priority' | 'type' | 'title' | 'status' | 'updated_at'
 type SortDirection = 'asc' | 'desc'
 
 interface TasksTabTableProps {
@@ -144,12 +144,12 @@ export function TasksTabTable({
               role="button"
               tabIndex={0}
               className="px-3 py-2 text-left text-xs font-medium text-slate-400 w-24 cursor-pointer hover:text-slate-200 select-none"
-              onClick={() => onSort('created_at')}
-              onKeyDown={handleSortKeyDown('created_at')}
+              onClick={() => onSort('updated_at')}
+              onKeyDown={handleSortKeyDown('updated_at')}
             >
-              Created
+              Updated
               <SortIndicator
-                field="created_at"
+                field="updated_at"
                 currentField={sortField}
                 direction={sortDirection}
               />

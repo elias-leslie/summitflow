@@ -56,7 +56,7 @@ export function TaskCard({
   }
 
   const isIdea = isCrowdsourcedIdea(task)
-  const canExpand = task.status === 'running' || task.status === 'ai_reviewing'
+  const canExpand = task.status === 'running'
   const isRunning = task.status === 'running'
   const currentStep = execution?.currentStep
 

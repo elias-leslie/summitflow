@@ -47,14 +47,6 @@ export function TaskModal({
     isStopping,
     executionError,
     isTogglingAutonomous,
-    descriptionOpen,
-    subtasksOpen,
-    timelineOpen,
-    agentTimelineOpen,
-    setDescriptionOpen,
-    setSubtasksOpen,
-    setTimelineOpen,
-    setAgentTimelineOpen,
     handleEditStart,
     handleEditCancel,
     handleEditSave,
@@ -62,7 +54,6 @@ export function TaskModal({
     handleSubtaskToggle,
     handleStartExecution,
     handleStopExecution,
-    handleObjectiveEdit,
     handleToggleAutonomous,
     handleAgentOverrideChange,
     setEditTitle,
@@ -132,38 +123,15 @@ export function TaskModal({
         {/* Task content */}
         {task && !isLoading && !error && (
           <>
-            {/* Header */}
+            {/* Header with integrated action bar */}
             <TaskModalHeader
               task={task}
               isEditing={isEditing}
               editTitle={editTitle}
               onEditTitleChange={setEditTitle}
-            />
-
-            {/* Scrollable body */}
-            <TaskModalContent
-              task={task}
-              projectId={projectId}
-              subtasks={subtasks}
-              isLoadingSubtasks={isLoadingSubtasks}
-              subtasksError={subtasksError}
-              isEditing={isEditing}
-              editDescription={editDescription}
               isExecuting={isExecuting}
               isStopping={isStopping}
               isTogglingAutonomous={isTogglingAutonomous}
-              executionError={executionError}
-              descriptionOpen={descriptionOpen}
-              subtasksOpen={subtasksOpen}
-              timelineOpen={timelineOpen}
-              agentTimelineOpen={agentTimelineOpen}
-              onEditDescriptionChange={setEditDescription}
-              onDescriptionToggle={() => setDescriptionOpen(!descriptionOpen)}
-              onSubtasksToggle={() => setSubtasksOpen(!subtasksOpen)}
-              onTimelineToggle={() => setTimelineOpen(!timelineOpen)}
-              onAgentTimelineToggle={() =>
-                setAgentTimelineOpen(!agentTimelineOpen)
-              }
               onStartExecution={handleStartExecution}
               onStopExecution={handleStopExecution}
               onStatusChange={handleStatusChange}
@@ -173,7 +141,19 @@ export function TaskModal({
               onEditCancel={handleEditCancel}
               onEditSave={handleEditSave}
               onDelete={handleDeleteClick}
-              onObjectiveEdit={handleObjectiveEdit}
+            />
+
+            {/* Tabbed body */}
+            <TaskModalContent
+              task={task}
+              projectId={projectId}
+              subtasks={subtasks}
+              isLoadingSubtasks={isLoadingSubtasks}
+              subtasksError={subtasksError}
+              isEditing={isEditing}
+              editDescription={editDescription}
+              executionError={executionError}
+              onEditDescriptionChange={setEditDescription}
               onSubtaskToggle={handleSubtaskToggle}
             />
           </>

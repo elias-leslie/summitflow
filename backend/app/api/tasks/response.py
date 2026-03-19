@@ -131,6 +131,7 @@ def task_to_response(task: dict[str, Any], criteria_count: int | None = None) ->
         total_sessions=task["total_sessions"],
         total_tokens_used=task["total_tokens_used"],
         created_at=task.get("created_at"),
+        updated_at=task.get("updated_at"),
         started_at=task.get("started_at"),
         completed_at=task.get("completed_at"),
         priority=task.get("priority", 2),

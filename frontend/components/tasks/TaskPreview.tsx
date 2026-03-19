@@ -1,13 +1,11 @@
 'use client'
 
 import {
-  AlertTriangle,
   ChevronDown,
   ChevronRight,
   FileCode,
   ListChecks,
   Tag,
-  Target,
 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useState } from 'react'
@@ -40,7 +38,7 @@ function groupSubtasksByPhase(subtasks: Subtask[]): Record<string, Subtask[]> {
 export function TaskPreview({
   task,
   subtasks = [],
-  highlightChanges = false,
+  highlightChanges: _highlightChanges = false,
 }: TaskPreviewProps) {
   const [expandedPhases, setExpandedPhases] = useState<Set<string>>(new Set())
   const groupedSubtasks = groupSubtasksByPhase(subtasks)
@@ -62,32 +60,6 @@ export function TaskPreview({
 
   return (
     <div className="space-y-5">
-      {/* Objective Section */}
-      <section>
-        <div className="flex items-center gap-2 mb-2">
-          <Target className="w-4 h-4 text-phosphor-400" />
-          <h4 className="text-xs font-mono uppercase tracking-wider text-slate-400">
-            Objective
-          </h4>
-        </div>
-        {task.objective ? (
-          <motion.div
-            initial={highlightChanges ? { scale: 0.98 } : false}
-            animate={{ scale: 1 }}
-            className="p-4 bg-phosphor-500/5 border border-phosphor-500/20 rounded-lg"
-          >
-            <p className="text-sm text-white leading-relaxed">
-              {task.objective}
-            </p>
-          </motion.div>
-        ) : (
-          <div className="p-4 bg-amber-500/5 border border-amber-500/20 rounded-lg flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-amber-400" />
-            <p className="text-sm text-amber-400">No objective defined</p>
-          </div>
-        )}
-      </section>
-
       {/* Metadata Row */}
       <section className="flex flex-wrap items-center gap-3 py-3 border-y border-slate-800">
         <span className={`text-xs font-medium ${priorityInfo.color}`}>

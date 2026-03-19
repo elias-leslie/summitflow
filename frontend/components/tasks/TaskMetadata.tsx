@@ -15,6 +15,9 @@ export function TaskMetadata({ task }: TaskMetadataProps) {
       {task.created_at && (
         <p>Created: {new Date(task.created_at).toLocaleDateString()}</p>
       )}
+      {task.updated_at && (
+        <p>Updated: {new Date(task.updated_at).toLocaleDateString()}</p>
+      )}
       {task.started_at && (
         <p>Started: {new Date(task.started_at).toLocaleDateString()}</p>
       )}

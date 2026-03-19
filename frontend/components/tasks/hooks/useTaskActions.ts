@@ -82,11 +82,10 @@ export function useTaskActions({
   )
 
   const handleObjectiveEdit = useCallback(
-    async (newObjective: string) => {
-      if (!task) return
-      onTaskUpdate?.({ ...task, objective: newObjective })
+    async (_newObjective: string) => {
+      // objective field removed from Task type — no-op
     },
-    [task, onTaskUpdate],
+    [],
   )
 
   const handleToggleAutonomous = useCallback(async () => {

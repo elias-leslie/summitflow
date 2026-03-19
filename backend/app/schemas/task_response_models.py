@@ -48,6 +48,7 @@ class TaskResponse(BaseModel):
     total_sessions: int
     total_tokens_used: int
     created_at: datetime | None
+    updated_at: datetime | None = None
     started_at: datetime | None
     completed_at: datetime | None
     # Issue tracking fields

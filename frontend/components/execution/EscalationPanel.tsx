@@ -75,7 +75,7 @@ export function EscalationPanel({
     return () => document.removeEventListener('keydown', handleEscapeKey)
   }, [isOpen, onClose])
 
-  const needsAttention = task.status === 'blocked'
+  const needsAttention = task.status === 'failed'
 
   if (!isOpen) return null
 

@@ -154,45 +154,19 @@ export function TaskRow({
                   </Button>
                 )}
                 {task.status === 'running' && (
-                  <>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onStatusChange('paused')
-                      }}
-                      disabled={isUpdating}
-                    >
-                      Pause
-                    </Button>
-                    <Button
-                      size="sm"
-                      className="bg-green-600 hover:bg-green-700"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onStatusChange('completed')
-                      }}
-                      disabled={isUpdating}
-                    >
-                      {isUpdating ? (
-                        <Loader2 className="w-3 h-3 animate-spin mr-1" />
-                      ) : null}
-                      Complete
-                    </Button>
-                  </>
-                )}
-                {task.status === 'paused' && (
                   <Button
                     size="sm"
-                    variant="outline"
+                    className="bg-green-600 hover:bg-green-700"
                     onClick={(e) => {
                       e.stopPropagation()
-                      onStatusChange('running')
+                      onStatusChange('completed')
                     }}
                     disabled={isUpdating}
                   >
-                    Resume
+                    {isUpdating ? (
+                      <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                    ) : null}
+                    Complete
                   </Button>
                 )}
                 {task.status === 'completed' && (
@@ -213,8 +187,8 @@ export function TaskRow({
                 )}
               </div>
 
-              {/* Execution Timeline for running/paused tasks */}
-              {(task.status === 'running' || task.status === 'paused') && (
+              {/* Execution Timeline for running tasks */}
+              {task.status === 'running' && (
                 <div
                   className="pt-3 border-t border-slate-700"
                   onClick={(e) => e.stopPropagation()}

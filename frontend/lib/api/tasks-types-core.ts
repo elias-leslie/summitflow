@@ -8,16 +8,10 @@
 
 export type TaskStatus =
   | 'pending'
-  | 'queue'
   | 'running'
-  | 'paused'
-  | 'blocked'
-  | 'conflicted'
-  | 'ai_reviewing'
   | 'completed'
   | 'failed'
   | 'cancelled'
-  | 'abandoned'
 
 export type TaskType =
   | 'feature'
@@ -76,6 +70,20 @@ export interface WorktreeInfo {
   is_active: boolean
 }
 
+export interface VerificationResult {
+  execution_clean?: boolean
+  subtask_count?: number
+  total_self_fix_attempts?: number
+  total_supervisor_attempts?: number
+  total_extensions_granted?: number
+  // Partial merge fields
+  partial_merge?: boolean
+  passed_count?: number
+  failed_count?: number
+  failed_subtasks?: string[]
+  failed_details?: { subtask_id: string; failure_reason: string }[]
+}
+
 export interface Task {
   id: string
   project_id: string
@@ -91,6 +99,7 @@ export interface Task {
   total_sessions: number
   total_tokens_used: number
   created_at: string | null
+  updated_at: string | null
   started_at: string | null
   completed_at: string | null
   priority: number
@@ -100,11 +109,11 @@ export interface Task {
   capability?: CapabilityContext | null
   blockers?: BlockerInfo[] | null
   blocked_by_incomplete?: boolean | null
-  // AI agent reliability fields
-  objective?: string | null
+  // Pipeline v2 fields
+  done_when?: string[] | null
   acceptance_criteria?: TaskAcceptanceCriterion[] | null
   current_phase?: 'plan' | 'implement' | 'test' | 'verify' | 'complete' | null
-  verification_result?: Record<string, unknown> | null
+  verification_result?: VerificationResult | null
   // Enrichment fields
   raw_request?: string | null
   enrichment_status?: EnrichmentStatus | null

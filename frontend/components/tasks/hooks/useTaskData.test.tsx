@@ -29,6 +29,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     total_sessions: overrides.total_sessions ?? 0,
     total_tokens_used: overrides.total_tokens_used ?? 0,
     created_at: overrides.created_at ?? null,
+    updated_at: overrides.updated_at ?? null,
     started_at: overrides.started_at ?? null,
     completed_at: overrides.completed_at ?? null,
     priority: overrides.priority ?? 50,

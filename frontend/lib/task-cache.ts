@@ -1,7 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query'
 import type { Task, TaskListResponse, TaskStatus } from '@/lib/api/tasks'
 
-const BLOCKED_TASK_STATUSES: TaskStatus[] = ['blocked', 'conflicted']
+const BLOCKED_TASK_STATUSES: TaskStatus[] = ['failed']
 
 export const taskQueryKeys = {
   root: (projectId: string) => ['tasks', projectId] as const,

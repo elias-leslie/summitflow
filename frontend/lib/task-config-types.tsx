@@ -5,7 +5,6 @@
 import {
   AlertTriangle,
   ArrowDownCircle,
-  Bot,
   Bug,
   Check,
   CheckCircle2,
@@ -13,9 +12,7 @@ import {
   Clock,
   ListTodo,
   Loader2,
-  OctagonX,
   Package,
-  Pause,
   Play,
   RefreshCw,
   X,
@@ -122,35 +119,10 @@ export interface TaskStatusCardConfig {
 
 export const taskStatusCardConfig: Record<TaskStatus, TaskStatusCardConfig> = {
   pending: { icon: null, className: '', title: '' },
-  queue: {
-    icon: <Clock className="h-3.5 w-3.5" />,
-    className: 'text-sky-400',
-    title: 'Queued for execution',
-  },
   running: {
     icon: <Loader2 className="h-3.5 w-3.5 animate-spin" />,
     className: 'text-blue-400',
     title: 'Task running',
-  },
-  paused: {
-    icon: <Pause className="h-3.5 w-3.5" />,
-    className: 'text-yellow-400',
-    title: 'Task paused',
-  },
-  blocked: {
-    icon: <OctagonX className="h-3.5 w-3.5" />,
-    className: 'text-orange-400',
-    title: 'Task blocked',
-  },
-  conflicted: {
-    icon: <OctagonX className="h-3.5 w-3.5" />,
-    className: 'text-rose-400',
-    title: 'Merge conflicted',
-  },
-  ai_reviewing: {
-    icon: <Bot className="h-3.5 w-3.5 animate-pulse" />,
-    className: 'text-amber-400',
-    title: 'AI reviewing',
   },
   completed: {
     icon: <Check className="h-3.5 w-3.5" />,
@@ -166,11 +138,6 @@ export const taskStatusCardConfig: Record<TaskStatus, TaskStatusCardConfig> = {
     icon: <X className="h-3.5 w-3.5" />,
     className: 'text-slate-500',
     title: 'Task cancelled',
-  },
-  abandoned: {
-    icon: <X className="h-3.5 w-3.5" />,
-    className: 'text-slate-500',
-    title: 'Task abandoned',
   },
 }
 
@@ -233,35 +200,10 @@ export const statusIconConfig: Record<
     className: 'text-slate-400',
     label: 'Pending',
   },
-  queue: {
-    icon: Clock,
-    className: 'text-sky-400',
-    label: 'Queue',
-  },
   running: {
     icon: Play,
     className: 'text-blue-400',
     label: 'Running',
-  },
-  paused: {
-    icon: Pause,
-    className: 'text-amber-400',
-    label: 'Paused',
-  },
-  blocked: {
-    icon: OctagonX,
-    className: 'text-orange-400',
-    label: 'Blocked',
-  },
-  conflicted: {
-    icon: OctagonX,
-    className: 'text-rose-400',
-    label: 'Conflicted',
-  },
-  ai_reviewing: {
-    icon: Bot,
-    className: 'text-amber-400',
-    label: 'AI Reviewing',
   },
   completed: {
     icon: CheckCircle2,
@@ -277,11 +219,6 @@ export const statusIconConfig: Record<
     icon: XCircle,
     className: 'text-slate-500',
     label: 'Cancelled',
-  },
-  abandoned: {
-    icon: XCircle,
-    className: 'text-slate-500',
-    label: 'Abandoned',
   },
 }
 

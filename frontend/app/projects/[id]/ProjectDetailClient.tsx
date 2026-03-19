@@ -102,7 +102,7 @@ export function ProjectDetailClient() {
   const [modalOpen, setModalOpen] = useState(!!urlTaskId)
   const [createTaskDialogOpen, setCreateTaskDialogOpen] = useState(false)
   const [escalationOpen, setEscalationOpen] = useState(false)
-  const [escalationTask, setEscalationTask] = useState<Task | null>(null)
+  const [escalationTask, _setEscalationTask] = useState<Task | null>(null)
 
   // Handle URL task param changes
   useEffect(() => {
@@ -152,15 +152,10 @@ export function ProjectDetailClient() {
   }
 
   const handleTaskClick = (task: Task) => {
-    if (task.status === 'blocked') {
-      setEscalationTask(task)
-      setEscalationOpen(true)
-    } else {
-      setSelectedTaskId(task.id)
-      setSelectedTask(task)
-      setModalOpen(true)
-      updateUrlParams({ task: task.id })
-    }
+    setSelectedTaskId(task.id)
+    setSelectedTask(task)
+    setModalOpen(true)
+    updateUrlParams({ task: task.id })
   }
 
   const handleApproveAndResume = async (_message?: string) => {

@@ -14,16 +14,8 @@ export function getPhaseFromStatus(status: TaskStatus): ExecutionPhase | null {
   switch (status) {
     case 'pending':
       return 'Triage'
-    case 'paused':
-    case 'blocked':
-    case 'conflicted':
-      return 'Plan'
-    case 'queue':
-      return 'Queue'
     case 'running':
       return 'Execute'
-    case 'ai_reviewing':
-      return 'Review'
     default:
       return null
   }

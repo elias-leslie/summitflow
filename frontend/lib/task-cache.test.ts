@@ -26,6 +26,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     total_sessions: overrides.total_sessions ?? 0,
     total_tokens_used: overrides.total_tokens_used ?? 0,
     created_at: overrides.created_at ?? null,
+    updated_at: overrides.updated_at ?? null,
     started_at: overrides.started_at ?? null,
     completed_at: overrides.completed_at ?? null,
     priority: overrides.priority ?? 50,
@@ -66,10 +67,10 @@ describe('task-cache', () => {
     expect(updated?.total).toBe(1)
   })
 
-  it('syncs blocked and non-blocked task status across cached task lists', () => {
+  it('syncs failed and non-failed task status across cached task lists', () => {
     const projectId = 'summitflow'
-    const blockedTask = makeTask({ id: 'task-1', status: 'blocked' })
-    const queuedTask = makeTask({ id: 'task-1', status: 'queue' })
+    const blockedTask = makeTask({ id: 'task-1', status: 'failed' })
+    const queuedTask = makeTask({ id: 'task-1', status: 'pending' })
 
     queryClient.setQueryData(taskQueryKeys.all(projectId), {
       tasks: [blockedTask],
@@ -90,12 +91,12 @@ describe('task-cache', () => {
       queryClient.getQueryData<{ tasks: Task[]; total: number }>(
         taskQueryKeys.all(projectId),
       )?.tasks[0].status,
-    ).toBe('queue')
+    ).toBe('pending')
     expect(
       queryClient.getQueryData<{ tasks: Task[]; total: number }>(
         taskQueryKeys.kanban(projectId),
       )?.tasks[0].status,
-    ).toBe('queue')
+    ).toBe('pending')
     expect(
       queryClient.getQueryData<{ tasks: Task[]; total: number }>(
         taskQueryKeys.blocked(projectId),
@@ -108,7 +109,7 @@ describe('task-cache', () => {
 
   it('removes tasks from all cached task lists', () => {
     const projectId = 'summitflow'
-    const task = makeTask({ id: 'task-1', status: 'blocked' })
+    const task = makeTask({ id: 'task-1', status: 'failed' })
 
     queryClient.setQueryData(taskQueryKeys.all(projectId), {
       tasks: [task],

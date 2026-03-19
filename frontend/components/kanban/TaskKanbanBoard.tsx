@@ -90,9 +90,7 @@ export function TaskKanbanBoard({
     const grouped: Record<TaskKanbanColumn, Task[]> = {
       ideas: [],
       planning: [],
-      queue: [],
       active: [],
-      blocked: [],
       done: [],
     }
 

@@ -38,16 +38,6 @@ interface UseTaskModalReturn {
   executionError: string | null
   isTogglingAutonomous: boolean
 
-  // Collapsible state
-  descriptionOpen: boolean
-  subtasksOpen: boolean
-  timelineOpen: boolean
-  agentTimelineOpen: boolean
-  setDescriptionOpen: (open: boolean) => void
-  setSubtasksOpen: (open: boolean) => void
-  setTimelineOpen: (open: boolean) => void
-  setAgentTimelineOpen: (open: boolean) => void
-
   // Handlers
   handleEditStart: () => void
   handleEditCancel: () => void
@@ -56,7 +46,6 @@ interface UseTaskModalReturn {
   handleSubtaskToggle: (subtaskId: string, passes: boolean) => Promise<void>
   handleStartExecution: () => Promise<void>
   handleStopExecution: () => Promise<void>
-  handleObjectiveEdit: (objective: string) => Promise<void>
   handleToggleAutonomous: () => Promise<void>
   handleAgentOverrideChange: (agentSlug: string | null) => Promise<void>
 }
@@ -107,23 +96,12 @@ export function useTaskModal({
     isTogglingAutonomous,
     handleStatusChange,
     handleSubtaskToggle,
-    handleObjectiveEdit,
     handleToggleAutonomous,
     handleAgentOverrideChange,
   } = useTaskActions({ task, projectId, onTaskUpdate, setTask, setSubtasks })
 
-  // Collapsible sections
-  const {
-    descriptionOpen,
-    subtasksOpen,
-    timelineOpen,
-    agentTimelineOpen,
-    setDescriptionOpen,
-    setSubtasksOpen,
-    setTimelineOpen,
-    setAgentTimelineOpen,
-    resetCollapsibleState,
-  } = useCollapsibleSections()
+  // Collapsible sections (minimal — only subtasks still use parent-level toggle)
+  const { resetCollapsibleState } = useCollapsibleSections()
 
   // Reset state when modal closes
   useEffect(() => {
@@ -149,14 +127,6 @@ export function useTaskModal({
     isStopping,
     executionError,
     isTogglingAutonomous,
-    descriptionOpen,
-    subtasksOpen,
-    timelineOpen,
-    agentTimelineOpen,
-    setDescriptionOpen,
-    setSubtasksOpen,
-    setTimelineOpen,
-    setAgentTimelineOpen,
     handleEditStart,
     handleEditCancel,
     handleEditSave,
@@ -164,7 +134,6 @@ export function useTaskModal({
     handleSubtaskToggle,
     handleStartExecution,
     handleStopExecution,
-    handleObjectiveEdit,
     handleToggleAutonomous,
     handleAgentOverrideChange,
   }

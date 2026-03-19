@@ -192,7 +192,50 @@ verify_health() {
     return $errors
 }
 
+# ─── Status mode ─────────────────────────────────────────────────
+
+show_status() {
+    local project="$1"
+    parse_project "$project"
+    local all_active=true
+    printf "  %-15s" "$project"
+    for svc in $BACKEND_SVC $FRONTEND_SVC $WORKER_SVCS; do
+        [ -z "$svc" ] && continue
+        local state
+        state=$(systemctl --user is-active "$svc" 2>/dev/null || echo "stopped")
+        if [ "$state" = "active" ]; then
+            printf " ${GREEN}%s${NC}" "$svc"
+        else
+            printf " ${RED}%s(%s)${NC}" "$svc" "$state"
+            all_active=false
+        fi
+    done
+    echo ""
+    $all_active
+}
+
 # ─── Main ─────────────────────────────────────────────────────────
+
+# Handle --status mode
+if [ "${1:-}" = "--status" ]; then
+    PROJECT="${2:-}"
+    if [ -n "$PROJECT" ]; then
+        if [ -z "${PROJECTS[$PROJECT]}" ]; then
+            echo "Unknown project: $PROJECT"
+            echo ""
+            show_projects
+            exit 1
+        fi
+        show_status "$PROJECT"
+        exit $?
+    fi
+    # All projects
+    errors=0
+    for p in summitflow agent-hub portfolio-ai terminal monkey-fight; do
+        show_status "$p" || ((errors++))
+    done
+    exit $errors
+fi
 
 PROJECT="${1:-}"
 

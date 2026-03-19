@@ -29,6 +29,7 @@ export type {
   CapabilityContext,
   BlockerInfo,
   WorktreeInfo,
+  VerificationResult,
   // Enrichment types
   EnrichmentStatus,
   EnrichmentRequest,

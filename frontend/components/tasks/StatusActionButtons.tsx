@@ -2,8 +2,6 @@
 
 import {
   CheckCircle2,
-  Edit2,
-  FastForward,
   Loader2,
   Play,
   Square,
@@ -26,14 +24,11 @@ export function StatusActionButtons({
   isStopping,
   onStartExecution,
   onStopExecution,
-  onStatusChange,
 }: StatusActionButtonsProps) {
   const isPending = status === 'pending'
-  const isPaused = status === 'paused'
   const isRunning = status === 'running'
-  const isBlocked = status === 'blocked'
   const isCompleted = status === 'completed'
-  const isAiReviewing = status === 'ai_reviewing'
+  const isFailed = status === 'failed'
 
   return (
     <>
@@ -52,7 +47,7 @@ export function StatusActionButtons({
           {isExecuting ? 'Starting...' : 'Start Execution'}
         </Button>
       )}
-      {isPaused && (
+      {isFailed && (
         <Button
           variant="outline"
           className="gap-2 border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
@@ -62,9 +57,9 @@ export function StatusActionButtons({
           {isExecuting ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
-            <FastForward className="h-4 w-4" />
+            <Play className="h-4 w-4" />
           )}
-          {isExecuting ? 'Resuming...' : 'Continue'}
+          {isExecuting ? 'Retrying...' : 'Retry'}
         </Button>
       )}
       {isRunning && (
@@ -88,26 +83,6 @@ export function StatusActionButtons({
           </Button>
         </>
       )}
-      {isBlocked && (
-        <>
-          <Button
-            variant="outline"
-            className="gap-2 border-phosphor-500/30 text-phosphor-400 hover:bg-phosphor-500/10"
-            onClick={() => onStatusChange('running')}
-          >
-            <CheckCircle2 className="h-4 w-4" />
-            Approve
-          </Button>
-          <Button
-            variant="outline"
-            className="gap-2 border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
-            onClick={() => onStatusChange('pending')}
-          >
-            <Edit2 className="h-4 w-4" />
-            Request Changes
-          </Button>
-        </>
-      )}
       {isCompleted && (
         <Button
           variant="outline"
@@ -116,16 +91,6 @@ export function StatusActionButtons({
         >
           <CheckCircle2 className="h-4 w-4" />
           Completed
-        </Button>
-      )}
-      {isAiReviewing && (
-        <Button
-          variant="outline"
-          className="gap-2 border-cyan-500/30 text-cyan-400"
-          disabled
-        >
-          <Loader2 className="h-4 w-4 animate-spin" />
-          AI Reviewing...
         </Button>
       )}
     </>
