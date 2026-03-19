@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-import logging
-
 from fastapi import APIRouter
 
+from ...logging_config import get_logger
 from ...storage import backups as backup_store
 from ...tasks.backup_wal import get_wal_status
 from .models import BackupHealthItem, BackupHealthResponse, WalHealthSummary
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter()
 

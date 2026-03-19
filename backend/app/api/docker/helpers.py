@@ -30,7 +30,7 @@ from .constants import (
     _USER_RUNTIME_DIR,
     COMPOSE_PROJECT,
 )
-from .models import RuntimeServiceMetrics, RuntimeServiceStatus
+from .models import ActionResult, RuntimeModeStatus, RuntimeServiceMetrics, RuntimeServiceStatus
 
 # ─── Auth ─────────────────────────────────────────────────────────
 
@@ -633,7 +633,7 @@ async def _launch_runtime_switch(mode: Literal["dev", "prod"], script_path: Path
 # ─── Runtime status aggregation ───────────────────────────────────
 
 
-async def _get_runtime_status():
+async def _get_runtime_status() -> RuntimeModeStatus:
     from .constants import _COMPOSE_FILE, _DEFAULT_STACK_MODE
     from .models import RuntimeModeStatus
 
@@ -702,7 +702,7 @@ def _classify_runtime(
 # ─── Service actions ──────────────────────────────────────────────
 
 
-async def _service_action(service: str, action: Literal["start", "stop", "restart"]):
+async def _service_action(service: str, action: Literal["start", "stop", "restart"]) -> ActionResult:
     from .models import ActionResult
 
     svc = _service_definition(service)
@@ -717,7 +717,7 @@ async def _service_action(service: str, action: Literal["start", "stop", "restar
     return ActionResult(success=True, message=f"{_past_tense(action)} {service}")
 
 
-async def _systemd_service_action(svc: dict[str, Any], action: Literal["start", "stop", "restart"]):
+async def _systemd_service_action(svc: dict[str, Any], action: Literal["start", "stop", "restart"]) -> ActionResult:
     """Execute a start/stop/restart action on a systemd service."""
     from .models import ActionResult
 
