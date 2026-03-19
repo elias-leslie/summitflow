@@ -22,28 +22,6 @@ export function buildQueryString(
 }
 
 /**
- * Fetch with timeout using AbortController.
- * Default timeout: 30 seconds.
- */
-export async function fetchWithTimeout(
-  url: string,
-  options: RequestInit = {},
-  timeoutMs: number = 30000,
-): Promise<Response> {
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
-
-  try {
-    return await fetch(url, {
-      ...options,
-      signal: controller.signal,
-    })
-  } finally {
-    clearTimeout(timeoutId)
-  }
-}
-
-/**
  * Get API base URL for backend calls.
  * Delegates to api-config.ts for proper hostname detection.
  */

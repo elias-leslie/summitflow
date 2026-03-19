@@ -101,15 +101,6 @@ export interface ScanHistoryResponse {
   summary: ScanHistorySummary
 }
 
-export interface ScanComparison {
-  before_scan: ScanHistoryEntry
-  after_scan: ScanHistoryEntry
-  before_metrics: Record<string, unknown>
-  after_metrics: Record<string, unknown>
-  delta: Record<string, unknown>
-  delta_pct: Record<string, number>
-}
-
 // ============================================================================
 // API Functions
 // ============================================================================
@@ -171,21 +162,3 @@ export async function fetchScanHistory(
   )
 }
 
-/**
- * Fetch comparison between two scans.
- *
- * @param projectId - Project ID
- * @param before - Scan ID of the baseline scan
- * @param after - Scan ID of the comparison scan
- */
-export async function fetchScanComparison(
-  projectId: string,
-  before: number,
-  after: number,
-): Promise<ScanComparison> {
-  const query = buildQueryString({ before, after })
-  return fetchWithErrorHandling<ScanComparison>(
-    `/api/projects/${projectId}/explorer/scan-comparison${query}`,
-    { errorMessage: 'Failed to fetch scan comparison' },
-  )
-}

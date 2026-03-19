@@ -16,11 +16,6 @@ export function useMediaQuery(query: string): boolean {
   return matches
 }
 
-/** True when viewport is >= 1024px (Tailwind `lg`) */
-export function useIsLg(): boolean {
-  return useMediaQuery('(min-width: 1024px)')
-}
-
 /** True when viewport is >= 1280px (Tailwind `xl`) */
 export function useIsXl(): boolean {
   return useMediaQuery('(min-width: 1280px)')

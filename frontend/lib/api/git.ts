@@ -102,21 +102,6 @@ export async function pullRepository(
   )
 }
 
-/**
- * Fetch changes for a specific project's repository.
- */
-export async function fetchRepository(
-  projectId: string,
-): Promise<GitSyncResponse> {
-  return fetchWithErrorHandling<GitSyncResponse>(
-    `${getApiBase()}/api/projects/${projectId}/git/fetch`,
-    {
-      method: 'POST',
-      errorMessage: 'Failed to fetch repository',
-    },
-  )
-}
-
 export interface SmartSyncResponse {
   success: boolean
   status: string
