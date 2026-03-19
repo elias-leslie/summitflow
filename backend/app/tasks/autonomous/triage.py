@@ -12,7 +12,7 @@ from ...services.agent_hub_client import get_sync_client
 from ...services.task_second_opinion import ensure_second_opinion_tracking
 from ...storage import log_task_event
 from ...storage import tasks as task_store
-from ...storage.task_spirit import upsert_task_spirit
+from ...storage.task_spirit import get_task_spirit, upsert_task_spirit
 from ...storage.tasks.dedup import duplicate_task_exists
 
 logger = get_logger(__name__)
@@ -124,6 +124,12 @@ def triage_idea(task_id: str, project_id: str) -> dict[str, Any]:
     if not task:
         logger.warning("Task not found for triage", task_id=task_id)
         return {"task_id": task_id, "status": "error", "message": "Task not found"}
+
+    # Skip triage for tasks that already have an approved plan
+    spirit = get_task_spirit(task_id)
+    if spirit and str(spirit.get("plan_status", "")).lower() == "approved":
+        logger.info("Skipping triage — plan already approved", task_id=task_id)
+        return {"task_id": task_id, "status": "completed", "result": {"status": "READY"}}
 
     title = task.get("title", "")
     description = task.get("description", "")

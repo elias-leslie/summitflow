@@ -43,8 +43,8 @@ async def _trigger_workflow(stage: str, task_id: str, project_id: str) -> None:
 
     workflow = workflow_map.get(stage)
     if workflow is None:
-        logger.warning("Unknown stage, dispatching to triage", task_id=task_id, stage=stage)
-        workflow = triage_wf
+        logger.warning("Skipping dispatch — unknown stage", task_id=task_id, stage=stage)
+        return
 
     await workflow.aio_run_no_wait(task_input)
 
