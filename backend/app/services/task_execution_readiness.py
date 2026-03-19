@@ -38,11 +38,6 @@ def _get_complexity(task: dict[str, Any], spirit: dict[str, Any] | None) -> str:
     return str(task.get("complexity") or (spirit or {}).get("complexity") or "SIMPLE")
 
 
-def _steps_for_subtask(subtask: dict[str, Any]) -> list[dict[str, Any]]:
-    steps = subtask.get("steps_from_table") or subtask.get("steps") or []
-    return steps if isinstance(steps, list) else []
-
-
 def _requires_nontrivial_plan(task: dict[str, Any], complexity: str) -> bool:
     return complexity in {"STANDARD", "COMPLEX"} or task.get("task_type") in _NONTRIVIAL_TASK_TYPES
 
@@ -79,17 +74,7 @@ def assess_task_execution_readiness(
         issues.append("Missing subtasks for non-trivial coding work")
         missing_fields.append("subtasks")
 
-    if subtasks and requires_nontrivial_plan:
-        step_less = [
-            subtask.get("subtask_id", "?")
-            for subtask in subtasks
-            if not _steps_for_subtask(subtask)
-        ]
-        if step_less:
-            issues.append(
-                "Missing step guidance for subtask(s): " + ", ".join(step_less[:5])
-            )
-            missing_fields.append("steps")
+    # Steps layer removed — subtask descriptions serve as guidance now
 
     if requires_nontrivial_plan and not _has_scope_context(context):
         issues.append("Missing execution scope context (files_to_modify/files_to_create)")

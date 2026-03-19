@@ -64,10 +64,10 @@ def _validate_task_for_autocode(
 ) -> None:
     """Validate that task can be autocoded."""
     current_status = task.get("status", "pending")
-    if current_status in ("running", "pending"):
-        output_error(f"Task {task_id} is already {current_status}.")
+    if current_status == "running":
+        output_error(f"Task {task_id} is already running.")
         raise typer.Exit(1)
-    if current_status in ("completed", "merged"):
+    if current_status in ("completed", "failed", "cancelled"):
         output_error(f"Task {task_id} is already {current_status}.")
         raise typer.Exit(1)
     readiness = client.validate_ready(task_id)
