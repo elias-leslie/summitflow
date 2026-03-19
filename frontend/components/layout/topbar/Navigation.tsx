@@ -3,7 +3,6 @@ import { ExternalLink } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useGitHealth } from '@/hooks/useGitHealth'
-import { usePersonaName } from '@/hooks/usePersonaName'
 import { navItems } from './constants'
 import { GitStatusIndicator } from './GitStatusIndicator'
 
@@ -20,7 +19,6 @@ export function Navigation({
 }: NavigationProps) {
   const pathname = usePathname()
   const gitHealth = useGitHealth()
-  const personaName = usePersonaName()
   const labelClassName = compact ? 'hidden' : 'inline'
   const externalIconClassName = compact || dense ? 'hidden' : 'block'
 
@@ -50,7 +48,7 @@ export function Navigation({
         }
         const ac = activeStyles[item.activeColor] ?? activeStyles.indigo
 
-        const label = item.id === 'chat' ? personaName : item.label
+        const label = item.label
 
         const className = clsx(
           'group flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg font-medium transition-all duration-200',

@@ -7,7 +7,6 @@ import {
   CheckSquare,
   GitBranch,
   LayoutGrid,
-  MessageSquare,
   MessageSquareWarning,
   Package,
   RefreshCw,
@@ -57,13 +56,6 @@ export const navItems = [
     href: '/feedback',
     icon: MessageSquareWarning,
     activeColor: 'rose',
-  },
-  {
-    id: 'chat',
-    label: 'Persona',
-    href: '/chat',
-    icon: MessageSquare,
-    activeColor: 'phosphor',
   },
   {
     id: 'docker',

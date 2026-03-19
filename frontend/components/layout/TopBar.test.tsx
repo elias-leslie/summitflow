@@ -23,10 +23,6 @@ vi.mock('@/components/notifications', () => ({
   },
 }))
 
-vi.mock('@/hooks/usePersonaName', () => ({
-  usePersonaName: () => 'Jenny',
-}))
-
 vi.mock('./topbar/AnimatedLogo', () => ({
   AnimatedLogo: () => <div data-testid="animated-logo" />,
 }))

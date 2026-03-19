@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ClipboardCopy, Copy, FileText } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn, getErrorMessage } from '@/lib/utils'
-import { FEEDBACK_TIMEOUT } from '@/lib/polling'
 import { fetchFileContent } from '@/lib/api/files'
 
 // ============================================================================

@@ -19,7 +19,6 @@ import {
   markNotificationRead,
   type Notification,
 } from '@/lib/api'
-import { buildChatUrl, getChatProjectId } from '@/app/chat/chat-routing'
 import { POLL_NOTIFICATIONS } from '@/lib/polling'
 import { PushNotificationToggle } from './PushNotificationToggle'
 
@@ -42,22 +41,6 @@ const severityColors = {
   critical: 'text-rose-500',
 }
 
-export const browserNavigator = {
-  go(url: string): void {
-    window.location.href = url
-  },
-}
-
-function navigateToChat(notification: Notification, projectId: string) {
-  browserNavigator.go(
-    buildChatUrl({
-      projectId,
-      taskId: notification.task_id,
-      notificationId: notification.id,
-    }),
-  )
-}
-
 export function NotificationBell({
   projectId,
   className,
@@ -67,24 +50,6 @@ export function NotificationBell({
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
-
-  // Redirect push notification deep link (?notification_id=X) to /chat
-  // Only redirects if we're NOT already on /chat (avoids infinite loop)
-  useEffect(() => {
-    if (window.location.pathname === '/chat') return
-
-    const params = new URLSearchParams(window.location.search)
-    const notificationId = params.get('notification_id')
-    if (!notificationId) return
-
-    browserNavigator.go(
-      buildChatUrl({
-        projectId: getChatProjectId(params),
-        taskId: params.get('task_id'),
-        notificationId,
-      }),
-    )
-  }, [projectId])
 
   // Fetch pending count periodically
   useEffect(() => {
@@ -125,7 +90,6 @@ export function NotificationBell({
   }
 
   const handleNotificationClick = async (notification: Notification) => {
-    // Mark as read if pending
     if (notification.status === 'pending') {
       try {
         await markNotificationRead(projectId, notification.id)
@@ -139,9 +103,6 @@ export function NotificationBell({
         toast.error('Failed to mark notification as read')
       }
     }
-    // Navigate to persona chat with context
-    navigateToChat(notification, projectId)
-    setIsOpen(false)
   }
 
   const handleDismiss = async (e: React.MouseEvent, notificationId: string) => {
@@ -316,21 +277,6 @@ export function NotificationBell({
               )}
             </div>
 
-            {/* Footer */}
-            {notifications.length > 0 && (
-              <div className="px-4 py-2 border-t border-slate-700 bg-slate-900/50">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsOpen(false)
-                    browserNavigator.go(buildChatUrl({ projectId }))
-                  }}
-                  className="text-xs text-phosphor-400 hover:text-phosphor-300"
-                >
-                  View all notifications
-                </button>
-              </div>
-            )}
           </div>
         </>
       )}

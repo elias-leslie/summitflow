@@ -10,10 +10,6 @@ vi.mock('@/hooks/useGitHealth', () => ({
   useGitHealth: () => 'clean',
 }))
 
-vi.mock('@/hooks/usePersonaName', () => ({
-  usePersonaName: () => 'Jenny',
-}))
-
 vi.mock('./GitStatusIndicator', () => ({
   GitStatusIndicator: () => <span data-testid="git-status" />,
 }))
@@ -23,7 +19,7 @@ describe('Navigation', () => {
     const { container } = render(<Navigation compact />)
 
     expect(screen.getAllByText('Runtime')[0]).toHaveClass('hidden')
-    expect(screen.getAllByText('Jenny')[0]).toHaveClass('hidden')
+    expect(screen.getAllByText('Feedback')[0]).toHaveClass('hidden')
     expect(container.querySelector('nav')).toHaveClass('justify-center')
   })
 
@@ -31,7 +27,7 @@ describe('Navigation', () => {
     const { container } = render(<Navigation dense />)
 
     expect(screen.getAllByText('Runtime')[0]).toHaveClass('inline')
-    expect(screen.getAllByText('Jenny')[0]).toHaveClass('inline')
+    expect(screen.getAllByText('Feedback')[0]).toHaveClass('inline')
     expect(container.querySelector('nav')).toHaveClass('justify-start')
   })
 })

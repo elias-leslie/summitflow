@@ -30,10 +30,6 @@ vi.mock('motion/react', () => ({
   },
 }))
 
-vi.mock('@/hooks/usePersonaName', () => ({
-  usePersonaName: () => 'Jenny',
-}))
-
 vi.mock('@/components/dashboard', () => ({
   ActivityFeed: () => <div data-testid="activity-feed" />,
   ProjectCard: ({ project }: { project: { name: string } }) => (

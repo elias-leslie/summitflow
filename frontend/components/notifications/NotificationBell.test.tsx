@@ -6,7 +6,7 @@ import {
   it,
   vi,
 } from 'vitest'
-import * as NotificationBellModule from './NotificationBell'
+import { NotificationBell } from './NotificationBell'
 
 const sonnerMocks = vi.hoisted(() => ({
   error: vi.fn(),
@@ -60,32 +60,10 @@ describe('NotificationBell', () => {
     })
     apiMocks.markNotificationRead.mockResolvedValue({})
     apiMocks.dismissNotification.mockResolvedValue({})
-
-    window.history.replaceState({}, '', '/')
   })
 
-  it('preserves project context when redirecting a deep link to chat', async () => {
-    const navigateSpy = vi
-      .spyOn(NotificationBellModule.browserNavigator, 'go')
-      .mockImplementation(() => {})
-
-    window.history.replaceState({}, '', '/?project_id=agent-hub&task_id=task-123&notification_id=notif-123')
-
-    render(<NotificationBellModule.NotificationBell projectId="agent-hub" />)
-
-    await waitFor(() => {
-      expect(navigateSpy).toHaveBeenCalledWith(
-        '/chat?project_id=agent-hub&task_id=task-123&notification_id=notif-123',
-      )
-    })
-  })
-
-  it('navigates to project-aware chat links when a notification is clicked', async () => {
-    const navigateSpy = vi
-      .spyOn(NotificationBellModule.browserNavigator, 'go')
-      .mockImplementation(() => {})
-
-    render(<NotificationBellModule.NotificationBell projectId="agent-hub" />)
+  it('marks a notification as read when clicked', async () => {
+    render(<NotificationBell projectId="agent-hub" />)
 
     fireEvent.click(screen.getByTitle('Notifications'))
 
@@ -97,18 +75,11 @@ describe('NotificationBell', () => {
         'agent-hub',
         'notif-123',
       )
-      expect(navigateSpy).toHaveBeenCalledWith(
-        '/chat?project_id=agent-hub&task_id=task-123&notification_id=notif-123',
-      )
     })
   })
 
   it('dismisses a notification without navigating', async () => {
-    const navigateSpy = vi
-      .spyOn(NotificationBellModule.browserNavigator, 'go')
-      .mockImplementation(() => {})
-
-    render(<NotificationBellModule.NotificationBell projectId="agent-hub" />)
+    render(<NotificationBell projectId="agent-hub" />)
 
     fireEvent.click(screen.getByTitle('Notifications'))
 
@@ -121,28 +92,12 @@ describe('NotificationBell', () => {
         'notif-123',
       )
     })
-    expect(navigateSpy).not.toHaveBeenCalled()
-  })
-
-  it('routes view-all actions through chat with project context', async () => {
-    const navigateSpy = vi
-      .spyOn(NotificationBellModule.browserNavigator, 'go')
-      .mockImplementation(() => {})
-
-    render(<NotificationBellModule.NotificationBell projectId="agent-hub" />)
-
-    fireEvent.click(screen.getByTitle('Notifications'))
-
-    await screen.findByText('Task failed')
-    fireEvent.click(screen.getByRole('button', { name: 'View all notifications' }))
-
-    expect(navigateSpy).toHaveBeenCalledWith('/chat?project_id=agent-hub')
   })
 
   it('shows a retry state when notifications fail to load', async () => {
     apiMocks.fetchNotifications.mockRejectedValueOnce(new Error('boom'))
 
-    render(<NotificationBellModule.NotificationBell projectId="agent-hub" />)
+    render(<NotificationBell projectId="agent-hub" />)
 
     fireEvent.click(screen.getByTitle('Notifications'))
 

@@ -9,7 +9,6 @@ import {
   ChevronRight,
   FolderKanban,
   ListTodo,
-  MessageSquare,
   Plus,
   Target,
 } from 'lucide-react'
@@ -18,7 +17,6 @@ import Link from 'next/link'
 import { useState } from 'react'
 import { ActivityFeed, ProjectCard, SystemHealthWidget } from '@/components/dashboard'
 import { useClampedPagination } from '@/hooks/useClampedPagination'
-import { usePersonaName } from '@/hooks/usePersonaName'
 import { fetchProjectsWithStats, type ProjectWithStats } from '@/lib/api'
 
 const PROJECTS_PER_PAGE = 9
@@ -29,7 +27,6 @@ const fadeUp = {
 }
 
 export function DashboardClient() {
-  const personaName = usePersonaName()
   const [page, setPage] = useState(0)
 
   const { data, isLoading, error } = useQuery({
@@ -71,7 +68,6 @@ export function DashboardClient() {
   ]
 
   const quickLinks = [
-    { href: '/chat', label: personaName, sub: 'AI concierge', icon: MessageSquare, hoverBorder: 'hover:border-phosphor-500/40', hoverBg: 'hover:bg-phosphor-500/5', iconColor: 'text-phosphor-400' },
     { href: '/backups', label: 'Backups', sub: 'DB snapshots', icon: Archive, hoverBorder: 'hover:border-indigo-500/40', hoverBg: 'hover:bg-indigo-500/5', iconColor: 'text-indigo-400' },
     { href: '/feedback', label: 'Feedback', sub: 'Signals & fixes', icon: AlertCircle, hoverBorder: 'hover:border-amber-500/40', hoverBg: 'hover:bg-amber-500/5', iconColor: 'text-amber-400' },
   ]

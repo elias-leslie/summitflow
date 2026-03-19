@@ -10,16 +10,15 @@ Revises: d2db0d94066c
 Create Date: 2026-03-19 17:53:11.737508
 
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 from alembic import op
 
-
 # revision identifiers, used by Alembic.
 revision: str = '63fecd7db0f2'
-down_revision: Union[str, Sequence[str], None] = 'd2db0d94066c'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = 'd2db0d94066c'
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
