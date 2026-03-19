@@ -384,6 +384,76 @@ def test_start_execution_reopens_passed_subtasks_for_conflict_resolution(
     mock_early.assert_called_once()
 
 
+@patch("app.tasks.autonomous.exec_modules.orchestrator.task_store")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.get_subtasks_for_task")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.validate_pristine_codebase", return_value=True)
+@patch("app.tasks.autonomous.exec_modules.orchestrator.setup_worktree", return_value="/tmp/worktree")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.execute_subtask_loop")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.emit_log")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.emit_progress")
+def test_execute_task_locked_skips_status_update_when_already_running(
+    mock_emit_progress: MagicMock,
+    mock_emit_log: MagicMock,
+    mock_loop: MagicMock,
+    mock_setup: MagicMock,
+    mock_validate: MagicMock,
+    mock_get_subtasks: MagicMock,
+    mock_task_store: MagicMock,
+) -> None:
+    """When task is already running (claimed by dispatch), skip redundant status update."""
+    task_id = "task-already-running"
+    project_id = "monkey-fight"
+
+    # First get_task call in _prepare_execution returns task with status=running
+    # Second get_task call in execute_task_locked returns same
+    mock_task_store.get_task.return_value = {
+        "id": task_id, "task_type": "task", "status": "running",
+    }
+    mock_get_subtasks.return_value = [{"id": "s1", "subtask_id": "1.1", "passes": False}]
+    mock_loop.return_value = ([{"subtask_id": "1.1", "status": "passed"}], 1)
+
+    with patch("app.tasks.autonomous.exec_modules.orchestrator.handle_successful_completion"):
+        result = start_execution(task_id, project_id)
+
+    assert result["status"] == "executed"
+    # update_task_status should NOT have been called with "running" since it's already running
+    for call in mock_task_store.update_task_status.call_args_list:
+        assert call.args != (task_id, "running"), "Should not redundantly set status to running"
+
+
+@patch("app.tasks.autonomous.exec_modules.orchestrator.task_store")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.get_subtasks_for_task")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.validate_pristine_codebase", return_value=True)
+@patch("app.tasks.autonomous.exec_modules.orchestrator.setup_worktree", return_value="/tmp/worktree")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.execute_subtask_loop")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.emit_log")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.emit_progress")
+def test_execute_task_locked_sets_running_when_pending(
+    mock_emit_progress: MagicMock,
+    mock_emit_log: MagicMock,
+    mock_loop: MagicMock,
+    mock_setup: MagicMock,
+    mock_validate: MagicMock,
+    mock_get_subtasks: MagicMock,
+    mock_task_store: MagicMock,
+) -> None:
+    """When task is pending (batch-pickup path without claim), status is set to running."""
+    task_id = "task-pending"
+    project_id = "monkey-fight"
+
+    mock_task_store.get_task.return_value = {
+        "id": task_id, "task_type": "task", "status": "pending",
+    }
+    mock_get_subtasks.return_value = [{"id": "s1", "subtask_id": "1.1", "passes": False}]
+    mock_loop.return_value = ([{"subtask_id": "1.1", "status": "passed"}], 1)
+
+    with patch("app.tasks.autonomous.exec_modules.orchestrator.handle_successful_completion"):
+        result = start_execution(task_id, project_id)
+
+    assert result["status"] == "executed"
+    mock_task_store.update_task_status.assert_any_call(task_id, "running")
+
+
 @patch("app.tasks.autonomous.exec_modules.orchestrator.emit_log")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.execute_task_locked")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.check_task_lane_conflicts")
