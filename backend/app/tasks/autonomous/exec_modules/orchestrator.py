@@ -147,7 +147,9 @@ def execute_task_locked(
     if error:
         return error
 
-    task_store.update_task_status(task_id, "running")
+    task = task_store.get_task(task_id)
+    if task and task.get("status") != "running":
+        task_store.update_task_status(task_id, "running")
 
     error, incomplete, total, completed = _load_subtasks(task_id, project_id)
     if error:

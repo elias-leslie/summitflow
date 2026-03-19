@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from app.config import DEFAULT_API_BASE, REDIS_URL
-from app.services._agent_hub_config import AGENT_HUB_URL
+from app.services._agent_hub_config import AGENT_HUB_URL, build_agent_hub_headers
 from app.storage import agent_configs
 from app.storage import tasks as task_store
 from app.storage.connection import get_connection
@@ -23,7 +23,11 @@ def check_autonomous_enabled(project_id: str) -> dict[str, Any] | None:
     """Return error dict if autonomous mode is disabled/unreachable, else None."""
     import httpx
     try:
-        resp = httpx.get(_AGENT_HUB_URL.format(project_id=project_id), timeout=_HTTP_TIMEOUT)
+        resp = httpx.get(
+            _AGENT_HUB_URL.format(project_id=project_id),
+            headers=build_agent_hub_headers(request_source="sf-pipeline"),
+            timeout=_HTTP_TIMEOUT,
+        )
         resp.raise_for_status()
         data = resp.json()
         if not data.get("allowed"):

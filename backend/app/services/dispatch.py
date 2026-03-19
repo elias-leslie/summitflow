@@ -10,6 +10,7 @@ from typing import TypedDict
 
 from ..logging_config import get_logger
 from ..storage import tasks as task_store
+from ..storage.tasks.claims import claim_task
 from ..tasks.autonomous.pickup import _determine_next_stage
 
 logger = get_logger(__name__)
@@ -71,6 +72,18 @@ async def dispatch_task(task_id: str, project_id: str) -> DispatchResult:
         raise ValueError(f"Task {task_id} not found")
 
     stage = _determine_next_stage(task_id)
+
+    # Claim before execution to match batch-pickup path behavior
+    if stage == "execution":
+        claimed = claim_task(task_id, f"api-dispatch-{project_id}", lock_duration_minutes=60)
+        if not claimed:
+            logger.warning("Task not claimable for execution", task_id=task_id)
+            return DispatchResult(
+                task_id=task_id,
+                project_id=project_id,
+                stage=stage,
+                status="not_claimable",
+            )
 
     await _trigger_workflow(stage, task_id, project_id)
 
