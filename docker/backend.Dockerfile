@@ -44,6 +44,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get purge -y gnupg && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
+# Create non-root user before COPY --chown, configure git for mounted repos
+RUN useradd -m -s /bin/bash appuser \
+    && git config --global --add safe.directory '*' \
+    && mkdir -p /etc/ssh && ssh-keyscan github.com >> /etc/ssh/ssh_known_hosts 2>/dev/null
+
 WORKDIR /app
 
 # Copy venv and app from builder (--chown avoids separate chown layer)
@@ -55,12 +60,6 @@ COPY --chown=appuser:appuser --from=builder /app/alembic ./alembic
 
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONUNBUFFERED=1
-
-# Create non-root user and configure git for mounted repos
-RUN useradd -m -s /bin/bash appuser \
-    && chown appuser:appuser /app \
-    && git config --global --add safe.directory '*' \
-    && mkdir -p /etc/ssh && ssh-keyscan github.com >> /etc/ssh/ssh_known_hosts 2>/dev/null
 
 COPY --chmod=755 docker/scripts/entrypoint-backend.sh /entrypoint.sh
 

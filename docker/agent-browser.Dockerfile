@@ -16,11 +16,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xdg-utils socat curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Chrome for Testing via npx, then resolve the binary path
+# Install Chrome for Testing, resolve binary path, clean caches in same layer
 RUN npx @puppeteer/browsers install chrome@stable \
     && npx @puppeteer/browsers install chromedriver@stable \
     && CHROME_BIN=$(find / -name 'chrome' -type f -path '*/chrome-linux64/*' 2>/dev/null | head -1) \
-    && ln -s "$CHROME_BIN" /usr/local/bin/chrome
+    && ln -s "$CHROME_BIN" /usr/local/bin/chrome \
+    && npm cache clean --force && rm -rf /tmp/* /root/.npm
 
 # Create non-root user for Chrome
 RUN groupadd -r browser && useradd -r -g browser -G audio,video browser \
