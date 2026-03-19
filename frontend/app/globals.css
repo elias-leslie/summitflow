@@ -140,30 +140,6 @@ body::before {
   background-size: 32px 32px;
 }
 
-/* Status indicator dots */
-.status-dot {
-  @apply w-2 h-2 rounded-full;
-}
-
-.status-dot.healthy {
-  @apply bg-outrun-500;
-  box-shadow: 0 0 8px rgba(255, 0, 102, 0.6);
-}
-
-.status-dot.warning {
-  @apply bg-amber-400;
-  box-shadow: 0 0 8px rgba(251, 191, 36, 0.6);
-}
-
-.status-dot.error {
-  @apply bg-rose-500;
-  box-shadow: 0 0 8px rgba(244, 63, 94, 0.6);
-}
-
-.status-dot.unknown {
-  @apply bg-slate-600;
-}
-
 /* Card styles */
 .card {
   @apply bg-slate-850 border border-slate-700 rounded-lg;
