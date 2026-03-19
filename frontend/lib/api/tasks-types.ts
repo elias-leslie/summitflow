@@ -65,4 +65,7 @@ export type {
   AgentHubLiveActivity,
   AgentHubSessionSummary,
   AgentHubEventsResponse,
+  NarrationTagType,
+  NarrationTag,
+  NarrationTimelineResponse,
 } from './tasks-types-agenthub'

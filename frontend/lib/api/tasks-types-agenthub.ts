@@ -92,3 +92,31 @@ export interface AgentHubEventsResponse {
   total: number
   max_turn: number
 }
+
+// ============================================================================
+// Narration Tags
+// ============================================================================
+
+export type NarrationTagType =
+  | 'started'
+  | 'found'
+  | 'modified'
+  | 'tested'
+  | 'confidence'
+  | 'blocked'
+  | 'decision'
+
+export interface NarrationTag {
+  id: number
+  task_id: string
+  session_id: string
+  tag_type: NarrationTagType
+  content: string
+  created_at: string
+}
+
+export interface NarrationTimelineResponse {
+  task_id: string
+  tags: NarrationTag[]
+  total: number
+}

@@ -8,6 +8,7 @@ import type {
   CodingAgentsResponse,
   AgentEventType,
   AgentHubEventsResponse,
+  NarrationTimelineResponse,
 } from './tasks-types'
 
 // ============================================================================
@@ -82,4 +83,23 @@ export async function fetchTaskAgentEvents(
     ...latestResponse,
     events: allEvents,
   }
+}
+
+// ============================================================================
+// Narration Timeline
+// ============================================================================
+
+export async function fetchNarrationTimeline(
+  taskId: string,
+  options?: { tag_type?: string; limit?: number },
+): Promise<NarrationTimelineResponse> {
+  const proxyBase = getAgentHubProxyBase()
+  const query = buildQueryString({
+    tag_type: options?.tag_type,
+    limit: options?.limit,
+  })
+  return fetchWithErrorHandling<NarrationTimelineResponse>(
+    `${proxyBase}/narration/tasks/${taskId}${query}`,
+    { errorMessage: 'Failed to fetch narration timeline' },
+  )
 }

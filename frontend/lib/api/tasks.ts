@@ -54,6 +54,9 @@ export type {
   AgentHubLiveActivity,
   AgentHubSessionSummary,
   AgentHubEventsResponse,
+  NarrationTagType,
+  NarrationTag,
+  NarrationTimelineResponse,
 } from './tasks-types'
 
 // ============================================================================
@@ -114,4 +117,6 @@ export {
   fetchCodingAgents,
   // Observability
   fetchTaskAgentEvents,
+  // Narration
+  fetchNarrationTimeline,
 } from './tasks-observability'

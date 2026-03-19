@@ -7,6 +7,7 @@ import { CollapsibleSection } from '@/components/tasks/CollapsibleSection'
 import { CriteriaProgress } from '@/components/tasks/CriteriaProgress'
 import { ExecutionTimeline } from '@/components/tasks/ExecutionTimeline'
 import { LinkedCapabilitySection } from '@/components/tasks/LinkedCapabilitySection'
+import { NarrationTimeline } from '@/components/tasks/NarrationTimeline'
 import { ObjectiveSection } from '@/components/tasks/ObjectiveSection'
 import { SubtasksSection } from '@/components/tasks/SubtasksSection'
 import { TaskLabels } from '@/components/tasks/TaskLabels'
@@ -225,10 +226,26 @@ export function TaskModalContent({
         </CollapsibleSection>
       )}
 
-      {/* Execution Timeline */}
+      {/* Progress Narration — primary execution summary for human review */}
+      {(task.total_sessions > 0 || isRunning || isAiReviewing) && (
+        <CollapsibleSection
+          title="Progress"
+          isOpen={true}
+          onToggle={() => {}}
+          testId="narration-toggle"
+        >
+          <NarrationTimeline
+            taskId={task.id}
+            isLive={isRunning || isAiReviewing}
+            pollInterval={5000}
+          />
+        </CollapsibleSection>
+      )}
+
+      {/* Execution Timeline — raw event log for drill-down */}
       {showTimeline && (
         <CollapsibleSection
-          title="Execution Timeline"
+          title="Execution Log"
           isOpen={timelineOpen}
           onToggle={onTimelineToggle}
           testId="timeline-toggle"
@@ -244,10 +261,10 @@ export function TaskModalContent({
         </CollapsibleSection>
       )}
 
-      {/* Agent Observability Timeline */}
+      {/* Agent Observability — full event detail for debugging */}
       {showTimeline && (
         <CollapsibleSection
-          title="Agent Observability"
+          title="Agent Detail"
           isOpen={agentTimelineOpen}
           onToggle={onAgentTimelineToggle}
           testId="agent-timeline-toggle"
