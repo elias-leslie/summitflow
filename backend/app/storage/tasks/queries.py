@@ -202,7 +202,7 @@ def purge_terminal_tasks(
 
         cur.execute(
             "SELECT id FROM tasks WHERE status = 'completed'"
-            " AND updated_at < NOW() - INTERVAL '%s days'",
+            " AND COALESCE(updated_at, created_at) < NOW() - INTERVAL '%s days'",
             (completed_max_age_days,),
         )
         aged_ids = [row[0] for row in cur.fetchall()]
