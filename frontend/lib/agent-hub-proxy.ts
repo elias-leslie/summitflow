@@ -1,3 +1,5 @@
+import { getApiBaseUrl } from './api-config'
+
 /**
  * Resolve the Agent Hub API base path.
  *
@@ -8,8 +10,7 @@
  */
 export function getAgentHubProxyBase(): string {
   if (typeof window === 'undefined') {
-    const apiUrl = process.env.API_URL || 'http://localhost:8001'
-    return `${apiUrl}/api/agent-hub`
+    return `${getApiBaseUrl()}/api/agent-hub`
   }
 
   return '/api/agent-hub'

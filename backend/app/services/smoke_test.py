@@ -13,6 +13,7 @@ import os
 from typing import Any
 from urllib.request import Request, urlopen
 
+from ..config import SUMMITFLOW_BACKEND_PORT
 from ..logging_config import get_logger
 from .redis_pool import get_redis
 
@@ -26,7 +27,10 @@ _REDIS_TTL = 3600  # 1 hour — re-notify if still failing after TTL expires
 # is set (partial profiles won't set vars for services they don't include).
 def _build_health_urls() -> dict[str, str]:
     urls: dict[str, str] = {
-        "summitflow": os.getenv("SUMMITFLOW_HEALTH_URL", "http://localhost:8001/health"),
+        "summitflow": os.getenv(
+            "SUMMITFLOW_HEALTH_URL",
+            f"http://localhost:{SUMMITFLOW_BACKEND_PORT}/health",
+        ),
     }
     for name, env_var in (
         ("agent-hub", "AGENT_HUB_HEALTH_URL"),

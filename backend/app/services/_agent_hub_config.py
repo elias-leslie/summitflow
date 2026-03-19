@@ -11,10 +11,9 @@ from typing import Final
 
 from agent_hub import AgentHubClient, AsyncAgentHubClient, CompletionResponse
 
+from ..config import AGENT_HUB_URL
 from ._agent_hub_types import LLMResponse
 
-# Default Agent Hub URL - can be overridden via environment
-AGENT_HUB_URL = os.getenv("AGENT_HUB_URL", "http://localhost:8003")
 AGENT_HUB_API_KEY = os.getenv("AGENT_HUB_API_KEY")
 
 

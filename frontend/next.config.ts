@@ -1,4 +1,5 @@
 import type { NextConfig } from 'next'
+import { PORTS } from './lib/api-config'
 
 const nextConfig: NextConfig = {
   output: 'standalone',
@@ -10,11 +11,11 @@ const nextConfig: NextConfig = {
     '192.168.8.244',
   ],
   // API routing via Next.js rewrites for CF Access compatibility
-  // Browser requests /api/* and /ws/* -> Next.js rewrites -> localhost:8001
+  // Browser requests /api/* and /ws/* -> Next.js rewrites -> localhost backend
   // This enables same-origin routing, avoiding CF Access cookie issues
   async rewrites() {
-    const apiUrl = process.env.API_URL || 'http://localhost:8001'
-    const agentHubApiUrl = process.env.AGENT_HUB_URL || 'http://localhost:8003'
+    const apiUrl = process.env.API_URL || `http://localhost:${PORTS.backend}`
+    const agentHubApiUrl = process.env.AGENT_HUB_URL || `http://localhost:${PORTS.agentHub}`
     return {
       // Agent Hub proxy: Route Handler at app/proxy-hub/agent-hub/[...path]/route.ts
       // injects client credentials and streams SSE directly to Agent Hub.

@@ -15,6 +15,8 @@
 // Config
 // ---------------------------------------------------------------------------
 
+import { PORTS } from '@/lib/api-config'
+
 const ENV_PREFIX = 'SUMMITFLOW'
 
 interface ProxyConfig {
@@ -26,7 +28,7 @@ interface ProxyConfig {
 function resolveConfig(): ProxyConfig {
   const envKey = (key: string) => `${ENV_PREFIX}_${key}`
   return {
-    agentHubUrl: process.env.AGENT_HUB_URL ?? 'http://localhost:8003',
+    agentHubUrl: process.env.AGENT_HUB_URL ?? `http://localhost:${PORTS.agentHub}`,
     clientId: process.env[envKey('CLIENT_ID')] ?? '',
     requestSource: process.env[envKey('REQUEST_SOURCE')] ?? '',
   }

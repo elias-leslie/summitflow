@@ -6,6 +6,22 @@ import os
 from pathlib import Path
 from typing import Any
 
+from ...config import (
+    AGENT_HUB_BACKEND_PORT,
+    AGENT_HUB_FRONTEND_PORT,
+    HATCHET_GRPC_PORT,
+    HATCHET_HEALTH_PORT,
+    MONKEY_FIGHT_PORT,
+    PORTFOLIO_BACKEND_PORT,
+    PORTFOLIO_FRONTEND_PORT,
+    POSTGRES_PORT,
+    REDIS_PORT,
+    SUMMITFLOW_BACKEND_PORT,
+    SUMMITFLOW_FRONTEND_PORT,
+    TERMINAL_BACKEND_PORT,
+    TERMINAL_FRONTEND_PORT,
+)
+
 
 def _float_env(name: str, default: float) -> float:
     raw = os.environ.get(name)
@@ -65,8 +81,8 @@ _RUNTIME_SERVICE_DEFS: tuple[dict[str, Any], ...] = (
         "manager": "systemd",
         "category": "app",
         "unit": "summitflow-backend.service",
-        "ports": ["8001"],
-        "probe_url": "http://localhost:8001/health",
+        "ports": [str(SUMMITFLOW_BACKEND_PORT)],
+        "probe_url": f"http://localhost:{SUMMITFLOW_BACKEND_PORT}/health",
     },
     {
         "service": "summitflow-web",
@@ -74,8 +90,8 @@ _RUNTIME_SERVICE_DEFS: tuple[dict[str, Any], ...] = (
         "manager": "systemd",
         "category": "app",
         "unit": "summitflow-frontend.service",
-        "ports": ["3001"],
-        "probe_url": "http://localhost:3001/",
+        "ports": [str(SUMMITFLOW_FRONTEND_PORT)],
+        "probe_url": f"http://localhost:{SUMMITFLOW_FRONTEND_PORT}/",
     },
     {
         "service": "summitflow-worker",
@@ -91,8 +107,8 @@ _RUNTIME_SERVICE_DEFS: tuple[dict[str, Any], ...] = (
         "manager": "systemd",
         "category": "app",
         "unit": "agent-hub-backend.service",
-        "ports": ["8003"],
-        "probe_url": "http://localhost:8003/health",
+        "ports": [str(AGENT_HUB_BACKEND_PORT)],
+        "probe_url": f"http://localhost:{AGENT_HUB_BACKEND_PORT}/health",
     },
     {
         "service": "agent-hub-web",
@@ -100,8 +116,8 @@ _RUNTIME_SERVICE_DEFS: tuple[dict[str, Any], ...] = (
         "manager": "systemd",
         "category": "app",
         "unit": "agent-hub-frontend.service",
-        "ports": ["3003"],
-        "probe_url": "http://localhost:3003/",
+        "ports": [str(AGENT_HUB_FRONTEND_PORT)],
+        "probe_url": f"http://localhost:{AGENT_HUB_FRONTEND_PORT}/",
     },
     {
         "service": "agent-hub-worker",
@@ -117,8 +133,8 @@ _RUNTIME_SERVICE_DEFS: tuple[dict[str, Any], ...] = (
         "manager": "systemd",
         "category": "app",
         "unit": "summitflow-terminal.service",
-        "ports": ["8002"],
-        "probe_url": "http://localhost:8002/health",
+        "ports": [str(TERMINAL_BACKEND_PORT)],
+        "probe_url": f"http://localhost:{TERMINAL_BACKEND_PORT}/health",
     },
     {
         "service": "terminal-web",
@@ -126,8 +142,8 @@ _RUNTIME_SERVICE_DEFS: tuple[dict[str, Any], ...] = (
         "manager": "systemd",
         "category": "app",
         "unit": "summitflow-terminal-frontend.service",
-        "ports": ["3002"],
-        "probe_url": "http://localhost:3002/",
+        "ports": [str(TERMINAL_FRONTEND_PORT)],
+        "probe_url": f"http://localhost:{TERMINAL_FRONTEND_PORT}/",
     },
     {
         "service": "portfolio-api",
@@ -135,8 +151,8 @@ _RUNTIME_SERVICE_DEFS: tuple[dict[str, Any], ...] = (
         "manager": "systemd",
         "category": "app",
         "unit": "portfolio-backend.service",
-        "ports": ["8000"],
-        "probe_url": "http://localhost:8000/health",
+        "ports": [str(PORTFOLIO_BACKEND_PORT)],
+        "probe_url": f"http://localhost:{PORTFOLIO_BACKEND_PORT}/health",
     },
     {
         "service": "portfolio-web",
@@ -144,8 +160,8 @@ _RUNTIME_SERVICE_DEFS: tuple[dict[str, Any], ...] = (
         "manager": "systemd",
         "category": "app",
         "unit": "portfolio-frontend.service",
-        "ports": ["3000"],
-        "probe_url": "http://localhost:3000/",
+        "ports": [str(PORTFOLIO_FRONTEND_PORT)],
+        "probe_url": f"http://localhost:{PORTFOLIO_FRONTEND_PORT}/",
     },
     {
         "service": "portfolio-worker",
@@ -161,8 +177,8 @@ _RUNTIME_SERVICE_DEFS: tuple[dict[str, Any], ...] = (
         "manager": "systemd",
         "category": "app",
         "unit": "monkey-fight.service",
-        "ports": ["4001"],
-        "probe_url": "http://localhost:4001/",
+        "ports": [str(MONKEY_FIGHT_PORT)],
+        "probe_url": f"http://localhost:{MONKEY_FIGHT_PORT}/",
     },
     {
         "service": "postgres",
@@ -170,7 +186,7 @@ _RUNTIME_SERVICE_DEFS: tuple[dict[str, Any], ...] = (
         "manager": "docker",
         "category": "infra",
         "container_service": "postgres",
-        "ports": ["5432"],
+        "ports": [str(POSTGRES_PORT)],
     },
     {
         "service": "redis",
@@ -178,7 +194,7 @@ _RUNTIME_SERVICE_DEFS: tuple[dict[str, Any], ...] = (
         "manager": "docker",
         "category": "infra",
         "container_service": "redis",
-        "ports": ["6379"],
+        "ports": [str(REDIS_PORT)],
     },
     {
         "service": "hatchet",
@@ -186,7 +202,7 @@ _RUNTIME_SERVICE_DEFS: tuple[dict[str, Any], ...] = (
         "manager": "docker",
         "category": "infra",
         "container_service": "hatchet",
-        "ports": ["7070", "8888"],
+        "ports": [str(HATCHET_GRPC_PORT), str(HATCHET_HEALTH_PORT)],
     },
 )
 _RUNTIME_SERVICE_MAP = {svc["service"]: svc for svc in _RUNTIME_SERVICE_DEFS}

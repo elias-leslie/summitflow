@@ -12,6 +12,25 @@ from pathlib import Path
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# ---------------------------------------------------------------------------
+# Port allocation — single source of truth for the SummitFlow management plane.
+# Other projects define their own ports in their own config.py; these are here
+# because SummitFlow manages the full runtime (docker/constants.py, smoke_test, etc.).
+# ---------------------------------------------------------------------------
+SUMMITFLOW_BACKEND_PORT = 8001
+SUMMITFLOW_FRONTEND_PORT = 3001
+AGENT_HUB_BACKEND_PORT = 8003
+AGENT_HUB_FRONTEND_PORT = 3003
+TERMINAL_BACKEND_PORT = 8002
+TERMINAL_FRONTEND_PORT = 3002
+PORTFOLIO_BACKEND_PORT = 8000
+PORTFOLIO_FRONTEND_PORT = 3000
+MONKEY_FIGHT_PORT = 4001
+POSTGRES_PORT = 5432
+REDIS_PORT = 6379
+HATCHET_GRPC_PORT = 7070
+HATCHET_HEALTH_PORT = 8888
+
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables.
@@ -38,7 +57,7 @@ class Settings(BaseSettings):
         return v
 
     # Redis
-    redis_url: str = "redis://localhost:6379"
+    redis_url: str = f"redis://localhost:{REDIS_PORT}"
 
     # Hatchet
     hatchet_client_token: str = ""
@@ -46,9 +65,9 @@ class Settings(BaseSettings):
     # CORS
     cors_origins: list[str] = [
         # Local development
-        "http://localhost:3001",
-        "http://localhost:4001",
-        "http://localhost:3003",
+        f"http://localhost:{SUMMITFLOW_FRONTEND_PORT}",
+        f"http://localhost:{MONKEY_FIGHT_PORT}",
+        f"http://localhost:{AGENT_HUB_FRONTEND_PORT}",
         # Production
         "https://dev.summitflow.dev",
         "https://test1.summitflow.dev",
@@ -71,4 +90,5 @@ def get_settings() -> Settings:
 settings = get_settings()
 DATABASE_URL = settings.database_url
 REDIS_URL = settings.redis_url
-DEFAULT_API_BASE = os.getenv("ST_API_BASE", "http://localhost:8001/api")
+DEFAULT_API_BASE = os.getenv("ST_API_BASE", f"http://localhost:{SUMMITFLOW_BACKEND_PORT}/api")
+AGENT_HUB_URL = os.getenv("AGENT_HUB_URL", f"http://localhost:{AGENT_HUB_BACKEND_PORT}")

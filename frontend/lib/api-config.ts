@@ -8,7 +8,7 @@
  * This pattern is self-contained - no external dependencies required.
  */
 
-const PORTS = { frontend: 3001, backend: 8001, agentHub: 8003 }
+export const PORTS = { frontend: 3001, backend: 8001, agentHub: 8003 }
 const PROD_DOMAIN = 'dev.summitflow.dev'
 const PROD_API_DOMAIN = 'devapi.summitflow.dev'
 
