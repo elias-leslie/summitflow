@@ -16,7 +16,7 @@ from ..output import handle_api_error, output_context, output_subtask_context
 from .tasks_helpers import fetch_phase_triggered_references, fetch_triggered_references
 from .tasks_progress import analyze_subtask_sync
 
-_TERMINAL_TASK_STATUSES = {"completed", "cancelled", "abandoned", "failed", "blocked"}
+_TERMINAL_TASK_STATUSES = {"completed", "cancelled", "failed"}
 
 
 def _enrich_task_from_spirit(task: dict[str, Any], task_id: str) -> None:

@@ -45,7 +45,8 @@ async def update_task(project_id: str, task_id: str, update: TaskUpdate) -> Task
         return task_to_response(existing)
 
     # Split into task fields and spirit fields
-    spirit_fields = {"objective", "spirit_anti", "decisions", "constraints", "done_when"}
+    # Only done_when is still a live spirit field; others are deprecated
+    spirit_fields = {"done_when"}
     task_updates = {k: v for k, v in update_fields.items() if k not in spirit_fields}
     spirit_updates = {
         k: v for k, v in update_fields.items() if k in spirit_fields and k != "labels"
@@ -170,7 +171,7 @@ async def execute_task(project_id: str, task_id: str) -> TaskResponse:
         )
 
     try:
-        updated = await asyncio.to_thread(task_store.update_task_status, task_id, "queue")
+        updated = await asyncio.to_thread(task_store.update_task_status, task_id, "pending")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
@@ -178,6 +179,6 @@ async def execute_task(project_id: str, task_id: str) -> TaskResponse:
         raise HTTPException(status_code=500, detail="Failed to start execution")
 
     # Dispatch autonomous execution
-    await dispatch_autonomous_task(task_id, "queue", project_id)
+    await dispatch_autonomous_task(task_id, "pending", project_id)
 
     return task_to_response(updated)

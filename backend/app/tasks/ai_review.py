@@ -1,6 +1,6 @@
 """AI Review task for pull request validation.
 
-Implements the AI review gate for git workflow. Runs when task transitions to ai_reviewing status. Pipeline: pytest, pre-commit, types, code quality (Opus), UI review (Gemini), step verification.
+Implements the AI review gate for git workflow. Runs when task transitions to running status for review. Pipeline: pytest, pre-commit, types, code quality (Opus), UI review (Gemini), step verification.
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ def _handle_escalation(
     logger.info("%s_escalation", escalation_type, task_id=task_id, reason=reason)
     result = ReviewResult(verdict=ReviewVerdict.FAIL, summary=f"{escalation_type}: {reason}", checks=checks, issues=issues, risk_level=risk_level)
     task_store.update_task(task_id, review_result=result.to_dict())
-    task_store.update_task_status(task_id, "blocked")
+    task_store.update_task_status(task_id, "failed")
     _notify_supervisor_review_needed(task_id, reason)
     return result.to_dict()
 
@@ -110,7 +110,7 @@ def _apply_verdict(task_id: str, pr_url: str | None, verdict: ReviewVerdict, sum
         log_task_event(task_id, f"AI Review needs fixes: {', '.join(all_issues[:3])}")
         logger.info("review_needs_fix", task_id=task_id, issues=len(all_issues))
     else:
-        task_store.update_task_status(task_id, "blocked")
+        task_store.update_task_status(task_id, "failed")
         _notify_supervisor_review_needed(task_id, summary)
         logger.info("review_escalated", task_id=task_id)
 
@@ -146,9 +146,9 @@ def _validate_task_for_review(task_id: str, task: dict[str, Any] | None) -> dict
     """Return an error result dict if the task is invalid, else None."""
     if not task:
         return ReviewResult(verdict=ReviewVerdict.FAIL, summary=f"Task {task_id} not found", issues=[f"Task {task_id} not found"]).to_dict()
-    if task.get("status") != "ai_reviewing":
+    if task.get("status") != "running":
         logger.warning("task_not_in_review", task_id=task_id, status=task.get("status"))
-        return ReviewResult(verdict=ReviewVerdict.FAIL, summary=f"Task not in ai_reviewing status (current: {task.get('status')})", issues=["Task must be in ai_reviewing status for review"]).to_dict()
+        return ReviewResult(verdict=ReviewVerdict.FAIL, summary=f"Task not in running status (current: {task.get('status')})", issues=["Task must be in running status for review"]).to_dict()
     return None
 
 

@@ -100,7 +100,7 @@ async def _handle_stop_signal(task_id: str) -> None:
     task = task_store.get_task(task_id)
     if task and task.get("status") == "running":
         try:
-            task_store.update_task_status(task_id, "paused")
+            task_store.update_task_status(task_id, "pending")
             log_task_event(
                 task_id,
                 "User requested stop via execution timeline",

@@ -81,11 +81,8 @@ def get_subtasks_for_task(
     subtasks = [row_to_dict(row) for row in rows]
 
     if include_steps:
-        from .steps import get_step_summary, get_steps_for_subtask
-
         for subtask in subtasks:
-            subtask_table_id = str(subtask["id"])
-            subtask["steps_from_table"] = get_steps_for_subtask(subtask_table_id)
-            subtask["step_summary"] = get_step_summary(subtask_table_id)
+            subtask["steps_from_table"] = []
+            subtask["step_summary"] = {"total": 0, "completed": 0}
 
     return subtasks

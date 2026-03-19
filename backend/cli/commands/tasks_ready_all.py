@@ -96,14 +96,14 @@ def _fetch_active_stale(
     active_count = 0
     stale_count = 0
 
-    for status in ("running", "queue"):
+    for status in ("running", "pending"):
         try:
             resp = client.get(f"{client.base_url}/projects/{pid}/tasks?status={status}&limit=100")
             batch = resp.get("tasks", [])
         except APIError:
             continue
 
-        if status == "queue":
+        if status == "pending":
             active.extend(batch)
             active_count += resp.get("total", len(batch))
             continue

@@ -10,7 +10,6 @@ from typing import Any
 from ...services.task_execution_readiness import TaskExecutionReadiness
 from ...services.task_lane_preflight import TaskLaneConflictCheck, TaskLaneConflictCheckDict
 from ...storage.events import get_events_by_trace
-from ...storage.steps import get_steps_for_subtask
 
 
 def _format_context_lines(spirit: dict[str, Any]) -> list[str]:
@@ -73,23 +72,13 @@ def _format_subtask_lines(subtasks: list[dict[str, Any]]) -> tuple[list[str], in
     completed = sum(1 for s in subtasks if s.get("passes"))
     pct = int(completed / len(subtasks) * 100)
     lines: list[str] = [f"SUBTASKS[{len(subtasks)}]:{completed}/{len(subtasks)}:{pct}%"]
-    total_criteria = 0
-    verified_criteria = 0
     for st in subtasks:
-        steps = get_steps_for_subtask(st["id"])
-        total_criteria += len(steps)
-        passed = sum(1 for s in steps if s.get("passes"))
-        verified_criteria += passed
         marker = "PASS" if st.get("passes") else "____"
         phase = f"[{st['phase']}] " if st.get("phase") else ""
         raw_desc = st.get("description", "")
         desc = raw_desc[:45] + ("..." if len(raw_desc) > 45 else "")
-        lines.append(f"{st['subtask_id']}   {marker} {phase}{desc} [{passed}/{len(steps)}]")
-        for step in steps:
-            step_desc = step.get("description", "")[:60]
-            status = "PASS" if step.get("passes") else "____"
-            lines.append(f"  {step.get('step_number', 0)}. {status} {step_desc}")
-    return lines, total_criteria, verified_criteria
+        lines.append(f"{st['subtask_id']}   {marker} {phase}{desc}")
+    return lines, 0, 0
 
 
 def _format_event_log_lines(task_id: str) -> list[str]:
@@ -130,10 +119,6 @@ def _format_workflow_readiness_lines(
 def _format_spirit_section_lines(spirit: dict[str, Any]) -> list[str]:
     """Return OBJECTIVE, SPIRIT_ANTI, DONE_WHEN, and CONTEXT lines from spirit."""
     lines: list[str] = []
-    if spirit.get("objective"):
-        lines.append(f"OBJECTIVE:{spirit['objective']}")
-    if spirit.get("spirit_anti"):
-        lines.append(f"SPIRIT_ANTI:{spirit['spirit_anti']}")
     done_when_list = spirit.get("done_when") or []
     if done_when_list:
         strs = [str(d) for d in done_when_list]
@@ -168,8 +153,7 @@ def format_toon_context(
 
     plan_status = spirit.get("plan_status", "draft") if spirit else "draft"
     subtask_lines, criteria_count, criteria_verified = _format_subtask_lines(subtasks)
-    decisions_count = len(spirit.get("decisions", [])) if spirit else 0
-    lines.extend(_format_workflow_readiness_lines(plan_status, criteria_count, decisions_count, readiness))
+    lines.extend(_format_workflow_readiness_lines(plan_status, criteria_count, 0, readiness))
 
     if spirit:
         lines.extend(_format_spirit_section_lines(spirit))

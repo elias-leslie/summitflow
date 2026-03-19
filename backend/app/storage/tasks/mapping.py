@@ -60,11 +60,10 @@ def row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
 def row_to_dict_with_spirit(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert a database row with spirit fields to a task dict.
 
-    Column order (45 columns):
+    Column order (41 columns):
         First 39 columns are standard task columns (see row_to_dict).
-        Then 6 spirit columns:
-        39: objective, 40: spirit_anti, 41: decisions, 42: constraints,
-        43: done_when, 44: plan_status
+        Then 2 spirit columns:
+        39: done_when, 40: plan_status
     """
     if row is None:
         raise ValueError("Row cannot be None")
@@ -72,12 +71,8 @@ def row_to_dict_with_spirit(row: TupleRow | tuple[Any, ...] | None) -> dict[str,
         raise ValueError(f"Expected {EXPECTED_TASK_COLUMNS_WITH_SPIRIT} columns, got {len(row)}")
 
     task = _build_task_dict(row[:EXPECTED_TASK_COLUMNS])
-    task["objective"] = row[39]
-    task["spirit_anti"] = row[40]
-    task["decisions"] = row[41] if row[41] else []
-    task["constraints"] = row[42] if row[42] else []
-    task["done_when"] = row[43] if row[43] else []
-    task["plan_status"] = row[44]
+    task["done_when"] = row[39] if row[39] else []
+    task["plan_status"] = row[40]
     return task
 
 

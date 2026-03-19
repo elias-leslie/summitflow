@@ -9,8 +9,6 @@ from fastapi import HTTPException
 from ...logging_config import get_logger
 from ...schemas.task_response_models import WorktreeResponse
 from ...storage import tasks as task_store
-from ...storage.steps import STEP_STATUS_PLAN_DEFECT, get_steps_for_subtask
-from ...storage.subtasks import get_subtasks_for_task
 
 logger = get_logger(__name__)
 
@@ -40,46 +38,27 @@ def get_worktree_response(task_id: str) -> WorktreeResponse | None:
 
 
 def get_step_count_for_task(task_id: str) -> int:
-    """Get total step count across all subtasks for a task. Returns 0 if none exist."""
-    subtasks = get_subtasks_for_task(task_id, include_steps=False)
-    if not subtasks:
-        return 0
-    return sum(len(get_steps_for_subtask(s.get("id", ""))) for s in subtasks)
+    """Get total step count across all subtasks for a task.
+
+    Steps layer has been removed. Always returns 0.
+    """
+    return 0
 
 
 def get_step_counts_batch(task_ids: list[str]) -> dict[str, int]:
-    """Get step counts for multiple tasks. Returns dict mapping task_id to step count."""
-    return {task_id: get_step_count_for_task(task_id) for task_id in task_ids}
+    """Get step counts for multiple tasks.
 
-
-def _step_is_verified(step: dict[str, Any]) -> bool:
-    """Return True if step counts as verified."""
-    return bool(step.get("passes") or (step.get("status") == STEP_STATUS_PLAN_DEFECT and step.get("fix_step_number")))
-
-
-def _tally_subtask_steps(subtask_id: str) -> tuple[int, int, list[str]]:
-    """Return (total, verified, unverified_ids) for all steps in a subtask."""
-    unverified: list[str] = []
-    steps = list(get_steps_for_subtask(subtask_id))
-    verified = sum(1 for s in steps if _step_is_verified(s))
-    for step in steps:
-        if not _step_is_verified(step):
-            unverified.append(f"{subtask_id}.{step.get('step_number', 0)}")
-    return len(steps), verified, unverified
+    Steps layer has been removed. Always returns 0 for each task.
+    """
+    return {task_id: 0 for task_id in task_ids}
 
 
 def get_step_verification_status(task_id: str) -> dict[str, Any]:
-    """Get step verification status: total, verified, unverified IDs, all_verified."""
-    subtasks = get_subtasks_for_task(task_id, include_steps=False)
-    if not subtasks:
-        return {"total": 0, "verified": 0, "unverified": [], "all_verified": True}
-    total, verified, unverified = 0, 0, []
-    for subtask in subtasks:
-        sub_total, sub_verified, sub_unverified = _tally_subtask_steps(subtask.get("id", ""))
-        total += sub_total
-        verified += sub_verified
-        unverified.extend(sub_unverified)
-    return {"total": total, "verified": verified, "unverified": unverified, "all_verified": not unverified}
+    """Get step verification status.
+
+    Steps layer has been removed. Returns all-verified stub.
+    """
+    return {"total": 0, "verified": 0, "unverified": [], "all_verified": True}
 
 
 def verify_task_project(task_id: str, project_id: str) -> dict[str, Any]:
@@ -119,12 +98,11 @@ async def _dispatch_pending_idea(task_id: str, project_id: str) -> None:
 
 
 async def _route_dispatch(task_id: str, new_status: str, project_id: str) -> None:
-    """Route dispatch based on new_status: queue, pending, or cancelled/blocked."""
-    if new_status == "queue":
+    """Route dispatch based on new_status: pending, or cancelled/failed."""
+    if new_status == "pending":
         await _dispatch_queue(task_id, project_id)
-    elif new_status == "pending":
         await _dispatch_pending_idea(task_id, project_id)
-    elif new_status in ("cancelled", "blocked"):
+    elif new_status in ("cancelled", "failed"):
         abort_running_task(task_id)
 
 

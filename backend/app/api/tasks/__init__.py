@@ -5,7 +5,6 @@ Split from monolithic tasks.py (1981 lines) into focused modules:
 - dependencies.py: Task dependency management
 - enrichment.py: AI-powered task enrichment
 - subtasks.py: Subtask management
-- steps.py: Step management within subtasks
 - logging.py: Progress logging, SSE streaming, task claiming
 - workflow.py: Task workflow automation
 """
@@ -17,7 +16,6 @@ from .dependencies import router as dependencies_router
 from .enrichment import router as enrichment_router
 from .logging import router as logging_router
 from .observability import router as observability_router
-from .steps import router as steps_router
 from .subtasks import router as subtasks_router
 from .workflow import router as workflow_router
 
@@ -28,7 +26,6 @@ router.include_router(core_router)
 router.include_router(dependencies_router)
 router.include_router(enrichment_router)
 router.include_router(subtasks_router)
-router.include_router(steps_router)
 router.include_router(logging_router)
 router.include_router(workflow_router)
 router.include_router(observability_router)

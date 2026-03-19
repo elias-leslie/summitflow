@@ -1,7 +1,7 @@
 """Integration tests for task_spirit JOIN in tasks API.
 
 Tests verify that:
-1. Task with spirit data returns objective, spirit_anti, decisions, constraints, done_when
+1. Task with spirit data returns done_when, plan_status, complexity, context
 2. Task without spirit data returns null/empty for spirit fields
 3. List endpoint returns spirit fields for all tasks
 """
@@ -22,7 +22,7 @@ class TestTaskSpiritJoin:
     def test_get_task_with_spirit_data(
         self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
     ) -> None:
-        """Task with spirit data should return all spirit fields populated."""
+        """Task with spirit data should return done_when and plan_status populated."""
         # Create a task
         response = client.post(
             f"/api/projects/{test_project_id}/tasks",
@@ -39,23 +39,14 @@ class TestTaskSpiritJoin:
         cleanup_task(task_id)
 
         # Add spirit data directly to database
-        # Note: decisions is list[dict], not list[str]
-        decisions_data = [
-            {"id": "d1", "question": "API style?", "answer": "Use REST API"},
-            {"id": "d2", "question": "Storage?", "answer": "Store in PostgreSQL"},
-        ]
         with get_connection() as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO task_spirit (task_id, objective, spirit_anti, decisions, constraints, done_when, plan_status)
-                VALUES (%s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s)
+                INSERT INTO task_spirit (task_id, done_when, plan_status)
+                VALUES (%s, %s::jsonb, %s)
                 """,
                 (
                     task_id,
-                    "Complete the feature implementation",
-                    "Do NOT break existing tests",
-                    json.dumps(decisions_data),
-                    json.dumps(["Must be backward compatible"]),
                     json.dumps(["All tests pass", "PR merged"]),
                     "approved",
                 ),
@@ -67,10 +58,6 @@ class TestTaskSpiritJoin:
         assert response.status_code == 200
         task_data = response.json()
 
-        assert task_data["objective"] == "Complete the feature implementation"
-        assert task_data["spirit_anti"] == "Do NOT break existing tests"
-        assert task_data["decisions"] == decisions_data
-        assert task_data["constraints"] == ["Must be backward compatible"]
         assert task_data["done_when"] == ["All tests pass", "PR merged"]
         assert task_data["plan_status"] == "approved"
 
@@ -99,10 +86,6 @@ class TestTaskSpiritJoin:
         task_data = response.json()
 
         # Spirit fields should be null or empty lists (graceful handling)
-        assert task_data["objective"] is None
-        assert task_data["spirit_anti"] is None
-        assert task_data["decisions"] == [] or task_data["decisions"] is None
-        assert task_data["constraints"] == [] or task_data["constraints"] is None
         assert task_data["done_when"] == [] or task_data["done_when"] is None
 
     def test_list_tasks_returns_spirit_fields(
@@ -136,10 +119,10 @@ class TestTaskSpiritJoin:
         with get_connection() as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO task_spirit (task_id, objective, spirit_anti, plan_status)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO task_spirit (task_id, plan_status)
+                VALUES (%s, %s)
                 """,
-                (task1_id, "List test objective", "List test anti-pattern", "draft"),
+                (task1_id, "draft"),
             )
             conn.commit()
 
@@ -156,13 +139,7 @@ class TestTaskSpiritJoin:
         assert task2_data is not None, "Task without spirit not found in list"
 
         # Verify spirit fields on task with spirit
-        assert task1_data["objective"] == "List test objective"
-        assert task1_data["spirit_anti"] == "List test anti-pattern"
         assert task1_data["plan_status"] == "draft"
-
-        # Verify spirit fields are null on task without spirit
-        assert task2_data["objective"] is None
-        assert task2_data["spirit_anti"] is None
 
 
 class TestTaskUpdates:
@@ -301,13 +278,9 @@ class TestReadyEndpoint:
             "labels": [],
             "task_type": "refactor",
             "parent_task_id": None,
-            "objective": None,
             "acceptance_criteria": None,
             "current_phase": None,
             "verification_result": None,
-            "spirit_anti": None,
-            "decisions": [],
-            "constraints": [],
             "done_when": [],
             "complexity": "STANDARD",
             "raw_request": None,
@@ -331,7 +304,6 @@ class TestReadyEndpoint:
             "title": "Ready bug task",
             "task_type": "bug",
             "priority": 1,
-            "objective": "Restore 200 on /health",
             "done_when": ["GET /health returns 200", "Relevant tests pass"],
             "complexity": "SIMPLE",
             "plan_status": "approved",
@@ -387,13 +359,9 @@ class TestReadyEndpoint:
             "labels": [],
             "task_type": "refactor",
             "parent_task_id": None,
-            "objective": "Refactor safely",
             "acceptance_criteria": None,
             "current_phase": None,
             "verification_result": None,
-            "spirit_anti": None,
-            "decisions": [],
-            "constraints": [],
             "done_when": ["Tests pass"],
             "complexity": "STANDARD",
             "raw_request": None,

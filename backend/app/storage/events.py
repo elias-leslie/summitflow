@@ -40,11 +40,7 @@ logger = get_logger(__name__)
 _ACTIVE_TASK_STATUSES = (
     "pending",
     "running",
-    "blocked",
-    "queue",
-    "ai_reviewing",
     "failed",
-    "paused",
     "review",
 )
 

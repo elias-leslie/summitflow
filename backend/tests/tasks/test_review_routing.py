@@ -572,4 +572,4 @@ class TestHandleEscalation:
 
         _handle_escalation("task-1", {"summary": "critical issue"})
 
-        mock_store.update_task_status.assert_called_once_with("task-1", "blocked")
+        mock_store.update_task_status.assert_called_once_with("task-1", "failed")

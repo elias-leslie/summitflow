@@ -10,7 +10,7 @@ from typing import Any
 from ..connection import get_connection
 from .core import TASK_COLUMNS, _row_to_dict, canonicalize_task_id
 
-_CLAIMABLE_STATUSES = {"pending", "paused", "blocked", "failed", "queue"}
+_CLAIMABLE_STATUSES = {"pending", "failed"}
 
 
 def _has_valid_lock(task: dict[str, Any], cur: Any) -> bool:

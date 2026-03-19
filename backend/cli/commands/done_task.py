@@ -6,6 +6,8 @@ from pathlib import Path
 
 import typer
 
+from app.tasks.autonomous.exec_modules.diff_gate import check_diff_gate
+
 from .._client_base import APIError
 from ..client import STClient
 from ..lib.checkpoint import get_snapshot_info, remove_snapshot
@@ -70,9 +72,23 @@ def _perform_completion(
     snapshot_info: dict[str, str | int | None],
     project_id: str | None,
     strict: bool,
+    skip_diff_gate: bool = False,
 ) -> None:
+    # Diff gate: check for meaningful changes before merge
+    if not skip_diff_gate:
+        raw_wt = snapshot_info.get("worktree_path")
+        worktree_path = str(raw_wt) if raw_wt else None
+        if worktree_path:
+            diff_result = check_diff_gate(worktree_path)
+            if not diff_result.passed:
+                output_error(
+                    f"Diff gate blocked completion: {diff_result.summary}\n"
+                    "  Use --skip-diff-gate for non-code tasks (docs, config)."
+                )
+                raise typer.Exit(1)
+
     if not strict:
-        subtasks_resp = client.get_subtasks(task_id, include_steps=True)
+        subtasks_resp = client.get_subtasks(task_id)
         sync_analysis = sync_completed_subtasks(
             client,
             task_id,
@@ -287,6 +303,7 @@ def complete_task(
     message: str | None = None,
     strict: bool = False,
     admin: bool = False,
+    skip_diff_gate: bool = False,
 ) -> dict[str, str | bool]:
     """Complete a task with branch merge and snapshot cleanup.
 
@@ -315,7 +332,7 @@ def complete_task(
     stashed = _handle_dirty_main(strict)
 
     try:
-        _perform_completion(client, task_id, snapshot_info, project_id, strict)
+        _perform_completion(client, task_id, snapshot_info, project_id, strict, skip_diff_gate)
     except SystemExit as exc:
         raise typer.Exit(exc.code) from None
     finally:

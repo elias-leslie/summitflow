@@ -15,12 +15,11 @@ class TestAssessTaskExecutionReadiness:
     def test_nontrivial_task_requires_full_agent_plan(self) -> None:
         readiness = assess_task_execution_readiness(
             {"task_type": "refactor", "complexity": "STANDARD", "description": "Refactor module"},
-            {"objective": "Refactor foo.py", "done_when": ["Tests pass"]},
+            {"done_when": ["Tests pass"]},
             [],
         )
 
         assert not readiness.ready
-        assert "spirit_anti" in readiness.missing_fields
         assert "subtasks" in readiness.missing_fields
         assert "context" in readiness.missing_fields
 

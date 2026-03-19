@@ -10,7 +10,7 @@ from ....storage.subtasks import update_subtask_passes
 from .events import emit_log
 from .memory_writes import save_subtask_learning
 from .session import extract_handoff_summary
-from .steps import compute_issue_id
+from .step_issue import compute_issue_id
 
 logger = get_logger(__name__)
 

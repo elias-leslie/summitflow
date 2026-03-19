@@ -9,7 +9,6 @@ from typing import Any
 
 from ..logging_config import get_logger
 from .connection import get_connection
-from .steps import bulk_create_steps
 from .subtasks_helpers import SUBTASK_COLUMNS, generate_subtask_id, row_to_dict
 
 logger = get_logger(__name__)
@@ -78,25 +77,8 @@ def _insert_subtasks_in_transaction(
 def _create_steps_for_subtasks(
     steps_to_create: list[tuple[str, list[str | dict[str, Any]]]],
 ) -> dict[str, list[dict[str, Any]]]:
-    """Create step rows for each subtask outside the subtask transaction.
-
-    Args:
-        steps_to_create: List of (subtask_table_id, step_items) pairs.
-
-    Returns:
-        Mapping of subtask_table_id -> list of created step dicts.
-    """
-    subtasks_with_steps: dict[str, list[dict[str, Any]]] = {}
-    for subtask_table_id, step_items in steps_to_create:
-        try:
-            created_steps = bulk_create_steps(subtask_table_id, step_items)
-            subtasks_with_steps[subtask_table_id] = created_steps
-        except ValueError:
-            raise  # Validation errors must propagate
-        except Exception as e:
-            logger.error("Failed to create steps for subtask %s: %s", subtask_table_id, e)
-            # Continue - subtask created, steps failed (partial success)
-    return subtasks_with_steps
+    """Steps layer has been removed. Returns empty dict."""
+    return {}
 
 
 def _attach_steps_to_subtasks(

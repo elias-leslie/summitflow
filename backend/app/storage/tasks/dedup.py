@@ -7,8 +7,8 @@ from typing import Any
 
 from ..connection import get_connection
 
-_ACTIVE = "('pending', 'running', 'paused', 'blocked', 'ai_reviewing')"
-_ACTIVE_Q = "('pending', 'running', 'queue', 'paused', 'blocked', 'ai_reviewing')"
+_ACTIVE = "('pending', 'running')"
+_ACTIVE_Q = "('pending', 'running')"
 _STOP_WORDS_ERR = {"the", "and", "for", "due", "with", "from", "error", "fix"}
 _STOP_WORDS_TITLE = {
     "the", "and", "for", "due", "with", "from", "into", "that", "this",

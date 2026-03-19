@@ -182,12 +182,12 @@ def _do_review_transition(
     log_message: str,
     dispatch: Callable[[str, str, str], None] | None,
 ) -> str:
-    """Set task to ai_reviewing and optionally dispatch the review workflow."""
-    task_store.update_task_status(task_id, "ai_reviewing")
-    emit_log(task_id, "info", f"{log_message}, starting QA review", project_id=project_id)
+    """Set task to completed after passing review gate."""
+    task_store.update_task_status(task_id, "completed")
+    emit_log(task_id, "info", f"{log_message}, completing after review gate", project_id=project_id)
     if dispatch:
         dispatch("review", task_id, project_id)
-    return "ai_reviewing"
+    return "completed"
 
 
 def _do_complete_transition(task_id: str, project_id: str, log_message: str) -> str:
@@ -200,7 +200,7 @@ def _do_complete_transition(task_id: str, project_id: str, log_message: str) -> 
         # self-block on the task's pre-merge status.
         task_store.update_task_status(task_id, "completed", validate_transition=False)
         merge_result = merge_and_cleanup_task_worktree(task_id, project_id)
-        merge_status = str(merge_result.get("status") or "blocked")
+        merge_status = str(merge_result.get("status") or "failed")
         emit_log(
             task_id,
             "info",
@@ -210,11 +210,9 @@ def _do_complete_transition(task_id: str, project_id: str, log_message: str) -> 
         if merge_status in {"merged", "skipped"}:
             _notify_completion(task_id, project_id)
             return "completed"
-        if merge_status == "conflicted":
-            return "conflicted"
-        if merge_status == "rolled_back":
+        if merge_status in ("conflicted", "rolled_back"):
             return "failed"
-        return "blocked"
+        return "failed"
 
     task_store.update_task_status(task_id, "completed")
     emit_log(
@@ -257,9 +255,9 @@ def transition_to_review_or_complete(
     log_message: str,
     dispatch: Callable[[str, str, str], None] | None = None,
 ) -> str:
-    """Transition task to ai_reviewing or a merge-derived terminal state.
+    """Transition task to completed or a merge-derived terminal state.
 
-    Returns the final status: "ai_reviewing", "completed", "conflicted", "failed", or "blocked".
+    Returns the final status: "completed" or "failed".
     """
     if _resolve_require_review(task_id, project_id):
         return _do_review_transition(task_id, project_id, log_message, dispatch)
@@ -280,11 +278,11 @@ def handle_status_transition_error(
         error_msg = "\n".join(parts)
 
     emit_log(task_id, "error", error_msg, project_id=project_id)
-    task_store.update_task_status(task_id, "blocked")
+    task_store.update_task_status(task_id, "failed")
     emit_log(
         task_id,
         "error",
-        "Task set to blocked due to status transition failure",
+        "Task set to failed due to status transition failure",
         project_id=project_id,
     )
     notify_failure(task_id, project_id, f"Status transition failed: {error}")

@@ -25,20 +25,15 @@ class TaskCreate(BaseModel):
     task_type: Literal["feature", "bug", "task", "refactor", "debt", "regression"] = "task"
     parent_task_id: str | None = None
     # AI agent reliability fields
-    objective: str | None = Field(default=None, description="Single measurable goal statement")
     acceptance_criteria: list[AcceptanceCriterion] | None = Field(
         default=None, description="List of acceptance criteria (validated on create)"
     )
+    # Deprecated spirit fields — accepted but ignored for backwards compatibility
+    objective: str | None = Field(default=None, description="DEPRECATED: no longer stored", exclude=True)
+    spirit_anti: str | None = Field(default=None, description="DEPRECATED: no longer stored", exclude=True)
+    decisions: list[dict[str, Any]] | None = Field(default=None, description="DEPRECATED: no longer stored", exclude=True)
+    constraints: list[str] | None = Field(default=None, description="DEPRECATED: no longer stored", exclude=True)
     # Pipeline v2 fields
-    spirit_anti: str | None = Field(
-        default=None, description="What NOT to do - failure mode to avoid"
-    )
-    decisions: list[dict[str, Any]] | None = Field(
-        default=None, description="Implementation decisions made during planning"
-    )
-    constraints: list[str] | None = Field(
-        default=None, description="Boundaries that must not be crossed"
-    )
     done_when: list[str] | None = Field(
         default=None, description="Checklist of completion conditions"
     )
@@ -77,14 +72,15 @@ class TaskUpdate(BaseModel):
     # Allow moving task to different project
     project_id: str | None = None
     # AI agent reliability fields
-    objective: str | None = None
     acceptance_criteria: list[AcceptanceCriterion] | None = None
     # Capability linkage (FK to capabilities table)
     capability_id: int | None = None
+    # Deprecated spirit fields — accepted but ignored for backwards compatibility
+    objective: str | None = Field(default=None, description="DEPRECATED: no longer stored", exclude=True)
+    spirit_anti: str | None = Field(default=None, description="DEPRECATED: no longer stored", exclude=True)
+    decisions: list[dict[str, Any]] | None = Field(default=None, description="DEPRECATED: no longer stored", exclude=True)
+    constraints: list[str] | None = Field(default=None, description="DEPRECATED: no longer stored", exclude=True)
     # Pipeline v2 fields
-    spirit_anti: str | None = None
-    decisions: list[dict[str, Any]] | None = None
-    constraints: list[str] | None = None
     done_when: list[str] | None = None
     complexity: Literal["SIMPLE", "STANDARD", "COMPLEX"] | None = None
     execution_mode: ExecutionModeLiteral | None = None

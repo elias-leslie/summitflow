@@ -30,9 +30,6 @@ from .exec_modules.quality import (
 from .exec_modules.quality import (
     parse_error_count as _parse_error_count,
 )
-from .exec_modules.steps import (
-    is_infrastructure_failure as _is_infrastructure_failure,
-)
 from .exec_modules.subtask_executor import execute_subtask as _execute_subtask
 from .exec_modules.worktree import (
     check_main_repo_leakage as _check_main_repo_leakage,
@@ -40,6 +37,28 @@ from .exec_modules.worktree import (
 from .exec_modules.worktree import (
     check_worktree_health as _check_worktree_health,
 )
+
+_INFRASTRUCTURE_PATTERNS = [
+    "command not found",
+    "No such file or directory",
+    "Permission denied",
+    "not recognized as",
+    "cannot execute binary",
+    "is not installed",
+    "ModuleNotFoundError",
+    "ImportError: cannot import",
+    "ImportError while loading",
+    "FileNotFoundError",
+    "timed out",
+    "Connection refused",
+]
+
+
+def _is_infrastructure_failure(output: str, reason: str, returncode: int) -> bool:
+    """Classify whether a failure is infrastructure (plan defect) vs code."""
+    combined = f"{output}\n{reason}".lower()
+    return any(pat.lower() in combined for pat in _INFRASTRUCTURE_PATTERNS)
+
 
 __all__ = [
     "PristineCheckError",

@@ -124,10 +124,10 @@ def _fetch_throughput_data(cur: psycopg.Cursor, project_id: str) -> tuple[int, i
 
 
 def _fetch_verification_results(cur: psycopg.Cursor, project_id: str) -> list[VerificationResult]:
-    """Fetch verification result dicts for completed/failed/abandoned tasks."""
+    """Fetch verification result dicts for completed/failed/cancelled tasks."""
     cur.execute(
         """SELECT verification_result FROM tasks WHERE project_id = %s
-        AND status IN ('completed', 'failed', 'abandoned') AND verification_result IS NOT NULL""",
+        AND status IN ('completed', 'failed', 'cancelled') AND verification_result IS NOT NULL""",
         (project_id,),
     )
     return [row[0] for row in cur.fetchall() if isinstance(row[0], dict)]
@@ -141,12 +141,12 @@ def _fetch_autonomous_data(cur: psycopg.Cursor, project_id: str) -> tuple[int, i
     )
     running: int = (cur.fetchone() or (0,))[0]
     cur.execute(
-        "SELECT COUNT(*) FROM tasks WHERE project_id = %s AND autonomous = true AND status = 'queue'",
+        "SELECT COUNT(*) FROM tasks WHERE project_id = %s AND autonomous = true AND status = 'pending'",
         (project_id,),
     )
     queue: int = (cur.fetchone() or (0,))[0]
     cur.execute(
-        """SELECT created_at FROM tasks WHERE project_id = %s AND autonomous = true AND status = 'queue'
+        """SELECT created_at FROM tasks WHERE project_id = %s AND autonomous = true AND status = 'pending'
         ORDER BY priority ASC, created_at ASC LIMIT 1""",
         (project_id,),
     )
@@ -165,11 +165,11 @@ def compute_pipeline_stats(project_id: str) -> PipelineStatsResponse:
     settings = get_autonomous_settings(project_id)
     return PipelineStatsResponse(
         task_distribution=TaskDistribution(
-            pending=status_counts.get("pending", 0), queue=status_counts.get("queue", 0),
-            running=status_counts.get("running", 0), ai_reviewing=status_counts.get("ai_reviewing", 0),
-            completed=status_counts.get("completed", 0), blocked=status_counts.get("blocked", 0),
-            failed=status_counts.get("failed", 0), cancelled=status_counts.get("cancelled", 0),
-            abandoned=status_counts.get("abandoned", 0),
+            pending=status_counts.get("pending", 0),
+            running=status_counts.get("running", 0),
+            completed=status_counts.get("completed", 0),
+            failed=status_counts.get("failed", 0),
+            cancelled=status_counts.get("cancelled", 0),
         ),
         throughput=Throughput(
             completed_today=completed_today, completed_this_week=completed_week, avg_completion_hours=avg_hours

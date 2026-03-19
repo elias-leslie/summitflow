@@ -20,7 +20,6 @@ from .completion_handler import (
 from .events import emit_error, emit_log, emit_progress
 from .execution_loop import execute_subtask_loop
 from .pristine_validation import validate_pristine_codebase
-from .steps import reset_steps_for_rerun
 from .worktree import check_main_repo_leakage
 from .worktree_setup import setup_worktree
 
@@ -89,14 +88,14 @@ def _prepare_execution(
 
     if not validate_pristine_codebase(task_id, project_id):
         return (
-            {"task_id": task_id, "status": "blocked", "error": "Pristine validation failed", "reason": "pristine_self_heal_failed"},
+            {"task_id": task_id, "status": "failed", "error": "Pristine validation failed", "reason": "pristine_self_heal_failed"},
             None, None, None,
         )
 
     project_path = setup_worktree(task_id, project_id)
     if not project_path:
         return (
-            {"task_id": task_id, "status": "blocked", "error": "Worktree creation failed", "reason": "worktree_creation_failed"},
+            {"task_id": task_id, "status": "failed", "error": "Worktree creation failed", "reason": "worktree_creation_failed"},
             None, None, None,
         )
 
@@ -109,15 +108,14 @@ def _load_subtasks(
 ) -> tuple[dict[str, Any] | None, list, int, int]:
     """Load subtasks. Returns (error, incomplete, total, completed)."""
     subtasks = get_subtasks_for_task(task_id, include_steps=True)
-    reset_steps_for_rerun(subtasks)
     incomplete = [s for s in subtasks if not s.get("passes")]
     total = len(subtasks)
     completed = total - len(incomplete)
     emit_progress(task_id, total_subtasks=total, completed_subtasks=completed, project_id=project_id)
     if total == 0:
         emit_error(task_id, "No subtasks to execute — planning may have failed", project_id=project_id)
-        task_store.update_task_status(task_id, "blocked")
-        return {"task_id": task_id, "status": "blocked", "error": "No subtasks to execute", "reason": "no_subtasks"}, [], 0, 0
+        task_store.update_task_status(task_id, "failed")
+        return {"task_id": task_id, "status": "failed", "error": "No subtasks to execute", "reason": "no_subtasks"}, [], 0, 0
     return None, incomplete, total, completed
 
 

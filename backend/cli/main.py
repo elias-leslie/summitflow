@@ -34,7 +34,6 @@ from .commands import (
     search,
     session_events,
     sessions,
-    step,
     subtask,
     tasks,
     tests,
@@ -69,7 +68,7 @@ TASKS (create/bug/idea REQUIRE -P <project>):
   log <id> <message>
   cancel <id> [-r reason]                  # cancel a task (from any state)
   reopen <id> [-r reason]                  # reopen a task (move back to pending)
-  sync-progress <id> [--none]              # sync passed subtasks from completed steps
+  sync-progress <id> [--none]              # sync passed subtasks
   autocode <id> [--dry-run] [--at TIME]    # queue for autonomous execution (immediate or scheduled)
   critique <id> [--stage task_shape]       # request/store a second-opinion critique
   verify <plan.json>                       # validate plan file against schema
@@ -91,13 +90,6 @@ SUBTASK:
   subtask create <task-id> <sub-id> <desc> [--phase P] [--steps "a,b,c"]
   subtask pass <subtask-id> -t <task-id> [--citation M:abc12345+] [--none]
   subtask delete <task-id> <subtask-id>
-
-STEP:
-  step list <task-id> <subtask-id>
-  step pass <task-id> <subtask-id> <step#>
-  step create <task-id> <subtask-id> --steps "a,b,c"
-  step add <task-id> <subtask-id> --steps "a,b,c"
-  step delete <task-id> <subtask-id> <step#>
 
 DEP:
   dep list <task-id>
@@ -199,7 +191,6 @@ EXAMPLES:
   st claim task-abc                        # claim task, create checkpoint
   st context task-abc                      # view full context
   st context task-abc --subtask 1.1        # view subtask context
-  st step pass 1.1 1 -t task-abc           # mark step 1 done
   st done 1.1 -t task-abc                  # complete subtask, merge branch
   st done task-abc                         # complete task, remove checkpoint
   st abandon task-abc --force              # rollback everything
@@ -237,7 +228,6 @@ app.add_typer(deps.app, name="dep")
 app.add_typer(design.app, name="design")
 app.add_typer(tests.app, name="test")
 app.add_typer(subtask.app, name="subtask")
-app.add_typer(step.app, name="step")
 app.add_typer(autonomous.app, name="autonomous")
 app.add_typer(sessions.app, name="sessions")
 app.add_typer(projects.app, name="projects")

@@ -22,11 +22,107 @@ def apply_schema_migrations(conn: psycopg.Connection, cur: psycopg.Cursor) -> No
     Adds columns to existing tables if they don't exist, allowing init_schema()
     to be run on databases that were created before these columns were added.
     """
+    _create_task_related_tables(cur)
     _add_missing_columns(cur)
+    _drop_removed_spirit_columns(cur)
     _backfill_execution_mode(cur)
     _ensure_execution_mode_constraint(cur)
     _create_migration_indexes(cur)
     conn.commit()
+
+
+def _create_task_related_tables(cur: psycopg.Cursor) -> None:
+    """Create task-related tables that were originally from archived SQL migrations.
+
+    These tables are not in the core tables module because they were added by
+    SQL migrations (072-series) that predated the tables/ module system.
+    """
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS task_spirit (
+            task_id TEXT PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
+            done_when JSONB DEFAULT '[]'::jsonb,
+            context JSONB DEFAULT '{}'::jsonb,
+            plan_status VARCHAR DEFAULT 'draft',
+            plan_approved_at TIMESTAMPTZ,
+            plan_approved_by TEXT,
+            plan_history JSONB DEFAULT '[]'::jsonb,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW(),
+            complexity VARCHAR
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS task_subtasks (
+            id TEXT PRIMARY KEY,
+            task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+            subtask_id TEXT NOT NULL,
+            phase TEXT,
+            description TEXT NOT NULL,
+            display_order INTEGER NOT NULL DEFAULT 0,
+            passes BOOLEAN DEFAULT FALSE,
+            passed_at TIMESTAMPTZ,
+            citations_acknowledged_at TIMESTAMPTZ,
+            subtask_type TEXT,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE(task_id, subtask_id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS task_subtask_steps (
+            id SERIAL PRIMARY KEY,
+            subtask_id TEXT NOT NULL REFERENCES task_subtasks(id) ON DELETE CASCADE,
+            step_number INTEGER NOT NULL,
+            description TEXT NOT NULL,
+            passes BOOLEAN DEFAULT FALSE,
+            spec JSONB,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE(subtask_id, step_number)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS task_labels (
+            id SERIAL PRIMARY KEY,
+            task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+            label TEXT NOT NULL,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE(task_id, label)
+        )
+        """
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_task_spirit_complexity"
+        " ON task_spirit(complexity)"
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_task_spirit_plan_status"
+        " ON task_spirit(plan_status)"
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_task_subtasks_task"
+        " ON task_subtasks(task_id)"
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_task_labels_task"
+        " ON task_labels(task_id)"
+    )
+
+
+def _drop_removed_spirit_columns(cur: psycopg.Cursor) -> None:
+    """Drop spirit columns removed by Alembic migration 52f2ce12774b.
+
+    Handles test databases and older schemas that still have the old columns.
+    """
+    for col in ("objective", "spirit_anti", "decisions", "constraints"):
+        with contextlib.suppress(psycopg.errors.UndefinedColumn, psycopg.errors.UndefinedTable):
+            cur.execute(f"ALTER TABLE task_spirit DROP COLUMN IF EXISTS {col}")
 
 
 def _project_column_additions() -> list[tuple[str, str]]:

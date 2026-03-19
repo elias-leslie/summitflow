@@ -45,5 +45,5 @@ NEXT SESSION:
 """
 
     log_task_event(task_id, wind_down_log)
-    task_store.update_task_status(task_id, "paused")
+    task_store.update_task_status(task_id, "pending")
     emit_log(task_id, "info", f"Session paused: {reason}")

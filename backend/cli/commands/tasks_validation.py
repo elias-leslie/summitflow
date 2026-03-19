@@ -33,13 +33,8 @@ def _validate_complexity(plan: dict[str, Any]) -> list[str]:
     """Validate conditional requirements based on complexity."""
     issues: list[str] = []
     complexity = plan.get("complexity", "SIMPLE")
-    if complexity in ("STANDARD", "COMPLEX"):
-        if not plan.get("spirit_anti"):
-            issues.append(f"Conditional: {complexity} tasks require 'spirit_anti'")
-        if not plan.get("done_when"):
-            issues.append(f"Conditional: {complexity} tasks require 'done_when' with at least 1 item")
-    if complexity == "COMPLEX" and not plan.get("decisions"):
-        issues.append("Conditional: COMPLEX tasks require 'decisions' with at least 1 item")
+    if complexity in ("STANDARD", "COMPLEX") and not plan.get("done_when"):
+        issues.append(f"Conditional: {complexity} tasks require 'done_when' with at least 1 item")
     return issues
 
 

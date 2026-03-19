@@ -168,9 +168,9 @@ def _check_diff_issues(task_id: str, project_id: str, task: dict, git_diff: str)
         logger.warning("Diff error detected, blocking review", task_id=task_id, diff=git_diff[:200])
         log_task_event(task_id, f"Review blocked: diff extraction failed — {git_diff.strip()[:200]}",
                        source="review", level="error")
-        task_store.update_task_status(task_id, "blocked")
+        task_store.update_task_status(task_id, "failed")
         _notify_failure(project_id, task_id, task, f"Diff extraction failed: {git_diff.strip()[:200]}")
-        return {"task_id": task_id, "status": "blocked", "verdict": "BLOCKED",
+        return {"task_id": task_id, "status": "failed", "verdict": "BLOCKED",
                 "message": f"Cannot review: {git_diff.strip()}"}
 
     return None
@@ -217,7 +217,7 @@ def ai_review(
     if not task:
         return {"task_id": task_id, "status": "error", "message": "Task not found"}
 
-    task_store.update_task_status(task_id, "ai_reviewing")
+    task_store.update_task_status(task_id, "running")
     git_diff = get_git_diff(task_id, project_id)
 
     early = _check_diff_issues(task_id, project_id, task, git_diff)
@@ -241,7 +241,7 @@ def ai_review(
                 "verdict": review_result.get("verdict"), "complexity": complexity}
     except Exception as e:
         logger.warning("AI review failed", task_id=task_id, error=str(e))
-        task_store.update_task_status(task_id, "blocked")
+        task_store.update_task_status(task_id, "failed")
         _notify_failure(project_id, task_id, task, f"AI review failed: {e}")
         return {"task_id": task_id, "status": "error", "message": str(e)}
 

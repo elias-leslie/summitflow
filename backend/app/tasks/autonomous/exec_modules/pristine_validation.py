@@ -42,7 +42,7 @@ def validate_pristine_codebase(task_id: str, project_id: str) -> bool:
         from ....constants import PRISTINE_SELF_HEAL_MAX_ATTEMPTS
 
         logger.error("pristine_self_heal_failed", task_id=task_id, error=str(e))
-        task_store.update_task_status(task_id, "blocked", error_message=str(e))
+        task_store.update_task_status(task_id, "failed", error_message=str(e))
         emit_error(
             task_id,
             f"Pristine self-heal failed after {PRISTINE_SELF_HEAL_MAX_ATTEMPTS} attempts: {e}",

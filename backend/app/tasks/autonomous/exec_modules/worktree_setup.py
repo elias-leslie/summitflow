@@ -32,7 +32,7 @@ def setup_worktree(task_id: str, project_id: str) -> str | None:
             recoverable=False,
             project_id=project_id,
         )
-        task_store.update_task_status(task_id, "blocked")
+        task_store.update_task_status(task_id, "failed")
         return None
 
     project_path = get_project_path(project_id, task_id)

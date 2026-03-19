@@ -310,14 +310,12 @@ class TestHealLoopExtension:
     @patch("app.tasks.autonomous.exec_modules.retry_loop.check_and_request_extension")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.run_execution_quality_check")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.check_worktree_health")
-    @patch("app.tasks.autonomous.exec_modules.retry_loop.get_steps_for_subtask")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.assert_task_runnable")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.agent_configs")
     def test_extension_granted_adds_attempts(
         self,
         mock_agent_configs: MagicMock,
         mock_assert_task_runnable: MagicMock,
-        mock_get_steps: MagicMock,
         mock_worktree_health: MagicMock,
         mock_verify: MagicMock,
         mock_check_ext: MagicMock,
@@ -334,9 +332,6 @@ class TestHealLoopExtension:
         mock_agent_configs.get_max_supervisor_attempts.return_value = 0
 
         mock_worktree_health.return_value = True
-        mock_get_steps.return_value = [
-            {"step_number": 1, "description": "test"},
-        ]
 
         total_normal = SELF_HEAL_MAX_ATTEMPTS + SUPERVISOR_GUIDED_MAX_ATTEMPTS
         fail_result = [{"step_number": 1, "passed": False, "output": "error", "reason": "threshold", "returncode": 1}]
@@ -392,14 +387,12 @@ class TestHealLoopExtension:
     @patch("app.tasks.autonomous.exec_modules.retry_loop.check_and_request_extension")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.run_execution_quality_check")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.check_worktree_health")
-    @patch("app.tasks.autonomous.exec_modules.retry_loop.get_steps_for_subtask")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.assert_task_runnable")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.agent_configs")
     def test_extension_denied_fails_subtask(
         self,
         mock_agent_configs: MagicMock,
         mock_assert_task_runnable: MagicMock,
-        mock_get_steps: MagicMock,
         mock_worktree_health: MagicMock,
         mock_verify: MagicMock,
         mock_check_ext: MagicMock,
@@ -414,9 +407,6 @@ class TestHealLoopExtension:
         mock_agent_configs.get_max_supervisor_attempts.return_value = 0
 
         mock_worktree_health.return_value = True
-        mock_get_steps.return_value = [
-            {"step_number": 1, "description": "test"},
-        ]
 
         fail_result = [{"step_number": 1, "passed": False, "output": "error", "reason": "threshold", "returncode": 1}]
         mock_verify.return_value = (False, fail_result)
@@ -461,14 +451,12 @@ class TestHealLoopExtension:
     @patch("app.tasks.autonomous.exec_modules.retry_loop.check_and_request_extension")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.run_execution_quality_check")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.check_worktree_health")
-    @patch("app.tasks.autonomous.exec_modules.retry_loop.get_steps_for_subtask")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.assert_task_runnable")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.agent_configs")
     def test_no_progress_skips_extension_request(
         self,
         mock_agent_configs: MagicMock,
         mock_assert_task_runnable: MagicMock,
-        mock_get_steps: MagicMock,
         mock_worktree_health: MagicMock,
         mock_verify: MagicMock,
         mock_check_ext: MagicMock,
@@ -484,9 +472,6 @@ class TestHealLoopExtension:
         mock_agent_configs.get_max_supervisor_attempts.return_value = 0
 
         mock_worktree_health.return_value = True
-        mock_get_steps.return_value = [
-            {"step_number": 1, "description": "test"},
-        ]
 
         fail_result = [{"step_number": 1, "passed": False, "output": "error", "reason": "failed", "returncode": 1}]
         mock_verify.return_value = (False, fail_result)

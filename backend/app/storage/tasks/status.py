@@ -1,10 +1,8 @@
 """Tasks storage - Status transitions and state machine.
 
-Status values: pending, queue, running, paused, failed, blocked, ai_reviewing,
-completed, cancelled, abandoned, conflicted.
+Status values: pending, running, completed, failed, cancelled.
 
-Kanban columns: Ideas/Planning=pending, Queue=queue, Active=running/paused/ai_reviewing,
-Blocked=blocked/conflicted, Done=completed/failed/cancelled/abandoned.
+Simplified from 11 statuses to 5.
 """
 
 from __future__ import annotations
@@ -14,43 +12,28 @@ from typing import Any
 from ..connection import get_connection
 from .core import TASK_COLUMNS, _row_to_dict, canonicalize_task_id, get_task
 
-# Valid task status transitions
+# Valid task status transitions (simplified)
 VALID_TRANSITIONS: dict[str, set[str]] = {
-    # Initial state
-    "pending": {"queue", "running", "paused", "blocked", "cancelled", "abandoned"},
-    # Queue state (autonomous execution pipeline)
-    "queue": {"running", "pending", "blocked", "cancelled", "abandoned"},
-    # Work states - can transition to abandoned (rollback without DB restore)
-    "running": {
-        "queue", "paused", "failed", "blocked",
-        "completed", "ai_reviewing", "cancelled", "abandoned",
-    },
-    "paused": {"queue", "running", "pending", "failed", "cancelled", "abandoned"},
-    "blocked": {"queue", "running", "pending", "failed", "cancelled", "abandoned"},
-    "failed": {"queue", "pending", "running", "cancelled", "abandoned"},
-    # Review states (agent workflow)
-    "ai_reviewing": {"completed", "blocked", "running", "failed", "abandoned"},
-    # Conflict state (merge failed due to conflict, awaiting retry)
-    "conflicted": {"queue", "running", "pending", "failed", "cancelled", "abandoned"},
-    # Terminal states
-    "completed": {"failed", "pending"},  # Reopen if incorrectly closed
-    "cancelled": {"pending"},  # Reopen cancelled tasks for reruns/continued work
-    "abandoned": {"pending"},  # Reopen after rollback when work should resume
+    "pending": {"running", "cancelled"},
+    "running": {"completed", "failed", "cancelled", "pending"},
+    "completed": {"pending"},
+    "failed": {"pending", "running"},
+    "cancelled": {"pending"},
 }
 
 # All valid status values (derived from transition keys)
 VALID_STATUSES: frozenset[str] = frozenset(VALID_TRANSITIONS.keys())
 
-# Prebuilt UPDATE SQL for status changes (11 positional %s params + task_id)
+# Prebuilt UPDATE SQL for status changes
 _UPDATE_SQL = f"""
     UPDATE tasks SET status = %s,
         started_at = CASE WHEN %s = 'running' THEN COALESCE(started_at, NOW()) ELSE started_at END,
-        completed_at = CASE WHEN %s IN ('completed','failed','cancelled','abandoned','conflicted') THEN NOW() ELSE completed_at END,
+        completed_at = CASE WHEN %s IN ('completed','failed','cancelled') THEN NOW() ELSE completed_at END,
         error_message = CASE WHEN %s = 'running' THEN NULL WHEN %s IN ('completed','failed') THEN %s ELSE error_message END,
         current_phase = CASE WHEN %s = 'completed' THEN 'complete' ELSE current_phase END,
-        claimed_by = CASE WHEN %s IN ('completed','failed','cancelled','abandoned') THEN NULL ELSE claimed_by END,
-        claimed_at = CASE WHEN %s IN ('completed','failed','cancelled','abandoned') THEN NULL ELSE claimed_at END,
-        lock_expires_at = CASE WHEN %s IN ('completed','failed','cancelled','abandoned') THEN NULL ELSE lock_expires_at END,
+        claimed_by = CASE WHEN %s IN ('completed','failed','cancelled') THEN NULL ELSE claimed_by END,
+        claimed_at = CASE WHEN %s IN ('completed','failed','cancelled') THEN NULL ELSE claimed_at END,
+        lock_expires_at = CASE WHEN %s IN ('completed','failed','cancelled') THEN NULL ELSE lock_expires_at END,
         updated_at = NOW()
     WHERE id = %s RETURNING {TASK_COLUMNS}
 """
@@ -104,7 +87,7 @@ def update_task_status(
 
     Args:
         task_id: Task ID
-        status: New status (see module docstring for valid values)
+        status: New status (pending, running, completed, failed, cancelled)
         error_message: Optional error message (for failed status)
         validate_transition: Whether to validate status transition (default True)
 

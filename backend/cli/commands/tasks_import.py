@@ -93,12 +93,6 @@ def _validate_plan(plan: Any, client: STClient) -> None:
     except js.ValidationError as e:
         path = ".".join(str(p) for p in e.absolute_path) if e.absolute_path else "root"
         detail = f"{path}: {e.message}"
-        if (
-            path == "root"
-            and "decisions" in e.message
-            and str(plan.get("complexity") or "").upper() == "COMPLEX"
-        ):
-            detail += " (COMPLEX plans require a non-empty decisions list.)"
         output_error(f"Schema validation failed: {detail}")
         raise typer.Exit(1) from None
     issues = validate_plan_schema(plan)
@@ -135,7 +129,6 @@ def import_plan_file(
         subtasks = plan.get("subtasks", [])
         typer.echo(f"Would create task: {plan.get('title')}")
         typer.echo(f"  complexity: {plan.get('complexity', 'SIMPLE')}")
-        typer.echo(f"  objective: {plan.get('objective', '')[:60]}...")
         typer.echo(f"  subtasks: {len(subtasks)}")
         for st in subtasks:
             typer.echo(f"    {st.get('id')}: {st.get('description', '')[:50]}")

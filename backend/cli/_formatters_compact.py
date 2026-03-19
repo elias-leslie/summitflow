@@ -1,4 +1,4 @@
-"""Compact one-liner formatters for tasks, subtasks, steps, and dependencies."""
+"""Compact one-liner formatters for tasks, subtasks, and dependencies."""
 
 from __future__ import annotations
 
@@ -43,14 +43,6 @@ def format_compact_subtask(subtask: dict[str, object]) -> str:
     done = _safe_int(step_summary.get("completed", 0))
     total = _safe_int(step_summary.get("total", 0))
     return f"{subtask_id:5} {passes} {description:40} [{done}/{total}]"
-
-
-def format_compact_step(step: dict[str, object]) -> str:
-    """Format step as compact one-liner."""
-    step_num = step.get("step_number", 0)
-    passes = "PASS" if step.get("passes") else "____"
-    description = truncate(str(step.get("description") or ""), 50)
-    return f"{step_num:2} {passes} {description}"
 
 
 def format_compact_dep(dep: dict[str, object]) -> str:

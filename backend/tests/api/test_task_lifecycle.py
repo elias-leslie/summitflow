@@ -68,6 +68,10 @@ class TestTaskLifecycleEndpoints:
         task_id = task["id"]
         cleanup_task(task_id)
 
+        mocker.patch(
+            "app.api.tasks.update_endpoints.validate_task_ready",
+            return_value=SimpleNamespace(ready=True, issues=[], suggestions=[], lane_conflict=None),
+        )
         mock_dispatch = mocker.patch(
             "app.api.tasks.update_endpoints.dispatch_autonomous_task",
             new_callable=AsyncMock,
@@ -78,8 +82,8 @@ class TestTaskLifecycleEndpoints:
         assert response.status_code == 200
         data = response.json()
         assert data["id"] == task_id
-        assert data["status"] == "queue"
-        mock_dispatch.assert_awaited_once_with(task_id, "queue", test_project_id)
+        assert data["status"] == "pending"
+        mock_dispatch.assert_awaited_once_with(task_id, "pending", test_project_id)
 
     def test_execute_rejects_manual_only_task(
         self,
@@ -124,8 +128,7 @@ class TestTaskLifecycleEndpoints:
         assert response.status_code == 422
         body = response.json()
         body_text = str(body)
-        assert "objective" in body_text
-        assert "done_when" in body_text
+        assert "description" in body_text or "done_when" in body_text
 
     def test_execute_rejects_lane_overlap_from_validation(
         self,

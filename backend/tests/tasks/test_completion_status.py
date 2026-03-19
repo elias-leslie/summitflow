@@ -19,15 +19,15 @@ class TestTransitionToReviewOrComplete:
     def test_review_enabled_dispatches_review(
         self, mock_store: MagicMock, mock_configs: MagicMock
     ) -> None:
-        """When project requires review and task has ai_review=True, dispatch review."""
+        """When project requires review and task has ai_review=True, task completes via review gate."""
         mock_configs.get_require_review.return_value = True
         mock_store.get_task.return_value = {"id": "t-1", "ai_review": True}
         dispatch = MagicMock()
 
         result = transition_to_review_or_complete("t-1", "proj", "test", dispatch)
 
-        assert result == "ai_reviewing"
-        mock_store.update_task_status.assert_called_with("t-1", "ai_reviewing")
+        assert result == "completed"
+        mock_store.update_task_status.assert_called_with("t-1", "completed")
         dispatch.assert_called_once_with("review", "t-1", "proj")
 
     @patch("app.tasks.autonomous.cleanup.worktree_cleanup.cleanup_task_worktree")
@@ -112,7 +112,7 @@ class TestTransitionToReviewOrComplete:
     @patch("app.tasks.autonomous.cleanup.merge_operations.merge_and_cleanup_task_worktree")
     @patch(f"{MODULE}.agent_configs")
     @patch(f"{MODULE}.task_store")
-    def test_review_disabled_auto_merge_conflict_returns_conflicted(
+    def test_review_disabled_auto_merge_conflict_returns_failed(
         self, mock_store: MagicMock, mock_configs: MagicMock, mock_merge_cleanup: MagicMock
     ) -> None:
         mock_configs.get_require_review.return_value = False
@@ -121,21 +121,21 @@ class TestTransitionToReviewOrComplete:
 
         result = transition_to_review_or_complete("t-1", "proj", "test")
 
-        assert result == "conflicted"
+        assert result == "failed"
 
     @patch(f"{MODULE}.agent_configs")
     @patch(f"{MODULE}.task_store")
     def test_task_ai_review_none_defaults_to_review(
         self, mock_store: MagicMock, mock_configs: MagicMock
     ) -> None:
-        """When task has no ai_review field, default to project setting."""
+        """When task has no ai_review field, default to project setting (completes via review gate)."""
         mock_configs.get_require_review.return_value = True
         mock_store.get_task.return_value = {"id": "t-1"}
         dispatch = MagicMock()
 
         result = transition_to_review_or_complete("t-1", "proj", "test", dispatch)
 
-        assert result == "ai_reviewing"
+        assert result == "completed"
         dispatch.assert_called_once()
 
     @patch(f"{MODULE}.agent_configs")
@@ -143,12 +143,12 @@ class TestTransitionToReviewOrComplete:
     def test_task_not_found_defaults_to_review(
         self, mock_store: MagicMock, mock_configs: MagicMock
     ) -> None:
-        """When task fetch returns None, default to project setting."""
+        """When task fetch returns None, default to project setting (completes via review gate)."""
         mock_configs.get_require_review.return_value = True
         mock_store.get_task.return_value = None
         dispatch = MagicMock()
 
         result = transition_to_review_or_complete("t-1", "proj", "test", dispatch)
 
-        assert result == "ai_reviewing"
+        assert result == "completed"
         dispatch.assert_called_once()

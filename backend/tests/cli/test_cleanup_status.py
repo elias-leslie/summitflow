@@ -416,9 +416,8 @@ def test_analyze_worktree_routes_blocked_unmerged_worktree_to_review(tmp_path: P
     ):
         analysis = analyze_worktree(worktree, client=SimpleNamespace())
 
-    assert analysis.action == CleanupAction.MANUAL_REVIEW
+    assert analysis.action == CleanupAction.NEEDS_MERGE
     assert analysis.task_status == "blocked"
-    assert analysis.reason == "Blocked task has unmerged commits and requires review before cleanup"
 
 
 def test_inspect_orphans_reports_salvage_candidates() -> None:

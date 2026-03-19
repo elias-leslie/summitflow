@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from ._formatters_compact import (
     format_compact_dep,
-    format_compact_step,
     format_compact_subtask,
     format_compact_task,
     truncate,
@@ -29,7 +28,6 @@ from ._formatters_context import (
 
 __all__ = [
     "format_compact_dep",
-    "format_compact_step",
     "format_compact_subtask",
     "format_compact_task",
     "format_context_blockers",

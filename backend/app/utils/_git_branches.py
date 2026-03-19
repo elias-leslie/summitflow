@@ -13,8 +13,8 @@ if TYPE_CHECKING:
 from ._git_core import _resolve_project_id, run_git
 
 _BASE_BRANCH_CANDIDATES = ["main", "master", "develop"]
-_CLOSED_TASK_STATUSES = frozenset({"completed", "cancelled", "abandoned"})
-_REVIEW_TASK_STATUSES = frozenset({"running", "pending", "queue", "blocked", "failed"})
+_CLOSED_TASK_STATUSES = frozenset({"completed", "cancelled"})
+_REVIEW_TASK_STATUSES = frozenset({"running", "pending", "failed"})
 
 
 @dataclass(frozen=True)

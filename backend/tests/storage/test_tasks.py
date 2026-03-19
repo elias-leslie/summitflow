@@ -36,8 +36,8 @@ def test_task(project_id: str, cleanup_task: Callable[[str], None]) -> dict[str,
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO task_spirit (task_id, objective, plan_status, complexity)
-            VALUES (%s, 'Test objective', 'approved', 'SIMPLE')
+            INSERT INTO task_spirit (task_id, plan_status, complexity)
+            VALUES (%s, 'approved', 'SIMPLE')
             ON CONFLICT (task_id) DO UPDATE SET plan_status = 'approved'
             """,
             (task["id"],),
@@ -50,18 +50,17 @@ def test_task(project_id: str, cleanup_task: Callable[[str], None]) -> dict[str,
 class TestValidTransitions:
     """Unit tests for VALID_TRANSITIONS state machine (no DB needed)."""
 
-    @pytest.mark.parametrize("state", ["pending", "queue", "running", "paused", "blocked", "failed"])
-    def test_all_non_terminal_states_allow_abandoned(self, state: str) -> None:
-        """Every non-terminal state must allow transition to abandoned."""
-        assert "abandoned" in VALID_TRANSITIONS[state], (
-            f"State '{state}' missing 'abandoned' transition"
+    @pytest.mark.parametrize("state", ["pending", "running", "failed", "cancelled"])
+    def test_all_non_terminal_states_exist_in_valid_transitions(self, state: str) -> None:
+        """Every valid status must have an entry in VALID_TRANSITIONS."""
+        assert state in VALID_TRANSITIONS, (
+            f"State '{state}' missing from VALID_TRANSITIONS"
         )
 
     def test_reopenable_terminal_states_can_return_to_pending(self) -> None:
-        """Completed, cancelled, and abandoned tasks can be reopened to pending."""
-        assert VALID_TRANSITIONS["completed"] == {"failed", "pending"}
+        """Completed and cancelled tasks can be reopened to pending."""
+        assert VALID_TRANSITIONS["completed"] == {"pending"}
         assert VALID_TRANSITIONS["cancelled"] == {"pending"}
-        assert VALID_TRANSITIONS["abandoned"] == {"pending"}
 
 
 class TestCreateTask:
@@ -140,22 +139,6 @@ class TestUpdateTaskStatus:
         assert result["error_message"] == "Test error"
         assert result["completed_at"] is not None
 
-    def test_status_paused(self, test_task: dict[str, Any]) -> None:
-        """Test transition to paused."""
-        task_store.update_task_status(test_task["id"], "running")
-        result = task_store.update_task_status(test_task["id"], "paused")
-
-        assert result is not None
-        assert result["status"] == "paused"
-
-    def test_status_pending_to_abandoned(self, test_task: dict[str, Any]) -> None:
-        """Test transition from pending to abandoned (st abandon on unclaimed task)."""
-        result = task_store.update_task_status(test_task["id"], "abandoned")
-
-        assert result is not None
-        assert result["status"] == "abandoned"
-        assert result["completed_at"] is not None
-
     def test_status_pending_to_completed_allowed_when_transition_validation_skipped(
         self, test_task: dict[str, Any]
     ) -> None:
@@ -170,35 +153,18 @@ class TestUpdateTaskStatus:
         assert result["status"] == "completed"
         assert result["completed_at"] is not None
 
-    def test_status_queue_to_abandoned(self, test_task: dict[str, Any]) -> None:
-        """Test transition from queue to abandoned."""
-        task_store.update_task_status(test_task["id"], "queue")
-        result = task_store.update_task_status(test_task["id"], "abandoned")
-
-        assert result is not None
-        assert result["status"] == "abandoned"
-
-    def test_status_failed_to_abandoned(self, test_task: dict[str, Any]) -> None:
-        """Test transition from failed to abandoned (cleanup of failed tasks)."""
+    def test_status_failed_to_running_retries_task(self, test_task: dict[str, Any]) -> None:
+        """Test transition from failed to running (retry a failed task)."""
         task_store.update_task_status(test_task["id"], "running")
         task_store.update_task_status(test_task["id"], "failed")
-        result = task_store.update_task_status(test_task["id"], "abandoned")
+        result = task_store.update_task_status(test_task["id"], "running")
 
         assert result is not None
-        assert result["status"] == "abandoned"
+        assert result["status"] == "running"
 
     def test_status_cancelled_to_pending_reopens_task(self, test_task: dict[str, Any]) -> None:
         """Cancelled tasks should be reopenable."""
         task_store.update_task_status(test_task["id"], "cancelled")
-
-        result = task_store.update_task_status(test_task["id"], "pending")
-
-        assert result is not None
-        assert result["status"] == "pending"
-
-    def test_status_abandoned_to_pending_reopens_task(self, test_task: dict[str, Any]) -> None:
-        """Abandoned tasks should be reopenable after rollback."""
-        task_store.update_task_status(test_task["id"], "abandoned")
 
         result = task_store.update_task_status(test_task["id"], "pending")
 
@@ -238,8 +204,8 @@ class TestListTasks:
         with get_connection() as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO task_spirit (task_id, objective, plan_status, complexity)
-                VALUES (%s, 'Test objective', 'approved', 'SIMPLE')
+                INSERT INTO task_spirit (task_id, plan_status, complexity)
+                VALUES (%s, 'approved', 'SIMPLE')
                 """,
                 (task2["id"],),
             )
@@ -311,15 +277,6 @@ class TestPurgeTerminalTasks:
         result = task_store.purge_terminal_tasks()
 
         assert result["cancelled"] >= 1
-        assert task_store.get_task(task["id"]) is None
-
-    def test_purge_deletes_abandoned_tasks(self, project_id: str) -> None:
-        task = task_store.create_task(project_id, "To Abandon")
-        task_store.update_task_status(task["id"], "abandoned")
-
-        result = task_store.purge_terminal_tasks()
-
-        assert result["abandoned"] >= 1
         assert task_store.get_task(task["id"]) is None
 
     def test_purge_preserves_pending_tasks(self, project_id: str, cleanup_task: Callable[[str], None]) -> None:

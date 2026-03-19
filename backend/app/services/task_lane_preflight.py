@@ -27,7 +27,7 @@ logger = get_logger(__name__)
 
 _RETIRED_WORKSTREAMS: frozenset[str] = frozenset({"retired", "superseded"})
 _TERMINAL_TASK_STATUSES: frozenset[str] = frozenset(
-    {"blocked", "completed", "cancelled", "abandoned", "failed"}
+    {"completed", "cancelled", "failed"}
 )
 _STALE_ACTIVE_MINUTES = 10
 _SESSIONS_INSPECT_CMD = "st sessions list --status active --project {project_id}"

@@ -60,7 +60,7 @@ def _determine_action(
     has_conflicts: bool,
 ) -> tuple[CleanupAction, str]:
     """Determine cleanup action and reason from git/task state."""
-    if task_status in ("running", "pending", "queue"):
+    if task_status in ("running", "pending"):
         return CleanupAction.TASK_ACTIVE, f"Task is {task_status}"
     if has_uncommitted:
         return CleanupAction.MANUAL_REVIEW, "Has uncommitted changes"
@@ -72,7 +72,7 @@ def _determine_action(
         else:
             reason = f"Cancelled task has {commits_ahead} unmerged commit(s) and can be discarded"
         return CleanupAction.SAFE_DELETE, reason
-    if task_status in {"blocked", "failed"}:
+    if task_status == "failed":
         if is_merged or commits_ahead == 0:
             action = CleanupAction.ALREADY_MERGED if is_merged else CleanupAction.SAFE_DELETE
             reason = "Already merged" if is_merged else f"{task_status.capitalize()} task has no commits ahead of main"

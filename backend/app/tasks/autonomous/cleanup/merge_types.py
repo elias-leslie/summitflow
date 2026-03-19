@@ -54,7 +54,7 @@ class MergeConflicted(TypedDict):
     """Merge conflict detected — task branch preserved for retry."""
 
     task_id: str
-    status: Literal["conflicted"]
+    status: Literal["failed"]
     task_branch: str
     base_branch: str
     conflicting_files: list[str]

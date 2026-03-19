@@ -193,11 +193,11 @@ async def list_blocked_tasks(
     # Return TOON format if requested
     if format == "toon":
         return PlainTextResponse(
-            content=toon_format_task_list(task_responses, endpoint_type="blocked")
+            content=toon_format_task_list(task_responses, endpoint_type="failed")
         )
 
     return TaskListResponse(
         tasks=task_responses,
         total=len(tasks),
-        hints=get_hints(task_responses, project_id, endpoint_type="blocked"),
+        hints=get_hints(task_responses, project_id, endpoint_type="failed"),
     )

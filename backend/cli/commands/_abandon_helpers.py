@@ -88,7 +88,7 @@ def confirm_task_abandon(
             typer.echo(f"  ... and {len(subtask_branches) - 5} more", err=True)
 
     typer.echo("\nThis will:")
-    typer.echo(f"  - Mark task {task_id} as 'abandoned'")
+    typer.echo(f"  - Mark task {task_id} as 'cancelled'")
     typer.echo(f"  - Delete task branch: {task_id}/main")
     if subtask_branches:
         typer.echo(f"  - Delete {len(subtask_branches)} subtask branches")
@@ -161,7 +161,7 @@ def abandon_task(
         confirm_task_abandon(task_id, subtask_branches, has_snapshot, snapshot_info, unmerged)
 
     try:
-        client.update_status(task_id, "abandoned")
+        client.update_status(task_id, "cancelled")
     except APIError as e:
         typer.echo(f"Warning: Could not update task status: {e.detail}", err=True)
 

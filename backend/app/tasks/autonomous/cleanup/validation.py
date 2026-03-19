@@ -97,7 +97,7 @@ def _apply_rollback_side_effects(
         extra={"task_id": task_id, "task_branch": task_branch},
     )
     create_regression_fix_task(task_id, project_id, task_branch)
-    task_store.update_task_status(task_id, "blocked")
+    task_store.update_task_status(task_id, "failed")
     save_rollback_learning(task_id, project_id, task_branch)
 
 

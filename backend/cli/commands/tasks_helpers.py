@@ -46,8 +46,7 @@ def upsert_task_spirit_from_plan(task_id: str, plan: dict[str, Any]) -> dict[str
             "second_opinion": ctx.get("second_opinion"),
         }.items() if v}
         upsert_task_spirit(
-            task_id=task_id, objective=plan["objective"], spirit_anti=plan.get("spirit_anti"),
-            decisions=plan.get("decisions"), constraints=plan.get("constraints"),
+            task_id=task_id,
             done_when=plan.get("done_when"), context=context_blob if context_blob else None,
             complexity=plan.get("complexity", "SIMPLE"),
         )

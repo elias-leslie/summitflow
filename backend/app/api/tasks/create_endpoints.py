@@ -29,17 +29,13 @@ logger = get_logger(__name__)
 
 async def _save_spirit_fields(task_id: str, task: TaskCreate) -> None:
     """Persist spirit fields to task_spirit table if any are provided."""
-    if not any([task.objective, task.spirit_anti, task.decisions, task.constraints, task.done_when]):
+    if not any([task.done_when, task.complexity]):
         return
     from ...storage.task_spirit import upsert_task_spirit
 
     await asyncio.to_thread(
         upsert_task_spirit,
         task_id=task_id,
-        objective=task.objective or "",
-        spirit_anti=task.spirit_anti,
-        decisions=task.decisions,
-        constraints=task.constraints,
         done_when=task.done_when,
         complexity=task.complexity,
     )
@@ -71,7 +67,7 @@ def _auto_classify_complexity(task: dict) -> None:
         from ...storage.task_spirit import get_task_spirit
 
         spirit = get_task_spirit(task_id)
-        if spirit and spirit.get("objective") and spirit.get("done_when"):
+        if spirit and spirit.get("done_when"):
             task_store.update_task(task_id, complexity="STANDARD")
 
 
@@ -146,7 +142,7 @@ async def create_task_from_ideation(
     return IdeationTaskResponse(
         task_id=task_id,
         project_id=project_id,
-        status="queue" if dispatched else "pending",
+        status="pending",
         dispatched=dispatched,
         dispatch_stage=dispatch_stage,
     )
@@ -161,16 +157,16 @@ async def batch_create_tasks(project_id: str, body: BatchTaskRequest) -> BatchTa
 
 
 async def _queue_task(task_id: str) -> None:
-    """Update task status to 'queue', raising HTTPException on failure."""
+    """Update task status to 'pending', raising HTTPException on failure."""
     from ...storage.tasks.status import update_task_status
 
     try:
-        await asyncio.to_thread(update_task_status, task_id, "queue")
+        await asyncio.to_thread(update_task_status, task_id, "pending")
     except ValueError as e:
         logger.error("ideation_task_queue_failed", task_id=task_id, error=str(e))
         raise HTTPException(
             status_code=500,
-            detail=f"Task created (id={task_id}) but status update to queue failed: {e}",
+            detail=f"Task created (id={task_id}) but status update to pending failed: {e}",
         ) from None
 
 

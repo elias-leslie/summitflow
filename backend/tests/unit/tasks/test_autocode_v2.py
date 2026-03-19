@@ -308,10 +308,8 @@ class TestModelEscalation:
     )
     @patch("app.tasks.autonomous.exec_modules.retry_loop.assert_task_runnable")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.check_worktree_health")
-    @patch("app.tasks.autonomous.exec_modules.retry_loop.get_steps_for_subtask")
     def test_model_override_none_during_self_heal(
         self,
-        mock_get_steps: MagicMock,
         mock_health: MagicMock,
         mock_assert_runnable: MagicMock,
         mock_verify: MagicMock,
@@ -323,7 +321,6 @@ class TestModelEscalation:
         from app.tasks.autonomous.exec_modules.retry_loop import run_self_healing_loop
 
         steps = [{"step_number": 1, "description": "Test"}]
-        mock_get_steps.return_value = steps
         mock_health.return_value = True
         mock_assert_runnable.return_value = None
         # First verify → fail, second → pass (heal succeeds on first try)
@@ -371,10 +368,8 @@ class TestModelEscalation:
     )
     @patch("app.tasks.autonomous.exec_modules.retry_loop.assert_task_runnable")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.check_worktree_health")
-    @patch("app.tasks.autonomous.exec_modules.retry_loop.get_steps_for_subtask")
     def test_model_override_escalation_after_threshold(
         self,
-        mock_get_steps: MagicMock,
         mock_health: MagicMock,
         mock_assert_runnable: MagicMock,
         mock_verify: MagicMock,
@@ -387,7 +382,6 @@ class TestModelEscalation:
         from app.tasks.autonomous.exec_modules.retry_loop import run_self_healing_loop
 
         steps = [{"step_number": 1, "description": "Test"}]
-        mock_get_steps.return_value = steps
         mock_health.return_value = True
         mock_assert_runnable.return_value = None
         # Always fail verification until we've exhausted self-heal + 1 supervisor attempt

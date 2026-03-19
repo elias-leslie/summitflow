@@ -167,12 +167,12 @@ class TestReviewPullRequest:
     def test_task_not_in_review_status(self, mock_store: MagicMock) -> None:
         mock_store.get_task.return_value = {
             "id": "task-123",
-            "status": "running",
+            "status": "pending",
             "project_id": "test",
         }
         result = review_pull_request("task-123")
         assert result["verdict"] == "FAIL"
-        assert "not in ai_reviewing" in result["summary"]
+        assert "not in running status" in result["summary"]
 
     @patch("app.tasks.ai_review._get_project_path")
     @patch("app.tasks.ai_review._run_pytest")
@@ -196,7 +196,7 @@ class TestReviewPullRequest:
     ) -> None:
         mock_store.get_task.return_value = {
             "id": "task-123",
-            "status": "ai_reviewing",
+            "status": "running",
             "project_id": "test",
         }
         mock_project_path.return_value = tmp_path
@@ -240,7 +240,7 @@ class TestReviewPullRequest:
     ) -> None:
         mock_store.get_task.return_value = {
             "id": "task-123",
-            "status": "ai_reviewing",
+            "status": "running",
             "project_id": "test",
         }
         mock_project_path.return_value = tmp_path
@@ -400,7 +400,7 @@ class TestEscalationToSupervisorReview:
     ) -> None:
         mock_store.get_task.return_value = {
             "id": "task-123",
-            "status": "ai_reviewing",
+            "status": "running",
             "project_id": "test",
         }
         mock_project_path.return_value = tmp_path
@@ -417,7 +417,7 @@ class TestEscalationToSupervisorReview:
 
         assert result["verdict"] == "FAIL"
         assert "Security" in result["summary"]
-        mock_store.update_task_status.assert_called_with("task-123", "blocked")
+        mock_store.update_task_status.assert_called_with("task-123", "failed")
         mock_notify.assert_called_once()
 
     @patch("app.tasks.ai_review._get_project_path")
@@ -443,7 +443,7 @@ class TestEscalationToSupervisorReview:
         # Simulate max retries exceeded scenario
         mock_store.get_task.return_value = {
             "id": "task-123",
-            "status": "ai_reviewing",
+            "status": "running",
             "project_id": "test",
         }
         mock_project_path.return_value = tmp_path

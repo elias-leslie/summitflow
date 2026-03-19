@@ -9,7 +9,6 @@ from typing import Any
 
 from ...storage import task_dependencies as dep_store
 from ...storage.events import get_events_by_trace
-from ...storage.steps import get_steps_for_subtask
 from ...storage.subtasks import get_subtask_dependencies
 
 
@@ -23,7 +22,6 @@ def _build_acceptance_criteria(spirit: dict[str, Any] | None) -> list[dict[str, 
 
 
 def _build_subtask_entry(task_id: str, st: dict[str, Any]) -> dict[str, Any]:
-    steps = get_steps_for_subtask(st["id"])
     deps = get_subtask_dependencies(task_id, st["subtask_id"])
     return {
         "id": st["subtask_id"],
@@ -32,16 +30,6 @@ def _build_subtask_entry(task_id: str, st: dict[str, Any]) -> dict[str, Any]:
         "passes": st.get("passes", False),
         "passed_at": st.get("passed_at"),
         "depends_on": deps or None,
-        "steps": [
-            {
-                "step_number": s["step_number"],
-                "description": s["description"],
-                "spec": s.get("spec"),
-                "passes": s.get("passes", False),
-                "status": s.get("status"),
-            }
-            for s in steps
-        ],
     }
 
 
@@ -76,10 +64,6 @@ def build_export_data(
             "created_at": task["created_at"].isoformat() if task.get("created_at") else None,
         },
         "spirit": {
-            "objective": spirit.get("objective"),
-            "spirit_anti": spirit.get("spirit_anti"),
-            "decisions": spirit.get("decisions", []),
-            "constraints": spirit.get("constraints", []),
             "done_when": spirit.get("done_when", []),
             "context": spirit.get("context", {}),
         }

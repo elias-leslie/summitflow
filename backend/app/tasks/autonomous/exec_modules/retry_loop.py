@@ -7,14 +7,13 @@ from typing import Any
 from ....constants import ESCALATION_MODEL, SELF_HEAL_MAX_ATTEMPTS, SUPERVISOR_GUIDED_MAX_ATTEMPTS
 from ....logging_config import get_logger
 from ....storage import agent_configs
-from ....storage.steps import get_steps_for_subtask
 from .agent_routing import EXTENSION_ATTEMPTS
 from .interruption import assert_task_runnable
+from .quality_check import run_execution_quality_check
 from .retry_execution import execute_fix_attempt
 from .retry_extensions import check_and_request_extension
 from .retry_infra import handle_infrastructure_failures
 from .retry_phases import determine_fix_prompt
-from .steps import run_execution_quality_check
 from .worktree import check_worktree_health
 
 logger = get_logger(__name__)
@@ -90,8 +89,6 @@ def _healing_loop_body(
 ) -> tuple[bool, list[dict[str, Any]], int, int, str | None, int, int, str | None, bool]:
     """One iteration of the healing loop; returns updated state plus should_break flag."""
     assert_task_runnable(task_id, project_id, f"self_heal_attempt_{heal_attempt}")
-    if heal_attempt > 0:
-        steps = get_steps_for_subtask(subtask_id)
     if not check_worktree_health(project_path, task_id, project_id):
         return False, _WORKTREE_DESTROYED, self_fix_attempts, supervisor_guided_attempts, agent_session_id, total_max_attempts, extensions_granted, guidance, True
     all_passed, step_results = run_execution_quality_check(task_id, subtask_id, steps, project_path, project_id)

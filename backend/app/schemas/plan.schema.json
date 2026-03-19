@@ -4,7 +4,7 @@
   "title": "SummitFlow Plan Schema",
   "description": "Schema for plan.json - the canonical format for task planning. DB schema mirrors this exactly.",
   "type": "object",
-  "required": ["title", "objective", "complexity"],
+  "required": ["title", "complexity"],
 
   "properties": {
 
@@ -59,43 +59,6 @@
       "type": "string",
       "enum": ["SIMPLE", "STANDARD", "COMPLEX"],
       "description": "Determines interview depth and checkpoints"
-    },
-
-    "objective": {
-      "type": "string",
-      "minLength": 20,
-      "description": "Spirit.why - THE ONE THING this task must achieve. Single sentence, measurable."
-    },
-
-    "spirit_anti": {
-      "type": "string",
-      "description": "What NOT to do. The failure mode to avoid. Required for STANDARD/COMPLEX."
-    },
-
-    "decisions": {
-      "type": "array",
-      "description": "Implementation choices made during planning. Agent must align with these.",
-      "items": {
-        "type": "object",
-        "required": ["id", "title", "outcome"],
-        "properties": {
-          "id": { "type": "string", "pattern": "^d[0-9]+$" },
-          "title": { "type": "string" },
-          "options": {
-            "type": "array",
-            "items": { "type": "string" },
-            "description": "What alternatives were considered"
-          },
-          "outcome": { "type": "string", "description": "What was decided" },
-          "rationale": { "type": "string", "description": "Why this choice" }
-        }
-      }
-    },
-
-    "constraints": {
-      "type": "array",
-      "items": { "type": "string" },
-      "description": "Boundaries that must not be crossed"
     },
 
     "done_when": {
@@ -254,20 +217,9 @@
         "properties": { "complexity": { "enum": ["STANDARD", "COMPLEX"] } }
       },
       "then": {
-        "required": ["spirit_anti", "done_when"],
+        "required": ["done_when"],
         "properties": {
           "done_when": { "minItems": 1 }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": { "complexity": { "const": "COMPLEX" } }
-      },
-      "then": {
-        "required": ["decisions"],
-        "properties": {
-          "decisions": { "minItems": 1 }
         }
       }
     }

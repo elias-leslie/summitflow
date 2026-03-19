@@ -18,7 +18,6 @@ from ...services.task_execution_readiness import assess_task_execution_readiness
 from ...services.task_lane_preflight import check_task_lane_conflicts
 from ...storage import task_dependencies as dep_store
 from ...storage.events import get_events_by_trace
-from ...storage.steps import get_steps_for_subtask
 from ...storage.subtasks import get_subtasks_for_task
 from ...storage.task_spirit import get_task_spirit
 from .helpers import verify_task_project
@@ -98,12 +97,7 @@ async def get_task_context(
     lane_check = check_task_lane_conflicts(task_id, project_id)
 
     if format == "json":
-        # Add steps to subtasks for JSON response
-        subtasks_with_steps = []
-        for st in subtasks:
-            steps = get_steps_for_subtask(st["id"])
-            subtasks_with_steps.append({**st, "steps": steps})
-        return build_context_json(task, spirit, subtasks_with_steps, blockers, lane_check)
+        return build_context_json(task, spirit, subtasks, blockers, lane_check)
 
     # Default: TOON format
     readiness = assess_task_execution_readiness(task, spirit, get_subtasks_for_task(task_id, include_steps=True))

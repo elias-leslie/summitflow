@@ -67,7 +67,7 @@ def dummy_client() -> _DummyClient:
             ],
             "total": 2,
         },
-        "http://test/api/projects/agent-hub/tasks?status=queue&limit=100": {"tasks": [], "total": 0},
+        "http://test/api/projects/agent-hub/tasks?status=pending&limit=100": {"tasks": [], "total": 0},
     }
     client._sessions = {
         "agent-hub": [

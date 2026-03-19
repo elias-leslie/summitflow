@@ -97,7 +97,7 @@ class TestAutoRollback:
         assert result
         mock_revert.assert_called_once_with("task-1", "/tmp/project")
         mock_create.assert_called_once_with("task-1", "test-project", "task-1/main")
-        mock_store.update_task_status.assert_called_once_with("task-1", "blocked")
+        mock_store.update_task_status.assert_called_once_with("task-1", "failed")
         mock_learn.assert_called_once()
 
     @patch("app.storage.log_task_event")
@@ -306,7 +306,7 @@ class TestMergeAndCleanup:
 
         result = merge_and_cleanup_task_worktree("task-1", "test-project")
 
-        assert result["status"] == "blocked"
+        assert result["status"] == "failed"
         assert result["reason"] == "task_still_running"
 
     @patch("app.tasks.autonomous.cleanup.merge_operations._git")

@@ -181,7 +181,7 @@ def _get_canonical_refactor_task_id(project_id: str, relative_path: str, issue_i
     linked_task_id = issue.get("st_task_id") if issue else None
     if isinstance(linked_task_id, str):
         linked_task = task_store.get_task(linked_task_id)
-        if linked_task and linked_task.get("status") in {"pending", "running", "paused", "blocked", "ai_reviewing"}:
+        if linked_task and linked_task.get("status") in {"pending", "running"}:
             return linked_task_id
 
     active_task_ids = task_store.list_active_tasks_for_file(project_id, relative_path, task_type="refactor")

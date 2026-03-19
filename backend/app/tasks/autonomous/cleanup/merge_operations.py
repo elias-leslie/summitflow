@@ -42,12 +42,12 @@ def _finalize_task_status(task_id: str, result: MergeResult) -> MergeResult:
             validate_transition=False,
         )
         return result
-    if status == "conflicted":
+    if status == "failed":
         return result
-    if status in {"blocked", "error"}:
+    if status in {"failed", "error"}:
         update_task_status(
             task_id,
-            "blocked",
+            "failed",
             error_message=str(result.get("reason") or result.get("error") or "merge_cleanup_failed"),
             validate_transition=False,
         )
@@ -99,7 +99,7 @@ def merge_and_cleanup_task_worktree(task_id: str, project_id: str) -> MergeResul
         if is_task_running(task_id):
             return _finalize_task_status(
                 task_id,
-                {"task_id": task_id, "status": "blocked", "reason": "task_still_running"},
+                {"task_id": task_id, "status": "failed", "reason": "task_still_running"},
             )
         worktree = get_task_worktree(task_id, project_id)
         if not worktree:
@@ -164,7 +164,7 @@ def _build_merge_failure_result(
         "detected_at": datetime.now(UTC).isoformat(),
         "error_output": (merge_outcome.error or "")[:500],
     })
-    update_task_status(task_id, "conflicted",
+    update_task_status(task_id, "failed",
         error_message=f"Merge conflict in {num_conflicts} file(s)", validate_transition=False)
     log_task_event(task_id,
         f"Merge conflict detected in {num_conflicts} file(s): "
@@ -172,7 +172,7 @@ def _build_merge_failure_result(
     logger.warning("Merge conflict for %s", task_branch,
         extra={"task_id": task_id, "conflicting_files": merge_outcome.conflicting_files})
     return {
-        "task_id": task_id, "status": "conflicted",
+        "task_id": task_id, "status": "failed",
         "task_branch": task_branch, "base_branch": base_branch,
         "conflicting_files": merge_outcome.conflicting_files,
         "error_output": (merge_outcome.error or "")[:500],

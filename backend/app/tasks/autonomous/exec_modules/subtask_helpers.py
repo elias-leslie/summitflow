@@ -8,7 +8,7 @@ from typing import Any
 from ....core.debug import debug, debug_error, debug_section
 from ....logging_config import get_logger
 from .events import emit_error, emit_log, emit_progress
-from .steps import compute_issue_id
+from .step_issue import compute_issue_id
 
 logger = get_logger(__name__)
 

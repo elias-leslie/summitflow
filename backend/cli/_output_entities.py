@@ -8,7 +8,6 @@ from . import _output_formatters as fmt
 from ._output_core import output_json
 from ._output_formatters import (
     format_compact_dep,
-    format_compact_step,
     format_compact_subtask,
     format_compact_task,
 )
@@ -108,15 +107,5 @@ def output_subtasks(subtasks: list[dict[str, Any]], summary: dict[str, Any] | No
 
 
 def output_steps(steps: list[dict[str, Any]], subtask_id: str = "") -> None:
-    """Output steps list."""
-    from ._output_state import _compact_output
-
-    if _compact_output:
-        done = sum(1 for s in steps if s.get("passes"))
-        total = len(steps)
-        pct = (done / total * 100) if total > 0 else 0
-        print(f"STEPS[{total}]:{done}/{total}:{pct:.0f}%")
-        for step in steps:
-            print(format_compact_step(step))
-    else:
-        output_json({"steps": steps, "total": len(steps)})
+    """Output steps list. Steps layer has been removed."""
+    output_json({"steps": [], "total": 0})

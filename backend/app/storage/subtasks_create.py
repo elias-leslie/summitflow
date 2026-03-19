@@ -1,14 +1,12 @@
-"""Subtask creation - insert a single subtask and its steps.
+"""Subtask creation - insert a single subtask.
 
-This module handles the create_subtask operation, inserting a new subtask row
-and optionally creating associated step rows in the normalized steps table.
+This module handles the create_subtask operation, inserting a new subtask row.
 """
 
 from __future__ import annotations
 
 from ..logging_config import get_logger
 from .connection import get_connection
-from .steps import bulk_create_steps
 from .subtasks_helpers import SUBTASK_COLUMNS, generate_subtask_id, row_to_dict
 
 logger = get_logger(__name__)
@@ -27,14 +25,8 @@ _INSERT_SQL = f"""
 
 
 def _attach_steps(result: dict[str, object], table_id: str, steps: list[str | dict[str, object]]) -> None:
-    """Create step rows and attach to result dict."""
-    try:
-        result["steps"] = bulk_create_steps(table_id, steps)
-    except ValueError:
-        raise  # Validation errors must propagate
-    except Exception as e:
-        logger.error("Failed to create steps for subtask %s: %s", table_id, e)
-        # Continue - subtask created, steps failed (partial success)
+    """Steps layer has been removed. No-op."""
+    pass
 
 
 def create_subtask(

@@ -36,34 +36,19 @@ Task summary: {task_summary}"""
 
 
 def build_steps_block(steps: list[dict[str, Any]]) -> str:
-    """Build formatted steps block from step dicts."""
-    if not steps:
-        return ""
-    lines = ["Steps to complete:"]
-    for step in steps:
-        step_num = step.get("step_number", 0)
-        desc = step.get("description", "")
-        lines.append(f"{step_num}. {desc}")
-        spec = step.get("spec") or {}
-        verify_commands = spec.get("verify_commands", [])
-        if verify_commands:
-            lines.append("   Verification commands:")
-            lines.extend(f"   - `{command}`" for command in verify_commands)
-    return "\n".join(lines)
+    """Build formatted steps block from step dicts.
+
+    Steps layer has been removed. Returns a static instruction.
+    """
+    return "Execute the subtask description directly."
 
 
 def build_failures_block(failed_steps: list[dict[str, Any]]) -> str:
-    """Build formatted failures block from failed step results."""
-    parts = []
-    for fail in failed_steps:
-        step_num = fail.get("step_number", "?")
-        reason = fail.get("reason", "unknown")
-        output = fail.get("output", "")[:500]
-        parts.append(f"### Step {step_num}: FAILED")
-        parts.append(f"Reason: {reason}")
-        if output:
-            parts.append(f"Output:\n```\n{output}\n```")
-    return "\n\n".join(parts)
+    """Build formatted failures block from failed step results.
+
+    Steps layer has been removed. Returns empty string.
+    """
+    return ""
 
 
 def classify_events(events: list[dict[str, Any]]) -> tuple[list[str], list[str]]:

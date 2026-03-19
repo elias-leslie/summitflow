@@ -282,8 +282,8 @@ def handle_dismiss_conflict(task_id: str) -> dict[str, str]:
     task = task_store.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    if task["status"] != "conflicted":
-        raise HTTPException(status_code=400, detail="Task is not in conflicted state")
+    if task["status"] != "failed":
+        raise HTTPException(status_code=400, detail="Task is not in failed state")
     update_task_fields(task_id, conflict_info=None)
     update_task_status(
         task_id, "failed",
@@ -347,15 +347,15 @@ async def handle_resolve_conflict(task_id: str) -> dict[str, object]:
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     status = str(task.get("status") or "")
-    if status not in {"conflicted", "blocked"}:
+    if status != "failed":
         raise HTTPException(
             status_code=400,
             detail=f"Task status {status!r} is not eligible for conflict resolution",
         )
     conflict_info = task.get("conflict_info") or {}
-    if (not isinstance(conflict_info, dict) or not conflict_info) and status == "blocked":
+    if (not isinstance(conflict_info, dict) or not conflict_info) and status == "failed":
         merge_result: MergeResult = merge_and_cleanup_task_worktree(task_id, str(task["project_id"]))
-        if str(merge_result.get("status") or "") != "conflicted":
+        if str(merge_result.get("status") or "") != "failed":
             return cast(dict[str, object], merge_result)
         task = task_store.get_task(task_id) or task
         conflict_info = task.get("conflict_info") or {}
@@ -368,7 +368,7 @@ async def handle_resolve_conflict(task_id: str) -> dict[str, object]:
         raise HTTPException(status_code=500, detail="Unable to prepare task worktree for conflict resolution")
     files = conflict_info.get("conflicting_files") or []
     message = "Resolve merge conflict against current main" + (f" in {', '.join(files[:5])}" if files else "")
-    update_task_status(task_id, "blocked", error_message=message, validate_transition=False)
+    update_task_status(task_id, "failed", error_message=message, validate_transition=False)
     for subtask in get_subtasks_for_task(task_id):
         short_id = str(subtask.get("subtask_id") or "")
         if short_id and subtask.get("passes"):
@@ -386,12 +386,12 @@ def handle_finalize_task_merge(task_id: str, task: dict[str, Any]) -> MergeResul
     from ...storage.subtasks import get_subtasks_for_task
 
     status = str(task.get("status") or "")
-    if status in {"running", "pending", "queue", "paused", "ai_reviewing"}:
+    if status in {"running", "pending"}:
         raise HTTPException(
             status_code=400,
             detail=f"Task is still active ({status}); use the normal execution/done path instead",
         )
-    if status not in {"completed", "conflicted"}:
+    if status not in {"completed", "failed"}:
         raise HTTPException(status_code=400, detail=f"Task status {status!r} is not eligible for finalize")
     # Block merge when subtasks have failures — prevents merging incomplete work
     subtasks = get_subtasks_for_task(task_id)
@@ -402,7 +402,7 @@ def handle_finalize_task_merge(task_id: str, task: dict[str, Any]) -> MergeResul
             status_code=400,
             detail=f"Cannot finalize: {len(failed)} subtask(s) failed ({', '.join(failed_ids)}). Fix or skip them first.",
         )
-    if status == "conflicted":
+    if status == "failed":
         update_task_fields(task_id, conflict_info=None)
     return merge_and_cleanup_task_worktree(task_id, task["project_id"])
 

@@ -1,6 +1,7 @@
 """Subtask completion logic for done command.
 
 Handles subtask completion with git branch merging.
+Steps layer removed — subtasks complete when the completion gate passes.
 """
 
 from __future__ import annotations
@@ -14,41 +15,6 @@ from ..lib.checkpoint import get_snapshot_info, merge_subtask_branch
 from ..output import output_error
 from .done_git import is_working_tree_clean
 from .done_validators import parse_db_error
-
-
-def _verify_step(
-    client: STClient,
-    task_id: str,
-    subtask_id: str,
-    step_number: int,
-) -> None:
-    """Verify a single step and abort on failure."""
-    try:
-        result = client.update_step(task_id, subtask_id, step_number, passes=True)
-        if result.get("passes") is False:
-            output_error(
-                f"Step {subtask_id}#{step_number} verification failed. Aborting."
-            )
-            raise typer.Exit(1)
-    except APIError as e:
-        output_error(f"Step {subtask_id}#{step_number} failed: {e.detail}")
-        raise typer.Exit(1) from None
-
-
-def _verify_subtask_steps(
-    client: STClient,
-    task_id: str,
-    subtask_id: str,
-    steps: list[dict[str, str | int | bool]],
-) -> None:
-    """Verify all unpassed steps for a subtask."""
-    for step in steps:
-        step_number = step.get("step_number")
-        if step_number is None or step.get("passes") is True:
-            continue
-        if step.get("status") == "plan_defect":
-            continue
-        _verify_step(client, task_id, subtask_id, int(step_number))
 
 
 def _acknowledge_citations(
@@ -95,25 +61,19 @@ def auto_close_subtasks(
     task_id: str,
     project_id: str | None,
 ) -> None:
-    """Auto-verify steps, acknowledge citations, and close unpassed subtasks.
+    """Auto-close all unpassed subtasks and merge their branches.
 
     For each subtask not yet passed:
-    1. Verify unpassed steps via API (server-side pass marking)
-    2. Acknowledge citations if not already done
-    3. Close the subtask and merge its branch
-
-    Aborts immediately if any step verification fails.
+    1. Acknowledge citations if not already done
+    2. Close the subtask and merge its branch
     """
-    subtasks_resp = client.get_subtasks(task_id, include_steps=True)
+    subtasks_resp = client.get_subtasks(task_id)
     subtasks = subtasks_resp.get("subtasks", [])
 
     for subtask in subtasks:
         subtask_id = subtask.get("subtask_id") or subtask.get("id")
         if not subtask_id or subtask.get("passes") is True:
             continue
-
-        steps = subtask.get("steps") or client.get_steps(task_id, subtask_id)
-        _verify_subtask_steps(client, task_id, subtask_id, steps)
 
         citations_status = subtask.get("citations_status") or subtask.get(
             "citations_acknowledged"

@@ -17,6 +17,7 @@ from .completion_status import (
     transition_to_review_or_complete,
     wake_persona,
 )
+from .diff_gate import check_diff_gate
 from .events import emit_error, emit_log
 from .followup_tasks import create_followup_task_for_failures
 from .quality_gate import run_quality_gate_with_autofix
@@ -41,14 +42,14 @@ def handle_early_completion(
             "task_id": task_id,
             "status": final_status,
             "message": "Triggered QA review for complete subtasks"
-            if final_status == "ai_reviewing"
+            if final_status == "completed"
             else "Completed without review",
         }
     except Exception as e:
         emit_log(task_id, "error", f"Failed to transition status: {e}", project_id=project_id)
-        task_store.update_task_status(task_id, "blocked")
+        task_store.update_task_status(task_id, "failed")
         notify_failure(task_id, project_id, f"Status transition failed: {e}")
-        return {"task_id": task_id, "status": "blocked", "message": f"Status transition failed: {e}"}
+        return {"task_id": task_id, "status": "failed", "message": f"Status transition failed: {e}"}
 
 
 def handle_successful_completion(
@@ -58,10 +59,21 @@ def handle_successful_completion(
     results: list[dict[str, Any]],
     dispatch: Callable[[str, str, str], None] | None = None,
 ) -> bool:
-    """Handle successful task completion with quality gate + intent verification."""
+    """Handle successful task completion with diff gate + quality gate + intent verification."""
+    # Diff gate: block completion if no meaningful changes
+    diff_result = check_diff_gate(project_path)
+    if not diff_result.passed:
+        task_store.update_task_status(task_id, "failed")
+        emit_task_transition(task_id, "failed", f"Diff gate failed: {diff_result.summary}")
+        emit_error(task_id, f"Diff gate blocked completion: {diff_result.summary}", project_id=project_id)
+        notify_failure(task_id, project_id, f"No code changes detected: {diff_result.summary}")
+        wake_persona(task_id, project_id, "diff_gate_failed",
+                     f"Task {task_id} blocked by diff gate — zero meaningful changes vs base branch.")
+        return False
+
     if not run_quality_gate_with_autofix(task_id, project_path, project_id):
-        task_store.update_task_status(task_id, "blocked")
-        emit_task_transition(task_id, "blocked", "Quality gate failed after auto-fix")
+        task_store.update_task_status(task_id, "failed")
+        emit_task_transition(task_id, "failed", "Quality gate failed after auto-fix")
         emit_error(task_id, "Final quality gate failed after auto-fix attempt", project_id=project_id)
         notify_failure(task_id, project_id, "Quality gate failed after auto-fix attempt.")
         wake_persona(task_id, project_id, "quality_gate",
@@ -71,7 +83,7 @@ def handle_successful_completion(
     # Intent verification: check done_when / objective / spirit_anti
     intent_result = _run_intent_check(task_id, project_path, project_id)
     if intent_result and not intent_result.passed:
-        task_store.update_task_status(task_id, "blocked")
+        task_store.update_task_status(task_id, "failed")
         summary = intent_result.summary or "Intent check failed"
         emit_error(task_id, f"Intent check failed: {summary}", project_id=project_id)
         notify_failure(task_id, project_id, f"Intent verification failed: {summary}")
@@ -116,7 +128,7 @@ def _handle_partial_merge_error(
 ) -> None:
     """Handle errors when setting up partial merge."""
     emit_log(task_id, "error", f"Failed to set up partial merge: {error}", project_id=project_id)
-    task_store.update_task_status(task_id, "blocked")
+    task_store.update_task_status(task_id, "failed")
     notify_failure(task_id, project_id, f"Partial merge failed: {error}")
 
 
@@ -168,8 +180,8 @@ def handle_failed_execution(
                 break
 
     try:
-        task_store.update_task_status(task_id, "blocked")
-        emit_task_transition(task_id, "blocked", f"All subtasks failed: {blocker_summary or 'unknown'}")
+        task_store.update_task_status(task_id, "failed")
+        emit_task_transition(task_id, "failed", f"All subtasks failed: {blocker_summary or 'unknown'}")
         emit_log(task_id, "info", "Execution paused - subtask verification failed", project_id=project_id)
         notify_failure(task_id, project_id, "All subtasks failed verification.",
                        subtask_id=subtask_id, blocker_summary=blocker_summary)

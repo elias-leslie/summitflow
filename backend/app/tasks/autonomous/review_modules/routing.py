@@ -20,7 +20,7 @@ from .actions import auto_merge, create_fix_subtask, handle_plan_defect, run_qa_
 logger = get_logger(__name__)
 STATUS_COMPLETED = "completed"
 STATUS_RUNNING = "running"
-STATUS_BLOCKED = "blocked"
+STATUS_FAILED = "failed"
 AGENT_SUPERVISOR = "supervisor"
 VERDICT_APPROVED = "APPROVED"
 VERDICT_NEEDS_FIX = "NEEDS_FIX"
@@ -202,8 +202,8 @@ def _handle_escalation(task_id: str, review_result: dict[str, str | list[str]]) 
         log_task_event(task_id, "AI Review: ESCALATE - Supervisor created fix subtask")
         logger.info("Escalation resolved with fix subtask", task_id=task_id)
         return
-    task_store.update_task_status(task_id, STATUS_BLOCKED)
-    emit_task_transition(task_id, STATUS_BLOCKED, f"Supervisor blocked: {summary[:100]}")
+    task_store.update_task_status(task_id, STATUS_FAILED)
+    emit_task_transition(task_id, STATUS_FAILED, f"Supervisor blocked: {summary[:100]}")
     log_task_event(task_id, f"AI Review: ESCALATE - Blocked. {summary[:200]}")
     logger.info("QA escalated, blocked by supervisor", task_id=task_id)
     _send_notification(task_id, project_id, create_task_failure_notification,

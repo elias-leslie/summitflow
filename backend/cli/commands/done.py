@@ -42,9 +42,10 @@ def _handle_task_completion(
     message: str | None,
     strict: bool,
     admin: bool,
+    skip_diff_gate: bool = False,
 ) -> None:
     """Handle task completion."""
-    result = complete_task(client, id, message, strict=strict, admin=admin)
+    result = complete_task(client, id, message, strict=strict, admin=admin, skip_diff_gate=skip_diff_gate)
     if result.get("merged"):
         base_branch = result.get("base_branch", "main")
         output_success(f"Task {id} completed. Checkpoint removed.")
@@ -79,6 +80,13 @@ def done_command(
             help="Close task without checkpoint merge requirements (for meta/planning tasks)",
         ),
     ] = False,
+    skip_diff_gate: Annotated[
+        bool,
+        typer.Option(
+            "--skip-diff-gate",
+            help="Skip diff gate check (for non-code tasks like docs or config)",
+        ),
+    ] = False,
 ) -> None:
     """Complete a task or subtask.
 
@@ -90,4 +98,4 @@ def done_command(
     if is_subtask_id(id):
         _handle_subtask_completion(client, id, task_id, message)
     else:
-        _handle_task_completion(client, id, message, strict, admin)
+        _handle_task_completion(client, id, message, strict, admin, skip_diff_gate)

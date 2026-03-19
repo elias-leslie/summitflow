@@ -7,14 +7,10 @@ class TaskDistribution(BaseModel):
     """Task count by status."""
 
     pending: int = Field(ge=0, description="Tasks in pending state")
-    queue: int = Field(ge=0, description="Tasks in queue (autonomous pipeline)")
     running: int = Field(ge=0, description="Tasks currently running")
-    ai_reviewing: int = Field(ge=0, description="Tasks in AI review")
     completed: int = Field(ge=0, description="Successfully completed tasks")
-    blocked: int = Field(ge=0, description="Tasks blocked by dependencies or issues")
     failed: int = Field(ge=0, description="Failed tasks")
     cancelled: int = Field(ge=0, description="Cancelled tasks")
-    abandoned: int = Field(ge=0, description="Abandoned tasks (rolled back)")
 
 
 class Throughput(BaseModel):

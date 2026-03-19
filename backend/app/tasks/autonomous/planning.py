@@ -126,7 +126,7 @@ def _process_plan_result(
     subtask_count = len(plan_data.get("subtasks", []))
     if subtask_count == 0:
         logger.warning("Planner produced 0 subtasks", task_id=task_id)
-        task_store.update_task_status(task_id, "blocked")
+        task_store.update_task_status(task_id, "failed")
         log_task_event(task_id, "Planning failed: planner produced no subtasks")
         return {
             "task_id": task_id,
@@ -187,7 +187,7 @@ def create_plan(task_id: str, project_id: str) -> dict[str, Any]:
 
     except Exception as e:
         logger.warning("Planning failed", task_id=task_id, error=str(e))
-        task_store.update_task_status(task_id, "blocked")
+        task_store.update_task_status(task_id, "failed")
         log_task_event(task_id, f"Planning failed: {e}")
         return {"task_id": task_id, "status": "error", "message": str(e)}
 

@@ -56,15 +56,11 @@ class TaskResponse(BaseModel):
     task_type: str
     parent_task_id: str | None
     # AI agent reliability fields
-    objective: str | None = None
     acceptance_criteria: list[AcceptanceCriterion] | None = None
     criteria_count: int | None = None  # Count from task_criteria junction table
     current_phase: str | None = None
     verification_result: dict[str, Any] | None = None
     # Pipeline v2 fields
-    spirit_anti: str | None = None
-    decisions: list[dict[str, Any]] | None = None
-    constraints: list[str] | None = None
     done_when: list[str] | None = None
     complexity: Literal["SIMPLE", "STANDARD", "COMPLEX"] | None = None
     # AI enrichment fields

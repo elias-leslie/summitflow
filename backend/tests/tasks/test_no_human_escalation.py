@@ -155,8 +155,8 @@ class TestBlockWithRecommendation:
         result = _block_with_recommendation(
             "task-1", "1.1", "step failed", 5, project_id="test-project"
         )
-        assert result["status"] == "blocked"
-        mock_store.update_task_status.assert_called_with("task-1", "blocked")
+        assert result["status"] == "failed"
+        mock_store.update_task_status.assert_called_with("task-1", "failed")
 
     @patch("app.tasks.autonomous.escalation.add_escalation_message")
     @patch("app.tasks.autonomous.escalation.task_store")
@@ -173,8 +173,8 @@ class TestBlockWithRecommendation:
         result = _block_with_recommendation(
             "task-1", "1.1", "step failed", 5, project_id="test-project"
         )
-        assert result["status"] == "blocked"
-        mock_store.update_task_status.assert_called_with("task-1", "blocked")
+        assert result["status"] == "failed"
+        mock_store.update_task_status.assert_called_with("task-1", "failed")
 
 
 class TestNoPipelineHumanEscalation:

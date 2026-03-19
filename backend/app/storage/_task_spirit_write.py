@@ -11,26 +11,18 @@ from .connection import get_connection
 
 logger = get_logger(__name__)
 
-_INSERT_FIELDS = "(task_id, objective, spirit_anti, decisions, constraints, done_when, context, complexity)"
-_INSERT_PLACEHOLDERS = "(%s, %s, %s, %s, %s, %s, %s, %s)"
+_INSERT_FIELDS = "(task_id, done_when, context, complexity)"
+_INSERT_PLACEHOLDERS = "(%s, %s, %s, %s)"
 
 
 def _build_insert_params(
     task_id: str,
-    objective: str,
-    spirit_anti: str | None,
-    decisions: list[dict[str, Any]] | None,
-    constraints: list[str] | None,
     done_when: list[str] | None,
     context: dict[str, Any] | None,
     complexity: str | None,
 ) -> tuple[Any, ...]:
     return (
         task_id,
-        objective,
-        spirit_anti,
-        json.dumps(decisions or []),
-        json.dumps(constraints or []),
         json.dumps(done_when or []),
         json.dumps(context or {}),
         complexity,
@@ -39,22 +31,19 @@ def _build_insert_params(
 
 def create_task_spirit(
     task_id: str,
-    objective: str,
-    spirit_anti: str | None = None,
-    decisions: list[dict[str, Any]] | None = None,
-    constraints: list[str] | None = None,
     done_when: list[str] | None = None,
     context: dict[str, Any] | None = None,
     complexity: str | None = None,
+    # Deprecated params — accepted but ignored for backwards compatibility
+    objective: str | None = None,
+    spirit_anti: str | None = None,
+    decisions: list[dict[str, Any]] | None = None,
+    constraints: list[str] | None = None,
 ) -> dict[str, Any]:
     """Create a task_spirit record for a task.
 
     Args:
         task_id: The task ID (FK to tasks)
-        objective: What the task aims to achieve
-        spirit_anti: What to avoid during implementation
-        decisions: List of architectural/design decisions
-        constraints: List of implementation constraints
         done_when: List of completion criteria
         context: JSONB blob for plan.json context preservation
         complexity: SIMPLE|STANDARD|COMPLEX
@@ -62,9 +51,7 @@ def create_task_spirit(
     Returns:
         Created task_spirit record as dict
     """
-    params = _build_insert_params(
-        task_id, objective, spirit_anti, decisions, constraints, done_when, context, complexity
-    )
+    params = _build_insert_params(task_id, done_when, context, complexity)
     sql = f"INSERT INTO task_spirit {_INSERT_FIELDS} VALUES {_INSERT_PLACEHOLDERS} RETURNING {SPIRIT_SELECT}"
     with get_connection() as conn:
         cur = conn.cursor()
@@ -80,28 +67,23 @@ def create_task_spirit(
 
 def upsert_task_spirit(
     task_id: str,
-    objective: str,
-    spirit_anti: str | None = None,
-    decisions: list[dict[str, Any]] | None = None,
-    constraints: list[str] | None = None,
     done_when: list[str] | None = None,
     context: dict[str, Any] | None = None,
     complexity: str | None = None,
+    # Deprecated params — accepted but ignored for backwards compatibility
+    objective: str | None = None,
+    spirit_anti: str | None = None,
+    decisions: list[dict[str, Any]] | None = None,
+    constraints: list[str] | None = None,
 ) -> dict[str, Any]:
     """Create or update task_spirit record.
 
     Used during plan.json import to handle both new tasks and updates.
     """
-    params = _build_insert_params(
-        task_id, objective, spirit_anti, decisions, constraints, done_when, context, complexity
-    )
+    params = _build_insert_params(task_id, done_when, context, complexity)
     sql = f"""
         INSERT INTO task_spirit {_INSERT_FIELDS} VALUES {_INSERT_PLACEHOLDERS}
         ON CONFLICT (task_id) DO UPDATE SET
-            objective = EXCLUDED.objective,
-            spirit_anti = EXCLUDED.spirit_anti,
-            decisions = EXCLUDED.decisions,
-            constraints = EXCLUDED.constraints,
             done_when = EXCLUDED.done_when,
             context = EXCLUDED.context,
             complexity = EXCLUDED.complexity,

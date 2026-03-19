@@ -101,7 +101,7 @@ def _handle_subtask_failure(
                 f"Circuit breaker: supervisor says stop after {issue_id} repeated {issue_counts[issue_id]} times",
                 source="supervisor", project_id=project_id,
             )
-            task_store.update_task_status(task_id, "blocked")
+            task_store.update_task_status(task_id, "failed")
             return False
         emit_log(
             task_id, "warn",

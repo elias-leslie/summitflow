@@ -44,7 +44,7 @@ async def _save_task_spirit(task_id: str, item: BatchTaskCreate) -> None:
     """Persist spirit fields to the task_spirit table, if any are set."""
     from ...storage.task_spirit import upsert_task_spirit
 
-    spirit_fields = {"objective", "spirit_anti", "decisions", "constraints", "done_when"}
+    spirit_fields = {"done_when"}
     has_spirit = any(getattr(item, f, None) for f in spirit_fields) or getattr(item, "complexity", None)
     if not has_spirit:
         return
@@ -52,8 +52,7 @@ async def _save_task_spirit(task_id: str, item: BatchTaskCreate) -> None:
         await asyncio.to_thread(
             upsert_task_spirit,
             task_id=task_id,
-            objective=getattr(item, "objective", None) or "",
-            **item.model_dump(include={"spirit_anti", "decisions", "constraints", "done_when", "complexity"}),
+            **item.model_dump(include={"done_when", "complexity"}),
         )
     except Exception as e:
         logger.warning("Failed to create task_spirit for task %s: %s", task_id, e)

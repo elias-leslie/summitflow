@@ -43,10 +43,10 @@ class TestApproveEndpoint:
         with get_connection() as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO task_spirit (task_id, objective, plan_status)
-                VALUES (%s, %s, %s)
+                INSERT INTO task_spirit (task_id, plan_status)
+                VALUES (%s, %s)
                 """,
-                (task_id, "Test objective", "draft"),
+                (task_id, "draft"),
             )
             conn.commit()
 
@@ -130,7 +130,9 @@ class TestContextEndpoint:
         assert "TITLE:Test task for context" in content
         assert "DESCRIPTION:Testing context endpoint" in content
         assert "WORKFLOW:plan:draft|ready:no|issues:" in content
-        assert "READINESS:missing:objective,done_when,spirit_anti,subtasks" in content
+        assert "READINESS:missing:" in content
+        assert "done_when" in content
+        assert "subtasks" in content
         assert "CRITERIA[0]:0/0" not in content
 
     @patch("app.api.tasks.workflow.check_task_lane_conflicts")
@@ -345,13 +347,11 @@ class TestExportEndpoint:
         with get_connection() as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO task_spirit (task_id, objective, spirit_anti, done_when)
-                VALUES (%s, %s, %s, %s::jsonb)
+                INSERT INTO task_spirit (task_id, done_when)
+                VALUES (%s, %s::jsonb)
                 """,
                 (
                     task_id,
-                    "Export objective",
-                    "SPIRIT: Test. ANTI: Don't fail.",
                     json.dumps(["Condition 1", "Condition 2"]),
                 ),
             )
@@ -366,7 +366,7 @@ class TestExportEndpoint:
         assert "task" in data
         assert data["task"]["id"] == task_id
         assert "spirit" in data
-        assert data["spirit"]["objective"] == "Export objective"
+        assert data["spirit"]["done_when"] == ["Condition 1", "Condition 2"]
         assert "acceptance_criteria" in data
         assert "subtasks" in data
         assert "dependencies" in data
@@ -395,12 +395,11 @@ class TestExportEndpoint:
         with get_connection() as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO task_spirit (task_id, objective, done_when)
-                VALUES (%s, %s, %s::jsonb)
+                INSERT INTO task_spirit (task_id, done_when)
+                VALUES (%s, %s::jsonb)
                 """,
                 (
                     task_id,
-                    "Test",
                     json.dumps(["First condition", "Second condition"]),
                 ),
             )

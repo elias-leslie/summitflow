@@ -178,8 +178,8 @@ async def retry_merge(task_id: str) -> dict[str, object]:
     task = task_store.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    if task["status"] != "conflicted":
-        raise HTTPException(status_code=400, detail="Task is not in conflicted state")
+    if task["status"] != "failed":
+        raise HTTPException(status_code=400, detail="Task is not in failed state")
     update_task_fields(task_id, conflict_info=None)
     return cast(dict[str, object], merge_and_cleanup_task_worktree(task_id, task["project_id"]))
 

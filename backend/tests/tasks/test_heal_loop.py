@@ -19,133 +19,6 @@ _SUBTASK_VALIDATION = "app.tasks.autonomous.exec_modules.subtask_validation"
 _CLEANUP = "app.tasks.autonomous.cleanup.merge_operations"
 
 
-class TestStepRereadAfterHealAttempt:
-    """Bug #1: Heal loop re-reads steps from DB on retry."""
-
-    @patch(f"{_RETRY_LOOP}.agent_configs")
-    @patch(f"{_RETRY_LOOP}.execute_fix_attempt")
-    @patch(f"{_RETRY_LOOP}.determine_fix_prompt")
-    @patch(f"{_RETRY_LOOP}.handle_infrastructure_failures")
-    @patch(f"{_RETRY_LOOP}.check_and_request_extension")
-    @patch(f"{_RETRY_LOOP}.run_execution_quality_check")
-    @patch(f"{_RETRY_LOOP}.check_worktree_health")
-    @patch(f"{_RETRY_LOOP}.get_steps_for_subtask")
-    @patch(f"{_RETRY_LOOP}.assert_task_runnable")
-    def test_steps_reread_after_heal_attempt(
-        self,
-        mock_assert_task_runnable: MagicMock,
-        mock_get_steps: MagicMock,
-        mock_worktree_health: MagicMock,
-        mock_verify: MagicMock,
-        mock_extension: MagicMock,
-        mock_infra: MagicMock,
-        mock_fix_prompt: MagicMock,
-        mock_fix_attempt: MagicMock,
-        mock_agent_configs: MagicMock,
-    ) -> None:
-        """get_steps_for_subtask is called on heal attempts > 0."""
-        from app.tasks.autonomous.exec_modules.retry_loop import run_self_healing_loop
-
-        # agent_configs returns 0 so constants are used as fallback
-        mock_agent_configs.get_max_self_fix_attempts.return_value = 0
-        mock_agent_configs.get_max_supervisor_attempts.return_value = 0
-
-        mock_worktree_health.return_value = True
-
-        updated_steps = [
-            {"step_number": 1, "description": "test", "status": "plan_defect"},
-            {"step_number": 2, "description": "fix step"},
-        ]
-        mock_get_steps.return_value = updated_steps
-
-        # First verify: fail, second verify (after re-read): pass
-        mock_verify.side_effect = [
-            (False, [{"step_number": 1, "passed": False, "output": "error", "reason": "failed", "returncode": 1}]),
-            (True, [{"step_number": 1, "passed": True, "output": "ok", "reason": "", "returncode": 0}]),
-        ]
-
-        # No infrastructure failures
-        mock_infra.side_effect = lambda failed, *a: failed
-
-        mock_fix_prompt.return_value = ("fix prompt", None)
-        mock_fix_attempt.return_value = ("fixed", "session-2")
-
-        original_steps = [{"step_number": 1, "description": "test"}]
-
-        subtask = {
-            "id": "sub-1",
-            "subtask_id": "1.1",
-            "description": "test subtask",
-        }
-
-        result = run_self_healing_loop(
-            task_id="task-1",
-            subtask_id="sub-1",
-            subtask_short_id="1.1",
-            subtask=subtask,
-            steps=original_steps,
-            project_path="/tmp/test-worktree",
-            project_id="test-project",
-            agent_slug="coder",
-            agent_session_id="session-1",
-            initial_response_content="initial",
-        )
-
-        all_passed = result[0]
-        assert all_passed
-        mock_get_steps.assert_called_once_with("sub-1")
-
-    @patch(f"{_RETRY_LOOP}.agent_configs")
-    @patch(f"{_RETRY_LOOP}.run_execution_quality_check")
-    @patch(f"{_RETRY_LOOP}.check_worktree_health")
-    @patch(f"{_RETRY_LOOP}.get_steps_for_subtask")
-    @patch(f"{_RETRY_LOOP}.assert_task_runnable")
-    def test_steps_not_reread_on_first_attempt(
-        self,
-        mock_assert_task_runnable: MagicMock,
-        mock_get_steps: MagicMock,
-        mock_worktree_health: MagicMock,
-        mock_verify: MagicMock,
-        mock_agent_configs: MagicMock,
-    ) -> None:
-        """get_steps_for_subtask is NOT called on first attempt (uses caller data)."""
-        from app.tasks.autonomous.exec_modules.retry_loop import run_self_healing_loop
-
-        mock_agent_configs.get_max_self_fix_attempts.return_value = 0
-        mock_agent_configs.get_max_supervisor_attempts.return_value = 0
-
-        mock_worktree_health.return_value = True
-
-        # All steps pass on first attempt
-        mock_verify.return_value = (
-            True,
-            [{"step_number": 1, "passed": True, "output": "ok", "reason": "", "returncode": 0}],
-        )
-
-        subtask = {
-            "id": "sub-1",
-            "subtask_id": "1.1",
-            "description": "test subtask",
-        }
-
-        result = run_self_healing_loop(
-            task_id="task-1",
-            subtask_id="sub-1",
-            subtask_short_id="1.1",
-            subtask=subtask,
-            steps=[{"step_number": 1, "description": "test"}],
-            project_path="/tmp/test-worktree",
-            project_id="test-project",
-            agent_slug="coder",
-            agent_session_id="session-1",
-            initial_response_content="initial",
-        )
-
-        all_passed = result[0]
-        assert all_passed
-        mock_get_steps.assert_not_called()
-
-
 class TestMergeBlockedWhenTaskRunning:
     """Bug #2, Layer A: Merge operations blocked when task is running."""
 
@@ -165,7 +38,7 @@ class TestMergeBlockedWhenTaskRunning:
 
         result = merge_and_cleanup_task_worktree("task-1", "test-project")
 
-        assert result["status"] == "blocked"
+        assert result["status"] == "failed"
         assert result["reason"] == "task_still_running"
         mock_worktree.assert_not_called()
 
@@ -287,12 +160,10 @@ class TestHealLoopAbortsOnInvalidWorktree:
     @patch(f"{_RETRY_LOOP}.agent_configs")
     @patch(f"{_RETRY_LOOP}.run_execution_quality_check")
     @patch(f"{_RETRY_LOOP}.check_worktree_health")
-    @patch(f"{_RETRY_LOOP}.get_steps_for_subtask")
     @patch(f"{_RETRY_LOOP}.assert_task_runnable")
     def test_heal_loop_aborts_on_invalid_worktree(
         self,
         mock_assert_task_runnable: MagicMock,
-        mock_get_steps: MagicMock,
         mock_worktree_health: MagicMock,
         mock_verify: MagicMock,
         mock_agent_configs: MagicMock,
@@ -516,10 +387,10 @@ class TestZeroStepSubtask:
 class TestWorkProductDetection:
     """Verification should treat dirty worktree edits as valid work product."""
 
-    @patch("app.tasks.autonomous.exec_modules.steps.subprocess.run")
+    @patch("app.tasks.autonomous.exec_modules.quality_check.subprocess.run")
     def test_has_work_product_when_branch_has_commits(self, mock_run: MagicMock) -> None:
         """A branch commit beyond main counts as work product."""
-        from app.tasks.autonomous.exec_modules.steps import _has_work_product
+        from app.tasks.autonomous.exec_modules.quality_check import _has_work_product
 
         mock_run.side_effect = [
             MagicMock(returncode=0, stdout="refs/remotes/origin/main\n"),  # detect base branch
@@ -528,13 +399,13 @@ class TestWorkProductDetection:
 
         assert _has_work_product("/tmp/test-worktree")
 
-    @patch("app.tasks.autonomous.exec_modules.steps.subprocess.run")
+    @patch("app.tasks.autonomous.exec_modules.quality_check.subprocess.run")
     def test_has_work_product_when_worktree_has_uncommitted_changes(
         self,
         mock_run: MagicMock,
     ) -> None:
         """Dirty worktree edits should count even before a commit exists."""
-        from app.tasks.autonomous.exec_modules.steps import _has_work_product
+        from app.tasks.autonomous.exec_modules.quality_check import _has_work_product
 
         mock_run.side_effect = [
             MagicMock(returncode=0, stdout="refs/remotes/origin/main\n"),  # detect base branch
@@ -544,10 +415,10 @@ class TestWorkProductDetection:
 
         assert _has_work_product("/tmp/test-worktree")
 
-    @patch("app.tasks.autonomous.exec_modules.steps.subprocess.run")
+    @patch("app.tasks.autonomous.exec_modules.quality_check.subprocess.run")
     def test_has_work_product_detects_master_branch(self, mock_run: MagicMock) -> None:
         """Repos using 'master' as default branch should be detected."""
-        from app.tasks.autonomous.exec_modules.steps import _has_work_product
+        from app.tasks.autonomous.exec_modules.quality_check import _has_work_product
 
         mock_run.side_effect = [
             MagicMock(returncode=0, stdout="refs/remotes/origin/master\n"),  # detect master
@@ -623,13 +494,13 @@ class TestWorkProductDetection:
 
         assert result == "No committed or dirty work product remains to merge"
 
-    @patch("app.tasks.autonomous.exec_modules.steps.subprocess.run")
+    @patch("app.tasks.autonomous.exec_modules.quality_check.subprocess.run")
     def test_has_no_work_product_when_branch_clean_and_no_commits(
         self,
         mock_run: MagicMock,
     ) -> None:
         """No branch commits and no dirty files means nothing was produced."""
-        from app.tasks.autonomous.exec_modules.steps import _has_work_product
+        from app.tasks.autonomous.exec_modules.quality_check import _has_work_product
 
         mock_run.side_effect = [
             MagicMock(returncode=0, stdout="refs/remotes/origin/main\n"),  # detect base branch
@@ -639,10 +510,10 @@ class TestWorkProductDetection:
 
         assert not _has_work_product("/tmp/test-worktree")
 
-    @patch("app.tasks.autonomous.exec_modules.steps.run_smoke_and_targeted_tests")
-    @patch("app.tasks.autonomous.exec_modules.steps.get_task_spirit")
-    @patch("app.tasks.autonomous.exec_modules.steps.get_task")
-    @patch("app.tasks.autonomous.exec_modules.steps.subprocess.run")
+    @patch("app.tasks.autonomous.exec_modules.quality_check._run_smoke_and_targeted_tests")
+    @patch("app.tasks.autonomous.exec_modules.quality_check.get_task_spirit")
+    @patch("app.tasks.autonomous.exec_modules.quality_check.get_task")
+    @patch("app.tasks.autonomous.exec_modules.quality_check.subprocess.run")
     def test_run_execution_quality_check_allows_no_code_validation_tasks(
         self,
         mock_run: MagicMock,
@@ -651,7 +522,7 @@ class TestWorkProductDetection:
         mock_smoke: MagicMock,
     ) -> None:
         """Explicit workflow-only validation tasks should not fail on missing commits."""
-        from app.tasks.autonomous.exec_modules.steps import run_execution_quality_check
+        from app.tasks.autonomous.exec_modules.quality_check import run_execution_quality_check
 
         mock_run.side_effect = [
             MagicMock(returncode=0, stdout="refs/remotes/origin/main\n"),  # detect base branch
@@ -669,15 +540,13 @@ class TestWorkProductDetection:
         }
         mock_smoke.return_value = True
 
-        all_passed, results = run_execution_quality_check(
+        all_passed, _results = run_execution_quality_check(
             "task-1",
             "sub-1",
-            [{"step_number": 1, "description": "Validate workflow", "passes": False}],
+            [],
             "/tmp/test-worktree",
             "summitflow",
         )
 
         assert all_passed
-        assert results[0]["passed"]
-        assert results[0]["reason"] == "auto_passed"
         mock_smoke.assert_called_once()

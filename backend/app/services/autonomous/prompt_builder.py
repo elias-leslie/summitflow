@@ -4,9 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from ...storage.steps import get_steps_for_subtask
-from ...storage.subtasks import get_subtasks_for_task
-
 VERIFICATION_BLOCK = """---
 # Verification
 
@@ -74,15 +71,7 @@ def _format_steps(lines: list[str], steps: list[dict[str, Any]]) -> None:
 
 
 def _add_steps_from_subtasks(lines: list[str], task_id: str) -> bool:
-    """Try to populate steps from subtask records; return True if populated."""
-    for subtask in get_subtasks_for_task(task_id, include_steps=False):
-        if subtask.get("passes"):
-            continue
-        steps = get_steps_for_subtask(subtask.get("id", ""))
-        if not steps:
-            continue
-        _format_steps(lines, steps)
-        return True
+    """Steps layer has been removed. Returns False (no steps to add)."""
     return False
 
 

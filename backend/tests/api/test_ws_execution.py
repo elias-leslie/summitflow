@@ -232,7 +232,7 @@ class TestHelperFunctions:
         await _handle_stop_signal("task-1")
 
         mock_get_task.assert_called_once_with("task-1")
-        mock_update_task_status.assert_called_once_with("task-1", "paused")
+        mock_update_task_status.assert_called_once_with("task-1", "pending")
         mock_log_task_event.assert_called_once_with(
             "task-1",
             "User requested stop via execution timeline",

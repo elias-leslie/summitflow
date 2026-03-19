@@ -33,8 +33,8 @@ class TestPromptTemplateFallbacks:
         )
 
         assert "Refactor the activity timeline" in prompt
-        assert "TypeScript error" in prompt
-        assert "Preserve behavior" in prompt
+        # build_failures_block returns empty string (steps layer removed)
+        assert "subtask 1.1" in prompt
         mock_logger.warning.assert_called_once()
 
     @patch(f"{_PROMPTS}.get_prompt_template")
@@ -69,6 +69,7 @@ class TestPromptTemplateFallbacks:
         ),
     )
     @patch(f"{_PROMPTS}.get_handoff_context", return_value={})
+    @patch(f"{_PROMPTS}.task_store")
     @patch(f"{_PROMPTS}.get_task_spirit")
     @patch(f"{_PROMPTS}.logger")
     @patch(f"{_PROMPTS}.get_prompt_template")
@@ -77,6 +78,7 @@ class TestPromptTemplateFallbacks:
         mock_get_prompt_template: MagicMock,
         mock_logger: MagicMock,
         mock_get_task_spirit: MagicMock,
+        mock_task_store: MagicMock,
         _mock_handoff: MagicMock,
         _mock_precision: MagicMock,
         _mock_resume: MagicMock,
@@ -88,13 +90,15 @@ class TestPromptTemplateFallbacks:
 
         mock_get_prompt_template.side_effect = TransientPromptFetchError("connection refused")
         mock_get_task_spirit.return_value = {
-            "objective": "Reduce the component size while preserving behavior",
-            "spirit_anti": "- Do not change UI behavior",
             "done_when": ["No regressions", "Keep render output stable"],
             "context": {
                 "files_to_modify": ["frontend/components/ActivityTimeline.tsx"],
                 "files_to_create": ["frontend/components/ActivityTimelineParts.tsx"],
             },
+        }
+        mock_task_store.get_task.return_value = {
+            "id": "task-1",
+            "description": "Reduce the component size while preserving behavior",
         }
 
         prompt = build_subtask_prompt(
@@ -109,7 +113,6 @@ class TestPromptTemplateFallbacks:
         )
 
         assert "Reduce the component size while preserving behavior" in prompt
-        assert "Do not change UI behavior" in prompt
         assert "Completion Criteria" in prompt
         assert "No regressions" in prompt
         assert "Expected Scope" in prompt

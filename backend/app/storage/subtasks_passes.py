@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from ..logging_config import get_logger
 from .connection import get_connection
 from .subtasks_helpers import SUBTASK_COLUMNS, generate_subtask_id, row_to_dict
-from .subtasks_validation import validate_citations_acknowledged, validate_steps_complete
+from .subtasks_validation import validate_citations_acknowledged
 
 logger = get_logger(__name__)
 
@@ -43,11 +43,7 @@ def _set_subtask_passes(
     table_id: str, task_id: str, subtask_id: str
 ) -> dict[str, object] | None:
     """Validate gates and mark subtask as passed."""
-    from .steps import get_steps_for_subtask
-
-    steps = get_steps_for_subtask(table_id)
-    validate_steps_complete(subtask_id, steps)
-
+    # Steps layer removed - skip step completion validation
     passed_at = datetime.now(UTC)
 
     with get_connection() as conn, conn.cursor() as cur:

@@ -1,10 +1,9 @@
-"""Subtask and step creation for autonomous tasks."""
+"""Subtask creation for autonomous tasks."""
 
 from __future__ import annotations
 
 from typing import cast
 
-from app.storage.steps import bulk_create_steps
 from app.storage.subtasks import bulk_create_subtasks
 
 
@@ -13,17 +12,18 @@ def create_single_subtask_with_steps(
     subtask_id: str,
     phase: str,
     description: str,
-    steps: list[dict[str, object]],
+    steps: list[dict[str, object]] | None = None,
     subtask_type: str | None = None,
 ) -> str | None:
-    """Create a single subtask with its steps.
+    """Create a single subtask.
 
     Args:
         task_id: Task ID
         subtask_id: Subtask ID (e.g., "1.1")
         phase: Phase name (e.g., "backend", "frontend")
         description: Subtask description
-        steps: List of step dictionaries
+        steps: Ignored (steps layer removed)
+        subtask_type: Optional subtask type
 
     Returns:
         Subtask full ID or None if creation failed
@@ -41,9 +41,7 @@ def create_single_subtask_with_steps(
     if not created_subtasks:
         return None
 
-    subtask_full_id = cast(str, created_subtasks[0]["id"])
-    bulk_create_steps(subtask_full_id, steps)
-    return subtask_full_id
+    return cast(str, created_subtasks[0]["id"])
 
 
 def create_architecture_subtasks(
@@ -51,14 +49,13 @@ def create_architecture_subtasks(
     violation_type: str,
     affected_files: list[str],
 ) -> None:
-    """Create subtasks and steps for architecture violations.
+    """Create subtasks for architecture violations.
 
     Args:
         task_id: Task ID
         violation_type: Type of violation
         affected_files: List of affected files
     """
-    # Limit to first 10 files to avoid overload
     subtask_data = []
     for i, file_path in enumerate(affected_files[:10], 1):
         subtask_data.append(
@@ -73,13 +70,4 @@ def create_architecture_subtasks(
     if not subtask_data:
         return
 
-    created_subtasks = bulk_create_subtasks(task_id, subtask_data)
-
-    for _idx, subtask in enumerate(created_subtasks):
-        subtask_full_id = cast(str, subtask["id"])
-        steps = [
-            {"description": f"Identify {violation_type.replace('_', ' ')} issue"},
-            {"description": "Implement fix following project patterns"},
-            {"description": "Verify fix with full quality gates"},
-        ]
-        bulk_create_steps(subtask_full_id, steps)
+    bulk_create_subtasks(task_id, subtask_data)

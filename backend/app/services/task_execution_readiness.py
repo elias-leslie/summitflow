@@ -62,27 +62,18 @@ def assess_task_execution_readiness(
     suggestions: list[str] = []
     missing_fields: list[str] = []
 
-    objective = str(spirit.get("objective") or task.get("objective") or "").strip()
+    # objective was migrated to task.description; spirit_anti/decisions/constraints dropped
+    description = str(task.get("description") or "").strip()
     done_when = spirit.get("done_when") or task.get("done_when") or []
-    spirit_anti = str(spirit.get("spirit_anti") or task.get("spirit_anti") or "").strip()
-    decisions = spirit.get("decisions") or task.get("decisions") or []
     context = spirit.get("context") or task.get("context") or {}
 
-    if not objective:
-        issues.append("Missing objective")
-        missing_fields.append("objective")
+    if not description:
+        issues.append("Missing description")
+        missing_fields.append("description")
 
     if not done_when:
         issues.append("Missing done_when success criteria")
         missing_fields.append("done_when")
-
-    if requires_nontrivial_plan and not spirit_anti:
-        issues.append("Missing spirit_anti guidance for non-trivial coding work")
-        missing_fields.append("spirit_anti")
-
-    if complexity == "COMPLEX" and not decisions:
-        issues.append("Missing decisions for COMPLEX task")
-        missing_fields.append("decisions")
 
     if requires_nontrivial_plan and not subtasks:
         issues.append("Missing subtasks for non-trivial coding work")

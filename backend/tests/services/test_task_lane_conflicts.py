@@ -127,7 +127,7 @@ class TestTaskLaneConflicts:
         mock_get_task: MagicMock,
         mock_httpx_client: MagicMock,
     ) -> None:
-        mock_get_task.return_value = {"id": "task-999", "status": "blocked"}
+        mock_get_task.return_value = {"id": "task-999", "status": "cancelled"}
         mock_httpx_client.get.return_value = _mock_response(
             {"sessions": [{"id": "sess-5", "external_id": "task-999", "current_branch": "task-999/main"}]}
         )
@@ -170,7 +170,7 @@ class TestTaskLaneConflicts:
         mock_get_task: MagicMock,
         mock_httpx_client: MagicMock,
     ) -> None:
-        mock_get_task.return_value = {"id": "task-123", "status": "blocked"}
+        mock_get_task.return_value = {"id": "task-123", "status": "cancelled"}
         mock_httpx_client.get.return_value = _mock_response(
             {
                 "sessions": [
@@ -189,7 +189,7 @@ class TestTaskLaneConflicts:
 
         assert result.overlap_kind == "stale_same_task"
         assert result.disposition == "reconcile"
-        assert "Task status is blocked but it still has a leftover live lane" in result.issues[0]
+        assert "Task status is cancelled but it still has a leftover live lane" in result.issues[0]
         assert "Reconcile or retire the leftover same-task lane" in result.suggestions[0]
 
     @patch("app.services.task_lane_preflight.task_store.get_task")

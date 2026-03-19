@@ -122,7 +122,7 @@ def dispatch_task_immediate(
 
     if is_blocked(task_id):
         logger.info("Task blocked by dependency", task_id=task_id)
-        return {"status": "blocked", "task_id": task_id, "reason": "dependency_blocked"}
+        return {"status": "failed", "task_id": task_id, "reason": "dependency_blocked"}
 
     stage = _determine_next_stage(task_id)
     if stage == "execution":

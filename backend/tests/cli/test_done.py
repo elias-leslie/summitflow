@@ -59,7 +59,7 @@ class TestAutoCloseSubtasks:
         client.update_subtask.assert_not_called()
 
     def test_verifies_unpassed_steps(self) -> None:
-        """Unpassed steps get verified via update_step."""
+        """Unpassed subtask is closed directly (steps layer removed)."""
         client = self._make_client()
         client.get_subtasks.return_value = {
             "subtasks": [
@@ -73,14 +73,13 @@ class TestAutoCloseSubtasks:
                 },
             ]
         }
-        client.update_step.return_value = {"passes": True}
         client.update_subtask.return_value = {"passes": True}
 
         with patch("cli.commands.done_subtask.merge_subtask_branch"):
             auto_close_subtasks(client, "task-123", None)
 
-        # Only step 1 should be verified (step 2 already passed)
-        client.update_step.assert_called_once_with("task-123", "1.1", 1, passes=True)
+        # Steps layer removed — update_step is no longer called
+        client.update_step.assert_not_called()
         client.update_subtask.assert_called_once_with("task-123", "1.1", passes=True)
 
     def test_skips_plan_defect_steps(self) -> None:
@@ -108,7 +107,7 @@ class TestAutoCloseSubtasks:
         client.update_step.assert_not_called()
 
     def test_aborts_on_step_failure(self) -> None:
-        """If step verification returns passes=False, abort immediately."""
+        """If subtask update fails, abort immediately (steps layer removed)."""
         client = self._make_client()
         client.get_subtasks.return_value = {
             "subtasks": [
@@ -121,13 +120,14 @@ class TestAutoCloseSubtasks:
                 },
             ]
         }
-        client.update_step.return_value = {"passes": False}
+        from cli._client_base import APIError
+        client.update_subtask.side_effect = APIError(400, "Cannot close subtask")
 
         with pytest.raises(typer.Exit):
             auto_close_subtasks(client, "task-123", None)
 
-        # Subtask should NOT be closed
-        client.update_subtask.assert_not_called()
+        # update_step should not be called (steps layer removed)
+        client.update_step.assert_not_called()
 
     def test_acknowledges_citations(self) -> None:
         """Citations are acknowledged before subtask close."""

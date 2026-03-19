@@ -22,7 +22,7 @@ logger = get_logger(__name__)
 WORKER_MAX_FAILURES: int = QA_WORKER_STUCK_THRESHOLD
 SUPERVISOR_MAX_ATTEMPTS: int = QA_SUPERVISOR_STUCK_THRESHOLD
 
-_STATUS_BLOCKED: str = "blocked"
+_STATUS_FAILED: str = "failed"
 _STATUS_GUIDANCE_PROVIDED: str = "guidance_provided"
 
 
@@ -116,12 +116,12 @@ def _block_with_recommendation(
         f"Issue: {issue_description}\nTotal Attempts: {attempts}"
     )
     recommendation = call_supervisor(prompt, project_id) or f"Issue in {subtask_id}: {issue_description}"
-    task_store.update_task_status(task_id, _STATUS_BLOCKED)
+    task_store.update_task_status(task_id, _STATUS_FAILED)
     add_escalation_message(task_id, subtask_id, recommendation, attempts)
     return {
         "task_id": task_id,
         "subtask_id": subtask_id,
-        "status": _STATUS_BLOCKED,
+        "status": _STATUS_FAILED,
         "recommendation": recommendation,
         "total_attempts": attempts,
     }

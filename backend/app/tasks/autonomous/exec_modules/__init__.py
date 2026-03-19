@@ -5,7 +5,6 @@ This package contains the refactored execution logic split across focused module
 - orchestrator: Main task execution flow
 - subtask_executor: Subtask execution with self-healing retry loop
 - quality: Pristine checking and quality gates
-- steps: Step verification and utilities
 - prompts: Prompt template management
 - events: Event emission for timeline tracking
 - git_ops: Git operations (commit, status)

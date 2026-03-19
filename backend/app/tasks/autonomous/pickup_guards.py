@@ -16,7 +16,7 @@ _AGENT_HUB_URL = f"{AGENT_HUB_URL}/api/projects/{{project_id}}/execution-permiss
 _REDIS_URL = f"{REDIS_URL}/1"
 _REDIS_TIMEOUT = 3
 _HTTP_TIMEOUT = 5.0
-_DISPATCHABLE_STATUSES = ("queue", "pending", "blocked")
+_DISPATCHABLE_STATUSES = ("pending", "failed")
 
 
 def check_autonomous_enabled(project_id: str) -> dict[str, Any] | None:

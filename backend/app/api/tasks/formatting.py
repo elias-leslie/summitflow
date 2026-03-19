@@ -23,10 +23,6 @@ def toon_format_task(task: TaskResponse) -> str:
     # Format criteria count
     criteria_str = f"criteria:{task.criteria_count or 0}"
 
-    # Format decisions count
-    decisions_count = len(task.decisions) if task.decisions else 0
-    decisions_str = f"decisions:{decisions_count}"
-
     # Format priority
     priority_str = f"P{task.priority}"
 
@@ -36,7 +32,7 @@ def toon_format_task(task: TaskResponse) -> str:
     # Truncate title to 80 chars max
     title = task.title[:80] if task.title else ""
 
-    return f"{task.id}|{task.status}|{priority_str}|{task.task_type}|{complexity_str}|{done_total}|{criteria_str}|{decisions_str}|{title}"
+    return f"{task.id}|{task.status}|{priority_str}|{task.task_type}|{complexity_str}|{done_total}|{criteria_str}|{title}"
 
 
 def toon_format(task: TaskResponse) -> str:
@@ -73,7 +69,7 @@ def get_hints(tasks: list[TaskResponse], project_id: str, endpoint_type: str = "
             first = tasks[0]
             hints.append(f"Full context: GET {base_url}/tasks/{first.id}/context")
             hints.append(f"Start task: PATCH {base_url}/tasks/{first.id}/status")
-    elif endpoint_type == "blocked":
+    elif endpoint_type == "failed":
         hints.append(f"View ready tasks: GET {base_url}/tasks/ready")
         if tasks:
             first = tasks[0]
@@ -103,7 +99,7 @@ def toon_format_task_list(tasks: list[TaskResponse], endpoint_type: str = "list"
     READY:3
     task-abc123|pending|P2|task|STANDARD|0/6|criteria:19|decisions:0|Add TOON format
     """
-    prefix_map = {"ready": "READY", "blocked": "BLOCKED", "list": "TASKS"}
+    prefix_map = {"ready": "READY", "failed": "FAILED", "list": "TASKS"}
 
     prefix = prefix_map.get(endpoint_type, "TASKS")
     lines = [f"{prefix}:{len(tasks)}"]

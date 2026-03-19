@@ -1,10 +1,9 @@
-"""Subtask and step operation mixins for STClient."""
+"""Subtask operation mixins for STClient."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from . import _client_steps as steps_ops
 from . import _client_subtasks as subtasks_ops
 
 
@@ -67,120 +66,4 @@ class SubtaskOperationsMixin:
     def acknowledge_no_citations(self, task_id: str, subtask_id: str) -> dict[str, Any]:
         return subtasks_ops.acknowledge_no_citations(
             self._client, self._global_url, self._handle_response, task_id, subtask_id
-        )
-
-
-class StepOperationsMixin:
-    """Mixin providing step operations."""
-
-    _client: Any
-    _url: Any
-    _global_url: Any
-    _handle_response: Any
-
-    def get_steps(self, task_id: str, subtask_id: str) -> list[dict[str, Any]]:
-        return steps_ops.get_steps(
-            self._client, self._url, self._handle_response, task_id, subtask_id
-        )
-
-    def bulk_create_steps(
-        self, task_id: str, subtask_id: str, descriptions: list[str]
-    ) -> dict[str, Any]:
-        return steps_ops.bulk_create_steps(
-            self._client, self._url, self._handle_response, task_id, subtask_id, descriptions
-        )
-
-    def append_steps(
-        self, task_id: str, subtask_id: str, descriptions: list[str]
-    ) -> dict[str, Any]:
-        return steps_ops.append_steps(
-            self._client, self._url, self._handle_response, task_id, subtask_id, descriptions
-        )
-
-    def update_step(
-        self, task_id: str, subtask_id: str, step_number: int, passes: bool,
-        already_verified: bool = False,
-    ) -> dict[str, Any]:
-        return steps_ops.update_step(
-            self._client,
-            self._global_url,
-            self._handle_response,
-            task_id,
-            subtask_id,
-            step_number,
-            passes,
-            already_verified=already_verified,
-        )
-
-    def delete_step(
-        self, task_id: str, subtask_id: str, step_number: int, force: bool = False
-    ) -> dict[str, Any]:
-        return steps_ops.delete_step(
-            self._client,
-            self._url,
-            self._handle_response,
-            task_id,
-            subtask_id,
-            step_number,
-            force=force,
-        )
-
-    def insert_step(
-        self, task_id: str, subtask_id: str, position: int, description: str
-    ) -> dict[str, Any]:
-        return steps_ops.insert_step(
-            self._client,
-            self._url,
-            self._handle_response,
-            task_id,
-            subtask_id,
-            position,
-            description,
-        )
-
-    def create_step_with_verification(
-        self,
-        task_id: str,
-        subtask_id: str,
-        description: str,
-    ) -> dict[str, Any]:
-        return steps_ops.create_step_with_verification(
-            self._client,
-            self._url,
-            self._handle_response,
-            task_id,
-            subtask_id,
-            description,
-        )
-
-    def update_step_fields(
-        self, task_id: str, subtask_id: str, step_number: int, description: str | None = None
-    ) -> dict[str, Any]:
-        return steps_ops.update_step_fields(
-            self._client,
-            self._url,
-            self._handle_response,
-            task_id,
-            subtask_id,
-            step_number,
-            description,
-        )
-
-    def update_step_status(
-        self,
-        task_id: str,
-        subtask_id: str,
-        step_number: int,
-        status: str,
-        fix_step_number: int | None = None,
-    ) -> dict[str, Any]:
-        return steps_ops.update_step_status(
-            self._client,
-            self._global_url,
-            self._handle_response,
-            task_id,
-            subtask_id,
-            step_number,
-            status,
-            fix_step_number,
         )

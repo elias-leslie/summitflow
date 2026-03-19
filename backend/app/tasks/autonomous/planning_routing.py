@@ -12,8 +12,8 @@ from ._project_resolution import resolve_task_project_id
 logger = get_logger(__name__)
 
 # Constants
-_STATUS_QUEUE = "queue"
-_STATUS_BLOCKED = "blocked"
+_STATUS_PENDING = "pending"
+_STATUS_FAILED = "failed"
 _AGENT_SUPERVISOR = "supervisor"
 _SUPERVISOR_BLOCKED_KEYWORD = "BLOCKED"
 
@@ -95,7 +95,7 @@ def _apply_complex_routing(task_id: str, project_id: str, tier: ComplexityTier, 
     """
     approved = supervisor_validate_plan(task_id, reasoning, project_id)
     if approved:
-        task_store.update_task_status(task_id, _STATUS_QUEUE)
+        task_store.update_task_status(task_id, _STATUS_PENDING)
         log_task_event(
             task_id,
             f"Complexity: {tier.value} - Supervisor approved, queued for execution. "
@@ -107,7 +107,7 @@ def _apply_complex_routing(task_id: str, project_id: str, tier: ComplexityTier, 
             complexity=tier.value,
         )
     else:
-        task_store.update_task_status(task_id, _STATUS_BLOCKED)
+        task_store.update_task_status(task_id, _STATUS_FAILED)
         log_task_event(
             task_id,
             f"Complexity: {tier.value} - Supervisor blocked task. "
@@ -128,7 +128,7 @@ def _apply_simple_routing(task_id: str, tier: ComplexityTier, reasoning: str) ->
         tier: Resolved complexity tier
         reasoning: Complexity reasoning string (unused but kept for symmetry)
     """
-    task_store.update_task_status(task_id, _STATUS_QUEUE)
+    task_store.update_task_status(task_id, _STATUS_PENDING)
     log_task_event(
         task_id,
         f"Complexity: {tier.value} - Plan ready, queued for execution.",

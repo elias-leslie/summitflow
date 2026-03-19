@@ -92,7 +92,6 @@ class TestCLIReferenceComplete:
             "ready",
             "claim",
             "subtask list",
-            "step pass",
             "subtask pass",
             "done",
         ]
@@ -130,7 +129,6 @@ class TestCLIReferenceComplete:
         )
         assert "TASKS" in CLI_REFERENCE, "CLI_REFERENCE missing TASKS section"
         assert "SUBTASK:" in CLI_REFERENCE, "CLI_REFERENCE missing SUBTASK section"
-        assert "STEP:" in CLI_REFERENCE, "CLI_REFERENCE missing STEP section"
 
     def test_rendered_help_preserves_literal_bracketed_tokens(self) -> None:
         """Rendered help should show literal bracketed placeholders, not eat them as Rich markup."""

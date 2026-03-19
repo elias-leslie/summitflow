@@ -6,7 +6,6 @@ from ._client_base import APIError, BaseHTTPClient
 from ._client_mixins import (
     DependencyOperationsMixin,
     ExecutionOperationsMixin,
-    StepOperationsMixin,
     SubtaskOperationsMixin,
     TaskOperationsMixin,
     TestOperationsMixin,
@@ -19,7 +18,6 @@ class STClient(
     DependencyOperationsMixin,
     TestOperationsMixin,
     SubtaskOperationsMixin,
-    StepOperationsMixin,
     ExecutionOperationsMixin,
 ):
     """HTTP client for SummitFlow Tasks API."""

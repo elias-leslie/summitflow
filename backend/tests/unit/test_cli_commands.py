@@ -20,7 +20,6 @@ import jsonschema
 import pytest
 from typer.testing import CliRunner
 
-from cli.commands.step import app as step_app
 from cli.commands.subtask import app as subtask_app
 from cli.commands.tasks import app as tasks_app
 from cli.commands.tasks_import import import_plan_file
@@ -298,15 +297,18 @@ class TestAutocodeValidation:
     def test_autocode_rejects_task_missing_execution_details(self) -> None:
         mock_client = MagicMock()
         mock_client.project_id = "summitflow"
-        mock_client.get_task.return_value = _make_mock_task(
+        task = _make_mock_task(
             "task-mock-1",
             title="Draft feature task",
             task_type="feature",
         )
+        # Use a status that bypasses the early "already X" check so readiness is evaluated
+        task["status"] = "queue"
+        mock_client.get_task.return_value = task
         mock_client.get_subtasks.return_value = {"subtasks": []}
         mock_client.validate_ready.return_value = {
             "ready": False,
-            "issues": ["Missing objective", "Missing done_when success criteria"],
+            "issues": ["Missing description", "Missing done_when success criteria"],
             "suggestions": ["Add context.files_to_modify/files_to_create for clearer execution scope"],
         }
 
@@ -315,7 +317,7 @@ class TestAutocodeValidation:
 
         assert result.exit_code == 1
         assert "not execution-ready" in result.output
-        assert "Missing objective" in result.output
+        assert "Missing description" in result.output
 
 
 class TestTaskCliErgonomics:
@@ -486,6 +488,14 @@ class TestPlanSchemaConsistency:
         mock_client = MagicMock()
         mock_client.base_url = "http://test"
         mock_client.get.return_value = json.loads(schema_path.read_text())
+        mock_client.batch_create_tasks.return_value = {
+            "created": [_make_mock_task("task-mock-1", complexity="COMPLEX")],
+            "errors": [],
+        }
+        mock_client.get_task.return_value = _make_mock_task("task-mock-1", complexity="COMPLEX")
+        mock_client.get_subtasks.return_value = {
+            "subtasks": [{"subtask_id": "1.1", "description": "Implement", "steps": ["Do thing"]}]
+        }
 
         plan_path = Path(tempfile.mkdtemp()) / "complex-plan.json"
         plan_path.write_text(
@@ -495,7 +505,7 @@ class TestPlanSchemaConsistency:
                     "objective": "Validate authoring guidance",
                     "complexity": "COMPLEX",
                     "spirit_anti": "Do not hide missing decisions guidance.",
-                    "done_when": ["Validation fails clearly"],
+                    "done_when": ["Validation passes for COMPLEX without decisions"],
                     "subtasks": [{"id": "1.1", "description": "Implement", "steps": ["Do thing"]}],
                 }
             )
@@ -504,11 +514,13 @@ class TestPlanSchemaConsistency:
         with (
             patch("cli.commands.tasks_create.require_explicit_project"),
             patch("cli.commands.tasks_create.STClient", return_value=mock_client),
+            patch("cli.commands.tasks_import.upsert_task_spirit_from_plan", return_value=None),
         ):
             result = runner.invoke(tasks_app, ["create", "--plan", str(plan_path)])
 
-        assert result.exit_code == 1
-        assert "COMPLEX plans require a non-empty decisions list" in result.output
+        # decisions requirement was removed — COMPLEX plans without decisions are now accepted
+        assert result.exit_code == 0
+        assert "IMPORT:task-mock-1|COMPLEX" in result.output
 
     def test_plan_schema_accepts_second_opinion_context(self) -> None:
         schema_path = Path(__file__).resolve().parents[2] / "app" / "schemas" / "plan.schema.json"
@@ -635,9 +647,8 @@ class TestSubtaskCreate:
     Since they test CLI commands that need task existence, we use mock_st_client.
     """
 
-    def test_subtask_create_requires_steps(self, mock_st_client: tuple[MagicMock, dict[str, dict[str, Any]]]) -> None:
-        """Test that creating a subtask without steps fails."""
-        # Create mock task first
+    def test_subtask_create_succeeds(self, mock_st_client: tuple[MagicMock, dict[str, dict[str, Any]]]) -> None:
+        """Test creating a subtask succeeds."""
         mock_client, _tasks_db = mock_st_client
         task = mock_client.create_task(
             {
@@ -647,9 +658,11 @@ class TestSubtaskCreate:
             }
         )
 
-        # Also mock the subtask CLI's client
+        mock_client.create_subtask = MagicMock(
+            return_value=_make_mock_subtask(task["id"], "1.1", description="Test subtask")
+        )
+
         with patch("cli.commands.subtask.STClient", return_value=mock_client):
-            # Subtask without steps should fail (gate rejects)
             result = runner.invoke(
                 subtask_app,
                 [
@@ -664,83 +677,7 @@ class TestSubtaskCreate:
                 ],
             )
 
-            assert result.exit_code == 1
-            assert "steps are required" in result.output.lower()
-
-    def test_subtask_create_with_steps_json(self, mock_st_client: tuple[MagicMock, dict[str, dict[str, Any]]]) -> None:
-        """Test creating a subtask with proper step structure via --steps-json."""
-        mock_client, _tasks_db = mock_st_client
-        task = mock_client.create_task(
-            {
-                "title": "CLI Subtask Steps Test",
-                "task_type": "task",
-                "priority": 3,
-            }
-        )
-
-        # Mock create_subtask to return success
-        mock_client.create_subtask = MagicMock(
-            return_value=_make_mock_subtask(task["id"], "1.1", description="Test with steps")
-        )
-
-        with patch("cli.commands.subtask.STClient", return_value=mock_client):
-            # Use --steps-json with step descriptions
-            steps_json = json.dumps(
-                [
-                    {
-                        "description": "First step",
-                    },
-                    {
-                        "description": "Second step",
-                    },
-                ]
-            )
-
-            result = runner.invoke(
-                subtask_app,
-                [
-                    "create",
-                    "1.1",
-                    "-d",
-                    "Test with steps",
-                    "--task",
-                    task["id"],
-                    "--steps-json",
-                    steps_json,
-                ],
-            )
-
             assert result.exit_code == 0
-            # Default output is JSON
-            assert '"success": true' in result.output
-            assert '"message": "1.1"' in result.output
-
-class TestStepCreate:
-    """Test st step create command."""
-
-    def test_step_new_invalid_task(self) -> None:
-        """Test error when creating steps for non-existent task."""
-        from cli.client import APIError
-
-        mock_client = MagicMock()
-        mock_client.create_step_with_verification = MagicMock(
-            side_effect=APIError(404, "Task not found")
-        )
-
-        with patch("cli.commands.step_operations.STClient", return_value=mock_client):
-            result = runner.invoke(
-                step_app,
-                [
-                    "new",
-                    "1.1",  # subtask_id
-                    "Step one",  # description
-                    "--task",
-                    "task-nonexistent",
-                ],
-            )
-
-            assert result.exit_code == 1
-            assert "not found" in result.output.lower() or "404" in result.output
 
 
 class TestBackupCommands:

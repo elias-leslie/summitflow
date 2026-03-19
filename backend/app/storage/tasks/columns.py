@@ -38,8 +38,9 @@ TASK_COLUMNS_ALIASED = """t.id, t.project_id, t.capability_id, t.title, t.descri
 
 EXPECTED_TASK_COLUMNS = 39
 
-# Columns for queries that JOIN with task_spirit (45 columns total)
-# Adds 6 spirit fields: objective, spirit_anti, decisions, constraints, done_when, plan_status
+# Columns for queries that JOIN with task_spirit (41 columns total)
+# Adds 2 spirit fields: done_when, plan_status
+# Dropped: objective, spirit_anti, decisions, constraints (migration 52f2ce12774b)
 TASK_COLUMNS_WITH_SPIRIT = """t.id, t.project_id, t.capability_id, t.title, t.description, t.status,
     t.error_message, t.branch_name, t.commits,
     t.total_sessions, t.total_tokens_used, t.created_at, t.started_at, t.completed_at,
@@ -50,6 +51,6 @@ TASK_COLUMNS_WITH_SPIRIT = """t.id, t.project_id, t.capability_id, t.title, t.de
     t.complexity, t.execution_mode, t.autonomous,
     t.agent_override, t.agent_hub_session_ids,
     t.labels, t.ai_review, t.conflict_info, t.merge_sha,
-    ts.objective, ts.spirit_anti, ts.decisions, ts.constraints, ts.done_when, ts.plan_status"""
+    ts.done_when, ts.plan_status"""
 
-EXPECTED_TASK_COLUMNS_WITH_SPIRIT = 45
+EXPECTED_TASK_COLUMNS_WITH_SPIRIT = 41

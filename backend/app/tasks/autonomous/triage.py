@@ -83,9 +83,9 @@ def _handle_ready(task_id: str, result: dict[str, Any]) -> None:
     if task:
         ensure_second_opinion_tracking(task_id, task, source="triage")
 
-    task_store.update_task_status(task_id, "queue")
-    log_task_event(task_id, f"Triage complete: CLEAR - Complexity: {complexity}. Moving to queue.")
-    logger.info("Triage clear, moving to queue", task_id=task_id, complexity=complexity)
+    task_store.update_task_status(task_id, "pending")
+    log_task_event(task_id, f"Triage complete: CLEAR - Complexity: {complexity}. Moving to pending.")
+    logger.info("Triage clear, moving to pending", task_id=task_id, complexity=complexity)
 
 
 def _handle_needs_clarification(task_id: str, result: dict[str, Any]) -> None:
@@ -93,7 +93,7 @@ def _handle_needs_clarification(task_id: str, result: dict[str, Any]) -> None:
     if questions:
         questions_text = "\n".join(f"- {q}" for q in questions)
         log_task_event(task_id, f"Triage: Needs clarification\n{questions_text}")
-    task_store.update_task_status(task_id, "blocked")
+    task_store.update_task_status(task_id, "failed")
     logger.info("Triage needs clarification", task_id=task_id, questions=len(questions))
 
 

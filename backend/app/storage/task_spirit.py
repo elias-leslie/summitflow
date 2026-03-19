@@ -1,8 +1,7 @@
-"""Task Spirit storage - Agent guidance and plan approval workflow.
+"""Task Spirit storage - Completion criteria and plan approval workflow.
 
 Handles the task_spirit table which stores:
-- objective, spirit_anti (agent guidance)
-- decisions, constraints, done_when (JSONB arrays)
+- done_when (JSONB array of completion criteria)
 - context (JSONB blob for plan.json round-trip)
 - plan_status, plan_approved_at/by, plan_history (workflow)
 - complexity (SIMPLE|STANDARD|COMPLEX)
@@ -58,14 +57,13 @@ def update_task_spirit(task_id: str, **fields: Any) -> dict[str, Any] | None:
         Updated record or None if not found
     """
     allowed_fields = {
-        "objective", "spirit_anti", "decisions", "constraints",
         "done_when", "context", "complexity", "plan_status",
     }
     updates = {k: v for k, v in fields.items() if k in allowed_fields}
     if not updates:
         return get_task_spirit(task_id)
 
-    for jsonb_field in ["decisions", "constraints", "done_when", "context"]:
+    for jsonb_field in ["done_when", "context"]:
         if jsonb_field in updates:
             updates[jsonb_field] = json.dumps(updates[jsonb_field])
 

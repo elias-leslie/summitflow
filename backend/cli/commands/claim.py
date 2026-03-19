@@ -47,7 +47,7 @@ def _claim_task(
 
     # Validate status before allocating worktree/ports
     status = task.get("status", "")
-    claimable = ("queue", "pending", "blocked")
+    claimable = ("pending", "failed")
     if status not in claimable and not force:
         output_error(f"Task {task_id} cannot be claimed (status={status}). Expected one of: {', '.join(claimable)}")
         raise typer.Exit(1)

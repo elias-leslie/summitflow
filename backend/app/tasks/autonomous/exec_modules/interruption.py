@@ -15,14 +15,14 @@ class ExecutionInterrupted(Exception):
         super().__init__(reason)
 
 
-_INTERRUPT_STATUSES = {"paused", "cancelled", "blocked", "abandoned", "completed", "failed"}
+_INTERRUPT_STATUSES = {"cancelled", "completed", "failed"}
 
 
 def assert_task_runnable(task_id: str, project_id: str, checkpoint: str) -> None:
     """Raise when a task has been externally paused or stopped."""
     task = task_store.get_task(task_id)
     if not task:
-        raise ExecutionInterrupted("blocked", "task_missing")
+        raise ExecutionInterrupted("failed", "task_missing")
 
     status = str(task.get("status"))
     if status not in _INTERRUPT_STATUSES:

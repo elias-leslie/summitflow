@@ -64,7 +64,7 @@ def _validate_task_for_autocode(
 ) -> None:
     """Validate that task can be autocoded."""
     current_status = task.get("status", "pending")
-    if current_status in ("running", "queue"):
+    if current_status in ("running", "pending"):
         output_error(f"Task {task_id} is already {current_status}.")
         raise typer.Exit(1)
     if current_status in ("completed", "merged"):
@@ -118,7 +118,7 @@ def _output_dry_run(
 def _queue_task_for_execution(task_id: str, client: STClient) -> None:
     """Update task status to queue for execution."""
     try:
-        client.update_status(task_id, status="queue")
+        client.update_status(task_id, status="pending")
     except APIError as e:
         handle_api_error(e)
         raise typer.Exit(1) from None

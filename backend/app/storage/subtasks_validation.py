@@ -91,35 +91,9 @@ def _build_incomplete_error(
 def validate_steps_complete(subtask_id: str, steps: list[dict[str, Any]]) -> None:
     """Validate that all steps are complete before marking subtask as passed.
 
-    Args:
-        subtask_id: Subtask ID for error messages (e.g., "1.1")
-        steps: List of step dictionaries from get_steps_for_subtask
-
-    Raises:
-        SubtaskGateError: If any steps are incomplete or validation fails
+    Steps layer has been removed. This is now a no-op.
     """
-    from .steps import STEP_STATUS_PLAN_DEFECT
-
-    if not steps:
-        return
-
-    step_passes_lookup = {s["step_number"]: s.get("passes", False) for s in steps}
-    incomplete, plan_defects, invalid_plan_defects = _classify_steps(
-        steps, step_passes_lookup, STEP_STATUS_PLAN_DEFECT
-    )
-
-    if incomplete:
-        msg = _build_incomplete_error(
-            subtask_id, incomplete, plan_defects, invalid_plan_defects
-        )
-        raise SubtaskGateError(msg, incomplete_steps=incomplete)
-
-    if plan_defects:
-        logger.info(
-            "Subtask %s passing with plan_defect steps: %s",
-            subtask_id,
-            plan_defects,
-        )
+    return
 
 
 def validate_citations_acknowledged(

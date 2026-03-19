@@ -216,14 +216,16 @@ def build_subtask_prompt(
     project_id: str,
     project_path: str,
 ) -> str:
-    """Build subtask prompt with fresh context: objective + spirit/anti + subtask + handoff."""
+    """Build subtask prompt with fresh context: description + done_when + subtask + handoff."""
     spirit = get_task_spirit(task_id)
-    objective = spirit.get("objective", "") if spirit else ""
-    spirit_anti = spirit.get("spirit_anti", "") if spirit else ""
     done_when = spirit.get("done_when", []) if spirit else []
     context = spirit.get("context", {}) if spirit else {}
     subtask_short_id = subtask.get("subtask_id", "")
     handoff = get_handoff_context(task_id, subtask_short_id)
+
+    # Use task description (objective was migrated there)
+    task = task_store.get_task(task_id)
+    objective = (task.get("description") or task.get("title") or "") if task else ""
 
     template = _get_template_with_transient_fallback(
         _SLUG_AUTOCODE_SUBTASK,
@@ -231,7 +233,7 @@ def build_subtask_prompt(
     )
     prompt = template.format_map({
         "objective": objective,
-        "spirit_anti_block": _build_spirit_block(spirit_anti),
+        "spirit_anti_block": "",  # spirit_anti dropped
         "done_when_block": _build_done_when_block(done_when),
         "scope_block": _build_scope_block(context),
         "handoff_block": _build_handoff_block(handoff),
