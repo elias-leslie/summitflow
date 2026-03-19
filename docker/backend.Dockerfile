@@ -6,26 +6,22 @@
 # ── Stage 1: Builder ─────────────────────────────────────────────
 FROM python:3.13-slim-bookworm AS builder
 
-# Install uv for fast dependency resolution
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 WORKDIR /app
 
-# Copy dependency files
+# Copy dependency files first (cache-friendly layer)
 COPY backend/pyproject.toml backend/uv.lock ./
-
-# Copy pre-built agent-hub-client wheel (local path dep won't resolve in Docker)
 COPY docker/workspace-packages/*.whl /tmp/wheels/
 
-# Install deps: export requirements, swap local path dep with wheel, install
+# Install deps and clean caches in same layer
 RUN uv export --frozen --no-dev --no-editable --format requirements-txt \
       --no-header > requirements.txt && \
-    # Remove the local path line for agent-hub-client
     sed -i '/^\.$/d; /agent-hub-client$/d; /^\.\.\//d' requirements.txt && \
-    # Create venv and install from requirements + wheel
     uv venv .venv && \
     uv pip install --python .venv/bin/python \
-      -r requirements.txt /tmp/wheels/agent_hub_client-*.whl
+      -r requirements.txt /tmp/wheels/agent_hub_client-*.whl && \
+    rm -rf /tmp/wheels /root/.cache/uv /root/.cache/pip requirements.txt
 
 # Copy application source
 COPY backend/app ./app
@@ -36,47 +32,37 @@ COPY backend/alembic ./alembic
 # ── Stage 2: Runtime ─────────────────────────────────────────────
 FROM python:3.13-slim-bookworm
 
-# Install curl for healthchecks, git for Git Operations page,
-# Docker CLI (official) for Docker dashboard API,
-# Node.js LTS for frontend quality gates (biome, tsc via npx)
+# Runtime deps only: curl (healthcheck), git+ssh (Git Operations page),
+# Docker CLI (Docker dashboard API), smbclient (SMB mounts feature)
+# Note: nodejs and postgresql-client removed — not needed at runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        curl ca-certificates git jq smbclient gnupg openssh-client \
+        curl ca-certificates git openssh-client smbclient gnupg \
     && install -m 0755 -d /etc/apt/keyrings \
     && curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian bookworm stable" > /etc/apt/sources.list.d/docker.list \
-    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/keyrings/pgdg.gpg \
-    && echo "deb [signed-by=/etc/apt/keyrings/pgdg.gpg] http://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
-    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get update && apt-get install -y --no-install-recommends \
-        docker-ce-cli docker-compose-plugin postgresql-client-16 nodejs \
+    && apt-get update && apt-get install -y --no-install-recommends docker-ce-cli \
+    && apt-get purge -y gnupg && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copy virtual environment and application from builder
-COPY --from=builder /app/.venv /app/.venv
-COPY --from=builder /app/app ./app
-COPY --from=builder /app/cli ./cli
-COPY --from=builder /app/alembic.ini ./
-COPY --from=builder /app/alembic ./alembic
+# Copy venv and app from builder (--chown avoids separate chown layer)
+COPY --chown=appuser:appuser --from=builder /app/.venv /app/.venv
+COPY --chown=appuser:appuser --from=builder /app/app ./app
+COPY --chown=appuser:appuser --from=builder /app/cli ./cli
+COPY --chown=appuser:appuser --from=builder /app/alembic.ini ./
+COPY --chown=appuser:appuser --from=builder /app/alembic ./alembic
 
-# Ensure venv binaries are on PATH
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONUNBUFFERED=1
 
-# Create non-root user for runtime
+# Create non-root user and configure git for mounted repos
 RUN useradd -m -s /bin/bash appuser \
-    && chown -R appuser:appuser /app
+    && chown appuser:appuser /app \
+    && git config --global --add safe.directory '*' \
+    && mkdir -p /etc/ssh && ssh-keyscan github.com >> /etc/ssh/ssh_known_hosts 2>/dev/null
 
-# Allow git to operate on mounted host repos (different UID)
-RUN git config --global --add safe.directory '*'
-
-# Add GitHub SSH host keys so git push/fetch works from container
-RUN mkdir -p /etc/ssh && ssh-keyscan github.com >> /etc/ssh/ssh_known_hosts 2>/dev/null
-
-# Copy and use entrypoint script
-COPY docker/scripts/entrypoint-backend.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+COPY --chmod=755 docker/scripts/entrypoint-backend.sh /entrypoint.sh
 
 USER appuser
 
