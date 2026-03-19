@@ -250,6 +250,7 @@ def idea(
         plan=None,
         blocked_by=None,
         execution_mode=_IDEA_EXECUTION_MODE,
+        manual_only=False,
         autonomous=True,
     )
 

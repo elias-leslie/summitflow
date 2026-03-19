@@ -14,6 +14,8 @@ import {
 import { cn } from '@/lib/utils'
 import { useFileTree } from '@/lib/hooks/useFileExplorer'
 import type { FileTreeEntry } from '@/lib/api/files'
+import { FileContextMenu } from './FileContextMenu'
+import type { ContextMenuPosition, FileContextMenuTarget } from './FileContextMenu'
 
 // ============================================================================
 // File icon mapping
@@ -48,9 +50,10 @@ interface TreeNodeProps {
   depth: number
   selectedFile: string | null
   onSelect: (path: string) => void
+  onContextMenu: (e: React.MouseEvent, entry: FileTreeEntry) => void
 }
 
-function TreeNode({ entry, projectId, depth, selectedFile, onSelect }: TreeNodeProps) {
+function TreeNode({ entry, projectId, depth, selectedFile, onSelect, onContextMenu }: TreeNodeProps) {
   const [expanded, setExpanded] = useState(false)
   const isSelected = selectedFile === entry.path
 
@@ -96,6 +99,7 @@ function TreeNode({ entry, projectId, depth, selectedFile, onSelect }: TreeNodeP
         style={{ paddingLeft }}
         onClick={handleClick}
         onKeyDown={handleKeyDown}
+        onContextMenu={(e) => onContextMenu(e, entry)}
       >
         {/* Expand chevron for directories */}
         {entry.is_directory ? (
@@ -141,6 +145,7 @@ function TreeNode({ entry, projectId, depth, selectedFile, onSelect }: TreeNodeP
                 depth={depth + 1}
                 selectedFile={selectedFile}
                 onSelect={onSelect}
+                onContextMenu={onContextMenu}
               />
             ))
           )}
@@ -162,6 +167,24 @@ interface FileTreeProps {
 
 export function FileTree({ projectId, selectedFile, onSelect }: FileTreeProps) {
   const { data, isLoading, isError, error } = useFileTree(projectId, '')
+  const [menuPosition, setMenuPosition] = useState<ContextMenuPosition | null>(null)
+  const [menuTarget, setMenuTarget] = useState<FileContextMenuTarget | null>(null)
+
+  const handleContextMenu = useCallback((e: React.MouseEvent, entry: FileTreeEntry) => {
+    e.preventDefault()
+    setMenuPosition({ x: e.clientX, y: e.clientY })
+    setMenuTarget({
+      path: entry.path,
+      name: entry.name,
+      isDirectory: entry.is_directory,
+      projectId,
+    })
+  }, [projectId])
+
+  const handleCloseMenu = useCallback(() => {
+    setMenuPosition(null)
+    setMenuTarget(null)
+  }, [])
 
   if (isLoading) {
     return (
@@ -187,17 +210,25 @@ export function FileTree({ projectId, selectedFile, onSelect }: FileTreeProps) {
   }
 
   return (
-    <div role="tree" className="py-2">
-      {data.entries.map(entry => (
-        <TreeNode
-          key={entry.path}
-          entry={entry}
-          projectId={projectId}
-          depth={0}
-          selectedFile={selectedFile}
-          onSelect={onSelect}
-        />
-      ))}
-    </div>
+    <>
+      <div role="tree" className="py-2">
+        {data.entries.map(entry => (
+          <TreeNode
+            key={entry.path}
+            entry={entry}
+            projectId={projectId}
+            depth={0}
+            selectedFile={selectedFile}
+            onSelect={onSelect}
+            onContextMenu={handleContextMenu}
+          />
+        ))}
+      </div>
+      <FileContextMenu
+        position={menuPosition}
+        target={menuTarget}
+        onClose={handleCloseMenu}
+      />
+    </>
   )
 }
