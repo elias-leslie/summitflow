@@ -13,6 +13,7 @@ from ..storage import maintenance_runs as maintenance_store
 from ..storage import notifications as notification_store
 from ..storage import quality_check_results as qcr_store
 from ..storage import scan_history
+from ..storage.tasks import purge_terminal_tasks
 from .autonomous.cleanup_operations import cleanup_stale_tasks
 
 logger = get_logger(__name__)
@@ -57,6 +58,11 @@ def run_daily_maintenance(
 
     try:
         task_cleanup = _run_step("stale_tasks", cleanup_stale_tasks, max_age_days)
+        task_purge = _run_step(
+            "purge_terminal_tasks",
+            purge_terminal_tasks,
+            completed_max_age_days=30,
+        )
         stale_scan_failures = _run_step(
             "stale_running_scans",
             scan_history.fail_stale_running_scans,
@@ -101,6 +107,7 @@ def run_daily_maintenance(
                     if isinstance(task_cleanup, dict)
                     else task_cleanup
                 ),
+                _deleted_count(task_purge),
                 _deleted_count(stale_scan_failures),
                 _deleted_count(scan_history_deleted),
                 _deleted_count(notifications_deleted),
@@ -117,6 +124,7 @@ def run_daily_maintenance(
                 _step_failed(step)
                 for step in (
                     task_cleanup,
+                    task_purge,
                     stale_scan_failures,
                     scan_history_deleted,
                     notifications_deleted,
@@ -130,6 +138,7 @@ def run_daily_maintenance(
             else "success",
             "rows_cleaned": rows_cleaned,
             "stale_tasks": task_cleanup,
+            "purged_tasks": task_purge,
             "stale_running_scans_failed": stale_scan_failures,
             "scan_history_deleted": scan_history_deleted,
             "notifications_deleted": notifications_deleted,
@@ -154,6 +163,7 @@ def run_daily_maintenance(
             status=result["status"],
             rows_cleaned=rows_cleaned,
             stale_tasks=_deleted_count(task_cleanup.get("cancelled_count", 0) if isinstance(task_cleanup, dict) else task_cleanup),
+            purged_tasks=_deleted_count(task_purge),
             stale_running_scans_failed=_deleted_count(stale_scan_failures),
             scan_history_deleted=_deleted_count(scan_history_deleted),
             notifications_deleted=_deleted_count(notifications_deleted),

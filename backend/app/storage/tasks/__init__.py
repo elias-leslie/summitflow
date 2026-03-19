@@ -40,6 +40,7 @@ from .queries import (
     list_blocked_tasks,
     list_ready_tasks,
     list_tasks,
+    purge_terminal_tasks,
 )
 from .sessions import add_agent_hub_session, get_agent_hub_sessions
 from .status import (
@@ -74,6 +75,7 @@ __all__ = [
     "list_blocked_tasks",
     "list_ready_tasks",
     "list_tasks",
+    "purge_terminal_tasks",
     "release_task",
     "reset_expired_claims",
     "task_exists_for_file",

@@ -183,6 +183,70 @@ def get_stale_tasks(max_age_days: int = 30, limit: int = 100) -> list[dict[str, 
     return [row_to_dict(row) for row in rows]
 
 
+def purge_terminal_tasks(
+    completed_max_age_days: int = 30,
+) -> dict[str, int]:
+    """Delete cancelled/abandoned tasks immediately and completed tasks older than N days.
+
+    Clears non-cascading FK references (notifications, mockups,
+    quality_check_results, parent_task_id) before deleting so the DELETE
+    does not violate constraints.  Cascading FKs (subtasks, labels,
+    spirit, dependencies) are handled automatically by the database.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        # Identify tasks to purge
+        cur.execute(
+            "SELECT id FROM tasks WHERE status IN ('cancelled', 'abandoned')"
+        )
+        immediate_ids = [row[0] for row in cur.fetchall()]
+
+        cur.execute(
+            "SELECT id FROM tasks WHERE status = 'completed'"
+            " AND updated_at < NOW() - INTERVAL '%s days'",
+            (completed_max_age_days,),
+        )
+        aged_ids = [row[0] for row in cur.fetchall()]
+
+        all_ids = list(set(immediate_ids + aged_ids))
+        if not all_ids:
+            conn.commit()
+            return {"cancelled": 0, "abandoned": 0, "completed": 0}
+
+        # Clear non-cascading FK references
+        cur.execute(
+            "UPDATE notifications SET task_id = NULL WHERE task_id = ANY(%s)",
+            (all_ids,),
+        )
+        cur.execute(
+            "UPDATE mockups SET task_id = NULL WHERE task_id = ANY(%s)",
+            (all_ids,),
+        )
+        cur.execute(
+            "UPDATE quality_check_results SET escalation_task_id = NULL"
+            " WHERE escalation_task_id = ANY(%s)",
+            (all_ids,),
+        )
+        cur.execute(
+            "UPDATE tasks SET parent_task_id = NULL"
+            " WHERE parent_task_id = ANY(%s)",
+            (all_ids,),
+        )
+
+        # Delete (cascading FKs handle subtasks, labels, spirit, deps)
+        cur.execute(
+            "DELETE FROM tasks WHERE id = ANY(%s) RETURNING status",
+            (all_ids,),
+        )
+        deleted_rows = cur.fetchall()
+        conn.commit()
+
+    counts: dict[str, int] = {"cancelled": 0, "abandoned": 0, "completed": 0}
+    for (status,) in deleted_rows:
+        if status in counts:
+            counts[status] += 1
+    return counts
+
+
 def count_completed_tasks_today(project_id: str) -> int:
     """Count tasks with status 'completed' and updated_at today for a project."""
     with get_connection() as conn, conn.cursor() as cur:

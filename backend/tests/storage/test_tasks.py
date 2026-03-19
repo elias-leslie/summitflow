@@ -301,6 +301,47 @@ class TestDeleteTask:
         assert not result
 
 
+class TestPurgeTerminalTasks:
+    """Tests for purge_terminal_tasks function."""
+
+    def test_purge_deletes_cancelled_tasks(self, project_id: str) -> None:
+        task = task_store.create_task(project_id, "To Cancel")
+        task_store.update_task_status(task["id"], "cancelled")
+
+        result = task_store.purge_terminal_tasks()
+
+        assert result["cancelled"] >= 1
+        assert task_store.get_task(task["id"]) is None
+
+    def test_purge_deletes_abandoned_tasks(self, project_id: str) -> None:
+        task = task_store.create_task(project_id, "To Abandon")
+        task_store.update_task_status(task["id"], "abandoned")
+
+        result = task_store.purge_terminal_tasks()
+
+        assert result["abandoned"] >= 1
+        assert task_store.get_task(task["id"]) is None
+
+    def test_purge_preserves_pending_tasks(self, project_id: str, cleanup_task: Callable[[str], None]) -> None:
+        task = task_store.create_task(project_id, "Still Pending")
+        cleanup_task(task["id"])
+
+        task_store.purge_terminal_tasks()
+
+        assert task_store.get_task(task["id"]) is not None
+
+    def test_purge_preserves_recent_completed_tasks(self, project_id: str, cleanup_task: Callable[[str], None]) -> None:
+        task = task_store.create_task(project_id, "Just Completed")
+        task_store.update_task_status(task["id"], "running")
+        task_store.update_task_status(task["id"], "completed")
+        cleanup_task(task["id"])
+
+        task_store.purge_terminal_tasks(completed_max_age_days=30)
+
+        # Recently completed — should NOT be purged
+        assert task_store.get_task(task["id"]) is not None
+
+
 class TestShortTaskIdResolution:
     def test_get_task_accepts_short_suffix(self, project_id: str) -> None:
         task = task_store.create_task(project_id, "Short id lookup")
