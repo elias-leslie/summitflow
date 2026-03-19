@@ -80,17 +80,7 @@ def _merge_context(
 
 
 def _upsert_task_spirit(task_id: str, plan_data: dict[str, Any]) -> None:
-    """Create or update the task spirit record.
-
-    When updating an existing spirit (created by triage), preserves the triage
-    objective to avoid mismatches with done_when during intent checking.
-    The planner's objective is often a reworded abstraction that can diverge
-    from the concrete done_when criteria set by the triager.
-    """
-    objective = str(plan_data.get("objective", "")).strip()
-    spirit_anti = str(plan_data.get("spirit_anti", "")).strip() or None
-    decisions = plan_data.get("decisions", [])
-    constraints = _merge_unique_strings(None, plan_data.get("constraints", []))
+    """Create or update the task spirit record."""
     done_when = _merge_unique_strings(None, plan_data.get("done_when", []))
     context = plan_data.get("context") if isinstance(plan_data.get("context"), dict) else {}
     complexity = str(plan_data.get("complexity", "")).strip() or None
@@ -98,30 +88,18 @@ def _upsert_task_spirit(task_id: str, plan_data: dict[str, Any]) -> None:
     if not spirit:
         create_task_spirit(
             task_id=task_id,
-            objective=objective,
-            spirit_anti=spirit_anti,
-            decisions=decisions if isinstance(decisions, list) else None,
-            constraints=constraints,
             done_when=done_when,
             context=context,
             complexity=complexity,
         )
     else:
-        # Preserve triage objective if one exists; only update constraints
         updates: dict[str, Any] = {
-            "constraints": _merge_unique_strings(spirit.get("constraints"), constraints),
             "done_when": _merge_unique_strings(spirit.get("done_when"), done_when),
             "context": _merge_context(
                 spirit.get("context") if isinstance(spirit.get("context"), dict) else {},
                 context,
             ),
         }
-        if not spirit.get("objective"):
-            updates["objective"] = objective
-        if not spirit.get("spirit_anti") and spirit_anti:
-            updates["spirit_anti"] = spirit_anti
-        if decisions:
-            updates["decisions"] = decisions
         if complexity and not spirit.get("complexity"):
             updates["complexity"] = complexity
         update_task_spirit(task_id, **updates)

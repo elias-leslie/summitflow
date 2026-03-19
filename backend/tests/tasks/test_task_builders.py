@@ -181,5 +181,5 @@ class TestCreateRefactorTask:
         }
         assert mock_create_subtask.call_args.kwargs["subtask_type"] == "refactor"
         assert "aim for <200 lines" in mock_create_subtask.call_args.kwargs["description"]
-        assert "Promotion evidence" in mock_create_task.call_args.kwargs["description"]
+        assert "preserving all existing behavior" in mock_create_task.call_args.kwargs["description"]
         mock_link.assert_called_once_with("task-123", 42)

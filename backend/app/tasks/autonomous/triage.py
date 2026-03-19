@@ -64,16 +64,14 @@ def _handle_ready(task_id: str, result: dict[str, Any]) -> None:
     complexity = result.get("suggested_complexity", "STANDARD")
     objective = result.get("objective", "")
     requirements = result.get("requirements", [])
-    spirit = result.get("spirit", "")
-    anti = result.get("anti", "")
-    spirit_anti = f"SPIRIT: {spirit}. ANTI: {anti}." if (spirit or anti) else None
 
-    task_store.update_task(task_id, complexity=complexity)
+    updates: dict[str, Any] = {"complexity": complexity}
+    if objective:
+        updates["description"] = objective
+    task_store.update_task(task_id, **updates)
     if objective:
         upsert_task_spirit(
             task_id=task_id,
-            objective=objective,
-            spirit_anti=spirit_anti,
             complexity=complexity,
             done_when=requirements if requirements else None,
         )

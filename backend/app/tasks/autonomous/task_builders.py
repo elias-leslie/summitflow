@@ -16,7 +16,6 @@ from app.tasks.autonomous._subtask_builder import (
 from app.tasks.autonomous._task_core import (
     _build_issue_aware_done_when,
     _build_issue_aware_objective,
-    build_architecture_description,
     build_refactor_description,
     create_task_with_spirit,
     link_task_to_issue,
@@ -29,14 +28,12 @@ logger = get_logger(__name__)
 __all__ = [
     "_build_issue_aware_done_when",
     "_build_issue_aware_objective",
+    "build_refactor_description",
     "create_architecture_task",
     "create_refactor_task",
     "create_schema_task",
 ]
 
-_REFACTOR_ANTI = "Do NOT change external behavior. Do NOT rename public APIs without updating all callers."
-_SCHEMA_ANTI = "Do NOT break existing queries. Do NOT rename without updating all references."
-_ARCH_ANTI = "Do NOT break existing functionality. Fix violations systematically, not file-by-file randomly."
 
 
 def create_refactor_task(
@@ -59,15 +56,6 @@ def create_refactor_task(
     issues = refactor_issues or []
     category = "backend" if relative_path.endswith(".py") else "frontend"
     title = f"Refactor: {relative_path} ({reason})"
-    description = build_refactor_description(
-        relative_path,
-        lines,
-        target_lines,
-        complexity,
-        priority,
-        promotion_reasons=promotion_reasons,
-        promotion_confidence=promotion_confidence,
-    )
     issue_id = issue_id or create_refactor_issue(
         project_id,
         relative_path,
@@ -77,11 +65,10 @@ def create_refactor_task(
         reason,
     )
 
+    objective = _build_issue_aware_objective(relative_path, lines, target_lines, issues)
     task_id = create_task_with_spirit(
-        project_id=project_id, title=title, description=description,
+        project_id=project_id, title=title, description=objective,
         priority=2 if priority == "high" else 3, task_type="refactor", tier=tier,
-        objective=_build_issue_aware_objective(relative_path, lines, target_lines, issues),
-        spirit_anti=_REFACTOR_ANTI,
         done_when=_build_issue_aware_done_when(lines, target_lines, issues, is_frontend=(category == "frontend")),
         context={"files_to_modify": [relative_path]},
         complexity="SIMPLE", auto_approve=True, ai_review=False,
@@ -115,12 +102,10 @@ def create_schema_task(
 ) -> tuple[str | None, int | None]:
     """Create schema task with spirit, subtasks, and steps."""
     issue_id = create_schema_issue(project_id, table_name, violation_type, detail, severity, metadata)
-    description = f"Auto-generated from Explorer schema scan.\n\nTable: {table_name}\nViolation: {detail}\nSeverity: {severity}"
 
     task_id = create_task_with_spirit(
-        project_id=project_id, title=title, description=description,
+        project_id=project_id, title=title, description=objective,
         priority=2 if severity == "error" else 3, task_type="debt", tier=tier,
-        objective=objective, spirit_anti=_SCHEMA_ANTI,
         done_when=done_when, complexity="SIMPLE", auto_approve=True,
     )
 
@@ -151,12 +136,10 @@ def create_architecture_task(
 ) -> tuple[str | None, int | None]:
     """Create architecture task with spirit, subtasks, and steps."""
     issue_id = create_architecture_issue(project_id, violation_type, title, severity, len(violations), affected_files)
-    description = build_architecture_description(violation_type, affected_files, len(violations))
 
     task_id = create_task_with_spirit(
-        project_id=project_id, title=f"Architecture: {title}", description=description,
+        project_id=project_id, title=f"Architecture: {title}", description=objective,
         priority=2 if severity == "error" else 3, task_type="refactor", tier=tier,
-        objective=objective, spirit_anti=_ARCH_ANTI,
         done_when=done_when, complexity=complexity, auto_approve=auto_approve,
     )
 

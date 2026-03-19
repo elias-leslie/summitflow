@@ -119,8 +119,6 @@ def _create_base_task(
 
 def _attach_spirit_and_approve(
     task_id: str,
-    objective: str,
-    spirit_anti: str,
     done_when: list[str],
     complexity: str,
     context: dict[str, object] | None,
@@ -129,8 +127,6 @@ def _attach_spirit_and_approve(
     """Attach a spirit to the task and optionally auto-approve the plan."""
     create_task_spirit(
         task_id=task_id,
-        objective=objective,
-        spirit_anti=spirit_anti,
         done_when=done_when,
         context=context,
         complexity=complexity,
@@ -146,8 +142,6 @@ def create_task_with_spirit(
     priority: int,
     task_type: str,
     tier: int,
-    objective: str,
-    spirit_anti: str,
     done_when: list[str],
     complexity: str,
     context: dict[str, object] | None = None,
@@ -159,12 +153,10 @@ def create_task_with_spirit(
     Args:
         project_id: Project ID
         title: Task title
-        description: Task description
+        description: Task description (also serves as the task objective)
         priority: Task priority (2=high, 3=medium)
         task_type: Task type
         tier: Model tier (1=Haiku, 2=Sonnet, 3=Opus)
-        objective: Spirit objective
-        spirit_anti: Spirit anti-pattern
         done_when: List of completion criteria
         complexity: Complexity level (SIMPLE/MODERATE/COMPLEX)
         auto_approve: Whether to auto-approve the plan
@@ -178,8 +170,6 @@ def create_task_with_spirit(
         return None
     _attach_spirit_and_approve(
         task_id,
-        objective,
-        spirit_anti,
         done_when,
         complexity,
         context,

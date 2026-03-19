@@ -34,11 +34,6 @@ def create_task_spirit(
     done_when: list[str] | None = None,
     context: dict[str, Any] | None = None,
     complexity: str | None = None,
-    # Deprecated params — accepted but ignored for backwards compatibility
-    objective: str | None = None,
-    spirit_anti: str | None = None,
-    decisions: list[dict[str, Any]] | None = None,
-    constraints: list[str] | None = None,
 ) -> dict[str, Any]:
     """Create a task_spirit record for a task.
 
@@ -70,11 +65,6 @@ def upsert_task_spirit(
     done_when: list[str] | None = None,
     context: dict[str, Any] | None = None,
     complexity: str | None = None,
-    # Deprecated params — accepted but ignored for backwards compatibility
-    objective: str | None = None,
-    spirit_anti: str | None = None,
-    decisions: list[dict[str, Any]] | None = None,
-    constraints: list[str] | None = None,
 ) -> dict[str, Any]:
     """Create or update task_spirit record.
 

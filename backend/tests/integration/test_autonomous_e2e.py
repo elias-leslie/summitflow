@@ -444,7 +444,7 @@ class TestExecutionE2E:
         task_id = task["id"]
         cleanup_tasks.append(task_id)
 
-        create_task_spirit(task_id=task_id, objective="Create file", constraints=[])
+        create_task_spirit(task_id=task_id)
 
         create_subtask(
             task_id=task_id,

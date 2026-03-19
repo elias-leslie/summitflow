@@ -28,10 +28,7 @@ class TestSavePlanToDatabase:
         from app.tasks.autonomous.planning_storage import save_plan_to_database
 
         mock_get_spirit.return_value = {
-            "objective": "Keep the triage objective",
-            "spirit_anti": "Do not break current callers",
             "done_when": ["Current API still works"],
-            "constraints": ["Keep scope tight"],
             "context": {"files_to_modify": ["backend/app/existing.py"]},
         }
         mock_task_store.get_task.return_value = {"id": "task-1", "complexity": "STANDARD"}
@@ -67,13 +64,11 @@ class TestSavePlanToDatabase:
         mock_create_spirit.assert_not_called()
         mock_update_spirit.assert_called_once_with(
             "task-1",
-            constraints=["Keep scope tight", "Avoid schema changes"],
             done_when=["Current API still works", "UI renders the new field"],
             context={
                 "files_to_modify": ["backend/app/existing.py", "frontend/app/page.tsx"],
                 "files_to_create": ["frontend/lib/stats.ts"],
             },
-            decisions=[{"id": "d1", "title": "Reuse service", "outcome": "reuse"}],
         )
         mock_bulk_create.assert_called_once_with(
             "task-1",

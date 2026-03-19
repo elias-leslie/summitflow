@@ -48,16 +48,14 @@ def _apply_ideation_result(
     """Persist ideation result and return success response."""
     upsert_task_spirit(
         task_id,
-        objective=result["objective"],
         context=result.get("scope", ""),
     )
 
     updates: dict[str, Any] = {
         "enrichment_status": "accepted",
         "enriched_by": "ideator",
+        "description": result.get("enriched_description") or result["objective"],
     }
-    if result.get("enriched_description"):
-        updates["description"] = result["enriched_description"]
     if result.get("suggested_type"):
         updates["task_type"] = result["suggested_type"]
     if result.get("complexity"):

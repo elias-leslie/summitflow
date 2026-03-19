@@ -35,10 +35,8 @@ def approve_task_plan_impl(task_id: str, approved_by: str, notes: str | None) ->
         try:
             task_data = task_store.get_task(task_id)
             if task_data:
-                objective = task_data.get("objective") or task_data.get("title", "")
                 create_task_spirit(
                     task_id=task_id,
-                    objective=objective,
                 )
                 result = approve_plan(task_id, approved_by=approved_by, notes=notes)
         except Exception as e:

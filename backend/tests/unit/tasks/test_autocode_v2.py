@@ -56,11 +56,11 @@ class TestDetermineNextStage:
     def test_crowdsourced_with_spirit_no_subtasks_returns_planning(
         self, mock_store: MagicMock, mock_spirit: MagicMock, mock_subtasks: MagicMock
     ) -> None:
-        """Crowdsourced task with spirit + objective but no subtasks → planning."""
+        """Crowdsourced task with spirit + description but no subtasks → planning."""
         from app.tasks.autonomous.pickup import _determine_next_stage
 
-        mock_store.get_task.return_value = {"labels": ["crowdsourced"]}
-        mock_spirit.return_value = {"objective": "Build a widget"}
+        mock_store.get_task.return_value = {"labels": ["crowdsourced"], "description": "Build a widget"}
+        mock_spirit.return_value = {"done_when": ["Widget works"]}
         mock_subtasks.return_value = []
 
         assert _determine_next_stage("task-1") == "planning"
@@ -86,11 +86,11 @@ class TestDetermineNextStage:
     def test_with_spirit_no_subtasks_returns_planning(
         self, mock_store: MagicMock, mock_spirit: MagicMock, mock_subtasks: MagicMock
     ) -> None:
-        """Task with spirit/objective but no subtasks → planning."""
+        """Task with spirit + description but no subtasks → planning."""
         from app.tasks.autonomous.pickup import _determine_next_stage
 
-        mock_store.get_task.return_value = {"labels": []}
-        mock_spirit.return_value = {"objective": "Add API endpoint"}
+        mock_store.get_task.return_value = {"labels": [], "description": "Add API endpoint"}
+        mock_spirit.return_value = {"done_when": ["Endpoint returns 200"]}
         mock_subtasks.return_value = []
 
         assert _determine_next_stage("task-1") == "planning"
@@ -104,8 +104,8 @@ class TestDetermineNextStage:
         """Task with incomplete subtasks → execution."""
         from app.tasks.autonomous.pickup import _determine_next_stage
 
-        mock_store.get_task.return_value = {"labels": []}
-        mock_spirit.return_value = {"objective": "Add API endpoint"}
+        mock_store.get_task.return_value = {"labels": [], "description": "Add API endpoint"}
+        mock_spirit.return_value = {"done_when": ["Endpoint returns 200"]}
         mock_subtasks.return_value = [
             {"subtask_id": "1.1", "passes": False},
             {"subtask_id": "1.2", "passes": True},
@@ -123,8 +123,8 @@ class TestDetermineNextStage:
     ) -> None:
         from app.tasks.autonomous.pickup import _determine_next_stage
 
-        mock_store.get_task.return_value = {"labels": []}
-        mock_spirit.return_value = {"objective": "Add API endpoint"}
+        mock_store.get_task.return_value = {"labels": [], "description": "Add API endpoint"}
+        mock_spirit.return_value = {"done_when": ["Endpoint returns 200"]}
         mock_subtasks.return_value = [{"subtask_id": "1.1", "passes": False}]
 
         with patch("app.tasks.autonomous.pickup_queries.load_task_execution_readiness") as mock_ready:
@@ -139,8 +139,8 @@ class TestDetermineNextStage:
     ) -> None:
         from app.tasks.autonomous.pickup import _determine_next_stage
 
-        mock_store.get_task.return_value = {"labels": []}
-        mock_spirit.return_value = {"objective": "Add API endpoint"}
+        mock_store.get_task.return_value = {"labels": [], "description": "Add API endpoint"}
+        mock_spirit.return_value = {"done_when": ["Endpoint returns 200"]}
         mock_subtasks.return_value = [{"subtask_id": "1.1", "passes": False}]
 
         with patch("app.tasks.autonomous.pickup_queries.load_task_execution_readiness") as mock_ready:
@@ -156,8 +156,8 @@ class TestDetermineNextStage:
         """Task with all subtasks passed → unknown (nothing left to do)."""
         from app.tasks.autonomous.pickup import _determine_next_stage
 
-        mock_store.get_task.return_value = {"labels": []}
-        mock_spirit.return_value = {"objective": "Add API endpoint"}
+        mock_store.get_task.return_value = {"labels": [], "description": "Add API endpoint"}
+        mock_spirit.return_value = {"done_when": ["Endpoint returns 200"]}
         mock_subtasks.return_value = [
             {"subtask_id": "1.1", "passes": True},
         ]

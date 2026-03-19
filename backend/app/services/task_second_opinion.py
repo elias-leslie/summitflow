@@ -140,7 +140,7 @@ def ensure_second_opinion_tracking(
             return entry
         raise ValueError(f"Failed to update task_spirit for {task_id}")
 
-    upsert_task_spirit(task_id=task_id, objective="", context={_SECOND_OPINION_CONTEXT_KEY: entry})
+    upsert_task_spirit(task_id=task_id, context={_SECOND_OPINION_CONTEXT_KEY: entry})
     return entry
 
 
@@ -247,5 +247,4 @@ def persist_second_opinion(
             return updated
         raise ValueError(f"Failed to update task_spirit for {task_id}")
 
-    objective = str(second_opinion.get("summary") or "Record second opinion").strip()
-    return upsert_task_spirit(task_id=task_id, objective=objective, context={_SECOND_OPINION_CONTEXT_KEY: second_opinion})
+    return upsert_task_spirit(task_id=task_id, context={_SECOND_OPINION_CONTEXT_KEY: second_opinion})

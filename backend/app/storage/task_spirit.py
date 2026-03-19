@@ -50,8 +50,7 @@ def update_task_spirit(task_id: str, **fields: Any) -> dict[str, Any] | None:
 
     Args:
         task_id: The task ID
-        **fields: Fields to update (objective, spirit_anti, decisions, constraints,
-                  done_when, context, complexity, plan_status)
+        **fields: Fields to update (done_when, context, complexity, plan_status)
 
     Returns:
         Updated record or None if not found

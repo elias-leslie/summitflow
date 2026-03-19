@@ -15,7 +15,7 @@ from app.storage.subtasks import get_subtasks_for_task
 from app.storage.task_spirit import get_task_spirit
 
 _REPLANNING_FIELDS = frozenset(
-    {"objective", "done_when", "spirit_anti", "decisions", "subtasks", "steps", "context"}
+    {"description", "done_when", "subtasks", "context"}
 )
 
 
@@ -26,14 +26,16 @@ def determine_next_stage(task_id: str) -> str:
         Stage name: 'ideation', 'triage', 'planning', 'execution', or 'unknown'
     """
     task = task_store.get_task(task_id)
+    if not task:
+        return "unknown"
     spirit = get_task_spirit(task_id)
     subtasks = get_subtasks_for_task(task_id)
 
-    is_crowdsourced = task and "crowdsourced" in (task.get("labels") or [])
-    if is_crowdsourced and (not spirit or not spirit.get("objective")):
+    is_crowdsourced = "crowdsourced" in (task.get("labels") or [])
+    if is_crowdsourced and (not spirit or not task.get("description")):
         return "ideation"
 
-    if not spirit or not spirit.get("objective"):
+    if not spirit or not task.get("description"):
         return "triage"
 
     if not subtasks:

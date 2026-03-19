@@ -6,12 +6,6 @@ Handles subtask ID parsing and error message processing.
 from __future__ import annotations
 
 # Error messages returned to the user when DB triggers block completion.
-_ERR_ZERO_STEPS = (
-    "Cannot complete: Task has no steps. Create subtasks with steps first."
-)
-_ERR_STEPS_INCOMPLETE = (
-    "Cannot complete: Some steps not verified. Run: st step pass <subtask> <step>"
-)
 _ERR_DEPENDENCIES = (
     "Cannot complete: Blocking dependencies incomplete. Complete them first."
 )
@@ -46,12 +40,6 @@ def parse_db_error(detail: str | dict[str, str] | object) -> str | None:
         return None
 
     msg = _extract_detail_text(detail)
-
-    if "zero steps" in msg or ("steps" in msg and "zero" in msg):
-        return _ERR_ZERO_STEPS
-
-    if "steps" in msg and ("incomplete" in msg or "not verified" in msg):
-        return _ERR_STEPS_INCOMPLETE
 
     if "dependencies" in msg or "depends on" in msg:
         return _ERR_DEPENDENCIES
