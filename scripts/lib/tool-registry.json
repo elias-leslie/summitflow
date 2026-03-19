@@ -166,32 +166,32 @@
   "service_redirects": [
     {
       "pattern": "systemctl\\s+(--user\\s+)?(restart|stop|start|kill|disable|enable)\\s+(summitflow|agent-hub|portfolio|sf-|ah-|hatchet)",
-      "message": "Use restart.sh for service management or worktree-services.sh start/stop <task-id> for worktree services. Never manage services via systemctl directly.",
+      "message": "Use rebuild.sh <project> for service management or worktree-services.sh start/stop <task-id> for worktree services. Never manage services via systemctl directly.",
       "component_id": "sf.scripts"
     },
     {
       "pattern": "(pkill|killall)\\b.*(uvicorn|gunicorn|next|hatchet)",
-      "message": "Never kill service processes directly. Use restart.sh to restart services or worktree-services.sh stop <task-id> for worktree services.",
+      "message": "Never kill service processes directly. Use rebuild.sh <project> or worktree-services.sh stop <task-id> for worktree services.",
       "component_id": "sf.scripts"
     },
     {
       "pattern": "(\\.venv/bin/)?(uvicorn|gunicorn)\\s+\\S+:\\S+",
-      "message": "Never start app servers directly. Use restart.sh for main services or worktree-services.sh start <task-id> for worktree services.",
+      "message": "Never start app servers directly. Use rebuild.sh <project> or worktree-services.sh start <task-id> for worktree services.",
       "component_id": "sf.scripts"
     },
     {
       "pattern": "python[0-9.]*\\s+-m\\s+(uvicorn|gunicorn)\\b",
-      "message": "Never start app servers directly. Use restart.sh for main services or worktree-services.sh start <task-id> for worktree services.",
+      "message": "Never start app servers directly. Use rebuild.sh <project> or worktree-services.sh start <task-id> for worktree services.",
       "component_id": "sf.scripts"
     },
     {
       "pattern": "(npm|pnpm)\\s+(run\\s+(dev|start)|start)\\b",
-      "message": "Never start dev servers directly. Use restart.sh for main services or worktree-services.sh start <task-id> for worktree services.",
+      "message": "Never start dev servers directly. Use rebuild.sh <project> or worktree-services.sh start <task-id> for worktree services.",
       "component_id": "sf.scripts"
     },
     {
       "pattern": "(npx\\s+)?next\\s+(dev|start)\\b",
-      "message": "Never start dev servers directly. Use restart.sh for main services or worktree-services.sh start <task-id> for worktree services.",
+      "message": "Never start dev servers directly. Use rebuild.sh <project> or worktree-services.sh start <task-id> for worktree services.",
       "component_id": "sf.scripts"
     },
     {

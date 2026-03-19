@@ -226,21 +226,19 @@ export function TaskModalContent({
         </CollapsibleSection>
       )}
 
-      {/* Progress Narration — primary execution summary for human review */}
-      {(task.total_sessions > 0 || isRunning || isAiReviewing) && (
-        <CollapsibleSection
-          title="Progress"
-          isOpen={true}
-          onToggle={() => {}}
-          testId="narration-toggle"
-        >
-          <NarrationTimeline
-            taskId={task.id}
-            isLive={isRunning || isAiReviewing}
-            pollInterval={5000}
-          />
-        </CollapsibleSection>
-      )}
+      {/* Progress Narration — always shown, component handles empty state */}
+      <CollapsibleSection
+        title="Progress"
+        isOpen={true}
+        onToggle={() => {}}
+        testId="narration-toggle"
+      >
+        <NarrationTimeline
+          taskId={task.id}
+          isLive={isRunning || isAiReviewing}
+          pollInterval={5000}
+        />
+      </CollapsibleSection>
 
       {/* Execution Timeline — raw event log for drill-down */}
       {showTimeline && (

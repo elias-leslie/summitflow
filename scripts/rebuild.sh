@@ -1,422 +1,265 @@
 #!/bin/bash
 #
-# Universal Rebuild Script
-# Clears caches, rebuilds, restarts services, verifies health
-# Works for any project — auto-detects systemd vs Docker runtime
+# rebuild.sh <project> — rebuild and restart a project
 #
 # Usage:
-#   ./scripts/rebuild.sh              # Full rebuild (frontend + all services)
-#   ./scripts/rebuild.sh --frontend   # Frontend only (rebuild + restart frontend)
-#   ./scripts/rebuild.sh --backend    # Backend only (restart backend + worker)
-#   ./scripts/rebuild.sh --restart    # Restart only (no rebuild)
-#   ./scripts/rebuild.sh --status     # Show service status
+#   rebuild.sh summitflow       # Rebuild summitflow (frontend + backend + worker)
+#   rebuild.sh agent-hub        # Rebuild agent-hub
+#   rebuild.sh terminal         # Rebuild terminal
+#   rebuild.sh portfolio-ai     # Rebuild portfolio-ai
+#   rebuild.sh monkey-fight     # Rebuild monkey-fight
+#   rebuild.sh                  # No args = show available projects
+#
+# Always rebuilds everything (frontend build + backend restart + worker restart).
+# Project name is required — no auto-detection from cwd.
 #
 
 set -eo pipefail
 
-# Load utilities (which also detects PROJECT_DIR and PROJECT_NAME)
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/lib/rebuild-utils.sh"
+# ─── Colors & logging ────────────────────────────────────────────
+GREEN='\033[0;32m' RED='\033[0;31m' YELLOW='\033[1;33m' NC='\033[0m'
+log()         { printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*"; }
+log_success() { printf "${GREEN}[%s] ✓ %s${NC}\n" "$(date '+%H:%M:%S')" "$*"; }
+log_error()   { printf "${RED}[%s] ✗ %s${NC}\n" "$(date '+%H:%M:%S')" "$*"; }
+log_warn()    { printf "${YELLOW}[%s] ⚠ %s${NC}\n" "$(date '+%H:%M:%S')" "$*"; }
 
-# Parse arguments
-FRONTEND_ONLY=false
-BACKEND_ONLY=false
-RESTART_ONLY=false
-STATUS_ONLY=false
-DOCKER_MODE_OVERRIDE=""
+# ─── Project registry ────────────────────────────────────────────
+# Each project: root_dir, backend_service, frontend_service, worker_services,
+#               backend_port, frontend_port, backend_dir, frontend_dir
+declare -A PROJECTS
+PROJECTS=(
+    [summitflow]="/home/kasadis/summitflow|summitflow-backend.service|summitflow-frontend.service|summitflow-hatchet-worker.service|8001|3001|backend|frontend"
+    [agent-hub]="/home/kasadis/agent-hub|agent-hub-backend.service|agent-hub-frontend.service|agent-hub-hatchet-worker.service|8003|3003|backend|frontend"
+    [portfolio-ai]="/home/kasadis/portfolio-ai|portfolio-backend.service|portfolio-frontend.service|portfolio-hatchet-worker.service|8000|3000|backend|frontend"
+    [terminal]="/home/kasadis/terminal|summitflow-terminal.service|summitflow-terminal-frontend.service||8002|3002|.|frontend"
+    [monkey-fight]="/home/kasadis/monkey-fight||monkey-fight.service||0|4001|.|."
+)
 
-for arg in "$@"; do
-    case $arg in
-        --frontend|-f) FRONTEND_ONLY=true ;;
-        --backend|-b) BACKEND_ONLY=true ;;
-        --restart|-r) RESTART_ONLY=true ;;
-        --status|-s) STATUS_ONLY=true ;;
-        --dev) DOCKER_MODE_OVERRIDE="dev" ;;
-        --prod) DOCKER_MODE_OVERRIDE="prod" ;;
-        --help|-h)
-            echo "Usage: $0 [--frontend] [--backend] [--restart] [--status] [--dev|--prod]"
-            echo ""
-            echo "Options:"
-            echo "  --frontend, -f  Frontend only (rebuild + restart frontend)"
-            echo "  --backend, -b   Backend only (restart backend + worker)"
-            echo "  --restart, -r   Restart only (no rebuild)"
-            echo "  --status, -s    Show service status"
-            echo "  --dev           Use Docker dev mode (bind mounts + hot reload)"
-            echo "  --prod          Use Docker prod mode (published/runtime images)"
-            echo ""
-            echo "Project: $PROJECT_NAME ($PROJECT_DIR)"
-            exit 0
-            ;;
-    esac
-done
-
-selected_action_label() {
-    if [ "$RESTART_ONLY" = true ]; then
-        echo "restart"
-    elif [ "$FRONTEND_ONLY" = true ]; then
-        echo "frontend"
-    elif [ "$BACKEND_ONLY" = true ]; then
-        echo "backend"
-    else
-        echo "full"
-    fi
+parse_project() {
+    IFS='|' read -r ROOT_DIR BACKEND_SVC FRONTEND_SVC WORKER_SVCS BACKEND_PORT FRONTEND_PORT BACKEND_SUBDIR FRONTEND_SUBDIR <<< "${PROJECTS[$1]}"
+    BACKEND_DIR="$ROOT_DIR/$BACKEND_SUBDIR"
+    FRONTEND_DIR="$ROOT_DIR/$FRONTEND_SUBDIR"
+    if [ "$BACKEND_SUBDIR" = "." ]; then BACKEND_DIR="$ROOT_DIR"; fi
+    if [ "$FRONTEND_SUBDIR" = "." ]; then FRONTEND_DIR="$ROOT_DIR"; fi
 }
 
-print_rebuild_header() {
-    local title="$1"
-    local runtime_desc="$2"
-    local switch_desc="${3:-}"
+show_projects() {
+    echo "Usage: rebuild.sh <project>"
     echo ""
-    echo "========================================"
-    echo "$title"
-    echo "========================================"
-    echo ""
-    echo "Project: $PROJECT_NAME"
-    echo "Mode: $(selected_action_label)"
-    echo "Runtime: $runtime_desc"
-    [ -n "$switch_desc" ] && echo "Switch: $switch_desc"
-    echo ""
+    echo "Available projects:"
+    for p in summitflow agent-hub portfolio-ai terminal monkey-fight; do
+        [ -n "${PROJECTS[$p]}" ] || continue
+        IFS='|' read -r root _ _ _ bp fp _ _ <<< "${PROJECTS[$p]}"
+        printf "  %-15s %s" "$p" "$root"
+        [ "$bp" != "0" ] && printf "  (:%s/:%s)" "$bp" "$fp" || printf "  (:%s)" "$fp"
+        echo ""
+    done
 }
 
-print_rebuild_footer() {
-    local errors="$1"
-    local duration="$2"
-    echo ""
-    echo "========================================"
-    if [ "$errors" -eq 0 ]; then
-        log_success "Rebuild complete (${duration}s)"
-    else
-        log_error "Rebuild completed with $errors error(s) (${duration}s)"
-    fi
-    echo "========================================"
-    echo ""
-    echo "URLs:"
-    if [ "$FRONTEND_ONLY" = false ] && [ "$HAS_BACKEND" != false ] && [ "$BACKEND_PORT" -gt 0 ]; then
-        echo "  Backend:  http://localhost:$BACKEND_PORT"
-    fi
-    if [ "$BACKEND_ONLY" = false ] && [ "$FRONTEND_PORT" -gt 0 ]; then
-        echo "  Frontend: http://localhost:$FRONTEND_PORT"
-    fi
-    echo ""
+# ─── Core operations ─────────────────────────────────────────────
+
+port_pids() { ss -ltnp "( sport = :$1 )" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | sort -u; }
+
+kill_port() {
+    local port="$1" pids
+    pids=$(port_pids "$port")
+    [ -z "$pids" ] && return 0
+    log_warn "Clearing port $port listeners"
+    echo "$pids" | xargs -r kill 2>/dev/null || true
+    for _ in $(seq 1 10); do
+        [ -z "$(port_pids "$port")" ] && return 0
+        sleep 1
+    done
+    echo "$pids" | xargs -r kill -9 2>/dev/null || true
+    sleep 1
 }
 
-# ─── Status ──────────────────────────────────────────────────────
-
-show_status_docker() {
-    set +e  # Don't exit on docker compose ps failures
-    local active_mode
-    active_mode=$([ "$DOCKER_DEV" = true ] && echo "dev overlay" || echo "production images")
-    echo ""
-    echo "========================================"
-    echo "$PROJECT_NAME Service Status (Docker)"
-    echo "========================================"
-    echo ""
-    local services
-    services=$(_compose_all_services)
-    if [ -n "$services" ]; then
-        for svc in $services; do
-            local state health
-            state=$(_docker_compose -f "$_COMPOSE_FILE" ps --format '{{.State}}' "$svc" 2>/dev/null)
-            [ -z "$state" ] && state="not found"
-            health=$(_docker_compose -f "$_COMPOSE_FILE" ps --format '{{.Health}}' "$svc" 2>/dev/null)
-            local icon="✗"; [ "$state" = "running" ] && icon="✓"
-            printf "  %-30s %s %s %s\n" "$svc" "$icon" "$state" "${health:+($health)}"
-        done
-    else
-        echo "  (no project containers created yet)"
-    fi
-    echo ""
-    echo "Ports: backend=$BACKEND_PORT, frontend=$FRONTEND_PORT"
-    if [ "$RUNTIME_MODE" = "docker-stopped" ]; then
-        echo "Stack: stopped"
-    else
-        echo "Stack: running"
-    fi
-    if [ "$DOCKER_DEV" = true ]; then
-        echo "Mode: docker ($active_mode)"
-    else
-        echo "Mode: docker ($active_mode)"
-    fi
-    echo "Default mode: $_DEFAULT_RUNTIME_MODE"
-    echo ""
-    set -e
+restart_svc() {
+    local svc="$1" port="${2:-}"
+    [ -z "$svc" ] && return 0
+    systemctl --user cat "$svc" &>/dev/null || { log_warn "$svc not found, skipping"; return 0; }
+    log "Restarting $svc..."
+    systemctl --user stop "$svc" 2>/dev/null || true
+    [ -n "$port" ] && [ "$port" -gt 0 ] 2>/dev/null && kill_port "$port"
+    systemctl --user start "$svc" && log_success "$svc" || { log_error "$svc failed"; return 1; }
 }
 
-show_status_native() {
-    echo ""
-    echo "========================================"
-    echo "$PROJECT_NAME Service Status"
-    echo "========================================"
-    echo ""
-    echo "Project: $PROJECT_NAME ($PROJECT_DIR)"
-    echo ""
-    echo "Services:"
-    for svc in $MANAGED_SERVICES; do
-        [ -n "$svc" ] || continue
-        if service_exists "$svc"; then
-            local status=$(systemctl --user is-active "$svc" 2>/dev/null || echo "unknown")
-            local icon="✗"; [ "$status" = "active" ] && icon="✓"
-            printf "  %-35s %s %s\n" "$svc" "$icon" "$status"
+ensure_infra() {
+    local compose_dir="/home/kasadis/summitflow/docker/compose"
+    local compose_file="$compose_dir/docker-compose.yml"
+    [ ! -f "$compose_file" ] && return 0
+
+    # Check if postgres, redis, hatchet are running
+    local missing=false
+    for svc in postgres redis hatchet; do
+        if ! docker ps --filter "label=com.docker.compose.project=summitflow-stack" \
+                       --filter "label=com.docker.compose.service=$svc" \
+                       --format '{{.ID}}' 2>/dev/null | grep -q .; then
+            missing=true
+            break
         fi
     done
-    if [ -f "$_COMPOSE_FILE" ]; then
-        echo ""
-        echo "Infra (Docker):"
-        local infra_lines
-        infra_lines=$(_docker_compose -f "$_COMPOSE_FILE" ps --format '{{.Service}} {{.State}} {{.Health}}' postgres redis hatchet 2>/dev/null || true)
-        if [ -n "$infra_lines" ]; then
-            while IFS= read -r line; do
-                [ -n "$line" ] || continue
-                printf "  %s\n" "$line"
-            done <<< "$infra_lines"
-        else
-            echo "  (infra not running)"
+    [ "$missing" = false ] && return 0
+
+    log "Starting Docker infra (postgres, redis, hatchet)..."
+
+    # Sanitize env to avoid Docker Compose conflicts
+    unset PORT HATCHET_CLIENT_TOKEN HATCHET_COOKIE_SECRET \
+          DATABASE_URL REDIS_URL AGENT_HUB_DB_URL \
+          AGENT_HUB_REDIS_URL PORTFOLIO_DB_URL INTERNAL_SERVICE_SECRET \
+          AGENT_HUB_SECRET_KEY 2>/dev/null || true
+
+    docker compose --env-file "$compose_dir/.env" -f "$compose_file" \
+        up -d postgres redis hatchet-migrate hatchet-setup-config hatchet 2>&1
+
+    # Wait for readiness
+    for _ in $(seq 1 45); do
+        if pg_isready -h localhost -p 5432 -U admin >/dev/null 2>&1 && \
+           curl -sf http://localhost:8888/ready >/dev/null 2>&1; then
+            log_success "Docker infra ready"
+            return 0
         fi
-    fi
-    echo ""
-    echo "Ports:"
-    if [ "$HAS_BACKEND" != false ] && [ "$BACKEND_PORT" -gt 0 ]; then
-        printf "  Backend  (%-5d): " "$BACKEND_PORT"
-        ss -tlnp 2>/dev/null | grep -q ":$BACKEND_PORT " && echo "✓ listening" || echo "✗ not bound"
-    fi
-    printf "  Frontend (%-5d): " "$FRONTEND_PORT"
-    ss -tlnp 2>/dev/null | grep -q ":$FRONTEND_PORT " && echo "✓ listening" || echo "✗ not bound"
-    echo ""
-    echo "Health:"
-    if [ "$HAS_BACKEND" != false ] && [ "$BACKEND_PORT" -gt 0 ]; then
-        printf "  Backend:  "
-        curl -s "http://localhost:$BACKEND_PORT/health" &>/dev/null && echo "✓ healthy" || echo "✗ unhealthy"
-    fi
-    printf "  Frontend: "
-    local http_status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "http://localhost:$FRONTEND_PORT/" 2>/dev/null)
-    [[ "$http_status" =~ ^(2|3)[0-9][0-9]$ ]] && echo "✓ serving (HTTP $http_status)" || echo "✗ not serving (HTTP $http_status)"
-    echo ""
+        sleep 2
+    done
+    log_error "Docker infra not ready after 90s"
+    return 1
 }
 
-# ─── Docker rebuild ──────────────────────────────────────────────
+run_migrations() {
+    [ -z "$BACKEND_SVC" ] && return 0
+    [ ! -f "$BACKEND_DIR/alembic.ini" ] && return 0
+    local venv="$BACKEND_DIR/.venv"
+    [ ! -d "$venv" ] && venv="$ROOT_DIR/.venv"
+    [ ! -x "$venv/bin/alembic" ] && return 0
 
-main_docker() {
-    local start_time=$(date +%s)
-    local errors=0
-
-    local all_services=$(_compose_all_services)
-    local stack_services=$(_compose_stack_services)
-    local api_svc=$(_compose_api_service)
-    local web_svc=$(_compose_web_service)
-    local detected_mode=$([ "$DOCKER_DEV" = true ] && echo "dev" || echo "prod")
-    local target_mode="$detected_mode"
-
-    if [ -n "$DOCKER_MODE_OVERRIDE" ]; then
-        target_mode="$DOCKER_MODE_OVERRIDE"
-        _set_docker_mode "$target_mode"
-    fi
-
-    local mode_switch_required=false
-    if [ "$detected_mode" != "$target_mode" ]; then
-        mode_switch_required=true
-    fi
-
-    local runtime_desc="docker"
-    if [ "$DOCKER_DEV" = true ] && [ "$DOCKER_IMAGE_STALE" = true ]; then
-        runtime_desc="docker (dev — image stale, rebuilding)"
-    elif [ "$DOCKER_DEV" = true ]; then
-        runtime_desc="docker (dev — hot reload)"
-    else
-        runtime_desc="docker (production images)"
-    fi
-    local switch_desc=""
-    [ "$mode_switch_required" = true ] && switch_desc="$detected_mode -> $target_mode"
-    print_rebuild_header "$PROJECT_NAME Rebuild (Docker)" "$runtime_desc" "$switch_desc"
-
-    if [ "$mode_switch_required" = true ]; then
-        local switch_services="${stack_services:-$all_services}"
-        if [ "$target_mode" = "dev" ]; then
-            docker_recreate_services "$switch_services" false || ((errors++))
-        else
-            docker_recreate_services "$switch_services" false || ((errors++))
-        fi
-        docker_run_migration || true
-    else
-        # In dev mode with a stale image, escalate to full build+recreate
-        local needs_build=false
-        if [ "$DOCKER_DEV" = true ] && [ "$DOCKER_IMAGE_STALE" = true ]; then
-            needs_build=true
-        elif [ "$DOCKER_DEV" = false ]; then
-            needs_build=true
-        fi
-
-        if [ "$needs_build" = false ]; then
-        # Dev overlay, image is fresh: bind-mounted source, hot reload. Just restart + migrate.
-            if [ "$RESTART_ONLY" = true ]; then
-                docker_restart_services "$all_services" || ((errors++))
-            elif [ "$FRONTEND_ONLY" = true ]; then
-                docker_restart_services "$web_svc" || ((errors++))
-            elif [ "$BACKEND_ONLY" = true ]; then
-                local backend_svcs="$api_svc"
-                # Include worker if it exists
-                for s in $all_services; do [[ "$s" == *worker* ]] && backend_svcs="$backend_svcs $s"; done
-                docker_restart_services "$backend_svcs" || ((errors++))
-                docker_run_migration || true
-            else
-                docker_restart_services "$all_services" || ((errors++))
-                docker_run_migration || true
-            fi
-        else
-            # Production images: build → recreate → migrate
-            if [ "$RESTART_ONLY" = true ]; then
-                docker_restart_services "$all_services" || ((errors++))
-            elif [ "$FRONTEND_ONLY" = true ]; then
-                docker_build_and_recreate "$web_svc" || ((errors++))
-            elif [ "$BACKEND_ONLY" = true ]; then
-                local backend_svcs="$api_svc"
-                for s in $all_services; do [[ "$s" == *worker* ]] && backend_svcs="$backend_svcs $s"; done
-                docker_build_and_recreate "$backend_svcs" || ((errors++))
-                docker_run_migration || true
-            else
-                docker_build_and_recreate "$all_services" || ((errors++))
-                docker_run_migration || true
-            fi
-        fi
-    fi
-
-    if [ "$FRONTEND_ONLY" = false ]; then
-        docker_reapply_hatchet_tuning || ((errors++))
-    fi
-
-    # Verify health
-    echo ""
-    log "Verifying services..."
-    if [ "$FRONTEND_ONLY" = false ] && [ "$HAS_BACKEND" != false ]; then
-        verify_backend || ((errors++))
-    fi
-    if [ "$BACKEND_ONLY" = false ]; then
-        verify_frontend || ((errors++))
-    fi
-
-    # Post-rebuild sync (only for summitflow backend)
-    if [ "$FRONTEND_ONLY" = false ] && [ "$PROJECT_NAME" = "summitflow" ] && [ $errors -eq 0 ]; then
-        local summitflow_api="${ST_API_BASE:-http://localhost:8001/api}"
-        log "Regenerating project index..."
-        local index_result=$(curl -s -X POST "$summitflow_api/projects/$PROJECT_NAME/explorer/regenerate-index" 2>/dev/null)
-        echo "$index_result" | grep -q '"status":"success"' && log_success "Index regenerated" || log "Index regeneration skipped"
-    fi
-
-    local end_time=$(date +%s)
-    local duration=$((end_time - start_time))
-
-    print_rebuild_footer "$errors" "$duration"
-
-    return $errors
+    log "Running migrations..."
+    (
+        cd "$BACKEND_DIR" &&
+        env -u DATABASE_URL -u REDIS_URL -u AGENT_HUB_DB_URL -u AGENT_HUB_REDIS_URL \
+            -u PORTFOLIO_DB_URL -u PORTFOLIO_AI_DB_URL -u HATCHET_CLIENT_TOKEN \
+            "$venv/bin/alembic" upgrade head
+    ) 2>&1 | tail -5
+    [ ${PIPESTATUS[0]} -eq 0 ] && log_success "Migrations applied" || log_warn "Migration returned non-zero"
 }
 
-# ─── Native (systemd) rebuild ────────────────────────────────────
+build_frontend() {
+    [ ! -f "$FRONTEND_DIR/package.json" ] && return 0
+    log "Building frontend..."
+    rm -rf "$FRONTEND_DIR/.next" "$FRONTEND_DIR/dist" 2>/dev/null || true
 
-main_native() {
-    local start_time=$(date +%s)
+    # Install deps if missing
+    if [ ! -d "$FRONTEND_DIR/node_modules" ]; then
+        log "Installing dependencies..."
+        (cd "$FRONTEND_DIR" && pnpm install) 2>&1 | tail -10
+    fi
+
+    (cd "$FRONTEND_DIR" && pnpm build) 2>&1 | tail -10
+    [ ${PIPESTATUS[0]} -eq 0 ] && log_success "Frontend built" || { log_error "Frontend build failed"; return 1; }
+}
+
+sync_seeds() {
+    local export_script="$BACKEND_DIR/scripts/export_seeds.py"
+    [ ! -f "$export_script" ] && return 0
+    local venv="$BACKEND_DIR/.venv"
+    [ ! -x "$venv/bin/python" ] && return 0
+    log "Syncing seed data..."
+    (cd "$BACKEND_DIR" && env -u DATABASE_URL -u REDIS_URL "$venv/bin/python" -m scripts.export_seeds) 2>&1 | tail -5
+    [ ${PIPESTATUS[0]} -eq 0 ] && log_success "Seed data synced" || true
+}
+
+verify_health() {
     local errors=0
-
-    if [ "$IS_WORKTREE" = true ]; then
-        log_error "rebuild.sh targets shared project services, not task worktree services."
-        echo ""
-        echo "Use the isolated worktree service manager instead:"
-        echo "  bash ~/summitflow/scripts/worktree-services.sh start ${WORKTREE_TASK_ID} --project ${PROJECT_NAME}"
-        echo "  bash ~/summitflow/scripts/worktree-services.sh status ${WORKTREE_TASK_ID} --project ${PROJECT_NAME}"
-        echo "  bash ~/summitflow/scripts/worktree-services.sh ports ${WORKTREE_TASK_ID} --project ${PROJECT_NAME}"
-        echo ""
-        exit 1
-    fi
-
-    print_rebuild_header "$PROJECT_NAME Rebuild" "native apps + docker infra"
-
-    docker_ensure_infra || ((errors++))
-
-    # Frontend rebuild (unless backend-only or restart-only)
-    if [ "$BACKEND_ONLY" = false ] && [ "$RESTART_ONLY" = false ]; then
-        clear_nextjs_cache || true
-        build_frontend || { log_error "Frontend build failed"; ((errors++)); }
-    fi
-
-    if [ "$FRONTEND_ONLY" = false ] && [ "$HAS_BACKEND" != false ]; then
-        run_native_migrations || ((errors++))
-    fi
-
-    # Restart services
-    if [ "$FRONTEND_ONLY" = false ] && [ "$HAS_BACKEND" != false ]; then
-        restart_service "$BACKEND_SERVICE" "$BACKEND_PORT" || ((errors++))
-        for svc in $WORKER_SERVICES $AUXILIARY_SERVICES; do
-            [ -n "$svc" ] || continue
-            restart_service "$svc" || ((errors++))
+    if [ -n "$BACKEND_SVC" ] && [ "$BACKEND_PORT" -gt 0 ] 2>/dev/null; then
+        log "Checking backend (:$BACKEND_PORT)..."
+        local ok=false
+        for _ in $(seq 1 15); do
+            curl -sf "http://localhost:$BACKEND_PORT/health" &>/dev/null && { ok=true; break; }
+            sleep 1
         done
+        [ "$ok" = true ] && log_success "Backend OK" || { log_error "Backend not healthy"; ((errors++)); }
     fi
-
-    if [ "$BACKEND_ONLY" = false ]; then
-        restart_service "$FRONTEND_SERVICE" "$FRONTEND_PORT" || ((errors++))
+    if [ "$FRONTEND_PORT" -gt 0 ] 2>/dev/null; then
+        log "Checking frontend (:$FRONTEND_PORT)..."
+        local ok=false
+        for _ in $(seq 1 30); do
+            local code
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "http://localhost:$FRONTEND_PORT/" 2>/dev/null)
+            [[ "$code" =~ ^(2|3)[0-9][0-9]$ ]] && { ok=true; break; }
+            sleep 1
+        done
+        [ "$ok" = true ] && log_success "Frontend OK ($code)" || { log_error "Frontend not healthy"; ((errors++)); }
     fi
-
-    # Verify health
-    echo ""
-    log "Verifying services..."
-    if [ "$FRONTEND_ONLY" = false ] && [ "$HAS_BACKEND" != false ]; then
-        verify_backend || ((errors++))
-    fi
-    if [ "$BACKEND_ONLY" = false ]; then
-        verify_frontend || ((errors++))
-    fi
-
-    # Post-rebuild sync tasks (only when backend rebuilt successfully)
-    if [ "$FRONTEND_ONLY" = false ] && [ "$HAS_BACKEND" != false ] && [ $errors -eq 0 ]; then
-        local summitflow_api="${ST_API_BASE:-http://localhost:8001/api}"
-        log "Regenerating project index..."
-        local index_result=$(curl -s -X POST "$summitflow_api/projects/$PROJECT_NAME/explorer/regenerate-index" 2>/dev/null)
-        if echo "$index_result" | grep -q '"status":"success"'; then
-            log_success "Index regenerated"
-        else
-            log "Index regeneration skipped (API may not be SummitFlow)"
-        fi
-
-        sync_seed_data_from_db
-    fi
-
-    local end_time=$(date +%s)
-    local duration=$((end_time - start_time))
-
-    print_rebuild_footer "$errors" "$duration"
-
     return $errors
 }
 
-# ─── Entry point ─────────────────────────────────────────────────
+# ─── Main ─────────────────────────────────────────────────────────
 
-detect_docker
-DETECTED_RUNTIME_MODE="$RUNTIME_MODE"
-DETECTED_DOCKER_MODE=$([ "$DOCKER_DEV" = true ] && echo "dev" || echo "prod")
+PROJECT="${1:-}"
 
-if [ "$STATUS_ONLY" = true ]; then
-    if [ "$RUNTIME_MODE" = "docker" ] || [ "$RUNTIME_MODE" = "docker-stopped" ]; then
-        show_status_docker
-    else
-        show_status_native
-    fi
+if [ -z "$PROJECT" ] || [ "$PROJECT" = "--help" ] || [ "$PROJECT" = "-h" ]; then
+    show_projects
     exit 0
 fi
 
-log_info "Detected runtime: $RUNTIME_MODE"
-if [ "$RUNTIME_MODE" = "docker-stopped" ]; then
-    if [ -n "$DOCKER_MODE_OVERRIDE" ] && [ "$DOCKER_MODE_OVERRIDE" != "$DETECTED_DOCKER_MODE" ]; then
-        log "Persisting Docker mode: $DOCKER_MODE_OVERRIDE"
-        _persist_runtime_mode
-    fi
-    docker_start_stack || exit 1
-    if [ "$RESTART_ONLY" = true ] && [ "$FRONTEND_ONLY" = false ] && [ "$BACKEND_ONLY" = false ]; then
-        detect_docker
-        show_status_docker
-        exit 0
-    fi
-    detect_docker
+if [ -z "${PROJECTS[$PROJECT]}" ]; then
+    echo "Unknown project: $PROJECT"
+    echo ""
+    show_projects
+    exit 1
 fi
 
-if [ "$RUNTIME_MODE" = "docker" ] || [ "$RUNTIME_MODE" = "docker-stopped" ]; then
-    main_docker
-else
-    main_native
+parse_project "$PROJECT"
+start_time=$(date +%s)
+errors=0
+
+echo ""
+echo "========================================"
+echo "Rebuilding $PROJECT"
+echo "========================================"
+echo ""
+
+# 1. Ensure Docker infra
+ensure_infra || ((errors++))
+
+# 2. Build frontend
+build_frontend || ((errors++))
+
+# 3. Run migrations
+run_migrations || ((errors++))
+
+# 4. Restart all services
+[ -n "$BACKEND_SVC" ] && { restart_svc "$BACKEND_SVC" "$BACKEND_PORT" || ((errors++)); }
+for svc in $WORKER_SVCS; do
+    [ -n "$svc" ] && { restart_svc "$svc" || ((errors++)); }
+done
+restart_svc "$FRONTEND_SVC" "$FRONTEND_PORT" || ((errors++))
+
+# 5. Verify health
+echo ""
+verify_health || ((errors++))
+
+# 6. Post-rebuild sync
+if [ $errors -eq 0 ]; then
+    sync_seeds
+    # Regenerate project index for summitflow
+    if [ "$PROJECT" = "summitflow" ]; then
+        curl -s -X POST "http://localhost:8001/api/projects/$PROJECT/explorer/regenerate-index" >/dev/null 2>&1 || true
+    fi
 fi
+
+duration=$(( $(date +%s) - start_time ))
+echo ""
+echo "========================================"
+if [ $errors -eq 0 ]; then
+    log_success "Rebuild complete (${duration}s)"
+else
+    log_error "Rebuild completed with $errors error(s) (${duration}s)"
+fi
+echo "========================================"
+echo ""
+echo "URLs:"
+[ "$BACKEND_PORT" -gt 0 ] 2>/dev/null && echo "  Backend:  http://localhost:$BACKEND_PORT"
+[ "$FRONTEND_PORT" -gt 0 ] 2>/dev/null && echo "  Frontend: http://localhost:$FRONTEND_PORT"
+echo ""
+
+exit $errors
