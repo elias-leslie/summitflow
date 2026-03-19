@@ -27,17 +27,17 @@ def test_gather_explorer_context_includes_symbol_matches() -> None:
 
 def test_collect_precision_code_search_context_tracks_token_savings() -> None:
     with (
-        patch("app.services.context_gatherer.precision_code_search.search_symbols") as mock_search,
+        patch("app.services.context_gatherer._precision_ranking.search_symbols") as mock_search,
         patch(
-            "app.services.context_gatherer.precision_code_search.list_related_entries_for_file"
+            "app.services.context_gatherer._precision_sections.list_related_entries_for_file"
         ) as mock_related,
-        patch("app.services.context_gatherer.precision_code_search.get_symbol") as mock_get_symbol,
+        patch("app.services.context_gatherer._precision_sections.get_symbol") as mock_get_symbol,
         patch(
-            "app.services.context_gatherer.precision_code_search._estimate_naive_file_tokens_for_symbols",
+            "app.services.context_gatherer.precision_code_search.estimate_naive_file_tokens",
             return_value=2000,
         ),
         patch(
-            "app.services.context_gatherer.precision_code_search._read_symbol_source"
+            "app.services.context_gatherer._precision_sections.read_symbol_source"
         ) as mock_read_symbol_source,
     ):
         mock_search.return_value = [
@@ -86,7 +86,7 @@ def test_collect_precision_code_search_context_skips_workflow_meta_queries() -> 
 
 def test_collect_precision_code_search_context_formats_text_fallback_matches() -> None:
     with (
-        patch("app.services.context_gatherer.precision_code_search.search_symbols", return_value=[]),
+        patch("app.services.context_gatherer._precision_ranking.search_symbols", return_value=[]),
         patch(
             "app.services.context_gatherer.precision_code_search.search_text",
             return_value={
@@ -115,7 +115,7 @@ def test_collect_precision_code_search_context_formats_text_fallback_matches() -
 def test_collect_precision_code_search_context_skips_fallback_fetch_on_symbol_hits() -> None:
     with (
         patch(
-            "app.services.context_gatherer.precision_code_search.search_symbols",
+            "app.services.context_gatherer._precision_ranking.search_symbols",
             return_value=[
                 {
                     "symbol_id": "backend/app/api/files.py::get_file_tree#function",
@@ -131,11 +131,11 @@ def test_collect_precision_code_search_context_skips_fallback_fetch_on_symbol_hi
             ],
         ),
         patch(
-            "app.services.context_gatherer.precision_code_search.list_related_entries_for_file",
+            "app.services.context_gatherer._precision_sections.list_related_entries_for_file",
             return_value=[],
         ),
         patch(
-            "app.services.context_gatherer.precision_code_search.get_symbol",
+            "app.services.context_gatherer._precision_sections.get_symbol",
             return_value={
                 "symbol_id": "backend/app/api/files.py::get_file_tree#function",
                 "qualified_name": "get_file_tree",
@@ -145,11 +145,11 @@ def test_collect_precision_code_search_context_skips_fallback_fetch_on_symbol_hi
             },
         ),
         patch(
-            "app.services.context_gatherer.precision_code_search._read_symbol_source",
+            "app.services.context_gatherer._precision_sections.read_symbol_source",
             return_value="def get_file_tree(path: str) -> dict[str, str]: ...",
         ),
         patch(
-            "app.services.context_gatherer.precision_code_search._estimate_naive_file_tokens_for_symbols",
+            "app.services.context_gatherer.precision_code_search.estimate_naive_file_tokens",
             return_value=2000,
         ),
         patch("app.services.context_gatherer.precision_code_search.search_text") as mock_search_text,
@@ -163,7 +163,7 @@ def test_collect_precision_code_search_context_skips_fallback_fetch_on_symbol_hi
 
 def test_collect_precision_code_search_context_uses_text_search_primitive_for_fallback() -> None:
     with (
-        patch("app.services.context_gatherer.precision_code_search.search_symbols", return_value=[]),
+        patch("app.services.context_gatherer._precision_ranking.search_symbols", return_value=[]),
         patch(
             "app.services.context_gatherer.precision_code_search.search_text",
             return_value={
@@ -195,7 +195,7 @@ def test_collect_precision_code_search_context_uses_text_search_primitive_for_fa
 def test_collect_precision_code_search_context_ranks_multi_term_matches_by_coverage() -> None:
     """Multi-term queries should not let early broad hits crowd out better later matches."""
 
-    def _search_side_effect(project_id: str, query: str, limit: int = 5) -> list[dict[str, object]]:
+    def _search_side_effect(project_id: str, query: str, limit: int = 50) -> list[dict[str, object]]:
         assert project_id == "project-1"
         assert limit >= 5
         quality_symbols = [
@@ -274,23 +274,23 @@ def test_collect_precision_code_search_context_ranks_multi_term_matches_by_cover
             return quality_symbols
         if query == "health":
             return health_symbols
-        raise AssertionError(f"Unexpected query term: {query}")
+        return []
 
     with (
         patch(
-            "app.services.context_gatherer.precision_code_search.search_symbols",
+            "app.services.context_gatherer._precision_ranking.search_symbols",
             side_effect=_search_side_effect,
         ),
         patch(
-            "app.services.context_gatherer.precision_code_search.list_related_entries_for_file"
+            "app.services.context_gatherer._precision_sections.list_related_entries_for_file"
         ) as mock_related,
-        patch("app.services.context_gatherer.precision_code_search.get_symbol") as mock_get_symbol,
+        patch("app.services.context_gatherer._precision_sections.get_symbol") as mock_get_symbol,
         patch(
-            "app.services.context_gatherer.precision_code_search._read_symbol_source",
+            "app.services.context_gatherer._precision_sections.read_symbol_source",
             return_value="async def get_health_summary(project_id: str) -> HealthSummaryResponse: ...",
         ),
         patch(
-            "app.services.context_gatherer.precision_code_search._estimate_naive_file_tokens_for_symbols",
+            "app.services.context_gatherer.precision_code_search.estimate_naive_file_tokens",
             return_value=3000,
         ),
     ):
@@ -341,7 +341,7 @@ def test_collect_precision_code_search_context_refreshes_stale_file_index() -> N
             "app.services.context_gatherer.precision_code_search.explorer_service.scan"
         ) as mock_scan,
         patch(
-            "app.services.context_gatherer.precision_code_search.search_symbols",
+            "app.services.context_gatherer._precision_ranking.search_symbols",
             return_value=[],
         ),
         patch(
@@ -388,7 +388,7 @@ def test_collect_precision_code_search_context_tracks_fresh_index_telemetry() ->
             return_value={"count": 4, "last_updated": "3026-03-10T17:00:00+00:00"},
         ),
         patch(
-            "app.services.context_gatherer.precision_code_search.search_symbols",
+            "app.services.context_gatherer._precision_ranking.search_symbols",
             return_value=[],
         ),
         patch(
@@ -426,19 +426,23 @@ def test_collect_precision_code_search_context_respects_symbol_limit() -> None:
 
     with (
         patch(
-            "app.services.context_gatherer.precision_code_search.search_symbols",
+            "app.services.context_gatherer._precision_ranking.search_symbols",
             side_effect=_search_side_effect,
         ),
         patch(
-            "app.services.context_gatherer.precision_code_search.list_related_entries_for_file",
+            "app.services.context_gatherer._precision_sections.list_related_entries_for_file",
             return_value=[],
         ),
         patch(
-            "app.services.context_gatherer.precision_code_search.get_symbol",
+            "app.services.context_gatherer._precision_sections.get_symbol",
             return_value=None,
         ),
         patch(
-            "app.services.context_gatherer.precision_code_search._estimate_naive_file_tokens_for_symbols",
+            "app.services.context_gatherer._precision_sections.read_symbol_source",
+            return_value="def func(): ...",
+        ),
+        patch(
+            "app.services.context_gatherer.precision_code_search.estimate_naive_file_tokens",
             return_value=5000,
         ),
     ):
@@ -453,7 +457,7 @@ def test_collect_precision_code_search_context_routes_natural_language_to_text()
     """Natural language queries like 'scoring logic' should auto-route to text search."""
     with (
         patch(
-            "app.services.context_gatherer.precision_code_search.search_symbols",
+            "app.services.context_gatherer._precision_ranking.search_symbols",
         ) as mock_symbols,
         patch(
             "app.services.context_gatherer.precision_code_search.search_text",

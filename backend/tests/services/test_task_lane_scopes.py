@@ -19,7 +19,7 @@ def _mock_response(payload: dict[str, object]) -> MagicMock:
 @pytest.fixture
 def mock_httpx_client(mocker):
     mock_client = MagicMock()
-    mock_client_cls = mocker.patch("app.services.task_lane_preflight.httpx.Client")
+    mock_client_cls = mocker.patch("app.services._lane_inventory.httpx.Client")
     mock_client_cls.return_value.__enter__.return_value = mock_client
     return mock_client
 
@@ -27,7 +27,7 @@ def mock_httpx_client(mocker):
 class TestTaskLaneScopes:
     """Scope validation and file-overlap detection for parallel lane dispatch."""
 
-    @patch("app.services.task_lane_preflight.get_task_spirit")
+    @patch("app.services._lane_scope.get_task_spirit")
     @patch("app.services.task_lane_preflight.task_store.get_task")
     def test_disjoint_scoped_lanes_can_proceed(
         self,
@@ -55,7 +55,7 @@ class TestTaskLaneScopes:
         assert result.suggestions == []
         assert result.conflicting_tasks == []
 
-    @patch("app.services.task_lane_preflight.get_task_spirit")
+    @patch("app.services._lane_scope.get_task_spirit")
     @patch("app.services.task_lane_preflight.task_store.get_task")
     def test_exact_file_overlap_blocks_scoped_parallel_dispatch(
         self,
@@ -92,7 +92,7 @@ class TestTaskLaneScopes:
         assert result.overlap_paths == ["backend/app/foo.py"]
         assert "backend/app/foo.py" in result.suggestions[0]
 
-    @patch("app.services.task_lane_preflight.get_task_spirit")
+    @patch("app.services._lane_scope.get_task_spirit")
     @patch("app.services.task_lane_preflight.task_store.get_task")
     def test_shared_plumbing_overlap_blocks_adjacent_parallel_dispatch(
         self,
@@ -125,7 +125,7 @@ class TestTaskLaneScopes:
         assert result.shared_plumbing
         assert "Do not run parallel coding lanes" in result.suggestions[0]
 
-    @patch("app.services.task_lane_preflight.get_task_spirit")
+    @patch("app.services._lane_scope.get_task_spirit")
     @patch("app.services.task_lane_preflight.task_store.get_task")
     def test_non_shared_service_paths_do_not_trigger_shared_plumbing_block(
         self,
@@ -152,7 +152,7 @@ class TestTaskLaneScopes:
         assert result.issues == []
         assert not result.shared_plumbing
 
-    @patch("app.services.task_lane_preflight.get_task_spirit")
+    @patch("app.services._lane_scope.get_task_spirit")
     @patch("app.services.task_lane_preflight.task_store.get_task")
     def test_unscoped_active_lane_falls_back_to_project_block(
         self,
@@ -177,7 +177,7 @@ class TestTaskLaneScopes:
         assert result.conflicting_tasks == ["task-999"]
         assert any("scope unavailable" in suggestion for suggestion in result.suggestions)
 
-    @patch("app.services.task_lane_preflight.get_task_spirit")
+    @patch("app.services._lane_scope.get_task_spirit")
     @patch("app.services.task_lane_preflight.task_store.get_task")
     def test_malformed_scope_falls_back_to_project_block(
         self,
@@ -206,7 +206,7 @@ class TestTaskLaneScopes:
         ]
         assert result.conflicting_tasks == ["task-999"]
 
-    @patch("app.services.task_lane_preflight.get_task_spirit")
+    @patch("app.services._lane_scope.get_task_spirit")
     @patch("app.services.task_lane_preflight.task_store.get_task")
     def test_mixed_valid_and_invalid_scope_salvages_valid_paths(
         self,
@@ -235,7 +235,7 @@ class TestTaskLaneScopes:
         ]
         assert result.conflicting_tasks == ["task-999"]
 
-    @patch("app.services.task_lane_preflight.get_task_spirit")
+    @patch("app.services._lane_scope.get_task_spirit")
     @patch("app.services.task_lane_preflight.task_store.get_task")
     def test_valid_scope_field_survives_other_malformed_scope_field(
         self,
@@ -269,7 +269,7 @@ class TestTaskLaneScopes:
         ]
         assert result.conflicting_tasks == ["task-999"]
 
-    @patch("app.services.task_lane_preflight.get_task_spirit")
+    @patch("app.services._lane_scope.get_task_spirit")
     @patch("app.services.task_lane_preflight.task_store.get_task")
     def test_live_declared_scope_takes_precedence_over_task_spirit_fallback(
         self,
@@ -315,7 +315,7 @@ class TestTaskLaneScopes:
         assert result.overlap_kind == "exact_file"
         assert result.overlap_paths == ["backend/app/foo.py"]
 
-    @patch("app.services.task_lane_preflight.get_task_spirit")
+    @patch("app.services._lane_scope.get_task_spirit")
     @patch("app.services.task_lane_preflight.task_store.get_task")
     def test_live_read_overlap_warns_without_blocking(
         self,
@@ -362,7 +362,7 @@ class TestTaskLaneScopes:
             "Another active coding lane is reading files in the target scope in project summitflow: task-999 (backend/app/foo.py)"
         ]
 
-    @patch("app.services.task_lane_preflight.get_task_spirit")
+    @patch("app.services._lane_scope.get_task_spirit")
     @patch("app.services.task_lane_preflight.task_store.get_task")
     def test_empty_or_invalid_only_scope_falls_back(
         self,
@@ -390,7 +390,7 @@ class TestTaskLaneScopes:
             "Another active coding lane exists in project summitflow but lacks usable file scope: task-123"
         ]
 
-    @patch("app.services.task_lane_preflight.get_task_spirit")
+    @patch("app.services._lane_scope.get_task_spirit")
     @patch("app.services.task_lane_preflight.task_store.get_task")
     def test_absolute_scope_path_falls_back_to_project_block(
         self,
@@ -418,7 +418,7 @@ class TestTaskLaneScopes:
             "Another active coding lane exists in project summitflow but lacks usable file scope: task-123"
         ]
 
-    @patch("app.services.task_lane_preflight.get_task_spirit")
+    @patch("app.services._lane_scope.get_task_spirit")
     @patch("app.services.task_lane_preflight.task_store.get_task")
     def test_path_matching_is_case_sensitive(
         self,
@@ -444,7 +444,7 @@ class TestTaskLaneScopes:
 
         assert result.issues == []
 
-    @patch("app.services.task_lane_preflight.get_task_spirit")
+    @patch("app.services._lane_scope.get_task_spirit")
     @patch("app.services.task_lane_preflight.task_store.get_task")
     def test_multiple_equal_conflicts_choose_deterministic_task_id(
         self,
@@ -478,7 +478,7 @@ class TestTaskLaneScopes:
         ]
         assert result.conflicting_tasks == ["task-aaa"]
 
-    @patch("app.services.task_lane_preflight.get_task_spirit")
+    @patch("app.services._lane_scope.get_task_spirit")
     @patch("app.services.task_lane_preflight.task_store.get_task")
     def test_scoped_exact_overlap_wins_over_unscoped_lane(
         self,
@@ -514,7 +514,7 @@ class TestTaskLaneScopes:
         ]
         assert result.conflicting_tasks == ["task-zzz"]
 
-    @patch("app.services.task_lane_preflight.get_task_spirit")
+    @patch("app.services._lane_scope.get_task_spirit")
     @patch("app.services.task_lane_preflight.task_store.get_task")
     def test_unscoped_lane_is_ignored_when_other_lane_is_disjoint_and_scoped(
         self,

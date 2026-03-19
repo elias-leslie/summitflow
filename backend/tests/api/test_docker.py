@@ -64,9 +64,9 @@ class TestDockerRuntime:
         script_path.parent.mkdir(parents=True)
         script_path.write_text("#!/bin/bash\n")
 
-        mocker.patch.object(docker_api, "_HOST_REPO_ROOT", host_repo_root)
-        mocker.patch.object(docker_api, "_HOST_HOME_PATH", tmp_path)
-        mocker.patch.object(docker_api, "_REPO_ROOT", Path("/app"))
+        mocker.patch("app.api.docker.helpers._HOST_REPO_ROOT", host_repo_root)
+        mocker.patch("app.api.docker.helpers._HOST_HOME_PATH", tmp_path)
+        mocker.patch("app.api.docker.helpers._REPO_ROOT", Path("/app"))
 
         assert docker_api._rebuild_script_path() == script_path
 
@@ -84,17 +84,15 @@ class TestDockerRuntime:
         docker_socket = tmp_path / "docker.sock"
         docker_socket.write_text("")
 
-        mocker.patch.object(docker_api, "_DOCKER_SOCKET", docker_socket)
-        mocker.patch.object(docker_api, "_HOST_HOME_PATH", tmp_path)
-        mocker.patch.object(docker_api, "COMPOSE_PROJECT", "summitflow-stack")
-        mocker.patch.object(
-            docker_api,
-            "_helper_image_ref",
+        mocker.patch("app.api.docker.helpers._DOCKER_SOCKET", docker_socket)
+        mocker.patch("app.api.docker.helpers._HOST_HOME_PATH", tmp_path)
+        mocker.patch("app.api.docker.helpers.COMPOSE_PROJECT", "summitflow-stack")
+        mocker.patch(
+            "app.api.docker.helpers._helper_image_ref",
             new=mocker.AsyncMock(return_value="ghcr.io/summitflow-solutions/summitflow-api:test"),
         )
-        run_docker = mocker.patch.object(
-            docker_api,
-            "_run_docker",
+        run_docker = mocker.patch(
+            "app.api.docker.helpers._run_docker",
             new=mocker.AsyncMock(side_effect=[("", "", 0), ("helper-id\n", "", 0)]),
         )
 
@@ -113,8 +111,6 @@ class TestDockerRuntime:
         mocker: MockerFixture,
         tmp_path,
     ) -> None:
-        from app.api import docker as docker_api
-
         compose_dir = tmp_path / "compose"
         compose_dir.mkdir()
         compose_file = compose_dir / "docker-compose.yml"
@@ -122,12 +118,11 @@ class TestDockerRuntime:
         runtime_file = compose_dir / ".runtime-mode"
         runtime_file.write_text("prod\n")
 
-        mocker.patch.object(docker_api, "_COMPOSE_FILE", compose_file)
-        mocker.patch.object(docker_api, "_RUNTIME_MODE_FILE", runtime_file)
-        mocker.patch.object(docker_api, "_DEFAULT_STACK_MODE", "dev")
-        mocker.patch.object(
-            docker_api,
-            "_runtime_service_statuses",
+        mocker.patch("app.api.docker.constants._COMPOSE_FILE", compose_file)
+        mocker.patch("app.api.docker.constants._RUNTIME_MODE_FILE", runtime_file)
+        mocker.patch("app.api.docker.constants._DEFAULT_STACK_MODE", "dev")
+        mocker.patch(
+            "app.api.docker.helpers._runtime_service_statuses",
             new=mocker.AsyncMock(
                 return_value=[
                     _status(
@@ -140,9 +135,8 @@ class TestDockerRuntime:
                 ]
             ),
         )
-        mocker.patch.object(
-            docker_api,
-            "_project_containers",
+        mocker.patch(
+            "app.api.docker.helpers._project_containers",
             new=mocker.AsyncMock(
                 return_value=[
                     {
@@ -152,9 +146,8 @@ class TestDockerRuntime:
                 ]
             ),
         )
-        mocker.patch.object(
-            docker_api,
-            "_detect_running_mode",
+        mocker.patch(
+            "app.api.docker.helpers._detect_running_mode",
             new=mocker.AsyncMock(return_value="dev"),
         )
 
@@ -177,25 +170,21 @@ class TestDockerRuntime:
         mocker: MockerFixture,
         tmp_path,
     ) -> None:
-        from app.api import docker as docker_api
-
         compose_dir = tmp_path / "compose"
         compose_dir.mkdir()
         compose_file = compose_dir / "docker-compose.yml"
         compose_file.write_text("services: {}\n")
         runtime_file = compose_dir / ".runtime-mode"
 
-        mocker.patch.object(docker_api, "_COMPOSE_FILE", compose_file)
-        mocker.patch.object(docker_api, "_RUNTIME_MODE_FILE", runtime_file)
-        mocker.patch.object(docker_api, "_DEFAULT_STACK_MODE", "dev")
-        mocker.patch.object(
-            docker_api,
-            "_runtime_service_statuses",
+        mocker.patch("app.api.docker.constants._COMPOSE_FILE", compose_file)
+        mocker.patch("app.api.docker.constants._RUNTIME_MODE_FILE", runtime_file)
+        mocker.patch("app.api.docker.constants._DEFAULT_STACK_MODE", "dev")
+        mocker.patch(
+            "app.api.docker.helpers._runtime_service_statuses",
             new=mocker.AsyncMock(return_value=[]),
         )
-        mocker.patch.object(
-            docker_api,
-            "_project_containers",
+        mocker.patch(
+            "app.api.docker.helpers._project_containers",
             new=mocker.AsyncMock(return_value=[]),
         )
 
@@ -223,11 +212,10 @@ class TestDockerRuntime:
         script_path = tmp_path / "rebuild.sh"
         script_path.write_text("#!/bin/bash\n")
 
-        mocker.patch.object(docker_api, "_rebuild_script_path", return_value=script_path)
-        mocker.patch.object(docker_api, "_INTERNAL_SECRET", "")
-        mocker.patch.object(
-            docker_api,
-            "_get_runtime_status",
+        mocker.patch("app.api.docker.routes._rebuild_script_path", return_value=script_path)
+        mocker.patch("app.api.docker.helpers._INTERNAL_SECRET", "")
+        mocker.patch(
+            "app.api.docker.routes._get_runtime_status",
             new=mocker.AsyncMock(
                 return_value=docker_api.RuntimeModeStatus(
                     runtime="docker",
@@ -241,9 +229,8 @@ class TestDockerRuntime:
                 )
             ),
         )
-        launch_switch = mocker.patch.object(
-            docker_api,
-            "_launch_runtime_switch",
+        launch_switch = mocker.patch(
+            "app.api.docker.routes._launch_runtime_switch",
             new=mocker.AsyncMock(return_value="summitflow-stack-mode-switch"),
         )
 
@@ -262,10 +249,9 @@ class TestDockerRuntime:
     ) -> None:
         from app.api import docker as docker_api
 
-        mocker.patch.object(docker_api, "_INTERNAL_SECRET", "")
-        mocker.patch.object(
-            docker_api,
-            "_get_runtime_status",
+        mocker.patch("app.api.docker.helpers._INTERNAL_SECRET", "")
+        mocker.patch(
+            "app.api.docker.routes._get_runtime_status",
             new=mocker.AsyncMock(
                 return_value=docker_api.RuntimeModeStatus(
                     runtime="hybrid",
@@ -279,10 +265,9 @@ class TestDockerRuntime:
                 )
             ),
         )
-        write_mode = mocker.patch.object(docker_api, "_write_runtime_mode")
-        launch_switch = mocker.patch.object(
-            docker_api,
-            "_launch_runtime_switch",
+        write_mode = mocker.patch("app.api.docker.routes._write_runtime_mode")
+        launch_switch = mocker.patch(
+            "app.api.docker.routes._launch_runtime_switch",
             new=mocker.AsyncMock(),
         )
 
@@ -302,9 +287,8 @@ class TestDockerRuntime:
     ) -> None:
         from app.api import docker as docker_api
 
-        mocker.patch.object(
-            docker_api,
-            "_run_systemctl_user",
+        mocker.patch(
+            "app.api.docker.helpers._run_systemctl_user",
             new=mocker.AsyncMock(
                 side_effect=[
                     ("", "", 0),
@@ -312,9 +296,8 @@ class TestDockerRuntime:
                 ]
             ),
         )
-        clear_ports = mocker.patch.object(
-            docker_api,
-            "_clear_service_ports",
+        clear_ports = mocker.patch(
+            "app.api.docker.helpers._clear_service_ports",
             new=mocker.AsyncMock(),
         )
 
@@ -332,9 +315,8 @@ class TestDockerRuntime:
     ) -> None:
         from app.api import docker as docker_api
 
-        mocker.patch.object(
-            docker_api,
-            "_run_systemctl_user",
+        mocker.patch(
+            "app.api.docker.helpers._run_systemctl_user",
             new=mocker.AsyncMock(return_value=("", "Timed out after 0.75s", 124)),
         )
 
@@ -356,9 +338,8 @@ class TestDockerRuntime:
     ) -> None:
         from app.api import docker as docker_api
 
-        mocker.patch.object(
-            docker_api,
-            "_systemd_unit_state",
+        mocker.patch(
+            "app.api.docker.helpers._systemd_unit_state",
             new=mocker.AsyncMock(
                 return_value={
                     "Id": "summitflow-backend.service",
@@ -370,9 +351,8 @@ class TestDockerRuntime:
                 }
             ),
         )
-        mocker.patch.object(
-            docker_api,
-            "_probe_http",
+        mocker.patch(
+            "app.api.docker.helpers._probe_http",
             new=mocker.AsyncMock(return_value=(True, 200)),
         )
 

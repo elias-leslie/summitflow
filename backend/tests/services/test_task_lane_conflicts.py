@@ -20,7 +20,7 @@ def _mock_response(payload: dict[str, object]) -> MagicMock:
 @pytest.fixture
 def mock_httpx_client(mocker):
     mock_client = MagicMock()
-    mock_client_cls = mocker.patch("app.services.task_lane_preflight.httpx.Client")
+    mock_client_cls = mocker.patch("app.services._lane_inventory.httpx.Client")
     mock_client_cls.return_value.__enter__.return_value = mock_client
     return mock_client
 
