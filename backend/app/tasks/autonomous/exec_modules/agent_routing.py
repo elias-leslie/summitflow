@@ -106,9 +106,6 @@ def detect_progress(
             evidence["diff_summary"] = diff.stdout.strip()[-DIFF_SUMMARY_MAX_LEN:]
     except (subprocess.TimeoutExpired, OSError):
         pass
-    defected = [s for s in steps if s.get("status") == "plan_defect"]
-    if defected:
-        evidence["adjusted_steps"] = len(defected)
     return evidence if evidence else None
 
 

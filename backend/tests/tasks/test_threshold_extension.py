@@ -70,26 +70,6 @@ class TestDetectProgress:
         assert result["has_code_changes"]
         assert "3 files changed" in result["diff_summary"]
 
-    def test_detects_defected_steps(self, tmp_path: Path) -> None:
-        from app.tasks.autonomous.exec_modules.agent_routing import detect_progress
-
-        step_results = [
-            {"step_number": 1, "passed": False, "output": "error", "reason": "failed"},
-        ]
-        steps = [
-            {"step_number": 1, "status": "plan_defect"},
-            {"step_number": 2, "status": "pending"},
-        ]
-
-        with patch("app.tasks.autonomous.exec_modules.agent_routing.subprocess") as mock_sub:
-            mock_result = MagicMock()
-            mock_result.stdout = ""
-            mock_sub.run.return_value = mock_result
-            result = detect_progress("sub-1", steps, step_results, str(tmp_path))
-
-        assert result is not None
-        assert result["adjusted_steps"] == 1
-
     def test_handles_subprocess_timeout(self, tmp_path: Path) -> None:
         """Git diff timeout should not crash, just skip that evidence."""
         import subprocess as real_subprocess
@@ -117,9 +97,7 @@ class TestDetectProgress:
             {"step_number": 1, "passed": True, "output": "ok"},
             {"step_number": 2, "passed": False, "output": "error", "reason": "failed"},
         ]
-        steps = [
-            {"step_number": 1, "status": "plan_defect"},
-        ]
+        steps: list[dict[str, Any]] = []
 
         with patch("app.tasks.autonomous.exec_modules.agent_routing.subprocess") as mock_sub:
             mock_result = MagicMock()
@@ -130,7 +108,6 @@ class TestDetectProgress:
         assert result is not None
         assert result["steps_passed"] == "1/2"
         assert result["has_code_changes"]
-        assert result["adjusted_steps"] == 1
 
 
 class TestRequestExtension:

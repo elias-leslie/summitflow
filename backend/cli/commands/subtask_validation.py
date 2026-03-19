@@ -8,27 +8,8 @@ import typer
 
 
 def is_step_resolved(step: dict[str, Any], step_passes: dict[int, bool]) -> bool:
-    """Check if a step is resolved (passed or plan_defect with passing fix).
-
-    A step is considered resolved if:
-    1. It has passes=True, OR
-    2. It has status="plan_defect" AND its linked fix_step_number has passes=True
-
-    Args:
-        step: Step data dict with 'passes', 'status', and 'fix_step_number' fields
-        step_passes: Map of step_number -> passes for all steps in the subtask
-
-    Returns:
-        True if the step is resolved, False otherwise
-    """
-    if step.get("passes"):
-        return True
-    # plan_defect steps are resolved if their fix step passed
-    if step.get("status") == "plan_defect":
-        fix_num = step.get("fix_step_number")
-        if fix_num and step_passes.get(fix_num, False):
-            return True
-    return False
+    """Check if a step is resolved (has passes=True)."""
+    return bool(step.get("passes"))
 
 
 def validate_steps_input(

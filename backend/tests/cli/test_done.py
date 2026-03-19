@@ -82,30 +82,6 @@ class TestAutoCloseSubtasks:
         client.update_step.assert_not_called()
         client.update_subtask.assert_called_once_with("task-123", "1.1", passes=True)
 
-    def test_skips_plan_defect_steps(self) -> None:
-        """Plan_defect steps are skipped (they have fix steps)."""
-        client = self._make_client()
-        client.get_subtasks.return_value = {
-            "subtasks": [
-                {
-                    "subtask_id": "1.1",
-                    "passes": False,
-                    "steps": [
-                        {"step_number": 1, "passes": True, "status": "pending"},
-                        {"step_number": 2, "passes": False, "status": "plan_defect"},
-                        {"step_number": 3, "passes": True, "status": "pending"},
-                    ],
-                },
-            ]
-        }
-        client.update_subtask.return_value = {"passes": True}
-
-        with patch("cli.commands.done_subtask.merge_subtask_branch"):
-            auto_close_subtasks(client, "task-123", None)
-
-        # Step 2 (plan_defect) should NOT be verified
-        client.update_step.assert_not_called()
-
     def test_aborts_on_step_failure(self) -> None:
         """If subtask update fails, abort immediately (steps layer removed)."""
         client = self._make_client()
