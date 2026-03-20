@@ -6,6 +6,7 @@ from typing import Any
 
 from ...logging_config import get_logger
 from ...services.task_execution_readiness import sync_task_execution_readiness
+from ...services.task_plan_context import build_task_plan_context
 from ...services.task_second_opinion import ensure_second_opinion_tracking
 from ...storage import tasks as task_store
 from ...storage.subtasks import bulk_add_subtask_dependencies, bulk_create_subtasks
@@ -82,7 +83,7 @@ def _merge_context(
 def _upsert_task_spirit(task_id: str, plan_data: dict[str, Any]) -> None:
     """Create or update the task spirit record."""
     done_when = _merge_unique_strings(None, plan_data.get("done_when", []))
-    context = plan_data.get("context") if isinstance(plan_data.get("context"), dict) else {}
+    context = build_task_plan_context(plan_data)
     complexity = str(plan_data.get("complexity", "")).strip() or None
     spirit = get_task_spirit(task_id)
     if not spirit:

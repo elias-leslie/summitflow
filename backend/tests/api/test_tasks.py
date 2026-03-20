@@ -14,6 +14,7 @@ from typing import Any
 from unittest.mock import patch
 
 from app.storage.connection import get_connection
+from app.storage.task_spirit import get_task_spirit
 
 
 class TestTaskSpiritJoin:
@@ -195,6 +196,40 @@ class TestTaskUpdates:
         assert response.status_code == 200
         updated = response.json()
         assert updated["execution_mode"] == "manual"
+
+    def test_task_update_plan_context_persists(
+        self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
+    ) -> None:
+        response = client.post(
+            f"/api/projects/{test_project_id}/tasks",
+            json={
+                "title": "Task with plan context",
+                "task_type": "task",
+            },
+        )
+        assert response.status_code == 200
+        task_id = response.json()["id"]
+        cleanup_task(task_id)
+
+        response = client.patch(
+            f"/api/projects/{test_project_id}/tasks/{task_id}",
+            json={
+                "objective": "Restore rich plan fidelity",
+                "constraints": ["Keep updates lean"],
+                "decisions": [{"id": "d1", "title": "Reuse context blob", "outcome": "accepted"}],
+                "done_when": ["Task context shows planner fields"],
+            },
+        )
+        assert response.status_code == 200
+
+        spirit = get_task_spirit(task_id)
+        assert spirit is not None
+        assert spirit["done_when"] == ["Task context shows planner fields"]
+        assert spirit["objective"] == "Restore rich plan fidelity"
+        assert spirit["constraints"] == ["Keep updates lean"]
+        assert spirit["decisions"] == [
+            {"id": "d1", "title": "Reuse context blob", "outcome": "accepted"}
+        ]
 
 
 class TestShortTaskIdApiResolution:

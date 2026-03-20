@@ -6,6 +6,8 @@ from typing import Any
 
 from psycopg.rows import TupleRow
 
+from ..services.task_plan_context import hydrate_task_plan_fields
+
 # Explicit column list for SELECT queries (avoids SELECT * fragility)
 # Simplified: dropped objective, spirit_anti, decisions, constraints
 SPIRIT_COLUMNS = (
@@ -30,7 +32,7 @@ def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any] | Non
         return None
     if len(row) != EXPECTED_COLUMNS:
         raise ValueError(f"Expected {EXPECTED_COLUMNS} columns for task_spirit, got {len(row)}")
-    return {
+    return hydrate_task_plan_fields({
         "task_id": row[0],
         "done_when": row[1] if row[1] else [],
         "context": row[2] if row[2] else {},
@@ -41,4 +43,4 @@ def _row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any] | Non
         "created_at": row[7].isoformat() if row[7] else None,
         "updated_at": row[8].isoformat() if row[8] else None,
         "complexity": row[9],
-    }
+    })

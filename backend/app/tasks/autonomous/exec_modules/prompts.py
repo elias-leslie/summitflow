@@ -191,7 +191,7 @@ def _build_precision_code_search_block(
     objective: str,
     subtask: dict[str, Any],
 ) -> str:
-    steps = subtask.get("steps_from_table", [])
+    steps = _get_subtask_steps(subtask)
     queries = [
         objective,
         str(subtask.get("description", "")),
@@ -208,6 +208,16 @@ def _build_precision_code_search_block(
         f"\n# Precision Code Search\n{result.prompt_context}\n\n"
         f"{PRECISION_CODE_SEARCH_GUIDANCE}"
     )
+
+
+def _get_subtask_steps(subtask: dict[str, Any]) -> list[dict[str, Any]]:
+    steps_from_table = subtask.get("steps_from_table")
+    if isinstance(steps_from_table, list) and steps_from_table:
+        return steps_from_table
+    steps = subtask.get("steps")
+    if isinstance(steps, list):
+        return steps
+    return []
 
 
 def build_subtask_prompt(
@@ -239,7 +249,7 @@ def build_subtask_prompt(
         "handoff_block": _build_handoff_block(handoff),
         "subtask_id": subtask_short_id,
         "description": subtask.get("description", ""),
-        "steps_block": build_steps_block(subtask.get("steps_from_table", [])),
+        "steps_block": build_steps_block(_get_subtask_steps(subtask)),
         "project_path": project_path,
     })
     precision_block = _build_precision_code_search_block(project_id, objective, subtask)
@@ -320,5 +330,5 @@ def build_fix_prompt(
         "description": subtask.get("description", ""),
         "failures_block": build_failures_block(failed_steps),
         "supervisor_block": supervisor_block,
-        "steps_block": build_steps_block(subtask.get("steps_from_table", [])),
+        "steps_block": build_steps_block(_get_subtask_steps(subtask)),
     })

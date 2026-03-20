@@ -123,6 +123,43 @@ class TestPromptTemplateFallbacks:
         assert "Use the Precision Code Search block as the first code-navigation pass." in prompt
         mock_logger.warning.assert_called_once()
 
+    @patch(f"{_PROMPTS}.build_health_context", return_value="")
+    @patch(f"{_PROMPTS}.build_conflict_context", return_value="")
+    @patch(f"{_PROMPTS}.build_resume_context", return_value="")
+    @patch(f"{_PROMPTS}._build_precision_code_search_block", return_value="")
+    @patch(f"{_PROMPTS}.get_handoff_context", return_value={})
+    @patch(f"{_PROMPTS}.task_store")
+    @patch(f"{_PROMPTS}.get_task_spirit")
+    @patch(f"{_PROMPTS}.get_prompt_template", return_value="{steps_block}")
+    def test_build_subtask_prompt_uses_plan_context_steps_when_step_rows_missing(
+        self,
+        _mock_template: MagicMock,
+        mock_get_task_spirit: MagicMock,
+        mock_task_store: MagicMock,
+        _mock_handoff: MagicMock,
+        _mock_precision: MagicMock,
+        _mock_resume: MagicMock,
+        _mock_conflict: MagicMock,
+        _mock_health: MagicMock,
+    ) -> None:
+        from app.tasks.autonomous.exec_modules.prompts import build_subtask_prompt
+
+        mock_get_task_spirit.return_value = {"done_when": [], "context": {}}
+        mock_task_store.get_task.return_value = {"id": "task-1", "description": "Do the work"}
+
+        prompt = build_subtask_prompt(
+            task_id="task-1",
+            subtask={
+                "subtask_id": "1.1",
+                "description": "Apply the refactor",
+                "steps": [{"step_number": 1, "description": "Preserve behavior"}],
+            },
+            project_id="agent-hub",
+            project_path="/tmp/worktree",
+        )
+
+        assert "Preserve behavior" in prompt
+
     @patch(f"{_PROMPTS}.task_store")
     def test_build_conflict_context_includes_conflicting_files(
         self,

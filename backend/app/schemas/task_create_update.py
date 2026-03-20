@@ -28,11 +28,11 @@ class TaskCreate(BaseModel):
     acceptance_criteria: list[AcceptanceCriterion] | None = Field(
         default=None, description="List of acceptance criteria (validated on create)"
     )
-    # Deprecated spirit fields — accepted but ignored for backwards compatibility
-    objective: str | None = Field(default=None, description="DEPRECATED: no longer stored", exclude=True)
-    spirit_anti: str | None = Field(default=None, description="DEPRECATED: no longer stored", exclude=True)
-    decisions: list[dict[str, Any]] | None = Field(default=None, description="DEPRECATED: no longer stored", exclude=True)
-    constraints: list[str] | None = Field(default=None, description="DEPRECATED: no longer stored", exclude=True)
+    # Rich plan metadata is preserved in task_spirit.context for round-trip task context.
+    objective: str | None = Field(default=None, description="Task objective stored in task_spirit context")
+    spirit_anti: str | None = Field(default=None, description="Guardrails stored in task_spirit context")
+    decisions: list[dict[str, Any]] | None = Field(default=None, description="Decision log stored in task_spirit context")
+    constraints: list[str] | None = Field(default=None, description="Constraints stored in task_spirit context")
     # Pipeline v2 fields
     done_when: list[str] | None = Field(
         default=None, description="Checklist of completion conditions"
@@ -75,11 +75,11 @@ class TaskUpdate(BaseModel):
     acceptance_criteria: list[AcceptanceCriterion] | None = None
     # Capability linkage (FK to capabilities table)
     capability_id: int | None = None
-    # Deprecated spirit fields — accepted but ignored for backwards compatibility
-    objective: str | None = Field(default=None, description="DEPRECATED: no longer stored", exclude=True)
-    spirit_anti: str | None = Field(default=None, description="DEPRECATED: no longer stored", exclude=True)
-    decisions: list[dict[str, Any]] | None = Field(default=None, description="DEPRECATED: no longer stored", exclude=True)
-    constraints: list[str] | None = Field(default=None, description="DEPRECATED: no longer stored", exclude=True)
+    # Rich plan metadata is preserved in task_spirit.context for round-trip task context.
+    objective: str | None = Field(default=None, description="Task objective stored in task_spirit context")
+    spirit_anti: str | None = Field(default=None, description="Guardrails stored in task_spirit context")
+    decisions: list[dict[str, Any]] | None = Field(default=None, description="Decision log stored in task_spirit context")
+    constraints: list[str] | None = Field(default=None, description="Constraints stored in task_spirit context")
     # Pipeline v2 fields
     done_when: list[str] | None = None
     complexity: Literal["SIMPLE", "STANDARD", "COMPLEX"] | None = None

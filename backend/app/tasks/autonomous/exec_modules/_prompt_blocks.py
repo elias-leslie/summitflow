@@ -35,20 +35,45 @@ If nothing to report, say "no feedback".
 Task summary: {task_summary}"""
 
 
-def build_steps_block(steps: list[dict[str, Any]]) -> str:
-    """Build formatted steps block from step dicts.
+def _step_description(step: dict[str, Any]) -> str:
+    description = str(step.get("description") or "").strip()
+    if not description:
+        return "Unnamed step"
+    return description
 
-    Steps layer has been removed. Returns a static instruction.
-    """
-    return "Execute the subtask description directly."
+
+def build_steps_block(steps: list[dict[str, Any]]) -> str:
+    """Build a compact execution checklist for the prompt."""
+    if not steps:
+        return "Execute the subtask description directly."
+
+    lines: list[str] = []
+    for index, step in enumerate(steps, start=1):
+        step_number = int(step.get("step_number") or index)
+        lines.append(f"{step_number}. {_step_description(step)}")
+        spec = step.get("spec")
+        if isinstance(spec, dict):
+            verify_commands = spec.get("verify_commands")
+            if isinstance(verify_commands, list):
+                commands = [str(command).strip() for command in verify_commands if str(command).strip()]
+                if commands:
+                    lines.append(f"   Verify with: {'; '.join(commands)}")
+
+    return "\n".join(lines)
 
 
 def build_failures_block(failed_steps: list[dict[str, Any]]) -> str:
-    """Build formatted failures block from failed step results.
+    """Build a compact list of failed verification details for retry prompts."""
+    if not failed_steps:
+        return ""
 
-    Steps layer has been removed. Returns empty string.
-    """
-    return ""
+    lines = ["Verification failures:"]
+    for step in failed_steps[:5]:
+        step_number = step.get("step_number", "?")
+        reason = str(step.get("reason") or step.get("error") or step.get("output") or "unknown").strip()
+        lines.append(f"- Step {step_number}: {reason[:200]}")
+    lines.append("")
+    return "\n".join(lines)
 
 
 def classify_events(events: list[dict[str, Any]]) -> tuple[list[str], list[str]]:

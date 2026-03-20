@@ -104,3 +104,27 @@ class TestSyncProgressCommand:
             sync_progress_command("task-1", acknowledge_none=False)
 
         client.update_subtask.assert_called_once_with("task-1", "1.1", passes=True)
+
+    def test_plan_context_steps_are_guidance_not_sync_blockers(self) -> None:
+        client = MagicMock()
+        client.get_subtasks.return_value = {
+            "subtasks": [
+                {
+                    "subtask_id": "1.1",
+                    "passes": False,
+                    "citations_acknowledged_at": "2026-03-09T12:00:00Z",
+                    "steps_source": "plan_context",
+                    "steps": [
+                        {"step_number": 1, "description": "Implement the change", "passes": False},
+                    ],
+                }
+            ]
+        }
+
+        with (
+            patch("cli.commands.tasks_progress.STClient", return_value=client),
+            patch("cli.commands.tasks_progress.output_success"),
+        ):
+            sync_progress_command("task-1", acknowledge_none=False)
+
+        client.update_subtask.assert_called_once_with("task-1", "1.1", passes=True)

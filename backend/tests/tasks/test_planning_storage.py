@@ -68,6 +68,26 @@ class TestSavePlanToDatabase:
             context={
                 "files_to_modify": ["backend/app/existing.py", "frontend/app/page.tsx"],
                 "files_to_create": ["frontend/lib/stats.ts"],
+                "objective": "Planner reworded objective",
+                "spirit_anti": "Do not broaden the feature",
+                "constraints": ["Avoid schema changes"],
+                "decisions": [{"id": "d1", "title": "Reuse service", "outcome": "reuse"}],
+                "subtasks": [
+                    {
+                        "subtask_id": "1.1",
+                        "phase": "frontend",
+                        "subtask_type": "frontend",
+                        "description": "Implement the UI update",
+                        "steps": [
+                            {
+                                "step_number": 1,
+                                "description": "Wire the component",
+                                "passes": False,
+                                "spec": {"verify_commands": ["dt --quick"]},
+                            }
+                        ],
+                    }
+                ],
             },
         )
         mock_bulk_create.assert_called_once_with(

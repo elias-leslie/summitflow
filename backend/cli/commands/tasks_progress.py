@@ -30,6 +30,10 @@ def _subtask_steps(subtask: dict[str, object]) -> list[dict[str, object]]:
     return []
 
 
+def _uses_plan_context_steps(subtask: dict[str, object]) -> bool:
+    return subtask.get("steps_source") == "plan_context"
+
+
 @dataclass
 class SyncAnalysis:
     synced: list[str]
@@ -50,6 +54,13 @@ def analyze_subtask_sync(subtasks: list[dict[str, object]]) -> SyncAnalysis:
         steps = _subtask_steps(subtask)
         if not steps:
             skipped.append(f"{subtask_id}:no-steps")
+            continue
+        if _uses_plan_context_steps(subtask):
+            citations_acknowledged = bool(subtask.get("citations_acknowledged_at"))
+            if not citations_acknowledged:
+                skipped.append(f"{subtask_id}:citations")
+                continue
+            syncable.append(subtask_id)
             continue
 
         incomplete = _incomplete_step_numbers(steps)
@@ -84,6 +95,26 @@ def sync_completed_subtasks(
         steps = _subtask_steps(subtask)
         if not steps:
             analysis.skipped.append(f"{subtask_id}:no-steps")
+            continue
+        if _uses_plan_context_steps(subtask):
+            citations_acknowledged = bool(subtask.get("citations_acknowledged_at"))
+            if not citations_acknowledged:
+                if not acknowledge_none:
+                    analysis.skipped.append(f"{subtask_id}:citations")
+                    continue
+                try:
+                    client.acknowledge_no_citations(task_id, subtask_id)
+                except APIError as e:
+                    handle_api_error(e)
+                    raise typer.Exit(1) from None
+                subtask["citations_acknowledged_at"] = True
+            try:
+                client.update_subtask(task_id, subtask_id, passes=True)
+            except APIError as e:
+                handle_api_error(e)
+                raise typer.Exit(1) from None
+            subtask["passes"] = True
+            analysis.synced.append(subtask_id)
             continue
 
         incomplete = _incomplete_step_numbers(steps)

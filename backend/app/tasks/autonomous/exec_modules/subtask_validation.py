@@ -27,7 +27,7 @@ def validate_subtask_environment(
             "reason": "worktree_invalid",
         }
 
-    steps = subtask.get("steps_from_table", [])
+    steps = subtask.get("steps_from_table") or subtask.get("steps") or []
     if not steps:
         emit_log(
             task_id,

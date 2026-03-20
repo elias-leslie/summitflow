@@ -29,14 +29,25 @@ logger = get_logger(__name__)
 
 async def _save_spirit_fields(task_id: str, task: TaskCreate) -> None:
     """Persist spirit fields to task_spirit table if any are provided."""
-    if not any([task.done_when, task.complexity]):
-        return
+    from ...services.task_plan_context import build_task_plan_context
     from ...storage.task_spirit import upsert_task_spirit
+
+    context = build_task_plan_context(
+        {
+            "objective": task.objective,
+            "spirit_anti": task.spirit_anti,
+            "decisions": task.decisions,
+            "constraints": task.constraints,
+        }
+    )
+    if not any([task.done_when, task.complexity, context]):
+        return
 
     await asyncio.to_thread(
         upsert_task_spirit,
         task_id=task_id,
         done_when=task.done_when,
+        context=context or None,
         complexity=task.complexity,
     )
 

@@ -13,6 +13,36 @@ from .subtasks_helpers import SUBTASK_COLUMNS, generate_subtask_id, row_to_dict
 logger = get_logger(__name__)
 
 
+def _attach_plan_context_guidance(
+    task_id: str,
+    subtasks: list[dict[str, object]],
+) -> None:
+    """Hydrate plan-only step guidance from task_spirit.context when step rows do not exist."""
+    from ..services.task_plan_context import get_plan_subtask_map
+    from .task_spirit import get_task_spirit
+
+    spirit = get_task_spirit(task_id)
+    if not spirit:
+        return
+
+    subtask_map = get_plan_subtask_map(spirit.get("context"))
+    if not subtask_map:
+        return
+
+    for subtask in subtasks:
+        if subtask.get("steps_from_table"):
+            continue
+        spec = subtask_map.get(str(subtask.get("subtask_id", "")))
+        if not spec:
+            continue
+        guidance_steps = spec.get("steps")
+        if not isinstance(guidance_steps, list) or not guidance_steps:
+            continue
+        subtask["steps"] = guidance_steps
+        subtask["steps_source"] = "plan_context"
+        subtask["step_summary"] = {"total": len(guidance_steps), "completed": 0}
+
+
 def get_subtask(task_id: str, subtask_id: str) -> dict[str, object] | None:
     """Get a single subtask by task_id and subtask_id.
 
@@ -84,5 +114,6 @@ def get_subtasks_for_task(
         for subtask in subtasks:
             subtask["steps_from_table"] = []
             subtask["step_summary"] = {"total": 0, "completed": 0}
+        _attach_plan_context_guidance(task_id, subtasks)
 
     return subtasks

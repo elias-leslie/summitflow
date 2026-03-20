@@ -91,7 +91,7 @@ def _run_initial_agent(
              supervisor_guided_attempts, extensions_granted,
              initial_content, agent_session_id).
     """
-    steps = subtask.get("steps_from_table", [])
+    steps = subtask.get("steps_from_table") or subtask.get("steps") or []
 
     logger.info(
         "Executing in project",
@@ -142,7 +142,7 @@ def _apply_fallbacks(
     Returns (all_passed, step_results, agent_slug, self_fix_attempts,
              supervisor_guided_attempts, extensions_granted).
     """
-    steps = subtask.get("steps_from_table", [])
+    steps = subtask.get("steps_from_table") or subtask.get("steps") or []
     return execute_with_fallbacks(
         task_id, subtask_id, subtask_short_id, subtask, subtask_type,
         steps, project_path, project_id, agent_slug, prompt,

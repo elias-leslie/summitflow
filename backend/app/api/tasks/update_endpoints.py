@@ -36,7 +36,8 @@ router = APIRouter()
 @router.patch("/projects/{project_id}/tasks/{task_id}", response_model=TaskResponse)
 async def update_task(project_id: str, task_id: str, update: TaskUpdate) -> TaskResponse:
     """Update task fields (splits updates between task and task_spirit tables)."""
-    from ...storage.task_spirit import update_task_spirit
+    from ...services.task_plan_context import build_task_plan_context
+    from ...storage.task_spirit import get_task_spirit, update_task_spirit, upsert_task_spirit
 
     existing = await asyncio.to_thread(verify_task_project, task_id, project_id)
 
@@ -44,9 +45,9 @@ async def update_task(project_id: str, task_id: str, update: TaskUpdate) -> Task
     if not update_fields:
         return task_to_response(existing)
 
-    # Split into task fields and spirit fields
-    # Only done_when is still a live spirit field; others are deprecated
-    spirit_fields = {"done_when"}
+    # Split into task fields and spirit fields.
+    # Rich task-plan metadata now lives in task_spirit.context for round-trip fidelity.
+    spirit_fields = {"done_when", "objective", "spirit_anti", "decisions", "constraints"}
     task_updates = {k: v for k, v in update_fields.items() if k not in spirit_fields}
     spirit_updates = {
         k: v for k, v in update_fields.items() if k in spirit_fields and k != "labels"
@@ -62,7 +63,22 @@ async def update_task(project_id: str, task_id: str, update: TaskUpdate) -> Task
 
     # Update task_spirit table
     if spirit_updates:
-        await asyncio.to_thread(update_task_spirit, task_id, **spirit_updates)
+        existing_spirit = await asyncio.to_thread(get_task_spirit, task_id)
+        existing_context = existing_spirit.get("context") if existing_spirit else None
+        merged_context: dict[str, Any] = (
+            dict(existing_context) if isinstance(existing_context, dict) else {}
+        )
+        merged_context.update(build_task_plan_context(spirit_updates))
+        spirit_payload: dict[str, Any] = {}
+        if "done_when" in spirit_updates:
+            spirit_payload["done_when"] = spirit_updates["done_when"]
+        if merged_context:
+            spirit_payload["context"] = merged_context
+
+        if existing_spirit:
+            await asyncio.to_thread(update_task_spirit, task_id, **spirit_payload)
+        else:
+            await asyncio.to_thread(upsert_task_spirit, task_id=task_id, **spirit_payload)
     updated = await refresh_task_tracking(task_id, "task-update")
 
     return task_to_response(updated)

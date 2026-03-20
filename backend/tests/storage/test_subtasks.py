@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import MagicMock, patch
 
 from app.storage import subtasks as subtask_store
 from app.storage.subtasks_crud import generate_subtask_id as _generate_subtask_id
@@ -149,6 +150,40 @@ class TestGetSubtasksForTask:
         assert len(subtasks) == 1
         assert subtasks[0]["steps_from_table"] == []
         assert subtasks[0]["step_summary"] == {"total": 0, "completed": 0}
+
+    @patch("app.storage.task_spirit.get_task_spirit")
+    def test_get_subtasks_with_include_steps_uses_plan_context_guidance(
+        self,
+        mock_get_spirit: MagicMock,
+        test_task: dict[str, Any],
+    ) -> None:
+        """Plan-context subtasks should surface step guidance when step rows do not exist."""
+        subtask_store.create_subtask(test_task["id"], "1.1", "Test", 0)
+        mock_get_spirit.return_value = {
+            "context": {
+                "subtasks": [
+                    {
+                        "subtask_id": "1.1",
+                        "description": "Test",
+                        "steps": [
+                            {"step_number": 1, "description": "Keep behavior stable", "passes": False},
+                            {"step_number": 2, "description": "Run dt -q -d", "passes": False},
+                        ],
+                    }
+                ]
+            }
+        }
+
+        subtasks = subtask_store.get_subtasks_for_task(test_task["id"], include_steps=True)
+
+        assert len(subtasks) == 1
+        assert subtasks[0]["steps_from_table"] == []
+        assert subtasks[0]["steps_source"] == "plan_context"
+        assert subtasks[0]["steps"] == [
+            {"step_number": 1, "description": "Keep behavior stable", "passes": False},
+            {"step_number": 2, "description": "Run dt -q -d", "passes": False},
+        ]
+        assert subtasks[0]["step_summary"] == {"total": 2, "completed": 0}
 
 
 class TestUpdateSubtaskPasses:
