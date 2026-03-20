@@ -112,13 +112,14 @@ def create_task_completion_notification(
 ) -> dict[str, Any]:
     """Create a task-completion notification with Johnny's voice.
 
-    Uses severity 'warning' to trigger push delivery (info stays in-app only).
+    Severity is 'info' — completions stay in-app only (no push buzz).
+    Push delivery is reserved for failures and blockers that need attention.
     """
     from .notifications import create_notification
 
     title = f"Task done: {task_title}"
     suffix = f" {detail}" if detail else ""
-    message = f"Finished '{task_title}' — all checks passed.{suffix} Tap to review."
+    message = f"Finished '{task_title}' — all checks passed.{suffix}"
     metadata: dict[str, Any] = {"johnny": True}
     if agent_hub_session_ids:
         metadata["agent_hub_session_ids"] = agent_hub_session_ids
@@ -127,7 +128,7 @@ def create_task_completion_notification(
         notification_type="task_completed",
         title=title,
         message=message,
-        severity="warning",
+        severity="info",
         task_id=task_id,
         metadata=metadata,
     )

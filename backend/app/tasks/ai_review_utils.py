@@ -70,10 +70,10 @@ def _notify_supervisor_review_needed(task_id: str, reason: str) -> None:
         create_notification(
             project_id=project_id,
             notification_type="task_needs_input",
-            title=f"Supervisor Review Required: {task_id}",
+            title=f"Review needed: {task_id}",
             message=reason,
             severity="warning",
-            metadata={"task_id": task_id, "escalation_reason": reason},
+            metadata={"task_id": task_id, "escalation_reason": reason, "force_push": True},
         )
         logger.info("supervisor_review_notification_sent", task_id=task_id)
     except Exception as e:

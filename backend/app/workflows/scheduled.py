@@ -256,17 +256,26 @@ async def prod_smoke_test_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
 
     result = await asyncio.to_thread(run_all_smoke_tests)
 
-    # Only notify on state transitions (healthy->unhealthy), not every check
+    # Only notify on state transitions (healthy->unhealthy), not every check.
+    # Route through create_notification() for dedup and DB persistence.
     if result.get("should_notify"):
-        from ..services.notifications import deliver
+        from ..storage.notifications import create_notification
 
         failures = result.get("failures", [])
-        names = ", ".join(f["project"] for f in failures)
-        await deliver({
-            "title": "Smoke Test Failed",
-            "message": f"Unhealthy: {names}",
-            "severity": "error",
-        })
+        current = result.get("current_status", "unhealthy")
+
+        if current == "unhealthy":
+            names = ", ".join(f["project"] for f in failures)
+            statuses = "; ".join(f"{f['project']}: {f['status']}" for f in failures[:3])
+            await asyncio.to_thread(
+                create_notification,
+                project_id="summitflow",
+                notification_type="system",
+                title="Smoke test failed",
+                message=f"Unhealthy: {names}. {statuses}",
+                severity="error",
+                metadata={"smoke_test": True, "failures": [f["project"] for f in failures]},
+            )
 
     return result
 

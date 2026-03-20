@@ -81,15 +81,31 @@ done
 echo "  ✓ Systemd units configured"
 echo ""
 
+# Step 6: Ensure ~/summitflow/scripts is on PATH
+echo "Step 6: Checking PATH setup..."
+SHELL_RC="$HOME/.bashrc"
+[ -n "$ZSH_VERSION" ] && SHELL_RC="$HOME/.zshrc"
+
+if ! grep -q 'summitflow/scripts' "$SHELL_RC" 2>/dev/null; then
+    echo '' >> "$SHELL_RC"
+    echo '# SummitFlow scripts (rebuild.sh, sf-browser, etc.)' >> "$SHELL_RC"
+    echo 'export PATH="$HOME/summitflow/scripts:$PATH"' >> "$SHELL_RC"
+    echo "  Added ~/summitflow/scripts to PATH in $SHELL_RC"
+else
+    echo "  ~/summitflow/scripts already on PATH"
+fi
+echo "  ✓ PATH configured"
+echo ""
+
 echo "================================"
 echo "✓ Setup complete!"
 echo "================================"
 echo ""
 echo "To start SummitFlow services:"
-echo "  bash ~/summitflow/scripts/start.sh"
+echo "  start.sh"
 echo ""
 echo "To check status:"
-echo "  bash ~/summitflow/scripts/status.sh"
+echo "  status.sh"
 echo ""
 echo "Access URLs:"
 echo "  - Local Backend:  http://localhost:8001"

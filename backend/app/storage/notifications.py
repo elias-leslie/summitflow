@@ -37,6 +37,7 @@ logger = get_logger(__name__)
 
 _background_tasks: set[asyncio.Task[None]] = set()
 _SEVERITY_RANK: dict[str, int] = {"info": 0, "warning": 1, "error": 2, "critical": 3}
+_SYSTEM_COOLDOWN_MINUTES = 30  # system notifications dedup at 30min (vs 15 for task notifications)
 
 __all__ = [
     "NotificationSeverity",
@@ -63,9 +64,14 @@ def _is_duplicate(
     task_id: str | None = None,
     cooldown_minutes: int = 15,
 ) -> bool:
-    """Check for a recent identical notification; returns True if it is a dup."""
+    """Check for a recent identical notification; returns True if it is a dup.
+
+    System notifications use a longer cooldown window (_SYSTEM_COOLDOWN_MINUTES)
+    and match on title text (since they have no task_id) to avoid repeat alerts
+    from scheduled health/smoke checks.
+    """
     if notification_type == "system":
-        return False
+        cooldown_minutes = _SYSTEM_COOLDOWN_MINUTES
     current_rank = _SEVERITY_RANK.get(severity, 0)
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(

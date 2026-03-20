@@ -115,6 +115,23 @@ self.addEventListener('push', (event) => {
   if (!event.data) return
   let data
   try { data = event.data.json() } catch { data = { title: 'SummitFlow', body: event.data.text() } }
+
+  const severity = data.severity || 'info'
+  const isCritical = CRITICAL_SEVERITIES.includes(severity)
+  const notifType = data.type || ''
+
+  // Build actions based on notification type
+  const actions = []
+  if (data.task_id) {
+    actions.push({ action: 'view', title: 'View Task' })
+    if (notifType === 'task_needs_input') {
+      actions.push({ action: 'view', title: 'Respond' })
+    }
+  }
+
+  // Vibration pattern scales with severity
+  const vibrate = isCritical ? [300, 100, 300, 100, 300] : [200, 100, 200]
+
   event.waitUntil(
     self.registration.showNotification(data.title || 'SummitFlow', {
       body: data.body || '',
@@ -122,10 +139,15 @@ self.addEventListener('push', (event) => {
       badge: ICON_PATH,
       tag: data.tag || DEFAULT_NOTIF_TAG,
       renotify: true,
-      requireInteraction: CRITICAL_SEVERITIES.includes(data.severity),
-      vibrate: [200, 100, 200],
-      data: { url: data.url || '/', task_id: data.task_id || null, notification_id: data.notification_id || null },
-      actions: data.task_id ? [{ action: 'view', title: 'View Task' }] : [],
+      requireInteraction: isCritical,
+      vibrate,
+      data: {
+        url: data.url || '/',
+        task_id: data.task_id || null,
+        notification_id: data.notification_id || null,
+        severity,
+      },
+      actions,
     })
   )
 })

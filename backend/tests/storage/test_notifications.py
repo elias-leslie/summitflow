@@ -255,15 +255,15 @@ class TestCreateTaskCompletionNotification:
     @patch("app.storage.notifications._schedule_delivery")
     @patch("app.storage.notifications._is_duplicate", return_value=False)
     @patch("app.storage.notifications.get_connection")
-    def test_completion_uses_warning_severity(
+    def test_completion_uses_info_severity(
         self, mock_conn: MagicMock, mock_dedup: MagicMock, mock_delivery: MagicMock
     ) -> None:
-        """Completion notifications use 'warning' severity to trigger push."""
+        """Completion notifications use 'info' severity (no push for routine completions)."""
         cur = MagicMock()
         cur.fetchone.return_value = (
             "notif-1", "proj-1", "task-1", None, None,
             "task_completed", "Task done: Deploy", "Finished 'Deploy'...",
-            "warning", "pending", {"johnny": True}, None, None, None,
+            "info", "pending", {"johnny": True}, None, None, None,
         )
         ctx = MagicMock()
         ctx.cursor.return_value.__enter__ = lambda s: cur
@@ -280,7 +280,7 @@ class TestCreateTaskCompletionNotification:
         call_args = cur.execute.call_args
         params = call_args[0][1]
         severity = params[7]
-        assert severity == "warning"
+        assert severity == "info"
 
     @patch("app.storage.notifications._schedule_delivery")
     @patch("app.storage.notifications._is_duplicate", return_value=False)

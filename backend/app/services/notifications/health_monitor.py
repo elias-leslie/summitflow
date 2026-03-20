@@ -18,7 +18,7 @@ logger = get_logger(__name__)
 
 # Redis keys and TTL
 _REDIS_KEY = "johnny:health:last_status"
-_REDIS_TTL = 300  # 5 minutes — stale after this, re-notify on next check
+_REDIS_TTL = 3600  # 1 hour — generous TTL to avoid re-alerting on key expiry
 
 # Health status values
 _STATUS_UNHEALTHY = "unhealthy"
