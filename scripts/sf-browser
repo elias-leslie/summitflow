@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# browse - Browser automation CLI for SummitFlow agents and operators.
+# sf-browser - SummitFlow remote browser automation wrapper.
 #
 # Canonical SummitFlow wrapper for remote browser automation.
 # Routes DOM-style work to Lightpanda and visual capture to Chrome.
 
 set -euo pipefail
 
-HOST="${BROWSE_HOST:-192.168.8.234}"
+HOST="${SF_BROWSER_HOST:-192.168.8.234}"
 AGENT_BROWSER_BIN="${HOME}/.local/bin/agent-browser"
 
 cdp_ws() {
@@ -52,7 +52,7 @@ case "${1:-}" in
         ;;
 esac
 
-ENGINE="${BROWSE_ENGINE:-}"
+ENGINE="${SF_BROWSER_ENGINE:-}"
 while [[ "${1:-}" == --* ]]; do
     case "$1" in
         --chrome)
