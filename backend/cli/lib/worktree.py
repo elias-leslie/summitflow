@@ -1,6 +1,8 @@
 """Worktree management for CLI task isolation.
 
-Isolated worktrees at ~/.local/share/st/worktrees/<project-id>/<task-id>/.
+Isolated lanes live at `/srv/workspaces/lanes/<project-id>/<task-id>/` when the
+shared Btrfs workspace is available, otherwise they fall back to
+`~/.local/share/st/worktrees/<project-id>/<task-id>/`.
 Branch naming: <task-id>/main
 """
 
@@ -8,6 +10,7 @@ from __future__ import annotations
 
 import contextlib
 import shutil
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -29,7 +32,12 @@ from .worktree_ops import (
     get_worktree_branch,
     verify_base_branch,
 )
-from .worktree_paths import get_worktree_path, get_worktrees_base_dir
+from .worktree_paths import (
+    get_lanes_base_dir,
+    get_worktree_path,
+    get_worktrees_base_dir,
+    workspaces_root_available,
+)
 
 
 @dataclass
@@ -44,6 +52,53 @@ class WorktreeInfo:
     project_id: str | None = None
 
 
+def _run_btrfs(args: list[str]) -> None:
+    """Run a Btrfs command and normalize failures to WorktreeError."""
+    try:
+        subprocess.run(
+            ["btrfs", *args],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        stderr = exc.stderr.strip() or str(exc)
+        raise WorktreeError(f"Btrfs command failed: btrfs {' '.join(args)}\n{stderr}") from exc
+    except OSError as exc:
+        raise WorktreeError(f"Failed to run btrfs {' '.join(args)}: {exc}") from exc
+
+
+def _is_btrfs_lane_path(path: Path, project_id: str | None) -> bool:
+    """Return True when the worktree path should be managed as a Btrfs lane."""
+    if not project_id or not workspaces_root_available():
+        return False
+    lanes_base = get_lanes_base_dir(project_id).resolve()
+    try:
+        relative = path.resolve().relative_to(lanes_base)
+    except ValueError:
+        return False
+    return len(relative.parts) == 1
+
+
+def _remove_worktree_path(path: Path) -> None:
+    """Remove a stale worktree path, preferring Btrfs subvolume deletion."""
+    if not path.exists():
+        return
+    with contextlib.suppress(WorktreeError):
+        _run_btrfs(["subvolume", "delete", str(path)])
+    if path.exists():
+        shutil.rmtree(path)
+
+
+def _prepare_worktree_path(worktree_path: Path, project_id: str | None) -> bool:
+    """Pre-create a Btrfs lane subvolume when the shared workspace is active."""
+    if not _is_btrfs_lane_path(worktree_path, project_id):
+        return False
+    worktree_path.parent.mkdir(parents=True, exist_ok=True)
+    _run_btrfs(["subvolume", "create", str(worktree_path)])
+    return True
+
+
 def create_worktree(
     task_id: str, base_branch: str = "main", project_id: str | None = None
 ) -> WorktreeInfo:
@@ -55,10 +110,17 @@ def create_worktree(
         existing_info = get_worktree_info(task_id, project_id)
         if existing_info:
             return existing_info
-        shutil.rmtree(worktree_path)
+        _remove_worktree_path(worktree_path)
     repo_root = get_repo_root(cwd=get_project_cwd(project_id))
     verify_base_branch(base_branch, repo_root)
-    create_worktree_branch(worktree_path, branch_name, base_branch, repo_root, task_id)
+    created_subvolume = _prepare_worktree_path(worktree_path, project_id)
+    try:
+        create_worktree_branch(worktree_path, branch_name, base_branch, repo_root, task_id)
+    except Exception:
+        if created_subvolume:
+            with contextlib.suppress(WorktreeError):
+                _remove_worktree_path(worktree_path)
+        raise
     symlink_gitignored_deps(repo_root, worktree_path)
     return WorktreeInfo(
         path=worktree_path,

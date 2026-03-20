@@ -28,7 +28,13 @@ NC='\033[0m'
 API_BASE_URL="${ST_API_URL:-http://localhost:8001}"
 
 # Worktrees base directory (per-project paths)
-WORKTREES_BASE="${ST_WORKTREES_BASE:-${HOME}/.local/share/st/worktrees}"
+DEFAULT_WORKSPACES_ROOT="${ST_WORKSPACES_ROOT:-/srv/workspaces}"
+if [ -d "${DEFAULT_WORKSPACES_ROOT}/lanes" ]; then
+    DEFAULT_WORKTREES_BASE="${DEFAULT_WORKSPACES_ROOT}/lanes"
+else
+    DEFAULT_WORKTREES_BASE="${HOME}/.local/share/st/worktrees"
+fi
+WORKTREES_BASE="${ST_WORKTREES_BASE:-${DEFAULT_WORKTREES_BASE}}"
 
 load_shared_env() {
     local env_file="${HOME}/.env.local"
@@ -57,7 +63,7 @@ usage() {
     echo ""
     echo "Environment Variables:"
     echo "  ST_API_URL           SummitFlow API URL (default: http://localhost:8001)"
-    echo "  ST_WORKTREES_BASE    Worktrees base dir (default: ~/.local/share/st/worktrees)"
+    echo "  ST_WORKTREES_BASE    Worktrees base dir (default: /srv/workspaces/lanes when available)"
     echo ""
     echo "Examples:"
     echo "  $0 start task-abc123 --project proj-xyz"
@@ -195,7 +201,7 @@ check_port() {
     fi
 }
 
-# Get worktree path (per-project: ~/.local/share/st/worktrees/<project-id>/<task-id>/)
+# Get worktree path (per-project: /srv/workspaces/lanes/<project-id>/<task-id>/ when available)
 get_worktree_path() {
     local task_id="$1"
     # Sanitize task ID (replace non-alphanumeric chars with underscore)

@@ -6,10 +6,28 @@ Not part of the public API; imported only by worktree.py.
 from __future__ import annotations
 
 import shutil
+import subprocess
 from pathlib import Path
 
 from .worktree_git import WorktreeError, get_repo_root, run_git
 from .worktree_paths import get_worktrees_base_dir
+
+
+def _remove_path(path: Path) -> None:
+    """Remove a worktree path, preferring Btrfs subvolume deletion when possible."""
+    if not path.exists():
+        return
+    try:
+        subprocess.run(
+            ["btrfs", "subvolume", "delete", str(path)],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return
+    except (subprocess.CalledProcessError, OSError):
+        pass
+    shutil.rmtree(path)
 
 
 def resolve_repo_root(worktree_path: Path) -> Path | None:
@@ -21,7 +39,7 @@ def resolve_repo_root(worktree_path: Path) -> Path | None:
     try:
         return get_repo_root(worktree_path)
     except WorktreeError:
-        shutil.rmtree(worktree_path)
+        _remove_path(worktree_path)
     return None
 
 
@@ -33,7 +51,7 @@ def force_remove_worktree(worktree_path: Path, repo_root: Path) -> None:
     except WorktreeError:
         pass
     try:
-        shutil.rmtree(worktree_path)
+        _remove_path(worktree_path)
         run_git(["worktree", "prune"], cwd=repo_root, check=False)
     except OSError as e:
         raise WorktreeError(f"Failed to remove worktree directory: {e}") from e

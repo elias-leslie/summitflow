@@ -1,7 +1,10 @@
 """Port management for worktree service isolation.
 
 Port configuration is loaded from .st/services.yaml via project_config.
-Port assignments are persisted in ~/.local/share/st/worktrees/<project-id>/<task-id>/ports.json
+Port assignments are persisted alongside the current lane path, which is
+`/srv/workspaces/lanes/<project-id>/<task-id>/ports.json` when the shared
+workspace is available and `~/.local/share/st/worktrees/<project-id>/<task-id>/ports.json`
+otherwise.
 """
 
 from __future__ import annotations
@@ -49,9 +52,9 @@ class WorktreePorts:
         )
 
 
-def get_worktree_ports(task_id: str) -> WorktreePorts | None:
+def get_worktree_ports(task_id: str, project_id: str | None = None) -> WorktreePorts | None:
     """Get existing port assignments for a worktree."""
-    data = load_ports_dict(task_id)
+    data = load_ports_dict(task_id, project_id)
     if data is None:
         return None
     try:
@@ -66,7 +69,10 @@ def calculate_ports(task_id: str, project_root: str | Path | None = None) -> tup
 
 
 def allocate_ports(
-    task_id: str, project_root: str | Path | None = None, force: bool = False
+    task_id: str,
+    project_root: str | Path | None = None,
+    force: bool = False,
+    project_id: str | None = None,
 ) -> WorktreePorts:
     """Allocate and persist port assignments for a worktree.
 
@@ -74,7 +80,7 @@ def allocate_ports(
     Raises RuntimeError if no available ports found.
     """
     if not force:
-        existing = get_worktree_ports(task_id)
+        existing = get_worktree_ports(task_id, project_id)
         if existing:
             return existing
 
@@ -89,20 +95,24 @@ def allocate_ports(
         api_url=_URL_TEMPLATE.format(backend_port),
         frontend_url=_URL_TEMPLATE.format(frontend_port),
     )
-    save_ports_dict(task_id, ports.to_dict())
+    save_ports_dict(task_id, ports.to_dict(), project_id)
     return ports
 
 
-def release_ports(task_id: str) -> bool:
+def release_ports(task_id: str, project_id: str | None = None) -> bool:
     """Release port assignments for a worktree."""
-    return delete_ports_file(task_id)
+    return delete_ports_file(task_id, project_id)
 
 
 def list_allocated_ports() -> list[WorktreePorts]:
     """List all currently allocated worktree ports."""
     from .worktree import get_active_worktrees
 
-    return [p for w in get_active_worktrees() if (p := get_worktree_ports(w.task_id))]
+    return [
+        p
+        for w in get_active_worktrees()
+        if (p := get_worktree_ports(w.task_id, w.project_id))
+    ]
 
 
 def get_port_status(project_root: str | Path | None = None) -> dict[str, list[dict[str, str | int | bool]]]:
@@ -126,9 +136,13 @@ def get_port_status(project_root: str | Path | None = None) -> dict[str, list[di
     return {"main": main_ports, "worktrees": worktree_ports}
 
 
-def format_port_info(task_id: str, project_root: str | Path | None = None) -> str:
+def format_port_info(
+    task_id: str,
+    project_root: str | Path | None = None,
+    project_id: str | None = None,
+) -> str:
     """Format port information for display."""
-    ports = get_worktree_ports(task_id)
+    ports = get_worktree_ports(task_id, project_id)
     if not ports:
         b, f = calculate_ports(task_id, project_root)
         return (

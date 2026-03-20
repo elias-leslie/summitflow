@@ -1,7 +1,9 @@
 """Checkpoint library for st CLI — worktree isolation for safe task execution.
 
 Used by st claim, st done, st abandon, and st checkpoints commands.
-Worktree paths: ~/.local/share/st/worktrees/<project-id>/<task-id>/
+Worktree paths live at `/srv/workspaces/lanes/<project-id>/<task-id>/` when the
+shared workspace is available and `~/.local/share/st/worktrees/<project-id>/<task-id>/`
+otherwise.
 """
 
 from __future__ import annotations
@@ -132,7 +134,7 @@ def get_snapshot_info(task_id: str) -> dict[str, str | int | None] | None:
     if worktree_info:
         info["worktree_branch"] = worktree_info.branch
 
-    ports = get_worktree_ports(task_id)
+    ports = get_worktree_ports(task_id, meta.project_id)
     if ports:
         info["backend_port"] = ports.backend_port
         info["frontend_port"] = ports.frontend_port

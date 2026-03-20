@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .worktree_git import WorktreeError, run_git
+from .worktree_git import WorktreeError, get_repo_root, run_git
+from .worktree_paths import get_projects_base_dir, workspaces_root_available
 
 
 def get_project_cwd(project_id: str | None) -> Path | None:
@@ -18,6 +19,16 @@ def get_project_cwd(project_id: str | None) -> Path | None:
     """
     if not project_id:
         return None
+
+    if workspaces_root_available():
+        workspace_project_root = get_projects_base_dir(project_id)
+        if workspace_project_root.exists():
+            try:
+                current_repo_root = get_repo_root(Path.cwd())
+            except WorktreeError:
+                current_repo_root = None
+            if current_repo_root and current_repo_root.resolve() == workspace_project_root.resolve():
+                return workspace_project_root.resolve()
 
     from app.storage.projects import get_project_root_path
 

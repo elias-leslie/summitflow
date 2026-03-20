@@ -2,7 +2,8 @@
 
 Provides worktree operations for Agent Hub task dispatch workflow.
 Each dispatched task gets an isolated worktree at:
-    ~/.local/share/st/worktrees/<project-id>/<task-id>/
+    /srv/workspaces/lanes/<project-id>/<task-id>/ when the shared workspace is available
+    ~/.local/share/st/worktrees/<project-id>/<task-id>/ otherwise
 
 With branch naming:
     <task-id>/main

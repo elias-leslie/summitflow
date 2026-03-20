@@ -84,9 +84,10 @@ CHECKPOINT (claim -> done | abandon):
   abandon <subtask> -t <task>              # abandon subtask, delete branch
   abandon <task> [--force] [--discard]     # abandon task, delete branches (--discard if unmerged)
   checkpoints [-p project] [-d task]       # show active checkpoints (auto-cleans stale)
-  snap [name]                              # save a fast hidden-ref snapshot for the current worktree lane
-  snaps                                    # list quick snapshots for the current worktree lane
-  rollback <id|name|-N>                    # restore the current worktree lane to a quick snapshot
+  snap [name]                              # save a Btrfs snapshot for the current lane or project scope
+  snaps                                    # list snapshots for the current lane or project scope
+  recover <id|name|-N> [--name lane]       # safe default: recover snapshot into sibling lane/project copy
+  rollback <id|name|-N>                    # destructive restore for the current task lane only
 
 SUBTASK:
   subtask list <task-id>
@@ -276,8 +277,8 @@ for cmd in claim.app.registered_commands:
         app.command(name=cmd.name)(cmd.callback)
 app.add_typer(checkpoints.app, name="checkpoints")
 for cmd in snapshots.app.registered_commands:
-    if cmd.callback is not None and cmd.name in {"snap", "snaps", "rollback"}:
-        app.command(name=cmd.name)(cmd.callback)
+    if cmd.callback is not None and cmd.name in {"snap", "snaps", "recover", "rollback"}:
+        app.command(name=cmd.name, context_settings=cmd.context_settings or {})(cmd.callback)
 for cmd in done.app.registered_commands:
     if cmd.callback is not None and cmd.name == "done":
         app.command(name="done")(cmd.callback)

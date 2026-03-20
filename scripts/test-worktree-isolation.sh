@@ -26,8 +26,13 @@ NC='\033[0m'
 # Configuration
 SUMMITFLOW_DIR="${HOME}/summitflow"
 TEST_PROJECT="summitflow"
-# Per-project worktree paths: ~/.local/share/st/worktrees/<project-id>/<task-id>/
-WORKTREES_BASE="${HOME}/.local/share/st/worktrees/${TEST_PROJECT}"
+WORKSPACES_ROOT="${ST_WORKSPACES_ROOT:-/srv/workspaces}"
+# Per-project worktree paths: /srv/workspaces/lanes/<project-id>/<task-id>/ when available
+if [ -d "${WORKSPACES_ROOT}/lanes/${TEST_PROJECT}" ]; then
+    WORKTREES_BASE="${WORKSPACES_ROOT}/lanes/${TEST_PROJECT}"
+else
+    WORKTREES_BASE="${HOME}/.local/share/st/worktrees/${TEST_PROJECT}"
+fi
 
 # State tracking
 PASSED=0
@@ -577,7 +582,7 @@ worktree = get_worktree_info(task_id, project_id='summitflow')
 if worktree:
     print(f'worktree_found:true')
     print(f'worktree_path:{worktree.path}')
-    if '.local/share/st/worktrees' in str(worktree.path):
+    if '/srv/workspaces/lanes' in str(worktree.path) or '.local/share/st/worktrees' in str(worktree.path):
         print('uses_worktree:true')
 else:
     print('worktree_found:false')

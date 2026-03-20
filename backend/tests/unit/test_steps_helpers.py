@@ -21,7 +21,7 @@ class TestGetVerificationCwd:
         self, mock_get_worktree_info: Any, mock_get_root: Any
     ) -> None:
         """Worktree exists and is valid — should return worktree path."""
-        worktree_path = Path("/home/user/.local/share/st/worktrees/summitflow/task-abc")
+        worktree_path = Path("/srv/workspaces/lanes/summitflow/task-abc")
         mock_info = MagicMock()
         mock_info.path = MagicMock(spec=Path)
         mock_info.path.exists.return_value = True

@@ -8,8 +8,10 @@ The event-driven path is preferred for low-latency dispatch.
 
 Worktree Isolation:
 When dispatching tasks to execution, a worktree is created at
-~/.local/share/st/worktrees/<project-id>/<task-id>/ with branch <task-id>/main.
-This ensures each task runs in isolation without affecting the main branch.
+`/srv/workspaces/lanes/<project-id>/<task-id>/` when the shared workspace is
+available, otherwise `~/.local/share/st/worktrees/<project-id>/<task-id>/`,
+with branch `<task-id>/main`. This ensures each task runs in isolation without
+affecting the main branch.
 """
 
 from __future__ import annotations

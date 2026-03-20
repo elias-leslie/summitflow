@@ -21,7 +21,7 @@ def create_worktree_resources(
         print(f"Error: Failed to create worktree: {e}", file=sys.stderr)
         sys.exit(1)
 
-    ports = allocate_ports(task_id)
+    ports = allocate_ports(task_id, project_id=project_id)
     print(f"Allocated ports: backend={ports.backend_port}, frontend={ports.frontend_port}")
     return worktree_path, ports.backend_port, ports.frontend_port
 

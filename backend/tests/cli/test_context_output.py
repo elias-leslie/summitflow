@@ -208,7 +208,7 @@ class TestFormatContextSnapshot:
             "claimed_by": "agent-coder",
             "created_at": "2026-03-10T14:30:00.123456",
             "base_branch": "main",
-            "worktree_path": "/home/user/.local/share/st/worktrees/proj/task-123",
+            "worktree_path": "/srv/workspaces/lanes/proj/task-123",
             "worktree_branch": "task/task-123",
             "backend_port": 8081,
             "frontend_port": 3001,
@@ -218,7 +218,7 @@ class TestFormatContextSnapshot:
 
         assert "SNAPSHOT:active|claimed_by:agent-coder|since:2026-03-10T14:30:00" in output
         assert "BASE_BRANCH:main" in output
-        assert "WORKTREE_PATH:/home/user/.local/share/st/worktrees/proj/task-123" in output
+        assert "WORKTREE_PATH:/srv/workspaces/lanes/proj/task-123" in output
         assert "TASK_BRANCH:task/task-123" in output
         assert "PORTS:backend:8081 | frontend:3001" in output
 
