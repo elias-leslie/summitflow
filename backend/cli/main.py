@@ -34,6 +34,7 @@ from .commands import (
     search,
     session_events,
     sessions,
+    snapshots,
     subtask,
     tasks,
     tests,
@@ -83,6 +84,9 @@ CHECKPOINT (claim -> done | abandon):
   abandon <subtask> -t <task>              # abandon subtask, delete branch
   abandon <task> [--force] [--discard]     # abandon task, delete branches (--discard if unmerged)
   checkpoints [-p project] [-d task]       # show active checkpoints (auto-cleans stale)
+  snap [name]                              # save a fast hidden-ref snapshot for the current worktree lane
+  snaps                                    # list quick snapshots for the current worktree lane
+  rollback <id|name|-N>                    # restore the current worktree lane to a quick snapshot
 
 SUBTASK:
   subtask list <task-id>
@@ -271,6 +275,9 @@ for cmd in claim.app.registered_commands:
     if cmd.callback is not None and cmd.name in {"claim", "adopt"}:
         app.command(name=cmd.name)(cmd.callback)
 app.add_typer(checkpoints.app, name="checkpoints")
+for cmd in snapshots.app.registered_commands:
+    if cmd.callback is not None and cmd.name in {"snap", "snaps", "rollback"}:
+        app.command(name=cmd.name)(cmd.callback)
 for cmd in done.app.registered_commands:
     if cmd.callback is not None and cmd.name == "done":
         app.command(name="done")(cmd.callback)
