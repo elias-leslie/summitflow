@@ -23,6 +23,7 @@ from app.utils.git_helpers import build_repo_workspace_summary
 
 from ..client import STClient
 from ..config import get_config_optional
+from ..lib.checkpoint import get_stale_checkpoints
 from ..lib.worktree import create_worktree, get_active_worktrees
 from ..output import output_error, output_json, output_success
 from ..output_context import OutputContext
@@ -113,14 +114,16 @@ def _build_repo_cleanup_entry(repo_path: Path) -> RepoEntry:
     client = STClient(require_project=False)
     analyses = [analyze_worktree(wt, client) for wt in active_worktrees]
     dirty_worktrees = sum(1 for wt in active_worktrees if has_uncommitted_changes(wt.path))
+    stale_checkpoints = len(get_stale_checkpoints(project_id))
     needs_merge_tasks, conflict_tasks, review_tasks = _categorize_analyses(analyses)
     needs_cleanup = any((
-        dirty_worktrees, ws.orphan_branches, ws.prunable_branches,
+        dirty_worktrees, stale_checkpoints, ws.orphan_branches, ws.prunable_branches,
         needs_merge_tasks, conflict_tasks, review_tasks,
     ))
     return RepoEntry(
         project_id=project_id, path=str(repo_path),
         active_worktrees=ws.active_worktrees, dirty_worktrees=dirty_worktrees,
+        stale_checkpoints=stale_checkpoints,
         orphan_task_branches=ws.orphan_branches, prunable_task_branches=ws.prunable_branches,
         worktree_task_ids=ws.worktree_task_ids, orphan_branch_names=ws.orphan_branch_names,
         prunable_branch_names=ws.prunable_branch_names, salvage_task_ids=ws.salvage_task_ids,
@@ -142,6 +145,7 @@ def build_cleanup_status_payload(all_projects: bool) -> dict[str, Any]:
         "repos_needing_cleanup": sum(1 for r in repositories if r["needs_cleanup"]),
         "active_worktrees": sum(r["active_worktrees"] for r in repositories),
         "dirty_worktrees": sum(r["dirty_worktrees"] for r in repositories),
+        "stale_checkpoints": sum(r["stale_checkpoints"] for r in repositories),
         "orphan_task_branches": sum(r["orphan_task_branches"] for r in repositories),
         "prunable_task_branches": sum(r["prunable_task_branches"] for r in repositories),
     }
@@ -360,6 +364,215 @@ def salvage_orphan(
     typer.echo(f"  worktree: {worktree.path}")
     if item.has_node_modules_artifact:
         typer.echo("  note: branch includes node_modules artifact changes; inspect before merge")
+
+
+@app.command("lanes")
+def cleanup_lanes(
+    lane_name: Annotated[str | None, typer.Argument(help="Specific lane name to delete (omit to scan all)")] = None,
+    all_projects: Annotated[bool, typer.Option("--all", help="Scan all projects (default: current project only)")] = False,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Show what would be deleted without deleting it")] = False,
+    confirm: Annotated[str | None, typer.Option("--confirm", help="Confirm token from preview run")] = None,
+) -> None:
+    """Delete orphaned Btrfs lanes and their snapshots.
+
+    Without a lane name, this targets only orphaned/unmanaged lanes plus
+    orphaned snapshot directories. With an explicit lane name, it will delete
+    that exact lane even if it is still a registered git worktree.
+
+    Uses two-pass confirmation: first run shows blast radius, second run with
+    --confirm TOKEN executes.
+    """
+    import os
+
+    from ..lib.checkpoint import get_stale_checkpoints, remove_snapshot
+    from ..lib.confirm_token import format_preview, generate_token, validate_token
+    from ..lib.quick_snapshots import (
+        LaneInspection,
+        OrphanedSnapshotDir,
+        SnapshotError,
+        delete_lane,
+        delete_orphaned_snapshots,
+        find_orphaned_snapshot_dirs,
+        inspect_lane,
+    )
+    from ..lib.worktree_paths import get_lanes_base_dir, workspaces_root_available
+
+    if not workspaces_root_available():
+        output_error("Btrfs workspaces not available — nothing to clean up.")
+        raise typer.Exit(1)
+
+    project_id = get_project_id(all_projects)
+    if not project_id and not all_projects:
+        output_error("Could not determine project. Use --all or run from a project directory.")
+        raise typer.Exit(1)
+
+    # Collect project IDs to scan
+    from ..lib.worktree_paths import get_workspaces_root
+
+    if all_projects:
+        lanes_root = get_workspaces_root() / "lanes"
+        project_ids = sorted(d.name for d in lanes_root.iterdir() if d.is_dir()) if lanes_root.is_dir() else []
+    else:
+        project_ids = [project_id]
+
+    # Enumerate and inspect lanes
+    all_inspections: list[LaneInspection] = []
+    for pid in project_ids:
+        lanes_base = get_lanes_base_dir(pid)
+        if not lanes_base.is_dir():
+            continue
+        lane_dirs = [lane_name] if lane_name else sorted(d.name for d in lanes_base.iterdir() if d.is_dir())
+        for name in lane_dirs:
+            try:
+                all_inspections.append(inspect_lane(pid, name))
+            except SnapshotError:
+                continue
+
+    inspections = (
+        all_inspections
+        if lane_name
+        else [inspection for inspection in all_inspections if not inspection.is_git_worktree]
+    )
+
+    # Also find orphaned snapshot directories (lane deleted but snapshots remain)
+    orphaned_snap_dirs: list[OrphanedSnapshotDir] = []
+    if not lane_name:  # Only scan for orphans when not targeting a specific lane
+        for pid in project_ids:
+            orphaned_snap_dirs.extend(find_orphaned_snapshot_dirs(pid))
+
+    stale_checkpoints = []
+    for pid in project_ids:
+        for checkpoint in get_stale_checkpoints(pid):
+            checkpoint_lane = Path(checkpoint.worktree_path).name if checkpoint.worktree_path else None
+            if lane_name and checkpoint.task_id != lane_name and checkpoint_lane != lane_name:
+                continue
+            stale_checkpoints.append(checkpoint)
+
+    if not inspections and not orphaned_snap_dirs and not stale_checkpoints:
+        if lane_name:
+            output_success("No matching lane, orphaned snapshots, or stale checkpoints found to clean up.")
+        else:
+            output_success("No orphaned lanes, orphaned snapshots, or stale checkpoints found to clean up.")
+        return
+
+    # Build command key for confirm token
+    scope_label = "all" if all_projects else project_ids[0]
+    target_label = lane_name or "all-lanes"
+    command_key = f"cleanup-lanes-{scope_label}-{target_label}"
+
+    if confirm is None:
+        # First pass: preview
+        lines: list[str] = []
+        for insp in inspections:
+            wt_label = "git-worktree" if insp.is_git_worktree else "orphan"
+            lines.append(f"LANE {insp.project_id}/{insp.lane_name} [{wt_label}]")
+            lines.append(f"  subvolume: {insp.lane_path}")
+            if insp.branch:
+                lines.append(f"  branch:   {insp.branch}")
+            if insp.snapshot_paths:
+                lines.append(f"  snapshots: {len(insp.snapshot_paths)}")
+                for sp in insp.snapshot_paths:
+                    lines.append(f"    {sp.name}")
+            else:
+                lines.append("  snapshots: 0")
+            if insp.manifest_dir:
+                lines.append(f"  manifest:  {insp.manifest_dir}")
+
+        for orphan in orphaned_snap_dirs:
+            lines.append(f"ORPHAN-SNAPSHOTS {orphan.project_id}/{orphan.lane_name} [lane-deleted]")
+            lines.append(f"  snapshot-dir: {orphan.snapshot_dir}")
+            lines.append(f"  snapshots: {len(orphan.snapshot_paths)}")
+            for sp in orphan.snapshot_paths:
+                lines.append(f"    {sp.name}")
+            if orphan.manifest_dir:
+                lines.append(f"  manifest:  {orphan.manifest_dir}")
+
+        for checkpoint in stale_checkpoints:
+            lines.append(f"STALE-CHECKPOINT {checkpoint.project_id}/{checkpoint.task_id}")
+            lines.append(f"  worktree: {checkpoint.worktree_path or '-'}")
+            lines.append(f"  created:  {checkpoint.created_at}")
+
+        total_subvols = (
+            sum(insp.total_items for insp in inspections)
+            + sum(o.total_items for o in orphaned_snap_dirs)
+        )
+        total_targets = len(inspections) + len(orphaned_snap_dirs) + len(stale_checkpoints)
+        summary = "DELETE explicit lane target(s)" if lane_name else "DELETE orphaned target(s)"
+        lines.insert(0, f"{summary}: {total_targets} target(s), {total_subvols} subvolume(s):")
+        lines.insert(1, "")
+
+        token = generate_token(command_key)
+        cmd_parts = ["st cleanup lanes"]
+        if lane_name:
+            cmd_parts.append(lane_name)
+        if all_projects:
+            cmd_parts.append("--all")
+        print(format_preview(" ".join(cmd_parts), lines, token))
+        if dry_run:
+            typer.echo("  (dry-run: no token needed)")
+        raise typer.Exit(0)
+
+    # Second pass: validate and execute
+    if not validate_token(command_key, confirm):
+        output_error(
+            "Invalid or expired confirm token.\n"
+            "  Run the command without --confirm to preview and get a new token."
+        )
+        raise typer.Exit(1)
+
+    if dry_run:
+        typer.echo("DRY RUN — would delete:")
+        for insp in inspections:
+            typer.echo(f"  {insp.project_id}/{insp.lane_name} ({insp.total_items} subvolumes)")
+        for orphan in orphaned_snap_dirs:
+            typer.echo(f"  {orphan.project_id}/{orphan.lane_name} orphaned snapshots ({orphan.total_items})")
+        for checkpoint in stale_checkpoints:
+            typer.echo(f"  {checkpoint.project_id}/{checkpoint.task_id} stale checkpoint metadata")
+        return
+
+    # Ensure we're not inside a lane we're about to delete
+    cwd = Path.cwd()
+    for insp in inspections:
+        try:
+            cwd.relative_to(insp.lane_path)
+            os.chdir(Path.home())
+            break
+        except ValueError:
+            pass
+
+    deleted = 0
+    errors: list[str] = []
+    for insp in inspections:
+        try:
+            delete_lane(insp)
+            typer.echo(f"  Deleted lane: {insp.project_id}/{insp.lane_name}")
+            deleted += 1
+        except Exception as exc:
+            errors.append(f"{insp.project_id}/{insp.lane_name}: {exc}")
+
+    for orphan in orphaned_snap_dirs:
+        try:
+            delete_orphaned_snapshots(orphan)
+            typer.echo(f"  Deleted orphaned snapshots: {orphan.project_id}/{orphan.lane_name}")
+            deleted += 1
+        except Exception as exc:
+            errors.append(f"orphan:{orphan.project_id}/{orphan.lane_name}: {exc}")
+
+    for checkpoint in stale_checkpoints:
+        try:
+            remove_snapshot(
+                checkpoint.task_id,
+                remove_worktree=False,
+                project_id=checkpoint.project_id,
+            )
+            typer.echo(f"  Deleted stale checkpoint: {checkpoint.project_id}/{checkpoint.task_id}")
+            deleted += 1
+        except Exception as exc:
+            errors.append(f"checkpoint:{checkpoint.project_id}/{checkpoint.task_id}: {exc}")
+
+    output_success(f"Deleted {deleted} target(s), {len(errors)} error(s)")
+    for err in errors:
+        typer.echo(f"  ERROR {err}", err=True)
 
 
 @app.command("status")

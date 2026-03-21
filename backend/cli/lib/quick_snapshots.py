@@ -12,6 +12,7 @@ metadata, so Btrfs alone is not enough to recreate staged state.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
@@ -23,7 +24,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from .worktree_git import WorktreeError, get_current_branch, get_repo_root
+from .worktree_git import WorktreeError, get_current_branch, get_repo_root, run_git
+from .worktree_helpers import force_remove_worktree
+from .worktree_ops import get_worktree_branch
 from .worktree_paths import (
     get_lanes_base_dir,
     get_projects_base_dir,
@@ -642,6 +645,197 @@ def recover_snapshot(
     return snapshot
 
 
+@dataclass(frozen=True)
+class LaneInspection:
+    """Result of inspecting a Btrfs lane for cleanup."""
+
+    project_id: str
+    lane_name: str
+    lane_path: Path
+    is_git_worktree: bool
+    branch: str | None
+    snapshot_paths: list[Path]
+    snapshot_dir: Path | None
+    manifest_dir: Path | None
+
+    @property
+    def total_items(self) -> int:
+        """Number of subvolumes that will be deleted (snapshots + lane)."""
+        return len(self.snapshot_paths) + 1
+
+
+@dataclass(frozen=True)
+class OrphanedSnapshotDir:
+    """Snapshot directory whose parent lane no longer exists."""
+
+    project_id: str
+    lane_name: str
+    snapshot_dir: Path
+    snapshot_paths: list[Path]
+    manifest_dir: Path | None
+
+    @property
+    def total_items(self) -> int:
+        return len(self.snapshot_paths)
+
+
+def find_orphaned_snapshot_dirs(project_id: str) -> list[OrphanedSnapshotDir]:
+    """Find snapshot directories for lanes that no longer exist."""
+    _require_workspaces()
+    snap_lanes_base = get_workspace_snapshots_base_dir(project_id) / "lanes"
+    if not snap_lanes_base.is_dir():
+        return []
+
+    lanes_base = get_lanes_base_dir(project_id)
+    orphans: list[OrphanedSnapshotDir] = []
+
+    for snap_dir in sorted(snap_lanes_base.iterdir()):
+        if not snap_dir.is_dir():
+            continue
+        # Check if the corresponding lane still exists
+        lane_path = lanes_base / snap_dir.name
+        if lane_path.exists():
+            continue  # Lane exists — not orphaned
+
+        snapshot_paths = sorted(p for p in snap_dir.iterdir() if p.is_dir())
+        # Check for manifest dir
+        manifest_base = (
+            Path.home() / ".local" / "share" / "st" / "snaps"
+            / project_id / f"lane-{snap_dir.name}"
+        )
+        orphans.append(OrphanedSnapshotDir(
+            project_id=project_id,
+            lane_name=snap_dir.name,
+            snapshot_dir=snap_dir,
+            snapshot_paths=snapshot_paths,
+            manifest_dir=manifest_base if manifest_base.is_dir() else None,
+        ))
+
+    return orphans
+
+
+def delete_orphaned_snapshots(orphan: OrphanedSnapshotDir) -> None:
+    """Delete orphaned snapshot subvolumes and metadata."""
+    for snap_path in orphan.snapshot_paths:
+        _delete_subvolume(snap_path)
+
+    if orphan.snapshot_dir.exists():
+        with contextlib.suppress(OSError):
+            orphan.snapshot_dir.rmdir()
+
+    if orphan.manifest_dir and orphan.manifest_dir.exists():
+        shutil.rmtree(orphan.manifest_dir, ignore_errors=True)
+
+
+def inspect_lane(project_id: str, lane_name: str) -> LaneInspection:
+    """Inspect a Btrfs lane and enumerate what cleanup would delete."""
+    _require_workspaces()
+    lane_path = get_lanes_base_dir(project_id) / lane_name
+    if not lane_path.exists():
+        raise SnapshotError(f"Lane does not exist: {lane_path}")
+
+    is_worktree = (lane_path / ".git").exists()
+    branch = get_worktree_branch(lane_path) if is_worktree else None
+
+    # Find snapshot subvolumes
+    snap_base = get_workspace_snapshots_base_dir(project_id) / "lanes" / _sanitize_label(lane_name)
+    snapshot_paths: list[Path] = []
+    snapshot_dir: Path | None = None
+    if snap_base.is_dir():
+        snapshot_dir = snap_base
+        snapshot_paths = sorted(p for p in snap_base.iterdir() if p.is_dir())
+
+    # Find manifest/artifact dir
+    scope = SnapshotScope("lane", lane_name, lane_path)
+    manifest_base = Path.home() / ".local" / "share" / "st" / "snaps" / project_id / _scope_key(scope)
+    manifest_dir = manifest_base if manifest_base.is_dir() else None
+
+    return LaneInspection(
+        project_id=project_id,
+        lane_name=lane_name,
+        lane_path=lane_path,
+        is_git_worktree=is_worktree,
+        branch=branch,
+        snapshot_paths=snapshot_paths,
+        snapshot_dir=snapshot_dir,
+        manifest_dir=manifest_dir,
+    )
+
+
+def delete_lane(inspection: LaneInspection) -> None:
+    """Delete a Btrfs lane, its snapshots, and metadata.
+
+    Must be called from outside the lane directory (caller responsibility).
+    """
+    # 1. Remove git worktree registration first so failures stop before we
+    # destroy any recoverable snapshot state.
+    if inspection.is_git_worktree:
+        git_file = inspection.lane_path / ".git"
+        if not git_file.is_file():
+            raise SnapshotError(
+                f"Expected git worktree metadata at {git_file}, but it was missing."
+            )
+
+        content = git_file.read_text(encoding="utf-8").strip()
+        if not content.startswith("gitdir:"):
+            raise SnapshotError(
+                f"Unexpected git worktree metadata format in {git_file}."
+            )
+
+        gitdir = Path(content.split(":", 1)[1].strip())
+        common_dir = gitdir.parent.parent  # .git/worktrees → .git
+        if common_dir.name != ".git":
+            raise SnapshotError(
+                f"Could not resolve canonical repo root for lane {inspection.lane_path}."
+            )
+
+        repo_root = common_dir.parent
+        try:
+            force_remove_worktree(inspection.lane_path, repo_root)
+        except WorktreeError as exc:
+            raise SnapshotError(f"Failed to remove git worktree registration: {exc}") from exc
+
+        if inspection.branch and inspection.branch not in {"main", "master", "HEAD"}:
+            branch_ref = f"refs/heads/{inspection.branch}"
+            branch_result = run_git(["show-ref", "--verify", branch_ref], cwd=repo_root, check=False)
+            if branch_result.returncode == 0:
+                delete_result = run_git(
+                    ["branch", "-D", inspection.branch],
+                    cwd=repo_root,
+                    check=False,
+                )
+                if delete_result.returncode != 0:
+                    stderr = delete_result.stderr.strip() or delete_result.stdout.strip() or "unknown git error"
+                    raise SnapshotError(
+                        f"Failed to delete lane branch '{inspection.branch}': {stderr}"
+                    )
+
+    # 2. Delete snapshot subvolumes (read-only, must unset ro first)
+    for snap_path in inspection.snapshot_paths:
+        _delete_subvolume(snap_path)
+
+    # 3. Remove empty snapshot directory
+    if inspection.snapshot_dir and inspection.snapshot_dir.exists():
+        with contextlib.suppress(OSError):
+            inspection.snapshot_dir.rmdir()
+
+    # 4. Delete the lane subvolume if git did not already remove it.
+    _delete_subvolume(inspection.lane_path)
+
+    # 5. Clean up manifest and artifacts
+    if inspection.manifest_dir and inspection.manifest_dir.exists():
+        shutil.rmtree(inspection.manifest_dir, ignore_errors=True)
+
+    # 6. Remove any task checkpoint metadata that still points at this lane.
+    with contextlib.suppress(Exception):
+        from .checkpoint import remove_checkpoint_for_worktree_path
+
+        remove_checkpoint_for_worktree_path(
+            inspection.lane_path,
+            project_id=inspection.project_id,
+        )
+
+
 # Public aliases for cross-module use (autosnapshot.py).
 # Keep underscore originals for backward compat with tests that monkeypatch them.
 resolve_scope = _resolve_scope
@@ -652,11 +846,17 @@ require_workspaces = _require_workspaces
 require_btrfs_subvolume = _require_btrfs_subvolume
 
 __all__ = [
+    "LaneInspection",
+    "OrphanedSnapshotDir",
     "QuickSnapshot",
     "SnapshotError",
     "SnapshotScope",
     "capture_snapshot",
+    "delete_lane",
+    "delete_orphaned_snapshots",
     "delete_subvolume",
+    "find_orphaned_snapshot_dirs",
+    "inspect_lane",
     "list_snapshots",
     "load_manifest",
     "recover_snapshot",

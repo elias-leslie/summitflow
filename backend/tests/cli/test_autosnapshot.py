@@ -421,3 +421,33 @@ def test_prune_dry_run_does_not_delete(
     assert len(remaining) == 5  # still all 5
     for entry in pruned:
         assert Path(entry.snapshot_path).exists()
+
+
+def test_prune_all_prunes_orphaned_lane_scopes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cli.lib.autosnapshot import AutosnapshotPolicy, prune_all
+    from cli.lib.quick_snapshots import capture_snapshot
+
+    workspaces_root = _setup_env(monkeypatch, tmp_path)
+    canonical, lane = _create_lane_repo(workspaces_root, lane_name="task-orphan")
+    monkeypatch.chdir(lane)
+
+    snaps = []
+    for i in range(3):
+        snaps.append(capture_snapshot(f"auto-{i}", project_id="summitflow", cwd=lane, source="auto-periodic"))
+
+    _git(canonical, "worktree", "remove", str(lane), "--force")
+    assert not lane.exists()
+
+    results = prune_all(policy=AutosnapshotPolicy(auto_keep_per_scope=1))
+
+    assert "summitflow/lane:task-orphan" in results
+    assert len(results["summitflow/lane:task-orphan"]) == 2
+
+    pruned_ids = {entry.id for entry in results["summitflow/lane:task-orphan"]}
+    for snap in snaps:
+        if snap.id in pruned_ids:
+            assert not Path(snap.snapshot_path).exists()
+        else:
+            assert Path(snap.snapshot_path).exists()

@@ -7,6 +7,7 @@ import subprocess
 import typer
 
 from ..client import APIError, STClient
+from ..lib.autosnapshot import capture_lifecycle_baseline
 from ..lib.checkpoint import (
     delete_subtask_branch,
     delete_task_branches,
@@ -201,6 +202,10 @@ def abandon_task(
     project_id: str | None = str(raw_pid) if raw_pid is not None else None
 
     if has_snapshot:
+        capture_lifecycle_baseline(
+            project_id=project_id,
+            cwd=snapshot_info.get("worktree_path") if snapshot_info else None,
+        )
         remove_snapshot(task_id, remove_worktree=True, project_id=project_id)
 
     delete_task_branches(task_id)

@@ -203,6 +203,7 @@ class TestCompleteTaskSmart:
         mock_error.assert_not_called()
 
     @patch("cli.commands.done_task.get_snapshot_info")
+    @patch("cli.commands.done_task.capture_lifecycle_baseline")
     @patch("cli.commands.done_task.remove_snapshot")
     @patch("cli.commands.done_task.merge_task_branch")
     @patch("cli.commands.done_task.auto_close_subtasks")
@@ -211,10 +212,10 @@ class TestCompleteTaskSmart:
     @patch("cli.commands.done_task._publish_completed_work")
     def test_calls_auto_close_by_default(
         self, mock_publish: MagicMock, mock_clean: MagicMock, mock_sync: MagicMock, mock_auto: MagicMock, mock_merge: MagicMock,
-        mock_remove: MagicMock, mock_snapshot: MagicMock
+        mock_remove: MagicMock, mock_capture: MagicMock, mock_snapshot: MagicMock
     ) -> None:
         """Smart mode calls auto_close_subtasks by default."""
-        mock_snapshot.return_value = {"worktree_path": None, "project_id": "test"}
+        mock_snapshot.return_value = {"worktree_path": "/tmp/task-123", "project_id": "test"}
         client = self._setup_mocks()
         client.get_subtasks.return_value = {"subtasks": []}
         mock_sync.return_value = MagicMock(synced=[], syncable=[], skipped=[])
@@ -223,6 +224,7 @@ class TestCompleteTaskSmart:
 
         mock_sync.assert_called_once()
         mock_auto.assert_called_once_with(client, "task-123", "test")
+        mock_capture.assert_called_once_with(project_id="test", cwd="/tmp/task-123")
         mock_publish.assert_called_once_with("task-123", "test")
         client.post.assert_not_called()
 
@@ -338,6 +340,7 @@ class TestCompleteTaskSmart:
         mock_error.assert_not_called()
 
     @patch("cli.commands.done_task.get_snapshot_info")
+    @patch("cli.commands.done_task.capture_lifecycle_baseline")
     @patch("cli.commands.done_task.remove_snapshot")
     @patch("cli.commands.done_task.merge_task_branch")
     @patch("cli.commands.done_task.auto_close_subtasks")
@@ -350,6 +353,7 @@ class TestCompleteTaskSmart:
         mock_auto: MagicMock,
         mock_merge: MagicMock,
         mock_remove: MagicMock,
+        mock_capture: MagicMock,
         mock_snapshot: MagicMock,
     ) -> None:
         """Admin mode should close stale claimed tasks without merge/review gates."""
@@ -365,6 +369,7 @@ class TestCompleteTaskSmart:
         assert not result["merged"]
         assert result["snapshot_removed"]
         client.close_task.assert_called_once_with("task-123", reason="stale state", skip_gates=True)
+        mock_capture.assert_called_once_with(project_id="test", cwd="/tmp/task-123")
         mock_remove.assert_called_once_with("task-123", project_id="test")
         mock_merge.assert_not_called()
         mock_publish.assert_not_called()

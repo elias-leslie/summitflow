@@ -10,6 +10,7 @@ from app.tasks.autonomous.exec_modules.diff_gate import check_diff_gate
 
 from .._client_base import APIError
 from ..client import STClient
+from ..lib.autosnapshot import capture_lifecycle_baseline
 from ..lib.checkpoint import get_snapshot_info, remove_snapshot
 from ..lib.checkpoint_branches import merge_task_branch
 from ..lib.checkpoint_metadata import SnapshotMeta, save_snapshot_meta
@@ -108,6 +109,12 @@ def _perform_completion(
             f"Code merged but status update failed: {e.detail}\n"
             f"  Recovery: st done {task_id} --admin"
         )
+    lifecycle_snapshot = capture_lifecycle_baseline(
+        project_id=project_id,
+        cwd=snapshot_info.get("worktree_path"),
+    )
+    if lifecycle_snapshot:
+        output_success(f"Protective snapshot captured before cleanup: {lifecycle_snapshot.id}")
     remove_snapshot(task_id, project_id=project_id)
     _trigger_health_check(task_id, project_id)
 
@@ -242,6 +249,12 @@ def _complete_with_admin_close(
         output_error(f"Failed to close task: {e.detail}")
         raise typer.Exit(1) from None
 
+    lifecycle_snapshot = capture_lifecycle_baseline(
+        project_id=project_id,
+        cwd=snapshot_info.get("worktree_path"),
+    )
+    if lifecycle_snapshot:
+        output_success(f"Protective snapshot captured before cleanup: {lifecycle_snapshot.id}")
     remove_snapshot(task_id, project_id=project_id)
     return {
         "task_id": task_id,

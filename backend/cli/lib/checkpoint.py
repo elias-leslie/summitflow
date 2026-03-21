@@ -12,6 +12,7 @@ import contextlib
 import json
 import sys
 from datetime import UTC, datetime
+from pathlib import Path
 
 from .checkpoint_branches import (
     create_subtask_branch,
@@ -37,8 +38,10 @@ __all__ = [
     "create_subtask_branch", "create_task_snapshot",
     "delete_subtask_branch", "delete_task_branches",
     "get_active_checkpoints", "get_snapshot_info",
+    "get_stale_checkpoints",
     "has_active_task",
     "merge_subtask_branch", "merge_task_branch",
+    "remove_checkpoint_for_worktree_path",
     "remove_snapshot",
 ]
 
@@ -84,6 +87,7 @@ def remove_snapshot(
     task_id: str, remove_worktree: bool = True, project_id: str | None = None
 ) -> bool:
     """Delete checkpoint metadata and optionally the worktree."""
+    from .port_manager import release_ports
     from .worktree import remove_worktree as rm_worktree
 
     if project_id is None:
@@ -96,8 +100,34 @@ def remove_snapshot(
         with contextlib.suppress(Exception):
             rm_worktree(task_id, delete_branch=False, project_id=project_id)
 
+    with contextlib.suppress(Exception):
+        release_ports(task_id, project_id)
+
     meta_path.unlink(missing_ok=True)
     return True
+
+
+def remove_checkpoint_for_worktree_path(
+    worktree_path: str | Path,
+    *,
+    project_id: str | None = None,
+) -> bool:
+    """Delete checkpoint metadata whose recorded worktree path matches exactly."""
+    target = Path(worktree_path).resolve()
+    for checkpoint in get_active_checkpoints(project_id):
+        if not checkpoint.worktree_path:
+            continue
+        try:
+            checkpoint_path = Path(checkpoint.worktree_path).resolve()
+        except OSError:
+            checkpoint_path = Path(checkpoint.worktree_path)
+        if checkpoint_path == target:
+            return remove_snapshot(
+                checkpoint.task_id,
+                remove_worktree=False,
+                project_id=checkpoint.project_id,
+            )
+    return False
 
 
 def get_active_checkpoints(project_id: str | None = None) -> list[SnapshotMeta]:
@@ -118,6 +148,20 @@ def get_active_checkpoints(project_id: str | None = None) -> list[SnapshotMeta]:
 
     checkpoints.sort(key=lambda m: m.created_at, reverse=True)
     return checkpoints
+
+
+def get_stale_checkpoints(project_id: str | None = None) -> list[SnapshotMeta]:
+    """Return checkpoint metadata whose recorded lane no longer resolves cleanly."""
+    from .worktree import get_worktree_info
+
+    stale: list[SnapshotMeta] = []
+    for checkpoint in get_active_checkpoints(project_id):
+        if not checkpoint.worktree_path:
+            continue
+        if get_worktree_info(checkpoint.task_id, checkpoint.project_id) is not None:
+            continue
+        stale.append(checkpoint)
+    return stale
 
 
 def has_active_task(project_id: str) -> str | None:

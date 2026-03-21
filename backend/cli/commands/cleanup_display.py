@@ -14,6 +14,7 @@ class RepoEntry(TypedDict):
     path: str
     active_worktrees: int
     dirty_worktrees: int
+    stale_checkpoints: int
     orphan_task_branches: int
     prunable_task_branches: int
     worktree_task_ids: list[str]
@@ -61,9 +62,11 @@ def print_repo_compact(repo: RepoEntry) -> None:
         print(f"{repo['project_id']} clean")
         return
     preview = f" tasks:{','.join(repo['worktree_task_ids'])}" if repo["worktree_task_ids"] else ""
+    stale = f" stale_cp:{repo['stale_checkpoints']}" if repo["stale_checkpoints"] else ""
     print(
         f"{repo['project_id']} worktrees:{repo['active_worktrees']} "
-        f"dirty:{repo['dirty_worktrees']} orphan:{repo['orphan_task_branches']} "
+        f"dirty:{repo['dirty_worktrees']}{stale} "
+        f"orphan:{repo['orphan_task_branches']} "
         f"prunable:{repo['prunable_task_branches']}{preview}"
         f"{_build_attention(repo)}{_build_branch_preview(repo)}"
     )
@@ -76,12 +79,13 @@ def format_cleanup_status_compact(data: dict[str, Any], all_projects: bool) -> N
     scope = "all" if all_projects else "current"
     print(
         "CLEANUP[{scope}]:repos={repos} needs_cleanup={needs} worktrees={worktrees} "
-        "dirty={dirty} orphan={orphan} prunable={prunable}".format(
+        "dirty={dirty} stale_cp={stale_cp} orphan={orphan} prunable={prunable}".format(
             scope=scope,
             repos=summary["repos"],
             needs=summary["repos_needing_cleanup"],
             worktrees=summary["active_worktrees"],
             dirty=summary["dirty_worktrees"],
+            stale_cp=summary["stale_checkpoints"],
             orphan=summary["orphan_task_branches"],
             prunable=summary["prunable_task_branches"],
         )

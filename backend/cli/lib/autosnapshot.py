@@ -1,15 +1,17 @@
-"""Autosnapshot policy library — baseline, periodic sweep, and retention pruning.
+"""Autosnapshot policy library — baseline, lifecycle, periodic, and retention pruning.
 
 Provides the automation backbone for Btrfs-backed snapshots:
 - ``ensure_baseline``: idempotent baseline snapshot for scope activation (claim, session start)
+- ``capture_lifecycle_baseline``: best-effort protective snapshot before destructive lifecycle cleanup
 - ``sweep_periodic``: periodic safety-net snapshots for active scopes
 - ``prune_scope`` / ``prune_all``: retention enforcement per scope
-- ``enumerate_active_scopes``: walk Btrfs-backed lanes and projects
+- ``enumerate_prunable_scopes``: walk Btrfs-backed lanes/projects plus retained orphan manifests
 """
 
 from __future__ import annotations
 
 import contextlib
+import json
 import shutil
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -85,6 +87,29 @@ def ensure_baseline(
     )
 
 
+def capture_lifecycle_baseline(
+    *,
+    project_id: str | None,
+    cwd: str | Path | None,
+) -> QuickSnapshot | None:
+    """Best-effort protective snapshot before destructive lifecycle cleanup.
+
+    This never raises; lifecycle commands should continue even if snapshotting is
+    unavailable or the current scope is not Btrfs-backed.
+    """
+    if not project_id or not cwd:
+        return None
+    try:
+        return capture_snapshot(
+            "auto-baseline",
+            project_id=project_id,
+            cwd=cwd,
+            source="auto-baseline",
+        )
+    except Exception:
+        return None
+
+
 def enumerate_active_scopes() -> list[tuple[str, SnapshotScope]]:
     """Walk Btrfs workspaces and return ``(project_id, scope)`` pairs.
 
@@ -121,6 +146,62 @@ def enumerate_active_scopes() -> list[tuple[str, SnapshotScope]]:
                 ))
 
     return scopes
+
+
+def _scope_from_manifest_entries(entries: list[QuickSnapshot]) -> tuple[str, SnapshotScope] | None:
+    if not entries:
+        return None
+    latest = max(entries, key=lambda entry: entry.created_at)
+    return (
+        latest.project_id,
+        SnapshotScope(
+            latest.scope_type,
+            latest.scope_name,
+            Path(latest.worktree_path),
+        ),
+    )
+
+
+def enumerate_prunable_scopes() -> list[tuple[str, SnapshotScope]]:
+    """Return scopes that may still have retained snapshots to prune.
+
+    Includes active scopes plus orphaned lane/project manifests whose working
+    directories were already deleted.
+    """
+    scopes_by_key: dict[str, tuple[str, SnapshotScope]] = {}
+    for project_id, scope in enumerate_active_scopes():
+        scopes_by_key[f"{project_id}/{scope.scope_type}:{scope.scope_name}"] = (project_id, scope)
+
+    manifests_root = Path.home() / ".local" / "share" / "st" / "snaps"
+    if not manifests_root.is_dir():
+        return list(scopes_by_key.values())
+
+    for project_dir in sorted(manifests_root.iterdir()):
+        if not project_dir.is_dir():
+            continue
+        for scope_dir in sorted(project_dir.iterdir()):
+            manifest_path = scope_dir / "manifest.json"
+            if not manifest_path.is_file():
+                continue
+            try:
+                raw = manifest_path.read_text(encoding="utf-8")
+                entries = [
+                    QuickSnapshot.from_dict(item)
+                    for item in json.loads(raw)
+                    if isinstance(item, dict)
+                ]
+            except Exception:
+                continue
+            resolved = _scope_from_manifest_entries(entries)
+            if resolved is None:
+                continue
+            project_id, scope = resolved
+            scopes_by_key.setdefault(
+                f"{project_id}/{scope.scope_type}:{scope.scope_name}",
+                (project_id, scope),
+            )
+
+    return list(scopes_by_key.values())
 
 
 def sweep_periodic(
@@ -218,9 +299,9 @@ def prune_all(
     policy: AutosnapshotPolicy = DEFAULT_POLICY,
     dry_run: bool = False,
 ) -> dict[str, list[QuickSnapshot]]:
-    """Enforce retention policy across all active scopes."""
+    """Enforce retention policy across active and retained orphan scopes."""
     results: dict[str, list[QuickSnapshot]] = {}
-    for project_id, scope in enumerate_active_scopes():
+    for project_id, scope in enumerate_prunable_scopes():
         key = f"{project_id}/{scope.scope_type}:{scope.scope_name}"
         pruned = prune_scope(
             project_id=project_id, scope=scope, policy=policy, dry_run=dry_run,
