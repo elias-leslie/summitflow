@@ -86,6 +86,27 @@ while [[ "${1:-}" == --* ]]; do
     esac
 done
 
+DEFAULT_VIEWPORT_WIDTH="${SF_BROWSER_VIEWPORT_WIDTH:-1600}"
+DEFAULT_VIEWPORT_HEIGHT="${SF_BROWSER_VIEWPORT_HEIGHT:-900}"
+
+should_apply_default_viewport() {
+    [[ "${SF_BROWSER_DISABLE_DEFAULT_VIEWPORT:-0}" != "1" ]] || return 1
+    [[ "$ENGINE" == "chrome" ]] || return 1
+
+    local has_open=0
+    for arg in "$@"; do
+        if [[ "$arg" == "--device" ]]; then
+            return 1
+        fi
+        if [[ "$arg" == "open" ]]; then
+            has_open=1
+        fi
+    done
+
+    [[ "$has_open" == "1" ]] || return 1
+    return 0
+}
+
 if [[ -z "$ENGINE" ]]; then
     for arg in "$@"; do
         case "$arg" in
@@ -118,6 +139,10 @@ else
         echo "ERROR: No browsers available on ${HOST}" >&2
         exit 1
     }
+fi
+
+if should_apply_default_viewport "$@"; then
+    "$AGENT_BROWSER_BIN" --cdp "$WS" set viewport "$DEFAULT_VIEWPORT_WIDTH" "$DEFAULT_VIEWPORT_HEIGHT"
 fi
 
 "$AGENT_BROWSER_BIN" --cdp "$WS" "$@"
