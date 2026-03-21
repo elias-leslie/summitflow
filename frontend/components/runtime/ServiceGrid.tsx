@@ -115,7 +115,7 @@ export function ServiceGrid() {
         <p className="text-sm text-slate-500 mt-1">
           Start or rebuild services with:{' '}
           <code className="text-amber-400">
-            ~/summitflow/scripts/rebuild.sh
+            rebuild.sh summitflow
           </code>
         </p>
       </div>

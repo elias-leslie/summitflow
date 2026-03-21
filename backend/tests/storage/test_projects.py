@@ -7,6 +7,7 @@ when a working_dir is provided.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -115,6 +116,78 @@ class TestBuildProjectEnv:
 
         # Assert
         assert "PYTHONPATH" not in result
+
+
+class TestFindProjectByCwd:
+    """Tests for path-aware project detection."""
+
+    @patch("app.storage.projects.list_projects")
+    def test_returns_longest_matching_root_for_nested_paths(
+        self,
+        mock_list_projects: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        from app.storage.projects import find_project_by_cwd
+
+        workspace = tmp_path / "workspace"
+        repo_root = workspace / "summitflow"
+        nested_root = repo_root / "tools"
+        cwd = nested_root / "scripts"
+        cwd.mkdir(parents=True)
+
+        mock_list_projects.return_value = [
+            {"id": "summitflow", "name": "SummitFlow", "root_path": str(repo_root)},
+            {"id": "tools", "name": "Tools", "root_path": str(nested_root)},
+        ]
+
+        result = find_project_by_cwd(str(cwd))
+
+        assert result == {"id": "tools", "name": "Tools", "root_path": str(nested_root)}
+
+    @patch("app.storage.projects.list_projects")
+    def test_resolves_relative_cwd_before_matching(
+        self,
+        mock_list_projects: MagicMock,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from app.storage.projects import find_project_by_cwd
+
+        repo_root = tmp_path / "summitflow"
+        child_dir = repo_root / "backend" / "app"
+        child_dir.mkdir(parents=True)
+        monkeypatch.chdir(tmp_path)
+
+        mock_list_projects.return_value = [
+            {"id": "summitflow", "name": "SummitFlow", "root_path": str(repo_root)},
+        ]
+
+        result = find_project_by_cwd("summitflow/backend/app")
+
+        assert result == {
+            "id": "summitflow",
+            "name": "SummitFlow",
+            "root_path": str(repo_root),
+        }
+
+    @patch("app.storage.projects.list_projects")
+    def test_returns_none_when_no_root_contains_cwd(
+        self,
+        mock_list_projects: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        from app.storage.projects import find_project_by_cwd
+
+        repo_root = tmp_path / "summitflow"
+        repo_root.mkdir()
+        other_dir = tmp_path / "elsewhere"
+        other_dir.mkdir()
+
+        mock_list_projects.return_value = [
+            {"id": "summitflow", "name": "SummitFlow", "root_path": str(repo_root)},
+        ]
+
+        assert find_project_by_cwd(str(other_dir)) is None
 
     @patch("app.storage.projects.get_project_root_path")
     def test_build_project_env_prepends_to_existing_pythonpath(

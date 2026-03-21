@@ -5,14 +5,14 @@ Wants=summitflow-backend.service
 
 [Service]
 Type=simple
-WorkingDirectory=%h/summitflow/backend
-Environment="PATH=%h/.local/bin:%h/summitflow/backend/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+WorkingDirectory=__SUMMITFLOW_ROOT__/backend
+Environment="PATH=%h/.local/bin:__SUMMITFLOW_ROOT__/backend/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 Environment="HOME=%h"
 EnvironmentFile=-%h/.env.local
 Environment="PYTHONUNBUFFERED=1"
 Environment="HATCHET_CLIENT_HOST_PORT=127.0.0.1:7070"
 Environment="HATCHET_CLIENT_TLS_STRATEGY=none"
-ExecStart=%h/summitflow/backend/.venv/bin/python -m app.worker
+ExecStart=__SUMMITFLOW_ROOT__/backend/.venv/bin/python -m app.worker
 Restart=always
 RestartSec=10
 StandardOutput=journal

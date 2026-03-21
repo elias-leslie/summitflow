@@ -553,7 +553,7 @@ case "$RESTORE_MODE" in
         if [ -z "$latest" ]; then
             log_error "No backups found"
             echo ""
-            echo "Run backup first: cd $PROJECT_DIR && bash ~/summitflow/scripts/backup.sh --keep-local"
+            echo "Run backup first: cd $PROJECT_DIR && bash $SCRIPT_DIR/backup.sh --keep-local"
             exit 1
         fi
         log "Found latest backup: $latest"

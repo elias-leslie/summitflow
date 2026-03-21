@@ -14,6 +14,7 @@
 #   1 - One or more tests failed
 
 set -e
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Colors
 GREEN='\033[0;32m'
@@ -24,7 +25,7 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 
 # Configuration
-SUMMITFLOW_DIR="${HOME}/summitflow"
+SUMMITFLOW_DIR="$(dirname "$SCRIPT_DIR")"
 TEST_PROJECT="summitflow"
 WORKSPACES_ROOT="${ST_WORKSPACES_ROOT:-/srv/workspaces}"
 # Per-project worktree paths: /srv/workspaces/lanes/<project-id>/<task-id>/ when available

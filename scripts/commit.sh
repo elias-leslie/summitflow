@@ -22,6 +22,8 @@
 
 set -uo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 SUMMITFLOW_API="${ST_API_BASE:-http://localhost:8001/api}/projects"
 BACKUP_SOURCES_API="${ST_API_BASE:-http://localhost:8001/api}/backup-sources"
 FALLBACK_FILE="$HOME/.claude/config/managed-repos.txt"
@@ -302,8 +304,8 @@ run_quality_gates() {
     local dt_cmd
     if command -v dt &>/dev/null; then
         dt_cmd="dt"
-    elif [[ -x "$HOME/summitflow/scripts/dev-tools.sh" ]]; then
-        dt_cmd="$HOME/summitflow/scripts/dev-tools.sh"
+    elif [[ -x "$SCRIPT_DIR/dev-tools.sh" ]]; then
+        dt_cmd="$SCRIPT_DIR/dev-tools.sh"
     else
         return 1
     fi

@@ -5,6 +5,7 @@
 # Routes DOM-style work to Lightpanda and visual capture to Chrome.
 
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 HOST="${SF_BROWSER_HOST:-192.168.8.234}"
 AGENT_BROWSER_BIN="${HOME}/.local/bin/agent-browser"
@@ -42,7 +43,7 @@ case "${1:-}" in
         latest=$(npm view agent-browser version 2>/dev/null || echo "?")
         echo "agent-browser: installed=${current} latest=${latest}"
         if [[ "$current" != "$latest" && "$latest" != "?" ]]; then
-            echo "  UPDATE: bash ~/summitflow/scripts/setup-agent-browser.sh ${latest}"
+            echo "  UPDATE: bash ${SCRIPT_DIR}/setup-agent-browser.sh ${latest}"
         fi
         echo ""
         echo "Browser engines are managed on the test VM:"

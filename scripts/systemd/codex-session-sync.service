@@ -4,6 +4,6 @@ After=network.target
 
 [Service]
 Type=oneshot
-ExecStart=%h/summitflow/scripts/codex-session-sync.py --scan --verbose
+ExecStart=__SUMMITFLOW_ROOT__/scripts/codex-session-sync.py --scan --verbose
 StandardOutput=journal
 StandardError=journal

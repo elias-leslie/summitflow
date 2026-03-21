@@ -2,6 +2,7 @@
 # Start all SummitFlow services via systemd (User Mode)
 
 set -e
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "================================"
 echo "Starting SummitFlow Platform"
@@ -25,4 +26,4 @@ echo "Waiting for services to be ready..."
 sleep 3
 
 # Run status check
-bash ~/summitflow/scripts/status.sh
+bash "$SCRIPT_DIR/status.sh"

@@ -11,6 +11,14 @@ APP_SERVICE_KILLMODES = {
     "summitflow-terminal.service": "mixed",
     "summitflow-terminal-frontend.service": "mixed",
 }
+SUMMITFLOW_ROOT_RENDERED_UNITS = [
+    "summitflow-backend.service",
+    "summitflow-frontend.service",
+    "summitflow-hatchet-worker.service",
+    "codex-session-sync.service",
+    "tmux-agent-session-sync.service",
+    "agent-browser-idle-reaper.service",
+]
 
 
 def _kill_mode_for(service_name: str) -> str | None:
@@ -27,3 +35,10 @@ def test_app_service_templates_use_expected_kill_mode() -> None:
 def test_app_service_templates_do_not_use_process_kill_mode() -> None:
     for service_name in APP_SERVICE_KILLMODES:
         assert _kill_mode_for(service_name) != "process"
+
+
+def test_summitflow_units_use_root_placeholder_instead_of_hardcoded_home_path() -> None:
+    for service_name in SUMMITFLOW_ROOT_RENDERED_UNITS:
+        text = (SYSTEMD_DIR / service_name).read_text()
+        assert "__SUMMITFLOW_ROOT__" in text
+        assert "%h/summitflow" not in text

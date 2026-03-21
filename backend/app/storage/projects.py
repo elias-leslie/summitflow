@@ -33,25 +33,37 @@ def get_project_root_path(project_id: str) -> str | None:
 def find_project_by_cwd(cwd: str) -> dict[str, Any] | None:
     """Find project whose root_path matches the given working directory.
 
-    Checks if cwd starts with any project's root_path. Returns the most
-    specific (longest) match or None.
+    Resolves cwd and project roots as filesystem paths, then returns the most
+    specific root that contains the cwd.
     """
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT id, name, root_path
-            FROM projects
-            WHERE root_path IS NOT NULL
-              AND %s LIKE root_path || '%%'
-            ORDER BY LENGTH(root_path) DESC
-            LIMIT 1
-            """,
-            (cwd,),
-        )
-        row = cur.fetchone()
-        if not row:
-            return None
-        return {"id": row[0], "name": row[1], "root_path": row[2]}
+    try:
+        candidate = Path(cwd).expanduser().resolve()
+    except OSError:
+        candidate = Path(cwd).expanduser()
+
+    matches: list[tuple[int, dict[str, Any]]] = []
+    for project in list_projects():
+        root_path = project.get("root_path")
+        if not root_path:
+            continue
+        try:
+            root = Path(root_path).expanduser().resolve()
+        except OSError:
+            root = Path(root_path).expanduser()
+
+        if candidate == root or root in candidate.parents:
+            matches.append((len(str(root)), project))
+
+    if not matches:
+        return None
+
+    matches.sort(key=lambda item: item[0], reverse=True)
+    project = matches[0][1]
+    return {
+        "id": project["id"],
+        "name": project["name"],
+        "root_path": project["root_path"],
+    }
 
 
 def _apply_working_dir_pythonpath(env: dict[str, str], working_dir: str) -> None:

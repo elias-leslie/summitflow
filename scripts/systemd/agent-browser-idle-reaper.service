@@ -3,4 +3,4 @@ Description=Clean up idle agent-browser daemons
 
 [Service]
 Type=oneshot
-ExecStart=%h/summitflow/scripts/agent-browser-idle-reaper.js
+ExecStart=__SUMMITFLOW_ROOT__/scripts/agent-browser-idle-reaper.js

@@ -110,8 +110,8 @@ class TestResolveProjectId:
         mocker.patch(
             "app.utils._git_core._query_db_project_roots",
             return_value=[
-                ("summitflow", "/home/kasadis/summitflow"),
-                ("agent-hub", "/home/kasadis/agent-hub"),
+                ("summitflow", "/repos/summitflow"),
+                ("agent-hub", "/repos/agent-hub"),
             ],
         )
         mocker.patch(
@@ -126,7 +126,7 @@ class TestResolveProjectId:
             return_value=[Path("/home/kasadis/.codex")],
         )
 
-        assert _resolve_project_id(Path("/home/kasadis/summitflow")) == "summitflow"
+        assert _resolve_project_id(Path("/repos/summitflow")) == "summitflow"
         assert _resolve_project_id(Path("/home/kasadis/.claude")) is None
         assert _resolve_project_id(Path("/home/kasadis/persona-sandbox")) is None
         assert _resolve_project_id(Path("/home/kasadis/.codex")) is None

@@ -4,5 +4,4 @@ After=network.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/env python3 %h/summitflow/scripts/tmux-agent-session-sync.py
-
+ExecStart=/usr/bin/env python3 __SUMMITFLOW_ROOT__/scripts/tmux-agent-session-sync.py

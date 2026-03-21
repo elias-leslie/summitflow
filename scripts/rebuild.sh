@@ -16,6 +16,9 @@
 
 set -eo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SUMMITFLOW_ROOT="$(dirname "$SCRIPT_DIR")"
+
 # ─── Colors & logging ────────────────────────────────────────────
 GREEN='\033[0;32m' RED='\033[0;31m' YELLOW='\033[1;33m' NC='\033[0m'
 log()         { printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*"; }
@@ -28,7 +31,7 @@ log_warn()    { printf "${YELLOW}[%s] ⚠ %s${NC}\n" "$(date '+%H:%M:%S')" "$*";
 #               backend_port, frontend_port, backend_dir, frontend_dir
 declare -A PROJECTS
 PROJECTS=(
-    [summitflow]="/home/kasadis/summitflow|summitflow-backend.service|summitflow-frontend.service|summitflow-hatchet-worker.service|8001|3001|backend|frontend"
+    [summitflow]="$SUMMITFLOW_ROOT|summitflow-backend.service|summitflow-frontend.service|summitflow-hatchet-worker.service|8001|3001|backend|frontend"
     [agent-hub]="/home/kasadis/agent-hub|agent-hub-backend.service|agent-hub-frontend.service|agent-hub-hatchet-worker.service|8003|3003|backend|frontend"
     [portfolio-ai]="/home/kasadis/portfolio-ai|portfolio-backend.service|portfolio-frontend.service|portfolio-hatchet-worker.service|8000|3000|backend|frontend"
     [terminal]="/home/kasadis/terminal|summitflow-terminal.service|summitflow-terminal-frontend.service||8002|3002|.|frontend"
@@ -85,7 +88,7 @@ restart_svc() {
 }
 
 ensure_infra() {
-    local compose_dir="/home/kasadis/summitflow/docker/compose"
+    local compose_dir="$SUMMITFLOW_ROOT/docker/compose"
     local compose_file="$compose_dir/docker-compose.yml"
     [ ! -f "$compose_file" ] && return 0
 

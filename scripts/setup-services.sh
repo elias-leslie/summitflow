@@ -13,6 +13,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SUMMITFLOW_DIR="$(dirname "$SCRIPT_DIR")"
 USER_SYSTEMD_DIR="$HOME/.config/systemd/user"
 SYSTEMCTL_USER_TIMEOUT="${SYSTEMCTL_USER_TIMEOUT:-20}"
+SUMMITFLOW_SCRIPTS_PATH="$SUMMITFLOW_DIR/scripts"
+
+escape_sed_replacement() {
+    printf '%s' "$1" | sed 's/[&|]/\\&/g'
+}
+
+render_unit_file() {
+    local src="$1"
+    local dest="$2"
+    local escaped_root
+    escaped_root=$(escape_sed_replacement "$SUMMITFLOW_DIR")
+    sed "s|__SUMMITFLOW_ROOT__|$escaped_root|g" "$src" > "$dest"
+}
 
 run_user_systemctl() {
     timeout --foreground "$SYSTEMCTL_USER_TIMEOUT" systemctl --user "$@"
@@ -30,17 +43,18 @@ echo ""
 echo "Step 1: Setting up systemd user services..."
 mkdir -p "$USER_SYSTEMD_DIR"
 
-# Step 2: Create symlinks for all unit files found in scripts/systemd/
-echo "  Creating symlinks..."
+# Step 2: Render unit files with the installed repo root.
+echo "  Rendering unit files..."
 UNITS_LINKED=0
 for unit_file in "$SUMMITFLOW_DIR"/scripts/systemd/*.{service,timer}; do
     [ -f "$unit_file" ] || continue
     unit_name="$(basename "$unit_file")"
-    ln -sf "$unit_file" "$USER_SYSTEMD_DIR/$unit_name"
+    rm -f "$USER_SYSTEMD_DIR/$unit_name"
+    render_unit_file "$unit_file" "$USER_SYSTEMD_DIR/$unit_name"
     echo "    $unit_name"
     UNITS_LINKED=$((UNITS_LINKED + 1))
 done
-echo "  Linked $UNITS_LINKED unit files"
+echo "  Rendered $UNITS_LINKED unit files"
 
 # Step 3: Reload systemd user daemon
 echo "  Reloading systemd user daemon..."
@@ -81,18 +95,44 @@ done
 echo "  ✓ Systemd units configured"
 echo ""
 
-# Step 6: Ensure ~/summitflow/scripts is on PATH
+# Step 6: Ensure the installed SummitFlow scripts directory is on PATH
 echo "Step 6: Checking PATH setup..."
 SHELL_RC="$HOME/.bashrc"
 [ -n "$ZSH_VERSION" ] && SHELL_RC="$HOME/.zshrc"
+PATH_EXPORT_LINE="export PATH=\"$SUMMITFLOW_SCRIPTS_PATH:\$PATH\""
 
-if ! grep -q 'summitflow/scripts' "$SHELL_RC" 2>/dev/null; then
+if ! grep -Fq "$SUMMITFLOW_SCRIPTS_PATH" "$SHELL_RC" 2>/dev/null; then
+    if grep -q 'summitflow/scripts' "$SHELL_RC" 2>/dev/null; then
+        tmp_rc="$(mktemp)"
+        awk -v replacement="$PATH_EXPORT_LINE" '
+            BEGIN { replaced = 0 }
+            /^# SummitFlow scripts / { next }
+            /export PATH=.*summitflow\/scripts/ {
+                if (!replaced) {
+                    print replacement
+                    replaced = 1
+                }
+                next
+            }
+            { print }
+            END {
+                if (!replaced) {
+                    print ""
+                    print "# SummitFlow scripts (rebuild.sh, sf-browser, etc.)"
+                    print replacement
+                }
+            }
+        ' "$SHELL_RC" > "$tmp_rc"
+        mv "$tmp_rc" "$SHELL_RC"
+        echo "  Updated SummitFlow scripts PATH in $SHELL_RC"
+    else
     echo '' >> "$SHELL_RC"
     echo '# SummitFlow scripts (rebuild.sh, sf-browser, etc.)' >> "$SHELL_RC"
-    echo 'export PATH="$HOME/summitflow/scripts:$PATH"' >> "$SHELL_RC"
-    echo "  Added ~/summitflow/scripts to PATH in $SHELL_RC"
+        echo "$PATH_EXPORT_LINE" >> "$SHELL_RC"
+        echo "  Added $SUMMITFLOW_SCRIPTS_PATH to PATH in $SHELL_RC"
+    fi
 else
-    echo "  ~/summitflow/scripts already on PATH"
+    echo "  $SUMMITFLOW_SCRIPTS_PATH already on PATH"
 fi
 echo "  ✓ PATH configured"
 echo ""
