@@ -22,6 +22,25 @@ export PROJECT_NAME=$(basename "$PROJECT_DIR")
 # Storage backend integration — resolve SMB config from DB if STORAGE_BACKEND_ID is set
 SCRIPT_DIR_BU="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR_BU/storage-backend.sh" 2>/dev/null || true
+source "$SCRIPT_DIR_BU/project-roots.sh" 2>/dev/null || true
+
+default_backup_state_root() {
+    if declare -F shared_cache_root >/dev/null 2>&1; then
+        local candidate_root
+        candidate_root="$(shared_cache_root)"
+        if [ -d "$candidate_root" ] && [ -w "$candidate_root" ]; then
+            printf '%s\n' "$candidate_root/backup-indexes"
+            return 0
+        fi
+    fi
+
+    local workspaces_cache="${ST_WORKSPACES_ROOT:-/srv/workspaces}/cache"
+    if [ -d "$workspaces_cache" ] && [ -w "$workspaces_cache" ]; then
+        printf '%s\n' "$workspaces_cache/backup-indexes"
+        return 0
+    fi
+    printf '%s\n' "$HOME/.local/share/summitflow/backup-indexes"
+}
 
 # SMB configuration - override via environment or ~/.env.local
 # Set SMB_HOST and SMB_SHARE in ~/.env.local for your NAS/SMB target
@@ -33,7 +52,10 @@ export SMB_SHARE="${SMB_SHARE:-backups}"
 export SMB_PATH="project-backups/$PROJECT_NAME"
 export SMB_USER="${SMB_USER:-backup-svc}"
 export CREDENTIALS_FILE="$HOME/.smbcredentials"
-export BACKUP_INDEX="$PROJECT_DIR/backup-index.json"
+export BACKUP_STATE_ROOT="${ST_BACKUP_STATE_ROOT:-$(default_backup_state_root)}"
+export BACKUP_STATE_DIR="$BACKUP_STATE_ROOT/$PROJECT_NAME"
+export LEGACY_BACKUP_INDEX="$PROJECT_DIR/backup-index.json"
+export BACKUP_INDEX="$BACKUP_STATE_DIR/backup-index.json"
 export RETENTION_DAYS=14
 export MIN_BACKUPS=3
 
@@ -132,6 +154,10 @@ log_error() {
 
 log_info() {
     printf "${BLUE}[%s] ℹ %s${NC}\n" "$(date '+%Y-%m-%d %H:%M:%S')" "$*"
+}
+
+ensure_backup_state_dir() {
+    mkdir -p "$BACKUP_STATE_DIR"
 }
 
 backup_expects_database() {
@@ -651,28 +677,6 @@ backup_checkpoint() {
     fi
 }
 
-# Restore backup index from git if corrupted
-restore_index_from_git() {
-    log "Attempting to restore backup-index.json from git..."
-
-    cd "$PROJECT_DIR" || return 1
-
-    # Check if file is in git
-    if ! git ls-files --error-unmatch backup-index.json &>/dev/null; then
-        log_warn "backup-index.json not tracked in git"
-        return 1
-    fi
-
-    # Restore from HEAD
-    if git restore backup-index.json 2>/dev/null; then
-        log_success "Restored backup-index.json from git"
-        return 0
-    else
-        log_error "Failed to restore from git"
-        return 1
-    fi
-}
-
 # Validate that index file is valid JSON with expected structure
 validate_index() {
     local index_file="${1:-$BACKUP_INDEX}"
@@ -696,6 +700,30 @@ validate_index() {
     return 0
 }
 
+migrate_legacy_backup_index() {
+    ensure_backup_state_dir
+
+    if [ ! -f "$LEGACY_BACKUP_INDEX" ]; then
+        return 0
+    fi
+
+    if [ -f "$BACKUP_INDEX" ]; then
+        if cmp -s "$LEGACY_BACKUP_INDEX" "$BACKUP_INDEX" 2>/dev/null; then
+            rm -f "$LEGACY_BACKUP_INDEX"
+        fi
+        return 0
+    fi
+
+    if ! validate_index "$LEGACY_BACKUP_INDEX" >/dev/null 2>&1; then
+        log_warn "Legacy backup index is invalid, leaving it in place: $LEGACY_BACKUP_INDEX"
+        return 1
+    fi
+
+    mv "$LEGACY_BACKUP_INDEX" "$BACKUP_INDEX"
+    log_success "Moved backup index to shared state: $BACKUP_INDEX"
+    return 0
+}
+
 # Sync local index with SMB - self-healing function
 # Adds missing backups, removes orphans, preserves existing verification data
 # Usage: sync_index_from_smb [--verify-missing]
@@ -706,19 +734,11 @@ sync_index_from_smb() {
         verify_missing=true
     fi
 
+    ensure_backup_state_dir
+    migrate_legacy_backup_index >/dev/null 2>&1 || true
     log "Syncing backup index with SMB..."
 
-    # Check if index exists and is valid
-    if [ -f "$BACKUP_INDEX" ]; then
-        if ! validate_index; then
-            log_warn "Index is corrupted, attempting git restore..."
-            if restore_index_from_git; then
-                log_success "Index restored from git"
-            fi
-        fi
-    fi
-
-    # Ensure index exists (create if still missing after git restore attempt)
+    # Ensure index exists and is valid
     if [ ! -f "$BACKUP_INDEX" ] || ! validate_index; then
         log "Creating fresh index..."
         cat > "$BACKUP_INDEX" << EOF
@@ -886,4 +906,7 @@ export -f upload_with_retry save_to_pending upload_pending_backups
 export -f update_backup_index get_backup_count remove_oldest_from_index
 export -f apply_retention backup_checkpoint
 export -f build_backup_manifest verify_backup
-export -f validate_index restore_index_from_git sync_index_from_smb
+export -f ensure_backup_state_dir validate_index migrate_legacy_backup_index sync_index_from_smb
+
+ensure_backup_state_dir
+migrate_legacy_backup_index >/dev/null 2>&1 || true
