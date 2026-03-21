@@ -66,6 +66,7 @@ install_cli_links() {
     local summitflow_st="$SUMMITFLOW_DIR/backend/.venv/bin/st"
     local summitflow_dt="$SUMMITFLOW_DIR/scripts/dev-tools.sh"
     local agent_hub_root=""
+    local terminal_root=""
 
     mkdir -p "$BIN_DIR"
 
@@ -83,6 +84,20 @@ install_cli_links() {
     if [ -n "$agent_hub_root" ] && [ -f "$agent_hub_root/scripts/db.sh" ]; then
         ln -sfnT "$agent_hub_root/scripts/db.sh" "$BIN_DIR/db"
         echo "  Linked db -> $agent_hub_root/scripts/db.sh"
+    fi
+
+    terminal_root="$(resolve_project_root terminal 2>/dev/null || true)"
+    if [ -n "$terminal_root" ] && [ -f "$terminal_root/scripts/tcodex" ]; then
+        ln -sfnT "$terminal_root/scripts/tcodex" "$BIN_DIR/tcodex"
+        echo "  Linked tcodex -> $terminal_root/scripts/tcodex"
+    fi
+    if [ -n "$terminal_root" ] && [ -f "$terminal_root/scripts/tclaude" ]; then
+        ln -sfnT "$terminal_root/scripts/tclaude" "$BIN_DIR/tclaude"
+        echo "  Linked tclaude -> $terminal_root/scripts/tclaude"
+    fi
+    if [ -n "$terminal_root" ] && [ -f "$terminal_root/scripts/tsession" ]; then
+        ln -sfnT "$terminal_root/scripts/tsession" "$BIN_DIR/tsession"
+        echo "  Linked tsession -> $terminal_root/scripts/tsession"
     fi
 }
 
