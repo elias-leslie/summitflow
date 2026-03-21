@@ -739,6 +739,155 @@ class OrphanedSnapshotDir:
         return len(self.snapshot_paths)
 
 
+@dataclass(frozen=True)
+class SnapshotResidue:
+    """Legacy snapshot state that falls outside the managed lane/project layout."""
+
+    project_id: str | None
+    residue_name: str
+    path: Path
+    residue_type: str
+
+    @property
+    def total_items(self) -> int:
+        return 1
+
+
+def _snapshot_manifest_root(project_id: str) -> Path:
+    return Path.home() / ".local" / "share" / "st" / "snaps" / project_id
+
+
+def find_orphaned_lane_manifest_dirs(project_id: str) -> list[SnapshotResidue]:
+    """Find lane manifest dirs whose lane and lane snapshots are both gone."""
+    manifest_root = _snapshot_manifest_root(project_id)
+    if not manifest_root.is_dir():
+        return []
+
+    lanes_base = get_lanes_base_dir(project_id)
+    snap_lanes_base = get_workspace_snapshots_base_dir(project_id) / "lanes"
+    residues: list[SnapshotResidue] = []
+
+    for entry in sorted(manifest_root.iterdir()):
+        if not entry.is_dir() or not entry.name.startswith("lane-"):
+            continue
+        lane_name = entry.name.removeprefix("lane-")
+        if (lanes_base / lane_name).exists():
+            continue
+        if (snap_lanes_base / lane_name).exists():
+            continue
+        residues.append(
+            SnapshotResidue(
+                project_id=project_id,
+                residue_name=lane_name,
+                path=entry,
+                residue_type="orphan-lane-manifest",
+            )
+        )
+
+    return residues
+
+
+def find_legacy_manifest_dirs(project_id: str) -> list[SnapshotResidue]:
+    """Find legacy snapshot manifest dirs that do not match current scope keys."""
+    manifest_root = _snapshot_manifest_root(project_id)
+    if not manifest_root.is_dir():
+        return []
+
+    residues: list[SnapshotResidue] = []
+    for entry in sorted(manifest_root.iterdir()):
+        if not entry.is_dir():
+            continue
+        if entry.name.startswith("lane-") or entry.name.startswith("project-"):
+            continue
+        residues.append(
+            SnapshotResidue(
+                project_id=project_id,
+                residue_name=entry.name,
+                path=entry,
+                residue_type="legacy-manifest",
+            )
+        )
+
+    return residues
+
+
+def find_legacy_snapshot_roots(
+    managed_project_ids: list[str],
+    *,
+    project_id: str | None = None,
+) -> list[SnapshotResidue]:
+    """Find unmanaged top-level snapshot roots under /srv/workspaces/.snapshots."""
+    _require_workspaces()
+    snapshots_root = get_workspace_snapshots_base_dir()
+    managed = set(managed_project_ids)
+    residues: list[SnapshotResidue] = []
+
+    for entry in sorted(snapshots_root.iterdir()):
+        if not entry.is_dir():
+            continue
+        if entry.name in managed:
+            continue
+
+        owner_project_id = next(
+            (pid for pid in managed_project_ids if entry.name.startswith(f"{pid}-")),
+            None,
+        )
+        if project_id is not None and owner_project_id != project_id:
+            continue
+
+        residues.append(
+            SnapshotResidue(
+                project_id=owner_project_id,
+                residue_name=entry.name,
+                path=entry,
+                residue_type="legacy-snapshot-root",
+            )
+        )
+
+    return residues
+
+
+def find_snapshot_residue(
+    managed_project_ids: list[str],
+    *,
+    project_id: str | None = None,
+) -> list[SnapshotResidue]:
+    """Find snapshot-related residue outside the current managed cleanup paths."""
+    residues: list[SnapshotResidue] = []
+    residues.extend(find_legacy_snapshot_roots(managed_project_ids, project_id=project_id))
+
+    project_ids = [project_id] if project_id else managed_project_ids
+    for pid in project_ids:
+        residues.extend(find_orphaned_lane_manifest_dirs(pid))
+        residues.extend(find_legacy_manifest_dirs(pid))
+
+    return sorted(
+        residues,
+        key=lambda residue: (
+            residue.project_id or "",
+            residue.residue_type,
+            residue.residue_name,
+        ),
+    )
+
+
+def delete_snapshot_residue(residue: SnapshotResidue) -> None:
+    """Delete one legacy snapshot residue target."""
+    if residue.residue_type == "legacy-snapshot-root":
+        try:
+            _delete_subvolume(residue.path)
+            return
+        except SnapshotError as exc:
+            message = str(exc)
+            if "Invalid argument" not in message and "Not a Btrfs subvolume" not in message:
+                raise
+
+    if residue.path.is_dir():
+        shutil.rmtree(residue.path, ignore_errors=False)
+    elif residue.path.exists():
+        residue.path.unlink()
+
+
 def find_orphaned_snapshot_dirs(project_id: str) -> list[OrphanedSnapshotDir]:
     """Find snapshot directories for lanes that no longer exist."""
     _require_workspaces()

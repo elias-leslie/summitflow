@@ -91,6 +91,11 @@ def _iter_target_repos(all_projects: bool) -> list[Path]:
     return repos[:1] if repos else []
 
 
+def _iter_target_project_ids(all_projects: bool) -> list[str]:
+    """Return managed project IDs relevant to the cleanup request."""
+    return [repo.name for repo in _iter_target_repos(all_projects)]
+
+
 def _categorize_analyses(analyses: list[WorktreeAnalysis]) -> tuple[list[str], list[str], list[str]]:
     """Return (needs_merge_tasks, conflict_tasks, review_tasks) from analyses."""
     needs_merge = [
@@ -109,21 +114,25 @@ def _categorize_analyses(analyses: list[WorktreeAnalysis]) -> tuple[list[str], l
 def _build_repo_cleanup_entry(repo_path: Path) -> RepoEntry:
     """Build cleanup counters for one managed repository."""
     project_id = repo_path.name
+    from ..lib.quick_snapshots import find_snapshot_residue
+
     ws = build_repo_workspace_summary(repo_path)
     active_worktrees = get_active_worktrees(project_id)
     client = STClient(require_project=False)
     analyses = [analyze_worktree(wt, client) for wt in active_worktrees]
     dirty_worktrees = sum(1 for wt in active_worktrees if has_uncommitted_changes(wt.path))
     stale_checkpoints = len(get_stale_checkpoints(project_id))
+    snapshot_residue = len(find_snapshot_residue([project_id], project_id=project_id))
     needs_merge_tasks, conflict_tasks, review_tasks = _categorize_analyses(analyses)
     needs_cleanup = any((
-        dirty_worktrees, stale_checkpoints, ws.orphan_branches, ws.prunable_branches,
+        dirty_worktrees, stale_checkpoints, snapshot_residue, ws.orphan_branches, ws.prunable_branches,
         needs_merge_tasks, conflict_tasks, review_tasks,
     ))
     return RepoEntry(
         project_id=project_id, path=str(repo_path),
         active_worktrees=ws.active_worktrees, dirty_worktrees=dirty_worktrees,
         stale_checkpoints=stale_checkpoints,
+        snapshot_residue=snapshot_residue,
         orphan_task_branches=ws.orphan_branches, prunable_task_branches=ws.prunable_branches,
         worktree_task_ids=ws.worktree_task_ids, orphan_branch_names=ws.orphan_branch_names,
         prunable_branch_names=ws.prunable_branch_names, salvage_task_ids=ws.salvage_task_ids,
@@ -146,6 +155,7 @@ def build_cleanup_status_payload(all_projects: bool) -> dict[str, Any]:
         "active_worktrees": sum(r["active_worktrees"] for r in repositories),
         "dirty_worktrees": sum(r["dirty_worktrees"] for r in repositories),
         "stale_checkpoints": sum(r["stale_checkpoints"] for r in repositories),
+        "snapshot_residue": sum(r["snapshot_residue"] for r in repositories),
         "orphan_task_branches": sum(r["orphan_task_branches"] for r in repositories),
         "prunable_task_branches": sum(r["prunable_task_branches"] for r in repositories),
     }
@@ -569,6 +579,99 @@ def cleanup_lanes(
             deleted += 1
         except Exception as exc:
             errors.append(f"checkpoint:{checkpoint.project_id}/{checkpoint.task_id}: {exc}")
+
+    output_success(f"Deleted {deleted} target(s), {len(errors)} error(s)")
+    for err in errors:
+        typer.echo(f"  ERROR {err}", err=True)
+
+
+@app.command("snapshots")
+def cleanup_snapshots(
+    residue_name: Annotated[str | None, typer.Argument(help="Specific legacy snapshot residue to delete")] = None,
+    all_projects: Annotated[bool, typer.Option("--all", help="Scan all projects (default: current project only)")] = False,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Show what would be deleted without deleting it")] = False,
+    confirm: Annotated[str | None, typer.Option("--confirm", help="Confirm token from preview run")] = None,
+) -> None:
+    """Delete legacy snapshot residue outside the current managed lane/project layout."""
+    import os
+
+    from ..lib.confirm_token import format_preview, generate_token, validate_token
+    from ..lib.quick_snapshots import delete_snapshot_residue, find_snapshot_residue
+    from ..lib.worktree_paths import workspaces_root_available
+
+    if not workspaces_root_available():
+        output_error("Btrfs workspaces not available — nothing to clean up.")
+        raise typer.Exit(1)
+
+    project_ids = _iter_target_project_ids(all_projects)
+    current_project_id = get_project_id(all_projects)
+    residues = find_snapshot_residue(project_ids, project_id=current_project_id)
+    if residue_name:
+        residues = [residue for residue in residues if residue.residue_name == residue_name]
+
+    if not residues:
+        if residue_name:
+            output_success("No matching snapshot residue found to clean up.")
+        else:
+            output_success("No legacy snapshot residue found to clean up.")
+        return
+
+    scope_label = "all" if all_projects else (current_project_id or "unknown")
+    target_label = residue_name or "all-snapshots"
+    command_key = f"cleanup-snapshots-{scope_label}-{target_label}"
+
+    if confirm is None:
+        lines = [f"DELETE legacy snapshot residue: {len(residues)} target(s):", ""]
+        for residue in residues:
+            owner = residue.project_id or "unowned"
+            lines.append(f"SNAPSHOT-RESIDUE {owner}/{residue.residue_name} [{residue.residue_type}]")
+            lines.append(f"  path: {residue.path}")
+
+        token = generate_token(command_key)
+        cmd_parts = ["st cleanup snapshots"]
+        if residue_name:
+            cmd_parts.append(residue_name)
+        if all_projects:
+            cmd_parts.append("--all")
+        print(format_preview(" ".join(cmd_parts), lines, token))
+        if dry_run:
+            typer.echo("  (dry-run: no token needed)")
+        raise typer.Exit(0)
+
+    if not validate_token(command_key, confirm):
+        output_error(
+            "Invalid or expired confirm token.\n"
+            "  Run the command without --confirm to preview and get a new token."
+        )
+        raise typer.Exit(1)
+
+    if dry_run:
+        typer.echo("DRY RUN — would delete:")
+        for residue in residues:
+            typer.echo(f"  {residue.project_id or 'unowned'}/{residue.residue_name} ({residue.residue_type})")
+        return
+
+    cwd = Path.cwd()
+    for residue in residues:
+        try:
+            cwd.relative_to(residue.path)
+            os.chdir(Path.home())
+            break
+        except ValueError:
+            pass
+
+    deleted = 0
+    errors: list[str] = []
+    for residue in residues:
+        try:
+            delete_snapshot_residue(residue)
+            typer.echo(
+                f"  Deleted snapshot residue: "
+                f"{residue.project_id or 'unowned'}/{residue.residue_name}"
+            )
+            deleted += 1
+        except Exception as exc:
+            errors.append(f"{residue.project_id or 'unowned'}/{residue.residue_name}: {exc}")
 
     output_success(f"Deleted {deleted} target(s), {len(errors)} error(s)")
     for err in errors:

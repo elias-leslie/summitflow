@@ -93,6 +93,20 @@ def _create_snapshot_for_lane(workspaces_root: Path, lane_name: str, snap_id: st
     return snap_dir
 
 
+def _create_legacy_snapshot_root(workspaces_root: Path, residue_name: str) -> Path:
+    path = workspaces_root / ".snapshots" / residue_name
+    path.mkdir(parents=True)
+    (path / "README.md").write_text("legacy snapshot\n", encoding="utf-8")
+    return path
+
+
+def _create_manifest_dir(tmp_path: Path, dir_name: str) -> Path:
+    manifest_dir = tmp_path / "home" / ".local" / "share" / "st" / "snaps" / "summitflow" / dir_name
+    manifest_dir.mkdir(parents=True, exist_ok=True)
+    (manifest_dir / "manifest.json").write_text("[]", encoding="utf-8")
+    return manifest_dir
+
+
 def _create_checkpoint_meta(tmp_path: Path, task_id: str, worktree_path: Path) -> Path:
     checkpoint_dir = tmp_path / "home" / ".local" / "share" / "st" / "checkpoints" / "summitflow"
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -298,6 +312,33 @@ class TestOrphanedSnapshotDirs:
         assert orphans == []
 
 
+class TestSnapshotResidue:
+    def test_find_snapshot_residue_includes_legacy_roots_and_manifest_residue(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from cli.lib.quick_snapshots import find_snapshot_residue
+
+        workspaces_root, canonical = _setup_workspace(tmp_path, monkeypatch)
+        _create_lane(canonical, workspaces_root, "alive-lane")
+        _create_snapshot_for_lane(workspaces_root, "alive-lane", "snap-001")
+        _create_legacy_snapshot_root(workspaces_root, "summitflow-pilot-v1")
+        _create_legacy_snapshot_root(workspaces_root, "summitflow-probes")
+        _create_manifest_dir(tmp_path, "repo-legacy123")
+        _create_manifest_dir(tmp_path, "lane-task-ghost")
+
+        residues = find_snapshot_residue(["summitflow"], project_id="summitflow")
+
+        assert {
+            (residue.residue_name, residue.residue_type)
+            for residue in residues
+        } == {
+            ("summitflow-pilot-v1", "legacy-snapshot-root"),
+            ("summitflow-probes", "legacy-snapshot-root"),
+            ("repo-legacy123", "legacy-manifest"),
+            ("task-ghost", "orphan-lane-manifest"),
+        }
+
+
 class TestDeleteLaneSnapshotDir:
     def test_delete_lane_cleans_snapshot_parent_dir(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -383,3 +424,43 @@ class TestCleanupLanesCommand:
         assert result.exit_code == 0
         assert "Deleted stale checkpoint: summitflow/task-stale" in result.output
         assert not meta_path.exists()
+
+
+class TestCleanupSnapshotsCommand:
+    def test_cleanup_snapshots_preview_lists_legacy_residue(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        workspaces_root, _canonical = _setup_workspace(tmp_path, monkeypatch)
+        _create_legacy_snapshot_root(workspaces_root, "summitflow-pilot-v1")
+        _create_manifest_dir(tmp_path, "repo-legacy123")
+
+        monkeypatch.setattr("cli.commands.cleanup.get_project_id", lambda all_projects=False: "summitflow")
+        monkeypatch.setattr("cli.lib.confirm_token.generate_token", lambda key: "deadbeef")
+
+        result = runner.invoke(app, ["snapshots"])
+
+        assert result.exit_code == 0
+        assert "DELETE legacy snapshot residue: 2 target(s):" in result.output
+        assert "SNAPSHOT-RESIDUE summitflow/summitflow-pilot-v1 [legacy-snapshot-root]" in result.output
+        assert "SNAPSHOT-RESIDUE summitflow/repo-legacy123 [legacy-manifest]" in result.output
+
+    def test_cleanup_snapshots_confirm_deletes_legacy_residue(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        workspaces_root, _canonical = _setup_workspace(tmp_path, monkeypatch)
+        legacy_root = _create_legacy_snapshot_root(workspaces_root, "summitflow-pilot-v1")
+        legacy_manifest = _create_manifest_dir(tmp_path, "repo-legacy123")
+        orphan_lane_manifest = _create_manifest_dir(tmp_path, "lane-task-ghost")
+
+        monkeypatch.setattr("cli.commands.cleanup.get_project_id", lambda all_projects=False: "summitflow")
+        monkeypatch.setattr("cli.lib.confirm_token.validate_token", lambda key, token: True)
+
+        result = runner.invoke(app, ["snapshots", "--confirm", "deadbeef"])
+
+        assert result.exit_code == 0
+        assert "Deleted snapshot residue: summitflow/summitflow-pilot-v1" in result.output
+        assert "Deleted snapshot residue: summitflow/repo-legacy123" in result.output
+        assert "Deleted snapshot residue: summitflow/task-ghost" in result.output
+        assert not legacy_root.exists()
+        assert not legacy_manifest.exists()
+        assert not orphan_lane_manifest.exists()

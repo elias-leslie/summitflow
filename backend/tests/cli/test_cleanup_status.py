@@ -25,6 +25,7 @@ def test_build_cleanup_status_payload_aggregates_repo_hygiene() -> None:
         patch("cli.commands.cleanup._get_managed_repos", return_value=repo_paths),
         patch("cli.commands.cleanup.get_project_id", return_value=None),
         patch("cli.commands.cleanup.get_stale_checkpoints", side_effect=[[], []]),
+        patch("cli.lib.quick_snapshots.find_snapshot_residue", return_value=[]),
         patch(
             "cli.commands.cleanup.build_repo_workspace_summary",
             side_effect=[
@@ -86,6 +87,7 @@ def test_build_cleanup_status_payload_aggregates_repo_hygiene() -> None:
         "active_worktrees": 2,
         "dirty_worktrees": 1,
         "stale_checkpoints": 0,
+        "snapshot_residue": 0,
         "orphan_task_branches": 1,
         "prunable_task_branches": 1,
     }
@@ -111,6 +113,7 @@ def test_cleanup_status_compact_reports_cross_repo_summary() -> None:
         patch("cli.commands.cleanup._get_managed_repos", return_value=repo_paths),
         patch("cli.commands.cleanup.get_project_id", return_value=None),
         patch("cli.commands.cleanup.get_stale_checkpoints", side_effect=[[], []]),
+        patch("cli.lib.quick_snapshots.find_snapshot_residue", return_value=[]),
         patch(
             "cli.commands.cleanup.build_repo_workspace_summary",
             side_effect=[
@@ -157,7 +160,7 @@ def test_cleanup_status_compact_reports_cross_repo_summary() -> None:
         result = runner.invoke(app, ["status", "--all"])
 
     assert result.exit_code == 0
-    assert "CLEANUP[all]:repos=2 needs_cleanup=1 worktrees=1 dirty=0 stale_cp=0 orphan=1 prunable=0" in result.output
+    assert "CLEANUP[all]:repos=2 needs_cleanup=1 worktrees=1 dirty=0 stale_cp=0 snap=0 orphan=1 prunable=0" in result.output
     assert (
         "summitflow worktrees:1 dirty:0 orphan:1 prunable:0 tasks:task-1 "
         "finalize:task-1 salvage:task-3 orphan_branches:task-3/main"
@@ -179,6 +182,7 @@ def test_cleanup_status_routes_missing_task_merge_candidates_to_review() -> None
         patch("cli.commands.cleanup._get_managed_repos", return_value=repo_paths),
         patch("cli.commands.cleanup.get_project_id", return_value="agent-hub"),
         patch("cli.commands.cleanup.get_stale_checkpoints", return_value=[]),
+        patch("cli.lib.quick_snapshots.find_snapshot_residue", return_value=[]),
         patch(
             "cli.commands.cleanup.build_repo_workspace_summary",
             return_value=SimpleNamespace(
@@ -222,6 +226,7 @@ def test_cleanup_status_fail_on_residue_returns_nonzero() -> None:
                 "active_worktrees": 2,
                 "dirty_worktrees": 1,
                 "stale_checkpoints": 0,
+                "snapshot_residue": 0,
                 "orphan_task_branches": 0,
                 "prunable_task_branches": 0,
             },
@@ -232,6 +237,7 @@ def test_cleanup_status_fail_on_residue_returns_nonzero() -> None:
                     "active_worktrees": 2,
                     "dirty_worktrees": 1,
                     "stale_checkpoints": 0,
+                    "snapshot_residue": 0,
                     "orphan_task_branches": 0,
                     "prunable_task_branches": 0,
                     "worktree_task_ids": ["task-1", "task-2"],
@@ -251,7 +257,7 @@ def test_cleanup_status_fail_on_residue_returns_nonzero() -> None:
         result = runner.invoke(app, ["status", "--fail-on-residue"])
 
     assert result.exit_code == 2
-    assert "CLEANUP[current]:repos=1 needs_cleanup=1 worktrees=2 dirty=1 stale_cp=0 orphan=0 prunable=0" in result.output
+    assert "CLEANUP[current]:repos=1 needs_cleanup=1 worktrees=2 dirty=1 stale_cp=0 snap=0 orphan=0 prunable=0" in result.output
 
 
 def test_cleanup_status_fail_on_residue_succeeds_when_clean() -> None:
@@ -264,6 +270,7 @@ def test_cleanup_status_fail_on_residue_succeeds_when_clean() -> None:
                 "active_worktrees": 0,
                 "dirty_worktrees": 0,
                 "stale_checkpoints": 0,
+                "snapshot_residue": 0,
                 "orphan_task_branches": 0,
                 "prunable_task_branches": 0,
             },
@@ -274,6 +281,7 @@ def test_cleanup_status_fail_on_residue_succeeds_when_clean() -> None:
                     "active_worktrees": 0,
                     "dirty_worktrees": 0,
                     "stale_checkpoints": 0,
+                    "snapshot_residue": 0,
                     "orphan_task_branches": 0,
                     "prunable_task_branches": 0,
                     "worktree_task_ids": [],
@@ -302,6 +310,7 @@ def test_cleanup_status_counts_stale_checkpoints_as_residue() -> None:
         patch("cli.commands.cleanup._get_managed_repos", return_value=repo_paths),
         patch("cli.commands.cleanup.get_project_id", return_value="summitflow"),
         patch("cli.commands.cleanup.get_stale_checkpoints", return_value=[SimpleNamespace(task_id="task-stale")]),
+        patch("cli.lib.quick_snapshots.find_snapshot_residue", return_value=[]),
         patch(
             "cli.commands.cleanup.build_repo_workspace_summary",
             return_value=SimpleNamespace(
@@ -320,8 +329,40 @@ def test_cleanup_status_counts_stale_checkpoints_as_residue() -> None:
         result = runner.invoke(app, ["status"])
 
     assert result.exit_code == 0
-    assert "CLEANUP[current]:repos=1 needs_cleanup=1 worktrees=0 dirty=0 stale_cp=1 orphan=0 prunable=0" in result.output
+    assert "CLEANUP[current]:repos=1 needs_cleanup=1 worktrees=0 dirty=0 stale_cp=1 snap=0 orphan=0 prunable=0" in result.output
     assert "summitflow worktrees:0 dirty:0 stale_cp:1 orphan:0 prunable:0" in result.output
+
+
+def test_cleanup_status_counts_snapshot_residue() -> None:
+    repo_paths = [Path("/repos/summitflow")]
+    with (
+        patch("cli.commands.cleanup._get_managed_repos", return_value=repo_paths),
+        patch("cli.commands.cleanup.get_project_id", return_value="summitflow"),
+        patch("cli.commands.cleanup.get_stale_checkpoints", return_value=[]),
+        patch(
+            "cli.lib.quick_snapshots.find_snapshot_residue",
+            return_value=[SimpleNamespace(), SimpleNamespace()],
+        ),
+        patch(
+            "cli.commands.cleanup.build_repo_workspace_summary",
+            return_value=SimpleNamespace(
+                active_worktrees=0,
+                orphan_branches=0,
+                prunable_branches=0,
+                worktree_task_ids=[],
+                orphan_branch_names=[],
+                prunable_branch_names=[],
+                salvage_task_ids=[],
+                review_orphan_task_ids=[],
+            ),
+        ),
+        patch("cli.commands.cleanup.get_active_worktrees", side_effect=[[], []]),
+    ):
+        result = runner.invoke(app, ["status"])
+
+    assert result.exit_code == 0
+    assert "CLEANUP[current]:repos=1 needs_cleanup=1 worktrees=0 dirty=0 stale_cp=0 snap=2 orphan=0 prunable=0" in result.output
+    assert "summitflow worktrees:0 dirty:0 snap:2 orphan:0 prunable:0" in result.output
 
 
 def test_cleanup_worktrees_auto_prunes_git_residue() -> None:
