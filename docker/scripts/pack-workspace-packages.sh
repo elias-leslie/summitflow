@@ -15,10 +15,16 @@
 # 5. Fix workspace: protocol deps → version strings
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SUMMITFLOW_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+SUMMITFLOW_ROOT_OVERRIDE="$SUMMITFLOW_ROOT"
+. "$SUMMITFLOW_ROOT/scripts/lib/project-roots.sh"
+
 OUT_DIR="${1:-/tmp/workspace-packages}"
 mkdir -p "$OUT_DIR"
 
-PACKAGES_DIR="${AGENT_HUB_PACKAGES:-$HOME/agent-hub/packages}"
+AGENT_HUB_ROOT="${AGENT_HUB_ROOT:-$(resolve_project_root agent-hub)}"
+PACKAGES_DIR="${AGENT_HUB_PACKAGES:-$AGENT_HUB_ROOT/packages}"
 
 # ── JavaScript packages ──────────────────────────────────────────
 for pkg in chat-ui push-client passport-client; do
