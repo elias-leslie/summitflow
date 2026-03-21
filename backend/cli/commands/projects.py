@@ -132,15 +132,15 @@ def update_project(
 @app.command("delete")
 def delete_project(
     project_id: Annotated[str, typer.Argument(help="Project ID to delete")],
-    force: Annotated[
-        bool,
-        typer.Option("--force", help="Required to confirm deletion"),
-    ] = False,
+    confirm: Annotated[
+        str | None,
+        typer.Option("--confirm", help="Confirm token from preview run"),
+    ] = None,
 ) -> None:
-    """Delete a project. Requires --force flag to confirm deletion.
+    """Delete a project. Two-pass confirmation required.
 
     Examples:
-        st projects delete persona-sandbox         # shows what would be deleted
-        st projects delete persona-sandbox --force  # actually deletes
+        st projects delete persona-sandbox                      # preview
+        st projects delete persona-sandbox --confirm a1b2c3d4   # execute
     """
-    run_delete(project_id, force=force)
+    run_delete(project_id, confirm=confirm)

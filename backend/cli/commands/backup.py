@@ -209,8 +209,43 @@ def show_backup(
 def delete_backup(
     ctx: typer.Context,
     backup_id: Annotated[str, typer.Argument(help="Backup ID to delete")],
+    confirm: Annotated[
+        str | None,
+        typer.Option("--confirm", help="Confirm token from preview run"),
+    ] = None,
 ) -> None:
-    """Delete a backup record. Note: Only deletes DB record, not backup files."""
+    """Delete a backup record. Two-pass confirmation required."""
+    from ..lib.confirm_token import format_preview, generate_token, validate_token
+    from ..output import output_error
+
+    command_key = f"backup-delete-{backup_id}"
+
+    if confirm is None:
+        try:
+            backup = _get_project_api().get_backup(backup_id)
+        except APIError as e:
+            handle_api_error(e)
+            return
+        note = backup.get("note", "-") if isinstance(backup, dict) else "-"
+        created = backup.get("created_at", "?") if isinstance(backup, dict) else "?"
+        lines = [
+            f"DELETE BACKUP: {backup_id}",
+            f"  Note: {note}",
+            f"  Created: {created}",
+            "",
+            "This will permanently delete the backup record.",
+        ]
+        token = generate_token(command_key)
+        print(format_preview(f"st backup delete {backup_id}", lines, token))
+        raise typer.Exit(0)
+
+    if not validate_token(command_key, confirm):
+        output_error(
+            "Invalid or expired confirm token.\n"
+            f"  Run `st backup delete {backup_id}` to preview and get a new token."
+        )
+        raise typer.Exit(1)
+
     try:
         _get_project_api().delete_backup(backup_id)
         output_deleted(ctx.obj, backup_id)

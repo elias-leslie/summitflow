@@ -1,0 +1,10 @@
+[Unit]
+Description=Btrfs autosnapshot sweep and retention cleanup
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/bin/st autosnap sweep
+ExecStartPost=%h/bin/st autosnap prune
+StandardOutput=journal
+StandardError=journal

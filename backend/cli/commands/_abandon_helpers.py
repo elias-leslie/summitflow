@@ -13,6 +13,7 @@ from ..lib.checkpoint import (
     get_snapshot_info,
     remove_snapshot,
 )
+from ..lib.confirm_token import format_preview, generate_token, validate_token
 from ..output import output_error
 
 
@@ -72,32 +73,57 @@ def check_branch_exists(branch_name: str) -> bool:
     return result.returncode == 0
 
 
-def confirm_task_abandon(
+def get_dirty_files() -> list[str]:
+    """Return list of uncommitted modified/added/deleted files in the working tree."""
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain", "--no-renames"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            return []
+        return [
+            line[3:] for line in result.stdout.splitlines()
+            if line and line[0:2].strip()
+        ]
+    except (subprocess.CalledProcessError, OSError):
+        return []
+
+
+def _build_preview_lines(
     task_id: str,
     subtask_branches: list[str],
     has_snapshot: bool,
     snapshot_info: dict[str, object] | None,
     unmerged: int,
-) -> None:
-    """Display abandon summary and prompt user to confirm. Exits on cancel."""
+    dirty_files: list[str],
+) -> list[str]:
+    """Build the preview lines showing what abandon will do."""
+    lines: list[str] = []
+    lines.append(f"ABANDON {task_id} will:")
+    lines.append("  Cancel task status")
+    lines.append(f"  Delete branch: {task_id}/main")
     if subtask_branches:
-        typer.echo(f"Warning: Found {len(subtask_branches)} subtask branches:", err=True)
+        lines.append(f"  Delete {len(subtask_branches)} subtask branches")
         for branch in subtask_branches[:5]:
-            typer.echo(f"  - {branch}", err=True)
+            lines.append(f"    {branch}")
         if len(subtask_branches) > 5:
-            typer.echo(f"  ... and {len(subtask_branches) - 5} more", err=True)
-
-    typer.echo("\nThis will:")
-    typer.echo(f"  - Mark task {task_id} as 'cancelled'")
-    typer.echo(f"  - Delete task branch: {task_id}/main")
-    if subtask_branches:
-        typer.echo(f"  - Delete {len(subtask_branches)} subtask branches")
+            lines.append(f"    ... and {len(subtask_branches) - 5} more")
     if has_snapshot and snapshot_info:
-        typer.echo(f"  - Remove snapshot file ({snapshot_info.get('size', '?')})")
+        wt = snapshot_info.get("worktree_path", "?")
+        lines.append(f"  Remove worktree: {wt}")
     if unmerged > 0:
-        typer.echo(f"  - DISCARD {unmerged} unmerged commits")
-    typer.echo("")
-    typer.echo("NOTE: Database will NOT be restored (append-only task metadata).")
+        lines.append(f"  DISCARD {unmerged} unmerged commits")
+    if dirty_files:
+        lines.append(f"  DISCARD {len(dirty_files)} uncommitted file changes:")
+        for path in dirty_files[:10]:
+            lines.append(f"    {path}")
+        if len(dirty_files) > 10:
+            lines.append(f"    ... and {len(dirty_files) - 10} more")
+    lines.append("")
+    lines.append("NOTE: Database will NOT be restored (append-only task metadata).")
+    return lines
 
 
 def abandon_subtask(
@@ -106,10 +132,7 @@ def abandon_subtask(
     task_id: str,
     reason: str | None = None,
 ) -> dict[str, object]:
-    """Abandon a subtask - delete git branch only.
-
-    Does not affect DB (other subtasks may have made changes).
-    """
+    """Abandon a subtask - delete git branch only."""
     branch_name = f"{task_id}/{subtask_id}"
     if not check_branch_exists(branch_name):
         output_error(f"Branch {branch_name} does not exist.")
@@ -135,30 +158,39 @@ def abandon_subtask(
 def abandon_task(
     client: STClient,
     task_id: str,
-    force: bool = False,
-    discard: bool = False,
+    confirm: str | None = None,
     reason: str | None = None,
 ) -> dict[str, object]:
-    """Abandon a task - mark as abandoned and delete git branches.
+    """Abandon a task — two-pass confirmation required.
 
-    SAFE: Does NOT restore database. Uses append-only task metadata.
-    Tasks created after this task's checkpoint will NOT be destroyed.
+    First call (confirm=None): shows preview, generates token, exits.
+    Second call (confirm=<token>): validates token, executes abandon.
     """
+    command_key = f"abandon-{task_id}"
+
     snapshot_info = get_snapshot_info(task_id)
     has_snapshot = snapshot_info is not None
     unmerged = count_unmerged_commits(task_id)
     subtask_branches = get_subtask_branches(task_id)
+    dirty_files = get_dirty_files()
 
-    if unmerged > 0 and not discard:
+    if confirm is None:
+        # First pass: preview + token
+        preview_lines = _build_preview_lines(
+            task_id, subtask_branches, has_snapshot, snapshot_info,
+            unmerged, dirty_files,
+        )
+        token = generate_token(command_key)
+        print(format_preview(f"st abandon {task_id}", preview_lines, token))
+        raise typer.Exit(0)
+
+    # Second pass: validate and execute
+    if not validate_token(command_key, confirm):
         output_error(
-            f"DESTRUCTIVE: Branch {task_id}/main has {unmerged} commits not in main.\n"
-            f"  Proceeding will permanently delete this work.\n"
-            f"  Use --discard to confirm, or `st done {task_id}` to merge first."
+            "Invalid or expired confirm token.\n"
+            "  Run `st abandon " + task_id + "` to preview and get a new token."
         )
         raise typer.Exit(1)
-
-    if not force:
-        confirm_task_abandon(task_id, subtask_branches, has_snapshot, snapshot_info, unmerged)
 
     try:
         client.update_status(task_id, "cancelled")

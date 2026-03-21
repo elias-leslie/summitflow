@@ -11,6 +11,7 @@ from .commands import (
     abandon,
     agents,
     autonomous,
+    autosnapshot,
     backup,
     checkpoints,
     claim,
@@ -82,12 +83,15 @@ CHECKPOINT (claim -> done | abandon):
   done <subtask> -t <task>                 # complete subtask, merge branch
   done <task>                              # complete task, merge to main, remove checkpoint
   abandon <subtask> -t <task>              # abandon subtask, delete branch
-  abandon <task> [--force] [--discard]     # abandon task, delete branches (--discard if unmerged)
+  abandon <task>                           # preview: show blast radius + confirm token
+  abandon <task> --confirm TOKEN           # execute with token from preview
   checkpoints [-p project] [-d task]       # show active checkpoints (auto-cleans stale)
   snap [name]                              # save a Btrfs snapshot for the current lane or project scope
   snaps                                    # list snapshots for the current lane or project scope
   recover <id|name|-N> [--name lane]       # safe default: recover snapshot into sibling lane/project copy
-  rollback <id|name|-N>                    # destructive restore for the current task lane only
+  rollback <id|name|-N>                    # preview: destructive restore for current task lane
+  rollback <id|name|-N> --confirm TOKEN   # execute with token from preview
+  prune [--dry-run]                        # remove old auto snapshots per retention policy
 
 SUBTASK:
   subtask list <task-id>
@@ -198,7 +202,8 @@ EXAMPLES:
   st context task-abc --subtask 1.1        # view subtask context
   st done 1.1 -t task-abc                  # complete subtask, merge branch
   st done task-abc                         # complete task, remove checkpoint
-  st abandon task-abc --force              # rollback everything
+  st abandon task-abc                      # preview blast radius
+  st abandon task-abc --confirm TOKEN     # execute with confirm token
   st checkpoints                           # show active checkpoints
 
 SEARCH (Precision Code Search):
@@ -277,8 +282,9 @@ for cmd in claim.app.registered_commands:
         app.command(name=cmd.name)(cmd.callback)
 app.add_typer(checkpoints.app, name="checkpoints")
 for cmd in snapshots.app.registered_commands:
-    if cmd.callback is not None and cmd.name in {"snap", "snaps", "recover", "rollback"}:
+    if cmd.callback is not None and cmd.name in {"snap", "snaps", "recover", "rollback", "prune"}:
         app.command(name=cmd.name, context_settings=cmd.context_settings or {})(cmd.callback)
+app.add_typer(autosnapshot.app, name="autosnap", hidden=True)
 for cmd in done.app.registered_commands:
     if cmd.callback is not None and cmd.name == "done":
         app.command(name="done")(cmd.callback)

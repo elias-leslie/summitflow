@@ -61,6 +61,13 @@ def create_task_snapshot(task_id: str, project_id: str, use_worktree: bool = Tru
         worktree_path, backend_port, frontend_port = create_worktree_resources(
             task_id, base_branch, project_id
         )
+        if worktree_path:
+            try:
+                from .autosnapshot import ensure_baseline
+
+                ensure_baseline(project_id=project_id, cwd=worktree_path, source="auto-claim")
+            except Exception:
+                pass  # baseline is supplementary, never blocks claim
     else:
         create_legacy_branch(task_id)
 

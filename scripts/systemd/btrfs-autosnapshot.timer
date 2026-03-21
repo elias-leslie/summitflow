@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Btrfs autosnapshot sweep every 60 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=60min
+Unit=btrfs-autosnapshot.service
+Persistent=true
+
+[Install]
+WantedBy=timers.target

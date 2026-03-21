@@ -173,11 +173,32 @@ def run_update(
     output_json(result)
 
 
-def run_delete(project_id: str, *, force: bool) -> None:
-    """Implementation for `projects delete`."""
-    if not force:
+def run_delete(project_id: str, *, confirm: str | None = None) -> None:
+    """Implementation for `projects delete` — two-pass confirmation."""
+    from ..lib.confirm_token import format_preview, generate_token, validate_token
+
+    command_key = f"projects-delete-{project_id}"
+
+    if confirm is None:
         project = projects_api("GET", f"/{project_id}")
-        output_json({"would_delete": project, "hint": "Pass --force to confirm deletion"})
+        name = project.get("name", project_id) if isinstance(project, dict) else project_id
+        lines = [
+            f"DELETE PROJECT: {project_id}",
+            f"  Name: {name}",
+            "",
+            "This will permanently delete the project record from the database.",
+            "Tasks, sessions, and other data linked to this project may be affected.",
+        ]
+        token = generate_token(command_key)
+        print(format_preview(f"st projects delete {project_id}", lines, token))
+        raise typer.Exit(0)
+
+    if not validate_token(command_key, confirm):
+        output_error(
+            "Invalid or expired confirm token.\n"
+            f"  Run `st projects delete {project_id}` to preview and get a new token."
+        )
         raise typer.Exit(1)
+
     projects_api("DELETE", f"/{project_id}")
     output_success(f"Deleted project '{project_id}'")

@@ -154,13 +154,39 @@ def down(
         bool,
         typer.Option("--volumes", "-v", help="Remove named volumes (destroys data!)"),
     ] = False,
+    confirm: Annotated[
+        str | None,
+        typer.Option("--confirm", help="Confirm token from preview run (required with --volumes)"),
+    ] = None,
 ) -> None:
-    """Stop the Docker compose stack."""
+    """Stop the Docker compose stack.
+
+    When --volumes is used, two-pass confirmation is required.
+    """
     args = compose_cmd("down")
     if volumes:
-        confirm = typer.confirm("This will destroy all data volumes. Continue?")
-        if not confirm:
-            raise typer.Abort()
+        from ..lib.confirm_token import format_preview, generate_token, validate_token
+        from ..output import output_error
+
+        command_key = "docker-down-volumes"
+        if confirm is None:
+            lines = [
+                "DOCKER DOWN --volumes will:",
+                "  Stop all containers in the compose stack",
+                "  DESTROY all named volumes (PostgreSQL, Redis, Hatchet data)",
+                "",
+                "This permanently deletes all database contents and cached state.",
+            ]
+            token = generate_token(command_key)
+            print(format_preview("st docker down --volumes", lines, token))
+            raise typer.Exit(0)
+
+        if not validate_token(command_key, confirm):
+            output_error(
+                "Invalid or expired confirm token.\n"
+                "  Run `st docker down --volumes` to preview and get a new token."
+            )
+            raise typer.Exit(1)
         args.append("--volumes")
     _run(args, stream=True, env=compose_env())
 

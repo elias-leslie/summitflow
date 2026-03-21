@@ -64,6 +64,7 @@ class QuickSnapshot:
     index_artifact_path: str | None
     created_at: str
     backend: str = "btrfs"
+    source: str = "manual"
     last_restored_at: str | None = None
     last_recovered_at: str | None = None
     recovery_path: str | None = None
@@ -92,6 +93,7 @@ class QuickSnapshot:
             ),
             created_at=str(data["created_at"]),
             backend=str(data.get("backend") or "btrfs"),
+            source=str(data.get("source") or "manual"),
             last_restored_at=(
                 str(data["last_restored_at"]) if data.get("last_restored_at") else None
             ),
@@ -438,6 +440,7 @@ def capture_snapshot(
     *,
     project_id: str,
     cwd: str | Path | None = None,
+    source: str = "manual",
 ) -> QuickSnapshot:
     repo_root = _resolve_repo_root(cwd)
     scope = _resolve_scope(repo_root, project_id)
@@ -475,6 +478,7 @@ def capture_snapshot(
             snapshot_id=snapshot_id,
         ),
         created_at=_now_iso(),
+        source=source,
     )
 
     entries = _load_manifest(project_id, scope)
@@ -638,11 +642,27 @@ def recover_snapshot(
     return snapshot
 
 
+# Public aliases for cross-module use (autosnapshot.py).
+# Keep underscore originals for backward compat with tests that monkeypatch them.
+resolve_scope = _resolve_scope
+load_manifest = _load_manifest
+save_manifest = _save_manifest
+delete_subvolume = _delete_subvolume
+require_workspaces = _require_workspaces
+require_btrfs_subvolume = _require_btrfs_subvolume
+
 __all__ = [
     "QuickSnapshot",
     "SnapshotError",
+    "SnapshotScope",
     "capture_snapshot",
+    "delete_subvolume",
     "list_snapshots",
+    "load_manifest",
     "recover_snapshot",
+    "require_btrfs_subvolume",
+    "require_workspaces",
+    "resolve_scope",
     "restore_snapshot",
+    "save_manifest",
 ]

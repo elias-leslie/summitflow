@@ -38,7 +38,6 @@ from .cleanup_display import RepoEntry, format_cleanup_status_compact, print_git
 from .cleanup_git import has_uncommitted_changes
 from .cleanup_handlers import (
     categorize_worktrees,
-    confirm_force_cleanup,
     execute_cleanup,
     print_cleanup_results,
     print_worktree_summary,
@@ -205,12 +204,15 @@ def _build_salvage_description(task_id: str, branch_name: str, repo_path: Path) 
 @app.command("worktrees")
 def cleanup_worktrees(
     auto: Annotated[bool, typer.Option("--auto", help="Auto-cleanup safe cases (merged, no commits ahead)")] = False,
-    force: Annotated[bool, typer.Option("--force", help="Force cleanup all worktrees (with confirmation)")] = False,
+    force: Annotated[bool, typer.Option("--force", help="Force cleanup all worktrees")] = False,
     stale_days: Annotated[int, typer.Option("--stale-days", help="Consider worktrees stale after N days")] = 7,
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Show what would be cleaned up without doing it")] = False,
     all_projects: Annotated[bool, typer.Option("--all", help="Scan all projects (default: current project only)")] = False,
+    confirm: Annotated[str | None, typer.Option("--confirm", help="Confirm token from preview run")] = None,
 ) -> None:
     """List orphaned/stale worktrees with recommendations. Actions: SAFE, MERGED, NEEDS_MERGE, CONFLICT, REVIEW, ACTIVE."""
+    from ..lib.confirm_token import format_preview, generate_token, validate_token
+
     project_id = get_project_id(all_projects)
     worktrees = get_active_worktrees(project_id)
 
@@ -232,18 +234,49 @@ def cleanup_worktrees(
         typer.echo(_NO_CLEANUP_FLAG_MSG)
         return
 
-    if force and not dry_run and not confirm_force_cleanup(len(worktrees), len(categorization.needs_merge)):
-        typer.echo(_ABORTED_MSG)
+    # --auto cleans only safe cases, no confirmation needed
+    if auto and not force:
+        typer.echo("")
+        if dry_run:
+            typer.echo(_DRY_RUN_MSG)
+        targets = categorization.safe_to_delete
+        results = execute_cleanup(targets, force=False, dry_run=dry_run)
+        print_cleanup_results(results, dry_run)
+        counts = _cleanup_safe_git_residue(_iter_target_repos(all_projects), dry_run)
+        if not dry_run:
+            print_git_residue_report(*counts)
         return
+
+    # --force requires two-pass confirmation
+    command_key = f"cleanup-worktrees-{project_id or 'all'}"
+    if confirm is None:
+        lines = [
+            f"FORCE CLEANUP will remove ALL {len(analyses)} worktrees:",
+        ]
+        for analysis in analyses:
+            action = analysis.action.value if hasattr(analysis.action, "value") else str(analysis.action)
+            lines.append(f"  {analysis.worktree.path} [{action}]")
+        if categorization.needs_merge:
+            lines.append(f"  WARNING: {len(categorization.needs_merge)} have unmerged commits")
+        token = generate_token(command_key)
+        scope = "--all" if all_projects else ""
+        print(format_preview(f"st cleanup worktrees --force {scope}".strip(), lines, token))
+        raise typer.Exit(0)
+
+    if not validate_token(command_key, confirm):
+        output_error(
+            "Invalid or expired confirm token.\n"
+            "  Run `st cleanup worktrees --force` to preview and get a new token."
+        )
+        raise typer.Exit(1)
 
     typer.echo("")
     if dry_run:
         typer.echo(_DRY_RUN_MSG)
-    targets = analyses if force else categorization.safe_to_delete
-    results = execute_cleanup(targets, force=force, dry_run=dry_run)
+    results = execute_cleanup(analyses, force=True, dry_run=dry_run)
     print_cleanup_results(results, dry_run)
     counts = _cleanup_safe_git_residue(_iter_target_repos(all_projects), dry_run)
-    if auto and not dry_run:
+    if not dry_run:
         print_git_residue_report(*counts)
 
 

@@ -212,20 +212,27 @@ def test_snapshot_subcommands_accept_negative_index(monkeypatch: pytest.MonkeyPa
 
     captured: dict[str, str] = {}
 
+    fake_snapshot = type(
+        "Snapshot",
+        (),
+        {
+            "id": "snap-1",
+            "name": "latest",
+            "backend": "btrfs",
+            "source": "manual",
+            "scope_type": "lane",
+            "scope_name": "task-123",
+            "created_at": "2025-01-01T00:00:00+00:00",
+            "branch": "main",
+            "head_oid": "abc123",
+            "worktree_path": "/tmp/lane",
+        },
+    )()
+
     def _fake_restore(target: str, project_id: str) -> object:
         captured["target"] = target
         captured["project_id"] = project_id
-        return type(
-            "Snapshot",
-            (),
-            {
-                "id": "snap-1",
-                "name": "latest",
-                "backend": "btrfs",
-                "scope_type": "lane",
-                "scope_name": "task-123",
-            },
-        )()
+        return fake_snapshot
 
     def _fake_recover(target: str, project_id: str, name: str | None = None) -> object:
         captured["recover_target"] = target
@@ -245,22 +252,47 @@ def test_snapshot_subcommands_accept_negative_index(monkeypatch: pytest.MonkeyPa
             },
         )()
 
+    def _fake_list_snapshots(project_id: str, cwd=None) -> list[object]:
+        return [fake_snapshot]
+
+    def _fake_resolve_repo_root(cwd=None):
+        return Path("/tmp/lane")
+
+    def _fake_resolve_scope(repo_root, project_id):
+        from cli.lib.quick_snapshots import SnapshotScope
+
+        return SnapshotScope("lane", "task-123", Path("/tmp/lane"))
+
     monkeypatch.setenv("ST_PROJECT_ID", "summitflow")
     monkeypatch.setattr("cli.commands.snapshots.restore_snapshot", _fake_restore)
     monkeypatch.setattr("cli.commands.snapshots.recover_snapshot", _fake_recover)
+    monkeypatch.setattr("cli.commands.snapshots.list_snapshots", _fake_list_snapshots)
+    monkeypatch.setattr("cli.lib.quick_snapshots._resolve_repo_root", _fake_resolve_repo_root)
+    monkeypatch.setattr("cli.lib.quick_snapshots.resolve_scope", _fake_resolve_scope)
 
-    rollback = runner.invoke(app, ["rollback", "-1"])
-    recover = runner.invoke(app, ["recover", "-1", "--name", "inspect"])
+    # Rollback first pass: preview (exit 0, shows confirm token)
+    rollback_preview = runner.invoke(app, ["rollback", "-1"])
+    assert rollback_preview.exit_code == 0, f"Preview failed: {rollback_preview.output}"
+    assert "--confirm" in rollback_preview.output
 
+    # Rollback second pass: execute with token
+    import re
+
+    token_match = re.search(r"--confirm (\w+)", rollback_preview.output)
+    assert token_match, f"No confirm token in output: {rollback_preview.output}"
+    token = token_match.group(1)
+
+    rollback = runner.invoke(app, ["rollback", "-1", "--confirm", token])
     assert rollback.exit_code == 0
+
+    # Recover still works (no two-pass needed)
+    recover = runner.invoke(app, ["recover", "-1", "--name", "inspect"])
     assert recover.exit_code == 0
-    assert captured == {
-        "target": "-1",
-        "project_id": "summitflow",
-        "recover_target": "-1",
-        "recover_project_id": "summitflow",
-        "recover_name": "inspect",
-    }
+
+    assert captured["target"] == "-1"
+    assert captured["project_id"] == "summitflow"
+    assert captured["recover_target"] == "-1"
+    assert captured["recover_name"] == "inspect"
 
 
 def test_root_snapshot_commands_accept_negative_index(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -268,20 +300,27 @@ def test_root_snapshot_commands_accept_negative_index(monkeypatch: pytest.Monkey
 
     captured: dict[str, str] = {}
 
+    fake_snapshot = type(
+        "Snapshot",
+        (),
+        {
+            "id": "snap-1",
+            "name": "latest",
+            "backend": "btrfs",
+            "source": "manual",
+            "scope_type": "lane",
+            "scope_name": "task-123",
+            "created_at": "2025-01-01T00:00:00+00:00",
+            "branch": "main",
+            "head_oid": "abc123",
+            "worktree_path": "/tmp/lane",
+        },
+    )()
+
     def _fake_restore(target: str, project_id: str) -> object:
         captured["target"] = target
         captured["project_id"] = project_id
-        return type(
-            "Snapshot",
-            (),
-            {
-                "id": "snap-1",
-                "name": "latest",
-                "backend": "btrfs",
-                "scope_type": "lane",
-                "scope_name": "task-123",
-            },
-        )()
+        return fake_snapshot
 
     def _fake_recover(target: str, project_id: str, name: str | None = None) -> object:
         captured["recover_target"] = target
@@ -301,19 +340,44 @@ def test_root_snapshot_commands_accept_negative_index(monkeypatch: pytest.Monkey
             },
         )()
 
+    def _fake_list_snapshots(project_id: str, cwd=None) -> list[object]:
+        return [fake_snapshot]
+
+    def _fake_resolve_repo_root(cwd=None):
+        return Path("/tmp/lane")
+
+    def _fake_resolve_scope(repo_root, project_id):
+        from cli.lib.quick_snapshots import SnapshotScope
+
+        return SnapshotScope("lane", "task-123", Path("/tmp/lane"))
+
     monkeypatch.setenv("ST_PROJECT_ID", "summitflow")
     monkeypatch.setattr("cli.commands.snapshots.restore_snapshot", _fake_restore)
     monkeypatch.setattr("cli.commands.snapshots.recover_snapshot", _fake_recover)
+    monkeypatch.setattr("cli.commands.snapshots.list_snapshots", _fake_list_snapshots)
+    monkeypatch.setattr("cli.lib.quick_snapshots._resolve_repo_root", _fake_resolve_repo_root)
+    monkeypatch.setattr("cli.lib.quick_snapshots.resolve_scope", _fake_resolve_scope)
 
-    rollback = runner.invoke(app, ["rollback", "-1"])
-    recover = runner.invoke(app, ["recover", "-1", "--name", "inspect"])
+    # Rollback preview (first pass)
+    rollback_preview = runner.invoke(app, ["rollback", "-1"])
+    assert rollback_preview.exit_code == 0, f"Preview failed: {rollback_preview.output}"
+    assert "--confirm" in rollback_preview.output
 
+    # Rollback execute (second pass with token)
+    import re
+
+    token_match = re.search(r"--confirm (\w+)", rollback_preview.output)
+    assert token_match, f"No confirm token in output: {rollback_preview.output}"
+    token = token_match.group(1)
+
+    rollback = runner.invoke(app, ["rollback", "-1", "--confirm", token])
     assert rollback.exit_code == 0
+
+    # Recover still works
+    recover = runner.invoke(app, ["recover", "-1", "--name", "inspect"])
     assert recover.exit_code == 0
-    assert captured == {
-        "target": "-1",
-        "project_id": "summitflow",
-        "recover_target": "-1",
-        "recover_project_id": "summitflow",
-        "recover_name": "inspect",
-    }
+
+    assert captured["target"] == "-1"
+    assert captured["project_id"] == "summitflow"
+    assert captured["recover_target"] == "-1"
+    assert captured["recover_name"] == "inspect"
