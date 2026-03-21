@@ -17,6 +17,7 @@ from ._projects_helpers import (
     run_create,
     run_delete,
     run_list,
+    run_root,
     run_update,
 )
 
@@ -83,6 +84,19 @@ def get_project(
     """
     result = projects_api("GET", f"/{project_id}")
     output_json(result)
+
+
+@app.command("root")
+def get_project_root(
+    project_id: Annotated[str, typer.Argument(help="Project ID to resolve")],
+) -> None:
+    """Print the canonical filesystem root for a project.
+
+    Examples:
+        st projects root summitflow
+        st projects root terminal
+    """
+    run_root(project_id)
 
 
 @app.command("create")

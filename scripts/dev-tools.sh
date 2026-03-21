@@ -25,6 +25,8 @@ set -o pipefail
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
 source "$SCRIPT_DIR/lib/dev-standards-config.sh"
+SUMMITFLOW_ROOT_OVERRIDE="$(dirname "$SCRIPT_DIR")"
+source "$SCRIPT_DIR/lib/project-roots.sh"
 
 # Colors
 GREEN='\033[0;32m'
@@ -203,9 +205,19 @@ sync_quality_result() {
 get_installed_version() {
     local venv="$1"
     local package="$2"
+    local python_bin="${venv}/bin/python"
 
-    if [[ -f "${venv}/bin/pip" ]]; then
-        "${venv}/bin/pip" show "$package" 2>/dev/null | grep "^Version:" | awk '{print $2}' || echo ""
+    if [[ -x "$python_bin" ]]; then
+        "$python_bin" - "$package" <<'PY' 2>/dev/null || true
+from importlib import metadata
+import sys
+
+package = sys.argv[1]
+try:
+    print(metadata.version(package))
+except metadata.PackageNotFoundError:
+    pass
+PY
     else
         echo ""
     fi
@@ -214,7 +226,7 @@ get_installed_version() {
 # Check if venv exists and is valid
 check_venv() {
     local venv="$1"
-    [[ -f "${venv}/bin/python" ]] && [[ -f "${venv}/bin/pip" ]]
+    [[ -x "${venv}/bin/python" ]]
 }
 
 # Rebuild venv from scratch
@@ -645,7 +657,8 @@ full_fix() {
 
 get_all_project_dirs() {
     for project in "${MANAGED_PROJECTS[@]}"; do
-        local dir="$HOME/$project"
+        local dir
+        dir="$(resolve_project_root "$project" 2>/dev/null || true)"
         if [[ -d "$dir" ]]; then
             echo "$dir"
         fi

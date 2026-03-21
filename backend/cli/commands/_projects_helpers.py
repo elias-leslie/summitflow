@@ -126,6 +126,21 @@ def run_list(*, verbose: bool) -> None:
     )
 
 
+def run_root(project_id: str) -> None:
+    """Implementation for `projects root`."""
+    project = projects_api("GET", f"/{project_id}")
+    if not isinstance(project, dict):
+        output_error(UNEXPECTED_RESPONSE_MSG)
+        raise typer.Exit(1)
+
+    root_path = project.get("root_path")
+    if not root_path:
+        output_error(f"Project '{project_id}' has no root_path configured")
+        raise typer.Exit(1)
+
+    typer.echo(root_path)
+
+
 def run_create(
     project_id: str,
     name: str,

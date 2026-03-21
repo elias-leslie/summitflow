@@ -105,7 +105,7 @@ DEP:
   dep add <task-id> <depends-on-id>
   dep rm <task-id> <depends-on-id>
 
-PROJECTS: projects [list|current|get|create|update|delete]
+PROJECTS: projects [list|current|get|root|create|update|delete]
 
 DESIGN:
   design ui analyze <page-url> [--page-path /foo]                                  # REQUIRES -P

@@ -14,48 +14,12 @@ SUMMITFLOW_DIR="$(dirname "$SCRIPT_DIR")"
 USER_SYSTEMD_DIR="$HOME/.config/systemd/user"
 SYSTEMCTL_USER_TIMEOUT="${SYSTEMCTL_USER_TIMEOUT:-20}"
 SUMMITFLOW_SCRIPTS_PATH="$SUMMITFLOW_DIR/scripts"
-WORKSPACES_ROOT="${ST_WORKSPACES_ROOT:-/srv/workspaces}"
+SUMMITFLOW_ROOT_OVERRIDE="$SUMMITFLOW_DIR"
+. "$SCRIPT_DIR/lib/project-roots.sh"
+BIN_DIR="${BIN_DIR:-$HOME/bin}"
 
 escape_sed_replacement() {
     printf '%s' "$1" | sed 's/[&|]/\\&/g'
-}
-
-resolve_project_root() {
-    local project="$1"
-    local configured fallback
-
-    if [ "$project" = "summitflow" ]; then
-        echo "$SUMMITFLOW_DIR"
-        return 0
-    fi
-
-    if command -v db >/dev/null 2>&1; then
-        configured="$(db -P summitflow query -t "SELECT root_path FROM projects WHERE id='${project}';" 2>/dev/null | head -n 1 | tr -d '\r' | xargs)"
-        if [ -n "$configured" ] && [ -d "$configured" ]; then
-            echo "$configured"
-            return 0
-        fi
-    fi
-
-    configured="$WORKSPACES_ROOT/projects/$project"
-    if [ -d "$configured" ]; then
-        echo "$configured"
-        return 0
-    fi
-
-    case "$project" in
-        agent-hub) fallback="$HOME/agent-hub" ;;
-        portfolio-ai) fallback="$HOME/portfolio-ai" ;;
-        terminal) fallback="$HOME/terminal" ;;
-        *) fallback="" ;;
-    esac
-
-    if [ -n "$fallback" ] && [ -d "$fallback" ]; then
-        echo "$fallback"
-        return 0
-    fi
-
-    return 1
 }
 
 render_unit_file() {
@@ -96,6 +60,30 @@ render_unit_tree() {
 
 run_user_systemctl() {
     timeout --foreground "$SYSTEMCTL_USER_TIMEOUT" systemctl --user "$@"
+}
+
+install_cli_links() {
+    local summitflow_st="$SUMMITFLOW_DIR/backend/.venv/bin/st"
+    local summitflow_dt="$SUMMITFLOW_DIR/scripts/dev-tools.sh"
+    local agent_hub_root=""
+
+    mkdir -p "$BIN_DIR"
+
+    if [ -x "$summitflow_st" ]; then
+        ln -sfnT "$summitflow_st" "$BIN_DIR/st"
+        echo "  Linked st -> $summitflow_st"
+    fi
+
+    if [ -f "$summitflow_dt" ]; then
+        ln -sfnT "$summitflow_dt" "$BIN_DIR/dt"
+        echo "  Linked dt -> $summitflow_dt"
+    fi
+
+    agent_hub_root="$(resolve_project_root agent-hub 2>/dev/null || true)"
+    if [ -n "$agent_hub_root" ] && [ -f "$agent_hub_root/scripts/db.sh" ]; then
+        ln -sfnT "$agent_hub_root/scripts/db.sh" "$BIN_DIR/db"
+        echo "  Linked db -> $agent_hub_root/scripts/db.sh"
+    fi
 }
 
 echo "================================"
@@ -161,8 +149,14 @@ done
 echo "  ✓ Systemd units configured"
 echo ""
 
-# Step 6: Ensure the installed SummitFlow scripts directory is on PATH
-echo "Step 6: Checking PATH setup..."
+# Step 6: Refresh CLI entrypoints used by humans and timers
+echo "Step 6: Refreshing CLI entrypoints..."
+install_cli_links
+echo "  ✓ CLI entrypoints refreshed"
+echo ""
+
+# Step 7: Ensure the installed SummitFlow scripts directory is on PATH
+echo "Step 7: Checking PATH setup..."
 SHELL_RC="$HOME/.bashrc"
 [ -n "$ZSH_VERSION" ] && SHELL_RC="$HOME/.zshrc"
 PATH_EXPORT_LINE="export PATH=\"$SUMMITFLOW_SCRIPTS_PATH:\$PATH\""

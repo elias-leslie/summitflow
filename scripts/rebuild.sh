@@ -18,7 +18,8 @@ set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SUMMITFLOW_ROOT="$(dirname "$SCRIPT_DIR")"
-WORKSPACES_ROOT="${ST_WORKSPACES_ROOT:-/srv/workspaces}"
+SUMMITFLOW_ROOT_OVERRIDE="$SUMMITFLOW_ROOT"
+. "$SCRIPT_DIR/lib/project-roots.sh"
 
 # ─── Colors & logging ────────────────────────────────────────────
 GREEN='\033[0;32m' RED='\033[0;31m' YELLOW='\033[1;33m' NC='\033[0m'
@@ -39,56 +40,9 @@ PROJECTS=(
     [monkey-fight]="|monkey-fight.service||0|4001|.|."
 )
 
-default_root_for_project() {
-    case "$1" in
-        summitflow) echo "$SUMMITFLOW_ROOT" ;;
-        agent-hub) echo "$HOME/agent-hub" ;;
-        portfolio-ai) echo "$HOME/portfolio-ai" ;;
-        terminal) echo "$HOME/terminal" ;;
-        monkey-fight) echo "$HOME/monkey-fight" ;;
-        *) return 1 ;;
-    esac
-}
-
-root_from_db() {
-    local project="$1"
-    command -v db >/dev/null 2>&1 || return 1
-    db -P summitflow query -t "SELECT root_path FROM projects WHERE id='${project}';" 2>/dev/null | head -n 1
-}
-
-resolve_root_dir() {
-    local project="$1"
-    local configured workspace_candidate fallback
-
-    if [ "$project" = "summitflow" ]; then
-        echo "$SUMMITFLOW_ROOT"
-        return 0
-    fi
-
-    configured="$(root_from_db "$project" | tr -d '\r' | xargs)"
-    if [ -n "$configured" ] && [ -d "$configured/.git" ]; then
-        echo "$configured"
-        return 0
-    fi
-
-    workspace_candidate="$WORKSPACES_ROOT/projects/$project"
-    if [ -d "$workspace_candidate/.git" ]; then
-        echo "$workspace_candidate"
-        return 0
-    fi
-
-    fallback="$(default_root_for_project "$project" 2>/dev/null || true)"
-    if [ -n "$fallback" ]; then
-        echo "$fallback"
-        return 0
-    fi
-
-    return 1
-}
-
 parse_project() {
     IFS='|' read -r BACKEND_SVC FRONTEND_SVC WORKER_SVCS BACKEND_PORT FRONTEND_PORT BACKEND_SUBDIR FRONTEND_SUBDIR <<< "${PROJECTS[$1]}"
-    ROOT_DIR="$(resolve_root_dir "$1")"
+    ROOT_DIR="$(resolve_project_root "$1")"
     BACKEND_DIR="$ROOT_DIR/$BACKEND_SUBDIR"
     FRONTEND_DIR="$ROOT_DIR/$FRONTEND_SUBDIR"
     if [ "$BACKEND_SUBDIR" = "." ]; then BACKEND_DIR="$ROOT_DIR"; fi
@@ -101,7 +55,7 @@ show_projects() {
     echo "Available projects:"
     for p in summitflow agent-hub portfolio-ai terminal monkey-fight; do
         [ -n "${PROJECTS[$p]}" ] || continue
-        root="$(resolve_root_dir "$p" 2>/dev/null || echo "unresolved")"
+        root="$(resolve_project_root "$p" 2>/dev/null || echo "unresolved")"
         IFS='|' read -r _ _ _ bp fp _ _ <<< "${PROJECTS[$p]}"
         printf "  %-15s %s" "$p" "$root"
         [ "$bp" != "0" ] && printf "  (:%s/:%s)" "$bp" "$fp" || printf "  (:%s)" "$fp"

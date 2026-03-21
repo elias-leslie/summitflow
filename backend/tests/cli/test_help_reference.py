@@ -136,4 +136,4 @@ class TestCLIReferenceComplete:
 
         assert result.exit_code == 0
         assert "[work]" in result.output
-        assert "projects [list|current|get|create|update|delete]" in result.output
+        assert "projects [list|current|get|root|create|update|delete]" in result.output
