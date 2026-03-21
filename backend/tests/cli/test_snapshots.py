@@ -402,7 +402,8 @@ def test_prune_compact_includes_policy_when_nothing_to_prune(monkeypatch: pytest
 
     assert result.exit_code == 0
     assert "PRUNE[0]|action:would-prune|" in result.output
-    assert "auto_keep:10" in result.output
+    assert "lane_keep:24" in result.output
+    assert "project_keep:7" in result.output
     assert "manual_keep:20" in result.output
 
 

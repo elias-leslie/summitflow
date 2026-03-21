@@ -164,6 +164,40 @@ def test_ensure_baseline_creates_when_baseline_is_stale(
     assert result.source == "auto-baseline"
 
 
+def test_ensure_all_baselines_creates_for_due_active_scopes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cli.lib.autosnapshot import ensure_all_baselines
+
+    workspaces_root = _setup_env(monkeypatch, tmp_path)
+    _create_lane_repo(workspaces_root, lane_name="task-baseline")
+    _create_project_repo(workspaces_root)
+
+    created = ensure_all_baselines()
+
+    scope_keys = {(snap.scope_type, snap.scope_name) for snap in created}
+    assert ("lane", "task-baseline") in scope_keys
+    assert ("project", "summitflow") in scope_keys
+    assert all(snap.source == "auto-baseline" for snap in created)
+
+
+def test_ensure_all_baselines_skips_recent_scopes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cli.lib.autosnapshot import ensure_all_baselines
+    from cli.lib.quick_snapshots import capture_snapshot
+
+    workspaces_root = _setup_env(monkeypatch, tmp_path)
+    _, lane = _create_lane_repo(workspaces_root, lane_name="task-baseline-recent")
+    project = _create_project_repo(workspaces_root)
+
+    capture_snapshot("fresh-lane", project_id="summitflow", cwd=lane)
+    capture_snapshot("fresh-project", project_id="summitflow", cwd=project)
+
+    created = ensure_all_baselines()
+    assert created == []
+
+
 # --- enumerate_active_scopes ---
 
 
@@ -254,6 +288,31 @@ def test_prune_keeps_configured_auto_limit(
 
     remaining = load_manifest("summitflow", scope)
     assert len(remaining) == 3
+
+
+def test_prune_scope_uses_scope_specific_auto_limits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cli.lib.autosnapshot import AutosnapshotPolicy, prune_scope
+    from cli.lib.quick_snapshots import _resolve_repo_root, capture_snapshot, resolve_scope
+
+    workspaces_root = _setup_env(monkeypatch, tmp_path)
+    _, lane = _create_lane_repo(workspaces_root, lane_name="task-retention")
+    project = _create_project_repo(workspaces_root)
+
+    for i in range(3):
+        capture_snapshot(f"lane-auto-{i}", project_id="summitflow", cwd=lane, source="auto-periodic")
+        capture_snapshot(f"project-auto-{i}", project_id="summitflow", cwd=project, source="auto-periodic")
+
+    lane_scope = resolve_scope(_resolve_repo_root(lane), "summitflow")
+    project_scope = resolve_scope(_resolve_repo_root(project), "summitflow")
+    policy = AutosnapshotPolicy(lane_auto_keep_per_scope=2, project_auto_keep_per_scope=1)
+
+    lane_pruned = prune_scope(project_id="summitflow", scope=lane_scope, policy=policy)
+    project_pruned = prune_scope(project_id="summitflow", scope=project_scope, policy=policy)
+
+    assert len(lane_pruned) == 1
+    assert len(project_pruned) == 2
 
 
 def test_prune_deletes_btrfs_subvolumes(

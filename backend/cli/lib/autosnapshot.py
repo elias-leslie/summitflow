@@ -38,17 +38,30 @@ class AutosnapshotPolicy:
     lane_interval_minutes: int = 60
     project_interval_minutes: int = 1440
     baseline_stale_minutes: int = 30
-    auto_keep_per_scope: int = 10
+    auto_keep_per_scope: int | None = None
+    lane_auto_keep_per_scope: int = 24
+    project_auto_keep_per_scope: int = 7
     manual_keep_per_scope: int = 20
 
     def to_dict(self) -> dict[str, int]:
-        return {
+        data = {
             "lane_interval_minutes": self.lane_interval_minutes,
             "project_interval_minutes": self.project_interval_minutes,
             "baseline_stale_minutes": self.baseline_stale_minutes,
-            "auto_keep_per_scope": self.auto_keep_per_scope,
+            "lane_auto_keep_per_scope": self.lane_auto_keep_per_scope,
+            "project_auto_keep_per_scope": self.project_auto_keep_per_scope,
             "manual_keep_per_scope": self.manual_keep_per_scope,
         }
+        if self.auto_keep_per_scope is not None:
+            data["auto_keep_per_scope"] = self.auto_keep_per_scope
+        return data
+
+    def auto_keep_for_scope(self, scope: SnapshotScope) -> int:
+        if self.auto_keep_per_scope is not None:
+            return self.auto_keep_per_scope
+        if scope.scope_type == "project":
+            return self.project_auto_keep_per_scope
+        return self.lane_auto_keep_per_scope
 
 
 DEFAULT_POLICY = AutosnapshotPolicy()
@@ -94,6 +107,27 @@ def ensure_baseline(
     return capture_snapshot(
         "auto-baseline", project_id=project_id, cwd=cwd, source=source,
     )
+
+
+def ensure_all_baselines(
+    *,
+    policy: AutosnapshotPolicy = DEFAULT_POLICY,
+) -> list[QuickSnapshot]:
+    """Create baseline snapshots for active scopes whose newest snapshot is stale."""
+    created: list[QuickSnapshot] = []
+    for project_id, scope in enumerate_active_scopes():
+        try:
+            snap = ensure_baseline(
+                project_id=project_id,
+                cwd=scope.path,
+                source="auto-baseline",
+                policy=policy,
+            )
+        except Exception:
+            continue
+        if snap is not None:
+            created.append(snap)
+    return created
 
 
 def capture_lifecycle_baseline(
@@ -266,7 +300,8 @@ def prune_scope(
     auto_entries.sort(key=lambda e: e.created_at)
     manual_entries.sort(key=lambda e: e.created_at)
 
-    auto_excess = auto_entries[: max(0, len(auto_entries) - policy.auto_keep_per_scope)]
+    auto_limit = policy.auto_keep_for_scope(scope)
+    auto_excess = auto_entries[: max(0, len(auto_entries) - auto_limit)]
     manual_excess = manual_entries[: max(0, len(manual_entries) - policy.manual_keep_per_scope)]
     to_prune = auto_excess + manual_excess
 

@@ -248,7 +248,8 @@ def prune_command(
                 f"PRUNE[0]|action:{action}|lane_interval:{policy['lane_interval_minutes']}|"
                 f"project_interval:{policy['project_interval_minutes']}|"
                 f"baseline_stale:{policy['baseline_stale_minutes']}|"
-                f"auto_keep:{policy['auto_keep_per_scope']}|"
+                f"lane_keep:{policy['lane_auto_keep_per_scope']}|"
+                f"project_keep:{policy['project_auto_keep_per_scope']}|"
                 f"manual_keep:{policy['manual_keep_per_scope']}"
             )
         else:
@@ -262,7 +263,8 @@ def prune_command(
             f"PRUNE[{total}]|action:{action}|lane_interval:{policy['lane_interval_minutes']}|"
             f"project_interval:{policy['project_interval_minutes']}|"
             f"baseline_stale:{policy['baseline_stale_minutes']}|"
-            f"auto_keep:{policy['auto_keep_per_scope']}|"
+            f"lane_keep:{policy['lane_auto_keep_per_scope']}|"
+            f"project_keep:{policy['project_auto_keep_per_scope']}|"
             f"manual_keep:{policy['manual_keep_per_scope']}"
         )
         for scope_key, entries in results.items():

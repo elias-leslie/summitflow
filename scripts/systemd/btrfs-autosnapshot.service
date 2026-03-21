@@ -4,7 +4,8 @@ After=network.target
 
 [Service]
 Type=oneshot
-ExecStart=%h/bin/st autosnap sweep
+ExecStart=%h/bin/st autosnap ensure-all-baselines
+ExecStartPost=%h/bin/st autosnap sweep
 ExecStartPost=%h/bin/st autosnap prune
 StandardOutput=journal
 StandardError=journal
