@@ -28,26 +28,58 @@ def _is_valid_git_path(path: Path) -> bool:
     return path.exists() and (path / ".git").exists()
 
 
+def _normalize_repo_path(path: Path) -> Path:
+    try:
+        return path.resolve()
+    except OSError:
+        return path
+
+
+def _project_roots_from_projects_response(projects: list[dict[str, Any]]) -> dict[str, Path]:
+    roots: dict[str, Path] = {}
+    for project in projects:
+        project_id = project.get("id")
+        root_path = project.get("root_path")
+        if not project_id or not root_path:
+            continue
+        candidate = Path(root_path)
+        if not _is_valid_git_path(candidate):
+            continue
+        roots[str(project_id)] = _normalize_repo_path(candidate)
+    return roots
+
+
+def _is_shadowed_project_repo(path: Path, project_roots: dict[str, Path]) -> bool:
+    registered_root = project_roots.get(path.name)
+    if registered_root is None:
+        return False
+    return _normalize_repo_path(path) != registered_root
+
+
 def _repos_from_api() -> list[Path]:
     repos: list[Path] = []
+    project_roots: dict[str, Path] = {}
 
     projects_response = httpx.get(_get_summitflow_api_url(), timeout=2.0)
     if projects_response.status_code == 200:
-        repos.extend([
-        Path(p["root_path"])
-        for p in projects_response.json()
-        if p.get("root_path") and _is_valid_git_path(Path(p["root_path"]))
-        ])
+        projects = projects_response.json()
+        project_roots = _project_roots_from_projects_response(projects)
+        repos.extend(project_roots.values())
 
     sources_response = httpx.get(_get_backup_sources_api_url(), timeout=2.0)
     if sources_response.status_code == 200:
-        repos.extend([
-            Path(source["path"])
-            for source in sources_response.json()
-            if source.get("path")
-            and source.get("source_type") in {"config", "workspace"}
-            and _is_valid_git_path(Path(source["path"]))
-        ])
+        for source in sources_response.json():
+            if source.get("source_type") not in {"config", "workspace"}:
+                continue
+            raw_path = source.get("path")
+            if not raw_path:
+                continue
+            path = Path(raw_path)
+            if not _is_valid_git_path(path):
+                continue
+            if _is_shadowed_project_repo(path, project_roots):
+                continue
+            repos.append(path)
 
     deduped: list[Path] = []
     for repo in repos:
@@ -77,7 +109,10 @@ def _get_managed_repos() -> list[Path]:
     except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError):
         repos = _repos_from_fallback()
     else:
+        project_roots = {repo.name: _normalize_repo_path(repo) for repo in repos}
         for repo in _repos_from_fallback():
+            if _is_shadowed_project_repo(repo, project_roots):
+                continue
             if repo not in repos:
                 repos.append(repo)
     return repos

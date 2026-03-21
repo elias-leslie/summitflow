@@ -9,20 +9,20 @@ from unittest.mock import MagicMock, patch
 @patch("app.tasks.autonomous.exec_modules.git_ops.has_uncommitted_changes")
 @patch("app.tasks.autonomous.exec_modules.git_ops.has_unpublished_commits")
 @patch("app.tasks.autonomous.exec_modules.git_ops.shutil.which")
-@patch("app.tasks.autonomous.exec_modules.git_ops.Path.home")
+@patch("app.tasks.autonomous.exec_modules.git_ops.resolve_script")
 @patch("app.tasks.autonomous.exec_modules.git_ops._run_git")
 @patch("app.tasks.autonomous.exec_modules.git_ops.subprocess.run")
 def test_smart_commit_uses_canonical_commit_script_with_push_and_skip_checks(
     mock_run: MagicMock,
     mock_git: MagicMock,
-    mock_home: MagicMock,
+    mock_resolve_script: MagicMock,
     mock_which: MagicMock,
     mock_has_unpublished_commits: MagicMock,
     mock_has_uncommitted_changes: MagicMock,
 ) -> None:
     from app.tasks.autonomous.exec_modules.git_ops import smart_commit
 
-    mock_home.return_value = Path("/home/tester")
+    mock_resolve_script.return_value = Path("/srv/workspaces/projects/summitflow/scripts/commit.sh")
     mock_which.return_value = None
     mock_has_uncommitted_changes.return_value = True
     mock_has_unpublished_commits.return_value = False
@@ -64,18 +64,15 @@ def test_smart_commit_uses_canonical_commit_script_with_push_and_skip_checks(
 
 
 @patch("app.tasks.autonomous.exec_modules.git_ops.shutil.which")
-@patch("app.tasks.autonomous.exec_modules.git_ops.Path.home")
 @patch("app.tasks.autonomous.exec_modules.git_ops._resolve_commit_script")
 @patch("app.tasks.autonomous.exec_modules.git_ops.subprocess.run")
 def test_publish_existing_commits_pushes_clean_ahead_branch(
     mock_run: MagicMock,
     mock_resolve_commit_script: MagicMock,
-    mock_home: MagicMock,
     mock_which: MagicMock,
 ) -> None:
     from app.tasks.autonomous.exec_modules.git_ops import publish_existing_commits
 
-    mock_home.return_value = Path("/home/tester")
     mock_which.return_value = None
     mock_resolve_commit_script.return_value = "/tmp/worktree/scripts/commit.sh"
     mock_run.return_value = MagicMock(returncode=0, stderr="")

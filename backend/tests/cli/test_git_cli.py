@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 from typer.testing import CliRunner
 
+from cli.commands._git_helpers import _get_managed_repos
 from cli.commands.git import _format_compact_repo, _get_repo_status, app
 from cli.output_context import OutputContext
 
@@ -195,3 +196,23 @@ class TestGetRepoStatus:
         (tmp_path / "somedir").mkdir()
         result = _get_repo_status(tmp_path / "somedir")
         assert result is None
+
+
+class TestManagedRepos:
+    """Tests for managed repo resolution helpers."""
+
+    def test_get_managed_repos_skips_shadowed_fallback_project_paths(self, tmp_path: Path) -> None:
+        canonical_terminal = tmp_path / "srv" / "workspaces" / "projects" / "terminal"
+        shadow_terminal = tmp_path / "home" / "kasadis" / "terminal"
+        config_repo = tmp_path / "home" / "kasadis" / ".claude"
+
+        for repo in (canonical_terminal, shadow_terminal, config_repo):
+            (repo / ".git").mkdir(parents=True)
+
+        with (
+            patch("cli.commands._git_helpers._repos_from_api", return_value=[canonical_terminal]),
+            patch("cli.commands._git_helpers._repos_from_fallback", return_value=[shadow_terminal, config_repo]),
+        ):
+            repos = _get_managed_repos()
+
+        assert repos == [canonical_terminal, config_repo]

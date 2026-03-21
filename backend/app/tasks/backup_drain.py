@@ -9,13 +9,12 @@ from typing import Any
 
 from ..logging_config import get_logger
 from ..storage import backups as backup_store
+from ..utils.shared_paths import resolve_script
 from .backup_utils import build_storage_env
 
 logger = get_logger(__name__)
 
-_HOST_ROOT = os.environ.get("BACKUP_HOST_ROOT")
-SCRIPT_DIR = Path(_HOST_ROOT) / "summitflow" / "scripts" if _HOST_ROOT else Path.home() / "summitflow" / "scripts"
-PENDING_UPLOAD_SCRIPT = SCRIPT_DIR / "backup-pending-upload.sh"
+PENDING_UPLOAD_SCRIPT = resolve_script("backup-pending-upload.sh")
 DRAIN_TIMEOUT = 600
 
 

@@ -9,7 +9,8 @@
 
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 SUMMITFLOW_DIR="$(dirname "$SCRIPT_DIR")"
 USER_SYSTEMD_DIR="$HOME/.config/systemd/user"
 SYSTEMCTL_USER_TIMEOUT="${SYSTEMCTL_USER_TIMEOUT:-20}"
@@ -67,6 +68,7 @@ install_cli_links() {
     local summitflow_dt="$SUMMITFLOW_DIR/scripts/dev-tools.sh"
     local agent_hub_root=""
     local terminal_root=""
+    local script_name=""
 
     mkdir -p "$BIN_DIR"
 
@@ -99,6 +101,13 @@ install_cli_links() {
         ln -sfnT "$terminal_root/scripts/tsession" "$BIN_DIR/tsession"
         echo "  Linked tsession -> $terminal_root/scripts/tsession"
     fi
+
+    for script_name in rebuild.sh commit.sh start.sh status.sh stop.sh backup.sh backup-all.sh restore.sh setup-services.sh; do
+        if [ -f "$SUMMITFLOW_DIR/scripts/$script_name" ]; then
+            ln -sfnT "$SUMMITFLOW_DIR/scripts/$script_name" "$BIN_DIR/$script_name"
+            echo "  Linked $script_name -> $SUMMITFLOW_DIR/scripts/$script_name"
+        fi
+    done
 }
 
 echo "================================"
@@ -117,7 +126,7 @@ mkdir -p "$USER_SYSTEMD_DIR"
 echo "  Rendering unit files..."
 render_unit_tree "$SUMMITFLOW_DIR/scripts/systemd"
 
-for external_project in agent-hub portfolio-ai; do
+for external_project in agent-hub portfolio-ai monkey-fight; do
     external_root="$(resolve_project_root "$external_project" 2>/dev/null || true)"
     [ -n "$external_root" ] || continue
     render_unit_tree "$external_root/scripts/systemd" "$external_root"
@@ -168,6 +177,12 @@ echo ""
 echo "Step 6: Refreshing CLI entrypoints..."
 install_cli_links
 echo "  ✓ CLI entrypoints refreshed"
+echo ""
+
+echo "Step 6b: Refreshing managed repo fallback registry..."
+write_managed_repo_file
+echo "  Updated $PROJECT_ROOTS_MANAGED_REPOS_FILE"
+echo "  ✓ Managed repo fallback refreshed"
 echo ""
 
 # Step 7: Ensure the installed SummitFlow scripts directory is on PATH

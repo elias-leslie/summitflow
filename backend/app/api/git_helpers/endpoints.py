@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 from typing import Any, cast
@@ -22,6 +23,7 @@ from ...utils.git_helpers import (
     list_snapshots,
     revert_to_snapshot,
 )
+from ...utils.shared_paths import resolve_script
 from ..models.git_models import (
     CommitInfo,
     ConflictInfo,
@@ -45,13 +47,10 @@ _logger = get_logger(__name__)
 
 def _smart_sync_env() -> tuple[Path, dict[str, str] | None]:
     """Return (script_path, env) for the commit.sh smart-sync invocation."""
-    import os
-
     host_root = os.environ.get("BACKUP_HOST_ROOT")
-    if host_root:
-        script_path = Path(host_root) / "summitflow" / "scripts" / "commit.sh"
-    else:
-        return Path.home() / "summitflow" / "scripts" / "commit.sh", None
+    script_path = resolve_script("commit.sh")
+    if not host_root:
+        return script_path, None
 
     env = os.environ.copy()
     env["HOME"] = host_root

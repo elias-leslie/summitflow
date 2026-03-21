@@ -2,7 +2,8 @@
 # Start all SummitFlow services via systemd (User Mode)
 
 set -e
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 
 echo "================================"
 echo "Starting SummitFlow Platform"

@@ -143,6 +143,30 @@ def _translate_path(raw: str) -> Path:
     return Path(raw)
 
 
+def _normalize_repo_path(path: Path) -> Path:
+    try:
+        return path.resolve()
+    except OSError:
+        return path
+
+
+def _registered_project_roots() -> dict[str, Path]:
+    roots: dict[str, Path] = {}
+    for db_project_id, raw_root in _query_db_project_roots():
+        translated = _translate_path(raw_root)
+        if not is_valid_git_repo(translated):
+            continue
+        roots[db_project_id] = _normalize_repo_path(translated)
+    return roots
+
+
+def _is_shadowed_project_repo(path: Path, project_roots: dict[str, Path]) -> bool:
+    registered_root = project_roots.get(path.name)
+    if registered_root is None:
+        return False
+    return _normalize_repo_path(path) != registered_root
+
+
 def _collect_db_repos() -> list[Path]:
     """Return valid git repo paths from the database."""
     repos: list[Path] = []
@@ -193,10 +217,15 @@ def _resolve_project_id(repo_path: Path, project_id: str | None = None) -> str |
 def get_managed_repos() -> list[Path]:
     """Get list of managed repos from DB-backed sources plus local fallback repos."""
     repos = _collect_db_repos()
+    project_roots = _registered_project_roots()
     for extra_repo in _collect_db_extra_repos():
+        if _is_shadowed_project_repo(extra_repo, project_roots):
+            continue
         if extra_repo not in repos:
             repos.append(extra_repo)
     for config_repo in _load_repo_paths_from_file(FALLBACK_FILE):
+        if _is_shadowed_project_repo(config_repo, project_roots):
+            continue
         if is_valid_git_repo(config_repo) and config_repo not in repos:
             repos.append(config_repo)
     return repos

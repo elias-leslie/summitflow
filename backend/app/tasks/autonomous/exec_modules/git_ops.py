@@ -7,6 +7,7 @@ import subprocess
 from pathlib import Path
 
 from ....logging_config import get_logger
+from ....utils.shared_paths import resolve_script
 
 logger = get_logger(__name__)
 
@@ -44,7 +45,7 @@ def _resolve_commit_script(project_path: str) -> str | None:
     if repo_root.returncode == 0 and repo_root.stdout.strip():
         candidates.append(str(Path(repo_root.stdout.strip()) / "scripts" / "commit.sh"))
 
-    candidates.append(str(Path.home() / "summitflow" / "scripts" / "commit.sh"))
+    candidates.append(str(resolve_script("commit.sh")))
 
     seen: set[str] = set()
     for candidate in candidates:

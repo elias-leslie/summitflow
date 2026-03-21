@@ -22,7 +22,8 @@
 
 set -uo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 
 SUMMITFLOW_API="${ST_API_BASE:-http://localhost:8001/api}/projects"
 BACKUP_SOURCES_API="${ST_API_BASE:-http://localhost:8001/api}/backup-sources"

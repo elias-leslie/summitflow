@@ -20,7 +20,8 @@
 set -eo pipefail
 
 # Load utilities (which also detects PROJECT_DIR and PROJECT_NAME)
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 source "$SCRIPT_DIR/lib/backup-utils.sh"
 
 # Configuration - uses PROJECT_NAME from backup-utils.sh

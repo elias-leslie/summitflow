@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import json
 import subprocess
-from pathlib import Path
 
 import typer
 
 from app.tasks.autonomous.exec_modules.diff_gate import check_diff_gate
+from app.utils.shared_paths import resolve_script
 
 from .._client_base import APIError
 from ..client import STClient
@@ -151,7 +151,7 @@ def _publish_completed_work(task_id: str, project_id: str | None) -> None:
         return
 
     command = [
-        str(Path.home() / "summitflow" / "scripts" / "commit.sh"),
+        str(resolve_script("commit.sh")),
         "--current",
         "--push",
         "--task",

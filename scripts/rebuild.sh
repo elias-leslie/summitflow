@@ -16,7 +16,8 @@
 
 set -eo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 SUMMITFLOW_ROOT="$(dirname "$SCRIPT_DIR")"
 SUMMITFLOW_ROOT_OVERRIDE="$SUMMITFLOW_ROOT"
 . "$SCRIPT_DIR/lib/project-roots.sh"

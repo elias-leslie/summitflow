@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import os
 import subprocess
-from pathlib import Path
 
 from ..logging_config import get_logger
 from ..storage import backups as backup_store
 from ..storage.notifications import create_notification
+from ..utils.shared_paths import resolve_script
 from .backup_lock import acquire_backup_lock, release_backup_lock
 from .backup_utils import (
     build_script_error_message,
@@ -21,9 +21,7 @@ from .backup_utils import (
 
 logger = get_logger(__name__)
 
-_HOST_ROOT = os.environ.get("BACKUP_HOST_ROOT")
-SCRIPT_DIR = Path(_HOST_ROOT) / "summitflow" / "scripts" if _HOST_ROOT else Path.home() / "summitflow" / "scripts"
-BACKUP_SCRIPT = SCRIPT_DIR / "backup.sh"
+BACKUP_SCRIPT = resolve_script("backup.sh")
 BACKUP_TIMEOUT = 600
 
 

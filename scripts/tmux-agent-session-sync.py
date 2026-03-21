@@ -14,6 +14,7 @@ from urllib import error, request
 AGENT_HUB_API = os.environ.get("AGENT_HUB_API", "http://localhost:8003/api")
 ENV_FILE = Path.home() / ".env.local"
 STATE_PATH = Path.home() / ".local" / "state" / "tmux-agent-session-sync" / "state.json"
+WORKSPACES_ROOT = Path(os.environ.get("ST_WORKSPACES_ROOT", "/srv/workspaces"))
 # Prefixes that identify agent tmux sessions (convention: {mode}-{project})
 AGENT_PREFIXES = ("claude-", "codex-")
 
@@ -101,6 +102,34 @@ def _provider_for_mode(mode: str) -> tuple[str, str, str]:
     return normalized or "tmux", f"{normalized or 'tmux'}/external-tmux", "agent"
 
 
+def _resolve_project_root(project_id: str) -> str | None:
+    try:
+        result = subprocess.run(
+            ["st", "projects", "root", project_id],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+            env={**os.environ, "ST_PROGRESS_ONLY": "1"},
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        result = None
+    if result and result.returncode == 0:
+        resolved = result.stdout.strip()
+        if resolved and Path(resolved).is_dir():
+            return resolved
+
+    candidate = WORKSPACES_ROOT / "projects" / project_id
+    if candidate.is_dir():
+        return str(candidate)
+
+    candidate = Path.home() / project_id
+    if candidate.is_dir():
+        return str(candidate)
+
+    return None
+
+
 def _session_id(tmux_session_name: str) -> str:
     return f"tmux:{tmux_session_name}"
 
@@ -140,8 +169,7 @@ def _discover_agent_tmux_sessions() -> list[dict[str, Any]]:
 
         # Fallback: derive from project name
         if not working_dir:
-            candidate = Path.home() / project_id
-            working_dir = str(candidate) if candidate.is_dir() else None
+            working_dir = _resolve_project_root(project_id)
 
         sessions.append({
             "tmux_session_name": name,
