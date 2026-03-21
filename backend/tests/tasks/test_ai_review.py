@@ -280,17 +280,18 @@ class TestSupervisorReviewNotification:
 
         _notify_supervisor_review_needed("task-123", "Need supervisor input")
 
-        mock_create_notification.assert_called_once_with(
-            project_id="agent-hub",
-            notification_type="task_needs_input",
-            title="Supervisor Review Required: task-123",
-            message="Need supervisor input",
-            severity="warning",
-            metadata={
-                "task_id": "task-123",
-                "escalation_reason": "Need supervisor input",
-            },
-        )
+        mock_create_notification.assert_called_once()
+        kwargs = mock_create_notification.call_args.kwargs
+        assert kwargs["project_id"] == "agent-hub"
+        assert kwargs["notification_type"] == "task_needs_input"
+        assert kwargs["title"] == "Review needed: task-123"
+        assert kwargs["message"] == "Need supervisor input"
+        assert kwargs["severity"] == "warning"
+        assert kwargs["metadata"] == {
+            "task_id": "task-123",
+            "escalation_reason": "Need supervisor input",
+            "force_push": True,
+        }
 
 
 class TestSecurityEscalation:

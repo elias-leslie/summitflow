@@ -168,6 +168,23 @@ def reset_cli_output_state() -> Generator[None]:
     set_progress_only(False)
 
 
+@pytest.fixture(autouse=True)
+def reset_cli_config_state() -> Generator[None]:
+    """Reset cached CLI config/project override between tests.
+
+    CLI commands resolve project scope through `cli.config.get_config()`,
+    which is cached. Tests that set ST_PROJECT_ID or --project semantics can
+    leak that cached project into later tests unless the cache is cleared.
+    """
+    from cli.config import get_config, set_project_override
+
+    set_project_override(None)
+    get_config.cache_clear()
+    yield
+    set_project_override(None)
+    get_config.cache_clear()
+
+
 # =============================================================================
 # TEST CLIENT FIXTURES
 # =============================================================================
