@@ -207,6 +207,55 @@ def test_project_snapshot_recover_creates_sibling_project_copy_and_blocks_rollba
         restore_snapshot(snapshot.id, project_id="summitflow")
 
 
+def test_get_snapshot_usage_parses_btrfs_du_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cli.lib.quick_snapshots import QuickSnapshot, get_snapshot_usage
+
+    snapshot_path = tmp_path / "snap"
+    snapshot_path.mkdir(parents=True)
+
+    def _fake_btrfs(args: list[str], *, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+        del cwd
+        assert args == ["filesystem", "du", "--raw", "-s", str(snapshot_path)]
+        return subprocess.CompletedProcess(
+            ["btrfs", *args],
+            0,
+            (
+                "     Total   Exclusive  Set shared  Filename\n"
+                f" 920190976           0   421191680  {snapshot_path}\n"
+            ),
+            "",
+        )
+
+    monkeypatch.setattr("cli.lib.quick_snapshots._btrfs", _fake_btrfs)
+
+    snapshot = QuickSnapshot(
+        id="snap-1",
+        name="latest",
+        project_id="summitflow",
+        repo_root=str(tmp_path / "repo"),
+        worktree_path=str(tmp_path / "lane"),
+        scope_type="lane",
+        scope_name="task-123",
+        snapshot_path=str(snapshot_path),
+        branch="main",
+        head_oid="abc123",
+        head_ref="refs/heads/main",
+        git_dir=str(tmp_path / ".git"),
+        index_artifact_path=None,
+        created_at="2026-03-21T00:00:00+00:00",
+    )
+
+    usage = get_snapshot_usage(snapshot)
+
+    assert usage is not None
+    assert usage.total_bytes == 920190976
+    assert usage.exclusive_bytes == 0
+    assert usage.shared_bytes == 421191680
+
+
 def test_snapshot_subcommands_accept_negative_index(monkeypatch: pytest.MonkeyPatch) -> None:
     from cli.commands.snapshots import app
 
@@ -293,6 +342,68 @@ def test_snapshot_subcommands_accept_negative_index(monkeypatch: pytest.MonkeyPa
     assert captured["project_id"] == "summitflow"
     assert captured["recover_target"] == "-1"
     assert captured["recover_name"] == "inspect"
+
+
+def test_snaps_compact_includes_usage_totals(monkeypatch: pytest.MonkeyPatch) -> None:
+    from cli.main import app
+
+    snapshot = type(
+        "Snapshot",
+        (),
+        {
+            "id": "snap-1",
+            "name": "latest",
+            "backend": "btrfs",
+            "source": "manual",
+            "scope_type": "lane",
+            "scope_name": "task-123",
+            "created_at": "2026-03-21T00:00:00+00:00",
+            "branch": "main",
+            "head_oid": "abc123",
+            "last_restored_at": None,
+            "last_recovered_at": None,
+            "to_dict": lambda self=None: {"id": "snap-1"},
+        },
+    )()
+
+    usage = type(
+        "Usage",
+        (),
+        {
+            "total_bytes": 2048,
+            "exclusive_bytes": 1024,
+            "shared_bytes": 512,
+            "to_dict": lambda self=None: {
+                "total_bytes": 2048,
+                "exclusive_bytes": 1024,
+                "shared_bytes": 512,
+            },
+        },
+    )()
+
+    monkeypatch.setenv("ST_PROJECT_ID", "summitflow")
+    monkeypatch.setattr("cli.commands.snapshots.list_snapshots", lambda project_id: [snapshot])
+    monkeypatch.setattr("cli.commands.snapshots.get_snapshot_usage", lambda snapshot: usage)
+
+    result = runner.invoke(app, ["snaps"])
+
+    assert result.exit_code == 0
+    assert "SNAPS[1]|total:2.0KiB|exclusive:1.0KiB|shared:512B" in result.output
+    assert "SNAP 1|snap-1|" in result.output
+    assert "total:2.0KiB|exclusive:1.0KiB|shared:512B" in result.output
+
+
+def test_prune_compact_includes_policy_when_nothing_to_prune(monkeypatch: pytest.MonkeyPatch) -> None:
+    from cli.main import app
+
+    monkeypatch.setattr("cli.commands.snapshots.prune_all", lambda dry_run=False: {})
+
+    result = runner.invoke(app, ["prune", "--dry-run"])
+
+    assert result.exit_code == 0
+    assert "PRUNE[0]|action:would-prune|" in result.output
+    assert "auto_keep:10" in result.output
+    assert "manual_keep:20" in result.output
 
 
 def test_root_snapshot_commands_accept_negative_index(monkeypatch: pytest.MonkeyPatch) -> None:

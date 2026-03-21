@@ -7,11 +7,12 @@ from typing import Annotated
 import typer
 
 from ..config import get_config
-from ..lib.autosnapshot import prune_all
+from ..lib.autosnapshot import DEFAULT_POLICY, prune_all
 from ..lib.confirm_token import format_preview, generate_token, validate_token
 from ..lib.quick_snapshots import (
     SnapshotError,
     capture_snapshot,
+    get_snapshot_usage,
     list_snapshots,
     recover_snapshot,
     restore_snapshot,
@@ -37,6 +38,24 @@ def _compact_name(value: str | None) -> str:
 
 def _compact_scope(scope_type: str, scope_name: str) -> str:
     return f"{scope_type}:{scope_name}"
+
+
+def _format_bytes(value: int | None) -> str:
+    if value is None:
+        return "-"
+    units = ("B", "KiB", "MiB", "GiB", "TiB")
+    size = float(value)
+    for unit in units:
+        if size < 1024.0 or unit == units[-1]:
+            if unit == "B":
+                return f"{int(size)}{unit}"
+            return f"{size:.1f}{unit}"
+        size /= 1024.0
+    return f"{int(value)}B"
+
+
+def _policy_fields() -> dict[str, int]:
+    return DEFAULT_POLICY.to_dict()
 
 
 @app.command("snap")
@@ -72,19 +91,41 @@ def snaps_command(ctx: typer.Context) -> None:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(1) from None
 
+    usage_by_id = {snapshot.id: get_snapshot_usage(snapshot) for snapshot in snapshots}
     if ctx.obj.is_compact:
-        print(f"SNAPS[{len(snapshots)}]")
+        total_bytes = sum(usage.total_bytes for usage in usage_by_id.values() if usage is not None)
+        exclusive_bytes = sum(
+            usage.exclusive_bytes for usage in usage_by_id.values() if usage is not None
+        )
+        shared_bytes = sum(usage.shared_bytes for usage in usage_by_id.values() if usage is not None)
+        print(
+            f"SNAPS[{len(snapshots)}]|total:{_format_bytes(total_bytes)}|"
+            f"exclusive:{_format_bytes(exclusive_bytes)}|shared:{_format_bytes(shared_bytes)}"
+        )
         for index, snapshot in enumerate(snapshots, start=1):
+            usage = usage_by_id.get(snapshot.id)
             print(
                 f"SNAP {index}|{snapshot.id}|name:{_compact_name(snapshot.name)}|"
                 f"scope:{_compact_scope(snapshot.scope_type, snapshot.scope_name)}|"
                 f"created:{snapshot.created_at}|backend:{snapshot.backend}|"
                 f"source:{snapshot.source}|"
                 f"restored:{snapshot.last_restored_at or '-'}|"
-                f"recovered:{snapshot.last_recovered_at or '-'}|usage:shared"
+                f"recovered:{snapshot.last_recovered_at or '-'}|"
+                f"total:{_format_bytes(usage.total_bytes if usage else None)}|"
+                f"exclusive:{_format_bytes(usage.exclusive_bytes if usage else None)}|"
+                f"shared:{_format_bytes(usage.shared_bytes if usage else None)}"
             )
         return
-    output_json({"snapshots": [snapshot.to_dict() for snapshot in snapshots], "total": len(snapshots)})
+    output_json({
+        "snapshots": [
+            {
+                **snapshot.to_dict(),
+                "usage": usage_by_id[snapshot.id].to_dict() if usage_by_id[snapshot.id] else None,
+            }
+            for snapshot in snapshots
+        ],
+        "total": len(snapshots),
+    })
 
 
 @app.command(
@@ -199,17 +240,31 @@ def prune_command(
 ) -> None:
     """Remove old auto snapshots per retention policy."""
     results = prune_all(dry_run=dry_run)
+    policy = _policy_fields()
     if not results:
         if ctx.obj.is_compact:
-            print("PRUNE[0] nothing to prune")
+            action = "would-prune" if dry_run else "pruned"
+            print(
+                f"PRUNE[0]|action:{action}|lane_interval:{policy['lane_interval_minutes']}|"
+                f"project_interval:{policy['project_interval_minutes']}|"
+                f"baseline_stale:{policy['baseline_stale_minutes']}|"
+                f"auto_keep:{policy['auto_keep_per_scope']}|"
+                f"manual_keep:{policy['manual_keep_per_scope']}"
+            )
         else:
-            output_json({"pruned": {}, "total": 0})
+            output_json({"pruned": {}, "total": 0, "dry_run": dry_run, "policy": policy})
         return
 
     total = sum(len(v) for v in results.values())
     if ctx.obj.is_compact:
         action = "would prune" if dry_run else "pruned"
-        print(f"PRUNE[{total}] {action}")
+        print(
+            f"PRUNE[{total}]|action:{action}|lane_interval:{policy['lane_interval_minutes']}|"
+            f"project_interval:{policy['project_interval_minutes']}|"
+            f"baseline_stale:{policy['baseline_stale_minutes']}|"
+            f"auto_keep:{policy['auto_keep_per_scope']}|"
+            f"manual_keep:{policy['manual_keep_per_scope']}"
+        )
         for scope_key, entries in results.items():
             for entry in entries:
                 print(
@@ -223,4 +278,5 @@ def prune_command(
             },
             "total": total,
             "dry_run": dry_run,
+            "policy": policy,
         })

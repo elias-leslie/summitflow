@@ -33,6 +33,19 @@ default_home_root_for_project() {
     esac
 }
 
+shared_workspaces_root() {
+    printf '%s\n' "$PROJECT_ROOTS_WORKSPACES_ROOT"
+}
+
+shared_cache_root() {
+    printf '%s\n' "$(shared_workspaces_root)/cache"
+}
+
+shared_cache_dir() {
+    local cache_name="$1"
+    printf '%s\n' "$(shared_cache_root)/$cache_name"
+}
+
 resolve_project_root() {
     local project="$1"
     local candidate

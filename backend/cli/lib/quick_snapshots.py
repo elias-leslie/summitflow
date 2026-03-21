@@ -110,6 +110,22 @@ class QuickSnapshot:
         )
 
 
+@dataclass(frozen=True)
+class SnapshotUsage:
+    """Btrfs usage statistics for a single snapshot subvolume."""
+
+    total_bytes: int
+    exclusive_bytes: int
+    shared_bytes: int
+
+    def to_dict(self) -> dict[str, int]:
+        return {
+            "total_bytes": self.total_bytes,
+            "exclusive_bytes": self.exclusive_bytes,
+            "shared_bytes": self.shared_bytes,
+        }
+
+
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -162,6 +178,37 @@ def _btrfs(args: list[str], *, cwd: Path | None = None) -> subprocess.CompletedP
         raise SnapshotError(f"Btrfs command failed: btrfs {' '.join(args)}\n{stderr}") from exc
     except OSError as exc:
         raise SnapshotError(f"Failed to run btrfs {' '.join(args)}: {exc}") from exc
+
+
+def _parse_btrfs_du_raw(output: str, expected_path: Path) -> SnapshotUsage:
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    if len(lines) < 2:
+        raise SnapshotError(
+            "Unable to parse snapshot usage output from btrfs filesystem du.\n"
+            f"  path: {expected_path}"
+        )
+
+    raw_parts = lines[-1].split(maxsplit=3)
+    if len(raw_parts) != 4:
+        raise SnapshotError(
+            "Unexpected btrfs filesystem du output format.\n"
+            f"  path: {expected_path}\n"
+            f"  line: {lines[-1]}"
+        )
+
+    total_raw, exclusive_raw, shared_raw, resolved_path = raw_parts
+    if Path(resolved_path).resolve() != expected_path.resolve():
+        raise SnapshotError(
+            "Btrfs usage output did not match the requested snapshot path.\n"
+            f"  expected: {expected_path}\n"
+            f"  actual:   {resolved_path}"
+        )
+
+    return SnapshotUsage(
+        total_bytes=int(total_raw),
+        exclusive_bytes=int(exclusive_raw),
+        shared_bytes=int(shared_raw),
+    )
 
 
 def _resolve_repo_root(cwd: str | Path | None = None) -> Path:
@@ -498,6 +545,19 @@ def list_snapshots(
     repo_root = _resolve_repo_root(cwd)
     scope = _resolve_scope(repo_root, project_id)
     return _load_manifest(project_id, scope)
+
+
+def get_snapshot_usage(snapshot: QuickSnapshot) -> SnapshotUsage | None:
+    """Return Btrfs usage statistics for *snapshot*, or ``None`` if unavailable."""
+    snapshot_path = Path(snapshot.snapshot_path)
+    if not snapshot_path.exists():
+        return None
+
+    try:
+        result = _btrfs(["filesystem", "du", "--raw", "-s", str(snapshot_path)])
+        return _parse_btrfs_du_raw(result.stdout, snapshot_path)
+    except SnapshotError:
+        return None
 
 
 def restore_snapshot(

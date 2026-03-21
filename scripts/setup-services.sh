@@ -110,6 +110,43 @@ install_cli_links() {
     done
 }
 
+sync_shared_cache_link() {
+    local cache_name="$1"
+    local source_dir="$HOME/.cache/$cache_name"
+    local target_dir
+    target_dir="$(shared_cache_dir "$cache_name")"
+
+    mkdir -p "$HOME/.cache"
+    mkdir -p "$(dirname "$target_dir")"
+    mkdir -p "$target_dir"
+
+    if [ -L "$source_dir" ] && [ "$(readlink -f "$source_dir")" = "$target_dir" ]; then
+        echo "  Cache $cache_name already linked -> $target_dir"
+        return 0
+    fi
+
+    if [ -d "$source_dir" ] && [ ! -L "$source_dir" ]; then
+        if command -v rsync >/dev/null 2>&1; then
+            rsync -a "$source_dir"/ "$target_dir"/
+        elif find "$source_dir" -mindepth 1 -print -quit >/dev/null 2>&1; then
+            cp -a "$source_dir"/. "$target_dir"/
+        fi
+        rm -rf "$source_dir"
+    elif [ -e "$source_dir" ] && [ ! -L "$source_dir" ]; then
+        rm -f "$source_dir"
+    fi
+
+    ln -sfnT "$target_dir" "$source_dir"
+    echo "  Linked cache $cache_name -> $target_dir"
+}
+
+sync_shared_caches() {
+    local cache_name
+    for cache_name in uv pip pnpm; do
+        sync_shared_cache_link "$cache_name"
+    done
+}
+
 echo "================================"
 echo "SummitFlow Service Setup"
 echo "================================"
@@ -183,6 +220,11 @@ echo "Step 6b: Refreshing managed repo fallback registry..."
 write_managed_repo_file
 echo "  Updated $PROJECT_ROOTS_MANAGED_REPOS_FILE"
 echo "  ✓ Managed repo fallback refreshed"
+echo ""
+
+echo "Step 6c: Migrating shared dependency caches onto Btrfs..."
+sync_shared_caches
+echo "  ✓ Shared caches refreshed"
 echo ""
 
 # Step 7: Ensure the installed SummitFlow scripts directory is on PATH

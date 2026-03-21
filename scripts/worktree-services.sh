@@ -17,6 +17,12 @@
 
 set -e
 
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd "$(dirname "${SCRIPT_PATH}")" && pwd)"
+SUMMITFLOW_ROOT_OVERRIDE="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# shellcheck source=/dev/null
+. "${SCRIPT_DIR}/lib/project-roots.sh"
+
 # Colors
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -296,8 +302,11 @@ start_service() {
     # Copy env file if specified and not present
     if [ -n "$env_file" ] && [ ! -f "${service_dir}/${env_file}" ]; then
         # Try to find source env file from main project
+        local project_root=""
+        project_root="$(resolve_project_root "$PROJECT_ID" 2>/dev/null || true)"
         local main_env_candidates=(
-            "${HOME}/summitflow/${cwd}/${env_file}"
+            "${project_root}/${cwd}/${env_file}"
+            "${project_root}/${env_file}"
             "${HOME}/${cwd}/${env_file}"
         )
         for candidate in "${main_env_candidates[@]}"; do

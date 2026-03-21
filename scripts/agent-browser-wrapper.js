@@ -13,9 +13,10 @@ const {
   needsWebSocketAuth,
 } = require('./agent-browser-cloudflare-auth.js');
 
+const SCRIPT_DIR = __dirname;
 const MANAGED_ROOT = process.env.AGENT_BROWSER_MANAGED_ROOT || path.join(process.env.HOME, '.local', 'share', 'agent-browser-managed');
 const REAL_AGENT_BROWSER = process.env.AGENT_BROWSER_REAL_BIN || path.join(MANAGED_ROOT, 'node_modules', '.bin', 'agent-browser');
-const REAPER = process.env.AGENT_BROWSER_REAPER_BIN || path.join(process.env.HOME, 'summitflow', 'scripts', 'agent-browser-idle-reaper.js');
+const REAPER = process.env.AGENT_BROWSER_REAPER_BIN || path.join(SCRIPT_DIR, 'agent-browser-idle-reaper.js');
 const DEFAULT_SESSION_NAME = 'default';
 
 function parseArgs(args) {

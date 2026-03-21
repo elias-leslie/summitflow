@@ -47,6 +47,16 @@ def get_workspace_snapshots_base_dir(project_id: str | None = None) -> Path:
     return base_dir
 
 
+def get_cache_base_dir(cache_name: str | None = None) -> Path:
+    """Return the shared Btrfs-backed cache base directory when available."""
+    base_dir = get_workspaces_root() / "cache"
+    if cache_name:
+        base_dir = base_dir / cache_name
+    if workspaces_root_available():
+        base_dir.mkdir(parents=True, exist_ok=True)
+    return base_dir
+
+
 def get_lanes_base_dir(project_id: str | None = None) -> Path:
     """Return the Btrfs-backed lanes base directory when available."""
     base_dir = get_workspaces_root() / "lanes"

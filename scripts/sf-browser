@@ -8,7 +8,19 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 HOST="${SF_BROWSER_HOST:-192.168.8.234}"
-AGENT_BROWSER_BIN="${HOME}/.local/bin/agent-browser"
+AGENT_BROWSER_BIN="${AGENT_BROWSER_BIN:-${HOME}/.local/bin/agent-browser}"
+MANAGED_AGENT_BROWSER_BIN="${HOME}/.local/share/agent-browser-managed/node_modules/.bin/agent-browser"
+LOCAL_WRAPPER_BIN="${SCRIPT_DIR}/agent-browser-wrapper.js"
+
+if [[ ! -x "${AGENT_BROWSER_BIN}" ]]; then
+    if command -v agent-browser >/dev/null 2>&1; then
+        AGENT_BROWSER_BIN="$(command -v agent-browser)"
+    elif [[ -x "${LOCAL_WRAPPER_BIN}" ]]; then
+        AGENT_BROWSER_BIN="${LOCAL_WRAPPER_BIN}"
+    elif [[ -x "${MANAGED_AGENT_BROWSER_BIN}" ]]; then
+        AGENT_BROWSER_BIN="${MANAGED_AGENT_BROWSER_BIN}"
+    fi
+fi
 
 cdp_ws() {
     local port="$1"

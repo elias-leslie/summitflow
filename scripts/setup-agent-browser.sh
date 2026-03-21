@@ -2,17 +2,31 @@
 set -euo pipefail
 
 VERSION="${1:-latest}"
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd "$(dirname "${SCRIPT_PATH}")" && pwd)"
 MANAGED_ROOT="${HOME}/.local/share/agent-browser-managed"
 BIN_DIR="${HOME}/.local/bin"
 USER_UNIT_DIR="${HOME}/.config/systemd/user"
-WRAPPER_SRC="${HOME}/summitflow/scripts/agent-browser-wrapper.js"
-CANONICAL_SF_BROWSER_SRC="${HOME}/summitflow/scripts/sf-browser"
-REAPER_SRC="${HOME}/summitflow/scripts/agent-browser-idle-reaper.js"
-SERVICE_SRC="${HOME}/summitflow/scripts/systemd/agent-browser-idle-reaper.service"
-TIMER_SRC="${HOME}/summitflow/scripts/systemd/agent-browser-idle-reaper.timer"
+WRAPPER_SRC="${SCRIPT_DIR}/agent-browser-wrapper.js"
+CANONICAL_SF_BROWSER_SRC="${SCRIPT_DIR}/sf-browser"
+REAPER_SRC="${SCRIPT_DIR}/agent-browser-idle-reaper.js"
+SERVICE_SRC="${SCRIPT_DIR}/systemd/agent-browser-idle-reaper.service"
+TIMER_SRC="${SCRIPT_DIR}/systemd/agent-browser-idle-reaper.timer"
 LEGACY_SKILL_DIR="${HOME}/.claude/skills/agent-browser"
 
 mkdir -p "${MANAGED_ROOT}" "${BIN_DIR}" "${USER_UNIT_DIR}"
+
+escape_sed_replacement() {
+  printf '%s' "$1" | sed 's/[&|]/\\&/g'
+}
+
+render_unit_file() {
+  local src="$1"
+  local dest="$2"
+  local escaped_root
+  escaped_root="$(escape_sed_replacement "$(dirname "${SCRIPT_DIR}")")"
+  sed "s|__SUMMITFLOW_ROOT__|${escaped_root}|g" "$src" > "$dest"
+}
 
 prune_legacy_skill_bundle() {
   if [[ ! -d "${LEGACY_SKILL_DIR}" ]]; then
@@ -51,7 +65,7 @@ ln -sfnT "${CANONICAL_SF_BROWSER_SRC}" "${BIN_DIR}/sf-browser"
 rm -f "${BIN_DIR}/browse"
 chmod +x "${WRAPPER_SRC}" "${CANONICAL_SF_BROWSER_SRC}" "${REAPER_SRC}"
 
-cp "${SERVICE_SRC}" "${USER_UNIT_DIR}/agent-browser-idle-reaper.service"
+render_unit_file "${SERVICE_SRC}" "${USER_UNIT_DIR}/agent-browser-idle-reaper.service"
 cp "${TIMER_SRC}" "${USER_UNIT_DIR}/agent-browser-idle-reaper.timer"
 
 systemctl --user daemon-reload

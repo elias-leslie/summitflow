@@ -41,6 +41,15 @@ class AutosnapshotPolicy:
     auto_keep_per_scope: int = 10
     manual_keep_per_scope: int = 20
 
+    def to_dict(self) -> dict[str, int]:
+        return {
+            "lane_interval_minutes": self.lane_interval_minutes,
+            "project_interval_minutes": self.project_interval_minutes,
+            "baseline_stale_minutes": self.baseline_stale_minutes,
+            "auto_keep_per_scope": self.auto_keep_per_scope,
+            "manual_keep_per_scope": self.manual_keep_per_scope,
+        }
+
 
 DEFAULT_POLICY = AutosnapshotPolicy()
 
