@@ -14,17 +14,84 @@ SUMMITFLOW_DIR="$(dirname "$SCRIPT_DIR")"
 USER_SYSTEMD_DIR="$HOME/.config/systemd/user"
 SYSTEMCTL_USER_TIMEOUT="${SYSTEMCTL_USER_TIMEOUT:-20}"
 SUMMITFLOW_SCRIPTS_PATH="$SUMMITFLOW_DIR/scripts"
+WORKSPACES_ROOT="${ST_WORKSPACES_ROOT:-/srv/workspaces}"
 
 escape_sed_replacement() {
     printf '%s' "$1" | sed 's/[&|]/\\&/g'
 }
 
+resolve_project_root() {
+    local project="$1"
+    local configured fallback
+
+    if [ "$project" = "summitflow" ]; then
+        echo "$SUMMITFLOW_DIR"
+        return 0
+    fi
+
+    if command -v db >/dev/null 2>&1; then
+        configured="$(db -P summitflow query -t "SELECT root_path FROM projects WHERE id='${project}';" 2>/dev/null | head -n 1 | tr -d '\r' | xargs)"
+        if [ -n "$configured" ] && [ -d "$configured" ]; then
+            echo "$configured"
+            return 0
+        fi
+    fi
+
+    configured="$WORKSPACES_ROOT/projects/$project"
+    if [ -d "$configured" ]; then
+        echo "$configured"
+        return 0
+    fi
+
+    case "$project" in
+        agent-hub) fallback="$HOME/agent-hub" ;;
+        portfolio-ai) fallback="$HOME/portfolio-ai" ;;
+        terminal) fallback="$HOME/terminal" ;;
+        *) fallback="" ;;
+    esac
+
+    if [ -n "$fallback" ] && [ -d "$fallback" ]; then
+        echo "$fallback"
+        return 0
+    fi
+
+    return 1
+}
+
 render_unit_file() {
     local src="$1"
     local dest="$2"
+    local project_root="${3:-}"
     local escaped_root
     escaped_root=$(escape_sed_replacement "$SUMMITFLOW_DIR")
-    sed "s|__SUMMITFLOW_ROOT__|$escaped_root|g" "$src" > "$dest"
+    local escaped_project_root
+    escaped_project_root=$(escape_sed_replacement "$project_root")
+    local terminal_root
+    terminal_root="$(resolve_project_root terminal 2>/dev/null || true)"
+    local escaped_terminal_root
+    escaped_terminal_root=$(escape_sed_replacement "$terminal_root")
+    sed \
+        -e "s|__SUMMITFLOW_ROOT__|$escaped_root|g" \
+        -e "s|__PROJECT_ROOT__|$escaped_project_root|g" \
+        -e "s|__TERMINAL_ROOT__|$escaped_terminal_root|g" \
+        "$src" > "$dest"
+}
+
+declare -a RENDERED_UNITS=()
+
+render_unit_tree() {
+    local source_root="$1"
+    local project_root="${2:-}"
+    local unit_file unit_name
+    [ -d "$source_root" ] || return 0
+    for unit_file in "$source_root"/*.{service,timer}; do
+        [ -f "$unit_file" ] || continue
+        unit_name="$(basename "$unit_file")"
+        rm -f "$USER_SYSTEMD_DIR/$unit_name"
+        render_unit_file "$unit_file" "$USER_SYSTEMD_DIR/$unit_name" "$project_root"
+        echo "    $unit_name"
+        RENDERED_UNITS+=("$unit_name")
+    done
 }
 
 run_user_systemctl() {
@@ -45,15 +112,15 @@ mkdir -p "$USER_SYSTEMD_DIR"
 
 # Step 2: Render unit files with the installed repo root.
 echo "  Rendering unit files..."
-UNITS_LINKED=0
-for unit_file in "$SUMMITFLOW_DIR"/scripts/systemd/*.{service,timer}; do
-    [ -f "$unit_file" ] || continue
-    unit_name="$(basename "$unit_file")"
-    rm -f "$USER_SYSTEMD_DIR/$unit_name"
-    render_unit_file "$unit_file" "$USER_SYSTEMD_DIR/$unit_name"
-    echo "    $unit_name"
-    UNITS_LINKED=$((UNITS_LINKED + 1))
+render_unit_tree "$SUMMITFLOW_DIR/scripts/systemd"
+
+for external_project in agent-hub portfolio-ai; do
+    external_root="$(resolve_project_root "$external_project" 2>/dev/null || true)"
+    [ -n "$external_root" ] || continue
+    render_unit_tree "$external_root/scripts/systemd" "$external_root"
 done
+
+UNITS_LINKED="${#RENDERED_UNITS[@]}"
 echo "  Rendered $UNITS_LINKED unit files"
 
 # Step 3: Reload systemd user daemon
@@ -65,17 +132,17 @@ fi
 
 # Build a set of timer-managed service names so they are enabled via timers, not directly.
 declare -A TIMER_MANAGED_SERVICES=()
-for timer_file in "$SUMMITFLOW_DIR"/scripts/systemd/*.timer; do
-    [ -f "$timer_file" ] || continue
-    timer_name="$(basename "$timer_file" .timer)"
-    TIMER_MANAGED_SERVICES["$timer_name"]=1
+for unit_name in "${RENDERED_UNITS[@]}"; do
+    if [[ "$unit_name" == *.timer ]]; then
+        timer_name="${unit_name%.timer}"
+        TIMER_MANAGED_SERVICES["$timer_name"]=1
+    fi
 done
 
 # Step 4: Enable long-running services
 echo "  Enabling long-running services..."
-for svc_file in "$SUMMITFLOW_DIR"/scripts/systemd/*.service; do
-    [ -f "$svc_file" ] || continue
-    svc_name="$(basename "$svc_file")"
+for svc_name in "${RENDERED_UNITS[@]}"; do
+    [[ "$svc_name" == *.service ]] || continue
     svc_base="${svc_name%.service}"
     if [[ -n "${TIMER_MANAGED_SERVICES[$svc_base]:-}" ]]; then
         echo "    skipped $svc_name (timer-managed)"
@@ -86,9 +153,8 @@ done
 
 # Step 5: Enable timers now so observability and maintenance jobs start immediately.
 echo "  Enabling timers..."
-for timer_file in "$SUMMITFLOW_DIR"/scripts/systemd/*.timer; do
-    [ -f "$timer_file" ] || continue
-    timer_name="$(basename "$timer_file")"
+for timer_name in "${RENDERED_UNITS[@]}"; do
+    [[ "$timer_name" == *.timer ]] || continue
     run_user_systemctl enable --now "$timer_name" 2>/dev/null && echo "    enabled $timer_name" || echo "    skipped $timer_name (may require dependencies)"
 done
 

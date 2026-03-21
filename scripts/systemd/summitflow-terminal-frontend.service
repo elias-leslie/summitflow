@@ -5,7 +5,7 @@ Wants=summitflow-terminal.service
 
 [Service]
 Type=simple
-WorkingDirectory=%h/terminal/frontend
+WorkingDirectory=__TERMINAL_ROOT__/frontend
 Environment="NODE_ENV=production"
 Environment="PORT=3002"
 Environment="API_URL=http://localhost:8002"
