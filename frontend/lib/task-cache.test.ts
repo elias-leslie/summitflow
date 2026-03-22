@@ -1,5 +1,6 @@
 import { QueryClient } from '@tanstack/react-query'
 import { afterEach, describe, expect, it } from 'vitest'
+import type { Task } from '@/lib/api/tasks'
 import { makeTask } from '@/tests/factories'
 import {
   invalidateTaskQueries,

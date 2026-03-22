@@ -17,7 +17,7 @@ from ..lib.quick_snapshots import (
     recover_snapshot,
     restore_snapshot,
 )
-from ..output import output_error, output_json
+from ..output import output_json
 from ..output_context import OutputContext
 
 app = typer.Typer(

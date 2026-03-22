@@ -191,9 +191,27 @@ def _task_column_additions() -> list[tuple[str, str]]:
     ]
 
 
+def _backup_source_column_additions() -> list[tuple[str, str]]:
+    """Return column additions for the backup_sources table."""
+    return [
+        ("storage_backend_id TEXT", "backup_sources"),
+        ("last_restore_tested_at TIMESTAMPTZ", "backup_sources"),
+        ("last_restore_test_ok BOOLEAN", "backup_sources"),
+        ("last_restore_test_error TEXT", "backup_sources"),
+        ("last_drill_at TIMESTAMPTZ", "backup_sources"),
+        ("last_drill_ok BOOLEAN", "backup_sources"),
+        ("last_drill_backup_id TEXT", "backup_sources"),
+        ("last_drill_result JSONB", "backup_sources"),
+    ]
+
+
 def _add_missing_columns(cur: psycopg.Cursor) -> None:
     """Add columns that may be missing from older schema versions."""
-    column_additions = _project_column_additions() + _task_column_additions()
+    column_additions = (
+        _project_column_additions()
+        + _task_column_additions()
+        + _backup_source_column_additions()
+    )
     for column, table in column_additions:
         _try_add_column(cur, table, column)
 

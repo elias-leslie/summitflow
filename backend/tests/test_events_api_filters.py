@@ -445,7 +445,6 @@ class TestEventsAPIEndpoints:
         self, mock_get_connection: MagicMock, client: TestClient
     ) -> None:
         """Test that /projects/{id}/events endpoint accepts after query param."""
-        mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_get_connection.return_value.__enter__.return_value = mock_cursor
 
@@ -467,7 +466,6 @@ class TestEventsAPIEndpoints:
         self, mock_get_connection: MagicMock, client: TestClient
     ) -> None:
         """Test that /projects/{id}/events endpoint accepts event_type query param."""
-        mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_get_connection.return_value.__enter__.return_value = mock_cursor
 
@@ -488,7 +486,6 @@ class TestEventsAPIEndpoints:
         self, mock_get_connection: MagicMock, client: TestClient
     ) -> None:
         """Test that /projects/{id}/events accepts both after and event_type."""
-        mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_get_connection.return_value.__enter__.return_value = mock_cursor
 
@@ -510,7 +507,6 @@ class TestEventsAPIEndpoints:
         self, mock_get_connection: MagicMock, client: TestClient
     ) -> None:
         """Test that /projects/{id}/events/by-trace/{trace_id} accepts after param."""
-        mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_get_connection.return_value.__enter__.return_value = mock_cursor
 
@@ -532,7 +528,6 @@ class TestEventsAPIEndpoints:
         self, mock_get_connection: MagicMock, client: TestClient
     ) -> None:
         """Test that by-trace endpoint accepts after with visibility and level."""
-        mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_get_connection.return_value.__enter__.return_value = mock_cursor
 

@@ -1,5 +1,6 @@
 import { renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { Task } from '@/lib/api/tasks'
 import { makeTask } from '@/tests/factories'
 import { useTaskData } from './useTaskData'
 
