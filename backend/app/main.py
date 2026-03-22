@@ -34,6 +34,7 @@ from .api import (
     quality_gate,
     refactor_sessions,
     schemas,
+    snapshots,
     system,
     tasks,
     tdd,
@@ -119,6 +120,7 @@ app.include_router(refactor_sessions.router, prefix="/api/projects", tags=["refa
 app.include_router(schemas.router, prefix="/api", tags=["schemas"])
 app.include_router(git.router, prefix="/api", tags=["git"])
 app.include_router(backups.router, prefix="/api", tags=["backups"])
+app.include_router(snapshots.router, prefix="/api", tags=["snapshots"])
 app.include_router(design_standards.router, prefix="/api", tags=["design-standards"])
 app.include_router(design_assets.router, prefix="/api", tags=["design-assets"])
 app.include_router(quality_gate.router, prefix="/api", tags=["quality-gate"])

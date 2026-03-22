@@ -1,0 +1,179 @@
+'use client'
+
+import { clsx } from 'clsx'
+import {
+  Camera,
+  Loader2,
+  Scissors,
+  Timer,
+} from 'lucide-react'
+import { useState } from 'react'
+import {
+  type BtrfsSummary,
+  createSnapshot,
+  pruneSnapshots,
+} from '@/lib/api/snapshots'
+import { formatBytes } from '@/lib/format'
+
+interface SnapshotSummaryCardProps {
+  summary: BtrfsSummary | undefined
+  isLoading: boolean
+  onMutated: () => void
+}
+
+export function SnapshotSummaryCard({
+  summary,
+  isLoading,
+  onMutated,
+}: SnapshotSummaryCardProps) {
+  const [snapping, setSnapping] = useState(false)
+  const [pruning, setPruning] = useState(false)
+  const [feedback, setFeedback] = useState<string | null>(null)
+
+  if (isLoading || !summary) return null
+
+  const autoCount = Object.entries(summary.by_source)
+    .filter(([k]) => k.startsWith('auto'))
+    .reduce((sum, [, v]) => sum + v, 0)
+  const manualCount = summary.by_source.manual ?? 0
+
+  const handleSnap = async () => {
+    setSnapping(true)
+    setFeedback(null)
+    try {
+      const snap = await createSnapshot('summitflow')
+      setFeedback(`Snapshot ${snap.name ?? snap.id.slice(0, 16)} created`)
+      onMutated()
+      setTimeout(() => setFeedback(null), 3000)
+    } catch {
+      setFeedback('Snapshot failed')
+    }
+    setSnapping(false)
+  }
+
+  const handlePrune = async () => {
+    setPruning(true)
+    setFeedback(null)
+    try {
+      const result = await pruneSnapshots(false)
+      setFeedback(result.ok ? `Pruned ${result.pruned} snapshot(s)` : 'Prune failed')
+      onMutated()
+      setTimeout(() => setFeedback(null), 3000)
+    } catch {
+      setFeedback('Prune failed')
+    }
+    setPruning(false)
+  }
+
+  const timerActive = summary.autosnap_timer_active
+
+  return (
+    <div
+      className={clsx(
+        'rounded-lg border-l-[3px] border border-slate-700/60 bg-slate-800/40 overflow-hidden',
+        timerActive ? 'border-l-emerald-500' : 'border-l-slate-600',
+      )}
+    >
+      {/* Header */}
+      <div className="px-4 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Camera className="w-4 h-4 text-slate-500" />
+          <span className="text-sm font-medium text-white">
+            Btrfs Snapshots
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div
+            className={clsx(
+              'w-1.5 h-1.5 rounded-full',
+              timerActive ? 'bg-emerald-500' : 'bg-slate-600',
+            )}
+          />
+          <div className="flex items-center gap-1 text-[10px] text-slate-500">
+            <Timer className="w-3 h-3" />
+            {timerActive ? 'Autosnap active' : 'Timer inactive'}
+          </div>
+        </div>
+      </div>
+
+      {/* Metrics */}
+      <div className="border-t border-slate-800/40 px-4 py-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+          <div className="min-w-0 rounded bg-slate-950/50 px-2 py-1.5">
+            <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
+              Total
+            </div>
+            <div className="text-xs text-slate-200">
+              {summary.total_snapshots} snapshots
+            </div>
+          </div>
+          <div className="min-w-0 rounded bg-slate-950/50 px-2 py-1.5">
+            <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
+              Exclusive
+            </div>
+            <div className="text-xs text-slate-200 font-mono">
+              {formatBytes(summary.total_usage_bytes)}
+            </div>
+          </div>
+          <div className="min-w-0 rounded bg-slate-950/50 px-2 py-1.5">
+            <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
+              Scopes
+            </div>
+            <div className="text-xs text-slate-200">
+              {summary.scope_count}
+            </div>
+          </div>
+          <div className="min-w-0 rounded bg-slate-950/50 px-2 py-1.5">
+            <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
+              Sources
+            </div>
+            <div className="text-xs text-slate-200">
+              {manualCount} manual, {autoCount} auto
+            </div>
+          </div>
+        </div>
+
+        {/* Policy summary */}
+        <div className="mt-2 text-[10px] text-slate-600 leading-relaxed">
+          Lanes: every {summary.policy.lane_interval_minutes}min, keep{' '}
+          {summary.policy.lane_auto_keep_per_scope} &middot; Projects: every{' '}
+          {Math.round(summary.policy.project_interval_minutes / 60)}h, keep{' '}
+          {summary.policy.project_auto_keep_per_scope}
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center gap-2 mt-3">
+          <button
+            type="button"
+            onClick={handleSnap}
+            disabled={snapping}
+            className="flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded bg-phosphor-500/10 text-phosphor-400 hover:bg-phosphor-500/20 disabled:opacity-40 transition-colors"
+          >
+            {snapping ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              <Camera className="w-3 h-3" />
+            )}
+            Take Snapshot
+          </button>
+          <button
+            type="button"
+            onClick={handlePrune}
+            disabled={pruning}
+            className="flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded bg-slate-700/40 text-slate-400 hover:bg-slate-700/60 disabled:opacity-40 transition-colors"
+          >
+            {pruning ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              <Scissors className="w-3 h-3" />
+            )}
+            Prune
+          </button>
+          {feedback && (
+            <span className="text-[11px] text-emerald-400">{feedback}</span>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}

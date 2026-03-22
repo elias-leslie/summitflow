@@ -24,6 +24,8 @@ import { StatusBadge } from '@/components/backup/StatusBadge'
 import { StatusRibbon } from '@/components/backup/StatusRibbon'
 import { StorageCard } from '@/components/backup/StorageCard'
 import { WalCard } from '@/components/backup/WalCard'
+import { ScopeList } from '@/components/snapshots/ScopeList'
+import { SnapshotSummaryCard } from '@/components/snapshots/SnapshotSummaryCard'
 import {
   type Backup,
   type BackupSource,
@@ -35,6 +37,7 @@ import {
   fetchStorageStatus,
   fetchWalStatus,
 } from '@/lib/api/backups'
+import { fetchScopes, fetchSnapshotSummary } from '@/lib/api/snapshots'
 import { formatBytes, formatDate, formatTimeAgo } from '@/lib/format'
 
 type ViewMode = 'list' | 'grid'
@@ -293,6 +296,18 @@ export function BackupsClient() {
     queryFn: fetchWalStatus,
   })
 
+  const { data: snapshotSummary, isLoading: snapshotLoading } = useQuery({
+    queryKey: ['snapshot-summary'],
+    queryFn: () => fetchSnapshotSummary(),
+    staleTime: 30_000,
+  })
+
+  const { data: snapshotScopes = [] } = useQuery({
+    queryKey: ['snapshot-scopes'],
+    queryFn: () => fetchScopes(),
+    staleTime: 30_000,
+  })
+
   const backups = backupsData?.backups ?? []
 
   // ─── Handlers ───────────────────────────────────────────────────
@@ -319,6 +334,11 @@ export function BackupsClient() {
 
   const refreshWal = () => {
     queryClient.invalidateQueries({ queryKey: ['wal-status'] })
+  }
+
+  const refreshSnapshots = () => {
+    queryClient.invalidateQueries({ queryKey: ['snapshot-summary'] })
+    queryClient.invalidateQueries({ queryKey: ['snapshot-scopes'] })
   }
 
   // ─── Render ─────────────────────────────────────────────────────
@@ -434,6 +454,24 @@ export function BackupsClient() {
             onRefresh={refreshStorage}
           />
         </div>
+      </section>
+
+      {/* Snapshots & Recovery */}
+      <section className="space-y-3">
+        <div>
+          <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-300">
+            Snapshots & Recovery
+          </h2>
+          <p className="mt-0.5 text-xs text-slate-500">
+            Btrfs filesystem snapshots for lane and project state
+          </p>
+        </div>
+        <SnapshotSummaryCard
+          summary={snapshotSummary}
+          isLoading={snapshotLoading}
+          onMutated={refreshSnapshots}
+        />
+        <ScopeList scopes={snapshotScopes} />
       </section>
 
       {/* Backup History */}
