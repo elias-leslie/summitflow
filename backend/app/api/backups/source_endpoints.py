@@ -33,6 +33,9 @@ def _source_to_response(source: dict[str, object]) -> BackupSourceResponse:
         next_run_at=parse_iso_datetime(source.get("next_run_at")),
         created_at=parse_iso_datetime(source.get("created_at")),
         updated_at=parse_iso_datetime(source.get("updated_at")),
+        last_drill_at=parse_iso_datetime(source.get("last_drill_at")),
+        last_drill_ok=source.get("last_drill_ok"),
+        last_drill_backup_id=source.get("last_drill_backup_id"),
     )
 
 

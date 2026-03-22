@@ -100,6 +100,9 @@ class BackupSourceResponse(BaseModel):
     next_run_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    last_drill_at: datetime | None = None
+    last_drill_ok: bool | None = None
+    last_drill_backup_id: str | None = None
 
 
 class StorageSummaryResponse(BaseModel):
