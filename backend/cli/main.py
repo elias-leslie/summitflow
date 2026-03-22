@@ -132,6 +132,8 @@ BACKUP:
 PERSONA: persona status | persona set-active <slug> | persona clear
 
 AGENTS: agents list | get <slug> | update <slug> [--primary-model M] [--memory-config-file path.json]
+        update supports direct memory flags: --memory-enabled/--memory-disabled,
+        --audience-tags/--add-audience-tags/--remove-audience-tags, and related memory-config fields
 
 SESSIONS: sessions list [--status S] | sessions show <id> | sessions close <id> | sessions ownership [--project P]
 
@@ -142,6 +144,7 @@ PROMPT: prompt list [--global] | get <slug> | create <slug> <name> -f path | upd
         prompt export [slug] [-o file] | import <file> [--dry-run]
 
 MEMORY: memory stats | save <text> [--tier T] | list | search <query> | get <id> | delete <id>
+        memory tag <id...> [--add-tags T] [--remove-tags T]
 
 FEEDBACK: feedback report <component> <title> [--type T] [--severity S] [--session SID] [--vote-if-match] | feedback search <query>
           feedback list [--component C] [--type T] [--status S] [--sort S]

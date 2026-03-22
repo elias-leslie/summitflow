@@ -22,6 +22,7 @@ from .memory_commands import (
     search_impl,
     seed_impl,
     stats_impl,
+    tag_impl,
     update_impl,
 )
 from .memory_options import (
@@ -262,6 +263,22 @@ def update(
             clear_tags,
             change_reason,
         )
+
+
+@app.command("tag")
+def tag(
+    uuids: UUIDsArg,
+    add_tags: Annotated[
+        str | None,
+        typer.Option("--add-tags", help="Comma-separated tags to add"),
+    ] = None,
+    remove_tags: Annotated[
+        str | None,
+        typer.Option("--remove-tags", help="Comma-separated tags to remove"),
+    ] = None,
+) -> None:
+    """Add/remove tags on one or more episodes without replacing the full list."""
+    tag_impl(uuids, add_tags=add_tags, remove_tags=remove_tags)
 
 
 @app.command("revisions")

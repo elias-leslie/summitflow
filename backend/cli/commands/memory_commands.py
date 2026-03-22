@@ -26,6 +26,7 @@ from .memory_crud import (
     save_impl,
     search_impl,
     stats_impl,
+    tag_impl,
     update_impl,
 )
 from .memory_seed import seed_impl
@@ -45,6 +46,7 @@ __all__ = [
     "search_impl",
     "seed_impl",
     "stats_impl",
+    "tag_impl",
     "update_impl",
 ]
 

@@ -268,6 +268,34 @@ def update_impl(
         typer.echo("No changes made.")
 
 
+def tag_impl(
+    uuids: list[str],
+    *,
+    add_tags: str | None,
+    remove_tags: str | None,
+) -> None:
+    """Add/remove tags across one or more memory episodes."""
+    parsed_add_tags = parse_tags_csv(add_tags) or []
+    parsed_remove_tags = parse_tags_csv(remove_tags) or []
+    if not parsed_add_tags and not parsed_remove_tags:
+        typer.echo("Error: Must specify --add-tags and/or --remove-tags")
+        raise typer.Exit(1)
+
+    result = agent_hub_request(
+        "POST",
+        "/api/memory/episodes/bulk-tag",
+        json={
+            "uuids": uuids,
+            "add_tags": parsed_add_tags,
+            "remove_tags": parsed_remove_tags,
+        },
+        tool_name="st memory tag",
+    )
+    typer.echo(
+        f"Tagged: updated={result.get('updated', 0)} failed={result.get('failed', 0)}"
+    )
+
+
 def revisions_impl(out: OutputContext, uuid: str, limit: int) -> None:
     """Fetch immutable revision history for one memory episode."""
     result = agent_hub_request(

@@ -10,7 +10,7 @@ import typer
 from typer.testing import CliRunner
 
 from cli.commands.memory import app
-from cli.commands.memory_crud import revisions_impl, save_impl, update_impl
+from cli.commands.memory_crud import revisions_impl, save_impl, tag_impl, update_impl
 from cli.commands.memory_formatters import format_list_compact
 
 runner = CliRunner()
@@ -235,6 +235,29 @@ class TestMemoryTagOptions:
         args = mock_update_impl.call_args.args
         assert args == ("abc12345", None, None, None, None, None, "finance-relevant", False)
 
+    def test_tag_command_forwards_bulk_tag_updates(self) -> None:
+        """`st memory tag` should call tag_impl with add/remove operations."""
+        with patch("cli.commands.memory.tag_impl") as mock_tag_impl:
+            result = runner.invoke(
+                app,
+                [
+                    "tag",
+                    "abc12345",
+                    "def67890",
+                    "--add-tags",
+                    "finance-relevant,portfolio",
+                    "--remove-tags",
+                    "stale",
+                ],
+            )
+
+        assert result.exit_code == 0
+        assert mock_tag_impl.call_args.args == (["abc12345", "def67890"],)
+        assert mock_tag_impl.call_args.kwargs == {
+            "add_tags": "finance-relevant,portfolio",
+            "remove_tags": "stale",
+        }
+
     def test_update_forwards_change_reason_to_impl(self) -> None:
         with patch("cli.commands.memory.update_impl") as mock_update_impl:
             result = runner.invoke(
@@ -310,6 +333,33 @@ class TestMemoryTagOptions:
                 raise AssertionError("Expected typer.Exit when both --tags and --clear-tags are provided")
 
         mock_echo.assert_called_once_with("Error: Specify only one of --tags or --clear-tags")
+
+    def test_tag_impl_calls_bulk_tag_endpoint(self) -> None:
+        with (
+            patch("cli.commands.memory_crud.agent_hub_request", return_value={"updated": 2, "failed": 1}) as mock_request,
+            patch("cli.commands.memory_crud.typer.echo") as mock_echo,
+        ):
+            tag_impl(["abc12345", "def67890"], add_tags="finance-relevant,portfolio", remove_tags="stale")
+
+        assert mock_request.call_args.args == ("POST", "/api/memory/episodes/bulk-tag")
+        assert mock_request.call_args.kwargs["json"] == {
+            "uuids": ["abc12345", "def67890"],
+            "add_tags": ["finance-relevant", "portfolio"],
+            "remove_tags": ["stale"],
+        }
+        assert mock_request.call_args.kwargs["tool_name"] == "st memory tag"
+        mock_echo.assert_called_once_with("Tagged: updated=2 failed=1")
+
+    def test_tag_impl_rejects_empty_bulk_tag_request(self) -> None:
+        with patch("cli.commands.memory_crud.typer.echo") as mock_echo:
+            try:
+                tag_impl(["abc12345"], add_tags=None, remove_tags=None)
+            except typer.Exit as exc:
+                assert exc.exit_code == 1
+            else:
+                raise AssertionError("Expected typer.Exit when no add/remove tags are provided")
+
+        mock_echo.assert_called_once_with("Error: Must specify --add-tags and/or --remove-tags")
 
     def test_save_impl_applies_tags_after_learning_is_saved(self) -> None:
         """Save should apply requested tags using the memory tags endpoint."""
