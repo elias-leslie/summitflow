@@ -9,6 +9,7 @@ from typing import Annotated, Any
 import typer
 
 from ..output import output_error, output_json
+from ._memory_crud_helpers import parse_csv_values
 from .agents_api import agent_preview_api, agents_api
 
 app = typer.Typer(help="Agent management (Agent Hub)")
@@ -34,6 +35,136 @@ def _load_text_file(path: Path, label: str) -> str:
         output_error(f"{label} file not found: {path}")
         raise typer.Exit(1)
     return path.read_text(encoding="utf-8")
+
+
+def _merge_tag_values(
+    *,
+    current: list[str],
+    replace: str | None,
+    add: str | None,
+    remove: str | None,
+    clear: bool,
+    label: str,
+) -> list[str] | None:
+    """Merge tag update flags into one final ordered list."""
+    if replace is not None and (add is not None or remove is not None or clear):
+        output_error(f"Use either --{label}, --add-{label}, --remove-{label}, or --clear-{label}")
+        raise typer.Exit(1)
+    if clear and (add is not None or remove is not None):
+        output_error(f"Use either --clear-{label} or add/remove flags, not both")
+        raise typer.Exit(1)
+    if replace is not None:
+        return parse_csv_values(replace) or []
+    if clear:
+        return []
+    if add is None and remove is None:
+        return None
+
+    merged = list(current)
+    for tag in parse_csv_values(add) or []:
+        if tag not in merged:
+            merged.append(tag)
+    for tag in parse_csv_values(remove) or []:
+        if tag in merged:
+            merged.remove(tag)
+    return merged
+
+
+def _memory_config_flags_requested(
+    memory_enabled: bool | None,
+    include_mandates: bool | None,
+    include_guardrails: bool | None,
+    include_references: bool | None,
+    continuity_enabled: bool | None,
+    continuity_max_sessions: int | None,
+    audience_tags: str | None,
+    add_audience_tags: str | None,
+    remove_audience_tags: str | None,
+    clear_audience_tags: bool,
+    exclude_tags: str | None,
+    add_exclude_tags: str | None,
+    remove_exclude_tags: str | None,
+    clear_exclude_tags: bool,
+) -> bool:
+    """Return True when any granular memory-config flag was provided."""
+    return any(
+        value is not None
+        for value in (
+            memory_enabled,
+            include_mandates,
+            include_guardrails,
+            include_references,
+            continuity_enabled,
+            continuity_max_sessions,
+            audience_tags,
+            add_audience_tags,
+            remove_audience_tags,
+            exclude_tags,
+            add_exclude_tags,
+            remove_exclude_tags,
+        )
+    ) or clear_audience_tags or clear_exclude_tags
+
+
+def _build_memory_config_patch(
+    slug: str,
+    *,
+    memory_enabled: bool | None,
+    include_mandates: bool | None,
+    include_guardrails: bool | None,
+    include_references: bool | None,
+    continuity_enabled: bool | None,
+    continuity_max_sessions: int | None,
+    audience_tags: str | None,
+    add_audience_tags: str | None,
+    remove_audience_tags: str | None,
+    clear_audience_tags: bool,
+    exclude_tags: str | None,
+    add_exclude_tags: str | None,
+    remove_exclude_tags: str | None,
+    clear_exclude_tags: bool,
+) -> dict[str, Any]:
+    """Return merged memory_config changes for granular CLI flags."""
+
+    agent = agents_api("GET", f"/{slug}")
+    memory_config = dict(agent.get("memory_config") or {})
+
+    if memory_enabled is not None:
+        memory_config["injection_enabled"] = memory_enabled
+    if include_mandates is not None:
+        memory_config["include_mandates"] = include_mandates
+    if include_guardrails is not None:
+        memory_config["include_guardrails"] = include_guardrails
+    if include_references is not None:
+        memory_config["include_references"] = include_references
+    if continuity_enabled is not None:
+        memory_config["continuity_enabled"] = continuity_enabled
+    if continuity_max_sessions is not None:
+        memory_config["continuity_max_sessions"] = continuity_max_sessions
+
+    merged_audience_tags = _merge_tag_values(
+        current=[str(tag) for tag in memory_config.get("audience_tags") or []],
+        replace=audience_tags,
+        add=add_audience_tags,
+        remove=remove_audience_tags,
+        clear=clear_audience_tags,
+        label="audience-tags",
+    )
+    if merged_audience_tags is not None:
+        memory_config["audience_tags"] = merged_audience_tags
+
+    merged_exclude_tags = _merge_tag_values(
+        current=[str(tag) for tag in memory_config.get("exclude_tags") or []],
+        replace=exclude_tags,
+        add=add_exclude_tags,
+        remove=remove_exclude_tags,
+        clear=clear_exclude_tags,
+        label="exclude-tags",
+    )
+    if merged_exclude_tags is not None:
+        memory_config["exclude_tags"] = merged_exclude_tags
+
+    return memory_config
 
 
 def _print_agent(agent: dict[str, Any]) -> None:
@@ -154,6 +285,23 @@ def update_agent(
     system_prompt_file: Annotated[Path | None, typer.Option("--system-prompt-file")] = None,
     memory_config_file: Annotated[Path | None, typer.Option("--memory-config-file")] = None,
     clear_memory_config: Annotated[bool, typer.Option("--clear-memory-config")] = False,
+    memory_enabled: Annotated[bool | None, typer.Option("--memory-enabled/--memory-disabled")] = None,
+    include_mandates: Annotated[bool | None, typer.Option("--include-mandates/--no-include-mandates")] = None,
+    include_guardrails: Annotated[bool | None, typer.Option("--include-guardrails/--no-include-guardrails")] = None,
+    include_references: Annotated[bool | None, typer.Option("--include-references/--no-include-references")] = None,
+    continuity_enabled: Annotated[bool | None, typer.Option("--continuity-enabled/--no-continuity-enabled")] = None,
+    continuity_max_sessions: Annotated[
+        int | None,
+        typer.Option("--continuity-max-sessions", min=1, max=20),
+    ] = None,
+    audience_tags: Annotated[str | None, typer.Option("--audience-tags")] = None,
+    add_audience_tags: Annotated[str | None, typer.Option("--add-audience-tags")] = None,
+    remove_audience_tags: Annotated[str | None, typer.Option("--remove-audience-tags")] = None,
+    clear_audience_tags: Annotated[bool, typer.Option("--clear-audience-tags")] = False,
+    exclude_tags: Annotated[str | None, typer.Option("--exclude-tags")] = None,
+    add_exclude_tags: Annotated[str | None, typer.Option("--add-exclude-tags")] = None,
+    remove_exclude_tags: Annotated[str | None, typer.Option("--remove-exclude-tags")] = None,
+    clear_exclude_tags: Annotated[bool, typer.Option("--clear-exclude-tags")] = False,
     change_reason: Annotated[str | None, typer.Option("--change-reason")] = None,
 ) -> None:
     """Update an agent using the Agent Hub API."""
@@ -176,13 +324,50 @@ def update_agent(
         payload["fallback_models"] = fallback_model
     if system_prompt_file is not None:
         payload["system_prompt"] = _load_text_file(system_prompt_file, "System prompt")
+    granular_memory_config = _memory_config_flags_requested(
+        memory_enabled=memory_enabled,
+        include_mandates=include_mandates,
+        include_guardrails=include_guardrails,
+        include_references=include_references,
+        continuity_enabled=continuity_enabled,
+        continuity_max_sessions=continuity_max_sessions,
+        audience_tags=audience_tags,
+        add_audience_tags=add_audience_tags,
+        remove_audience_tags=remove_audience_tags,
+        clear_audience_tags=clear_audience_tags,
+        exclude_tags=exclude_tags,
+        add_exclude_tags=add_exclude_tags,
+        remove_exclude_tags=remove_exclude_tags,
+        clear_exclude_tags=clear_exclude_tags,
+    )
     if memory_config_file is not None and clear_memory_config:
         output_error("Use either --memory-config-file or --clear-memory-config, not both")
         raise typer.Exit(1)
+    if granular_memory_config and (memory_config_file is not None or clear_memory_config):
+        output_error("Use either granular memory-config flags or --memory-config-file/--clear-memory-config, not both")
+        raise typer.Exit(1)
     if memory_config_file is not None:
         payload["memory_config"] = _load_json_file(memory_config_file, "Memory config")
-    if clear_memory_config:
+    elif clear_memory_config:
         payload["memory_config"] = None
+    elif granular_memory_config:
+        payload["memory_config"] = _build_memory_config_patch(
+            slug,
+            memory_enabled=memory_enabled,
+            include_mandates=include_mandates,
+            include_guardrails=include_guardrails,
+            include_references=include_references,
+            continuity_enabled=continuity_enabled,
+            continuity_max_sessions=continuity_max_sessions,
+            audience_tags=audience_tags,
+            add_audience_tags=add_audience_tags,
+            remove_audience_tags=remove_audience_tags,
+            clear_audience_tags=clear_audience_tags,
+            exclude_tags=exclude_tags,
+            add_exclude_tags=add_exclude_tags,
+            remove_exclude_tags=remove_exclude_tags,
+            clear_exclude_tags=clear_exclude_tags,
+        )
     if change_reason is not None:
         payload["change_reason"] = change_reason
 
