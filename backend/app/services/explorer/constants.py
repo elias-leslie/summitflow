@@ -80,7 +80,6 @@ SKIP_DIRS: frozenset[str] = frozenset(
         ".ruff_cache",
         # Data directories (project-specific)
         "data",
-        "solution_state",
         ".beads",
         # Backup and external content
         "backups",
