@@ -103,7 +103,7 @@ export function ProjectRow({ repo }: ProjectRowProps) {
         'rounded-lg border overflow-hidden transition-all duration-200',
         'bg-slate-900/40',
         expanded
-          ? 'border-slate-700/80 shadow-lg shadow-black/20'
+          ? 'border-slate-700/80 shadow-lg shadow-black/30 shadow-outrun-500/[0.03]'
           : 'border-slate-800/60 hover:border-slate-700/60',
       )}
     >

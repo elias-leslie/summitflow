@@ -122,7 +122,7 @@ export function DashboardContent({ projectId }: { projectId: string }) {
             badgeBg="bg-phosphor-500/10"
             badgeBorder="border-phosphor-500/20"
           />
-          <div className="rounded-md border border-slate-800/30 divide-y divide-slate-800/20 overflow-hidden">
+          <div className="rounded-lg border border-slate-800/30 bg-slate-900/20 divide-y divide-slate-800/15 overflow-hidden">
             {data.recent_commits.slice(0, 15).map((commit) => (
               <CommitEntry
                 key={commit.sha}
