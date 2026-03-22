@@ -424,6 +424,7 @@ export function BackupsClient() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
           <WalCard
             walStatus={walStatus}
+            walHealth={healthData?.wal ?? null}
             isLoading={walLoading}
             onRefresh={refreshWal}
           />

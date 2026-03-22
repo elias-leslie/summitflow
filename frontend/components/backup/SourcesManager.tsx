@@ -3,21 +3,25 @@
 import { clsx } from 'clsx'
 import {
   ChevronRight,
+  FlaskConical,
   FolderOpen,
   Loader2,
   Play,
   Save,
 } from 'lucide-react'
 import Link from 'next/link'
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { SourceTypeBadge } from './SourceTypeBadge'
 import { StatusBadge } from './StatusBadge'
 import {
   type Backup,
   type BackupHealthItem,
   type BackupSource,
+  type CoverageResponse,
   createBackupSource,
   createSourceBackup,
+  fetchInfraCoverage,
+  runRestoreDrill,
   updateBackupSource,
 } from '@/lib/api/backups'
 import { formatBytes, formatDate, formatTimeAgo } from '@/lib/format'
@@ -26,7 +30,92 @@ const SOURCE_CONTENTS: Record<string, string> = {
   project: 'Code, assets, and project database',
   config: 'Application settings and preferences',
   workspace: 'Shared workspace files',
-  infrastructure: 'PostgreSQL roles, databases, and server config',
+  infrastructure: 'PostgreSQL, Redis, Hatchet config, and secrets',
+}
+
+// ─── Restore Confidence Badge ─────────────────────────────────
+
+const CONFIDENCE_STYLES: Record<string, string> = {
+  verified: 'bg-emerald-500/12 text-emerald-400 border-emerald-500/20',
+  stale: 'bg-amber-500/12 text-amber-400 border-amber-500/20',
+  partial: 'bg-amber-500/12 text-amber-400 border-amber-500/20',
+  untested: 'bg-slate-700/50 text-slate-500 border-slate-600/40',
+}
+
+function RestoreConfidenceBadge({ confidence }: { confidence: string | null }) {
+  const label = confidence ?? 'untested'
+  return (
+    <span
+      className={clsx(
+        'inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] uppercase tracking-[0.12em] font-medium border leading-none',
+        CONFIDENCE_STYLES[label] ?? CONFIDENCE_STYLES.untested,
+      )}
+    >
+      <span
+        className={clsx(
+          'w-1.5 h-1.5 rounded-full',
+          label === 'verified' && 'bg-emerald-400',
+          (label === 'stale' || label === 'partial') && 'bg-amber-400',
+          label === 'untested' && 'bg-slate-500',
+        )}
+      />
+      {label}
+    </span>
+  )
+}
+
+// ─── Coverage Chips ─────────────────────────────────────────────
+
+function CoverageChips({ coverage }: { coverage: CoverageResponse | null }) {
+  if (!coverage) return null
+
+  const components = coverage.result?.components ?? coverage.contract.map((c) => ({
+    key: c.key, label: c.label, category: c.category, present: false, error: null,
+  }))
+
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {components.map((comp) => {
+        if (comp.category === 'excluded') {
+          return (
+            <span
+              key={comp.key}
+              className="inline-flex items-center gap-1.5 rounded bg-slate-900/40 px-2 py-1 text-[10px] text-slate-600 line-through border border-slate-800/30"
+              title={`Excluded: ${comp.key}`}
+            >
+              {comp.label}
+            </span>
+          )
+        }
+        const isOptional = comp.category === 'optional'
+        return (
+          <span
+            key={comp.key}
+            className={clsx(
+              'inline-flex items-center gap-1.5 rounded px-2 py-1 text-[10px] border',
+              isOptional
+                ? 'bg-slate-900/40 text-slate-500 border-slate-800/30'
+                : comp.present
+                  ? 'bg-emerald-500/8 text-emerald-400/80 border-emerald-500/15'
+                  : 'bg-red-500/8 text-red-400/80 border-red-500/15',
+            )}
+          >
+            <span
+              className={clsx(
+                'w-1.5 h-1.5 rounded-full shrink-0',
+                isOptional
+                  ? 'bg-slate-600'
+                  : comp.present
+                    ? 'bg-emerald-500'
+                    : 'bg-red-500',
+              )}
+            />
+            {comp.label}
+          </span>
+        )
+      })}
+    </div>
+  )
 }
 
 const HEALTH_ACCENT: Record<string, string> = {
@@ -79,6 +168,27 @@ function SourceCard({
   const [enabled, setEnabled] = useState(source.enabled)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [drilling, setDrilling] = useState(false)
+  const [coverage, setCoverage] = useState<CoverageResponse | null>(null)
+
+  const isInfra = source.source_type === 'infrastructure'
+
+  // Fetch coverage for infrastructure sources when expanded
+  useEffect(() => {
+    if (expanded && isInfra && !coverage) {
+      fetchInfraCoverage().then(setCoverage).catch(() => {})
+    }
+  }, [expanded, isInfra, coverage])
+
+  const handleDrill = useCallback(async () => {
+    setDrilling(true)
+    try {
+      await runRestoreDrill()
+    } catch {
+      /* parent refetch */
+    }
+    setDrilling(false)
+  }, [])
 
   const healthStatus = health?.health_status ?? ''
   const accentClass = HEALTH_ACCENT[healthStatus] ?? 'border-l-slate-600'
@@ -160,6 +270,21 @@ function SourceCard({
           className="flex items-center gap-1.5 shrink-0"
           onClick={(e) => e.stopPropagation()}
         >
+          {isInfra && (
+            <button
+              type="button"
+              onClick={handleDrill}
+              disabled={drilling}
+              className="text-[11px] px-2 py-1 rounded bg-slate-700/40 text-slate-400 hover:bg-slate-700/60 disabled:opacity-40 transition-colors"
+              title="Run restore drill"
+            >
+              {drilling ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <FlaskConical className="w-3 h-3" />
+              )}
+            </button>
+          )}
           <button
             type="button"
             onClick={onBackupNow}
@@ -189,14 +314,40 @@ function SourceCard({
           <div className="border-t border-slate-800/40 px-4 py-4 space-y-4">
             {/* What's backed up + path */}
             <div className="space-y-1.5">
-              <div className="text-xs text-slate-400">
-                {SOURCE_CONTENTS[source.source_type] ?? source.source_type}
-              </div>
+              {isInfra && coverage ? (
+                <CoverageChips coverage={coverage} />
+              ) : (
+                <div className="text-xs text-slate-400">
+                  {SOURCE_CONTENTS[source.source_type] ?? source.source_type}
+                </div>
+              )}
               <div className="flex items-center gap-2 text-xs text-slate-500">
                 <FolderOpen className="w-3.5 h-3.5 shrink-0" />
                 <span className="font-mono truncate">{source.path}</span>
               </div>
             </div>
+
+            {/* Restore confidence — infrastructure only */}
+            {isInfra && health && (
+              <div className="flex items-center gap-3 px-2.5 py-2 rounded bg-slate-950/40 border border-slate-800/30">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                    Restore
+                  </span>
+                  <RestoreConfidenceBadge confidence={health.restore_confidence} />
+                </div>
+                {health.last_drill_at && (
+                  <span className="text-[10px] text-slate-600 ml-auto">
+                    Drilled {formatTimeAgo(health.last_drill_at)}
+                  </span>
+                )}
+                {health.last_drill_backup_id && (
+                  <span className="text-[10px] text-slate-600 font-mono truncate max-w-[80px]">
+                    {health.last_drill_backup_id}
+                  </span>
+                )}
+              </div>
+            )}
 
             {/* Metrics row */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">

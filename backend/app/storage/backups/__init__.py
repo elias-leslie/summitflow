@@ -24,6 +24,7 @@ from .queries import (
     get_pending_upload_backups,
     get_storage_summary,
     promote_pending_upload,
+    update_source_drill_result,
     update_source_restore_test,
 )
 from .sources import (
@@ -70,6 +71,7 @@ __all__ = [
     "update_backend",
     "update_backup_status",
     "update_source",
+    "update_source_drill_result",
     "update_source_last_run",
     "update_source_restore_test",
     "update_test_result",

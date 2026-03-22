@@ -127,6 +127,27 @@ main() {
     # SMB credentials (if present)
     [ -f "$HOME/.smbcredentials" ] && cp "$HOME/.smbcredentials" "$STAGING_DIR/configs/smbcredentials"
 
+    # Hatchet config (small, on-disk, contains signing keys needed for recovery)
+    local hatchet_dir="$PROJECT_DIR/docker/compose/hatchet-config"
+    if [ -d "$hatchet_dir" ]; then
+        cp -r "$hatchet_dir" "$STAGING_DIR/configs/hatchet-config"
+        log_success "Hatchet config collected"
+    else
+        log_warn "Hatchet config dir not found: $hatchet_dir"
+    fi
+
+    # ── Redis state ──
+    log "Exporting Redis state..."
+    local redis_dump="$STAGING_DIR/configs/redis-dump.rdb"
+    local redis_host="${REDIS_HOST:-localhost}"
+    local redis_port="${REDIS_PORT:-6379}"
+
+    if redis-cli -h "$redis_host" -p "$redis_port" --rdb "$redis_dump" 2>/dev/null; then
+        log_success "Redis dump complete ($(du -h "$redis_dump" | cut -f1))"
+    else
+        log_warn "Redis dump failed or Redis not available — skipping"
+    fi
+
     local config_count
     config_count=$(find "$STAGING_DIR/configs" -type f 2>/dev/null | wc -l | tr -d ' ')
     log_success "Collected $config_count config file(s)"

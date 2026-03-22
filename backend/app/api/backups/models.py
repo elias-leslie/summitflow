@@ -163,6 +163,17 @@ class BackupHealthItem(BaseModel):
     pending_upload_count: int = 0
     last_restore_tested_at: str | None = None
     last_restore_test_ok: bool | None = None
+    # Phase 4: extended health fields
+    latest_backup_age_hours: float | None = None
+    latest_restore_test_age_hours: float | None = None
+    restore_test_backup_id: str | None = None
+    coverage_complete: bool | None = None
+    pitr_supported: bool = False
+    restore_confidence: str | None = None  # verified | stale | partial | untested
+    # Drill tracking
+    last_drill_at: str | None = None
+    last_drill_ok: bool | None = None
+    last_drill_backup_id: str | None = None
 
 
 class WalHealthSummary(BaseModel):
@@ -181,3 +192,66 @@ class BackupHealthResponse(BaseModel):
     sources: list[BackupHealthItem]
     pending_upload_count: int = 0
     wal: WalHealthSummary | None = None
+
+
+# ─── Coverage Contract Models ──────────────────────────────────
+
+
+class CoverageComponentResponse(BaseModel):
+    """A single component of the infra coverage contract."""
+
+    key: str
+    label: str
+    category: str  # required | optional | excluded
+    description: str
+    archive_marker: str | None = None
+    reason: str | None = None
+
+
+class CoverageVerificationComponent(BaseModel):
+    """Verification result for a single coverage component."""
+
+    key: str
+    label: str
+    category: str
+    present: bool
+    error: str | None = None
+
+
+class CoverageVerificationResult(BaseModel):
+    """Result of verifying an archive against the coverage contract."""
+
+    complete: bool
+    required_count: int
+    present_count: int
+    missing: list[str]
+    components: list[CoverageVerificationComponent]
+
+
+class CoverageResponse(BaseModel):
+    """Full coverage contract with optional verification."""
+
+    contract: list[CoverageComponentResponse]
+    verified: bool = False
+    result: CoverageVerificationResult | None = None
+
+
+# ─── Restore Drill Models ──────────────────────────────────────
+
+
+class DrillComponentResult(BaseModel):
+    """Result of one component in a restore drill."""
+
+    key: str
+    ok: bool
+    error: str | None = None
+
+
+class RestoreDrillResult(BaseModel):
+    """Result of a full infrastructure restore drill."""
+
+    ok: bool
+    backup_id: str | None = None
+    components: list[DrillComponentResult]
+    duration_ms: int | None = None
+    drilled_at: str | None = None

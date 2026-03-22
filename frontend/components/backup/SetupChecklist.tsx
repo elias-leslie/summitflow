@@ -46,15 +46,18 @@ function computeSteps(
   const hasSources = sources.length > 0
   const hasSchedules = sources.some((s) => s.enabled)
   const hasInfra = sources.some((s) => s.source_type === 'infrastructure')
+  const infraHealth = healthItems.find(
+    (h) => h.source_type === 'infrastructure',
+  )
   const infraHealthy =
-    hasInfra &&
-    healthItems.some(
-      (h) => h.source_type === 'infrastructure' && h.health_status !== 'red',
-    )
+    hasInfra && infraHealth != null && infraHealth.health_status !== 'red'
 
   const failingCount = healthItems.filter(
     (h) => h.health_status === 'red',
   ).length
+
+  const restoreConfidence = infraHealth?.restore_confidence ?? null
+  const restoreValidated = restoreConfidence === 'verified'
 
   return [
     {
@@ -83,20 +86,33 @@ function computeSteps(
       title: 'System backup',
       description: hasInfra
         ? infraHealthy
-          ? 'PostgreSQL roles, databases, and server config are backed up'
+          ? 'PostgreSQL, Redis, Hatchet config, and secrets are backed up'
           : 'System backup source exists but last backup failed'
-        : 'Backs up PostgreSQL roles, databases, and server config for full disaster recovery.',
+        : 'Backs up PostgreSQL, Redis, Hatchet config, and secrets for infrastructure recovery.',
       complete: infraHealthy,
+    },
+    {
+      id: 'restore_validation',
+      icon: <ShieldCheck className="w-4 h-4" />,
+      title: 'Restore validation',
+      description: restoreValidated
+        ? 'Latest restore drill passed — recovery verified'
+        : restoreConfidence === 'stale'
+          ? 'Restore drill passed but is stale — re-run to verify current backup'
+          : restoreConfidence === 'partial'
+            ? 'Restore drill ran but some components failed'
+            : 'Run a restore drill to verify backups can actually be restored.',
+      complete: restoreValidated,
     },
     {
       id: 'wal',
       icon: <Database className="w-4 h-4" />,
       title: 'Database change log (WAL)',
       description: walStatus?.enabled
-        ? 'Active — database can be recovered to any point in time'
+        ? 'Active — database changes logged between backups'
         : walStatus?.pending_restart
           ? 'Configured — PostgreSQL restart needed to activate'
-          : 'Logs every database write between backups for point-in-time recovery.',
+          : 'Logs database changes between backups. Point-in-time recovery requires a physical base backup (not yet configured).',
       complete: !!(walStatus?.enabled || walStatus?.pending_restart),
     },
   ]

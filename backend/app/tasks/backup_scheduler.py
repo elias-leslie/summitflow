@@ -146,7 +146,7 @@ def run_scheduled_backups() -> dict[str, Any]:
 
         succeeded = sum(1 for result in results if result.get("status") == "completed")
         failed = len(results) - succeeded
-        result = {
+        result: dict[str, Any] = {
             "status": "success" if failed == 0 else "partial",
             "count": len(results),
             "succeeded": succeeded,
@@ -173,6 +173,15 @@ def run_scheduled_backups() -> dict[str, Any]:
             stale_cleaned=stale_cleaned,
             expired_cleaned=expired_count,
         )
+
+        # Run scheduled restore drills after backups complete
+        try:
+            drill_result = run_scheduled_drills()
+            result["drill"] = drill_result
+        except Exception:
+            logger.exception("scheduled_drill_failed")
+            result["drill"] = {"status": "error"}
+
         return result
     except Exception as exc:
         maintenance_store.record_maintenance_run(
@@ -185,3 +194,37 @@ def run_scheduled_backups() -> dict[str, Any]:
             error_message=str(exc),
         )
         raise
+
+
+def run_scheduled_drills() -> dict[str, Any]:
+    """Run infra restore drill if stale (>24h since last drill).
+
+    Returns:
+        Drill result summary.
+    """
+    sources = backup_store.list_sources()
+    infra_source = next((s for s in sources if s.get("source_type") == "infrastructure" and s.get("enabled")), None)
+
+    if not infra_source:
+        return {"status": "skipped", "reason": "no enabled infrastructure source"}
+
+    # Check staleness — only drill if >24h old
+    last_drill_at = infra_source.get("last_drill_at")
+    if last_drill_at:
+        try:
+            dt = datetime.fromisoformat(str(last_drill_at))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=UTC)
+            hours_since = (datetime.now(UTC) - dt).total_seconds() / 3600
+            if hours_since < 24:
+                logger.info("scheduled_drill_skipped", hours_since=round(hours_since, 1))
+                return {"status": "skipped", "reason": f"last drill {round(hours_since, 1)}h ago"}
+        except (ValueError, TypeError):
+            pass  # Proceed with drill if we can't parse
+
+    logger.info("scheduled_drill_started")
+    from .backup_restore_drill import run_infra_drill
+
+    result = run_infra_drill()
+    logger.info("scheduled_drill_completed", ok=result.get("ok"))
+    return {"status": "completed", "ok": result.get("ok"), "result": result}

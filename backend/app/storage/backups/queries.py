@@ -222,7 +222,10 @@ def get_backup_health_summary() -> list[dict[str, Any]]:
                       AND b.status = 'completed_pending_upload'
                 ) AS pending_upload_count,
                 bs.last_restore_tested_at,
-                bs.last_restore_test_ok
+                bs.last_restore_test_ok,
+                bs.last_drill_at,
+                bs.last_drill_ok,
+                bs.last_drill_backup_id
             FROM backup_sources bs
             ORDER BY bs.source_type, bs.name
             """
@@ -242,6 +245,9 @@ def get_backup_health_summary() -> list[dict[str, Any]]:
             "pending_upload_count": int(row[8]) if row[8] else 0,
             "last_restore_tested_at": row[9].isoformat() if row[9] else None,
             "last_restore_test_ok": row[10],
+            "last_drill_at": row[11].isoformat() if row[11] else None,
+            "last_drill_ok": row[12],
+            "last_drill_backup_id": row[13],
         }
         for row in rows
     ]
@@ -263,6 +269,30 @@ def update_source_restore_test(
             WHERE id = %s
             """,
             (ok, error, source_id),
+        )
+        conn.commit()
+
+
+def update_source_drill_result(
+    source_id: str,
+    ok: bool,
+    backup_id: str | None = None,
+    result: dict | None = None,
+) -> None:
+    """Record the result of a restore drill for a backup source."""
+    import json
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE backup_sources
+            SET last_drill_at = NOW(),
+                last_drill_ok = %s,
+                last_drill_backup_id = %s,
+                last_drill_result = %s
+            WHERE id = %s
+            """,
+            (ok, backup_id, json.dumps(result) if result else None, source_id),
         )
         conn.commit()
 

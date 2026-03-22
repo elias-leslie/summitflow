@@ -8,9 +8,10 @@ from typing import Any
 from ..connection import get_connection
 
 SOURCE_COLUMNS = """id, name, path, source_type, project_id, enabled, frequency,
-       retention_days, last_run_at, next_run_at, created_at, updated_at"""
+       retention_days, last_run_at, next_run_at, created_at, updated_at,
+       last_drill_at, last_drill_ok, last_drill_backup_id"""
 
-EXPECTED_SOURCE_COLUMNS = 12
+EXPECTED_SOURCE_COLUMNS = 15
 
 
 def row_to_source(row: tuple[Any, ...]) -> dict[str, Any]:
@@ -30,6 +31,9 @@ def row_to_source(row: tuple[Any, ...]) -> dict[str, Any]:
         "next_run_at": row[9].isoformat() if row[9] else None,
         "created_at": row[10].isoformat() if row[10] else None,
         "updated_at": row[11].isoformat() if row[11] else None,
+        "last_drill_at": row[12].isoformat() if row[12] else None,
+        "last_drill_ok": row[13],
+        "last_drill_backup_id": row[14],
     }
 
 

@@ -10,18 +10,21 @@ import {
   Loader2,
 } from 'lucide-react'
 import {
+  type WalHealthSummary,
   type WalStatus,
   disableWalArchiving,
   enableWalArchiving,
 } from '@/lib/api/backups'
+import { formatBytes } from '@/lib/format'
 
 interface WalCardProps {
   walStatus: WalStatus | undefined
+  walHealth: WalHealthSummary | null
   isLoading: boolean
   onRefresh: () => void
 }
 
-export function WalCard({ walStatus, isLoading, onRefresh }: WalCardProps) {
+export function WalCard({ walStatus, walHealth, isLoading, onRefresh }: WalCardProps) {
   const [expanded, setExpanded] = useState(false)
   const [toggling, setToggling] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -126,9 +129,9 @@ export function WalCard({ walStatus, isLoading, onRefresh }: WalCardProps) {
                 {/* Description — show when not active */}
                 {!enabled && !pendingRestart && (
                   <p className="text-xs text-slate-400 leading-relaxed">
-                    Saves a continuous log of every PostgreSQL database write
-                    between scheduled backups. Enables recovery to any point in
-                    time, not just the last backup.
+                    Logs database changes between backups. Point-in-time
+                    recovery requires a physical base backup (not yet
+                    configured).
                   </p>
                 )}
 
@@ -172,6 +175,16 @@ export function WalCard({ walStatus, isLoading, onRefresh }: WalCardProps) {
                         </div>
                         <div className="truncate text-xs text-slate-200 font-mono">
                           {walStatus.last_archived_wal}
+                        </div>
+                      </div>
+                    )}
+                    {(walHealth?.archive_size_bytes ?? 0) > 0 && (
+                      <div className="min-w-0 rounded bg-slate-950/50 px-2 py-1.5">
+                        <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                          Archive Size
+                        </div>
+                        <div className="truncate text-xs text-slate-200">
+                          {formatBytes(walHealth!.archive_size_bytes)}
                         </div>
                       </div>
                     )}

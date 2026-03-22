@@ -8,6 +8,7 @@ from typing import Any
 
 from ..logging_config import get_logger
 from ..storage import backups as backup_store
+from .backup_coverage import verify_archive_coverage
 from .backup_restore import restore_backup
 
 logger = get_logger(__name__)
@@ -43,9 +44,9 @@ def test_restore_for_source(source_id: str) -> dict[str, Any]:
     source_type = str(source.get("source_type", ""))
     backup_id = latest["id"]
 
-    # Infrastructure sources don't have a project dir — verify archive accessibility instead
+    # Infrastructure sources don't have a project dir — validate archive coverage instead
     if source_type == "infrastructure":
-        return _test_archive_accessibility(source_id, latest)
+        return _validate_infra_archive(source_id, latest)
 
     project_id = str(source.get("project_id") or source_id)
 
@@ -75,98 +76,185 @@ def test_restore_for_source(source_id: str) -> dict[str, Any]:
     }
 
 
-def _test_archive_accessibility(source_id: str, backup: dict[str, Any]) -> dict[str, Any]:
-    """Verify an infrastructure backup archive is accessible and valid.
+def _validate_infra_archive(source_id: str, backup: dict[str, Any]) -> dict[str, Any]:
+    """Validate an infrastructure backup archive with per-component coverage checks.
 
-    Checks: archive exists on SMB or locally, passes tar integrity test.
+    Locates the archive (local, pending, or SMB), then:
+    1. Verifies tar integrity
+    2. Checks coverage contract (required files present)
+    3. Validates pg_dumpall header (SQL)
+    4. Validates Redis RDB header (REDIS magic bytes)
     """
     backup_id = backup["id"]
     location = str(backup.get("location") or "")
     name = str(backup.get("name") or "")
+    verification_json = backup.get("verification_json")
 
-    # Check local file first
+    archive_path = _locate_archive(location, name, source_id)
+    if archive_path is None:
+        error = f"Cannot locate archive: location={location}, name={name}"
+        backup_store.update_source_restore_test(source_id, ok=False, error=error)
+        return {"ok": False, "source_id": source_id, "backup_id": backup_id, "error": error}
+
+    # 1. Tar integrity
+    try:
+        result = subprocess.run(
+            ["tar", "tzf", archive_path],
+            capture_output=True, text=True, timeout=120,
+        )
+        if result.returncode != 0:
+            error = f"Archive integrity check failed: {result.stderr[:200]}"
+            backup_store.update_source_restore_test(source_id, ok=False, error=error)
+            _cleanup_temp_archive(archive_path, location)
+            return {"ok": False, "source_id": source_id, "backup_id": backup_id, "error": error}
+        file_listing = result.stdout.strip().splitlines()
+    except Exception as e:
+        error = str(e)
+        backup_store.update_source_restore_test(source_id, ok=False, error=error)
+        _cleanup_temp_archive(archive_path, location)
+        return {"ok": False, "source_id": source_id, "backup_id": backup_id, "error": error}
+
+    # 2. Coverage contract check
+    coverage_result = verify_archive_coverage(verification_json)
+    coverage_ok = coverage_result.complete
+
+    # 3. Validate pg_dumpall header (quick sanity check)
+    pg_ok = _validate_pgdump_header(archive_path, file_listing)
+
+    # 4. Validate Redis RDB header
+    redis_ok = _validate_redis_header(archive_path, file_listing)
+
+    # Aggregate result
+    errors: list[str] = []
+    if not coverage_ok:
+        errors.append(f"Missing required components: {', '.join(coverage_result.missing)}")
+    if not pg_ok:
+        errors.append("PostgreSQL dump header validation failed")
+    if not redis_ok and _has_file_in_listing(file_listing, "redis-dump.rdb"):
+        errors.append("Redis RDB header validation failed")
+
+    all_ok = coverage_ok and pg_ok
+    backup_store.update_source_restore_test(source_id, ok=all_ok, error="; ".join(errors) if errors else None)
+    _cleanup_temp_archive(archive_path, location)
+
+    logger.info("restore_test_completed", source_id=source_id, ok=all_ok, files=len(file_listing),
+                coverage_complete=coverage_ok, pg_ok=pg_ok, redis_ok=redis_ok)
+    return {
+        "ok": all_ok,
+        "source_id": source_id,
+        "backup_id": backup_id,
+        "files": len(file_listing),
+        "coverage": {
+            "complete": coverage_result.complete,
+            "required": coverage_result.required_count,
+            "present": coverage_result.present_count,
+            "missing": coverage_result.missing,
+        },
+        "pg_header_ok": pg_ok,
+        "redis_header_ok": redis_ok,
+        "errors": errors if errors else None,
+    }
+
+
+def _locate_archive(location: str, name: str, source_id: str) -> str | None:
+    """Find the archive file locally, in pending dir, or download from SMB."""
+    # Local file
     if location and not location.startswith("//") and Path(location).exists():
-        return _verify_tar_integrity(source_id, backup_id, location)
+        return location
 
-    # Check pending dir
+    # Pending dir
     pending_path = Path.home() / ".local" / "share" / "backup-pending" / name
     if name and pending_path.exists():
-        return _verify_tar_integrity(source_id, backup_id, str(pending_path))
+        return str(pending_path)
 
-    # Check SMB — download to temp and verify
+    # SMB — download to temp
+    smb_path = None
     if location.startswith("//"):
-        return _verify_smb_archive(source_id, backup_id, location)
-
-    # Fallback: try to find by name on SMB
-    if name:
+        smb_path = location
+    elif name:
         import os
-
         smb_host = os.environ.get("SMB_HOST", "")
         smb_share = os.environ.get("SMB_SHARE", "")
         if smb_host and smb_share:
             smb_path = f"//{smb_host}/{smb_share}/project-backups/{source_id}/{name}"
-            return _verify_smb_archive(source_id, backup_id, smb_path)
 
-    error = f"Cannot locate archive: location={location}, name={name}"
-    backup_store.update_source_restore_test(source_id, ok=False, error=error)
-    return {"ok": False, "source_id": source_id, "backup_id": backup_id, "error": error}
+    if smb_path:
+        return _download_smb_archive(smb_path)
 
-
-def _verify_tar_integrity(source_id: str, backup_id: str, path: str) -> dict[str, Any]:
-    """Verify a local tar.gz archive passes integrity check."""
-    try:
-        result = subprocess.run(
-            ["tar", "tzf", path],
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-        if result.returncode == 0:
-            file_count = len(result.stdout.strip().splitlines())
-            backup_store.update_source_restore_test(source_id, ok=True)
-            logger.info("restore_test_completed", source_id=source_id, ok=True, files=file_count)
-            return {"ok": True, "source_id": source_id, "backup_id": backup_id, "files": file_count}
-        error = f"Archive integrity check failed: {result.stderr[:200]}"
-        backup_store.update_source_restore_test(source_id, ok=False, error=error)
-        return {"ok": False, "source_id": source_id, "backup_id": backup_id, "error": error}
-    except Exception as e:
-        error = str(e)
-        backup_store.update_source_restore_test(source_id, ok=False, error=error)
-        return {"ok": False, "source_id": source_id, "backup_id": backup_id, "error": error}
+    return None
 
 
-def _verify_smb_archive(source_id: str, backup_id: str, smb_path: str) -> dict[str, Any]:
-    """Verify an SMB-hosted archive exists by listing it via smbclient."""
+def _download_smb_archive(smb_path: str) -> str | None:
+    """Download an archive from SMB to a temp file. Returns local path or None."""
     import os
+    import tempfile
 
     creds_file = Path(os.environ.get("HOME", str(Path.home()))) / ".smbcredentials"
-
-    # Parse SMB path: //host/share/path/to/file.tar.gz
     parts = smb_path.split("/")
     if len(parts) < 5:
-        error = f"Invalid SMB path: {smb_path}"
-        backup_store.update_source_restore_test(source_id, ok=False, error=error)
-        return {"ok": False, "source_id": source_id, "backup_id": backup_id, "error": error}
+        return None
 
-    host = parts[2]
-    share = parts[3]
+    host, share = parts[2], parts[3]
     remote_dir = "/".join(parts[4:-1])
     filename = parts[-1]
 
-    cmd = ["smbclient", f"//{host}/{share}", "-A", str(creds_file), "-c", f'ls {remote_dir}/{filename}']
+    temp_path = Path(tempfile.mkdtemp()) / filename
+    cmd = [
+        "smbclient", f"//{host}/{share}", "-A", str(creds_file),
+        "-c", f"cd {remote_dir}; get {filename} {temp_path}",
+    ]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        if filename in result.stdout:
-            backup_store.update_source_restore_test(source_id, ok=True)
-            logger.info("restore_test_completed", source_id=source_id, ok=True, method="smb_verify")
-            return {"ok": True, "source_id": source_id, "backup_id": backup_id, "method": "smb_verify"}
-        error = f"Archive not found on SMB: {smb_path}"
-        backup_store.update_source_restore_test(source_id, ok=False, error=error)
-        return {"ok": False, "source_id": source_id, "backup_id": backup_id, "error": error}
-    except Exception as e:
-        error = f"SMB check failed: {e}"
-        backup_store.update_source_restore_test(source_id, ok=False, error=error)
-        return {"ok": False, "source_id": source_id, "backup_id": backup_id, "error": error}
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        if result.returncode == 0 and temp_path.exists():
+            return str(temp_path)
+    except Exception:
+        pass
+    return None
+
+
+def _cleanup_temp_archive(archive_path: str, original_location: str) -> None:
+    """Remove temp archive if it was downloaded from SMB."""
+    if original_location.startswith("//") and Path(archive_path).exists():
+        import shutil
+        parent = Path(archive_path).parent
+        if str(parent).startswith("/tmp/"):
+            shutil.rmtree(parent, ignore_errors=True)
+
+
+def _has_file_in_listing(file_listing: list[str], pattern: str) -> bool:
+    """Check if any file in the tar listing matches a pattern."""
+    return any(pattern in f for f in file_listing)
+
+
+def _validate_pgdump_header(archive_path: str, file_listing: list[str]) -> bool:
+    """Extract and validate pg_dumpall header — must start with SQL comment."""
+    dump_entry = next((f for f in file_listing if "pgdumpall.sql.gz" in f), None)
+    if not dump_entry:
+        return False
+    try:
+        result = subprocess.run(
+            ["bash", "-c", f"tar xzf '{archive_path}' -O '{dump_entry}' | gunzip | head -c 100"],
+            capture_output=True, text=True, timeout=30,
+        )
+        return result.returncode == 0 and result.stdout.startswith("--")
+    except Exception:
+        return False
+
+
+def _validate_redis_header(archive_path: str, file_listing: list[str]) -> bool:
+    """Extract and validate Redis RDB header — must start with REDIS magic bytes."""
+    rdb_entry = next((f for f in file_listing if "redis-dump.rdb" in f), None)
+    if not rdb_entry:
+        # Redis dump may not exist (optional if Redis was unavailable)
+        return True
+    try:
+        result = subprocess.run(
+            ["bash", "-c", f"tar xzf '{archive_path}' -O '{rdb_entry}' | head -c 5"],
+            capture_output=True, timeout=10,
+        )
+        return result.returncode == 0 and result.stdout.startswith(b"REDIS")
+    except Exception:
+        return False
 
 
 def run_restore_tests() -> dict[str, Any]:
