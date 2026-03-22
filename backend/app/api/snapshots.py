@@ -133,14 +133,13 @@ def _get_cli_libs() -> tuple[Any, ...]:
     )
     from cli.lib.quick_snapshots import (
         capture_snapshot,
-        get_snapshot_usage,
         list_snapshots,
         load_manifest,
         recover_snapshot,
     )
 
     return (
-        capture_snapshot, list_snapshots, get_snapshot_usage,
+        capture_snapshot, list_snapshots,
         recover_snapshot, load_manifest,
         DEFAULT_POLICY, enumerate_prunable_scopes, prune_all,
     )
@@ -153,7 +152,7 @@ def _get_cli_libs() -> tuple[Any, ...]:
 async def snapshot_summary(project_id: str | None = None) -> SnapshotSummaryResponse:
     """Aggregate snapshot summary with policy and timer status."""
     (
-        _, _, get_snapshot_usage,
+        _, _,
         _, load_manifest,
         DEFAULT_POLICY, enumerate_prunable_scopes, _,
     ) = _get_cli_libs()
@@ -163,7 +162,6 @@ async def snapshot_summary(project_id: str | None = None) -> SnapshotSummaryResp
         scopes = [s for s in scopes if s[0] == project_id]
 
     total_snapshots = 0
-    total_usage = 0
     by_source: dict[str, int] = {}
     by_scope_type: dict[str, int] = {}
 
@@ -174,17 +172,11 @@ async def snapshot_summary(project_id: str | None = None) -> SnapshotSummaryResp
             src = snap.source or "manual"
             by_source[src] = by_source.get(src, 0) + 1
             by_scope_type[snap.scope_type] = by_scope_type.get(snap.scope_type, 0) + 1
-            try:
-                usage = get_snapshot_usage(snap)
-                if usage:
-                    total_usage += usage.exclusive_bytes
-            except Exception:
-                pass
 
     policy = DEFAULT_POLICY
     return SnapshotSummaryResponse(
         total_snapshots=total_snapshots,
-        total_usage_bytes=total_usage,
+        total_usage_bytes=0,
         by_source=by_source,
         by_scope_type=by_scope_type,
         scope_count=len(scopes),
@@ -197,7 +189,7 @@ async def snapshot_summary(project_id: str | None = None) -> SnapshotSummaryResp
 async def snapshot_scopes(project_id: str | None = None) -> list[ScopeResponse]:
     """List all snapshot scopes with counts and usage."""
     (
-        _, _, get_snapshot_usage,
+        _, _,
         _, load_manifest,
         _, enumerate_prunable_scopes, _,
     ) = _get_cli_libs()
@@ -212,22 +204,13 @@ async def snapshot_scopes(project_id: str | None = None) -> list[ScopeResponse]:
         if not entries:
             continue
 
-        total_bytes = 0
-        for snap in entries:
-            try:
-                usage = get_snapshot_usage(snap)
-                if usage:
-                    total_bytes += usage.exclusive_bytes
-            except Exception:
-                pass
-
         timestamps = [e.created_at for e in entries if e.created_at]
         results.append(ScopeResponse(
             project_id=pid,
             scope_type=scope.scope_type,
             scope_name=scope.scope_name,
             snapshot_count=len(entries),
-            total_bytes=total_bytes if total_bytes > 0 else None,
+            total_bytes=None,
             newest_at=max(timestamps) if timestamps else None,
             oldest_at=min(timestamps) if timestamps else None,
         ))
@@ -242,7 +225,7 @@ async def list_all_snapshots(
 ) -> list[SnapshotResponse]:
     """List all snapshots, optionally filtered by project and scope type."""
     (
-        _, _, get_snapshot_usage,
+        _, _,
         _, load_manifest,
         _, enumerate_prunable_scopes, _,
     ) = _get_cli_libs()
@@ -257,10 +240,7 @@ async def list_all_snapshots(
     for pid, scope in scopes:
         entries = load_manifest(pid, scope)
         for snap in entries:
-            usage = None
-            with contextlib.suppress(Exception):
-                usage = get_snapshot_usage(snap)
-            results.append(_snapshot_to_response(snap, usage))
+            results.append(_snapshot_to_response(snap))
 
     # Sort newest first
     results.sort(key=lambda s: s.created_at, reverse=True)
