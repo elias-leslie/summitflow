@@ -1,4 +1,4 @@
-import { fetchWithErrorHandling } from './utils'
+import { fetchWithErrorHandling, postJson } from './utils'
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -52,8 +52,6 @@ export interface BtrfsSummary {
 
 // ─── API Functions ──────────────────────────────────────────────
 
-const JSON_HEADERS = { 'Content-Type': 'application/json' }
-
 export function fetchSnapshots(projectId?: string, scopeType?: string): Promise<BtrfsSnapshot[]> {
   const params = new URLSearchParams()
   if (projectId) params.set('project_id', projectId)
@@ -89,37 +87,25 @@ export function fetchSnapshotSummary(projectId?: string): Promise<BtrfsSummary> 
 }
 
 export function createSnapshot(projectId: string, name?: string): Promise<BtrfsSnapshot> {
-  return fetchWithErrorHandling<BtrfsSnapshot>(
+  return postJson<BtrfsSnapshot>(
     '/api/snapshots/snap',
-    {
-      method: 'POST',
-      headers: JSON_HEADERS,
-      body: JSON.stringify({ project_id: projectId, name: name ?? null }),
-      errorMessage: 'Failed to create snapshot',
-    },
+    { project_id: projectId, name: name ?? null },
+    'Failed to create snapshot',
   )
 }
 
 export function recoverSnapshot(snapshotId: string, projectId: string, name?: string): Promise<{ ok: boolean; recovery_path?: string; error?: string }> {
-  return fetchWithErrorHandling(
+  return postJson(
     `/api/snapshots/${snapshotId}/recover`,
-    {
-      method: 'POST',
-      headers: JSON_HEADERS,
-      body: JSON.stringify({ project_id: projectId, name: name ?? null }),
-      errorMessage: 'Failed to recover snapshot',
-    },
+    { project_id: projectId, name: name ?? null },
+    'Failed to recover snapshot',
   )
 }
 
 export function pruneSnapshots(dryRun = true): Promise<{ ok: boolean; dry_run: boolean; pruned: number; error?: string }> {
-  return fetchWithErrorHandling(
+  return postJson(
     '/api/snapshots/prune',
-    {
-      method: 'POST',
-      headers: JSON_HEADERS,
-      body: JSON.stringify({ dry_run: dryRun }),
-      errorMessage: 'Failed to prune snapshots',
-    },
+    { dry_run: dryRun },
+    'Failed to prune snapshots',
   )
 }

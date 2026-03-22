@@ -8,7 +8,7 @@ import type {
   AutonomousExecutionSettings,
   AutonomousExecutionSettingsUpdate,
 } from './projects-types'
-import { fetchWithErrorHandling } from './utils'
+import { fetchWithErrorHandling, patchJson } from './utils'
 
 // ============================================================================
 // Autonomous Execution Settings (for orchestrator task execution)
@@ -26,10 +26,5 @@ export async function updateAutonomousSettings(
   projectId: string,
   settings: AutonomousExecutionSettingsUpdate,
 ): Promise<AutonomousExecutionSettings> {
-  return fetchWithErrorHandling(`/api/projects/${projectId}/autonomous/settings`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(settings),
-    errorMessage: 'Failed to update autonomous settings',
-  })
+  return patchJson(`/api/projects/${projectId}/autonomous/settings`, settings, 'Failed to update autonomous settings')
 }

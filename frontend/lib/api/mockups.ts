@@ -2,7 +2,7 @@
  * Mockups API module
  */
 
-import { buildQueryString, fetchWithErrorHandling } from './utils'
+import { buildQueryString, deleteJson, fetchWithErrorHandling, postJson, putJson } from './utils'
 
 export interface Mockup {
   id: number
@@ -125,14 +125,10 @@ export async function updateMockupStatus(
   status: string,
   approvedBy?: string,
 ): Promise<Mockup> {
-  return fetchWithErrorHandling<Mockup>(
+  return putJson<Mockup>(
     `/api/projects/${projectId}/mockups/${mockupId}/status`,
-    {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status, approved_by: approvedBy }),
-      errorMessage: 'Failed to update mockup status',
-    },
+    { status, approved_by: approvedBy },
+    'Failed to update mockup status',
   )
 }
 
@@ -143,12 +139,9 @@ export async function deleteMockup(
   projectId: string,
   mockupId: string,
 ): Promise<{ deleted: boolean }> {
-  return fetchWithErrorHandling<{ deleted: boolean }>(
+  return deleteJson<{ deleted: boolean }>(
     `/api/projects/${projectId}/mockups/${mockupId}`,
-    {
-      method: 'DELETE',
-      errorMessage: 'Failed to delete mockup',
-    },
+    'Failed to delete mockup',
   )
 }
 
@@ -197,13 +190,9 @@ export async function analyzePage(
   pageUrl: string,
   pagePath?: string,
 ): Promise<AnalyzePageResponse> {
-  return fetchWithErrorHandling<AnalyzePageResponse>(
+  return postJson<AnalyzePageResponse>(
     `/api/projects/${projectId}/mockups/analyze-page`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ page_url: pageUrl, page_path: pagePath }),
-      errorMessage: 'Failed to analyze page design',
-    },
+    { page_url: pageUrl, page_path: pagePath },
+    'Failed to analyze page design',
   )
 }

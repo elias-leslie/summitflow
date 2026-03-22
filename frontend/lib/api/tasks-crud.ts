@@ -2,7 +2,7 @@
  * Tasks API - Core CRUD Operations
  */
 
-import { buildQueryString, fetchWithErrorHandling, getApiBase } from './utils'
+import { buildQueryString, fetchWithErrorHandling, getApiBase, patchJson, postJson } from './utils'
 import type {
   Task,
   TaskListResponse,
@@ -30,12 +30,7 @@ export async function createTask(
     autonomous?: boolean
   },
 ): Promise<Task> {
-  return fetchWithErrorHandling(`/api/projects/${projectId}/tasks`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(task),
-    errorMessage: 'Failed to create task',
-  })
+  return postJson(`/api/projects/${projectId}/tasks`, task, 'Failed to create task')
 }
 
 export async function updateTask(
@@ -53,12 +48,7 @@ export async function updateTask(
     agent_override?: string | null
   },
 ): Promise<Task> {
-  return fetchWithErrorHandling(`/api/projects/${projectId}/tasks/${taskId}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(updates),
-    errorMessage: 'Failed to update task',
-  })
+  return patchJson(`/api/projects/${projectId}/tasks/${taskId}`, updates, 'Failed to update task')
 }
 
 // ============================================================================
@@ -132,14 +122,10 @@ export async function updateTaskStatus(
   status: TaskStatus,
   taskErrorMessage?: string,
 ): Promise<Task> {
-  return fetchWithErrorHandling(
+  return patchJson(
     `${getApiBase()}/api/projects/${projectId}/tasks/${taskId}/status`,
-    {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status, error_message: taskErrorMessage }),
-      errorMessage: 'Failed to update task status',
-    },
+    { status, error_message: taskErrorMessage },
+    'Failed to update task status',
   )
 }
 

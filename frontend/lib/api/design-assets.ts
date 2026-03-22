@@ -1,4 +1,4 @@
-import { buildQueryString, fetchWithErrorHandling } from './utils'
+import { buildQueryString, deleteJson, fetchWithErrorHandling, postJson, putJson } from './utils'
 
 export interface DesignAsset {
   id: number
@@ -118,14 +118,10 @@ export async function generateDesignAssets(
   projectId: string,
   data: GenerateDesignAssetRequest,
 ): Promise<GenerateDesignAssetResponse> {
-  return fetchWithErrorHandling<GenerateDesignAssetResponse>(
+  return postJson<GenerateDesignAssetResponse>(
     `/api/projects/${projectId}/design-assets/generate`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-      errorMessage: 'Failed to generate design assets',
-    },
+    data,
+    'Failed to generate design assets',
   )
 }
 
@@ -135,14 +131,10 @@ export async function updateDesignAssetStatus(
   status: string,
   approvedBy?: string,
 ): Promise<DesignAsset> {
-  return fetchWithErrorHandling<DesignAsset>(
+  return putJson<DesignAsset>(
     `/api/projects/${projectId}/design-assets/${assetId}/status`,
-    {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status, approved_by: approvedBy }),
-      errorMessage: 'Failed to update asset status',
-    },
+    { status, approved_by: approvedBy },
+    'Failed to update asset status',
   )
 }
 
@@ -150,12 +142,9 @@ export async function deleteDesignAsset(
   projectId: string,
   assetId: string,
 ): Promise<{ deleted: boolean }> {
-  return fetchWithErrorHandling<{ deleted: boolean }>(
+  return deleteJson<{ deleted: boolean }>(
     `/api/projects/${projectId}/design-assets/${assetId}`,
-    {
-      method: 'DELETE',
-      errorMessage: 'Failed to delete design asset',
-    },
+    'Failed to delete design asset',
   )
 }
 

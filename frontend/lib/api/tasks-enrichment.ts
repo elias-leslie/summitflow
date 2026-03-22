@@ -2,7 +2,7 @@
  * Tasks API - Enrichment & Refinement Workflow
  */
 
-import { fetchWithErrorHandling } from './utils'
+import { fetchWithErrorHandling, patchJson, postJson } from './utils'
 import type {
   Task,
   EnrichmentRequest,
@@ -27,12 +27,7 @@ export async function enrichTask(
   sync = false,
 ): Promise<Task> {
   const url = `/api/projects/${projectId}/tasks/enrich${sync ? '?sync=true' : ''}`
-  return fetchWithErrorHandling(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(request),
-    errorMessage: 'Failed to enrich task',
-  })
+  return postJson(url, request, 'Failed to enrich task')
 }
 
 /**
@@ -43,14 +38,10 @@ export async function discussTask(
   taskId: string,
   message: string,
 ): Promise<DiscussionResponse> {
-  return fetchWithErrorHandling(
+  return postJson(
     `/api/projects/${projectId}/tasks/${taskId}/discuss`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message }),
-      errorMessage: 'Failed to discuss task',
-    },
+    { message },
+    'Failed to discuss task',
   )
 }
 
@@ -113,14 +104,10 @@ export async function updateSubtask(
   subtaskId: string,
   passes: boolean,
 ): Promise<Subtask> {
-  return fetchWithErrorHandling(
+  return patchJson(
     `/api/projects/${projectId}/tasks/${taskId}/subtasks/${subtaskId}`,
-    {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ passes }),
-      errorMessage: 'Failed to update subtask',
-    },
+    { passes },
+    'Failed to update subtask',
   )
 }
 
@@ -154,14 +141,10 @@ export async function updateStep(
   stepNumber: number,
   passes: boolean,
 ): Promise<Step> {
-  return fetchWithErrorHandling(
+  return patchJson(
     `/api/projects/${projectId}/tasks/${taskId}/subtasks/${subtaskId}/steps/${stepNumber}`,
-    {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ passes }),
-      errorMessage: 'Failed to update step',
-    },
+    { passes },
+    'Failed to update step',
   )
 }
 

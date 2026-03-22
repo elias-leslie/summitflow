@@ -1,4 +1,4 @@
-import { buildQueryString, fetchWithErrorHandling } from './utils'
+import { buildQueryString, fetchWithErrorHandling, postJson, putJson } from './utils'
 
 export interface BackupVerification {
   verified: boolean
@@ -66,14 +66,12 @@ export function backupHasDatabase(backup: Backup): boolean {
 
 type RestoreOptions = { dry_run?: boolean; db_only?: boolean; files_only?: boolean }
 type BackupListOptions = { limit?: number; offset?: number; status?: string }
-const JSON_HEADERS = { 'Content-Type': 'application/json' }
-
 function restoreBody(opts?: RestoreOptions) {
-  return JSON.stringify({
+  return {
     dry_run: opts?.dry_run ?? false,
     db_only: opts?.db_only ?? false,
     files_only: opts?.files_only ?? false,
-  })
+  }
 }
 
 function backupListQuery(options?: BackupListOptions & { source_id?: string }) {
@@ -100,28 +98,26 @@ export function fetchBackup(projectId: string, backupId: string): Promise<Backup
 }
 
 export function createBackup(projectId: string, options?: { note?: string; keep_local?: boolean }): Promise<BackupCreateResponse> {
-  return fetchWithErrorHandling<BackupCreateResponse>(
+  return postJson<BackupCreateResponse>(
     `/api/projects/${projectId}/backups`,
-    {
-      method: 'POST',
-      headers: JSON_HEADERS,
-      body: JSON.stringify({ note: options?.note ?? null, keep_local: options?.keep_local ?? false }),
-      errorMessage: 'Failed to create backup',
-    },
+    { note: options?.note ?? null, keep_local: options?.keep_local ?? false },
+    'Failed to create backup',
   )
 }
 
 export function restoreBackup(projectId: string, backupId: string, options?: RestoreOptions): Promise<RestoreResponse> {
-  return fetchWithErrorHandling<RestoreResponse>(
+  return postJson<RestoreResponse>(
     `/api/projects/${projectId}/backups/${backupId}/restore`,
-    { method: 'POST', headers: JSON_HEADERS, body: restoreBody(options), errorMessage: 'Failed to restore backup' },
+    restoreBody(options),
+    'Failed to restore backup',
   )
 }
 
 export function restoreSourceBackup(sourceId: string, backupId: string, options?: RestoreOptions): Promise<RestoreResponse> {
-  return fetchWithErrorHandling<RestoreResponse>(
+  return postJson<RestoreResponse>(
     `/api/backup-sources/${sourceId}/backups/${backupId}/restore`,
-    { method: 'POST', headers: JSON_HEADERS, body: restoreBody(options), errorMessage: 'Failed to restore backup' },
+    restoreBody(options),
+    'Failed to restore backup',
   )
 }
 
@@ -144,9 +140,7 @@ export function fetchAllBackups(options?: BackupListOptions & { source_id?: stri
 export function createBackupSource(data: {
   id: string; name: string; path: string; source_type?: string; project_id?: string
 }): Promise<BackupSource> {
-  return fetchWithErrorHandling<BackupSource>('/api/backup-sources', {
-    method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(data), errorMessage: 'Failed to create backup source',
-  })
+  return postJson<BackupSource>('/api/backup-sources', data, 'Failed to create backup source')
 }
 
 export function fetchBackupSources(sourceType?: string): Promise<BackupSource[]> {
@@ -161,21 +155,18 @@ export function fetchBackupSource(sourceId: string): Promise<BackupSource> {
 export function updateBackupSource(sourceId: string, data: {
   name?: string; enabled?: boolean; frequency?: string; retention_days?: number
 }): Promise<BackupSource> {
-  return fetchWithErrorHandling<BackupSource>(
+  return putJson<BackupSource>(
     `/api/backup-sources/${sourceId}`,
-    { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify(data), errorMessage: 'Failed to update backup source' },
+    data,
+    'Failed to update backup source',
   )
 }
 
 export function createSourceBackup(sourceId: string, options?: { note?: string; keep_local?: boolean }): Promise<BackupCreateResponse> {
-  return fetchWithErrorHandling<BackupCreateResponse>(
+  return postJson<BackupCreateResponse>(
     `/api/backup-sources/${sourceId}/backups`,
-    {
-      method: 'POST',
-      headers: JSON_HEADERS,
-      body: JSON.stringify({ note: options?.note ?? null, keep_local: options?.keep_local ?? false }),
-      errorMessage: 'Failed to create backup',
-    },
+    { note: options?.note ?? null, keep_local: options?.keep_local ?? false },
+    'Failed to create backup',
   )
 }
 
@@ -258,9 +249,7 @@ export function fetchStorageStatus(): Promise<StorageStatus> {
 export function createStorageBackend(data: {
   name: string; backend_type?: string; config?: Record<string, unknown>; is_default?: boolean
 }): Promise<StorageBackend> {
-  return fetchWithErrorHandling<StorageBackend>('/api/backup-storage', {
-    method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(data), errorMessage: 'Failed to create storage backend',
-  })
+  return postJson<StorageBackend>('/api/backup-storage', data, 'Failed to create storage backend')
 }
 
 export function testStorageBackend(id: string): Promise<{ success: boolean; message: string }> {

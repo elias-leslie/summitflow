@@ -2,7 +2,7 @@
  * Tasks API - Autonomous Execution & Batch Operations
  */
 
-import { fetchWithErrorHandling, getApiBase } from './utils'
+import { getApiBase, postJson } from './utils'
 import type {
   ExecuteTaskOptions,
   ExecuteTaskResponse,
@@ -23,14 +23,10 @@ export async function executeTask(
   taskId: string,
   options?: ExecuteTaskOptions,
 ): Promise<ExecuteTaskResponse> {
-  return fetchWithErrorHandling(
+  return postJson(
     `${getApiBase()}/api/projects/${projectId}/tasks/${taskId}/execute`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(options || {}),
-      errorMessage: 'Failed to start task execution',
-    },
+    options || {},
+    'Failed to start task execution',
   )
 }
 
@@ -42,10 +38,5 @@ export async function batchCreateTasks(
   projectId: string,
   items: BatchTaskCreateItem[],
 ): Promise<BatchTaskResponse> {
-  return fetchWithErrorHandling(`/api/projects/${projectId}/tasks/batch`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ items }),
-    errorMessage: 'Failed to batch create tasks',
-  })
+  return postJson(`/api/projects/${projectId}/tasks/batch`, { items }, 'Failed to batch create tasks')
 }

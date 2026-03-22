@@ -5,7 +5,7 @@
  * Re-exports automation and type definitions for backward compatibility.
  */
 
-import { fetchWithErrorHandling } from './utils'
+import { fetchWithErrorHandling, patchJson, postJson } from './utils'
 import type {
   Project,
   ProjectHealth,
@@ -50,24 +50,14 @@ export async function createProject(project: {
   health_endpoint?: string
   root_path?: string
 }): Promise<Project> {
-  return fetchWithErrorHandling('/api/projects', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(project),
-    errorMessage: 'Failed to create project',
-  })
+  return postJson('/api/projects', project, 'Failed to create project')
 }
 
 export async function updateProject(
   id: string,
   project: ProjectUpdate,
 ): Promise<Project> {
-  return fetchWithErrorHandling(`/api/projects/${id}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(project),
-    errorMessage: 'Failed to update project',
-  })
+  return patchJson(`/api/projects/${id}`, project, 'Failed to update project')
 }
 
 // ============================================================================
