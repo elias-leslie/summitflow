@@ -13,18 +13,39 @@ Uses external tools:
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from .violation_detectors import (
+
+class ViolationType(Enum):
+    PARALLEL_IMPLEMENTATION = "parallel_implementation"
+    MISSING_INFRASTRUCTURE = "missing_infrastructure"
+    DUPLICATE_UTILITY = "duplicate_utility"
+
+
+@dataclass
+class CodeViolation:
+    violation_type: ViolationType
+    file_path: str
+    detail: str
+    severity: str = "warning"
+    line_start: int | None = None
+    line_end: int | None = None
+    related_files: list[str] = field(default_factory=list)
+
+
+# NOTE: violation_detectors and violation_parsers import CodeViolation and
+# ViolationType from this module.  The definitions above MUST stay above this
+# import so that names are already bound when the circular import resolves.
+from .violation_detectors import (  # noqa: E402
     detect_dead_code,
     detect_duplicates,
     detect_missing_infrastructure,
     find_pattern_implementations,
 )
-from .violation_models import CodeViolation, ViolationType
 
-# Re-export public API so existing imports keep working
 __all__ = ["CodeViolation", "CodeViolationDetector", "ViolationType"]
 
 

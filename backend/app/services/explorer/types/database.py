@@ -18,9 +18,9 @@ from .database_analysis import (
     analyze_column_completeness,
     analyze_table_freshness,
     build_table_metadata,
+    categorize_table,
     extract_foreign_key_references,
 )
-from .database_categories import categorize_table
 from .database_config import SYSTEM_TABLES, get_db_url_for_project, is_table_owned_by_project
 from .schema_violations import SchemaViolationDetector
 

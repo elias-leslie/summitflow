@@ -25,10 +25,40 @@ from ....logging_config import get_logger
 from ..base import BaseScanner, get_project_config
 from ..health import calculate_health_for_entry
 from ..models import ExplorerEntryCreate
-from .task_categorization import categorize_task
 from .task_schedule import format_interval, get_task_schedule
 
 logger = get_logger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Task categorization
+# ---------------------------------------------------------------------------
+
+_TASK_CATEGORY_KEYWORDS: list[tuple[str, list[str]]] = [
+    ("data-fetch", ["fetch", "sync", "pull"]),
+    ("maintenance", ["cleanup", "prune", "archive"]),
+    ("reporting", ["report", "summary", "digest"]),
+    ("alerts", ["alert", "notify"]),
+    ("backup", ["backup", "snapshot"]),
+    ("analytics", ["analytics", "metric", "stat"]),
+    ("market-data", ["market", "price", "quote"]),
+    ("news", ["news", "headline"]),
+    ("indicators", ["indicator", "signal"]),
+]
+
+_DEFAULT_TASK_CATEGORY = "scheduled"
+
+_TASK_KEYWORD_MAP: dict[str, str] = {
+    kw: category
+    for category, keywords in _TASK_CATEGORY_KEYWORDS
+    for kw in keywords
+}
+
+
+def categorize_task(task_name: str) -> str:
+    """Categorize a task by its name pattern."""
+    name = task_name.lower()
+    return next((cat for kw, cat in _TASK_KEYWORD_MAP.items() if kw in name), None) or _DEFAULT_TASK_CATEGORY
 
 
 class TaskScanner(BaseScanner):

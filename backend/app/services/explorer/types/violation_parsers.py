@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 from ....logging_config import get_logger
-from .violation_models import CodeViolation, ViolationType
+from .code_violations import CodeViolation, ViolationType
 
 logger = get_logger(__name__)
 

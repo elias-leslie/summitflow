@@ -1,6 +1,7 @@
-"""Database table analysis utilities.
+"""Database table analysis and categorization utilities.
 
-Provides functions for analyzing table columns, freshness, and completeness.
+Provides functions for analyzing table columns, freshness, completeness,
+and categorizing tables by naming patterns.
 """
 
 from __future__ import annotations
@@ -176,3 +177,34 @@ def build_table_metadata(
         },
         "violations": violations,
     }
+
+
+# ---------------------------------------------------------------------------
+# Table categorization
+# ---------------------------------------------------------------------------
+
+_DEFAULT_TABLE_CATEGORY = "data"
+
+_TABLE_CATEGORY_PATTERNS: list[tuple[str, tuple[str, ...]]] = [
+    ("auth",      ("user", "auth", "credential")),
+    ("logging",   ("log", "history", "audit")),
+    ("config",    ("config", "setting", "pref")),
+    ("cache",     ("cache", "temp")),
+    ("analytics", ("metric", "stat", "analytic")),
+    ("tasks",     ("task", "job", "queue")),
+    ("features",  ("feature", "capability")),
+    ("sitemap",   ("sitemap", "endpoint", "route")),
+    ("evidence",  ("evidence", "artifact")),
+    ("vision",    ("vision", "goal")),
+    ("files",     ("file", "scan", "explorer")),
+    ("projects",  ("project",)),
+]
+
+
+def categorize_table(table_name: str) -> str:
+    """Categorize a table by its name pattern."""
+    name = table_name.lower()
+    for category, keywords in _TABLE_CATEGORY_PATTERNS:
+        if any(keyword in name for keyword in keywords):
+            return category
+    return _DEFAULT_TABLE_CATEGORY

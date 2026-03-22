@@ -11,7 +11,7 @@ import subprocess
 from pathlib import Path
 
 from ....logging_config import get_logger
-from .violation_models import CodeViolation, ViolationType
+from .code_violations import CodeViolation, ViolationType
 from .violation_parsers import parse_jscpd_output, parse_semgrep_output, parse_vulture_line
 
 logger = get_logger(__name__)
