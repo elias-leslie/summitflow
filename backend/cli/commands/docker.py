@@ -165,28 +165,17 @@ def down(
     """
     args = compose_cmd("down")
     if volumes:
-        from ..lib.confirm_token import format_preview, generate_token, validate_token
-        from ..output import output_error
+        from ..lib.confirm_token import confirm_gate
 
         command_key = "docker-down-volumes"
-        if confirm is None:
-            lines = [
-                "DOCKER DOWN --volumes will:",
-                "  Stop all containers in the compose stack",
-                "  DESTROY all named volumes (PostgreSQL, Redis, Hatchet data)",
-                "",
-                "This permanently deletes all database contents and cached state.",
-            ]
-            token = generate_token(command_key)
-            print(format_preview("st docker down --volumes", lines, token))
-            raise typer.Exit(0)
-
-        if not validate_token(command_key, confirm):
-            output_error(
-                "Invalid or expired confirm token.\n"
-                "  Run `st docker down --volumes` to preview and get a new token."
-            )
-            raise typer.Exit(1)
+        preview_lines = [
+            "DOCKER DOWN --volumes will:",
+            "  Stop all containers in the compose stack",
+            "  DESTROY all named volumes (PostgreSQL, Redis, Hatchet data)",
+            "",
+            "This permanently deletes all database contents and cached state.",
+        ]
+        confirm_gate(command_key, confirm, preview_lines, "st docker down --volumes")
         args.append("--volumes")
     _run(args, stream=True, env=compose_env())
 

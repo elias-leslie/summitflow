@@ -14,7 +14,7 @@ from ..lib.checkpoint import (
     get_snapshot_info,
     remove_snapshot,
 )
-from ..lib.confirm_token import format_preview, generate_token, validate_token
+from ..lib.confirm_token import confirm_gate
 from ..output import output_error
 
 
@@ -175,23 +175,12 @@ def abandon_task(
     subtask_branches = get_subtask_branches(task_id)
     dirty_files = get_dirty_files()
 
-    if confirm is None:
-        # First pass: preview + token
-        preview_lines = _build_preview_lines(
-            task_id, subtask_branches, has_snapshot, snapshot_info,
-            unmerged, dirty_files,
-        )
-        token = generate_token(command_key)
-        print(format_preview(f"st abandon {task_id}", preview_lines, token))
-        raise typer.Exit(0)
+    preview_lines = _build_preview_lines(
+        task_id, subtask_branches, has_snapshot, snapshot_info,
+        unmerged, dirty_files,
+    )
 
-    # Second pass: validate and execute
-    if not validate_token(command_key, confirm):
-        output_error(
-            "Invalid or expired confirm token.\n"
-            "  Run `st abandon " + task_id + "` to preview and get a new token."
-        )
-        raise typer.Exit(1)
+    confirm_gate(command_key, confirm, preview_lines, f"st abandon {task_id}")
 
     try:
         client.update_status(task_id, "cancelled")

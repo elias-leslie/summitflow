@@ -215,11 +215,11 @@ def delete_backup(
     ] = None,
 ) -> None:
     """Delete a backup record. Two-pass confirmation required."""
-    from ..lib.confirm_token import format_preview, generate_token, validate_token
-    from ..output import output_error
+    from ..lib.confirm_token import confirm_gate
 
     command_key = f"backup-delete-{backup_id}"
 
+    preview_lines: list[str] = []
     if confirm is None:
         try:
             backup = _get_project_api().get_backup(backup_id)
@@ -228,23 +228,15 @@ def delete_backup(
             return
         note = backup.get("note", "-") if isinstance(backup, dict) else "-"
         created = backup.get("created_at", "?") if isinstance(backup, dict) else "?"
-        lines = [
+        preview_lines = [
             f"DELETE BACKUP: {backup_id}",
             f"  Note: {note}",
             f"  Created: {created}",
             "",
             "This will permanently delete the backup record.",
         ]
-        token = generate_token(command_key)
-        print(format_preview(f"st backup delete {backup_id}", lines, token))
-        raise typer.Exit(0)
 
-    if not validate_token(command_key, confirm):
-        output_error(
-            "Invalid or expired confirm token.\n"
-            f"  Run `st backup delete {backup_id}` to preview and get a new token."
-        )
-        raise typer.Exit(1)
+    confirm_gate(command_key, confirm, preview_lines, f"st backup delete {backup_id}")
 
     try:
         _get_project_api().delete_backup(backup_id)

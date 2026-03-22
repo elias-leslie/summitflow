@@ -13,12 +13,15 @@ from cli.commands._abandon_helpers import abandon_task
 def test_abandon_preview_does_not_capture_or_delete() -> None:
     client = MagicMock()
 
+    def _raise_exit(*args, **kwargs):
+        raise typer.Exit(0)
+
     with (
         patch("cli.commands._abandon_helpers.get_snapshot_info", return_value={"project_id": "test", "worktree_path": "/tmp/task-123"}),
         patch("cli.commands._abandon_helpers.count_unmerged_commits", return_value=0),
         patch("cli.commands._abandon_helpers.get_subtask_branches", return_value=[]),
         patch("cli.commands._abandon_helpers.get_dirty_files", return_value=[]),
-        patch("cli.commands._abandon_helpers.generate_token", return_value="deadbeef"),
+        patch("cli.commands._abandon_helpers.confirm_gate", side_effect=_raise_exit),
         patch("cli.commands._abandon_helpers.capture_lifecycle_baseline") as mock_capture,
         patch("cli.commands._abandon_helpers.remove_snapshot") as mock_remove,
         patch("cli.commands._abandon_helpers.delete_task_branches") as mock_delete,
@@ -53,7 +56,7 @@ def test_abandon_confirm_captures_before_removing_snapshot() -> None:
         patch("cli.commands._abandon_helpers.count_unmerged_commits", return_value=2),
         patch("cli.commands._abandon_helpers.get_subtask_branches", return_value=["task-123/1.1"]),
         patch("cli.commands._abandon_helpers.get_dirty_files", return_value=["foo.py"]),
-        patch("cli.commands._abandon_helpers.validate_token", return_value=True),
+        patch("cli.commands._abandon_helpers.confirm_gate"),
         patch("cli.commands._abandon_helpers.capture_lifecycle_baseline", side_effect=_capture) as mock_capture,
         patch("cli.commands._abandon_helpers.remove_snapshot", side_effect=_remove) as mock_remove,
         patch("cli.commands._abandon_helpers.delete_task_branches", side_effect=_delete) as mock_delete,

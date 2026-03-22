@@ -8,7 +8,7 @@ import typer
 
 from ..config import get_config
 from ..lib.autosnapshot import DEFAULT_POLICY, prune_all
-from ..lib.confirm_token import format_preview, generate_token, validate_token
+from ..lib.confirm_token import confirm_gate
 from ..lib.quick_snapshots import (
     SnapshotError,
     capture_snapshot,
@@ -178,8 +178,9 @@ def rollback_command(
     config = get_config()
     command_key = f"rollback-{config.project_id}-{target}"
 
+    # Build preview lines (only needed for first pass, but confirm_gate handles the branching)
+    preview_lines: list[str] = []
     if confirm is None:
-        # First pass: preview
         try:
             snapshots = list_snapshots(project_id=config.project_id)
             from ..lib.quick_snapshots import _find_snapshot, _resolve_repo_root, resolve_scope
@@ -191,7 +192,7 @@ def rollback_command(
             typer.echo(f"Error: {exc}", err=True)
             raise typer.Exit(1) from None
 
-        lines = [
+        preview_lines = [
             f"ROLLBACK will destructively replace lane: {scope.scope_name}",
             f"  Snapshot: {snapshot.id}",
             f"  Name: {_compact_name(snapshot.name)}",
@@ -202,17 +203,8 @@ def rollback_command(
             "Current lane contents will be permanently destroyed.",
             "Consider 'st recover' instead for non-destructive restoration.",
         ]
-        token = generate_token(command_key)
-        print(format_preview(f"st rollback {target}", lines, token))
-        raise typer.Exit(0)
 
-    # Second pass: validate and execute
-    if not validate_token(command_key, confirm):
-        output_error(
-            "Invalid or expired confirm token.\n"
-            f"  Run `st rollback {target}` to preview and get a new token."
-        )
-        raise typer.Exit(1)
+    confirm_gate(command_key, confirm, preview_lines, f"st rollback {target}")
 
     try:
         snapshot = restore_snapshot(target, project_id=config.project_id)
