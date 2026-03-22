@@ -6,7 +6,7 @@ from typing import Any
 import psycopg
 from fastapi import HTTPException
 
-from ...storage.connection import get_connection, get_cursor, get_cursor, get_cursor
+from ...storage.connection import get_connection, get_cursor
 from .models import ProjectResponse, ProjectStats, ProjectWithStats
 
 

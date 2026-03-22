@@ -7,7 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 
 from ...schemas.project import ProjectServicesResponse
 from ...services import explorer
-from ...storage.connection import get_connection, get_cursor, get_cursor, get_cursor
+from ...storage.connection import get_connection, get_cursor
 from ..projects_services import get_project_services
 from . import agents
 from .pulse import router as pulse_router

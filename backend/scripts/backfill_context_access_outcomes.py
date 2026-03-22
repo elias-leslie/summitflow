@@ -24,7 +24,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 import lib.ensure_backend_venv  # noqa: F401
 
-from app.storage.connection import get_connection, get_cursor, get_cursor, get_cursor
+from app.storage.connection import get_connection, get_cursor
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
