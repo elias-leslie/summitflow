@@ -225,7 +225,7 @@ def cleanup_worktrees(
     confirm: Annotated[str | None, typer.Option("--confirm", help="Confirm token from preview run")] = None,
 ) -> None:
     """List orphaned/stale worktrees with recommendations. Actions: SAFE, MERGED, NEEDS_MERGE, CONFLICT, REVIEW, ACTIVE."""
-    from ..lib.confirm_token import format_preview, generate_token, validate_token
+    from ..lib.confirm_token import confirm_gate
 
     project_id = get_project_id(all_projects)
     worktrees = get_active_worktrees(project_id)
@@ -263,26 +263,16 @@ def cleanup_worktrees(
 
     # --force requires two-pass confirmation
     command_key = f"cleanup-worktrees-{project_id or 'all'}"
-    if confirm is None:
-        lines = [
-            f"FORCE CLEANUP will remove ALL {len(analyses)} worktrees:",
-        ]
-        for analysis in analyses:
-            action = analysis.action.value if hasattr(analysis.action, "value") else str(analysis.action)
-            lines.append(f"  {analysis.worktree.path} [{action}]")
-        if categorization.needs_merge:
-            lines.append(f"  WARNING: {len(categorization.needs_merge)} have unmerged commits")
-        token = generate_token(command_key)
-        scope = "--all" if all_projects else ""
-        print(format_preview(f"st cleanup worktrees --force {scope}".strip(), lines, token))
-        raise typer.Exit(0)
-
-    if not validate_token(command_key, confirm):
-        output_error(
-            "Invalid or expired confirm token.\n"
-            "  Run `st cleanup worktrees --force` to preview and get a new token."
-        )
-        raise typer.Exit(1)
+    preview_lines = [
+        f"FORCE CLEANUP will remove ALL {len(analyses)} worktrees:",
+    ]
+    for analysis in analyses:
+        action = analysis.action.value if hasattr(analysis.action, "value") else str(analysis.action)
+        preview_lines.append(f"  {analysis.worktree.path} [{action}]")
+    if categorization.needs_merge:
+        preview_lines.append(f"  WARNING: {len(categorization.needs_merge)} have unmerged commits")
+    scope = "--all" if all_projects else ""
+    confirm_gate(command_key, confirm, preview_lines, f"st cleanup worktrees --force {scope}".strip())
 
     typer.echo("")
     if dry_run:
@@ -395,7 +385,7 @@ def cleanup_lanes(
     import os
 
     from ..lib.checkpoint import get_stale_checkpoints, remove_snapshot
-    from ..lib.confirm_token import format_preview, generate_token, validate_token
+    from ..lib.confirm_token import confirm_gate
     from ..lib.quick_snapshots import (
         LaneInspection,
         OrphanedSnapshotDir,
@@ -470,65 +460,62 @@ def cleanup_lanes(
     target_label = lane_name or "all-lanes"
     command_key = f"cleanup-lanes-{scope_label}-{target_label}"
 
-    if confirm is None:
-        # First pass: preview
-        lines: list[str] = []
-        for insp in inspections:
-            wt_label = "git-worktree" if insp.is_git_worktree else "orphan"
-            lines.append(f"LANE {insp.project_id}/{insp.lane_name} [{wt_label}]")
-            lines.append(f"  subvolume: {insp.lane_path}")
-            if insp.branch:
-                lines.append(f"  branch:   {insp.branch}")
-            if insp.snapshot_paths:
-                lines.append(f"  snapshots: {len(insp.snapshot_paths)}")
-                for sp in insp.snapshot_paths:
-                    lines.append(f"    {sp.name}")
-            else:
-                lines.append("  snapshots: 0")
-            if insp.manifest_dir:
-                lines.append(f"  manifest:  {insp.manifest_dir}")
+    # Build preview lines for confirm gate
+    preview_lines: list[str] = []
+    for insp in inspections:
+        wt_label = "git-worktree" if insp.is_git_worktree else "orphan"
+        preview_lines.append(f"LANE {insp.project_id}/{insp.lane_name} [{wt_label}]")
+        preview_lines.append(f"  subvolume: {insp.lane_path}")
+        if insp.branch:
+            preview_lines.append(f"  branch:   {insp.branch}")
+        if insp.snapshot_paths:
+            preview_lines.append(f"  snapshots: {len(insp.snapshot_paths)}")
+            for sp in insp.snapshot_paths:
+                preview_lines.append(f"    {sp.name}")
+        else:
+            preview_lines.append("  snapshots: 0")
+        if insp.manifest_dir:
+            preview_lines.append(f"  manifest:  {insp.manifest_dir}")
 
-        for orphan in orphaned_snap_dirs:
-            lines.append(f"ORPHAN-SNAPSHOTS {orphan.project_id}/{orphan.lane_name} [lane-deleted]")
-            lines.append(f"  snapshot-dir: {orphan.snapshot_dir}")
-            lines.append(f"  snapshots: {len(orphan.snapshot_paths)}")
-            for sp in orphan.snapshot_paths:
-                lines.append(f"    {sp.name}")
-            if orphan.manifest_dir:
-                lines.append(f"  manifest:  {orphan.manifest_dir}")
+    for orphan in orphaned_snap_dirs:
+        preview_lines.append(f"ORPHAN-SNAPSHOTS {orphan.project_id}/{orphan.lane_name} [lane-deleted]")
+        preview_lines.append(f"  snapshot-dir: {orphan.snapshot_dir}")
+        preview_lines.append(f"  snapshots: {len(orphan.snapshot_paths)}")
+        for sp in orphan.snapshot_paths:
+            preview_lines.append(f"    {sp.name}")
+        if orphan.manifest_dir:
+            preview_lines.append(f"  manifest:  {orphan.manifest_dir}")
 
-        for checkpoint in stale_checkpoints:
-            lines.append(f"STALE-CHECKPOINT {checkpoint.project_id}/{checkpoint.task_id}")
-            lines.append(f"  worktree: {checkpoint.worktree_path or '-'}")
-            lines.append(f"  created:  {checkpoint.created_at}")
+    for checkpoint in stale_checkpoints:
+        preview_lines.append(f"STALE-CHECKPOINT {checkpoint.project_id}/{checkpoint.task_id}")
+        preview_lines.append(f"  worktree: {checkpoint.worktree_path or '-'}")
+        preview_lines.append(f"  created:  {checkpoint.created_at}")
 
-        total_subvols = (
-            sum(insp.total_items for insp in inspections)
-            + sum(o.total_items for o in orphaned_snap_dirs)
-        )
-        total_targets = len(inspections) + len(orphaned_snap_dirs) + len(stale_checkpoints)
-        summary = "DELETE explicit lane target(s)" if lane_name else "DELETE orphaned target(s)"
-        lines.insert(0, f"{summary}: {total_targets} target(s), {total_subvols} subvolume(s):")
-        lines.insert(1, "")
+    total_subvols = (
+        sum(insp.total_items for insp in inspections)
+        + sum(o.total_items for o in orphaned_snap_dirs)
+    )
+    total_targets = len(inspections) + len(orphaned_snap_dirs) + len(stale_checkpoints)
+    summary = "DELETE explicit lane target(s)" if lane_name else "DELETE orphaned target(s)"
+    preview_lines.insert(0, f"{summary}: {total_targets} target(s), {total_subvols} subvolume(s):")
+    preview_lines.insert(1, "")
+
+    cmd_parts = ["st cleanup lanes"]
+    if lane_name:
+        cmd_parts.append(lane_name)
+    if all_projects:
+        cmd_parts.append("--all")
+
+    if confirm is None and dry_run:
+        # Dry-run preview doesn't need token
+        from ..lib.confirm_token import format_preview, generate_token
 
         token = generate_token(command_key)
-        cmd_parts = ["st cleanup lanes"]
-        if lane_name:
-            cmd_parts.append(lane_name)
-        if all_projects:
-            cmd_parts.append("--all")
-        print(format_preview(" ".join(cmd_parts), lines, token))
-        if dry_run:
-            typer.echo("  (dry-run: no token needed)")
+        print(format_preview(" ".join(cmd_parts), preview_lines, token))
+        typer.echo("  (dry-run: no token needed)")
         raise typer.Exit(0)
 
-    # Second pass: validate and execute
-    if not validate_token(command_key, confirm):
-        output_error(
-            "Invalid or expired confirm token.\n"
-            "  Run the command without --confirm to preview and get a new token."
-        )
-        raise typer.Exit(1)
+    confirm_gate(command_key, confirm, preview_lines, " ".join(cmd_parts))
 
     if dry_run:
         typer.echo("DRY RUN — would delete:")
@@ -595,7 +582,7 @@ def cleanup_snapshots(
     """Delete legacy snapshot residue outside the current managed lane/project layout."""
     import os
 
-    from ..lib.confirm_token import format_preview, generate_token, validate_token
+    from ..lib.confirm_token import confirm_gate
     from ..lib.quick_snapshots import delete_snapshot_residue, find_snapshot_residue
     from ..lib.worktree_paths import workspaces_root_available
 
@@ -620,30 +607,18 @@ def cleanup_snapshots(
     target_label = residue_name or "all-snapshots"
     command_key = f"cleanup-snapshots-{scope_label}-{target_label}"
 
-    if confirm is None:
-        lines = [f"DELETE legacy snapshot residue: {len(residues)} target(s):", ""]
-        for residue in residues:
-            owner = residue.project_id or "unowned"
-            lines.append(f"SNAPSHOT-RESIDUE {owner}/{residue.residue_name} [{residue.residue_type}]")
-            lines.append(f"  path: {residue.path}")
+    preview_lines = [f"DELETE legacy snapshot residue: {len(residues)} target(s):", ""]
+    for residue in residues:
+        owner = residue.project_id or "unowned"
+        preview_lines.append(f"SNAPSHOT-RESIDUE {owner}/{residue.residue_name} [{residue.residue_type}]")
+        preview_lines.append(f"  path: {residue.path}")
 
-        token = generate_token(command_key)
-        cmd_parts = ["st cleanup snapshots"]
-        if residue_name:
-            cmd_parts.append(residue_name)
-        if all_projects:
-            cmd_parts.append("--all")
-        print(format_preview(" ".join(cmd_parts), lines, token))
-        if dry_run:
-            typer.echo("  (dry-run: no token needed)")
-        raise typer.Exit(0)
-
-    if not validate_token(command_key, confirm):
-        output_error(
-            "Invalid or expired confirm token.\n"
-            "  Run the command without --confirm to preview and get a new token."
-        )
-        raise typer.Exit(1)
+    cmd_parts = ["st cleanup snapshots"]
+    if residue_name:
+        cmd_parts.append(residue_name)
+    if all_projects:
+        cmd_parts.append("--all")
+    confirm_gate(command_key, confirm, preview_lines, " ".join(cmd_parts))
 
     if dry_run:
         typer.echo("DRY RUN — would delete:")

@@ -49,6 +49,36 @@ def validate_token(command_key: str, token: str) -> bool:
     return True
 
 
+def confirm_gate(
+    command_key: str,
+    confirm: str | None,
+    preview_lines: list[str],
+    preview_cmd: str,
+) -> None:
+    """Two-pass confirm gate for destructive commands.
+
+    Call this before executing the destructive action. It either:
+    - Shows the preview and exits (when confirm is None), or
+    - Validates the token and exits with error (when token is invalid), or
+    - Returns normally (when token is valid) — proceed with the action.
+    """
+    import typer
+
+    from ..output import output_error
+
+    if confirm is None:
+        token = generate_token(command_key)
+        print(format_preview(preview_cmd, preview_lines, token))
+        raise typer.Exit(0)
+
+    if not validate_token(command_key, confirm):
+        output_error(
+            "Invalid or expired confirm token.\n"
+            "  Run the command without --confirm to preview and get a new token."
+        )
+        raise typer.Exit(1)
+
+
 def format_preview(command_hint: str, lines: list[str], token: str) -> str:
     """Format a standard preview block with confirm hint.
 
