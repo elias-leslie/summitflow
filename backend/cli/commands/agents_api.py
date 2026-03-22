@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from ._api_paths import AGENTS_BASE_PATH, AGENTS_PREVIEW_PATH
 from .memory_api import agent_hub_request
 
 
 def agents_api(method: str, path: str, **kwargs: Any) -> dict[str, Any]:
     """Make an Agent Hub agent-management request."""
-    return agent_hub_request(method, f"/api/agents{path}", tool_name="st agents", **kwargs)
+    return agent_hub_request(method, f"{AGENTS_BASE_PATH}{path}", tool_name="st agents", **kwargs)
 
 
 def agent_preview_api(slug: str, **kwargs: Any) -> dict[str, Any]:
@@ -21,7 +22,7 @@ def agent_preview_api(slug: str, **kwargs: Any) -> dict[str, Any]:
     }
     return agent_hub_request(
         "GET",
-        f"/api/agents/{slug}/preview",
+        AGENTS_PREVIEW_PATH.format(slug=slug),
         tool_name="st agents",
         params=params,
     )

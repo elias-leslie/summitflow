@@ -123,11 +123,12 @@ def _trigger_health_check(task_id: str, project_id: str | None) -> None:
     if not project_id:
         return
     try:
+        from ._api_paths import SITE_HEALTH_CHECK_TRIGGER_PATH
         from .memory_api import agent_hub_request
 
         agent_hub_request(
             "POST",
-            "/api/site-health-check/trigger",
+            SITE_HEALTH_CHECK_TRIGGER_PATH,
             json={"project_id": project_id, "task_id": task_id},
             tool_name="st done",
         )

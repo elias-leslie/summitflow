@@ -9,6 +9,7 @@ from typing import Any
 import typer
 
 from ..output_context import OutputContext
+from ._api_paths import MEMORY_BATCH_UPDATE_PATH
 from .memory_api import agent_hub_request
 from .memory_formatters import format_batch_tier_compact
 
@@ -90,7 +91,7 @@ def batch_tier_impl(
 
     result = agent_hub_request(
         "POST",
-        "/api/memory/batch-update",
+        MEMORY_BATCH_UPDATE_PATH,
         json={"updates": updates},
         tool_name="st memory batch-tier",
     )

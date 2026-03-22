@@ -10,6 +10,7 @@ import typer
 from ..config import get_agent_hub_url
 from ..output import output_error, output_json
 from ..output_context import OutputContext
+from ._api_paths import ACCESS_CONTROL_METRICS_PATH
 from ._http_errors import parse_error_detail, raise_connect_error, raise_timeout_error
 
 app = typer.Typer(help="Tool usage metrics (Agent Hub)")
@@ -90,7 +91,7 @@ def status(
         st tools status --limit 20
     """
     result = _api_request(
-        "/api/access-control/metrics",
+        ACCESS_CONTROL_METRICS_PATH,
         params={"hours": hours, "limit": limit},
     )
 

@@ -4,6 +4,11 @@ from __future__ import annotations
 
 import typer
 
+from ._api_paths import (
+    MEMORY_EPISODE_PATH,
+    MEMORY_EPISODE_PROPERTIES_PATH,
+    MEMORY_EPISODE_TAGS_PATH,
+)
 from .memory_api import agent_hub_request
 from .memory_validation import validate_summary_length
 
@@ -99,12 +104,12 @@ def validate_save_inputs(tier: str, confidence: int, summary: str) -> str:
 
 def fetch_existing_episode(uuid: str) -> dict[str, object]:
     """Fetch an existing episode, raising on error."""
-    return agent_hub_request("GET", f"/api/memory/episode/{uuid}", tool_name="st memory update")
+    return agent_hub_request("GET", MEMORY_EPISODE_PATH.format(uuid=uuid), tool_name="st memory update")
 
 
 def fetch_episode_tags(uuid: str) -> list[str]:
     """Fetch current tags for an episode."""
-    result = agent_hub_request("GET", f"/api/memory/episodes/{uuid}/tags", tool_name="st memory update")
+    result = agent_hub_request("GET", MEMORY_EPISODE_TAGS_PATH.format(uuid=uuid), tool_name="st memory update")
     return [str(tag) for tag in result.get("tags", [])]
 
 
@@ -126,7 +131,7 @@ def update_episode_content_or_tier(
 
     result = agent_hub_request(
         "PATCH",
-        f"/api/memory/episode/{episode_uuid}",
+        MEMORY_EPISODE_PATH.format(uuid=episode_uuid),
         json=payload,
         tool_name="st memory update",
     )
@@ -160,7 +165,7 @@ def patch_episode_properties(
 
     patch_result = agent_hub_request(
         "PATCH",
-        f"/api/memory/episode/{target_uuid}/properties",
+        MEMORY_EPISODE_PROPERTIES_PATH.format(uuid=target_uuid),
         json=props,
         tool_name="st memory update",
     )
@@ -181,7 +186,7 @@ def replace_episode_tags(target_uuid: str, tags: list[str]) -> None:
     """Replace tags on an episode."""
     result = agent_hub_request(
         "PUT",
-        f"/api/memory/episodes/{target_uuid}/tags",
+        MEMORY_EPISODE_TAGS_PATH.format(uuid=target_uuid),
         json={"tags": tags},
         tool_name="st memory update",
     )

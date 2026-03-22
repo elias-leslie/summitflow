@@ -6,6 +6,7 @@ from typing import Any
 
 import typer
 
+from ._api_paths import MEMORY_BATCH_UPDATE_PATH, MEMORY_EPISODE_PATH
 from .memory_api import agent_hub_request
 
 
@@ -18,7 +19,7 @@ def apply_content_changes(content_changes: list[dict[str, Any]]) -> tuple[int, i
         try:
             update_result = agent_hub_request(
                 "PATCH",
-                f"/api/memory/episode/{change['uuid']}",
+                MEMORY_EPISODE_PATH.format(uuid=change['uuid']),
                 json={
                     "content": change["new_content"],
                     "injection_tier": change["tier"],
@@ -45,7 +46,7 @@ def apply_property_updates(property_updates: list[dict[str, Any]]) -> tuple[int,
 
     result = agent_hub_request(
         "POST",
-        "/api/memory/batch-update",
+        MEMORY_BATCH_UPDATE_PATH,
         json={"updates": property_updates},
         tool_name="st memory import",
     )

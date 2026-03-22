@@ -6,6 +6,7 @@ import typer
 
 from ..output import output_json
 from ..output_context import OutputContext
+from ._api_paths import MEMORY_CLEANUP_ORPHANED_PATH, MEMORY_CLEANUP_PATH
 from .memory_api import agent_hub_request
 from .memory_formatters import format_orphaned_cleanup_compact, format_stale_cleanup_compact
 
@@ -18,7 +19,7 @@ def _cleanup_orphaned(
     """Remove orphaned episodes (not linked to any session)."""
     result = agent_hub_request(
         "POST",
-        "/api/memory/cleanup-orphaned",
+        MEMORY_CLEANUP_ORPHANED_PATH,
         scope=scope,
         scope_id=scope_id,
         tool_name="st memory cleanup --orphaned",
@@ -39,7 +40,7 @@ def _cleanup_stale(
     """Remove stale episodes based on TTL."""
     result = agent_hub_request(
         "POST",
-        f"/api/memory/cleanup?ttl_days={ttl_days}",
+        f"{MEMORY_CLEANUP_PATH}?ttl_days={ttl_days}",
         scope=scope,
         scope_id=scope_id,
         tool_name="st memory cleanup --stale",

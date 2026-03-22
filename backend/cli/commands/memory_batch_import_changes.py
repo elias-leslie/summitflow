@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ._api_paths import MEMORY_LIST_PATH
 from .memory_api import agent_hub_request
 
 
@@ -15,7 +16,7 @@ def fetch_current_episodes() -> dict[str, dict[str, Any]]:
     while True:
         current_result = agent_hub_request(
             "GET",
-            "/api/memory/list",
+            MEMORY_LIST_PATH,
             params=params,
             tool_name="st memory import",
         )

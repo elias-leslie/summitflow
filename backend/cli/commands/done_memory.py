@@ -40,12 +40,13 @@ def report_task_outcome(
     Non-blocking — failures are logged but never block task completion.
     """
     try:
+        from ._api_paths import MEMORY_TASK_OUTCOME_PATH
         from .memory_api import agent_hub_request
 
         payload = _build_outcome_payload(task_id, succeeded, project_id, started_at)
         agent_hub_request(
             "POST",
-            "/api/memory/task-outcome",
+            MEMORY_TASK_OUTCOME_PATH,
             json=payload,
             tool_name="st done",
         )

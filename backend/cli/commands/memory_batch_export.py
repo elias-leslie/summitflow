@@ -9,6 +9,7 @@ from typing import Any
 
 import typer
 
+from ._api_paths import MEMORY_BATCH_GET_PATH, MEMORY_LIST_PATH
 from .memory_api import agent_hub_request
 
 MINIMAL_EXPORT_FIELDS = [
@@ -57,7 +58,7 @@ def _fetch_episodes_by_uuids(
     """Fetch specific episodes by UUID."""
     result = agent_hub_request(
         "POST",
-        "/api/memory/batch-get",
+        MEMORY_BATCH_GET_PATH,
         json={"uuids": uuids},
         scope=scope,
         scope_id=scope_id,
@@ -78,7 +79,7 @@ def _fetch_episodes_by_tier(
 
     result = agent_hub_request(
         "GET",
-        "/api/memory/list",
+        MEMORY_LIST_PATH,
         params=params,
         scope=scope,
         scope_id=scope_id,
@@ -90,7 +91,7 @@ def _fetch_episodes_by_tier(
         params["cursor"] = result.get("cursor")
         result = agent_hub_request(
             "GET",
-            "/api/memory/list",
+            MEMORY_LIST_PATH,
             params=params,
             scope=scope,
             scope_id=scope_id,

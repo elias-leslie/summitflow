@@ -12,7 +12,9 @@ from ..lib.credentials import load_credentials
 
 def _get_url(path: str = "") -> str:
     """Build full persona API URL."""
-    return f"{get_agent_hub_url()}/api/persona{path}"
+    from ._api_paths import PERSONA_BASE_PATH
+
+    return f"{get_agent_hub_url()}{PERSONA_BASE_PATH}{path}"
 
 
 def _get_headers() -> dict[str, str]:
@@ -59,7 +61,9 @@ def update_personality(personality: str, reason: str = "") -> dict[str, Any]:
 
 def _heartbeat_url(path: str = "") -> str:
     """Build heartbeat API URL."""
-    return f"{get_agent_hub_url()}/api/heartbeat{path}"
+    from ._api_paths import HEARTBEAT_BASE_PATH
+
+    return f"{get_agent_hub_url()}{HEARTBEAT_BASE_PATH}{path}"
 
 
 def trigger_heartbeat(target_project_id: str | None = None) -> dict[str, Any]:

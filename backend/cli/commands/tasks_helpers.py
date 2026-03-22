@@ -79,7 +79,9 @@ def fetch_triggered_references(task_type: str) -> list[dict[str, Any]]:
     from ..config import get_agent_hub_url
 
     try:
-        url = f"{get_agent_hub_url()}/api/memory/triggered-references"
+        from ._api_paths import MEMORY_TRIGGERED_REFS_PATH
+
+        url = f"{get_agent_hub_url()}{MEMORY_TRIGGERED_REFS_PATH}"
         response = httpx.get(url, params={"task_type": task_type}, timeout=5.0)
         if response.status_code == 200:
             data: dict[str, Any] = response.json()
@@ -97,7 +99,9 @@ def fetch_phase_triggered_references(phase: str) -> list[dict[str, Any]]:
     from ..config import get_agent_hub_url
 
     try:
-        url = f"{get_agent_hub_url()}/api/memory/phase-triggered-references"
+        from ._api_paths import MEMORY_PHASE_TRIGGERED_REFS_PATH
+
+        url = f"{get_agent_hub_url()}{MEMORY_PHASE_TRIGGERED_REFS_PATH}"
         response = httpx.get(url, params={"phase": phase}, timeout=5.0)
         if response.status_code == 200:
             data: dict[str, Any] = response.json()

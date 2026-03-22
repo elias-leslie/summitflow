@@ -6,6 +6,18 @@ import typer
 
 from ..output import output_error, output_json
 from ..output_context import OutputContext
+from ._api_paths import (
+    MEMORY_BATCH_GET_PATH,
+    MEMORY_BULK_DELETE_PATH,
+    MEMORY_BULK_TAG_PATH,
+    MEMORY_EPISODE_PATH,
+    MEMORY_EPISODE_RESTORE_PATH,
+    MEMORY_EPISODE_REVISIONS_PATH,
+    MEMORY_LIST_PATH,
+    MEMORY_SAVE_LEARNING_PATH,
+    MEMORY_SEARCH_PATH,
+    MEMORY_STATS_PATH,
+)
 from ._memory_crud_helpers import (
     build_save_payload,
     fetch_episode_tags,
@@ -35,7 +47,7 @@ from .memory_validation import validate_content_format, validate_episode_content
 
 def stats_impl(out: OutputContext, scope: str, scope_id: str | None) -> None:
     result = agent_hub_request(
-        "GET", "/api/memory/stats", scope=scope, scope_id=scope_id, tool_name="st memory stats"
+        "GET", MEMORY_STATS_PATH, scope=scope, scope_id=scope_id, tool_name="st memory stats"
     )
     if out.is_compact:
         format_stats_compact(result)
@@ -62,7 +74,7 @@ def save_impl(
     validate_content_format(content, summary, tier)
     payload = build_save_payload(content, summary, tier, confidence, context, pinned, trigger_types, change_reason)
     result = agent_hub_request(
-        "POST", "/api/memory/save-learning", json=payload,
+        "POST", MEMORY_SAVE_LEARNING_PATH, json=payload,
         scope=scope, scope_id=scope_id, tool_name="st memory save",
     )
     parsed_tags = parse_tags_csv(tags)
@@ -88,7 +100,7 @@ def list_impl(
     if tier:
         params["category"] = tier
     result = agent_hub_request(
-        "GET", "/api/memory/list", params=params,
+        "GET", MEMORY_LIST_PATH, params=params,
         scope=scope, scope_id=scope_id, tool_name="st memory list",
     )
     if out.is_compact:
@@ -110,7 +122,7 @@ def search_impl(
     if tier:
         params["category"] = tier
     result = agent_hub_request(
-        "GET", "/api/memory/search", params=params,
+        "GET", MEMORY_SEARCH_PATH, params=params,
         scope=scope, scope_id=scope_id, tool_name="st memory search",
     )
     if out.is_compact:
@@ -126,7 +138,7 @@ def get_impl(out: OutputContext, uuids: list[str]) -> None:
 
     if len(uuids) > 1:
         result = agent_hub_request(
-            "POST", "/api/memory/batch-get", json={"uuids": uuids}, tool_name="st memory get"
+            "POST", MEMORY_BATCH_GET_PATH, json={"uuids": uuids}, tool_name="st memory get"
         )
         if out.is_compact:
             format_batch_get_compact(result)
@@ -134,7 +146,7 @@ def get_impl(out: OutputContext, uuids: list[str]) -> None:
             output_json(result)
         return
 
-    result = agent_hub_request("GET", f"/api/memory/episode/{uuids[0]}", tool_name="st memory get")
+    result = agent_hub_request("GET", MEMORY_EPISODE_PATH.format(uuid=uuids[0]), tool_name="st memory get")
     if out.is_compact:
         format_get_compact(result)
     else:
@@ -147,7 +159,7 @@ def delete_impl(uuids: list[str], *, change_reason: str | None = None) -> None:
         return
     result = agent_hub_request(
         "POST",
-        "/api/memory/bulk-delete",
+        MEMORY_BULK_DELETE_PATH,
         json={"ids": uuids, "change_reason": change_reason},
         tool_name="st memory delete",
     )
@@ -159,7 +171,7 @@ def delete_impl(uuids: list[str], *, change_reason: str | None = None) -> None:
 def _delete_single(uuid: str, *, change_reason: str | None = None) -> None:
     result = agent_hub_request(
         "DELETE",
-        f"/api/memory/episode/{uuid}",
+        MEMORY_EPISODE_PATH.format(uuid=uuid),
         params={"change_reason": change_reason} if change_reason else None,
         tool_name="st memory delete",
     )
@@ -283,7 +295,7 @@ def tag_impl(
 
     result = agent_hub_request(
         "POST",
-        "/api/memory/episodes/bulk-tag",
+        MEMORY_BULK_TAG_PATH,
         json={
             "uuids": uuids,
             "add_tags": parsed_add_tags,
@@ -300,7 +312,7 @@ def revisions_impl(out: OutputContext, uuid: str, limit: int) -> None:
     """Fetch immutable revision history for one memory episode."""
     result = agent_hub_request(
         "GET",
-        f"/api/memory/episode/{uuid}/revisions",
+        MEMORY_EPISODE_REVISIONS_PATH.format(uuid=uuid),
         params={"limit": limit},
         tool_name="st memory revisions",
     )
@@ -315,7 +327,7 @@ def restore_impl(uuid: str, revision_id: str, *, change_reason: str | None = Non
     payload = {"change_reason": change_reason} if change_reason else {}
     result = agent_hub_request(
         "POST",
-        f"/api/memory/episode/{uuid}/revisions/{revision_id}/restore",
+        MEMORY_EPISODE_RESTORE_PATH.format(uuid=uuid, revision_id=revision_id),
         json=payload,
         tool_name="st memory restore",
     )

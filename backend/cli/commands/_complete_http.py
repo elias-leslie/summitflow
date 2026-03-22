@@ -122,7 +122,9 @@ def stream_complete(
 
     content_parts: list[str] = []
     last_data: dict[str, Any] = {}
-    url = f"{agent_hub_url}/api/complete"
+    from ._api_paths import COMPLETE_PATH
+
+    url = f"{agent_hub_url}{COMPLETE_PATH}"
     http_timeout = httpx.Timeout(connect=5.0, read=timeout, write=30.0, pool=30.0)
     with httpx.Client(timeout=http_timeout) as client, client.stream("POST", url, json=payload, headers=headers) as response:
         if response.status_code >= 400:
@@ -221,4 +223,6 @@ def call_complete(
             raise_connect_error("Agent Hub", agent_hub_url, e)
         except httpx.TimeoutException as e:
             raise_timeout_error("Agent Hub", agent_hub_url, read_timeout, e)
-    return _post_with_retry(f"{agent_hub_url}/api/complete", headers, payload, read_timeout)
+    from ._api_paths import COMPLETE_PATH
+
+    return _post_with_retry(f"{agent_hub_url}{COMPLETE_PATH}", headers, payload, read_timeout)

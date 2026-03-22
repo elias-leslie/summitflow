@@ -13,6 +13,7 @@ from typing import Any, cast
 import typer
 
 from ..output import output_error
+from ._api_paths import MEMORY_SAVE_LEARNING_PATH, MEMORY_SEARCH_PATH
 from ._memory_crud_helpers import (
     build_save_payload,
     fetch_episode_tags,
@@ -109,7 +110,7 @@ def _find_existing_by_tag(skill_tag: str, scope: str, scope_id: str | None) -> d
     """Search for an existing episode with the given skill tag."""
     try:
         result = agent_hub_request(
-            "GET", "/api/memory/search", params={"query": skill_tag, "limit": 5},
+            "GET", MEMORY_SEARCH_PATH, params={"query": skill_tag, "limit": 5},
             scope=scope, scope_id=scope_id, tool_name=_HUB_TOOL,
         )
         for ep in result.get("results", []):
@@ -133,7 +134,7 @@ def _upsert_skill_episode(
             return "would_create"
         result = agent_hub_request(
             "POST",
-            "/api/memory/save-learning",
+            MEMORY_SAVE_LEARNING_PATH,
             json=payload,
             scope=scope,
             scope_id=scope_id,
