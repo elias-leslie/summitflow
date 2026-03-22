@@ -24,7 +24,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 import lib.ensure_backend_venv  # noqa: F401
 
-from app.storage.connection import get_connection
+from app.storage.connection import get_connection, get_cursor, get_cursor, get_cursor
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -111,7 +111,7 @@ def main() -> int:
     logger.info("Starting context_access_log outcome backfill...")
 
     # Check current state
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         null_count, filled_count = _get_outcome_counts(cur)
 
     logger.info("Current state: %d with outcomes, %d without", filled_count, null_count)
@@ -129,7 +129,7 @@ def main() -> int:
     logger.info("  Errors: %d", stats["errors"])
 
     # Verify final state
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute("SELECT COUNT(*) FROM context_access_log WHERE task_outcome IS NULL")
         remaining_row = cur.fetchone()
         assert remaining_row is not None

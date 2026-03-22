@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .connection import get_connection
+from .connection import get_connection, get_cursor
 
 _VALID_DEPENDENCY_TYPES = {"blocks", "discovered-from"}
 
@@ -119,7 +119,7 @@ def remove_dependency(
 
 def get_dependencies(task_id: str) -> list[dict[str, Any]]:
     """Get all dependencies for a task (what this task depends on)."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(_SQL_GET_DEPS, (task_id,))
         rows = cur.fetchall()
     return [
@@ -131,7 +131,7 @@ def get_dependencies(task_id: str) -> list[dict[str, Any]]:
 
 def get_blocking_tasks(task_id: str) -> list[dict[str, Any]]:
     """Get unresolved blocking dependencies for a task (only incomplete blockers)."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(_SQL_BLOCKERS, (task_id,))
         rows = cur.fetchall()
     return [{"id": r[0], "title": r[1], "status": r[2], "priority": r[3]} for r in rows]
@@ -145,7 +145,7 @@ def get_blocking_tasks_batch(task_ids: list[str]) -> dict[str, list[dict[str, An
     """
     if not task_ids:
         return {}
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(_SQL_BLOCKERS_BATCH, (task_ids,))
         rows = cur.fetchall()
     result: dict[str, list[dict[str, Any]]] = {}
@@ -156,7 +156,7 @@ def get_blocking_tasks_batch(task_ids: list[str]) -> dict[str, list[dict[str, An
 
 def is_blocked(task_id: str) -> bool:
     """Check if a task has incomplete blocking dependencies."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(_SQL_IS_BLOCKED, (task_id,))
         result = cur.fetchone()
     return result[0] if result else False

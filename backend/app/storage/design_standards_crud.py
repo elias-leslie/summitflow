@@ -5,7 +5,7 @@ Low-level database operations for design standards management.
 
 from typing import Any
 
-from .connection import get_connection
+from .connection import get_connection, get_cursor
 
 # SQL constants
 _STANDARD_COLS = (
@@ -29,7 +29,7 @@ def _row_to_standard(row: tuple[Any, ...]) -> dict[str, Any]:
 
 def get_base_standard() -> dict[str, Any] | None:
     """Get the base (global) design standard."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             f"SELECT {_STANDARD_COLS} FROM design_standards "
             "WHERE is_base = TRUE AND project_id IS NULL LIMIT 1"
@@ -40,7 +40,7 @@ def get_base_standard() -> dict[str, Any] | None:
 
 def get_standard_by_id(standard_id: int) -> dict[str, Any] | None:
     """Get a design standard by ID."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             f"SELECT {_STANDARD_COLS} FROM design_standards WHERE id = %s",
             (standard_id,),
@@ -51,7 +51,7 @@ def get_standard_by_id(standard_id: int) -> dict[str, Any] | None:
 
 def get_project_standard(project_id: str, name: str | None = None) -> dict[str, Any] | None:
     """Get project-specific design standard."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         if name:
             cur.execute(
                 f"SELECT {_STANDARD_COLS} FROM design_standards "
@@ -70,7 +70,7 @@ def get_project_standard(project_id: str, name: str | None = None) -> dict[str, 
 
 def list_standards(project_id: str | None = None) -> list[dict[str, Any]]:
     """List design standards."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         if project_id:
             cur.execute(
                 f"SELECT {_STANDARD_COLS} FROM design_standards "

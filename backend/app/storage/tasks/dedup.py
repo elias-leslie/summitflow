@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from ..connection import get_connection
+from ..connection import get_cursor
 
 _ACTIVE = "('pending', 'running')"
 _ACTIVE_Q = "('pending', 'running')"
@@ -30,7 +30,7 @@ _ERROR_SUBS = [
 
 def task_exists_for_file(project_id: str, file_path: str) -> bool:
     """Check if a pending/running task targets a specific file path."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             f"SELECT EXISTS (SELECT 1 FROM tasks WHERE project_id = %s"
             f" AND status IN {_ACTIVE}"
@@ -58,7 +58,7 @@ def list_active_tasks_for_file(
         query += " AND task_type = %s"
         params.append(task_type)
     query += " ORDER BY id"
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(query, params)
         return [str(row[0]) for row in cur.fetchall()]
 
@@ -128,7 +128,7 @@ def duplicate_task_exists(
     if exclude_task_id:
         query += " AND id != %s"
         params.append(exclude_task_id)
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(query, params)
         return _find_duplicate_in_rows(cur.fetchall(), new_kw, new_desc_kw)
 
@@ -163,7 +163,7 @@ def _bug_keyword_match(cur: Any, project_id: str, error_kw: set[str]) -> bool:
 def bug_task_exists_for_error(project_id: str, error_title: str) -> bool:
     """True if a bug task already exists for this error (semantic dedup)."""
     normalized, error_kw = _normalize_error_pattern(error_title)
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         if _bug_exact_match(cur, project_id, normalized[:50]):
             return True
         return _bug_keyword_match(cur, project_id, error_kw)

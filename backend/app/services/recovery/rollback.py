@@ -9,7 +9,7 @@ import asyncio
 from typing import Any
 
 from ...logging_config import get_logger
-from ...storage.connection import get_connection
+from ...storage.connection import get_cursor
 
 logger = get_logger(__name__)
 
@@ -51,7 +51,7 @@ def _get_project_root(project_id: str) -> dict[str, Any]:
     Returns:
         Dict with success, root_path, or error.
     """
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute("SELECT root_path FROM projects WHERE id = %s", (project_id,))
         row = cur.fetchone()
         project = {"root_path": row[0]} if row else None

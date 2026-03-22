@@ -10,7 +10,7 @@ import json
 from typing import Any
 
 from ..logging_config import get_logger
-from .connection import get_connection
+from .connection import get_connection, get_cursor
 
 logger = get_logger(__name__)
 
@@ -112,7 +112,7 @@ def get_previous_summary(subtask_id: str) -> dict[str, Any] | None:
     Returns:
         Summary record or None if not found.
     """
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             """
             SELECT id, subtask_id, summary, files_modified, decisions_made, created_at
@@ -139,7 +139,7 @@ def _fetch_handoff_rows(task_id: str, current_subtask_id: str) -> list[tuple[Any
     Returns:
         List of raw DB rows ordered by display_order.
     """
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             """
             SELECT ss.id, ss.subtask_id, ss.summary, ss.files_modified,
@@ -225,7 +225,7 @@ def get_subtask_summary(task_id: str) -> dict[str, Any]:
             - next_subtask_id: ID of next incomplete subtask, or None
             - progress_percent: Completion percentage (0-100)
     """
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             """
             SELECT

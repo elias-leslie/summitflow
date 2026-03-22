@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..connection import get_connection
+from ..connection import get_connection, get_cursor
 from .models import BACKUP_COLUMNS, row_to_backup
 
 
@@ -100,7 +100,7 @@ def get_storage_summary(
         where_clause = ""
         params = []
 
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             f"""
             SELECT
@@ -167,7 +167,7 @@ def get_latest_backup(
     else:
         return None
 
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             f"SELECT {BACKUP_COLUMNS} FROM backups "
             f"WHERE {where} AND status IN ('completed', 'completed_pending_upload') "
@@ -186,7 +186,7 @@ def get_backup_health_summary() -> list[dict[str, Any]]:
         List of dicts with source_id, source_name, source_type, last_success_at,
         failure_count_7d, next_run_at, enabled
     """
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             """
             SELECT
@@ -319,7 +319,7 @@ def promote_pending_upload(backup_id: str, location: str | None = None) -> bool:
 
 def get_pending_upload_backups() -> list[dict[str, Any]]:
     """Get all backups with completed_pending_upload status."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             f"SELECT {BACKUP_COLUMNS} FROM backups "
             "WHERE status = 'completed_pending_upload' "

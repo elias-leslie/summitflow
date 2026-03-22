@@ -1,6 +1,6 @@
 """Scheduled (cron) workflows for SummitFlow.
 
-14 active cron workflows on Hatchet schedule (2 disabled: systemd monitor, browser monitor).
+12 active cron workflows on Hatchet schedule.
 All use ConcurrencyExpression with CANCEL_IN_PROGRESS to prevent overlapping runs.
 
 Schedule philosophy (2026-03-16 tuning):
@@ -20,11 +20,9 @@ from hatchet_sdk import ConcurrencyExpression, ConcurrencyLimitStrategy, Context
 from ..hatchet_app import hatchet
 from .models import (
     EmptyInput,
-    MonitorInput,
     ProjectInput,
     SelfHealingInput,
     StaleCleanupInput,
-    SystemdMonitorInput,
 )
 
 
@@ -171,52 +169,6 @@ async def task_generation_wf(input: ProjectInput, ctx: Context) -> dict[str, Any
     from ..tasks.autonomous.task_generation import generate_tasks_from_scan
 
     return await asyncio.to_thread(generate_tasks_from_scan, input.project_id)
-
-
-@hatchet.task(
-    name="summitflow-monitor-systemd",
-    input_validator=SystemdMonitorInput,
-    execution_timeout="300s",
-    retries=3,
-    backoff_factor=2.0,
-    # DISABLED: Creates noisy bug tasks from transient log errors with broken
-    # dedup (28 pending, 0 ever completed). Runtime errors belong in
-    # observability, not the task system. — 2026-02-20
-    # on_crons=["*/5 * * * *"],
-    concurrency=ConcurrencyExpression(
-        expression="'summitflow-monitor-systemd'",
-        max_runs=1,
-        limit_strategy=ConcurrencyLimitStrategy.CANCEL_IN_PROGRESS,
-    ),
-)
-async def monitor_systemd_wf(input: SystemdMonitorInput, ctx: Context) -> dict[str, Any]:
-    from ..tasks.self_healing import monitor_systemd_errors
-
-    return await asyncio.to_thread(
-        monitor_systemd_errors, input.project_id, input.since, input.max_tasks
-    )
-
-
-@hatchet.task(
-    name="summitflow-monitor-browser",
-    input_validator=MonitorInput,
-    execution_timeout="600s",
-    retries=3,
-    backoff_factor=2.0,
-    # DISABLED: Creates bug tasks from console errors that are never resolved
-    # autonomously. Console errors should surface in Explorer dashboard for
-    # human review, not auto-create tasks. — 2026-02-20
-    # on_crons=["30 */6 * * *"],
-    concurrency=ConcurrencyExpression(
-        expression="'summitflow-monitor-browser'",
-        max_runs=1,
-        limit_strategy=ConcurrencyLimitStrategy.CANCEL_IN_PROGRESS,
-    ),
-)
-async def monitor_browser_wf(input: MonitorInput, ctx: Context) -> dict[str, Any]:
-    from ..tasks.self_healing import monitor_browser_errors
-
-    return await asyncio.to_thread(monitor_browser_errors, input.project_id, input.max_tasks)
 
 
 @hatchet.task(

@@ -10,7 +10,7 @@ from typing import Any
 
 from psycopg.types.json import Jsonb
 
-from .connection import get_connection
+from .connection import get_connection, get_cursor
 
 
 def _jsonb(data: dict[str, Any]) -> Jsonb:
@@ -74,7 +74,7 @@ def get_rule(standard_id: int, rule_id: str) -> dict[str, Any] | None:
     Returns:
         Rule dict or None if not found
     """
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             """
             SELECT id, standard_id, category, rule_id, name, requirements, created_at
@@ -109,7 +109,7 @@ def list_rules(standard_id: int, category: str | None = None) -> list[dict[str, 
     Returns:
         List of rule dicts
     """
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         if category:
             cur.execute(
                 """

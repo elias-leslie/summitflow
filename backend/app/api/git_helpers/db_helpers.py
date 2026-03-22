@@ -20,9 +20,9 @@ def get_project_root(project_id: str) -> Path:
     Raises:
         HTTPException: If project not found or has no root_path
     """
-    from ...storage.connection import get_connection
+    from ...storage.connection import get_cursor
 
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute("SELECT root_path FROM projects WHERE id = %s", (project_id,))
         row = cur.fetchone()
         if not row:
@@ -48,11 +48,11 @@ def get_project_root_with_fallback(project_id: str) -> Path:
     Raises:
         HTTPException: If project not found in DB or config
     """
-    from ...storage.connection import get_connection
+    from ...storage.connection import get_cursor
     from ...utils._git_core import FALLBACK_FILE, _load_repo_paths_from_file
 
     project_root = None
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute("SELECT root_path FROM projects WHERE id = %s", (project_id,))
         row = cur.fetchone()
         if row:
@@ -93,7 +93,7 @@ def query_conflicts(project_id: str | None = None) -> list[dict[str, Any]]:
 
     Returns a list of dicts with task_id, title, project_id, and conflict_info.
     """
-    from ...storage.connection import get_connection
+    from ...storage.connection import get_cursor
 
     sql = """SELECT id, title, project_id, conflict_info
              FROM tasks
@@ -104,7 +104,7 @@ def query_conflicts(project_id: str | None = None) -> list[dict[str, Any]]:
         params.append(project_id)
     sql += " ORDER BY completed_at DESC NULLS LAST"
 
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(sql, tuple(params) if params else None)
         rows = cur.fetchall()
 
@@ -121,7 +121,7 @@ def query_recent_merges(
 
     Returns a list of dicts with task_id, title, project_id, completed_at, pre_sha, merge_sha.
     """
-    from ...storage.connection import get_connection
+    from ...storage.connection import get_cursor
 
     sql = """SELECT id, title, project_id, completed_at, pre_merge_sha, merge_sha
              FROM tasks
@@ -135,7 +135,7 @@ def query_recent_merges(
     sql += " ORDER BY completed_at DESC NULLS LAST LIMIT %s"
     params.append(limit)
 
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(sql, tuple(params))
         rows = cur.fetchall()
 

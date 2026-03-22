@@ -7,7 +7,7 @@ from typing import Any
 
 from psycopg import sql
 
-from .connection import get_connection
+from .connection import get_connection, get_cursor
 from .explorer_helpers import row_to_entry, to_iso_string
 
 
@@ -90,7 +90,7 @@ def replace_file_symbols(project_id: str, file_path: str, symbols: list[dict[str
 
 def list_symbols_for_file(project_id: str, file_path: str) -> list[dict[str, Any]]:
     """List symbols for a file ordered by source position."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             """
             SELECT id, project_id, file_path, symbol_id, qualified_name, name, kind,
@@ -107,7 +107,7 @@ def list_symbols_for_file(project_id: str, file_path: str) -> list[dict[str, Any
 
 def get_symbol(project_id: str, symbol_id: str) -> dict[str, Any] | None:
     """Fetch one symbol by project and stable symbol id."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             """
             SELECT id, project_id, file_path, symbol_id, qualified_name, name, kind,
@@ -124,7 +124,7 @@ def get_symbol(project_id: str, symbol_id: str) -> dict[str, Any] | None:
 
 def get_symbol_stats(project_id: str) -> dict[str, Any]:
     """Return aggregate symbol index stats for a project."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             """
             SELECT COUNT(*), MAX(updated_at)
@@ -144,7 +144,7 @@ def get_symbol_stats(project_id: str) -> dict[str, Any]:
 
 def list_related_entries_for_file(project_id: str, file_path: str) -> list[dict[str, Any]]:
     """List page and endpoint entries whose source file matches the symbol file."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             """
             SELECT id, project_id, entry_type, path, name, health_status,
@@ -165,7 +165,7 @@ def list_related_entries_for_file(project_id: str, file_path: str) -> list[dict[
 def summarize_symbols_for_file(project_id: str, file_path: str, *, limit: int = 5) -> list[dict[str, Any]]:
     """Return a concise top-symbol summary for a file."""
     capped = max(1, limit)
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             """
             SELECT symbol_id, name, kind, qualified_name, start_line, end_line
@@ -254,7 +254,7 @@ def search_symbols(
 
     ranking_params = [exact, exact, fuzzy, fuzzy, fuzzy, fuzzy, fuzzy, fuzzy]
 
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(query_sql, (*ranking_params, *params, limit))
         rows = cur.fetchall()
         return [_row_to_symbol(row[:-1]) for row in rows]

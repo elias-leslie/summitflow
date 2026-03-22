@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any, TypedDict
 
 from ..logging_config import get_logger
-from .connection import get_connection
+from .connection import get_connection, get_cursor
 
 logger = get_logger(__name__)
 
@@ -58,7 +58,7 @@ def upsert_element(
 
 def get_elements_for_entry(explorer_entry_id: int) -> list[ExplorerSubElement]:
     """Get all sub-elements for an explorer entry."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             """
             SELECT id, explorer_entry_id, selector, element_type, label,

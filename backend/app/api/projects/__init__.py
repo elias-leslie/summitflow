@@ -7,7 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 
 from ...schemas.project import ProjectServicesResponse
 from ...services import explorer
-from ...storage.connection import get_connection
+from ...storage.connection import get_connection, get_cursor, get_cursor, get_cursor
 from ..projects_services import get_project_services
 from . import agents
 from .pulse import router as pulse_router
@@ -81,7 +81,7 @@ async def create_project(
 @router.get("", response_model=list[ProjectResponse])
 async def list_projects() -> list[ProjectResponse]:
     """List all registered projects."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             """
                 SELECT id, name, base_url, health_endpoint, root_path, created_at
@@ -107,7 +107,7 @@ async def list_projects() -> list[ProjectResponse]:
 @router.get("/with-stats", response_model=ProjectsWithStatsResponse)
 async def list_projects_with_stats() -> ProjectsWithStatsResponse:
     """List all projects with aggregated stats (features, tasks, bugs, blocked)."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             """
             SELECT id, name, base_url, health_endpoint, root_path, created_at
@@ -137,7 +137,7 @@ async def get_project(project_id: str) -> ProjectResponse:
 async def check_project_health(project_id: str) -> ProjectHealthResponse:
     """Check health of a registered project."""
     # Get project
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             "SELECT base_url, health_endpoint FROM projects WHERE id = %s",
             (project_id,),

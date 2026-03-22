@@ -6,13 +6,13 @@ from typing import Any
 
 from psycopg import sql
 
-from ..connection import get_connection
+from ..connection import get_cursor
 from .core import MOCKUP_SELECT_COLUMNS, _row_to_mockup
 
 
 def get_mockup(project_id: str, mockup_id: str) -> dict[str, Any] | None:
     """Get a mockup by project_id and mockup_id."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             f"SELECT {MOCKUP_SELECT_COLUMNS} FROM mockups WHERE project_id = %s AND mockup_id = %s",
             (project_id, mockup_id),
@@ -105,7 +105,7 @@ def list_mockups(
     )
     where_sql = sql.SQL(" AND ").join(sql.SQL(c) for c in where_clauses)
 
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         total = _count_mockups(cur, where_sql, params.copy())
 
         cur.execute(
@@ -125,7 +125,7 @@ def get_mockups_for_task(
     status: str | None = None,
 ) -> list[dict[str, Any]]:
     """Get all mockups for a task."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         query = (
             f"SELECT {MOCKUP_SELECT_COLUMNS} FROM mockups WHERE project_id = %s AND task_id = %s"
         )
@@ -149,7 +149,7 @@ def get_mockups_for_page(
     status: str | None = None,
 ) -> list[dict[str, Any]]:
     """Get all mockups for a specific page."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         query = (
             f"SELECT {MOCKUP_SELECT_COLUMNS} FROM mockups WHERE project_id = %s AND page_path = %s"
         )

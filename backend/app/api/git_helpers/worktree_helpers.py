@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ...storage.connection import get_connection
+from ...storage.connection import get_cursor
 from ..models.git_models import WorktreeInfo
 
 
@@ -32,7 +32,7 @@ def enrich_snapshots(
     task_ids = [s.task_id for s in snapshots]
     placeholders = ",".join(["%s"] * len(task_ids))
 
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             f"SELECT id, title, project_id FROM tasks WHERE id IN ({placeholders})",
             tuple(task_ids),

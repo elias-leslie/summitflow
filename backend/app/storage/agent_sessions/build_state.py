@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from ..connection import get_connection
+from ..connection import get_connection, get_cursor
 
 
 def get_build_state(
@@ -21,7 +21,7 @@ def get_build_state(
     Returns:
         Build state dict (empty dict if not set).
     """
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             """
             SELECT build_state

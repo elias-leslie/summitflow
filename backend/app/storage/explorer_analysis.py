@@ -14,7 +14,7 @@ from psycopg import sql
 
 from app.services.refactor_promotion import assess_refactor_target
 
-from .connection import get_connection
+from .connection import get_cursor
 from .explorer_analysis_helpers import (
     REFACTOR_SUMMARY_SQL,
     REFACTOR_TARGETS_SQL,
@@ -119,7 +119,7 @@ def get_refactor_targets(
         project_id=project_id, extensions=extensions, code_only=code_only
     )
 
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             sql.SQL(REFACTOR_TARGETS_SQL).format(where_clause=_build_where(conditions)),
             (*params, limit),
@@ -151,7 +151,7 @@ def count_stale_metadata_entries(project_id: str, min_version: int = 2) -> int:
     Returns:
         Count of file entries with stale metadata
     """
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(STALE_METADATA_SQL, (project_id, min_version))
         row = cur.fetchone()
         return row[0] if row else 0
@@ -166,7 +166,7 @@ def get_coverage_gaps(project_id: str) -> dict[str, Any]:
     Returns:
         Dict with endpoints, pages, tables arrays
     """
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         endpoint_rows = _get_unlinked_entries(cur, project_id, "endpoint")
         uncovered_endpoints = [
             {"path": r[0], "name": r[1], "method": (r[2] or {}).get("method", "")}

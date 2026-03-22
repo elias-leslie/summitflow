@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .connection import get_connection
+from .connection import get_connection, get_cursor
 from .notifications_helpers import NotificationStatus, _row_to_dict
 
 _SELECT_COLS = """
@@ -20,7 +20,7 @@ def get_notification(notification_id: str) -> dict[str, Any] | None:
     Returns:
         Notification dict or None if not found
     """
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             _SELECT_COLS + "WHERE id = %s",
             (notification_id,),
@@ -49,7 +49,7 @@ def list_notifications(
     Returns:
         List of notification dicts
     """
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         if status_filter:
             cur.execute(
                 _SELECT_COLS + "WHERE project_id = %s AND status = %s ORDER BY created_at DESC LIMIT %s OFFSET %s",
@@ -76,7 +76,7 @@ def get_pending_count(project_id: str) -> int:
     Returns:
         Number of pending notifications
     """
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             "SELECT COUNT(*) FROM notifications WHERE project_id = %s AND status = 'pending'",
             (project_id,),

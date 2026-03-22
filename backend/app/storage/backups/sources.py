@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from ..connection import get_connection
+from ..connection import get_connection, get_cursor
 
 SOURCE_COLUMNS = """id, name, path, source_type, project_id, enabled, frequency,
        retention_days, last_run_at, next_run_at, created_at, updated_at,
@@ -42,7 +42,7 @@ def list_sources(source_type: str | None = None) -> list[dict[str, Any]]:
     where = "WHERE source_type = %s" if source_type else ""
     params = [source_type] if source_type else []
 
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             f"SELECT {SOURCE_COLUMNS} FROM backup_sources {where} ORDER BY source_type, name",
             params,
@@ -54,7 +54,7 @@ def list_sources(source_type: str | None = None) -> list[dict[str, Any]]:
 
 def get_source(source_id: str) -> dict[str, Any] | None:
     """Get a single backup source by ID."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             f"SELECT {SOURCE_COLUMNS} FROM backup_sources WHERE id = %s",
             (source_id,),
@@ -132,7 +132,7 @@ def delete_source(source_id: str) -> bool:
 
 def list_due_sources() -> list[dict[str, Any]]:
     """Get all sources that are due for a scheduled backup."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             f"""
             SELECT {SOURCE_COLUMNS} FROM backup_sources

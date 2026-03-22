@@ -8,7 +8,7 @@ from typing import Any
 
 from psycopg.types.json import Jsonb
 
-from .connection import get_connection
+from .connection import get_connection, get_cursor
 
 _SELECT_COLS = """
     id, workflow_name, status, started_at, finished_at, duration_ms,
@@ -123,7 +123,7 @@ def list_maintenance_runs(
     workflow_name: str | None = None,
 ) -> list[dict[str, Any]]:
     """Return recent maintenance runs ordered by newest start time first."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         if workflow_name is None:
             cur.execute(
                 f"""
@@ -154,7 +154,7 @@ def get_latest_maintenance_runs(
     workflow_names: Sequence[str] | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Return the latest run per workflow name."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         if workflow_names:
             cur.execute(
                 f"""

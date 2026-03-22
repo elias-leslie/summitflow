@@ -184,10 +184,10 @@ def write_index_file(project_id: str) -> str | None:
 
 def write_all_index_files() -> dict[str, str | None]:
     """Generate index files for all projects."""
-    from ...storage.connection import get_connection
+    from ...storage.connection import get_cursor
 
     results: dict[str, str | None] = {}
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute("SELECT id FROM projects WHERE root_path IS NOT NULL")
         rows = cur.fetchall()
     for (project_id,) in rows:

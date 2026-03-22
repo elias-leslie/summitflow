@@ -8,7 +8,7 @@ from typing import Any
 from psycopg import sql
 from psycopg.types.json import Jsonb
 
-from ..connection import generate_prefixed_id, get_connection
+from ..connection import generate_prefixed_id, get_connection, get_cursor
 from ._fields import SESSION_FIELDS, SESSION_FIELDS_WITH_STATE, row_to_dict
 
 
@@ -51,7 +51,7 @@ def get_session(project_id: str, session_id: str) -> dict[str, Any] | None:
     Returns:
         Session dict or None if not found.
     """
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             f"""
             SELECT {SESSION_FIELDS_WITH_STATE}
@@ -71,7 +71,7 @@ def get_session_by_id(session_db_id: int) -> dict[str, Any] | None:
     Returns:
         Session dict or None if not found.
     """
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             f"""
             SELECT {SESSION_FIELDS}
@@ -98,7 +98,7 @@ def get_recent_sessions(
     Returns:
         List of session dicts, ordered by created_at DESC.
     """
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             f"""
             SELECT {SESSION_FIELDS}
@@ -129,7 +129,7 @@ def list_sessions(
     Returns:
         List of session dicts, ordered by created_at DESC.
     """
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         if status is not None:
             cur.execute(
                 f"""

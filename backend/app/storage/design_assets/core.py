@@ -7,7 +7,7 @@ from typing import Any
 
 from psycopg.types.json import Jsonb
 
-from ..connection import get_connection
+from ..connection import get_connection, get_cursor
 
 ASSET_TYPES = frozenset(
     {
@@ -100,7 +100,7 @@ def _row_to_export(row: tuple[Any, ...]) -> dict[str, Any]:
 
 def get_asset_by_db_id(db_id: int) -> dict[str, Any] | None:
     """Get asset by database id."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(f"SELECT {ASSET_SELECT_COLUMNS} FROM design_assets WHERE id = %s", (db_id,))
         row = cur.fetchone()
     return _row_to_asset(row) if row else None

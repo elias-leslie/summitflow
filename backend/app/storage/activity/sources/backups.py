@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from ...connection import get_connection
+from ...connection import get_cursor
 from ..types import ActivityEvent, BackupMetadata
 
 
@@ -36,7 +36,7 @@ def _fetch_backup_rows(
     limit: int,
 ) -> list[tuple[Any, ...]]:
     """Execute the backup query and return raw rows."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             f"""
             SELECT id, project_id, backup_type, status, size_bytes, completed_at, created_at

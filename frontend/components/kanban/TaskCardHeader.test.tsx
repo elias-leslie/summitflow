@@ -1,38 +1,11 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import type { Task } from '@/lib/api'
+import { makeTask } from '@/tests/factories'
 import { TaskCardHeader } from './TaskCardHeader'
-
-function makeTask(overrides: Partial<Task> = {}): Task {
-  return {
-    id: 'task-abc123',
-    project_id: 'summitflow',
-    capability_id: null,
-    title: 'Fix login bug',
-    description: null,
-    status: 'pending',
-    plan_content: null,
-    progress_log: null,
-    error_message: null,
-    branch_name: null,
-    commits: [],
-    total_sessions: 0,
-    total_tokens_used: 0,
-    created_at: '2026-03-01T00:00:00Z',
-    updated_at: '2026-03-01T00:00:00Z',
-    started_at: null,
-    completed_at: null,
-    priority: 2,
-    labels: [],
-    task_type: 'bug',
-    parent_task_id: null,
-    ...overrides,
-  }
-}
 
 describe('TaskCardHeader', () => {
   it('renders task ID and priority', () => {
-    render(<TaskCardHeader task={makeTask()} />)
+    render(<TaskCardHeader task={makeTask({ id: 'task-abc123', priority: 2 })} />)
 
     expect(screen.getByText('task-abc123')).toBeInTheDocument()
     expect(screen.getByText('P2')).toBeInTheDocument()

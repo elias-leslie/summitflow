@@ -17,7 +17,7 @@ from typing import Any
 
 from psycopg import sql
 
-from .connection import get_connection
+from .connection import get_connection, get_cursor
 from .explorer_helpers import (
     ALLOWED_SORT_FIELDS,
     ENTRY_COLUMNS,
@@ -107,7 +107,7 @@ def get_entries(project_id: str, filters: dict[str, Any] | None = None) -> list[
     limit = min(int(filters.get("limit", 1000)), 10000)
     offset = int(filters.get("offset", 0))
 
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             sql.SQL("""
             SELECT ee.id, ee.project_id, ee.entry_type, ee.path, ee.name, ee.health_status,
@@ -130,7 +130,7 @@ def get_entries(project_id: str, filters: dict[str, Any] | None = None) -> list[
 
 def get_entry(project_id: str, entry_type: str, path: str) -> dict[str, Any] | None:
     """Get a single explorer entry by type and path."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             f"SELECT {ENTRY_COLUMNS} FROM explorer_entries "
             "WHERE project_id = %s AND entry_type = %s AND path = %s",
@@ -142,7 +142,7 @@ def get_entry(project_id: str, entry_type: str, path: str) -> dict[str, Any] | N
 
 def get_entry_by_id(entry_id: int) -> dict[str, Any] | None:
     """Get a single explorer entry by ID."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             f"SELECT {ENTRY_COLUMNS} FROM explorer_entries WHERE id = %s",
             (entry_id,),
@@ -163,7 +163,7 @@ def get_children(
         parent_path = parent_path + "/"
     limit = max(1, min(limit, MAX_CHILDREN_LIMIT))
 
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         if not parent_path:
             query = (
                 f"SELECT {ENTRY_COLUMNS} FROM explorer_entries "
@@ -194,7 +194,7 @@ def get_stats(project_id: str, entry_type: str | None = None) -> dict[str, Any]:
 
     where_clause = build_where_clause(conditions)
 
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             sql.SQL(
                 "SELECT entry_type, COUNT(*) FROM explorer_entries WHERE {where_clause} GROUP BY entry_type"
@@ -231,7 +231,7 @@ def get_stats(project_id: str, entry_type: str | None = None) -> dict[str, Any]:
 
 def get_type_summaries(project_id: str) -> dict[str, dict[str, Any]]:
     """Return per-entry-type totals, health counts, and last scan times."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             """
             SELECT
@@ -268,7 +268,7 @@ def get_type_summaries(project_id: str) -> dict[str, dict[str, Any]]:
 
 def get_scan_metrics(project_id: str) -> dict[str, Any]:
     """Return aggregate metrics used in scan history and overview surfaces."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             """
             SELECT
@@ -367,7 +367,7 @@ def update_health_check(entry_id: int, health_status: str, health_data: dict[str
 
 def get_pages_for_health_check(project_id: str) -> list[dict[str, Any]]:
     """Get page entries that need health checks."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             f"SELECT {ENTRY_COLUMNS} FROM explorer_entries "
             "WHERE project_id = %s AND entry_type = 'page' ORDER BY path",

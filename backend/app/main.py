@@ -217,11 +217,11 @@ async def health_cache_info() -> dict[str, str | int | bool | None]:
 
 def _check_database_health() -> ComponentHealth:
     """Check PostgreSQL database connectivity and response time using connection pool."""
-    from .storage.connection import get_connection
+    from .storage.connection import get_cursor
 
     start_time = time.time()
     try:
-        with get_connection() as conn, conn.cursor() as cur:
+        with get_cursor() as cur:
             cur.execute("SELECT 1")
             cur.fetchone()
         response_time_ms = (time.time() - start_time) * 1000

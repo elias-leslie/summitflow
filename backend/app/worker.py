@@ -19,8 +19,6 @@ from app.workflows.pipeline import (
 )
 from app.workflows.scheduled import (
     health_monitor_wf,
-    monitor_browser_wf,
-    monitor_systemd_wf,
     prod_smoke_test_wf,
     refresh_precision_indexes_wf,
     reset_claims_wf,
@@ -58,7 +56,7 @@ def main() -> None:
             review_wf,
             merge_cleanup_wf,
             escalation_wf,
-            # Scheduled (13)
+            # Scheduled (12)
             work_pickup_wf,
             reset_claims_wf,
             scan_projects_wf,
@@ -66,8 +64,6 @@ def main() -> None:
             scheduled_backups_wf,
             stale_cleanup_wf,
             task_generation_wf,
-            monitor_systemd_wf,
-            monitor_browser_wf,
             self_healing_wf,
             prod_smoke_test_wf,
             health_monitor_wf,

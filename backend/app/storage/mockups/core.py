@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from ..connection import get_connection
+from ..connection import get_connection, get_cursor
 
 # Mockup type constants
 MOCKUP_TYPES = frozenset({"component", "page", "layout", "icon", "illustration", "sprite", "sheet"})
@@ -64,7 +64,7 @@ def _row_to_mockup(row: tuple[Any, ...]) -> dict[str, Any]:
 
 def get_mockup_by_db_id(db_id: int) -> dict[str, Any] | None:
     """Get a mockup by database ID (primary key)."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             f"SELECT {MOCKUP_SELECT_COLUMNS} FROM mockups WHERE id = %s",
             (db_id,),

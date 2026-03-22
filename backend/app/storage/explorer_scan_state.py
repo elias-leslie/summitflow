@@ -11,7 +11,7 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
-from .connection import get_connection
+from .connection import get_connection, get_cursor
 from .explorer_helpers import to_iso_string as _to_iso_string
 
 _SCAN_STATE_COLUMNS = """
@@ -85,7 +85,7 @@ def get_scan_state(project_id: str) -> dict[str, Any] | None:
     Returns:
         Scan state dict or None if no scan has been run
     """
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             f"""
             SELECT {_SCAN_STATE_COLUMNS}

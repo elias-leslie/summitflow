@@ -1,6 +1,6 @@
 import { QueryClient } from '@tanstack/react-query'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { Task } from '@/lib/api/tasks'
+import { makeTask } from '@/tests/factories'
 import {
   invalidateTaskQueries,
   removeTaskFromList,
@@ -9,32 +9,6 @@ import {
   taskQueryKeys,
   upsertTaskInList,
 } from './task-cache'
-
-function makeTask(overrides: Partial<Task> = {}): Task {
-  return {
-    id: overrides.id ?? 'task-1',
-    project_id: overrides.project_id ?? 'summitflow',
-    capability_id: overrides.capability_id ?? null,
-    title: overrides.title ?? 'Test task',
-    description: overrides.description ?? null,
-    status: overrides.status ?? 'pending',
-    plan_content: overrides.plan_content ?? null,
-    progress_log: overrides.progress_log ?? null,
-    error_message: overrides.error_message ?? null,
-    branch_name: overrides.branch_name ?? null,
-    commits: overrides.commits ?? [],
-    total_sessions: overrides.total_sessions ?? 0,
-    total_tokens_used: overrides.total_tokens_used ?? 0,
-    created_at: overrides.created_at ?? null,
-    updated_at: overrides.updated_at ?? null,
-    started_at: overrides.started_at ?? null,
-    completed_at: overrides.completed_at ?? null,
-    priority: overrides.priority ?? 50,
-    labels: overrides.labels ?? [],
-    task_type: overrides.task_type ?? 'task',
-    parent_task_id: overrides.parent_task_id ?? null,
-  }
-}
 
 describe('task-cache', () => {
   const queryClient = new QueryClient()

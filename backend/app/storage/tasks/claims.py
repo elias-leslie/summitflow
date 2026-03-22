@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..connection import get_connection
+from ..connection import get_connection, get_cursor
 from .core import TASK_COLUMNS, _row_to_dict, canonicalize_task_id
 
 _CLAIMABLE_STATUSES = {"pending", "failed"}
@@ -134,7 +134,7 @@ def count_running_tasks(project_id: str) -> int:
     Returns:
         Number of tasks with status='running' and valid claim.
     """
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             """
             SELECT COUNT(*)

@@ -59,9 +59,9 @@ def get_entries_with_console_errors(project_id: str) -> list[dict[str, Any]]:
     Returns:
         List of entry dicts with console errors
     """
-    from ...storage.connection import get_connection
+    from ...storage.connection import get_cursor
 
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             """
             SELECT id, project_id, entry_type, path, name, health_status,

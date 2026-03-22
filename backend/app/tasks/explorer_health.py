@@ -9,7 +9,7 @@ from typing import Any
 
 from ..logging_config import get_logger
 from ..storage import explorer_entries
-from ..storage.connection import get_connection
+from ..storage.connection import get_cursor
 
 logger = get_logger(__name__)
 
@@ -28,7 +28,7 @@ LOCALHOST_HOSTNAME = "localhost"
 
 def _get_project_info(project_id: str) -> tuple[str | None, int | None] | None:
     """Return (base_url, port) for a project, or None if not found."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             "SELECT base_url, frontend_port FROM projects WHERE id = %s",
             (project_id,),

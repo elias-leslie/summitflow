@@ -7,7 +7,7 @@ All functions use short subtask IDs (e.g., "1.1") and convert to table IDs inter
 from __future__ import annotations
 
 from ..logging_config import get_logger
-from .connection import get_connection
+from .connection import get_cursor
 from .subtasks_helpers import SUBTASK_COLUMNS, generate_subtask_id, row_to_dict
 
 logger = get_logger(__name__)
@@ -51,7 +51,7 @@ def get_subtask(task_id: str, subtask_id: str) -> dict[str, object] | None:
     """
     table_id = generate_subtask_id(task_id, subtask_id)
 
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             f"SELECT {SUBTASK_COLUMNS} FROM task_subtasks WHERE id = %s",
             (table_id,),
@@ -72,7 +72,7 @@ def get_subtask_by_table_id(table_id: str) -> dict[str, object] | None:
     Returns:
         Subtask dict or None if not found.
     """
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             f"SELECT {SUBTASK_COLUMNS} FROM task_subtasks WHERE id = %s",
             (table_id,),
@@ -96,7 +96,7 @@ def get_subtasks_for_task(
     Returns:
         List of subtask dicts, ordered by display_order.
     """
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             f"""
             SELECT {SUBTASK_COLUMNS}

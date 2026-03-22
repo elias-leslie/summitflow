@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from ._events_models import Event, EventLevel, EventsQueryResult, EventVisibility, row_to_event
-from .connection import get_connection
+from .connection import get_cursor
 
 _SELECT_COLUMNS = """
     SELECT id, project_id, trace_id, span_id, parent_span_id,
@@ -66,7 +66,7 @@ def get_events_by_trace(
     conditions, params = _build_trace_conditions(trace_id, visibility, level, after)
     params.append(limit)
 
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             f"{_SELECT_COLUMNS}WHERE {' AND '.join(conditions)}"
             " ORDER BY timestamp ASC LIMIT %s",
@@ -189,7 +189,7 @@ def get_events_with_filters(
     )
     where_clause = " AND ".join(conditions)
 
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         total, summary = _fetch_events_stats(cur, where_clause, params)
         events = _fetch_events_page(cur, where_clause, params, limit, offset)
 

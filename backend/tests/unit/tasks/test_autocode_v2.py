@@ -170,15 +170,15 @@ class TestDetermineNextStage:
 class TestQueuedAutonomousTasks:
     """Tests for execution-mode filtering in pickup queries."""
 
-    @patch("app.tasks.autonomous.pickup_queries.get_connection")
-    def test_only_autonomous_mode_rows_are_returned(self, mock_conn: MagicMock) -> None:
+    @patch("app.tasks.autonomous.pickup_queries.get_cursor")
+    def test_only_autonomous_mode_rows_are_returned(self, mock_get_cursor: MagicMock) -> None:
         from app.tasks.autonomous.pickup_queries import get_queued_autonomous_tasks
 
         mock_cursor = MagicMock()
         mock_cursor.fetchall.return_value = [
             ("task-1", "Auto task", "task", "SIMPLE", "queue"),
         ]
-        mock_conn.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value = mock_cursor
+        mock_get_cursor.return_value.__enter__.return_value = mock_cursor
 
         tasks = get_queued_autonomous_tasks("summitflow")
 

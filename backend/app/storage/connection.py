@@ -81,6 +81,21 @@ def get_connection() -> Generator[psycopg.Connection]:
         yield conn
 
 
+@contextmanager
+def get_cursor() -> Generator[psycopg.Cursor]:
+    """Get a cursor with auto-commit — the common read-only pattern.
+
+    Usage:
+        with get_cursor() as cur:
+            cur.execute("SELECT 1")
+            rows = cur.fetchall()
+
+    For writes that need explicit commit, use get_connection() directly.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        yield cur
+
+
 # Import init_schema after defining get_connection to avoid circular import
 # This works because the import happens after get_connection is defined
 def init_schema() -> None:

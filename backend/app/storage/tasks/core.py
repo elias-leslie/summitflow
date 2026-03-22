@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..connection import generate_prefixed_id, get_connection
+from ..connection import generate_prefixed_id, get_connection, get_cursor
 from .columns import TASK_COLUMNS, TASK_COLUMNS_WITH_SPIRIT
 from .execution_mode import normalize_execution_fields
 from .mapping import row_to_dict, row_to_dict_with_spirit
@@ -28,7 +28,7 @@ def canonicalize_task_id(task_id: str) -> str:
 
 
 def _fetch_task_row(task_id: str) -> Any | None:
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             f"""
             SELECT {TASK_COLUMNS_WITH_SPIRIT}

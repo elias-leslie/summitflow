@@ -9,7 +9,7 @@ from typing import Annotated, Any
 
 from fastapi import Depends, HTTPException, Path
 
-from ..storage.connection import get_connection
+from ..storage.connection import get_cursor
 
 
 def get_valid_project(
@@ -28,7 +28,7 @@ def get_valid_project(
     Raises:
         HTTPException(404): If project not found
     """
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             """
             SELECT id, name, base_url, health_endpoint, root_path, created_at
@@ -64,7 +64,7 @@ def validate_project_exists(project_id: str) -> None:
     Raises:
         HTTPException: 404 if project not found
     """
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute("SELECT 1 FROM projects WHERE id = %s", (project_id,))
         if not cur.fetchone():
             raise HTTPException(status_code=404, detail=f"Project {project_id} not found")

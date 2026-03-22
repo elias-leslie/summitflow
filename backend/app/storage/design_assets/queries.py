@@ -6,13 +6,13 @@ from typing import Any
 
 from psycopg import sql
 
-from ..connection import get_connection
+from ..connection import get_cursor
 from .core import ASSET_SELECT_COLUMNS, _row_to_asset, _row_to_export
 
 
 def get_asset(project_id: str, asset_id: str) -> dict[str, Any] | None:
     """Get a single asset."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             f"SELECT {ASSET_SELECT_COLUMNS} FROM design_assets WHERE project_id = %s AND asset_id = %s",
             (project_id, asset_id),
@@ -54,7 +54,7 @@ def list_assets(
         params.append(tag)
 
     where_sql = sql.SQL(" AND ").join(sql.SQL(clause) for clause in clauses)
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(sql.SQL("SELECT COUNT(*) FROM design_assets WHERE ") + where_sql, params)
         total_row = cur.fetchone()
         total = int(total_row[0]) if total_row and total_row[0] else 0
@@ -71,7 +71,7 @@ def list_assets(
 
 def list_asset_exports(project_id: str, asset_id: str) -> list[dict[str, Any]]:
     """List exports for an asset."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             """
             SELECT
@@ -96,7 +96,7 @@ def list_asset_exports(project_id: str, asset_id: str) -> list[dict[str, Any]]:
 
 def get_asset_stats(project_id: str) -> dict[str, Any]:
     """Aggregate stats for assets."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             """
             SELECT

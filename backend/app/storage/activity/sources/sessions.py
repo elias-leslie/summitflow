@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from ...connection import get_connection
+from ...connection import get_cursor
 from ..types import ActivityEvent, SessionMetadata
 
 
@@ -44,7 +44,7 @@ def _fetch_session_rows(
     Returns:
         List of raw database rows
     """
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             f"""
             SELECT session_id, project_id, agent_type, status, ended_at, started_at,

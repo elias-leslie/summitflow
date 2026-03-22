@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..logging_config import get_logger
-from .connection import get_connection
+from .connection import get_connection, get_cursor
 
 logger = get_logger(__name__)
 
@@ -70,7 +70,7 @@ def get_refactor_session(
     Returns:
         Session dict or None if not found
     """
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             """
             SELECT id, project_id, task_id, baseline_scan_id, baseline_commit_sha,
@@ -99,7 +99,7 @@ def get_active_refactor_session(
     Returns:
         Session dict or None if no active session
     """
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             """
             SELECT id, project_id, task_id, baseline_scan_id, baseline_commit_sha,

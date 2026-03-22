@@ -123,10 +123,10 @@ class BaseScanner(ABC):
 
 def get_project_root(project_id: str) -> str | None:
     """Get the root path for a project from database. Returns path or None."""
-    from ...storage.connection import get_connection
+    from ...storage.connection import get_cursor
     from ...utils._git_core import _translate_path
 
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute("SELECT root_path FROM projects WHERE id = %s", (project_id,))
         row = cur.fetchone()
         if not row or not row[0]:
@@ -136,10 +136,10 @@ def get_project_root(project_id: str) -> str | None:
 
 def get_project_config(project_id: str) -> dict[str, Any] | None:
     """Get full project configuration from database. Returns config dict or None."""
-    from ...storage.connection import get_connection
+    from ...storage.connection import get_cursor
 
     cols = ", ".join(_PROJECT_COLUMNS)
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(f"SELECT {cols} FROM projects WHERE id = %s", (project_id,))
         row = cur.fetchone()
         if not row:

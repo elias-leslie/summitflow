@@ -6,7 +6,7 @@ from typing import Any
 
 from psycopg import sql
 
-from ..connection import get_connection
+from ..connection import get_connection, get_cursor
 from .columns import TASK_COLUMNS, TASK_COLUMNS_WITH_SPIRIT
 from .mapping import row_to_dict, row_to_dict_with_spirit, row_to_dict_with_subtask_summary
 
@@ -59,7 +59,7 @@ def list_tasks(
     params.extend([limit, offset])
 
     joined = sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             sql.SQL(
                 f"SELECT {TASK_COLUMNS_WITH_SPIRIT} FROM tasks t"
@@ -87,7 +87,7 @@ def count_tasks(
         priority_filter, labels_filter, orphans_only,
     )
     joined = sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             sql.SQL("SELECT COUNT(*) FROM tasks t WHERE {conditions}").format(conditions=joined),
             tuple(params),
@@ -102,7 +102,7 @@ def get_tasks_by_enrichment_status(
     limit: int = 50,
 ) -> list[dict[str, Any]]:
     """Get tasks with a specific enrichment status, ordered by creation date (newest first)."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             f"SELECT {TASK_COLUMNS} FROM tasks"
             " WHERE project_id = %s AND enrichment_status = %s"
@@ -124,7 +124,7 @@ def list_ready_tasks(project_id: str, limit: int = 50, offset: int = 0) -> list[
         " WHERE d.task_id = t.id AND d.dependency_type = 'blocks'"
         " AND blocker.status NOT IN ('completed'))"
     )
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             f"""
             SELECT {TASK_COLUMNS_WITH_SPIRIT},
@@ -154,7 +154,7 @@ def list_blocked_tasks(project_id: str, limit: int = 50) -> list[dict[str, Any]]
         " WHERE d.task_id = t.id AND d.dependency_type = 'blocks'"
         " AND blocker.status NOT IN ('completed'))"
     )
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             f"""
             SELECT DISTINCT {TASK_COLUMNS_WITH_SPIRIT}
@@ -170,7 +170,7 @@ def list_blocked_tasks(project_id: str, limit: int = 50) -> list[dict[str, Any]]
 
 def get_stale_tasks(max_age_days: int = 30, limit: int = 100) -> list[dict[str, Any]]:
     """Get auto-generated pending tasks with no activity for more than max_age_days."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             f"SELECT {TASK_COLUMNS} FROM tasks"
             " WHERE status = 'pending' AND 'auto-generated' = ANY(labels)"
@@ -249,7 +249,7 @@ def purge_terminal_tasks(
 
 def count_completed_tasks_today(project_id: str) -> int:
     """Count tasks with status 'completed' and updated_at today for a project."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             "SELECT COUNT(*) FROM tasks"
             " WHERE project_id = %s AND status = 'completed' AND DATE(updated_at) = CURRENT_DATE",

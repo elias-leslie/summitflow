@@ -1,39 +1,12 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import type { Task } from '@/lib/api'
+import { makeTask } from '@/tests/factories'
 import { TaskCardBody } from './TaskCardBody'
-
-function makeTask(overrides: Partial<Task> = {}): Task {
-  return {
-    id: 'task-abc123',
-    project_id: 'summitflow',
-    capability_id: null,
-    title: 'Implement search feature',
-    description: null,
-    status: 'pending',
-    plan_content: null,
-    progress_log: null,
-    error_message: null,
-    branch_name: null,
-    commits: [],
-    total_sessions: 0,
-    total_tokens_used: 0,
-    created_at: '2026-03-01T00:00:00Z',
-    updated_at: '2026-03-01T00:00:00Z',
-    started_at: null,
-    completed_at: null,
-    priority: 2,
-    labels: [],
-    task_type: 'feature',
-    parent_task_id: null,
-    ...overrides,
-  }
-}
 
 describe('TaskCardBody', () => {
   it('renders task title', () => {
     render(
-      <TaskCardBody task={makeTask()} canExpand={false} />,
+      <TaskCardBody task={makeTask({ title: 'Implement search feature' })} canExpand={false} />,
     )
 
     expect(screen.getByText('Implement search feature')).toBeInTheDocument()

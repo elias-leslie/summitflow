@@ -15,7 +15,7 @@ import psycopg
 
 from ..config import settings
 from ..logging_config import get_logger
-from ..storage.connection import get_connection
+from ..storage.connection import get_cursor
 
 logger = get_logger(__name__)
 
@@ -42,7 +42,7 @@ def get_wal_status() -> dict[str, Any]:
     Returns:
         Dict with archive_mode, current_lsn, last_archived_wal, etc.
     """
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute("SHOW archive_mode")
         row = cur.fetchone()
         archive_mode = row[0] if row else "off"

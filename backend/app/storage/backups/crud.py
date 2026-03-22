@@ -6,7 +6,7 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
-from ..connection import generate_prefixed_id, get_connection
+from ..connection import generate_prefixed_id, get_connection, get_cursor
 from .models import BACKUP_COLUMNS, build_backup_updates, row_to_backup
 
 
@@ -69,7 +69,7 @@ def get_backup(backup_id: str) -> dict[str, Any] | None:
     Returns:
         Backup record or None if not found
     """
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             f"SELECT {BACKUP_COLUMNS} FROM backups WHERE id = %s",
             (backup_id,),
@@ -114,7 +114,7 @@ def list_backups(
 
     where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
 
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         # Get total count
         cur.execute(f"SELECT COUNT(*) FROM backups WHERE {where_sql}", params)
         count_row = cur.fetchone()

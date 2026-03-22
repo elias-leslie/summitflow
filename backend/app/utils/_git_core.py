@@ -99,10 +99,10 @@ CONFIG_REPOS = _load_repo_paths_from_file(FALLBACK_FILE)
 
 def _query_db_root_paths() -> list[str]:
     """Return raw root_path values from the projects table, or [] on error."""
-    from ..storage.connection import get_connection
+    from ..storage.connection import get_cursor
 
     try:
-        with get_connection() as conn, conn.cursor() as cur:
+        with get_cursor() as cur:
             cur.execute(_SQL_SELECT_ROOT_PATHS)
             return [row[0] for row in cur.fetchall()]
     except Exception:
@@ -112,10 +112,10 @@ def _query_db_root_paths() -> list[str]:
 
 def _query_db_project_roots() -> list[tuple[str, str]]:
     """Return project ids and raw root_path values from the projects table, or [] on error."""
-    from ..storage.connection import get_connection
+    from ..storage.connection import get_cursor
 
     try:
-        with get_connection() as conn, conn.cursor() as cur:
+        with get_cursor() as cur:
             cur.execute(_SQL_SELECT_PROJECT_ROOTS)
             return [(str(row[0]), str(row[1])) for row in cur.fetchall()]
     except Exception:
@@ -125,10 +125,10 @@ def _query_db_project_roots() -> list[tuple[str, str]]:
 
 def _query_db_extra_repos() -> list[tuple[str, str]]:
     """Return non-project managed repo ids and paths from backup_sources, or [] on error."""
-    from ..storage.connection import get_connection
+    from ..storage.connection import get_cursor
 
     try:
-        with get_connection() as conn, conn.cursor() as cur:
+        with get_cursor() as cur:
             cur.execute(_SQL_SELECT_EXTRA_REPOS)
             return [(str(row[0]), str(row[1])) for row in cur.fetchall()]
     except Exception:

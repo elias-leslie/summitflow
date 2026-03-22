@@ -7,7 +7,7 @@ from typing import cast
 
 import psycopg
 
-from ..storage.connection import get_connection
+from ..storage.connection import get_cursor
 from .autonomous_service import get_autonomous_settings
 from .pipeline_models import (
     Autonomous,
@@ -157,7 +157,7 @@ def _fetch_autonomous_data(cur: psycopg.Cursor, project_id: str) -> tuple[int, i
 
 def compute_pipeline_stats(project_id: str) -> PipelineStatsResponse:
     """Compute pipeline statistics for a project (sync version for thread pool)."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         status_counts = _fetch_task_distribution(cur, project_id)
         completed_today, completed_week, avg_hours = _fetch_throughput_data(cur, project_id)
         verification_results = _fetch_verification_results(cur, project_id)

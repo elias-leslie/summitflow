@@ -10,21 +10,21 @@ from pathlib import Path
 from typing import Any
 
 from ..logging_config import get_logger
-from .connection import get_connection
+from .connection import get_cursor
 
 logger = get_logger(__name__)
 
 
 def project_exists(project_id: str) -> bool:
     """Return True if project exists, False otherwise."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute("SELECT 1 FROM projects WHERE id = %s", (project_id,))
         return cur.fetchone() is not None
 
 
 def get_project_root_path(project_id: str) -> str | None:
     """Return project root path or None if project not found."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute("SELECT root_path FROM projects WHERE id = %s", (project_id,))
         row = cur.fetchone()
         return row[0] if row else None
@@ -128,7 +128,7 @@ def build_project_env(project_id: str | None, working_dir: str | None = None) ->
 
 def list_projects() -> list[dict[str, Any]]:
     """Return list of all projects with id, name, root_path, created_at."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             "SELECT id, name, root_path, created_at FROM projects ORDER BY created_at"
         )

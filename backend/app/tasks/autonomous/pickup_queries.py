@@ -10,7 +10,7 @@ from typing import Any
 
 from app.services.task_execution_readiness import load_task_execution_readiness
 from app.storage import tasks as task_store
-from app.storage.connection import get_connection
+from app.storage.connection import get_cursor
 from app.storage.subtasks import get_subtasks_for_task
 from app.storage.task_spirit import get_task_spirit
 
@@ -63,7 +63,7 @@ def get_queued_autonomous_tasks(project_id: str, limit: int = 10) -> list[dict[s
     Returns:
         List of task dicts with id, title, task_type, complexity, status
     """
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             """
             SELECT id, title, task_type, complexity, status

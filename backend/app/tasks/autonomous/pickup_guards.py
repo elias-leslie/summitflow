@@ -9,7 +9,7 @@ from app.config import DEFAULT_API_BASE, REDIS_URL
 from app.services._agent_hub_config import AGENT_HUB_URL, build_agent_hub_headers
 from app.storage import agent_configs
 from app.storage import tasks as task_store
-from app.storage.connection import get_connection
+from app.storage.connection import get_cursor
 
 # Constants
 _AGENT_HUB_URL = f"{AGENT_HUB_URL}/api/projects/{{project_id}}/execution-permission"
@@ -68,7 +68,7 @@ def check_cooldown_period(project_id: str) -> dict[str, Any] | None:
     cooldown_minutes = agent_configs.get_cooldown_minutes(project_id)
     if cooldown_minutes == 0:
         return None
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             "SELECT started_at FROM tasks WHERE project_id = %s"
             " AND started_at IS NOT NULL ORDER BY started_at DESC LIMIT 1",
@@ -103,7 +103,7 @@ def check_system_health(project_id: str) -> dict[str, Any] | None:
     details: dict[str, str] = {}
     # Postgres
     try:
-        with get_connection() as conn, conn.cursor() as cur:
+        with get_cursor() as cur:
             cur.execute("SELECT 1")
         details["postgres"] = "healthy"
     except Exception as e:

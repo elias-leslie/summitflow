@@ -22,15 +22,13 @@ from app.storage.events import get_events_by_trace, get_events_with_filters
 class TestGetEventsWithFiltersAfter:
     """Tests for get_events_with_filters() with after timestamp filter."""
 
-    @patch("app.storage._events_query.get_connection")
+    @patch("app.storage._events_query.get_cursor")
     def test_get_events_with_filters_after_builds_correct_sql_condition(
         self, mock_get_connection: MagicMock
     ) -> None:
         """Test that after timestamp parameter builds correct SQL WHERE condition."""
-        mock_conn = MagicMock()
         mock_cursor = MagicMock()
-        mock_get_connection.return_value.__enter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        mock_get_connection.return_value.__enter__.return_value = mock_cursor
 
         # Mock cursor.fetchone() for COUNT query
         mock_cursor.fetchone.side_effect = [
@@ -66,15 +64,13 @@ class TestGetEventsWithFiltersAfter:
         assert result["total"] == 5
         assert result["events"] == []
 
-    @patch("app.storage._events_query.get_connection")
+    @patch("app.storage._events_query.get_cursor")
     def test_get_events_with_filters_after_excludes_older_events(
         self, mock_get_connection: MagicMock
     ) -> None:
         """Test that after filter excludes events at or before the timestamp."""
-        mock_conn = MagicMock()
         mock_cursor = MagicMock()
-        mock_get_connection.return_value.__enter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        mock_get_connection.return_value.__enter__.return_value = mock_cursor
 
         after_timestamp = datetime(2026, 2, 14, 10, 0, 0, tzinfo=UTC)
         _older_timestamp = datetime(2026, 2, 14, 9, 0, 0, tzinfo=UTC)
@@ -116,15 +112,13 @@ class TestGetEventsWithFiltersAfter:
         assert result["events"][0]["timestamp"] == newer_timestamp
         assert result["events"][0]["message"] == "Newer event"
 
-    @patch("app.storage._events_query.get_connection")
+    @patch("app.storage._events_query.get_cursor")
     def test_get_events_with_filters_after_none_includes_all_events(
         self, mock_get_connection: MagicMock
     ) -> None:
         """Test that after=None includes all events without timestamp filter."""
-        mock_conn = MagicMock()
         mock_cursor = MagicMock()
-        mock_get_connection.return_value.__enter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        mock_get_connection.return_value.__enter__.return_value = mock_cursor
 
         mock_cursor.fetchone.side_effect = [(3,), None]
         mock_cursor.fetchall.side_effect = [[], []]
@@ -141,15 +135,13 @@ class TestGetEventsWithFiltersAfter:
 class TestGetEventsWithFiltersEventType:
     """Tests for get_events_with_filters() with event_type filter."""
 
-    @patch("app.storage._events_query.get_connection")
+    @patch("app.storage._events_query.get_cursor")
     def test_get_events_with_filters_event_type_builds_correct_sql_condition(
         self, mock_get_connection: MagicMock
     ) -> None:
         """Test that event_type parameter builds correct SQL WHERE condition."""
-        mock_conn = MagicMock()
         mock_cursor = MagicMock()
-        mock_get_connection.return_value.__enter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        mock_get_connection.return_value.__enter__.return_value = mock_cursor
 
         mock_cursor.fetchone.side_effect = [(2,), None]
         mock_cursor.fetchall.side_effect = [[], []]
@@ -175,15 +167,13 @@ class TestGetEventsWithFiltersEventType:
 
         assert result["total"] == 2
 
-    @patch("app.storage._events_query.get_connection")
+    @patch("app.storage._events_query.get_cursor")
     def test_get_events_with_filters_event_type_filters_correctly(
         self, mock_get_connection: MagicMock
     ) -> None:
         """Test that event_type filter returns only matching event types."""
-        mock_conn = MagicMock()
         mock_cursor = MagicMock()
-        mock_get_connection.return_value.__enter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        mock_get_connection.return_value.__enter__.return_value = mock_cursor
 
         timestamp = datetime(2026, 2, 14, 10, 0, 0, tzinfo=UTC)
 
@@ -232,15 +222,13 @@ class TestGetEventsWithFiltersEventType:
         assert len(result["events"]) == 2
         assert all(e["event_type"] == "progress" for e in result["events"])
 
-    @patch("app.storage._events_query.get_connection")
+    @patch("app.storage._events_query.get_cursor")
     def test_get_events_with_filters_event_type_none_includes_all_types(
         self, mock_get_connection: MagicMock
     ) -> None:
         """Test that event_type=None includes all event types without filter."""
-        mock_conn = MagicMock()
         mock_cursor = MagicMock()
-        mock_get_connection.return_value.__enter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        mock_get_connection.return_value.__enter__.return_value = mock_cursor
 
         mock_cursor.fetchone.side_effect = [(5,), None]
         mock_cursor.fetchall.side_effect = [[], []]
@@ -257,15 +245,13 @@ class TestGetEventsWithFiltersEventType:
 class TestGetEventsWithFiltersCombined:
     """Tests for get_events_with_filters() with combined after + event_type."""
 
-    @patch("app.storage._events_query.get_connection")
+    @patch("app.storage._events_query.get_cursor")
     def test_get_events_with_filters_after_and_event_type_combines_filters(
         self, mock_get_connection: MagicMock
     ) -> None:
         """Test that after + event_type filters combine correctly with AND."""
-        mock_conn = MagicMock()
         mock_cursor = MagicMock()
-        mock_get_connection.return_value.__enter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        mock_get_connection.return_value.__enter__.return_value = mock_cursor
 
         after_timestamp = datetime(2026, 2, 14, 10, 0, 0, tzinfo=UTC)
 
@@ -287,15 +273,13 @@ class TestGetEventsWithFiltersCombined:
         assert after_timestamp in count_params
         assert "error" in count_params
 
-    @patch("app.storage._events_query.get_connection")
+    @patch("app.storage._events_query.get_cursor")
     def test_get_events_with_filters_after_and_event_type_with_other_filters(
         self, mock_get_connection: MagicMock
     ) -> None:
         """Test that after + event_type work with other existing filters."""
-        mock_conn = MagicMock()
         mock_cursor = MagicMock()
-        mock_get_connection.return_value.__enter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        mock_get_connection.return_value.__enter__.return_value = mock_cursor
 
         after_timestamp = datetime(2026, 2, 14, 10, 0, 0, tzinfo=UTC)
 
@@ -334,15 +318,13 @@ class TestGetEventsWithFiltersCombined:
 class TestGetEventsByTraceAfter:
     """Tests for get_events_by_trace() with after timestamp filter."""
 
-    @patch("app.storage._events_query.get_connection")
+    @patch("app.storage._events_query.get_cursor")
     def test_get_events_by_trace_after_builds_correct_sql_condition(
         self, mock_get_connection: MagicMock
     ) -> None:
         """Test that after timestamp parameter builds correct SQL WHERE condition."""
-        mock_conn = MagicMock()
         mock_cursor = MagicMock()
-        mock_get_connection.return_value.__enter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        mock_get_connection.return_value.__enter__.return_value = mock_cursor
 
         mock_cursor.fetchall.return_value = []
 
@@ -361,15 +343,13 @@ class TestGetEventsByTraceAfter:
         assert after_timestamp in params
         assert result == []
 
-    @patch("app.storage._events_query.get_connection")
+    @patch("app.storage._events_query.get_cursor")
     def test_get_events_by_trace_after_filters_correctly(
         self, mock_get_connection: MagicMock
     ) -> None:
         """Test that after filter returns only events after timestamp."""
-        mock_conn = MagicMock()
         mock_cursor = MagicMock()
-        mock_get_connection.return_value.__enter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        mock_get_connection.return_value.__enter__.return_value = mock_cursor
 
         after_timestamp = datetime(2026, 2, 14, 10, 0, 0, tzinfo=UTC)
         newer_timestamp = datetime(2026, 2, 14, 11, 0, 0, tzinfo=UTC)
@@ -398,15 +378,13 @@ class TestGetEventsByTraceAfter:
         assert result[0]["timestamp"] == newer_timestamp
         assert result[0]["message"] == "Newer event"
 
-    @patch("app.storage._events_query.get_connection")
+    @patch("app.storage._events_query.get_cursor")
     def test_get_events_by_trace_after_none_includes_all_events(
         self, mock_get_connection: MagicMock
     ) -> None:
         """Test that after=None includes all events without timestamp filter."""
-        mock_conn = MagicMock()
         mock_cursor = MagicMock()
-        mock_get_connection.return_value.__enter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        mock_get_connection.return_value.__enter__.return_value = mock_cursor
 
         mock_cursor.fetchall.return_value = []
 
@@ -418,15 +396,13 @@ class TestGetEventsByTraceAfter:
         assert "timestamp >" not in sql
         assert len(params) == 2  # trace_id + limit
 
-    @patch("app.storage._events_query.get_connection")
+    @patch("app.storage._events_query.get_cursor")
     def test_get_events_by_trace_after_with_other_filters(
         self, mock_get_connection: MagicMock
     ) -> None:
         """Test that after works with visibility and level filters."""
-        mock_conn = MagicMock()
         mock_cursor = MagicMock()
-        mock_get_connection.return_value.__enter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        mock_get_connection.return_value.__enter__.return_value = mock_cursor
 
         after_timestamp = datetime(2026, 2, 14, 10, 0, 0, tzinfo=UTC)
 
@@ -471,8 +447,7 @@ class TestEventsAPIEndpoints:
         """Test that /projects/{id}/events endpoint accepts after query param."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
-        mock_get_connection.return_value.__enter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        mock_get_connection.return_value.__enter__.return_value = mock_cursor
 
         mock_cursor.fetchone.side_effect = [(0,), None]
         mock_cursor.fetchall.side_effect = [[], []]
@@ -494,8 +469,7 @@ class TestEventsAPIEndpoints:
         """Test that /projects/{id}/events endpoint accepts event_type query param."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
-        mock_get_connection.return_value.__enter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        mock_get_connection.return_value.__enter__.return_value = mock_cursor
 
         mock_cursor.fetchone.side_effect = [(0,), None]
         mock_cursor.fetchall.side_effect = [[], []]
@@ -516,8 +490,7 @@ class TestEventsAPIEndpoints:
         """Test that /projects/{id}/events accepts both after and event_type."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
-        mock_get_connection.return_value.__enter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        mock_get_connection.return_value.__enter__.return_value = mock_cursor
 
         mock_cursor.fetchone.side_effect = [(0,), None]
         mock_cursor.fetchall.side_effect = [[], []]
@@ -539,8 +512,7 @@ class TestEventsAPIEndpoints:
         """Test that /projects/{id}/events/by-trace/{trace_id} accepts after param."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
-        mock_get_connection.return_value.__enter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        mock_get_connection.return_value.__enter__.return_value = mock_cursor
 
         mock_cursor.fetchall.return_value = []
 
@@ -562,8 +534,7 @@ class TestEventsAPIEndpoints:
         """Test that by-trace endpoint accepts after with visibility and level."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
-        mock_get_connection.return_value.__enter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        mock_get_connection.return_value.__enter__.return_value = mock_cursor
 
         mock_cursor.fetchall.return_value = []
 

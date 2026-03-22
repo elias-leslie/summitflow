@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from ...connection import get_connection
+from ...connection import get_cursor
 from ..types import ActivityEvent, TaskMetadata
 
 
@@ -57,7 +57,7 @@ def get_recent_task_events(
     """
     where_clause, params = _build_task_query_params(project_id)
 
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             f"""
             SELECT id, project_id, title, status, completed_at, created_at

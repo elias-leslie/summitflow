@@ -13,7 +13,7 @@ from typing import Any
 
 from ..logging_config import get_logger
 from ..services import explorer
-from ..storage.connection import get_connection
+from ..storage.connection import get_cursor
 from .explorer_health import run_page_health_checks as _run_page_health_checks
 from .explorer_resolution import check_and_close_resolved_issues
 
@@ -25,7 +25,7 @@ INTER_PROJECT_DELAY = 5
 
 def _fetch_projects(project_id: str | None) -> list[tuple]:
     """Fetch projects from the database."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         if project_id:
             cur.execute(
                 "SELECT id, name, root_path FROM projects WHERE id = %s",

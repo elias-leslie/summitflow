@@ -14,7 +14,7 @@ from cli.lib.project_config import (
 )
 
 from ..schemas.project import ProjectServicesResponse, ServiceConfigSchema
-from ..storage.connection import get_connection
+from ..storage.connection import get_cursor
 
 
 def _get_project_root_path(project_id: str) -> str | None:
@@ -29,7 +29,7 @@ def _get_project_root_path(project_id: str) -> str | None:
     Raises:
         HTTPException: If project not found.
     """
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             "SELECT root_path FROM projects WHERE id = %s",
             (project_id,),

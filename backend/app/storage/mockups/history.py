@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..connection import get_connection
+from ..connection import get_cursor
 from .core import get_mockup_by_db_id
 from .queries import get_mockup
 
@@ -32,7 +32,7 @@ def get_mockup_history(project_id: str, mockup_id: str) -> list[dict[str, Any]]:
 
 def get_mockup_stats(project_id: str) -> dict[str, Any]:
     """Get mockup statistics for a project."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             """
             SELECT

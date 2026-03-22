@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..connection import generate_prefixed_id, get_connection
+from ..connection import generate_prefixed_id, get_connection, get_cursor
 
 BACKEND_COLUMNS = """id, name, backend_type, config, is_default, enabled,
        last_test_at, last_test_ok, created_at, updated_at"""
@@ -33,7 +33,7 @@ def row_to_backend(row: tuple[Any, ...]) -> dict[str, Any]:
 def list_backends(enabled_only: bool = False) -> list[dict[str, Any]]:
     """List all storage backends."""
     where = "WHERE enabled = TRUE" if enabled_only else ""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(  # type: ignore[arg-type]  # dynamic SQL columns
             f"SELECT {BACKEND_COLUMNS} FROM storage_backends {where} ORDER BY is_default DESC, name",
         )
@@ -43,7 +43,7 @@ def list_backends(enabled_only: bool = False) -> list[dict[str, Any]]:
 
 def get_backend(backend_id: str) -> dict[str, Any] | None:
     """Get a single storage backend by ID."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             f"SELECT {BACKEND_COLUMNS} FROM storage_backends WHERE id = %s",
             (backend_id,),
@@ -54,7 +54,7 @@ def get_backend(backend_id: str) -> dict[str, Any] | None:
 
 def get_default_backend() -> dict[str, Any] | None:
     """Get the default storage backend."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             f"SELECT {BACKEND_COLUMNS} FROM storage_backends WHERE is_default = TRUE AND enabled = TRUE LIMIT 1",
         )

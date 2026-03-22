@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from ..logging_config import get_logger
-from ..storage.connection import get_connection
+from ..storage.connection import get_cursor
 
 logger = get_logger(__name__)
 
@@ -27,7 +27,7 @@ def _translate_path(raw: str | None) -> str | None:
 
 def get_source_path(source_id: str) -> str | None:
     """Get path for a backup source."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             "SELECT path FROM backup_sources WHERE id = %s",
             (source_id,),
@@ -43,7 +43,7 @@ def get_project_root(project_id: str) -> str | None:
     if source_path:
         return source_path
 
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             "SELECT root_path FROM projects WHERE id = %s",
             (project_id,),
@@ -177,7 +177,7 @@ def calculate_next_run(frequency: str) -> datetime:
 
 def get_source_type(source_id: str) -> str | None:
     """Get the source_type for a backup source."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             "SELECT source_type FROM backup_sources WHERE id = %s",
             (source_id,),
@@ -192,7 +192,7 @@ def get_storage_config(source_id: str) -> dict[str, Any] | None:
     Checks if the source has a storage_backend_id, then falls back to the
     default backend, then returns None (caller uses env/file-based config).
     """
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         # Check source-specific backend
         cur.execute(
             """

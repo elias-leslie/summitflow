@@ -18,64 +18,46 @@ from app.storage.notifications import (
 class TestIsDuplicate:
     """Tests for _is_duplicate() dedup check."""
 
-    @patch("app.storage.notifications.get_connection")
-    def test_no_existing_notification_not_duplicate(self, mock_conn: MagicMock) -> None:
+    @patch("app.storage.notifications.get_cursor")
+    def test_no_existing_notification_not_duplicate(self, mock_get_cursor: MagicMock) -> None:
         """First notification of its kind is never a duplicate."""
-        cursor = MagicMock()
-        cursor.fetchone.return_value = None
-        mock_conn.return_value.__enter__ = lambda s: MagicMock(cursor=lambda: MagicMock(__enter__=lambda s: cursor, __exit__=lambda *a: None))
-        mock_conn.return_value.__exit__ = lambda *a: None
-
-        # Properly mock the context manager chain
-        ctx = MagicMock()
         cur = MagicMock()
         cur.fetchone.return_value = None
-        ctx.cursor.return_value.__enter__ = lambda s: cur
-        ctx.cursor.return_value.__exit__ = lambda *a: None
-        mock_conn.return_value.__enter__ = lambda s: ctx
-        mock_conn.return_value.__exit__ = lambda *a: None
+        mock_get_cursor.return_value.__enter__ = lambda s: cur
+        mock_get_cursor.return_value.__exit__ = lambda *a: None
 
         result = _is_duplicate("proj-1", "task_failed", "error", "task-1")
         assert not result
 
-    @patch("app.storage.notifications.get_connection")
-    def test_existing_same_severity_is_duplicate(self, mock_conn: MagicMock) -> None:
+    @patch("app.storage.notifications.get_cursor")
+    def test_existing_same_severity_is_duplicate(self, mock_get_cursor: MagicMock) -> None:
         """Same type+task+severity within window is a duplicate."""
         cur = MagicMock()
         cur.fetchone.return_value = ("error",)  # existing with same severity
-        ctx = MagicMock()
-        ctx.cursor.return_value.__enter__ = lambda s: cur
-        ctx.cursor.return_value.__exit__ = lambda *a: None
-        mock_conn.return_value.__enter__ = lambda s: ctx
-        mock_conn.return_value.__exit__ = lambda *a: None
+        mock_get_cursor.return_value.__enter__ = lambda s: cur
+        mock_get_cursor.return_value.__exit__ = lambda *a: None
 
         result = _is_duplicate("proj-1", "task_failed", "error", "task-1")
         assert result
 
-    @patch("app.storage.notifications.get_connection")
-    def test_severity_escalation_not_duplicate(self, mock_conn: MagicMock) -> None:
+    @patch("app.storage.notifications.get_cursor")
+    def test_severity_escalation_not_duplicate(self, mock_get_cursor: MagicMock) -> None:
         """Higher severity for same task is NOT a duplicate (escalation)."""
         cur = MagicMock()
         cur.fetchone.return_value = ("warning",)  # existing is warning
-        ctx = MagicMock()
-        ctx.cursor.return_value.__enter__ = lambda s: cur
-        ctx.cursor.return_value.__exit__ = lambda *a: None
-        mock_conn.return_value.__enter__ = lambda s: ctx
-        mock_conn.return_value.__exit__ = lambda *a: None
+        mock_get_cursor.return_value.__enter__ = lambda s: cur
+        mock_get_cursor.return_value.__exit__ = lambda *a: None
 
         result = _is_duplicate("proj-1", "task_failed", "error", "task-1")
         assert not result  # error > warning → not a dup
 
-    @patch("app.storage.notifications.get_connection")
-    def test_severity_downgrade_is_duplicate(self, mock_conn: MagicMock) -> None:
+    @patch("app.storage.notifications.get_cursor")
+    def test_severity_downgrade_is_duplicate(self, mock_get_cursor: MagicMock) -> None:
         """Lower severity for same task IS a duplicate."""
         cur = MagicMock()
         cur.fetchone.return_value = ("error",)  # existing is error
-        ctx = MagicMock()
-        ctx.cursor.return_value.__enter__ = lambda s: cur
-        ctx.cursor.return_value.__exit__ = lambda *a: None
-        mock_conn.return_value.__enter__ = lambda s: ctx
-        mock_conn.return_value.__exit__ = lambda *a: None
+        mock_get_cursor.return_value.__enter__ = lambda s: cur
+        mock_get_cursor.return_value.__exit__ = lambda *a: None
 
         result = _is_duplicate("proj-1", "task_failed", "warning", "task-1")
         assert result  # warning < error → dup

@@ -6,13 +6,13 @@ from typing import Any
 import psycopg
 from fastapi import HTTPException
 
-from ...storage.connection import get_connection
+from ...storage.connection import get_connection, get_cursor, get_cursor, get_cursor
 from .models import ProjectResponse, ProjectStats, ProjectWithStats
 
 
 def get_project_from_db(project_id: str) -> ProjectResponse:
     """Fetch a project from the database by ID."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             """
                 SELECT id, name, base_url, health_endpoint, root_path, created_at
@@ -92,7 +92,7 @@ def _fetch_blocked_counts(cur: psycopg.Cursor[Any], project_ids: list[str]) -> d
 
 def fetch_project_stats(project_ids: list[str]) -> dict[str, ProjectStats]:
     """Fetch aggregated stats for multiple projects."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         feature_counts = _fetch_feature_counts(cur, project_ids)
         task_counts = _fetch_task_counts(cur, project_ids)
         bug_counts = _fetch_bug_counts(cur, project_ids)

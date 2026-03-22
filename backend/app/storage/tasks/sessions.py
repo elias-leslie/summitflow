@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..connection import get_connection
+from ..connection import get_connection, get_cursor
 from .columns import TASK_COLUMNS
 from .mapping import row_to_dict
 
@@ -45,7 +45,7 @@ def add_agent_hub_session(task_id: str, session_id: str) -> dict[str, Any] | Non
     # If no row returned, either task not found or session_id already exists
     # Try to fetch the task to distinguish
     if not row:
-        with get_connection() as conn, conn.cursor() as cur:
+        with get_cursor() as cur:
             cur.execute(
                 f"SELECT {TASK_COLUMNS} FROM tasks WHERE id = %s",
                 (task_id,),
@@ -66,7 +66,7 @@ def get_agent_hub_sessions(task_id: str) -> list[str]:
     Returns:
         List of Agent Hub session IDs (empty if task not found or no sessions).
     """
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             "SELECT agent_hub_session_ids FROM tasks WHERE id = %s",
             (task_id,),

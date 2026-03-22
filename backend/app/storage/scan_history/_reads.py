@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from ..connection import get_connection
+from ..connection import get_cursor
 from ._helpers import (
     build_triggers_breakdown,
     classify_complexity_trend,
@@ -32,7 +32,7 @@ def get_scan_history(
     days = min(days, 365)
     cutoff = datetime.now(UTC) - timedelta(days=days)
 
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         query = _SCAN_SELECT + " WHERE project_id = %s AND started_at >= %s"
         params: list[Any] = [project_id, cutoff]
 
@@ -53,7 +53,7 @@ def get_latest_scan(
     statuses: list[str] | None = None,
 ) -> dict[str, Any] | None:
     """Return the most recent scan for a project, optionally filtered by status."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         query = _SCAN_SELECT + " WHERE project_id = %s"
         params: list[Any] = [project_id]
 
@@ -73,7 +73,7 @@ def get_scan_comparison(
     scan_id_after: int,
 ) -> dict[str, Any] | None:
     """Get comparison between two scans."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             _SCAN_SELECT + " WHERE id IN (%s, %s)",
             (scan_id_before, scan_id_after),
@@ -105,7 +105,7 @@ def get_sparkline_data(project_id: str, days: int = 30) -> dict[str, Any]:
     days = min(days, 365)
     cutoff = datetime.now(UTC) - timedelta(days=days)
 
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             """
             SELECT DATE(started_at) as scan_date,
@@ -163,7 +163,7 @@ def get_summary(project_id: str, days: int = 30) -> dict[str, Any]:
     days = min(days, 365)
     cutoff = datetime.now(UTC) - timedelta(days=days)
 
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             """
             SELECT COUNT(*) as total_scans, AVG(duration_ms) as avg_duration

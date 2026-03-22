@@ -11,7 +11,7 @@ import json
 from typing import Any
 
 from ..logging_config import get_logger
-from .connection import generate_prefixed_id, get_connection
+from .connection import generate_prefixed_id, get_connection, get_cursor
 from .notifications_helpers import (
     NotificationSeverity,
     NotificationStatus,
@@ -73,7 +73,7 @@ def _is_duplicate(
     if notification_type == "system":
         cooldown_minutes = _SYSTEM_COOLDOWN_MINUTES
     current_rank = _SEVERITY_RANK.get(severity, 0)
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             """
             SELECT severity FROM notifications

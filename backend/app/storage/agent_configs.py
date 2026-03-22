@@ -8,7 +8,7 @@ from psycopg.types.json import Jsonb
 
 from ..constants import DEFAULT_CLAUDE_MODEL, DEFAULT_GEMINI_MODEL
 from ..logging_config import get_logger
-from .connection import get_connection
+from .connection import get_connection, get_cursor
 
 logger = get_logger(__name__)
 
@@ -66,7 +66,7 @@ def get_agent_config(project_id: str) -> AgentConfig:
     Returns:
         AgentConfig dict, or default config if not set
     """
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             """
                 SELECT agent_configs

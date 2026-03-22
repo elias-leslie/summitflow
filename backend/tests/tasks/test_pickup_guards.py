@@ -108,7 +108,7 @@ def _mock_healthy_infra() -> tuple:
 class TestCheckSystemHealth:
     """Tests for check_system_health backend HTTP check."""
 
-    @patch("app.tasks.autonomous.pickup_guards.get_connection")
+    @patch("app.tasks.autonomous.pickup_guards.get_cursor")
     @patch("redis.Redis.from_url")
     @patch("httpx.get")
     def test_backend_healthy_via_http(
@@ -124,7 +124,7 @@ class TestCheckSystemHealth:
         result = check_system_health("proj")
         assert result is None  # all healthy
 
-    @patch("app.tasks.autonomous.pickup_guards.get_connection")
+    @patch("app.tasks.autonomous.pickup_guards.get_cursor")
     @patch("redis.Redis.from_url")
     @patch("httpx.get")
     def test_backend_unhealthy_via_http(
@@ -141,7 +141,7 @@ class TestCheckSystemHealth:
         assert result is not None
         assert "backend" in result["failing_services"]
 
-    @patch("app.tasks.autonomous.pickup_guards.get_connection")
+    @patch("app.tasks.autonomous.pickup_guards.get_cursor")
     @patch("redis.Redis.from_url")
     @patch("httpx.get")
     def test_backend_unavailable_does_not_block(

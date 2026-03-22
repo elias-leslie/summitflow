@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from ...connection import get_connection
+from ...connection import get_cursor
 from ..types import ActivityEvent, GitMetadata
 
 
@@ -26,7 +26,7 @@ def _fetch_git_rows(
     limit: int,
 ) -> list[tuple[Any, ...]]:
     """Execute git event query and return raw rows."""
-    with get_connection() as conn, conn.cursor() as cur:
+    with get_cursor() as cur:
         cur.execute(
             f"""
             SELECT project_id, git_commit_sha, notes, ended_at, agent_type
