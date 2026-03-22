@@ -62,17 +62,22 @@ def run_infra_drill() -> dict[str, Any]:
             timeout=DRILL_TIMEOUT,
         )
 
-        # Parse JSON output (last line of stdout)
+        # Parse JSON output — find last JSON object line in stdout
         output_lines = result.stdout.strip().splitlines()
-        json_line = output_lines[-1] if output_lines else "{}"
-
-        try:
-            drill_result = json.loads(json_line)
-        except json.JSONDecodeError:
+        drill_result = None
+        for line in reversed(output_lines):
+            line = line.strip()
+            if line.startswith("{") and line.endswith("}"):
+                try:
+                    drill_result = json.loads(line)
+                    break
+                except json.JSONDecodeError:
+                    continue
+        if drill_result is None:
             drill_result = {
                 "ok": False,
                 "components": [],
-                "error": f"Failed to parse drill output: {result.stdout[:200]}",
+                "error": f"No JSON found in drill output (last 300 chars): {result.stdout[-300:]}",
             }
 
         drill_result["backup_id"] = backup_id

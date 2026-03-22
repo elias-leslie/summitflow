@@ -139,10 +139,43 @@ main() {
     # ── Redis state ──
     log "Exporting Redis state..."
     local redis_dump="$STAGING_DIR/configs/redis-dump.rdb"
-    local redis_host="${REDIS_HOST:-localhost}"
-    local redis_port="${REDIS_PORT:-6379}"
+    local redis_dumped=false
 
-    if redis-cli -h "$redis_host" -p "$redis_port" --rdb "$redis_dump" 2>/dev/null; then
+    # Try redis-cli on host first
+    if command -v redis-cli &>/dev/null; then
+        local redis_host="${REDIS_HOST:-localhost}"
+        local redis_port="${REDIS_PORT:-6379}"
+        if redis-cli -h "$redis_host" -p "$redis_port" --rdb "$redis_dump" 2>/dev/null; then
+            redis_dumped=true
+        fi
+    fi
+
+    # Fallback: copy RDB from Docker Redis container
+    if [ "$redis_dumped" = false ] && [ -S /var/run/docker.sock ]; then
+        local redis_container=""
+        redis_container=$(docker compose -p summitflow-stack ps --format '{{.Name}}' redis 2>/dev/null | head -1)
+        if [ -z "$redis_container" ]; then
+            redis_container=$(docker ps --filter "label=com.docker.compose.service=redis" --format "{{.Names}}" 2>/dev/null | head -1)
+        fi
+        if [ -n "$redis_container" ]; then
+            # Load Redis password from env
+            local redis_pass=""
+            if [ -f "$HOME/.env.local" ]; then
+                redis_pass=$(grep '^REDIS_PASSWORD=' "$HOME/.env.local" 2>/dev/null | cut -d'=' -f2- | tr -d '"' || true)
+            fi
+            local auth_args=""
+            [ -n "$redis_pass" ] && auth_args="-a $redis_pass"
+
+            # Trigger BGSAVE and wait, then extract dump (root exec to bypass file perms)
+            docker exec "$redis_container" redis-cli $auth_args BGSAVE 2>/dev/null || true
+            sleep 2
+            if docker exec "$redis_container" cat /data/dump.rdb > "$redis_dump" 2>/dev/null; then
+                [ -s "$redis_dump" ] && redis_dumped=true
+            fi
+        fi
+    fi
+
+    if [ "$redis_dumped" = true ] && [ -f "$redis_dump" ]; then
         log_success "Redis dump complete ($(du -h "$redis_dump" | cut -f1))"
     else
         log_warn "Redis dump failed or Redis not available — skipping"
