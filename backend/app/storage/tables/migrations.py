@@ -122,7 +122,11 @@ def _drop_removed_spirit_columns(cur: psycopg.Cursor) -> None:
     """
     for col in ("objective", "spirit_anti", "decisions", "constraints"):
         with contextlib.suppress(psycopg.errors.UndefinedColumn, psycopg.errors.UndefinedTable):
-            cur.execute(f"ALTER TABLE task_spirit DROP COLUMN IF EXISTS {col}")
+            cur.execute(
+                sql.SQL("ALTER TABLE task_spirit DROP COLUMN IF EXISTS {}").format(
+                    sql.Identifier(col)
+                )
+            )
 
 
 def _project_column_additions() -> list[tuple[str, str]]:
