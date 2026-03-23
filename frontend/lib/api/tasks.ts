@@ -5,9 +5,8 @@
  * Implementation has been split into focused modules for better maintainability:
  *
  * - tasks-types.ts: Type definitions
- * - tasks-crud.ts: Core CRUD operations
+ * - tasks-crud.ts: Core CRUD operations and execution
  * - tasks-enrichment.ts: Enrichment workflow (subtasks, steps, criteria)
- * - tasks-execution.ts: Autonomous execution and batch operations
  * - tasks-observability.ts: Agent Hub integration and observability
  */
 
@@ -67,6 +66,7 @@ export {
   fetchTask,
   fetchTasks,
   // Execution control
+  executeTask,
   updateTaskStatus,
   // Delete operations
   deleteTask,
@@ -89,15 +89,6 @@ export {
   getSteps,
   updateStep,
 } from './tasks-enrichment'
-
-// ============================================================================
-// Execution & Batch Operations
-// ============================================================================
-
-export {
-  // Autonomous execution
-  executeTask,
-} from './tasks-execution'
 
 // ============================================================================
 // Agent Hub Integration

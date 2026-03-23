@@ -75,6 +75,21 @@ class CreateNotificationRequest(BaseModel):
 # ============================================================================
 
 
+def _get_notification_or_404(
+    notification_id: str, project_id: str,
+) -> dict[str, Any]:
+    """Get notification and verify it belongs to the project. Raises 404 if not found."""
+    notification = notification_store.get_notification(notification_id)
+    if not notification:
+        raise HTTPException(status_code=404, detail=f"Notification {notification_id} not found")
+    if notification["project_id"] != project_id:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Notification {notification_id} not found in project {project_id}",
+        )
+    return notification
+
+
 def _notification_to_response(notification: dict[str, Any]) -> NotificationResponse:
     """Convert storage notification to API response."""
     return NotificationResponse(
@@ -148,14 +163,7 @@ async def get_notification_count(project_id: str) -> NotificationCountResponse:
 )
 async def get_notification(project_id: str, notification_id: str) -> NotificationResponse:
     """Get a single notification."""
-    notification = notification_store.get_notification(notification_id)
-    if not notification:
-        raise HTTPException(status_code=404, detail=f"Notification {notification_id} not found")
-    if notification["project_id"] != project_id:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Notification {notification_id} not found in project {project_id}",
-        )
+    notification = _get_notification_or_404(notification_id, project_id)
     return _notification_to_response(notification)
 
 
@@ -182,16 +190,7 @@ async def create_notification(
 )
 async def mark_notification_read(project_id: str, notification_id: str) -> NotificationResponse:
     """Mark a notification as read."""
-    # Verify notification exists and belongs to project
-    existing = notification_store.get_notification(notification_id)
-    if not existing:
-        raise HTTPException(status_code=404, detail=f"Notification {notification_id} not found")
-    if existing["project_id"] != project_id:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Notification {notification_id} not found in project {project_id}",
-        )
-
+    _get_notification_or_404(notification_id, project_id)
     notification = notification_store.mark_as_read(notification_id)
     if not notification:
         raise HTTPException(status_code=500, detail="Failed to mark notification as read")
@@ -204,16 +203,7 @@ async def mark_notification_read(project_id: str, notification_id: str) -> Notif
 )
 async def dismiss_notification(project_id: str, notification_id: str) -> NotificationResponse:
     """Dismiss a notification."""
-    # Verify notification exists and belongs to project
-    existing = notification_store.get_notification(notification_id)
-    if not existing:
-        raise HTTPException(status_code=404, detail=f"Notification {notification_id} not found")
-    if existing["project_id"] != project_id:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Notification {notification_id} not found in project {project_id}",
-        )
-
+    _get_notification_or_404(notification_id, project_id)
     notification = notification_store.dismiss_notification(notification_id)
     if not notification:
         raise HTTPException(status_code=500, detail="Failed to dismiss notification")
@@ -232,16 +222,7 @@ async def dismiss_all_notifications(project_id: str) -> dict[str, Any]:
 )
 async def delete_notification(project_id: str, notification_id: str) -> dict[str, Any]:
     """Delete a notification."""
-    # Verify notification exists and belongs to project
-    existing = notification_store.get_notification(notification_id)
-    if not existing:
-        raise HTTPException(status_code=404, detail=f"Notification {notification_id} not found")
-    if existing["project_id"] != project_id:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Notification {notification_id} not found in project {project_id}",
-        )
-
+    _get_notification_or_404(notification_id, project_id)
     if not notification_store.delete_notification(notification_id):
         raise HTTPException(status_code=500, detail="Failed to delete notification")
     return {"deleted": True, "id": notification_id}

@@ -26,12 +26,11 @@ _INSERT_SQL = f"""
 """
 
 
-def _insert_one_subtask(cur: Any, task_id: str, subtask: dict[str, Any], idx: int) -> tuple[dict[str, Any], str, list[Any]]:
-    """Execute the INSERT for a single subtask row and return (row_dict, table_id, steps)."""
+def _insert_one_subtask(cur: Any, task_id: str, subtask: dict[str, Any], idx: int) -> dict[str, Any]:
+    """Execute the INSERT for a single subtask row and return the row dict."""
     subtask_id = subtask["subtask_id"]
     table_id = generate_subtask_id(task_id, subtask_id)
     display_order = subtask.get("display_order", idx)
-    steps = subtask.get("steps", [])
 
     cur.execute(
         _INSERT_SQL,
@@ -46,50 +45,7 @@ def _insert_one_subtask(cur: Any, task_id: str, subtask: dict[str, Any], idx: in
         ),
     )
     row = cur.fetchone()
-    return row_to_dict(row), table_id, steps
-
-
-def _insert_subtasks_in_transaction(
-    task_id: str,
-    subtasks: list[dict[str, Any]],
-) -> tuple[list[dict[str, Any]], list[tuple[str, list[str | dict[str, Any]]]]]:
-    """Insert subtask rows inside a single DB transaction.
-
-    Returns:
-        A tuple of (created_subtask_dicts, steps_to_create) where
-        steps_to_create is a list of (subtask_table_id, step_items) pairs
-        for subtasks that have steps defined.
-    """
-    created: list[dict[str, Any]] = []
-    steps_to_create: list[tuple[str, list[str | dict[str, Any]]]] = []
-
-    with get_connection() as conn, conn.cursor() as cur:
-        for idx, subtask in enumerate(subtasks):
-            row_dict, table_id, steps = _insert_one_subtask(cur, task_id, subtask, idx)
-            created.append(row_dict)
-            if steps:
-                steps_to_create.append((table_id, steps))
-        conn.commit()
-
-    return created, steps_to_create
-
-
-def _create_steps_for_subtasks(
-    steps_to_create: list[tuple[str, list[str | dict[str, Any]]]],
-) -> dict[str, list[dict[str, Any]]]:
-    """Steps layer has been removed. Returns empty dict."""
-    return {}
-
-
-def _attach_steps_to_subtasks(
-    created: list[dict[str, Any]],
-    subtasks_with_steps: dict[str, list[dict[str, Any]]],
-) -> None:
-    """Mutate each subtask dict to include its created steps list."""
-    for subtask in created:
-        subtask_table_id = subtask["id"]
-        if subtask_table_id in subtasks_with_steps:
-            subtask["steps_from_table"] = subtasks_with_steps[subtask_table_id]
+    return row_to_dict(row)
 
 
 def bulk_create_subtasks(
@@ -98,16 +54,13 @@ def bulk_create_subtasks(
 ) -> list[dict[str, Any]]:
     """Create multiple subtasks for a task in a single transaction.
 
-    Also creates step rows in task_subtask_steps table when steps are provided.
-    The JSONB steps column is not used (deprecated).
-
     Args:
         task_id: Parent task ID
         subtasks: List of subtask dicts with keys:
             - subtask_id: str (required) - e.g., "1.1"
             - description: str (required)
             - phase: str (optional)
-            - steps: list[str | dict] (optional) - strings or {description, spec} objects
+            - steps: Ignored (steps layer removed)
             - display_order: int (optional, auto-assigned if missing)
 
     Returns:
@@ -119,9 +72,12 @@ def bulk_create_subtasks(
     if not subtasks:
         return []
 
-    created, steps_to_create = _insert_subtasks_in_transaction(task_id, subtasks)
-    subtasks_with_steps = _create_steps_for_subtasks(steps_to_create)
-    _attach_steps_to_subtasks(created, subtasks_with_steps)
+    created: list[dict[str, Any]] = []
+    with get_connection() as conn, conn.cursor() as cur:
+        for idx, subtask in enumerate(subtasks):
+            row_dict = _insert_one_subtask(cur, task_id, subtask, idx)
+            created.append(row_dict)
+        conn.commit()
 
     logger.info("Created %d subtasks for task %s", len(created), task_id)
     return created

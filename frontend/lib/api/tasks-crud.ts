@@ -9,6 +9,8 @@ import type {
   TaskListResponse,
   TaskStatus,
   TaskType,
+  ExecuteTaskOptions,
+  ExecuteTaskResponse,
   DeleteTaskResponse,
 } from './tasks-types'
 
@@ -85,6 +87,22 @@ export async function fetchTasks(
 // ============================================================================
 // Task Execution Control
 // ============================================================================
+
+/**
+ * Start autonomous orchestrator execution for a task.
+ * Queues the task for execution via Hatchet workflow with streaming to WebSocket.
+ */
+export async function executeTask(
+  projectId: string,
+  taskId: string,
+  options?: ExecuteTaskOptions,
+): Promise<ExecuteTaskResponse> {
+  return postJson(
+    `${getApiBaseUrl()}/api/projects/${projectId}/tasks/${taskId}/execute`,
+    options || {},
+    'Failed to start task execution',
+  )
+}
 
 export async function updateTaskStatus(
   projectId: string,

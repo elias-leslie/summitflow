@@ -21,7 +21,6 @@ export type TaskType =
   | 'debt'
   | 'regression'
 
-export type AgentType = 'claude' | 'gemini'
 export type TaskExecutionMode = 'manual' | 'autonomous' | 'manual_only'
 
 export type EnrichmentStatus =

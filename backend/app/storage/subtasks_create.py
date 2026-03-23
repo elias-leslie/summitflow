@@ -24,11 +24,6 @@ _INSERT_SQL = f"""
 """
 
 
-def _attach_steps(result: dict[str, object], table_id: str, steps: list[str | dict[str, object]]) -> None:
-    """Steps layer has been removed. No-op."""
-    pass
-
-
 def create_subtask(
     task_id: str,
     subtask_id: str,
@@ -38,7 +33,7 @@ def create_subtask(
     steps: list[str | dict[str, object]] | None = None,
     subtask_type: str | None = None,
 ) -> dict[str, object]:
-    """Create a new subtask, optionally with step rows.
+    """Create a new subtask.
 
     Args:
         task_id: Parent task ID (must exist in tasks table)
@@ -46,7 +41,7 @@ def create_subtask(
         description: Subtask description
         display_order: Order for display (0-indexed)
         phase: Optional phase: research, database, backend, frontend, testing
-        steps: Optional list of steps - strings or {description, spec} dicts
+        steps: Ignored (steps layer removed). Kept for API compatibility.
         subtask_type: Optional type for agent routing (backend, frontend, etc.)
 
     Returns:
@@ -55,7 +50,6 @@ def create_subtask(
     Raises:
         Exception: If task_id doesn't exist (FK constraint violation)
     """
-    steps = steps or []
     table_id = generate_subtask_id(task_id, subtask_id)
 
     with get_connection() as conn, conn.cursor() as cur:
@@ -67,9 +61,5 @@ def create_subtask(
         conn.commit()
 
     result = row_to_dict(row)
-
-    if steps:
-        _attach_steps(result, table_id, steps)
-
     logger.debug("Created subtask %s for task %s", subtask_id, task_id)
     return result

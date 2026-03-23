@@ -2,7 +2,7 @@
  * Tasks API - Enrichment Type Definitions
  */
 
-import type { Task, TaskType } from './tasks-types-core'
+import type { Task } from './tasks-types-core'
 
 // ============================================================================
 // Enrichment Types
@@ -45,12 +45,6 @@ export interface SubtasksResponse {
   total: number
   completed: number
   next_subtask_id: string | null
-}
-
-export interface EnrichmentRequest {
-  raw_request: string
-  priority?: number
-  task_type?: TaskType
 }
 
 export interface DiscussionMessage {
