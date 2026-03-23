@@ -293,15 +293,6 @@ def looks_like_workflow_meta_query(queries: list[str]) -> bool:
     return workflow_hits >= 2 and not has_explicit_code_signal(queries)
 
 
-def fallback_match_terms(query_terms: list[str]) -> list[str]:
-    specific_terms = [
-        term.lower()
-        for term in query_terms
-        if term.lower() not in _CODE_SIGNAL_TERMS and term.lower() not in _STOP_WORDS
-    ]
-    return specific_terms or [term.lower() for term in query_terms]
-
-
 # ---------------------------------------------------------------------------
 # Query quality classification for hint generation
 # ---------------------------------------------------------------------------
