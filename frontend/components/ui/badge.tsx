@@ -42,7 +42,7 @@ export function Badge({
   return (
     <span
       className={clsx(
-        'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium mono',
+        'inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium mono',
         variants[variant],
         onClick && 'cursor-pointer hover:opacity-80 transition-opacity',
         className,

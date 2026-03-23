@@ -229,7 +229,10 @@ _resolve_systemd_services() {
     export SERVICE_PREFIX="$prefix"
     export BACKEND_SERVICE="${prefix}-backend.service"
     export FRONTEND_SERVICE="${prefix}-frontend.service"
+    export DEFAULT_WORKER_SERVICES=""
+    export OPTIONAL_WORKER_SERVICES=""
     export WORKER_SERVICES=""
+    export ALL_WORKER_SERVICES=""
     export AUXILIARY_SERVICES=""
     export HAS_BACKEND=true
     export BACKEND_DIR="$PROJECT_DIR/backend"
@@ -237,17 +240,18 @@ _resolve_systemd_services() {
 
     case "$PROJECT_NAME" in
         summitflow)
-            export WORKER_SERVICES="summitflow-hatchet-worker.service"
+            export DEFAULT_WORKER_SERVICES="summitflow-hatchet-worker.service"
             export BACKEND_PORT=8001 FRONTEND_PORT=3001
             ;;
         agent-hub)
-            export WORKER_SERVICES="agent-hub-hatchet-worker.service"
+            export DEFAULT_WORKER_SERVICES="agent-hub-hatchet-ops-worker.service"
+            export OPTIONAL_WORKER_SERVICES="agent-hub-hatchet-agent-worker.service"
             export BACKEND_PORT=8003 FRONTEND_PORT=3003
             ;;
         portfolio-ai)
             export BACKEND_SERVICE="portfolio-backend.service"
             export FRONTEND_SERVICE="portfolio-frontend.service"
-            export WORKER_SERVICES="portfolio-hatchet-worker.service"
+            export DEFAULT_WORKER_SERVICES="portfolio-hatchet-worker.service"
             export BACKEND_PORT=8000 FRONTEND_PORT=3000
             ;;
         terminal)
@@ -269,7 +273,12 @@ _resolve_systemd_services() {
             ;;
     esac
 
-    export MANAGED_SERVICES="$BACKEND_SERVICE $WORKER_SERVICES $AUXILIARY_SERVICES $FRONTEND_SERVICE"
+    export WORKER_SERVICES="$DEFAULT_WORKER_SERVICES"
+    if [ "${REBUILD_INCLUDE_ALL_WORKERS:-false}" = "true" ] && [ -n "$OPTIONAL_WORKER_SERVICES" ]; then
+        export WORKER_SERVICES="$DEFAULT_WORKER_SERVICES $OPTIONAL_WORKER_SERVICES"
+    fi
+    export ALL_WORKER_SERVICES="$DEFAULT_WORKER_SERVICES $OPTIONAL_WORKER_SERVICES"
+    export MANAGED_SERVICES="$BACKEND_SERVICE $ALL_WORKER_SERVICES $AUXILIARY_SERVICES $FRONTEND_SERVICE"
 }
 _resolve_systemd_services
 

@@ -317,7 +317,7 @@ export function ProjectSettingsClient() {
       </div>
 
       {/* Tab Bar */}
-      <div className="flex items-center gap-1 mb-6 border-b border-slate-800">
+      <div className="flex items-center gap-1 mb-6 border-b border-slate-800/60">
         {tabs.map((tab) => {
           const Icon = tab.icon
           return (
@@ -326,13 +326,13 @@ export function ProjectSettingsClient() {
               type="button"
               onClick={() => setActiveTab(tab.id)}
               className={clsx(
-                'flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px',
+                'flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-all border-b-2 -mb-px',
                 activeTab === tab.id
-                  ? 'border-outrun-500 text-slate-100'
-                  : 'border-transparent text-slate-500 hover:text-slate-300 hover:border-slate-600',
+                  ? 'border-outrun-500 text-slate-100 bg-outrun-500/5'
+                  : 'border-transparent text-slate-500 hover:text-slate-300 hover:border-slate-700',
               )}
             >
-              <Icon className="w-4 h-4" />
+              <Icon className={clsx('w-4 h-4', activeTab === tab.id && 'text-outrun-400')} />
               {tab.label}
             </button>
           )
@@ -566,20 +566,24 @@ function StatusCell({
   pending = false,
   mono = false,
 }: StatusCellProps) {
-  const toneClasses: Record<string, string> = {
-    default: 'text-slate-100',
-    emerald: 'text-emerald-300',
-    rose: 'text-rose-300',
-    amber: 'text-amber-300',
-    cyan: 'text-cyan-300',
+  const toneClasses: Record<string, { text: string; icon: string; iconBg: string }> = {
+    default: { text: 'text-slate-100', icon: 'text-slate-400', iconBg: 'bg-slate-500/10' },
+    emerald: { text: 'text-emerald-300', icon: 'text-emerald-400', iconBg: 'bg-emerald-500/10' },
+    rose: { text: 'text-rose-300', icon: 'text-rose-400', iconBg: 'bg-rose-500/10' },
+    amber: { text: 'text-amber-300', icon: 'text-amber-400', iconBg: 'bg-amber-500/10' },
+    cyan: { text: 'text-cyan-300', icon: 'text-cyan-400', iconBg: 'bg-cyan-500/10' },
   }
 
+  const tc = toneClasses[tone]
+
   return (
-    <div className="card px-4 py-3">
+    <div className="card px-4 py-3.5">
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 text-2xs uppercase tracking-wide text-slate-500">
-          <Icon className="h-3 w-3" />
-          {label}
+        <div className="flex items-center gap-2 text-2xs uppercase tracking-wider text-slate-500">
+          <div className={`rounded-md p-1.5 ${tc.iconBg}`}>
+            <Icon className={`h-3 w-3 ${tc.icon}`} />
+          </div>
+          <span className="font-medium">{label}</span>
         </div>
         {actionLabel && onAction ? (
           <button
@@ -591,7 +595,7 @@ function StatusCell({
           </button>
         ) : null}
       </div>
-      <div className={clsx('mt-1 text-sm truncate', mono && 'font-mono', toneClasses[tone])}>
+      <div className={clsx('mt-2 text-sm truncate font-semibold', mono && 'font-mono', tc.text)}>
         {value}
       </div>
       <div className="mt-0.5 truncate text-2xs text-slate-600">{helper}</div>

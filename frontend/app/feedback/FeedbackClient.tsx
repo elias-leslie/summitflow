@@ -1,6 +1,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
+import { MessageSquareWarning } from 'lucide-react'
 import { useState } from 'react'
 import { ComponentSummary } from '@/components/feedback/ComponentSummary'
 import { FeedbackBoard } from '@/components/feedback/FeedbackBoard'
@@ -58,13 +59,18 @@ export function FeedbackClient() {
       <div className="p-6 space-y-5 max-w-7xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-100 display tracking-tight">
-              Agent Feedback
-            </h1>
-            <p className="text-sm text-slate-400 mt-0.5">
-              Friction reports, ideas, and praise from AI agents
-            </p>
+          <div className="flex items-center gap-3">
+            <div className="p-1.5 rounded-md bg-rose-500/10 border border-rose-500/20">
+              <MessageSquareWarning className="w-5 h-5 text-rose-400" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-slate-100 display tracking-tight leading-none">
+                Agent Feedback
+              </h1>
+              <p className="text-sm text-slate-500 mt-0.5">
+                Friction reports, ideas, and praise from AI agents
+              </p>
+            </div>
           </div>
           {summary && (
             <div className="hidden sm:flex items-center gap-3 text-sm">

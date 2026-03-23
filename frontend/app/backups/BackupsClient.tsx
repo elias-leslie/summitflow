@@ -355,13 +355,18 @@ export function BackupsClient() {
 
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-100 display tracking-tight">
-            Backup Operations
-          </h1>
-          <p className="text-sm text-slate-400 mt-0.5">
-            Sources, schedules, storage, and history
-          </p>
+        <div className="flex items-center gap-3">
+          <div className="p-1.5 rounded-md bg-indigo-500/10 border border-indigo-500/20">
+            <Archive className="w-5 h-5 text-indigo-400" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-slate-100 display tracking-tight leading-none">
+              Backup Operations
+            </h1>
+            <p className="text-sm text-slate-500 mt-0.5">
+              Sources, schedules, storage, and history
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-3">
           {healthData && (

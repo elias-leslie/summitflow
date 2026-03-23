@@ -124,7 +124,15 @@ _RUNTIME_SERVICE_DEFS: tuple[dict[str, Any], ...] = (
         "display_name": "agent-hub-worker",
         "manager": "systemd",
         "category": "worker",
-        "unit": "agent-hub-hatchet-worker.service",
+        "unit": "agent-hub-hatchet-agent-worker.service",
+        "ports": [],
+    },
+    {
+        "service": "agent-hub-ops-worker",
+        "display_name": "agent-hub-ops-worker",
+        "manager": "systemd",
+        "category": "worker",
+        "unit": "agent-hub-hatchet-ops-worker.service",
         "ports": [],
     },
     {

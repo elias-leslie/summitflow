@@ -42,6 +42,16 @@ def _status(
 class TestDockerRuntime:
     """Tests for Docker runtime mode endpoints."""
 
+    def test_runtime_service_map_includes_split_agent_hub_workers(self) -> None:
+        from app.api import docker as docker_api
+
+        assert docker_api._RUNTIME_SERVICE_MAP["agent-hub-worker"]["unit"] == (
+            "agent-hub-hatchet-agent-worker.service"
+        )
+        assert docker_api._RUNTIME_SERVICE_MAP["agent-hub-ops-worker"]["unit"] == (
+            "agent-hub-hatchet-ops-worker.service"
+        )
+
     def test_detect_repo_root_walks_up_container_layout(self, tmp_path) -> None:
         from app.api import docker as docker_api
 

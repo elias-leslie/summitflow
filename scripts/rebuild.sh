@@ -5,12 +5,15 @@
 # Usage:
 #   rebuild.sh summitflow       # Rebuild summitflow (frontend + backend + worker)
 #   rebuild.sh agent-hub        # Rebuild agent-hub
+#   rebuild.sh --include-all-workers agent-hub
+#                              # Rebuild agent-hub and restart the protected agent worker too
 #   rebuild.sh terminal         # Rebuild terminal
 #   rebuild.sh portfolio-ai     # Rebuild portfolio-ai
 #   rebuild.sh monkey-fight     # Rebuild monkey-fight
 #   rebuild.sh                  # No args = show available projects
 #
-# Always rebuilds everything (frontend build + backend restart + worker restart).
+# Always rebuilds frontend, backend, and the project's default worker services.
+# Use --include-all-workers to also restart optional protected workers.
 # Project name is required — no auto-detection from cwd.
 #
 
@@ -30,38 +33,53 @@ log_error()   { printf "${RED}[%s] ✗ %s${NC}\n" "$(date '+%H:%M:%S')" "$*"; }
 log_warn()    { printf "${YELLOW}[%s] ⚠ %s${NC}\n" "$(date '+%H:%M:%S')" "$*"; }
 
 # ─── Project registry ────────────────────────────────────────────
-# Each project: backend_service, frontend_service, worker_services,
-#               backend_port, frontend_port, backend_dir, frontend_dir
+# Each project: backend_service, frontend_service, default_worker_services,
+#               optional_worker_services, backend_port, frontend_port,
+#               backend_dir, frontend_dir
 declare -A PROJECTS
 PROJECTS=(
-    [summitflow]="summitflow-backend.service|summitflow-frontend.service|summitflow-hatchet-worker.service|8001|3001|backend|frontend"
-    [agent-hub]="agent-hub-backend.service|agent-hub-frontend.service|agent-hub-hatchet-worker.service|8003|3003|backend|frontend"
-    [portfolio-ai]="portfolio-backend.service|portfolio-frontend.service|portfolio-hatchet-worker.service|8000|3000|backend|frontend"
-    [terminal]="summitflow-terminal.service|summitflow-terminal-frontend.service||8002|3002|.|frontend"
-    [monkey-fight]="|monkey-fight.service||0|4001|.|."
+    [summitflow]="summitflow-backend.service|summitflow-frontend.service|summitflow-hatchet-worker.service||8001|3001|backend|frontend"
+    [agent-hub]="agent-hub-backend.service|agent-hub-frontend.service|agent-hub-hatchet-ops-worker.service|agent-hub-hatchet-agent-worker.service|8003|3003|backend|frontend"
+    [portfolio-ai]="portfolio-backend.service|portfolio-frontend.service|portfolio-hatchet-worker.service||8000|3000|backend|frontend"
+    [terminal]="summitflow-terminal.service|summitflow-terminal-frontend.service|||8002|3002|.|frontend"
+    [monkey-fight]="|monkey-fight.service|||0|4001|.|."
 )
 
+INCLUDE_ALL_WORKERS=false
+STATUS_MODE=false
+
+resolve_worker_svcs() {
+    WORKER_SVCS="$DEFAULT_WORKER_SVCS"
+    ALL_WORKER_SVCS="$DEFAULT_WORKER_SVCS $OPTIONAL_WORKER_SVCS"
+    if [ "$INCLUDE_ALL_WORKERS" = true ] && [ -n "$OPTIONAL_WORKER_SVCS" ]; then
+        WORKER_SVCS="$DEFAULT_WORKER_SVCS $OPTIONAL_WORKER_SVCS"
+    fi
+}
+
 parse_project() {
-    IFS='|' read -r BACKEND_SVC FRONTEND_SVC WORKER_SVCS BACKEND_PORT FRONTEND_PORT BACKEND_SUBDIR FRONTEND_SUBDIR <<< "${PROJECTS[$1]}"
+    IFS='|' read -r BACKEND_SVC FRONTEND_SVC DEFAULT_WORKER_SVCS OPTIONAL_WORKER_SVCS BACKEND_PORT FRONTEND_PORT BACKEND_SUBDIR FRONTEND_SUBDIR <<< "${PROJECTS[$1]}"
     ROOT_DIR="$(resolve_project_root "$1")"
     BACKEND_DIR="$ROOT_DIR/$BACKEND_SUBDIR"
     FRONTEND_DIR="$ROOT_DIR/$FRONTEND_SUBDIR"
     if [ "$BACKEND_SUBDIR" = "." ]; then BACKEND_DIR="$ROOT_DIR"; fi
     if [ "$FRONTEND_SUBDIR" = "." ]; then FRONTEND_DIR="$ROOT_DIR"; fi
+    resolve_worker_svcs
 }
 
 show_projects() {
-    echo "Usage: rebuild.sh <project>"
+    echo "Usage: rebuild.sh [--include-all-workers] <project>"
     echo ""
     echo "Available projects:"
     for p in summitflow agent-hub portfolio-ai terminal monkey-fight; do
         [ -n "${PROJECTS[$p]}" ] || continue
         root="$(resolve_project_root "$p" 2>/dev/null || echo "unresolved")"
-        IFS='|' read -r _ _ _ bp fp _ _ <<< "${PROJECTS[$p]}"
+        IFS='|' read -r _ _ _ _ bp fp _ _ <<< "${PROJECTS[$p]}"
         printf "  %-15s %s" "$p" "$root"
         [ "$bp" != "0" ] && printf "  (:%s/:%s)" "$bp" "$fp" || printf "  (:%s)" "$fp"
         echo ""
     done
+    echo ""
+    echo "Use --include-all-workers to restart optional protected workers."
 }
 
 # ─── Core operations ─────────────────────────────────────────────
@@ -207,7 +225,7 @@ show_status() {
     parse_project "$project"
     local all_active=true
     printf "  %-15s" "$project"
-    for svc in $BACKEND_SVC $FRONTEND_SVC $WORKER_SVCS; do
+    for svc in $BACKEND_SVC $FRONTEND_SVC $ALL_WORKER_SVCS; do
         [ -z "$svc" ] && continue
         local state
         state=$(systemctl --user is-active "$svc" 2>/dev/null || echo "stopped")
@@ -224,9 +242,43 @@ show_status() {
 
 # ─── Main ─────────────────────────────────────────────────────────
 
+POSITIONAL=()
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --status)
+            STATUS_MODE=true
+            ;;
+        --include-all-workers)
+            INCLUDE_ALL_WORKERS=true
+            ;;
+        --help|-h)
+            show_projects
+            exit 0
+            ;;
+        --)
+            shift
+            while [ $# -gt 0 ]; do
+                POSITIONAL+=("$1")
+                shift
+            done
+            break
+            ;;
+        -*)
+            echo "Unknown option: $1"
+            echo ""
+            show_projects
+            exit 1
+            ;;
+        *)
+            POSITIONAL+=("$1")
+            ;;
+    esac
+    shift
+done
+
 # Handle --status mode
-if [ "${1:-}" = "--status" ]; then
-    PROJECT="${2:-}"
+if [ "$STATUS_MODE" = true ]; then
+    PROJECT="${POSITIONAL[0]:-}"
     if [ -n "$PROJECT" ]; then
         if [ -z "${PROJECTS[$PROJECT]}" ]; then
             echo "Unknown project: $PROJECT"
@@ -245,9 +297,9 @@ if [ "${1:-}" = "--status" ]; then
     exit $errors
 fi
 
-PROJECT="${1:-}"
+PROJECT="${POSITIONAL[0]:-}"
 
-if [ -z "$PROJECT" ] || [ "$PROJECT" = "--help" ] || [ "$PROJECT" = "-h" ]; then
+if [ -z "$PROJECT" ]; then
     show_projects
     exit 0
 fi
@@ -277,6 +329,11 @@ build_frontend || ((errors++))
 
 # 3. Run migrations
 run_migrations || ((errors++))
+
+# Agent Hub keeps the long-lived agent worker out of the default restart path.
+if [ -n "$OPTIONAL_WORKER_SVCS" ] && [ "$INCLUDE_ALL_WORKERS" != true ]; then
+    log_warn "Skipping protected worker services: $OPTIONAL_WORKER_SVCS (use --include-all-workers to restart them)"
+fi
 
 # 4. Restart all services
 [ -n "$BACKEND_SVC" ] && { restart_svc "$BACKEND_SVC" "$BACKEND_PORT" || ((errors++)); }

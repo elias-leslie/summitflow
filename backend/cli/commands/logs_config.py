@@ -18,7 +18,9 @@ USER_SERVICES = {
     "sf-worker": "summitflow-hatchet-worker.service",
     "agent-hub": "agent-hub-backend.service",
     "ah-frontend": "agent-hub-frontend.service",
-    "ah-worker": "agent-hub-hatchet-worker.service",
+    "ah-worker": "agent-hub-hatchet-agent-worker.service",
+    "ah-agent-worker": "agent-hub-hatchet-agent-worker.service",
+    "ah-ops-worker": "agent-hub-hatchet-ops-worker.service",
     "terminal": "summitflow-terminal.service",
     "monkey-fight": "monkey-fight.service",
 }

@@ -39,6 +39,17 @@ def test_get_service_list_all_includes_portfolio_ai() -> None:
     assert set(system_svcs) == set(SYSTEM_SERVICES)
 
 
+def test_get_service_list_includes_split_agent_hub_workers() -> None:
+    """Agent Hub logs should expose both the protected agent worker and ops worker."""
+    user_svcs, system_svcs = get_service_list("ah-worker,ah-ops-worker")
+
+    assert USER_SERVICES["ah-worker"] == "agent-hub-hatchet-agent-worker.service"
+    assert USER_SERVICES["ah-agent-worker"] == "agent-hub-hatchet-agent-worker.service"
+    assert USER_SERVICES["ah-ops-worker"] == "agent-hub-hatchet-ops-worker.service"
+    assert user_svcs == ["ah-worker", "ah-ops-worker"]
+    assert system_svcs == []
+
+
 @pytest.mark.parametrize(
     "shorthand,expected",
     [

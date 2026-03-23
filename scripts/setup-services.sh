@@ -13,6 +13,7 @@ SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 SUMMITFLOW_DIR="$(dirname "$SCRIPT_DIR")"
 USER_SYSTEMD_DIR="$HOME/.config/systemd/user"
+MANAGED_UNITS_STATE_DIR="$USER_SYSTEMD_DIR/.managed-unit-manifests"
 SYSTEMCTL_USER_TIMEOUT="${SYSTEMCTL_USER_TIMEOUT:-20}"
 SUMMITFLOW_SCRIPTS_PATH="$SUMMITFLOW_DIR/scripts"
 SUMMITFLOW_ROOT_OVERRIDE="$SUMMITFLOW_DIR"
@@ -43,12 +44,54 @@ render_unit_file() {
 }
 
 declare -a RENDERED_UNITS=()
+declare -a PRUNED_UNITS=()
+
+array_contains() {
+    local needle="$1"
+    shift
+    local item
+    for item in "$@"; do
+        [ "$item" = "$needle" ] && return 0
+    done
+    return 1
+}
+
+manifest_path_for_source() {
+    local source_root="$1"
+    local key
+    mkdir -p "$MANAGED_UNITS_STATE_DIR"
+    key="$(printf '%s' "$source_root" | sha256sum | awk '{print $1}')"
+    printf '%s/%s.units\n' "$MANAGED_UNITS_STATE_DIR" "$key"
+}
 
 render_unit_tree() {
     local source_root="$1"
     local project_root="${2:-}"
-    local unit_file unit_name
+    local unit_file unit_name manifest_file
+    local -a desired_units=()
+    local -a previous_units=()
     [ -d "$source_root" ] || return 0
+
+    for unit_file in "$source_root"/*.{service,timer}; do
+        [ -f "$unit_file" ] || continue
+        desired_units+=("$(basename "$unit_file")")
+    done
+
+    manifest_file="$(manifest_path_for_source "$source_root")"
+    if [ -f "$manifest_file" ]; then
+        mapfile -t previous_units < "$manifest_file"
+    fi
+
+    for unit_name in "${previous_units[@]}"; do
+        [ -n "$unit_name" ] || continue
+        if ! array_contains "$unit_name" "${desired_units[@]}"; then
+            run_user_systemctl disable --now "$unit_name" >/dev/null 2>&1 || true
+            rm -f "$USER_SYSTEMD_DIR/$unit_name"
+            echo "    pruned $unit_name"
+            PRUNED_UNITS+=("$unit_name")
+        fi
+    done
+
     for unit_file in "$source_root"/*.{service,timer}; do
         [ -f "$unit_file" ] || continue
         unit_name="$(basename "$unit_file")"
@@ -56,6 +99,11 @@ render_unit_tree() {
         render_unit_file "$unit_file" "$USER_SYSTEMD_DIR/$unit_name" "$project_root"
         echo "    $unit_name"
         RENDERED_UNITS+=("$unit_name")
+    done
+
+    : > "$manifest_file"
+    for unit_name in "${desired_units[@]}"; do
+        printf '%s\n' "$unit_name" >> "$manifest_file"
     done
 }
 
@@ -171,6 +219,9 @@ done
 
 UNITS_LINKED="${#RENDERED_UNITS[@]}"
 echo "  Rendered $UNITS_LINKED unit files"
+if [ "${#PRUNED_UNITS[@]}" -gt 0 ]; then
+    echo "  Pruned ${#PRUNED_UNITS[@]} stale unit files"
+fi
 
 # Step 3: Reload systemd user daemon
 echo "  Reloading systemd user daemon..."
