@@ -127,13 +127,15 @@ export function BackupScheduleConfig({ sourceId }: BackupScheduleConfigProps) {
             type="button"
             onClick={() => setEnabled(!enabled)}
             className={clsx(
-              'relative w-12 h-6 rounded-full transition-colors',
+              'relative w-12 h-6 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phosphor-500/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900',
               enabled ? 'bg-green-500' : 'bg-slate-600',
             )}
+            aria-pressed={enabled}
+            aria-label="Toggle scheduled backups"
           >
             <span
               className={clsx(
-                'absolute top-1 w-4 h-4 bg-white rounded-full transition-transform',
+                'absolute top-1 w-4 h-4 bg-slate-100 rounded-full transition-transform shadow-sm',
                 enabled ? 'left-7' : 'left-1',
               )}
             />
@@ -152,10 +154,10 @@ export function BackupScheduleConfig({ sourceId }: BackupScheduleConfigProps) {
                 onClick={() => setFrequency(option.value)}
                 disabled={!enabled}
                 className={clsx(
-                  'p-3 rounded-lg border text-left transition-colors',
+                  'p-3 rounded-lg border text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phosphor-500/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900',
                   frequency === option.value
-                    ? 'border-phosphor-500 bg-phosphor-500/10'
-                    : 'border-slate-600 bg-slate-700/30 hover:border-slate-500',
+                    ? 'border-phosphor-500 bg-phosphor-500/10 shadow-[0_0_12px_rgba(0,245,255,0.08)]'
+                    : 'border-slate-600 bg-slate-700/30 hover:border-slate-500 hover:bg-slate-700/50',
                 )}
               >
                 <p className="text-sm font-medium text-slate-200">
@@ -181,8 +183,8 @@ export function BackupScheduleConfig({ sourceId }: BackupScheduleConfigProps) {
             value={retentionDays}
             onChange={(e) => setRetentionDays(Number(e.target.value))}
             disabled={!enabled}
-            className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md
-                       text-slate-200 focus:outline-none focus:ring-2 focus:ring-phosphor-500"
+            className="w-full px-3 py-2 bg-slate-900/80 border border-slate-700 rounded-md
+                       text-slate-200 focus-visible:outline-none focus-visible:border-phosphor-500/50 focus-visible:ring-1 focus-visible:ring-phosphor-500/20 transition-all"
           >
             {[7, 14, 21, 30, 60, 90].map((num) => (
               <option key={num} value={num}>

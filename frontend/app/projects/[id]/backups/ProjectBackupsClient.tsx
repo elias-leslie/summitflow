@@ -351,13 +351,15 @@ export function ProjectBackupsClient() {
             </button>
           </div>
         ) : backups.length === 0 ? (
-          <div className="p-12 bg-slate-800/50 rounded-lg border border-slate-700 text-center">
-            <Archive className="w-12 h-12 text-slate-500 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-slate-300 mb-2">
+          <div className="p-12 bg-slate-800/50 rounded-lg border border-dashed border-slate-700 text-center">
+            <div className="mx-auto mb-5 w-16 h-16 rounded-2xl bg-indigo-500/8 border border-indigo-500/15 flex items-center justify-center">
+              <Archive className="w-8 h-8 text-indigo-500/50" />
+            </div>
+            <h3 className="text-lg font-medium text-slate-200 mb-2 display">
               No backups yet
             </h3>
-            <p className="text-slate-400 mb-6">
-              Create your first backup to protect your project data.
+            <p className="text-sm text-slate-500 mb-6 max-w-xs mx-auto">
+              Create your first backup to protect your project data. Scheduled backups can also be configured above.
             </p>
             <button
               type="button"
@@ -498,9 +500,7 @@ export function ProjectBackupsClient() {
                   value={backupNote}
                   onChange={(e) => setBackupNote(e.target.value)}
                   placeholder="e.g., Before major refactor"
-                  className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md
-                             text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2
-                             focus:ring-phosphor-500 focus:border-transparent"
+                  className="input"
                 />
               </div>
 

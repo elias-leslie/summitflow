@@ -221,6 +221,8 @@ export function NewProjectClient() {
             )}
           </div>
 
+          <div className="chrome-line my-1" />
+
           <div className="space-y-2">
             <Label htmlFor="healthEndpoint">Health Endpoint</Label>
             <Input

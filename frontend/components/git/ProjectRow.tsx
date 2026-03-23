@@ -118,7 +118,8 @@ export function ProjectRow({ repo }: ProjectRowProps) {
             setExpanded(!expanded)
           }
         }}
-        className="flex items-center gap-3 px-4 py-2.5 cursor-pointer select-none group"
+        aria-expanded={expanded}
+        className="flex items-center gap-3 px-4 py-2.5 cursor-pointer select-none group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-phosphor-500/40"
       >
         {/* Chevron */}
         <ChevronRight

@@ -326,7 +326,7 @@ export function ProjectSettingsClient() {
               type="button"
               onClick={() => setActiveTab(tab.id)}
               className={clsx(
-                'flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-all border-b-2 -mb-px',
+                'flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-all border-b-2 -mb-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-outrun-500/40',
                 activeTab === tab.id
                   ? 'border-outrun-500 text-slate-100 bg-outrun-500/5'
                   : 'border-transparent text-slate-500 hover:text-slate-300 hover:border-slate-700',
