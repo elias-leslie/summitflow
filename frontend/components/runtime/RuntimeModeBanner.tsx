@@ -41,7 +41,7 @@ export function RuntimeModeBanner() {
   }
 
   return (
-    <div className="rounded-lg border border-slate-700/60 bg-slate-900/70 px-4 py-2.5">
+    <div className="rounded-lg border border-slate-700/60 bg-slate-900/70 px-4 py-3">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         {/* Badge */}
         <span

@@ -41,14 +41,14 @@ function ActionCell({
           <button
             onClick={() => restartMut.mutate()}
             disabled={restartMut.isPending}
-            className="text-2xs px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 disabled:opacity-40 transition-colors"
+            className="text-2xs px-2 py-1 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 hover:border-amber-500/30 disabled:opacity-40 transition-all font-medium"
           >
             {restartMut.isPending ? '...' : 'Restart'}
           </button>
           <button
             onClick={() => stopMut.mutate()}
             disabled={stopMut.isPending}
-            className="text-2xs px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 hover:bg-red-500/20 disabled:opacity-40 transition-colors"
+            className="text-2xs px-2 py-1 rounded-md bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 hover:border-red-500/30 disabled:opacity-40 transition-all font-medium"
           >
             {stopMut.isPending ? '...' : 'Stop'}
           </button>
@@ -57,7 +57,7 @@ function ActionCell({
         <button
           onClick={() => startMut.mutate()}
           disabled={startMut.isPending}
-          className="text-2xs px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-40 transition-colors"
+          className="text-2xs px-2 py-1 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 hover:border-emerald-500/30 disabled:opacity-40 transition-all font-medium"
         >
           {startMut.isPending ? '...' : 'Start'}
         </button>

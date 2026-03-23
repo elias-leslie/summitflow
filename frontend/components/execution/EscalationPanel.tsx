@@ -99,7 +99,7 @@ export function EscalationPanel({
             <div className="flex items-center gap-3">
               <AlertTriangle className="h-5 w-5 text-orange-400" />
               <div>
-                <h2 className="text-lg font-medium text-slate-100">
+                <h2 className="text-lg font-semibold text-slate-100 display">
                   Escalation Required
                 </h2>
                 <p className="text-sm text-slate-400">{task.title}</p>
