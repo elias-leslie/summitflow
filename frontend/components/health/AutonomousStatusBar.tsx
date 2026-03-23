@@ -24,7 +24,7 @@ export function AutonomousStatusBar({ autonomous }: AutonomousStatusBarProps) {
     if (diffMins < 0) return 'Overdue'
     if (diffMins < 60) return `In ${diffMins}m`
     if (diffMins < 1440) return `In ${Math.floor(diffMins / 60)}h ${diffMins % 60}m`
-    return date.toLocaleDateString()
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
   }
 
   const statusLabel = running_count > 0

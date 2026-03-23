@@ -32,6 +32,20 @@ export function formatDate(dateStr: string | null | undefined): string {
 }
 
 /**
+ * Format a date string as a short date (e.g. "Mar 22, 2026").
+ * Use when time is not needed.
+ */
+export function formatShortDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return '-'
+  const date = new Date(dateStr)
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+}
+
+/**
  * Format a timestamp as relative time with recency indicator.
  * Used for timeline events where recent items get special styling.
  */

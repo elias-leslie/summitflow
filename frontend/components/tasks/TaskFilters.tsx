@@ -65,6 +65,7 @@ export function TaskFilters({
       <select
         value={filters.type}
         onChange={(e) => handleChange('type', e.target.value)}
+        aria-label="Filter by task type"
         className="px-2 py-1.5 text-xs bg-slate-800 border border-slate-700 rounded text-slate-100 focus-visible:outline-none focus-visible:border-phosphor-500/50 focus-visible:ring-1 focus-visible:ring-phosphor-500/20 transition-colors"
       >
         {TYPE_OPTIONS.map((opt) => (
@@ -78,6 +79,7 @@ export function TaskFilters({
       <select
         value={filters.status}
         onChange={(e) => handleChange('status', e.target.value)}
+        aria-label="Filter by status"
         className="px-2 py-1.5 text-xs bg-slate-800 border border-slate-700 rounded text-slate-100 focus-visible:outline-none focus-visible:border-phosphor-500/50 focus-visible:ring-1 focus-visible:ring-phosphor-500/20 transition-colors"
       >
         {STATUS_OPTIONS.map((opt) => (
@@ -94,6 +96,7 @@ export function TaskFilters({
           const val = e.target.value
           handleChange('priority', val === 'all' ? 'all' : parseInt(val, 10))
         }}
+        aria-label="Filter by priority"
         className="px-2 py-1.5 text-xs bg-slate-800 border border-slate-700 rounded text-slate-100 focus-visible:outline-none focus-visible:border-phosphor-500/50 focus-visible:ring-1 focus-visible:ring-phosphor-500/20 transition-colors"
       >
         {PRIORITY_OPTIONS.map((opt) => (

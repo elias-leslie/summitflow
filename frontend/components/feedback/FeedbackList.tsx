@@ -23,7 +23,7 @@ import {
   fetchFeedbackItem,
   updateFeedbackStatus,
 } from '@/lib/api/feedback'
-import { formatTimeAgo } from '@/lib/format'
+import { formatShortDate, formatTimeAgo } from '@/lib/format'
 import { TYPE_CONFIG, STATUS_CONFIG } from './feedbackConstants'
 
 // ─── Accent colors by type ───────────────────────────────────────
@@ -159,7 +159,7 @@ function InlineDetail({
             Created
           </div>
           <div className="truncate text-xs text-slate-200">
-            {new Date(item.created_at).toLocaleDateString()}
+            {formatShortDate(item.created_at)}
           </div>
         </div>
         {item.agent_slug && (
@@ -216,7 +216,7 @@ function InlineDetail({
           <p className="text-xs text-slate-300">{item.resolution_note}</p>
           {item.resolved_at && (
             <p className="text-2xs text-slate-500 mt-1">
-              {new Date(item.resolved_at).toLocaleDateString()}
+              {formatShortDate(item.resolved_at)}
             </p>
           )}
         </div>
@@ -245,7 +245,7 @@ function InlineDetail({
                   <div className="flex items-center gap-2 text-2xs text-slate-600">
                     {vote.agent_slug && <span>{vote.agent_slug}</span>}
                     <span>
-                      {new Date(vote.created_at).toLocaleDateString()}
+                      {formatShortDate(vote.created_at)}
                     </span>
                   </div>
                 </div>

@@ -52,7 +52,8 @@ export function DesignFilters({
         <select
           value={statusFilter}
           onChange={(e) => onStatusFilterChange(e.target.value as StatusFilter)}
-          className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-outrun-500"
+          aria-label="Filter by status"
+          className="bg-slate-900/80 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus-visible:outline-none focus-visible:border-phosphor-500/50 focus-visible:ring-1 focus-visible:ring-phosphor-500/20 transition-colors"
         >
           <option value="all">All Status</option>
           <option value="generated">Generated</option>
@@ -67,7 +68,8 @@ export function DesignFilters({
       <select
         value={typeFilter}
         onChange={(e) => onTypeFilterChange(e.target.value as TypeFilter)}
-        className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-outrun-500"
+        aria-label="Filter by type"
+        className="bg-slate-900/80 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus-visible:outline-none focus-visible:border-phosphor-500/50 focus-visible:ring-1 focus-visible:ring-phosphor-500/20 transition-colors"
       >
         <option value="all">All Types</option>
         <option value="component">Component</option>

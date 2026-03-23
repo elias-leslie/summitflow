@@ -263,7 +263,7 @@ export function ProjectSettingsClient() {
         <StatusCell
           label="Project ID"
           value={project.id}
-          helper={`Created ${new Date(project.created_at).toLocaleDateString()}`}
+          helper={`Created ${new Date(project.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`}
           icon={Gauge}
           mono
         />

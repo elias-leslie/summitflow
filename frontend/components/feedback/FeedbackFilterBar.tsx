@@ -115,7 +115,8 @@ export function FeedbackFilterBar({
         onChange={(e) =>
           onFiltersChange({ component_id: e.target.value || undefined })
         }
-        className="px-2 py-1 bg-slate-900/60 border border-slate-700/60 rounded text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-phosphor-500"
+        aria-label="Filter by component"
+        className="px-2 py-1 bg-slate-900/60 border border-slate-700/60 rounded text-xs text-slate-200 focus-visible:outline-none focus-visible:border-phosphor-500/50 focus-visible:ring-1 focus-visible:ring-phosphor-500/20 transition-colors"
       >
         <option value="">All Components</option>
         {Object.entries(COMPONENT_GROUPS).map(([group, components]) => (
@@ -137,7 +138,8 @@ export function FeedbackFilterBar({
             sort: e.target.value as FeedbackFilters['sort'],
           })
         }
-        className="px-2 py-1 bg-slate-900/60 border border-slate-700/60 rounded text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-phosphor-500"
+        aria-label="Sort feedback"
+        className="px-2 py-1 bg-slate-900/60 border border-slate-700/60 rounded text-xs text-slate-200 focus-visible:outline-none focus-visible:border-phosphor-500/50 focus-visible:ring-1 focus-visible:ring-phosphor-500/20 transition-colors"
       >
         {SORT_OPTIONS.map((opt) => (
           <option key={opt.value} value={opt.value}>

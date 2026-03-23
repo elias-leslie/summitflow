@@ -1,6 +1,7 @@
 'use client'
 
 import type { Task } from '@/lib/api/tasks'
+import { formatShortDate } from '@/lib/format'
 
 interface TaskMetadataProps {
   task: Task
@@ -13,16 +14,16 @@ export function TaskMetadata({ task }: TaskMetadataProps) {
         Status: <span className="text-slate-300">{task.status}</span>
       </p>
       {task.created_at && (
-        <p>Created: {new Date(task.created_at).toLocaleDateString()}</p>
+        <p>Created: {formatShortDate(task.created_at)}</p>
       )}
       {task.updated_at && (
-        <p>Updated: {new Date(task.updated_at).toLocaleDateString()}</p>
+        <p>Updated: {formatShortDate(task.updated_at)}</p>
       )}
       {task.started_at && (
-        <p>Started: {new Date(task.started_at).toLocaleDateString()}</p>
+        <p>Started: {formatShortDate(task.started_at)}</p>
       )}
       {task.completed_at && (
-        <p>Completed: {new Date(task.completed_at).toLocaleDateString()}</p>
+        <p>Completed: {formatShortDate(task.completed_at)}</p>
       )}
     </div>
   )

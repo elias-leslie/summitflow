@@ -1,6 +1,7 @@
 'use client'
 
 import type { Mockup } from '@/lib/api/mockups'
+import { formatDate } from '@/lib/format'
 import { StatusActions } from './StatusActions'
 
 interface DetailsSidebarProps {
@@ -19,7 +20,7 @@ export function DetailsSidebar({
   onStatusChange,
 }: DetailsSidebarProps) {
   const formattedDate = mockup.created_at
-    ? new Date(mockup.created_at).toLocaleString()
+    ? formatDate(mockup.created_at)
     : 'Unknown'
 
   return (
@@ -123,7 +124,7 @@ export function DetailsSidebar({
                   <span className="text-slate-100 flex-1 truncate">{item.name}</span>
                   <span className="text-slate-500 text-xs">
                     {item.created_at
-                      ? new Date(item.created_at).toLocaleDateString()
+                      ? formatDate(item.created_at)
                       : ''}
                   </span>
                 </div>

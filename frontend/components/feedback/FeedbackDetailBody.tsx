@@ -2,6 +2,7 @@
 
 import { ExternalLink, ThumbsUp } from 'lucide-react'
 import type { FeedbackItemWithVotes } from '@/lib/api/feedback'
+import { formatShortDate } from '@/lib/format'
 
 // ─── Constants ───────────────────────────────────────────────────
 
@@ -58,7 +59,7 @@ export function FeedbackDetailBody({ item }: FeedbackDetailBodyProps) {
         <MetricBox label="Project" value={item.project_id} />
         <MetricBox
           label="Created"
-          value={new Date(item.created_at).toLocaleDateString()}
+          value={formatShortDate(item.created_at)}
         />
         {item.agent_slug && (
           <MetricBox label="Agent" value={item.agent_slug} />
@@ -93,7 +94,7 @@ export function FeedbackDetailBody({ item }: FeedbackDetailBodyProps) {
           <p className="text-xs text-slate-300">{item.resolution_note}</p>
           {item.resolved_at && (
             <p className="text-2xs text-slate-500 mt-1">
-              {new Date(item.resolved_at).toLocaleDateString()}
+              {formatShortDate(item.resolved_at)}
             </p>
           )}
         </div>
@@ -123,7 +124,7 @@ export function FeedbackDetailBody({ item }: FeedbackDetailBodyProps) {
                     <div className="flex items-center gap-2 text-2xs text-slate-600">
                       {vote.agent_slug && <span>{vote.agent_slug}</span>}
                       <span>
-                        {new Date(vote.created_at).toLocaleDateString()}
+                        {formatShortDate(vote.created_at)}
                       </span>
                     </div>
                   </div>
