@@ -41,7 +41,6 @@ export type {
   // Execution types
   ExecuteTaskOptions,
   ExecuteTaskResponse,
-  BatchTaskResult,
   DeleteTaskResponse,
   // Agent Hub types
   CodingAgent,

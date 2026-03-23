@@ -4,6 +4,7 @@ import type { ChatMessage } from '@agent-hub/chat-ui'
 import { buildAgentHubChatApiConfig } from '@/lib/agent-hub-chat-config'
 import { getAgentHubProxyBase } from '@/lib/agent-hub-proxy'
 import { getApiBaseUrl } from '@/lib/api-config'
+import { postJson } from '@/lib/api/utils'
 import {
   CREATE_TASK_TOOL_NAME,
   DEFAULT_COMPLEXITY,
@@ -81,32 +82,19 @@ export function useTaskIdeation(projectId: string, onOpenChange: (open: boolean)
     setError(null)
 
     try {
-      const apiBase = getApiBaseUrl()
-      const response = await fetch(
-        `${apiBase}/api/projects/${projectId}/tasks/from-ideation`,
+      const result = await postJson<IdeationTaskResponse>(
+        `${getApiBaseUrl()}/api/projects/${projectId}/tasks/from-ideation`,
         {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title: taskData.title,
-            description: taskData.description,
-            priority: taskData.priority,
-            task_type: taskData.task_type,
-            labels: taskData.labels,
-            complexity: taskData.complexity,
-            auto_dispatch: true,
-          }),
+          title: taskData.title,
+          description: taskData.description,
+          priority: taskData.priority,
+          task_type: taskData.task_type,
+          labels: taskData.labels,
+          complexity: taskData.complexity,
+          auto_dispatch: true,
         },
+        'Failed to create task',
       )
-
-      if (!response.ok) {
-        const errorBody = await response.json().catch(() => null)
-        throw new Error(
-          errorBody?.detail || `Failed to create task (${response.status})`,
-        )
-      }
-
-      const result: IdeationTaskResponse = await response.json()
 
       invalidateTasks()
 

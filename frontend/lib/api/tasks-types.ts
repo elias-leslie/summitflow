@@ -15,7 +15,6 @@
 export type {
   TaskStatus,
   TaskType,
-  AgentType,
   EnrichmentStatus,
   TaskAcceptanceCriterion,
   CapabilityContext,
@@ -36,7 +35,6 @@ export type {
   StepSummary,
   Subtask,
   SubtasksResponse,
-  EnrichmentRequest,
   DiscussionMessage,
   DiscussionResponse,
 } from './tasks-types-enrichment'
@@ -48,9 +46,6 @@ export type {
 export type {
   ExecuteTaskOptions,
   ExecuteTaskResponse,
-  BatchTaskCreateItem,
-  BatchTaskResult,
-  BatchTaskResponse,
   DeleteTaskResponse,
 } from './tasks-types-execution'
 
