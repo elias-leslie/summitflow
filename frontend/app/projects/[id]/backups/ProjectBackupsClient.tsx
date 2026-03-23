@@ -320,7 +320,7 @@ export function ProjectBackupsClient() {
           <button
             type="button"
             onClick={() => setCreateDialogOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 text-sm bg-phosphor-600 text-white
+            className="flex items-center gap-2 px-4 py-2 text-sm bg-phosphor-600 text-slate-50
                        hover:bg-phosphor-500 rounded-md transition-colors font-medium"
           >
             <Plus className="w-4 h-4" />
@@ -362,7 +362,7 @@ export function ProjectBackupsClient() {
             <button
               type="button"
               onClick={() => setCreateDialogOpen(true)}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-phosphor-600 text-white
+              className="inline-flex items-center gap-2 px-4 py-2 bg-phosphor-600 text-slate-50
                          hover:bg-phosphor-500 rounded-md transition-colors font-medium"
             >
               <Plus className="w-4 h-4" />
@@ -478,7 +478,7 @@ export function ProjectBackupsClient() {
       </section>
 
       {createDialogOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-slate-800 rounded-lg border border-slate-700 p-6 w-full max-w-md mx-4">
             <h3 className="text-lg font-semibold text-slate-100 mb-4 flex items-center gap-2">
               <Archive className="w-5 h-5 text-phosphor-400" />
@@ -525,7 +525,7 @@ export function ProjectBackupsClient() {
                   type="button"
                   onClick={handleCreateBackup}
                   disabled={creating}
-                  className="flex items-center gap-2 px-4 py-2 text-sm bg-phosphor-600 text-white
+                  className="flex items-center gap-2 px-4 py-2 text-sm bg-phosphor-600 text-slate-50
                              hover:bg-phosphor-500 rounded-md transition-colors font-medium
                              disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -548,7 +548,7 @@ export function ProjectBackupsClient() {
       )}
 
       {deleteConfirmId && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-slate-800 rounded-lg border border-slate-700 p-6 w-full max-w-md mx-4">
             <h3 className="text-lg font-semibold text-slate-100 mb-2 flex items-center gap-2">
               <AlertCircle className="w-5 h-5 text-red-400" />
@@ -579,7 +579,7 @@ export function ProjectBackupsClient() {
                 type="button"
                 onClick={() => handleDeleteBackup(deleteConfirmId)}
                 disabled={deleting}
-                className="flex items-center gap-2 px-4 py-2 text-sm bg-red-600 text-white
+                className="flex items-center gap-2 px-4 py-2 text-sm bg-red-600 text-slate-50
                            hover:bg-red-500 rounded-md transition-colors font-medium
                            disabled:opacity-50 disabled:cursor-not-allowed"
               >

@@ -299,7 +299,7 @@ export function AssetStudioWorkspace({
                         className="object-cover"
                         unoptimized
                       />
-                      <div className="absolute left-2 top-2 rounded-full bg-black/65 px-2 py-1 text-2xs uppercase tracking-[0.18em] text-cyan-200">
+                      <div className="absolute left-2 top-2 rounded-full bg-slate-950/70 px-2 py-1 text-2xs uppercase tracking-[0.18em] text-cyan-200">
                         {asset.workflow}
                       </div>
                     </div>

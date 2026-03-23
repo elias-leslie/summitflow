@@ -368,7 +368,7 @@ export function SourceBackupsClient({ sourceId }: { sourceId: string }) {
                 type="button"
                 onClick={handleCreate}
                 disabled={creating}
-                className="flex items-center gap-2 px-4 py-1.5 bg-phosphor-600 text-white rounded-md
+                className="flex items-center gap-2 px-4 py-1.5 bg-phosphor-600 text-slate-50 rounded-md
                            text-sm font-medium hover:bg-phosphor-500 transition-colors disabled:opacity-50"
               >
                 {creating ? (
@@ -394,7 +394,7 @@ export function SourceBackupsClient({ sourceId }: { sourceId: string }) {
             <button
               type="button"
               onClick={() => setShowCreateForm(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-phosphor-600 text-white rounded-md
+              className="flex items-center gap-2 px-4 py-2 bg-phosphor-600 text-slate-50 rounded-md
                          text-sm font-medium hover:bg-phosphor-500 transition-colors"
             >
               <Plus className="w-4 h-4" />
