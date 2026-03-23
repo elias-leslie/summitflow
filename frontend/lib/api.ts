@@ -13,5 +13,7 @@ export * from './api/tasks'
 export {
   buildQueryString,
   fetchWithErrorHandling,
-  getApiBase,
 } from './api/utils'
+
+// Re-export API base URL helper for callers that need it
+export { getApiBaseUrl } from './api-config'

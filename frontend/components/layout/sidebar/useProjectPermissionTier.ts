@@ -1,3 +1,4 @@
+import { fetchWithErrorHandling } from '@/lib/api/utils'
 import { POLL_SLOW } from '@/lib/polling'
 import { useQuery } from '@tanstack/react-query'
 
@@ -15,9 +16,15 @@ interface ProjectPermission {
 }
 
 async function fetchPermissions(): Promise<ProjectPermission[]> {
-  const res = await fetch('/api/agent-hub/projects/permissions')
-  if (!res.ok) return []
-  return res.json()
+  try {
+    return await fetchWithErrorHandling<ProjectPermission[]>(
+      '/api/agent-hub/projects/permissions',
+      { errorMessage: 'Failed to fetch project permissions' },
+    )
+  } catch {
+    // Silent degradation — sidebar shows no tier badge rather than erroring
+    return []
+  }
 }
 
 export function useProjectPermissionTier(projectId: string): string | null {

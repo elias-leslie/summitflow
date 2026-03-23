@@ -2,8 +2,6 @@
  * Shared API utilities - DRY helpers for common fetch patterns.
  */
 
-import { getApiBaseUrl } from '../api-config'
-
 /**
  * Build query string from optional params object.
  * Skips undefined/null values.
@@ -19,14 +17,6 @@ export function buildQueryString(
   }
   const str = searchParams.toString()
   return str ? `?${str}` : ''
-}
-
-/**
- * Get API base URL for backend calls.
- * Delegates to api-config.ts for proper hostname detection.
- */
-export function getApiBase(): string {
-  return getApiBaseUrl()
 }
 
 /**

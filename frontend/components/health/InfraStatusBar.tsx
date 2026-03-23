@@ -2,6 +2,7 @@
 
 import { useSystemStats } from '@/hooks/useSystemStats'
 import { API_PATHS, buildApiUrl } from '@/lib/api-config'
+import { fetchWithErrorHandling } from '@/lib/api/utils'
 import { POLL_STANDARD } from '@/lib/polling'
 import { useQuery } from '@tanstack/react-query'
 
@@ -61,11 +62,11 @@ export function InfraStatusBar() {
 
   const { data: detailed, isError: isDetailedError } = useQuery({
     queryKey: ['health-detailed'],
-    queryFn: async () => {
-      const res = await fetch(buildApiUrl(API_PATHS.HEALTH_DETAILED))
-      if (!res.ok) throw new Error('Failed to fetch detailed health')
-      return res.json() as Promise<DetailedHealth>
-    },
+    queryFn: () =>
+      fetchWithErrorHandling<DetailedHealth>(
+        buildApiUrl(API_PATHS.HEALTH_DETAILED),
+        { errorMessage: 'Failed to fetch detailed health' },
+      ),
     refetchInterval: POLL_STANDARD * 2,
     staleTime: POLL_STANDARD * 2 - 5000,
   })

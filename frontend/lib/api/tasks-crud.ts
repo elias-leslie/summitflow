@@ -2,7 +2,8 @@
  * Tasks API - Core CRUD Operations
  */
 
-import { buildQueryString, fetchWithErrorHandling, getApiBase, patchJson, postJson } from './utils'
+import { getApiBaseUrl } from '../api-config'
+import { buildQueryString, fetchWithErrorHandling, patchJson, postJson } from './utils'
 import type {
   Task,
   TaskListResponse,
@@ -108,7 +109,7 @@ export async function startTask(
   },
 ): Promise<Task> {
   return fetchWithErrorHandling(
-    `${getApiBase()}/api/projects/${projectId}/tasks/${taskId}/execute`,
+    `${getApiBaseUrl()}/api/projects/${projectId}/tasks/${taskId}/execute`,
     {
       method: 'POST',
       errorMessage: 'Failed to start task',
@@ -123,7 +124,7 @@ export async function updateTaskStatus(
   taskErrorMessage?: string,
 ): Promise<Task> {
   return patchJson(
-    `${getApiBase()}/api/projects/${projectId}/tasks/${taskId}/status`,
+    `${getApiBaseUrl()}/api/projects/${projectId}/tasks/${taskId}/status`,
     { status, error_message: taskErrorMessage },
     'Failed to update task status',
   )

@@ -2,7 +2,8 @@
  * Tasks API - Autonomous Execution & Batch Operations
  */
 
-import { getApiBase, postJson } from './utils'
+import { getApiBaseUrl } from '../api-config'
+import { postJson } from './utils'
 import type {
   ExecuteTaskOptions,
   ExecuteTaskResponse,
@@ -24,7 +25,7 @@ export async function executeTask(
   options?: ExecuteTaskOptions,
 ): Promise<ExecuteTaskResponse> {
   return postJson(
-    `${getApiBase()}/api/projects/${projectId}/tasks/${taskId}/execute`,
+    `${getApiBaseUrl()}/api/projects/${projectId}/tasks/${taskId}/execute`,
     options || {},
     'Failed to start task execution',
   )

@@ -2,7 +2,8 @@
  * Enhanced Git API client — conflicts, diffs, commits, snapshots.
  */
 
-import { fetchWithErrorHandling, getApiBase } from './utils'
+import { getApiBaseUrl } from '../api-config'
+import { fetchWithErrorHandling } from './utils'
 
 // --- Conflict Types ---
 
@@ -127,7 +128,7 @@ export async function fetchProjectDashboard(
   commitsLimit = 15,
 ): Promise<ProjectDashboardResponse> {
   return fetchWithErrorHandling<ProjectDashboardResponse>(
-    `${getApiBase()}/api/git/projects/${projectId}/dashboard?commits_limit=${commitsLimit}`,
+    `${getApiBaseUrl()}/api/git/projects/${projectId}/dashboard?commits_limit=${commitsLimit}`,
     { errorMessage: 'Failed to fetch project dashboard' },
   )
 }
@@ -141,7 +142,7 @@ export async function fetchConflicts(
   if (projectId) params.set('project_id', projectId)
   const suffix = params.size > 0 ? `?${params.toString()}` : ''
   return fetchWithErrorHandling<ConflictsResponse>(
-    `${getApiBase()}/api/git/conflicts${suffix}`,
+    `${getApiBaseUrl()}/api/git/conflicts${suffix}`,
     { errorMessage: 'Failed to fetch conflicts' },
   )
 }
@@ -150,7 +151,7 @@ export async function retryMerge(
   taskId: string,
 ): Promise<Record<string, unknown>> {
   return fetchWithErrorHandling<Record<string, unknown>>(
-    `${getApiBase()}/api/git/tasks/${taskId}/retry-merge`,
+    `${getApiBaseUrl()}/api/git/tasks/${taskId}/retry-merge`,
     { method: 'POST', errorMessage: 'Failed to retry merge' },
   )
 }
@@ -159,7 +160,7 @@ export async function dismissConflict(
   taskId: string,
 ): Promise<{ status: string }> {
   return fetchWithErrorHandling<{ status: string }>(
-    `${getApiBase()}/api/git/tasks/${taskId}/dismiss-conflict`,
+    `${getApiBaseUrl()}/api/git/tasks/${taskId}/dismiss-conflict`,
     { method: 'POST', errorMessage: 'Failed to dismiss conflict' },
   )
 }
@@ -168,7 +169,7 @@ export async function dismissConflict(
 
 export async function fetchTaskDiff(taskId: string): Promise<TaskDiffResponse> {
   return fetchWithErrorHandling<TaskDiffResponse>(
-    `${getApiBase()}/api/tasks/${taskId}/diff`,
+    `${getApiBaseUrl()}/api/tasks/${taskId}/diff`,
     { errorMessage: 'Failed to fetch task diff' },
   )
 }
@@ -181,7 +182,7 @@ export async function fetchCommitDiff(
 ): Promise<TaskDiffResponse> {
   const params = projectId ? `?project_id=${projectId}` : ''
   return fetchWithErrorHandling<TaskDiffResponse>(
-    `${getApiBase()}/api/git/commits/${sha}/diff${params}`,
+    `${getApiBaseUrl()}/api/git/commits/${sha}/diff${params}`,
     { errorMessage: 'Failed to fetch commit diff' },
   )
 }
@@ -190,7 +191,7 @@ export async function revertToSnapshot(
   taskId: string,
 ): Promise<{ status: string; reverted_to: string }> {
   return fetchWithErrorHandling<{ status: string; reverted_to: string }>(
-    `${getApiBase()}/api/git/snapshots/${taskId}/revert`,
+    `${getApiBaseUrl()}/api/git/snapshots/${taskId}/revert`,
     { method: 'POST', errorMessage: 'Failed to revert to snapshot' },
   )
 }

@@ -2,6 +2,8 @@
  * API functions for fetching design standards
  */
 
+import { fetchWithErrorHandling } from '@/lib/api/utils'
+
 import type { DesignRule } from './types'
 
 /**
@@ -12,14 +14,16 @@ import type { DesignRule } from './types'
 export async function fetchEffectiveRules(
   projectId: string,
 ): Promise<DesignRule[]> {
-  const res = await fetch(
-    `/api/projects/${projectId}/design-standards/effective-rules`,
-  )
-  if (!res.ok) {
+  try {
+    return await fetchWithErrorHandling<DesignRule[]>(
+      `/api/projects/${projectId}/design-standards/effective-rules`,
+      { errorMessage: 'Failed to fetch project design rules' },
+    )
+  } catch {
     // Fallback to base rules if project has no standard
-    const baseRes = await fetch('/api/design-standards/base/rules')
-    if (!baseRes.ok) throw new Error('Failed to fetch design rules')
-    return baseRes.json()
+    return fetchWithErrorHandling<DesignRule[]>(
+      '/api/design-standards/base/rules',
+      { errorMessage: 'Failed to fetch design rules' },
+    )
   }
-  return res.json()
 }

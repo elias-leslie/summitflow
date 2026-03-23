@@ -4,7 +4,8 @@
  */
 
 import { getAgentHubProxyBase } from '../agent-hub-proxy'
-import { buildQueryString, getApiBase } from './utils'
+import { getApiBaseUrl } from '../api-config'
+import { buildQueryString } from './utils'
 
 // ============================================================================
 // Types
@@ -135,7 +136,7 @@ export interface FeedbackFilters {
 // ============================================================================
 
 async function feedbackFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const apiBase = typeof window === 'undefined' ? getApiBase() : getAgentHubProxyBase()
+  const apiBase = typeof window === 'undefined' ? getApiBaseUrl() : getAgentHubProxyBase()
   const response = await fetch(`${apiBase}/feedback${path}`, options)
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Request failed' }))

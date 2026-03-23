@@ -2,7 +2,8 @@
  * Git management API functions.
  */
 
-import { fetchWithErrorHandling, getApiBase } from './utils'
+import { getApiBaseUrl } from '../api-config'
+import { fetchWithErrorHandling } from './utils'
 
 export interface RepoWorkspaceSummary {
   active_worktrees: number
@@ -57,7 +58,7 @@ export interface GitSyncResponse {
  */
 export async function fetchGitStatus(): Promise<GitStatusResponse> {
   return fetchWithErrorHandling<GitStatusResponse>(
-    `${getApiBase()}/api/git/status`,
+    `${getApiBaseUrl()}/api/git/status`,
     { errorMessage: 'Failed to fetch git status' },
   )
 }
@@ -69,7 +70,7 @@ export async function fetchProjectGitStatus(
   projectId: string,
 ): Promise<GitStatusResponse> {
   return fetchWithErrorHandling<GitStatusResponse>(
-    `${getApiBase()}/api/projects/${projectId}/git/status`,
+    `${getApiBaseUrl()}/api/projects/${projectId}/git/status`,
     { errorMessage: 'Failed to fetch project git status' },
   )
 }
@@ -79,7 +80,7 @@ export async function fetchProjectGitStatus(
  */
 export async function syncRepositories(): Promise<GitSyncResponse> {
   return fetchWithErrorHandling<GitSyncResponse>(
-    `${getApiBase()}/api/git/sync`,
+    `${getApiBaseUrl()}/api/git/sync`,
     {
       method: 'POST',
       errorMessage: 'Failed to sync repositories',
@@ -94,7 +95,7 @@ export async function pullRepository(
   projectId: string,
 ): Promise<GitSyncResponse> {
   return fetchWithErrorHandling<GitSyncResponse>(
-    `${getApiBase()}/api/projects/${projectId}/git/pull`,
+    `${getApiBaseUrl()}/api/projects/${projectId}/git/pull`,
     {
       method: 'POST',
       errorMessage: 'Failed to pull repository',
@@ -117,7 +118,7 @@ export async function smartSyncProject(
   projectId: string,
 ): Promise<SmartSyncResponse> {
   return fetchWithErrorHandling<SmartSyncResponse>(
-    `${getApiBase()}/api/projects/${projectId}/git/smart-sync`,
+    `${getApiBaseUrl()}/api/projects/${projectId}/git/smart-sync`,
     {
       method: 'POST',
       errorMessage: 'Failed to smart sync project',
