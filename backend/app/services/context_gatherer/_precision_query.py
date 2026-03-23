@@ -63,13 +63,6 @@ _STOP_WORDS = {
     "every",
     "some",
     "other",
-    "logic",
-    "algorithm",
-    "implementation",
-    "handling",
-    "processing",
-    "returns",
-    "results",
 }
 _WORKFLOW_META_TERMS = {
     "workflow",
@@ -257,6 +250,34 @@ def extract_query_terms(queries: list[str]) -> list[str]:
                     return terms
 
     return terms
+
+
+def nl_to_symbol_terms(queries: list[str]) -> list[str]:
+    """Generate potential symbol names from natural language query words.
+
+    E.g. "project selector" -> ["ProjectSelector", "project_selector"]
+    """
+    combined = " ".join(queries).strip()
+    words = [w for w in combined.lower().split() if len(w) >= 2 and w not in _STOP_WORDS]
+    if not words:
+        return []
+
+    terms: list[str] = []
+    # Full phrase as CamelCase and snake_case
+    if len(words) >= 2:
+        camel = "".join(w.capitalize() for w in words)
+        snake = "_".join(words)
+        terms.append(camel)
+        if snake != camel:
+            terms.append(snake)
+
+    # Individual words and their case variants
+    for word in words:
+        for variant in expand_case_variants(word):
+            if variant not in terms:
+                terms.append(variant)
+
+    return terms[:_MAX_TERMS]
 
 
 def has_explicit_code_signal(queries: list[str]) -> bool:

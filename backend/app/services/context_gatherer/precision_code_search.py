@@ -15,6 +15,7 @@ from ._precision_query import (
     is_import_query,
     is_natural_language_query,
     looks_like_workflow_meta_query,
+    nl_to_symbol_terms,
     normalize_queries,
     split_path_and_symbol_terms,
 )
@@ -217,8 +218,23 @@ def _search_symbols_for_queries(
     *,
     symbol_limit: int = _SEARCH_LIMIT,
 ) -> tuple[list[dict[str, object]], str]:
-    """Run symbol search (skipping for import/NL queries) and build the symbol section."""
-    if is_import_query(normalized_queries) or is_natural_language_query(normalized_queries):
+    """Run symbol search and build the symbol section.
+
+    Import queries skip symbol search entirely. Natural language queries
+    generate CamelCase/snake_case variants and try symbol search before
+    falling back (e.g. "project selector" → tries "ProjectSelector").
+    """
+    if is_import_query(normalized_queries):
+        return [], ""
+
+    if is_natural_language_query(normalized_queries):
+        # Try symbol search with case-expanded variants from NL words
+        nl_terms = nl_to_symbol_terms(normalized_queries)
+        if nl_terms:
+            symbols = search_and_rank_symbols(project_id, nl_terms, symbol_limit=symbol_limit)
+            if symbols:
+                section = build_symbol_section(project_id, symbols)
+                return symbols, section
         return [], ""
 
     _path_terms, symbol_terms = split_path_and_symbol_terms(normalized_queries)
@@ -233,7 +249,12 @@ def _text_fallback(
     normalized_queries: list[str],
     symbol_section: str,
 ) -> tuple[dict[str, Any], str]:
-    """Run text search as a fallback when symbol search yields nothing."""
+    """Run text search as a fallback when symbol search yields nothing.
+
+    Tries the full phrase first.  When that produces no matches and the
+    query has multiple words, retries with the longest individual term
+    to surface at least *some* relevant content.
+    """
     _empty: dict[str, Any] = {"count": 0, "files_searched": 0, "items": [], "truncated": False}
     if symbol_section:
         return _empty, ""
@@ -241,6 +262,18 @@ def _text_fallback(
     path_terms, _symbol_terms = split_path_and_symbol_terms(normalized_queries)
     text_query = " ".join(path_terms) if path_terms else " ".join(normalized_queries)
     text_results = search_text(project_id, text_query, limit=_ENTRY_LIMIT)
+
+    # If phrase search found nothing, try individual terms (longest first)
+    if not text_results.get("items") and " " in text_query:
+        terms = sorted(text_query.split(), key=len, reverse=True)
+        for term in terms:
+            if len(term) < 3:
+                continue
+            term_results = search_text(project_id, term, limit=_ENTRY_LIMIT)
+            if term_results.get("items"):
+                text_results = term_results
+                break
+
     return text_results, build_text_section(text_results)
 
 

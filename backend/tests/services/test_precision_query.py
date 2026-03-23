@@ -9,6 +9,7 @@ from app.services.context_gatherer._precision_query import (
     is_import_query,
     is_natural_language_query,
     is_short_or_generic,
+    nl_to_symbol_terms,
     split_path_and_symbol_terms,
 )
 from app.services.context_gatherer._precision_ranking import symbol_match_rank as _symbol_match_rank
@@ -223,3 +224,39 @@ class TestIsNaturalLanguageQuery:
     def test_rejects_code_signal_queries(self) -> None:
         assert is_natural_language_query(["api endpoint routing"]) is False
         assert is_natural_language_query(["python class hierarchy"]) is False
+
+
+class TestNlToSymbolTerms:
+    """Generate potential symbol names from natural language query words."""
+
+    def test_generates_camel_case(self) -> None:
+        terms = nl_to_symbol_terms(["project selector"])
+        assert "ProjectSelector" in terms
+
+    def test_generates_snake_case(self) -> None:
+        terms = nl_to_symbol_terms(["project selector"])
+        assert "project_selector" in terms
+
+    def test_includes_individual_words(self) -> None:
+        terms = nl_to_symbol_terms(["project selector"])
+        assert "project" in terms
+        assert "selector" in terms
+
+    def test_filters_stop_words(self) -> None:
+        terms = nl_to_symbol_terms(["the project for this"])
+        # "the", "for", "this" are stop words
+        assert "project" in terms
+        assert "the" not in terms
+
+    def test_empty_after_stop_words(self) -> None:
+        terms = nl_to_symbol_terms(["the and for"])
+        assert terms == []
+
+    def test_single_word(self) -> None:
+        terms = nl_to_symbol_terms(["selector"])
+        assert "selector" in terms
+
+    def test_three_words(self) -> None:
+        terms = nl_to_symbol_terms(["infra status bar"])
+        assert "InfraStatusBar" in terms
+        assert "infra_status_bar" in terms

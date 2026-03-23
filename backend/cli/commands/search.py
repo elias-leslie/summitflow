@@ -45,7 +45,7 @@ def _generate_hint(query: str, mode: str, metadata: dict) -> str | None:
     if mode == "text-fallback":
         if has_path_segments(queries):
             return "fell back to text search (no symbol match). Path-qualified terms are noisy — try just the symbol name."
-        return "fell back to text search (no symbol match). Narrower symbol/function names give better results."
+        return "fell back to text search (no symbol match). Try a specific identifier like `FunctionName` or `function_name`."
 
     # Symbol-first with low match quality — check if results look incidental
     symbol_count = metadata.get("symbol_count", 0)

@@ -454,10 +454,11 @@ def test_collect_precision_code_search_context_respects_symbol_limit() -> None:
 
 
 def test_collect_precision_code_search_context_routes_natural_language_to_text() -> None:
-    """Natural language queries like 'scoring logic' should auto-route to text search."""
+    """NL queries try symbol search with case variants first, fall back to text if no symbols."""
     with (
         patch(
             "app.services.context_gatherer._precision_ranking.search_symbols",
+            return_value=[],  # No symbol matches for NL variants
         ) as mock_symbols,
         patch(
             "app.services.context_gatherer.precision_code_search.search_text",
@@ -478,6 +479,103 @@ def test_collect_precision_code_search_context_routes_natural_language_to_text()
     ):
         result = collect_precision_code_search_context("project-1", ["scoring logic"])
 
-    mock_symbols.assert_not_called()
+    # NL queries now try symbol search with case variants (e.g. "ScoringLogic")
+    mock_symbols.assert_called()
     assert result.metadata["used_fallback"] is True
     assert result.metadata["fallback_mode"] == "text"
+
+
+def test_collect_precision_code_search_context_nl_query_finds_symbols_via_case_variants() -> None:
+    """NL query 'project selector' should find ProjectSelector symbol via case expansion."""
+    with (
+        patch(
+            "app.services.context_gatherer._precision_ranking.search_symbols",
+        ) as mock_symbols,
+        patch(
+            "app.services.context_gatherer._precision_sections.list_related_entries_for_file",
+            return_value=[],
+        ),
+        patch(
+            "app.services.context_gatherer._precision_sections.get_symbol",
+            return_value={
+                "symbol_id": "frontend/components/layout/ProjectSelector.tsx::ProjectSelector#function",
+                "qualified_name": "ProjectSelector",
+                "file_path": "frontend/components/layout/ProjectSelector.tsx",
+                "start_line": 21,
+                "end_line": 180,
+            },
+        ),
+        patch(
+            "app.services.context_gatherer._precision_sections.read_symbol_source",
+            return_value="export function ProjectSelector({ onProjectChange }: Props) {",
+        ),
+        patch(
+            "app.services.context_gatherer.precision_code_search.estimate_naive_file_tokens",
+            return_value=2000,
+        ),
+    ):
+        mock_symbols.return_value = [
+            {
+                "symbol_id": "frontend/components/layout/ProjectSelector.tsx::ProjectSelector#function",
+                "qualified_name": "ProjectSelector",
+                "name": "ProjectSelector",
+                "kind": "function",
+                "file_path": "frontend/components/layout/ProjectSelector.tsx",
+                "start_line": 21,
+                "end_line": 180,
+                "signature": "export function ProjectSelector({ onProjectChange })",
+                "summary": "Project selection dropdown component.",
+            }
+        ]
+
+        result = collect_precision_code_search_context("project-1", ["project selector"])
+
+    # NL query should find symbols via CamelCase expansion ("ProjectSelector")
+    assert result.metadata["used_symbol_first"] is True
+    assert result.metadata["symbol_count"] == 1
+    assert "ProjectSelector" in result.prompt_context
+
+
+def test_collect_precision_code_search_context_text_fallback_tries_individual_terms() -> None:
+    """When full-phrase text search finds nothing, individual terms should be tried."""
+    call_count = 0
+
+    def _search_text_side_effect(project_id: str, query: str, *, limit: int = 20) -> dict:
+        nonlocal call_count
+        call_count += 1
+        if " " in query:
+            # Full phrase "open settings" finds nothing
+            return {"items": [], "count": 0, "files_searched": 10, "truncated": False}
+        # Individual term "settings" finds results
+        if query == "settings":
+            return {
+                "items": [
+                    {
+                        "path": "backend/app/config.py",
+                        "line": 15,
+                        "content": "class Settings(BaseSettings):",
+                        "language": "python",
+                    }
+                ],
+                "count": 1,
+                "files_searched": 10,
+                "truncated": False,
+            }
+        return {"items": [], "count": 0, "files_searched": 10, "truncated": False}
+
+    with (
+        patch(
+            "app.services.context_gatherer._precision_ranking.search_symbols",
+            return_value=[],
+        ),
+        patch(
+            "app.services.context_gatherer.precision_code_search.search_text",
+            side_effect=_search_text_side_effect,
+        ),
+    ):
+        result = collect_precision_code_search_context("project-1", ["open settings"])
+
+    assert call_count >= 2  # At least phrase + one individual term
+    assert result.metadata["used_fallback"] is True
+    assert result.metadata["text_match_count"] == 1
+    assert "config.py" in result.prompt_context
