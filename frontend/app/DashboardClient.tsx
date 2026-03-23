@@ -4,10 +4,12 @@ import { useQuery } from '@tanstack/react-query'
 import {
   AlertCircle,
   Archive,
+  Boxes,
   Bug,
   ChevronLeft,
   ChevronRight,
   FolderKanban,
+  GitBranch,
   ListTodo,
   Plus,
   Target,
@@ -69,8 +71,10 @@ export function DashboardClient() {
   ]
 
   const quickLinks = [
+    { href: '/git', label: 'Git', sub: 'Repos & branches', icon: GitBranch, hoverBorder: 'hover:border-violet-500/40', hoverBg: 'hover:bg-violet-500/5', iconColor: 'text-violet-400', iconBg: 'bg-violet-500/10' },
     { href: '/backups', label: 'Backups', sub: 'DB snapshots', icon: Archive, hoverBorder: 'hover:border-indigo-500/40', hoverBg: 'hover:bg-indigo-500/5', iconColor: 'text-indigo-400', iconBg: 'bg-indigo-500/10' },
     { href: '/feedback', label: 'Feedback', sub: 'Signals & fixes', icon: AlertCircle, hoverBorder: 'hover:border-amber-500/40', hoverBg: 'hover:bg-amber-500/5', iconColor: 'text-amber-400', iconBg: 'bg-amber-500/10' },
+    { href: '/runtime', label: 'Runtime', sub: 'Services & infra', icon: Boxes, hoverBorder: 'hover:border-cyan-500/40', hoverBg: 'hover:bg-cyan-500/5', iconColor: 'text-cyan-400', iconBg: 'bg-cyan-500/10' },
   ]
 
   return (

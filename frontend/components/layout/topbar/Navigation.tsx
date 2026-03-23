@@ -51,7 +51,7 @@ export function Navigation({
         const label = item.label
 
         const className = clsx(
-          'group flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg font-medium transition-all duration-200',
+          'group relative flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg font-medium transition-all duration-200',
           dense ? 'gap-1 text-xs' : 'text-sm',
           compact ? 'p-2' : dense ? 'px-1.5 py-1.5' : 'px-3 py-1.5',
           isActive
@@ -75,6 +75,12 @@ export function Navigation({
                   'h-3 w-3 text-slate-600 group-hover:text-slate-500',
                   externalIconClassName,
                 )}
+              />
+            )}
+            {isActive && (
+              <span
+                className="absolute bottom-0 left-1/2 -translate-x-1/2 h-0.5 w-3/5 rounded-full bg-current opacity-60"
+                aria-hidden="true"
               />
             )}
           </>

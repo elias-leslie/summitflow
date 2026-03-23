@@ -171,9 +171,12 @@ export function GitClient() {
 
       {/* Empty */}
       {gitStatus?.repositories.length === 0 && (
-        <div className="text-center py-20 text-slate-600">
-          <GitBranch className="w-8 h-8 mx-auto mb-3 opacity-40" />
-          <p className="text-sm">No repositories found</p>
+        <div className="text-center py-20">
+          <div className="mx-auto mb-4 w-14 h-14 rounded-2xl bg-violet-500/8 border border-violet-500/15 flex items-center justify-center">
+            <GitBranch className="w-7 h-7 text-violet-500/50" />
+          </div>
+          <p className="text-sm font-medium text-slate-400 mb-1">No repositories found</p>
+          <p className="text-xs text-slate-600">Register a project to start tracking its git workspace.</p>
         </div>
       )}
     </div>

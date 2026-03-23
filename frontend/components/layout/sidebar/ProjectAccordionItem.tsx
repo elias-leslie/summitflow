@@ -38,7 +38,10 @@ export function ProjectAccordionItem({
 
   return (
     <div
-      className="rounded-lg overflow-hidden"
+      className={clsx(
+        'rounded-lg overflow-hidden transition-all duration-200',
+        isActive && 'border-l-2 border-outrun-500/60',
+      )}
       data-testid="project-accordion-item"
       data-expanded={isExpanded}
     >

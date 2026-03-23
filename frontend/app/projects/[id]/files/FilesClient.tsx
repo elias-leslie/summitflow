@@ -77,10 +77,25 @@ export function FilesClient(): React.ReactElement {
           {selectedFile ? (
             <FileViewer projectId={projectId} filePath={selectedFile} />
           ) : (
-            <div className="flex h-full items-center justify-center text-slate-500">
-              <div className="text-center">
-                <FolderOpen className="mx-auto mb-3 h-12 w-12 text-slate-700" />
-                <p className="text-sm">Select a file to view</p>
+            <div className="flex h-full items-center justify-center">
+              <div className="text-center max-w-xs">
+                <div className="mx-auto mb-5 w-16 h-16 rounded-2xl bg-emerald-500/8 border border-emerald-500/15 flex items-center justify-center">
+                  <FolderOpen className="h-8 w-8 text-emerald-500/60" />
+                </div>
+                <p className="text-sm font-medium text-slate-300 mb-1.5">Browse project files</p>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Select a file from the tree to view its contents, syntax-highlighted and ready to explore.
+                </p>
+                <div className="mt-5 flex items-center justify-center gap-4 text-2xs text-slate-600">
+                  <span className="flex items-center gap-1.5">
+                    <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 font-mono text-slate-400">Click</kbd>
+                    to open
+                  </span>
+                  <span className="text-slate-700">|</span>
+                  <span className="flex items-center gap-1.5">
+                    Drag edge to resize
+                  </span>
+                </div>
               </div>
             </div>
           )}

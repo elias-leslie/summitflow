@@ -15,10 +15,16 @@ export function ProjectNavItem({ item, href, isActive }: ProjectNavItemProps) {
     <Link
       href={href}
       className={clsx(
-        'group flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200',
+        'group relative flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200',
         isActive ? item.activeClasses : item.inactiveClasses,
       )}
     >
+      {isActive && (
+        <span
+          className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 rounded-full bg-current opacity-50"
+          aria-hidden="true"
+        />
+      )}
       <Icon
         className={clsx(
           'w-4 h-4 flex-shrink-0 transition-colors duration-200',

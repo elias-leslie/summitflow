@@ -318,9 +318,9 @@ export function ProjectCard({ project }: ProjectCardProps) {
         </div>
       </div>
 
-      <div className="mt-4 pt-3 border-t border-slate-700/40">
+      <div className="mt-4 pt-3 border-t border-slate-700/30">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-0.5">
             {metrics.map((metric) => {
               const Icon = metric.icon
               return (
@@ -329,7 +329,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
                   key={metric.key}
                   onClick={(e) => handleStatClick(e, metric.key)}
                   className={clsx(
-                    'flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg transition-all duration-200',
+                    'flex items-center gap-1.5 text-xs px-2 py-1.5 rounded-md transition-all duration-200',
                     metric.count > 0
                       ? `${metric.activeClass} hover:bg-slate-800/60`
                       : 'text-slate-600 hover:text-slate-400 hover:bg-slate-800/40',
@@ -337,16 +337,16 @@ export function ProjectCard({ project }: ProjectCardProps) {
                   title={metric.title}
                   aria-label={`${metric.label}: ${metric.count}`}
                 >
-                  <Icon className="w-3.5 h-3.5" />
-                  <span className="tabular-nums font-medium">{metric.count}</span>
+                  <Icon className="w-3 h-3" />
+                  <span className="tabular-nums font-semibold">{metric.count}</span>
                 </button>
               )
             })}
           </div>
 
-          <span className="text-2xs text-slate-600 flex items-center gap-1">
+          <span className="text-2xs text-slate-600 flex items-center gap-1 font-mono">
             <Clock className="w-3 h-3" />
-            {new Date(project.created_at).toLocaleDateString()}
+            {new Date(project.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
           </span>
         </div>
       </div>
