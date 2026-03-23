@@ -96,7 +96,7 @@ export function WalCard({ walStatus, walHealth, isLoading, onRefresh }: WalCardP
           )}
         />
         <Disc className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-        <span className="text-sm font-medium text-white">
+        <span className="text-sm font-medium text-slate-100">
           Database Change Log (WAL)
         </span>
         <span className="text-xs text-slate-500 flex-1 text-right">
@@ -207,7 +207,7 @@ export function WalCard({ walStatus, walHealth, isLoading, onRefresh }: WalCardP
                   onClick={handleToggle}
                   disabled={toggling}
                   className={clsx(
-                    'text-[11px] px-2.5 py-1 rounded transition-colors disabled:opacity-40 flex items-center gap-1.5',
+                    'text-2xs px-2.5 py-1 rounded transition-colors disabled:opacity-40 flex items-center gap-1.5',
                     enabled || pendingRestart
                       ? 'bg-slate-700/50 text-slate-400 hover:bg-slate-700/80'
                       : 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20',

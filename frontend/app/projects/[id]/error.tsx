@@ -20,7 +20,7 @@ export default function ProjectDetailError({ error, reset }: ErrorProps) {
         <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-rose-500/10 flex items-center justify-center">
           <AlertTriangle className="w-8 h-8 text-rose-500" />
         </div>
-        <h2 className="display text-xl font-semibold text-white mb-2">
+        <h2 className="display text-xl font-semibold text-slate-100 mb-2">
           Failed to load project
         </h2>
         <p className="text-slate-400 mb-4">

@@ -20,7 +20,7 @@ export function StepProgressIndicator({ status }: StepProgressIndicatorProps) {
           <div key={phase} className="flex items-center gap-1">
             {index > 0 && (
               <div
-                className={`w-2 h-px ${isPast ? 'bg-phosphor-500' : 'bg-slate-600'}`}
+                className={`w-3 h-px transition-colors ${isPast ? 'bg-phosphor-500/60' : 'bg-slate-700'}`}
               />
             )}
             <span

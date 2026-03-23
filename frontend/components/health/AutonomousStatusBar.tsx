@@ -50,7 +50,7 @@ export function AutonomousStatusBar({ autonomous }: AutonomousStatusBarProps) {
             <Badge variant={running_count > 0 ? 'phosphor' : 'slate'}>
               {running_count}/{max_concurrent}
             </Badge>
-            <span className="text-[11px] text-slate-500">
+            <span className="text-2xs text-slate-500">
               {availableSlots} slot{availableSlots === 1 ? '' : 's'} free
             </span>
           </div>

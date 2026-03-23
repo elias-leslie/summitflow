@@ -141,8 +141,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
   return (
     <article
       className={clsx(
-        'card-elevated p-5 group transition-all duration-300',
-        'hover:border-phosphor-500/50 hover:translate-y-[-2px]',
+        'card-interactive p-5 group',
       )}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -167,7 +166,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
                 background: `linear-gradient(135deg, ${gradient.from} 0%, ${gradient.to} 100%)`,
               }}
             >
-              <span className="display font-bold text-xl text-white">
+              <span className="display font-bold text-xl text-slate-100">
                 {firstLetter}
               </span>
             </div>
@@ -175,7 +174,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
           <div>
             <Link
               href={`/projects/${project.id}`}
-              className="font-medium text-white transition-colors hover:text-phosphor-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phosphor-500/60 rounded-sm"
+              className="font-medium text-slate-100 transition-colors hover:text-phosphor-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phosphor-500/60 rounded-sm"
             >
               {project.name}
             </Link>
@@ -189,12 +188,12 @@ export function ProjectCard({ project }: ProjectCardProps) {
                   {project.root_path}
                 </span>
               ) : (
-                <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-300">
+                <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-2xs text-amber-300">
                   No root path
                 </span>
               )}
             </div>
-            <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-2xs">
               <Link
                 href={`/projects/${project.id}/settings`}
                 className="inline-flex items-center gap-1 rounded-full border border-slate-700 px-2 py-1 text-slate-400 transition-colors hover:border-slate-500 hover:text-slate-200"
@@ -319,9 +318,9 @@ export function ProjectCard({ project }: ProjectCardProps) {
         </div>
       </div>
 
-      <div className="mt-4 pt-3 border-t border-slate-800">
+      <div className="mt-4 pt-3 border-t border-slate-800/60">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5">
             {metrics.map((metric) => {
               const Icon = metric.icon
               return (
@@ -330,10 +329,10 @@ export function ProjectCard({ project }: ProjectCardProps) {
                   key={metric.key}
                   onClick={(e) => handleStatClick(e, metric.key)}
                   className={clsx(
-                    'flex items-center gap-1 text-xs transition-colors',
+                    'flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-all duration-200',
                     metric.count > 0
-                      ? metric.activeClass
-                      : 'text-slate-500 hover:text-slate-400',
+                      ? `${metric.activeClass} hover:bg-slate-800/60`
+                      : 'text-slate-500 hover:text-slate-400 hover:bg-slate-800/40',
                   )}
                   title={metric.title}
                   aria-label={`${metric.label}: ${metric.count}`}
@@ -345,7 +344,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
             })}
           </div>
 
-          <span className="text-xs text-slate-500 flex items-center gap-1">
+          <span className="text-2xs text-slate-500 flex items-center gap-1">
             <Clock className="w-3 h-3" />
             {new Date(project.created_at).toLocaleDateString()}
           </span>

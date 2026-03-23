@@ -7,6 +7,9 @@ Output is designed to be scannable by AI agents.
 
 from __future__ import annotations
 
+import contextlib
+import socket
+import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -91,6 +94,30 @@ def get_project_urls(project_id: str) -> dict[str, str]:
     return urls
 
 
+def get_network_info() -> dict[str, str]:
+    """Get host network identity for cross-machine URL construction.
+
+    Returns host_ip (first LAN address) and hostname so agents can build
+    URLs reachable from remote machines (e.g. sf-browser on a test VM).
+    """
+    info: dict[str, str] = {}
+    try:
+        result = subprocess.run(
+            ["hostname", "-I"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            info["host_ip"] = result.stdout.strip().split()[0]
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    with contextlib.suppress(OSError):
+        info["hostname"] = socket.gethostname()
+    return info
+
+
 def get_explorer_summary(project_id: str) -> dict[str, Any]:
     """Get the highest-signal Explorer trust metadata for `.index.yaml`."""
     from .scan_ops import get_scan_overview
@@ -151,6 +178,7 @@ def generate_index(project_id: str) -> str:
         ("environment", get_environment(project_id)),
         ("services", get_services(project_id)),
         ("urls", get_project_urls(project_id)),
+        ("network", get_network_info()),
         ("cli", get_cli_info(project_id)),
         ("explorer", get_explorer_summary(project_id)),
         ("pages", get_pages(project_id)),

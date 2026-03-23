@@ -120,11 +120,11 @@ export function StatusRibbon({
 
         {/* Storage backend indicator */}
         {storageStatus?.configured ? (
-          <span className="ml-auto text-[11px] text-slate-500 hidden sm:inline">
+          <span className="ml-auto text-2xs text-slate-500 hidden sm:inline">
             {storageStatus.default_backend_name}
           </span>
         ) : (
-          <span className="ml-auto text-[11px] text-amber-400 hidden sm:inline">
+          <span className="ml-auto text-2xs text-amber-400 hidden sm:inline">
             No storage backend
           </span>
         )}

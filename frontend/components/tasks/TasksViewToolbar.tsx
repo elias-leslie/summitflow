@@ -19,15 +19,15 @@ export function TasksViewToolbar({
   return (
     <div className="flex items-center justify-between">
       {/* Board | Table toggle */}
-      <div className="flex items-center gap-1 rounded-lg bg-slate-800/50 p-0.5">
+      <div className="flex items-center gap-0.5 rounded-lg bg-slate-800/60 border border-slate-700/50 p-0.5">
         <button
           type="button"
           onClick={() => onViewModeChange('board')}
           className={cn(
-            'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors',
+            'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200',
             viewMode === 'board'
-              ? 'bg-phosphor-500/20 text-phosphor-400'
-              : 'text-slate-400 hover:text-slate-300',
+              ? 'bg-phosphor-500/15 text-phosphor-400 shadow-sm'
+              : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/50',
           )}
         >
           <Kanban className="w-3.5 h-3.5" />
@@ -37,10 +37,10 @@ export function TasksViewToolbar({
           type="button"
           onClick={() => onViewModeChange('table')}
           className={cn(
-            'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors',
+            'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200',
             viewMode === 'table'
-              ? 'bg-phosphor-500/20 text-phosphor-400'
-              : 'text-slate-400 hover:text-slate-300',
+              ? 'bg-phosphor-500/15 text-phosphor-400 shadow-sm'
+              : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/50',
           )}
         >
           <List className="w-3.5 h-3.5" />

@@ -99,7 +99,7 @@ export function ConfirmDeleteDialog(props: ConfirmDeleteDialogProps) {
               <Trash2 className="w-6 h-6 text-rose-400" />
             </div>
             <div className="flex-1">
-              <h3 className="text-lg font-semibold text-white mb-2">
+              <h3 className="text-lg font-semibold text-slate-100 mb-2">
                 {title}
               </h3>
               <p className="text-slate-400 text-sm mb-6">

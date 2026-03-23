@@ -230,7 +230,7 @@ export function SetupChecklist({
             )}
           />
           <div>
-            <h2 className="text-sm font-medium text-white">
+            <h2 className="text-sm font-medium text-slate-100">
               {allDone
                 ? 'Backup protection fully configured'
                 : doneCount === 0
@@ -258,7 +258,7 @@ export function SetupChecklist({
             ))}
           </div>
           {allDone && (
-            <span className="text-[11px] text-slate-500">
+            <span className="text-2xs text-slate-500">
               {expanded ? 'Hide' : 'Details'}
             </span>
           )}
@@ -302,14 +302,14 @@ export function SetupChecklist({
                 {step.id === 'storage' && (
                   <Link
                     href="/backups/setup"
-                    className="flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded bg-phosphor-500/10 text-phosphor-400 hover:bg-phosphor-500/20 transition-colors"
+                    className="flex items-center gap-1.5 text-2xs px-2.5 py-1 rounded bg-phosphor-500/10 text-phosphor-400 hover:bg-phosphor-500/20 transition-colors"
                   >
                     Configure
                     <ArrowRight className="w-3 h-3" />
                   </Link>
                 )}
                 {step.id === 'sources' && (
-                  <span className="text-[11px] text-slate-600 italic">
+                  <span className="text-2xs text-slate-600 italic">
                     See below
                   </span>
                 )}
@@ -318,7 +318,7 @@ export function SetupChecklist({
                     type="button"
                     onClick={handleSetupInfra}
                     disabled={runningAction === 'infra'}
-                    className="flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-40 transition-colors"
+                    className="flex items-center gap-1.5 text-2xs px-2.5 py-1 rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-40 transition-colors"
                   >
                     {runningAction === 'infra' ? (
                       <Loader2 className="w-3 h-3 animate-spin" />
@@ -335,7 +335,7 @@ export function SetupChecklist({
                     type="button"
                     onClick={handleEnableWal}
                     disabled={runningAction === 'wal'}
-                    className="flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-40 transition-colors"
+                    className="flex items-center gap-1.5 text-2xs px-2.5 py-1 rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-40 transition-colors"
                   >
                     {runningAction === 'wal' ? (
                       <Loader2 className="w-3 h-3 animate-spin" />
@@ -354,7 +354,7 @@ export function SetupChecklist({
       {/* Restore guidance — only when expanded */}
       {(!allDone || expanded) && (
         <div className="px-4 py-2.5 border-t border-slate-800/40 bg-slate-900/30">
-          <p className="text-[11px] text-slate-500 leading-relaxed">
+          <p className="text-2xs text-slate-500 leading-relaxed">
             <span className="text-slate-400 font-medium">To restore:</span>{' '}
             expand any backup in the history below and click Restore.
           </p>

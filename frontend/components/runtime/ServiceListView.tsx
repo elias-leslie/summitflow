@@ -41,14 +41,14 @@ function ActionCell({
           <button
             onClick={() => restartMut.mutate()}
             disabled={restartMut.isPending}
-            className="text-[11px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 disabled:opacity-40 transition-colors"
+            className="text-2xs px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 disabled:opacity-40 transition-colors"
           >
             {restartMut.isPending ? '...' : 'Restart'}
           </button>
           <button
             onClick={() => stopMut.mutate()}
             disabled={stopMut.isPending}
-            className="text-[11px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 hover:bg-red-500/20 disabled:opacity-40 transition-colors"
+            className="text-2xs px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 hover:bg-red-500/20 disabled:opacity-40 transition-colors"
           >
             {stopMut.isPending ? '...' : 'Stop'}
           </button>
@@ -57,7 +57,7 @@ function ActionCell({
         <button
           onClick={() => startMut.mutate()}
           disabled={startMut.isPending}
-          className="text-[11px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-40 transition-colors"
+          className="text-2xs px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-40 transition-colors"
         >
           {startMut.isPending ? '...' : 'Start'}
         </button>
@@ -111,7 +111,7 @@ export function ServiceListView({
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-sm font-medium text-white truncate">
+                      <span className="text-sm font-medium text-slate-100 truncate">
                         {s.display_name}
                       </span>
                       <span
@@ -153,7 +153,7 @@ export function ServiceListView({
                       <ActionCell service={s.service} isRunning={isRunning} />
                       <button
                         onClick={() => setLogService(s.service)}
-                        className="text-[11px] px-1.5 py-0.5 rounded bg-slate-700/60 text-slate-400 hover:bg-slate-700 hover:text-slate-300 transition-colors"
+                        className="text-2xs px-1.5 py-0.5 rounded bg-slate-700/60 text-slate-400 hover:bg-slate-700 hover:text-slate-300 transition-colors"
                       >
                         Logs
                       </button>

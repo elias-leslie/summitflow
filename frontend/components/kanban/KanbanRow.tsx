@@ -78,8 +78,8 @@ export function KanbanRow({
       <button
         type="button"
         onClick={onToggle}
-        className={`flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors hover:bg-white/5 rounded-lg ${
-          !isCollapsed ? 'border-b border-slate-800 rounded-b-none' : ''
+        className={`flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors hover:bg-slate-800/30 rounded-lg ${
+          !isCollapsed ? 'border-b border-slate-800/60 rounded-b-none' : ''
         }`}
       >
         <motion.span

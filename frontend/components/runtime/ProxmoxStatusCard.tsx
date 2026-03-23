@@ -29,7 +29,7 @@ export function ProxmoxStatusCard() {
   if (error || !data) {
     return (
       <div className="rounded-lg border border-red-500/30 bg-red-950/20 px-4 py-3">
-        <span className="text-sm font-medium text-white">Proxmox</span>
+        <span className="text-sm font-medium text-slate-100">Proxmox</span>
         <span className="ml-3 text-sm text-red-300">
           {error instanceof Error ? error.message : 'Unavailable'}
         </span>
@@ -58,7 +58,7 @@ export function ProxmoxStatusCard() {
           'w-2 h-2 rounded-full',
           data.reachable ? 'bg-emerald-500' : data.configured ? 'bg-amber-500' : 'bg-slate-600',
         )} />
-        <span className="text-sm font-medium text-white">Proxmox</span>
+        <span className="text-sm font-medium text-slate-100">Proxmox</span>
         <span className="text-xs text-slate-500 flex-1">{summary}</span>
         <svg
           width="12"
@@ -139,7 +139,7 @@ export function ProxmoxStatusCard() {
                         <div className="flex items-center justify-between gap-2">
                           <div>
                             <div className="font-medium">{guest.name}</div>
-                            <div className="mt-0.5 text-[11px] text-slate-400">
+                            <div className="mt-0.5 text-2xs text-slate-400">
                               {guest.node} &middot; {guest.type} &middot; VMID{' '}
                               {guest.vmid}
                             </div>

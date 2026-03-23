@@ -31,7 +31,7 @@ function FileStatusIcon({ status }: { status: string }) {
 function InlineDiff({ content }: { content: string }) {
   return (
     <div className="overflow-x-auto bg-black/40 border-t border-slate-800/30">
-      <pre className="text-[11px] font-mono leading-[1.6] p-0">
+      <pre className="text-2xs font-mono leading-[1.6] p-0">
         {content.split('\n').map((line, i) => {
           let lineClass = 'text-slate-500 px-3'
           if (line.startsWith('+') && !line.startsWith('+++')) {
@@ -81,7 +81,7 @@ function FileRow({ file }: { file: DiffFile }) {
         )}
         {!hasDiff && <span className="w-2.5" />}
         <FileStatusIcon status={file.status} />
-        <span className="text-[11px] font-mono text-slate-400 truncate flex-1 min-w-0">
+        <span className="text-2xs font-mono text-slate-400 truncate flex-1 min-w-0">
           {file.path}
         </span>
         <div className="flex items-center gap-1.5 shrink-0 text-[10px] font-mono opacity-50 group-hover/file:opacity-100 transition-opacity">
@@ -164,7 +164,7 @@ export function CommitEntry({ commit, projectId }: { commit: CommitInfo; project
         {/* Commit info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2">
-            <span className="text-[11px] font-mono text-phosphor-500 shrink-0">{commit.short_sha}</span>
+            <span className="text-2xs font-mono text-phosphor-500 shrink-0">{commit.short_sha}</span>
             <span className="text-sm text-slate-300 truncate">{commit.message}</span>
           </div>
           <div className="flex items-center gap-2 text-[10px] text-slate-500">
@@ -201,7 +201,7 @@ export function CommitEntry({ commit, projectId }: { commit: CommitInfo; project
             {/* Left gutter line connecting files */}
             <div className="relative pl-3 border-l border-slate-800/40 ml-[7px]">
               {isFetching && files.length === 0 && (
-                <div className="flex items-center gap-2 py-3 px-2 text-slate-500 text-[11px]">
+                <div className="flex items-center gap-2 py-3 px-2 text-slate-500 text-2xs">
                   <Loader2 className="w-3 h-3 animate-spin text-phosphor-500/60" />
                   Loading files...
                 </div>
@@ -214,7 +214,7 @@ export function CommitEntry({ commit, projectId }: { commit: CommitInfo; project
                 </div>
               )}
               {!isFetching && files.length === 0 && expanded && diffData && (
-                <div className="py-3 px-2 text-[11px] text-slate-600">
+                <div className="py-3 px-2 text-2xs text-slate-600">
                   No file changes found.
                 </div>
               )}

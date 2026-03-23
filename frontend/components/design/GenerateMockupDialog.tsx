@@ -98,7 +98,7 @@ export function GenerateMockupDialog({
         <div className="flex items-center justify-between p-4 border-b border-slate-800">
           <div className="flex items-center gap-3">
             <Sparkles className="w-5 h-5 text-outrun-400" />
-            <h2 className="text-lg font-semibold text-white">
+            <h2 className="text-lg font-semibold text-slate-100">
               Generate Design Mockup
             </h2>
           </div>

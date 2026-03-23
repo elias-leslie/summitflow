@@ -22,7 +22,7 @@ export function DragOverlayTaskCard({ task }: DragOverlayTaskCardProps) {
           P{task.priority}
         </span>
       </div>
-      <h4 className="text-sm font-medium text-white line-clamp-2">
+      <h4 className="text-sm font-medium text-slate-100 line-clamp-2">
         {task.title}
       </h4>
     </div>

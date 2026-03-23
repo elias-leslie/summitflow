@@ -107,7 +107,7 @@ export function SheetHeader({ children, className = '' }: SheetHeaderProps) {
 
 export function SheetTitle({ children, className = '' }: SheetTitleProps) {
   return (
-    <h2 className={`display text-lg font-semibold text-white ${className}`}>
+    <h2 className={`display text-lg font-semibold text-slate-100 ${className}`}>
       {children}
     </h2>
   )

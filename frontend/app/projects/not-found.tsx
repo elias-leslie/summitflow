@@ -8,7 +8,7 @@ export default function ProjectsNotFound() {
         <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-amber-500/10 flex items-center justify-center">
           <Search className="w-8 h-8 text-amber-400" />
         </div>
-        <h2 className="display text-xl font-semibold text-white mb-2">
+        <h2 className="display text-xl font-semibold text-slate-100 mb-2">
           Project not found
         </h2>
         <p className="text-slate-400 mb-6">

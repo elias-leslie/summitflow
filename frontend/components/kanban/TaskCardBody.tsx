@@ -22,7 +22,7 @@ export function TaskCardBody({ task, currentStep, canExpand }: TaskCardBodyProps
 
   return (
     <>
-      <h4 className="text-sm font-medium text-white leading-tight mb-2 line-clamp-2">
+      <h4 className="text-sm font-medium text-slate-100 leading-tight mb-2 line-clamp-2">
         {task.title}
       </h4>
 

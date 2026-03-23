@@ -48,7 +48,7 @@ export function FixPipelineCard({
             Resolution mix across automated fixes, escalations, and still-open findings.
           </p>
         </div>
-        <div className="rounded-full border border-phosphor-500/20 bg-phosphor-500/10 px-2 py-1 text-[11px] text-phosphor-300">
+        <div className="rounded-full border border-phosphor-500/20 bg-phosphor-500/10 px-2 py-1 text-2xs text-phosphor-300">
           {autoFixRate}% auto-resolved
         </div>
       </div>

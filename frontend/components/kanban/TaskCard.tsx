@@ -70,10 +70,10 @@ export function TaskCard({
       ref={setNodeRef}
       style={style}
       data-testid={`task-card-${task.id}`}
-      className={`group relative rounded-lg border bg-slate-900/80 p-3 shadow-sm hover:border-slate-600 hover:bg-slate-850 transition-colors cursor-pointer ${
+      className={`group relative rounded-lg border bg-slate-900/80 p-3 shadow-sm hover:border-slate-600 hover:bg-slate-850 transition-all duration-200 cursor-pointer ${
         isRunning
-          ? 'border-phosphor-500/50 shadow-phosphor-500/20 shadow-lg animate-pulse-glow'
-          : 'border-slate-700'
+          ? 'border-phosphor-500/50 shadow-phosphor-500/20 shadow-lg animate-[pulse-glow_2s_ease-in-out_infinite]'
+          : 'border-slate-700 hover:translate-y-[-1px]'
       }`}
       onClick={onClick}
     >

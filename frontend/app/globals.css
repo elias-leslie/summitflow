@@ -63,12 +63,15 @@
   --font-body: var(--font-body), system-ui, sans-serif;
 
   /* Font sizes */
-  --text-2xs: 0.625rem;
-  --text-2xs--line-height: 0.875rem;
+  --text-3xs: 0.625rem;
+  --text-3xs--line-height: 0.875rem;
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
 
   /* Animations */
   --animate-fade-in: fadeIn 0.5s ease-out;
   --animate-slide-up: slideUp 0.5s ease-out;
+  --animate-pulse-glow: pulse-glow 2s ease-in-out infinite;
 }
 
 /* Keyframes */
@@ -89,6 +92,25 @@
   100% {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes pulse-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 8px rgba(0, 245, 255, 0.15);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(0, 245, 255, 0.3), 0 0 40px rgba(0, 245, 255, 0.1);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
   }
 }
 
@@ -154,8 +176,8 @@ body::before {
   @apply bg-slate-850 border border-slate-700 rounded-lg;
   background: linear-gradient(
     135deg,
-    rgba(21, 13, 32, 0.9) 0%,
-    rgba(15, 10, 24, 0.95) 100%
+    rgba(25, 16, 38, 0.95) 0%,
+    rgba(18, 12, 28, 0.97) 100%
   );
   box-shadow:
     0 4px 6px -1px rgba(0, 0, 0, 0.4),
@@ -163,44 +185,79 @@ body::before {
     0 0 0 1px rgba(255, 0, 102, 0.05);
 }
 
-/* Button styles */
+/* Interactive card with hover lift and glow */
+.card-interactive {
+  @apply bg-slate-850 border border-slate-700 rounded-lg cursor-pointer;
+  background: linear-gradient(
+    135deg,
+    rgba(25, 16, 38, 0.95) 0%,
+    rgba(18, 12, 28, 0.97) 100%
+  );
+  box-shadow:
+    0 4px 6px -1px rgba(0, 0, 0, 0.4),
+    0 2px 4px -2px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(255, 0, 102, 0.05);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.card-interactive:hover {
+  border-color: rgba(0, 245, 255, 0.35);
+  transform: translateY(-2px);
+  box-shadow:
+    0 8px 24px -4px rgba(0, 0, 0, 0.5),
+    0 4px 8px -2px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(0, 245, 255, 0.15),
+    0 0 20px rgba(0, 245, 255, 0.06);
+}
+
+/* Subtle card for secondary surfaces */
+.card-subtle {
+  @apply rounded-lg;
+  background: rgba(15, 10, 24, 0.5);
+  border: 1px solid rgba(45, 29, 66, 0.4);
+}
+
+/* Button styles — CSS utility classes for non-component usage (Links, etc.) */
 .btn {
   @apply px-4 py-2 rounded-md font-medium transition-all duration-200;
-  @apply focus:outline-none focus:ring-2 focus:ring-outrun-500/50;
+  @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-outrun-500/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900;
 }
 
 .btn-primary {
   @apply px-4 py-2 rounded-md font-medium transition-all duration-200;
-  @apply focus:outline-none focus:ring-2 focus:ring-outrun-500/50;
-  @apply bg-outrun-600 text-white;
+  @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-outrun-500/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900;
+  @apply bg-outrun-600 text-slate-100 border border-outrun-500;
   @apply hover:bg-outrun-500 hover:shadow-lg;
-  box-shadow: 0 0 20px rgba(255, 0, 102, 0.25);
+  @apply active:bg-outrun-700;
+  box-shadow: 0 0 20px rgba(255, 0, 102, 0.2);
 }
 
 .btn-primary:hover {
-  box-shadow: 0 0 30px rgba(255, 0, 102, 0.4);
+  box-shadow: 0 0 30px rgba(255, 0, 102, 0.35);
 }
 
 .btn-secondary {
   @apply px-4 py-2 rounded-md font-medium transition-all duration-200;
-  @apply focus:outline-none focus:ring-2 focus:ring-outrun-500/50;
-  @apply bg-slate-750 text-slate-200 border border-slate-600;
-  @apply hover:bg-slate-700 hover:border-outrun-500/30;
+  @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-outrun-500/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900;
+  @apply bg-slate-800 text-slate-200 border border-slate-700;
+  @apply hover:bg-slate-750 hover:border-slate-600;
+  @apply active:bg-slate-850;
 }
 
 .btn-ghost {
   @apply px-4 py-2 rounded-md font-medium transition-all duration-200;
-  @apply focus:outline-none focus:ring-2 focus:ring-outrun-500/50;
+  @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-outrun-500/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900;
   @apply text-slate-400;
   @apply hover:text-outrun-400 hover:bg-slate-800/50;
+  @apply active:bg-slate-800;
 }
 
 /* Input styles */
 .input {
   @apply w-full px-3 py-2 rounded-md;
-  @apply bg-slate-900 border border-slate-700;
+  @apply bg-slate-900/80 border border-slate-700;
   @apply text-slate-200 placeholder-slate-500;
-  @apply focus:outline-none focus:border-outrun-500/50 focus:ring-1 focus:ring-outrun-500/30;
+  @apply focus-visible:outline-none focus-visible:border-phosphor-500/50 focus-visible:ring-1 focus-visible:ring-phosphor-500/20 focus-visible:bg-slate-900;
   @apply transition-all duration-200;
 }
 
@@ -229,21 +286,27 @@ body::before {
 
 /* Scrollbar styling */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(15, 10, 24, 0.5);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #2d1d42;
-  border-radius: 4px;
+  background: rgba(45, 29, 66, 0.6);
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #3d2d52;
+  background: rgba(61, 45, 82, 0.8);
+}
+
+/* Only show scrollbar on hover for cleaner look */
+* {
+  scrollbar-color: rgba(45, 29, 66, 0.6) transparent;
+  scrollbar-width: thin;
 }
 
 /* Animation utilities */
@@ -257,6 +320,18 @@ body::before {
 .animate-fade-in {
   animation: fadeIn 0.5s ease-out;
   animation-fill-mode: both;
+}
+
+/* Staggered animation delays */
+.stagger-1 { animation-delay: 0.05s; }
+.stagger-2 { animation-delay: 0.1s; }
+.stagger-3 { animation-delay: 0.15s; }
+.stagger-4 { animation-delay: 0.2s; }
+.stagger-5 { animation-delay: 0.25s; }
+
+/* Shimmer animation for skeletons */
+.animate-shimmer {
+  animation: shimmer 2s ease-in-out infinite;
 }
 
 /* ============================================================================

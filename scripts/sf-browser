@@ -1,8 +1,21 @@
 #!/usr/bin/env bash
 # sf-browser - SummitFlow remote browser automation wrapper.
 #
-# Canonical SummitFlow wrapper for remote browser automation.
-# Routes DOM-style work to Lightpanda and visual capture to Chrome.
+# Default engine: Chrome (works for screenshots, console errors, and DOM).
+# Use --lp to force Lightpanda for lightweight DOM-only work.
+#
+# Usage:
+#   sf-browser health                          Check engine status
+#   sf-browser open <url>                      Open URL (Chrome, 1600x900 viewport)
+#   sf-browser screenshot [path]               Screenshot current page
+#   sf-browser check <url> [screenshot-path]   Open + screenshot + console errors (one command)
+#   sf-browser snapshot                         Accessibility tree
+#   sf-browser eval <js>                       Run JavaScript
+#   sf-browser <any agent-browser command>     Pass-through to agent-browser
+#
+# Flags:
+#   --lp        Force Lightpanda engine
+#   --chrome    Force Chrome engine (default)
 
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -35,6 +48,17 @@ engine_up() {
     curl -sf --connect-timeout 2 "http://${HOST}:$1/json/version" >/dev/null 2>&1
 }
 
+close_tabs() {
+    local port="$1"
+    curl -sf "http://${HOST}:${port}/json/list" 2>/dev/null \
+        | jq -r '.[].id' 2>/dev/null \
+        | while read -r tab_id; do
+            curl -sf "http://${HOST}:${port}/json/close/${tab_id}" >/dev/null 2>&1
+        done
+}
+
+# --- Built-in commands ---
+
 case "${1:-}" in
     health)
         printf "%-12s %-6s %-6s %s\n" "ENGINE" "PORT" "STATUS" "DETAILS"
@@ -63,7 +87,88 @@ case "${1:-}" in
         echo "  Rebuild Chrome image from summitflow/docker/agent-browser.Dockerfile"
         exit 0
         ;;
+    check)
+        # High-level: open URL, wait, screenshot, collect console errors — one command.
+        shift
+        URL="${1:?Usage: sf-browser check <url> [screenshot-path]}"
+        SCREENSHOT_PATH="${2:-/tmp/sf-browser-check.png}"
+        WAIT_MS="${SF_BROWSER_CHECK_WAIT:-5000}"
+
+        # Always use Chrome for check
+        WS=$(cdp_ws 9222 2>/dev/null) || {
+            echo "ERROR: Chrome not available on ${HOST}:9222" >&2
+            exit 1
+        }
+
+        # Set viewport
+        "$AGENT_BROWSER_BIN" --cdp "$WS" set viewport 1600 900 2>/dev/null || true
+
+        # Navigate
+        "$AGENT_BROWSER_BIN" --cdp "$WS" open "$URL" --wait "$WAIT_MS"
+
+        # Inject console error capture and wait for late errors
+        "$AGENT_BROWSER_BIN" --cdp "$WS" eval "
+            window.__sfErrors = []; window.__sfWarnings = [];
+            const _oe = console.error; console.error = function(...a) { window.__sfErrors.push(a.map(String).join(' ')); _oe.apply(console,a); };
+            const _ow = console.warn; console.warn = function(...a) { window.__sfWarnings.push(a.map(String).join(' ')); _ow.apply(console,a); };
+            'capturing'
+        " >/dev/null 2>&1
+
+        # Brief wait for late async errors
+        "$AGENT_BROWSER_BIN" --cdp "$WS" wait 2000 2>/dev/null || true
+
+        # Screenshot
+        "$AGENT_BROWSER_BIN" --cdp "$WS" screenshot "$SCREENSHOT_PATH" 2>/dev/null
+
+        # Collect errors (agent-browser wraps eval output in quotes, so we strip them)
+        RAW_ERRORS=$("$AGENT_BROWSER_BIN" --cdp "$WS" eval "JSON.stringify({errors: window.__sfErrors || [], warnings: window.__sfWarnings || [], url: location.href, title: document.title})" 2>/dev/null) || RAW_ERRORS='{"errors":[],"warnings":[]}'
+        ERRORS=$(echo "$RAW_ERRORS" | jq -r '. // .' 2>/dev/null) || ERRORS="$RAW_ERRORS"
+
+        # Also check for failed network requests via performance API
+        RAW_NETWORK=$("$AGENT_BROWSER_BIN" --cdp "$WS" eval "
+            JSON.stringify(
+                performance.getEntriesByType('resource')
+                    .filter(e => e.responseStatus >= 400)
+                    .map(e => e.responseStatus + ' ' + e.name.split('/').pop())
+            )
+        " 2>/dev/null) || RAW_NETWORK="[]"
+        NETWORK_ERRORS=$(echo "$RAW_NETWORK" | jq -r '. // .' 2>/dev/null) || NETWORK_ERRORS="$RAW_NETWORK"
+
+        # Clean up tabs on the engine we used
+        close_tabs 9222
+
+        # Output results
+        echo "Screenshot: ${SCREENSHOT_PATH}"
+        echo "Page: $(echo "$ERRORS" | jq -r '.url // "unknown"' 2>/dev/null)"
+        echo "Title: $(echo "$ERRORS" | jq -r '.title // "unknown"' 2>/dev/null)"
+
+        ERROR_COUNT=$(echo "$ERRORS" | jq -r '.errors | length' 2>/dev/null || echo 0)
+        WARN_COUNT=$(echo "$ERRORS" | jq -r '.warnings | length' 2>/dev/null || echo 0)
+        NETWORK_COUNT=$(echo "$NETWORK_ERRORS" | jq -r 'length' 2>/dev/null || echo 0)
+
+        if [[ "$ERROR_COUNT" -gt 0 ]]; then
+            echo ""
+            echo "Console errors (${ERROR_COUNT}):"
+            echo "$ERRORS" | jq -r '.errors[]' 2>/dev/null | head -20
+        fi
+        if [[ "$WARN_COUNT" -gt 0 ]]; then
+            echo ""
+            echo "Console warnings (${WARN_COUNT}):"
+            echo "$ERRORS" | jq -r '.warnings[]' 2>/dev/null | head -10
+        fi
+        if [[ "$NETWORK_COUNT" -gt 0 ]]; then
+            echo ""
+            echo "Failed network requests (${NETWORK_COUNT}):"
+            echo "$NETWORK_ERRORS" | jq -r '.[]' 2>/dev/null | head -20
+        fi
+        if [[ "$ERROR_COUNT" -eq 0 && "$WARN_COUNT" -eq 0 && "$NETWORK_COUNT" -eq 0 ]]; then
+            echo "No console errors, warnings, or failed network requests."
+        fi
+        exit 0
+        ;;
 esac
+
+# --- Engine selection ---
 
 ENGINE="${SF_BROWSER_ENGINE:-}"
 while [[ "${1:-}" == --* ]]; do
@@ -86,49 +191,19 @@ while [[ "${1:-}" == --* ]]; do
     esac
 done
 
-DEFAULT_VIEWPORT_WIDTH="${SF_BROWSER_VIEWPORT_WIDTH:-1600}"
-DEFAULT_VIEWPORT_HEIGHT="${SF_BROWSER_VIEWPORT_HEIGHT:-900}"
-
-should_apply_default_viewport() {
-    [[ "${SF_BROWSER_DISABLE_DEFAULT_VIEWPORT:-0}" != "1" ]] || return 1
-    [[ "$ENGINE" == "chrome" ]] || return 1
-
-    local has_open=0
-    for arg in "$@"; do
-        if [[ "$arg" == "--device" ]]; then
-            return 1
-        fi
-        if [[ "$arg" == "open" ]]; then
-            has_open=1
-        fi
-    done
-
-    [[ "$has_open" == "1" ]] || return 1
-    return 0
-}
-
+# Default engine: Chrome first (agents need screenshots most often)
 if [[ -z "$ENGINE" ]]; then
-    for arg in "$@"; do
-        case "$arg" in
-            screenshot|pdf|inspect|trace|record)
-                ENGINE=chrome
-                break
-                ;;
-        esac
-    done
-fi
-
-if [[ -z "$ENGINE" ]]; then
-    if engine_up 9223; then
-        ENGINE=lightpanda
-    elif engine_up 9222; then
+    if engine_up 9222; then
         ENGINE=chrome
+    elif engine_up 9223; then
+        ENGINE=lightpanda
     else
         echo "ERROR: No browsers available on ${HOST}" >&2
         exit 1
     fi
 fi
 
+# Resolve WebSocket URL
 if [[ "$ENGINE" == "lightpanda" ]]; then
     WS=$(cdp_ws 9223 2>/dev/null) || WS=$(cdp_ws 9222 2>/dev/null) || {
         echo "ERROR: No browsers available on ${HOST}" >&2
@@ -141,22 +216,39 @@ else
     }
 fi
 
+# --- Viewport ---
+
+DEFAULT_VIEWPORT_WIDTH="${SF_BROWSER_VIEWPORT_WIDTH:-1600}"
+DEFAULT_VIEWPORT_HEIGHT="${SF_BROWSER_VIEWPORT_HEIGHT:-900}"
+
+should_apply_default_viewport() {
+    [[ "${SF_BROWSER_DISABLE_DEFAULT_VIEWPORT:-0}" != "1" ]] || return 1
+    [[ "$ENGINE" == "chrome" ]] || return 1
+
+    for arg in "$@"; do
+        [[ "$arg" == "--device" ]] && return 1
+        [[ "$arg" == "open" ]] && { return 0; }
+    done
+    return 1
+}
+
 if should_apply_default_viewport "$@"; then
-    "$AGENT_BROWSER_BIN" --cdp "$WS" set viewport "$DEFAULT_VIEWPORT_WIDTH" "$DEFAULT_VIEWPORT_HEIGHT"
+    "$AGENT_BROWSER_BIN" --cdp "$WS" set viewport "$DEFAULT_VIEWPORT_WIDTH" "$DEFAULT_VIEWPORT_HEIGHT" 2>/dev/null || true
 fi
+
+# --- Execute ---
 
 "$AGENT_BROWSER_BIN" --cdp "$WS" "$@"
 EXIT_CODE=$?
 
+# Clean up tabs only for the engine we used (not both)
 case "${1:-}" in
     screenshot|pdf|close)
-        for port in 9222 9223; do
-            curl -sf "http://${HOST}:${port}/json/list" 2>/dev/null \
-                | jq -r '.[].id' 2>/dev/null \
-                | while read -r tab_id; do
-                    curl -sf "http://${HOST}:${port}/json/close/${tab_id}" >/dev/null 2>&1
-                done
-        done
+        if [[ "$ENGINE" == "chrome" ]]; then
+            close_tabs 9222
+        else
+            close_tabs 9223
+        fi
         ;;
 esac
 

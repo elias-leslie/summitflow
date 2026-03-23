@@ -85,11 +85,11 @@ export function QualityGateStatus({ health }: QualityGateStatusProps) {
                       {formatCheckLabel(name)}
                     </span>
                   </div>
-                  <span className="text-[11px] text-slate-500 tabular-nums">
+                  <span className="text-2xs text-slate-500 tabular-nums">
                     {state.badgeLabel}
                   </span>
                 </div>
-                <div className="mt-1 text-[11px] text-slate-500">
+                <div className="mt-1 text-2xs text-slate-500">
                   {formatLastRun(check.last_run)}
                 </div>
               </div>

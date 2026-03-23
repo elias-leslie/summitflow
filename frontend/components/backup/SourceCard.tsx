@@ -245,13 +245,13 @@ export function SourceCard({
           className={clsx('w-2 h-2 rounded-full shrink-0', dotClass)}
           title={healthStatus || 'unknown'}
         />
-        <span className="font-medium text-white text-sm truncate">
+        <span className="font-medium text-slate-100 text-sm truncate">
           {source.name}
         </span>
         <SourceTypeBadge type={source.source_type} />
 
         {/* Schedule info */}
-        <div className="hidden sm:flex items-center gap-2 text-[11px] text-slate-500 ml-auto mr-2">
+        <div className="hidden sm:flex items-center gap-2 text-2xs text-slate-500 ml-auto mr-2">
           {source.enabled ? (
             <>
               <span className="rounded bg-slate-700/70 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.14em] text-slate-400">
@@ -276,7 +276,7 @@ export function SourceCard({
               type="button"
               onClick={handleDrill}
               disabled={drilling}
-              className="text-[11px] px-2 py-1 rounded bg-slate-700/40 text-slate-400 hover:bg-slate-700/60 disabled:opacity-40 transition-colors"
+              className="text-2xs px-2 py-1 rounded bg-slate-700/40 text-slate-400 hover:bg-slate-700/60 disabled:opacity-40 transition-colors"
               title="Run restore drill"
             >
               {drilling ? (
@@ -290,7 +290,7 @@ export function SourceCard({
             type="button"
             onClick={onBackupNow}
             disabled={isBackingUp}
-            className="text-[11px] px-2 py-1 rounded bg-phosphor-500/10 text-phosphor-400 hover:bg-phosphor-500/20 disabled:opacity-40 transition-colors"
+            className="text-2xs px-2 py-1 rounded bg-phosphor-500/10 text-phosphor-400 hover:bg-phosphor-500/20 disabled:opacity-40 transition-colors"
             title="Backup now"
           >
             {isBackingUp ? (
@@ -418,7 +418,7 @@ export function SourceCard({
                 type="button"
                 onClick={() => setEnabled(!enabled)}
                 className={clsx(
-                  'text-[11px] px-2 py-1 rounded border transition-colors',
+                  'text-2xs px-2 py-1 rounded border transition-colors',
                   enabled
                     ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
                     : 'bg-slate-700/50 text-slate-500 border-slate-600/50 hover:text-slate-400',
@@ -431,7 +431,7 @@ export function SourceCard({
                   type="button"
                   onClick={handleSave}
                   disabled={saving}
-                  className="flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-phosphor-500/10 text-phosphor-400 hover:bg-phosphor-500/20 disabled:opacity-40 transition-colors"
+                  className="flex items-center gap-1 text-2xs px-2 py-1 rounded bg-phosphor-500/10 text-phosphor-400 hover:bg-phosphor-500/20 disabled:opacity-40 transition-colors"
                 >
                   {saving ? (
                     <Loader2 className="w-3 h-3 animate-spin" />
@@ -442,7 +442,7 @@ export function SourceCard({
                 </button>
               )}
               {saved && (
-                <span className="text-[11px] text-emerald-400">Saved</span>
+                <span className="text-2xs text-emerald-400">Saved</span>
               )}
             </div>
 
@@ -470,7 +470,7 @@ export function SourceCard({
                 ))}
                 <Link
                   href={`/backups/${recentBackups[0].source_id}`}
-                  className="inline-block text-[11px] text-phosphor-400 hover:text-phosphor-300 transition-colors mt-1"
+                  className="inline-block text-2xs text-phosphor-400 hover:text-phosphor-300 transition-colors mt-1"
                 >
                   View all &rarr;
                 </Link>

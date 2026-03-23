@@ -152,7 +152,7 @@ export function NewProjectClient() {
             <FolderPlus className="h-7 w-7 text-phosphor-400" />
           </div>
           <div>
-            <h1 className="display text-2xl font-semibold text-white">
+            <h1 className="display text-2xl font-bold text-slate-100 tracking-tight">
               Create Project
             </h1>
             <p className="mt-1 text-sm text-slate-400">

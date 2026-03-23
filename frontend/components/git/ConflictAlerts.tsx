@@ -77,7 +77,7 @@ function ConflictCard({ conflict }: { conflict: ConflictInfo }) {
               <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-rose-500 animate-pulse shadow-[0_0_6px_rgba(244,63,94,0.8)]" />
             </div>
             <div className="min-w-0">
-              <h3 className="text-sm font-semibold text-white truncate">
+              <h3 className="text-sm font-semibold text-slate-100 truncate">
                 {conflict.task_title}
               </h3>
               <div className="flex items-center gap-1.5 text-xs text-slate-500">
@@ -191,7 +191,7 @@ export function ConflictAlerts({ projectId }: { projectId?: string }) {
             <AlertTriangle className="w-5 h-5 text-rose-400" />
             <div className="absolute inset-0 blur-md bg-rose-500/40" />
           </div>
-          <h2 className="font-semibold text-white">Merge Conflicts</h2>
+          <h2 className="font-semibold text-slate-100">Merge Conflicts</h2>
           <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-400 border border-rose-500/30">
             {data.count}
           </span>

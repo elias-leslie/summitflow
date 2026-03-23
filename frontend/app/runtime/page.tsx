@@ -28,7 +28,7 @@ export default function RuntimePage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-white font-display">
+          <h1 className="text-2xl font-bold text-slate-100 display tracking-tight">
             Runtime Management
           </h1>
           <p className="text-sm text-slate-400 mt-0.5">

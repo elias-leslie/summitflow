@@ -16,6 +16,7 @@ import { motion } from 'motion/react'
 import Link from 'next/link'
 import { useState } from 'react'
 import { ActivityFeed, ProjectCard, SystemHealthWidget } from '@/components/dashboard'
+import { Skeleton } from '@/components/ui/skeleton'
 import { useClampedPagination } from '@/hooks/useClampedPagination'
 import { fetchProjectsWithStats, type ProjectWithStats } from '@/lib/api'
 
@@ -60,11 +61,11 @@ export function DashboardClient() {
   const handleNextPage = () => setPage((p) => Math.min(totalPages - 1, p + 1))
 
   const stats = [
-    { label: 'Projects', value: totalProjects, icon: FolderKanban, color: 'text-white' },
-    { label: 'Features', value: totals.features, icon: Target, color: 'text-white' },
-    { label: 'Tasks', value: totals.tasks, icon: ListTodo, color: 'text-white' },
-    { label: 'Bugs', value: totals.bugs, icon: Bug, color: totals.bugs > 0 ? 'text-amber-300' : 'text-white' },
-    { label: 'Blocked', value: totals.blocked, icon: AlertCircle, color: totals.blocked > 0 ? 'text-rose-300' : 'text-white' },
+    { label: 'Projects', value: totalProjects, icon: FolderKanban, color: 'text-slate-100', iconColor: 'text-phosphor-500', iconBg: 'bg-phosphor-500/10' },
+    { label: 'Features', value: totals.features, icon: Target, color: 'text-slate-100', iconColor: 'text-blue-400', iconBg: 'bg-blue-500/10' },
+    { label: 'Tasks', value: totals.tasks, icon: ListTodo, color: 'text-slate-100', iconColor: 'text-purple-400', iconBg: 'bg-purple-500/10' },
+    { label: 'Bugs', value: totals.bugs, icon: Bug, color: totals.bugs > 0 ? 'text-amber-300' : 'text-slate-100', iconColor: 'text-amber-400', iconBg: 'bg-amber-500/10' },
+    { label: 'Blocked', value: totals.blocked, icon: AlertCircle, color: totals.blocked > 0 ? 'text-rose-300' : 'text-slate-100', iconColor: 'text-rose-400', iconBg: 'bg-rose-500/10' },
   ]
 
   const quickLinks = [
@@ -81,7 +82,7 @@ export function DashboardClient() {
         className="flex flex-col sm:flex-row sm:items-end justify-between gap-4"
       >
         <div>
-          <h1 className="display text-[28px] font-extrabold text-white tracking-tight leading-none">
+          <h1 className="display text-[28px] font-extrabold text-slate-100 tracking-tight leading-none">
             Command Center
           </h1>
           <p className="mt-1.5 text-sm text-slate-500">
@@ -96,19 +97,19 @@ export function DashboardClient() {
         {...fadeUp}
         transition={{ duration: 0.4, delay: 0.04, ease: [0.25, 0.46, 0.45, 0.94] }}
       >
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-px rounded-xl overflow-hidden bg-slate-800/60">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           {stats.map((stat) => {
             const Icon = stat.icon
             return (
-              <div key={stat.label} className="bg-slate-900/90 px-4 py-3.5 flex items-center gap-3">
-                <div className="rounded-lg bg-slate-800 p-2">
-                  <Icon className="w-4 h-4 text-slate-500" />
+              <div key={stat.label} className="card px-4 py-4 flex items-center gap-3.5">
+                <div className={`rounded-lg p-2.5 ${stat.iconBg}`}>
+                  <Icon className={`w-4.5 h-4.5 ${stat.iconColor}`} />
                 </div>
                 <div>
-                  <div className={`text-2xl font-bold tabular-nums leading-none ${stat.color}`}>
+                  <div className={`text-2xl font-bold tabular-nums leading-none tracking-tight ${stat.color}`}>
                     {stat.value}
                   </div>
-                  <div className="text-[11px] text-slate-500 mt-1">{stat.label}</div>
+                  <div className="text-2xs text-slate-500 mt-1 font-medium">{stat.label}</div>
                 </div>
               </div>
             )
@@ -132,8 +133,8 @@ export function DashboardClient() {
             >
               <Icon className={`w-4 h-4 ${link.iconColor}`} />
               <div>
-                <div className="text-sm font-medium text-white leading-none">{link.label}</div>
-                <div className="text-[11px] text-slate-500 mt-0.5">{link.sub}</div>
+                <div className="text-sm font-medium text-slate-100 leading-none">{link.label}</div>
+                <div className="text-2xs text-slate-500 mt-0.5">{link.sub}</div>
               </div>
             </Link>
           )
@@ -145,8 +146,8 @@ export function DashboardClient() {
         {...fadeUp}
         transition={{ duration: 0.4, delay: 0.1, ease: [0.25, 0.46, 0.45, 0.94] }}
       >
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="display font-semibold text-base text-white">Projects</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="display font-bold text-lg text-slate-100 tracking-tight">Projects</h2>
           <div className="flex items-center gap-3">
             {totalPages > 1 && (
               <div className="flex items-center gap-1.5 text-xs">
@@ -157,7 +158,7 @@ export function DashboardClient() {
                   type="button"
                   onClick={handlePrevPage}
                   disabled={page === 0}
-                  className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  className="p-1 rounded text-slate-400 hover:text-slate-100 hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                   aria-label="Previous page"
                 >
                   <ChevronLeft className="w-3.5 h-3.5" />
@@ -167,7 +168,7 @@ export function DashboardClient() {
                   type="button"
                   onClick={handleNextPage}
                   disabled={page === totalPages - 1}
-                  className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  className="p-1 rounded text-slate-400 hover:text-slate-100 hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                   aria-label="Next page"
                 >
                   <ChevronRight className="w-3.5 h-3.5" />
@@ -195,7 +196,7 @@ export function DashboardClient() {
         {...fadeUp}
         transition={{ duration: 0.4, delay: 0.14, ease: [0.25, 0.46, 0.45, 0.94] }}
       >
-        <h2 className="display font-semibold text-base text-white mb-3">Recent Activity</h2>
+        <h2 className="display font-bold text-lg text-slate-100 tracking-tight mb-4">Recent Activity</h2>
         <ActivityFeed />
       </motion.section>
     </div>
@@ -215,11 +216,24 @@ function ProjectsGrid({
 }: ProjectsGridProps) {
   if (isLoading) {
     return (
-      <div className="card p-8 text-center">
-        <div className="inline-flex items-center gap-2 text-slate-400">
-          <div className="w-4 h-4 border-2 border-phosphor-500/30 border-t-phosphor-500 rounded-full animate-spin" />
-          Loading projects...
-        </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="card p-5 space-y-4">
+            <div className="flex items-center gap-3">
+              <Skeleton className="w-12 h-12 rounded-xl" />
+              <div className="space-y-2 flex-1">
+                <Skeleton className="h-4 w-3/4 rounded" />
+                <Skeleton className="h-3 w-1/2 rounded" />
+              </div>
+            </div>
+            <Skeleton className="h-px w-full" />
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-6 w-12 rounded" />
+              <Skeleton className="h-6 w-12 rounded" />
+              <Skeleton className="h-6 w-12 rounded" />
+            </div>
+          </div>
+        ))}
       </div>
     )
   }

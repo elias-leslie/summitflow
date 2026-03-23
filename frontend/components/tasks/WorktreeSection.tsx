@@ -50,7 +50,7 @@ export function WorktreeSection({ worktree }: WorktreeSectionProps) {
             )}
           </div>
           <div>
-            <h3 className="text-sm font-medium text-white">Active Worktree</h3>
+            <h3 className="text-sm font-medium text-slate-100">Active Worktree</h3>
             <span className="text-xs text-slate-500">Isolated workspace</span>
           </div>
         </div>

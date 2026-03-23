@@ -75,7 +75,7 @@ export function GitClient() {
             <GitBranch className="w-5 h-5 text-outrun-500" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-white tracking-tight leading-none">
+            <h1 className="text-2xl font-bold text-slate-100 display tracking-tight leading-none">
               Git Operations
             </h1>
             <p className="text-xs text-slate-500 mt-0.5">
@@ -149,7 +149,7 @@ export function GitClient() {
         <div className="p-4 rounded-lg bg-rose-500/8 border border-rose-500/20 text-rose-300 flex items-center gap-3 text-sm">
           <XCircle className="w-5 h-5 text-rose-500 shrink-0" />
           <div>
-            <span className="font-medium text-white">Connection failed.</span>{' '}
+            <span className="font-medium text-slate-100">Connection failed.</span>{' '}
             Verify the backend is running.
           </div>
         </div>

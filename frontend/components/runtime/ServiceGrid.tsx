@@ -132,7 +132,7 @@ export function ServiceGrid() {
             className={clsx(
               'px-2.5 py-1 text-xs transition-colors',
               view === 'grid'
-                ? 'bg-slate-700 text-white'
+                ? 'bg-slate-700 text-slate-100'
                 : 'bg-slate-900/50 text-slate-500 hover:text-slate-300',
             )}
             aria-label="Grid view"
@@ -149,7 +149,7 @@ export function ServiceGrid() {
             className={clsx(
               'px-2.5 py-1 text-xs transition-colors',
               view === 'list'
-                ? 'bg-slate-700 text-white'
+                ? 'bg-slate-700 text-slate-100'
                 : 'bg-slate-900/50 text-slate-500 hover:text-slate-300',
             )}
             aria-label="List view"

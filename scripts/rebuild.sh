@@ -292,10 +292,8 @@ verify_health || ((errors++))
 # 6. Post-rebuild sync
 if [ $errors -eq 0 ]; then
     sync_seeds
-    # Regenerate project index for summitflow
-    if [ "$PROJECT" = "summitflow" ]; then
-        curl -s -X POST "http://localhost:8001/api/projects/$PROJECT/explorer/regenerate-index" >/dev/null 2>&1 || true
-    fi
+    # Regenerate project index (all projects use the same SummitFlow explorer API)
+    curl -s -X POST "http://localhost:8001/api/projects/$PROJECT/explorer/regenerate-index" >/dev/null 2>&1 || true
 fi
 
 duration=$(( $(date +%s) - start_time ))

@@ -14,7 +14,7 @@ export function WorktreeCompact({ worktree }: { worktree: WorktreeInfo }) {
         )}
       </div>
       <div className="flex-1 min-w-0">
-        <span className="text-sm font-semibold text-white">{worktree.task_id}</span>
+        <span className="text-sm font-semibold text-slate-100">{worktree.task_id}</span>
         <div className="flex items-center gap-2 text-[10px] text-slate-500">
           <GitBranch className="w-2.5 h-2.5" />
           <span className="font-mono text-violet-300">{worktree.branch}</span>

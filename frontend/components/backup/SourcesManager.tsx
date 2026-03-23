@@ -40,7 +40,7 @@ function InfraSetupCard({
           type="button"
           onClick={onCreate}
           disabled={isCreating}
-          className="text-[11px] px-2.5 py-1 rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-40 transition-colors flex items-center gap-1.5 shrink-0"
+          className="text-2xs px-2.5 py-1 rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-40 transition-colors flex items-center gap-1.5 shrink-0"
         >
           {isCreating ? (
             <Loader2 className="w-3 h-3 animate-spin" />

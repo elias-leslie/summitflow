@@ -254,13 +254,13 @@ export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedP
           <button
             type="button"
             onClick={() => refetch()}
-            className="inline-flex items-center gap-1 text-[11px] text-slate-500 transition-colors hover:text-slate-300"
+            className="inline-flex items-center gap-1 text-2xs text-slate-500 transition-colors hover:text-slate-300"
           >
             <RefreshCw className={clsx('h-3 w-3', (isRefetching || isFetchingNextPage) && 'animate-spin')} />
             Refresh
           </button>
         </div>
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-2xs text-slate-500">
           <span>
             {isLoading
               ? 'Loading latest activity'
@@ -284,8 +284,9 @@ export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedP
           <button
             type="button"
             onClick={() => refetch()}
-            className="mt-3 text-xs text-slate-400 hover:text-slate-200"
+            className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-300 bg-slate-800 border border-slate-700 rounded-md hover:border-slate-600 hover:text-slate-200 transition-colors"
           >
+            <RefreshCw className="h-3 w-3" />
             Try again
           </button>
         </div>

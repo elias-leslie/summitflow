@@ -43,10 +43,12 @@ export function TaskRow({
     <>
       <tr
         className={cn(
-          'border-b border-slate-700/50 hover:bg-slate-800/50 cursor-pointer transition-colors',
+          'border-b border-slate-700/50 hover:bg-slate-800/50 cursor-pointer transition-colors focus-visible:bg-slate-800/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-phosphor-500/50',
           isExpanded && 'bg-slate-800/30',
         )}
         onClick={onToggle}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle() } }}
+        tabIndex={0}
       >
         {/* Expand */}
         <td className="w-8 px-2 py-2">
@@ -156,7 +158,7 @@ export function TaskRow({
                 {task.status === 'running' && (
                   <Button
                     size="sm"
-                    className="bg-green-600 hover:bg-green-700"
+                    className="bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-600/30 hover:border-emerald-500/50"
                     onClick={(e) => {
                       e.stopPropagation()
                       onStatusChange('completed')

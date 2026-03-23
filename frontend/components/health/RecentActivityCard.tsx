@@ -44,7 +44,7 @@ function ActivityRow({ event }: { event: ActivityEvent }) {
       <div className="flex-1 min-w-0">
         <p className="text-xs text-slate-300 truncate">{event.message}</p>
         {metaParts.length > 0 && (
-          <p className="mt-0.5 text-[11px] text-slate-500 uppercase tracking-wide">
+          <p className="mt-0.5 text-2xs text-slate-500 uppercase tracking-wide">
             {metaParts.join(' · ')}
           </p>
         )}
@@ -76,7 +76,7 @@ export function RecentActivityCard({ projectId }: RecentActivityCardProps) {
           <div className="flex flex-col items-center justify-center py-6 text-center">
             <span className="text-amber-500 text-lg mb-1">!</span>
             <span className="text-xs text-slate-400">Failed to load activity</span>
-            <span className="mt-1 text-[11px] text-slate-500">
+            <span className="mt-1 text-2xs text-slate-500">
               {summarizeError(error, 'Activity service unavailable')}
             </span>
           </div>
@@ -115,7 +115,7 @@ export function RecentActivityCard({ projectId }: RecentActivityCardProps) {
           <div className="flex flex-col items-center justify-center py-6 text-center">
             <span className="text-slate-600 text-lg mb-1">○</span>
             <span className="text-xs text-slate-400">No recent activity</span>
-            <span className="mt-1 text-[11px] text-slate-500">
+            <span className="mt-1 text-2xs text-slate-500">
               New task, git, session, and backup events will appear here.
             </span>
           </div>

@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import yaml
 
-from app.services.explorer.index_generator import generate_index, write_index_file
+from app.services.explorer.index_generator import generate_index, get_network_info, write_index_file
 
 
 class TestGenerateIndex:
@@ -22,6 +22,7 @@ class TestGenerateIndex:
             patch("app.services.explorer.index_generator.get_services") as mock_services,
             patch("app.services.explorer.index_generator.get_cli_info") as mock_cli,
             patch("app.services.explorer.index_generator.get_project_urls") as mock_urls,
+            patch("app.services.explorer.index_generator.get_network_info") as mock_network,
             patch("app.services.explorer.index_generator.get_explorer_summary") as mock_explorer,
         ):
             mock_storage.get_entries.return_value = []
@@ -29,6 +30,7 @@ class TestGenerateIndex:
             mock_services.return_value = {}
             mock_cli.return_value = {}
             mock_urls.return_value = {}
+            mock_network.return_value = {}
             mock_explorer.return_value = {}
 
             result = generate_index("test-project")
@@ -53,6 +55,7 @@ class TestGenerateIndex:
             patch("app.services.explorer.index_generator.get_services") as mock_services,
             patch("app.services.explorer.index_generator.get_cli_info") as mock_cli,
             patch("app.services.explorer.index_generator.get_project_urls") as mock_urls,
+            patch("app.services.explorer.index_generator.get_network_info") as mock_network,
             patch("app.services.explorer.index_generator.get_explorer_summary") as mock_explorer,
         ):
             # Return file entries for type=file, empty for others
@@ -66,6 +69,7 @@ class TestGenerateIndex:
             mock_services.return_value = {}
             mock_cli.return_value = {}
             mock_urls.return_value = {}
+            mock_network.return_value = {}
             mock_explorer.return_value = {}
 
             result = generate_index("test-project")
@@ -92,6 +96,7 @@ class TestGenerateIndex:
             patch("app.services.explorer.index_generator.get_services") as mock_services,
             patch("app.services.explorer.index_generator.get_cli_info") as mock_cli,
             patch("app.services.explorer.index_generator.get_project_urls") as mock_urls,
+            patch("app.services.explorer.index_generator.get_network_info") as mock_network,
             patch("app.services.explorer.index_generator.get_explorer_summary") as mock_explorer,
         ):
 
@@ -105,6 +110,7 @@ class TestGenerateIndex:
             mock_services.return_value = {}
             mock_cli.return_value = {}
             mock_urls.return_value = {}
+            mock_network.return_value = {}
             mock_explorer.return_value = {}
 
             result = generate_index("test-project")
@@ -130,6 +136,7 @@ class TestGenerateIndex:
             patch("app.services.explorer.index_generator.get_services") as mock_services,
             patch("app.services.explorer.index_generator.get_cli_info") as mock_cli,
             patch("app.services.explorer.index_generator.get_project_urls") as mock_urls,
+            patch("app.services.explorer.index_generator.get_network_info") as mock_network,
             patch("app.services.explorer.index_generator.get_explorer_summary") as mock_explorer,
         ):
 
@@ -143,6 +150,7 @@ class TestGenerateIndex:
             mock_services.return_value = {}
             mock_cli.return_value = {}
             mock_urls.return_value = {}
+            mock_network.return_value = {}
             mock_explorer.return_value = {}
 
             result = generate_index("test-project")
@@ -160,6 +168,7 @@ class TestGenerateIndex:
             patch("app.services.explorer.index_generator.get_services") as mock_services,
             patch("app.services.explorer.index_generator.get_cli_info") as mock_cli,
             patch("app.services.explorer.index_generator.get_project_urls") as mock_urls,
+            patch("app.services.explorer.index_generator.get_network_info") as mock_network,
             patch("app.services.explorer.index_generator.get_explorer_summary") as mock_explorer,
         ):
             mock_storage.get_entries.return_value = []
@@ -170,6 +179,7 @@ class TestGenerateIndex:
                 "frontend": "http://localhost:3001",
                 "api": "http://localhost:8001/api",
             }
+            mock_network.return_value = {}
             mock_explorer.return_value = {
                 "scan_status": "completed",
                 "last_completed_scan": "2026-03-11T12:00:00+00:00",
@@ -195,6 +205,7 @@ class TestGenerateIndex:
             patch("app.services.explorer.index_generator.get_services") as mock_services,
             patch("app.services.explorer.index_generator.get_cli_info") as mock_cli,
             patch("app.services.explorer.index_generator.get_project_urls") as mock_urls,
+            patch("app.services.explorer.index_generator.get_network_info") as mock_network,
             patch("app.services.explorer.index_generator.get_explorer_summary") as mock_explorer,
         ):
             mock_storage.get_entries.return_value = []
@@ -206,6 +217,7 @@ class TestGenerateIndex:
             }
             mock_cli.return_value = {}
             mock_urls.return_value = {}
+            mock_network.return_value = {}
             mock_explorer.return_value = {}
 
             result = generate_index("test-project")
@@ -274,6 +286,7 @@ class TestWriteIndexFile:
             patch("app.services.explorer.index_generator.get_services") as mock_services,
             patch("app.services.explorer.index_generator.get_cli_info") as mock_cli,
             patch("app.services.explorer.index_generator.get_project_urls") as mock_urls,
+            patch("app.services.explorer.index_generator.get_network_info") as mock_network,
             patch("app.services.explorer.index_generator.get_explorer_summary") as mock_explorer,
         ):
             mock_root.return_value = str(tmp_path)
@@ -288,6 +301,7 @@ class TestWriteIndexFile:
             mock_services.return_value = {}
             mock_cli.return_value = {}
             mock_urls.return_value = {}
+            mock_network.return_value = {}
             mock_explorer.return_value = {}
 
             result = write_index_file("test-project")
@@ -300,3 +314,56 @@ class TestWriteIndexFile:
         parsed = yaml.safe_load(content)
         assert parsed["project"] == "test-project"
         assert "backend" in parsed["folders"]
+
+
+class TestGetNetworkInfo:
+    """Tests for get_network_info function."""
+
+    def test_returns_host_ip_and_hostname(self) -> None:
+        """Test successful hostname -I and socket.gethostname."""
+        import subprocess as sp
+
+        mock_result = sp.CompletedProcess(args=[], returncode=0, stdout="192.168.8.244 172.17.0.1\n")
+        with (
+            patch("app.services.explorer.index_generator.subprocess.run", return_value=mock_result),
+            patch("app.services.explorer.index_generator.socket.gethostname", return_value="summitflow-prod"),
+        ):
+            info = get_network_info()
+
+        assert info["host_ip"] == "192.168.8.244"
+        assert info["hostname"] == "summitflow-prod"
+
+    def test_returns_empty_on_failure(self) -> None:
+        """Test graceful degradation when commands fail."""
+        with (
+            patch("app.services.explorer.index_generator.subprocess.run", side_effect=OSError),
+            patch("app.services.explorer.index_generator.socket.gethostname", side_effect=OSError),
+        ):
+            info = get_network_info()
+
+        assert info == {}
+
+    def test_network_info_included_in_generated_index(self) -> None:
+        """Test network section appears in generated YAML."""
+        with (
+            patch("app.services.explorer.index_generator.storage") as mock_storage,
+            patch("app.services.explorer.index_generator.get_environment") as mock_env,
+            patch("app.services.explorer.index_generator.get_services") as mock_services,
+            patch("app.services.explorer.index_generator.get_cli_info") as mock_cli,
+            patch("app.services.explorer.index_generator.get_project_urls") as mock_urls,
+            patch("app.services.explorer.index_generator.get_network_info") as mock_network,
+            patch("app.services.explorer.index_generator.get_explorer_summary") as mock_explorer,
+        ):
+            mock_storage.get_entries.return_value = []
+            mock_env.return_value = {}
+            mock_services.return_value = {}
+            mock_cli.return_value = {}
+            mock_urls.return_value = {}
+            mock_network.return_value = {"host_ip": "10.0.0.1", "hostname": "test-host"}
+            mock_explorer.return_value = {}
+
+            result = generate_index("test-project")
+
+        parsed = yaml.safe_load(result)
+        assert parsed["network"]["host_ip"] == "10.0.0.1"
+        assert parsed["network"]["hostname"] == "test-host"

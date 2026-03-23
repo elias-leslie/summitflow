@@ -46,7 +46,7 @@ export function RuntimeModeBanner() {
         {/* Badge */}
         <span
           className={clsx(
-            'inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.14em]',
+            'inline-flex items-center rounded-full border px-2.5 py-0.5 text-2xs font-semibold uppercase tracking-[0.14em]',
             runtimeBadge[rt.runtime] ?? runtimeBadge['docker-stopped'],
           )}
         >

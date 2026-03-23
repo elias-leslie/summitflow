@@ -101,7 +101,7 @@ export function DialogHeader({ children, className = '' }: DialogHeaderProps) {
 
 export function DialogTitle({ children, className = '' }: DialogTitleProps) {
   return (
-    <h2 className={`display text-lg font-semibold text-white ${className}`}>
+    <h2 className={`display text-lg font-semibold text-slate-100 ${className}`}>
       {children}
     </h2>
   )

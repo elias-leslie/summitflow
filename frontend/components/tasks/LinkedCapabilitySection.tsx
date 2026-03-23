@@ -48,7 +48,7 @@ export function LinkedCapabilitySection({
             <span className="mono text-xs text-slate-500">
               {capability.capability_id}
             </span>
-            <h4 className="text-sm font-medium text-white">
+            <h4 className="text-sm font-medium text-slate-100">
               {capability.name}
             </h4>
           </div>

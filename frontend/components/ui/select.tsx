@@ -79,9 +79,9 @@ export function SelectTrigger({ children, className }: SelectTriggerProps) {
       onClick={() => setOpen(!open)}
       className={clsx(
         'flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm',
-        'bg-slate-900 border border-slate-700',
+        'bg-slate-900/80 border border-slate-700',
         'text-slate-200 hover:border-slate-600',
-        'focus:outline-none focus:border-phosphor-500/50 focus:ring-1 focus:ring-phosphor-500/20',
+        'focus-visible:outline-none focus-visible:border-phosphor-500/50 focus-visible:ring-1 focus-visible:ring-phosphor-500/20',
         'transition-all duration-200',
         className,
       )}

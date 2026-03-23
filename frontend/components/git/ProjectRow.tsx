@@ -129,12 +129,12 @@ export function ProjectRow({ repo }: ProjectRowProps) {
         />
 
         {/* Repo name */}
-        <span className="font-semibold text-white text-sm tracking-tight shrink-0">
+        <span className="font-semibold text-slate-100 text-sm tracking-tight shrink-0">
           {repo.name}
         </span>
 
         {/* Branch */}
-        <span className="text-[11px] font-mono text-slate-500 truncate min-w-0">
+        <span className="text-2xs font-mono text-slate-500 truncate min-w-0">
           {repo.branch}
         </span>
 
@@ -158,7 +158,7 @@ export function ProjectRow({ repo }: ProjectRowProps) {
           {/* State pill */}
           <span
             className={clsx(
-              'flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md',
+              'flex items-center gap-1 text-2xs px-2 py-0.5 rounded-md',
               stateInfo.bg,
               stateInfo.color,
             )}
@@ -172,13 +172,13 @@ export function ProjectRow({ repo }: ProjectRowProps) {
 
           {/* Ahead / behind */}
           {repo.ahead > 0 && (
-            <span className="text-phosphor-400 flex items-center gap-0.5 text-[11px] font-mono">
+            <span className="text-phosphor-400 flex items-center gap-0.5 text-2xs font-mono">
               <ArrowUp className="w-3 h-3" />
               {repo.ahead}
             </span>
           )}
           {repo.behind > 0 && (
-            <span className="text-amber-400 flex items-center gap-0.5 text-[11px] font-mono">
+            <span className="text-amber-400 flex items-center gap-0.5 text-2xs font-mono">
               <ArrowDown className="w-3 h-3" />
               {repo.behind}
             </span>
@@ -193,7 +193,7 @@ export function ProjectRow({ repo }: ProjectRowProps) {
               syncMutation.mutate()
             }}
             className={clsx(
-              'flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all',
+              'flex items-center gap-1 px-2.5 py-1 rounded-md text-2xs font-medium transition-all',
               syncMutation.isPending
                 ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
                 : 'bg-outrun-500/12 text-outrun-400 border border-outrun-500/20 hover:bg-outrun-500/20 hover:border-outrun-500/40',

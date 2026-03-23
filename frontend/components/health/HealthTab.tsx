@@ -31,8 +31,14 @@ export function HealthTab({ projectId }: HealthTabProps) {
 
   if (healthLoading && pipelineLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-8 h-8 border-2 border-outrun-500/30 border-t-outrun-500 rounded-full animate-spin" />
+      <div className="space-y-6">
+        <Skeleton className="h-12 w-full rounded-lg" />
+        <Skeleton className="h-16 w-full rounded-lg" />
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Skeleton className="h-48 w-full rounded-lg" />
+          <Skeleton className="h-48 w-full rounded-lg" />
+        </div>
+        <Skeleton className="h-64 w-full rounded-lg" />
       </div>
     )
   }

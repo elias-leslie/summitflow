@@ -18,11 +18,11 @@ import { useServiceAction } from './useServiceAction'
 
 function MetricStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 rounded bg-slate-950/50 px-2 py-1.5">
-      <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
+    <div className="min-w-0 rounded-md bg-slate-950/60 px-2.5 py-1.5 border border-slate-800/40">
+      <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500 font-medium">
         {label}
       </div>
-      <div className="truncate text-xs text-slate-200" title={value}>
+      <div className="truncate text-xs text-slate-200 font-mono tabular-nums mt-0.5" title={value}>
         {value}
       </div>
     </div>
@@ -59,10 +59,10 @@ export function ServiceCard({
         {/* Identity */}
         <div className="mb-2.5 flex items-center gap-2">
           <div className={clsx('w-2 h-2 rounded-full', healthDotClass(tone))} />
-          <span className="font-medium text-white text-sm truncate flex-1">
+          <span className="font-medium text-slate-100 text-sm truncate flex-1">
             {container.display_name}
           </span>
-          <span className={clsx('text-[11px] capitalize', tone === 'healthy' ? 'text-emerald-400' : tone === 'unhealthy' ? 'text-red-400' : 'text-slate-500')}>
+          <span className={clsx('text-2xs capitalize', tone === 'healthy' ? 'text-emerald-400' : tone === 'unhealthy' ? 'text-red-400' : 'text-slate-500')}>
             {healthLabel(container.state, container.health)}
           </span>
         </div>
@@ -92,7 +92,7 @@ export function ServiceCard({
                 <MetricStat label="Mem%" value={metric.mem_percent} />
               </div>
             ) : (
-              <p className="text-[11px] text-slate-600">
+              <p className="text-2xs text-slate-600">
                 {metricsLoading ? 'Loading metrics...' : 'Metrics unavailable'}
               </p>
             )}
@@ -106,14 +106,14 @@ export function ServiceCard({
               <button
                 onClick={() => restartMut.mutate()}
                 disabled={restartMut.isPending}
-                className="text-[11px] px-2 py-1 rounded bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 disabled:opacity-40 transition-colors"
+                className="text-2xs px-2.5 py-1.5 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 hover:border-amber-500/30 disabled:opacity-40 transition-all font-medium"
               >
                 {restartMut.isPending ? '...' : 'Restart'}
               </button>
               <button
                 onClick={() => stopMut.mutate()}
                 disabled={stopMut.isPending}
-                className="text-[11px] px-2 py-1 rounded bg-red-500/10 text-red-400 hover:bg-red-500/20 disabled:opacity-40 transition-colors"
+                className="text-2xs px-2.5 py-1.5 rounded-md bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 hover:border-red-500/30 disabled:opacity-40 transition-all font-medium"
               >
                 {stopMut.isPending ? '...' : 'Stop'}
               </button>
@@ -122,14 +122,19 @@ export function ServiceCard({
             <button
               onClick={() => startMut.mutate()}
               disabled={startMut.isPending}
-              className="text-[11px] px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-40 transition-colors"
+              className="text-2xs px-2.5 py-1.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 hover:border-emerald-500/30 disabled:opacity-40 transition-all font-medium"
             >
               {startMut.isPending ? '...' : 'Start'}
             </button>
           )}
           <button
             onClick={() => setShowLogs(!showLogs)}
-            className="text-[11px] px-2 py-1 rounded bg-slate-700/60 text-slate-400 hover:bg-slate-700 hover:text-slate-300 transition-colors ml-auto"
+            className={clsx(
+              'text-2xs px-2.5 py-1.5 rounded-md border transition-all font-medium ml-auto',
+              showLogs
+                ? 'bg-phosphor-500/10 text-phosphor-400 border-phosphor-500/20'
+                : 'bg-slate-700/40 text-slate-400 border-slate-700/60 hover:bg-slate-700/60 hover:text-slate-300',
+            )}
           >
             Logs
           </button>

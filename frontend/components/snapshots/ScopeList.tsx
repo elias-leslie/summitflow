@@ -185,7 +185,7 @@ function ScopeCard({ scope }: { scope: BtrfsScope }) {
         <span className="text-[10px] text-slate-600 rounded bg-slate-900/60 px-1.5 py-0.5 shrink-0">
           {scope.snapshot_count}
         </span>
-        <div className="hidden sm:flex items-center gap-3 text-[11px] text-slate-500 ml-auto">
+        <div className="hidden sm:flex items-center gap-3 text-2xs text-slate-500 ml-auto">
           {scope.total_bytes != null && scope.total_bytes > 0 && (
             <span className="font-mono">{formatBytes(scope.total_bytes)}</span>
           )}

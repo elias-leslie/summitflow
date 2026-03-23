@@ -24,7 +24,7 @@ function SegmentedToggle<T extends string>({
           type="button"
           onClick={() => onChange(opt.value === '' ? undefined : (opt.value as T))}
           className={clsx(
-            'px-2.5 py-1 text-[11px] transition-colors',
+            'px-2.5 py-1 text-2xs transition-colors',
             (value ?? '') === opt.value
               ? 'bg-slate-700 text-white'
               : 'bg-slate-900/50 text-slate-500 hover:text-slate-300',
@@ -144,7 +144,7 @@ export function FeedbackFilterBar({
         ))}
       </select>
 
-      <span className="text-[11px] text-slate-500 ml-auto tabular-nums">
+      <span className="text-2xs text-slate-500 ml-auto tabular-nums">
         {total} item{total !== 1 ? 's' : ''}
       </span>
     </div>

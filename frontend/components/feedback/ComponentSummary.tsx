@@ -251,10 +251,10 @@ export function ComponentSummary({
   return (
     <section className="space-y-3">
       <div>
-        <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-300">
+        <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-300 display">
           Components
         </h2>
-        <p className="mt-0.5 text-xs text-slate-500">
+        <p className="mt-1 text-xs text-slate-500">
           Feedback by system component
         </p>
       </div>

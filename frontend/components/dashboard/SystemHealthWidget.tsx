@@ -51,15 +51,15 @@ export function SystemHealthWidget({ className }: SystemHealthWidgetProps) {
   return (
     <div className={cn('flex items-center gap-4', className)}>
       {metrics.map((m) => (
-        <div key={m.label} className="flex items-center gap-2">
-          <span className="text-[11px] text-slate-500 w-7">{m.label}</span>
-          <div className="w-14 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+        <div key={m.label} className="flex items-center gap-2" title={`${m.label}: ${m.percent}%`}>
+          <span className="text-2xs text-slate-500 w-8 font-medium">{m.label}</span>
+          <div className="w-20 h-1.5 bg-slate-800 rounded-full overflow-hidden">
             <div
               className={cn('h-full rounded-full transition-all duration-700', STATUS_COLORS[m.status].bar)}
               style={{ width: `${Math.min(m.percent, 100)}%` }}
             />
           </div>
-          <span className={cn('text-[11px] font-mono tabular-nums w-8', STATUS_COLORS[m.status].text)}>
+          <span className={cn('text-2xs font-mono tabular-nums w-9', STATUS_COLORS[m.status].text)}>
             {m.percent}%
           </span>
         </div>

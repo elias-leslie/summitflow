@@ -56,7 +56,7 @@ export function FeedbackDetailActions({
                   type="button"
                   onClick={handleResolveConfirm}
                   disabled={statusMutation.isPending}
-                  className="flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded
+                  className="flex items-center gap-1.5 text-2xs px-2.5 py-1 rounded
                              bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20
                              disabled:opacity-40 transition-colors"
                 >
@@ -70,7 +70,7 @@ export function FeedbackDetailActions({
                 <button
                   type="button"
                   onClick={() => setShowResolveInput(false)}
-                  className="text-[11px] px-2 py-1 text-slate-500 hover:text-slate-300 transition-colors"
+                  className="text-2xs px-2 py-1 text-slate-500 hover:text-slate-300 transition-colors"
                 >
                   Cancel
                 </button>
@@ -87,7 +87,7 @@ export function FeedbackDetailActions({
                         statusMutation.mutate({ status: 'acknowledged' })
                       }
                       disabled={statusMutation.isPending}
-                      className="flex items-center gap-1.5 text-[11px] px-2 py-1 rounded
+                      className="flex items-center gap-1.5 text-2xs px-2 py-1 rounded
                                  bg-amber-500/10 text-amber-400 hover:bg-amber-500/20
                                  disabled:opacity-40 transition-colors"
                     >
@@ -99,7 +99,7 @@ export function FeedbackDetailActions({
                     type="button"
                     onClick={() => setShowResolveInput(true)}
                     disabled={statusMutation.isPending}
-                    className="flex items-center gap-1.5 text-[11px] px-2 py-1 rounded
+                    className="flex items-center gap-1.5 text-2xs px-2 py-1 rounded
                                bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20
                                disabled:opacity-40 transition-colors"
                   >
@@ -112,7 +112,7 @@ export function FeedbackDetailActions({
                       statusMutation.mutate({ status: 'wont_fix' })
                     }
                     disabled={statusMutation.isPending}
-                    className="text-[11px] px-2 py-1 text-slate-500 hover:text-slate-400
+                    className="text-2xs px-2 py-1 text-slate-500 hover:text-slate-400
                                disabled:opacity-40 transition-colors"
                   >
                     Won&apos;t Fix
@@ -127,7 +127,7 @@ export function FeedbackDetailActions({
                     statusMutation.mutate({ status: 'archived' })
                   }
                   disabled={statusMutation.isPending}
-                  className="flex items-center gap-1.5 text-[11px] px-2 py-1 rounded
+                  className="flex items-center gap-1.5 text-2xs px-2 py-1 rounded
                              bg-slate-700/40 text-slate-400 hover:bg-slate-700/60
                              disabled:opacity-40 transition-colors"
                 >
@@ -145,7 +145,7 @@ export function FeedbackDetailActions({
           type="button"
           onClick={onDelete}
           disabled={deleteMutation.isPending}
-          className="flex items-center gap-1.5 text-[11px] px-2 py-1 rounded
+          className="flex items-center gap-1.5 text-2xs px-2 py-1 rounded
                      text-red-500/60 hover:text-red-400 hover:bg-red-500/10
                      disabled:opacity-40 transition-colors"
         >

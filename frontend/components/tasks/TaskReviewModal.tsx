@@ -149,7 +149,7 @@ export function TaskReviewModal({
 
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-800">
-          <h2 className="text-sm font-mono uppercase tracking-wider text-white">
+          <h2 className="text-sm font-mono uppercase tracking-wider text-slate-100">
             Review Task
           </h2>
           <p className="text-xs text-slate-500 mt-1 truncate max-w-lg">

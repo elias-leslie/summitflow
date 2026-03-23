@@ -215,7 +215,7 @@ function InlineDetail({
           </div>
           <p className="text-xs text-slate-300">{item.resolution_note}</p>
           {item.resolved_at && (
-            <p className="text-[11px] text-slate-500 mt-1">
+            <p className="text-2xs text-slate-500 mt-1">
               {new Date(item.resolved_at).toLocaleDateString()}
             </p>
           )}
@@ -242,7 +242,7 @@ function InlineDetail({
                       {vote.comment}
                     </p>
                   )}
-                  <div className="flex items-center gap-2 text-[11px] text-slate-600">
+                  <div className="flex items-center gap-2 text-2xs text-slate-600">
                     {vote.agent_slug && <span>{vote.agent_slug}</span>}
                     <span>
                       {new Date(vote.created_at).toLocaleDateString()}
@@ -273,7 +273,7 @@ function InlineDetail({
                   type="button"
                   onClick={handleResolveConfirm}
                   disabled={statusMutation.isPending}
-                  className="text-[11px] px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-40 transition-colors flex items-center gap-1"
+                  className="text-2xs px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-40 transition-colors flex items-center gap-1"
                 >
                   {statusMutation.isPending ? (
                     <Loader2 className="w-3 h-3 animate-spin" />
@@ -285,7 +285,7 @@ function InlineDetail({
                 <button
                   type="button"
                   onClick={() => setShowResolveInput(false)}
-                  className="text-[11px] px-2 py-1 text-slate-500 hover:text-slate-300 transition-colors"
+                  className="text-2xs px-2 py-1 text-slate-500 hover:text-slate-300 transition-colors"
                 >
                   Cancel
                 </button>
@@ -302,7 +302,7 @@ function InlineDetail({
                           statusMutation.mutate({ status: 'acknowledged' })
                         }
                         disabled={statusMutation.isPending}
-                        className="text-[11px] px-2 py-1 rounded bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 disabled:opacity-40 transition-colors flex items-center gap-1"
+                        className="text-2xs px-2 py-1 rounded bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 disabled:opacity-40 transition-colors flex items-center gap-1"
                       >
                         <Clock className="w-3 h-3" />
                         Acknowledge
@@ -312,7 +312,7 @@ function InlineDetail({
                       type="button"
                       onClick={() => setShowResolveInput(true)}
                       disabled={statusMutation.isPending}
-                      className="text-[11px] px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-40 transition-colors flex items-center gap-1"
+                      className="text-2xs px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-40 transition-colors flex items-center gap-1"
                     >
                       <Check className="w-3 h-3" />
                       Resolve
@@ -323,7 +323,7 @@ function InlineDetail({
                         statusMutation.mutate({ status: 'wont_fix' })
                       }
                       disabled={statusMutation.isPending}
-                      className="text-[11px] px-2 py-1 text-slate-500 hover:text-slate-400 disabled:opacity-40 transition-colors"
+                      className="text-2xs px-2 py-1 text-slate-500 hover:text-slate-400 disabled:opacity-40 transition-colors"
                     >
                       Won&apos;t Fix
                     </button>
@@ -337,7 +337,7 @@ function InlineDetail({
                       statusMutation.mutate({ status: 'archived' })
                     }
                     disabled={statusMutation.isPending}
-                    className="text-[11px] px-2 py-1 rounded bg-slate-700/40 text-slate-400 hover:bg-slate-700/60 disabled:opacity-40 transition-colors"
+                    className="text-2xs px-2 py-1 rounded bg-slate-700/40 text-slate-400 hover:bg-slate-700/60 disabled:opacity-40 transition-colors"
                   >
                     Archive
                   </button>
@@ -350,7 +350,7 @@ function InlineDetail({
           type="button"
           onClick={() => setShowDeleteConfirm(true)}
           disabled={deleteMutation.isPending}
-          className="text-[11px] px-2 py-1 rounded text-red-500/60 hover:text-red-400 hover:bg-red-500/10 disabled:opacity-40 transition-colors flex items-center gap-1 ml-auto"
+          className="text-2xs px-2 py-1 rounded text-red-500/60 hover:text-red-400 hover:bg-red-500/10 disabled:opacity-40 transition-colors flex items-center gap-1 ml-auto"
         >
           {deleteMutation.isPending ? (
             <Loader2 className="w-3 h-3 animate-spin" />
@@ -493,11 +493,11 @@ export function FeedbackList({
                     {item.component_id}
                   </span>
                   {item.agent_slug && (
-                    <span className="text-[11px] text-slate-600">
+                    <span className="text-2xs text-slate-600">
                       {item.agent_slug}
                     </span>
                   )}
-                  <span className="text-[11px] text-slate-600">
+                  <span className="text-2xs text-slate-600">
                     {formatTimeAgo(item.created_at)}
                   </span>
                 </div>

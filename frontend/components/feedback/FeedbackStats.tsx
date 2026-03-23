@@ -152,7 +152,7 @@ export function FeedbackStats({
           isActive={activeType === 'praise'}
           onClick={() => handleClick('praise')}
         />
-        <span className="ml-auto text-[11px] text-slate-500">
+        <span className="ml-auto text-2xs text-slate-500">
           {summary.total} total
         </span>
       </div>

@@ -78,7 +78,7 @@ export function SnapshotSummaryCard({
       <div className="px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Camera className="w-4 h-4 text-slate-500" />
-          <span className="text-sm font-medium text-white">
+          <span className="text-sm font-medium text-slate-100">
             Btrfs Snapshots
           </span>
         </div>
@@ -147,7 +147,7 @@ export function SnapshotSummaryCard({
             type="button"
             onClick={handleSnap}
             disabled={snapping}
-            className="flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded bg-phosphor-500/10 text-phosphor-400 hover:bg-phosphor-500/20 disabled:opacity-40 transition-colors"
+            className="flex items-center gap-1.5 text-2xs px-2.5 py-1 rounded bg-phosphor-500/10 text-phosphor-400 hover:bg-phosphor-500/20 disabled:opacity-40 transition-colors"
           >
             {snapping ? (
               <Loader2 className="w-3 h-3 animate-spin" />
@@ -160,7 +160,7 @@ export function SnapshotSummaryCard({
             type="button"
             onClick={handlePrune}
             disabled={pruning}
-            className="flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded bg-slate-700/40 text-slate-400 hover:bg-slate-700/60 disabled:opacity-40 transition-colors"
+            className="flex items-center gap-1.5 text-2xs px-2.5 py-1 rounded bg-slate-700/40 text-slate-400 hover:bg-slate-700/60 disabled:opacity-40 transition-colors"
           >
             {pruning ? (
               <Loader2 className="w-3 h-3 animate-spin" />
@@ -170,7 +170,7 @@ export function SnapshotSummaryCard({
             Prune
           </button>
           {feedback && (
-            <span className="text-[11px] text-emerald-400">{feedback}</span>
+            <span className="text-2xs text-emerald-400">{feedback}</span>
           )}
         </div>
       </div>

@@ -8,7 +8,7 @@ export const THEME = {
     text: {
       primary: 'text-slate-200',
       secondary: 'text-slate-500',
-      header: 'font-display tracking-tight text-white',
+      header: 'font-display tracking-tight text-slate-100',
       mono: 'font-mono text-cyan-400',
     },
     accent: {

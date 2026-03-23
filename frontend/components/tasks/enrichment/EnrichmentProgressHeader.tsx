@@ -29,7 +29,7 @@ export function EnrichmentProgressHeader({
         />
       </div>
       <div>
-        <h3 className="text-sm font-mono uppercase tracking-wider text-white">
+        <h3 className="text-sm font-mono uppercase tracking-wider text-slate-100">
           Agent Working
         </h3>
         <p className="text-xs text-slate-500">

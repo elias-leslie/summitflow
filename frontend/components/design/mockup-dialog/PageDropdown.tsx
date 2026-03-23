@@ -101,7 +101,7 @@ export function PageDropdown({
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium text-white group-hover:text-outrun-400 transition-colors">
+                        <div className="text-sm font-medium text-slate-100 group-hover:text-outrun-400 transition-colors">
                           {page.name}
                         </div>
                         <div className="text-xs text-slate-400 font-mono truncate">

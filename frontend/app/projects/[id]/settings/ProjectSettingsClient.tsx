@@ -259,7 +259,7 @@ export function ProjectSettingsClient() {
       </header>
 
       {/* Status Strip */}
-      <div className="mb-6 grid grid-cols-2 lg:grid-cols-4 gap-px rounded-xl overflow-hidden bg-slate-800/60">
+      <div className="mb-6 grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatusCell
           label="Project ID"
           value={project.id}
@@ -328,7 +328,7 @@ export function ProjectSettingsClient() {
               className={clsx(
                 'flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px',
                 activeTab === tab.id
-                  ? 'border-outrun-500 text-white'
+                  ? 'border-outrun-500 text-slate-100'
                   : 'border-transparent text-slate-500 hover:text-slate-300 hover:border-slate-600',
               )}
             >
@@ -426,7 +426,7 @@ export function ProjectSettingsClient() {
             <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3 text-sm">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Effective health check</p>
+                  <p className="text-2xs font-medium uppercase tracking-wide text-slate-500">Effective health check</p>
                   <p className="mt-0.5 break-all font-mono text-sm text-slate-200">{healthPreview}</p>
                 </div>
                 <a
@@ -508,14 +508,14 @@ export function ProjectSettingsClient() {
                         </p>
                       </div>
                       {service.cwd && (
-                        <span className="rounded-full border border-slate-700 px-2 py-0.5 font-mono text-[11px] text-slate-400">
+                        <span className="rounded-full border border-slate-700 px-2 py-0.5 font-mono text-2xs text-slate-400">
                           {service.cwd}
                         </span>
                       )}
                     </div>
                     <p className="mt-2 break-all font-mono text-xs text-slate-300">{service.command}</p>
                     {(service.build_command || service.env_file) && (
-                      <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                      <div className="mt-2 flex flex-wrap gap-2 text-2xs text-slate-500">
                         {service.build_command && <span>Build: {service.build_command}</span>}
                         {service.env_file && <span>Env: {service.env_file}</span>}
                       </div>
@@ -575,9 +575,9 @@ function StatusCell({
   }
 
   return (
-    <div className="bg-slate-900/90 px-4 py-3">
+    <div className="card px-4 py-3">
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-slate-500">
+        <div className="flex items-center gap-1.5 text-2xs uppercase tracking-wide text-slate-500">
           <Icon className="h-3 w-3" />
           {label}
         </div>
@@ -594,7 +594,7 @@ function StatusCell({
       <div className={clsx('mt-1 text-sm truncate', mono && 'font-mono', toneClasses[tone])}>
         {value}
       </div>
-      <div className="mt-0.5 truncate text-[11px] text-slate-600">{helper}</div>
+      <div className="mt-0.5 truncate text-2xs text-slate-600">{helper}</div>
     </div>
   )
 }

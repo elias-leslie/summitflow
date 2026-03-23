@@ -99,7 +99,7 @@ export function GitRepoCard({ repo }: GitRepoCardProps) {
       {/* Header */}
       <div className="flex items-start justify-between mb-4">
         <div>
-          <h3 className="display font-semibold text-lg text-white">
+          <h3 className="display font-semibold text-lg text-slate-100">
             {repo.name}
           </h3>
           <p className="mono text-xs text-slate-500 truncate max-w-[200px]">

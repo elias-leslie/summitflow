@@ -39,7 +39,7 @@ export function FeedbackDetailHeader({
             {componentId}
           </span>
         </div>
-        <h2 className="text-sm font-medium text-white leading-tight">
+        <h2 className="text-sm font-medium text-slate-100 leading-tight">
           {title}
         </h2>
       </div>

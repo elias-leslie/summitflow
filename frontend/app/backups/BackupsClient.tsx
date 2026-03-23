@@ -82,7 +82,7 @@ function BackupGridCard({
                   : 'bg-amber-500',
           )}
         />
-        <span className="font-medium text-white text-sm truncate flex-1">
+        <span className="font-medium text-slate-100 text-sm truncate flex-1">
           {source?.name ?? backup.source_id}
         </span>
         {backup.verified != null && (
@@ -136,7 +136,7 @@ function BackupGridCard({
       <div className="mt-3 flex items-center gap-2">
         <Link
           href={`/backups/${backup.source_id}`}
-          className="text-[11px] px-2 py-1 rounded bg-slate-700/50 text-slate-400 hover:bg-slate-700/80 transition-colors flex items-center gap-1"
+          className="text-2xs px-2 py-1 rounded bg-slate-700/50 text-slate-400 hover:bg-slate-700/80 transition-colors flex items-center gap-1"
         >
           <Eye className="w-3 h-3" />
           View
@@ -144,7 +144,7 @@ function BackupGridCard({
         {backup.status === 'completed' && (
           <Link
             href={`/backups/${backup.source_id}/restore/${backup.id}`}
-            className="text-[11px] px-2 py-1 rounded bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 transition-colors flex items-center gap-1"
+            className="text-2xs px-2 py-1 rounded bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 transition-colors flex items-center gap-1"
           >
             <RotateCcw className="w-3 h-3" />
             Restore
@@ -356,7 +356,7 @@ export function BackupsClient() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-white font-display">
+          <h1 className="text-2xl font-bold text-slate-100 display tracking-tight">
             Backup Operations
           </h1>
           <p className="text-sm text-slate-400 mt-0.5">
@@ -393,7 +393,7 @@ export function BackupsClient() {
           <button
             type="button"
             onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-1.5 text-[11px] px-3 py-1.5 rounded-md bg-phosphor-500/12 text-phosphor-400 border border-phosphor-500/20 hover:bg-phosphor-500/20 hover:border-phosphor-500/40 transition-all font-medium"
+            className="flex items-center gap-1.5 text-2xs px-3 py-1.5 rounded-md bg-phosphor-500/12 text-phosphor-400 border border-phosphor-500/20 hover:bg-phosphor-500/20 hover:border-phosphor-500/40 transition-all font-medium"
             data-testid="backup-manual-trigger"
           >
             <Plus className="w-3.5 h-3.5" />
@@ -512,7 +512,7 @@ export function BackupsClient() {
           <div className="p-4 rounded-lg bg-rose-500/8 border border-rose-500/20 text-rose-300 flex items-center gap-3 text-sm">
             <AlertCircle className="w-5 h-5 text-rose-500 shrink-0" />
             <div>
-              <span className="font-medium text-white">
+              <span className="font-medium text-slate-100">
                 Failed to load backups.
               </span>{' '}
               <button

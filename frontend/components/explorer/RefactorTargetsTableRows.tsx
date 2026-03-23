@@ -257,7 +257,7 @@ export function TargetRow({
                       return (
                         <span
                           key={issue}
-                          className={cn('px-1.5 py-0.5 rounded border text-[11px]', s.color)}
+                          className={cn('px-1.5 py-0.5 rounded border text-2xs', s.color)}
                         >
                           {s.label}
                         </span>

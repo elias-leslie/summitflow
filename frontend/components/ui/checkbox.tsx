@@ -21,7 +21,7 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(
         onClick={() => onCheckedChange?.(!checked)}
         className={clsx(
           'w-4 h-4 rounded border flex items-center justify-center transition-all',
-          'focus:outline-none focus:ring-2 focus:ring-phosphor-500/30 focus:ring-offset-2 focus:ring-offset-slate-900',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phosphor-500/30 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900',
           checked
             ? 'bg-phosphor-600 border-phosphor-500'
             : 'bg-slate-900 border-slate-600 hover:border-slate-500',

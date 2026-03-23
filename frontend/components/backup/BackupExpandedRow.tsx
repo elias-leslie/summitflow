@@ -165,7 +165,7 @@ export function BackupExpandedRow({
                   {backup.verified ? 'Verified' : 'Verification Failed'}
                 </span>
                 {backup.verified_at && (
-                  <span className="text-[11px] text-slate-500 ml-auto">
+                  <span className="text-2xs text-slate-500 ml-auto">
                     {formatDate(backup.verified_at)}
                   </span>
                 )}
@@ -208,7 +208,7 @@ export function BackupExpandedRow({
                         .map(([name, info]) => (
                           <div
                             key={name}
-                            className="flex items-center justify-between text-[11px]"
+                            className="flex items-center justify-between text-2xs"
                           >
                             <span className="text-slate-400 truncate">
                               {name}

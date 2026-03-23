@@ -92,7 +92,7 @@ export function FeedbackDetailBody({ item }: FeedbackDetailBodyProps) {
           </h3>
           <p className="text-xs text-slate-300">{item.resolution_note}</p>
           {item.resolved_at && (
-            <p className="text-[11px] text-slate-500 mt-1">
+            <p className="text-2xs text-slate-500 mt-1">
               {new Date(item.resolved_at).toLocaleDateString()}
             </p>
           )}
@@ -120,7 +120,7 @@ export function FeedbackDetailBody({ item }: FeedbackDetailBodyProps) {
                         {vote.comment}
                       </p>
                     )}
-                    <div className="flex items-center gap-2 text-[11px] text-slate-600">
+                    <div className="flex items-center gap-2 text-2xs text-slate-600">
                       {vote.agent_slug && <span>{vote.agent_slug}</span>}
                       <span>
                         {new Date(vote.created_at).toLocaleDateString()}
@@ -132,7 +132,7 @@ export function FeedbackDetailBody({ item }: FeedbackDetailBodyProps) {
             ))}
           </div>
         ) : (
-          <p className="text-[11px] text-slate-600">No votes yet</p>
+          <p className="text-2xs text-slate-600">No votes yet</p>
         )}
       </div>
     </div>

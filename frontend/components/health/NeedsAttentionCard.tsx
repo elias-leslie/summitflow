@@ -62,7 +62,7 @@ export function NeedsAttentionCard({
           </p>
         </div>
         {escalatedCount > 0 && (
-          <span className="rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-1 text-[11px] text-rose-300">
+          <span className="rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-1 text-2xs text-rose-300">
             {escalatedCount} escalated
           </span>
         )}

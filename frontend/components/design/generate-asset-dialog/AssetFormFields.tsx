@@ -274,7 +274,7 @@ export function AssetFormFields({
 
       {mockupType === 'sprite_sheet' && (
         <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4 space-y-4">
-          <p className="text-sm font-medium text-white">Sprite Sheet Settings</p>
+          <p className="text-sm font-medium text-slate-100">Sprite Sheet Settings</p>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <input
               value={sheetColumns}

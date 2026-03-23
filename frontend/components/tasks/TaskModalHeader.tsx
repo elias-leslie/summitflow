@@ -60,7 +60,7 @@ export function TaskModalHeader({
           autoFocus
         />
       ) : (
-        <h2 className="display text-lg font-semibold text-white leading-tight">
+        <h2 className="display text-lg font-semibold text-slate-100 leading-tight">
           {task.title}
         </h2>
       )}

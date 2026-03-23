@@ -85,7 +85,7 @@ export function StorageCard({
           )}
         />
         <HardDrive className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-        <span className="text-sm font-medium text-white">Storage Backend</span>
+        <span className="text-sm font-medium text-slate-100">Storage Backend</span>
         <span className="text-xs text-slate-500 flex-1 text-right">
           {configured ? 'Connected' : 'Not configured'}
         </span>
@@ -138,7 +138,7 @@ export function StorageCard({
                 </div>
 
                 {backends.length > 1 && (
-                  <p className="text-[11px] text-slate-500">
+                  <p className="text-2xs text-slate-500">
                     +{backends.length - 1} more backend
                     {backends.length > 2 ? 's' : ''}
                   </p>
@@ -150,7 +150,7 @@ export function StorageCard({
                     type="button"
                     onClick={handleTest}
                     disabled={testing}
-                    className="text-[11px] px-2 py-1 rounded bg-slate-700/50 text-slate-400 hover:bg-slate-700/80 disabled:opacity-40 transition-colors flex items-center gap-1.5"
+                    className="text-2xs px-2 py-1 rounded bg-slate-700/50 text-slate-400 hover:bg-slate-700/80 disabled:opacity-40 transition-colors flex items-center gap-1.5"
                   >
                     {testing ? (
                       <Loader2 className="w-3 h-3 animate-spin" />
@@ -161,7 +161,7 @@ export function StorageCard({
                   </button>
                   <Link
                     href="/backups/storage"
-                    className="text-[11px] text-phosphor-400 hover:text-phosphor-300 transition-colors flex items-center gap-1"
+                    className="text-2xs text-phosphor-400 hover:text-phosphor-300 transition-colors flex items-center gap-1"
                   >
                     Manage
                     <ArrowRight className="w-3 h-3" />
@@ -196,7 +196,7 @@ export function StorageCard({
                 </p>
                 <Link
                   href="/backups/setup"
-                  className="inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded bg-phosphor-500/10 text-phosphor-400 hover:bg-phosphor-500/20 transition-colors"
+                  className="inline-flex items-center gap-1.5 text-2xs px-2.5 py-1 rounded bg-phosphor-500/10 text-phosphor-400 hover:bg-phosphor-500/20 transition-colors"
                 >
                   Set up storage
                   <ArrowRight className="w-3 h-3" />

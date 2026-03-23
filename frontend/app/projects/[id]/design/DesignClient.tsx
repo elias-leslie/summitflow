@@ -18,7 +18,7 @@ export function DesignClient(): React.ReactElement {
         <p className="text-xs uppercase tracking-[0.24em] text-cyan-300">Design Ops</p>
         <div className="mt-4 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
-            <h1 className="text-3xl font-semibold tracking-tight text-white">
+            <h1 className="text-3xl font-semibold tracking-tight text-slate-100">
               A design workspace for UI review and asset production
             </h1>
             <p className="mt-3 text-sm leading-6 text-slate-300">
@@ -30,10 +30,10 @@ export function DesignClient(): React.ReactElement {
             <button
               type="button"
               onClick={() => setActiveView('ui-design')}
-              className={`rounded-full px-4 py-2 text-sm transition ${
+              className={`rounded-full px-4 py-2 text-sm font-medium transition-all duration-200 ${
                 activeView === 'ui-design'
-                  ? 'bg-white text-slate-950'
-                  : 'bg-slate-950/70 text-slate-300 hover:text-white'
+                  ? 'bg-phosphor-500/20 text-phosphor-400 border border-phosphor-500/30'
+                  : 'bg-slate-900/70 text-slate-400 border border-slate-700 hover:text-slate-200 hover:border-slate-600'
               }`}
             >
               UI Design
@@ -41,10 +41,10 @@ export function DesignClient(): React.ReactElement {
             <button
               type="button"
               onClick={() => setActiveView('asset-studio')}
-              className={`rounded-full px-4 py-2 text-sm transition ${
+              className={`rounded-full px-4 py-2 text-sm font-medium transition-all duration-200 ${
                 activeView === 'asset-studio'
-                  ? 'bg-white text-slate-950'
-                  : 'bg-slate-950/70 text-slate-300 hover:text-white'
+                  ? 'bg-phosphor-500/20 text-phosphor-400 border border-phosphor-500/30'
+                  : 'bg-slate-900/70 text-slate-400 border border-slate-700 hover:text-slate-200 hover:border-slate-600'
               }`}
             >
               Asset Studio

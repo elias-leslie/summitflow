@@ -242,7 +242,7 @@ export function AssetStudioWorkspace({
 
         <aside className="card p-4">
           <p className="text-xs uppercase tracking-[0.22em] text-cyan-300">Production Playbook</p>
-          <h3 className="mt-2 text-lg font-semibold text-white">Asset Direction</h3>
+          <h3 className="mt-2 text-lg font-semibold text-slate-100">Asset Direction</h3>
           <div className="mt-4 space-y-4 text-sm text-slate-300">
             <p>Use transparent backgrounds for sprites, icons, portraits, and UI textures.</p>
             <p>Use `production` workflow for in-game art, `marketing` for promo mockups, and `ui` for product-facing visuals.</p>
@@ -299,14 +299,14 @@ export function AssetStudioWorkspace({
                         className="object-cover"
                         unoptimized
                       />
-                      <div className="absolute left-2 top-2 rounded-full bg-black/65 px-2 py-1 text-[11px] uppercase tracking-[0.18em] text-cyan-200">
+                      <div className="absolute left-2 top-2 rounded-full bg-black/65 px-2 py-1 text-2xs uppercase tracking-[0.18em] text-cyan-200">
                         {asset.workflow}
                       </div>
                     </div>
                     <div className={viewMode === 'grid' ? 'p-4' : 'min-w-0'}>
                       <div className="flex items-center justify-between gap-3">
                         <h3 className="truncate text-white font-medium">{asset.name}</h3>
-                        <span className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
+                        <span className="text-2xs uppercase tracking-[0.18em] text-slate-500">
                           {asset.asset_type.replace('_', ' ')}
                         </span>
                       </div>
@@ -404,7 +404,7 @@ function StudioStat({
     <div className="card flex items-center gap-3 p-4">
       <div className="rounded-xl bg-slate-900 p-2">{icon}</div>
       <div>
-        <div className="text-lg font-semibold text-white">{value}</div>
+        <div className="text-lg font-semibold text-slate-100">{value}</div>
         <div className="text-xs uppercase tracking-[0.18em] text-slate-500">{label}</div>
       </div>
     </div>
@@ -440,7 +440,7 @@ function AssetInspector({
     return (
       <aside className="card p-5">
         <p className="text-xs uppercase tracking-[0.22em] text-cyan-300">Inspector</p>
-        <h3 className="mt-2 text-lg font-semibold text-white">Select an asset</h3>
+        <h3 className="mt-2 text-lg font-semibold text-slate-100">Select an asset</h3>
         <p className="mt-3 text-sm text-slate-400">
           Review prompts, tags, export records, and production metadata from a persistent right-hand inspector.
         </p>
@@ -453,7 +453,7 @@ function AssetInspector({
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-[0.22em] text-cyan-300">{asset.workflow}</p>
-          <h3 className="mt-1 text-xl font-semibold text-white">{asset.name}</h3>
+          <h3 className="mt-1 text-xl font-semibold text-slate-100">{asset.name}</h3>
         </div>
         <button type="button" onClick={onClose} aria-label="Close" className="text-slate-500 hover:text-white">
           <X className="h-4 w-4" />

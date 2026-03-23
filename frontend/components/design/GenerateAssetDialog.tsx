@@ -133,7 +133,7 @@ export function GenerateAssetDialog({
         <div className="flex items-center justify-between p-4 border-b border-slate-800">
           <div className="flex items-center gap-3">
             <ImageIcon className="w-5 h-5 text-outrun-400" />
-            <h2 className="text-lg font-semibold text-white">
+            <h2 className="text-lg font-semibold text-slate-100">
               Generate Game Asset
             </h2>
           </div>

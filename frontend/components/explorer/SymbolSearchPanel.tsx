@@ -240,7 +240,7 @@ export function SymbolSearchPanel({ projectId }: SymbolSearchPanelProps) {
 function MetaBlock({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
+      <p className="text-2xs uppercase tracking-[0.2em] text-slate-500">
         {label}
       </p>
       <p className="mt-1 text-sm text-slate-100">{value}</p>

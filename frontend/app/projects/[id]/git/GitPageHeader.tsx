@@ -37,7 +37,7 @@ export function GitPageHeader({
       </div>
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="display text-3xl font-bold text-white tracking-tight">
+          <h1 className="display text-3xl font-bold text-slate-100 tracking-tight">
             {title}
           </h1>
           <p className="text-slate-400 mt-1">{description}</p>

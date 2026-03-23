@@ -72,7 +72,7 @@ export function TaskSummaryCard({
     <div className="space-y-6">
       <div className="flex items-center gap-3">
         <CheckCircle2 className="w-5 h-5 text-phosphor-400" />
-        <h3 className="text-lg font-semibold text-white">Task Ready for Creation</h3>
+        <h3 className="text-lg font-semibold text-slate-100">Task Ready for Creation</h3>
       </div>
 
       <div className="rounded-lg border border-phosphor-500/20 bg-slate-800/50 p-5 space-y-5">

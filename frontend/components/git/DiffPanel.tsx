@@ -74,7 +74,7 @@ function DiffFileSection({ file }: { file: DiffFile }) {
       {/* Diff content */}
       {expanded && file.diff_content && (
         <div className="overflow-x-auto bg-black/50 border-t border-slate-800">
-          <pre className="text-[11px] font-mono leading-[1.6] p-0">
+          <pre className="text-2xs font-mono leading-[1.6] p-0">
             {file.diff_content.split('\n').map((line, i) => {
               let lineClass = 'text-slate-500 px-3'
               if (line.startsWith('+') && !line.startsWith('+++')) {
@@ -124,7 +124,7 @@ export function DiffPanel({
           {/* Header */}
           <div className="shrink-0 flex items-center justify-between px-5 py-4 border-b border-slate-800 bg-slate-900/40">
             <div className="min-w-0">
-              <Dialog.Title className="text-base font-semibold text-white truncate">
+              <Dialog.Title className="text-base font-semibold text-slate-100 truncate">
                 {title}
               </Dialog.Title>
               {subtitle && (
