@@ -395,7 +395,8 @@ export function SourceCard({
               <select
                 value={frequency}
                 onChange={(e) => setFrequency(e.target.value)}
-                className="px-2 py-1 bg-slate-900/60 border border-slate-700/60 rounded text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-phosphor-500"
+                aria-label="Backup frequency"
+                className="px-2 py-1 bg-slate-900/60 border border-slate-700/60 rounded text-xs text-slate-200 focus-visible:outline-none focus-visible:border-phosphor-500/50 focus-visible:ring-1 focus-visible:ring-phosphor-500/20 transition-colors"
               >
                 {FREQUENCY_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>
@@ -406,7 +407,8 @@ export function SourceCard({
               <select
                 value={retention}
                 onChange={(e) => setRetention(Number(e.target.value))}
-                className="px-2 py-1 bg-slate-900/60 border border-slate-700/60 rounded text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-phosphor-500"
+                aria-label="Retention period"
+                className="px-2 py-1 bg-slate-900/60 border border-slate-700/60 rounded text-xs text-slate-200 focus-visible:outline-none focus-visible:border-phosphor-500/50 focus-visible:ring-1 focus-visible:ring-phosphor-500/20 transition-colors"
               >
                 {RETENTION_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>
