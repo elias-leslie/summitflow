@@ -64,12 +64,22 @@ manifest_path_for_source() {
     printf '%s/%s.units\n' "$MANAGED_UNITS_STATE_DIR" "$key"
 }
 
+legacy_units_for_source() {
+    local source_root="$1"
+    case "$source_root" in
+        */agent-hub/scripts/systemd)
+            printf '%s\n' "agent-hub-hatchet-worker.service"
+            ;;
+    esac
+}
+
 render_unit_tree() {
     local source_root="$1"
     local project_root="${2:-}"
     local unit_file unit_name manifest_file
     local -a desired_units=()
     local -a previous_units=()
+    local legacy_unit
     [ -d "$source_root" ] || return 0
 
     for unit_file in "$source_root"/*.{service,timer}; do
@@ -81,11 +91,18 @@ render_unit_tree() {
     if [ -f "$manifest_file" ]; then
         mapfile -t previous_units < "$manifest_file"
     fi
+    while IFS= read -r legacy_unit; do
+        [ -n "$legacy_unit" ] || continue
+        if ! array_contains "$legacy_unit" "${previous_units[@]}"; then
+            previous_units+=("$legacy_unit")
+        fi
+    done < <(legacy_units_for_source "$source_root")
 
     for unit_name in "${previous_units[@]}"; do
         [ -n "$unit_name" ] || continue
         if ! array_contains "$unit_name" "${desired_units[@]}"; then
             run_user_systemctl disable --now "$unit_name" >/dev/null 2>&1 || true
+            run_user_systemctl reset-failed "$unit_name" >/dev/null 2>&1 || true
             rm -f "$USER_SYSTEMD_DIR/$unit_name"
             echo "    pruned $unit_name"
             PRUNED_UNITS+=("$unit_name")

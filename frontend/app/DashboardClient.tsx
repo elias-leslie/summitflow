@@ -82,10 +82,10 @@ export function DashboardClient() {
         className="flex flex-col sm:flex-row sm:items-end justify-between gap-4"
       >
         <div>
-          <h1 className="display text-[28px] font-extrabold text-slate-100 tracking-tight leading-none">
+          <h1 className="display text-3xl font-extrabold text-slate-100 tracking-tight leading-none">
             Command Center
           </h1>
-          <p className="mt-1.5 text-sm text-slate-500">
+          <p className="mt-2 text-sm text-slate-500">
             {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
           </p>
         </div>
@@ -152,7 +152,7 @@ export function DashboardClient() {
         transition={{ duration: 0.4, delay: 0.1, ease: [0.25, 0.46, 0.45, 0.94] }}
       >
         <div className="flex items-center justify-between mb-4">
-          <h2 className="display font-bold text-lg text-slate-100 tracking-tight">Projects</h2>
+          <h2 className="display font-bold text-xl text-slate-100 tracking-tight">Projects</h2>
           <div className="flex items-center gap-3">
             {totalPages > 1 && (
               <div className="flex items-center gap-1.5 text-xs">

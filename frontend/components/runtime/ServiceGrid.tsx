@@ -126,14 +126,14 @@ export function ServiceGrid() {
     <div className="space-y-5">
       {/* View toggle */}
       <div className="flex items-center justify-end">
-        <div className="flex rounded-md border border-slate-700/60 overflow-hidden">
+        <div className="flex items-center gap-0.5 rounded-lg bg-slate-800/60 border border-slate-700/50 p-0.5">
           <button
             onClick={() => setView('grid')}
             className={clsx(
-              'px-2.5 py-1 text-xs transition-colors',
+              'flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all duration-200',
               view === 'grid'
-                ? 'bg-slate-700 text-slate-100'
-                : 'bg-slate-900/50 text-slate-500 hover:text-slate-300',
+                ? 'bg-phosphor-500/15 text-phosphor-400 shadow-sm'
+                : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/50',
             )}
             aria-label="Grid view"
           >
@@ -143,14 +143,15 @@ export function ServiceGrid() {
               <rect x="1" y="9" width="6" height="6" rx="1" stroke="currentColor" strokeWidth="1.5" />
               <rect x="9" y="9" width="6" height="6" rx="1" stroke="currentColor" strokeWidth="1.5" />
             </svg>
+            Grid
           </button>
           <button
             onClick={() => setView('list')}
             className={clsx(
-              'px-2.5 py-1 text-xs transition-colors',
+              'flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all duration-200',
               view === 'list'
-                ? 'bg-slate-700 text-slate-100'
-                : 'bg-slate-900/50 text-slate-500 hover:text-slate-300',
+                ? 'bg-phosphor-500/15 text-phosphor-400 shadow-sm'
+                : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/50',
             )}
             aria-label="List view"
           >
@@ -159,6 +160,7 @@ export function ServiceGrid() {
               <line x1="1" y1="8" x2="15" y2="8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
               <line x1="1" y1="13" x2="15" y2="13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
             </svg>
+            List
           </button>
         </div>
       </div>
@@ -166,10 +168,10 @@ export function ServiceGrid() {
       {sections.map((section) => (
         <section key={section.id} className="space-y-3">
           <div>
-            <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-300">
+            <h2 className="display text-sm font-bold uppercase tracking-[0.16em] text-slate-200">
               {section.title}
             </h2>
-            <p className="mt-0.5 text-xs text-slate-500">
+            <p className="mt-0.5 text-xs text-slate-600">
               {section.description}
             </p>
           </div>

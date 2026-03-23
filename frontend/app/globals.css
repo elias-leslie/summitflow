@@ -218,6 +218,17 @@ body::before {
   border: 1px solid rgba(45, 29, 66, 0.4);
 }
 
+/* Compact info card — minimal padding, for status strips */
+.card-compact {
+  @apply rounded-lg;
+  background: linear-gradient(
+    135deg,
+    rgba(21, 13, 32, 0.8) 0%,
+    rgba(15, 10, 24, 0.9) 100%
+  );
+  border: 1px solid rgba(45, 29, 66, 0.5);
+}
+
 /* Button styles — CSS utility classes for non-component usage (Links, etc.) */
 .btn {
   @apply px-4 py-2 rounded-md font-medium transition-all duration-200;

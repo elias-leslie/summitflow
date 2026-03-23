@@ -96,11 +96,11 @@ export function KanbanRow({
           />
         )}
 
-        <span className={`text-sm font-medium ${colors.header}`}>
+        <span className={`display text-sm font-semibold ${colors.header}`}>
           {column.title}
         </span>
 
-        <span className="text-xs mono text-slate-500 bg-slate-800 px-2 py-0.5 rounded">
+        <span className="text-xs mono text-slate-500 bg-slate-800/80 px-2 py-0.5 rounded-md tabular-nums">
           {tasks.length}
         </span>
 
@@ -159,8 +159,8 @@ export function KanbanRow({
                     })}
                   </div>
                 ) : (
-                  <div className="flex items-center justify-center h-16 text-xs text-slate-600 italic">
-                    No tasks
+                  <div className="flex items-center justify-center h-16 text-xs text-slate-600">
+                    No tasks in this column
                   </div>
                 )}
               </div>
