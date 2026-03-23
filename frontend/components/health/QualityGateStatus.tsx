@@ -76,20 +76,20 @@ export function QualityGateStatus({ health }: QualityGateStatusProps) {
             return (
               <div
                 key={name}
-                className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2"
+                className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2.5 transition-colors hover:border-slate-700"
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex min-w-0 items-center gap-2">
-                    <span className={`h-1.5 w-1.5 rounded-full ${state.dotColor}`} />
+                    <span className={`h-2 w-2 rounded-full ${state.dotColor} ring-2 ring-slate-900`} />
                     <span className={`truncate text-xs font-medium ${state.textColor}`}>
                       {formatCheckLabel(name)}
                     </span>
                   </div>
-                  <span className="text-2xs text-slate-500 tabular-nums">
+                  <span className="text-2xs text-slate-500 tabular-nums font-medium">
                     {state.badgeLabel}
                   </span>
                 </div>
-                <div className="mt-1 text-2xs text-slate-500">
+                <div className="mt-1.5 text-2xs text-slate-600">
                   {formatLastRun(check.last_run)}
                 </div>
               </div>

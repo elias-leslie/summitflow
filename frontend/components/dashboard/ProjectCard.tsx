@@ -193,10 +193,10 @@ export function ProjectCard({ project }: ProjectCardProps) {
                 </span>
               )}
             </div>
-            <div className="mt-2 flex flex-wrap items-center gap-2 text-2xs">
+            <div className="mt-2.5 flex flex-wrap items-center gap-2 text-2xs">
               <Link
                 href={`/projects/${project.id}/settings`}
-                className="inline-flex items-center gap-1 rounded-full border border-slate-700 px-2 py-1 text-slate-400 transition-colors hover:border-slate-500 hover:text-slate-200"
+                className="inline-flex items-center gap-1 rounded-md border border-slate-700/60 bg-slate-800/40 px-2.5 py-1 text-slate-400 transition-all hover:border-slate-500 hover:text-slate-200 hover:bg-slate-750/60"
               >
                 <Settings2 className="w-3 h-3" />
                 Settings
@@ -205,7 +205,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
                 href={project.base_url}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1 rounded-full border border-slate-700 px-2 py-1 text-slate-400 transition-colors hover:border-slate-500 hover:text-slate-200"
+                className="inline-flex items-center gap-1 rounded-md border border-slate-700/60 bg-slate-800/40 px-2.5 py-1 text-slate-400 transition-all hover:border-slate-500 hover:text-slate-200 hover:bg-slate-750/60"
               >
                 <ExternalLink className="w-3 h-3" />
                 Open app
@@ -318,9 +318,9 @@ export function ProjectCard({ project }: ProjectCardProps) {
         </div>
       </div>
 
-      <div className="mt-4 pt-3 border-t border-slate-800/60">
+      <div className="mt-4 pt-3 border-t border-slate-700/40">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1">
             {metrics.map((metric) => {
               const Icon = metric.icon
               return (
@@ -329,22 +329,22 @@ export function ProjectCard({ project }: ProjectCardProps) {
                   key={metric.key}
                   onClick={(e) => handleStatClick(e, metric.key)}
                   className={clsx(
-                    'flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-all duration-200',
+                    'flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg transition-all duration-200',
                     metric.count > 0
                       ? `${metric.activeClass} hover:bg-slate-800/60`
-                      : 'text-slate-500 hover:text-slate-400 hover:bg-slate-800/40',
+                      : 'text-slate-600 hover:text-slate-400 hover:bg-slate-800/40',
                   )}
                   title={metric.title}
                   aria-label={`${metric.label}: ${metric.count}`}
                 >
-                  <Icon className="w-3 h-3" />
-                  <span className="tabular-nums">{metric.count}</span>
+                  <Icon className="w-3.5 h-3.5" />
+                  <span className="tabular-nums font-medium">{metric.count}</span>
                 </button>
               )
             })}
           </div>
 
-          <span className="text-2xs text-slate-500 flex items-center gap-1">
+          <span className="text-2xs text-slate-600 flex items-center gap-1">
             <Clock className="w-3 h-3" />
             {new Date(project.created_at).toLocaleDateString()}
           </span>

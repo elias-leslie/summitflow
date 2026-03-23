@@ -69,8 +69,8 @@ export function DashboardClient() {
   ]
 
   const quickLinks = [
-    { href: '/backups', label: 'Backups', sub: 'DB snapshots', icon: Archive, hoverBorder: 'hover:border-indigo-500/40', hoverBg: 'hover:bg-indigo-500/5', iconColor: 'text-indigo-400' },
-    { href: '/feedback', label: 'Feedback', sub: 'Signals & fixes', icon: AlertCircle, hoverBorder: 'hover:border-amber-500/40', hoverBg: 'hover:bg-amber-500/5', iconColor: 'text-amber-400' },
+    { href: '/backups', label: 'Backups', sub: 'DB snapshots', icon: Archive, hoverBorder: 'hover:border-indigo-500/40', hoverBg: 'hover:bg-indigo-500/5', iconColor: 'text-indigo-400', iconBg: 'bg-indigo-500/10' },
+    { href: '/feedback', label: 'Feedback', sub: 'Signals & fixes', icon: AlertCircle, hoverBorder: 'hover:border-amber-500/40', hoverBg: 'hover:bg-amber-500/5', iconColor: 'text-amber-400', iconBg: 'bg-amber-500/10' },
   ]
 
   return (
@@ -92,6 +92,9 @@ export function DashboardClient() {
         <SystemHealthWidget />
       </motion.div>
 
+      {/* Chrome divider */}
+      <div className="chrome-line" />
+
       {/* Stats Strip */}
       <motion.div
         {...fadeUp}
@@ -101,15 +104,15 @@ export function DashboardClient() {
           {stats.map((stat) => {
             const Icon = stat.icon
             return (
-              <div key={stat.label} className="card px-4 py-4 flex items-center gap-3.5">
-                <div className={`rounded-lg p-2.5 ${stat.iconBg}`}>
-                  <Icon className={`w-4.5 h-4.5 ${stat.iconColor}`} />
+              <div key={stat.label} className="card px-5 py-4 flex items-center gap-4 relative overflow-hidden">
+                <div className={`rounded-xl p-3 ${stat.iconBg} ring-1 ring-white/5`}>
+                  <Icon className={`w-5 h-5 ${stat.iconColor}`} />
                 </div>
                 <div>
-                  <div className={`text-2xl font-bold tabular-nums leading-none tracking-tight ${stat.color}`}>
+                  <div className={`text-[28px] font-extrabold tabular-nums leading-none tracking-tight ${stat.color}`}>
                     {stat.value}
                   </div>
-                  <div className="text-2xs text-slate-500 mt-1 font-medium">{stat.label}</div>
+                  <div className="text-2xs text-slate-500 mt-1.5 font-medium uppercase tracking-wider">{stat.label}</div>
                 </div>
               </div>
             )
@@ -129,12 +132,14 @@ export function DashboardClient() {
             <Link
               key={link.href}
               href={link.href}
-              className={`card px-4 py-3 flex items-center gap-3 transition-all ${link.hoverBorder} ${link.hoverBg}`}
+              className={`card px-5 py-3.5 flex items-center gap-3.5 transition-all ${link.hoverBorder} ${link.hoverBg}`}
             >
-              <Icon className={`w-4 h-4 ${link.iconColor}`} />
+              <div className={`rounded-lg p-2 ${link.iconBg} ring-1 ring-white/5`}>
+                <Icon className={`w-4 h-4 ${link.iconColor}`} />
+              </div>
               <div>
                 <div className="text-sm font-medium text-slate-100 leading-none">{link.label}</div>
-                <div className="text-2xs text-slate-500 mt-0.5">{link.sub}</div>
+                <div className="text-2xs text-slate-500 mt-1">{link.sub}</div>
               </div>
             </Link>
           )
@@ -196,7 +201,10 @@ export function DashboardClient() {
         {...fadeUp}
         transition={{ duration: 0.4, delay: 0.14, ease: [0.25, 0.46, 0.45, 0.94] }}
       >
-        <h2 className="display font-bold text-lg text-slate-100 tracking-tight mb-4">Recent Activity</h2>
+        <div className="mb-4">
+          <h2 className="display font-bold text-lg text-slate-100 tracking-tight">Recent Activity</h2>
+          <div className="chrome-line mt-2" />
+        </div>
         <ActivityFeed />
       </motion.section>
     </div>

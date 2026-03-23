@@ -60,17 +60,17 @@ export function PipelineHealthDashboard({ data }: PipelineHealthDashboardProps) 
           ) : (
             <>
               {/* Horizontal stacked bar */}
-              <div className="mb-4">
-                <div className="flex h-4 rounded-full overflow-hidden bg-slate-800">
+              <div className="mb-5">
+                <div className="flex h-3 rounded-full overflow-hidden bg-slate-800/60 ring-1 ring-white/5">
                   {taskStatuses.map((status) => {
                     if (status.count === 0) return null
                     const widthPercent = (status.count / totalTasks) * 100
                     return (
                       <div
                         key={status.label}
-                        className={status.color}
+                        className={`${status.color} transition-all duration-500`}
                         style={{ width: `${widthPercent}%` }}
-                        title={`${status.label}: ${status.count}`}
+                        title={`${status.label}: ${status.count} (${Math.round(widthPercent)}%)`}
                       />
                     )
                   })}
@@ -106,8 +106,9 @@ export function PipelineHealthDashboard({ data }: PipelineHealthDashboardProps) 
           </CardHeader>
           <CardContent className="space-y-3">
             {totalTasks === 0 ? (
-              <div className="flex flex-col items-center justify-center py-4 text-center">
-                <span className="text-xs text-slate-500">No completed tasks to analyze</span>
+              <div className="flex flex-col items-center justify-center py-6 text-center">
+                <span className="text-sm text-slate-600 mb-1">--</span>
+                <span className="text-xs text-slate-600">Waiting for completed tasks</span>
               </div>
             ) : (
               <>
@@ -141,8 +142,9 @@ export function PipelineHealthDashboard({ data }: PipelineHealthDashboardProps) 
           </CardHeader>
           <CardContent className="space-y-3">
             {totalTasks === 0 ? (
-              <div className="flex flex-col items-center justify-center py-4 text-center">
-                <span className="text-xs text-slate-500">No completed tasks to analyze</span>
+              <div className="flex flex-col items-center justify-center py-6 text-center">
+                <span className="text-sm text-slate-600 mb-1">--</span>
+                <span className="text-xs text-slate-600">Waiting for completed tasks</span>
               </div>
             ) : (
               <>
@@ -192,8 +194,9 @@ export function PipelineHealthDashboard({ data }: PipelineHealthDashboardProps) 
           </CardHeader>
           <CardContent className="space-y-3">
             {totalTasks === 0 ? (
-              <div className="flex flex-col items-center justify-center py-4 text-center">
-                <span className="text-xs text-slate-500">No completed tasks to analyze</span>
+              <div className="flex flex-col items-center justify-center py-6 text-center">
+                <span className="text-sm text-slate-600 mb-1">--</span>
+                <span className="text-xs text-slate-600">Waiting for completed tasks</span>
               </div>
             ) : (
               <>
