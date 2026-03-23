@@ -10,22 +10,6 @@ from ...services import explorer
 from ...storage.connection import get_connection, get_cursor
 from ..projects_services import get_project_services
 from . import agents
-from .pulse import router as pulse_router
-
-# Re-export get_connection for backwards compatibility with tests
-__all__ = [
-    "AgentConfigResponse",
-    "AgentConfigUpdate",
-    "ProjectCreate",
-    "ProjectHealthResponse",
-    "ProjectResponse",
-    "ProjectStats",
-    "ProjectUpdate",
-    "ProjectWithStats",
-    "ProjectsWithStatsResponse",
-    "get_connection",  # For test mocking compatibility
-    "router",
-]
 from .db_helpers import (
     build_project_with_stats,
     create_project_in_db,
@@ -33,16 +17,13 @@ from .db_helpers import (
     get_project_from_db,
 )
 from .models import (
-    AgentConfigResponse,
-    AgentConfigUpdate,
     ProjectCreate,
     ProjectHealthResponse,
     ProjectResponse,
-    ProjectStats,
     ProjectsWithStatsResponse,
     ProjectUpdate,
-    ProjectWithStats,
 )
+from .pulse import router as pulse_router
 
 router = APIRouter()
 
@@ -248,5 +229,3 @@ async def delete_project(project_id: str) -> dict[str, str]:
         raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
 
     return {"status": "deleted", "id": project_id}
-
-
