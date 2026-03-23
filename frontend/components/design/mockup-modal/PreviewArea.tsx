@@ -70,7 +70,7 @@ export function PreviewArea({
               className="w-full h-full rounded-lg border-0"
             />
           ) : (
-            <div className="w-full h-full p-4 overflow-auto text-white text-sm font-mono whitespace-pre-wrap">
+            <div className="w-full h-full p-4 overflow-auto text-slate-100 text-sm font-mono whitespace-pre-wrap">
               {mockup.content}
             </div>
           )

@@ -89,10 +89,12 @@ function ComponentRow({
     <button
       type="button"
       onClick={onClick}
+      aria-pressed={isActive}
       className={clsx(
         'flex items-center gap-3 px-3 py-2 rounded-md text-left transition-all w-full',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phosphor-500/40',
         isActive
-          ? 'bg-slate-700/40 ring-1 ring-slate-600/60'
+          ? 'bg-slate-700/40 ring-1 ring-phosphor-500/20'
           : 'hover:bg-slate-800/40',
       )}
     >
@@ -170,8 +172,10 @@ function GroupSection({
       )}
     >
       <button
+        type="button"
         onClick={() => setExpanded(!expanded)}
-        className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-slate-800/30"
+        aria-expanded={expanded}
+        className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-slate-800/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-phosphor-500/40"
       >
         <ChevronRight
           className={clsx(

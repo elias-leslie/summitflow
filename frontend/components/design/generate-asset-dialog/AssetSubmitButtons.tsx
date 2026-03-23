@@ -19,7 +19,7 @@ export function AssetSubmitButtons({
         type="button"
         onClick={onCancel}
         disabled={isPending}
-        className="px-4 py-2 text-slate-400 hover:text-white"
+        className="px-4 py-2 text-slate-400 hover:text-slate-100"
       >
         Cancel
       </button>

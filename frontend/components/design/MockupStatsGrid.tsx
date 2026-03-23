@@ -43,7 +43,7 @@ export function MockupStatsGrid({
         >
           {statusIcons[status]}
           <div>
-            <div className="text-white font-medium">{count}</div>
+            <div className="text-slate-100 font-medium">{count}</div>
             <div className="text-slate-400 text-xs capitalize">
               {status.replace('_', ' ')}
             </div>

@@ -30,28 +30,28 @@ export function DetailsSidebar({
             <h3 className="text-sm font-medium text-slate-400 mb-1">
               Description
             </h3>
-            <p className="text-white">{mockup.description}</p>
+            <p className="text-slate-100">{mockup.description}</p>
           </div>
         )}
 
         <div className="grid grid-cols-2 gap-4">
           <div>
             <h3 className="text-sm font-medium text-slate-400 mb-1">Type</h3>
-            <p className="text-white capitalize">{mockup.mockup_type}</p>
+            <p className="text-slate-100 capitalize">{mockup.mockup_type}</p>
           </div>
           <div>
             <h3 className="text-sm font-medium text-slate-400 mb-1">Version</h3>
-            <p className="text-white">{mockup.version}</p>
+            <p className="text-slate-100">{mockup.version}</p>
           </div>
           <div>
             <h3 className="text-sm font-medium text-slate-400 mb-1">Created</h3>
-            <p className="text-white">{formattedDate}</p>
+            <p className="text-slate-100">{formattedDate}</p>
           </div>
           <div>
             <h3 className="text-sm font-medium text-slate-400 mb-1">
               Iteration
             </h3>
-            <p className="text-white">{mockup.iteration_count}</p>
+            <p className="text-slate-100">{mockup.iteration_count}</p>
           </div>
         </div>
 
@@ -61,19 +61,19 @@ export function DetailsSidebar({
             {mockup.generator && (
               <div className="flex justify-between">
                 <span className="text-slate-400">Generator</span>
-                <span className="text-white">{mockup.generator}</span>
+                <span className="text-slate-100">{mockup.generator}</span>
               </div>
             )}
             {mockup.generation_time_ms && (
               <div className="flex justify-between">
                 <span className="text-slate-400">Generation Time</span>
-                <span className="text-white">{mockup.generation_time_ms}ms</span>
+                <span className="text-slate-100">{mockup.generation_time_ms}ms</span>
               </div>
             )}
             {mockup.task_id && (
               <div className="flex justify-between">
                 <span className="text-slate-400">Task</span>
-                <span className="text-white font-mono text-xs">
+                <span className="text-slate-100 font-mono text-xs">
                   {mockup.task_id}
                 </span>
               </div>
@@ -81,7 +81,7 @@ export function DetailsSidebar({
             {mockup.page_path && (
               <div className="flex justify-between">
                 <span className="text-slate-400">Page</span>
-                <span className="text-white">{mockup.page_path}</span>
+                <span className="text-slate-100">{mockup.page_path}</span>
               </div>
             )}
           </div>
@@ -120,7 +120,7 @@ export function DetailsSidebar({
                   }`}
                 >
                   <span className="text-slate-400">v{item.version}</span>
-                  <span className="text-white flex-1 truncate">{item.name}</span>
+                  <span className="text-slate-100 flex-1 truncate">{item.name}</span>
                   <span className="text-slate-500 text-xs">
                     {item.created_at
                       ? new Date(item.created_at).toLocaleDateString()

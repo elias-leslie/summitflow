@@ -23,9 +23,12 @@ function StatPill({
     <button
       type="button"
       onClick={onClick}
+      aria-pressed={isActive}
       className={clsx(
         'flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-mono tabular-nums transition-all',
-        isActive ? 'ring-1 ring-white/20 shadow-lg shadow-black/20' : '',
+        'hover:shadow-md hover:brightness-110',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phosphor-500/40',
+        isActive ? 'ring-1 ring-phosphor-500/30 shadow-lg shadow-slate-950/30' : '',
         tone,
       )}
     >

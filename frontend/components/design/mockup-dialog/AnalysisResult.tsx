@@ -18,17 +18,17 @@ export function AnalysisResult({ result }: AnalysisResultProps) {
         <div className="grid grid-cols-3 gap-4 text-sm">
           <div className="card p-3">
             <div className="text-slate-400 mb-1">Mockup ID</div>
-            <div className="text-white font-mono text-xs">
+            <div className="text-slate-100 font-mono text-xs">
               {result.mockup_id}
             </div>
           </div>
           <div className="card p-3">
             <div className="text-slate-400 mb-1">Issues Found</div>
-            <div className="text-white">{result.issues_found}</div>
+            <div className="text-slate-100">{result.issues_found}</div>
           </div>
           <div className="card p-3">
             <div className="text-slate-400 mb-1">Mockup Image</div>
-            <div className="text-white text-xs">
+            <div className="text-slate-100 text-xs">
               {result.mockup_image_path ? '✓ Generated' : '—'}
             </div>
           </div>

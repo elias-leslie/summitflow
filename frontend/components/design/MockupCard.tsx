@@ -129,7 +129,7 @@ export function MockupCard({
                 : 'border-slate-600 hover:border-outrun-400'
             }`}
           >
-            {isSelected && <Check className="w-3.5 h-3.5 text-white" />}
+            {isSelected && <Check className="w-3.5 h-3.5 text-slate-100" />}
           </div>
         )}
 
@@ -140,7 +140,7 @@ export function MockupCard({
 
         {/* Info */}
         <div className="flex-1 min-w-0">
-          <h3 className="text-white font-medium truncate">{mockup.name}</h3>
+          <h3 className="text-slate-100 font-medium truncate">{mockup.name}</h3>
           {mockup.description && (
             <p className="text-slate-400 text-sm truncate">
               {mockup.description}
@@ -199,7 +199,7 @@ export function MockupCard({
                   : 'bg-slate-900/80 border-slate-600 hover:border-outrun-400'
               }`}
             >
-              {isSelected && <Check className="w-4 h-4 text-white" />}
+              {isSelected && <Check className="w-4 h-4 text-slate-100" />}
             </div>
           </div>
         )}
@@ -257,7 +257,7 @@ export function MockupCard({
 
       {/* Info */}
       <div className="p-3">
-        <h3 className="text-white font-medium truncate group-hover:text-outrun-400 transition-colors">
+        <h3 className="text-slate-100 font-medium truncate group-hover:text-outrun-400 transition-colors">
           {mockup.name}
         </h3>
         {mockup.description && (

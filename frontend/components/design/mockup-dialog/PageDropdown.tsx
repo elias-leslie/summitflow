@@ -50,7 +50,7 @@ export function PageDropdown({
         type="button"
         onClick={onToggle}
         disabled={isDisabled}
-        className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-left text-white hover:border-outrun-500/50 focus:outline-none focus:ring-2 focus:ring-outrun-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed group"
+        className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-left text-slate-100 hover:border-outrun-500/50 focus:outline-none focus:ring-2 focus:ring-outrun-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed group"
       >
         <div className="flex items-center justify-between">
           <div className="flex-1 min-w-0">

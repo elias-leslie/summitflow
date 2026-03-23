@@ -23,11 +23,13 @@ function SegmentedToggle<T extends string>({
           key={opt.value}
           type="button"
           onClick={() => onChange(opt.value === '' ? undefined : (opt.value as T))}
+          aria-pressed={(value ?? '') === opt.value}
           className={clsx(
-            'px-2.5 py-1 text-2xs transition-colors',
+            'px-2.5 py-1 text-2xs transition-all',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-phosphor-500/40',
             (value ?? '') === opt.value
-              ? 'bg-slate-700 text-slate-100'
-              : 'bg-slate-900/50 text-slate-500 hover:text-slate-300',
+              ? 'bg-slate-700 text-slate-100 shadow-inner'
+              : 'bg-slate-900/50 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50',
           )}
         >
           {opt.label}

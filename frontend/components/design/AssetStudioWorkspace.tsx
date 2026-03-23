@@ -187,7 +187,7 @@ export function AssetStudioWorkspace({
               setPage(0)
             }}
             placeholder="Search generated assets..."
-            className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-white xl:col-span-2"
+            className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 xl:col-span-2"
           />
           <select
             value={statusFilter}
@@ -305,7 +305,7 @@ export function AssetStudioWorkspace({
                     </div>
                     <div className={viewMode === 'grid' ? 'p-4' : 'min-w-0'}>
                       <div className="flex items-center justify-between gap-3">
-                        <h3 className="truncate text-white font-medium">{asset.name}</h3>
+                        <h3 className="truncate text-slate-100 font-medium">{asset.name}</h3>
                         <span className="text-2xs uppercase tracking-[0.18em] text-slate-500">
                           {asset.asset_type.replace('_', ' ')}
                         </span>
@@ -455,7 +455,7 @@ function AssetInspector({
           <p className="text-xs uppercase tracking-[0.22em] text-cyan-300">{asset.workflow}</p>
           <h3 className="mt-1 text-xl font-semibold text-slate-100">{asset.name}</h3>
         </div>
-        <button type="button" onClick={onClose} aria-label="Close" className="text-slate-500 hover:text-white">
+        <button type="button" onClick={onClose} aria-label="Close" className="text-slate-500 hover:text-slate-100">
           <X className="h-4 w-4" />
         </button>
       </div>
@@ -547,7 +547,7 @@ function AssetInspector({
           {(exports ?? []).map((assetExport: DesignAssetExport) => (
             <div key={assetExport.export_id} className="rounded-xl bg-slate-900 p-3 text-sm">
               <div className="flex items-center justify-between gap-3">
-                <span className="text-white">{assetExport.export_type}</span>
+                <span className="text-slate-100">{assetExport.export_type}</span>
                 <span className="text-slate-500">{assetExport.file_path}</span>
               </div>
               {assetExport.manifest_path && (
@@ -573,7 +573,7 @@ function InspectorField({
   return (
     <div className="rounded-xl bg-slate-900 p-3">
       <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{label}</p>
-      <p className="mt-1 text-white capitalize">{value}</p>
+      <p className="mt-1 text-slate-100 capitalize">{value}</p>
     </div>
   )
 }

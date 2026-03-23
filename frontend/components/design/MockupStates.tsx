@@ -31,7 +31,7 @@ export function ErrorState({
     <div className={`flex-1 flex items-center justify-center ${className}`}>
       <div className="card p-8 text-center max-w-md">
         <XCircle className="w-10 h-10 text-rose-500 mx-auto mb-4" />
-        <p className="text-white mb-2">{title}</p>
+        <p className="text-slate-100 mb-2">{title}</p>
         <p className="text-slate-400 text-sm mb-4">
           {error instanceof Error ? error.message : 'Unknown error'}
         </p>
@@ -58,7 +58,7 @@ export function EmptyState({
     <div className={`flex-1 flex items-center justify-center ${className}`}>
       <div className="card p-8 text-center max-w-md">
         <ImageIcon className="w-10 h-10 text-slate-500 mx-auto mb-4" />
-        <h2 className="text-white font-medium mb-2">{title}</h2>
+        <h2 className="text-slate-100 font-medium mb-2">{title}</h2>
         <p className="text-slate-400 text-sm">{description}</p>
       </div>
     </div>

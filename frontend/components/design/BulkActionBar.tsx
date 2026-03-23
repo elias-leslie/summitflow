@@ -18,7 +18,7 @@ export function BulkActionBar({
       <div className="bg-slate-900 border-2 border-outrun-500/50 rounded-xl px-6 py-4 shadow-2xl shadow-outrun-500/20 flex items-center gap-4">
         <div className="flex items-center gap-2">
           <CheckSquare className="w-5 h-5 text-outrun-400" />
-          <span className="text-white font-medium">
+          <span className="text-slate-100 font-medium">
             {selectedCount} selected
           </span>
         </div>

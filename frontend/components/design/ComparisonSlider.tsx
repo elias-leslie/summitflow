@@ -156,10 +156,10 @@ export function ComparisonSlider({
       </div>
 
       {/* Labels */}
-      <div className="absolute top-2 left-2 px-2 py-1 bg-black/70 rounded text-xs text-white font-medium">
+      <div className="absolute top-2 left-2 px-2 py-1 bg-slate-950/80 rounded text-xs text-slate-100 font-medium">
         Before
       </div>
-      <div className="absolute top-2 right-2 px-2 py-1 bg-black/70 rounded text-xs text-white font-medium">
+      <div className="absolute top-2 right-2 px-2 py-1 bg-slate-950/80 rounded text-xs text-slate-100 font-medium">
         After
       </div>
     </div>

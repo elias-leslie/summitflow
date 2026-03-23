@@ -80,7 +80,7 @@ export function StorageSetupWizard() {
               className={clsx(
                 'w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium border',
                 i < currentStepIdx
-                  ? 'bg-phosphor-600 border-phosphor-500 text-white'
+                  ? 'bg-phosphor-600 border-phosphor-500 text-slate-50'
                   : i === currentStepIdx
                     ? 'bg-phosphor-600/20 border-phosphor-500 text-phosphor-400'
                     : 'bg-slate-800 border-slate-600 text-slate-500',
@@ -241,7 +241,7 @@ export function StorageSetupWizard() {
               className={clsx(
                 'flex items-center gap-2 px-4 py-2 text-sm rounded-md font-medium transition-colors',
                 host && share && !saving
-                  ? 'bg-phosphor-600 text-white hover:bg-phosphor-500'
+                  ? 'bg-phosphor-600 text-slate-50 hover:bg-phosphor-500'
                   : 'bg-slate-700 text-slate-400 cursor-not-allowed',
               )}
             >
@@ -288,7 +288,7 @@ export function StorageSetupWizard() {
                 <button
                   type="button"
                   onClick={handleTest}
-                  className="flex items-center gap-2 mx-auto px-6 py-3 bg-phosphor-600 text-white rounded-md
+                  className="flex items-center gap-2 mx-auto px-6 py-3 bg-phosphor-600 text-slate-50 rounded-md
                              text-sm font-medium hover:bg-phosphor-500 transition-colors"
                 >
                   <Wifi className="w-4 h-4" />
@@ -334,7 +334,7 @@ export function StorageSetupWizard() {
           <button
             type="button"
             onClick={() => router.push('/backups')}
-            className="inline-flex items-center gap-2 px-6 py-2 bg-phosphor-600 text-white rounded-md
+            className="inline-flex items-center gap-2 px-6 py-2 bg-phosphor-600 text-slate-50 rounded-md
                        text-sm font-medium hover:bg-phosphor-500 transition-colors"
           >
             <HardDrive className="w-4 h-4" />

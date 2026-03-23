@@ -20,7 +20,7 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variants: Record<ButtonVariant, string> = {
   primary: `
-    bg-outrun-600 text-white border border-outrun-500
+    bg-outrun-600 text-slate-50 border border-outrun-500
     hover:bg-outrun-500 hover:shadow-lg hover:shadow-outrun-500/20
     active:bg-outrun-700
     disabled:bg-slate-700 disabled:border-slate-600 disabled:text-slate-500

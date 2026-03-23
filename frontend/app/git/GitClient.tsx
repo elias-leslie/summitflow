@@ -10,9 +10,15 @@ import {
   Unplug,
   XCircle,
 } from 'lucide-react'
+import { motion } from 'motion/react'
 import { ConflictAlerts } from '@/components/git/ConflictAlerts'
 import { ProjectRow } from '@/components/git/ProjectRow'
 import { useGitStatus } from './useGitStatus'
+
+const fadeUp = {
+  initial: { opacity: 0, y: 14 },
+  animate: { opacity: 1, y: 0 },
+}
 
 function StatPill({
   icon: Icon,
@@ -69,7 +75,11 @@ export function GitClient() {
   return (
     <div className="p-6 space-y-5 max-w-6xl mx-auto">
       {/* Header */}
-      <header className="flex items-center justify-between gap-4">
+      <motion.header
+        {...fadeUp}
+        transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
+        className="flex items-center justify-between gap-4"
+      >
         <div className="flex items-center gap-3">
           <div className="p-1.5 rounded-md bg-outrun-500/10 border border-outrun-500/20">
             <GitBranch className="w-5 h-5 text-outrun-500" />
@@ -84,7 +94,7 @@ export function GitClient() {
           </div>
         </div>
 
-      </header>
+      </motion.header>
 
       {/* Conflict Alerts */}
       <ConflictAlerts />
@@ -127,11 +137,15 @@ export function GitClient() {
 
       {/* Repository list */}
       {gitStatus && !isLoading && (
-        <div className="space-y-2">
+        <motion.div
+          {...fadeUp}
+          transition={{ duration: 0.4, delay: 0.08, ease: [0.25, 0.46, 0.45, 0.94] }}
+          className="space-y-2"
+        >
           {repos.map((repo) => (
             <ProjectRow key={repo.path} repo={repo} />
           ))}
-        </div>
+        </motion.div>
       )}
 
       {/* Loading */}

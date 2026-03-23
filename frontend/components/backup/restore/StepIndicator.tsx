@@ -20,9 +20,9 @@ export function StepIndicator({
         className={clsx(
           'w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium',
           completed
-            ? 'bg-green-500 text-white'
+            ? 'bg-green-500 text-slate-50'
             : active
-              ? 'bg-phosphor-500 text-white'
+              ? 'bg-phosphor-500 text-slate-50'
               : 'bg-slate-700 text-slate-400',
         )}
       >

@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { MessageSquareWarning } from 'lucide-react'
+import { motion } from 'motion/react'
 import { useState } from 'react'
 import { ComponentSummary } from '@/components/feedback/ComponentSummary'
 import { FeedbackBoard } from '@/components/feedback/FeedbackBoard'
@@ -58,7 +59,12 @@ export function FeedbackClient() {
     <div className="overflow-y-auto h-full">
       <div className="p-6 space-y-5 max-w-7xl mx-auto">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <motion.div
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
+          className="flex items-center justify-between"
+        >
           <div className="flex items-center gap-3">
             <div className="p-1.5 rounded-md bg-rose-500/10 border border-rose-500/20">
               <MessageSquareWarning className="w-5 h-5 text-rose-400" />
@@ -79,7 +85,7 @@ export function FeedbackClient() {
               </span>
             </div>
           )}
-        </div>
+        </motion.div>
 
         {/* Error state */}
         {error && (
@@ -107,7 +113,11 @@ export function FeedbackClient() {
         />
 
         {/* Board */}
-        <section className="space-y-3">
+        <motion.section
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.08, ease: [0.25, 0.46, 0.45, 0.94] }}
+          className="space-y-3">
           <div>
             <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-300">
               Feedback
@@ -125,7 +135,7 @@ export function FeedbackClient() {
             onItemClick={setSelectedId}
             selectedId={selectedId}
           />
-        </section>
+        </motion.section>
       </div>
     </div>
   )

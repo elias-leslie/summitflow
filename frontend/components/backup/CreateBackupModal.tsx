@@ -135,7 +135,7 @@ export function CreateBackupModal({ sources, onClose, onCreated }: CreateBackupM
             className={clsx(
               'flex items-center gap-2 px-4 py-2 text-sm rounded-md font-medium transition-colors',
               count > 0 && !isPending
-                ? 'bg-phosphor-600 text-white hover:bg-phosphor-500'
+                ? 'bg-phosphor-600 text-slate-50 hover:bg-phosphor-500'
                 : 'bg-slate-700 text-slate-400 cursor-not-allowed',
             )}
             data-testid="backup-create-confirm"

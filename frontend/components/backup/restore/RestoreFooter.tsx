@@ -37,7 +37,7 @@ export function RestoreFooter({
         <button
           type="button"
           onClick={onContinue}
-          className="flex items-center gap-2 px-4 py-2 text-sm bg-yellow-600 text-white
+          className="flex items-center gap-2 px-4 py-2 text-sm bg-yellow-600 text-slate-50
                      hover:bg-yellow-500 rounded-md transition-colors font-medium"
         >
           Continue
@@ -64,7 +64,7 @@ export function RestoreFooter({
           className={clsx(
             'flex items-center gap-2 px-4 py-2 text-sm rounded-md transition-colors font-medium',
             isConfirmValid
-              ? 'bg-red-600 text-white hover:bg-red-500'
+              ? 'bg-red-600 text-slate-50 hover:bg-red-500'
               : 'bg-slate-700 text-slate-500 cursor-not-allowed',
           )}
         >
