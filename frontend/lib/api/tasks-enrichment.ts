@@ -5,7 +5,6 @@
 import { fetchWithErrorHandling, patchJson, postJson } from './utils'
 import type {
   Task,
-  EnrichmentRequest,
   DiscussionResponse,
   SubtasksResponse,
   Subtask,
@@ -15,20 +14,6 @@ import type {
 // ============================================================================
 // Enrichment Workflow
 // ============================================================================
-
-/**
- * Enrich a task with AI-generated objective, criteria, and subtasks.
- * @param sync If true, runs enrichment synchronously and returns enriched task.
- *             If false (default), queues enrichment and returns task with status 'enriching'.
- */
-export async function enrichTask(
-  projectId: string,
-  request: EnrichmentRequest,
-  sync = false,
-): Promise<Task> {
-  const url = `/api/projects/${projectId}/tasks/enrich${sync ? '?sync=true' : ''}`
-  return postJson(url, request, 'Failed to enrich task')
-}
 
 /**
  * Send a message to discuss and refine a task with the AI.

@@ -76,19 +76,6 @@ export async function fetchProjectGitStatus(
 }
 
 /**
- * Sync all repositories (pull from remote).
- */
-export async function syncRepositories(): Promise<GitSyncResponse> {
-  return fetchWithErrorHandling<GitSyncResponse>(
-    `${getApiBaseUrl()}/api/git/sync`,
-    {
-      method: 'POST',
-      errorMessage: 'Failed to sync repositories',
-    },
-  )
-}
-
-/**
  * Pull changes for a specific project's repository.
  */
 export async function pullRepository(

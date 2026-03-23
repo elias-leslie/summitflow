@@ -71,13 +71,6 @@ export function fetchScopes(projectId?: string): Promise<BtrfsScope[]> {
   )
 }
 
-export function fetchSnapshotPolicy(): Promise<BtrfsPolicy> {
-  return fetchWithErrorHandling<BtrfsPolicy>(
-    '/api/snapshots/policy',
-    { errorMessage: 'Failed to fetch snapshot policy' },
-  )
-}
-
 export function fetchSnapshotSummary(projectId?: string): Promise<BtrfsSummary> {
   const qs = projectId ? `?project_id=${projectId}` : ''
   return fetchWithErrorHandling<BtrfsSummary>(

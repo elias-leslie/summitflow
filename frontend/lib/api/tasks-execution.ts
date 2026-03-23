@@ -7,8 +7,6 @@ import { postJson } from './utils'
 import type {
   ExecuteTaskOptions,
   ExecuteTaskResponse,
-  BatchTaskCreateItem,
-  BatchTaskResponse,
 } from './tasks-types'
 
 // ============================================================================
@@ -31,13 +29,3 @@ export async function executeTask(
   )
 }
 
-// ============================================================================
-// Batch Operations
-// ============================================================================
-
-export async function batchCreateTasks(
-  projectId: string,
-  items: BatchTaskCreateItem[],
-): Promise<BatchTaskResponse> {
-  return postJson(`/api/projects/${projectId}/tasks/batch`, { items }, 'Failed to batch create tasks')
-}

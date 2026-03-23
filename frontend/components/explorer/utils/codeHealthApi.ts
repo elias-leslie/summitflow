@@ -7,8 +7,6 @@
 export type {
   RefactorTarget,
   RefactorTargetsResponse,
-  CoverageGapsResponse,
-  CoverageGapsSummary,
 } from '@/lib/api/explorer-analysis'
 
-export { fetchRefactorTargets, fetchCoverageGaps } from '@/lib/api/explorer-analysis'
+export { fetchRefactorTargets } from '@/lib/api/explorer-analysis'

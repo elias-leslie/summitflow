@@ -4,7 +4,7 @@
  * Provides checkpoint information for dashboard and task detail views.
  */
 
-import { buildQueryString } from './utils'
+import { buildQueryString, throwFromResponse } from './utils'
 
 export interface BranchInfo {
   branch: string
@@ -43,7 +43,7 @@ export async function getCheckpoint(
   }
 
   if (!response.ok) {
-    throw new Error(`Failed to fetch checkpoint: ${response.statusText}`)
+    await throwFromResponse(response, 'Failed to fetch checkpoint')
   }
 
   return response.json()
@@ -66,12 +66,7 @@ export async function getActiveCheckpoint(
   }
 
   if (!response.ok) {
-    // 200 with null body is valid (no active checkpoint)
-    const text = await response.text()
-    if (!text || text === 'null') {
-      return null
-    }
-    throw new Error(`Failed to fetch active checkpoint: ${response.statusText}`)
+    await throwFromResponse(response, 'Failed to fetch active checkpoint')
   }
 
   const text = await response.text()

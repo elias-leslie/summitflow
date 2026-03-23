@@ -1,4 +1,5 @@
 import { buildApiUrl } from '../api-config'
+import { fetchWithErrorHandling } from './utils'
 
 export interface RuntimeServiceStatus {
   name: string
@@ -77,50 +78,57 @@ export interface ProxmoxStatus {
   guests: ProxmoxGuestStatus[]
 }
 
-async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(buildApiUrl(path), init)
-  if (!res.ok) {
-    let detail = ''
-    try {
-      const payload = await res.json()
-      detail =
-        typeof payload?.detail === 'string'
-          ? payload.detail
-          : JSON.stringify(payload)
-    } catch {
-      detail = res.statusText
-    }
-    throw new Error(`${res.status}: ${detail}`)
-  }
-  return res.json()
+function apiUrl(path: string): string {
+  return buildApiUrl(path)
 }
 
 export const runtimeApi = {
-  getStatus: () => fetchJson<RuntimeServiceStatus[]>('/api/docker/status'),
-  getMetrics: () => fetchJson<RuntimeServiceMetrics[]>('/api/docker/metrics'),
-  getHealth: () => fetchJson<HealthSummary>('/api/docker/health'),
-  getRuntime: () => fetchJson<RuntimeModeStatus>('/api/docker/runtime'),
-  getProxmoxStatus: () => fetchJson<ProxmoxStatus>('/api/docker/proxmox'),
+  getStatus: () =>
+    fetchWithErrorHandling<RuntimeServiceStatus[]>(apiUrl('/api/docker/status'), {
+      errorMessage: 'Failed to fetch runtime status',
+    }),
+  getMetrics: () =>
+    fetchWithErrorHandling<RuntimeServiceMetrics[]>(apiUrl('/api/docker/metrics'), {
+      errorMessage: 'Failed to fetch runtime metrics',
+    }),
+  getHealth: () =>
+    fetchWithErrorHandling<HealthSummary>(apiUrl('/api/docker/health'), {
+      errorMessage: 'Failed to fetch health summary',
+    }),
+  getRuntime: () =>
+    fetchWithErrorHandling<RuntimeModeStatus>(apiUrl('/api/docker/runtime'), {
+      errorMessage: 'Failed to fetch runtime mode',
+    }),
+  getProxmoxStatus: () =>
+    fetchWithErrorHandling<ProxmoxStatus>(apiUrl('/api/docker/proxmox'), {
+      errorMessage: 'Failed to fetch Proxmox status',
+    }),
   getLogs: (service: string, tail = 100) =>
-    fetchJson<{ logs: string }>(`/api/docker/logs/${service}?tail=${tail}`),
+    fetchWithErrorHandling<{ logs: string }>(apiUrl(`/api/docker/logs/${service}?tail=${tail}`), {
+      errorMessage: 'Failed to fetch service logs',
+    }),
 
   restart: (service: string) =>
-    fetchJson<RuntimeActionResult>(`/api/docker/restart/${service}`, {
+    fetchWithErrorHandling<RuntimeActionResult>(apiUrl(`/api/docker/restart/${service}`), {
       method: 'POST',
+      errorMessage: 'Failed to restart service',
     }),
   stop: (service: string) =>
-    fetchJson<RuntimeActionResult>(`/api/docker/stop/${service}`, {
+    fetchWithErrorHandling<RuntimeActionResult>(apiUrl(`/api/docker/stop/${service}`), {
       method: 'POST',
+      errorMessage: 'Failed to stop service',
     }),
   start: (service: string) =>
-    fetchJson<RuntimeActionResult>(`/api/docker/start/${service}`, {
+    fetchWithErrorHandling<RuntimeActionResult>(apiUrl(`/api/docker/start/${service}`), {
       method: 'POST',
+      errorMessage: 'Failed to start service',
     }),
   switchRuntimeMode: (mode: 'dev' | 'prod') =>
-    fetchJson<RuntimeActionResult>('/api/docker/runtime', {
+    fetchWithErrorHandling<RuntimeActionResult>(apiUrl('/api/docker/runtime'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mode }),
+      errorMessage: 'Failed to switch runtime mode',
     }),
 
   logStreamUrl: (service: string, tail = 100) =>

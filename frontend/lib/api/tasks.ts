@@ -19,7 +19,6 @@ export type {
   // Core task types
   TaskStatus,
   TaskType,
-  AgentType,
   Task,
   TaskListResponse,
   TaskDependency,
@@ -32,7 +31,6 @@ export type {
   VerificationResult,
   // Enrichment types
   EnrichmentStatus,
-  EnrichmentRequest,
   DiscussionMessage,
   DiscussionResponse,
   // Subtasks & steps
@@ -43,9 +41,7 @@ export type {
   // Execution types
   ExecuteTaskOptions,
   ExecuteTaskResponse,
-  BatchTaskCreateItem,
   BatchTaskResult,
-  BatchTaskResponse,
   DeleteTaskResponse,
   // Agent Hub types
   CodingAgent,
@@ -71,9 +67,7 @@ export {
   // Read operations
   fetchTask,
   fetchTasks,
-  fetchBlockedTasks,
   // Execution control
-  startTask,
   updateTaskStatus,
   // Delete operations
   deleteTask,
@@ -86,7 +80,6 @@ export {
 
 export {
   // Enrichment workflow
-  enrichTask,
   discussTask,
   acceptTask,
   // Subtasks
@@ -105,8 +98,6 @@ export {
 export {
   // Autonomous execution
   executeTask,
-  // Batch operations
-  batchCreateTasks,
 } from './tasks-execution'
 
 // ============================================================================

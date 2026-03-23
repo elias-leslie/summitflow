@@ -8,12 +8,17 @@ This module provides:
 
 from __future__ import annotations
 
-from typing import Any, Literal, cast
+from typing import Any, cast
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from ..storage import notifications as notification_store
+from ..storage.notifications_helpers import (
+    NotificationSeverity,
+    NotificationStatus,
+    NotificationType,
+)
 
 router = APIRouter(tags=["Notifications"])
 
@@ -57,10 +62,10 @@ class NotificationCountResponse(BaseModel):
 class CreateNotificationRequest(BaseModel):
     """Request to create a notification."""
 
-    type: Literal["task_failed", "task_needs_input", "task_completed", "system"]
+    type: NotificationType
     title: str
     message: str
-    severity: Literal["info", "warning", "error", "critical"] = "info"
+    severity: NotificationSeverity = "info"
     task_id: str | None = None
     metadata: dict[str, Any] | None = None
 
@@ -116,7 +121,7 @@ async def list_notifications(
     """
     notifications = notification_store.list_notifications(
         project_id=project_id,
-        status_filter=cast(Literal["pending", "read", "dismissed"], status) if status else None,
+        status_filter=cast(NotificationStatus, status) if status else None,
         limit=limit,
         offset=offset,
         include_dismissed=include_dismissed,

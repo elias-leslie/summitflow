@@ -9,7 +9,6 @@ import type {
   TaskListResponse,
   TaskStatus,
   TaskType,
-  AgentType,
   DeleteTaskResponse,
 } from './tasks-types'
 
@@ -83,39 +82,9 @@ export async function fetchTasks(
   })
 }
 
-export async function fetchBlockedTasks(
-  projectId: string,
-  limit = 50,
-): Promise<TaskListResponse> {
-  return fetchWithErrorHandling(
-    `/api/projects/${projectId}/tasks/blocked?limit=${limit}`,
-    {
-      errorMessage: 'Failed to fetch blocked tasks',
-    },
-  )
-}
-
 // ============================================================================
 // Task Execution Control
 // ============================================================================
-
-export async function startTask(
-  projectId: string,
-  taskId: string,
-  _options: {
-    agent_type: AgentType
-    model?: string
-    allow_delegation?: boolean
-  },
-): Promise<Task> {
-  return fetchWithErrorHandling(
-    `${getApiBaseUrl()}/api/projects/${projectId}/tasks/${taskId}/execute`,
-    {
-      method: 'POST',
-      errorMessage: 'Failed to start task',
-    },
-  )
-}
 
 export async function updateTaskStatus(
   projectId: string,

@@ -7,6 +7,7 @@ import subprocess
 import time
 from typing import Any
 
+from ..config import SUMMITFLOW_FRONTEND_PORT
 from ..logging_config import get_logger
 from ..storage import explorer_entries
 from ..storage.connection import get_cursor
@@ -22,7 +23,7 @@ BA_CMD = "ba"
 BA_SUBCMD = "check"
 BA_FLAG_NO_ERRORS = "--no-errors"
 TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
-DEFAULT_LOCAL_PORT = 3001
+DEFAULT_LOCAL_PORT = SUMMITFLOW_FRONTEND_PORT
 LOCALHOST_HOSTNAME = "localhost"
 
 

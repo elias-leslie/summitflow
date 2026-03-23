@@ -34,6 +34,8 @@ if TYPE_CHECKING:
 
 import yaml
 
+from app.config import SUMMITFLOW_BACKEND_PORT, SUMMITFLOW_FRONTEND_PORT
+
 
 @dataclass
 class ServiceConfig:
@@ -139,7 +141,7 @@ class ProjectServicesConfig:
 DEFAULT_BACKEND_CONFIG = ServiceConfig(
     name="backend",
     command="uvicorn app.main:app --host 0.0.0.0 --port {port}",
-    port=8001,
+    port=SUMMITFLOW_BACKEND_PORT,
     worktree_port_base=8100,
     worktree_port_range=100,
     cwd="backend",
@@ -149,7 +151,7 @@ DEFAULT_BACKEND_CONFIG = ServiceConfig(
 DEFAULT_FRONTEND_CONFIG = ServiceConfig(
     name="frontend",
     command="npm run start -- --hostname 0.0.0.0 --port {port}",
-    port=3001,
+    port=SUMMITFLOW_FRONTEND_PORT,
     worktree_port_base=3100,
     worktree_port_range=100,
     cwd="frontend",

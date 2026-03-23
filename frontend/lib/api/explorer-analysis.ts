@@ -10,20 +10,6 @@ import { buildQueryString, fetchWithErrorHandling } from './utils'
 // Types
 // ============================================================================
 
-export interface CoverageGapsSummary {
-  total_uncovered: number
-  endpoint_count: number
-  page_count: number
-  table_count: number
-}
-
-export interface CoverageGapsResponse {
-  summary: CoverageGapsSummary
-  uncovered_endpoints: Array<{ id: number; path: string; name: string }>
-  uncovered_pages: Array<{ id: number; path: string; name: string }>
-  uncovered_tables: Array<{ id: number; path: string; name: string }>
-}
-
 export interface RefactorTarget {
   path: string
   name: string
@@ -66,17 +52,6 @@ export interface RefactorTargetsResponse {
 // API Functions
 // ============================================================================
 
-/**
- * Fetch coverage gaps (uncovered endpoints, pages, tables).
- */
-export async function fetchCoverageGaps(
-  projectId: string,
-): Promise<CoverageGapsResponse> {
-  return fetchWithErrorHandling<CoverageGapsResponse>(
-    `/api/projects/${projectId}/analysis/coverage-gaps`,
-    { errorMessage: 'Failed to fetch coverage gaps' },
-  )
-}
 
 /**
  * Fetch files that are refactoring candidates.

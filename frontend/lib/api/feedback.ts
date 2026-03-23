@@ -4,8 +4,7 @@
  */
 
 import { getAgentHubProxyBase } from '../agent-hub-proxy'
-import { getApiBaseUrl } from '../api-config'
-import { buildQueryString } from './utils'
+import { buildQueryString, fetchWithErrorHandling } from './utils'
 
 // ============================================================================
 // Types
@@ -113,13 +112,6 @@ function transformSummary(raw: FeedbackSummaryRaw): FeedbackSummary {
   }
 }
 
-export interface ComponentFeedback {
-  component_id: string
-  total: number
-  open: number
-  items: FeedbackItem[]
-}
-
 export interface FeedbackFilters {
   query?: string
   component_id?: string
@@ -135,14 +127,8 @@ export interface FeedbackFilters {
 // API Functions
 // ============================================================================
 
-async function feedbackFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const apiBase = typeof window === 'undefined' ? getApiBaseUrl() : getAgentHubProxyBase()
-  const response = await fetch(`${apiBase}/feedback${path}`, options)
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'Request failed' }))
-    throw new Error(error.detail || error.message || 'Request failed')
-  }
-  return response.json()
+function feedbackUrl(path: string): string {
+  return `${getAgentHubProxyBase()}/feedback${path}`
 }
 
 /**
@@ -152,14 +138,18 @@ export async function fetchFeedbackItems(
   filters: FeedbackFilters = {},
 ): Promise<FeedbackListResponse> {
   const query = buildQueryString(filters as Record<string, string | number | undefined>)
-  return feedbackFetch<FeedbackListResponse>(`${query}`)
+  return fetchWithErrorHandling<FeedbackListResponse>(feedbackUrl(query), {
+    errorMessage: 'Failed to fetch feedback items',
+  })
 }
 
 /**
  * Get a single feedback item with votes.
  */
 export async function fetchFeedbackItem(id: string): Promise<FeedbackItemWithVotes> {
-  return feedbackFetch<FeedbackItemWithVotes>(`/${id}`)
+  return fetchWithErrorHandling<FeedbackItemWithVotes>(feedbackUrl(`/${id}`), {
+    errorMessage: 'Failed to fetch feedback item',
+  })
 }
 
 /**
@@ -169,19 +159,10 @@ export async function fetchFeedbackSummary(
   projectId?: string,
 ): Promise<FeedbackSummary> {
   const query = buildQueryString({ project_id: projectId })
-  const raw = await feedbackFetch<FeedbackSummaryRaw>(`/summary${query}`)
+  const raw = await fetchWithErrorHandling<FeedbackSummaryRaw>(feedbackUrl(`/summary${query}`), {
+    errorMessage: 'Failed to fetch feedback summary',
+  })
   return transformSummary(raw)
-}
-
-/**
- * Get feedback for a specific component.
- */
-export async function fetchComponentFeedback(
-  componentId: string,
-  status?: string,
-): Promise<ComponentFeedback> {
-  const query = buildQueryString({ status })
-  return feedbackFetch<ComponentFeedback>(`/components/${componentId}${query}`)
 }
 
 /**
@@ -195,10 +176,11 @@ export async function updateFeedbackStatus(
     linked_task_id?: string
   },
 ): Promise<FeedbackItem> {
-  return feedbackFetch<FeedbackItem>(`/${id}`, {
+  return fetchWithErrorHandling<FeedbackItem>(feedbackUrl(`/${id}`), {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
+    errorMessage: 'Failed to update feedback status',
   })
 }
 
@@ -208,7 +190,8 @@ export async function updateFeedbackStatus(
 export async function deleteFeedbackItem(
   id: string,
 ): Promise<{ deleted: boolean; id: string }> {
-  return feedbackFetch<{ deleted: boolean; id: string }>(`/${id}`, {
+  return fetchWithErrorHandling<{ deleted: boolean; id: string }>(feedbackUrl(`/${id}`), {
     method: 'DELETE',
+    errorMessage: 'Failed to delete feedback item',
   })
 }
