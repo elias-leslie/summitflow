@@ -84,7 +84,7 @@ export function ConfirmDeleteDialog(props: ConfirmDeleteDialogProps) {
         {/* Backdrop (only for fixed positioning) */}
         {positioning === 'fixed' && (
           <div
-            className="absolute inset-0 bg-black/80"
+            className="absolute inset-0 bg-slate-950/90 backdrop-blur-sm"
             onClick={onCancel}
           />
         )}
@@ -143,7 +143,7 @@ export function ConfirmDeleteDialog(props: ConfirmDeleteDialogProps) {
   // Task-style layout (AlertCircle, red theme)
   return (
     <div
-      className={`${positioning} inset-0 ${zIndex} flex items-center justify-center bg-black/60`}
+      className={`${positioning} inset-0 ${zIndex} flex items-center justify-center bg-black/60 backdrop-blur-sm`}
       onClick={onCancel}
     >
       <div

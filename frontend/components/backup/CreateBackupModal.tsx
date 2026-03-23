@@ -57,7 +57,7 @@ export function CreateBackupModal({ sources, onClose, onCreated }: CreateBackupM
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
       onClick={onClose}
       data-testid="backup-create-modal"
     >
@@ -65,7 +65,7 @@ export function CreateBackupModal({ sources, onClose, onCreated }: CreateBackupM
         className="bg-slate-800 rounded-lg border border-slate-700 p-6 w-full max-w-md shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-lg font-semibold text-slate-100 mb-4">Create Manual Backup</h2>
+        <h2 className="text-lg font-semibold text-slate-100 display mb-4">Create Manual Backup</h2>
 
         <div className="space-y-4">
           <div>

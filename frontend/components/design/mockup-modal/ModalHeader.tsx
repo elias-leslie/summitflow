@@ -22,7 +22,7 @@ export function ModalHeader({ mockup, onClose }: ModalHeaderProps) {
     <div className="flex items-center justify-between p-3 border-b border-slate-800 flex-shrink-0">
       <div className="flex items-center gap-3">
         <TypeIcon className="w-5 h-5 text-outrun-400" />
-        <h2 className="text-lg font-semibold text-slate-100">{mockup.name}</h2>
+        <h2 className="text-lg font-semibold text-slate-100 display">{mockup.name}</h2>
         <div
           className={`flex items-center gap-1.5 px-2 py-1 rounded ${status.bg}`}
         >

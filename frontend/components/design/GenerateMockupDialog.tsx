@@ -90,7 +90,7 @@ export function GenerateMockupDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/80" onClick={handleClose} role="presentation" />
+      <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-sm" onClick={handleClose} role="presentation" />
 
       {/* Dialog */}
       <div className="relative bg-slate-900 rounded-xl w-full max-w-2xl mx-4">
@@ -98,7 +98,7 @@ export function GenerateMockupDialog({
         <div className="flex items-center justify-between p-4 border-b border-slate-800">
           <div className="flex items-center gap-3">
             <Sparkles className="w-5 h-5 text-outrun-400" />
-            <h2 className="text-lg font-semibold text-slate-100">
+            <h2 className="text-lg font-semibold text-slate-100 display">
               Generate Design Mockup
             </h2>
           </div>
