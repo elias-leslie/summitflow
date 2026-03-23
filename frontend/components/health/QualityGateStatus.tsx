@@ -20,7 +20,7 @@ export function QualityGateStatus({ health }: QualityGateStatusProps) {
       <div className="card rounded-xl px-4 py-3">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h3 className="text-sm font-semibold text-slate-300">
+            <h3 className="text-sm font-semibold text-slate-300 display">
               Quality Gates
             </h3>
             <p className="mt-1 text-xs text-slate-500">
@@ -55,7 +55,7 @@ export function QualityGateStatus({ health }: QualityGateStatusProps) {
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-sm font-semibold text-slate-300">
+            <h3 className="text-sm font-semibold text-slate-300 display">
               Quality Gates
             </h3>
             <Badge variant={health?.overall_pass ? 'phosphor' : 'rose'}>

@@ -43,7 +43,7 @@ export function CardTitle({ children, className }: CardTitleProps) {
   return (
     <h3
       className={clsx(
-        'text-lg font-semibold text-slate-100',
+        'text-lg font-semibold text-slate-100 display tracking-tight',
         className,
       )}
     >

@@ -49,7 +49,7 @@ export function TasksViewToolbar({
       </div>
 
       {/* New Task button */}
-      <Button size="sm" onClick={onNewTask} data-testid="new-task-button">
+      <Button variant="primary" size="sm" onClick={onNewTask} data-testid="new-task-button">
         <Plus className="w-4 h-4 mr-1" />
         New Task
       </Button>

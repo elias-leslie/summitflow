@@ -23,7 +23,7 @@ export function FixPipelineCard({
   if (detected === 0) {
     return (
       <div className="card rounded-xl p-4">
-        <h3 className="text-sm font-semibold text-slate-300 mb-3">
+        <h3 className="text-sm font-semibold text-slate-300 display mb-3">
           Fix Pipeline (Last 7 Days)
         </h3>
         <div className="flex flex-col items-center justify-center py-8 text-center">
@@ -41,7 +41,7 @@ export function FixPipelineCard({
     <div className="card rounded-xl p-4">
       <div className="mb-3 flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-slate-300">
+          <h3 className="text-sm font-semibold text-slate-300 display">
             Fix Pipeline (Last 7 Days)
           </h3>
           <p className="mt-1 text-xs text-slate-500">

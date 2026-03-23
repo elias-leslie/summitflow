@@ -42,7 +42,7 @@ export function AutonomousStatusBar({ autonomous }: AutonomousStatusBarProps) {
     <div className="card rounded-xl p-4">
       <div className="flex items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-4">
-          <h3 className="text-sm font-semibold text-slate-300">Autonomous Execution</h3>
+          <h3 className="text-sm font-semibold text-slate-300 display">Autonomous Execution</h3>
 
           {/* Running/Concurrency indicator */}
           <div className="flex items-center gap-2">

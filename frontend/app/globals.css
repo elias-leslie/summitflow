@@ -154,12 +154,13 @@ body::before {
   );
 }
 
-/* Grid background pattern - outrun style */
+/* Grid background pattern - outrun style with radial atmosphere */
 .bg-grid {
   background-image:
+    radial-gradient(ellipse 80% 60% at 50% 0%, rgba(191, 0, 255, 0.04) 0%, transparent 60%),
     linear-gradient(to right, var(--grid-color) 1px, transparent 1px),
     linear-gradient(to bottom, var(--grid-color) 1px, transparent 1px);
-  background-size: 32px 32px;
+  background-size: 100% 100%, 32px 32px, 32px 32px;
 }
 
 /* Card styles */

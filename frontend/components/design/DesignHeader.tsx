@@ -39,7 +39,7 @@ export function DesignHeader({
         </div>
         <div>
           <div className="flex items-center gap-3">
-            <h2 className="text-2xl font-semibold text-slate-100">{title}</h2>
+            <h2 className="text-2xl font-bold text-slate-100 display tracking-tight">{title}</h2>
             {totalLabel && (
               <span className="rounded-full bg-slate-900 px-3 py-1 text-xs uppercase tracking-[0.18em] text-slate-400">
                 {totalLabel}

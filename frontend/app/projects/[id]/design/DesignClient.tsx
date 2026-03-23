@@ -18,7 +18,7 @@ export function DesignClient(): React.ReactElement {
         <p className="text-xs uppercase tracking-[0.24em] text-cyan-300">Design Ops</p>
         <div className="mt-4 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
-            <h1 className="text-3xl font-semibold tracking-tight text-slate-100">
+            <h1 className="text-3xl font-bold tracking-tight text-slate-100 display">
               A design workspace for UI review and asset production
             </h1>
             <p className="mt-3 text-sm leading-6 text-slate-300">

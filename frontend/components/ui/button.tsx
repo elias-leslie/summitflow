@@ -75,7 +75,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         disabled={disabled}
         className={clsx(
           'inline-flex items-center justify-center font-medium rounded-md',
-          'transition-all duration-200 ease-out',
+          'transition-all duration-200 ease-out active:scale-[0.97]',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-outrun-500/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900',
           'disabled:cursor-not-allowed',
           variants[variant],

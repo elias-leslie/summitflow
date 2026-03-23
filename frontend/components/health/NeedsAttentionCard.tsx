@@ -20,7 +20,7 @@ export function NeedsAttentionCard({
   if (items.length === 0) {
     return (
       <div className="card rounded-xl p-4">
-        <h3 className="text-sm font-semibold text-slate-300 mb-3 flex items-center gap-2">
+        <h3 className="text-sm font-semibold text-slate-300 display mb-3 flex items-center gap-2">
           <span className={hasChecks ? 'text-emerald-500' : 'text-slate-500'}>
             {hasChecks ? '✓' : '○'}
           </span>
@@ -50,7 +50,7 @@ export function NeedsAttentionCard({
     <div className="card rounded-xl p-4">
       <div className="mb-3 flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+          <h3 className="text-sm font-semibold text-slate-300 display flex items-center gap-2">
             <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" />
             Needs Attention
             <span className="text-xs text-slate-500 font-normal">
