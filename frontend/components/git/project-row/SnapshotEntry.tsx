@@ -35,7 +35,7 @@ export function SnapshotEntry({ snapshot }: { snapshot: SnapshotInfo }) {
         )}
       />
       <div className="flex-1 min-w-0">
-        <span className="text-sm text-white truncate block">{snapshot.task_title || snapshot.task_id}</span>
+        <span className="text-sm text-slate-100 truncate block">{snapshot.task_title || snapshot.task_id}</span>
         <div className="flex items-center gap-2 text-[10px] text-slate-500">
           <span className="font-mono">{snapshot.short_sha}</span>
           <span>{formatTimeAgo(snapshot.created_at)}</span>

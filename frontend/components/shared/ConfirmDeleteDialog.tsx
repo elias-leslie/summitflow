@@ -79,7 +79,7 @@ export function ConfirmDeleteDialog(props: ConfirmDeleteDialogProps) {
   if (isDesignEntity) {
     return (
       <div
-        className={`${positioning} inset-0 ${zIndex} flex items-center justify-center${positioning === 'absolute' ? ' bg-black/60 backdrop-blur-sm' : ''}`}
+        className={`${positioning} inset-0 ${zIndex} flex items-center justify-center${positioning === 'absolute' ? ' bg-slate-950/90 backdrop-blur-sm' : ''}`}
       >
         {/* Backdrop (only for fixed positioning) */}
         {positioning === 'fixed' && (
@@ -118,7 +118,7 @@ export function ConfirmDeleteDialog(props: ConfirmDeleteDialogProps) {
                   type="button"
                   onClick={onConfirm}
                   disabled={isDeleting}
-                  className="bg-rose-500 hover:bg-rose-600 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+                  className="bg-rose-500 hover:bg-rose-600 text-slate-50 px-4 py-2 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
                 >
                   {isDeleting ? (
                     <>
@@ -143,7 +143,7 @@ export function ConfirmDeleteDialog(props: ConfirmDeleteDialogProps) {
   // Task-style layout (AlertCircle, red theme)
   return (
     <div
-      className={`${positioning} inset-0 ${zIndex} flex items-center justify-center bg-black/60 backdrop-blur-sm`}
+      className={`${positioning} inset-0 ${zIndex} flex items-center justify-center bg-slate-950/90 backdrop-blur-sm`}
       onClick={onCancel}
     >
       <div
@@ -198,7 +198,7 @@ export function ConfirmDeleteDialog(props: ConfirmDeleteDialogProps) {
             type="button"
             onClick={onConfirm}
             disabled={isDeleting}
-            className="flex items-center gap-2 px-4 py-2 text-sm bg-rose-600 text-white hover:bg-rose-500 rounded-md transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 px-4 py-2 text-sm bg-rose-600 text-slate-50 hover:bg-rose-500 rounded-md transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isDeleting ? (
               <>

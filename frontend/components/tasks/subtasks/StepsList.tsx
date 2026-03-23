@@ -154,7 +154,7 @@ export function StepsList({
               <button
                 type="button"
                 onClick={() => void fetchStepsIfNeeded()}
-                className="mt-1 text-2xs text-rose-200 underline underline-offset-2 hover:text-white"
+                className="mt-1 text-2xs text-rose-200 underline underline-offset-2 hover:text-slate-50"
               >
                 Retry
               </button>

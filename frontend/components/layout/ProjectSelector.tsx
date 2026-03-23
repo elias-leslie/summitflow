@@ -104,7 +104,7 @@ export function ProjectSelector({ onProjectChange }: ProjectSelectorProps) {
         className={clsx(
           'flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all cursor-pointer',
           'bg-slate-800 border border-slate-700 hover:border-slate-500 hover:bg-slate-750',
-          selectedProject ? 'text-white' : 'text-slate-400',
+          selectedProject ? 'text-slate-100' : 'text-slate-400',
         )}
       >
         {/* Health dot */}
@@ -157,8 +157,8 @@ export function ProjectSelector({ onProjectChange }: ProjectSelectorProps) {
                   className={clsx(
                     'w-full flex items-center justify-between px-3 py-2.5 text-sm text-left transition-colors cursor-pointer',
                     selectedProjectId === project.id
-                      ? 'bg-outrun-500/15 text-white'
-                      : 'text-slate-300 hover:bg-slate-800 hover:text-white',
+                      ? 'bg-outrun-500/15 text-slate-100'
+                      : 'text-slate-300 hover:bg-slate-800 hover:text-slate-100',
                   )}
                 >
                   <div className="flex items-center gap-2 truncate">

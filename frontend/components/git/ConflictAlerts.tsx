@@ -94,7 +94,7 @@ function ConflictCard({ conflict }: { conflict: ConflictInfo }) {
         </div>
 
         {/* Conflicting files */}
-        <div className="mb-3 p-2.5 rounded-md bg-black/30 border border-rose-500/10">
+        <div className="mb-3 p-2.5 rounded-md bg-slate-950/30 border border-rose-500/10">
           <div className="flex items-center gap-1.5 mb-1.5">
             <FileWarning className="w-3 h-3 text-rose-500/60" />
             <span className="text-[10px] text-rose-400/60 uppercase tracking-wider font-medium">

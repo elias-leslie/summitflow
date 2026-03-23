@@ -51,7 +51,7 @@ function FeedbackHealthBar({
   if (components.length === 0) return null
 
   return (
-    <div className="flex gap-0.5 h-2 rounded-full overflow-hidden bg-slate-800/50">
+    <div className="flex gap-0.5 h-2.5 rounded-full overflow-hidden bg-slate-800/50 ring-1 ring-white/5">
       {components.map(([id, data]) => {
         const frictionRatio = data.total > 0 ? data.friction / data.total : 0
         const praiseRatio = data.total > 0 ? data.praise / data.total : 0

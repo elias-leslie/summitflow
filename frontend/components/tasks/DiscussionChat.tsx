@@ -232,7 +232,7 @@ export function DiscussionChat({
             disabled={isLoading}
             rows={1}
             className="flex-1 px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg
-              text-sm text-white placeholder:text-slate-500 resize-none
+              text-sm text-slate-100 placeholder:text-slate-500 resize-none
               focus:border-phosphor-500 focus:ring-1 focus:ring-phosphor-500
               disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             style={{ minHeight: '40px', maxHeight: '120px' }}

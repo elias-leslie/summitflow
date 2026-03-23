@@ -90,8 +90,8 @@ export function ProjectAccordionItem({
             className={clsx(
               'text-sm font-medium truncate transition-colors',
               isActive
-                ? 'text-white'
-                : 'text-slate-300 group-hover:text-white',
+                ? 'text-slate-100'
+                : 'text-slate-300 group-hover:text-slate-100',
             )}
           >
             {project.name}

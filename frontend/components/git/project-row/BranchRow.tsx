@@ -44,7 +44,7 @@ export function BranchRow({ branch }: { branch: BranchInfo }) {
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="truncate text-sm text-white">{branch.name}</span>
+            <span className="truncate text-sm text-slate-100">{branch.name}</span>
             {branch.is_current && (
               <BranchBadge label="Current" tone="emerald" />
             )}

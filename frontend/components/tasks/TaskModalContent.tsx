@@ -109,7 +109,7 @@ function TabBar({
             className={`relative flex items-center gap-1.5 px-3 py-2 text-xs font-medium
               rounded-t-md transition-all duration-200
               ${isActive
-                ? 'text-white bg-slate-800/80'
+                ? 'text-slate-100 bg-slate-800/80'
                 : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/30'
               }`}
             data-testid={`tab-${tabId}`}
@@ -372,7 +372,7 @@ function ExecutionPanel({
           onClick={() => setDepth('events')}
           className={`px-3 py-1 text-xs rounded transition-all duration-150
             ${depth === 'events'
-              ? 'bg-slate-700 text-white shadow-sm'
+              ? 'bg-slate-700 text-slate-100 shadow-sm'
               : 'text-slate-500 hover:text-slate-300'
             }`}
         >
@@ -383,7 +383,7 @@ function ExecutionPanel({
           onClick={() => setDepth('agent')}
           className={`px-3 py-1 text-xs rounded transition-all duration-150
             ${depth === 'agent'
-              ? 'bg-slate-700 text-white shadow-sm'
+              ? 'bg-slate-700 text-slate-100 shadow-sm'
               : 'text-slate-500 hover:text-slate-300'
             }`}
         >

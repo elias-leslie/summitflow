@@ -65,7 +65,7 @@ export function DesignHeader({
             className={`flex items-center gap-2 rounded-lg border px-3 py-2 transition ${
               selectMode
                 ? 'border-cyan-400/40 bg-cyan-500/10 text-cyan-200'
-                : 'border-slate-700 bg-slate-900 text-slate-300 hover:text-white'
+                : 'border-slate-700 bg-slate-900 text-slate-300 hover:text-slate-100'
             }`}
           >
             {selectMode ? <X className="h-4 w-4" /> : <CheckSquare className="h-4 w-4" />}
@@ -81,7 +81,7 @@ export function DesignHeader({
               className={`rounded-lg p-2 ${
                 viewMode === 'grid'
                   ? 'bg-cyan-500/10 text-cyan-300'
-                  : 'text-slate-500 hover:text-white'
+                  : 'text-slate-500 hover:text-slate-100'
               }`}
             >
               <Grid3X3 className="h-4 w-4" />
@@ -92,7 +92,7 @@ export function DesignHeader({
               className={`rounded-lg p-2 ${
                 viewMode === 'list'
                   ? 'bg-cyan-500/10 text-cyan-300'
-                  : 'text-slate-500 hover:text-white'
+                  : 'text-slate-500 hover:text-slate-100'
               }`}
             >
               <List className="h-4 w-4" />

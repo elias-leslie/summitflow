@@ -195,7 +195,7 @@ export function AssetStudioWorkspace({
               setStatusFilter(event.target.value as AssetStatusFilter)
               setPage(0)
             }}
-            className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-white"
+            className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus-visible:outline-none focus-visible:border-phosphor-500/50 focus-visible:ring-1 focus-visible:ring-phosphor-500/20 transition-colors"
           >
             <option value="all">All Statuses</option>
             <option value="generated">Generated</option>
@@ -210,7 +210,7 @@ export function AssetStudioWorkspace({
               setTypeFilter(event.target.value as AssetTypeFilter)
               setPage(0)
             }}
-            className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-white"
+            className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus-visible:outline-none focus-visible:border-phosphor-500/50 focus-visible:ring-1 focus-visible:ring-phosphor-500/20 transition-colors"
           >
             <option value="all">All Asset Types</option>
             <option value="sprite">Sprite</option>
@@ -230,7 +230,7 @@ export function AssetStudioWorkspace({
               setWorkflowFilter(event.target.value as WorkflowFilter)
               setPage(0)
             }}
-            className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-white"
+            className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus-visible:outline-none focus-visible:border-phosphor-500/50 focus-visible:ring-1 focus-visible:ring-phosphor-500/20 transition-colors"
           >
             <option value="all">All Workflows</option>
             <option value="concept">Concept</option>

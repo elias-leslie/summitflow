@@ -26,7 +26,7 @@ function SegmentedToggle<T extends string>({
           className={clsx(
             'px-2.5 py-1 text-2xs transition-colors',
             (value ?? '') === opt.value
-              ? 'bg-slate-700 text-white'
+              ? 'bg-slate-700 text-slate-100'
               : 'bg-slate-900/50 text-slate-500 hover:text-slate-300',
           )}
         >

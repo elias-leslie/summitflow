@@ -31,7 +31,7 @@ export function MergeRow({ merge }: { merge: MergedTaskSummary }) {
       >
         <GitMerge className="w-3.5 h-3.5 text-purple-400 shrink-0" />
         <div className="flex-1 min-w-0">
-          <span className="text-sm text-white truncate block">{merge.task_title}</span>
+          <span className="text-sm text-slate-100 truncate block">{merge.task_title}</span>
           <span className="text-[10px] text-slate-500">{formatTimeAgo(merge.merged_at)}</span>
         </div>
         <div className="shrink-0 flex items-center gap-2.5">

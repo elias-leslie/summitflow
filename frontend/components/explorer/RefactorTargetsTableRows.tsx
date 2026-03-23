@@ -160,7 +160,7 @@ export function TargetRow({
         <div className="flex justify-center">
           <span
             className={cn(
-              'px-2 py-0.5 text-xs rounded text-white font-medium',
+              'px-2 py-0.5 text-xs rounded text-slate-100 font-medium',
               style.badge,
             )}
           >

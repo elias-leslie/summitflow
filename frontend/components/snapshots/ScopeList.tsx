@@ -179,7 +179,7 @@ function ScopeCard({ scope }: { scope: BtrfsScope }) {
         >
           {scope.scope_type}
         </span>
-        <span className="text-sm text-white font-medium truncate">
+        <span className="text-sm text-slate-100 font-medium truncate">
           {scope.scope_name}
         </span>
         <span className="text-[10px] text-slate-600 rounded bg-slate-900/60 px-1.5 py-0.5 shrink-0">

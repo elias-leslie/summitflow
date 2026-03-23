@@ -49,13 +49,13 @@ export function MergeReviewSection({
             disabled={isPending}
             aria-label={settings.auto_merge_enabled ? 'Disable auto-merge' : 'Enable auto-merge'}
             className={clsx(
-              'relative w-12 h-6 rounded-full transition-colors',
+              'relative w-12 h-6 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phosphor-500/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900',
               settings.auto_merge_enabled ? 'bg-phosphor-500' : 'bg-slate-600',
             )}
           >
             <span
               className={clsx(
-                'absolute top-1 w-4 h-4 bg-white rounded-full transition-transform',
+                'absolute top-1 w-4 h-4 bg-slate-100 rounded-full transition-transform shadow-sm',
                 settings.auto_merge_enabled ? 'translate-x-7' : 'translate-x-1',
               )}
             />
@@ -80,13 +80,13 @@ export function MergeReviewSection({
             disabled={isPending}
             aria-label={settings.require_review ? 'Disable required review' : 'Enable required review'}
             className={clsx(
-              'relative w-12 h-6 rounded-full transition-colors',
+              'relative w-12 h-6 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phosphor-500/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900',
               settings.require_review ? 'bg-phosphor-500' : 'bg-slate-600',
             )}
           >
             <span
               className={clsx(
-                'absolute top-1 w-4 h-4 bg-white rounded-full transition-transform',
+                'absolute top-1 w-4 h-4 bg-slate-100 rounded-full transition-transform shadow-sm',
                 settings.require_review ? 'translate-x-7' : 'translate-x-1',
               )}
             />

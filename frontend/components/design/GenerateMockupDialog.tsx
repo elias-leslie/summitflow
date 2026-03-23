@@ -105,7 +105,7 @@ export function GenerateMockupDialog({
           <button
             type="button"
             onClick={handleClose}
-            className="p-2 text-slate-400 hover:text-white"
+            className="p-2 text-slate-400 hover:text-slate-100 transition-colors"
             aria-label="Close dialog"
           >
             <X className="w-5 h-5" />

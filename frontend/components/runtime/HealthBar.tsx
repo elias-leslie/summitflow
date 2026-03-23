@@ -20,7 +20,7 @@ export function HealthBar({ services }: HealthBarProps) {
   if (services.length === 0) return null
 
   return (
-    <div className="flex gap-0.5 h-2 rounded-full overflow-hidden bg-slate-800/50">
+    <div className="flex gap-0.5 h-2.5 rounded-full overflow-hidden bg-slate-800/50 ring-1 ring-white/5">
       {services.map((s) => {
         const tone = resolveHealthTone(s.state, s.health)
         return (

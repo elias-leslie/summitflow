@@ -73,7 +73,7 @@ function DiffFileSection({ file }: { file: DiffFile }) {
 
       {/* Diff content */}
       {expanded && file.diff_content && (
-        <div className="overflow-x-auto bg-black/50 border-t border-slate-800">
+        <div className="overflow-x-auto bg-slate-950/50 border-t border-slate-800">
           <pre className="text-2xs font-mono leading-[1.6] p-0">
             {file.diff_content.split('\n').map((line, i) => {
               let lineClass = 'text-slate-500 px-3'
@@ -110,7 +110,7 @@ export function DiffPanel({
   return (
     <Dialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out" />
+        <Dialog.Overlay className="fixed inset-0 z-40 bg-slate-950/90 backdrop-blur-sm data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out" />
         <Dialog.Content
           className={clsx(
             'fixed right-0 top-0 z-50 h-full w-full max-w-[60vw] min-w-[480px]',
@@ -149,7 +149,7 @@ export function DiffPanel({
                 </span>
               </div>
               <Dialog.Close asChild>
-                <button type="button" aria-label="Close diff" className="p-1.5 rounded-md text-slate-500 hover:text-white hover:bg-slate-800 transition-colors">
+                <button type="button" aria-label="Close diff" className="p-1.5 rounded-md text-slate-500 hover:text-slate-100 hover:bg-slate-800 transition-colors">
                   <X className="w-4 h-4" />
                 </button>
               </Dialog.Close>

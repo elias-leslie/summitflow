@@ -227,9 +227,9 @@ export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedP
       className={clsx('card overflow-hidden', className)}
       data-testid="activity-feed"
     >
-      <div className="border-b border-slate-800 px-3 py-2">
+      <div className="border-b border-slate-800/60 px-3 py-2.5">
         <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-0.5 rounded-lg bg-slate-800/40 border border-slate-700/40 p-0.5">
             {TYPE_FILTERS.map((filter) => {
               const Icon = filter.icon
               return (
@@ -239,9 +239,9 @@ export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedP
                   onClick={() => setTypeFilter(filter.value)}
                   aria-pressed={typeFilter === filter.value}
                   className={clsx(
-                    'flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs transition-colors',
+                    'flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all duration-200',
                     typeFilter === filter.value
-                      ? 'bg-slate-700 text-white'
+                      ? 'bg-slate-700/80 text-slate-100 shadow-sm'
                       : 'text-slate-500 hover:bg-slate-800/50 hover:text-slate-300',
                   )}
                 >
@@ -309,7 +309,7 @@ export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedP
             rowProps={{ items }}
             style={{ height: listHeight }}
           />
-          <div className="border-t border-slate-800 p-3 text-center">
+          <div className="border-t border-slate-800/60 p-3 text-center">
             <p className="text-xs text-slate-500">
               Showing {items.length} of {total} events
             </p>

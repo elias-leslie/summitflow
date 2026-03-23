@@ -30,7 +30,7 @@ function FileStatusIcon({ status }: { status: string }) {
 
 function InlineDiff({ content }: { content: string }) {
   return (
-    <div className="overflow-x-auto bg-black/40 border-t border-slate-800/30">
+    <div className="overflow-x-auto bg-slate-950/40 border-t border-slate-800/30">
       <pre className="text-2xs font-mono leading-[1.6] p-0">
         {content.split('\n').map((line, i) => {
           let lineClass = 'text-slate-500 px-3'

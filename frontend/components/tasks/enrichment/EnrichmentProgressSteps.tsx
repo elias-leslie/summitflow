@@ -60,7 +60,7 @@ export function EnrichmentProgressSteps({
                   step.status === 'completed'
                     ? 'text-slate-300'
                     : step.status === 'active'
-                      ? 'text-white'
+                      ? 'text-slate-100'
                       : 'text-slate-500'
                 }`}
               >

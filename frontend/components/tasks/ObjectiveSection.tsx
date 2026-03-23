@@ -64,7 +64,7 @@ export function ObjectiveSection({
               value={editValue}
               onChange={(e) => setEditValue(e.target.value)}
               className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg
-                text-sm text-white placeholder:text-slate-500 resize-none
+                text-sm text-slate-100 placeholder:text-slate-500 resize-none
                 focus:border-phosphor-500 focus:ring-1 focus:ring-phosphor-500"
               rows={3}
             />
@@ -87,7 +87,7 @@ export function ObjectiveSection({
             exit={{ opacity: 0 }}
             className="p-4 bg-phosphor-500/5 border border-phosphor-500/20 rounded-lg"
           >
-            <p className="text-sm text-white leading-relaxed">{objective}</p>
+            <p className="text-sm text-slate-100 leading-relaxed">{objective}</p>
           </motion.div>
         ) : (
           <motion.div

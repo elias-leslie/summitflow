@@ -78,7 +78,7 @@ export function SyncResultBlock({ result }: { result: SyncResult }) {
         Log
       </button>
       {showLog && (
-        <pre className="mt-1.5 text-[9px] font-mono leading-relaxed text-slate-400 bg-black/60 p-2 rounded border border-slate-800 overflow-x-auto max-h-40">
+        <pre className="mt-1.5 text-[9px] font-mono leading-relaxed text-slate-400 bg-slate-950/60 p-2 rounded border border-slate-800 overflow-x-auto max-h-40">
           {result.raw_output}
         </pre>
       )}

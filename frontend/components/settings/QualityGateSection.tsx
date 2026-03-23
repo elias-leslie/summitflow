@@ -126,13 +126,13 @@ export function QualityGateSection({
             disabled={isPending}
             aria-label={settings.quality_gate_fix_enabled ? 'Disable auto-fix' : 'Enable auto-fix'}
             className={clsx(
-              'relative w-12 h-6 rounded-full transition-colors',
+              'relative w-12 h-6 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phosphor-500/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900',
               settings.quality_gate_fix_enabled ? 'bg-phosphor-500' : 'bg-slate-600',
             )}
           >
             <span
               className={clsx(
-                'absolute top-1 w-4 h-4 bg-white rounded-full transition-transform',
+                'absolute top-1 w-4 h-4 bg-slate-100 rounded-full transition-transform shadow-sm',
                 settings.quality_gate_fix_enabled ? 'translate-x-7' : 'translate-x-1',
               )}
             />
