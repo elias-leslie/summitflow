@@ -37,7 +37,7 @@ class TestBuildRepoWorkspaceSummary:
             ],
         )
         mocker.patch(
-            "cli.commands.cleanup_git.has_uncommitted_changes",
+            "app.utils._git_core.has_uncommitted_changes",
             side_effect=[False, True],
         )
         mocker.patch("app.utils._git_branches._detect_base_branch", return_value="main")

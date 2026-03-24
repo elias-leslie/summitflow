@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Literal, TypedDict
 
 from app.services.worktree import get_task_worktree, remove_task_worktree
-from cli.commands.cleanup_git import has_uncommitted_changes
+from app.utils._git_core import has_uncommitted_changes
 
 from ....logging_config import get_logger
 

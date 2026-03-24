@@ -78,6 +78,12 @@ def is_valid_git_repo(path: Path) -> bool:
     return path.exists() and (path / ".git").exists()
 
 
+def has_uncommitted_changes(worktree_path: Path) -> bool:
+    """Check if worktree has uncommitted changes."""
+    result = run_git(["status", "--porcelain"], worktree_path)
+    return bool(result.stdout.strip())
+
+
 def _load_repo_paths_from_file(path: Path) -> list[Path]:
     """Return valid git repo paths from a newline-delimited config file."""
     if not path.exists():

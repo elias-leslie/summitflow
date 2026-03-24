@@ -245,9 +245,8 @@ def build_repo_workspace_summary(
     repo_path: Path, project_id: str | None = None,
 ) -> RepoWorkspaceSummary:
     """Build per-repository branch/worktree cleanup counters."""
-    from cli.commands.cleanup_git import has_uncommitted_changes
-
     from ..api.models.git_models import RepoWorkspaceSummary
+    from ._git_core import has_uncommitted_changes
 
     resolved_project_id = _resolve_project_id(repo_path, project_id)
     branches = get_all_branches(repo_path, resolved_project_id)
