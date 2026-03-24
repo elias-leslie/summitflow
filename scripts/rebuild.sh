@@ -7,6 +7,8 @@
 #   rebuild.sh agent-hub        # Rebuild agent-hub
 #   rebuild.sh --include-all-workers agent-hub
 #                              # Rebuild agent-hub and restart the protected agent worker too
+#   rebuild.sh --detach agent-hub
+#                              # Queue an out-of-band rebuild and return immediately
 #   rebuild.sh terminal         # Rebuild terminal
 #   rebuild.sh portfolio-ai     # Rebuild portfolio-ai
 #   rebuild.sh monkey-fight     # Rebuild monkey-fight
@@ -47,6 +49,7 @@ PROJECTS=(
 
 INCLUDE_ALL_WORKERS=false
 STATUS_MODE=false
+DETACH_MODE=false
 
 resolve_worker_svcs() {
     WORKER_SVCS="$DEFAULT_WORKER_SVCS"
@@ -67,7 +70,7 @@ parse_project() {
 }
 
 show_projects() {
-    echo "Usage: rebuild.sh [--include-all-workers] <project>"
+    echo "Usage: rebuild.sh [--detach] [--include-all-workers] <project>"
     echo ""
     echo "Available projects:"
     for p in summitflow agent-hub portfolio-ai terminal monkey-fight; do
@@ -80,6 +83,50 @@ show_projects() {
     done
     echo ""
     echo "Use --include-all-workers to restart optional protected workers."
+    echo "Use --detach to queue the rebuild in a background user unit."
+}
+
+queue_detached_rebuild() {
+    local project="$1"
+    local unit_name="sf-rebuild-$project"
+    local unit_service="${unit_name}.service"
+    local cmd=("$SCRIPT_PATH")
+
+    if [ "$INCLUDE_ALL_WORKERS" = true ]; then
+        cmd+=("--include-all-workers")
+    fi
+    cmd+=("$project")
+
+    if systemctl --user is-active --quiet "$unit_service"; then
+        log_error "Detached rebuild already active: $unit_service"
+        echo "STATUS: systemctl --user status $unit_service"
+        echo "LOGS: journalctl --user -u $unit_service -n 200 --no-pager"
+        return 1
+    fi
+
+    systemctl --user stop "$unit_service" >/dev/null 2>&1 || true
+    systemctl --user reset-failed "$unit_service" >/dev/null 2>&1 || true
+
+    log "Queueing detached rebuild for $project..."
+    local output
+    if ! output=$(
+        systemd-run --user --collect \
+            --unit "$unit_name" \
+            --description "Detached rebuild for $project" \
+            --setenv=PATH="$PATH" \
+            --setenv=HOME="$HOME" \
+            "${cmd[@]}" 2>&1
+    ); then
+        log_error "Failed to queue detached rebuild"
+        echo "$output"
+        return 1
+    fi
+
+    log_success "Detached rebuild queued: $unit_service"
+    echo "$output"
+    echo "STATUS: systemctl --user status $unit_service"
+    echo "LOGS: journalctl --user -u $unit_service -n 200 --no-pager"
+    return 0
 }
 
 # ─── Core operations ─────────────────────────────────────────────
@@ -251,6 +298,9 @@ while [ $# -gt 0 ]; do
         --include-all-workers)
             INCLUDE_ALL_WORKERS=true
             ;;
+        --detach)
+            DETACH_MODE=true
+            ;;
         --help|-h)
             show_projects
             exit 0
@@ -312,6 +362,12 @@ if [ -z "${PROJECTS[$PROJECT]}" ]; then
 fi
 
 parse_project "$PROJECT"
+
+if [ "$DETACH_MODE" = true ]; then
+    queue_detached_rebuild "$PROJECT"
+    exit $?
+fi
+
 start_time=$(date +%s)
 errors=0
 

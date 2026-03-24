@@ -1,4 +1,4 @@
-export { Badge, ErrorBadge, SuccessBadge, WarningBadge } from './badge'
+export { Badge } from './badge'
 export { Button } from './button'
 export { Checkbox } from './checkbox'
 export {
