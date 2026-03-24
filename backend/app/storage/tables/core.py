@@ -8,6 +8,7 @@ def create_core_tables(cur: psycopg.Cursor) -> None:
     _create_projects_table(cur)
     _create_sitemap_entries_table(cur)
     _create_tasks_table(cur)
+    _create_task_deletions_table(cur)
     _create_task_dependencies_table(cur)
     _create_maintenance_runs_table(cur)
 
@@ -153,6 +154,31 @@ def _create_tasks_table(cur: psycopg.Cursor) -> None:
         "CREATE INDEX IF NOT EXISTS idx_tasks_project_created ON tasks(project_id, created_at DESC)"
     )
     cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_updated ON tasks(updated_at DESC)")
+
+
+def _create_task_deletions_table(cur: psycopg.Cursor) -> None:
+    """Create archived task deletion snapshots for forensic retrieval."""
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS task_deletions (
+            id BIGSERIAL PRIMARY KEY,
+            task_id TEXT NOT NULL,
+            project_id TEXT NOT NULL,
+            deleted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            deletion_source TEXT NOT NULL DEFAULT 'unknown',
+            deletion_reason TEXT,
+            snapshot JSONB NOT NULL DEFAULT '{}'::jsonb
+        )
+        """
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_task_deletions_task_id_deleted_at"
+        " ON task_deletions(task_id, deleted_at DESC)"
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_task_deletions_project_id"
+        " ON task_deletions(project_id)"
+    )
 
 
 def _create_task_dependencies_table(cur: psycopg.Cursor) -> None:

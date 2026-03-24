@@ -13,6 +13,7 @@ from collections.abc import Callable
 from typing import Any
 from unittest.mock import patch
 
+from app.storage import tasks as task_store
 from app.storage.connection import get_connection
 from app.storage.task_spirit import get_task_spirit
 
@@ -488,3 +489,26 @@ class TestReadyEndpoint:
         cleanup_task(task["id"])
 
         assert task["plan_status"] in (None, "draft")
+
+
+class TestTaskDelete:
+    def test_delete_task_archives_snapshot(self, client: Any, test_project_id: str) -> None:
+        response = client.post(
+            f"/api/projects/{test_project_id}/tasks",
+            json={
+                "title": "Delete through API",
+                "description": "Preserve archived snapshot",
+                "task_type": "task",
+            },
+        )
+        assert response.status_code == 200
+        task_id = response.json()["id"]
+
+        response = client.delete(f"/api/projects/{test_project_id}/tasks/{task_id}")
+        assert response.status_code == 200
+        assert response.json()["status"] == "deleted"
+
+        archived = task_store.get_deleted_task_context(task_id)
+        assert archived is not None
+        assert archived["task"]["title"] == "Delete through API"
+        assert archived["task"]["deletion_source"] == "api:tasks.delete_task"

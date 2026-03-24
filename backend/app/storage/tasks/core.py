@@ -132,10 +132,26 @@ def update_task(task_id: str, **fields: Any) -> dict[str, Any] | None:
     return update_task_fields(resolved_task_id, **fields)
 
 
-def delete_task(task_id: str) -> bool:
-    """Delete a task. Returns True if deleted, False if not found."""
+def delete_task(
+    task_id: str,
+    *,
+    deletion_source: str = "storage:delete_task",
+    deletion_reason: str | None = None,
+) -> bool:
+    """Delete a task after archiving its final snapshot for postmortems."""
+    from .deletions import archive_task_snapshots
+
     resolved_task_id = canonicalize_task_id(task_id)
     with get_connection() as conn, conn.cursor() as cur:
+        archived_ids = archive_task_snapshots(
+            cur,
+            [resolved_task_id],
+            deletion_source=deletion_source,
+            deletion_reason=deletion_reason,
+        )
+        if not archived_ids:
+            conn.commit()
+            return False
         cur.execute(
             "DELETE FROM tasks WHERE id = %s RETURNING id",
             (resolved_task_id,),

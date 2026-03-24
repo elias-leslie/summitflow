@@ -89,7 +89,11 @@ async def delete_task(project_id: str, task_id: str) -> dict[str, Any]:
     """Delete a task."""
     await asyncio.to_thread(verify_task_project, task_id, project_id)
 
-    deleted = await asyncio.to_thread(task_store.delete_task, task_id)
+    deleted = await asyncio.to_thread(
+        task_store.delete_task,
+        task_id,
+        deletion_source="api:tasks.delete_task",
+    )
     if not deleted:
         raise HTTPException(status_code=500, detail="Failed to delete task")
 

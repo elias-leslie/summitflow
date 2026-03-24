@@ -136,6 +136,13 @@ def format_context_task(task: dict[str, Any]) -> str:
         lines.append(f"TITLE:{title}")
     if description := task.get("description"):
         lines.append(f"DESCRIPTION:{description}")
+    if task.get("archived"):
+        deleted_at = task.get("deleted_at") or "unknown"
+        deletion_source = task.get("deletion_source") or "unknown"
+        archived_line = f"ARCHIVED:deleted_at:{deleted_at} | source:{deletion_source}"
+        if deletion_reason := task.get("deletion_reason"):
+            archived_line += f" | reason:{deletion_reason}"
+        lines.append(archived_line)
     if workflow := _format_workflow_line(task):
         lines.append(workflow)
     if objective := task.get("objective"):

@@ -8,6 +8,7 @@ from psycopg import sql
 
 from ..connection import get_connection, get_cursor
 from .columns import TASK_COLUMNS, TASK_COLUMNS_WITH_SPIRIT
+from .deletions import archive_task_snapshots
 from .mapping import row_to_dict, row_to_dict_with_spirit, row_to_dict_with_subtask_summary
 
 
@@ -212,30 +213,40 @@ def purge_terminal_tasks(
             conn.commit()
             return {"cancelled": 0, "abandoned": 0, "completed": 0}
 
+        archived_ids = archive_task_snapshots(
+            cur,
+            all_ids,
+            deletion_source="storage:purge_terminal_tasks",
+            deletion_reason="Terminal-task retention purge",
+        )
+        if not archived_ids:
+            conn.commit()
+            return {"cancelled": 0, "abandoned": 0, "completed": 0}
+
         # Clear non-cascading FK references
         cur.execute(
             "UPDATE notifications SET task_id = NULL WHERE task_id = ANY(%s)",
-            (all_ids,),
+            (archived_ids,),
         )
         cur.execute(
             "UPDATE mockups SET task_id = NULL WHERE task_id = ANY(%s)",
-            (all_ids,),
+            (archived_ids,),
         )
         cur.execute(
             "UPDATE quality_check_results SET escalation_task_id = NULL"
             " WHERE escalation_task_id = ANY(%s)",
-            (all_ids,),
+            (archived_ids,),
         )
         cur.execute(
             "UPDATE tasks SET parent_task_id = NULL"
             " WHERE parent_task_id = ANY(%s)",
-            (all_ids,),
+            (archived_ids,),
         )
 
         # Delete (cascading FKs handle subtasks, labels, spirit, deps)
         cur.execute(
             "DELETE FROM tasks WHERE id = ANY(%s) RETURNING status",
-            (all_ids,),
+            (archived_ids,),
         )
         deleted_rows = cur.fetchall()
         conn.commit()

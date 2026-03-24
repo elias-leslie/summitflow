@@ -9,6 +9,7 @@ from cli._output_formatters import (
     format_context_subtasks,
     format_context_task,
 )
+from cli.client import APIError
 from cli.commands.tasks_context import get_task_context
 
 
@@ -47,6 +48,28 @@ class TestFormatContextTask:
         output = format_context_task(task)
 
         assert "WORKFLOW:decisions:0" not in output
+
+    def test_includes_archival_metadata_when_present(self) -> None:
+        task = {
+            "id": "task-archived",
+            "status": "completed",
+            "priority": 2,
+            "task_type": "task",
+            "complexity": "SIMPLE",
+            "title": "Recovered audit trail",
+            "archived": True,
+            "deleted_at": "2026-03-24T00:00:00+00:00",
+            "deletion_source": "storage:purge_terminal_tasks",
+            "deletion_reason": "Retention purge",
+        }
+
+        output = format_context_task(task)
+
+        assert (
+            "ARCHIVED:deleted_at:2026-03-24T00:00:00+00:00 | "
+            "source:storage:purge_terminal_tasks | reason:Retention purge"
+            in output
+        )
 
     def test_includes_lane_overlap_summary_when_present(self) -> None:
         task = {
@@ -284,3 +307,37 @@ class TestTaskContextCommand:
             get_task_context("task-1", None, client)
 
         mock_lane.assert_not_called()
+
+    def test_get_task_context_falls_back_to_archived_snapshot(self) -> None:
+        client = MagicMock()
+        client.get_task.side_effect = APIError(404, "Task task-1 not found")
+        archived = {
+            "task": {
+                "id": "task-1",
+                "project_id": "summitflow",
+                "status": "completed",
+                "task_type": "task",
+                "priority": 2,
+                "complexity": "STANDARD",
+                "title": "Archived monkey-fight task",
+            },
+            "subtasks": [{"subtask_id": "1.1", "description": "Preserved subtask"}],
+            "deleted_at": "2026-03-24T00:00:00+00:00",
+            "deletion_source": "storage:purge_terminal_tasks",
+            "deletion_reason": "Retention purge",
+        }
+
+        with (
+            patch(
+                "cli.commands.tasks_context.task_store.get_deleted_task_context",
+                return_value=archived,
+            ),
+            patch("cli.commands.tasks_context.output_context") as mock_output,
+        ):
+            get_task_context("task-1", None, client)
+
+        archived_task = mock_output.call_args.args[0]
+        assert archived_task["archived"] is True
+        assert archived_task["deletion_source"] == "storage:purge_terminal_tasks"
+        assert archived_task["deletion_reason"] == "Retention purge"
+        assert mock_output.call_args.args[1] == archived["subtasks"]

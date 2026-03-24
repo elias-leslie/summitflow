@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+from app.storage import subtasks as subtask_store
 from app.storage import tasks as task_store
 from app.storage.connection import get_connection
 from app.storage.tasks.status import VALID_TRANSITIONS
@@ -249,22 +250,32 @@ class TestListTasks:
 class TestDeleteTask:
     """Tests for delete_task function."""
 
-    def test_delete_task_removes_task(self, project_id: str) -> None:
-        """Test that delete_task removes the task."""
+    def test_delete_task_archives_snapshot_and_hides_live_task(self, project_id: str) -> None:
+        """Deleting a task should preserve an archived snapshot for postmortems."""
         task = task_store.create_task(project_id, "To Delete")
         task_id = task["id"]
+        subtask_store.create_subtask(task_id, "1.1", "Preserve subtask context", 1)
 
         result = task_store.delete_task(task_id)
         assert result
 
-        # Verify deleted
         retrieved = task_store.get_task(task_id)
         assert retrieved is None
+
+        archived = task_store.get_deleted_task_context(task_id)
+        assert archived is not None
+        assert archived["task"]["id"] == task_id
+        assert archived["task"]["title"] == "To Delete"
+        assert archived["task"]["archived"] is True
+        assert archived["task"]["deletion_source"] == "storage:delete_task"
+        assert archived["subtasks"][0]["subtask_id"] == "1.1"
+        assert archived["subtasks"][0]["description"] == "Preserve subtask context"
 
     def test_delete_task_nonexistent_returns_false(self) -> None:
         """Test deleting nonexistent task returns False."""
         result = task_store.delete_task("nonexistent-id")
         assert not result
+        assert task_store.get_deleted_task_context("nonexistent-id") is None
 
 
 class TestPurgeTerminalTasks:
@@ -278,6 +289,10 @@ class TestPurgeTerminalTasks:
 
         assert result["cancelled"] >= 1
         assert task_store.get_task(task["id"]) is None
+        archived = task_store.get_deleted_task_context(task["id"])
+        assert archived is not None
+        assert archived["task"]["title"] == "To Cancel"
+        assert archived["task"]["deletion_source"] == "storage:purge_terminal_tasks"
 
     def test_purge_preserves_pending_tasks(self, project_id: str, cleanup_task: Callable[[str], None]) -> None:
         task = task_store.create_task(project_id, "Still Pending")

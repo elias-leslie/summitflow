@@ -32,6 +32,7 @@ from .dedup import (
     list_active_tasks_for_file,
     task_exists_for_file,
 )
+from .deletions import get_deleted_task_context
 from .queries import (
     count_completed_tasks_today,
     count_tasks,
@@ -68,6 +69,7 @@ __all__ = [
     "delete_task",
     "duplicate_task_exists",
     "get_agent_hub_sessions",
+    "get_deleted_task_context",
     "get_stale_tasks",
     "get_task",
     "get_tasks_by_enrichment_status",

@@ -626,5 +626,8 @@ def test_cleanup_salvage_rolls_back_task_if_worktree_creation_fails() -> None:
         result = runner.invoke(app, ["salvage", "task-24310aaf", "--all"])
 
     assert result.exit_code == 1
-    mock_delete_task.assert_called_once_with("task-24310aaf")
+    mock_delete_task.assert_called_once_with(
+        "task-24310aaf",
+        deletion_source="cli:cleanup.salvage_rollback",
+    )
     assert "failed to create worktree" in result.output

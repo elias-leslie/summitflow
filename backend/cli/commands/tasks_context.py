@@ -9,6 +9,7 @@ import typer
 
 from app.services.task_execution_readiness import assess_task_execution_readiness
 from app.services.task_lane_preflight import check_task_lane_conflicts
+from app.storage import tasks as task_store
 
 from ..client import APIError, STClient
 from ..lib.worktree import get_worktree_info
@@ -146,6 +147,25 @@ def _handle_task_context(
     output_context(task, subtasks, blockers, task_refs, snapshot)
 
 
+def _try_output_archived_task_context(task_id: str, subtask: str | None) -> bool:
+    """Output archived task context when the live task row has been deleted."""
+    archived = task_store.get_deleted_task_context(task_id)
+    if not archived:
+        return False
+
+    task = dict(archived["task"])
+    task.setdefault("archived", True)
+    task.setdefault("deleted_at", archived.get("deleted_at"))
+    task.setdefault("deletion_source", archived.get("deletion_source"))
+    task.setdefault("deletion_reason", archived.get("deletion_reason"))
+    subtasks = archived["subtasks"]
+    if subtask:
+        _handle_subtask_context(task, subtask, subtasks)
+    else:
+        output_context(task, subtasks, [], [], None)
+    return True
+
+
 def get_task_context(
     task_id: str,
     subtask: str | None,
@@ -168,5 +188,7 @@ def get_task_context(
         _display_worktree_info(task_id)
 
     except APIError as e:
+        if e.status_code == 404 and _try_output_archived_task_context(task_id, subtask):
+            return
         handle_api_error(e)
         raise typer.Exit(1) from None

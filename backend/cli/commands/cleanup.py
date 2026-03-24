@@ -354,7 +354,7 @@ def salvage_orphan(
     try:
         worktree = create_worktree(task_id, project_id=repo_path.name)
     except Exception as exc:
-        task_store.delete_task(task_id)
+        task_store.delete_task(task_id, deletion_source="cli:cleanup.salvage_rollback")
         output_error(f"Recovered task record for {task_id}, but failed to create worktree: {exc}")
         raise typer.Exit(1) from exc
 
