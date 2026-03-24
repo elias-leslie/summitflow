@@ -28,6 +28,19 @@ def _git(args: list[str], cwd: str, text: bool = True) -> subprocess.CompletedPr
     return subprocess.run(args, cwd=cwd, capture_output=True, text=text, timeout=10)
 
 
+def _clear_checkpoint_residue(task_id: str, project_id: str) -> None:
+    """Remove checkpoint metadata for a lane whose worktree is already gone."""
+    try:
+        from cli.lib.checkpoint import remove_snapshot
+
+        remove_snapshot(task_id, remove_worktree=False, project_id=project_id)
+    except Exception as exc:
+        logger.warning(
+            "checkpoint_residue_cleanup_failed",
+            extra={"task_id": task_id, "project_id": project_id, "error": str(exc)},
+        )
+
+
 def _finalize_task_status(task_id: str, result: MergeResult) -> MergeResult:
     """Persist authoritative task status from merge outcome."""
     status = result.get("status")
@@ -59,6 +72,7 @@ def _safe_finalize_branch_without_worktree(task_id: str, project_id: str) -> Mer
     task = task_store.get_task(task_id) or {}
     project_root = get_project_root_path(project_id)
     if not project_root:
+        _clear_checkpoint_residue(task_id, project_id)
         return {"task_id": task_id, "status": "skipped", "reason": "no_worktree"}
 
     task_branch = str(task.get("branch_name") or f"{task_id}/main")
@@ -70,6 +84,7 @@ def _safe_finalize_branch_without_worktree(task_id: str, project_id: str) -> Mer
     _git(["git", "worktree", "prune"], project_root)
     branch_deleted = delete_task_branch(project_root, task_branch, task_id)
     if branch_deleted:
+        _clear_checkpoint_residue(task_id, project_id)
         logger.info(
             "branch_deleted_without_worktree",
             extra={"task_id": task_id, "task_branch": task_branch},
@@ -82,6 +97,7 @@ def _safe_finalize_branch_without_worktree(task_id: str, project_id: str) -> Mer
             "branch_deleted": True,
             "post_merge_valid": True,
         }
+    _clear_checkpoint_residue(task_id, project_id)
     return {
         "task_id": task_id,
         "status": "skipped",
