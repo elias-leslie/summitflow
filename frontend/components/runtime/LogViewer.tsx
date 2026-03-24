@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { runtimeApi } from '@/lib/api/runtime'
@@ -85,11 +86,12 @@ export function LogViewer({ service, onClose }: LogViewerProps) {
           <div className="flex gap-2 mt-2">
             <button
               onClick={toggleStream}
-              className={`text-xs px-2.5 py-1 rounded transition-colors ${
+              className={clsx(
+                'text-xs px-2.5 py-1 rounded transition-colors',
                 streaming
                   ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                  : 'bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700'
-              }`}
+                  : 'bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700',
+              )}
             >
               {streaming ? 'Stop streaming' : 'Stream live'}
             </button>

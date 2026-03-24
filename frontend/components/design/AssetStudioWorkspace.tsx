@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, Image as ImageIcon, Layers3, Package, Tags, X } from 'lucide-react'
 import Image from 'next/image'
@@ -281,16 +282,16 @@ export function AssetStudioWorkspace({
                     type="button"
                     key={asset.asset_id}
                     onClick={() => setSelectedAsset(asset)}
-                    className={`card overflow-hidden text-left transition hover:ring-1 hover:ring-cyan-400/30 ${
-                      viewMode === 'list' ? 'flex items-center gap-4 p-3' : ''
-                    }`}
+                    className={clsx('card overflow-hidden text-left transition hover:ring-1 hover:ring-cyan-400/30',
+                      viewMode === 'list' && 'flex items-center gap-4 p-3'
+                    )}
                   >
                     <div
-                      className={`relative overflow-hidden rounded-xl bg-slate-900 ${
+                      className={clsx('relative overflow-hidden rounded-xl bg-slate-900',
                         viewMode === 'grid'
                           ? 'aspect-video'
                           : 'h-24 w-40 flex-shrink-0'
-                      }`}
+                      )}
                     >
                       <Image
                         src={getDesignAssetImageUrl(projectId, asset.asset_id)}

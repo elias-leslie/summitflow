@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import { useState } from 'react'
 import { motion } from 'motion/react'
 import {
@@ -106,12 +107,7 @@ function TabBar({
             key={tabId}
             type="button"
             onClick={() => onTabChange(tabId)}
-            className={`relative flex items-center gap-1.5 px-3 py-2 text-xs font-medium
-              rounded-t-md transition-all duration-200
-              ${isActive
-                ? 'text-slate-100 bg-slate-800/80'
-                : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/30'
-              }`}
+            className={clsx('relative flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-t-md transition-all duration-200', isActive ? 'text-slate-100 bg-slate-800/80' : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/30')}
             data-testid={`tab-${tabId}`}
           >
             <Icon className="w-3.5 h-3.5" />
@@ -173,13 +169,7 @@ function VerificationResultSection({ result }: { result: VerificationResult }) {
       <h4 className="text-xs font-mono uppercase tracking-wider text-slate-500 mb-2">
         Completion Gate
       </h4>
-      <div className={`p-3 rounded-lg border ${
-        isPartial
-          ? 'bg-amber-950/20 border-amber-800/20'
-          : isClean
-            ? 'bg-emerald-950/20 border-emerald-800/20'
-            : 'bg-slate-800/50 border-slate-700/30'
-      }`}>
+      <div className={clsx('p-3 rounded-lg border', isPartial ? 'bg-amber-950/20 border-amber-800/20' : isClean ? 'bg-emerald-950/20 border-emerald-800/20' : 'bg-slate-800/50 border-slate-700/30')}>
         {/* Summary line */}
         <div className="flex items-center gap-2 mb-2">
           {isPartial ? (
@@ -189,9 +179,7 @@ function VerificationResultSection({ result }: { result: VerificationResult }) {
           ) : (
             <CheckCircle2 className="w-4 h-4 text-slate-400" />
           )}
-          <span className={`text-sm font-medium ${
-            isPartial ? 'text-amber-300' : isClean ? 'text-emerald-300' : 'text-slate-300'
-          }`}>
+          <span className={clsx('text-sm font-medium', isPartial ? 'text-amber-300' : isClean ? 'text-emerald-300' : 'text-slate-300')}>
             {isPartial
               ? `Partial merge — ${result.passed_count}/${result.subtask_count} subtasks passed`
               : isClean
@@ -370,22 +358,14 @@ function ExecutionPanel({
         <button
           type="button"
           onClick={() => setDepth('events')}
-          className={`px-3 py-1 text-xs rounded transition-all duration-150
-            ${depth === 'events'
-              ? 'bg-slate-700 text-slate-100 shadow-sm'
-              : 'text-slate-500 hover:text-slate-300'
-            }`}
+          className={clsx('px-3 py-1 text-xs rounded transition-all duration-150', depth === 'events' ? 'bg-slate-700 text-slate-100 shadow-sm' : 'text-slate-500 hover:text-slate-300')}
         >
           Event Stream
         </button>
         <button
           type="button"
           onClick={() => setDepth('agent')}
-          className={`px-3 py-1 text-xs rounded transition-all duration-150
-            ${depth === 'agent'
-              ? 'bg-slate-700 text-slate-100 shadow-sm'
-              : 'text-slate-500 hover:text-slate-300'
-            }`}
+          className={clsx('px-3 py-1 text-xs rounded transition-all duration-150', depth === 'agent' ? 'bg-slate-700 text-slate-100 shadow-sm' : 'text-slate-500 hover:text-slate-300')}
         >
           Agent Detail
         </button>

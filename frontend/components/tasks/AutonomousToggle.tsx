@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import { Bot, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
@@ -19,11 +20,7 @@ export function AutonomousToggle({
   return (
     <Button
       variant="outline"
-      className={`gap-2 ${
-        autonomous
-          ? 'border-purple-500/30 text-purple-400 bg-purple-500/10'
-          : 'border-slate-600 text-slate-400'
-      }`}
+      className={clsx('gap-2', autonomous ? 'border-purple-500/30 text-purple-400 bg-purple-500/10' : 'border-slate-600 text-slate-400')}
       onClick={onToggle}
       disabled={isToggling || isRunning}
       title={

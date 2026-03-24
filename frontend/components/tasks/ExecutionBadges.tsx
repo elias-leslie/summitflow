@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import {
   Ban,
   CheckCircle2,
@@ -132,11 +133,11 @@ export function ExecutionBadges({
   if (compact) {
     return (
       <div
-        className={`inline-flex items-center gap-1 ${className}`}
+        className={clsx('inline-flex items-center gap-1', className)}
         title={task.status}
       >
         <span
-          className={`p-1 rounded ${statusConfig.bg} ${statusConfig.color}`}
+          className={clsx('p-1 rounded', statusConfig.bg, statusConfig.color)}
         >
           {statusConfig.icon}
         </span>
@@ -145,10 +146,10 @@ export function ExecutionBadges({
   }
 
   return (
-    <div className={`inline-flex items-center gap-2 ${className}`}>
+    <div className={clsx('inline-flex items-center gap-2', className)}>
       {/* Status badge */}
       <span
-        className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs ${statusConfig.bg} ${statusConfig.color} border border-current/20`}
+        className={clsx('inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs', statusConfig.bg, statusConfig.color, 'border border-current/20')}
         title={`Status: ${task.status}`}
       >
         {statusConfig.icon}
@@ -203,7 +204,7 @@ interface StatusIconProps {
 export function StatusIcon({ status, className = '' }: StatusIconProps) {
   const config = statusIcons[status] || statusIcons.pending
   return (
-    <span className={`${config.color} ${className}`} title={status}>
+    <span className={clsx(config.color, className)} title={status}>
       {config.icon}
     </span>
   )

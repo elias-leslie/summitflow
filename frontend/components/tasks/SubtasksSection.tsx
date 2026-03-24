@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import {
   CheckCircle2,
   ChevronDown,
@@ -135,18 +136,14 @@ export function SubtasksSection({
                 ) : (
                   <ChevronRight className="w-4 h-4 text-slate-500" />
                 )}
-                <span className={`p-1.5 rounded ${config.bgColor}`}>
-                  <PhaseIcon className={`w-3.5 h-3.5 ${config.color}`} />
+                <span className={clsx('p-1.5 rounded', config.bgColor)}>
+                  <PhaseIcon className={clsx('w-3.5 h-3.5', config.color)} />
                 </span>
                 <span className="text-sm text-slate-200 capitalize flex-1 text-left">
                   {phase}
                 </span>
                 <span
-                  className={`text-xs font-mono ${
-                    completedCount === phaseSubtasks.length
-                      ? 'text-phosphor-400'
-                      : 'text-slate-500'
-                  }`}
+                  className={clsx('text-xs font-mono', completedCount === phaseSubtasks.length ? 'text-phosphor-400' : 'text-slate-500')}
                 >
                   {completedCount}/{phaseSubtasks.length}
                 </span>
@@ -199,11 +196,7 @@ export function SubtasksSection({
                                       {subtask.subtask_id}
                                     </span>
                                     <span
-                                      className={`text-sm ${
-                                        subtask.passes
-                                          ? 'text-slate-500 line-through'
-                                          : 'text-slate-200'
-                                      }`}
+                                      className={clsx('text-sm', subtask.passes ? 'text-slate-500 line-through' : 'text-slate-200')}
                                     >
                                       {subtask.description}
                                     </span>
@@ -222,11 +215,7 @@ export function SubtasksSection({
                                         steps
                                       </span>
                                       <span
-                                        className={`font-mono px-1.5 py-0.5 rounded ${
-                                          stepInfo.completed === stepInfo.total
-                                            ? 'bg-phosphor-500/10 text-phosphor-400'
-                                            : 'bg-slate-800 text-slate-500'
-                                        }`}
+                                        className={clsx('font-mono px-1.5 py-0.5 rounded', stepInfo.completed === stepInfo.total ? 'bg-phosphor-500/10 text-phosphor-400' : 'bg-slate-800 text-slate-500')}
                                       >
                                         {stepInfo.completed}/{stepInfo.total}
                                       </span>

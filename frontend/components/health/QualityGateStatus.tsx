@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import { Badge } from '@/components/ui/badge'
 import type { HealthSummary } from './HealthTypes'
 import {
@@ -80,8 +81,8 @@ export function QualityGateStatus({ health }: QualityGateStatusProps) {
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex min-w-0 items-center gap-2">
-                    <span className={`h-2 w-2 rounded-full ${state.dotColor} ring-2 ring-slate-900`} />
-                    <span className={`truncate text-xs font-medium ${state.textColor}`}>
+                    <span className={clsx('h-2 w-2 rounded-full ring-2 ring-slate-900', state.dotColor)} />
+                    <span className={clsx('truncate text-xs font-medium', state.textColor)}>
                       {formatCheckLabel(name)}
                     </span>
                   </div>

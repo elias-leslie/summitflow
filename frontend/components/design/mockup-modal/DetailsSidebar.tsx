@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import type { Mockup } from '@/lib/api/mockups'
 import { formatDate } from '@/lib/format'
 import { StatusActions } from './StatusActions'
@@ -114,11 +115,9 @@ export function DetailsSidebar({
               {history.map((item) => (
                 <div
                   key={item.mockup_id}
-                  className={`card p-2 flex items-center gap-3 text-sm ${
-                    item.mockup_id === mockup.mockup_id
-                      ? 'ring-1 ring-outrun-500'
-                      : ''
-                  }`}
+                  className={clsx('card p-2 flex items-center gap-3 text-sm',
+                    item.mockup_id === mockup.mockup_id && 'ring-1 ring-outrun-500'
+                  )}
                 >
                   <span className="text-slate-400">v{item.version}</span>
                   <span className="text-slate-100 flex-1 truncate">{item.name}</span>

@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { AlertCircle, ArrowLeft, FolderPlus, FolderTree, HeartPulse } from 'lucide-react'
 import Link from 'next/link'
@@ -192,7 +193,7 @@ export function NewProjectClient() {
               onChange={(e) => handleProjectIdChange(e.target.value)}
               placeholder="my-awesome-project"
               aria-invalid={Boolean(errors.projectId)}
-              className={`mono ${errors.projectId ? 'border-rose-500/50' : ''}`}
+              className={clsx('mono', errors.projectId && 'border-rose-500/50')}
             />
             <p className="text-xs text-slate-500">
               Stable slug used for APIs, tasks, and navigation. Auto-generated from the name until you override it.
@@ -231,7 +232,7 @@ export function NewProjectClient() {
               onChange={(e) => handleHealthEndpointChange(e.target.value)}
               placeholder={DEFAULT_HEALTH_ENDPOINT}
               aria-invalid={Boolean(errors.healthEndpoint)}
-              className={`mono ${errors.healthEndpoint ? 'border-rose-500/50' : ''}`}
+              className={clsx('mono', errors.healthEndpoint && 'border-rose-500/50')}
             />
             <p className="text-xs text-slate-500">
               Relative path or full URL for service checks. Leave the default unless the app exposes a different route.
@@ -249,7 +250,7 @@ export function NewProjectClient() {
               onChange={(e) => handleRootPathChange(e.target.value)}
               placeholder="/home/user/projects/my-project"
               aria-invalid={Boolean(errors.rootPath)}
-              className={`mono ${errors.rootPath ? 'border-rose-500/50' : ''}`}
+              className={clsx('mono', errors.rootPath && 'border-rose-500/50')}
             />
             <p className="text-xs text-slate-500">
               Strongly recommended. Enables file browsing, service config discovery, and safer project-aware automation.

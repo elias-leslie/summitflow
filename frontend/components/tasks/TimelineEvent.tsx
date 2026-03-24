@@ -1,3 +1,4 @@
+import clsx from 'clsx'
 import {
   AlertCircle,
   CheckCircle2,
@@ -65,16 +66,16 @@ export function TimelineEvent({ message }: { message: TimelineMessage }) {
       <div
         role={hasDetails ? 'button' : undefined}
         tabIndex={hasDetails ? 0 : undefined}
-        className={`group flex gap-3 py-2 px-3 ${config.bg} hover:bg-slate-700/30 transition-colors border-b border-slate-800/30 ${hasDetails ? 'cursor-pointer' : ''}`}
+        className={clsx('group flex gap-3 py-2 px-3', config.bg, 'hover:bg-slate-700/30 transition-colors border-b border-slate-800/30', hasDetails && 'cursor-pointer')}
         onClick={() => hasDetails && setExpanded(!expanded)}
         onKeyDown={hasDetails ? handleKeyToggle : undefined}
       >
-        <span className={`text-2xs mono shrink-0 w-14 tabular-nums ${isRecent ? 'text-cyan-500' : 'text-slate-600'}`}>
+        <span className={clsx('text-2xs mono shrink-0 w-14 tabular-nums', isRecent ? 'text-cyan-500' : 'text-slate-600')}>
           {time}
         </span>
         <div className="flex items-center gap-2 shrink-0 w-14">
           {config.icon || (isToolCall ? <Terminal className="h-3 w-3 text-violet-400" /> : null)}
-          <span className={`text-2xs mono font-medium ${config.color}`}>
+          <span className={clsx('text-2xs mono font-medium', config.color)}>
             {level.toUpperCase().slice(0, 4)}
           </span>
         </div>
@@ -138,8 +139,8 @@ export function TimelineEvent({ message }: { message: TimelineMessage }) {
     const config = statusConfig[status] || statusConfig.in_progress
 
     return (
-      <div className={`flex items-center gap-3 py-2.5 px-3 ${config.bg} border-l-2 ${config.border} border-b border-slate-800/30`}>
-        <span className={`text-2xs mono shrink-0 w-14 tabular-nums ${isRecent ? 'text-cyan-500' : 'text-slate-600'}`}>
+      <div className={clsx('flex items-center gap-3 py-2.5 px-3', config.bg, 'border-l-2', config.border, 'border-b border-slate-800/30')}>
+        <span className={clsx('text-2xs mono shrink-0 w-14 tabular-nums', isRecent ? 'text-cyan-500' : 'text-slate-600')}>
           {time}
         </span>
         <div className="flex items-center gap-2 shrink-0">
@@ -149,7 +150,7 @@ export function TimelineEvent({ message }: { message: TimelineMessage }) {
           {subtaskId && (
             <span className="inline-flex items-center gap-1.5">
               <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">Subtask</span>
-              <span className={`mono text-sm font-semibold ${config.color}`}>{subtaskId}</span>
+              <span className={clsx('mono text-sm font-semibold', config.color)}>{subtaskId}</span>
             </span>
           )}
           {step !== null && (
@@ -180,7 +181,7 @@ export function TimelineEvent({ message }: { message: TimelineMessage }) {
 
     return (
       <div className="flex items-center gap-3 py-2.5 px-3 bg-violet-950/30 border-l-2 border-violet-500 border-b border-slate-800/30">
-        <span className={`text-2xs mono shrink-0 w-14 tabular-nums ${isRecent ? 'text-cyan-500' : 'text-slate-600'}`}>
+        <span className={clsx('text-2xs mono shrink-0 w-14 tabular-nums', isRecent ? 'text-cyan-500' : 'text-slate-600')}>
           {time}
         </span>
         <Zap className="h-3.5 w-3.5 text-violet-400" />
@@ -202,13 +203,13 @@ export function TimelineEvent({ message }: { message: TimelineMessage }) {
     const isUser = sender === 'user' || !sender
 
     return (
-      <div className={`flex gap-3 py-3 px-3 border-l-2 border-b border-slate-800/30 ${isUser ? 'bg-slate-800/30 border-l-slate-500' : 'bg-cyan-950/20 border-l-cyan-500'}`}>
-        <span className={`text-2xs mono shrink-0 w-14 tabular-nums ${isRecent ? 'text-cyan-500' : 'text-slate-600'}`}>
+      <div className={clsx('flex gap-3 py-3 px-3 border-l-2 border-b border-slate-800/30', isUser ? 'bg-slate-800/30 border-l-slate-500' : 'bg-cyan-950/20 border-l-cyan-500')}>
+        <span className={clsx('text-2xs mono shrink-0 w-14 tabular-nums', isRecent ? 'text-cyan-500' : 'text-slate-600')}>
           {time}
         </span>
-        <MessageSquare className={`h-3.5 w-3.5 mt-0.5 shrink-0 ${isUser ? 'text-slate-400' : 'text-cyan-400'}`} />
+        <MessageSquare className={clsx('h-3.5 w-3.5 mt-0.5 shrink-0', isUser ? 'text-slate-400' : 'text-cyan-400')} />
         <div className="flex-1 min-w-0">
-          <span className={`text-xs font-semibold uppercase tracking-wide ${isUser ? 'text-slate-400' : 'text-cyan-400'}`}>
+          <span className={clsx('text-xs font-semibold uppercase tracking-wide', isUser ? 'text-slate-400' : 'text-cyan-400')}>
             {isUser ? 'You' : 'Agent'}
           </span>
           <p className="text-sm text-slate-300 mt-1 leading-relaxed whitespace-pre-wrap">{text}</p>
@@ -227,11 +228,11 @@ export function TimelineEvent({ message }: { message: TimelineMessage }) {
       <div
         role={details ? 'button' : undefined}
         tabIndex={details ? 0 : undefined}
-        className={`flex gap-3 py-2.5 px-3 bg-red-950/30 border-l-2 border-red-500 border-b border-slate-800/30 ${details ? 'cursor-pointer' : ''}`}
+        className={clsx('flex gap-3 py-2.5 px-3 bg-red-950/30 border-l-2 border-red-500 border-b border-slate-800/30', details && 'cursor-pointer')}
         onClick={() => details && setExpanded(!expanded)}
         onKeyDown={details ? handleKeyToggle : undefined}
       >
-        <span className={`text-2xs mono shrink-0 w-14 tabular-nums ${isRecent ? 'text-cyan-500' : 'text-slate-600'}`}>
+        <span className={clsx('text-2xs mono shrink-0 w-14 tabular-nums', isRecent ? 'text-cyan-500' : 'text-slate-600')}>
           {time}
         </span>
         <AlertCircle className="h-3.5 w-3.5 text-red-400 shrink-0 mt-0.5" />
@@ -268,7 +269,7 @@ export function TimelineEvent({ message }: { message: TimelineMessage }) {
   if (message.type === 'connected') {
     return (
       <div className="flex items-center gap-3 py-1.5 px-3 bg-slate-900/50 border-b border-slate-800/30">
-        <span className={`text-2xs mono shrink-0 w-14 tabular-nums ${isRecent ? 'text-cyan-500' : 'text-slate-600'}`}>
+        <span className={clsx('text-2xs mono shrink-0 w-14 tabular-nums', isRecent ? 'text-cyan-500' : 'text-slate-600')}>
           {time}
         </span>
         <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />

@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import { useQuery } from '@tanstack/react-query'
 import { Search, X } from 'lucide-react'
 import { useRouter } from 'next/navigation'
@@ -127,9 +128,10 @@ export function TaskSearch({ onExpandedChange }: TaskSearchProps) {
               type="button"
               key={task.id}
               onClick={() => navigateToTask(task)}
-              className={`w-full px-3 py-2 flex items-center gap-2 text-left hover:bg-slate-700/50 transition-colors ${
-                index === selectedIndex ? 'bg-slate-700/50' : ''
-              }`}
+              className={clsx(
+                'w-full px-3 py-2 flex items-center gap-2 text-left hover:bg-slate-700/50 transition-colors',
+                index === selectedIndex && 'bg-slate-700/50',
+              )}
             >
               {typeIcons[task.task_type] || typeIcons.task}
               <div className="flex-1 min-w-0">
@@ -139,15 +141,16 @@ export function TaskSearch({ onExpandedChange }: TaskSearchProps) {
                 <div className="text-xs text-slate-500 truncate">{task.id}</div>
               </div>
               <span
-                className={`text-xs px-1.5 py-0.5 rounded ${
+                className={clsx(
+                  'text-xs px-1.5 py-0.5 rounded',
                   task.status === 'completed'
                     ? 'bg-phosphor-500/20 text-phosphor-400'
                     : task.status === 'running'
                       ? 'bg-outrun-500/20 text-outrun-400'
                       : task.status === 'failed'
                         ? 'bg-rose-500/20 text-rose-400'
-                        : 'bg-slate-500/20 text-slate-400'
-                }`}
+                        : 'bg-slate-500/20 text-slate-400',
+                )}
               >
                 {task.status}
               </span>
@@ -213,9 +216,10 @@ export function TaskSearch({ onExpandedChange }: TaskSearchProps) {
   return (
     <div ref={searchRef}>
       <div
-        className={`relative transition-all duration-300 ${
-          isSearchFocused ? 'scale-[1.02]' : ''
-        }`}
+        className={clsx(
+          'relative transition-all duration-300',
+          isSearchFocused && 'scale-[1.02]',
+        )}
       >
         {!isSearchFocused && !searchValue && (
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none z-10" />
@@ -228,7 +232,7 @@ export function TaskSearch({ onExpandedChange }: TaskSearchProps) {
           value={searchValue}
           onChange={(e) => setSearchValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          className={`input ${!isSearchFocused && !searchValue ? 'pl-12' : 'pl-4'} pr-4 py-2 text-sm bg-slate-800/80 border-slate-700 w-56 focus:w-72 focus:border-outrun-500/50 transition-all duration-300`}
+          className={clsx('input pr-4 py-2 text-sm bg-slate-800/80 border-slate-700 w-56 focus:w-72 focus:border-outrun-500/50 transition-all duration-300', !isSearchFocused && !searchValue ? 'pl-12' : 'pl-4')}
           onFocus={() => setIsSearchFocused(true)}
         />
         {resultsDropdown}

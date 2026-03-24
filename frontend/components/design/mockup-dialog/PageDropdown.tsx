@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import { ChevronDown } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import type { ExplorerEntry } from '@/lib/api/explorer'
@@ -72,9 +73,9 @@ export function PageDropdown({
             )}
           </div>
           <ChevronDown
-            className={`w-5 h-5 text-slate-400 ml-3 transition-transform duration-200 ${
-              isDropdownOpen ? 'rotate-180 text-outrun-400' : ''
-            }`}
+            className={clsx('w-5 h-5 text-slate-400 ml-3 transition-transform duration-200',
+              isDropdownOpen && 'rotate-180 text-outrun-400'
+            )}
           />
         </div>
       </button>
@@ -124,7 +125,7 @@ export function PageDropdown({
                           )}
                       </div>
                       <div
-                        className={`px-2 py-0.5 rounded text-2xs font-medium shrink-0 ${
+                        className={clsx('px-2 py-0.5 rounded text-2xs font-medium shrink-0',
                           page.healthStatus === 'healthy'
                             ? 'bg-emerald-950/50 text-emerald-400'
                             : page.healthStatus === 'warning'
@@ -132,7 +133,7 @@ export function PageDropdown({
                               : page.healthStatus === 'error'
                                 ? 'bg-rose-950/50 text-rose-400'
                                 : 'bg-slate-800 text-slate-500'
-                        }`}
+                        )}
                       >
                         {page.healthStatus}
                       </div>

@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import {
   AlertTriangle,
   CheckCircle2,
@@ -181,14 +182,15 @@ export function EscalationPanel({
                 {chatMessages.map((msg) => (
                   <div
                     key={msg.id}
-                    className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                    className={clsx('flex', msg.role === 'user' ? 'justify-end' : 'justify-start')}
                   >
                     <div
-                      className={`max-w-[80%] px-3 py-2 rounded-lg text-sm ${
+                      className={clsx(
+                        'max-w-[80%] px-3 py-2 rounded-lg text-sm',
                         msg.role === 'user'
                           ? 'bg-phosphor-500/20 text-phosphor-200'
-                          : 'bg-slate-800 text-slate-300'
-                      }`}
+                          : 'bg-slate-800 text-slate-300',
+                      )}
                     >
                       {msg.content}
                     </div>

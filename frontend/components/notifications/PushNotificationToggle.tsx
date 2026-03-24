@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import { Bell, BellOff, BellRing } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import {
@@ -97,13 +98,14 @@ function ToggleButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
+      className={clsx(
+        'flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors',
         active
           ? 'bg-phosphor-500/10 text-phosphor-400 hover:bg-phosphor-500/20'
           : disabled
             ? 'text-slate-600 cursor-not-allowed'
-            : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
-      }`}
+            : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200',
+      )}
       title={label}
     >
       {icon}

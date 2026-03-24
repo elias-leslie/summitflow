@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import { useSystemStats } from '@/hooks/useSystemStats'
 import { API_PATHS, buildApiUrl } from '@/lib/api-config'
 import { fetchWithErrorHandling } from '@/lib/api/utils'
@@ -29,7 +30,7 @@ function StatusDot({ status }: { status: string }) {
         : status === 'critical' || status === 'unhealthy'
           ? 'bg-rose-500'
           : 'bg-slate-500'
-  return <span className={`w-1.5 h-1.5 rounded-full ${color}`} />
+  return <span className={clsx('w-1.5 h-1.5 rounded-full', color)} />
 }
 
 
@@ -153,7 +154,7 @@ export function InfraStatusBar() {
 
         {/* Overall status */}
         <div className="flex items-center gap-2">
-          <span className={`w-2 h-2 rounded-full ${overall.color}`} />
+          <span className={clsx('w-2 h-2 rounded-full', overall.color)} />
           <span className="text-xs text-slate-400">{overall.label}</span>
         </div>
       </div>

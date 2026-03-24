@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatTimeAgo } from '@/lib/format'
@@ -40,7 +41,7 @@ function ActivityRow({ event }: { event: ActivityEvent }) {
 
   return (
     <div className="flex items-start gap-2 py-1.5 border-b border-slate-800 last:border-0">
-      <span className={`text-xs mt-0.5 ${color}`}>{icon}</span>
+      <span className={clsx('text-xs mt-0.5', color)}>{icon}</span>
       <div className="flex-1 min-w-0">
         <p className="text-xs text-slate-300 truncate">{event.message}</p>
         {metaParts.length > 0 && (

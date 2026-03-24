@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import { useParams } from 'next/navigation'
 import { useState } from 'react'
 import { AssetStudioWorkspace } from '@/components/design/AssetStudioWorkspace'
@@ -30,22 +31,22 @@ export function DesignClient(): React.ReactElement {
             <button
               type="button"
               onClick={() => setActiveView('ui-design')}
-              className={`rounded-full px-4 py-2 text-sm font-medium transition-all duration-200 ${
+              className={clsx('rounded-full px-4 py-2 text-sm font-medium transition-all duration-200',
                 activeView === 'ui-design'
                   ? 'bg-phosphor-500/20 text-phosphor-400 border border-phosphor-500/30 shadow-[0_0_12px_rgba(0,245,255,0.15)]'
                   : 'bg-slate-900/70 text-slate-400 border border-slate-700 hover:text-slate-200 hover:border-slate-600'
-              }`}
+              )}
             >
               UI Design
             </button>
             <button
               type="button"
               onClick={() => setActiveView('asset-studio')}
-              className={`rounded-full px-4 py-2 text-sm font-medium transition-all duration-200 ${
+              className={clsx('rounded-full px-4 py-2 text-sm font-medium transition-all duration-200',
                 activeView === 'asset-studio'
                   ? 'bg-phosphor-500/20 text-phosphor-400 border border-phosphor-500/30 shadow-[0_0_12px_rgba(0,245,255,0.15)]'
                   : 'bg-slate-900/70 text-slate-400 border border-slate-700 hover:text-slate-200 hover:border-slate-600'
-              }`}
+              )}
             >
               Asset Studio
             </button>

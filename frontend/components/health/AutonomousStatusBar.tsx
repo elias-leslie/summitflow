@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import { Badge } from '@/components/ui/badge'
 import type { Autonomous } from './PipelineTypes'
 
@@ -74,7 +75,7 @@ export function AutonomousStatusBar({ autonomous }: AutonomousStatusBarProps) {
 
         {/* Status indicator */}
         <div className="flex items-center gap-2">
-          <span className={`w-2 h-2 rounded-full ${statusTone}`} />
+          <span className={clsx('w-2 h-2 rounded-full', statusTone)} />
           <span className="text-xs text-slate-500">
             {statusLabel}
           </span>

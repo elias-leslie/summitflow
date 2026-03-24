@@ -1,3 +1,4 @@
+import clsx from 'clsx'
 import { ChevronDown, ChevronRight, Trash2 } from 'lucide-react'
 import type { Task } from '@/lib/api'
 import type { Subtask } from '@/lib/api/tasks'
@@ -75,7 +76,7 @@ export function TaskListRow({
       {/* Priority */}
       <td className="px-3 py-3">
         <span
-          className={`text-xs px-1.5 py-0.5 rounded border mono font-medium ${priorityStyle.className}`}
+          className={clsx('text-xs px-1.5 py-0.5 rounded border mono font-medium', priorityStyle.className)}
         >
           {priorityStyle.label}
         </span>
@@ -83,7 +84,7 @@ export function TaskListRow({
 
       {/* Type */}
       <td className="px-3 py-3">
-        <span className={`flex items-center gap-1.5 ${typeStyle.className}`}>
+        <span className={clsx('flex items-center gap-1.5', typeStyle.className)}>
           <TypeIcon className="h-3.5 w-3.5" />
           <span className="text-xs">{typeStyle.label}</span>
         </span>
@@ -124,7 +125,7 @@ export function TaskListRow({
 
       {/* Status */}
       <td className="px-3 py-3">
-        <span className={`flex items-center gap-1.5 ${statusStyle.className}`}>
+        <span className={clsx('flex items-center gap-1.5', statusStyle.className)}>
           <StatusIcon className="h-3.5 w-3.5" />
           <span className="text-xs capitalize">{task.status}</span>
         </span>

@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import {
   ASSET_TYPES,
   BACKGROUND_MODES,
@@ -97,7 +98,7 @@ export function AssetFormFields({
           placeholder="Describe the asset you want to generate..."
           rows={3}
           disabled={isPending}
-          className={`${INPUT_CLASS} resize-none`}
+          className={clsx(INPUT_CLASS, 'resize-none')}
         />
       </div>
 
@@ -200,11 +201,11 @@ export function AssetFormFields({
               type="button"
               onClick={() => onModelChange(m.id)}
               disabled={isPending}
-              className={`px-3 py-2 rounded-lg border text-sm transition-all ${
+              className={clsx('px-3 py-2 rounded-lg border text-sm transition-all',
                 model === m.id
                   ? 'bg-outrun-500/20 border-outrun-500/50 text-outrun-400'
                   : 'bg-slate-800 border-slate-700 text-slate-300 hover:text-slate-100 hover:border-slate-600'
-              }`}
+              )}
             >
               <div className="font-medium">{m.name}</div>
               <div className="text-xs text-slate-500">{m.hint}</div>

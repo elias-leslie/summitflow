@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import { Check, Loader2 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import type { ProgressStep } from './types'
@@ -56,13 +57,14 @@ export function EnrichmentProgressSteps({
             {/* Step Label */}
             <div className="flex-1 min-w-0">
               <span
-                className={`text-sm font-medium transition-colors duration-300 ${
+                className={clsx(
+                  'text-sm font-medium transition-colors duration-300',
                   step.status === 'completed'
                     ? 'text-slate-300'
                     : step.status === 'active'
                       ? 'text-slate-100'
-                      : 'text-slate-500'
-                }`}
+                      : 'text-slate-500',
+                )}
               >
                 {step.status === 'completed' && step.completedLabel
                   ? step.completedLabel

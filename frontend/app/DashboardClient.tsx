@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import { useQuery } from '@tanstack/react-query'
 import {
   AlertCircle,
@@ -115,11 +116,11 @@ export function DashboardClient() {
                 transition={{ duration: 0.35, delay: 0.06 + i * 0.05, ease: [0.25, 0.46, 0.45, 0.94] }}
                 className="card px-5 py-4 flex items-center gap-4 relative overflow-hidden"
               >
-                <div className={`rounded-xl p-3 ${stat.iconBg} ring-1 ring-white/5`}>
-                  <Icon className={`w-5 h-5 ${stat.iconColor}`} />
+                <div className={clsx('rounded-xl p-3 ring-1 ring-white/5', stat.iconBg)}>
+                  <Icon className={clsx('w-5 h-5', stat.iconColor)} />
                 </div>
                 <div>
-                  <div className={`text-[28px] font-extrabold tabular-nums leading-none tracking-tight ${stat.color}`}>
+                  <div className={clsx('text-[28px] font-extrabold tabular-nums leading-none tracking-tight', stat.color)}>
                     {stat.value}
                   </div>
                   <div className="text-2xs text-slate-500 mt-1.5 font-medium uppercase tracking-wider">{stat.label}</div>
@@ -142,10 +143,10 @@ export function DashboardClient() {
             <Link
               key={link.href}
               href={link.href}
-              className={`card px-5 py-3.5 flex items-center gap-3.5 transition-all group/link ${link.hoverBorder} ${link.hoverBg}`}
+              className={clsx('card px-5 py-3.5 flex items-center gap-3.5 transition-all group/link', link.hoverBorder, link.hoverBg)}
             >
-              <div className={`rounded-lg p-2 ${link.iconBg} ring-1 ring-white/5 transition-shadow group-hover/link:shadow-lg`}>
-                <Icon className={`w-4 h-4 ${link.iconColor}`} />
+              <div className={clsx('rounded-lg p-2 ring-1 ring-white/5 transition-shadow group-hover/link:shadow-lg', link.iconBg)}>
+                <Icon className={clsx('w-4 h-4', link.iconColor)} />
               </div>
               <div>
                 <div className="text-sm font-medium text-slate-100 leading-none">{link.label}</div>

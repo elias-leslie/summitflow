@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
@@ -68,7 +69,7 @@ export function PipelineHealthDashboard({ data }: PipelineHealthDashboardProps) 
                     return (
                       <div
                         key={status.label}
-                        className={`${status.color} transition-all duration-500`}
+                        className={clsx(status.color, 'transition-all duration-500')}
                         style={{ width: `${widthPercent}%` }}
                         title={`${status.label}: ${status.count} (${Math.round(widthPercent)}%)`}
                       />

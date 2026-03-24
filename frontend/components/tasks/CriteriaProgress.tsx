@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import { CheckCircle2, XCircle } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import type { TaskAcceptanceCriterion } from '@/lib/api/tasks'
@@ -86,11 +87,7 @@ export function CriteriaProgress({
           {displayCriteria.map((criterion, index) => (
             <div
               key={criterion.id ?? `criterion-${index}`}
-              className={`w-2 h-2 rounded-full transition-all duration-200 ${
-                criterion.verified
-                  ? 'bg-phosphor-400 shadow-sm shadow-phosphor-400/30'
-                  : 'bg-slate-700 group-hover:bg-slate-600'
-              }`}
+              className={clsx('w-2 h-2 rounded-full transition-all duration-200', criterion.verified ? 'bg-phosphor-400 shadow-sm shadow-phosphor-400/30' : 'bg-slate-700 group-hover:bg-slate-600')}
             />
           ))}
           {hiddenCount > 0 && (

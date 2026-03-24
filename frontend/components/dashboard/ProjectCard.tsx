@@ -331,7 +331,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
                   className={clsx(
                     'flex items-center gap-1.5 text-xs px-2 py-1.5 rounded-md transition-all duration-200',
                     metric.count > 0
-                      ? `${metric.activeClass} hover:bg-slate-800/60`
+                      ? [metric.activeClass, 'hover:bg-slate-800/60']
                       : 'text-slate-600 hover:text-slate-400 hover:bg-slate-800/40',
                   )}
                   title={metric.title}

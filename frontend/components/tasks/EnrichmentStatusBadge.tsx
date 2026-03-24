@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import {
   CheckCircle2,
   Eye,
@@ -66,14 +67,14 @@ export function EnrichmentStatusBadge({
 
   return (
     <span
-      className={`
-        inline-flex items-center gap-1 px-1.5 py-0.5
-        text-2xs font-medium rounded border
-        ${config.className}
-        ${className}
-      `}
+      className={clsx(
+        'inline-flex items-center gap-1 px-1.5 py-0.5',
+        'text-2xs font-medium rounded border',
+        config.className,
+        className,
+      )}
     >
-      <Icon className={`w-3 h-3 ${isAnimated ? 'animate-spin' : ''}`} />
+      <Icon className={clsx('w-3 h-3', isAnimated && 'animate-spin')} />
       <span>{config.label}</span>
     </span>
   )
