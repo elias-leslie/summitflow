@@ -21,7 +21,8 @@ export function ProjectNavItem({ item, href, isActive }: ProjectNavItemProps) {
     >
       {isActive && (
         <span
-          className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 rounded-full bg-current opacity-50"
+          className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 rounded-full bg-current opacity-60"
+          style={{ boxShadow: '2px 0 8px currentColor' }}
           aria-hidden="true"
         />
       )}
