@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import { X } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { type ReactNode, useCallback, useEffect } from 'react'
@@ -85,9 +86,7 @@ export function SheetContent({
       animate={{ x: 0 }}
       exit={{ x: isRight ? '100%' : '-100%' }}
       transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
-      className={`fixed ${isRight ? 'right-0' : 'left-0'} top-0 bottom-0 z-50
-        w-full max-w-md bg-slate-900 border-l border-slate-700 shadow-2xl
-        shadow-phosphor-500/5 overflow-y-auto ${className}`}
+      className={clsx('fixed', isRight ? 'right-0' : 'left-0', 'top-0 bottom-0 z-50 w-full max-w-md bg-slate-900 border-l border-slate-700 shadow-2xl shadow-phosphor-500/5 overflow-y-auto', className)}
       onClick={(e) => e.stopPropagation()}
     >
       {children}
@@ -98,7 +97,7 @@ export function SheetContent({
 export function SheetHeader({ children, className = '' }: SheetHeaderProps) {
   return (
     <div
-      className={`sticky top-0 bg-slate-900/95 backdrop-blur border-b border-slate-700 px-5 py-4 ${className}`}
+      className={clsx('sticky top-0 bg-slate-900/95 backdrop-blur border-b border-slate-700 px-5 py-4', className)}
     >
       {children}
     </div>
@@ -107,7 +106,7 @@ export function SheetHeader({ children, className = '' }: SheetHeaderProps) {
 
 export function SheetTitle({ children, className = '' }: SheetTitleProps) {
   return (
-    <h2 className={`display text-lg font-semibold text-slate-100 ${className}`}>
+    <h2 className={clsx('display text-lg font-semibold text-slate-100', className)}>
       {children}
     </h2>
   )
@@ -118,7 +117,7 @@ export function SheetDescription({
   className = '',
 }: SheetDescriptionProps) {
   return (
-    <p className={`text-sm text-slate-400 mt-1 ${className}`}>{children}</p>
+    <p className={clsx('text-sm text-slate-400 mt-1', className)}>{children}</p>
   )
 }
 
@@ -132,8 +131,7 @@ export function SheetClose({ onClose, className = '' }: SheetCloseProps) {
     <button
       onClick={onClose}
       aria-label="Close"
-      className={`absolute right-4 top-4 p-1.5 rounded-md text-slate-500
-        hover:text-phosphor-400 hover:bg-slate-800 transition-colors ${className}`}
+      className={clsx('absolute right-4 top-4 p-1.5 rounded-md text-slate-500 hover:text-phosphor-400 hover:bg-slate-800 transition-colors', className)}
     >
       <X className="w-4 h-4" />
     </button>
@@ -147,5 +145,5 @@ export function SheetBody({
   children: ReactNode
   className?: string
 }) {
-  return <div className={`px-5 py-4 ${className}`}>{children}</div>
+  return <div className={clsx('px-5 py-4', className)}>{children}</div>
 }

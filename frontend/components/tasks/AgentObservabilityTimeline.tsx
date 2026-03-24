@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import { useCallback, useState } from 'react'
 import type { AgentEventType } from '@/lib/api/tasks'
 import { useAgentHubEvents } from './hooks/useAgentHubEvents'
@@ -81,7 +82,7 @@ export function AgentObservabilityTimeline({
     maxHeight === 'none' ? { minHeight: '200px' } : { minHeight: '200px', maxHeight }
 
   return (
-    <div className={`flex flex-col ${className}`}>
+    <div className={clsx('flex flex-col', className)}>
       <ObservabilityHeader
         viewMode={viewMode}
         sessionIds={sessionIds}

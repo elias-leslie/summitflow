@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import { AlertCircle, Loader2 } from 'lucide-react'
 import type { RefObject } from 'react'
 import type { AgentHubEvent, AgentHubSessionSummary } from '@/lib/api/tasks'
@@ -73,7 +74,7 @@ export function ObservabilityContent({
     <div
       ref={scrollRef}
       onScroll={onScroll}
-      className={`flex-1 overflow-y-auto bg-slate-950/40 border border-slate-800/50 border-t-0 ${viewMode === 'replay' ? '' : 'rounded-b-lg'}`}
+      className={clsx('flex-1 overflow-y-auto bg-slate-950/40 border border-slate-800/50 border-t-0', viewMode !== 'replay' && 'rounded-b-lg')}
       style={heightStyle}
     >
       {isLoading && events.length === 0 ? (
@@ -116,7 +117,7 @@ export function ObservabilityContent({
             <div
               key={event.id}
               data-event-index={idx}
-              className={idx === replayIndex ? 'ring-1 ring-cyan-500/50 ring-inset' : idx > replayIndex ? 'opacity-30' : ''}
+              className={clsx(idx === replayIndex && 'ring-1 ring-cyan-500/50 ring-inset', idx > replayIndex && 'opacity-30')}
             >
               <AgentTimelineEvent
                 event={event}

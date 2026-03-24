@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import { X } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { type ReactNode, useCallback, useEffect } from 'react'
@@ -81,9 +82,7 @@ export function DialogContent({
       animate={{ opacity: 1, scale: 1, x: '-50%', y: '-50%' }}
       exit={{ opacity: 0, scale: 0.95, x: '-50%', y: 'calc(-50% + 10px)' }}
       transition={{ duration: 0.2, ease: 'easeOut' }}
-      className={`fixed left-1/2 top-1/2 z-50
-        bg-slate-900 border border-slate-700 rounded-lg shadow-2xl
-        shadow-phosphor-500/5 ${className}`}
+      className={clsx('fixed left-1/2 top-1/2 z-50 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl shadow-phosphor-500/5', className)}
       onClick={(e) => e.stopPropagation()}
     >
       {children}
@@ -93,7 +92,7 @@ export function DialogContent({
 
 export function DialogHeader({ children, className = '' }: DialogHeaderProps) {
   return (
-    <div className={`border-b border-slate-700 px-5 py-4 ${className}`}>
+    <div className={clsx('border-b border-slate-700 px-5 py-4', className)}>
       {children}
     </div>
   )
@@ -101,7 +100,7 @@ export function DialogHeader({ children, className = '' }: DialogHeaderProps) {
 
 export function DialogTitle({ children, className = '' }: DialogTitleProps) {
   return (
-    <h2 className={`display text-lg font-semibold text-slate-100 ${className}`}>
+    <h2 className={clsx('display text-lg font-semibold text-slate-100', className)}>
       {children}
     </h2>
   )
@@ -112,7 +111,7 @@ export function DialogDescription({
   className = '',
 }: DialogDescriptionProps) {
   return (
-    <p className={`text-sm text-slate-400 mt-1 ${className}`}>{children}</p>
+    <p className={clsx('text-sm text-slate-400 mt-1', className)}>{children}</p>
   )
 }
 
@@ -126,8 +125,7 @@ export function DialogClose({ onClose, className = '' }: DialogCloseProps) {
     <button
       onClick={onClose}
       aria-label="Close dialog"
-      className={`absolute right-4 top-4 p-1.5 rounded-md text-slate-500
-        hover:text-phosphor-400 hover:bg-slate-800 transition-colors ${className}`}
+      className={clsx('absolute right-4 top-4 p-1.5 rounded-md text-slate-500 hover:text-phosphor-400 hover:bg-slate-800 transition-colors', className)}
     >
       <X className="w-4 h-4" />
     </button>

@@ -145,11 +145,7 @@ export function StepItem({
                   <button
                     type="button"
                     onClick={handleCopy}
-                    className={`absolute top-2 right-2 p-1.5 rounded-md transition-all duration-150 z-10 ${
-                      copied
-                        ? 'bg-phosphor-500/20 text-phosphor-400'
-                        : 'bg-slate-700/80 text-slate-400 opacity-60 group-hover/spec:opacity-100 hover:bg-slate-600 hover:text-slate-200'
-                    }`}
+                    className={clsx('absolute top-2 right-2 p-1.5 rounded-md transition-all duration-150 z-10', copied ? 'bg-phosphor-500/20 text-phosphor-400' : 'bg-slate-700/80 text-slate-400 opacity-60 group-hover/spec:opacity-100 hover:bg-slate-600 hover:text-slate-200')}
                     aria-label="Copy spec"
                   >
                     {copied ? (

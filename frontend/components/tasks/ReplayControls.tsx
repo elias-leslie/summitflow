@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import {
   ChevronLeft,
   ChevronRight,
@@ -131,7 +132,7 @@ export function ReplayControls({
 
   return (
     <div
-      className={`flex items-center gap-2 px-3 py-2 bg-slate-900/80 border border-slate-800/50 rounded-lg ${className}`}
+      className={clsx('flex items-center gap-2 px-3 py-2 bg-slate-900/80 border border-slate-800/50 rounded-lg', className)}
     >
       {/* Transport controls */}
       <div className="flex items-center gap-0.5">
@@ -155,11 +156,7 @@ export function ReplayControls({
         <button
           type="button"
           onClick={handlePlayPause}
-          className={`p-1.5 rounded transition-colors ${
-            isPlaying
-              ? 'text-cyan-400 bg-cyan-500/20 hover:bg-cyan-500/30'
-              : 'text-slate-400 hover:text-slate-300 hover:bg-slate-700/50'
-          }`}
+          className={clsx('p-1.5 rounded transition-colors', isPlaying ? 'text-cyan-400 bg-cyan-500/20 hover:bg-cyan-500/30' : 'text-slate-400 hover:text-slate-300 hover:bg-slate-700/50')}
           title={isPlaying ? 'Pause' : 'Play'}
         >
           {isPlaying ? (

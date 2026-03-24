@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import { Globe } from 'lucide-react'
 import type { SpecRecord } from './SpecRendererTypes'
 
@@ -18,7 +19,7 @@ function MethodBadge({ method }: { method: string }) {
 
   return (
     <span
-      className={`px-1.5 py-0.5 text-2xs font-mono font-semibold rounded border ${colorClass}`}
+      className={clsx('px-1.5 py-0.5 text-2xs font-mono font-semibold rounded border', colorClass)}
     >
       {method.toUpperCase()}
     </span>

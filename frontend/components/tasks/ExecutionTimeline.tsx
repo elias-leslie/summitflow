@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import { AlertCircle, Loader2 } from 'lucide-react'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { useExecutionWebSocketStream } from '@/hooks/useExecutionWebSocketStream'
@@ -132,7 +133,7 @@ export function ExecutionTimeline({
     : { minHeight: '200px', maxHeight }
 
   return (
-    <div className={`flex flex-col ${className}`}>
+    <div className={clsx('flex flex-col', className)}>
       <TimelineHeader
         isConnected={isConnected}
         error={error}

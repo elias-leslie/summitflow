@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import {
   AlertCircle,
   Brain,
@@ -88,20 +89,13 @@ export function TimelineFilters({
               type="button"
               key={chip.id}
               onClick={() => onFilterChange(chip.id, chip.eventTypes)}
-              className={`
-                flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all
-                ${
-                  isActive
-                    ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40'
-                    : 'bg-slate-800/50 text-slate-400 border border-slate-700/50 hover:bg-slate-700/50 hover:text-slate-300'
-                }
-              `}
+              className={clsx('flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all', isActive ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50 hover:bg-slate-700/50 hover:text-slate-300')}
             >
               {chip.icon}
               <span>{chip.label}</span>
               {count > 0 && (
                 <span
-                  className={`text-2xs px-1 py-0.5 rounded ${isActive ? 'bg-cyan-500/30' : 'bg-slate-700/70'}`}
+                  className={clsx('text-2xs px-1 py-0.5 rounded', isActive ? 'bg-cyan-500/30' : 'bg-slate-700/70')}
                 >
                   {count}
                 </span>

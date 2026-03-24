@@ -6,6 +6,7 @@ import {
   Fira_Code,
   IBM_Plex_Mono,
 } from 'next/font/google'
+import clsx from 'clsx'
 import Script from 'next/script'
 import './globals.css'
 import { AppShell } from '@/components/layout/AppShell'
@@ -71,7 +72,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`dark ${outfit.variable} ${bricolageGrotesque.variable} ${jetbrainsMono.variable} ${firaCode.variable} ${ibmPlexMono.variable}`}
+      className={clsx('dark', outfit.variable, bricolageGrotesque.variable, jetbrainsMono.variable, firaCode.variable, ibmPlexMono.variable)}
     >
       <head>
         <link

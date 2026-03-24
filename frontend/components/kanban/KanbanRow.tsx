@@ -90,7 +90,7 @@ export function KanbanRow({
           transition={{ duration: 0.15 }}
           className="flex-shrink-0"
         >
-          <ChevronRight className={`h-4 w-4 ${colors.header}`} />
+          <ChevronRight className={clsx('h-4 w-4', colors.header)} />
         </motion.span>
 
         {IconComponent && (

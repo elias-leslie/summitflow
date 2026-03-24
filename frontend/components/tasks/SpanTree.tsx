@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import {
   AlertCircle,
   ChevronDown,
@@ -163,7 +164,7 @@ function SpanNodeRow({
       <div
         role="button"
         tabIndex={0}
-        className={`flex items-center gap-2 py-1.5 px-2 rounded-md cursor-pointer hover:bg-slate-700/30 transition-colors border ${levelBg}`}
+        className={clsx('flex items-center gap-2 py-1.5 px-2 rounded-md cursor-pointer hover:bg-slate-700/30 transition-colors border', levelBg)}
         style={{ marginLeft: `${depth * 20}px` }}
         onClick={handleClick}
         onKeyDown={(e) => {
@@ -284,7 +285,7 @@ export function SpanTree({
 
   if (isLoading) {
     return (
-      <div className={`flex items-center justify-center py-8 text-slate-600 ${className}`}>
+      <div className={clsx('flex items-center justify-center py-8 text-slate-600', className)}>
         <Loader2 className="h-5 w-5 animate-spin mr-2" />
         <span className="text-sm">Loading span tree...</span>
       </div>
@@ -293,7 +294,7 @@ export function SpanTree({
 
   if (error) {
     return (
-      <div className={`flex items-center justify-center py-8 ${className}`}>
+      <div className={clsx('flex items-center justify-center py-8', className)}>
         <AlertCircle className="h-5 w-5 text-amber-500 mr-2" />
         <span className="text-sm text-amber-500">{error}</span>
       </div>
@@ -302,7 +303,7 @@ export function SpanTree({
 
   if (tree.length === 0) {
     return (
-      <div className={`flex items-center justify-center py-8 text-slate-600 ${className}`}>
+      <div className={clsx('flex items-center justify-center py-8 text-slate-600', className)}>
         <GitBranch className="h-5 w-5 mr-2" />
         <span className="text-sm">No span hierarchy data available</span>
       </div>
@@ -310,7 +311,7 @@ export function SpanTree({
   }
 
   return (
-    <div className={`space-y-1 p-2 ${className}`}>
+    <div className={clsx('space-y-1 p-2', className)}>
       {tree.map((root) => (
         <SpanNodeRow
           key={root.event.span_id || root.event.id}

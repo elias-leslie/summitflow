@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useState } from 'react'
 import type { AgentHubEvent } from '@/lib/api/tasks'
@@ -24,11 +25,11 @@ export function AgentTimelineEvent({ event, searchTerm }: AgentTimelineEventProp
 
   return (
     <div
-      className={`group flex gap-3 py-2.5 px-3 ${config.bg} border-l-2 ${config.border} hover:bg-slate-700/30 transition-colors border-b border-slate-800/30 ${hasExpandableContent ? 'cursor-pointer' : ''}`}
+      className={clsx('group flex gap-3 py-2.5 px-3', config.bg, 'border-l-2', config.border, 'hover:bg-slate-700/30 transition-colors border-b border-slate-800/30', hasExpandableContent && 'cursor-pointer')}
       onClick={() => hasExpandableContent && setExpanded(!expanded)}
     >
       <span
-        className={`text-2xs mono shrink-0 w-14 tabular-nums ${isRecent ? 'text-cyan-500' : 'text-slate-600'}`}
+        className={clsx('text-2xs mono shrink-0 w-14 tabular-nums', isRecent ? 'text-cyan-500' : 'text-slate-600')}
       >
         {time}
       </span>

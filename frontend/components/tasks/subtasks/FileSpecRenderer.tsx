@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import { FileEdit, FileMinus, FilePlus, FileText } from 'lucide-react'
 import { getSpecTruthy, getSpecValue, type SpecRecord } from './SpecRendererTypes'
 
@@ -48,7 +49,7 @@ function OperationBadge({ operation }: { operation: string }) {
 
   return (
     <span
-      className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-semibold ${color}`}
+      className={clsx('flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-semibold', color)}
     >
       <Icon className="w-3 h-3" />
       {label}

@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import { GitBranch, List, Play, Radio, RefreshCw } from 'lucide-react'
 import type { AgentHubSessionSummary } from '@/lib/api/tasks'
 
@@ -65,11 +66,7 @@ export function ObservabilityHeader({
               type="button"
               key={mode}
               onClick={() => onViewModeChange(mode)}
-              className={`flex items-center gap-1 px-2 py-1 rounded text-2xs font-medium transition-colors ${
-                viewMode === mode
-                  ? 'bg-slate-700 text-slate-200'
-                  : 'text-slate-500 hover:text-slate-400'
-              }`}
+              className={clsx('flex items-center gap-1 px-2 py-1 rounded text-2xs font-medium transition-colors', viewMode === mode ? 'bg-slate-700 text-slate-200' : 'text-slate-500 hover:text-slate-400')}
               title={label}
             >
               <Icon className="h-3 w-3" />
@@ -93,7 +90,7 @@ export function ObservabilityHeader({
           disabled={isLoading}
           className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-300 px-2 py-1 rounded bg-slate-800/50 hover:bg-slate-700/50 transition-colors disabled:opacity-50"
         >
-          <RefreshCw className={`h-3 w-3 ${isLoading ? 'animate-spin' : ''}`} />
+          <RefreshCw className={clsx('h-3 w-3', isLoading && 'animate-spin')} />
           Refresh
         </button>
       </div>
