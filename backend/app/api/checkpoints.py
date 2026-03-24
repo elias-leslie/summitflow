@@ -1,22 +1,19 @@
 """Checkpoints API - checkpoint status for frontend UI.
 
-Provides checkpoint information for the dashboard and task detail views.
-Reads from .st/snapshots directory in project roots.
+Provides active checkpoint information for the dashboard and task detail views
+from the canonical global checkpoint metadata store.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
-from app.storage.projects import get_project_root_path, list_projects
+from app.storage.projects import list_projects
 
 from .checkpoint_helpers import (
     _build_response,
-    _get_snapshot_info,
-    _get_task_branches,
     find_checkpoint_in_all_projects,
     get_project_checkpoints,
 )
@@ -75,13 +72,9 @@ async def get_checkpoint(task_id: str, project_id: str | None = None) -> Checkpo
         HTTPException: If checkpoint not found
     """
     if project_id:
-        root = get_project_root_path(project_id)
-        if not root:
-            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
-        info = _get_snapshot_info(task_id, Path(root))
-        if info:
-            info["branches"] = _get_task_branches(task_id, Path(root))
-            return _build_response(info)
+        for checkpoint in get_project_checkpoints(project_id):
+            if checkpoint["task_id"] == task_id:
+                return _build_response(checkpoint)
     else:
         info = find_checkpoint_in_all_projects(task_id)
         if info:

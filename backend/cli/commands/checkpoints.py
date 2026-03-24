@@ -1,6 +1,6 @@
 """Checkpoints command for st CLI.
 
-Shows active checkpoints for visibility and debugging.
+Shows active checkpoints from the canonical checkpoint metadata store.
 Provides cleanup for stale metadata and orphaned branches.
 """
 
@@ -11,9 +11,9 @@ from typing import Annotated
 import typer
 
 from ..lib.checkpoint import get_active_checkpoints, get_snapshot_info
+from ..lib.checkpoint_branches import get_task_branches
 from ..output import output_json
 from ..output_context import OutputContext
-from .checkpoints_branch_ops import get_task_branches
 from .checkpoints_cleanup import auto_cleanup_safe_items
 from .checkpoints_formatters import (
     format_cleanup_summary,
@@ -33,7 +33,7 @@ def _checkpoint_to_dict(cp: object) -> dict:
         "base_branch": cp.base_branch,
         "created_at": cp.created_at,
         "claimed_by": cp.claimed_by,
-        "branches": get_task_branches(cp.task_id),
+        "branches": get_task_branches(cp.task_id, project_id=cp.project_id),
     }
 
 
@@ -65,7 +65,7 @@ def checkpoints_callback(
     if details:
         format_details(ctx.obj, details)
         return
-    cleaned = auto_cleanup_safe_items()
+    cleaned = auto_cleanup_safe_items(project)
     checkpoints = get_active_checkpoints(project)
     if ctx.obj.is_compact:
         _output_compact(ctx.obj, checkpoints, cleaned)

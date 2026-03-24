@@ -18,6 +18,7 @@ from .checkpoint_branches import (
     create_subtask_branch,
     delete_subtask_branch,
     delete_task_branches,
+    get_task_branches,
     merge_subtask_branch,
     merge_task_branch,
 )
@@ -114,7 +115,7 @@ def remove_checkpoint_for_worktree_path(
 ) -> bool:
     """Delete checkpoint metadata whose recorded worktree path matches exactly."""
     target = Path(worktree_path).resolve()
-    for checkpoint in get_active_checkpoints(project_id):
+    for checkpoint in _iter_checkpoint_meta(project_id):
         if not checkpoint.worktree_path:
             continue
         try:
@@ -132,36 +133,14 @@ def remove_checkpoint_for_worktree_path(
 
 def get_active_checkpoints(project_id: str | None = None) -> list[SnapshotMeta]:
     """List active checkpoints, optionally filtered by project, newest first."""
-    snapshots_dir = get_snapshots_dir(project_id=project_id) if project_id else _global_checkpoints_base()
-    if not snapshots_dir.exists():
-        return []
-
-    checkpoints = []
-    pattern = "*.meta.json" if project_id else "*/*.meta.json"
-    for meta_file in snapshots_dir.glob(pattern):
-        try:
-            meta = SnapshotMeta.from_dict(json.loads(meta_file.read_text()))
-            if project_id is None or meta.project_id == project_id:
-                checkpoints.append(meta)
-        except (json.JSONDecodeError, KeyError):
-            continue
-
-    checkpoints.sort(key=lambda m: m.created_at, reverse=True)
+    checkpoints = [checkpoint for checkpoint in _iter_checkpoint_meta(project_id) if _checkpoint_is_active(checkpoint)]
+    checkpoints.sort(key=lambda meta: meta.created_at, reverse=True)
     return checkpoints
 
 
 def get_stale_checkpoints(project_id: str | None = None) -> list[SnapshotMeta]:
     """Return checkpoint metadata whose recorded lane no longer resolves cleanly."""
-    from .worktree import get_worktree_info
-
-    stale: list[SnapshotMeta] = []
-    for checkpoint in get_active_checkpoints(project_id):
-        if not checkpoint.worktree_path:
-            continue
-        if get_worktree_info(checkpoint.task_id, checkpoint.project_id) is not None:
-            continue
-        stale.append(checkpoint)
-    return stale
+    return [checkpoint for checkpoint in _iter_checkpoint_meta(project_id) if not _checkpoint_is_active(checkpoint)]
 
 
 def has_active_task(project_id: str) -> str | None:
@@ -193,3 +172,30 @@ def get_snapshot_info(task_id: str) -> dict[str, str | int | None] | None:
         info["frontend_url"] = ports.frontend_url
 
     return info
+
+
+def _checkpoint_is_active(checkpoint: SnapshotMeta) -> bool:
+    """Return True when checkpoint metadata still has a live worktree or branch."""
+    from .worktree import get_worktree_info
+
+    if checkpoint.worktree_path and get_worktree_info(checkpoint.task_id, checkpoint.project_id) is not None:
+        return True
+    return bool(get_task_branches(checkpoint.task_id, project_id=checkpoint.project_id))
+
+
+def _iter_checkpoint_meta(project_id: str | None = None) -> list[SnapshotMeta]:
+    """Load raw checkpoint metadata from the canonical global checkpoint store."""
+    snapshots_dir = get_snapshots_dir(project_id=project_id) if project_id else _global_checkpoints_base()
+    if not snapshots_dir.exists():
+        return []
+
+    checkpoints: list[SnapshotMeta] = []
+    pattern = "*.meta.json" if project_id else "*/*.meta.json"
+    for meta_file in snapshots_dir.glob(pattern):
+        try:
+            checkpoint = SnapshotMeta.from_dict(json.loads(meta_file.read_text()))
+        except (json.JSONDecodeError, KeyError):
+            continue
+        if project_id is None or checkpoint.project_id == project_id:
+            checkpoints.append(checkpoint)
+    return checkpoints

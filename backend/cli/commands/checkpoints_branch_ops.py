@@ -10,14 +10,6 @@ import subprocess
 from ..lib.checkpoint import get_snapshot_info
 
 
-def _classify_branch(branch: str) -> dict[str, str]:
-    """Classify a branch as task or subtask type."""
-    suffix = branch.split("/")[-1] if "/" in branch else ""
-    if suffix == "main":
-        return {"branch": branch, "subtask_id": "", "type": "task"}
-    return {"branch": branch, "subtask_id": suffix, "type": "subtask"}
-
-
 def _parse_commit_line(line: str) -> dict[str, str] | None:
     """Parse a commit log line into a commit dict, or return None if invalid."""
     if "|" not in line:
@@ -26,26 +18,6 @@ def _parse_commit_line(line: str) -> dict[str, str] | None:
     if len(parts) != 3:
         return None
     return {"hash": parts[0][:8], "message": parts[1], "age": parts[2]}
-
-
-def get_task_branches(task_id: str) -> list[dict[str, str]]:
-    """Get all branches for a task (task branch + subtask branches)."""
-    branches = []
-    try:
-        result = subprocess.run(
-            ["git", "branch", "--list", f"{task_id}/*"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        for line in result.stdout.splitlines():
-            branch = line.strip().lstrip("* ")
-            if branch:
-                branches.append(_classify_branch(branch))
-    except subprocess.CalledProcessError:
-        pass
-    return branches
-
 
 def get_branch_unmerged_commits(branch: str) -> list[dict[str, str]]:
     """Get unmerged commits for a branch (commits not in main)."""

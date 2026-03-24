@@ -9,9 +9,9 @@ from datetime import UTC, datetime
 from typing import Any
 
 from ..lib.checkpoint import get_snapshot_info
+from ..lib.checkpoint_branches import get_task_branches
 from ..output import output_json
 from ..output_context import OutputContext
-from .checkpoints_branch_ops import get_task_branches
 
 
 def format_age(created_at: str) -> str:
@@ -47,8 +47,9 @@ def _format_checkpoint_line(cp: dict[str, Any]) -> None:
     task_id = cp.get("task_id", "?")
     age = format_age(cp.get("created_at", ""))
     size = cp.get("size", "?")
+    project_id = cp.get("project_id")
 
-    branches = get_task_branches(task_id)
+    branches = get_task_branches(task_id, project_id=project_id)
     branch_count = len(branches)
 
     print(f"{task_id}|{age}|{branch_count} branches|{size}")
@@ -85,7 +86,7 @@ def format_details(out: OutputContext, task_id: str) -> None:
         return
 
     age = format_age(str(info.get("created_at", "")))
-    branches = get_task_branches(task_id)
+    branches = get_task_branches(task_id, project_id=info.get("project_id"))
 
     if out.is_compact:
         print(f"CHECKPOINT:{task_id}")

@@ -409,6 +409,19 @@ class TestCleanupLanesCommand:
         assert result.exit_code == 0
         assert "STALE-CHECKPOINT summitflow/task-stale" in result.output
 
+
+    def test_cleanup_lanes_explicit_missing_target_reports_no_match_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _setup_workspace(tmp_path, monkeypatch)
+
+        monkeypatch.setattr("cli.commands.cleanup.get_project_id", lambda all_projects=False: "summitflow")
+
+        result = runner.invoke(app, ["lanes", "missing-lane", "--confirm", "deadbeef"])
+
+        assert result.exit_code == 1
+        assert "No matching lane, orphaned snapshots, or stale checkpoints found to clean up." in result.output
+
     def test_cleanup_lanes_deletes_stale_checkpoint_without_lane(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -443,6 +456,19 @@ class TestCleanupSnapshotsCommand:
         assert "DELETE legacy snapshot residue: 2 target(s):" in result.output
         assert "SNAPSHOT-RESIDUE summitflow/summitflow-pilot-v1 [legacy-snapshot-root]" in result.output
         assert "SNAPSHOT-RESIDUE summitflow/repo-legacy123 [legacy-manifest]" in result.output
+
+
+    def test_cleanup_snapshots_explicit_missing_target_reports_no_match_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _setup_workspace(tmp_path, monkeypatch)
+
+        monkeypatch.setattr("cli.commands.cleanup.get_project_id", lambda all_projects=False: "summitflow")
+
+        result = runner.invoke(app, ["snapshots", "missing-snapshot", "--confirm", "deadbeef"])
+
+        assert result.exit_code == 1
+        assert "No matching snapshot residue found to clean up." in result.output
 
     def test_cleanup_snapshots_confirm_deletes_legacy_residue(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

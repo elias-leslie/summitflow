@@ -51,6 +51,30 @@ def _branch_exists(branch: str, cwd: str | None = None) -> bool:
     return result.returncode == 0
 
 
+def _classify_branch(branch: str) -> dict[str, str]:
+    """Classify a task-family branch as task or subtask type."""
+    suffix = branch.split("/")[-1] if "/" in branch else ""
+    if suffix == "main":
+        return {"branch": branch, "subtask_id": "", "type": "task"}
+    return {"branch": branch, "subtask_id": suffix, "type": "subtask"}
+
+
+def get_task_branches(task_id: str, project_id: str | None = None) -> list[dict[str, str]]:
+    """List task-family branches for a checkpoint in the project's canonical repo."""
+    branches: list[dict[str, str]] = []
+    cwd = _get_repo_cwd(project_id)
+    try:
+        result = _run_git(["git", "branch", "--list", f"{task_id}/*"], cwd=cwd)
+    except subprocess.CalledProcessError:
+        return branches
+
+    for line in result.stdout.splitlines():
+        branch = line.strip().lstrip("* ")
+        if branch:
+            branches.append(_classify_branch(branch))
+    return branches
+
+
 def create_subtask_branch(task_id: str, subtask_id: str) -> str:
     """Create git branch for subtask. Format: {task_id}/{subtask_id}"""
     branch_name = f"{task_id}/{subtask_id}"

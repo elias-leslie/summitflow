@@ -8,11 +8,12 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from ..lib.checkpoint import get_stale_checkpoints, remove_snapshot
+from ..lib.checkpoint_branches import get_task_branches
 from ..lib.worktree import get_worktree_info
 from .checkpoints_branch_ops import (
     get_branch_unmerged_commits,
     get_orphaned_branches,
-    get_task_branches,
 )
 
 
@@ -21,7 +22,7 @@ def _is_stale_meta(meta_file: Path) -> bool:
     meta = json.loads(meta_file.read_text())
     task_id = meta.get("task_id", "")
     project_id = meta.get("project_id")
-    return not get_worktree_info(task_id, project_id) and not get_task_branches(task_id)
+    return not get_worktree_info(task_id, project_id) and not get_task_branches(task_id, project_id=project_id)
 
 
 def _cleanup_snapshots_dir(snapshots_dir: Path) -> tuple[int, int]:
@@ -54,16 +55,26 @@ def _process_orphaned_branch(branch: str) -> dict[str, Any] | None:
     return {"branch": branch, "commits": unmerged_commits}
 
 
-def auto_cleanup_safe_items() -> tuple[int, int, int, list[dict[str, Any]]]:
+def _cleanup_global_stale_checkpoints(project_id: str | None = None) -> int:
+    """Delete stale checkpoint metadata from the canonical global store."""
+    cleaned = 0
+    for checkpoint in get_stale_checkpoints(project_id):
+        remove_snapshot(checkpoint.task_id, remove_worktree=False, project_id=checkpoint.project_id)
+        cleaned += 1
+    return cleaned
+
+
+def auto_cleanup_safe_items(project_id: str | None = None) -> tuple[int, int, int, list[dict[str, Any]]]:
     """Auto-cleanup clearly safe items.
 
     Returns (stale_meta, legacy_sql, cleaned_branches, branches_needing_review).
     Branches needing review have unmerged commits and require judgment.
     """
     snapshots_dir = Path.cwd() / ".st" / "snapshots"
-    cleaned_meta, cleaned_sql = 0, 0
+    cleaned_meta, cleaned_sql = _cleanup_global_stale_checkpoints(project_id), 0
     if snapshots_dir.exists():
-        cleaned_meta, cleaned_sql = _cleanup_snapshots_dir(snapshots_dir)
+        legacy_meta, cleaned_sql = _cleanup_snapshots_dir(snapshots_dir)
+        cleaned_meta += legacy_meta
 
     cleaned_branches = 0
     branches_needing_review: list[dict[str, Any]] = []

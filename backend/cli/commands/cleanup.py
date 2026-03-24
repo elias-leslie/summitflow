@@ -415,6 +415,9 @@ def cleanup_lanes(
             if lane_name else
             "No orphaned lanes, orphaned snapshots, or stale checkpoints found to clean up."
         )
+        if lane_name:
+            output_error(msg)
+            raise typer.Exit(1)
         output_success(msg)
         return
 
@@ -474,6 +477,9 @@ def cleanup_snapshots(
 
     if not residues:
         msg = "No matching snapshot residue found to clean up." if residue_name else "No legacy snapshot residue found to clean up."
+        if residue_name:
+            output_error(msg)
+            raise typer.Exit(1)
         output_success(msg)
         return
 
