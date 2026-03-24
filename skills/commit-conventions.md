@@ -25,6 +25,6 @@ tags: [skill:commit-conventions, git, commit]
 - Worktree branches are managed by the orchestrator
 
 ## Commit Safety
-- Never use `git commit` directly — use `/commit_it` (pushes by default)
+- Never use `git commit` directly — use `commit.sh --push --msg "..."` (or `commit.sh --all --push --msg "..."` for multi-repo work)
 - Never force push to main
 - Never amend published commits

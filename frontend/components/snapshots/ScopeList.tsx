@@ -1,6 +1,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
+import { STALE_GIT } from '@/lib/polling'
 import { clsx } from 'clsx'
 import {
   ChevronRight,
@@ -136,7 +137,7 @@ function ScopeCard({ scope }: { scope: BtrfsScope }) {
     queryKey: ['snapshot-scope', scope.project_id, scope.scope_type, scope.scope_name],
     queryFn: () => fetchSnapshots(scope.project_id, scope.scope_type),
     enabled: expanded,
-    staleTime: 30_000,
+    staleTime: STALE_GIT,
   })
 
   // Filter to this scope

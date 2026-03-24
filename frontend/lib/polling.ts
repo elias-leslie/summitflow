@@ -15,6 +15,9 @@ export const POLL_RAPID = 2_000
 /** Fast refresh for system stats and actively-changing data. */
 export const POLL_FAST = 5_000
 
+/** Monitoring refresh for operational/runtime status pages. */
+export const POLL_MONITOR = 10_000
+
 /** Slow refresh for background/infrequent data (git status, file explorer). */
 export const POLL_SLOW = 60_000
 

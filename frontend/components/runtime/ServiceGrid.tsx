@@ -5,6 +5,7 @@ import { clsx } from 'clsx'
 import { motion } from 'motion/react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { type RuntimeServiceStatus, runtimeApi } from '@/lib/api/runtime'
+import { POLL_MONITOR, POLL_STANDARD } from '@/lib/polling'
 import { ServiceCard } from './ServiceCard'
 import { ServiceListView } from './ServiceListView'
 
@@ -33,12 +34,12 @@ export function ServiceGrid() {
   } = useQuery({
     queryKey: ['runtime', 'status'],
     queryFn: runtimeApi.getStatus,
-    refetchInterval: 10_000,
+    refetchInterval: POLL_MONITOR,
   })
   const { data: metrics, isLoading: isMetricsLoading } = useQuery({
     queryKey: ['runtime', 'metrics'],
     queryFn: runtimeApi.getMetrics,
-    refetchInterval: 15_000,
+    refetchInterval: POLL_STANDARD,
   })
 
   const metricsByService = useMemo(

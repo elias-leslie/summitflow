@@ -3,6 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { clsx } from 'clsx'
 import { type RuntimeModeStatus, runtimeApi } from '@/lib/api/runtime'
+import { POLL_MONITOR } from '@/lib/polling'
 
 const runtimeBadge: Record<string, string> = {
   hybrid: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
@@ -25,7 +26,7 @@ export function RuntimeModeBanner() {
   const { data: rt, error, isLoading } = useQuery({
     queryKey: ['runtime', 'mode'],
     queryFn: runtimeApi.getRuntime,
-    refetchInterval: 10_000,
+    refetchInterval: POLL_MONITOR,
   })
 
   if (isLoading) {

@@ -65,7 +65,7 @@ All other backend files that reference ports should import from config. No raw `
 - Don't touch test files — they can keep hardcoded values for test isolation
 - Run `dt --check` per project before each commit (or `dt -P <project> --check`)
 - Commit per project, not across projects
-- Use `/commit_it --all` at the end to push everything
+- Use `commit.sh --all --push --msg "<clear summary>"` at the end to push everything
 
 ### Verification
 After all changes, this should return zero hits in non-test production code:

@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { clsx } from 'clsx'
 import { useState } from 'react'
 import { runtimeApi } from '@/lib/api/runtime'
+import { POLL_NOTIFICATIONS } from '@/lib/polling'
 import { formatBytes, formatUptime } from './health-utils'
 
 function statusTone(status: string): string {
@@ -19,7 +20,7 @@ export function ProxmoxStatusCard() {
   const { data, error, isLoading } = useQuery({
     queryKey: ['runtime', 'proxmox'],
     queryFn: runtimeApi.getProxmoxStatus,
-    refetchInterval: 30_000,
+    refetchInterval: POLL_NOTIFICATIONS,
   })
 
   if (isLoading) {

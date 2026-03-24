@@ -38,6 +38,7 @@ import {
   fetchWalStatus,
 } from '@/lib/api/backups'
 import { fetchScopes, fetchSnapshotSummary } from '@/lib/api/snapshots'
+import { POLL_NOTIFICATIONS, STALE_GIT } from '@/lib/polling'
 import { formatBytes, formatDate, formatTimeAgo } from '@/lib/format'
 
 type ViewMode = 'list' | 'grid'
@@ -283,7 +284,7 @@ export function BackupsClient() {
   const { data: healthData, isLoading: healthLoading } = useQuery({
     queryKey: ['backup-health'],
     queryFn: fetchBackupHealth,
-    refetchInterval: 30_000,
+    refetchInterval: POLL_NOTIFICATIONS,
   })
 
   const { data: storageBackends = [] } = useQuery({
@@ -299,13 +300,13 @@ export function BackupsClient() {
   const { data: snapshotSummary, isLoading: snapshotLoading } = useQuery({
     queryKey: ['snapshot-summary'],
     queryFn: () => fetchSnapshotSummary(),
-    staleTime: 30_000,
+    staleTime: STALE_GIT,
   })
 
   const { data: snapshotScopes = [] } = useQuery({
     queryKey: ['snapshot-scopes'],
     queryFn: () => fetchScopes(),
-    staleTime: 30_000,
+    staleTime: STALE_GIT,
   })
 
   const backups = backupsData?.backups ?? []

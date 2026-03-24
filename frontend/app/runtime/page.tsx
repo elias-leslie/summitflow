@@ -8,18 +8,19 @@ import { RuntimeModeBanner } from '@/components/runtime/RuntimeModeBanner'
 import { ServiceGrid } from '@/components/runtime/ServiceGrid'
 import { ProxmoxStatusCard } from '@/components/runtime/ProxmoxStatusCard'
 import { runtimeApi } from '@/lib/api/runtime'
+import { POLL_MONITOR } from '@/lib/polling'
 
 export default function RuntimePage() {
   const { data: health, isLoading: healthLoading, error: healthError } = useQuery({
     queryKey: ['runtime', 'health'],
     queryFn: runtimeApi.getHealth,
-    refetchInterval: 10_000,
+    refetchInterval: POLL_MONITOR,
   })
 
   const { data: services, isLoading: servicesLoading, error: servicesError } = useQuery({
     queryKey: ['runtime', 'status'],
     queryFn: runtimeApi.getStatus,
-    refetchInterval: 10_000,
+    refetchInterval: POLL_MONITOR,
   })
 
   const isLoading = healthLoading || servicesLoading
