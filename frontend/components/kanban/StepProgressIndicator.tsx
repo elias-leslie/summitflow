@@ -1,3 +1,4 @@
+import clsx from 'clsx'
 import type { TaskStatus } from '@/lib/api'
 import { EXECUTION_PHASES, getPhaseFromStatus } from './task-card-utils'
 
@@ -20,17 +21,18 @@ export function StepProgressIndicator({ status }: StepProgressIndicatorProps) {
           <div key={phase} className="flex items-center gap-1">
             {index > 0 && (
               <div
-                className={`w-3 h-px transition-colors ${isPast ? 'bg-phosphor-500/60' : 'bg-slate-700'}`}
+                className={clsx('w-3 h-px transition-colors', isPast ? 'bg-phosphor-500/60' : 'bg-slate-700')}
               />
             )}
             <span
-              className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+              className={clsx(
+                'px-1.5 py-0.5 rounded text-[10px] font-medium',
                 isActive
                   ? 'bg-phosphor-500/20 text-phosphor-400 border border-phosphor-500/30'
                   : isPast
                     ? 'bg-slate-700 text-slate-300'
-                    : 'bg-slate-800 text-slate-500'
-              }`}
+                    : 'bg-slate-800 text-slate-500',
+              )}
             >
               {phase}
             </span>

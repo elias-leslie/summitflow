@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import { AlertCircle, Loader2, Trash2 } from 'lucide-react'
 
 // ============================================================================
@@ -79,7 +80,7 @@ export function ConfirmDeleteDialog(props: ConfirmDeleteDialogProps) {
   if (isDesignEntity) {
     return (
       <div
-        className={`${positioning} inset-0 ${zIndex} flex items-center justify-center${positioning === 'absolute' ? ' bg-slate-950/90 backdrop-blur-sm' : ''}`}
+        className={clsx(positioning, 'inset-0 flex items-center justify-center', zIndex, positioning === 'absolute' && 'bg-slate-950/90 backdrop-blur-sm')}
       >
         {/* Backdrop (only for fixed positioning) */}
         {positioning === 'fixed' && (
@@ -143,7 +144,7 @@ export function ConfirmDeleteDialog(props: ConfirmDeleteDialogProps) {
   // Task-style layout (AlertCircle, red theme)
   return (
     <div
-      className={`${positioning} inset-0 ${zIndex} flex items-center justify-center bg-slate-950/90 backdrop-blur-sm`}
+      className={clsx(positioning, 'inset-0 flex items-center justify-center bg-slate-950/90 backdrop-blur-sm', zIndex)}
       onClick={onCancel}
     >
       <div

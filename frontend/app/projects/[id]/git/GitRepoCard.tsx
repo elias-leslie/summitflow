@@ -107,20 +107,14 @@ export function GitRepoCard({ repo }: GitRepoCardProps) {
           </p>
         </div>
         <div
-          className={`
-            flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium
-            ${
-              stateColor === 'phosphor'
-                ? 'bg-phosphor-500/10 text-phosphor-400'
-                : stateColor === 'outrun'
-                  ? 'bg-outrun-500/10 text-outrun-400'
-                  : stateColor === 'amber'
-                    ? 'bg-amber-500/10 text-amber-400'
-                    : stateColor === 'sunset'
-                      ? 'bg-sunset-orange/10 text-sunset-orange'
-                      : 'bg-slate-500/10 text-slate-400'
-            }
-          `}
+          className={clsx(
+            'flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium',
+            stateColor === 'phosphor' && 'bg-phosphor-500/10 text-phosphor-400',
+            stateColor === 'outrun' && 'bg-outrun-500/10 text-outrun-400',
+            stateColor === 'amber' && 'bg-amber-500/10 text-amber-400',
+            stateColor === 'sunset' && 'bg-sunset-orange/10 text-sunset-orange',
+            !['phosphor', 'outrun', 'amber', 'sunset'].includes(stateColor) && 'bg-slate-500/10 text-slate-400',
+          )}
         >
           {getStateIcon(repo.state)}
           {getStateLabel(repo.state)}
@@ -137,7 +131,7 @@ export function GitRepoCard({ repo }: GitRepoCardProps) {
       <div className="grid grid-cols-3 gap-3">
         <div className="text-center p-2 rounded bg-slate-800/50">
           <div
-            className={`text-lg font-bold ${repo.uncommitted > 0 ? 'text-outrun-400' : 'text-slate-500'}`}
+            className={clsx('text-lg font-bold', repo.uncommitted > 0 ? 'text-outrun-400' : 'text-slate-500')}
           >
             {repo.uncommitted}
           </div>
@@ -147,7 +141,7 @@ export function GitRepoCard({ repo }: GitRepoCardProps) {
         </div>
         <div className="text-center p-2 rounded bg-slate-800/50">
           <div
-            className={`text-lg font-bold ${repo.ahead > 0 ? 'text-sunset-orange' : 'text-slate-500'}`}
+            className={clsx('text-lg font-bold', repo.ahead > 0 ? 'text-sunset-orange' : 'text-slate-500')}
           >
             {repo.ahead}
           </div>
@@ -157,7 +151,7 @@ export function GitRepoCard({ repo }: GitRepoCardProps) {
         </div>
         <div className="text-center p-2 rounded bg-slate-800/50">
           <div
-            className={`text-lg font-bold ${repo.behind > 0 ? 'text-amber-400' : 'text-slate-500'}`}
+            className={clsx('text-lg font-bold', repo.behind > 0 ? 'text-amber-400' : 'text-slate-500')}
           >
             {repo.behind}
           </div>

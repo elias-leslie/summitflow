@@ -1,3 +1,4 @@
+import clsx from 'clsx'
 import type { CheckResult } from './HealthTypes'
 import {
   formatCheckLabel,
@@ -96,9 +97,7 @@ export function NeedsAttentionCard({
               </div>
             </div>
             <span
-              className={`text-xs shrink-0 ${
-                item.escalation_task_id ? 'text-rose-300' : 'text-purple-400'
-              }`}
+              className={clsx('text-xs shrink-0', item.escalation_task_id ? 'text-rose-300' : 'text-purple-400')}
               title={item.escalation_task_id ? `Escalated to ${item.escalation_task_id}` : undefined}
             >
               {formatIssueStatus(item)}

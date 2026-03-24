@@ -1,3 +1,4 @@
+import clsx from 'clsx'
 import {
   Link2,
   Loader2,
@@ -47,7 +48,7 @@ export function TaskCardBody({ task, currentStep, canExpand }: TaskCardBodyProps
             </span>
             {hasCriteria && (
               <span
-                className={`text-xs mono ${allPassed ? 'text-phosphor-400' : 'text-slate-400'}`}
+                className={clsx('text-xs mono', allPassed ? 'text-phosphor-400' : 'text-slate-400')}
               >
                 ({capability.criteria_passed}/{capability.criteria_total})
               </span>
@@ -63,11 +64,10 @@ export function TaskCardBody({ task, currentStep, canExpand }: TaskCardBodyProps
               (_, i) => (
                 <div
                   key={i}
-                  className={`h-1.5 w-1.5 rounded-full ${
-                    i < capability?.criteria_passed
-                      ? 'bg-phosphor-500'
-                      : 'bg-slate-600'
-                  }`}
+                  className={clsx(
+                    'h-1.5 w-1.5 rounded-full',
+                    i < capability?.criteria_passed ? 'bg-phosphor-500' : 'bg-slate-600',
+                  )}
                 />
               ),
             )}

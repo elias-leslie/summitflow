@@ -1,3 +1,4 @@
+import clsx from 'clsx'
 import type { Task } from '@/lib/api'
 import {
   getPriorityClasses,
@@ -17,7 +18,7 @@ export function DragOverlayTaskCard({ task }: DragOverlayTaskCardProps) {
         <span className={typeConfig.className}>{typeConfig.icon}</span>
         <span className="text-xs mono text-slate-500">{task.id}</span>
         <span
-          className={`text-xs px-1.5 py-0.5 rounded border mono font-medium ${getPriorityClasses(task.priority)}`}
+          className={clsx('text-xs px-1.5 py-0.5 rounded border mono font-medium', getPriorityClasses(task.priority))}
         >
           P{task.priority}
         </span>
