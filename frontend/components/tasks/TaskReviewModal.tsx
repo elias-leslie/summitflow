@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import { Check, FileText, Loader2, MessageSquare, Trash2 } from 'lucide-react'
 import { motion } from 'motion/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -162,11 +163,7 @@ export function TaskReviewModal({
           <button
             type="button"
             onClick={() => setActiveTab('preview')}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors ${
-              activeTab === 'preview'
-                ? 'text-phosphor-400 border-b-2 border-phosphor-500'
-                : 'text-slate-500 hover:text-slate-300'
-            }`}
+            className={clsx('flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors', activeTab === 'preview' ? 'text-phosphor-400 border-b-2 border-phosphor-500' : 'text-slate-500 hover:text-slate-300')}
           >
             <FileText className="w-4 h-4" />
             Preview
@@ -174,11 +171,7 @@ export function TaskReviewModal({
           <button
             type="button"
             onClick={() => setActiveTab('chat')}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors ${
-              activeTab === 'chat'
-                ? 'text-phosphor-400 border-b-2 border-phosphor-500'
-                : 'text-slate-500 hover:text-slate-300'
-            }`}
+            className={clsx('flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors', activeTab === 'chat' ? 'text-phosphor-400 border-b-2 border-phosphor-500' : 'text-slate-500 hover:text-slate-300')}
           >
             <MessageSquare className="w-4 h-4" />
             Discussion
@@ -189,7 +182,7 @@ export function TaskReviewModal({
         <div className="flex-1 flex min-h-0 overflow-hidden">
           {/* Left Column - Task Preview (hidden on mobile when chat is active) */}
           <motion.div
-            className={`${activeTab === 'chat' ? 'hidden md:flex' : 'flex'} flex-col flex-1 md:flex-[3] md:border-r border-slate-800 overflow-hidden`}
+            className={clsx(activeTab === 'chat' ? 'hidden md:flex' : 'flex', 'flex-col flex-1 md:flex-[3] md:border-r border-slate-800 overflow-hidden')}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.2 }}
@@ -205,7 +198,7 @@ export function TaskReviewModal({
 
           {/* Right Column - Discussion Chat (hidden on mobile when preview is active) */}
           <motion.div
-            className={`${activeTab === 'preview' ? 'hidden md:flex' : 'flex'} flex-col flex-1 md:flex-[2] min-h-0`}
+            className={clsx(activeTab === 'preview' ? 'hidden md:flex' : 'flex', 'flex-col flex-1 md:flex-[2] min-h-0')}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.2, delay: 0.1 }}

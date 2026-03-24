@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import {
   AlertTriangle,
   Code2,
@@ -41,7 +42,7 @@ function TagIcon({ tagType }: { tagType: NarrationTagType }) {
     color: 'text-slate-400',
   }
   const Icon = config.icon
-  return <Icon className={`w-3.5 h-3.5 ${config.color} flex-shrink-0`} />
+  return <Icon className={clsx('w-3.5 h-3.5 flex-shrink-0', config.color)} />
 }
 
 function ConfidenceBadge({ content }: { content: string }) {
@@ -56,7 +57,7 @@ function ConfidenceBadge({ content }: { content: string }) {
         : 'text-rose-400 bg-rose-500/10 border-rose-500/20'
   return (
     <span
-      className={`inline-flex items-center px-1.5 py-0.5 text-2xs font-mono rounded border ${color}`}
+      className={clsx('inline-flex items-center px-1.5 py-0.5 text-2xs font-mono rounded border', color)}
     >
       {score}%
     </span>

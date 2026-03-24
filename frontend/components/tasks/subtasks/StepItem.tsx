@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import {
   Braces,
   Check,
@@ -58,7 +59,7 @@ export function StepItem({
       initial={{ opacity: 0, x: -8 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ delay: index * 0.03 }}
-      className={`group relative ${isActive ? 'z-10' : ''}`}
+      className={clsx('group relative', isActive && 'z-10')}
     >
       {/* Active step indicator - animated border */}
       {isActive && (
@@ -98,13 +99,7 @@ export function StepItem({
               {step.step_number}.
             </span>
             <span
-              className={`text-xs transition-all duration-200 ${
-                passes
-                  ? 'text-slate-600 line-through decoration-slate-700'
-                  : isActive
-                    ? 'text-slate-200 font-medium'
-                    : 'text-slate-400'
-              }`}
+              className={clsx('text-xs transition-all duration-200', passes ? 'text-slate-600 line-through decoration-slate-700' : isActive ? 'text-slate-200 font-medium' : 'text-slate-400')}
             >
               {step.description}
             </span>
@@ -123,11 +118,7 @@ export function StepItem({
                 type="button"
                 onClick={() => setIsSpecExpanded(!isSpecExpanded)}
                 data-testid={`spec-btn-${step.step_number}`}
-                className={`flex-shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded transition-all duration-150 ${
-                  isSpecExpanded
-                    ? 'bg-blue-500/15 text-blue-400'
-                    : 'bg-slate-800/60 text-slate-500 hover:bg-slate-700/60 hover:text-blue-400'
-                }`}
+                className={clsx('flex-shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded transition-all duration-150', isSpecExpanded ? 'bg-blue-500/15 text-blue-400' : 'bg-slate-800/60 text-slate-500 hover:bg-slate-700/60 hover:text-blue-400')}
                 aria-label={isSpecExpanded ? 'Hide spec' : 'Show spec'}
               >
                 <Braces className="w-3 h-3" />

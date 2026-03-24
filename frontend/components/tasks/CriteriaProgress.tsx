@@ -78,7 +78,7 @@ export function CriteriaProgress({
             handleClick(e)
           }
         } : undefined}
-        className={`inline-flex items-center gap-1.5 group ${expandable ? 'cursor-pointer' : 'cursor-default'}`}
+        className={clsx('inline-flex items-center gap-1.5 group', expandable ? 'cursor-pointer' : 'cursor-default')}
         title={expandable ? 'Click to expand' : tooltipContent}
         data-testid="criteria-expand"
       >
@@ -99,13 +99,7 @@ export function CriteriaProgress({
 
         {/* Count */}
         <span
-          className={`text-2xs font-mono transition-colors ${
-            verified === total
-              ? 'text-phosphor-400'
-              : verified > 0
-                ? 'text-slate-400'
-                : 'text-slate-600'
-          }`}
+          className={clsx('text-2xs font-mono transition-colors', verified === total ? 'text-phosphor-400' : verified > 0 ? 'text-slate-400' : 'text-slate-600')}
         >
           {verified}/{total}
         </span>
@@ -143,15 +137,7 @@ export function CriteriaProgress({
                 <div className="flex items-center gap-2 mt-1">
                   {c.verify_by && (
                     <span
-                      className={`text-2xs px-1.5 py-0.5 rounded ${
-                        c.verify_by === 'test'
-                          ? 'bg-blue-900/50 text-blue-400'
-                          : c.verify_by === 'opus'
-                            ? 'bg-purple-900/50 text-purple-400'
-                            : c.verify_by === 'human'
-                              ? 'bg-amber-900/50 text-amber-400'
-                              : 'bg-slate-700 text-slate-400'
-                      }`}
+                      className={clsx('text-2xs px-1.5 py-0.5 rounded', c.verify_by === 'test' ? 'bg-blue-900/50 text-blue-400' : c.verify_by === 'opus' ? 'bg-purple-900/50 text-purple-400' : c.verify_by === 'human' ? 'bg-amber-900/50 text-amber-400' : 'bg-slate-700 text-slate-400')}
                     >
                       {c.verify_by}
                     </span>

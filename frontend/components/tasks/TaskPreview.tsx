@@ -63,7 +63,7 @@ export function TaskPreview({
     <div className="space-y-5">
       {/* Metadata Row */}
       <section className="flex flex-wrap items-center gap-3 py-3 border-y border-slate-800">
-        <span className={`text-xs font-medium ${priorityInfo.color}`}>
+        <span className={clsx('text-xs font-medium', priorityInfo.color)}>
           {priorityInfo.label}
         </span>
         <span className="text-slate-600">·</span>

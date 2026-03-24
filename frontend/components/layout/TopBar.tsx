@@ -26,7 +26,7 @@ export function TopBar() {
 
   return (
     <>
-      <header className="h-16 flex-shrink-0 bg-slate-900 border-b border-slate-700/50 flex items-center px-6 gap-4">
+      <header className="h-16 flex-shrink-0 bg-slate-900/95 backdrop-blur-sm border-b border-slate-700/50 flex items-center px-6 gap-4">
         <AnimatedLogo />
         <div
           ref={slotRef}

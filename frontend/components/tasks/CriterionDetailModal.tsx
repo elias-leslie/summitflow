@@ -1,5 +1,6 @@
 'use client'
 
+import clsx from 'clsx'
 import {
   CheckCircle2,
   Clock,
@@ -93,7 +94,7 @@ export function CriterionDetailModal({
                 {criterionId || 'Criterion'}
               </div>
               <span
-                className={`inline-block mt-1 text-xs px-2 py-0.5 rounded ${categoryColors[category]?.bg || 'bg-slate-700'} ${categoryColors[category]?.text || 'text-slate-400'}`}
+                className={clsx('inline-block mt-1 text-xs px-2 py-0.5 rounded', categoryColors[category]?.bg || 'bg-slate-700', categoryColors[category]?.text || 'text-slate-400')}
               >
                 {category}
               </span>
@@ -126,7 +127,7 @@ export function CriterionDetailModal({
             <div className="flex items-center gap-2">
               <span className="text-xs text-slate-500">Verify via</span>
               <span
-                className={`text-xs px-2 py-0.5 rounded ${verifyByColors[verifyBy]?.bg || 'bg-slate-700'} ${verifyByColors[verifyBy]?.text || 'text-slate-400'}`}
+                className={clsx('text-xs px-2 py-0.5 rounded', verifyByColors[verifyBy]?.bg || 'bg-slate-700', verifyByColors[verifyBy]?.text || 'text-slate-400')}
               >
                 {verifyBy}
               </span>
