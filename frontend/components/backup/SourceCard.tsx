@@ -177,7 +177,7 @@ export function SourceCard({
 
   useEffect(() => {
     if (expanded && isInfra && !coverage) {
-      fetchInfraCoverage().then(setCoverage).catch(() => {})
+      fetchInfraCoverage().then(setCoverage).catch(() => setCoverage(null))
     }
   }, [expanded, isInfra, coverage])
 

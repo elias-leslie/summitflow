@@ -129,8 +129,7 @@ export function deleteBackup(projectId: string, backupId: string): Promise<{ del
 }
 
 export function fetchStorageSummary(sourceId?: string): Promise<StorageSummary> {
-  const query = sourceId ? `?source_id=${sourceId}` : ''
-  return fetchWithErrorHandling<StorageSummary>(`/api/backups/storage${query}`, { errorMessage: 'Failed to fetch storage summary' })
+  return fetchWithErrorHandling<StorageSummary>(`/api/backups/storage${buildQueryString({ source_id: sourceId })}`, { errorMessage: 'Failed to fetch storage summary' })
 }
 
 export function fetchAllBackups(options?: BackupListOptions & { source_id?: string }): Promise<BackupListResponse> {
@@ -144,8 +143,7 @@ export function createBackupSource(data: {
 }
 
 export function fetchBackupSources(sourceType?: string): Promise<BackupSource[]> {
-  const query = sourceType ? `?source_type=${sourceType}` : ''
-  return fetchWithErrorHandling<BackupSource[]>(`/api/backup-sources${query}`, { errorMessage: 'Failed to fetch backup sources' })
+  return fetchWithErrorHandling<BackupSource[]>(`/api/backup-sources${buildQueryString({ source_type: sourceType })}`, { errorMessage: 'Failed to fetch backup sources' })
 }
 
 export function fetchBackupSource(sourceId: string): Promise<BackupSource> {

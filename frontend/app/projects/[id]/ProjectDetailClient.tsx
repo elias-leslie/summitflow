@@ -6,7 +6,6 @@ import Link from 'next/link'
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { BlockedTasksAlert } from '@/components/dashboard'
 import { EscalationPanel } from '@/components/execution/EscalationPanel'
 import { ExplorerTab } from '@/components/explorer/ExplorerTab'
 import type { ExplorerType } from '@/components/explorer/types'
@@ -233,11 +232,6 @@ export function ProjectDetailClient() {
             />
             {viewMode === 'board' ? (
               <>
-                <BlockedTasksAlert projectId={projectId} onTaskClick={(taskId) => {
-                  setSelectedTaskId(taskId)
-                  setModalOpen(true)
-                  updateUrlParams({ task: taskId })
-                }} />
                 <TaskKanbanBoard
                   tasks={kanbanTasks}
                   projectId={projectId}
