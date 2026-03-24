@@ -20,10 +20,15 @@ from .done_subtask import auto_close_subtasks
 from .tasks_progress import sync_completed_subtasks
 
 
+def _get_worktree_path(snapshot_info: dict[str, str | int | None]) -> str | None:
+    """Return the worktree path as str, or None if absent/empty."""
+    raw = snapshot_info.get("worktree_path")
+    return str(raw) if raw else None
+
+
 def ensure_worktree_clean(snapshot_info: dict[str, str | int | None]) -> None:
     """Fail fast when the claimed worktree still has uncommitted changes."""
-    raw_wt = snapshot_info.get("worktree_path")
-    worktree_path = str(raw_wt) if raw_wt is not None else None
+    worktree_path = _get_worktree_path(snapshot_info)
     if not worktree_path or is_working_tree_clean(worktree_path):
         return
 
@@ -67,6 +72,21 @@ def _auto_verify_readiness(client: STClient, task_id: str) -> None:
     raise typer.Exit(1)
 
 
+def _run_smart_prereqs(client: STClient, task_id: str, project_id: str | None) -> None:
+    """Auto-sync subtasks, auto-close open ones, then verify readiness (smart mode only)."""
+    subtasks_resp = client.get_subtasks(task_id)
+    sync_analysis = sync_completed_subtasks(
+        client,
+        task_id,
+        subtasks_resp.get("subtasks", []),
+        acknowledge_none=True,
+    )
+    if sync_analysis.synced:
+        output_success(f"Pre-synced subtasks before completion: {', '.join(sync_analysis.synced)}")
+    auto_close_subtasks(client, task_id, project_id)
+    _auto_verify_readiness(client, task_id)
+
+
 def _perform_completion(
     client: STClient,
     task_id: str,
@@ -77,8 +97,7 @@ def _perform_completion(
 ) -> None:
     # Diff gate: check for meaningful changes before merge
     if not skip_diff_gate:
-        raw_wt = snapshot_info.get("worktree_path")
-        worktree_path = str(raw_wt) if raw_wt else None
+        worktree_path = _get_worktree_path(snapshot_info)
         if worktree_path:
             diff_result = check_diff_gate(worktree_path)
             if not diff_result.passed:
@@ -89,17 +108,7 @@ def _perform_completion(
                 raise typer.Exit(1)
 
     if not strict:
-        subtasks_resp = client.get_subtasks(task_id)
-        sync_analysis = sync_completed_subtasks(
-            client,
-            task_id,
-            subtasks_resp.get("subtasks", []),
-            acknowledge_none=True,
-        )
-        if sync_analysis.synced:
-            output_success(f"Pre-synced subtasks before completion: {', '.join(sync_analysis.synced)}")
-        auto_close_subtasks(client, task_id, project_id)
-        _auto_verify_readiness(client, task_id)
+        _run_smart_prereqs(client, task_id, project_id)
 
     merge_task_branch(task_id, project_id=project_id)
     try:
@@ -190,7 +199,6 @@ def _publish_completed_work(task_id: str, project_id: str | None) -> None:
 
     detail = reason or stderr or stdout[:200] or "unknown publish failure"
     output_warning(f"Task merged but publish did not complete cleanly: {status} ({detail})")
-
 
 
 def _complete_without_snapshot(
