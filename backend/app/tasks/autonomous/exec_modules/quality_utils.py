@@ -4,16 +4,21 @@ from __future__ import annotations
 
 import re
 import shutil
+from pathlib import Path
 
 
 def find_dev_tools() -> str | None:
-    """Find dt command or dev-tools.sh script.
+    """Find the dt command, including the common user-local bin fallback.
 
-    Returns path to dt (if in PATH) or None if not found.
+    Returns:
+        Path to dt, or None if it is unavailable.
     """
     dt_path = shutil.which("dt")
     if dt_path:
         return dt_path
+    fallback = Path.home() / "bin" / "dt"
+    if fallback.exists():
+        return str(fallback)
     return None
 
 

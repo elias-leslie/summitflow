@@ -35,12 +35,8 @@ def _finalize_task_status(task_id: str, result: MergeResult) -> MergeResult:
         update_task_status(task_id, "completed", validate_transition=False)
         return result
     if status == "rolled_back":
-        update_task_status(
-            task_id,
-            "failed",
-            error_message=str(result.get("reason") or "post_merge_validation_failed"),
-            validate_transition=False,
-        )
+        # auto_rollback() owns the terminal task status update so it can
+        # account for the task's pre-rollback state without double-writing.
         return result
     if status == "failed":
         return result
