@@ -19,7 +19,6 @@ from .api import (
     backups,
     checkpoints,
     console_errors,
-    context,
     design_assets,
     design_standards,
     docker,
@@ -37,7 +36,6 @@ from .api import (
     snapshots,
     system,
     tasks,
-    tdd,
     ws_execution,
 )
 from .config import settings
@@ -113,8 +111,7 @@ app.include_router(files.router, prefix="/api/projects", tags=["files"])
 
 app.include_router(tasks.router, prefix="/api", tags=["tasks"])
 app.include_router(notifications.router, prefix="/api", tags=["notifications"])
-app.include_router(agent_sessions.router, prefix="/api/projects", tags=["tdd"])
-app.include_router(tdd.router, prefix="/api", tags=["tdd"])
+app.include_router(agent_sessions.router, prefix="/api/projects", tags=["agent-sessions"])
 app.include_router(autonomous.router, prefix="/api/projects", tags=["autonomous"])
 app.include_router(refactor_sessions.router, prefix="/api/projects", tags=["refactoring"])
 app.include_router(schemas.router, prefix="/api", tags=["schemas"])
@@ -128,7 +125,6 @@ app.include_router(auto_fix.router, prefix="/api", tags=["quality-gate"])
 app.include_router(console_errors.router, prefix="/api", tags=["quality-gate"])
 app.include_router(activity.router, prefix="/api", tags=["activity"])
 app.include_router(mockups.router, prefix="/api", tags=["mockups"])
-app.include_router(context.router, prefix="/api", tags=["context"])
 app.include_router(checkpoints.router, tags=["checkpoints"])
 app.include_router(agent_hub.router, prefix="/api", tags=["agent-hub"])
 app.include_router(events.router, prefix="/api", tags=["events"])
