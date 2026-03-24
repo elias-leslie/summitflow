@@ -173,7 +173,7 @@ export function ServiceGrid() {
             <h2 className="display text-sm font-bold uppercase tracking-[0.16em] text-slate-200">
               {section.title}
             </h2>
-            <p className="mt-0.5 text-xs text-slate-600">
+            <p className="mt-0.5 text-xs text-slate-500">
               {section.description}
             </p>
           </div>

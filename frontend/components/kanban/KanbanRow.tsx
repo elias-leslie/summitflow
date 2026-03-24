@@ -1,6 +1,7 @@
 'use client'
 
 import { useDroppable } from '@dnd-kit/core'
+import clsx from 'clsx'
 import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable'
 import {
   ChevronRight,
@@ -68,19 +69,21 @@ export function KanbanRow({
   return (
     <div
       ref={setNodeRef}
-      className={`rounded-lg border transition-colors ${
+      className={clsx(
+        'rounded-lg border transition-colors',
         showDropHint
           ? colors.dropIndicator
-          : `${colors.border} ${colors.bg}`
-      }`}
+          : [colors.border, colors.bg],
+      )}
     >
       {/* Row Header — always visible, clickable */}
       <button
         type="button"
         onClick={onToggle}
-        className={`flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors hover:bg-slate-800/30 rounded-lg ${
-          !isCollapsed ? 'border-b border-slate-800/60 rounded-b-none' : ''
-        }`}
+        className={clsx(
+          'flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors hover:bg-slate-800/30 rounded-lg',
+          !isCollapsed && 'border-b border-slate-800/60 rounded-b-none',
+        )}
       >
         <motion.span
           animate={{ rotate: isCollapsed ? 0 : 90 }}
@@ -92,11 +95,11 @@ export function KanbanRow({
 
         {IconComponent && (
           <IconComponent
-            className={`w-4 h-4 ${colors.header}${column.icon === 'zap' ? ' animate-pulse' : ''}`}
+            className={clsx('w-4 h-4', colors.header, column.icon === 'zap' && 'animate-pulse')}
           />
         )}
 
-        <span className={`display text-sm font-semibold ${colors.header}`}>
+        <span className={clsx('display text-sm font-semibold', colors.header)}>
           {column.title}
         </span>
 
@@ -159,8 +162,9 @@ export function KanbanRow({
                     })}
                   </div>
                 ) : (
-                  <div className="flex items-center justify-center h-16 text-xs text-slate-600">
-                    No tasks in this column
+                  <div className="flex items-center justify-center h-16 gap-2 text-xs text-slate-600">
+                    <span className="inline-block w-1 h-1 rounded-full bg-slate-700" />
+                    No tasks yet
                   </div>
                 )}
               </div>

@@ -367,7 +367,7 @@ export function ProjectSettingsClient() {
                   value={healthEndpoint}
                   onChange={(e) => { clearError('healthEndpoint'); setHealthEndpoint(e.target.value) }}
                   aria-invalid={Boolean(errors.healthEndpoint)}
-                  className={`mono ${errors.healthEndpoint ? 'border-red-500/50' : ''}`}
+                  className={clsx('mono', errors.healthEndpoint && 'border-red-500/50')}
                 />
                 {errors.healthEndpoint && <p className="text-xs text-red-400">{errors.healthEndpoint}</p>}
               </div>
@@ -380,7 +380,7 @@ export function ProjectSettingsClient() {
                 value={rootPath}
                 onChange={(e) => { clearError('rootPath'); setRootPath(e.target.value) }}
                 aria-invalid={Boolean(errors.rootPath)}
-                className={`mono ${errors.rootPath ? 'border-red-500/50' : ''}`}
+                className={clsx('mono', errors.rootPath && 'border-red-500/50')}
                 placeholder="/home/user/projects/my-project"
               />
               <p className="text-xs text-slate-500">
@@ -487,8 +487,8 @@ function StatusCell({
     <div className="card px-4 py-3.5 transition-all duration-200 hover:border-slate-600/60">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-2xs uppercase tracking-wider text-slate-500">
-          <div className={`rounded-md p-1.5 ${tc.iconBg}`}>
-            <Icon className={`h-3 w-3 ${tc.icon}`} />
+          <div className={clsx('rounded-md p-1.5', tc.iconBg)}>
+            <Icon className={clsx('h-3 w-3', tc.icon)} />
           </div>
           <span className="font-medium">{label}</span>
         </div>
@@ -505,7 +505,7 @@ function StatusCell({
       <div className={clsx('mt-2 text-sm truncate font-semibold', mono && 'font-mono', tc.text)}>
         {value}
       </div>
-      <div className="mt-0.5 truncate text-2xs text-slate-600">{helper}</div>
+      <div className="mt-0.5 truncate text-2xs text-slate-500">{helper}</div>
     </div>
   )
 }

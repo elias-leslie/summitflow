@@ -18,8 +18,8 @@ import { useServiceAction } from './useServiceAction'
 
 function MetricStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 rounded-md bg-slate-950/60 px-2.5 py-1.5 border border-slate-800/40">
-      <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500 font-medium">
+    <div className="min-w-0 rounded-md bg-slate-950/60 px-2.5 py-1.5 border border-slate-800/50">
+      <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">
         {label}
       </div>
       <div className="truncate text-xs text-slate-200 font-mono tabular-nums mt-0.5" title={value}>
@@ -52,7 +52,7 @@ export function ServiceCard({
     <>
       <div
         className={clsx(
-          'rounded-lg border-l-[3px] border border-slate-700/60 bg-slate-800/40 p-4 transition-colors hover:bg-slate-800/60',
+          'rounded-lg border-l-[3px] border border-slate-700/60 bg-slate-800/40 p-4 transition-all duration-200 hover:bg-slate-800/60 hover:shadow-lg hover:shadow-black/20',
           healthAccentClass(tone),
         )}
       >
@@ -106,14 +106,14 @@ export function ServiceCard({
               <button
                 onClick={() => restartMut.mutate()}
                 disabled={restartMut.isPending}
-                className="text-2xs px-2.5 py-1.5 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 hover:border-amber-500/30 disabled:opacity-40 transition-all font-medium"
+                className="text-2xs px-2.5 py-1.5 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 hover:border-amber-500/30 disabled:opacity-40 transition-all font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-900"
               >
                 {restartMut.isPending ? '...' : 'Restart'}
               </button>
               <button
                 onClick={() => stopMut.mutate()}
                 disabled={stopMut.isPending}
-                className="text-2xs px-2.5 py-1.5 rounded-md bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 hover:border-red-500/30 disabled:opacity-40 transition-all font-medium"
+                className="text-2xs px-2.5 py-1.5 rounded-md bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 hover:border-red-500/30 disabled:opacity-40 transition-all font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/40 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-900"
               >
                 {stopMut.isPending ? '...' : 'Stop'}
               </button>
@@ -122,7 +122,7 @@ export function ServiceCard({
             <button
               onClick={() => startMut.mutate()}
               disabled={startMut.isPending}
-              className="text-2xs px-2.5 py-1.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 hover:border-emerald-500/30 disabled:opacity-40 transition-all font-medium"
+              className="text-2xs px-2.5 py-1.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 hover:border-emerald-500/30 disabled:opacity-40 transition-all font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-900"
             >
               {startMut.isPending ? '...' : 'Start'}
             </button>

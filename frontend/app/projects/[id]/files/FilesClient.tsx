@@ -78,7 +78,7 @@ export function FilesClient(): React.ReactElement {
             <FileViewer projectId={projectId} filePath={selectedFile} />
           ) : (
             <div className="flex h-full items-center justify-center">
-              <div className="text-center max-w-xs">
+              <div className="text-center max-w-xs animate-in stagger-1">
                 <div className="mx-auto mb-5 w-16 h-16 rounded-2xl bg-emerald-500/8 border border-emerald-500/15 flex items-center justify-center">
                   <FolderOpen className="h-8 w-8 text-emerald-500/60" />
                 </div>
