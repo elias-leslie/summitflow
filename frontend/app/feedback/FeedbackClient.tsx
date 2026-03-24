@@ -63,9 +63,9 @@ export function FeedbackClient() {
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
-          className="flex items-center justify-between"
+          className="flex items-center justify-between hero-glow"
         >
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 relative z-10">
             <div className="p-1.5 rounded-md bg-rose-500/10 border border-rose-500/20">
               <MessageSquareWarning className="w-5 h-5 text-rose-400" />
             </div>
@@ -119,7 +119,7 @@ export function FeedbackClient() {
           transition={{ duration: 0.4, delay: 0.08, ease: [0.25, 0.46, 0.45, 0.94] }}
           className="space-y-3">
           <div>
-            <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-300">
+            <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-300 display">
               Feedback
             </h2>
             <p className="mt-0.5 text-xs text-slate-500">

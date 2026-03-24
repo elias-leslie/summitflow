@@ -78,9 +78,9 @@ export function GitClient() {
       <motion.header
         {...fadeUp}
         transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
-        className="flex items-center justify-between gap-4"
+        className="flex items-center justify-between gap-4 hero-glow"
       >
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 relative z-10">
           <div className="p-1.5 rounded-md bg-outrun-500/10 border border-outrun-500/20">
             <GitBranch className="w-5 h-5 text-outrun-500" />
           </div>
@@ -137,15 +137,18 @@ export function GitClient() {
 
       {/* Repository list */}
       {gitStatus && !isLoading && (
-        <motion.div
-          {...fadeUp}
-          transition={{ duration: 0.4, delay: 0.08, ease: [0.25, 0.46, 0.45, 0.94] }}
-          className="space-y-2"
-        >
-          {repos.map((repo) => (
-            <ProjectRow key={repo.path} repo={repo} />
+        <div className="space-y-2">
+          {repos.map((repo, i) => (
+            <motion.div
+              key={repo.path}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: 0.06 + i * 0.04, ease: [0.25, 0.46, 0.45, 0.94] }}
+            >
+              <ProjectRow repo={repo} />
+            </motion.div>
           ))}
-        </motion.div>
+        </div>
       )}
 
       {/* Loading */}

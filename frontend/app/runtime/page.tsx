@@ -32,9 +32,9 @@ export default function RuntimePage() {
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
-        className="flex items-center justify-between"
+        className="flex items-center justify-between hero-glow"
       >
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 relative z-10">
           <div className="p-1.5 rounded-md bg-cyan-500/10 border border-cyan-500/20">
             <Boxes className="w-5 h-5 text-cyan-400" />
           </div>

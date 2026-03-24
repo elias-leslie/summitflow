@@ -28,7 +28,7 @@ function StatPill({
         'flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-mono tabular-nums transition-all',
         'hover:shadow-md hover:brightness-110',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phosphor-500/40',
-        isActive ? 'ring-1 ring-phosphor-500/30 shadow-lg shadow-slate-950/30' : '',
+        isActive ? 'ring-1 ring-phosphor-500/30 shadow-lg shadow-slate-950/30 brightness-125' : '',
         tone,
       )}
     >

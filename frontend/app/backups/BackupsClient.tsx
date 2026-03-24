@@ -354,8 +354,8 @@ export function BackupsClient() {
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between hero-glow">
+        <div className="flex items-center gap-3 relative z-10">
           <div className="p-1.5 rounded-md bg-indigo-500/10 border border-indigo-500/20">
             <Archive className="w-5 h-5 text-indigo-400" />
           </div>
@@ -439,7 +439,7 @@ export function BackupsClient() {
       {/* Protection & Storage — collapsible cards */}
       <section className="space-y-3">
         <div>
-          <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-300">
+          <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-300 display">
             Protection & Storage
           </h2>
           <p className="mt-0.5 text-xs text-slate-500">
@@ -464,7 +464,7 @@ export function BackupsClient() {
       {/* Snapshots & Recovery */}
       <section className="space-y-3">
         <div>
-          <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-300">
+          <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-300 display">
             Snapshots & Recovery
           </h2>
           <p className="mt-0.5 text-xs text-slate-500">
@@ -483,7 +483,7 @@ export function BackupsClient() {
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-300">
+            <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-300 display">
               Backup History
             </h2>
             <p className="mt-0.5 text-xs text-slate-500">

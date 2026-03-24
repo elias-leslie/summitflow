@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { clsx } from 'clsx'
+import { motion } from 'motion/react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { type RuntimeServiceStatus, runtimeApi } from '@/lib/api/runtime'
 import { ServiceCard } from './ServiceCard'
@@ -183,13 +184,19 @@ export function ServiceGrid() {
             />
           ) : (
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {section.items.map((service) => (
-                <ServiceCard
+              {section.items.map((service, i) => (
+                <motion.div
                   key={service.name}
-                  container={service}
-                  metric={metricsByService.get(service.service)}
-                  metricsLoading={isMetricsLoading}
-                />
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3, delay: i * 0.04, ease: [0.25, 0.46, 0.45, 0.94] }}
+                >
+                  <ServiceCard
+                    container={service}
+                    metric={metricsByService.get(service.service)}
+                    metricsLoading={isMetricsLoading}
+                  />
+                </motion.div>
               ))}
             </div>
           )}
