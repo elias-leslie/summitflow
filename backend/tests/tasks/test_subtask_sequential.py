@@ -225,6 +225,7 @@ def test_subtask_execution_winds_down_when_task_is_paused() -> None:
     )
 
 
+@patch("app.tasks.autonomous.exec_modules.orchestrator.check_task_lane_conflicts", return_value=TaskLaneConflictCheck())
 @patch("app.tasks.autonomous.exec_modules.orchestrator.task_store")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.get_subtasks_for_task")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.validate_pristine_codebase", return_value=True)
@@ -240,6 +241,7 @@ def test_start_execution_orchestration_flow(
     mock_validate: MagicMock,
     mock_get_subtasks: MagicMock,
     mock_task_store: MagicMock,
+    _mock_lane_conflicts: MagicMock,
 ) -> None:
     """Verify that start_execution correctly orchestrates subtask execution."""
     task_id = "task-123"
@@ -277,6 +279,7 @@ def test_start_execution_orchestration_flow(
     mock_task_store.update_task_status.assert_called_with(task_id, "running")
 
 
+@patch("app.tasks.autonomous.exec_modules.orchestrator.check_task_lane_conflicts", return_value=TaskLaneConflictCheck())
 @patch("app.tasks.autonomous.exec_modules.orchestrator.task_store")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.get_subtasks_for_task")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.validate_pristine_codebase", return_value=True)
@@ -296,6 +299,7 @@ def test_start_execution_routes_completion_before_optional_feedback(
     mock_validate: MagicMock,
     mock_get_subtasks: MagicMock,
     mock_task_store: MagicMock,
+    _mock_lane_conflicts: MagicMock,
 ) -> None:
     task_id = "task-123"
     project_id = "proj-123"
@@ -313,6 +317,7 @@ def test_start_execution_routes_completion_before_optional_feedback(
     assert any("feedback collection failed after completion routing" in call.args[2] for call in mock_emit_log.call_args_list)
 
 
+@patch("app.tasks.autonomous.exec_modules.orchestrator.check_task_lane_conflicts", return_value=TaskLaneConflictCheck())
 @patch("app.tasks.autonomous.exec_modules.orchestrator.task_store")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.get_subtasks_for_task")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.validate_pristine_codebase", return_value=True)
@@ -332,6 +337,7 @@ def test_start_execution_collects_feedback_after_failed_run(
     mock_validate: MagicMock,
     mock_get_subtasks: MagicMock,
     mock_task_store: MagicMock,
+    _mock_lane_conflicts: MagicMock,
 ) -> None:
     task_id = "task-failed"
     project_id = "proj-123"
@@ -347,6 +353,7 @@ def test_start_execution_collects_feedback_after_failed_run(
     mock_feedback.assert_called_once()
 
 
+@patch("app.tasks.autonomous.exec_modules.orchestrator.check_task_lane_conflicts", return_value=TaskLaneConflictCheck())
 @patch("app.tasks.autonomous.exec_modules.orchestrator.task_store")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.get_subtasks_for_task")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.validate_pristine_codebase", return_value=True)
@@ -362,6 +369,7 @@ def test_start_execution_reopens_passed_subtasks_for_conflict_resolution(
     mock_validate: MagicMock,
     mock_get_subtasks: MagicMock,
     mock_task_store: MagicMock,
+    _mock_lane_conflicts: MagicMock,
 ) -> None:
     task_id = "task-conflict"
     project_id = "proj-123"
@@ -384,6 +392,7 @@ def test_start_execution_reopens_passed_subtasks_for_conflict_resolution(
     mock_early.assert_called_once()
 
 
+@patch("app.tasks.autonomous.exec_modules.orchestrator.check_task_lane_conflicts", return_value=TaskLaneConflictCheck())
 @patch("app.tasks.autonomous.exec_modules.orchestrator.task_store")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.get_subtasks_for_task")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.validate_pristine_codebase", return_value=True)
@@ -399,6 +408,7 @@ def test_execute_task_locked_skips_status_update_when_already_running(
     mock_validate: MagicMock,
     mock_get_subtasks: MagicMock,
     mock_task_store: MagicMock,
+    _mock_lane_conflicts: MagicMock,
 ) -> None:
     """When task is already running (claimed by dispatch), skip redundant status update."""
     task_id = "task-already-running"
@@ -421,6 +431,7 @@ def test_execute_task_locked_skips_status_update_when_already_running(
         assert call.args != (task_id, "running"), "Should not redundantly set status to running"
 
 
+@patch("app.tasks.autonomous.exec_modules.orchestrator.check_task_lane_conflicts", return_value=TaskLaneConflictCheck())
 @patch("app.tasks.autonomous.exec_modules.orchestrator.task_store")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.get_subtasks_for_task")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.validate_pristine_codebase", return_value=True)
@@ -436,6 +447,7 @@ def test_execute_task_locked_sets_running_when_pending(
     mock_validate: MagicMock,
     mock_get_subtasks: MagicMock,
     mock_task_store: MagicMock,
+    _mock_lane_conflicts: MagicMock,
 ) -> None:
     """When task is pending (batch-pickup path without claim), status is set to running."""
     task_id = "task-pending"

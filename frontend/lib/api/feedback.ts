@@ -4,7 +4,7 @@
  */
 
 import { getAgentHubProxyBase } from '../agent-hub-proxy'
-import { buildQueryString, fetchWithErrorHandling } from './utils'
+import { buildQueryString, deleteJson, fetchWithErrorHandling, patchJson } from './utils'
 
 // ============================================================================
 // Types
@@ -176,12 +176,7 @@ export async function updateFeedbackStatus(
     linked_task_id?: string
   },
 ): Promise<FeedbackItem> {
-  return fetchWithErrorHandling<FeedbackItem>(feedbackUrl(`/${id}`), {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-    errorMessage: 'Failed to update feedback status',
-  })
+  return patchJson<FeedbackItem>(feedbackUrl(`/${id}`), data, 'Failed to update feedback status')
 }
 
 /**
@@ -190,8 +185,5 @@ export async function updateFeedbackStatus(
 export async function deleteFeedbackItem(
   id: string,
 ): Promise<{ deleted: boolean; id: string }> {
-  return fetchWithErrorHandling<{ deleted: boolean; id: string }>(feedbackUrl(`/${id}`), {
-    method: 'DELETE',
-    errorMessage: 'Failed to delete feedback item',
-  })
+  return deleteJson<{ deleted: boolean; id: string }>(feedbackUrl(`/${id}`), 'Failed to delete feedback item')
 }

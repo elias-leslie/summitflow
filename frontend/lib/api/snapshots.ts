@@ -1,4 +1,4 @@
-import { fetchWithErrorHandling, postJson } from './utils'
+import { buildQueryString, fetchWithErrorHandling, postJson } from './utils'
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -53,20 +53,15 @@ export interface BtrfsSummary {
 // ─── API Functions ──────────────────────────────────────────────
 
 export function fetchSnapshots(projectId?: string, scopeType?: string): Promise<BtrfsSnapshot[]> {
-  const params = new URLSearchParams()
-  if (projectId) params.set('project_id', projectId)
-  if (scopeType) params.set('scope_type', scopeType)
-  const qs = params.toString()
   return fetchWithErrorHandling<BtrfsSnapshot[]>(
-    `/api/snapshots${qs ? `?${qs}` : ''}`,
+    `/api/snapshots${buildQueryString({ project_id: projectId, scope_type: scopeType })}`,
     { errorMessage: 'Failed to fetch snapshots' },
   )
 }
 
 export function fetchScopes(projectId?: string): Promise<BtrfsScope[]> {
-  const qs = projectId ? `?project_id=${projectId}` : ''
   return fetchWithErrorHandling<BtrfsScope[]>(
-    `/api/snapshots/scopes${qs}`,
+    `/api/snapshots/scopes${buildQueryString({ project_id: projectId })}`,
     { errorMessage: 'Failed to fetch snapshot scopes' },
   )
 }

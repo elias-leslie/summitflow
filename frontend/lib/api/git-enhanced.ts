@@ -3,7 +3,7 @@
  */
 
 import { getApiBaseUrl } from '../api-config'
-import { fetchWithErrorHandling } from './utils'
+import { buildQueryString, fetchWithErrorHandling } from './utils'
 
 // --- Conflict Types ---
 
@@ -138,11 +138,8 @@ export async function fetchProjectDashboard(
 export async function fetchConflicts(
   projectId?: string,
 ): Promise<ConflictsResponse> {
-  const params = new URLSearchParams()
-  if (projectId) params.set('project_id', projectId)
-  const suffix = params.size > 0 ? `?${params.toString()}` : ''
   return fetchWithErrorHandling<ConflictsResponse>(
-    `${getApiBaseUrl()}/api/git/conflicts${suffix}`,
+    `${getApiBaseUrl()}/api/git/conflicts${buildQueryString({ project_id: projectId })}`,
     { errorMessage: 'Failed to fetch conflicts' },
   )
 }

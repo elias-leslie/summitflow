@@ -1,5 +1,5 @@
 import { buildApiUrl } from '../api-config'
-import { fetchWithErrorHandling } from './utils'
+import { fetchWithErrorHandling, postJson } from './utils'
 
 export interface RuntimeServiceStatus {
   name: string
@@ -124,12 +124,7 @@ export const runtimeApi = {
       errorMessage: 'Failed to start service',
     }),
   switchRuntimeMode: (mode: 'dev' | 'prod') =>
-    fetchWithErrorHandling<RuntimeActionResult>(apiUrl('/api/docker/runtime'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode }),
-      errorMessage: 'Failed to switch runtime mode',
-    }),
+    postJson<RuntimeActionResult>(apiUrl('/api/docker/runtime'), { mode }, 'Failed to switch runtime mode'),
 
   logStreamUrl: (service: string, tail = 100) =>
     buildApiUrl(`/api/docker/logs/${service}?follow=true&tail=${tail}`),
