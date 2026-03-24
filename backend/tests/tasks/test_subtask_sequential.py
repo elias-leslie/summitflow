@@ -233,7 +233,9 @@ def test_subtask_execution_winds_down_when_task_is_paused() -> None:
 @patch("app.tasks.autonomous.exec_modules.orchestrator.execute_subtask_loop")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.emit_log")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.emit_progress")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.execute_agent_feedback")
 def test_start_execution_orchestration_flow(
+    _mock_feedback: MagicMock,
     mock_emit_progress: MagicMock,
     mock_emit_log: MagicMock,
     mock_loop: MagicMock,
