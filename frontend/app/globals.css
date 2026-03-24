@@ -202,13 +202,29 @@ body::before {
 }
 
 .card-interactive:hover {
-  border-color: rgba(0, 245, 255, 0.35);
+  border-color: rgba(0, 245, 255, 0.3);
   transform: translateY(-2px);
   box-shadow:
     0 8px 24px -4px rgba(0, 0, 0, 0.5),
     0 4px 8px -2px rgba(0, 0, 0, 0.3),
-    0 0 0 1px rgba(0, 245, 255, 0.15),
-    0 0 20px rgba(0, 245, 255, 0.06);
+    0 0 0 1px rgba(0, 245, 255, 0.12),
+    0 0 24px rgba(0, 245, 255, 0.06);
+}
+
+.card-interactive::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 10%;
+  right: 10%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0, 245, 255, 0.25), transparent);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.card-interactive:hover::after {
+  opacity: 1;
 }
 
 /* Subtle card for secondary surfaces */
@@ -352,6 +368,10 @@ body::before {
 .stagger-3 { animation-delay: 0.15s; }
 .stagger-4 { animation-delay: 0.2s; }
 .stagger-5 { animation-delay: 0.25s; }
+.stagger-6 { animation-delay: 0.3s; }
+.stagger-7 { animation-delay: 0.35s; }
+.stagger-8 { animation-delay: 0.4s; }
+.stagger-9 { animation-delay: 0.45s; }
 
 /* Shimmer animation for skeletons */
 .animate-shimmer {
@@ -382,11 +402,38 @@ body::before {
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(255, 0, 102, 0.5) 20%,
-    rgba(255, 102, 0, 0.5) 50%,
-    rgba(255, 0, 102, 0.5) 80%,
+    rgba(255, 0, 102, 0.6) 20%,
+    rgba(255, 102, 0, 0.65) 50%,
+    rgba(255, 0, 102, 0.6) 80%,
     transparent 100%
   );
+  box-shadow: 0 0 8px rgba(255, 0, 102, 0.15), 0 0 20px rgba(255, 0, 102, 0.06);
+}
+
+/* Hero section radial glow — atmospheric depth behind page titles */
+.hero-glow {
+  position: relative;
+}
+.hero-glow::before {
+  content: "";
+  position: absolute;
+  top: -40px;
+  left: -60px;
+  width: 320px;
+  height: 180px;
+  background: radial-gradient(ellipse at center, rgba(255, 0, 102, 0.06) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Pulsing status dot — for health indicators */
+.status-dot-pulse {
+  animation: dot-pulse 2.5s ease-in-out infinite;
+}
+
+@keyframes dot-pulse {
+  0%, 100% { box-shadow: 0 0 4px currentColor; }
+  50% { box-shadow: 0 0 10px currentColor, 0 0 20px rgba(0, 245, 255, 0.1); }
 }
 
 /* ============================================================================

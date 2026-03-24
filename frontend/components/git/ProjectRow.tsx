@@ -100,13 +100,21 @@ export function ProjectRow({ repo }: ProjectRowProps) {
   return (
     <div
       className={clsx(
-        'rounded-lg border overflow-hidden transition-all duration-200',
+        'rounded-lg border overflow-hidden transition-all duration-200 relative',
         'bg-slate-900/40',
         expanded
           ? 'border-slate-700/80 shadow-lg shadow-black/30 shadow-outrun-500/[0.03]'
           : 'border-slate-800/60 hover:border-slate-700/60',
       )}
     >
+      {/* State accent strip */}
+      <div
+        className={clsx(
+          'absolute left-0 top-0 bottom-0 w-[2px] rounded-l-lg transition-colors duration-200',
+          stateInfo.stripColor ?? 'bg-transparent',
+        )}
+        aria-hidden="true"
+      />
       {/* Header — entire row is clickable for expand */}
       <div
         role="button"

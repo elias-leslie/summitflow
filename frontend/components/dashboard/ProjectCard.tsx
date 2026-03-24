@@ -261,10 +261,10 @@ export function ProjectCard({ project }: ProjectCardProps) {
           ) : qualityGate ? (
             <div
               className={clsx(
-                'w-3 h-3 rounded-full',
+                'w-3 h-3 rounded-full status-dot-pulse',
                 qualityGate.overall_pass
-                  ? 'bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.6)]'
-                  : 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.6)]',
+                  ? 'bg-purple-500 text-purple-500'
+                  : 'bg-amber-500 text-amber-500',
               )}
               title={
                 qualityGate.overall_pass
@@ -291,10 +291,10 @@ export function ProjectCard({ project }: ProjectCardProps) {
           ) : health ? (
             <div
               className={clsx(
-                'w-3 h-3 rounded-full',
+                'w-3 h-3 rounded-full status-dot-pulse',
                 health.healthy
-                  ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]'
-                  : 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.6)]',
+                  ? 'bg-green-500 text-green-500'
+                  : 'bg-rose-500 text-rose-500',
               )}
               title={
                 health.healthy

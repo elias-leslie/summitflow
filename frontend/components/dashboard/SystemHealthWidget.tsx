@@ -9,9 +9,9 @@ interface SystemHealthWidgetProps {
 }
 
 const STATUS_COLORS = {
-  ok: { bar: 'bg-neon-cyan', text: 'text-neon-cyan' },
-  warning: { bar: 'bg-amber-400', text: 'text-amber-400' },
-  critical: { bar: 'bg-rose-500', text: 'text-rose-500' },
+  ok: { bar: 'bg-neon-cyan', text: 'text-neon-cyan', glow: '0 0 8px rgba(0, 245, 255, 0.3)' },
+  warning: { bar: 'bg-amber-400', text: 'text-amber-400', glow: '0 0 8px rgba(251, 191, 36, 0.3)' },
+  critical: { bar: 'bg-rose-500', text: 'text-rose-500', glow: '0 0 8px rgba(244, 63, 94, 0.3)' },
 } as const
 
 export function SystemHealthWidget({ className }: SystemHealthWidgetProps) {
@@ -56,7 +56,7 @@ export function SystemHealthWidget({ className }: SystemHealthWidgetProps) {
           <div className="w-24 h-2 bg-slate-800 rounded-full overflow-hidden ring-1 ring-white/[0.03]">
             <div
               className={cn('h-full rounded-full transition-all duration-700', STATUS_COLORS[m.status].bar)}
-              style={{ width: `${Math.min(m.percent, 100)}%` }}
+              style={{ width: `${Math.min(m.percent, 100)}%`, boxShadow: STATUS_COLORS[m.status].glow }}
             />
           </div>
           <span className={cn('text-2xs font-mono tabular-nums w-9', STATUS_COLORS[m.status].text)}>

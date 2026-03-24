@@ -83,10 +83,10 @@ export function DashboardClient() {
       <motion.div
         {...fadeUp}
         transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
-        className="flex flex-col sm:flex-row sm:items-end justify-between gap-4"
+        className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 hero-glow"
       >
-        <div>
-          <h1 className="display text-3xl font-extrabold text-slate-100 tracking-tight leading-none">
+        <div className="relative z-10">
+          <h1 className="display text-3xl font-extrabold text-sunset tracking-tight leading-none">
             Command Center
           </h1>
           <p className="mt-2 text-sm text-slate-500">
@@ -105,10 +105,16 @@ export function DashboardClient() {
         transition={{ duration: 0.4, delay: 0.04, ease: [0.25, 0.46, 0.45, 0.94] }}
       >
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-          {stats.map((stat) => {
+          {stats.map((stat, i) => {
             const Icon = stat.icon
             return (
-              <div key={stat.label} className="card px-5 py-4 flex items-center gap-4 relative overflow-hidden">
+              <motion.div
+                key={stat.label}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.35, delay: 0.06 + i * 0.05, ease: [0.25, 0.46, 0.45, 0.94] }}
+                className="card px-5 py-4 flex items-center gap-4 relative overflow-hidden"
+              >
                 <div className={`rounded-xl p-3 ${stat.iconBg} ring-1 ring-white/5`}>
                   <Icon className={`w-5 h-5 ${stat.iconColor}`} />
                 </div>
@@ -118,7 +124,7 @@ export function DashboardClient() {
                   </div>
                   <div className="text-2xs text-slate-500 mt-1.5 font-medium uppercase tracking-wider">{stat.label}</div>
                 </div>
-              </div>
+              </motion.div>
             )
           })}
         </div>
@@ -282,8 +288,15 @@ function ProjectsGrid({
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {projects.map((project) => (
-          <ProjectCard key={project.id} project={project} />
+        {projects.map((project, i) => (
+          <motion.div
+            key={project.id}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35, delay: i * 0.06, ease: [0.25, 0.46, 0.45, 0.94] }}
+          >
+            <ProjectCard project={project} />
+          </motion.div>
         ))}
       </div>
     </div>

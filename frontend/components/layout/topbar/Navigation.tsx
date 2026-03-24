@@ -79,7 +79,8 @@ export function Navigation({
             )}
             {isActive && (
               <span
-                className="absolute bottom-0 left-1/2 -translate-x-1/2 h-0.5 w-3/5 rounded-full bg-current opacity-60"
+                className="absolute bottom-0 left-1/2 -translate-x-1/2 h-0.5 w-3/5 rounded-full bg-current opacity-70"
+                style={{ boxShadow: '0 2px 8px currentColor' }}
                 aria-hidden="true"
               />
             )}
