@@ -4,6 +4,7 @@ import { useSystemStats } from '@/hooks/useSystemStats'
 import { API_PATHS, buildApiUrl } from '@/lib/api-config'
 import { fetchWithErrorHandling } from '@/lib/api/utils'
 import { POLL_STANDARD } from '@/lib/polling'
+import { formatUptime } from '@/components/runtime/health-utils'
 import { useQuery } from '@tanstack/react-query'
 
 interface ComponentHealth {
@@ -31,14 +32,6 @@ function StatusDot({ status }: { status: string }) {
   return <span className={`w-1.5 h-1.5 rounded-full ${color}`} />
 }
 
-function formatUptime(seconds: number): string {
-  const days = Math.floor(seconds / 86400)
-  const hours = Math.floor((seconds % 86400) / 3600)
-  if (days > 0) return `${days}d ${hours}h`
-  const mins = Math.floor((seconds % 3600) / 60)
-  if (hours > 0) return `${hours}h ${mins}m`
-  return `${mins}m`
-}
 
 function getOverallStatus(
   systemStatus: string | undefined,
