@@ -5,11 +5,8 @@ from datetime import UTC, datetime
 import httpx
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 
-from ...schemas.project import ProjectServicesResponse
 from ...services import explorer
 from ...storage.connection import get_connection, get_cursor
-from ..projects_services import get_project_services
-from . import agents
 from .db_helpers import (
     build_project_with_stats,
     create_project_in_db,
@@ -27,8 +24,6 @@ from .pulse import router as pulse_router
 
 router = APIRouter()
 
-# Include sub-routers for agent configuration
-router.include_router(agents.router, tags=["projects"])
 router.include_router(pulse_router, tags=["projects"])
 
 
@@ -153,15 +148,6 @@ async def check_project_health(project_id: str) -> ProjectHealthResponse:
             checked_at=datetime.now(UTC),
         )
 
-
-@router.get("/{project_id}/services", response_model=ProjectServicesResponse)
-async def get_services(project_id: str) -> ProjectServicesResponse:
-    """Get service configuration for a project.
-
-    Returns the service commands, ports, and settings from .st/services.yaml
-    if available, otherwise returns default configuration.
-    """
-    return get_project_services(project_id)
 
 
 @router.patch("/{project_id}", response_model=ProjectResponse)

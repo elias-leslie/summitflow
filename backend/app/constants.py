@@ -42,29 +42,6 @@ REASONING_GEMINI_MODEL = GEMINI_PRO
 FAST_CLAUDE_MODEL = CLAUDE_HAIKU
 FAST_GEMINI_MODEL = GEMINI_FLASH
 
-# Valid model lists for validation
-VALID_CLAUDE_MODELS = (
-    CLAUDE_SONNET,
-    CLAUDE_OPUS,
-    CLAUDE_HAIKU,
-    # Shorthand aliases
-    "sonnet",
-    "opus",
-    "haiku",
-)
-
-VALID_GEMINI_MODELS = (
-    GEMINI_FLASH,
-    GEMINI_PRO,
-)
-
-VALID_AGENT_MODELS = (
-    AGENT_WORKER,
-    AGENT_SUPERVISOR,
-    AGENT_REVIEWER,
-    AGENT_DEBUGGER,
-    AGENT_TRIAGER,
-)
 
 # =============================================================================
 # QA Review Thresholds
