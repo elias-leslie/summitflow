@@ -17,13 +17,6 @@ class TaskWorktreeInfo:
     is_active: bool = True
 
 
-class WorktreeError(Exception):
-    """Error during worktree operations."""
-
-    pass
-
-
 __all__ = [
     "TaskWorktreeInfo",
-    "WorktreeError",
 ]

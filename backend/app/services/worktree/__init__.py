@@ -20,11 +20,10 @@ from .operations import (
     remove_task_worktree,
 )
 from .paths import ensure_task_worktree, get_execution_path
-from .types import TaskWorktreeInfo, WorktreeError
+from .types import TaskWorktreeInfo
 
 __all__ = [
     "TaskWorktreeInfo",
-    "WorktreeError",
     "create_task_worktree",
     "ensure_task_worktree",
     "get_execution_path",

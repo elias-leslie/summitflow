@@ -23,6 +23,7 @@ from .explorer_analysis_helpers import (
     build_summary,
     row_to_target,
 )
+from .explorer_helpers import build_where_clause
 from .explorer_symbols import summarize_symbols_for_file
 
 # Extensions for code files that can be refactored
@@ -30,10 +31,6 @@ REFACTORABLE_EXTENSIONS = {".py", ".ts", ".tsx", ".js", ".mjs"}
 
 # Path patterns to exclude from refactor targets (tests, config, etc.)
 REFACTOR_EXCLUDE_PATTERNS = {"test_", "tests/", "__test__", ".test.", ".spec."}
-
-
-def _build_where(conditions: list[str]) -> sql.Composable:
-    return sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)
 
 
 def _build_refactor_filter_conditions(
@@ -121,13 +118,13 @@ def get_refactor_targets(
 
     with get_cursor() as cur:
         cur.execute(
-            sql.SQL(REFACTOR_TARGETS_SQL).format(where_clause=_build_where(conditions)),
+            sql.SQL(REFACTOR_TARGETS_SQL).format(where_clause=build_where_clause(conditions)),
             (*params, limit),
         )
         targets = [row_to_target(row) for row in cur.fetchall()]
 
         cur.execute(
-            sql.SQL(REFACTOR_SUMMARY_SQL).format(where_clause=_build_where(summary_conditions)),
+            sql.SQL(REFACTOR_SUMMARY_SQL).format(where_clause=build_where_clause(summary_conditions)),
             summary_params,
         )
         summary = build_summary(cur.fetchall())

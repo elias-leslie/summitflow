@@ -10,6 +10,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from ....config import SUMMITFLOW_BACKEND_PORT
 from ....logging_config import get_logger
 from ..base import BaseScanner, get_project_config
 from ..health import calculate_health_for_entry
@@ -84,7 +85,7 @@ def make_endpoint_entry(
         health_status="unknown",
         metadata={
             "method": method.upper(),
-            "port": 8001,
+            "port": SUMMITFLOW_BACKEND_PORT,
             "source_file": source_file,
             "function_name": function_name or "unknown",
             "category": _categorize_endpoint(full_path),

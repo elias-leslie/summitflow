@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import os
-import subprocess
 from pathlib import Path
 from typing import Any
 
 import httpx
 
 from app.config import DEFAULT_API_BASE
+from app.utils._git_core import run_git as _run_git
 
 FALLBACK_FILE = Path.home() / ".claude/config/managed-repos.txt"
 REMOTE_REF_TEMPLATE = "{branch}...origin/{branch}"
@@ -116,10 +116,6 @@ def _get_managed_repos() -> list[Path]:
             if repo not in repos:
                 repos.append(repo)
     return repos
-
-
-def _run_git(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace")
 
 
 def _get_ahead_behind(repo_path: Path, branch: str) -> tuple[int, int]:
