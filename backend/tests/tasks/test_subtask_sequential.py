@@ -400,7 +400,9 @@ def test_start_execution_reopens_passed_subtasks_for_conflict_resolution(
 @patch("app.tasks.autonomous.exec_modules.orchestrator.execute_subtask_loop")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.emit_log")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.emit_progress")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.execute_agent_feedback")
 def test_execute_task_locked_skips_status_update_when_already_running(
+    _mock_feedback: MagicMock,
     mock_emit_progress: MagicMock,
     mock_emit_log: MagicMock,
     mock_loop: MagicMock,
@@ -439,7 +441,9 @@ def test_execute_task_locked_skips_status_update_when_already_running(
 @patch("app.tasks.autonomous.exec_modules.orchestrator.execute_subtask_loop")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.emit_log")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.emit_progress")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.execute_agent_feedback")
 def test_execute_task_locked_sets_running_when_pending(
+    _mock_feedback: MagicMock,
     mock_emit_progress: MagicMock,
     mock_emit_log: MagicMock,
     mock_loop: MagicMock,
