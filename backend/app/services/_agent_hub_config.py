@@ -79,7 +79,7 @@ def build_agent_hub_headers(
 def get_sync_client(
     base_url: str | None = None,
     api_key: str | None = None,
-    timeout: float = 600.0,
+    timeout: float | None = None,
     client_name: str = "summitflow",
 ) -> AgentHubClient:
     """Get a configured sync Agent Hub client with credentials.
@@ -87,7 +87,8 @@ def get_sync_client(
     Args:
         base_url: Agent Hub URL (defaults to AGENT_HUB_URL)
         api_key: Optional API key (defaults to AGENT_HUB_API_KEY)
-        timeout: Request timeout in seconds (default: 600)
+        timeout: Optional HTTP request timeout in seconds. Leave unset for
+            long-running agent calls.
         client_name: Client identifier for usage tracking
 
     Returns:
@@ -106,7 +107,7 @@ def get_sync_client(
 def get_async_client(
     base_url: str | None = None,
     api_key: str | None = None,
-    timeout: float = 600.0,
+    timeout: float | None = None,
     client_name: str = "summitflow",
 ) -> AsyncAgentHubClient:
     """Get a configured async Agent Hub client with credentials.
@@ -114,7 +115,8 @@ def get_async_client(
     Args:
         base_url: Agent Hub URL (defaults to AGENT_HUB_URL)
         api_key: Optional API key (defaults to AGENT_HUB_API_KEY)
-        timeout: Request timeout in seconds (default: 600)
+        timeout: Optional HTTP request timeout in seconds. Leave unset for
+            long-running agent calls.
         client_name: Client identifier for usage tracking
 
     Returns:

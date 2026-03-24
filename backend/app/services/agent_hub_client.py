@@ -20,7 +20,7 @@ from ._agent_hub_types import LLMClient, LLMResponse
 logger = get_logger(__name__)
 
 # Module-level constants
-DEFAULT_TIMEOUT: float = 600.0
+DEFAULT_TIMEOUT: float | None = None
 DEFAULT_CLIENT_NAME: str = "summitflow"
 DEFAULT_PROJECT_ID: str = "summitflow"
 MODEL_NAME_PREFIX: str = "agent"
