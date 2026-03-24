@@ -10,7 +10,6 @@ const navigationMocks = vi.hoisted(() => ({
 const apiMocks = vi.hoisted(() => ({
   fetchProject: vi.fn(),
   fetchProjectHealth: vi.fn(),
-  fetchProjectServices: vi.fn(),
   fetchQualityGateHealth: vi.fn(),
   updateProject: vi.fn(),
 }))
@@ -43,7 +42,6 @@ vi.mock('@/components/settings/AutonomousSettings', () => ({
 vi.mock('@/lib/api', () => ({
   fetchProject: apiMocks.fetchProject,
   fetchProjectHealth: apiMocks.fetchProjectHealth,
-  fetchProjectServices: apiMocks.fetchProjectServices,
   fetchQualityGateHealth: apiMocks.fetchQualityGateHealth,
   updateProject: apiMocks.updateProject,
 }))
@@ -79,22 +77,6 @@ describe('ProjectSettingsClient', () => {
       total_unfixed: 3,
       checks: {},
     })
-    apiMocks.fetchProjectServices.mockResolvedValue({
-      project_id: 'summitflow',
-      config_source: 'file',
-      services: {
-        backend: {
-          name: 'backend',
-          command: 'uv run uvicorn app.main:app --port {port}',
-          port: 8001,
-          worktree_port_base: 8101,
-          worktree_port_range: 100,
-          cwd: 'backend',
-          env_file: '.env',
-          build_command: null,
-        },
-      },
-    })
     apiMocks.updateProject.mockResolvedValue({
       id: 'summitflow',
       name: 'SummitFlow Ops',
@@ -122,7 +104,7 @@ describe('ProjectSettingsClient', () => {
     )
   })
 
-  it('shows live project trust signals and service configuration', async () => {
+  it('shows live project trust signals and automation tab', async () => {
     apiMocks.fetchProject.mockResolvedValue({
       id: 'summitflow',
       name: 'SummitFlow',
@@ -138,11 +120,6 @@ describe('ProjectSettingsClient', () => {
     expect(screen.getByDisplayValue('summitflow')).toBeInTheDocument()
     expect(await screen.findByText('123ms')).toBeInTheDocument()
     expect(await screen.findByText('3 open')).toBeInTheDocument()
-    // .st/services.yaml appears in both status strip and services list
-    expect((await screen.findAllByText('.st/services.yaml')).length).toBeGreaterThan(0)
-    expect(
-      screen.getByText('uv run uvicorn app.main:app --port {port}'),
-    ).toBeInTheDocument()
 
     // Automation tab shows autonomous settings
     fireEvent.click(screen.getByRole('button', { name: /Automation/i }))

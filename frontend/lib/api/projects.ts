@@ -9,7 +9,6 @@ import { fetchWithErrorHandling, patchJson, postJson } from './utils'
 import type {
   Project,
   ProjectHealth,
-  ProjectServicesResponse,
   ProjectUpdate,
   ProjectsWithStatsResponse,
   QualityGateHealth,
@@ -67,14 +66,6 @@ export async function updateProject(
 export async function fetchProjectHealth(id: string): Promise<ProjectHealth> {
   return fetchWithErrorHandling(`/api/projects/${id}/health`, {
     errorMessage: 'Failed to check project health',
-  })
-}
-
-export async function fetchProjectServices(
-  id: string,
-): Promise<ProjectServicesResponse> {
-  return fetchWithErrorHandling(`/api/projects/${id}/services`, {
-    errorMessage: 'Failed to fetch project services',
   })
 }
 

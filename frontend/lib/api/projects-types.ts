@@ -54,23 +54,6 @@ export interface ProjectHealth {
   checked_at: string
 }
 
-export interface ProjectServiceConfig {
-  name: string
-  command: string
-  port: number
-  worktree_port_base: number
-  worktree_port_range: number
-  cwd?: string | null
-  env_file?: string | null
-  build_command?: string | null
-}
-
-export interface ProjectServicesResponse {
-  project_id: string
-  config_source: 'file' | 'default'
-  services: Record<string, ProjectServiceConfig>
-}
-
 export interface QualityGateHealth {
   project_id: string
   overall_pass: boolean

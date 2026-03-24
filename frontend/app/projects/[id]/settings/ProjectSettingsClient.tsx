@@ -7,7 +7,6 @@ import {
   ArrowLeft,
   Bot,
   ExternalLink,
-  FolderTree,
   Gauge,
   HeartPulse,
   Loader2,
@@ -24,7 +23,6 @@ import { Label } from '@/components/ui/label'
 import {
   fetchProject,
   fetchProjectHealth,
-  fetchProjectServices,
   fetchQualityGateHealth,
   updateProject,
 } from '@/lib/api'
@@ -74,17 +72,6 @@ export function ProjectSettingsClient() {
     enabled: Boolean(project),
   })
 
-  const {
-    data: services,
-    error: servicesError,
-    refetch: refetchServices,
-    isFetching: servicesRefreshing,
-  } = useQuery({
-    queryKey: ['project-services', projectId],
-    queryFn: () => fetchProjectServices(projectId),
-    enabled: Boolean(project?.root_path),
-  })
-
   useEffect(() => {
     if (!project) return
     setName(project.name)
@@ -107,7 +94,6 @@ export function ProjectSettingsClient() {
         queryClient.invalidateQueries({ queryKey: ['projects'] }),
         queryClient.invalidateQueries({ queryKey: ['projects-with-stats'] }),
         queryClient.invalidateQueries({ queryKey: ['project-health', projectId] }),
-        queryClient.invalidateQueries({ queryKey: ['project-services', projectId] }),
       ])
       setSaveState('Project registration details saved.')
     },
@@ -229,10 +215,6 @@ export function ProjectSettingsClient() {
     )
   }
 
-  const serviceEntries = Object.values(services?.services ?? {}).sort(
-    (left, right) => left.port - right.port,
-  )
-
   const tabs: { id: SettingsTab; label: string; icon: typeof Settings2 }[] = [
     { id: 'general', label: 'General', icon: Settings2 },
     { id: 'automation', label: 'Automation', icon: Bot },
@@ -259,7 +241,7 @@ export function ProjectSettingsClient() {
       </header>
 
       {/* Status Strip */}
-      <div className="mb-6 grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="mb-6 grid grid-cols-3 gap-3">
         <StatusCell
           label="Project ID"
           value={project.id}
@@ -297,22 +279,6 @@ export function ProjectSettingsClient() {
           helper={qualityGate ? (qualityGate.overall_pass ? 'No unfixed issues' : 'Needs attention') : 'Not loaded'}
           icon={AlertCircle}
           tone={qualityGate ? (qualityGate.overall_pass ? 'emerald' : 'amber') : 'default'}
-        />
-        <StatusCell
-          label="Services"
-          value={project.root_path ? `${serviceEntries.length} configured` : 'No root path'}
-          helper={
-            project.root_path
-              ? services?.config_source === 'file'
-                ? '.st/services.yaml'
-                : 'Default map'
-              : 'Add root path to unlock'
-          }
-          icon={FolderTree}
-          tone={project.root_path ? 'cyan' : 'amber'}
-          actionLabel={project.root_path ? 'Reload' : undefined}
-          onAction={project.root_path ? () => refetchServices() : undefined}
-          pending={servicesRefreshing}
         />
       </div>
 
@@ -466,65 +432,6 @@ export function ProjectSettingsClient() {
             </div>
           </form>
 
-          {/* Services */}
-          <div className="card rounded-xl p-6">
-            <div className="mb-4">
-              <h2 className="text-base font-semibold text-slate-100">Service Configuration</h2>
-              <p className="mt-1 text-sm text-slate-400">
-                Services SummitFlow uses for reasoning about this project&apos;s runtime.
-              </p>
-            </div>
-
-            {!project.root_path ? (
-              <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-4 text-sm text-amber-200">
-                Add a root path above to enable service discovery.
-              </div>
-            ) : servicesError ? (
-              <div className="rounded-lg border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-200">
-                {getErrorMessage(servicesError, 'Unable to load service configuration.')}
-              </div>
-            ) : serviceEntries.length === 0 ? (
-              <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-4 text-sm text-slate-400">
-                No services detected yet.
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-xs text-slate-500">
-                  <span>
-                    Source:{' '}
-                    <span className="text-slate-300">
-                      {services?.config_source === 'file' ? '.st/services.yaml' : 'default config'}
-                    </span>
-                  </span>
-                  <span>{serviceEntries.length} service{serviceEntries.length === 1 ? '' : 's'}</span>
-                </div>
-                {serviceEntries.map((service) => (
-                  <div key={service.name} className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        <p className="text-sm font-medium text-slate-100">{service.name}</p>
-                        <p className="text-xs text-slate-500">
-                          Port {service.port} · worktree base {service.worktree_port_base}
-                        </p>
-                      </div>
-                      {service.cwd && (
-                        <span className="rounded-full border border-slate-700 px-2 py-0.5 font-mono text-2xs text-slate-400">
-                          {service.cwd}
-                        </span>
-                      )}
-                    </div>
-                    <p className="mt-2 break-all font-mono text-xs text-slate-300">{service.command}</p>
-                    {(service.build_command || service.env_file) && (
-                      <div className="mt-2 flex flex-wrap gap-2 text-2xs text-slate-500">
-                        {service.build_command && <span>Build: {service.build_command}</span>}
-                        {service.env_file && <span>Env: {service.env_file}</span>}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
         </div>
       )}
 
