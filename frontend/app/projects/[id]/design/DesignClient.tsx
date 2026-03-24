@@ -32,7 +32,7 @@ export function DesignClient(): React.ReactElement {
               onClick={() => setActiveView('ui-design')}
               className={`rounded-full px-4 py-2 text-sm font-medium transition-all duration-200 ${
                 activeView === 'ui-design'
-                  ? 'bg-phosphor-500/20 text-phosphor-400 border border-phosphor-500/30'
+                  ? 'bg-phosphor-500/20 text-phosphor-400 border border-phosphor-500/30 shadow-[0_0_12px_rgba(0,245,255,0.15)]'
                   : 'bg-slate-900/70 text-slate-400 border border-slate-700 hover:text-slate-200 hover:border-slate-600'
               }`}
             >
@@ -43,7 +43,7 @@ export function DesignClient(): React.ReactElement {
               onClick={() => setActiveView('asset-studio')}
               className={`rounded-full px-4 py-2 text-sm font-medium transition-all duration-200 ${
                 activeView === 'asset-studio'
-                  ? 'bg-phosphor-500/20 text-phosphor-400 border border-phosphor-500/30'
+                  ? 'bg-phosphor-500/20 text-phosphor-400 border border-phosphor-500/30 shadow-[0_0_12px_rgba(0,245,255,0.15)]'
                   : 'bg-slate-900/70 text-slate-400 border border-slate-700 hover:text-slate-200 hover:border-slate-600'
               }`}
             >

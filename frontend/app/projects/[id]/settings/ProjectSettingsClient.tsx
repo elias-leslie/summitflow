@@ -192,7 +192,7 @@ export function ProjectSettingsClient() {
           <div className="flex items-start gap-3">
             <AlertCircle className="mt-0.5 h-5 w-5 text-rose-400" />
             <div>
-              <h1 className="text-lg font-semibold text-slate-100">
+              <h1 className="text-lg font-semibold text-slate-100 display">
                 Unable to load project settings
               </h1>
               <p className="mt-1 text-sm text-slate-400">
@@ -217,7 +217,7 @@ export function ProjectSettingsClient() {
     return (
       <main className="content-container py-8">
         <div className="card max-w-xl p-6">
-          <h1 className="text-lg font-semibold text-slate-100">Project not found</h1>
+          <h1 className="text-lg font-semibold text-slate-100 display">Project not found</h1>
           <p className="mt-1 text-sm text-slate-400">
             This project no longer exists or has not been registered yet.
           </p>

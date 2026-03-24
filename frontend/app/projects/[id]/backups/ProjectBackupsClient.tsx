@@ -311,7 +311,7 @@ export function ProjectBackupsClient() {
             <ArrowLeft className="w-5 h-5" />
           </Link>
           <div className="flex-1">
-            <h1 className="text-2xl font-semibold text-slate-100 flex items-center gap-3">
+            <h1 className="text-2xl font-semibold text-slate-100 display flex items-center gap-3">
               <Archive className="w-6 h-6 text-slate-400" />
               Backups
             </h1>
@@ -320,8 +320,7 @@ export function ProjectBackupsClient() {
           <button
             type="button"
             onClick={() => setCreateDialogOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 text-sm bg-phosphor-600 text-slate-50
-                       hover:bg-phosphor-500 rounded-md transition-colors font-medium"
+            className="btn-primary flex items-center gap-2 text-sm"
           >
             <Plus className="w-4 h-4" />
             Create Backup

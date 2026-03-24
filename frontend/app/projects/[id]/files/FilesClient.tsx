@@ -42,7 +42,7 @@ export function FilesClient(): React.ReactElement {
       {/* Header */}
       <div className="flex items-center gap-3 border-b border-slate-800 px-6 py-4">
         <FolderOpen className="h-5 w-5 text-emerald-400" />
-        <h1 className="text-lg font-semibold text-slate-100">Files</h1>
+        <h1 className="text-lg font-semibold text-slate-100 display">Files</h1>
         {selectedFile && (
           <FileBreadcrumb
             projectId={projectId}

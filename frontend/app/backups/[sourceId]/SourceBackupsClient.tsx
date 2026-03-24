@@ -334,7 +334,7 @@ export function SourceBackupsClient({ sourceId }: { sourceId: string }) {
       <header className="mb-8 flex items-start justify-between">
         <div>
           <div className="flex items-center gap-3 mb-1">
-            <h1 className="text-2xl font-semibold text-slate-100">
+            <h1 className="text-2xl font-semibold text-slate-100 display">
               {source.name}
             </h1>
             <SourceTypeBadge type={source.source_type} />
