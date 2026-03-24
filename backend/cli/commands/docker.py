@@ -30,6 +30,22 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
+# ─── Constants ───────────────────────────────────────────────────
+
+ENV_PREFIX = "stenv-"
+
+_BUILD_PROJECTS = [
+    ("summitflow",  "docker/backend.Dockerfile",  "ghcr.io/summitflow-solutions/summitflow-api"),
+    ("summitflow",  "docker/frontend.Dockerfile", "ghcr.io/summitflow-solutions/summitflow-web"),
+    ("agent-hub",   "docker/backend.Dockerfile",  "ghcr.io/summitflow-solutions/agent-hub-api"),
+    ("agent-hub",   "docker/frontend.Dockerfile", "ghcr.io/summitflow-solutions/agent-hub-web"),
+    ("terminal",    "docker/backend.Dockerfile",  "ghcr.io/summitflow-solutions/terminal-api"),
+    ("terminal",    "docker/frontend.Dockerfile", "ghcr.io/summitflow-solutions/terminal-web"),
+    ("portfolio-ai","docker/backend.Dockerfile",  "ghcr.io/summitflow-solutions/portfolio-api"),
+    ("portfolio-ai","docker/frontend.Dockerfile", "ghcr.io/summitflow-solutions/portfolio-web"),
+    ("monkey-fight","docker/Dockerfile",          "ghcr.io/summitflow-solutions/monkey-fight"),
+]
+
 # ─── Helpers ─────────────────────────────────────────────────────
 
 
@@ -58,9 +74,24 @@ def _run(
     return result
 
 
-def _compose_json(
-    *args: str,
-) -> list[dict]:
+def _parse_json_lines(text: str) -> list[dict]:
+    """Parse newline-delimited JSON, skipping invalid lines. Handles arrays and objects."""
+    if not text.strip():
+        return []
+    rows: list[dict] = []
+    for line in text.strip().splitlines():
+        try:
+            data = json.loads(line)
+            if isinstance(data, list):
+                rows.extend(data)
+            else:
+                rows.append(data)
+        except json.JSONDecodeError:
+            continue
+    return rows
+
+
+def _compose_json(*args: str) -> list[dict]:
     """Run a docker compose command that returns JSON lines."""
     result = _run(
         compose_cmd(*args, "--format", "json"),
@@ -68,15 +99,23 @@ def _compose_json(
         check=False,
         env=compose_env(),
     )
-    if not result or not result.stdout.strip():
-        return []
-    lines = []
-    for line in result.stdout.strip().splitlines():
-        try:
-            lines.append(json.loads(line))
-        except json.JSONDecodeError:
-            continue
-    return lines
+    return _parse_json_lines(result.stdout if result else "")
+
+
+def _list_envs() -> list[dict]:
+    """Return active ephemeral test environments (stenv-* projects)."""
+    result = _run(
+        ["docker", "compose", "ls", "--format", "json"],
+        capture=True,
+        check=False,
+    )
+    rows = _parse_json_lines(result.stdout if result else "")
+    return [r for r in rows if r.get("Name", "").startswith(ENV_PREFIX)]
+
+
+def _env_compose_cmd(project_name: str, *args: str) -> list[str]:
+    """Build a docker compose command targeting an ephemeral environment."""
+    return ["docker", "compose", "--env-file", str(COMPOSE_ENV_FILE), "-p", project_name, *args]
 
 
 # ─── Status ──────────────────────────────────────────────────────
@@ -87,29 +126,19 @@ def status() -> None:
     """Show container health grid (TOON format)."""
     containers = _compose_json("ps", "--all")
     mode = read_docker_mode()
-    if not containers:
-        typer.echo(f"DOCKER:MODE:{mode}")
-        typer.echo("DOCKER:STATUS\n  (no containers running)")
-        return
-
     typer.echo(f"DOCKER:MODE:{mode}")
     typer.echo("DOCKER:STATUS")
+    if not containers:
+        typer.echo("  (no containers running)")
+        return
     for c in containers:
         name = c.get("Name", c.get("Service", "unknown"))
         state = c.get("State", "unknown")
         health = c.get("Health", "")
         status_str = c.get("Status", "")
-
-        # Extract port bindings
-        ports = c.get("Publishers", [])
-        port_str = ""
-        if ports:
-            published = [str(p.get("PublishedPort", "")) for p in ports if p.get("PublishedPort")]
-            if published:
-                port_str = f":{','.join(set(published))}"
-
-        display_health = health if health else state
-        typer.echo(f"  {name}:{display_health}{port_str}:{status_str}")
+        published = {str(p["PublishedPort"]) for p in c.get("Publishers", []) if p.get("PublishedPort")}
+        port_str = f":{','.join(published)}" if published else ""
+        typer.echo(f"  {name}:{health or state}{port_str}:{status_str}")
 
 
 # ─── Lifecycle ───────────────────────────────────────────────────
@@ -118,29 +147,23 @@ def status() -> None:
 @app.command()
 def up(
     profile: Annotated[
-        str,
-        typer.Option("--profile", "-p", help="Compose profile to start"),
+        str, typer.Option("--profile", "-p", help="Compose profile to start"),
     ] = "summitflow",
     dev: Annotated[
-        bool,
-        typer.Option("--dev", help="Use development override (bind mounts + hot reload)"),
+        bool, typer.Option("--dev", help="Use development override (bind mounts + hot reload)"),
     ] = False,
     prod: Annotated[
-        bool,
-        typer.Option("--prod", help="Use production runtime images"),
+        bool, typer.Option("--prod", help="Use production runtime images"),
     ] = False,
     detach: Annotated[
-        bool,
-        typer.Option("--detach/--no-detach", "-d", help="Run in background"),
+        bool, typer.Option("--detach/--no-detach", "-d", help="Run in background"),
     ] = True,
 ) -> None:
     """Start the Docker compose stack."""
     if dev and prod:
         raise typer.BadParameter("Choose either --dev or --prod, not both.")
-
     mode = "dev" if dev else "prod" if prod else read_docker_mode()
     write_docker_mode(mode)
-
     args = compose_cmd_for_mode(mode, "--profile", profile)
     args.extend(["up"])
     if detach:
@@ -151,12 +174,10 @@ def up(
 @app.command()
 def down(
     volumes: Annotated[
-        bool,
-        typer.Option("--volumes", "-v", help="Remove named volumes (destroys data!)"),
+        bool, typer.Option("--volumes", "-v", help="Remove named volumes (destroys data!)"),
     ] = False,
     confirm: Annotated[
-        str | None,
-        typer.Option("--confirm", help="Confirm token from preview run (required with --volumes)"),
+        str | None, typer.Option("--confirm", help="Confirm token from preview run (required with --volumes)"),
     ] = None,
 ) -> None:
     """Stop the Docker compose stack.
@@ -167,15 +188,18 @@ def down(
     if volumes:
         from ..lib.confirm_token import confirm_gate
 
-        command_key = "docker-down-volumes"
-        preview_lines = [
-            "DOCKER DOWN --volumes will:",
-            "  Stop all containers in the compose stack",
-            "  DESTROY all named volumes (PostgreSQL, Redis, Hatchet data)",
-            "",
-            "This permanently deletes all database contents and cached state.",
-        ]
-        confirm_gate(command_key, confirm, preview_lines, "st docker down --volumes")
+        confirm_gate(
+            "docker-down-volumes",
+            confirm,
+            [
+                "DOCKER DOWN --volumes will:",
+                "  Stop all containers in the compose stack",
+                "  DESTROY all named volumes (PostgreSQL, Redis, Hatchet data)",
+                "",
+                "This permanently deletes all database contents and cached state.",
+            ],
+            "st docker down --volumes",
+        )
         args.append("--volumes")
     _run(args, stream=True, env=compose_env())
 
@@ -183,12 +207,10 @@ def down(
 @app.command()
 def restart(
     service: Annotated[
-        str | None,
-        typer.Argument(help="Service to restart (all if omitted)"),
+        str | None, typer.Argument(help="Service to restart (all if omitted)"),
     ] = None,
     recreate: Annotated[
-        bool,
-        typer.Option("--recreate", help="Force-recreate container from current image"),
+        bool, typer.Option("--recreate", help="Force-recreate container from current image"),
     ] = False,
 ) -> None:
     """Restart one or all containers.
@@ -196,10 +218,7 @@ def restart(
     Use --recreate to rebuild and recreate containers from the current image
     (equivalent to docker compose up --force-recreate --build).
     """
-    if recreate:
-        args = compose_cmd("up", "-d", "--force-recreate", "--build")
-    else:
-        args = compose_cmd("restart")
+    args = compose_cmd("up", "-d", "--force-recreate", "--build") if recreate else compose_cmd("restart")
     if service:
         args.append(service)
     _run(args, stream=True, env=compose_env())
@@ -210,18 +229,9 @@ def restart(
 
 @app.command()
 def logs(
-    service: Annotated[
-        str,
-        typer.Argument(help="Service name"),
-    ],
-    follow: Annotated[
-        bool,
-        typer.Option("--follow", "-f", help="Follow log output"),
-    ] = False,
-    tail: Annotated[
-        int,
-        typer.Option("--tail", "-n", help="Number of lines to show"),
-    ] = 50,
+    service: Annotated[str, typer.Argument(help="Service name")],
+    follow: Annotated[bool, typer.Option("--follow", "-f", help="Follow log output")] = False,
+    tail: Annotated[int, typer.Option("--tail", "-n", help="Number of lines to show")] = 50,
 ) -> None:
     """Tail container logs."""
     args = compose_cmd("logs", "--tail", str(tail))
@@ -236,43 +246,21 @@ def logs(
 
 @app.command()
 def build(
-    push: Annotated[
-        bool,
-        typer.Option("--push", help="Push images after building"),
-    ] = False,
-    tag: Annotated[
-        str,
-        typer.Option("--tag", "-t", help="Image tag"),
-    ] = "latest",
+    push: Annotated[bool, typer.Option("--push", help="Push images after building")] = False,
+    tag: Annotated[str, typer.Option("--tag", "-t", help="Image tag")] = "latest",
 ) -> None:
     """Build Docker images for all services."""
     typer.echo(f"Building images with tag: {tag}")
-
-    # Build each project's Dockerfiles
-    projects = [
-        ("summitflow", "docker/backend.Dockerfile", f"ghcr.io/summitflow-solutions/summitflow-api:{tag}"),
-        ("summitflow", "docker/frontend.Dockerfile", f"ghcr.io/summitflow-solutions/summitflow-web:{tag}"),
-        ("agent-hub", "docker/backend.Dockerfile", f"ghcr.io/summitflow-solutions/agent-hub-api:{tag}"),
-        ("agent-hub", "docker/frontend.Dockerfile", f"ghcr.io/summitflow-solutions/agent-hub-web:{tag}"),
-        ("terminal", "docker/backend.Dockerfile", f"ghcr.io/summitflow-solutions/terminal-api:{tag}"),
-        ("terminal", "docker/frontend.Dockerfile", f"ghcr.io/summitflow-solutions/terminal-web:{tag}"),
-        ("portfolio-ai", "docker/backend.Dockerfile", f"ghcr.io/summitflow-solutions/portfolio-api:{tag}"),
-        ("portfolio-ai", "docker/frontend.Dockerfile", f"ghcr.io/summitflow-solutions/portfolio-web:{tag}"),
-        ("monkey-fight", "docker/Dockerfile", f"ghcr.io/summitflow-solutions/monkey-fight:{tag}"),
-    ]
-
     home = Path.home()
-    for project, dockerfile, image in projects:
+    for project, dockerfile, image_base in _BUILD_PROJECTS:
+        image = f"{image_base}:{tag}"
         context = home / project
         df_path = context / dockerfile
         if not df_path.exists():
             typer.echo(f"  SKIP {image} (Dockerfile not found)")
             continue
         typer.echo(f"  BUILD {image}")
-        _run(
-            ["docker", "build", "-f", str(df_path), "-t", image, str(context)],
-            stream=True,
-        )
+        _run(["docker", "build", "-f", str(df_path), "-t", image, str(context)], stream=True)
         if push:
             typer.echo(f"  PUSH {image}")
             _run(["docker", "push", image], stream=True)
@@ -289,28 +277,18 @@ def pull() -> None:
 
 @app.command()
 def shell(
-    service: Annotated[
-        str,
-        typer.Argument(help="Service name"),
-    ],
+    service: Annotated[str, typer.Argument(help="Service name")],
 ) -> None:
     """Open an interactive shell in a running container."""
-    _run(
-        compose_cmd("exec", service, "/bin/bash"),
-        stream=True,
-        check=False,
-        env=compose_env(),
-    )
+    _run(compose_cmd("exec", service, "/bin/bash"), stream=True, check=False, env=compose_env())
 
 
 # ─── Backup & Restore (delegated to unified backup system) ──────
 
+
 @app.command()
 def backup(
-    note: Annotated[
-        str,
-        typer.Option("--note", help="Backup note/description"),
-    ] = "",
+    note: Annotated[str, typer.Option("--note", help="Backup note/description")] = "",
 ) -> None:
     """Create an infrastructure backup via the unified backup system.
 
@@ -329,8 +307,7 @@ def backup(
 @app.command()
 def restore(
     backup_id: Annotated[
-        str,
-        typer.Argument(help="Backup ID to restore (from 'st backup infra list')"),
+        str, typer.Argument(help="Backup ID to restore (from 'st backup infra list')"),
     ],
 ) -> None:
     """Restore from an infrastructure backup.
@@ -349,35 +326,18 @@ def restore(
 
 # ─── Ephemeral Test Environments ─────────────────────────────────
 
-ENV_PREFIX = "stenv-"
-
 
 @app.command("env-create")
 def env_create(
     name: Annotated[str, typer.Argument(help="Environment name")],
-    profile: Annotated[
-        str,
-        typer.Option("--profile", "-p", help="Compose profile"),
-    ] = "summitflow",
+    profile: Annotated[str, typer.Option("--profile", "-p", help="Compose profile")] = "summitflow",
     with_browser: Annotated[
-        bool,
-        typer.Option("--with-browser", help="Include agent-browser container"),
+        bool, typer.Option("--with-browser", help="Include agent-browser container"),
     ] = False,
 ) -> None:
     """Create an ephemeral test environment."""
     project_name = f"{ENV_PREFIX}{name}"
-    args = [
-        "docker",
-        "compose",
-        "--env-file",
-        str(COMPOSE_ENV_FILE),
-        "-f",
-        str(COMPOSE_FILE),
-        "-p",
-        project_name,
-        "--profile",
-        profile,
-    ]
+    args = _env_compose_cmd(project_name, "-f", str(COMPOSE_FILE), "--profile", profile)
     if with_browser:
         args.extend(["--profile", "browser"])
     args.extend(["up", "-d"])
@@ -388,87 +348,38 @@ def env_create(
 @app.command("env-list")
 def env_list() -> None:
     """List active test environments."""
-    result = _run(
-        ["docker", "compose", "ls", "--format", "json"],
-        capture=True,
-        check=False,
-    )
-    if not result or not result.stdout.strip():
+    envs = _list_envs()
+    if not envs:
         typer.echo("No test environments found.")
         return
-
-    envs = []
-    for line in result.stdout.strip().splitlines():
-        try:
-            data = json.loads(line)
-            if isinstance(data, list):
-                envs.extend(data)
-            else:
-                envs.append(data)
-        except json.JSONDecodeError:
-            continue
-
-    found = False
     for env in envs:
-        name = env.get("Name", "")
-        if name.startswith(ENV_PREFIX):
-            status_str = env.get("Status", "unknown")
-            typer.echo(f"  {name.removeprefix(ENV_PREFIX)}: {status_str}")
-            found = True
-
-    if not found:
-        typer.echo("No test environments found.")
+        name = env.get("Name", "").removeprefix(ENV_PREFIX)
+        typer.echo(f"  {name}: {env.get('Status', 'unknown')}")
 
 
 @app.command("env-destroy")
 def env_destroy(
     name: Annotated[
-        str | None,
-        typer.Argument(help="Environment name (omit for --all)"),
+        str | None, typer.Argument(help="Environment name (omit for --all)"),
     ] = None,
     all_envs: Annotated[
-        bool,
-        typer.Option("--all", help="Destroy all test environments"),
+        bool, typer.Option("--all", help="Destroy all test environments"),
     ] = False,
 ) -> None:
     """Tear down a test environment."""
-    if all_envs:
-        # List and destroy all stenv- projects
-        result = _run(
-            ["docker", "compose", "ls", "--format", "json"],
-            capture=True,
-            check=False,
-        )
-        if result and result.stdout.strip():
-            for line in result.stdout.strip().splitlines():
-                try:
-                    data = json.loads(line)
-                    items = data if isinstance(data, list) else [data]
-                    for env in items:
-                        env_name = env.get("Name", "")
-                        if env_name.startswith(ENV_PREFIX):
-                            typer.echo(f"Destroying: {env_name}")
-                            _run(
-                                ["docker", "compose", "--env-file", str(COMPOSE_ENV_FILE), "-p", env_name, "down", "--volumes"],
-                                stream=True,
-                                check=False,
-                                env=compose_env(),
-                            )
-                except json.JSONDecodeError:
-                    continue
-        return
-
-    if not name:
+    if not all_envs and not name:
         typer.echo("Provide environment name or use --all", err=True)
         raise typer.Exit(1)
 
-    project_name = f"{ENV_PREFIX}{name}"
-    typer.echo(f"Destroying test environment: {name}")
-    _run(
-        ["docker", "compose", "--env-file", str(COMPOSE_ENV_FILE), "-p", project_name, "down", "--volumes"],
-        stream=True,
-        env=compose_env(),
-    )
+    targets = [env["Name"] for env in _list_envs()] if all_envs else [f"{ENV_PREFIX}{name}"]
+    for project_name in targets:
+        typer.echo(f"Destroying: {project_name}")
+        _run(
+            _env_compose_cmd(project_name, "down", "--volumes"),
+            stream=True,
+            check=False,
+            env=compose_env(),
+        )
 
 
 @app.command("env-exec")
@@ -477,16 +388,11 @@ def env_exec(
     cmd: Annotated[list[str], typer.Argument(help="Command to run")],
 ) -> None:
     """Run a command in a test environment service."""
-    project_name = f"{ENV_PREFIX}{name}"
     if not cmd:
         typer.echo("Provide a command to run", err=True)
         raise typer.Exit(1)
-    _run(
-        ["docker", "compose", "--env-file", str(COMPOSE_ENV_FILE), "-p", project_name, "exec", *cmd],
-        stream=True,
-        check=False,
-        env=compose_env(),
-    )
+    project_name = f"{ENV_PREFIX}{name}"
+    _run(_env_compose_cmd(project_name, "exec", *cmd), stream=True, check=False, env=compose_env())
 
 
 # ─── Metrics ─────────────────────────────────────────────────────
@@ -500,20 +406,15 @@ def metrics() -> None:
         capture=True,
         check=False,
     )
-    if not result or not result.stdout.strip():
+    rows = _parse_json_lines(result.stdout if result else "")
+    if not rows:
         typer.echo("No running containers.")
         return
-
     typer.echo("DOCKER:METRICS")
     typer.echo(f"  {'NAME':<30} {'CPU':>8} {'MEM':>12} {'MEM %':>8}")
     typer.echo(f"  {'─' * 30} {'─' * 8} {'─' * 12} {'─' * 8}")
-    for line in result.stdout.strip().splitlines():
-        try:
-            c = json.loads(line)
-            name = c.get("Name", "unknown")
-            cpu = c.get("CPUPerc", "0%")
-            mem = c.get("MemUsage", "0B / 0B")
-            mem_pct = c.get("MemPerc", "0%")
-            typer.echo(f"  {name:<30} {cpu:>8} {mem:>12} {mem_pct:>8}")
-        except json.JSONDecodeError:
-            continue
+    for c in rows:
+        typer.echo(
+            f"  {c.get('Name', 'unknown'):<30} {c.get('CPUPerc', '0%'):>8} "
+            f"{c.get('MemUsage', '0B / 0B'):>12} {c.get('MemPerc', '0%'):>8}"
+        )
