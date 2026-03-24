@@ -177,9 +177,8 @@ export async function fetchCommitDiff(
   sha: string,
   projectId?: string,
 ): Promise<TaskDiffResponse> {
-  const params = projectId ? `?project_id=${projectId}` : ''
   return fetchWithErrorHandling<TaskDiffResponse>(
-    `${getApiBaseUrl()}/api/git/commits/${sha}/diff${params}`,
+    `${getApiBaseUrl()}/api/git/commits/${sha}/diff${buildQueryString({ project_id: projectId })}`,
     { errorMessage: 'Failed to fetch commit diff' },
   )
 }

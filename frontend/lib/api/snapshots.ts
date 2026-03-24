@@ -67,9 +67,8 @@ export function fetchScopes(projectId?: string): Promise<BtrfsScope[]> {
 }
 
 export function fetchSnapshotSummary(projectId?: string): Promise<BtrfsSummary> {
-  const qs = projectId ? `?project_id=${projectId}` : ''
   return fetchWithErrorHandling<BtrfsSummary>(
-    `/api/snapshots/summary${qs}`,
+    `/api/snapshots/summary${buildQueryString({ project_id: projectId })}`,
     { errorMessage: 'Failed to fetch snapshot summary' },
   )
 }
