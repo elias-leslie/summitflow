@@ -328,7 +328,7 @@ export function ProjectSettingsClient() {
               className={clsx(
                 'flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-all border-b-2 -mb-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-outrun-500/40',
                 activeTab === tab.id
-                  ? 'border-outrun-500 text-slate-100 bg-outrun-500/5'
+                  ? 'border-outrun-500 text-slate-100 bg-outrun-500/5 shadow-[0_2px_8px_rgba(255,0,102,0.15)]'
                   : 'border-transparent text-slate-500 hover:text-slate-300 hover:border-slate-700',
               )}
             >
@@ -577,7 +577,7 @@ function StatusCell({
   const tc = toneClasses[tone]
 
   return (
-    <div className="card px-4 py-3.5">
+    <div className="card px-4 py-3.5 transition-all duration-200 hover:border-slate-600/60">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-2xs uppercase tracking-wider text-slate-500">
           <div className={`rounded-md p-1.5 ${tc.iconBg}`}>

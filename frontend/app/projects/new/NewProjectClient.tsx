@@ -147,11 +147,11 @@ export function NewProjectClient() {
           Back to Dashboard
         </Link>
 
-        <div className="flex items-center gap-4">
-          <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-slate-800">
+        <div className="flex items-center gap-4 hero-glow">
+          <div className="relative z-10 flex h-14 w-14 items-center justify-center rounded-xl bg-slate-800 border border-slate-700/50">
             <FolderPlus className="h-7 w-7 text-phosphor-400" />
           </div>
-          <div>
+          <div className="relative z-10">
             <h1 className="display text-2xl font-bold text-slate-100 tracking-tight">
               Create Project
             </h1>

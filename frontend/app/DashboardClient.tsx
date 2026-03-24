@@ -142,9 +142,9 @@ export function DashboardClient() {
             <Link
               key={link.href}
               href={link.href}
-              className={`card px-5 py-3.5 flex items-center gap-3.5 transition-all ${link.hoverBorder} ${link.hoverBg}`}
+              className={`card px-5 py-3.5 flex items-center gap-3.5 transition-all group/link ${link.hoverBorder} ${link.hoverBg}`}
             >
-              <div className={`rounded-lg p-2 ${link.iconBg} ring-1 ring-white/5`}>
+              <div className={`rounded-lg p-2 ${link.iconBg} ring-1 ring-white/5 transition-shadow group-hover/link:shadow-lg`}>
                 <Icon className={`w-4 h-4 ${link.iconColor}`} />
               </div>
               <div>

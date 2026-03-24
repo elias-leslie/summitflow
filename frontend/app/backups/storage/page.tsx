@@ -19,8 +19,8 @@ export default function StorageBackendsPage() {
 
   return (
     <main className="content-container py-8">
-      <header className="mb-8 flex items-start justify-between">
-        <div>
+      <header className="mb-8 flex items-start justify-between hero-glow">
+        <div className="relative z-10">
           <h1 className="text-2xl font-bold text-slate-100 display tracking-tight flex items-center gap-3">
             <HardDrive className="w-6 h-6 text-slate-400" />
             Storage Backends
@@ -31,8 +31,7 @@ export default function StorageBackendsPage() {
         </div>
         <Link
           href="/backups/setup"
-          className="flex items-center gap-2 px-4 py-2 bg-phosphor-600 text-slate-50 rounded-md
-                     text-sm font-medium hover:bg-phosphor-500 transition-colors"
+          className="relative z-10 flex items-center gap-2 btn-primary text-sm"
         >
           <Plus className="w-4 h-4" />
           Add Backend
@@ -50,8 +49,7 @@ export default function StorageBackendsPage() {
           <p className="text-slate-400 mb-4">Set up a storage backend to start sending backups to your NAS.</p>
           <Link
             href="/backups/setup"
-            className="inline-flex items-center gap-2 px-4 py-2 bg-phosphor-600 text-slate-50 rounded-md
-                       text-sm font-medium hover:bg-phosphor-500 transition-colors"
+            className="btn-primary inline-flex items-center gap-2 text-sm"
           >
             <Plus className="w-4 h-4" />
             Set up storage

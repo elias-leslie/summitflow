@@ -45,10 +45,10 @@ export function ProjectsAccordion({
             key={p.id}
             href={`/projects/${p.id}`}
             className={clsx(
-              'flex items-center justify-center w-10 h-10 mx-auto rounded-lg transition-all duration-200',
+              'flex items-center justify-center w-10 h-10 mx-auto rounded-lg transition-all duration-200 border',
               p.id === currentProjectId
-                ? 'bg-outrun-500/20 text-outrun-400 shadow-[0_0_12px_rgba(255,0,102,0.2)]'
-                : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/50',
+                ? 'bg-outrun-500/20 text-outrun-400 border-outrun-500/30 shadow-[0_0_12px_rgba(255,0,102,0.2)]'
+                : 'text-slate-500 border-transparent hover:text-slate-300 hover:bg-slate-800/50 hover:border-slate-700/50',
             )}
             title={p.name}
           >
