@@ -4,10 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from app.tasks.autonomous.exec_modules._agent_kwargs import (
-    AUTONOMOUS_TURN_TIMEOUT_SECONDS,
-    build_complete_kwargs,
-)
+from app.tasks.autonomous.exec_modules._agent_kwargs import build_complete_kwargs
 
 
 def test_build_complete_kwargs_passes_task_id_as_external_id() -> None:
@@ -51,8 +48,8 @@ def test_build_complete_kwargs_leaves_model_selection_to_agent_routing() -> None
     assert "tier_preference" not in result
 
 
-def test_build_complete_kwargs_sets_explicit_turn_timeout_for_autonomous_runs() -> None:
-    """Autocode should give multi-turn specialist sessions a scaled HTTP ceiling."""
+def test_build_complete_kwargs_does_not_set_timeout_for_autonomous_runs() -> None:
+    """Autocode should not impose a local HTTP timeout ceiling on specialist runs."""
     with patch(
         "app.tasks.autonomous.exec_modules._agent_kwargs._detect_git_branch",
         return_value="task-123/main",
@@ -67,4 +64,4 @@ def test_build_complete_kwargs_sets_explicit_turn_timeout_for_autonomous_runs() 
             max_turns=50,
         )
 
-    assert result["timeout_seconds"] == AUTONOMOUS_TURN_TIMEOUT_SECONDS
+    assert "timeout_seconds" not in result

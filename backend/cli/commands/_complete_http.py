@@ -78,7 +78,7 @@ def build_payload(
     session_id: str | None, thinking_level: str | None,
     trace_id: str | None, use_memory: bool, execute_tools: bool,
     max_turns: int, stream: bool, include_roles: list[str] | None,
-    images: list[str] | None = None, timeout_seconds: float | None = None,
+    images: list[str] | None = None,
 ) -> dict[str, Any]:
     """Build request payload for /api/complete."""
     content: str | list[dict[str, Any]]
@@ -98,8 +98,6 @@ def build_payload(
     ]:
         if val:
             payload[key] = val
-    if timeout_seconds:
-        payload["timeout_seconds"] = timeout_seconds
     if use_memory:
         payload["use_memory"] = True
     if execute_tools:
@@ -115,7 +113,7 @@ def build_payload(
 
 def stream_complete(
     agent_hub_url: str, headers: dict[str, str],
-    payload: dict[str, Any], timeout: float,
+    payload: dict[str, Any], timeout: float | None,
 ) -> dict[str, Any]:
     """Stream SSE completion, printing content chunks as they arrive."""
     import json
@@ -153,21 +151,9 @@ def stream_complete(
     return last_data
 
 
-def _scale_http_timeout(timeout: float, max_turns: int) -> float:
-    """Scale HTTP timeout for multi-turn sessions.
-
-    The server enforces per-turn inactivity timeouts internally — the HTTP
-    client just needs a generous ceiling so the connection doesn't drop while
-    the agent is still making progress across many turns.
-    """
-    if max_turns > 1:
-        return timeout * max_turns + 60
-    return timeout + 30
-
-
 def _post_with_retry(
     url: str, headers: dict[str, str], payload: dict[str, Any],
-    read_timeout: float, max_attempts: int = 2,
+    read_timeout: float | None, max_attempts: int = 2,
 ) -> dict[str, Any]:
     """POST to *url* with simple retry on transient connect errors."""
     from typing import cast
@@ -199,7 +185,7 @@ def call_complete(
     agent_slug: str | None, message: str, project_id: str = "st-cli",
     source_client: str = "st-cli", use_memory: bool = True,
     memory_group_id: str | None = None, execute_tools: bool = False,
-    working_dir: str | None = None, timeout: float = 300.0,
+    working_dir: str | None = None, timeout: float | None = None,
     skip_cache: bool = False, session_id: str | None = None,
     thinking_level: str | None = None, max_turns: int = 1,
     stream: bool = False, trace_id: str | None = None,
@@ -213,16 +199,17 @@ def call_complete(
     payload = build_payload(
         message, project_id, agent_slug, memory_group_id, working_dir,
         session_id, thinking_level, trace_id, use_memory, execute_tools,
-        max_turns, stream, include_roles, images, timeout_seconds=timeout,
+        max_turns, stream, include_roles, images,
     )
-    read_timeout = _scale_http_timeout(timeout, max_turns)
+    read_timeout = timeout
+    timeout_for_errors = read_timeout if read_timeout is not None else 30.0
     if stream:
         try:
             return stream_complete(agent_hub_url, headers, payload, read_timeout)
         except httpx.ConnectError as e:
             raise_connect_error("Agent Hub", agent_hub_url, e)
         except httpx.TimeoutException as e:
-            raise_timeout_error("Agent Hub", agent_hub_url, read_timeout, e)
+            raise_timeout_error("Agent Hub", agent_hub_url, timeout_for_errors, e)
     from ._api_paths import COMPLETE_PATH
 
     return _post_with_retry(f"{agent_hub_url}{COMPLETE_PATH}", headers, payload, read_timeout)

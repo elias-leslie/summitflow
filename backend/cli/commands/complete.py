@@ -63,7 +63,7 @@ def complete_default(
     memory_group: Annotated[str | None, _Opt("--memory-group", "-g", help="Memory group ID")] = None,
     execute_tools: Annotated[bool, _Opt("--execute-tools", "-x", help="Execute tools")] = False,
     working_dir: Annotated[str | None, _Opt("--working-dir", "-w", help="Working dir")] = None,
-    max_turns: Annotated[int, _Opt("--max-turns", "-n", help="Max agentic turns (high limit intentional for long-running autonomous tasks; 300s timeout per turn)", min=1, max=200)] = 1,
+    max_turns: Annotated[int, _Opt("--max-turns", "-n", help="Max agentic turns (high limit intentional for long-running autonomous tasks)", min=1, max=200)] = 1,
     thinking_level: Annotated[str | None, _Opt("--thinking", help="Thinking level: minimal|low|medium|high|ultrathink")] = None,
     skip_cache: Annotated[bool, _Opt("--skip-cache", help="Bypass response cache")] = False,
     stream: Annotated[bool, _Opt("--stream", help="Stream response via SSE")] = False,
@@ -71,7 +71,7 @@ def complete_default(
     include_roles: Annotated[str | None, _Opt("--roles", help="Comma-separated prompt roles to include")] = None,
     image: Annotated[list[str] | None, _Opt("--image", "-i", help="Image file path(s) for multimodal input")] = None,
     file: Annotated[str | None, _Opt("--file", "-f", help="Read message from file")] = None,
-    timeout: Annotated[float, _Opt("--timeout", "-t", help="Per-turn inactivity timeout (s)")] = 300.0,
+    timeout: Annotated[float | None, _Opt("--timeout", "-t", help="Optional HTTP read-timeout ceiling in seconds. Omit to wait for completion.")] = None,
     raw: Annotated[bool, _Opt("--raw", help="Output raw JSON")] = False,
 ) -> None:
     """Send a completion request to Agent Hub.
