@@ -25,7 +25,6 @@ from .constants import (  # noqa: F401
     _USER_UID,
     BACKUP_DIR,
     COMPOSE_PROJECT,
-    _bool_env,
     _detect_repo_root,
     _float_env,
 )

@@ -23,7 +23,6 @@ from ...storage import projects as project_store
 from ...storage import task_dependencies as dep_store
 from ...storage import tasks as task_store
 from .formatting import get_hints, toon_format_task_list
-from .helpers import get_step_counts_batch
 from .response import task_to_response
 
 router = APIRouter()
@@ -254,9 +253,7 @@ async def list_tasks(
         project_id, filter_kwargs, limit, offset, include_blockers
     )
 
-    task_ids = [t["id"] for t in tasks]
-    criteria_counts = await asyncio.to_thread(get_step_counts_batch, task_ids)
-    task_responses = [task_to_response(t, criteria_counts.get(t["id"], 0)) for t in tasks]
+    task_responses = [task_to_response(t) for t in tasks]
 
     if format == "toon":
         return PlainTextResponse(
@@ -281,11 +278,7 @@ async def list_ready_tasks(
     """List tasks ready to work on (not blocked by dependencies)."""
     ready_tasks, total_ready = await _collect_execution_ready_tasks(project_id, limit)
 
-    # Batch fetch criteria counts to avoid N+1 queries
-    task_ids = [str(t["id"]) for t in ready_tasks]
-    criteria_counts = await asyncio.to_thread(get_step_counts_batch, task_ids)
-
-    task_responses = [task_to_response(t, criteria_counts.get(str(t["id"]), 0)) for t in ready_tasks]
+    task_responses = [task_to_response(t) for t in ready_tasks]
 
     # Return TOON format if requested
     if format == "toon":
@@ -311,11 +304,7 @@ async def list_blocked_tasks(
     """List tasks blocked by incomplete dependencies."""
     tasks = await asyncio.to_thread(task_store.list_blocked_tasks, project_id, limit=limit)
 
-    # Batch fetch criteria counts to avoid N+1 queries
-    task_ids = [t["id"] for t in tasks]
-    criteria_counts = await asyncio.to_thread(get_step_counts_batch, task_ids)
-
-    task_responses = [task_to_response(t, criteria_counts.get(t["id"], 0)) for t in tasks]
+    task_responses = [task_to_response(t) for t in tasks]
 
     # Return TOON format if requested
     if format == "toon":

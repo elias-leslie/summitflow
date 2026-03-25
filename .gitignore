@@ -50,6 +50,13 @@ htmlcov/
 .mypy_cache/
 .ruff_cache/
 
+# Pip install artifacts (malformed `pip install foo=ver` output)
+backend/=*
+
+# SQLite scratch databases
+*.db
+!*.db-journal
+
 # Temp
 /tmp/
 *.tmp

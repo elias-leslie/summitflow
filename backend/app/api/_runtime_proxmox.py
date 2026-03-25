@@ -17,23 +17,8 @@ from urllib import request as urllib_request
 
 from pydantic import BaseModel
 
-
-def _float_env(name: str, default: float) -> float:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    try:
-        return max(float(raw), 0.1)
-    except ValueError:
-        return default
-
-
-def _bool_env(name: str, default: bool = False) -> bool:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
-
+from ..utils.env import bool_env as _bool_env
+from ..utils.env import float_env as _float_env
 
 _PROXMOX_TIMEOUT_SECONDS = _float_env("SUMMITFLOW_RUNTIME_PROXMOX_TIMEOUT", 5.0)
 

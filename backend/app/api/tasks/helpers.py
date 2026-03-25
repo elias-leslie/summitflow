@@ -37,30 +37,6 @@ def get_worktree_response(task_id: str) -> WorktreeResponse | None:
     return None
 
 
-def get_step_count_for_task(task_id: str) -> int:
-    """Get total step count across all subtasks for a task.
-
-    Steps layer has been removed. Always returns 0.
-    """
-    return 0
-
-
-def get_step_counts_batch(task_ids: list[str]) -> dict[str, int]:
-    """Get step counts for multiple tasks.
-
-    Steps layer has been removed. Always returns 0 for each task.
-    """
-    return {task_id: 0 for task_id in task_ids}
-
-
-def get_step_verification_status(task_id: str) -> dict[str, Any]:
-    """Get step verification status.
-
-    Steps layer has been removed. Returns all-verified stub.
-    """
-    return {"total": 0, "verified": 0, "unverified": [], "all_verified": True}
-
-
 def verify_task_project(task_id: str, project_id: str) -> dict[str, Any]:
     """Get task and verify it belongs to the project. Raises HTTPException(404) if not found."""
     task = task_store.get_task(task_id)

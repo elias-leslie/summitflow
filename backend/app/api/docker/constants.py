@@ -21,23 +21,7 @@ from ...config import (
     TERMINAL_BACKEND_PORT,
     TERMINAL_FRONTEND_PORT,
 )
-
-
-def _float_env(name: str, default: float) -> float:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    try:
-        return max(float(raw), 0.1)
-    except ValueError:
-        return default
-
-
-def _bool_env(name: str, default: bool = False) -> bool:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
+from ...utils.env import float_env as _float_env
 
 
 def _detect_repo_root(start_path: Path | None = None) -> Path:

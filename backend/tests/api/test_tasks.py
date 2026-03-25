@@ -361,10 +361,6 @@ class TestReadyEndpoint:
                 "app.services.task_execution_readiness.sync_task_execution_readiness",
                 side_effect=_fake_sync,
             ),
-            patch(
-                "app.api.tasks.list_endpoints.get_step_counts_batch",
-                return_value={"task-ready": 0},
-            ),
         ):
             response = client.get(f"/api/projects/{test_project_id}/tasks/ready?limit=20")
 
@@ -455,10 +451,6 @@ class TestReadyEndpoint:
             patch(
                 "app.services.task_execution_readiness.sync_task_execution_readiness",
                 side_effect=_fake_sync,
-            ),
-            patch(
-                "app.api.tasks.list_endpoints.get_step_counts_batch",
-                return_value={f"task-ready-{idx}": 0 for idx in range(4)},
             ),
         ):
             response = client.get(f"/api/projects/{test_project_id}/tasks/ready?limit=3")

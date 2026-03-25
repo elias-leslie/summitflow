@@ -70,16 +70,9 @@ def _format_steps(lines: list[str], steps: list[dict[str, Any]]) -> None:
     lines.append("")
 
 
-def _add_steps_from_subtasks(lines: list[str], task_id: str) -> bool:
-    """Steps layer has been removed. Returns False (no steps to add)."""
-    return False
-
-
 def _add_steps(lines: list[str], task: dict[str, Any]) -> None:
-    """Add steps to the prompt from subtasks."""
-    task_id = task.get("id")
-    if task_id:
-        _add_steps_from_subtasks(lines, task_id)
+    """Add steps to the prompt from subtasks (no-op: steps layer removed)."""
+    pass
 
 
 def _add_rules(lines: list[str], rules: dict[str, str]) -> None:

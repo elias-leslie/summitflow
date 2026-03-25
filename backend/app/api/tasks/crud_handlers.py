@@ -22,7 +22,7 @@ from ...schemas.tasks import (
 )
 from ...storage import tasks as task_store
 from ...storage.subtasks import get_subtasks_for_task
-from .helpers import get_step_verification_status, refresh_task_tracking
+from .helpers import refresh_task_tracking
 from .response import task_to_response
 
 logger = get_logger(__name__)
@@ -158,18 +158,3 @@ async def validate_completion_gates(task_id: str) -> None:
             },
         )
 
-    step_status = await asyncio.to_thread(get_step_verification_status, task_id)
-    # Steps are optional progress trackers — zero steps is valid for bare/intent-only tasks
-    if step_status["total"] > 0 and not step_status["all_verified"]:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "message": "Cannot complete task with incomplete steps",
-                "unverified_steps": step_status["unverified"][:10],
-                "remaining": len(step_status["unverified"]),
-                "what_to_do": [
-                    "Complete all steps before closing the task",
-                    f"Run: st context {task_id} to see remaining steps",
-                ],
-            },
-        )

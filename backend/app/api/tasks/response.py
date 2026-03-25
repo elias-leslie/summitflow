@@ -14,7 +14,6 @@ from ...schemas.tasks import (
     TaskResponse,
 )
 from ...storage.tasks.execution_mode import is_autonomous_mode
-from .helpers import get_step_count_for_task
 
 
 def _format_datetime(val: str | datetime | None) -> str | None:
@@ -139,7 +138,7 @@ def task_to_response(task: dict[str, Any], criteria_count: int | None = None) ->
         task_type=task.get("task_type", "task"),
         parent_task_id=task.get("parent_task_id"),
         acceptance_criteria=_parse_task_criteria(task),
-        criteria_count=criteria_count if criteria_count is not None else get_step_count_for_task(task["id"]),
+        criteria_count=criteria_count if criteria_count is not None else 0,
         current_phase=task.get("current_phase"),
         verification_result=task.get("verification_result"),
         done_when=task.get("done_when"),

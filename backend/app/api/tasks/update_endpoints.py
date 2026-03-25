@@ -22,7 +22,6 @@ from ...storage import tasks as task_store
 from ...storage.tasks.execution_mode import is_manual_only_mode
 from .helpers import (
     dispatch_autonomous_task,
-    get_step_verification_status,
     refresh_task_tracking,
     verify_task_project,
 )
@@ -108,15 +107,15 @@ async def _merge_step_verification(task_id: str, updated: dict[str, Any]) -> dic
     """Merge step-level verification into verification_result on completion.
 
     Preserves existing keys (e.g. execution_clean from autocode pipeline).
+    Steps layer has been removed, so step counts are always zero/empty.
     """
-    step_status = await asyncio.to_thread(get_step_verification_status, task_id)
     existing = updated.get("verification_result") or {}
     merged = {
         **existing,
-        "total": step_status["total"],
-        "verified": step_status["verified"],
-        "unverified": step_status["unverified"],
-        "all_verified": step_status["all_verified"],
+        "total": 0,
+        "verified": 0,
+        "unverified": [],
+        "all_verified": True,
     }
     return await asyncio.to_thread(task_store.update_task, task_id, verification_result=merged)
 

@@ -48,7 +48,6 @@ dev = [
     "pytest-randomly>=3.16.0",
     # Linting & Type Checking
     "ruff>=0.15.0",
-    "ty>=0.0.17",
     "types-jsonschema>=4.26.0",
 ]
 
@@ -76,9 +75,3 @@ unfixable = ["F401"]
 "**/tests/**" = ["SIM105"]
 "**/migrations/**" = ["SIM117"]
 
-[tool.ty.rules]
-# Suppress beta-quality rules (ty 0.0.x false positives)
-# Remove these as ty matures past 0.1
-invalid-argument-type = "ignore"  # dict unpacking, ParamSpec middleware
-unknown-argument = "ignore"       # structlog bound logger kwargs
-unresolved-import = "ignore"      # self-imports from packages, lazy imports

@@ -36,6 +36,17 @@ function getProjectHost(baseUrl: string): string {
   }
 }
 
+// Gradient palette for project avatar fallbacks — keyed by first letter
+const LETTER_GRADIENTS: Record<string, { from: string; to: string }> = {
+  S: { from: '#00c853', to: '#009624' },
+  P: { from: '#3b82f6', to: '#2563eb' },
+  A: { from: '#8b5cf6', to: '#6d28d9' },
+  C: { from: '#f59e0b', to: '#d97706' },
+  B: { from: '#ec4899', to: '#be185d' },
+  D: { from: '#06b6d4', to: '#0891b2' },
+  default: { from: '#64748b', to: '#475569' },
+}
+
 export function ProjectCard({ project }: ProjectCardProps) {
   const router = useRouter()
   const [hovered, setHovered] = useState(false)
@@ -61,18 +72,8 @@ export function ProjectCard({ project }: ProjectCardProps) {
     staleTime: STALE_GIT,
   })
 
-  // Generate gradient based on first letter (used as fallback if no logo)
-  const gradients: Record<string, { from: string; to: string }> = {
-    S: { from: '#00c853', to: '#009624' },
-    P: { from: '#3b82f6', to: '#2563eb' },
-    A: { from: '#8b5cf6', to: '#6d28d9' },
-    C: { from: '#f59e0b', to: '#d97706' },
-    B: { from: '#ec4899', to: '#be185d' },
-    D: { from: '#06b6d4', to: '#0891b2' },
-    default: { from: '#64748b', to: '#475569' },
-  }
   const firstLetter = project.name.charAt(0).toUpperCase()
-  const gradient = gradients[firstLetter] ?? gradients.default
+  const gradient = LETTER_GRADIENTS[firstLetter] ?? LETTER_GRADIENTS.default
 
   const { stats } = project
   const projectHost = getProjectHost(project.base_url)

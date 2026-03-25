@@ -21,7 +21,6 @@ from ...storage.subtasks import get_subtasks_for_task
 from ...tasks.autonomous._project_resolution import resolve_task_project_id
 from .formatting import toon_format_task
 from .helpers import (
-    get_step_verification_status,
     get_task_or_404,
     get_worktree_response,
     verify_task_project,
@@ -39,19 +38,10 @@ async def check_completion_readiness(task_id: str) -> dict[str, Any]:
 
     subtasks = await asyncio.to_thread(get_subtasks_for_task, canonical_task_id)
     incomplete = [s["subtask_id"] for s in subtasks if not s.get("passes")]
-    step_status = await asyncio.to_thread(get_step_verification_status, canonical_task_id)
 
     gates: list[dict[str, Any]] = []
     if incomplete:
         gates.append({"gate": "subtasks", "pass": False, "detail": incomplete[:5]})
-    if step_status["total"] > 0 and not step_status["all_verified"]:
-        gates.append(
-            {
-                "gate": "steps",
-                "pass": False,
-                "detail": step_status["unverified"][:5],
-            }
-        )
 
     return {"ready": not gates, "gates": gates}
 
