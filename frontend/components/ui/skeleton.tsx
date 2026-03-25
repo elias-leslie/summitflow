@@ -10,11 +10,11 @@ export function Skeleton({ className }: SkeletonProps) {
   return (
     <div
       className={clsx(
-        'rounded-md bg-slate-800/50 relative overflow-hidden',
+        'rounded-md bg-slate-800/40 relative overflow-hidden',
         className,
       )}
     >
-      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[rgba(191,0,255,0.06)] to-transparent animate-shimmer" />
+      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[rgba(191,0,255,0.08)] via-50% to-transparent animate-shimmer" />
     </div>
   )
 }

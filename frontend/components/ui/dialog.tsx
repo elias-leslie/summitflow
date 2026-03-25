@@ -82,7 +82,7 @@ export function DialogContent({
       animate={{ opacity: 1, scale: 1, x: '-50%', y: '-50%' }}
       exit={{ opacity: 0, scale: 0.95, x: '-50%', y: 'calc(-50% + 10px)' }}
       transition={{ duration: 0.2, ease: 'easeOut' }}
-      className={clsx('fixed left-1/2 top-1/2 z-50 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl shadow-black/50', className)}
+      className={clsx('fixed left-1/2 top-1/2 z-50 bg-[linear-gradient(180deg,rgba(18,12,28,0.99),rgba(9,7,16,0.98))] border border-slate-700/80 rounded-2xl shadow-[0_32px_80px_-16px_rgba(0,0,0,0.85),0_0_0_1px_rgba(255,0,102,0.06)]', className)}
       onClick={(e) => e.stopPropagation()}
     >
       {children}
@@ -92,7 +92,7 @@ export function DialogContent({
 
 export function DialogHeader({ children, className = '' }: DialogHeaderProps) {
   return (
-    <div className={clsx('border-b border-slate-700 px-5 py-4', className)}>
+    <div className={clsx('border-b border-slate-700/70 px-5 py-4', className)}>
       {children}
     </div>
   )

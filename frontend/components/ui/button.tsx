@@ -20,10 +20,10 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variants: Record<ButtonVariant, string> = {
   primary: `
-    bg-outrun-600 text-slate-50 border border-outrun-500
-    hover:bg-outrun-500 hover:shadow-lg hover:shadow-outrun-500/20
-    active:bg-outrun-700
-    disabled:bg-slate-700 disabled:border-slate-600 disabled:text-slate-500
+    bg-outrun-600 text-slate-50 border border-outrun-500 shadow-[0_0_20px_rgba(255,0,102,0.2)]
+    hover:bg-outrun-500 hover:shadow-[0_0_30px_rgba(255,0,102,0.35)]
+    active:bg-outrun-700 active:shadow-[0_0_12px_rgba(255,0,102,0.15)]
+    disabled:bg-slate-700 disabled:border-slate-600 disabled:text-slate-500 disabled:shadow-none
   `,
   secondary: `
     bg-slate-800 text-slate-200 border border-slate-700

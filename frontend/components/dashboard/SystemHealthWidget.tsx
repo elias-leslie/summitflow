@@ -89,7 +89,7 @@ export function SystemHealthWidget({ className }: SystemHealthWidgetProps) {
                       : 'Persistent storage occupancy'}
                 </p>
               </div>
-              <span className={clsx('font-mono text-lg tabular-nums', STATUS_COLORS[m.status].text)}>
+              <span className={clsx('font-mono text-xl font-bold tabular-nums', STATUS_COLORS[m.status].text)}>
                 {m.percent}%
               </span>
             </div>

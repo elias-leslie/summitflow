@@ -72,10 +72,10 @@ export function TaskCard({
       style={style}
       data-testid={`task-card-${task.id}`}
       className={clsx(
-        'group relative rounded-lg border bg-slate-900/80 p-3 shadow-sm hover:border-slate-600 hover:bg-slate-850 transition-all duration-200 cursor-pointer',
+        'group relative rounded-xl border bg-[linear-gradient(180deg,rgba(18,12,28,0.92),rgba(10,7,17,0.94))] p-3 shadow-[0_12px_24px_-20px_rgba(0,0,0,0.8)] hover:border-slate-600/90 hover:bg-[linear-gradient(180deg,rgba(22,15,34,0.95),rgba(12,9,20,0.96))] transition-all duration-200 cursor-pointer',
         isRunning
-          ? 'border-phosphor-500/50 shadow-phosphor-500/20 shadow-lg animate-[pulse-glow_2s_ease-in-out_infinite]'
-          : 'border-slate-700 hover:translate-y-[-1px]',
+          ? 'border-phosphor-500/50 shadow-[0_0_20px_rgba(0,245,255,0.12)] animate-[pulse-glow_2s_ease-in-out_infinite]'
+          : 'border-slate-700/80 hover:translate-y-[-2px] hover:shadow-[0_16px_32px_-20px_rgba(0,0,0,0.9)]',
       )}
       onClick={onClick}
     >
