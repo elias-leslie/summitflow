@@ -96,8 +96,11 @@ async def _collect_execution_ready_tasks(
         if not tasks:
             break
 
-        for task in tasks:
-            readiness = await asyncio.to_thread(sync_task_execution_readiness, task["id"])
+        # Run readiness checks concurrently instead of sequentially (N+1 fix)
+        readiness_results = await asyncio.gather(
+            *(asyncio.to_thread(sync_task_execution_readiness, task["id"]) for task in tasks)
+        )
+        for task, readiness in zip(tasks, readiness_results):
             if not readiness.ready:
                 continue
             total_ready += 1

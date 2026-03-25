@@ -83,7 +83,7 @@ def _run_jscpd(project_root: Path, scan_dir: Path, formats: list[str]) -> list[C
         logger.debug("jscpd not available, skipping duplicate detection")
     except subprocess.TimeoutExpired:
         logger.warning("jscpd timed out scanning %s", scan_dir)
-    except Exception as e:
+    except (subprocess.SubprocessError, OSError) as e:
         logger.warning("jscpd failed for %s: %s", scan_dir, e)
     return []
 
@@ -117,7 +117,7 @@ def detect_dead_code(project_root: Path, backend_dir: str) -> list[CodeViolation
         logger.debug("vulture not available, skipping dead code detection")
     except subprocess.TimeoutExpired:
         logger.warning("vulture timed out")
-    except Exception as e:
+    except (subprocess.SubprocessError, OSError) as e:
         logger.warning("vulture failed: %s", e)
     return []
 
@@ -152,7 +152,7 @@ def detect_missing_infrastructure(
         return detect_missing_infrastructure_builtin(project_root, backend_dir)
     except subprocess.TimeoutExpired:
         logger.warning("semgrep timed out")
-    except Exception as e:
+    except (subprocess.SubprocessError, OSError) as e:
         logger.warning("semgrep failed: %s", e)
     return []
 
