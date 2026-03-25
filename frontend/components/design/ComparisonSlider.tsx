@@ -143,14 +143,14 @@ export function ComparisonSlider({
 
       {/* Slider line and handle */}
       <div
-        className="absolute top-0 bottom-0 w-0.5 bg-white shadow-lg"
+        className="absolute top-0 bottom-0 w-0.5 bg-phosphor-500 shadow-[0_0_8px_rgba(0,245,255,0.4)]"
         style={{ left: `${sliderPosition}%`, transform: 'translateX(-50%)' }}
       >
         {/* Handle */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-10 h-10 bg-white rounded-full shadow-lg flex items-center justify-center">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-10 h-10 bg-slate-800 border-2 border-phosphor-500 rounded-full shadow-[0_0_12px_rgba(0,245,255,0.3)] flex items-center justify-center">
           <div className="flex items-center gap-1">
-            <div className="w-0 h-0 border-y-4 border-y-transparent border-r-4 border-r-slate-700" />
-            <div className="w-0 h-0 border-y-4 border-y-transparent border-l-4 border-l-slate-700" />
+            <div className="w-0 h-0 border-y-4 border-y-transparent border-r-4 border-r-phosphor-400" />
+            <div className="w-0 h-0 border-y-4 border-y-transparent border-l-4 border-l-phosphor-400" />
           </div>
         </div>
       </div>

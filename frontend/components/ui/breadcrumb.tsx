@@ -2,7 +2,7 @@
 
 import { ChevronRight, Home } from 'lucide-react'
 import Link from 'next/link'
-import { cn } from '@/lib/utils'
+import clsx from 'clsx'
 
 // ============================================================================
 // Types
@@ -28,7 +28,7 @@ export function Breadcrumb({ items, className }: BreadcrumbProps) {
 
   return (
     <nav
-      className={cn('flex items-center text-sm', className)}
+      className={clsx('flex items-center text-sm', className)}
       aria-label="Breadcrumb"
     >
       <ol className="flex items-center gap-1">
@@ -53,7 +53,7 @@ export function Breadcrumb({ items, className }: BreadcrumbProps) {
                 </Link>
               ) : (
                 <span
-                  className={cn(
+                  className={clsx(
                     'flex items-center gap-1.5',
                     isLast ? 'text-phosphor-400 font-medium' : 'text-slate-400',
                   )}

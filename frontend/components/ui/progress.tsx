@@ -3,7 +3,7 @@
 import * as ProgressPrimitive from '@radix-ui/react-progress'
 import type * as React from 'react'
 
-import { cn } from '@/lib/utils'
+import clsx from 'clsx'
 
 function Progress({
   className,
@@ -14,7 +14,7 @@ function Progress({
   return (
     <ProgressPrimitive.Root
       data-slot="progress"
-      className={cn(
+      className={clsx(
         'bg-slate-800/60 ring-1 ring-white/5 relative h-2 w-full overflow-hidden rounded-full',
         className,
       )}
@@ -22,7 +22,7 @@ function Progress({
     >
       <ProgressPrimitive.Indicator
         data-slot="progress-indicator"
-        className={cn(
+        className={clsx(
           'h-full w-full flex-1 transition-all duration-500 ease-out',
           hasValue ? 'bg-phosphor-500 shadow-[0_0_8px_rgba(0,245,255,0.3)]' : 'bg-phosphor-500',
         )}
