@@ -134,7 +134,7 @@ function InlineDetail({
     'flex items-center gap-1 rounded-full border px-3 py-1.5 text-[11px] uppercase tracking-[0.16em] transition-colors disabled:opacity-40'
 
   return (
-    <div className="space-y-4 border-t border-slate-800/40 bg-slate-950/30 px-5 py-5">
+    <div className="space-y-3 border-t border-slate-800/40 bg-slate-950/30 px-4 py-3">
       {item.description ? (
         <div className="rounded-[1.15rem] border border-slate-800/70 bg-slate-950/55 px-4 py-4">
           <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
@@ -394,7 +394,7 @@ export function FeedbackList({
           <div
             key={item.id}
             className={clsx(
-              'overflow-hidden rounded-[1.5rem] border-l-[4px] border border-slate-700/60 bg-slate-950/45 transition-all duration-200',
+              'overflow-hidden rounded-xl border-l-[3px] border border-slate-700/60 bg-slate-950/45 transition-all duration-200',
               accentClass,
               isExpanded
                 ? 'border-slate-700/80 shadow-[0_24px_60px_rgba(2,6,23,0.3)]'
@@ -411,7 +411,7 @@ export function FeedbackList({
                   onItemClick(isExpanded ? null : item.id)
                 }
               }}
-              className="group cursor-pointer select-none px-5 py-4"
+              className="group cursor-pointer select-none px-4 py-3"
             >
               <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div className="flex min-w-0 flex-1 items-start gap-3">

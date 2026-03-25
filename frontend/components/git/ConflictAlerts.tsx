@@ -178,24 +178,18 @@ export function ConflictAlerts({ projectId }: { projectId?: string }) {
 
   return (
     <section className="animate-in fade-in slide-in-from-top-4 space-y-4 duration-500">
-      <div className="card-elevated px-5 py-5">
+      <div className="card-elevated px-4 py-3">
         <div className="flex items-center gap-2.5">
-          <div className="relative flex h-11 w-11 items-center justify-center rounded-2xl border border-rose-500/20 bg-rose-500/12">
-            <AlertTriangle className="h-5 w-5 text-rose-400" />
-            <div className="absolute inset-0 rounded-2xl blur-md bg-rose-500/20" />
-          </div>
+          <AlertTriangle className="h-4 w-4 text-rose-400" />
           <div>
-            <div className="eyebrow text-rose-300">Merge conflicts</div>
-            <h2 className="mt-2 text-xl font-semibold text-slate-100">
-              Intervention required
+            <h2 className="text-sm font-semibold text-slate-100">
+              Merge Conflicts
             </h2>
-            <p className="mt-2 text-sm leading-relaxed text-slate-300">
-              Conflicts are blocking merge completion for active task branches.
-              Retry if the workspace has been cleaned up, or dismiss once the
-              issue is intentionally resolved elsewhere.
+            <p className="text-xs text-slate-400">
+              {data.count} conflict{data.count !== 1 ? 's' : ''} blocking merge completion
             </p>
           </div>
-          <span className="ml-auto rounded-full border border-rose-500/30 bg-rose-500/15 px-3 py-1 text-[11px] font-mono uppercase tracking-[0.16em] text-rose-300">
+          <span className="ml-auto rounded-full border border-rose-500/30 bg-rose-500/15 px-2 py-0.5 text-[10px] font-mono uppercase tracking-[0.14em] text-rose-300">
             {data.count} active
           </span>
         </div>

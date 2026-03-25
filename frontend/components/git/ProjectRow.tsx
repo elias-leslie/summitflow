@@ -100,11 +100,11 @@ export function ProjectRow({ repo }: ProjectRowProps) {
   return (
     <div
       className={clsx(
-        'relative overflow-hidden rounded-[1.6rem] border transition-all duration-200',
+        'relative overflow-hidden rounded-xl border transition-all duration-200',
         'bg-slate-950/45',
         expanded
-          ? 'border-slate-700/90 shadow-[0_28px_70px_rgba(2,6,23,0.4)]'
-          : 'border-slate-800/60 hover:-translate-y-0.5 hover:border-slate-700/60',
+          ? 'border-slate-700/90'
+          : 'border-slate-800/60 hover:border-slate-700/60',
       )}
     >
       <div
@@ -126,7 +126,7 @@ export function ProjectRow({ repo }: ProjectRowProps) {
           }
         }}
         aria-expanded={expanded}
-        className="group cursor-pointer select-none px-5 py-4 transition-colors duration-150 hover:bg-slate-900/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-phosphor-500/40"
+        className="group cursor-pointer select-none px-4 py-3 transition-colors duration-150 hover:bg-slate-900/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-phosphor-500/40"
       >
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0 flex-1">

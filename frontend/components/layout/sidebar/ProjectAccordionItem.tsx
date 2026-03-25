@@ -54,7 +54,7 @@ export function ProjectAccordionItem({
         onClick={onToggleExpand}
         data-testid={`project-accordion-${project.id}`}
         className={clsx(
-          'group flex w-full items-center gap-3 px-3.5 py-3 text-left transition-all duration-200',
+          'group flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition-all duration-200',
           isActive ? 'bg-transparent' : 'hover:bg-slate-800/30',
         )}
       >
@@ -62,7 +62,7 @@ export function ProjectAccordionItem({
         <div className="relative flex-shrink-0">
           <div
             className={clsx(
-              'flex h-10 w-10 items-center justify-center rounded-2xl border transition-all duration-200',
+              'flex h-8 w-8 items-center justify-center rounded-xl border transition-all duration-200',
               isActive
                 ? 'border-outrun-500/28 bg-gradient-to-br from-outrun-500/22 to-violet-500/14'
                 : 'border-slate-700/60 bg-slate-800/60 group-hover:border-slate-600/80',

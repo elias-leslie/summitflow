@@ -77,7 +77,7 @@ export function FeedbackFilterBar({
   ]
 
   return (
-    <div className="card-elevated px-4 py-4">
+    <div className="card-elevated px-3 py-3">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-end">
         <form
           onSubmit={onSearchSubmit}

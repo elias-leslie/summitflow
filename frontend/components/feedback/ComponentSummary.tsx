@@ -176,7 +176,7 @@ function GroupSection({
   return (
     <div
       className={clsx(
-        'overflow-hidden rounded-[1.5rem] border transition-all duration-200',
+        'overflow-hidden rounded-xl border transition-all duration-200',
         GROUP_TONE[groupName] ?? 'border-slate-700/60 bg-slate-800/40',
         expanded ? 'border-slate-700/80' : 'hover:bg-slate-800/60',
       )}
@@ -185,7 +185,7 @@ function GroupSection({
         type="button"
         onClick={() => setExpanded(!expanded)}
         aria-expanded={expanded}
-        className="flex w-full items-center gap-3 px-4 py-4 text-left transition-colors hover:bg-slate-800/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-phosphor-500/40"
+        className="flex w-full items-center gap-3 px-3 py-3 text-left transition-colors hover:bg-slate-800/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-phosphor-500/40"
       >
         <ChevronRight
           className={clsx(
@@ -270,15 +270,13 @@ export function ComponentSummary({
   if (!hasAny) return null
 
   return (
-    <section className="card-elevated space-y-4 px-5 py-5">
+    <section className="card-elevated space-y-3 px-4 py-3">
       <div>
-        <div className="eyebrow">Components</div>
-        <h2 className="display mt-2 text-2xl font-semibold text-slate-100">
+        <h2 className="display text-sm font-semibold uppercase tracking-[0.16em] text-slate-300">
           Components
         </h2>
-        <p className="mt-2 text-sm text-slate-400">
-          Compare where SummitFlow, Agent Hub, and cross-cutting tooling are
-          collecting the most signal.
+        <p className="mt-0.5 text-xs text-slate-500">
+          Signal distribution across SummitFlow, Agent Hub, and cross-cutting tooling
         </p>
       </div>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">

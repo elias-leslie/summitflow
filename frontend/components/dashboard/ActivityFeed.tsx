@@ -236,7 +236,7 @@ export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedP
       className={clsx('panel-glass overflow-hidden', className)}
       data-testid="activity-feed"
     >
-      <div className="border-b border-slate-800/60 px-4 py-4">
+      <div className="border-b border-slate-800/60 px-3 py-3">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-0.5 rounded-full border border-slate-700/50 bg-slate-900/66 p-1">
             {TYPE_FILTERS.map((filter) => {

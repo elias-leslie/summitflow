@@ -25,11 +25,9 @@ function StatCard({
       onClick={onClick}
       aria-pressed={isActive}
       className={clsx(
-        'rounded-[1.35rem] border px-4 py-4 text-left transition-all duration-200',
+        'rounded-lg border px-3 py-2.5 text-left transition-all duration-200',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phosphor-500/40',
-        isActive
-          ? 'ring-1 ring-phosphor-500/30 shadow-[0_18px_40px_rgba(2,6,23,0.32)]'
-          : 'hover:-translate-y-0.5 hover:shadow-[0_18px_40px_rgba(2,6,23,0.24)]',
+        isActive ? 'ring-1 ring-phosphor-500/30' : '',
         tone,
       )}
     >
@@ -43,10 +41,10 @@ function StatCard({
           </span>
         ) : null}
       </div>
-      <div className="mt-4 font-mono text-3xl tabular-nums text-slate-50">
+      <div className="mt-1 font-mono text-xl tabular-nums text-slate-50">
         {value}
       </div>
-      <div className="mt-2 text-xs leading-relaxed text-slate-400">
+      <div className="mt-1 text-[10px] text-slate-400">
         {description}
       </div>
     </button>
@@ -67,7 +65,7 @@ function FeedbackHealthBar({
   if (components.length === 0) return null
 
   return (
-    <div className="rounded-[1.35rem] border border-slate-800/70 bg-slate-950/55 px-4 py-4">
+    <div className="rounded-lg border border-slate-800/70 bg-slate-950/55 px-3 py-2.5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
@@ -187,13 +185,10 @@ export function FeedbackStats({
   }
 
   return (
-    <section className="card-elevated space-y-4 px-5 py-5">
-      <div>
-        <div className="eyebrow">Signal overview</div>
-        <h2 className="display mt-2 text-2xl font-semibold text-slate-100">
-          What the feedback mix is saying
-        </h2>
-      </div>
+    <section className="card-elevated space-y-3 px-4 py-3">
+      <h2 className="display text-sm font-semibold uppercase tracking-[0.16em] text-slate-300">
+        Signal overview
+      </h2>
       <FeedbackHealthBar summary={summary} />
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         {cards.map((card) => (

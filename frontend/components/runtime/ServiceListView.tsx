@@ -79,7 +79,7 @@ export function ServiceListView({
 
   return (
     <>
-      <div className="overflow-hidden rounded-[1.8rem] border border-slate-700/60 bg-slate-950/40 shadow-[0_24px_80px_rgba(4,6,16,0.35)]">
+      <div className="overflow-hidden rounded-xl border border-slate-700/60 bg-slate-950/40">
         <Table>
           <TableHeader>
             <TableRow className="border-slate-700/60 bg-slate-950/70">

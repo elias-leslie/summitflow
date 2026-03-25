@@ -75,25 +75,16 @@ export function SystemHealthWidget({ className }: SystemHealthWidgetProps) {
         {metrics.map((m) => (
           <div
             key={m.label}
-            className="rounded-2xl border border-slate-800/70 bg-slate-950/55 p-4"
+            className="rounded-lg border border-slate-800/70 bg-slate-950/55 px-3 py-2"
             title={`${m.label}: ${m.percent}%`}
           >
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="eyebrow">{m.label}</div>
-                <p className="mt-1 text-sm text-slate-200">
-                  {m.label === 'CPU'
-                    ? 'Host compute pressure'
-                    : m.label === 'RAM'
-                      ? 'Working memory usage'
-                      : 'Persistent storage occupancy'}
-                </p>
-              </div>
-              <span className={clsx('font-mono text-xl font-bold tabular-nums', STATUS_COLORS[m.status].text)}>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">{m.label}</span>
+              <span className={clsx('font-mono text-sm font-bold tabular-nums', STATUS_COLORS[m.status].text)}>
                 {m.percent}%
               </span>
             </div>
-            <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-slate-800 ring-1 ring-white/[0.04]">
+            <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-800 ring-1 ring-white/[0.04]">
               <div
                 className={clsx('h-full rounded-full transition-all duration-700', STATUS_COLORS[m.status].bar)}
                 style={{
@@ -105,8 +96,8 @@ export function SystemHealthWidget({ className }: SystemHealthWidgetProps) {
           </div>
         ))}
       </div>
-      <div className="flex items-center justify-between rounded-2xl border border-slate-800/70 bg-slate-950/45 px-4 py-3 text-xs text-slate-500">
-        <span>Native monitor feed refreshes automatically.</span>
+      <div className="flex items-center justify-between rounded-lg border border-slate-800/70 bg-slate-950/45 px-3 py-2 text-xs text-slate-500">
+        <span>Auto-refreshing</span>
         <button
           type="button"
           onClick={() => refetch()}
