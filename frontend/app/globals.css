@@ -58,7 +58,7 @@
 
   /* Fonts - CSS variables are set by next/font in layout.tsx */
   /* Using var() references to the font variables injected by next/font */
-  --font-mono: var(--font-mono), "Fira Code", monospace;
+  --font-mono: var(--font-mono), monospace;
   --font-display: var(--font-display), system-ui, sans-serif;
   --font-body: var(--font-body), system-ui, sans-serif;
 

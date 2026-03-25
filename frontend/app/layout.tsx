@@ -3,8 +3,6 @@ import {
   Outfit,
   Bricolage_Grotesque,
   JetBrains_Mono,
-  Fira_Code,
-  IBM_Plex_Mono,
 } from 'next/font/google'
 import clsx from 'clsx'
 import './globals.css'
@@ -33,20 +31,6 @@ const jetbrainsMono = JetBrains_Mono({
   display: 'swap',
 })
 
-// Alternative mono fonts
-const firaCode = Fira_Code({
-  subsets: ['latin'],
-  weight: ['400', '500'],
-  variable: '--font-fira-code',
-  display: 'swap',
-})
-
-const ibmPlexMono = IBM_Plex_Mono({
-  subsets: ['latin'],
-  weight: ['400', '500'],
-  variable: '--font-ibm-plex-mono',
-  display: 'swap',
-})
 
 export const metadata: Metadata = {
   title: 'SummitFlow',
@@ -67,7 +51,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={clsx('dark', outfit.variable, bricolageGrotesque.variable, jetbrainsMono.variable, firaCode.variable, ibmPlexMono.variable)}
+      className={clsx('dark', outfit.variable, bricolageGrotesque.variable, jetbrainsMono.variable)}
     >
       <head>
         <link
