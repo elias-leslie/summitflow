@@ -5,7 +5,6 @@ import {
   AlertTriangle,
   GitBranch,
   Layers,
-  ShieldCheck,
   RefreshCw,
   Scissors,
   XCircle,
@@ -71,41 +70,10 @@ export function GitClient() {
   )
   const hasIssues =
     dirtyRepos + dirtyWorktrees + orphanBranches + prunableBranches > 0
-  const cleanRepos = Math.max(repos.length - dirtyRepos, 0)
   const reviewDebt = orphanBranches + prunableBranches
-  const statCards = [
-    {
-      icon: ShieldCheck,
-      label: 'Clean repos',
-      value: cleanRepos,
-      detail: 'ready for normal work',
-      tone: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-200',
-    },
-    {
-      icon: AlertTriangle,
-      label: 'Dirty repos',
-      value: dirtyRepos,
-      detail: 'local changes or ahead branches',
-      tone: 'border-rose-500/20 bg-rose-500/10 text-rose-200',
-    },
-    {
-      icon: Layers,
-      label: 'Active worktrees',
-      value: activeWorktrees,
-      detail: `${dirtyWorktrees} have local edits`,
-      tone: 'border-cyan-500/20 bg-cyan-500/10 text-cyan-200',
-    },
-    {
-      icon: Scissors,
-      label: 'Cleanup debt',
-      value: reviewDebt,
-      detail: 'orphan + prunable branches',
-      tone: 'border-amber-500/20 bg-amber-500/10 text-amber-200',
-    },
-  ]
 
   return (
-    <div className="mx-auto max-w-[1400px] space-y-4 px-4 py-4 md:px-5 lg:px-6">
+    <div className="mx-auto max-w-[1400px] space-y-3 px-4 py-3 md:px-5 lg:px-6">
       <motion.section
         {...fadeUp}
         transition={{ duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
@@ -154,34 +122,6 @@ export function GitClient() {
           </div>
         </div>
 
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-          {statCards.map((card) => {
-            const Icon = card.icon
-            return (
-              <div
-                key={card.label}
-                className={clsx('rounded-lg border px-3 py-2', card.tone)}
-              >
-                <div className="flex items-center gap-2.5">
-                  <Icon className="h-3.5 w-3.5 text-current" />
-                  <div className="min-w-0">
-                    <div className="flex items-baseline gap-2">
-                      <span className="font-mono text-lg font-bold leading-none tabular-nums text-slate-50">
-                        {card.value}
-                      </span>
-                      <span className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
-                        {card.label}
-                      </span>
-                    </div>
-                    <div className="text-[10px] text-slate-400">
-                      {card.detail}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )
-          })}
-        </div>
       </motion.section>
 
       <ConflictAlerts />

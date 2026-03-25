@@ -69,9 +69,7 @@
   --text-2xs--line-height: 1rem;
 
   /* Animations */
-  --animate-fade-in: fadeIn 0.5s ease-out;
   --animate-slide-up: slideUp 0.5s ease-out;
-  --animate-pulse-glow: pulse-glow 2s ease-in-out infinite;
 }
 
 /* Keyframes */
@@ -161,25 +159,6 @@ body {
   overflow-x: hidden;
 }
 
-/* Subtle scanline overlay - classic CRT effect */
-body::before {
-  content: "";
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  pointer-events: none;
-  z-index: 9999;
-  background: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 2px,
-    rgba(255, 255, 255, 0.008) 2px,
-    rgba(255, 255, 255, 0.008) 4px
-  );
-  opacity: 0;
-}
 
 body::after {
   content: "";
@@ -460,21 +439,12 @@ body::after {
   animation-fill-mode: both;
 }
 
-.animate-fade-in {
-  animation: fadeIn 0.5s ease-out;
-  animation-fill-mode: both;
-}
-
 /* Staggered animation delays */
 .stagger-1 { animation-delay: 0.05s; }
 .stagger-2 { animation-delay: 0.1s; }
 .stagger-3 { animation-delay: 0.15s; }
 .stagger-4 { animation-delay: 0.2s; }
 .stagger-5 { animation-delay: 0.25s; }
-.stagger-6 { animation-delay: 0.3s; }
-.stagger-7 { animation-delay: 0.35s; }
-.stagger-8 { animation-delay: 0.4s; }
-.stagger-9 { animation-delay: 0.45s; }
 
 /* Shimmer animation for skeletons */
 .animate-shimmer {
@@ -520,9 +490,6 @@ body::after {
 /* Hero section radial glow — atmospheric depth behind page titles */
 .hero-glow {
   position: relative;
-}
-.hero-glow::before {
-  content: none;
 }
 
 /* Pulsing status dot — for health indicators */

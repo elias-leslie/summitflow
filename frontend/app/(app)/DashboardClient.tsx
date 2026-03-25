@@ -81,7 +81,7 @@ export function DashboardClient() {
   ]
 
   return (
-    <div className="mx-auto max-w-[1500px] space-y-4 px-4 py-4 md:px-5 lg:px-6">
+    <div className="mx-auto max-w-[1500px] space-y-3 px-4 py-3 md:px-5 lg:px-6">
       <motion.section
         {...fadeUp}
         transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
@@ -150,7 +150,7 @@ export function DashboardClient() {
         </div>
       </motion.section>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_340px]">
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1.35fr)_340px]">
         <motion.section
           {...fadeUp}
           transition={{ duration: 0.4, delay: 0.08, ease: [0.25, 0.46, 0.45, 0.94] }}
@@ -289,7 +289,7 @@ function ProjectsGrid({
 }: ProjectsGridProps) {
   if (isLoading) {
     return (
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
         {Array.from({ length: 6 }).map((_, i) => (
           <div key={i} className="card p-5 space-y-4">
             <div className="flex items-center gap-3">
@@ -342,7 +342,7 @@ function ProjectsGrid({
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
         {projects.map((project, i) => (
           <motion.div
             key={project.id}
