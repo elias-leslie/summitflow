@@ -47,15 +47,14 @@ function ConflictCard({ conflict }: { conflict: ConflictInfo }) {
   return (
     <div
       className={clsx(
-        'relative overflow-hidden rounded-lg border transition-all duration-300',
-        'bg-gradient-to-br from-rose-950/40 to-slate-900/80',
+        'relative overflow-hidden rounded-[1.6rem] border transition-all duration-300',
+        'bg-gradient-to-br from-rose-950/40 to-slate-950/80',
         'border-rose-500/30',
-        'hover:border-rose-500/50 hover:shadow-[0_0_20px_rgba(244,63,94,0.15)]',
+        'hover:border-rose-500/50 hover:shadow-[0_0_24px_rgba(244,63,94,0.18)]',
       )}
     >
-      {/* Hazard stripe top edge */}
       <div
-        className="h-0.5 w-full"
+        className="h-1 w-full"
         style={{
           background: `repeating-linear-gradient(
             90deg,
@@ -67,22 +66,20 @@ function ConflictCard({ conflict }: { conflict: ConflictInfo }) {
         }}
       />
 
-      <div className="p-4">
-        {/* Header row */}
-        <div className="flex items-start justify-between gap-3 mb-3">
+      <div className="p-5">
+        <div className="mb-4 flex items-start justify-between gap-3">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="relative shrink-0 w-8 h-8 rounded-md bg-rose-500/15 flex items-center justify-center">
-              <AlertTriangle className="w-4 h-4 text-rose-400" />
-              {/* Pulse indicator */}
-              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-rose-500 animate-pulse shadow-[0_0_6px_rgba(244,63,94,0.8)]" />
+            <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-rose-500/20 bg-rose-500/15">
+              <AlertTriangle className="h-4 w-4 text-rose-400" />
+              <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-rose-500 animate-pulse shadow-[0_0_6px_rgba(244,63,94,0.8)]" />
             </div>
             <div className="min-w-0">
-              <h3 className="text-sm font-semibold text-slate-100 truncate">
+              <h3 className="truncate text-sm font-semibold text-slate-100">
                 {conflict.task_title}
               </h3>
               <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                <GitBranch className="w-3 h-3 shrink-0" />
-                <span className="font-mono text-rose-400/70 truncate">
+                <GitBranch className="h-3 w-3 shrink-0" />
+                <span className="truncate font-mono text-rose-300/70">
                   {conflict.task_branch}
                 </span>
                 <span className="text-slate-600 shrink-0">
@@ -93,11 +90,10 @@ function ConflictCard({ conflict }: { conflict: ConflictInfo }) {
           </div>
         </div>
 
-        {/* Conflicting files */}
-        <div className="mb-3 p-2.5 rounded-md bg-slate-950/30 border border-rose-500/10">
-          <div className="flex items-center gap-1.5 mb-1.5">
-            <FileWarning className="w-3 h-3 text-rose-500/60" />
-            <span className="text-[10px] text-rose-400/60 uppercase tracking-wider font-medium">
+        <div className="mb-4 rounded-[1.2rem] border border-rose-500/10 bg-slate-950/30 p-3">
+          <div className="mb-1.5 flex items-center gap-1.5">
+            <FileWarning className="h-3 w-3 text-rose-500/60" />
+            <span className="text-[10px] font-medium uppercase tracking-wider text-rose-300/70">
               {conflict.conflicting_files.length} Conflicting File
               {conflict.conflicting_files.length !== 1 ? 's' : ''}
             </span>
@@ -106,36 +102,35 @@ function ConflictCard({ conflict }: { conflict: ConflictInfo }) {
             {conflict.conflicting_files.slice(0, 5).map((file) => (
               <div
                 key={file}
-                className="text-xs font-mono text-slate-400 truncate pl-1 border-l-2 border-rose-500/30"
+                className="truncate border-l-2 border-rose-500/30 pl-2 font-mono text-xs text-slate-400"
               >
                 {file}
               </div>
             ))}
             {conflict.conflicting_files.length > 5 && (
-              <div className="text-[10px] text-slate-600 pl-1">
+              <div className="pl-2 text-[10px] text-slate-600">
                 +{conflict.conflicting_files.length - 5} more
               </div>
             )}
           </div>
         </div>
 
-        {/* Actions */}
         <div className="flex items-center gap-2">
           <button
             type="button"
             disabled={isWorking}
             onClick={() => retryMut.mutate()}
             className={clsx(
-              'flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all',
+              'flex flex-1 items-center justify-center gap-1.5 rounded-2xl border px-3 py-2 text-xs font-medium transition-all',
               isWorking
-                ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                : 'bg-rose-500/15 text-rose-300 border border-rose-500/30 hover:bg-rose-500/25 hover:border-rose-500/50 hover:shadow-[0_0_10px_rgba(244,63,94,0.2)]',
+                ? 'cursor-not-allowed border-slate-800 bg-slate-800 text-slate-500'
+                : 'border-rose-500/30 bg-rose-500/15 text-rose-200 hover:border-rose-500/50 hover:bg-rose-500/25 hover:shadow-[0_0_10px_rgba(244,63,94,0.2)]',
             )}
           >
             {retryMut.isPending ? (
-              <Loader2 className="w-3 h-3 animate-spin" />
+              <Loader2 className="h-3 w-3 animate-spin" />
             ) : (
-              <RefreshCw className="w-3 h-3" />
+              <RefreshCw className="h-3 w-3" />
             )}
             Retry Merge
           </button>
@@ -144,25 +139,24 @@ function ConflictCard({ conflict }: { conflict: ConflictInfo }) {
             disabled={isWorking}
             onClick={() => dismissMut.mutate()}
             className={clsx(
-              'flex items-center justify-center gap-1 px-3 py-1.5 rounded-md text-xs transition-all',
+              'flex items-center justify-center gap-1 rounded-2xl border border-slate-800/70 px-3 py-2 text-xs transition-all',
               isWorking
                 ? 'text-slate-600 cursor-not-allowed'
-                : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/50',
+                : 'text-slate-500 hover:border-slate-700 hover:bg-slate-800/50 hover:text-slate-300',
             )}
           >
-            <X className="w-3 h-3" />
+            <X className="h-3 w-3" />
             Dismiss
           </button>
         </div>
 
-        {/* Retry result feedback */}
         {retryMut.isSuccess && (
-          <div className="mt-2 text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20">
+          <div className="mt-3 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-[10px] font-mono text-emerald-300">
             Merge retry completed
           </div>
         )}
         {retryMut.isError && (
-          <div className="mt-2 text-[10px] font-mono text-rose-400 bg-rose-500/10 px-2 py-1 rounded border border-rose-500/20">
+          <div className="mt-3 rounded-full border border-rose-500/20 bg-rose-500/10 px-3 py-1 text-[10px] font-mono text-rose-300">
             Retry failed — conflict may still exist
           </div>
         )}
@@ -183,22 +177,30 @@ export function ConflictAlerts({ projectId }: { projectId?: string }) {
   if (isLoading || !data || data.count === 0) return null
 
   return (
-    <section className="animate-in fade-in slide-in-from-top-4 duration-500">
-      {/* Section Header */}
-      <div className="flex items-center justify-between mb-3">
+    <section className="animate-in fade-in slide-in-from-top-4 space-y-4 duration-500">
+      <div className="card-elevated px-5 py-5">
         <div className="flex items-center gap-2.5">
-          <div className="relative">
-            <AlertTriangle className="w-5 h-5 text-rose-400" />
-            <div className="absolute inset-0 blur-md bg-rose-500/40" />
+          <div className="relative flex h-11 w-11 items-center justify-center rounded-2xl border border-rose-500/20 bg-rose-500/12">
+            <AlertTriangle className="h-5 w-5 text-rose-400" />
+            <div className="absolute inset-0 rounded-2xl blur-md bg-rose-500/20" />
           </div>
-          <h2 className="font-semibold text-slate-100">Merge Conflicts</h2>
-          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-400 border border-rose-500/30">
-            {data.count}
+          <div>
+            <div className="eyebrow text-rose-300">Merge conflicts</div>
+            <h2 className="mt-2 text-xl font-semibold text-slate-100">
+              Intervention required
+            </h2>
+            <p className="mt-2 text-sm leading-relaxed text-slate-300">
+              Conflicts are blocking merge completion for active task branches.
+              Retry if the workspace has been cleaned up, or dismiss once the
+              issue is intentionally resolved elsewhere.
+            </p>
+          </div>
+          <span className="ml-auto rounded-full border border-rose-500/30 bg-rose-500/15 px-3 py-1 text-[11px] font-mono uppercase tracking-[0.16em] text-rose-300">
+            {data.count} active
           </span>
         </div>
       </div>
 
-      {/* Conflict Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         {data.conflicts.map((conflict) => (
           <ConflictCard key={conflict.task_id} conflict={conflict} />

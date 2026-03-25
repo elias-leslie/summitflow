@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { clsx } from 'clsx'
+import { Activity, Boxes, DatabaseZap, Layers3 } from 'lucide-react'
 import { type RuntimeModeStatus, runtimeApi } from '@/lib/api/runtime'
 import { POLL_MONITOR } from '@/lib/polling'
 
@@ -30,40 +31,93 @@ export function RuntimeModeBanner() {
   })
 
   if (isLoading) {
-    return <div className="h-10 animate-pulse rounded-lg bg-slate-800/40" />
+    return <div className="h-32 animate-pulse rounded-3xl bg-slate-800/40" />
   }
 
   if (error || !rt) {
     return (
-      <div className="rounded-lg border border-red-500/30 bg-red-950/20 px-4 py-2.5 text-sm text-red-300">
+      <div className="rounded-3xl border border-red-500/30 bg-red-950/20 px-5 py-4 text-sm text-red-300">
         {error instanceof Error ? error.message : 'Runtime mode unavailable'}
       </div>
     )
   }
 
+  const details = [
+    {
+      label: 'Apps',
+      value: rt.apps_runtime,
+      icon: Activity,
+      tone: 'border-cyan-500/20 bg-cyan-500/10 text-cyan-200',
+    },
+    {
+      label: 'Infra',
+      value: rt.infra_runtime,
+      icon: DatabaseZap,
+      tone: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-200',
+    },
+    {
+      label: 'Mode',
+      value: `${rt.current_mode} now`,
+      icon: Layers3,
+      tone: 'border-amber-500/20 bg-amber-500/10 text-amber-200',
+    },
+    {
+      label: 'Source',
+      value: rt.source,
+      icon: Boxes,
+      tone: 'border-slate-700/70 bg-slate-950/70 text-slate-200',
+    },
+  ]
+
   return (
-    <div className="rounded-lg border border-slate-700/60 bg-slate-900/70 px-4 py-3">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        {/* Badge */}
+    <div className="card-elevated px-5 py-5">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="eyebrow">Runtime posture</div>
+          <h2 className="display mt-2 text-2xl font-semibold text-slate-50">
+            {rt.runtime === 'hybrid'
+              ? 'Hybrid operations'
+              : rt.runtime === 'native'
+                ? 'Native operations'
+                : rt.runtime === 'docker'
+                  ? 'Docker operations'
+                  : 'Standby posture'}
+          </h2>
+          <p className="mt-2 text-sm leading-relaxed text-slate-300">
+            {runtimeSummary(rt)}
+          </p>
+        </div>
         <span
           className={clsx(
-            'inline-flex items-center rounded-full border px-2.5 py-0.5 text-2xs font-semibold uppercase tracking-[0.14em]',
+            'inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]',
             runtimeBadge[rt.runtime] ?? runtimeBadge['docker-stopped'],
           )}
         >
           {rt.runtime}
         </span>
+      </div>
 
-        {/* Summary */}
-        <span className="text-sm text-slate-400 flex-1 min-w-0">
-          {runtimeSummary(rt)}
-        </span>
-
-        {/* Inline metadata */}
-        <div className="hidden md:flex items-center gap-3 text-xs text-slate-500">
-          <span>Apps: <span className="text-slate-300">{rt.apps_runtime}</span></span>
-          <span>Infra: <span className="text-slate-300">{rt.infra_runtime}</span></span>
-        </div>
+      <div className="mt-5 grid gap-3 sm:grid-cols-2">
+        {details.map((detail) => {
+          const Icon = detail.icon
+          return (
+            <div
+              key={detail.label}
+              className={clsx(
+                'rounded-2xl border px-4 py-3 transition-colors',
+                detail.tone,
+              )}
+            >
+              <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-slate-400">
+                <Icon className="h-3.5 w-3.5 text-current" />
+                {detail.label}
+              </div>
+              <div className="mt-2 text-sm font-medium capitalize text-slate-100">
+                {detail.value}
+              </div>
+            </div>
+          )
+        })}
       </div>
     </div>
   )

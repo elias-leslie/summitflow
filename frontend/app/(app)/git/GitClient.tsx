@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   GitBranch,
   Layers,
+  ShieldCheck,
   RefreshCw,
   Scissors,
   Unplug,
@@ -71,73 +72,167 @@ export function GitClient() {
   )
   const hasIssues =
     dirtyRepos + dirtyWorktrees + orphanBranches + prunableBranches > 0
+  const cleanRepos = Math.max(repos.length - dirtyRepos, 0)
+  const reviewDebt = orphanBranches + prunableBranches
+  const statCards = [
+    {
+      icon: ShieldCheck,
+      label: 'Clean repos',
+      value: cleanRepos,
+      detail: 'ready for normal work',
+      tone: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-200',
+    },
+    {
+      icon: AlertTriangle,
+      label: 'Dirty repos',
+      value: dirtyRepos,
+      detail: 'local changes or ahead branches',
+      tone: 'border-rose-500/20 bg-rose-500/10 text-rose-200',
+    },
+    {
+      icon: Layers,
+      label: 'Active worktrees',
+      value: activeWorktrees,
+      detail: `${dirtyWorktrees} have local edits`,
+      tone: 'border-cyan-500/20 bg-cyan-500/10 text-cyan-200',
+    },
+    {
+      icon: Scissors,
+      label: 'Cleanup debt',
+      value: reviewDebt,
+      detail: 'orphan + prunable branches',
+      tone: 'border-amber-500/20 bg-amber-500/10 text-amber-200',
+    },
+  ]
 
   return (
-    <div className="p-6 space-y-5 max-w-6xl mx-auto">
-      {/* Header */}
-      <motion.header
+    <div className="mx-auto max-w-[1400px] space-y-6 px-4 py-6 md:px-6 lg:px-8">
+      <motion.section
         {...fadeUp}
         transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
-        className="flex items-center justify-between gap-4 hero-glow"
+        className="card-elevated hero-glow relative overflow-hidden px-6 py-6 md:px-8 md:py-8"
       >
-        <div className="flex items-center gap-3 relative z-10">
-          <div className="p-1.5 rounded-md bg-outrun-500/10 border border-outrun-500/20">
-            <GitBranch className="w-5 h-5 text-outrun-500" />
+        <div className="pointer-events-none absolute inset-y-0 right-0 w-[34%] bg-[radial-gradient(circle_at_top_right,rgba(244,63,94,0.16),transparent_62%)] opacity-80" />
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_340px]">
+          <div className="relative z-10 space-y-6">
+            <div className="flex items-start gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-outrun-500/20 bg-outrun-500/10">
+                <GitBranch className="h-6 w-6 text-outrun-400" />
+              </div>
+              <div>
+                <div className="eyebrow">Repository operations</div>
+                <h1 className="display mt-2 text-4xl font-semibold tracking-tight text-slate-50">
+                  Git control surface
+                </h1>
+                <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-300 sm:text-base">
+                  Keep workspace health visible across every managed repository,
+                  isolate cleanup debt, and trigger syncs without losing the big
+                  picture.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {statCards.map((card) => {
+                const Icon = card.icon
+                return (
+                  <div
+                    key={card.label}
+                    className={clsx('rounded-[1.35rem] border px-4 py-4', card.tone)}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-2.5">
+                        <Icon className="h-4 w-4 text-current" />
+                      </div>
+                      <span className="font-mono text-3xl tabular-nums text-slate-50">
+                        {card.value}
+                      </span>
+                    </div>
+                    <div className="mt-4 text-[11px] uppercase tracking-[0.18em] text-slate-500">
+                      {card.label}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-400">
+                      {card.detail}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
           </div>
-          <div>
-            <h1 className="text-2xl font-bold text-slate-100 display tracking-tight leading-none">
-              Git Operations
-            </h1>
-            <p className="text-xs text-slate-500 mt-0.5">
-              {repos.length} workspace{repos.length !== 1 ? 's' : ''}
-            </p>
+
+          <div className="relative z-10 space-y-4">
+            <div className="card-elevated px-5 py-5">
+              <div className="eyebrow">Readiness</div>
+              <h2 className="mt-2 text-lg font-semibold text-slate-100">
+                {hasIssues ? 'Cleanup debt is visible' : 'Everything looks steady'}
+              </h2>
+              <p className="mt-2 text-sm leading-relaxed text-slate-300">
+                {hasIssues
+                  ? 'Use the issue strip below to see where repo hygiene or worktree cleanup deserves attention before more branching and fan-out.'
+                  : 'All managed repositories are currently in a calm state with no visible cleanup debt.'}
+              </p>
+            </div>
+
+            {gitStatus && !isLoading && hasIssues ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <StatPill
+                  icon={AlertTriangle}
+                  value={dirtyRepos}
+                  label="dirty"
+                  tone="bg-pink-500/8 text-pink-300 border-pink-500/20"
+                />
+                <StatPill
+                  icon={Layers}
+                  value={activeWorktrees}
+                  label="worktrees"
+                  tone="bg-phosphor-500/8 text-phosphor-300 border-phosphor-500/20"
+                />
+                <StatPill
+                  icon={AlertTriangle}
+                  value={dirtyWorktrees}
+                  label="dirty wt"
+                  tone="bg-orange-500/8 text-orange-300 border-orange-500/20"
+                />
+                <StatPill
+                  icon={Unplug}
+                  value={orphanBranches}
+                  label="orphan"
+                  tone="bg-amber-500/8 text-amber-300 border-amber-500/20"
+                />
+                <StatPill
+                  icon={Scissors}
+                  value={prunableBranches}
+                  label="prunable"
+                  tone="bg-rose-500/8 text-rose-300 border-rose-500/20"
+                />
+              </div>
+            ) : (
+              <div className="rounded-[1.35rem] border border-emerald-500/18 bg-emerald-500/10 px-4 py-4 text-sm text-emerald-200">
+                No active repo hygiene warnings are visible right now.
+              </div>
+            )}
           </div>
         </div>
+      </motion.section>
 
-      </motion.header>
-
-      {/* Conflict Alerts */}
       <ConflictAlerts />
 
-      {/* Compact status strip — only renders when issues exist */}
-      {gitStatus && !isLoading && hasIssues && (
-        <div className="flex flex-wrap items-center gap-2">
-          <StatPill
-            icon={AlertTriangle}
-            value={dirtyRepos}
-            label="dirty"
-            tone="bg-pink-500/8 text-pink-400 border-pink-500/20"
-          />
-          <StatPill
-            icon={Layers}
-            value={activeWorktrees}
-            label="worktrees"
-            tone="bg-phosphor-500/8 text-phosphor-400 border-phosphor-500/20"
-          />
-          <StatPill
-            icon={AlertTriangle}
-            value={dirtyWorktrees}
-            label="dirty wt"
-            tone="bg-orange-500/8 text-orange-400 border-orange-500/20"
-          />
-          <StatPill
-            icon={Unplug}
-            value={orphanBranches}
-            label="orphan"
-            tone="bg-amber-500/8 text-amber-400 border-amber-500/20"
-          />
-          <StatPill
-            icon={Scissors}
-            value={prunableBranches}
-            label="prunable"
-            tone="bg-rose-500/8 text-rose-400 border-rose-500/20"
-          />
-        </div>
-      )}
-
-      {/* Repository list */}
       {gitStatus && !isLoading && (
-        <div className="space-y-2">
+        <section className="space-y-4">
+          <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+            <div>
+              <div className="eyebrow">Repositories</div>
+              <h2 className="display mt-2 text-2xl font-semibold text-slate-100">
+                Workspace inventory
+              </h2>
+              <p className="mt-2 text-sm text-slate-400">
+                {repos.length} workspace{repos.length !== 1 ? 's' : ''} with
+                live branch, sync, and cleanup context.
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
           {repos.map((repo, i) => (
             <motion.div
               key={repo.path}
@@ -148,22 +243,21 @@ export function GitClient() {
               <ProjectRow repo={repo} />
             </motion.div>
           ))}
-        </div>
+          </div>
+        </section>
       )}
 
-      {/* Loading */}
       {isLoading && (
-        <div className="flex items-center justify-center py-20">
-          <div className="flex items-center gap-2.5 text-slate-500 text-sm">
+        <div className="card-elevated flex items-center justify-center py-20">
+          <div className="flex items-center gap-2.5 text-sm text-slate-500">
             <RefreshCw className="w-5 h-5 animate-spin text-phosphor-500" />
             Scanning workspaces...
           </div>
         </div>
       )}
 
-      {/* Error */}
       {isError && (
-        <div className="p-4 rounded-lg bg-rose-500/8 border border-rose-500/20 text-rose-300 flex items-center gap-3 text-sm">
+        <div className="card-elevated flex items-center gap-3 border-rose-500/20 bg-rose-500/8 p-4 text-sm text-rose-300">
           <XCircle className="w-5 h-5 text-rose-500 shrink-0" />
           <div>
             <span className="font-medium text-slate-100">Connection failed.</span>{' '}
@@ -172,14 +266,17 @@ export function GitClient() {
         </div>
       )}
 
-      {/* Empty */}
       {gitStatus?.repositories.length === 0 && (
-        <div className="text-center py-20">
-          <div className="mx-auto mb-4 w-14 h-14 rounded-2xl bg-violet-500/8 border border-violet-500/15 flex items-center justify-center">
+        <div className="card-elevated py-20 text-center">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-violet-500/15 bg-violet-500/8">
             <GitBranch className="w-7 h-7 text-violet-500/50" />
           </div>
-          <p className="text-sm font-medium text-slate-400 mb-1">No repositories found</p>
-          <p className="text-xs text-slate-600">Register a project to start tracking its git workspace.</p>
+          <p className="mb-1 text-sm font-medium text-slate-300">
+            No repositories found
+          </p>
+          <p className="text-xs text-slate-500">
+            Register a project to start tracking its git workspace.
+          </p>
         </div>
       )}
     </div>
