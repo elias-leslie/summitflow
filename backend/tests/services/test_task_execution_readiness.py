@@ -64,6 +64,60 @@ class TestAssessTaskExecutionReadiness:
 
         assert readiness.ready
 
+    def test_frontend_task_requires_execution_contract_when_runtime_eval_route_is_selected(self) -> None:
+        readiness = assess_task_execution_readiness(
+            {"task_type": "feature", "complexity": "STANDARD", "description": "Refresh dashboard layout"},
+            {
+                "done_when": ["Dashboard loads", "Tests pass"],
+                "context": {"files_to_modify": ["frontend/app/dashboard/page.tsx"]},
+            },
+            [
+                {
+                    "subtask_id": "1.1",
+                    "subtask_type": "frontend",
+                    "description": "Refresh dashboard layout",
+                    "steps_from_table": [{"step_number": 1, "description": "Update layout"}],
+                }
+            ],
+        )
+
+        assert not readiness.ready
+        assert "execution_contract" in readiness.missing_fields
+        assert any("execution contract" in issue.lower() for issue in readiness.issues)
+
+    def test_frontend_task_with_execution_contract_is_execution_ready(self) -> None:
+        readiness = assess_task_execution_readiness(
+            {"task_type": "feature", "complexity": "STANDARD", "description": "Refresh dashboard layout"},
+            {
+                "done_when": ["Dashboard loads", "Tests pass"],
+                "context": {
+                    "files_to_modify": ["frontend/app/dashboard/page.tsx"],
+                    "execution_contract": {
+                        "mode": "runtime_eval",
+                        "target_urls": ["/app"],
+                        "user_flows": [
+                            {
+                                "title": "Open dashboard",
+                                "actions": ["Visit /app"],
+                                "expected_outcomes": ["Dashboard widgets render"],
+                            }
+                        ],
+                        "evidence_requirements": ["screenshot"],
+                    },
+                },
+            },
+            [
+                {
+                    "subtask_id": "1.1",
+                    "subtask_type": "frontend",
+                    "description": "Refresh dashboard layout",
+                    "steps_from_table": [{"step_number": 1, "description": "Update layout"}],
+                }
+            ],
+        )
+
+        assert readiness.ready
+
 
 class TestSecondOpinionParsing:
     """Parsing helpers for live critique responses."""

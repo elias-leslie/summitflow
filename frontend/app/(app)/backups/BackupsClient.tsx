@@ -23,7 +23,6 @@ import { SourcesManager } from '@/components/backup/SourcesManager'
 import { StatusBadge } from '@/components/backup/StatusBadge'
 import { StatusRibbon } from '@/components/backup/StatusRibbon'
 import { StorageCard } from '@/components/backup/StorageCard'
-import { WalCard } from '@/components/backup/WalCard'
 import { ScopeList } from '@/components/snapshots/ScopeList'
 import { SnapshotSummaryCard } from '@/components/snapshots/SnapshotSummaryCard'
 import {
@@ -35,7 +34,6 @@ import {
   fetchStorageBackends,
   fetchStorageSummary,
   fetchStorageStatus,
-  fetchWalStatus,
 } from '@/lib/api/backups'
 import { fetchScopes, fetchSnapshotSummary } from '@/lib/api/snapshots'
 import { POLL_NOTIFICATIONS, STALE_GIT } from '@/lib/polling'
@@ -292,11 +290,6 @@ export function BackupsClient() {
     queryFn: fetchStorageBackends,
   })
 
-  const { data: walStatus, isLoading: walLoading } = useQuery({
-    queryKey: ['wal-status'],
-    queryFn: fetchWalStatus,
-  })
-
   const { data: snapshotSummary, isLoading: snapshotLoading } = useQuery({
     queryKey: ['snapshot-summary'],
     queryFn: () => fetchSnapshotSummary(),
@@ -339,10 +332,6 @@ export function BackupsClient() {
   const refreshStorage = () => {
     queryClient.invalidateQueries({ queryKey: ['storage-backends'] })
     queryClient.invalidateQueries({ queryKey: ['storage-status'] })
-  }
-
-  const refreshWal = () => {
-    queryClient.invalidateQueries({ queryKey: ['wal-status'] })
   }
 
   const refreshSnapshots = () => {
@@ -429,11 +418,9 @@ export function BackupsClient() {
         storageStatus={storageStatus}
         sources={sources}
         healthItems={healthData?.sources ?? []}
-        walStatus={walStatus}
-        isLoading={storageLoading || healthLoading || walLoading}
+        isLoading={storageLoading || healthLoading}
         onSourceChanged={refreshSources}
         onBackupTriggered={invalidateAll}
-        onWalRefresh={refreshWal}
       />
 
       {/* Sources & Schedules */}
@@ -445,29 +432,21 @@ export function BackupsClient() {
         onBackupTriggered={invalidateAll}
       />
 
-      {/* Protection & Storage — collapsible cards */}
+      {/* Storage */}
       <section className="space-y-3">
         <div>
           <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-300 display">
-            Protection & Storage
+            Storage
           </h2>
           <p className="mt-0.5 text-xs text-slate-500">
-            WAL archiving and remote storage backends
+            Remote storage backends
           </p>
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
-          <WalCard
-            walStatus={walStatus}
-            walHealth={healthData?.wal ?? null}
-            isLoading={walLoading}
-            onRefresh={refreshWal}
-          />
-          <StorageCard
-            backends={storageBackends}
-            storageStatus={storageStatus}
-            onRefresh={refreshStorage}
-          />
-        </div>
+        <StorageCard
+          backends={storageBackends}
+          storageStatus={storageStatus}
+          onRefresh={refreshStorage}
+        />
       </section>
 
       {/* Snapshots & Recovery */}

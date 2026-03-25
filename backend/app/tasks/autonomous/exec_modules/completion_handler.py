@@ -21,6 +21,7 @@ from .diff_gate import check_diff_gate
 from .events import emit_error, emit_log
 from .followup_tasks import create_followup_task_for_failures
 from .quality_gate import run_quality_gate_with_autofix
+from .runtime_evaluator import run_runtime_evaluator
 
 logger = get_logger(__name__)
 
@@ -89,6 +90,20 @@ def handle_successful_completion(
         notify_failure(task_id, project_id, f"Intent verification failed: {summary}")
         wake_persona(task_id, project_id, "intent_failed",
                      f"Task {task_id} intent check failed: {summary}. Review done_when criteria.")
+        return False
+
+    runtime_result = run_runtime_evaluator(task_id, project_id)
+    if runtime_result.mode != "code_only" and not runtime_result.passed:
+        task_store.update_task_status(task_id, "failed")
+        summary = runtime_result.summary or "Runtime evaluation failed"
+        emit_error(task_id, f"Runtime evaluation failed: {summary}", project_id=project_id)
+        notify_failure(task_id, project_id, f"Runtime evaluation failed: {summary}")
+        wake_persona(
+            task_id,
+            project_id,
+            "runtime_eval_failed",
+            f"Task {task_id} runtime evaluation failed: {summary}. Review contract and runtime evidence.",
+        )
         return False
 
     try:

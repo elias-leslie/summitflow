@@ -221,6 +221,35 @@ class TestFormatContextTask:
 
         assert "LANE:" not in output
 
+    def test_includes_harness_route_and_execution_contract_summary(self) -> None:
+        task = {
+            "id": "task-795",
+            "status": "pending",
+            "priority": 2,
+            "task_type": "feature",
+            "complexity": "STANDARD",
+            "title": "Critique dashboard design",
+            "context": {
+                "execution_contract": {
+                    "mode": "runtime_eval_plus_design",
+                    "target_urls": ["/app/dashboard"],
+                    "user_flows": [{"title": "Open dashboard"}],
+                    "api_checks": [{"method": "GET", "path": "/dashboard"}],
+                    "negative_cases": [{"title": "Missing dashboard"}],
+                    "design_criteria": {"rubric": ["craft", "usability"]},
+                }
+            },
+            "harness_route": {
+                "mode": "runtime_eval_plus_design",
+                "reasons": ["frontend_scope", "design_criteria"],
+            },
+        }
+
+        output = format_context_task(task)
+
+        assert "HARNESS:runtime_eval_plus_design|reasons:frontend_scope,design_criteria" in output
+        assert "CONTRACT:urls=1|flows=1|api=1|negative=1|design=yes" in output
+
 
 
 class TestFormatContextSnapshot:

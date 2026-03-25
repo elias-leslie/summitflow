@@ -124,6 +124,8 @@ BACKUP:
   backup list [--limit N] [--status S]
   backup create [--note 'message'] [--keep-local]
   backup restore <id> [--dry-run] [--yes]
+  backup testbed baseline [--note X] [--snapshot-name X] [--allow-dirty] [--local|--remote] [--keep-local]
+  backup testbed reset [backup-id] [--rebuild|--no-rebuild] [--confirm TOKEN]
   backup status [<task-id>]
   backup schedule [--enable|--disable] [--frequency daily|weekly|monthly] [--retention N]
   backup show <id>

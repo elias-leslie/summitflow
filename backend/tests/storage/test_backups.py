@@ -149,6 +149,30 @@ class TestBackupCRUD:
         assert failed["status"] == "failed"
         assert failed["error_message"] == "Disk full"
 
+    def test_merge_backup_verification_json(self, cleanup_project: str) -> None:
+        """Merging verification metadata preserves existing fields."""
+        backup = backups.create_backup_record(cleanup_project)
+        backups.update_backup_status(
+            backup["id"],
+            status="completed",
+            verification_json={"has_db": True, "tree": {"files": 1}},
+        )
+
+        updated = backups.merge_backup_verification_json(
+            backup["id"],
+            {
+                "testbed_baseline": {
+                    "snapshot_id": "snap-123",
+                    "git": {"branch": "main"},
+                }
+            },
+        )
+
+        assert updated is not None
+        assert updated["verification_json"]["has_db"] is True
+        assert updated["verification_json"]["tree"] == {"files": 1}
+        assert updated["verification_json"]["testbed_baseline"]["snapshot_id"] == "snap-123"
+
     def test_delete_backup_record(self, cleanup_project: str) -> None:
         """Delete backup removes record."""
         backup = backups.create_backup_record(cleanup_project)
@@ -162,6 +186,26 @@ class TestBackupCRUD:
         """Delete nonexistent backup returns False."""
         result = backups.delete_backup_record("bkp-nonexistent")
         assert not result
+
+    def test_get_latest_backup_filters_by_verification_key(self, cleanup_project: str) -> None:
+        """Latest backup lookup can require a verification_json marker."""
+        manual = backups.create_backup_record(cleanup_project, backup_type="manual")
+        baseline = backups.create_backup_record(cleanup_project, backup_type="manual")
+
+        backups.update_backup_status(manual["id"], status="completed")
+        backups.update_backup_status(
+            baseline["id"],
+            status="completed",
+            verification_json={"testbed_baseline": {"snapshot_id": "snap-123"}},
+        )
+
+        latest = backups.get_latest_backup(
+            project_id=cleanup_project,
+            verification_key="testbed_baseline",
+        )
+
+        assert latest is not None
+        assert latest["id"] == baseline["id"]
 
 
 class TestSourceCRUD:

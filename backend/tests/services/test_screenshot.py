@@ -29,7 +29,7 @@ class TestBuildScreenshotCommand:
         )
         # The close must be separated by ';' (not '&&') so it executes
         # even when the screenshot command itself fails.
-        assert " ; agent-browser close" in cmd
+        assert " ; sf-browser close" in cmd
 
     def test_full_flag_included_when_full_page(self) -> None:
         """--full flag is present when full_page=True."""

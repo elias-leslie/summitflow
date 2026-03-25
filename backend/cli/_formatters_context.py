@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services.task_harness import summarize_execution_contract
+
 from ._formatters_compact import _safe_int, truncate
 
 
@@ -27,6 +29,33 @@ def _format_context_lines(context: dict[str, Any] | None) -> list[str]:
         status = second_opinion.get("status", "pending")
         parts.append(f"2nd:{stage}:{status}")
     return [f"CONTEXT:{' | '.join(parts)}"] if parts else []
+
+
+def _format_contract_line(context: dict[str, Any] | None) -> str | None:
+    if not isinstance(context, dict):
+        return None
+    summary = summarize_execution_contract(context.get("execution_contract"))
+    if summary["target_url_count"] == 0 and summary["user_flow_count"] == 0 and summary["api_check_count"] == 0 and summary["negative_case_count"] == 0 and not summary["has_design_criteria"]:
+        return None
+    design_flag = "yes" if summary["has_design_criteria"] else "no"
+    return (
+        "CONTRACT:"
+        f"urls={summary['target_url_count']}|"
+        f"flows={summary['user_flow_count']}|"
+        f"api={summary['api_check_count']}|"
+        f"negative={summary['negative_case_count']}|"
+        f"design={design_flag}"
+    )
+
+
+def _format_harness_line(task: dict[str, Any]) -> str | None:
+    route = task.get("harness_route")
+    if not isinstance(route, dict):
+        return None
+    mode = str(route.get("mode") or "code_only")
+    reasons = route.get("reasons") or []
+    reason_text = ",".join(str(reason) for reason in reasons if reason)
+    return f"HARNESS:{mode}|reasons:{reason_text}" if reason_text else f"HARNESS:{mode}"
 
 
 def _format_specialist_group(group: object) -> str | None:
@@ -145,6 +174,8 @@ def format_context_task(task: dict[str, Any]) -> str:
         lines.append(archived_line)
     if workflow := _format_workflow_line(task):
         lines.append(workflow)
+    if harness := _format_harness_line(task):
+        lines.append(harness)
     if objective := task.get("objective"):
         lines.append(f"OBJECTIVE:{objective}")
     if spirit_anti := task.get("spirit_anti"):
@@ -164,6 +195,8 @@ def format_context_task(task: dict[str, Any]) -> str:
     if skipped := _visible_sync_skips(task):
         lines.append(f"SYNC_SKIPS:{' | '.join(skipped[:8])}")
     lines.extend(_format_context_lines(task.get("context")))
+    if contract_line := _format_contract_line(task.get("context")):
+        lines.append(contract_line)
     lines.extend(_format_lane_lines(task.get("lane_preflight")))
     return "\n".join(lines)
 

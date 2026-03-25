@@ -60,6 +60,10 @@ def _generate_hint(query: str, mode: str, metadata: dict) -> str | None:
 
 @app.command()
 def search(
+    project: Annotated[
+        str | None,
+        typer.Option("--project", "-P", help="Project ID (overrides auto-detection for this search)"),
+    ] = None,
     query: Annotated[
         list[str] | None,
         typer.Argument(help="Search query (symbol name, function, class, endpoint)"),
@@ -113,7 +117,7 @@ def search(
         typer.echo("Error: choose at most one primitive mode", err=True)
         raise typer.Exit(1)
 
-    client = STClient()
+    client = STClient(project_id=project) if project else STClient()
 
     if file:
         params = urlencode({"file_path": file, "limit": limit})

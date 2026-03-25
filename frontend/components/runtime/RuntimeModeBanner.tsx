@@ -2,7 +2,6 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { clsx } from 'clsx'
-import { Activity, Boxes, DatabaseZap, Layers3 } from 'lucide-react'
 import { type RuntimeModeStatus, runtimeApi } from '@/lib/api/runtime'
 import { POLL_MONITOR } from '@/lib/polling'
 
@@ -31,92 +30,40 @@ export function RuntimeModeBanner() {
   })
 
   if (isLoading) {
-    return <div className="h-32 animate-pulse rounded-3xl bg-slate-800/40" />
+    return <div className="h-10 animate-pulse rounded-lg bg-slate-800/40" />
   }
 
   if (error || !rt) {
     return (
-      <div className="rounded-3xl border border-red-500/30 bg-red-950/20 px-5 py-4 text-sm text-red-300">
+      <div className="rounded-lg border border-red-500/30 bg-red-950/20 px-4 py-2.5 text-sm text-red-300">
         {error instanceof Error ? error.message : 'Runtime mode unavailable'}
       </div>
     )
   }
 
-  const details = [
-    {
-      label: 'Apps',
-      value: rt.apps_runtime,
-      icon: Activity,
-      tone: 'border-cyan-500/20 bg-cyan-500/10 text-cyan-200',
-    },
-    {
-      label: 'Infra',
-      value: rt.infra_runtime,
-      icon: DatabaseZap,
-      tone: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-200',
-    },
-    {
-      label: 'Mode',
-      value: `${rt.current_mode} now`,
-      icon: Layers3,
-      tone: 'border-amber-500/20 bg-amber-500/10 text-amber-200',
-    },
-    {
-      label: 'Source',
-      value: rt.source,
-      icon: Boxes,
-      tone: 'border-slate-700/70 bg-slate-950/70 text-slate-200',
-    },
-  ]
-
   return (
-    <div className="card-elevated px-4 py-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="display text-sm font-semibold text-slate-100">
-            {rt.runtime === 'hybrid'
-              ? 'Hybrid Operations'
-              : rt.runtime === 'native'
-                ? 'Native Operations'
-                : rt.runtime === 'docker'
-                  ? 'Docker Operations'
-                  : 'Standby'}
-          </h2>
-          <p className="text-xs text-slate-400">
-            {runtimeSummary(rt)}
-          </p>
-        </div>
+    <div className="rounded-lg border border-slate-700/60 bg-slate-900/70 px-4 py-3">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        {/* Badge */}
         <span
           className={clsx(
-            'rounded-full border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em]',
+            'inline-flex items-center rounded-full border px-2.5 py-0.5 text-2xs font-semibold uppercase tracking-[0.14em]',
             runtimeBadge[rt.runtime] ?? runtimeBadge['docker-stopped'],
           )}
         >
           {rt.runtime}
         </span>
-      </div>
 
-      <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        {details.map((detail) => {
-          const Icon = detail.icon
-          return (
-            <div
-              key={detail.label}
-              className={clsx(
-                'rounded-lg border px-2.5 py-1.5',
-                detail.tone,
-              )}
-            >
-              <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.14em] text-slate-400">
-                <Icon className="h-3 w-3 text-current" />
-                {detail.label}
-              </div>
-              <div className="mt-0.5 text-xs font-medium capitalize text-slate-100">
-                {detail.value}
-              </div>
-            </div>
-          )
-        })}
+        {/* Summary */}
+        <span className="text-sm text-slate-400 flex-1 min-w-0">
+          {runtimeSummary(rt)}
+        </span>
+
+        {/* Inline metadata */}
+        <div className="hidden md:flex items-center gap-3 text-xs text-slate-500">
+          <span>Apps: <span className="text-slate-300">{rt.apps_runtime}</span></span>
+          <span>Infra: <span className="text-slate-300">{rt.infra_runtime}</span></span>
+        </div>
       </div>
     </div>
   )

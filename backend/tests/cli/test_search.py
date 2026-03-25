@@ -56,6 +56,20 @@ def test_search_json_output_emits_full_payload() -> None:
     assert json.loads(result.output) == payload
 
 
+def test_search_project_override_uses_requested_project() -> None:
+    payload = {
+        "prompt_context": "Precision Code Search: symbol-first",
+        "metadata": {"symbol_count": 1, "used_symbol_first": True},
+    }
+
+    with patch("cli.commands.search.STClient", return_value=_mock_client(payload)) as mock_client:
+        result = runner.invoke(app, ["proxy_complete", "--project", "agent-hub", "--json"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.output) == payload
+    mock_client.assert_called_once_with(project_id="agent-hub")
+
+
 def test_search_compact_output_reports_empty_results() -> None:
     payload = {
         "prompt_context": "",

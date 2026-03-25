@@ -350,7 +350,14 @@ main() {
         echo ""
         log_success "Local backup created: $final_path"
         echo ""
-        echo "Archive: $final_path"
+        echo "Archive: $ARCHIVE_NAME"
+        if [ "$db_dump_result" -eq 2 ]; then
+            echo "DB Size: 0 bytes"
+            echo "Database: not configured (files-only backup)"
+        else
+            echo "DB Size: $(numfmt --to=iec $db_size 2>/dev/null || echo "$db_size bytes")"
+        fi
+        echo "Location: $final_path"
         echo "Size: $(du -h "$final_path" | cut -f1)"
         return 0
     fi

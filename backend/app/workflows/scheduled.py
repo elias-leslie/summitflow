@@ -269,24 +269,6 @@ async def pending_drain_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
     return await asyncio.to_thread(drain_pending_backups)
 
 
-@hatchet.task(
-    name="summitflow-wal-cleanup",
-    input_validator=EmptyInput,
-    execution_timeout="120s",
-    retries=2,
-    backoff_factor=2.0,
-    on_crons=["0 5 * * *"],
-    concurrency=ConcurrencyExpression(
-        expression="'summitflow-wal-cleanup'",
-        max_runs=1,
-        limit_strategy=ConcurrencyLimitStrategy.CANCEL_IN_PROGRESS,
-    ),
-)
-async def wal_cleanup_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
-    from ..tasks.backup_wal_cleanup import cleanup_wal_archive
-
-    return await asyncio.to_thread(cleanup_wal_archive)
-
 
 @hatchet.task(
     name="summitflow-restore-tests",

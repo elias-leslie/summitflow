@@ -36,17 +36,6 @@ function getProjectHost(baseUrl: string): string {
   }
 }
 
-// Gradient palette for project avatar fallbacks — keyed by first letter
-const LETTER_GRADIENTS: Record<string, { from: string; to: string }> = {
-  S: { from: '#00c853', to: '#009624' },
-  P: { from: '#3b82f6', to: '#2563eb' },
-  A: { from: '#8b5cf6', to: '#6d28d9' },
-  C: { from: '#f59e0b', to: '#d97706' },
-  B: { from: '#ec4899', to: '#be185d' },
-  D: { from: '#06b6d4', to: '#0891b2' },
-  default: { from: '#64748b', to: '#475569' },
-}
-
 export function ProjectCard({ project }: ProjectCardProps) {
   const router = useRouter()
   const [hovered, setHovered] = useState(false)
@@ -72,8 +61,18 @@ export function ProjectCard({ project }: ProjectCardProps) {
     staleTime: STALE_GIT,
   })
 
+  // Generate gradient based on first letter (used as fallback if no logo)
+  const gradients: Record<string, { from: string; to: string }> = {
+    S: { from: '#00c853', to: '#009624' },
+    P: { from: '#3b82f6', to: '#2563eb' },
+    A: { from: '#8b5cf6', to: '#6d28d9' },
+    C: { from: '#f59e0b', to: '#d97706' },
+    B: { from: '#ec4899', to: '#be185d' },
+    D: { from: '#06b6d4', to: '#0891b2' },
+    default: { from: '#64748b', to: '#475569' },
+  }
   const firstLetter = project.name.charAt(0).toUpperCase()
-  const gradient = LETTER_GRADIENTS[firstLetter] ?? LETTER_GRADIENTS.default
+  const gradient = gradients[firstLetter] ?? gradients.default
 
   const { stats } = project
   const projectHost = getProjectHost(project.base_url)
@@ -141,84 +140,122 @@ export function ProjectCard({ project }: ProjectCardProps) {
 
   return (
     <article
-      className="card-interactive group flex h-full flex-col p-4"
+      className={clsx(
+        'card-interactive p-5 group',
+      )}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onFocusCapture={() => setHovered(true)}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-3">
+      <div className="flex items-start justify-between">
+        <div className="flex items-center gap-3">
           {project.logo_url ? (
-            <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl border border-slate-700/60 bg-slate-800/80">
+            <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-800 flex items-center justify-center">
               <Image
                 src={project.logo_url}
                 alt={project.name}
-                width={40}
-                height={40}
+                width={48}
+                height={48}
                 className="object-cover w-full h-full"
               />
             </div>
           ) : (
             <div
-              className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10"
+              className="w-12 h-12 rounded-xl flex items-center justify-center"
               style={{
                 background: `linear-gradient(135deg, ${gradient.from} 0%, ${gradient.to} 100%)`,
               }}
             >
-              <span className="display text-sm font-bold text-slate-100">
+              <span className="display font-bold text-xl text-slate-100">
                 {firstLetter}
               </span>
             </div>
           )}
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-1.5">
+          <div>
+            <Link
+              href={`/projects/${project.id}`}
+              className="font-medium text-slate-100 transition-colors hover:text-phosphor-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phosphor-500/60 rounded-sm"
+            >
+              {project.name}
+            </Link>
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+              <span className="font-mono">{projectHost}</span>
+              {project.root_path ? (
+                <span
+                  className="max-w-[240px] truncate font-mono text-slate-600"
+                  title={project.root_path}
+                >
+                  {project.root_path}
+                </span>
+              ) : (
+                <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-2xs text-amber-300">
+                  No root path
+                </span>
+              )}
+            </div>
+            <div className="mt-2.5 flex flex-wrap items-center gap-2 text-2xs">
               <Link
-                href={`/projects/${project.id}`}
-                className="display text-sm font-semibold text-slate-100 transition-colors hover:text-phosphor-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phosphor-500/60 rounded-sm"
+                href={`/projects/${project.id}/settings`}
+                className="inline-flex items-center gap-1 rounded-md border border-slate-700/60 bg-slate-800/40 px-2.5 py-1 text-slate-400 transition-all hover:border-slate-500 hover:text-slate-200 hover:bg-slate-750/60"
               >
-                {project.name}
+                <Settings2 className="w-3 h-3" />
+                Settings
               </Link>
-              <span className="rounded-full border border-slate-700/60 bg-slate-900/70 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.14em] text-slate-500">
-                {project.id}
-              </span>
-            </div>
-            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500">
-              <span className="font-mono text-slate-400">{projectHost}</span>
-              <span
-                className={clsx(
-                  'rounded-full border px-2 py-0.5 uppercase tracking-[0.14em]',
-                  health?.healthy === false
-                    ? 'border-rose-500/20 bg-rose-500/10 text-rose-300'
-                    : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300',
-                )}
+              <a
+                href={project.base_url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 rounded-md border border-slate-700/60 bg-slate-800/40 px-2.5 py-1 text-slate-400 transition-all hover:border-slate-500 hover:text-slate-200 hover:bg-slate-750/60"
               >
-                {health
-                  ? health.healthy
-                    ? health.response_time_ms != null
-                      ? `${Math.round(health.response_time_ms)}ms`
-                      : 'healthy'
-                    : 'issue'
-                  : 'pending'}
-              </span>
-              <span
-                className={clsx(
-                  'rounded-full border px-2 py-0.5 uppercase tracking-[0.14em]',
-                  qualityGate && !qualityGate.overall_pass
-                    ? 'border-amber-500/20 bg-amber-500/10 text-amber-300'
-                    : 'border-violet-500/20 bg-violet-500/10 text-violet-300',
-                )}
-              >
-                {qualityGate
-                  ? qualityGate.overall_pass
-                    ? 'quality ok'
-                    : `${qualityGate.total_unfixed} open`
-                  : 'quality pending'}
-              </span>
+                <ExternalLink className="w-3 h-3" />
+                Open app
+              </a>
             </div>
+            {checkpoint && (
+              <div className="flex items-center gap-1.5 mt-1 text-xs text-phosphor-400">
+                <Database className="w-3 h-3" />
+                <span>Active checkpoint</span>
+                <span className="font-mono">{checkpoint.task_id}</span>
+                <span className="text-slate-500">{checkpoint.age}</span>
+              </div>
+            )}
+            {(health || qualityGate) && (
+              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                <span className={clsx(
+                  'text-slate-500',
+                  health?.healthy === false && 'text-rose-300',
+                )}>
+                  Service:{' '}
+                  {health
+                    ? health.healthy
+                      ? health.response_time_ms != null
+                        ? `${Math.round(health.response_time_ms)}ms`
+                        : 'healthy'
+                      : health.error || 'unhealthy'
+                    : 'pending'}
+                </span>
+                <span className={clsx(
+                  'text-slate-500',
+                  qualityGate && !qualityGate.overall_pass && 'text-amber-300',
+                )}>
+                  Quality:{' '}
+                  {qualityGate
+                    ? qualityGate.overall_pass
+                      ? 'passing'
+                      : `${qualityGate.total_unfixed} open`
+                    : 'pending'}
+                </span>
+                {!project.root_path && (
+                  <span className="text-amber-300">
+                    Config: root path missing
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 rounded-full border border-slate-800/70 bg-slate-950/60 px-2 py-1.5">
+        <div className="flex items-center gap-2">
           {qualityLoading ? (
             <div className="w-3 h-3 border border-slate-600 border-t-purple-500 rounded-full animate-spin" />
           ) : qualityGate ? (
@@ -281,67 +318,37 @@ export function ProjectCard({ project }: ProjectCardProps) {
         </div>
       </div>
 
-      {checkpoint && (
-        <div className="mt-3 rounded-lg border border-phosphor-500/14 bg-phosphor-500/8 px-3 py-2 text-xs text-phosphor-300">
-          <div className="flex flex-wrap items-center gap-2">
-            <Database className="h-3 w-3" />
-            <span className="font-medium text-slate-100">Checkpoint</span>
-            <span className="font-mono">{checkpoint.task_id}</span>
-            <span className="text-slate-500">{checkpoint.age}</span>
+      <div className="mt-4 pt-3 border-t border-slate-700/30">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-0.5">
+            {metrics.map((metric) => {
+              const Icon = metric.icon
+              return (
+                <button
+                  type="button"
+                  key={metric.key}
+                  onClick={(e) => handleStatClick(e, metric.key)}
+                  className={clsx(
+                    'flex items-center gap-1.5 text-xs px-2 py-1.5 rounded-md transition-all duration-200',
+                    metric.count > 0
+                      ? [metric.activeClass, 'hover:bg-slate-800/60']
+                      : 'text-slate-600 hover:text-slate-400 hover:bg-slate-800/40',
+                  )}
+                  title={metric.title}
+                  aria-label={`${metric.label}: ${metric.count}`}
+                >
+                  <Icon className="w-3 h-3" />
+                  <span className="tabular-nums font-semibold">{metric.count}</span>
+                </button>
+              )
+            })}
           </div>
+
+          <span className="text-2xs text-slate-600 flex items-center gap-1 font-mono">
+            <Clock className="w-3 h-3" />
+            {new Date(project.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+          </span>
         </div>
-      )}
-
-      <div className="mt-3 grid grid-cols-2 gap-1.5 xl:grid-cols-4">
-        {metrics.map((metric) => {
-          const Icon = metric.icon
-
-          return (
-            <button
-              type="button"
-              key={metric.key}
-              onClick={(e) => handleStatClick(e, metric.key)}
-              title={metric.title}
-              className="rounded-lg border border-slate-800/70 bg-slate-950/55 px-2 py-1.5 text-left transition-colors hover:border-slate-700/80 hover:bg-slate-900/80"
-            >
-              <div className="flex items-center justify-between gap-1.5">
-                <Icon className={clsx('h-3 w-3', metric.activeClass)} />
-                <span className="font-mono text-sm font-bold tabular-nums text-slate-100">
-                  {metric.count}
-                </span>
-              </div>
-              <div className="mt-1 text-[9px] uppercase tracking-[0.14em] text-slate-500">
-                {metric.label}
-              </div>
-            </button>
-          )
-        })}
-      </div>
-
-      <div className="mt-3 flex flex-wrap items-center gap-1.5">
-        <Link
-          href={`/projects/${project.id}/settings`}
-          className="inline-flex items-center gap-1 rounded-full border border-slate-700/60 bg-slate-900/70 px-2.5 py-1 text-[10px] text-slate-300 transition-all hover:border-slate-500 hover:text-slate-100"
-        >
-          <Settings2 className="h-3 w-3" />
-          Settings
-        </Link>
-        <a
-          href={project.base_url}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center gap-1 rounded-full border border-slate-700/60 bg-slate-900/70 px-2.5 py-1 text-[10px] text-slate-300 transition-all hover:border-slate-500 hover:text-slate-100"
-        >
-          <ExternalLink className="h-3 w-3" />
-          Open
-        </a>
-        <span className="ml-auto flex items-center gap-1 font-mono text-[10px] text-slate-500">
-          <Clock className="h-2.5 w-2.5" />
-          {new Date(project.created_at).toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-          })}
-        </span>
       </div>
     </article>
   )

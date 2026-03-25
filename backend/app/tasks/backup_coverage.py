@@ -66,18 +66,11 @@ INFRA_COVERAGE: tuple[CoverageComponent, ...] = (
         archive_marker="configs/redis-dump.rdb",
     ),
     CoverageComponent(
-        key="wal_archive",
-        label="WAL archive",
-        category="optional",
-        description="PostgreSQL write-ahead log segments for inter-backup recovery",
-        reason="Managed separately via continuous archiving",
-    ),
-    CoverageComponent(
         key="pg_basebackup",
         label="Physical base backup",
         category="excluded",
-        description="pg_basebackup for true point-in-time recovery via WAL replay",
-        reason="Not yet implemented — PITR deferred",
+        description="pg_basebackup for point-in-time recovery",
+        reason="Not needed — daily pg_dumpall backups provide sufficient recovery",
     ),
 )
 

@@ -9,6 +9,7 @@ from pathlib import Path
 from ....logging_config import get_logger
 
 logger = get_logger(__name__)
+_BROWSER_CMD = "sf-browser"
 
 
 def _build_screenshot_command(
@@ -21,11 +22,11 @@ def _build_screenshot_command(
     """Build the agent-browser command chain for capturing a screenshot."""
     full_flag = "--full" if full_page else ""
     return (
-        f"agent-browser open {shlex.quote(url)} && "
-        f"agent-browser set viewport {width} {height} && "
-        f"agent-browser wait --load networkidle && "
-        f"agent-browser screenshot {shlex.quote(str(output_path))} {full_flag} ; "
-        f"agent-browser close"
+        f"{_BROWSER_CMD} open {shlex.quote(url)} && "
+        f"{_BROWSER_CMD} set viewport {width} {height} && "
+        f"{_BROWSER_CMD} wait --load networkidle && "
+        f"{_BROWSER_CMD} screenshot {shlex.quote(str(output_path))} {full_flag} ; "
+        f"{_BROWSER_CMD} close"
     )
 
 
@@ -33,7 +34,7 @@ async def _close_browser_after_timeout() -> None:
     """Attempt to close the browser after a screenshot timeout."""
     try:
         close_proc = await asyncio.create_subprocess_shell(
-            "agent-browser close",
+            f"{_BROWSER_CMD} close",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )

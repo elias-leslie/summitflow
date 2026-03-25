@@ -125,6 +125,36 @@ def emit_quality_gate_result(
     )
 
 
+def emit_prompt_harness_snapshot(
+    task_id: str,
+    snapshot: dict[str, Any],
+) -> None:
+    """Emit prompt-composition snapshot metadata for session observability."""
+    emit_lifecycle_event(
+        task_id,
+        event_type="tool_result",
+        content=f"Prompt harness snapshot: {snapshot.get('mode', 'code_only')}",
+        tool_name="prompt_harness",
+        tool_output=snapshot,
+        agent_id="orchestrator",
+    )
+
+
+def emit_runtime_evaluator_result(
+    task_id: str,
+    result: dict[str, Any],
+) -> None:
+    """Emit compact runtime-evaluator output for session observability."""
+    emit_lifecycle_event(
+        task_id,
+        event_type="tool_result",
+        content=f"Runtime evaluator: {result.get('summary', result.get('mode', 'runtime_eval'))}",
+        tool_name="runtime_evaluator",
+        tool_output=result,
+        agent_id="orchestrator",
+    )
+
+
 def emit_task_transition(
     task_id: str,
     new_status: str,

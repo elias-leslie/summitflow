@@ -32,7 +32,23 @@ class TestMemoryUpdateContentInput:
         args = mock_update_impl.call_args.args
         assert args[0] == "abc12345"
         assert args[1] == "Use /commit_it when available.\n"
-        assert args[2:] == (None, None, None, None, None, False)
+        assert args[2:] == (
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            False,
+            None,
+            False,
+        )
 
     def test_update_accepts_content_from_stdin(self) -> None:
         """`--content-file -` should read content from stdin."""
@@ -48,7 +64,23 @@ class TestMemoryUpdateContentInput:
         args = mock_update_impl.call_args.args
         assert args[0] == "abc12345"
         assert args[1] == "Literal [work] and `backticks` should survive.\n"
-        assert args[2:] == (None, None, None, None, None, False)
+        assert args[2:] == (
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            False,
+            None,
+            False,
+        )
 
     def test_update_rejects_inline_and_file_content_together(self, tmp_path: Path) -> None:
         """`--content` and `--content-file` together should error clearly."""
@@ -96,6 +128,7 @@ class TestMemorySaveContentInput:
         assert result.exit_code == 0
         args = mock_save_impl.call_args.args
         assert args[1] == "**Quality Checks**: Use dt for all quality checks.\n"
+        assert args[8:16] == (None, None, None, None, None, None, None, None)
 
     def test_save_accepts_content_from_stdin(self) -> None:
         """`--content-file -` should read save content from stdin."""
@@ -115,6 +148,7 @@ class TestMemorySaveContentInput:
         assert result.exit_code == 0
         args = mock_save_impl.call_args.args
         assert args[1] == "**Quality Checks**: Use dt for all quality checks.\n"
+        assert args[8:16] == (None, None, None, None, None, None, None, None)
 
     def test_save_rejects_inline_and_file_content_together(self, tmp_path: Path) -> None:
         """`save` should reject inline content combined with --content-file."""
@@ -196,6 +230,14 @@ class TestMemoryTagOptions:
             None,
             False,
             None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
             "finance-relevant,portfolio",
             "global",
             None,
@@ -233,7 +275,67 @@ class TestMemoryTagOptions:
 
         assert result.exit_code == 0
         args = mock_update_impl.call_args.args
-        assert args == ("abc12345", None, None, None, None, None, "finance-relevant", False)
+        assert args == (
+            "abc12345",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            False,
+            "finance-relevant",
+            False,
+        )
+
+    def test_save_forwards_context_routing_to_impl(self) -> None:
+        """`st memory save` should wire new routing controls through the public CLI."""
+        with patch("cli.commands.memory.save_impl") as mock_save_impl:
+            result = runner.invoke(
+                app,
+                [
+                    "save",
+                    "**Tool Docs**: Keep CLI docs role-scoped.",
+                    "--summary",
+                    "Scope tool docs",
+                    "--context-kind",
+                    "capability",
+                    "--trigger-phases",
+                    "implementation,verification",
+                    "--consumer-profiles",
+                    "codex_startup,claude_startup",
+                    "--exclude-consumer-profiles",
+                    "agent_runtime",
+                    "--agent-slugs",
+                    "jenny",
+                    "--exclude-agent-slugs",
+                    "formatter",
+                    "--audience-tags",
+                    "operator-tooling",
+                    "--exclude-audience-tags",
+                    "narrow-output",
+                ],
+            )
+
+        assert result.exit_code == 0
+        args = mock_save_impl.call_args.args
+        assert args[8:16] == (
+            "implementation,verification",
+            "capability",
+            "codex_startup,claude_startup",
+            "agent_runtime",
+            "jenny",
+            "formatter",
+            "operator-tooling",
+            "narrow-output",
+        )
 
     def test_tag_command_forwards_bulk_tag_updates(self) -> None:
         """`st memory tag` should call tag_impl with add/remove operations."""
@@ -274,6 +376,55 @@ class TestMemoryTagOptions:
 
         assert result.exit_code == 0
         assert mock_update_impl.call_args.args[-1] == "refresh duplicate wording"
+
+    def test_update_forwards_context_routing_to_impl(self) -> None:
+        """`st memory update` should wire new routing controls through the public CLI."""
+        with patch("cli.commands.memory.update_impl") as mock_update_impl:
+            result = runner.invoke(
+                app,
+                [
+                    "update",
+                    "abc12345",
+                    "--context-kind",
+                    "capability",
+                    "--trigger-phases",
+                    "implementation,verification",
+                    "--consumer-profiles",
+                    "codex_startup",
+                    "--exclude-consumer-profiles",
+                    "agent_runtime",
+                    "--agent-slugs",
+                    "jenny",
+                    "--exclude-agent-slugs",
+                    "formatter",
+                    "--audience-tags",
+                    "operator-tooling",
+                    "--exclude-audience-tags",
+                    "narrow-output",
+                    "--clear-applicability",
+                ],
+            )
+
+        assert result.exit_code == 0
+        assert mock_update_impl.call_args.args == (
+            "abc12345",
+            None,
+            None,
+            None,
+            None,
+            "implementation,verification",
+            None,
+            "capability",
+            "codex_startup",
+            "agent_runtime",
+            "jenny",
+            "formatter",
+            "operator-tooling",
+            "narrow-output",
+            True,
+            None,
+            False,
+        )
 
     def test_delete_forwards_change_reason_to_impl(self) -> None:
         with patch("cli.commands.memory.delete_impl") as mock_delete_impl:
@@ -326,7 +477,25 @@ class TestMemoryTagOptions:
         """Tag replacement and clearing are mutually exclusive."""
         with patch("cli.commands.memory_crud.typer.echo") as mock_echo:
             try:
-                update_impl("abc12345", None, None, None, None, None, "finance-relevant", True)
+                update_impl(
+                    "abc12345",
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    False,
+                    "finance-relevant",
+                    True,
+                )
             except typer.Exit as exc:
                 assert exc.exit_code == 1
             else:
@@ -380,6 +549,14 @@ class TestMemoryTagOptions:
                 None,
                 False,
                 None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
                 "finance-relevant,portfolio",
                 "project",
                 "portfolio-ai",
@@ -416,7 +593,25 @@ class TestMemoryTagOptions:
             patch("cli.commands.memory_crud.validate_content_format"),
             patch("cli.commands.memory_crud.typer.echo"),
         ):
-            update_impl("abc12345", "new content", None, None, None, None, None, False)
+            update_impl(
+                "abc12345",
+                "new content",
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                False,
+                None,
+                False,
+            )
 
         mock_update_episode.assert_called_once_with(
             "abc12345",
@@ -433,18 +628,89 @@ class TestMemoryTagOptions:
             patch("cli.commands.memory_crud.patch_episode_properties") as mock_patch_properties,
             patch("cli.commands.memory_crud.replace_episode_tags") as mock_replace_tags,
         ):
-            update_impl("abc12345", None, None, "Updated summary", None, None, None, False)
+            update_impl(
+                "abc12345",
+                None,
+                None,
+                "Updated summary",
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                False,
+                None,
+                False,
+            )
 
         mock_fetch_existing.assert_not_called()
         mock_fetch_tags.assert_not_called()
-        mock_patch_properties.assert_called_once_with("abc12345", "Updated summary", None, None)
+        mock_patch_properties.assert_called_once_with("abc12345", "Updated summary", None, None, None, None, None)
         mock_replace_tags.assert_not_called()
+
+    def test_update_impl_merges_applicability_changes(self) -> None:
+        """Applicability updates should preserve untouched existing targeting keys."""
+        with (
+            patch(
+                "cli.commands.memory_crud.fetch_existing_episode",
+                return_value={
+                    "uuid": "abc12345",
+                    "applicability": {
+                        "consumer_profiles": ["codex_startup"],
+                        "agent_slugs": ["jenny"],
+                    },
+                },
+            ) as mock_fetch_existing,
+            patch("cli.commands.memory_crud.patch_episode_properties") as mock_patch_properties,
+        ):
+            update_impl(
+                "abc12345",
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                "claude_startup",
+                None,
+                None,
+                None,
+                None,
+                None,
+                False,
+                None,
+                False,
+            )
+
+        mock_fetch_existing.assert_called_once_with("abc12345")
+        mock_patch_properties.assert_called_once_with(
+            "abc12345",
+            None,
+            None,
+            None,
+            None,
+            None,
+            {
+                "consumer_profiles": ["claude_startup"],
+                "exclude_consumer_profiles": [],
+                "agent_slugs": ["jenny"],
+                "exclude_agent_slugs": [],
+                "audience_tags": [],
+                "exclude_audience_tags": [],
+            },
+        )
 
     def test_update_impl_rejects_invalid_tier(self) -> None:
         """Tier updates should validate allowed tier values."""
         with patch("cli.commands.memory_crud.fetch_existing_episode") as mock_fetch_existing:
             try:
-                update_impl("abc12345", None, "bad-tier", None, None, None, None, False)
+                update_impl("abc12345", None, "bad-tier", None, None, None, None, None, None, None, None, None, None, None, False, None, False)
             except typer.Exit as exc:
                 assert exc.exit_code == 1
             else:
@@ -456,7 +722,7 @@ class TestMemoryTagOptions:
         """Blank summaries should fail instead of writing whitespace."""
         with patch("cli.commands.memory_crud.fetch_existing_episode") as mock_fetch_existing:
             try:
-                update_impl("abc12345", None, None, "   ", None, None, None, False)
+                update_impl("abc12345", None, None, "   ", None, None, None, None, None, None, None, None, None, None, False, None, False)
             except typer.Exit as exc:
                 assert exc.exit_code == 1
             else:
@@ -469,7 +735,7 @@ class TestMemoryTagOptions:
         out = SimpleNamespace(is_compact=True)
         with patch("cli.commands.memory_crud.agent_hub_request") as mock_request:
             try:
-                save_impl(out, "   ", "Use dt for checks", "reference", 80, None, False, None, None, "global", None)
+                save_impl(out, "   ", "Use dt for checks", "reference", 80, None, False, None, None, None, None, None, None, None, None, None, None, "global", None)
             except typer.Exit as exc:
                 assert exc.exit_code == 1
             else:
@@ -481,7 +747,7 @@ class TestMemoryTagOptions:
         """Blank content updates should fail before loading the episode."""
         with patch("cli.commands.memory_crud.fetch_existing_episode") as mock_fetch_existing:
             try:
-                update_impl("abc12345", "   ", None, None, None, None, None, False)
+                update_impl("abc12345", "   ", None, None, None, None, None, None, None, None, None, None, None, None, False, None, False)
             except typer.Exit as exc:
                 assert exc.exit_code == 1
             else:

@@ -14,6 +14,7 @@ from .crud import (
     delete_backup_record,
     get_backup,
     list_backups,
+    merge_backup_verification_json,
     update_backup_status,
 )
 from .queries import (
@@ -67,6 +68,7 @@ __all__ = [
     "list_backups",
     "list_due_sources",
     "list_sources",
+    "merge_backup_verification_json",
     "promote_pending_upload",
     "update_backend",
     "update_backup_status",

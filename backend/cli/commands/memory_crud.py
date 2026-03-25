@@ -22,6 +22,7 @@ from ._memory_crud_helpers import (
     build_save_payload,
     fetch_episode_tags,
     fetch_existing_episode,
+    merge_applicability_payload,
     parse_csv_values,
     parse_tags_csv,
     patch_episode_properties,
@@ -64,6 +65,14 @@ def save_impl(
     context: str | None,
     pinned: bool,
     trigger_types: str | None,
+    trigger_phases: str | None,
+    context_kind: str | None,
+    consumer_profiles: str | None,
+    exclude_consumer_profiles: str | None,
+    agent_slugs: str | None,
+    exclude_agent_slugs: str | None,
+    audience_tags: str | None,
+    exclude_audience_tags: str | None,
     tags: str | None,
     scope: str,
     scope_id: str | None,
@@ -72,7 +81,24 @@ def save_impl(
     summary = validate_save_inputs(tier, confidence, summary)
     validate_episode_content_present(content)
     validate_content_format(content, summary, tier)
-    payload = build_save_payload(content, summary, tier, confidence, context, pinned, trigger_types, change_reason)
+    payload = build_save_payload(
+        content,
+        summary,
+        tier,
+        confidence,
+        context,
+        pinned,
+        trigger_types,
+        trigger_phases,
+        context_kind,
+        consumer_profiles,
+        exclude_consumer_profiles,
+        agent_slugs,
+        exclude_agent_slugs,
+        audience_tags,
+        exclude_audience_tags,
+        change_reason,
+    )
     result = agent_hub_request(
         "POST", MEMORY_SAVE_LEARNING_PATH, json=payload,
         scope=scope, scope_id=scope_id, tool_name="st memory save",
@@ -189,7 +215,16 @@ def update_impl(
     tier: str | None,
     summary: str | None,
     trigger_types: str | None,
+    trigger_phases: str | None,
     pinned: bool | None,
+    context_kind: str | None,
+    consumer_profiles: str | None,
+    exclude_consumer_profiles: str | None,
+    agent_slugs: str | None,
+    exclude_agent_slugs: str | None,
+    audience_tags: str | None,
+    exclude_audience_tags: str | None,
+    clear_applicability: bool,
     tags: str | None,
     clear_tags: bool,
     change_reason: str | None = None,
@@ -199,10 +234,27 @@ def update_impl(
         raise typer.Exit(1)
 
     if not any(
-        [content is not None, tier is not None, summary is not None, trigger_types is not None, pinned is not None, tags is not None, clear_tags]
+        [
+            content is not None,
+            tier is not None,
+            summary is not None,
+            trigger_types is not None,
+            trigger_phases is not None,
+            pinned is not None,
+            context_kind is not None,
+            consumer_profiles is not None,
+            exclude_consumer_profiles is not None,
+            agent_slugs is not None,
+            exclude_agent_slugs is not None,
+            audience_tags is not None,
+            exclude_audience_tags is not None,
+            clear_applicability,
+            tags is not None,
+            clear_tags,
+        ]
     ):
         typer.echo(
-            "Error: Must specify at least one of: --content, --tier, --summary, --trigger-types, --pinned, --tags, --clear-tags"
+            "Error: Must specify at least one of: --content, --tier, --summary, --trigger-types, --trigger-phases, --pinned, --context-kind, applicability options, --tags, --clear-tags, --clear-applicability"
         )
         raise typer.Exit(1)
 
@@ -213,7 +265,27 @@ def update_impl(
     normalized_tier = validate_tier(tier) if tier is not None else None
     replacement_tags = [] if clear_tags else parse_tags_csv(tags)
     content_or_tier_changed = content is not None or normalized_tier is not None
-    properties_changed = normalized_summary is not None or trigger_types is not None or pinned is not None
+    applicability_changed = any(
+        [
+            consumer_profiles is not None,
+            exclude_consumer_profiles is not None,
+            agent_slugs is not None,
+            exclude_agent_slugs is not None,
+            audience_tags is not None,
+            exclude_audience_tags is not None,
+            clear_applicability,
+        ]
+    )
+    properties_changed = any(
+        [
+            normalized_summary is not None,
+            trigger_types is not None,
+            trigger_phases is not None,
+            pinned is not None,
+            context_kind is not None,
+            applicability_changed,
+        ]
+    )
     tags_changed = replacement_tags is not None or clear_tags
 
     existing: dict[str, object] | None = None
@@ -257,19 +329,42 @@ def update_impl(
         normalized_trigger_types = None
         if trigger_types is not None:
             normalized_trigger_types = ",".join(parse_csv_values(trigger_types) or [])
+        normalized_trigger_phases = None
+        if trigger_phases is not None:
+            normalized_trigger_phases = ",".join(parse_csv_values(trigger_phases) or [])
+        applicability = None
+        if applicability_changed:
+            if existing is None:
+                existing = fetch_existing_episode(uuid)
+            applicability = merge_applicability_payload(
+                existing,
+                consumer_profiles=consumer_profiles,
+                exclude_consumer_profiles=exclude_consumer_profiles,
+                agent_slugs=agent_slugs,
+                exclude_agent_slugs=exclude_agent_slugs,
+                audience_tags=audience_tags,
+                exclude_audience_tags=exclude_audience_tags,
+                clear_applicability=clear_applicability,
+            )
         if change_reason is None:
             patch_episode_properties(
                 target_uuid,
                 normalized_summary,
                 normalized_trigger_types,
+                normalized_trigger_phases,
                 pinned,
+                context_kind,
+                applicability,
             )
         else:
             patch_episode_properties(
                 target_uuid,
                 normalized_summary,
                 normalized_trigger_types,
+                normalized_trigger_phases,
                 pinned,
+                context_kind,
+                applicability,
                 change_reason=change_reason,
             )
 

@@ -151,12 +151,14 @@ def get_storage_summary(
 def get_latest_backup(
     project_id: str | None = None,
     source_id: str | None = None,
+    verification_key: str | None = None,
 ) -> dict[str, Any] | None:
     """Get the most recent completed backup for a source or project.
 
     Args:
         project_id: Project ID (used if source_id not provided)
         source_id: Source ID (takes precedence)
+        verification_key: Optional top-level verification_json key to require
 
     Returns:
         Latest completed backup record or None if no completed backups exist
@@ -170,14 +172,23 @@ def get_latest_backup(
     else:
         return None
 
+    filters = [
+        where,
+        "status IN ('completed', 'completed_pending_upload')",
+    ]
+    params: list[Any] = [param]
+    if verification_key:
+        filters.append("verification_json ? %s")
+        params.append(verification_key)
+
     with get_cursor() as cur:
         cur.execute(
             static_sql(
                 f"SELECT {BACKUP_COLUMNS} FROM backups "
-                f"WHERE {where} AND status IN ('completed', 'completed_pending_upload') "
+                f"WHERE {' AND '.join(filters)} "
                 "ORDER BY completed_at DESC LIMIT 1"
             ),
-            (param,),
+            params,
         )
         row = cur.fetchone()
 

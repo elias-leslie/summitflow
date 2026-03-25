@@ -20,6 +20,7 @@ from ...services.context_gatherer import (
     PRECISION_CODE_SEARCH_GUIDANCE,
     collect_precision_code_search_context,
 )
+from ...services.task_harness import summarize_execution_contract
 from ...services.worktree import get_execution_path
 from ...storage import log_task_event
 from ...storage import tasks as task_store
@@ -139,6 +140,23 @@ def _build_snapshot_block(task_id: str, project_id: str) -> str:
     return "Touched File Snapshots:\n" + "\n\n".join(blocks) + "\n\n"
 
 
+def _build_execution_contract_block(task_id: str) -> str:
+    context = _get_spirit_context(task_id)
+    contract = context.get("execution_contract")
+    summary = summarize_execution_contract(contract)
+    if summary["target_url_count"] == 0 and summary["user_flow_count"] == 0 and summary["api_check_count"] == 0 and summary["negative_case_count"] == 0 and not summary["has_design_criteria"]:
+        return ""
+    return (
+        "Execution Contract:\n"
+        f"- mode: {summary['mode']}\n"
+        f"- target_urls: {summary['target_url_count']}\n"
+        f"- user_flows: {summary['user_flow_count']}\n"
+        f"- api_checks: {summary['api_check_count']}\n"
+        f"- negative_cases: {summary['negative_case_count']}\n"
+        f"- design_critic: {'yes' if summary['has_design_criteria'] else 'no'}\n\n"
+    )
+
+
 def _notify_failure(project_id: str, task_id: str, task: dict, error_message: str) -> None:
     """Send failure notification, suppressing secondary errors."""
     try:
@@ -184,11 +202,13 @@ def _build_prompt(task: dict, complexity: str, git_diff: str, task_id: str) -> s
     precision_context = _build_precision_context(task, task_id, task.get("project_id", ""))
     scope_block = _build_scope_block(task_id, task.get("project_id", ""))
     snapshot_block = _build_snapshot_block(task_id, task.get("project_id", ""))
+    contract_block = _build_execution_contract_block(task_id)
 
     return (
         f"Task: {task.get('title', '')}\nComplexity: {complexity}\n\n"
         f"{precision_context}"
         f"Success Criteria (done_when):\n{done_when_text}\n\n"
+        f"{contract_block}"
         f"{scope_block}"
         f"{snapshot_block}"
         f"Git Diff:\n```\n{git_diff[:50000]}\n```\n\n"

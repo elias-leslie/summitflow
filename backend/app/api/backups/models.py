@@ -179,22 +179,11 @@ class BackupHealthItem(BaseModel):
     last_drill_backup_id: str | None = None
 
 
-class WalHealthSummary(BaseModel):
-    """WAL archiving health summary."""
-
-    enabled: bool = False
-    archive_segment_count: int = 0
-    archive_size_bytes: int = 0
-    last_archived_time: str | None = None
-    failed_count: int = 0
-
-
 class BackupHealthResponse(BaseModel):
     """Response model for backup health summary."""
 
     sources: list[BackupHealthItem]
     pending_upload_count: int = 0
-    wal: WalHealthSummary | None = None
 
 
 # ─── Coverage Contract Models ──────────────────────────────────

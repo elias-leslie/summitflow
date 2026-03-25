@@ -46,12 +46,12 @@ async def backup_create_wf(input: BackupInput, ctx: Context) -> dict[str, Any]:
 
     return await asyncio.to_thread(
         create_backup,
-        input.project_id,
-        input.note,
-        input.backup_type,
-        input.keep_local,
-        input.retention_days,
-        input.source_id,
+        project_id=input.project_id,
+        note=input.note,
+        backup_type=input.backup_type,
+        keep_local=input.keep_local,
+        retention_days=input.retention_days,
+        source_id=input.source_id,
     )
 
 

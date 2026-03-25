@@ -51,10 +51,4 @@ apply_schema summitflow_test summitflow_app "$INIT_DIR/summitflow-schema.sql"
 apply_schema agent_hub_test agent_hub_app "$INIT_DIR/agent-hub-schema.sql"
 apply_schema portfolio_ai_test portfolio_app "$INIT_DIR/portfolio-ai-schema.sql"
 
-# Ensure WAL archive directory is writable by the postgres user
-if [ -d /var/lib/postgresql/wal-archive ]; then
-  chown postgres:postgres /var/lib/postgresql/wal-archive
-  chmod 700 /var/lib/postgresql/wal-archive
-fi
-
 echo "Database initialization complete (production + test databases)."

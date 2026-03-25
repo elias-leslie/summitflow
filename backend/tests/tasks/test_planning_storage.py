@@ -39,6 +39,37 @@ class TestSavePlanToDatabase:
             "done_when": ["UI renders the new field"],
             "decisions": [{"id": "d1", "title": "Reuse service", "outcome": "reuse"}],
             "constraints": ["Avoid schema changes"],
+            "execution_contract": {
+                "mode": "runtime_eval_plus_design",
+                "target_urls": ["/app/projects/task-1/design"],
+                "user_flows": [
+                    {
+                        "title": "Open design tab",
+                        "actions": ["Visit the design page"],
+                        "expected_outcomes": ["Design page renders without errors"],
+                    }
+                ],
+                "api_checks": [
+                    {
+                        "method": "GET",
+                        "path": "/projects/task-1",
+                        "status": 200,
+                        "body_expectations": ["task-1"],
+                    }
+                ],
+                "negative_cases": [
+                    {
+                        "title": "Missing project returns 404",
+                        "path": "/projects/missing-project",
+                        "status": 404,
+                    }
+                ],
+                "evidence_requirements": ["screenshot", "API response", "file:line citation"],
+                "design_criteria": {
+                    "rubric": ["originality", "visual cohesion", "craft", "usability"],
+                },
+                "risk_notes": ["State-heavy dashboard can regress visually"],
+            },
             "context": {
                 "files_to_modify": ["frontend/app/page.tsx"],
                 "files_to_create": ["frontend/lib/stats.ts"],
@@ -72,6 +103,41 @@ class TestSavePlanToDatabase:
                 "spirit_anti": "Do not broaden the feature",
                 "constraints": ["Avoid schema changes"],
                 "decisions": [{"id": "d1", "title": "Reuse service", "outcome": "reuse"}],
+                "execution_contract": {
+                    "mode": "runtime_eval_plus_design",
+                    "target_urls": ["/app/projects/task-1/design"],
+                    "user_flows": [
+                        {
+                            "flow_id": "flow-1",
+                            "title": "Open design tab",
+                            "setup": [],
+                            "actions": ["Visit the design page"],
+                            "expected_outcomes": ["Design page renders without errors"],
+                        }
+                    ],
+                    "api_checks": [
+                        {
+                            "criterion_id": "api-1",
+                            "method": "GET",
+                            "path": "/projects/task-1",
+                            "status": 200,
+                            "body_expectations": ["task-1"],
+                        }
+                    ],
+                    "negative_cases": [
+                        {
+                            "criterion_id": "negative-1",
+                            "title": "Missing project returns 404",
+                            "path": "/projects/missing-project",
+                            "status": 404,
+                        }
+                    ],
+                    "evidence_requirements": ["screenshot", "API response", "file:line citation"],
+                    "design_criteria": {
+                        "rubric": ["originality", "visual cohesion", "craft", "usability"],
+                    },
+                    "risk_notes": ["State-heavy dashboard can regress visually"],
+                },
                 "subtasks": [
                     {
                         "subtask_id": "1.1",

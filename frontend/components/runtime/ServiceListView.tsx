@@ -35,31 +35,31 @@ function ActionCell({
   const startMut = useServiceAction(service, 'start')
 
   return (
-    <div className="flex flex-wrap gap-1.5">
+    <div className="flex gap-1">
       {isRunning ? (
         <>
           <button
             onClick={() => restartMut.mutate()}
             disabled={restartMut.isPending}
-            className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.16em] text-amber-300 transition-all hover:border-amber-500/30 hover:bg-amber-500/20 disabled:opacity-40"
+            className="text-2xs px-2 py-1 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 hover:border-amber-500/30 disabled:opacity-40 transition-all font-medium"
           >
-            {restartMut.isPending ? '…' : 'Restart'}
+            {restartMut.isPending ? '...' : 'Restart'}
           </button>
           <button
             onClick={() => stopMut.mutate()}
             disabled={stopMut.isPending}
-            className="rounded-full border border-rose-500/20 bg-rose-500/10 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.16em] text-rose-300 transition-all hover:border-rose-500/30 hover:bg-rose-500/20 disabled:opacity-40"
+            className="text-2xs px-2 py-1 rounded-md bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 hover:border-red-500/30 disabled:opacity-40 transition-all font-medium"
           >
-            {stopMut.isPending ? '…' : 'Stop'}
+            {stopMut.isPending ? '...' : 'Stop'}
           </button>
         </>
       ) : (
         <button
           onClick={() => startMut.mutate()}
           disabled={startMut.isPending}
-          className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.16em] text-emerald-300 transition-all hover:border-emerald-500/30 hover:bg-emerald-500/20 disabled:opacity-40"
+          className="text-2xs px-2 py-1 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 hover:border-emerald-500/30 disabled:opacity-40 transition-all font-medium"
         >
-          {startMut.isPending ? '…' : 'Start'}
+          {startMut.isPending ? '...' : 'Start'}
         </button>
       )}
     </div>
@@ -79,10 +79,10 @@ export function ServiceListView({
 
   return (
     <>
-      <div className="overflow-hidden rounded-xl border border-slate-700/60 bg-slate-950/40">
+      <div className="rounded-lg border border-slate-700/60 overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow className="border-slate-700/60 bg-slate-950/70">
+            <TableRow className="border-slate-700/60 bg-slate-900/50">
               <TableHead className="w-8" />
               <TableHead>Service</TableHead>
               <TableHead className="hidden sm:table-cell">Type</TableHead>
@@ -110,42 +110,32 @@ export function ServiceListView({
                     />
                   </TableCell>
                   <TableCell>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="truncate text-sm font-medium text-slate-100">
-                          {s.display_name}
-                        </span>
-                        <span
-                          className={clsx(
-                            'shrink-0 rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.16em]',
-                            tone === 'healthy'
-                              ? 'border-emerald-500/18 bg-emerald-500/10 text-emerald-300'
-                              : tone === 'unhealthy'
-                                ? 'border-rose-500/18 bg-rose-500/10 text-rose-300'
-                                : 'border-amber-500/18 bg-amber-500/10 text-amber-300',
-                          )}
-                        >
-                          {healthLabel(s.state, s.health)}
-                        </span>
-                      </div>
-                      <div className="mt-1 truncate font-mono text-[11px] text-slate-500">
-                        {s.service}
-                      </div>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-sm font-medium text-slate-100 truncate">
+                        {s.display_name}
+                      </span>
+                      <span
+                        className={clsx(
+                          'text-[10px] capitalize shrink-0',
+                          tone === 'healthy'
+                            ? 'text-emerald-400'
+                            : tone === 'unhealthy'
+                              ? 'text-red-400'
+                              : 'text-slate-500',
+                        )}
+                      >
+                        {healthLabel(s.state, s.health)}
+                      </span>
                     </div>
                   </TableCell>
                   <TableCell className="hidden sm:table-cell">
-                    <div className="flex flex-wrap gap-1.5">
-                      <span className="rounded-full border border-slate-700/70 bg-slate-950/70 px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-slate-300">
-                        {managerLabel(s.manager)}
-                      </span>
-                      <span className="rounded-full border border-slate-700/70 bg-slate-950/70 px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-slate-500">
-                        {s.category}
-                      </span>
-                    </div>
+                    <span className="text-xs text-slate-400">
+                      {managerLabel(s.manager)}
+                    </span>
                   </TableCell>
                   <TableCell className="hidden md:table-cell">
                     <span className="text-xs text-slate-400">
-                      {s.ports.length > 0 ? s.ports.map((port) => `:${port}`).join(', ') : '—'}
+                      {s.ports.join(', ') || '-'}
                     </span>
                   </TableCell>
                   <TableCell className="hidden lg:table-cell">
@@ -159,11 +149,11 @@ export function ServiceListView({
                     </span>
                   </TableCell>
                   <TableCell>
-                    <div className="flex flex-wrap items-center gap-1.5">
+                    <div className="flex items-center gap-1">
                       <ActionCell service={s.service} isRunning={isRunning} />
                       <button
                         onClick={() => setLogService(s.service)}
-                        className="rounded-full border border-slate-700/70 bg-slate-950/70 px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-slate-400 transition-colors hover:border-slate-600 hover:text-slate-200"
+                        className="text-2xs px-1.5 py-0.5 rounded bg-slate-700/60 text-slate-400 hover:bg-slate-700 hover:text-slate-300 transition-colors"
                       >
                         Logs
                       </button>

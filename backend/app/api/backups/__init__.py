@@ -28,12 +28,10 @@ from .models import (
     StorageBackendResponse,
     StorageBackendUpdate,
     StorageSummaryResponse,
-    WalHealthSummary,
 )
 from .project_endpoints import router as project_router
 from .source_endpoints import router as source_router
 from .storage_endpoints import router as storage_router
-from .wal_endpoints import router as wal_router
 
 # Main router that combines all sub-routers
 router = APIRouter()
@@ -41,7 +39,6 @@ router = APIRouter()
 # Include routers (order matters: storage and health before source/project to avoid path conflicts)
 router.include_router(storage_router)
 router.include_router(health_router)
-router.include_router(wal_router)
 router.include_router(source_router)
 router.include_router(project_router)
 router.include_router(global_router)
@@ -61,6 +58,5 @@ __all__ = [
     "StorageBackendResponse",
     "StorageBackendUpdate",
     "StorageSummaryResponse",
-    "WalHealthSummary",
     "router",
 ]

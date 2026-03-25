@@ -427,7 +427,13 @@ class suppress_snapshot_error:
 
 
 def _safe_cwd_for_scope(scope_path: Path) -> Path:
-    workspaces_root = scope_path.parents[2] if len(scope_path.parents) >= 3 else Path.home()
+    if scope_path.parent.name == "projects":
+        candidate = scope_path.parent.parent
+        return candidate if candidate.exists() else Path.home()
+    if len(scope_path.parents) >= 3 and scope_path.parent.parent.name == "lanes":
+        candidate = scope_path.parents[2]
+        return candidate if candidate.exists() else Path.home()
+    workspaces_root = Path(os.environ.get("ST_WORKSPACES_ROOT", "/srv/workspaces"))
     return workspaces_root if workspaces_root.exists() else Path.home()
 
 
@@ -618,6 +624,69 @@ def restore_snapshot(
         _delete_subvolume(backup_path)
     finally:
         os.chdir(original_cwd if original_cwd.exists() else scope.path)
+
+    updated_entries: list[QuickSnapshot] = []
+    restored_at = _now_iso()
+    for entry in entries:
+        if entry.id == snapshot.id:
+            entry = QuickSnapshot.from_dict({**entry.to_dict(), "last_restored_at": restored_at})
+            snapshot = entry
+        updated_entries.append(entry)
+    _save_manifest(project_id, scope, updated_entries)
+    return snapshot
+
+
+def restore_project_snapshot(
+    target: str,
+    *,
+    project_id: str,
+    cwd: str | Path | None = None,
+) -> QuickSnapshot:
+    """Destructively replace the current project root with a recorded project snapshot."""
+    repo_root = _resolve_repo_root(cwd)
+    scope = _resolve_scope(repo_root, project_id)
+    if scope.scope_type != "project":
+        raise SnapshotError("Project snapshot restore is only allowed from a project root.")
+
+    entries = _load_manifest(project_id, scope)
+    snapshot = _find_snapshot(target, entries)
+
+    if snapshot.worktree_path != str(scope.path):
+        raise SnapshotError(
+            "Snapshot belongs to a different project root.\n"
+            f"  snapshot: {snapshot.worktree_path}\n"
+            f"  current:  {scope.path}"
+        )
+
+    if snapshot.scope_type != "project":
+        raise SnapshotError("Project snapshot restore requires a project-scoped snapshot.")
+
+    source_snapshot = Path(snapshot.snapshot_path)
+    if not source_snapshot.exists():
+        raise SnapshotError(f"Snapshot path is missing: {source_snapshot}")
+
+    backup_path = scope.path.parent / f"{scope.path.name}.__rollback_old__"
+    if backup_path.exists():
+        raise SnapshotError(
+            f"Rollback staging path already exists: {backup_path}. "
+            "Clean it up before retrying."
+        )
+
+    original_cwd = Path.cwd()
+    os.chdir(_safe_cwd_for_scope(scope.path))
+    try:
+        scope.path.rename(backup_path)
+        try:
+            _snapshot_subvolume(source_snapshot, scope.path, readonly=False)
+        except Exception:
+            if scope.path.exists():
+                _delete_subvolume(scope.path)
+            backup_path.rename(scope.path)
+            raise
+        _delete_subvolume(backup_path)
+    finally:
+        fallback = scope.path if scope.path.exists() else _safe_cwd_for_scope(scope.path)
+        os.chdir(original_cwd if original_cwd.exists() else fallback)
 
     updated_entries: list[QuickSnapshot] = []
     restored_at = _now_iso()
@@ -1100,6 +1169,7 @@ __all__ = [
     "require_btrfs_subvolume",
     "require_workspaces",
     "resolve_scope",
+    "restore_project_snapshot",
     "restore_snapshot",
     "save_manifest",
 ]

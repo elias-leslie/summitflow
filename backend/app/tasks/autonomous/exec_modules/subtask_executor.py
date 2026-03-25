@@ -8,9 +8,10 @@ from typing import Any
 from ....logging_config import get_logger
 from .agent_execution import execute_agent_initial
 from .agent_routing import get_agent_for_subtask
+from .ah_events import emit_prompt_harness_snapshot
 from .git_work_product import ensure_committed_work_product
 from .interruption import ExecutionInterrupted
-from .prompts import build_subtask_prompt
+from .prompts import build_subtask_prompt_payload
 from .result_processing import process_final_result
 from .retry_loop import run_self_healing_loop
 from .subtask_fallback import execute_with_fallbacks
@@ -171,7 +172,8 @@ def execute_subtask(
 
         subtask_type = subtask.get("subtask_type")
         agent_slug = agent_override or get_agent_for_subtask(subtask_type, task_type)
-        prompt = build_subtask_prompt(task_id, subtask, project_id, project_path)
+        prompt, prompt_snapshot = build_subtask_prompt_payload(task_id, subtask, project_id, project_path)
+        emit_prompt_harness_snapshot(task_id, prompt_snapshot)
 
         all_passed, step_results, self_fix_attempts, supervisor_guided_attempts, extensions_granted, initial_content, _ = (
             _run_initial_agent(

@@ -4,9 +4,7 @@ import { useState } from 'react'
 import { clsx } from 'clsx'
 import {
   ArrowRight,
-  Check,
   CheckCircle2,
-  Database,
   HardDrive,
   Loader2,
   ListChecks,
@@ -19,10 +17,8 @@ import {
   type BackupHealthItem,
   type BackupSource,
   type StorageStatus,
-  type WalStatus,
   createBackupSource,
   createSourceBackup,
-  enableWalArchiving,
   updateBackupSource,
 } from '@/lib/api/backups'
 
@@ -40,7 +36,6 @@ function computeSteps(
   storageStatus: StorageStatus | undefined,
   sources: BackupSource[],
   healthItems: BackupHealthItem[],
-  walStatus: WalStatus | undefined,
 ): Step[] {
   const hasStorage = storageStatus?.configured ?? false
   const hasSources = sources.length > 0
@@ -104,17 +99,6 @@ function computeSteps(
             : 'Run a restore drill to verify backups can actually be restored.',
       complete: restoreValidated,
     },
-    {
-      id: 'wal',
-      icon: <Database className="w-4 h-4" />,
-      title: 'Database change log (WAL)',
-      description: walStatus?.enabled
-        ? 'Active — database changes logged between backups'
-        : walStatus?.pending_restart
-          ? 'Configured — PostgreSQL restart needed to activate'
-          : 'Logs database changes between backups. Point-in-time recovery requires a physical base backup (not yet configured).',
-      complete: !!(walStatus?.enabled || walStatus?.pending_restart),
-    },
   ]
 }
 
@@ -124,29 +108,24 @@ interface SetupChecklistProps {
   storageStatus: StorageStatus | undefined
   sources: BackupSource[]
   healthItems: BackupHealthItem[]
-  walStatus: WalStatus | undefined
   isLoading: boolean
   onSourceChanged: () => void
   onBackupTriggered: () => void
-  onWalRefresh: () => void
 }
 
 export function SetupChecklist({
   storageStatus,
   sources,
   healthItems,
-  walStatus,
   isLoading,
   onSourceChanged,
   onBackupTriggered,
-  onWalRefresh,
 }: SetupChecklistProps) {
   const [runningAction, setRunningAction] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
-  const [actionNotice, setActionNotice] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
 
-  const steps = computeSteps(storageStatus, sources, healthItems, walStatus)
+  const steps = computeSteps(storageStatus, sources, healthItems)
   const doneCount = steps.filter((s) => s.complete).length
   const allDone = doneCount === steps.length
 
@@ -181,26 +160,6 @@ export function SetupChecklist({
     } catch (err) {
       setActionError(
         err instanceof Error ? err.message : 'Failed to set up system backup',
-      )
-    }
-    setRunningAction(null)
-  }
-
-  const handleEnableWal = async () => {
-    setRunningAction('wal')
-    setActionError(null)
-    setActionNotice(null)
-    try {
-      await enableWalArchiving()
-      setActionNotice(
-        'Database change log configured. PostgreSQL restart needed to fully activate.',
-      )
-      onWalRefresh()
-    } catch (err) {
-      setActionError(
-        err instanceof Error
-          ? err.message
-          : 'Failed to enable WAL archiving.',
       )
     }
     setRunningAction(null)
@@ -330,21 +289,6 @@ export function SetupChecklist({
                       : 'Enable'}
                   </button>
                 )}
-                {step.id === 'wal' && (
-                  <button
-                    type="button"
-                    onClick={handleEnableWal}
-                    disabled={runningAction === 'wal'}
-                    className="flex items-center gap-1.5 text-2xs px-2.5 py-1 rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-40 transition-colors"
-                  >
-                    {runningAction === 'wal' ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                    ) : (
-                      <Check className="w-3 h-3" />
-                    )}
-                    Enable
-                  </button>
-                )}
               </div>
             )}
           </div>
@@ -362,14 +306,9 @@ export function SetupChecklist({
       )}
 
       {/* Feedback */}
-      {(actionError || actionNotice) && (
+      {actionError && (
         <div className="px-4 py-2.5 border-t border-slate-800/40">
-          {actionError && (
-            <p className="text-xs text-rose-400">{actionError}</p>
-          )}
-          {actionNotice && !actionError && (
-            <p className="text-xs text-emerald-400">{actionNotice}</p>
-          )}
+          <p className="text-xs text-rose-400">{actionError}</p>
         </div>
       )}
     </div>

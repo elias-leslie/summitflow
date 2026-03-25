@@ -661,7 +661,10 @@ class TestUpsertSkillEpisode:
             "ep-123",
             "Fresh summary",
             "feature,refactor",
+            None,
             True,
+            None,
+            None,
         )
         mock_replace_tags.assert_called_once_with("ep-123", ["quality", "skill:test"])
 

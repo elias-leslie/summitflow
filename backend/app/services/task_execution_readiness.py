@@ -8,6 +8,7 @@ from typing import Any
 from ..storage import tasks as task_store
 from ..storage.subtasks import get_subtasks_for_task
 from ..storage.task_spirit import approve_plan, get_task_spirit, set_plan_status
+from .task_harness import determine_task_harness, execution_contract_issues
 from .task_second_opinion import assess_second_opinion_readiness
 
 _NONTRIVIAL_TASK_TYPES = {"feature", "task", "refactor", "debt", "regression"}
@@ -82,6 +83,14 @@ def assess_task_execution_readiness(
 
     if requires_nontrivial_plan and not task.get("description"):
         suggestions.append("Add a task description with scope and constraints")
+
+    harness_decision = determine_task_harness(task, spirit, subtasks)
+    contract_issues, contract_missing = execution_contract_issues(
+        harness_decision,
+        context.get("execution_contract"),
+    )
+    issues.extend(contract_issues)
+    missing_fields.extend(contract_missing)
 
     second_opinion_issues, second_opinion_suggestions, second_opinion_missing = (
         assess_second_opinion_readiness(task, spirit)

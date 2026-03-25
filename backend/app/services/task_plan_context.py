@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, cast
 
+from .task_harness import normalize_execution_contract
+
 _STRING_FIELDS = ("objective", "spirit_anti", "testing_strategy")
 _LIST_FIELDS = (
     "constraints",
@@ -24,6 +26,7 @@ _CONTEXT_DERIVED_FIELDS = (
     "references",
     "testing_strategy",
     "second_opinion",
+    "execution_contract",
     "subtasks",
 )
 
@@ -139,6 +142,12 @@ def build_task_plan_context(payload: dict[str, Any] | None) -> dict[str, Any]:
     second_opinion = source.get("second_opinion")
     if second_opinion:
         context["second_opinion"] = second_opinion
+
+    execution_contract = normalize_execution_contract(
+        source.get("execution_contract") or context.get("execution_contract")
+    )
+    if execution_contract:
+        context["execution_contract"] = execution_contract
 
     if subtasks := normalize_plan_subtasks(source.get("subtasks")):
         context["subtasks"] = subtasks

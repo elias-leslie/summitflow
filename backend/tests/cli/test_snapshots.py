@@ -207,6 +207,37 @@ def test_project_snapshot_recover_creates_sibling_project_copy_and_blocks_rollba
         restore_snapshot(snapshot.id, project_id="summitflow")
 
 
+def test_project_snapshot_restore_replaces_git_state_in_place(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cli.lib.quick_snapshots import capture_snapshot, restore_project_snapshot
+
+    workspaces_root = tmp_path / "workspaces"
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("ST_WORKSPACES_ROOT", str(workspaces_root))
+    _patch_fake_btrfs(monkeypatch)
+    project = _create_project_repo(workspaces_root)
+    tracked = project / "tracked.txt"
+
+    monkeypatch.chdir(project)
+    snapshot = capture_snapshot("project-baseline", project_id="summitflow")
+    baseline_head = _git(project, "rev-parse", "HEAD").stdout.strip()
+
+    tracked.write_text("two\n", encoding="utf-8")
+    _git(project, "add", "tracked.txt")
+    _git(project, "commit", "-m", "after snapshot")
+    changed_head = _git(project, "rev-parse", "HEAD").stdout.strip()
+    assert changed_head != baseline_head
+
+    restored = restore_project_snapshot(snapshot.id, project_id="summitflow")
+
+    assert restored.id == snapshot.id
+    assert restored.scope_type == "project"
+    assert tracked.read_text(encoding="utf-8") == "one\n"
+    assert _git(project, "rev-parse", "HEAD").stdout.strip() == baseline_head
+
+
 def test_get_snapshot_usage_parses_btrfs_du_output(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

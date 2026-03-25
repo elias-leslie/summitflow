@@ -41,19 +41,13 @@ const COMPONENT_LABELS: Record<string, string> = {
   'coderabbit.suggestions': 'CodeRabbit',
 }
 
-const GROUP_TONE: Record<string, string> = {
-  SummitFlow: 'border-cyan-500/15 bg-cyan-500/8',
-  'Agent Hub': 'border-rose-500/15 bg-rose-500/8',
-  'Cross-Cutting': 'border-amber-500/15 bg-amber-500/8',
-}
-
 // ─── Ratio Bar ───────────────────────────────────────────────────
 
 function RatioBar({ data }: { data: ComponentBreakdown }) {
   const total = data.friction + data.idea + data.praise
   if (total === 0) return null
   return (
-    <div className="flex h-2 w-20 shrink-0 overflow-hidden rounded-full bg-slate-800/50">
+    <div className="flex gap-px h-1.5 rounded-full overflow-hidden bg-slate-800/50 w-16 shrink-0">
       {data.friction > 0 && (
         <div
           className="bg-red-500 transition-all duration-300"
@@ -97,30 +91,25 @@ function ComponentRow({
       onClick={onClick}
       aria-pressed={isActive}
       className={clsx(
-        'flex w-full items-center gap-3 rounded-[1.1rem] border px-3 py-3 text-left transition-all',
+        'flex items-center gap-3 px-3 py-2 rounded-md text-left transition-all w-full',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phosphor-500/40',
         isActive
-          ? 'border-phosphor-500/20 bg-slate-700/40 ring-1 ring-phosphor-500/20'
-          : 'border-slate-800/70 bg-slate-950/40 hover:bg-slate-800/40',
+          ? 'bg-slate-700/40 ring-1 ring-phosphor-500/20'
+          : 'hover:bg-slate-800/40',
       )}
     >
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm text-slate-200">{label}</div>
-        <div className="mt-1 text-[10px] uppercase tracking-[0.16em] text-slate-500">
-          {componentId}
-        </div>
-      </div>
-      <div className="flex items-center gap-2">
-        <RatioBar data={data} />
-        {data.open > 0 && (
-          <span className="rounded-full border border-rose-500/20 bg-rose-500/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] text-rose-300">
-            {data.open} open
-          </span>
-        )}
-        <span className="rounded-full border border-slate-700/70 bg-slate-950/70 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] text-slate-400">
-          {data.total}
+      <span className="text-xs text-slate-300 truncate flex-1 min-w-0">
+        {label}
+      </span>
+      <RatioBar data={data} />
+      {data.open > 0 && (
+        <span className="text-[10px] font-mono text-red-400 tabular-nums shrink-0">
+          {data.open}
         </span>
-      </div>
+      )}
+      <span className="text-[10px] font-mono text-slate-600 tabular-nums shrink-0">
+        {data.total}
+      </span>
     </button>
   )
 }
@@ -176,39 +165,33 @@ function GroupSection({
   return (
     <div
       className={clsx(
-        'overflow-hidden rounded-xl border transition-all duration-200',
-        GROUP_TONE[groupName] ?? 'border-slate-700/60 bg-slate-800/40',
-        expanded ? 'border-slate-700/80' : 'hover:bg-slate-800/60',
+        'rounded-lg border border-slate-700/60 bg-slate-800/40 overflow-hidden transition-all duration-200',
+        expanded
+          ? 'border-slate-700/80'
+          : 'hover:bg-slate-800/60',
       )}
     >
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
         aria-expanded={expanded}
-        className="flex w-full items-center gap-3 px-3 py-3 text-left transition-colors hover:bg-slate-800/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-phosphor-500/40"
+        className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-slate-800/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-phosphor-500/40"
       >
         <ChevronRight
           className={clsx(
-            'h-3.5 w-3.5 shrink-0 text-slate-600 transition-transform duration-200',
+            'w-3.5 h-3.5 text-slate-600 transition-transform duration-200 shrink-0',
             expanded && 'rotate-90',
           )}
         />
-        <div className="min-w-0 flex-1">
-          <div className="text-sm font-medium text-slate-200">{groupName}</div>
-          <div className="mt-1 text-[10px] uppercase tracking-[0.16em] text-slate-500">
-            {groupTotal} total signals
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {groupOpen > 0 && (
-            <span className="rounded-full border border-rose-500/20 bg-rose-500/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] text-rose-300">
-              {groupOpen} open
-            </span>
-          )}
-          <span className="rounded-full border border-slate-700/70 bg-slate-950/70 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] text-slate-400">
-            {groupTotal}
+        <span className="text-xs font-medium text-slate-300">{groupName}</span>
+        <span className="text-[10px] font-mono text-slate-600 tabular-nums">
+          {groupTotal}
+        </span>
+        {groupOpen > 0 && (
+          <span className="text-[10px] font-mono text-red-400 tabular-nums">
+            {groupOpen} open
           </span>
-        </div>
+        )}
       </button>
 
       <div
@@ -220,7 +203,7 @@ function GroupSection({
         )}
       >
         <div className="overflow-hidden">
-          <div className="space-y-2 border-t border-slate-800/40 px-3 py-3">
+          <div className="border-t border-slate-800/40 px-2 py-1.5 space-y-0.5">
             {allComponents.map((componentId) => (
               <ComponentRow
                 key={componentId}
@@ -270,16 +253,16 @@ export function ComponentSummary({
   if (!hasAny) return null
 
   return (
-    <section className="card-elevated space-y-3 px-4 py-3">
+    <section className="space-y-3">
       <div>
-        <h2 className="display text-sm font-semibold uppercase tracking-[0.16em] text-slate-300">
+        <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-300 display">
           Components
         </h2>
-        <p className="mt-0.5 text-xs text-slate-500">
-          Signal distribution across SummitFlow, Agent Hub, and cross-cutting tooling
+        <p className="mt-1 text-xs text-slate-500">
+          Feedback by system component
         </p>
       </div>
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
         {Object.entries(COMPONENT_GROUPS).map(([groupName, components]) => (
           <GroupSection
             key={groupName}

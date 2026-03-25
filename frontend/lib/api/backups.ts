@@ -222,18 +222,9 @@ export interface BackupHealthItem {
   last_drill_backup_id: string | null
 }
 
-export interface WalHealthSummary {
-  enabled: boolean
-  archive_segment_count: number
-  archive_size_bytes: number
-  last_archived_time: string | null
-  failed_count: number
-}
-
 export interface BackupHealthResponse {
   sources: BackupHealthItem[]
   pending_upload_count: number
-  wal: WalHealthSummary | null
 }
 
 export function fetchStorageBackends(): Promise<StorageBackend[]> {
@@ -319,34 +310,3 @@ export function runRestoreDrill(): Promise<RestoreDrillResult> {
   })
 }
 
-// ─── WAL Archiving ──────────────────────────────────────────────
-
-export interface WalStatus {
-  archive_mode: string
-  archive_command: string
-  current_lsn: string
-  enabled: boolean
-  pending_restart?: boolean
-  archived_count?: number
-  last_archived_wal?: string
-  last_archived_time?: string
-  failed_count?: number
-  last_failed_wal?: string
-  last_failed_time?: string
-}
-
-export function fetchWalStatus(): Promise<WalStatus> {
-  return fetchWithErrorHandling<WalStatus>('/api/backups/wal/status', { errorMessage: 'Failed to fetch WAL status' })
-}
-
-export function enableWalArchiving(): Promise<WalStatus> {
-  return fetchWithErrorHandling<WalStatus>('/api/backups/wal/enable', {
-    method: 'POST', errorMessage: 'Failed to enable WAL archiving',
-  })
-}
-
-export function disableWalArchiving(): Promise<WalStatus> {
-  return fetchWithErrorHandling<WalStatus>('/api/backups/wal/disable', {
-    method: 'POST', errorMessage: 'Failed to disable WAL archiving',
-  })
-}

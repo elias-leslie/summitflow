@@ -357,6 +357,73 @@ class TestPlanningE2E:
         assert updated_task["complexity"] == "COMPLEX"
         assert task_events_contain(task_id, "Supervisor approved")
 
+    def test_planning_persists_execution_contract_for_frontend_flow(
+        self, test_project_id: str, cleanup_tasks: list[str]
+    ) -> None:
+        """Planner execution contracts should round-trip into task_spirit context."""
+        task = task_store.create_task(
+            project_id=test_project_id,
+            title="Refresh dashboard design",
+            description="Redesign the dashboard and verify the main runtime flow",
+            task_type="feature",
+        )
+        task_id = task["id"]
+        cleanup_tasks.append(task_id)
+        task_store.update_task_status(task_id, "queue")
+
+        plan_json = json.dumps(
+            {
+                "objective": "Refresh dashboard design and verify the main runtime flow",
+                "execution_contract": {
+                    "mode": "runtime_eval_plus_design",
+                    "target_urls": ["/app"],
+                    "user_flows": [
+                        {
+                            "title": "Open dashboard",
+                            "actions": ["Visit /app"],
+                            "expected_outcomes": ["Dashboard widgets render"],
+                        }
+                    ],
+                    "api_checks": [{"method": "GET", "path": "/health", "status": 200}],
+                    "design_criteria": {"rubric": ["originality", "craft"]},
+                },
+                "context": {"files_to_modify": ["frontend/app/dashboard/page.tsx"]},
+                "subtasks": [
+                    {
+                        "subtask_id": "1.1",
+                        "phase": "frontend",
+                        "subtask_type": "ui-design",
+                        "description": "Refresh dashboard visuals",
+                        "steps": [{"description": "Update layout"}],
+                    }
+                ],
+            }
+        )
+
+        mock_response = create_mock_agent_response(plan_json)
+
+        with (
+            patch("app.tasks.autonomous.planning.get_sync_client") as mock_client,
+            patch("app.tasks.autonomous.planning.ComplexityAssessor") as mock_assessor,
+        ):
+            mock_client.return_value.complete.return_value = mock_response
+            mock_assessor_instance = MagicMock()
+            mock_assessor_instance.assess_sync.return_value = MagicMock(
+                tier=ComplexityTier.STANDARD,
+                reasoning="Frontend redesign with runtime verification",
+            )
+            mock_assessor.return_value = mock_assessor_instance
+
+            result = create_plan(task_id, test_project_id)
+
+        assert result["status"] == "completed"
+        spirit = get_task_spirit(task_id)
+        assert spirit is not None
+        context = spirit["context"]
+        assert context["execution_contract"]["mode"] == "runtime_eval_plus_design"
+        assert context["execution_contract"]["target_urls"] == ["/app"]
+        assert context["execution_contract"]["user_flows"][0]["flow_id"] == "flow-1"
+
 
 @pytest.mark.e2e
 class TestExecutionE2E:

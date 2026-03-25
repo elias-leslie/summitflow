@@ -204,6 +204,34 @@ class TestCreateBackupTask:
         assert backup["status"] == "completed_pending_upload"
         assert backup["name"] == "test-backup.tar.gz"
 
+    def test_create_backup_local_only_records_local_archive_location(self, cleanup_project: str) -> None:
+        """Local-only backup mode records the local archive path and skips pending-upload state."""
+        with patch("app.tasks.backup_executor.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout="""
+                Archive: test-backup.tar.gz
+                Size: 100M
+                DB Size: 50M
+                Location: /tmp/test-project/backups/test-backup.tar.gz
+                Verification: {"verified": true, "verified_at": "2026-03-14T10:00:00Z", "errors": [], "tree": {}, "total_files": 1, "checksum": "sha256:test", "has_db": true}
+                """,
+                stderr="",
+            )
+
+            result = create_backup(project_id=cleanup_project, local_only=True)
+
+        assert result["status"] == "completed"
+        backup = backup_store.get_backup(result["backup_id"])
+        assert backup is not None
+        assert backup["status"] == "completed"
+        assert backup["location"] == "/tmp/test-project/backups/test-backup.tar.gz"
+        assert backup["name"] == "test-backup.tar.gz"
+        assert backup["db_size_bytes"] == 50 * 1024 * 1024
+
+        called_cmd = mock_run.call_args.args[0]
+        assert "--local" in called_cmd
+
     @patch("app.tasks.backup_executor.create_notification")
     def test_create_backup_failure_notification_uses_backup_project(
         self,

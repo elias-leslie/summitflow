@@ -83,6 +83,24 @@ def summarize_tool_output(tool_output: dict[str, Any]) -> str:
     return f"({len(lines)} lines) {lines[0][:100]}..."
 
 
+def _summarize_prompt_harness(tool_output: dict[str, Any]) -> str:
+    sections = tool_output.get("sections") or []
+    total_tokens = sum(int(section.get("estimated_tokens") or 0) for section in sections if isinstance(section, dict))
+    return f"mode={tool_output.get('mode', 'code_only')} sections={len(sections)} tok={total_tokens}"
+
+
+def _summarize_runtime_evaluator(tool_output: dict[str, Any]) -> str:
+    criteria = tool_output.get("criteria") or []
+    passed = sum(1 for criterion in criteria if isinstance(criterion, dict) and criterion.get("status") == "passed")
+    total = len(criteria)
+    design_result = tool_output.get("design_result") or {}
+    design_score = design_result.get("overall_score")
+    summary = f"mode={tool_output.get('mode', 'runtime_eval')} pass={passed}/{total}"
+    if design_score is not None:
+        summary += f" design={design_score}"
+    return summary
+
+
 def _format_event_header(event: dict[str, Any], verbose: bool) -> str:
     event_type = event.get("event_type", "unknown")
     color = _TYPE_COLORS.get(event_type, "")
@@ -110,7 +128,14 @@ def _format_tool_result_content(event: dict[str, Any], verbose: bool) -> str:
     tool_output = event.get("tool_output")
     if not tool_output:
         return ""
-    return json.dumps(tool_output, indent=2) if verbose else summarize_tool_output(tool_output)
+    if verbose:
+        return json.dumps(tool_output, indent=2)
+    tool_name = event.get("tool_name")
+    if tool_name == "prompt_harness":
+        return _summarize_prompt_harness(tool_output)
+    if tool_name == "runtime_evaluator":
+        return _summarize_runtime_evaluator(tool_output)
+    return summarize_tool_output(tool_output)
 
 
 def format_event(event: dict[str, Any], verbose: bool = False) -> str:

@@ -141,3 +141,50 @@ class TestSessionEventsFormatter:
         assert "total selected=4 | index=33 | selected cited=2/4 (50%)" in lines[1]
         assert "aaa11111: refs=3 | index=29 | selected cited=2/3 (67%)" in lines[2]
         assert "bbb22222: refs=1 | index=4 | selected cited=0/1 (0%)" in lines[3]
+
+    def test_format_event_summarizes_prompt_harness_snapshot(self) -> None:
+        event = {
+            "turn": 1,
+            "sequence": 2,
+            "event_type": "tool_result",
+            "tool_name": "prompt_harness",
+            "tool_output": {
+                "mode": "runtime_eval",
+                "sections": [
+                    {"label": "Task Objective", "estimated_tokens": 120},
+                    {"label": "Execution Contract", "estimated_tokens": 80},
+                ],
+                "execution_contract": {"target_urls": ["/app/dashboard"]},
+            },
+        }
+
+        rendered = format_event(event)
+
+        assert "prompt_harness" in rendered
+        assert "mode=runtime_eval" in rendered
+        assert "sections=2" in rendered
+        assert "tok=200" in rendered
+
+    def test_format_event_summarizes_runtime_evaluator_result(self) -> None:
+        event = {
+            "turn": 2,
+            "sequence": 4,
+            "event_type": "tool_result",
+            "tool_name": "runtime_evaluator",
+            "tool_output": {
+                "mode": "runtime_eval_plus_design",
+                "passed": False,
+                "criteria": [
+                    {"status": "passed"},
+                    {"status": "failed"},
+                ],
+                "design_result": {"overall_score": 8.5},
+            },
+        }
+
+        rendered = format_event(event)
+
+        assert "runtime_evaluator" in rendered
+        assert "mode=runtime_eval_plus_design" in rendered
+        assert "pass=1/2" in rendered
+        assert "design=8.5" in rendered

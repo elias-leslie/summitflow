@@ -182,3 +182,66 @@ class TestPromptTemplateFallbacks:
         assert "Merge Conflict Context" in prompt
         assert "backend/app/services/tools/tool_handler.py" in prompt
         assert "task-1/main" in prompt
+
+    @patch(f"{_PROMPTS}.build_health_context", return_value="")
+    @patch(f"{_PROMPTS}.build_conflict_context", return_value="")
+    @patch(f"{_PROMPTS}.build_resume_context", return_value="")
+    @patch(f"{_PROMPTS}._build_precision_code_search_block", return_value="")
+    @patch(f"{_PROMPTS}.get_handoff_context", return_value={})
+    @patch(f"{_PROMPTS}.task_store")
+    @patch(f"{_PROMPTS}.get_task_spirit")
+    @patch(
+        f"{_PROMPTS}.get_prompt_template",
+        return_value="{objective}{done_when_block}{scope_block}{contract_block}{steps_block}",
+    )
+    def test_build_subtask_prompt_includes_execution_contract_block(
+        self,
+        _mock_template: MagicMock,
+        mock_get_task_spirit: MagicMock,
+        mock_task_store: MagicMock,
+        _mock_handoff: MagicMock,
+        _mock_precision: MagicMock,
+        _mock_resume: MagicMock,
+        _mock_conflict: MagicMock,
+        _mock_health: MagicMock,
+    ) -> None:
+        from app.tasks.autonomous.exec_modules.prompts import build_subtask_prompt
+
+        mock_get_task_spirit.return_value = {
+            "done_when": ["Keep the dashboard stable"],
+            "context": {
+                "files_to_modify": ["frontend/app/dashboard/page.tsx"],
+                "execution_contract": {
+                    "mode": "runtime_eval_plus_design",
+                    "target_urls": ["/app/dashboard"],
+                    "user_flows": [
+                        {
+                            "title": "Open dashboard",
+                            "actions": ["Visit /app/dashboard"],
+                            "expected_outcomes": ["Dashboard content renders"],
+                        }
+                    ],
+                    "api_checks": [{"method": "GET", "path": "/dashboard", "status": 200}],
+                    "design_criteria": {"rubric": ["craft", "usability"]},
+                    "risk_notes": ["Dense card layout can regress visually"],
+                },
+            },
+        }
+        mock_task_store.get_task.return_value = {"id": "task-1", "description": "Refresh dashboard UX"}
+
+        prompt = build_subtask_prompt(
+            task_id="task-1",
+            subtask={
+                "subtask_id": "1.1",
+                "description": "Refresh dashboard UX",
+                "steps_from_table": [{"step_number": 1, "description": "Update layout"}],
+            },
+            project_id="summitflow",
+            project_path="/tmp/worktree",
+        )
+
+        assert "Execution Contract" in prompt
+        assert "runtime_eval_plus_design" in prompt
+        assert "/app/dashboard" in prompt
+        assert "Open dashboard" in prompt
+        assert "Dense card layout can regress visually" in prompt

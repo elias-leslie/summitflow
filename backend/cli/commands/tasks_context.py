@@ -8,6 +8,7 @@ from typing import Any
 import typer
 
 from app.services.task_execution_readiness import assess_task_execution_readiness
+from app.services.task_harness import determine_task_harness
 from app.services.task_lane_preflight import check_task_lane_conflicts
 from app.storage import tasks as task_store
 
@@ -138,6 +139,7 @@ def _handle_task_context(
     task_refs = fetch_triggered_references(task_type) if task_type else []
     task["execution_readiness"] = assess_task_execution_readiness(task, task, subtasks)
     task["completion_readiness"] = client.get_task_completion_readiness(task_id)
+    task["harness_route"] = determine_task_harness(task, task, subtasks).to_dict()
     if task.get("status") not in _TERMINAL_TASK_STATUSES:
         task["lane_preflight"] = check_task_lane_conflicts(task_id, task["project_id"]).to_dict()
     sync_analysis = analyze_subtask_sync(subtasks)

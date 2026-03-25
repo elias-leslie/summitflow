@@ -9,6 +9,7 @@ from ....services.context_gatherer import (
     PRECISION_CODE_SEARCH_GUIDANCE,
     collect_precision_code_search_context,
 )
+from ....services.task_harness import estimate_prompt_tokens, summarize_execution_contract
 from ....storage import tasks as task_store
 from ....storage.events import get_events_by_trace
 from ....storage.subtasks import get_handoff_context
@@ -29,7 +30,7 @@ logger = get_logger(__name__)
 _SLUG_AUTOCODE_SUBTASK = "autocode-subtask"
 _SLUG_AUTOCODE_FIX = "autocode-fix"
 _TRANSIENT_SUBTASK_TEMPLATE = """# Task Objective
-{objective}{spirit_anti_block}{done_when_block}{scope_block}{handoff_block}
+{objective}{spirit_anti_block}{done_when_block}{scope_block}{contract_block}{handoff_block}
 
 # Subtask {subtask_id}
 {description}
@@ -186,6 +187,54 @@ def _build_handoff_block(handoff: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _build_execution_contract_block(context: dict[str, Any]) -> str:
+    if not isinstance(context, dict):
+        return ""
+    contract = context.get("execution_contract")
+    summary = summarize_execution_contract(contract)
+    if summary["target_url_count"] == 0 and summary["user_flow_count"] == 0 and summary["api_check_count"] == 0 and summary["negative_case_count"] == 0 and not summary["has_design_criteria"]:
+        return ""
+
+    contract = contract if isinstance(contract, dict) else {}
+    lines = [f"\n# Execution Contract\nMode: {summary['mode']}"]
+    target_urls = contract.get("target_urls") or []
+    if target_urls:
+        lines.append("Target URLs:")
+        lines.extend(f"- {url}" for url in target_urls)
+    user_flows = contract.get("user_flows") or []
+    if user_flows:
+        lines.append("User flows:")
+        for flow in user_flows:
+            title = flow.get("title", "Flow")
+            lines.append(f"- {title}")
+            actions = flow.get("actions") or []
+            expected = flow.get("expected_outcomes") or []
+            if actions:
+                lines.append(f"  actions: {'; '.join(str(action) for action in actions)}")
+            if expected:
+                lines.append(f"  expect: {'; '.join(str(item) for item in expected)}")
+    api_checks = contract.get("api_checks") or []
+    if api_checks:
+        lines.append("API checks:")
+        for check in api_checks:
+            lines.append(
+                f"- {check.get('method', 'GET')} {check.get('path', '')} -> {check.get('status', '?')}"
+            )
+    negative_cases = contract.get("negative_cases") or []
+    if negative_cases:
+        lines.append("Negative cases:")
+        for case in negative_cases:
+            title = case.get("title") or case.get("path") or "Negative case"
+            lines.append(f"- {title} -> {case.get('status', '?')}")
+    if summary["has_design_criteria"]:
+        lines.append("Design critic: required")
+    risk_notes = contract.get("risk_notes") or []
+    if risk_notes:
+        lines.append("Evaluator focus:")
+        lines.extend(f"- {note}" for note in risk_notes)
+    return "\n".join(lines)
+
+
 def _build_precision_code_search_block(
     project_id: str,
     objective: str,
@@ -220,22 +269,55 @@ def _get_subtask_steps(subtask: dict[str, Any]) -> list[dict[str, Any]]:
     return []
 
 
-def build_subtask_prompt(
+def _build_snapshot_sections(
+    objective: str,
+    done_when_block: str,
+    scope_block: str,
+    contract_block: str,
+    handoff_block: str,
+    subtask: dict[str, Any],
+    project_path: str,
+) -> list[dict[str, Any]]:
+    sections: list[tuple[str, str]] = [
+        ("Task Objective", objective),
+        ("Completion Criteria", done_when_block),
+        ("Expected Scope", scope_block),
+        ("Execution Contract", contract_block),
+        ("Previous Work Summary", handoff_block),
+        ("Subtask", subtask.get("description", "")),
+        ("Steps", build_steps_block(_get_subtask_steps(subtask))),
+        ("Working Directory", project_path),
+    ]
+    return [
+        {
+            "label": label,
+            "estimated_tokens": estimate_prompt_tokens(content),
+        }
+        for label, content in sections
+        if content
+    ]
+
+
+def build_subtask_prompt_payload(
     task_id: str,
     subtask: dict[str, Any],
     project_id: str,
     project_path: str,
-) -> str:
-    """Build subtask prompt with fresh context: description + done_when + subtask + handoff."""
+) -> tuple[str, dict[str, Any]]:
+    """Build subtask prompt plus a compact prompt-composition snapshot."""
     spirit = get_task_spirit(task_id)
     done_when = spirit.get("done_when", []) if spirit else []
     context = spirit.get("context", {}) if spirit else {}
     subtask_short_id = subtask.get("subtask_id", "")
     handoff = get_handoff_context(task_id, subtask_short_id)
 
-    # Use task description (objective was migrated there)
     task = task_store.get_task(task_id)
     objective = (task.get("description") or task.get("title") or "") if task else ""
+    done_when_block = _build_done_when_block(done_when)
+    scope_block = _build_scope_block(context)
+    contract_block = _build_execution_contract_block(context)
+    handoff_block = _build_handoff_block(handoff)
+    steps_block = build_steps_block(_get_subtask_steps(subtask))
 
     template = _get_template_with_transient_fallback(
         _SLUG_AUTOCODE_SUBTASK,
@@ -243,28 +325,68 @@ def build_subtask_prompt(
     )
     prompt = template.format_map({
         "objective": objective,
-        "spirit_anti_block": "",  # spirit_anti dropped
-        "done_when_block": _build_done_when_block(done_when),
-        "scope_block": _build_scope_block(context),
-        "handoff_block": _build_handoff_block(handoff),
+        "spirit_anti_block": "",
+        "done_when_block": done_when_block,
+        "scope_block": scope_block,
+        "contract_block": contract_block,
+        "handoff_block": handoff_block,
         "subtask_id": subtask_short_id,
         "description": subtask.get("description", ""),
-        "steps_block": build_steps_block(_get_subtask_steps(subtask)),
+        "steps_block": steps_block,
         "project_path": project_path,
     })
+
+    snapshot_sections = _build_snapshot_sections(
+        objective,
+        done_when_block,
+        scope_block,
+        contract_block,
+        handoff_block,
+        subtask,
+        project_path,
+    )
+
     precision_block = _build_precision_code_search_block(project_id, objective, subtask)
     if precision_block:
         prompt += precision_block
+        snapshot_sections.append(
+            {"label": "Precision Code Search", "estimated_tokens": estimate_prompt_tokens(precision_block)}
+        )
 
     resume_block = build_resume_context(task_id)
     if resume_block:
         prompt += resume_block
+        snapshot_sections.append(
+            {"label": "Resume Context", "estimated_tokens": estimate_prompt_tokens(resume_block)}
+        )
     conflict_block = build_conflict_context(task_id)
     if conflict_block:
         prompt += conflict_block
+        snapshot_sections.append(
+            {"label": "Merge Conflict Context", "estimated_tokens": estimate_prompt_tokens(conflict_block)}
+        )
     health_block = build_health_context(project_id)
     if health_block:
         prompt += f"\n\n{health_block}"
+        snapshot_sections.append(
+            {"label": "System Health Warning", "estimated_tokens": estimate_prompt_tokens(health_block)}
+        )
+
+    return prompt, {
+        "mode": summarize_execution_contract(context.get("execution_contract")).get("mode", "code_only"),
+        "sections": snapshot_sections,
+        "execution_contract": summarize_execution_contract(context.get("execution_contract")),
+    }
+
+
+def build_subtask_prompt(
+    task_id: str,
+    subtask: dict[str, Any],
+    project_id: str,
+    project_path: str,
+) -> str:
+    """Build subtask prompt with fresh context: description + done_when + subtask + handoff."""
+    prompt, _snapshot = build_subtask_prompt_payload(task_id, subtask, project_id, project_path)
     return prompt
 
 

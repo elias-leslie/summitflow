@@ -103,6 +103,76 @@ TriggerTypesUpdateOpt = Annotated[
     ),
 ]
 
+TriggerPhasesOpt = Annotated[
+    str | None,
+    typer.Option(
+        "--trigger-phases",
+        help="Comma-separated subtask phases (implementation,verification,cleanup,etc.)",
+    ),
+]
+
+TriggerPhasesUpdateOpt = Annotated[
+    str | None,
+    typer.Option(
+        "--trigger-phases",
+        help="Comma-separated subtask phases (implementation,verification,cleanup,etc.)",
+    ),
+]
+
+ContextKindOpt = Annotated[
+    str | None,
+    typer.Option(
+        "--context-kind",
+        help="Semantic context channel (policy, reference, capability, continuity, signal)",
+    ),
+]
+
+ContextKindUpdateOpt = Annotated[
+    str | None,
+    typer.Option(
+        "--context-kind",
+        help="Semantic context channel (policy, reference, capability, continuity, signal)",
+    ),
+]
+
+ConsumerProfilesOpt = Annotated[
+    str | None,
+    typer.Option("--consumer-profiles", help="Comma-separated consumer profiles to target"),
+]
+
+ExcludeConsumerProfilesOpt = Annotated[
+    str | None,
+    typer.Option(
+        "--exclude-consumer-profiles",
+        help="Comma-separated consumer profiles to exclude",
+    ),
+]
+
+AgentSlugsOpt = Annotated[
+    str | None,
+    typer.Option("--agent-slugs", help="Comma-separated agent slugs to target"),
+]
+
+ExcludeAgentSlugsOpt = Annotated[
+    str | None,
+    typer.Option("--exclude-agent-slugs", help="Comma-separated agent slugs to exclude"),
+]
+
+AudienceTagsOpt = Annotated[
+    str | None,
+    typer.Option("--audience-tags", help="Comma-separated audience tags to target"),
+]
+
+ExcludeAudienceTagsOpt = Annotated[
+    str | None,
+    typer.Option("--exclude-audience-tags", help="Comma-separated audience tags to exclude"),
+]
+
+ClearApplicabilityOpt = Annotated[
+    bool,
+    typer.Option("--clear-applicability", help="Remove all applicability targeting/exclusions"),
+]
+
 TagsOpt = Annotated[
     str | None,
     typer.Option(

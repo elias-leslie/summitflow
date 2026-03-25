@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
 
@@ -195,6 +196,46 @@ def update_backup_status(
                 f"UPDATE backups SET {', '.join(updates)} WHERE id = %s RETURNING {BACKUP_COLUMNS}"
             ),
             params,
+        )
+        row = cur.fetchone()
+        conn.commit()
+
+    return row_to_backup(row) if row else None
+
+
+def _merge_json_dicts(
+    base: Mapping[str, Any],
+    updates: Mapping[str, Any],
+) -> dict[str, Any]:
+    merged: dict[str, Any] = dict(base)
+    for key, value in updates.items():
+        existing = merged.get(key)
+        if isinstance(existing, Mapping) and isinstance(value, Mapping):
+            merged[key] = _merge_json_dicts(existing, value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def merge_backup_verification_json(
+    backup_id: str,
+    verification_updates: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    """Merge additional verification metadata into an existing backup record."""
+    backup = get_backup(backup_id)
+    if not backup:
+        return None
+
+    current = backup.get("verification_json")
+    current_mapping = current if isinstance(current, Mapping) else {}
+    merged = _merge_json_dicts(current_mapping, verification_updates)
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            static_sql(
+                f"UPDATE backups SET verification_json = %s WHERE id = %s RETURNING {BACKUP_COLUMNS}"
+            ),
+            (json.dumps(merged), backup_id),
         )
         row = cur.fetchone()
         conn.commit()

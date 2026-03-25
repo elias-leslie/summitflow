@@ -80,6 +80,7 @@ def _build_seed_spec(skill_tag: str, content: str, fm: dict[str, Any]) -> tuple[
     tier = validate_tier(str(fm.get("tier", "reference")))
     summary = validate_save_inputs(tier, 90, str(fm.get("summary") or skill_tag))
     trigger_types = _normalize_frontmatter_list(fm.get("trigger_task_types"))
+    trigger_phases = _normalize_frontmatter_list(fm.get("trigger_phases"))
     tags = _normalize_frontmatter_list(fm.get("tags"))
     if skill_tag not in tags:
         tags.append(skill_tag)
@@ -92,6 +93,14 @@ def _build_seed_spec(skill_tag: str, content: str, fm: dict[str, Any]) -> tuple[
         context=None,
         pinned=bool(fm.get("pinned")),
         trigger_types=",".join(trigger_types) if trigger_types else None,
+        trigger_phases=",".join(trigger_phases) if trigger_phases else None,
+        context_kind=str(fm.get("context_kind")).strip() if fm.get("context_kind") else None,
+        consumer_profiles=",".join(_normalize_frontmatter_list(fm.get("consumer_profiles"))) or None,
+        exclude_consumer_profiles=",".join(_normalize_frontmatter_list(fm.get("exclude_consumer_profiles"))) or None,
+        agent_slugs=",".join(_normalize_frontmatter_list(fm.get("agent_slugs"))) or None,
+        exclude_agent_slugs=",".join(_normalize_frontmatter_list(fm.get("exclude_agent_slugs"))) or None,
+        audience_tags=",".join(_normalize_frontmatter_list(fm.get("audience_tags"))) or None,
+        exclude_audience_tags=",".join(_normalize_frontmatter_list(fm.get("exclude_audience_tags"))) or None,
         change_reason=None,
     )
     return payload, tags
@@ -148,15 +157,33 @@ def _upsert_skill_episode(
     existing_full = fetch_existing_episode(episode_uuid)
     existing_tags = fetch_episode_tags(episode_uuid)
     desired_trigger_types = list(payload.get("trigger_task_types", []))
+    desired_trigger_phases = list(payload.get("trigger_phases", []))
     desired_pinned = bool(payload.get("pinned", False))
+    desired_context_kind = payload.get("context_kind") or "reference"
+    desired_applicability = payload.get("applicability")
     content_changed = str(existing_full.get("content", "")).strip() != content.strip()
     tier_changed = str(existing_full.get("injection_tier", "reference")) != str(payload["injection_tier"])
     summary_changed = str(existing_full.get("summary", "")) != str(payload["summary"])
     trigger_types_changed = list(existing_full.get("trigger_task_types") or []) != desired_trigger_types
+    trigger_phases_changed = list(existing_full.get("trigger_phases") or []) != desired_trigger_phases
     pinned_changed = bool(existing_full.get("pinned", False)) != desired_pinned
+    context_kind_changed = (existing_full.get("context_kind") or "reference") != desired_context_kind
+    applicability_changed = (existing_full.get("applicability") or {}) != (desired_applicability or {})
     tags_changed = existing_tags != tags
 
-    if not any([content_changed, tier_changed, summary_changed, trigger_types_changed, pinned_changed, tags_changed]):
+    if not any(
+        [
+            content_changed,
+            tier_changed,
+            summary_changed,
+            trigger_types_changed,
+            trigger_phases_changed,
+            pinned_changed,
+            context_kind_changed,
+            applicability_changed,
+            tags_changed,
+        ]
+    ):
         return "unchanged"
 
     if dry_run:
@@ -168,12 +195,15 @@ def _upsert_skill_episode(
             content=content,
             tier=str(payload["injection_tier"]),
         )
-    if summary_changed or trigger_types_changed or pinned_changed:
+    if summary_changed or trigger_types_changed or trigger_phases_changed or pinned_changed or context_kind_changed or applicability_changed:
         patch_episode_properties(
             episode_uuid,
             str(payload["summary"]) if summary_changed else None,
             ",".join(desired_trigger_types) if trigger_types_changed else None,
+            ",".join(desired_trigger_phases) if trigger_phases_changed else None,
             desired_pinned if pinned_changed else None,
+            str(desired_context_kind) if context_kind_changed else None,
+            desired_applicability if applicability_changed else None,
         )
     if tags_changed:
         replace_episode_tags(episode_uuid, tags)

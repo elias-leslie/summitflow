@@ -55,6 +55,26 @@ class TestMockupProjectScope:
         analyze_screenshot_with_vision("agent-hub", screenshot_path, [], "/home")
 
         assert mock_client.complete.call_args.kwargs["project_id"] == "agent-hub"
+        assert mock_client.complete.call_args.kwargs["agent_slug"] == "designer"
+
+    @patch("app.services.mockup_generator.analysis.vision.get_sync_client")
+    def test_analyze_screenshot_with_prompt_uses_passed_project_id_and_agent_slug(
+        self,
+        mock_get_client: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        from app.services.mockup_generator.analysis.vision import analyze_screenshot_with_prompt
+
+        screenshot_path = tmp_path / "screenshot.png"
+        screenshot_path.write_bytes(b"png")
+        mock_client = MagicMock()
+        mock_client.complete.return_value = SimpleNamespace(content='{"passed": true}')
+        mock_get_client.return_value = mock_client
+
+        analyze_screenshot_with_prompt("agent-hub", screenshot_path, "prompt")
+
+        assert mock_client.complete.call_args.kwargs["project_id"] == "agent-hub"
+        assert mock_client.complete.call_args.kwargs["agent_slug"] == "site-checker"
 
     @patch("app.services.mockup_generator.renderers.gemini.get_sync_client")
     def test_generate_mockup_gemini_uses_passed_project_id(

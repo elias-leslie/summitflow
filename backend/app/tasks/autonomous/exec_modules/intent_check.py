@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import subprocess
 from dataclasses import dataclass, field
+from typing import Any
 
 from ....logging_config import get_logger
+from ....services.task_harness import summarize_execution_contract
 from ....storage import tasks as task_store
 from ....storage.task_spirit import get_task_spirit
 
@@ -236,17 +238,37 @@ def _build_completion_gate_prompt(
     modified_files: list[str],
     file_contents: str,
     diff_summary: str,
+    execution_contract: dict[str, Any] | None,
 ) -> str:
     """Build the completion gate verification prompt."""
     done_items = "\n".join(f"  {i+1}. {item}" for i, item in enumerate(done_when))
     anti_section = f"\nSPIRIT_ANTI (must NOT happen):\n{spirit_anti}" if spirit_anti else ""
     files_list = "\n".join(f"  - {f}" for f in modified_files) if modified_files else "  (none)"
+    contract_summary = summarize_execution_contract(execution_contract)
+    contract_section = ""
+    if (
+        contract_summary["target_url_count"] > 0
+        or contract_summary["user_flow_count"] > 0
+        or contract_summary["api_check_count"] > 0
+        or contract_summary["negative_case_count"] > 0
+        or contract_summary["has_design_criteria"]
+    ):
+        contract_section = (
+            "\nEXECUTION CONTRACT:\n"
+            f"  mode={contract_summary['mode']}\n"
+            f"  target_urls={contract_summary['target_url_count']}\n"
+            f"  user_flows={contract_summary['user_flow_count']}\n"
+            f"  api_checks={contract_summary['api_check_count']}\n"
+            f"  negative_cases={contract_summary['negative_case_count']}\n"
+            f"  design_critic={'yes' if contract_summary['has_design_criteria'] else 'no'}\n"
+        )
 
     return (
         "You are performing a completion gate check. Verify that the task's done_when criteria "
         "have been met by examining the actual code changes.\n\n"
         f"TASK DESCRIPTION: {description}{anti_section}\n\n"
         f"DONE_WHEN CRITERIA:\n{done_items}\n\n"
+        f"{contract_section}\n"
         f"MODIFIED FILES:\n{files_list}\n\n"
         f"CHANGES SUMMARY:\n{diff_summary}\n\n"
         f"FILE CONTENTS:\n{file_contents}\n\n"
@@ -270,9 +292,13 @@ def _evaluate_completion_gate(
     diff_summary: str,
 ) -> IntentCheckResult:
     """Call reviewer agent to verify completion gate."""
+    spirit = get_task_spirit(task_id) or {}
+    raw_context = spirit.get("context")
+    context: dict[str, Any] = raw_context if isinstance(raw_context, dict) else {}
     prompt = _build_completion_gate_prompt(
         description, spirit_anti, done_when,
         modified_files, file_contents, diff_summary,
+        context.get("execution_contract"),
     )
     try:
         from ....services.agent_hub_client import get_sync_client

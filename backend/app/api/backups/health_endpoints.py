@@ -9,12 +9,10 @@ from fastapi import APIRouter
 from ...logging_config import get_logger
 from ...storage import backups as backup_store
 from ...tasks.backup_coverage import get_coverage_summary
-from ...tasks.backup_wal import get_wal_status
 from .models import (
     BackupHealthItem,
     BackupHealthResponse,
     CoverageResponse,
-    WalHealthSummary,
 )
 
 logger = get_logger(__name__)
@@ -102,24 +100,9 @@ async def backup_health() -> BackupHealthResponse:
             )
         )
 
-    # WAL summary
-    wal: WalHealthSummary | None = None
-    try:
-        wal_data = get_wal_status()
-        wal = WalHealthSummary(
-            enabled=wal_data.get("enabled", False),
-            archive_segment_count=wal_data.get("archive_segment_count", 0),
-            archive_size_bytes=wal_data.get("archive_size_bytes", 0),
-            last_archived_time=wal_data.get("last_archived_time"),
-            failed_count=wal_data.get("failed_count", 0),
-        )
-    except Exception:
-        logger.warning("Failed to retrieve WAL status", exc_info=True)
-
     return BackupHealthResponse(
         sources=items,
         pending_upload_count=total_pending_upload,
-        wal=wal,
     )
 
 

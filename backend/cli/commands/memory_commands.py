@@ -66,6 +66,14 @@ def save(
     context: str | None,
     pinned: bool,
     trigger_types: str | None,
+    trigger_phases: str | None,
+    context_kind: str | None,
+    consumer_profiles: str | None,
+    exclude_consumer_profiles: str | None,
+    agent_slugs: str | None,
+    exclude_agent_slugs: str | None,
+    audience_tags: str | None,
+    exclude_audience_tags: str | None,
     tags: str | None,
     scope: str,
     scope_id: str | None,
@@ -73,7 +81,26 @@ def save(
 ) -> None:
     """Save a new memory episode."""
     save_impl(
-        out, content, summary, tier, confidence, context, pinned, trigger_types, tags, scope, scope_id, change_reason
+        out,
+        content,
+        summary,
+        tier,
+        confidence,
+        context,
+        pinned,
+        trigger_types,
+        trigger_phases,
+        context_kind,
+        consumer_profiles,
+        exclude_consumer_profiles,
+        agent_slugs,
+        exclude_agent_slugs,
+        audience_tags,
+        exclude_audience_tags,
+        tags,
+        scope,
+        scope_id,
+        change_reason,
     )
 
 
@@ -117,13 +144,41 @@ def update(
     tier: str | None,
     summary: str | None,
     trigger_types: str | None,
+    trigger_phases: str | None,
     pinned: bool | None,
+    context_kind: str | None,
+    consumer_profiles: str | None,
+    exclude_consumer_profiles: str | None,
+    agent_slugs: str | None,
+    exclude_agent_slugs: str | None,
+    audience_tags: str | None,
+    exclude_audience_tags: str | None,
+    clear_applicability: bool,
     tags: str | None,
     clear_tags: bool,
     change_reason: str | None,
 ) -> None:
     """Update a memory episode."""
-    update_impl(uuid, content, tier, summary, trigger_types, pinned, tags, clear_tags, change_reason)
+    update_impl(
+        uuid,
+        content,
+        tier,
+        summary,
+        trigger_types,
+        trigger_phases,
+        pinned,
+        context_kind,
+        consumer_profiles,
+        exclude_consumer_profiles,
+        agent_slugs,
+        exclude_agent_slugs,
+        audience_tags,
+        exclude_audience_tags,
+        clear_applicability,
+        tags,
+        clear_tags,
+        change_reason,
+    )
 
 
 def revisions(out: OutputContext, uuid: str, limit: int) -> None:

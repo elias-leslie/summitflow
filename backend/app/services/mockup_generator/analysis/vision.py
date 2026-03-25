@@ -23,6 +23,8 @@ _MEDIA_TYPE_WEBP = "image/webp"
 _PURPOSE = "design_analysis"
 _TEMPERATURE = 0.3
 _ROLE_USER = "user"
+_DEFAULT_VISION_AGENT_SLUG = "site-checker"
+_DESIGN_VISION_AGENT_SLUG = "designer"
 
 # Issue counting patterns
 _ISSUE_MARKER = "**Issue**:"
@@ -61,10 +63,16 @@ def _build_message(image_base64: str, media_type: str, prompt: str) -> MessageIn
     )
 
 
-def _call_vision_model(project_id: str, message: MessageInput) -> str:
+def _call_vision_model(
+    project_id: str,
+    message: MessageInput,
+    *,
+    agent_slug: str,
+) -> str:
     """Send a message to Gemini Pro vision and return the response text."""
     client = get_sync_client()
     response = client.complete(
+        agent_slug=agent_slug,
         model=GEMINI_PRO,
         messages=[message],
         project_id=project_id,
@@ -80,6 +88,23 @@ def _count_issues(recommendations: str) -> int:
     if issues_count == 0:
         issues_count = recommendations.count(_LIST_MARKER) // 2
     return issues_count
+
+
+def analyze_screenshot_with_prompt(
+    project_id: str,
+    screenshot_path: Path,
+    prompt: str,
+    *,
+    agent_slug: str = _DEFAULT_VISION_AGENT_SLUG,
+) -> tuple[str | None, str | None]:
+    """Run a custom image prompt against a screenshot."""
+    try:
+        image_base64, media_type = _encode_image(screenshot_path)
+        message = _build_message(image_base64, media_type, prompt)
+        return _call_vision_model(project_id, message, agent_slug=agent_slug), None
+    except Exception as e:
+        logger.error("vision_prompt_failed", error=str(e))
+        return None, str(e)
 
 
 def analyze_screenshot_with_vision(
@@ -99,10 +124,15 @@ def analyze_screenshot_with_vision(
         Tuple of (recommendations, issues_count, error)
     """
     try:
-        image_base64, media_type = _encode_image(screenshot_path)
         prompt = build_design_analysis_prompt(design_rules, page_url)
-        message = _build_message(image_base64, media_type, prompt)
-        recommendations = _call_vision_model(project_id, message)
+        recommendations, error = analyze_screenshot_with_prompt(
+            project_id,
+            screenshot_path,
+            prompt,
+            agent_slug=_DESIGN_VISION_AGENT_SLUG,
+        )
+        if error or recommendations is None:
+            return None, 0, error or "Vision prompt failed"
         issues_count = _count_issues(recommendations)
         return recommendations, issues_count, None
 
@@ -111,4 +141,4 @@ def analyze_screenshot_with_vision(
         return None, 0, str(e)
 
 
-__all__ = ["analyze_screenshot_with_vision"]
+__all__ = ["analyze_screenshot_with_prompt", "analyze_screenshot_with_vision"]

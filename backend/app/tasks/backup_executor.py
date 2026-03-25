@@ -34,6 +34,7 @@ def create_backup(
     note: str | None = None,
     backup_type: str = "manual",
     keep_local: bool = False,
+    local_only: bool = False,
     retention_days: int | None = None,
     source_id: str | None = None,
 ) -> dict[str, object]:
@@ -70,7 +71,14 @@ def create_backup(
 
     try:
         return _run_backup(
-            project_id, backup_dir, note, backup_type, keep_local, retention_days, resolved_source_id
+            project_id,
+            backup_dir,
+            note,
+            backup_type,
+            keep_local,
+            local_only,
+            retention_days,
+            resolved_source_id,
         )
     finally:
         release_backup_lock(resolved_source_id)
@@ -82,6 +90,7 @@ def _run_backup(
     note: str | None,
     backup_type: str,
     keep_local: bool,
+    local_only: bool,
     retention_days: int | None = None,
     source_id: str | None = None,
 ) -> dict[str, object]:
@@ -93,6 +102,8 @@ def _run_backup(
     backup_store.update_backup_status(backup_id, "running")
 
     cmd = ["bash", str(BACKUP_SCRIPT)]
+    if local_only:
+        cmd.append("--local")
     if keep_local:
         cmd.append("--keep-local")
     if retention_days is not None:
