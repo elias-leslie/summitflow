@@ -114,7 +114,7 @@ export function DashboardClient() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.35, delay: 0.06 + i * 0.05, ease: [0.25, 0.46, 0.45, 0.94] }}
-                className="card px-5 py-4 flex items-center gap-4 relative overflow-hidden"
+                className="card px-5 py-4 flex items-center gap-4 relative overflow-hidden transition-all duration-200 hover:border-slate-700/80 hover:shadow-[0_0_16px_rgba(0,0,0,0.3)]"
               >
                 <div className={clsx('rounded-xl p-3 ring-1 ring-white/5', stat.iconBg)}>
                   <Icon className={clsx('w-5 h-5', stat.iconColor)} />
@@ -143,10 +143,10 @@ export function DashboardClient() {
             <Link
               key={link.href}
               href={link.href}
-              className={clsx('card px-5 py-3.5 flex items-center gap-3.5 transition-all group/link', link.hoverBorder, link.hoverBg)}
+              className={clsx('card px-5 py-3.5 flex items-center gap-3.5 transition-all duration-200 group/link hover:-translate-y-0.5', link.hoverBorder, link.hoverBg)}
             >
-              <div className={clsx('rounded-lg p-2 ring-1 ring-white/5 transition-shadow group-hover/link:shadow-lg', link.iconBg)}>
-                <Icon className={clsx('w-4 h-4', link.iconColor)} />
+              <div className={clsx('rounded-lg p-2 ring-1 ring-white/5 transition-all duration-200 group-hover/link:shadow-lg group-hover/link:scale-110', link.iconBg)}>
+                <Icon className={clsx('w-4 h-4 transition-colors', link.iconColor)} />
               </div>
               <div>
                 <div className="text-sm font-medium text-slate-100 leading-none">{link.label}</div>

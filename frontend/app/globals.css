@@ -183,11 +183,12 @@ body::before {
     rgba(21, 13, 32, 0.9) 0%,
     rgba(15, 10, 24, 0.95) 100%
   );
-  transition: border-color 0.2s ease;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .card:hover {
   border-color: rgba(45, 29, 66, 0.8);
+  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.3);
 }
 
 .card-elevated {
@@ -335,6 +336,12 @@ body::before {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+}
+
+/* Section header — uppercase tracking for consistent page section titles */
+.section-header {
+  @apply text-xs font-semibold uppercase tracking-[0.16em] text-slate-400;
+  font-family: var(--font-display), system-ui, sans-serif;
 }
 
 /* Scrollbar styling */

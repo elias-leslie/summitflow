@@ -108,7 +108,7 @@ function ActivityRow({
   return (
     <div
       style={style}
-      className="flex items-center gap-3 border-b border-slate-800/50 px-4 hover:bg-slate-800/30 transition-colors"
+      className="flex items-center gap-3 border-b border-slate-800/50 px-4 hover:bg-slate-800/40 transition-colors duration-150"
       data-testid={`activity-item-${event.type}`}
       title={event.timestamp ? formatDate(event.timestamp) : undefined}
     >
@@ -241,8 +241,8 @@ export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedP
                   className={clsx(
                     'flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all duration-200',
                     typeFilter === filter.value
-                      ? 'bg-slate-700/80 text-slate-100 shadow-sm'
-                      : 'text-slate-500 hover:bg-slate-800/50 hover:text-slate-300',
+                      ? 'bg-slate-700/80 text-slate-100 shadow-sm ring-1 ring-white/5'
+                      : 'text-slate-500 hover:bg-slate-800/60 hover:text-slate-300',
                   )}
                 >
                   <Icon className="h-3 w-3" />
