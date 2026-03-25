@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 from ....logging_config import get_logger
 
@@ -22,8 +23,8 @@ def _get_non_null_count(table_name: str, col_name: str, conn: Any) -> int | None
         result = conn.execute(text(f'SELECT COUNT("{col_name}") FROM "{table_name}"'))
         row = result.fetchone()
         return int(row[0]) if row else 0
-    except Exception:
-        logger.debug("Failed to analyze column completeness for %s.%s", table_name, col_name, exc_info=True)
+    except (SQLAlchemyError, ValueError, TypeError) as exc:
+        logger.debug("Failed to analyze column completeness for %s.%s: %s", table_name, col_name, exc, exc_info=True)
         return None
 
 
@@ -79,7 +80,7 @@ def _query_max_date(table_name: str, date_col: str, conn: Any) -> Any | None:
         result = conn.execute(text(f'SELECT MAX("{date_col}") FROM "{table_name}"'))
         row = result.fetchone()
         return row[0] if row and row[0] else None
-    except Exception:
+    except (SQLAlchemyError, ValueError, TypeError):
         logger.debug("Failed to analyze freshness for %s.%s", table_name, date_col, exc_info=True)
         return None
 

@@ -53,7 +53,7 @@ def calculate_radon_cc(content: str) -> tuple[float, float] | None:
         avg_cc = round(sum(complexities) / len(complexities), 2)
         max_cc = float(max(complexities))
         return (avg_cc, max_cc)
-    except Exception:
+    except (ImportError, SyntaxError, ValueError, TypeError):
         # Radon can fail on syntax errors, encoding issues, etc.
         logger.debug("Radon cyclomatic complexity analysis failed", exc_info=True)
         return None
@@ -78,7 +78,8 @@ def calculate_comment_density(content: str) -> float | None:
         # comments / loc gives ratio, *100 for percentage
         density: float = float(result.comments) / float(result.loc) * 100
         return round(density, 1)
-    except Exception:
+    except (ImportError, SyntaxError, ValueError, TypeError):
+        logger.debug("Radon comment density analysis failed", exc_info=True)
         return None
 
 

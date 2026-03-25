@@ -183,7 +183,7 @@ def _check_api_patterns(file_path: Path) -> list[CodeViolation]:
                 severity="warning",
             )
         ]
-    except Exception as e:
+    except OSError as e:
         logger.debug("Failed to check API patterns in %s: %s", file_path, e)
         return []
 
@@ -214,7 +214,7 @@ def _first_matching_line(py_file: Path, pattern: str) -> int | None:
         for i, line in enumerate(py_file.read_text().splitlines(), 1):
             if pattern.lower() in line.lower():
                 return i
-    except Exception:
+    except OSError:
         logger.debug(
             "Failed to read file for parallel implementation scan: %s", py_file, exc_info=True
         )

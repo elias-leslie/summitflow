@@ -50,7 +50,6 @@ def build_execution_prompt(
         lines.extend(["", "**Files to modify:**"] + [f"- {f}" for f in files])
 
     lines.append("")
-    _add_steps(lines, task)
     _add_rules(lines, context.get("rule_contents", {}))
     _add_patterns(lines, context.get("patterns", []))
 
@@ -60,19 +59,6 @@ def build_execution_prompt(
     lines.extend([VERIFICATION_BLOCK, OUTPUT_FORMAT_BLOCK])
     return "\n".join(lines).replace("\n\n\n", "\n\n")
 
-
-def _format_steps(lines: list[str], steps: list[dict[str, Any]]) -> None:
-    """Append formatted step entries to lines."""
-    lines.append("**Steps to complete:**")
-    for s in steps:
-        m = "✓" if s.get("passes") else "○"
-        lines.append(f"{m} {s.get('step_number')}. {s.get('description', '')}")
-    lines.append("")
-
-
-def _add_steps(lines: list[str], task: dict[str, Any]) -> None:
-    """Add steps to the prompt from subtasks (no-op: steps layer removed)."""
-    pass
 
 
 def _add_rules(lines: list[str], rules: dict[str, str]) -> None:

@@ -8,7 +8,10 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from ....logging_config import get_logger
 from .file_constants import BLOAT_THRESHOLDS, CLASS_PATTERNS, FUNCTION_PATTERNS, IMPORT_PATTERNS
+
+logger = get_logger(__name__)
 
 
 def read_file_content(file_path: Path) -> tuple[str, int]:
@@ -26,7 +29,8 @@ def read_file_content(file_path: Path) -> tuple[str, int]:
         with file_path.open(encoding="utf-8", errors="ignore") as f:
             content = f.read()
             lines = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
-    except Exception:
+    except OSError:
+        logger.debug("Failed to read file: %s", file_path, exc_info=True)
         lines = 0
     return content, lines
 

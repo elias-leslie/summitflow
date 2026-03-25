@@ -8,6 +8,7 @@ from __future__ import annotations
 import fnmatch
 from pathlib import Path
 
+from ....logging_config import get_logger
 from .file_constants import (
     CODE_HEALTH_THRESHOLDS,
     COMPAT_CRUFT_EXCLUDE_PATTERNS,
@@ -15,6 +16,8 @@ from .file_constants import (
     MAGIC_STRING_EXCLUDE_PATTERNS,
     MAGIC_STRING_PATTERNS,
 )
+
+logger = get_logger(__name__)
 
 
 def _is_excluded(rel_path: str, file_name: str, exclude_globs: list[str]) -> bool:
@@ -113,8 +116,8 @@ def _compute_python_ast_flags(file_path: Path) -> dict[str, bool]:
             flags["has_large_classes"] = True
         if result["max_nesting"] > CODE_HEALTH_THRESHOLDS["max_nesting_depth"]:
             flags["deep_nesting"] = True
-    except Exception:
-        pass  # Skip AST analysis for unparseable files
+    except (ImportError, SyntaxError, ValueError, TypeError, OSError):
+        logger.debug("AST analysis failed for %s", file_path, exc_info=True)
     return flags
 
 

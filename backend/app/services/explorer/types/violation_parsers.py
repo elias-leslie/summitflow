@@ -44,7 +44,7 @@ def parse_jscpd_output(output: str) -> list[CodeViolation]:
 
     except json.JSONDecodeError:
         logger.debug("Failed to parse jscpd JSON output")
-    except Exception as e:
+    except (KeyError, TypeError, ValueError) as e:
         logger.warning("Error parsing jscpd output: %s", e)
 
     return violations
@@ -78,7 +78,7 @@ def parse_vulture_line(line: str) -> CodeViolation | None:
             line_start=line_num,
         )
 
-    except Exception:
+    except (ValueError, IndexError, TypeError):
         logger.debug("Failed to parse vulture output line", exc_info=True)
         return None
 
@@ -111,7 +111,7 @@ def parse_semgrep_output(output: str) -> list[CodeViolation]:
 
     except json.JSONDecodeError:
         logger.debug("Failed to parse semgrep JSON output")
-    except Exception as e:
+    except (KeyError, TypeError, ValueError) as e:
         logger.warning("Error parsing semgrep output: %s", e)
 
     return violations
