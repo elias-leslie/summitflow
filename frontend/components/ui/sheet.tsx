@@ -86,7 +86,7 @@ export function SheetContent({
       animate={{ x: 0 }}
       exit={{ x: isRight ? '100%' : '-100%' }}
       transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
-      className={clsx('fixed', isRight ? 'right-0' : 'left-0', 'top-0 bottom-0 z-50 w-full max-w-md bg-slate-900 border-l border-slate-700 shadow-2xl shadow-phosphor-500/5 overflow-y-auto', className)}
+      className={clsx('fixed', isRight ? 'right-0' : 'left-0', 'top-0 bottom-0 z-50 w-full max-w-md bg-[linear-gradient(180deg,rgba(15,10,24,0.99),rgba(9,7,16,0.98))] border-l border-slate-700/80 shadow-[0_0_80px_-20px_rgba(0,0,0,0.8)] overflow-y-auto', className)}
       onClick={(e) => e.stopPropagation()}
     >
       {children}
@@ -97,7 +97,7 @@ export function SheetContent({
 export function SheetHeader({ children, className = '' }: SheetHeaderProps) {
   return (
     <div
-      className={clsx('sticky top-0 bg-slate-900/95 backdrop-blur border-b border-slate-700 px-5 py-4', className)}
+      className={clsx('sticky top-0 bg-slate-900/95 backdrop-blur-md border-b border-slate-700/70 px-5 py-4', className)}
     >
       {children}
     </div>

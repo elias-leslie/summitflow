@@ -81,7 +81,7 @@ export function SelectTrigger({ children, className }: SelectTriggerProps) {
         'flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm',
         'bg-slate-950/60 border border-slate-700/80 shadow-inner shadow-black/20',
         'text-slate-200 hover:border-slate-600 hover:bg-slate-900/60',
-        'focus-visible:outline-none focus-visible:border-phosphor-500/50 focus-visible:ring-1 focus-visible:ring-phosphor-500/20',
+        'focus-visible:outline-none focus-visible:border-phosphor-500/50 focus-visible:ring-1 focus-visible:ring-phosphor-500/25 focus-visible:shadow-[0_0_16px_-4px_rgba(0,245,255,0.18)]',
         'transition-all duration-200',
         className,
       )}
@@ -150,7 +150,7 @@ export function SelectContent({ children, className }: SelectContentProps) {
           transition={{ duration: 0.15 }}
           className={clsx(
             'absolute z-50 mt-1.5 min-w-full',
-            'bg-slate-900/95 backdrop-blur-sm border border-slate-700/80 rounded-lg shadow-xl shadow-black/40',
+            'bg-[linear-gradient(180deg,rgba(18,12,28,0.98),rgba(9,7,16,0.97))] backdrop-blur-md border border-slate-700/80 rounded-xl shadow-[0_24px_48px_-12px_rgba(0,0,0,0.75),0_0_0_1px_rgba(255,0,102,0.04)]',
             'max-h-64 overflow-auto',
             className,
           )}
