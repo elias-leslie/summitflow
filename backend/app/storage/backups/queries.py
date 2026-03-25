@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .._sql import static_sql
 from ..connection import get_connection, get_cursor
 from .models import BACKUP_COLUMNS, row_to_backup
 
@@ -102,18 +103,20 @@ def get_storage_summary(
 
     with get_cursor() as cur:
         cur.execute(
-            f"""
-            SELECT
-                COUNT(*) as total_count,
-                COALESCE(SUM(size_bytes), 0) as total_bytes,
-                COUNT(*) FILTER (WHERE status IN ('completed', 'completed_pending_upload')) as completed_count,
-                COUNT(*) FILTER (WHERE status = 'completed_pending_upload') as pending_upload_count,
-                COUNT(*) FILTER (WHERE status = 'pending') as pending_count,
-                COUNT(*) FILTER (WHERE status = 'running') as running_count,
-                COUNT(*) FILTER (WHERE status = 'failed') as failed_count
-            FROM backups
-            {where_clause}
-            """,
+            static_sql(
+                f"""
+                SELECT
+                    COUNT(*) as total_count,
+                    COALESCE(SUM(size_bytes), 0) as total_bytes,
+                    COUNT(*) FILTER (WHERE status IN ('completed', 'completed_pending_upload')) as completed_count,
+                    COUNT(*) FILTER (WHERE status = 'completed_pending_upload') as pending_upload_count,
+                    COUNT(*) FILTER (WHERE status = 'pending') as pending_count,
+                    COUNT(*) FILTER (WHERE status = 'running') as running_count,
+                    COUNT(*) FILTER (WHERE status = 'failed') as failed_count
+                FROM backups
+                {where_clause}
+                """
+            ),
             params,
         )
         row = cur.fetchone()
@@ -169,9 +172,11 @@ def get_latest_backup(
 
     with get_cursor() as cur:
         cur.execute(
-            f"SELECT {BACKUP_COLUMNS} FROM backups "
-            f"WHERE {where} AND status IN ('completed', 'completed_pending_upload') "
-            "ORDER BY completed_at DESC LIMIT 1",
+            static_sql(
+                f"SELECT {BACKUP_COLUMNS} FROM backups "
+                f"WHERE {where} AND status IN ('completed', 'completed_pending_upload') "
+                "ORDER BY completed_at DESC LIMIT 1"
+            ),
             (param,),
         )
         row = cur.fetchone()
@@ -307,9 +312,11 @@ def promote_pending_upload(backup_id: str, location: str | None = None) -> bool:
             params.append(location)
         params.append(backup_id)
         cur.execute(
-            f"UPDATE backups SET {', '.join(updates)} "
-            "WHERE id = %s AND status = 'completed_pending_upload' "
-            "RETURNING id",
+            static_sql(
+                f"UPDATE backups SET {', '.join(updates)} "
+                "WHERE id = %s AND status = 'completed_pending_upload' "
+                "RETURNING id"
+            ),
             params,
         )
         row = cur.fetchone()
@@ -321,9 +328,11 @@ def get_pending_upload_backups() -> list[dict[str, Any]]:
     """Get all backups with completed_pending_upload status."""
     with get_cursor() as cur:
         cur.execute(
-            f"SELECT {BACKUP_COLUMNS} FROM backups "
-            "WHERE status = 'completed_pending_upload' "
-            "ORDER BY created_at ASC",
+            static_sql(
+                f"SELECT {BACKUP_COLUMNS} FROM backups "
+                "WHERE status = 'completed_pending_upload' "
+                "ORDER BY created_at ASC"
+            ),
         )
         rows = cur.fetchall()
     return [row_to_backup(row) for row in rows]

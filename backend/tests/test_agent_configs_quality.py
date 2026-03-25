@@ -261,14 +261,14 @@ class TestBuildDtCommand:
         """Test build_dt_command with multiple tools returns all tools."""
         # Arrange
         config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
-        config["quality_gate_tools"] = ["ruff", "types", "biome", "tsc"]
+        config["quality_gate_tools"] = ["ruff", "types", "biome", "tsc", "vitest"]
 
         # Act
         with patch("app.storage.agent_configs_quality.get_agent_config", return_value=config):
             result = build_dt_command("dt", "test-project")
 
         # Assert
-        assert result == ["dt", "ruff", "types", "biome", "tsc"]
+        assert result == ["dt", "ruff", "types", "biome", "tsc", "vitest"]
 
     def test_build_dt_command_with_custom_dt_path(self) -> None:
         """Test build_dt_command uses provided dt path."""

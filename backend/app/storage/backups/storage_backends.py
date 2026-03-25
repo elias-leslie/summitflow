@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .._sql import static_sql
 from ..connection import generate_prefixed_id, get_connection, get_cursor
 
 BACKEND_COLUMNS = """id, name, backend_type, config, is_default, enabled,
@@ -34,8 +35,10 @@ def list_backends(enabled_only: bool = False) -> list[dict[str, Any]]:
     """List all storage backends."""
     where = "WHERE enabled = TRUE" if enabled_only else ""
     with get_cursor() as cur:
-        cur.execute(  # type: ignore[arg-type]  # dynamic SQL columns
-            f"SELECT {BACKEND_COLUMNS} FROM storage_backends {where} ORDER BY is_default DESC, name",
+        cur.execute(
+            static_sql(
+                f"SELECT {BACKEND_COLUMNS} FROM storage_backends {where} ORDER BY is_default DESC, name"
+            ),
         )
         rows = cur.fetchall()
     return [row_to_backend(row) for row in rows]
@@ -45,7 +48,7 @@ def get_backend(backend_id: str) -> dict[str, Any] | None:
     """Get a single storage backend by ID."""
     with get_cursor() as cur:
         cur.execute(
-            f"SELECT {BACKEND_COLUMNS} FROM storage_backends WHERE id = %s",
+            static_sql(f"SELECT {BACKEND_COLUMNS} FROM storage_backends WHERE id = %s"),
             (backend_id,),
         )
         row = cur.fetchone()
@@ -56,7 +59,9 @@ def get_default_backend() -> dict[str, Any] | None:
     """Get the default storage backend."""
     with get_cursor() as cur:
         cur.execute(
-            f"SELECT {BACKEND_COLUMNS} FROM storage_backends WHERE is_default = TRUE AND enabled = TRUE LIMIT 1",
+            static_sql(
+                f"SELECT {BACKEND_COLUMNS} FROM storage_backends WHERE is_default = TRUE AND enabled = TRUE LIMIT 1"
+            ),
         )
         row = cur.fetchone()
     return row_to_backend(row) if row else None
@@ -79,11 +84,13 @@ def create_backend(
             cur.execute("UPDATE storage_backends SET is_default = FALSE WHERE is_default = TRUE")
 
         cur.execute(
-            f"""
-            INSERT INTO storage_backends (id, name, backend_type, config, is_default)
-            VALUES (%s, %s, %s, %s, %s)
-            RETURNING {BACKEND_COLUMNS}
-            """,
+            static_sql(
+                f"""
+                INSERT INTO storage_backends (id, name, backend_type, config, is_default)
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING {BACKEND_COLUMNS}
+                """
+            ),
             (backend_id, name, backend_type, json.dumps(config or {}), is_default),
         )
         row = cur.fetchone()
@@ -126,7 +133,9 @@ def update_backend(backend_id: str, **fields: Any) -> dict[str, Any] | None:
             cur.execute("UPDATE storage_backends SET is_default = FALSE WHERE is_default = TRUE")
 
         cur.execute(
-            f"UPDATE storage_backends SET {', '.join(updates)} WHERE id = %s RETURNING {BACKEND_COLUMNS}",
+            static_sql(
+                f"UPDATE storage_backends SET {', '.join(updates)} WHERE id = %s RETURNING {BACKEND_COLUMNS}"
+            ),
             params,
         )
         row = cur.fetchone()
@@ -148,12 +157,14 @@ def update_test_result(backend_id: str, success: bool) -> dict[str, Any] | None:
     """Update last test result for a storage backend."""
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            f"""
-            UPDATE storage_backends
-            SET last_test_at = NOW(), last_test_ok = %s, updated_at = NOW()
-            WHERE id = %s
-            RETURNING {BACKEND_COLUMNS}
-            """,
+            static_sql(
+                f"""
+                UPDATE storage_backends
+                SET last_test_at = NOW(), last_test_ok = %s, updated_at = NOW()
+                WHERE id = %s
+                RETURNING {BACKEND_COLUMNS}
+                """
+            ),
             (success, backend_id),
         )
         row = cur.fetchone()

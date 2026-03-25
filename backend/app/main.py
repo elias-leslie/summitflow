@@ -5,10 +5,11 @@ import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from typing import cast
+from typing import Any, cast
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware import Middleware
 
 from .api import (
     activity,
@@ -88,21 +89,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         close_pool()
 
 
+_cors_middleware = [
+    Middleware(
+        cast(Any, CORSMiddleware),
+        allow_origins=settings.cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+]
+
 app = FastAPI(
     title="SummitFlow",
     description="AI-assisted software development platform",
     version=_APP_VERSION,
     redirect_slashes=False,  # Prevent 307 redirects that expose backend URL
     lifespan=lifespan,
-)
-
-# CORS middleware - origins loaded from settings for cross-project communication
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    middleware=_cors_middleware,
 )
 
 # Include routers

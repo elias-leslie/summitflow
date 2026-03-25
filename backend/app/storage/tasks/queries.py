@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from psycopg import sql
-
+from .._sql import join_static_sql, static_sql
 from ..connection import get_connection, get_cursor
 from .columns import TASK_COLUMNS, TASK_COLUMNS_WITH_SPIRIT
 from .deletions import archive_task_snapshots
@@ -59,10 +58,10 @@ def list_tasks(
     )
     params.extend([limit, offset])
 
-    joined = sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)
+    joined = join_static_sql(conditions, " AND ")
     with get_cursor() as cur:
         cur.execute(
-            sql.SQL(
+            static_sql(
                 f"SELECT {TASK_COLUMNS_WITH_SPIRIT} FROM tasks t"
                 " LEFT JOIN task_spirit ts ON t.id = ts.task_id"
                 " WHERE {conditions}"
@@ -87,10 +86,10 @@ def count_tasks(
         project_id, status_filter, task_type_filter,
         priority_filter, labels_filter, orphans_only,
     )
-    joined = sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)
+    joined = join_static_sql(conditions, " AND ")
     with get_cursor() as cur:
         cur.execute(
-            sql.SQL("SELECT COUNT(*) FROM tasks t WHERE {conditions}").format(conditions=joined),
+            static_sql("SELECT COUNT(*) FROM tasks t WHERE {conditions}").format(conditions=joined),
             tuple(params),
         )
         row = cur.fetchone()
@@ -105,9 +104,11 @@ def get_tasks_by_enrichment_status(
     """Get tasks with a specific enrichment status, ordered by creation date (newest first)."""
     with get_cursor() as cur:
         cur.execute(
-            f"SELECT {TASK_COLUMNS} FROM tasks"
-            " WHERE project_id = %s AND enrichment_status = %s"
-            " ORDER BY created_at DESC LIMIT %s",
+            static_sql(
+                f"SELECT {TASK_COLUMNS} FROM tasks"
+                " WHERE project_id = %s AND enrichment_status = %s"
+                " ORDER BY created_at DESC LIMIT %s"
+            ),
             (project_id, status, limit),
         )
         rows = cur.fetchall()
@@ -127,20 +128,22 @@ def list_ready_tasks(project_id: str, limit: int = 50, offset: int = 0) -> list[
     )
     with get_cursor() as cur:
         cur.execute(
-            f"""
-            SELECT {TASK_COLUMNS_WITH_SPIRIT},
-                   COALESCE(sub.total, 0) as subtask_total,
-                   COALESCE(sub.completed, 0) as subtask_completed
-            FROM tasks t
-            LEFT JOIN task_spirit ts ON t.id = ts.task_id
-            LEFT JOIN (
-                SELECT task_id, COUNT(*) as total,
-                       SUM(CASE WHEN passes THEN 1 ELSE 0 END) as completed
-                FROM task_subtasks GROUP BY task_id
-            ) sub ON t.id = sub.task_id
-            WHERE t.project_id = %s AND t.status = 'pending' AND {_not_blocked}
-            ORDER BY t.priority ASC, t.created_at ASC LIMIT %s OFFSET %s
-            """,
+            static_sql(
+                f"""
+                SELECT {TASK_COLUMNS_WITH_SPIRIT},
+                       COALESCE(sub.total, 0) as subtask_total,
+                       COALESCE(sub.completed, 0) as subtask_completed
+                FROM tasks t
+                LEFT JOIN task_spirit ts ON t.id = ts.task_id
+                LEFT JOIN (
+                    SELECT task_id, COUNT(*) as total,
+                           SUM(CASE WHEN passes THEN 1 ELSE 0 END) as completed
+                    FROM task_subtasks GROUP BY task_id
+                ) sub ON t.id = sub.task_id
+                WHERE t.project_id = %s AND t.status = 'pending' AND {_not_blocked}
+                ORDER BY t.priority ASC, t.created_at ASC LIMIT %s OFFSET %s
+                """
+            ),
             (project_id, limit, offset),
         )
         rows = cur.fetchall()
@@ -157,12 +160,14 @@ def list_blocked_tasks(project_id: str, limit: int = 50) -> list[dict[str, Any]]
     )
     with get_cursor() as cur:
         cur.execute(
-            f"""
-            SELECT DISTINCT {TASK_COLUMNS_WITH_SPIRIT}
-            FROM tasks t LEFT JOIN task_spirit ts ON t.id = ts.task_id
-            WHERE t.project_id = %s AND t.status = 'pending' AND {_is_blocked}
-            ORDER BY t.priority ASC, t.created_at ASC LIMIT %s
-            """,
+            static_sql(
+                f"""
+                SELECT DISTINCT {TASK_COLUMNS_WITH_SPIRIT}
+                FROM tasks t LEFT JOIN task_spirit ts ON t.id = ts.task_id
+                WHERE t.project_id = %s AND t.status = 'pending' AND {_is_blocked}
+                ORDER BY t.priority ASC, t.created_at ASC LIMIT %s
+                """
+            ),
             (project_id, limit),
         )
         rows = cur.fetchall()
@@ -173,11 +178,13 @@ def get_stale_tasks(max_age_days: int = 30, limit: int = 100) -> list[dict[str, 
     """Get auto-generated pending tasks with no activity for more than max_age_days."""
     with get_cursor() as cur:
         cur.execute(
-            f"SELECT {TASK_COLUMNS} FROM tasks"
-            " WHERE status = 'pending' AND 'auto-generated' = ANY(labels)"
-            " AND created_at < NOW() - INTERVAL '%s days'"
-            " AND (updated_at IS NULL OR updated_at < NOW() - INTERVAL '%s days')"
-            " ORDER BY created_at ASC LIMIT %s",
+            static_sql(
+                f"SELECT {TASK_COLUMNS} FROM tasks"
+                " WHERE status = 'pending' AND 'auto-generated' = ANY(labels)"
+                " AND created_at < NOW() - INTERVAL '%s days'"
+                " AND (updated_at IS NULL OR updated_at < NOW() - INTERVAL '%s days')"
+                " ORDER BY created_at ASC LIMIT %s"
+            ),
             (max_age_days, max_age_days, limit),
         )
         rows = cur.fetchall()

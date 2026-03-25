@@ -12,6 +12,8 @@ from typing import Any
 
 from psycopg import sql
 
+from ._sql import join_static_sql
+
 
 def to_iso_string(value: datetime | None) -> str | None:
     """Convert datetime to ISO string, returning None if value is None."""
@@ -30,7 +32,7 @@ def build_where_clause(conditions: list[str]) -> sql.Composable:
         sql.Composable ready to format into a query
     """
     if conditions:
-        return sql.SQL(" AND ").join(sql.SQL(c) for c in conditions)
+        return join_static_sql(conditions, " AND ")
     return sql.SQL("TRUE")
 
 

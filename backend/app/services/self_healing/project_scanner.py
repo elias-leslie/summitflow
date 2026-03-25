@@ -13,6 +13,8 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
+_FIXABLE_CHECK_TYPES: tuple[qcr_store.CheckType, ...] = ("ruff", "types", "biome", "tsc")
+
 
 def get_projects_with_unfixed_errors(
     conn: psycopg.Connection[Any],
@@ -35,7 +37,7 @@ def get_projects_with_unfixed_errors(
         unfixed_counts: dict[str, int] = {}
 
         # Check each fixable check type
-        for check_type in ["ruff", "types", "biome", "tsc"]:
+        for check_type in _FIXABLE_CHECK_TYPES:
             count = qcr_store.get_unfixed_count(
                 conn,
                 project_id,

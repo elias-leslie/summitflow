@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..logging_config import get_logger
+from ._sql import static_sql
 from .connection import get_connection, get_cursor
 
 logger = get_logger(__name__)
@@ -155,14 +156,16 @@ def update_refactor_session(
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            f"""
-            UPDATE refactor_sessions
-            SET {set_clause}
-            WHERE project_id = %s AND task_id = %s
-            RETURNING id, project_id, task_id, baseline_scan_id, baseline_commit_sha,
-                      status, session_id, final_scan_id, final_commit_sha,
-                      subtasks_planned, subtasks_completed, started_at, completed_at
-            """,
+            static_sql(
+                f"""
+                UPDATE refactor_sessions
+                SET {set_clause}
+                WHERE project_id = %s AND task_id = %s
+                RETURNING id, project_id, task_id, baseline_scan_id, baseline_commit_sha,
+                          status, session_id, final_scan_id, final_commit_sha,
+                          subtasks_planned, subtasks_completed, started_at, completed_at
+                """
+            ),
             values,
         )
         row = cur.fetchone()

@@ -66,7 +66,12 @@ def _extract_event_fields(event: dict[str, object]) -> tuple[str, str | None, di
 def _parse_message(raw: object) -> dict[str, object] | None:
     """Decode and parse a Redis pubsub message. Returns None on parse failure."""
     try:
-        decoded = raw.decode("utf-8") if isinstance(raw, bytes) else raw
+        if isinstance(raw, bytes):
+            decoded = raw.decode("utf-8")
+        elif isinstance(raw, str):
+            decoded = raw
+        else:
+            return None
         result = json.loads(decoded)
         return result if isinstance(result, dict) else None
     except (json.JSONDecodeError, UnicodeDecodeError) as e:
@@ -76,9 +81,10 @@ def _parse_message(raw: object) -> dict[str, object] | None:
 
 def _augment_event_with_db_meta(event: dict[str, object], created_event: Event) -> None:
     """Augment event data dict in-place with DB-assigned metadata."""
-    if isinstance(event.get("data"), dict):
+    data = event.get("data")
+    if isinstance(data, dict):
         event["data"] = {
-            **event["data"],
+            **{str(key): value for key, value in data.items()},
             "event_id": created_event["id"],
             "persisted_at": created_event["timestamp"].isoformat(),
         }

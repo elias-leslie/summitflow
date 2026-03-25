@@ -158,6 +158,7 @@ def review_pull_request(task_id: str, pr_url: str | None = None) -> dict[str, An
     error = _validate_task_for_review(task_id, task)
     if error is not None:
         return error
+    assert task is not None
     try:
         return _do_review(task_id, task, pr_url)
     except Exception as e:

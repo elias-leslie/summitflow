@@ -12,6 +12,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from ..storage import activity as activity_store
+from ..storage.activity.types import ActivityEvent as StorageActivityEvent
 
 router = APIRouter()
 
@@ -57,7 +58,7 @@ def _parse_event_types(types: str | None) -> list[str] | None:
     return valid or None
 
 
-def _to_activity_event(e: dict[str, Any]) -> ActivityEvent:
+def _to_activity_event(e: StorageActivityEvent) -> ActivityEvent:
     """Convert a raw event dict to an ActivityEvent model."""
     return ActivityEvent(
         type=e["type"],

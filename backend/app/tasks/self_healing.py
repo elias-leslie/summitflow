@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 from ..logging_config import get_logger
 from ..services.self_healing.browser_monitor import (
@@ -33,7 +33,7 @@ def _resolve_project_id(project_id: str | None = None) -> str:
 
 
 def _process_error_batch(
-    errors: list[object],
+    errors: Sequence[object],
     max_tasks: int,
     create_fn: Callable[..., dict[str, str] | None],
     project_id: str,

@@ -86,7 +86,7 @@ def run_infra_drill() -> dict[str, Any]:
         _record_drill_result(
             source_id,
             backup_id,
-            ok=drill_result.get("ok", False),
+            ok=bool(drill_result.get("ok")),
             result=drill_result,
         )
 
@@ -183,7 +183,7 @@ def _record_drill_result(
     source_id: str,
     backup_id: str,
     ok: bool,
-    result: dict | None = None,
+    result: dict[str, Any] | None = None,
     error: str | None = None,
 ) -> None:
     """Record drill result in backup_sources table."""

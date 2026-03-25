@@ -14,7 +14,7 @@ from app.storage.tasks.update import update_task_fields
 
 from ....logging_config import get_logger
 from .git_operations import checkout_base_branch, delete_task_branch, merge_task_branch
-from .merge_types import MergeResult
+from .merge_types import MergeFailed, MergeResult
 from .validation import auto_rollback, run_post_merge_validation
 
 logger = get_logger(__name__)
@@ -22,6 +22,10 @@ logger = get_logger(__name__)
 
 def _err(task_id: str, msg: str) -> MergeResult:
     return {"task_id": task_id, "status": "error", "error": msg}
+
+
+def _failed(task_id: str, reason: str) -> MergeFailed:
+    return {"task_id": task_id, "status": "failed", "reason": reason}
 
 
 def _git(args: list[str], cwd: str, text: bool = True) -> subprocess.CompletedProcess:
@@ -111,7 +115,7 @@ def merge_and_cleanup_task_worktree(task_id: str, project_id: str) -> MergeResul
         if is_task_running(task_id):
             return _finalize_task_status(
                 task_id,
-                {"task_id": task_id, "status": "failed", "reason": "task_still_running"},
+                _failed(task_id, "task_still_running"),
             )
         worktree = get_task_worktree(task_id, project_id)
         if not worktree:

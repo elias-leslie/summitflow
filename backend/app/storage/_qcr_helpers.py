@@ -4,6 +4,8 @@ from typing import Any
 
 import psycopg
 
+from ._sql import static_sql
+
 CheckResult = dict[str, Any]
 
 _COLS = (
@@ -27,7 +29,7 @@ def exec_returning(
 ) -> CheckResult | None:
     """Execute a statement with RETURNING and return the first row as a dict."""
     with conn.cursor() as cur:
-        cur.execute(sql, params)
+        cur.execute(static_sql(sql), params)
         row = cur.fetchone()
         return row_to_dict(row) if row else None
 

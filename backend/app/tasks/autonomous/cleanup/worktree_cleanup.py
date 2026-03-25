@@ -71,7 +71,7 @@ def cleanup_task_worktree(
                 "reason": "no_worktree",
             }
 
-        if has_uncommitted_changes(str(worktree.path)):
+        if has_uncommitted_changes(worktree.path):
             return {
                 "task_id": task_id,
                 "status": "skipped",

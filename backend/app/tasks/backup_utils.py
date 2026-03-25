@@ -5,8 +5,9 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 from ..logging_config import get_logger
 from ..storage.connection import get_cursor
@@ -146,17 +147,55 @@ def build_script_error_message(result: subprocess.CompletedProcess[str]) -> str:
     return " | ".join(parts) if any([stderr_filtered, stdout_tail]) else "Unknown error"
 
 
-def build_verification_kwargs(verification: dict[str, Any]) -> dict[str, Any]:
+def as_mapping(value: object) -> Mapping[str, Any] | None:
+    """Return a string-keyed mapping view when the value is JSON-like."""
+    return cast(Mapping[str, Any], value) if isinstance(value, Mapping) else None
+
+
+def get_int_field(data: Mapping[str, Any], key: str) -> int | None:
+    """Return an int field from a JSON-like mapping when coercion is safe."""
+    value = data.get(key)
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        return int(stripped) if stripped.isdigit() else None
+    return None
+
+
+def get_str_field(data: Mapping[str, Any], key: str) -> str | None:
+    """Return a string field from a JSON-like mapping when present."""
+    value = data.get(key)
+    if value is None:
+        return None
+    return str(value)
+
+
+def get_bool_field(data: Mapping[str, Any], key: str) -> bool | None:
+    """Return a bool field from a JSON-like mapping when coercion is safe."""
+    value = data.get(key)
+    if isinstance(value, bool):
+        return value
+    return None
+
+
+def build_verification_kwargs(verification: Mapping[str, Any]) -> dict[str, Any]:
     """Extract verification fields into update_backup_status kwargs."""
     vkw: dict[str, Any] = {
-        "verified": verification.get("verified"),
-        "verified_at": verification.get("verified_at"),
-        "checksum": verification.get("checksum"),
-        "verification_json": verification,
+        "verified": get_bool_field(verification, "verified"),
+        "verified_at": get_str_field(verification, "verified_at"),
+        "checksum": get_str_field(verification, "checksum"),
+        "verification_json": dict(verification),
     }
-    total = verification.get("total_files")
+    total = get_int_field(verification, "total_files")
     if total is not None:
-        vkw["total_files"] = int(total)
+        vkw["total_files"] = total
     return vkw
 
 

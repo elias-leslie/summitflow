@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from psycopg import sql
+
 from ...storage.connection import get_cursor
-from ..models.git_models import WorktreeInfo
+from ..models.git_models import SnapshotInfo, WorktreeInfo
 
 
 def collect_worktrees() -> list[WorktreeInfo]:
@@ -23,20 +25,18 @@ def collect_worktrees() -> list[WorktreeInfo]:
     ]
 
 
-def enrich_snapshots(
-    snapshots: list, project_id: str | None = None,
-) -> None:
+def enrich_snapshots(snapshots: list[SnapshotInfo]) -> None:
     """Enrich snapshot objects with task titles from the database."""
     if not snapshots:
         return
     task_ids = [s.task_id for s in snapshots]
-    placeholders = ",".join(["%s"] * len(task_ids))
+    placeholders = sql.SQL(",").join(sql.Placeholder() for _ in task_ids)
+    query = sql.SQL(
+        "SELECT id, title, project_id FROM tasks WHERE id IN ({placeholders})"
+    ).format(placeholders=placeholders)
 
     with get_cursor() as cur:
-        cur.execute(
-            f"SELECT id, title, project_id FROM tasks WHERE id IN ({placeholders})",
-            tuple(task_ids),
-        )
+        cur.execute(query, tuple(task_ids))
         task_map = {row[0]: (row[1], row[2]) for row in cur.fetchall()}
 
     for s in snapshots:

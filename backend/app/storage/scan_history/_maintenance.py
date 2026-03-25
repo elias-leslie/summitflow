@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .._sql import static_sql
 from ..connection import get_connection
 
 
@@ -76,32 +77,34 @@ def cleanup_old_scan_history(
         # it must never include user-supplied input to avoid SQL injection.
         reference_sql = " AND ".join(clause.strip() for clause in reference_clauses)
         cur.execute(
-            f"""
-            WITH ranked AS (
-                SELECT
-                    sh.id,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY sh.project_id, sh.scan_type
-                        ORDER BY sh.started_at DESC, sh.id DESC
-                    ) AS rn
-                FROM scan_history sh
-                WHERE sh.status != 'running'
+            static_sql(
+                f"""
+                WITH ranked AS (
+                    SELECT
+                        sh.id,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY sh.project_id, sh.scan_type
+                            ORDER BY sh.started_at DESC, sh.id DESC
+                        ) AS rn
+                    FROM scan_history sh
+                    WHERE sh.status != 'running'
+                ),
+                candidates AS (
+                    SELECT sh.id
+                    FROM scan_history sh
+                    JOIN ranked r ON r.id = sh.id
+                    WHERE r.rn > %s
+                      AND sh.started_at < NOW() - (%s * INTERVAL '1 day')
+                      AND {reference_sql}
+                ),
+                deleted AS (
+                    DELETE FROM scan_history
+                    WHERE id IN (SELECT id FROM candidates)
+                    RETURNING id
+                )
+                SELECT COUNT(*) FROM deleted
+                """
             ),
-            candidates AS (
-                SELECT sh.id
-                FROM scan_history sh
-                JOIN ranked r ON r.id = sh.id
-                WHERE r.rn > %s
-                  AND sh.started_at < NOW() - (%s * INTERVAL '1 day')
-                  AND {reference_sql}
-            ),
-            deleted AS (
-                DELETE FROM scan_history
-                WHERE id IN (SELECT id FROM candidates)
-                RETURNING id
-            )
-            SELECT COUNT(*) FROM deleted
-            """,
             (keep_latest_per_type, max_age_days),
         )
         row = cur.fetchone()

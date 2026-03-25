@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .._sql import static_sql
 from ..connection import get_connection
 from .core import MOCKUP_SELECT_COLUMNS, MOCKUP_STATUSES, _row_to_mockup
 from .queries import get_mockup
@@ -53,12 +54,14 @@ def update_mockup(
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            f"""
-            UPDATE mockups
-            SET {", ".join(updates)}
-            WHERE project_id = %s AND mockup_id = %s
-            RETURNING {MOCKUP_SELECT_COLUMNS}
-            """,
+            static_sql(
+                f"""
+                UPDATE mockups
+                SET {", ".join(updates)}
+                WHERE project_id = %s AND mockup_id = %s
+                RETURNING {MOCKUP_SELECT_COLUMNS}
+                """
+            ),
             params,
         )
         row = cur.fetchone()

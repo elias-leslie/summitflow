@@ -6,6 +6,7 @@ get_sync_client, get_async_client, and Agent Hub config constants."""
 from __future__ import annotations
 
 from agent_hub import AgentHubClient
+from agent_hub.models import MessageInput, ToolResultMessage
 
 from ..logging_config import get_logger
 from ._agent_hub_config import (
@@ -91,7 +92,7 @@ class AgentHubLLMClient(LLMClient):
         """Generate completion via Agent Hub; raises RuntimeError on failure."""
         effective_use_memory = use_memory if use_memory is not None else self.use_memory
         effective_memory_group = memory_group_id or self.memory_group_id
-        msgs: list[dict[str, str]] = []
+        msgs: list[dict[str, str] | MessageInput | ToolResultMessage] = []
         if system:
             msgs.append({"role": "system", "content": system})
         msgs.append({"role": "user", "content": prompt})

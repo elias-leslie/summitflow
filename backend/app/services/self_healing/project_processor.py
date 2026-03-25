@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypedDict, cast
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from ...logging_config import get_logger
+from ...storage import quality_check_results as qcr_store
 from .config import BUDGET_CAP_USD, CHECK_TYPE_PRIORITY, MAX_ERRORS_PER_PROJECT
 
 if TYPE_CHECKING:
     import psycopg
 
 logger = get_logger(__name__)
+
+_CHECK_TYPE_PRIORITY = cast(Sequence[qcr_store.CheckType], CHECK_TYPE_PRIORITY)
 
 
 class FixResults(TypedDict):
@@ -80,9 +84,9 @@ def _update_project_results(
 
 
 def _fix_check_type(
-    conn: psycopg.Connection[dict[str, object]],
+    conn: psycopg.Connection[Any],
     project_id: str,
-    check_type: str,
+    check_type: qcr_store.CheckType,
     unfixed_count: int,
     project_budget: int,
     cumulative_cost_usd: float,
@@ -126,7 +130,7 @@ def _fix_check_type(
 
 
 def process_project(
-    conn: psycopg.Connection[dict[str, object]],
+    conn: psycopg.Connection[Any],
     project_id: str,
     unfixed_counts: dict[str, int],
     remaining_budget: int,
@@ -142,7 +146,7 @@ def process_project(
     project_budget = min(remaining_budget, effective_max)
 
     # Process check types in priority order
-    for check_type in CHECK_TYPE_PRIORITY:
+    for check_type in _CHECK_TYPE_PRIORITY:
         if check_type not in unfixed_counts:
             continue
 

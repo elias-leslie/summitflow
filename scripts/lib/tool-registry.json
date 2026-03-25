@@ -104,6 +104,23 @@
       }
     },
     {
+      "name": "vitest",
+      "component_id": "sf.dt",
+      "redirect_patterns": [
+        "(npx\\s+)?vitest\\b"
+      ],
+      "redirect_message": "Use 'dt vitest [args]' — handles project detection and TOON output.",
+      "dt": {
+        "label": "VITEST",
+        "binary": "npx",
+        "args": "vitest run",
+        "count_method": "vitest_parse",
+        "working_dir": "frontend",
+        "fallback_global": true,
+        "pass_path": false
+      }
+    },
+    {
       "name": "sqlfluff",
       "component_id": "sf.dt",
       "redirect_patterns": [

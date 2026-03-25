@@ -22,6 +22,23 @@ from .pipeline_models import (
 VerificationResult = dict[str, object]
 
 
+def _coerce_metric_int(*values: object, default: int = 0) -> int:
+    """Return the first truthy integer-like value, falling back to default."""
+    for value in values:
+        if not value:
+            continue
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            return int(value)
+        if isinstance(value, str):
+            try:
+                return int(value)
+            except ValueError:
+                continue
+    return default
+
+
 def _compute_self_healing(results: list[VerificationResult]) -> SelfHealing:
     """Compute self-healing metrics from verification results."""
     total = len(results)
@@ -31,10 +48,21 @@ def _compute_self_healing(results: list[VerificationResult]) -> SelfHealing:
             supervisor_escalation_rate=0.0, model_escalation_count=0
         )
     first_pass = sum(1 for vr in results if vr.get("execution_clean", False))
-    total_fixes = sum(vr.get("total_self_fix_attempts", 0) or vr.get("self_fix_attempts", 0) for vr in results)
+    total_fixes = sum(
+        _coerce_metric_int(
+            vr.get("total_self_fix_attempts"),
+            vr.get("self_fix_attempts"),
+            default=0,
+        )
+        for vr in results
+    )
     supervisor_esc = sum(
         1 for vr in results
-        if int(vr.get("total_supervisor_attempts") or vr.get("supervisor_guided_attempts") or 0) > 0
+        if _coerce_metric_int(
+            vr.get("total_supervisor_attempts"),
+            vr.get("supervisor_guided_attempts"),
+            default=0,
+        ) > 0
     )
     model_esc = sum(1 for vr in results if vr.get("model_escalated", False) or vr.get("tier_upgraded", False))
     return SelfHealing(
@@ -59,8 +87,8 @@ def _compute_verification(results: list[VerificationResult]) -> Verification:
             total_steps += 1
             if step_data.get("passed", False):
                 passed_steps += 1
-            retry_count = int(step_data.get("retry_count") or 0)
-            attempts = int(step_data.get("attempts") or 1)
+            retry_count = _coerce_metric_int(step_data.get("retry_count"), default=0)
+            attempts = _coerce_metric_int(step_data.get("attempts"), default=1)
             retries = retry_count or attempts - 1
             total_retries += max(0, retries)
     if total_steps == 0:
@@ -80,7 +108,8 @@ def _compute_partial_merge(results: list[VerificationResult]) -> PartialMerge:
     partial = sum(1 for vr in results if vr.get("partial_merge", False))
     failures = sum(
         1 for vr in results
-        if int(vr.get("passed_count") or 0) == 0 and int(vr.get("subtask_count") or 0) > 0
+        if _coerce_metric_int(vr.get("passed_count"), default=0) == 0
+        and _coerce_metric_int(vr.get("subtask_count"), default=0) > 0
     )
     return PartialMerge(
         full_completion_rate=round(full / total, 2),

@@ -142,10 +142,17 @@ get_changed_python_files() {
     get_changed_files "py" "$PROJECT_DIR" | grep -E "^$BACKEND_PATH" | grep -v "alembic/versions/" || true
 }
 
+# Get frontend root directory for current project
+get_frontend_root() {
+    local project_dir="${1:-$PROJECT_DIR}"
+    local frontend_dir="$project_dir/frontend"
+    [[ -d "$frontend_dir" ]] && echo "$frontend_dir" || echo "$project_dir"
+}
+
 # Get changed TypeScript files in frontend
 get_changed_ts_files() {
-    local frontend_dir="$PROJECT_DIR/frontend"
-    [[ ! -d "$frontend_dir" ]] && frontend_dir="$PROJECT_DIR"
+    local frontend_dir
+    frontend_dir="$(get_frontend_root "$PROJECT_DIR")"
     get_changed_files "ts|tsx|js|jsx" "$PROJECT_DIR" | grep -E "^$frontend_dir" || true
 }
 
@@ -559,7 +566,7 @@ quick_check() {
     return $errors
 }
 
-# Frontend-only check: skip Python tools, run only biome and tsc
+# Frontend-only check: skip Python tools, run biome + tsc and vitest when configured
 # Useful for pure frontend projects (e.g., monkey-fight)
 frontend_only_check() {
     local project_dir="$1"
@@ -576,6 +583,11 @@ frontend_only_check() {
 
     run_tool_toon biome || { ((errors++)) || true; }
     run_tool_toon tsc || { ((errors++)) || true; }
+    if has_frontend_vitest "$project_dir"; then
+        run_tool_toon vitest || { ((errors++)) || true; }
+    else
+        echo "VITEST:OK:skipped_no_vitest"
+    fi
 
     if [[ $errors -eq 0 ]]; then
         echo "CHECK_RESULT:OK"
@@ -607,9 +619,15 @@ full_check() {
     if has_frontend "$project_dir"; then
         run_tool_toon biome || { ((errors++)) || true; }
         run_tool_toon tsc || { ((errors++)) || true; }
+        if has_frontend_vitest "$project_dir"; then
+            run_tool_toon vitest || { ((errors++)) || true; }
+        else
+            echo "VITEST:OK:skipped_no_vitest"
+        fi
     else
         echo "BIOME:OK:skipped_no_frontend"
         echo "TSC:OK:skipped_no_frontend"
+        echo "VITEST:OK:skipped_no_frontend"
     fi
 
     if [[ $errors -eq 0 ]]; then
@@ -799,6 +817,27 @@ has_frontend() {
     return 1
 }
 
+# Check if project has Vitest frontend tests configured
+has_frontend_vitest() {
+    local project_dir="${1:-$PROJECT_DIR}"
+    if ! has_frontend "$project_dir"; then
+        return 1
+    fi
+
+    local frontend_dir
+    frontend_dir="$(get_frontend_root "$project_dir")"
+
+    if ls "$frontend_dir"/vitest.config.* 2>/dev/null | head -1 >/dev/null; then
+        return 0
+    fi
+
+    if [[ -f "$frontend_dir/package.json" ]] && grep -q '"vitest"' "$frontend_dir/package.json"; then
+        return 0
+    fi
+
+    return 1
+}
+
 # Get working directory for a tool
 get_tool_working_dir() {
     local dir_type="$1"
@@ -809,8 +848,8 @@ get_tool_working_dir() {
             echo "$app_dir"
             ;;
         frontend)
-            local frontend_dir="$PROJECT_DIR/frontend"
-            [[ ! -d "$frontend_dir" ]] && frontend_dir="$PROJECT_DIR"
+            local frontend_dir
+            frontend_dir="$(get_frontend_root "$PROJECT_DIR")"
             echo "$frontend_dir"
             ;;
         test)
@@ -889,6 +928,21 @@ count_issues() {
                 summary_line=$(echo "$output" | strip_ansi | grep -v '^\s*$' | tail -1) || true
             fi
             echo "$summary_line"
+            ;;
+        vitest_parse)
+            local failed_count summary_line
+            summary_line=$(echo "$output" | strip_ansi | grep -E '^\s*(Tests|Test Files)\s+' | tail -1) || true
+            failed_count=""
+            if [[ -n "$summary_line" ]]; then
+                failed_count=$(echo "$summary_line" | sed -nE 's/.*[^0-9]([0-9]+) failed.*/\1/p' | head -1) || true
+            fi
+            if [[ -n "$failed_count" ]]; then
+                echo "$failed_count"
+            elif [[ $retval -eq 0 ]]; then
+                echo "0"
+            else
+                echo "1"
+            fi
             ;;
     esac
 }
@@ -1057,6 +1111,10 @@ run_tool_toon() {
             return 0
         fi
     fi
+    if [[ "$tool_name" == "vitest" ]] && ! has_frontend_vitest "$PROJECT_DIR"; then
+        echo "$label:OK:skipped_no_vitest"
+        return 0
+    fi
 
     ensure_output_dir
     local details_file="$OUTPUT_DIR/${tool_name}-details.txt"
@@ -1173,6 +1231,9 @@ EOF
                 is_success=1
             fi
             ;;
+        vitest_parse)
+            [[ $retval -eq 0 ]] && is_success=1
+            ;;
         wc_l)
             # For line counting, exit code 0 means success regardless of output
             [[ $retval -eq 0 ]] && is_success=1 && count=0
@@ -1251,16 +1312,17 @@ show_help() {
     echo "  types            Run ty with TOON output (<50 bytes on clean)"
     echo "  biome            Run biome lint with TOON output (frontend)"
     echo "  tsc              Run tsc with TOON output (frontend)"
+    echo "  vitest           Run Vitest with TOON output (frontend, when configured)"
     echo "  sqlfluff         Run sqlfluff lint with TOON output (migrations)"
     echo "  squawk           Run squawk migration safety with TOON output (migrations)"
     echo "  coderabbit       Run CodeRabbit AI review with TOON output (not in --check/--quick)"
     echo ""
     echo "Options:"
     echo "  (no args)        Dashboard of all projects (default)"
-    echo "  --check, -c      Quality gate: lint, types, tests + frontend (current project)"
+    echo "  --check, -c      Quality gate: lint, types, tests + frontend checks (current project)"
     echo "  --quick, -q      Fast check: lint, types + frontend (for commits)"
     echo "  --changed-only, -d  Only check changed files (combine with -c or -q)"
-    echo "  --frontend-only  Frontend only: biome + tsc (skip Python tools)"
+    echo "  --frontend-only  Frontend only: biome + tsc + vitest when configured"
     echo "  --fix, -f        Auto-fix + install deps + pre-commit install (current project)"
     echo "  --fix-all        Fix all managed projects"
     echo "  --rebuild-venv   Delete and recreate venv (fixes corrupt venv)"

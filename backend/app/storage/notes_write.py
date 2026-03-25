@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from ._sql import static_sql
 from .connection import generate_prefixed_id, get_connection
 from .notes_helpers import NoteType, _row_to_dict
 
@@ -29,11 +30,13 @@ def create_note(
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            f"""
-            INSERT INTO notes (id, project_scope, type, title, content, tags, pinned, metadata)
-            VALUES (%s, %s, %s, %s, %s, %s::text[], %s, %s::jsonb)
-            {_RETURNING_COLS}
-            """,
+            static_sql(
+                f"""
+                INSERT INTO notes (id, project_scope, type, title, content, tags, pinned, metadata)
+                VALUES (%s, %s, %s, %s, %s, %s::text[], %s, %s::jsonb)
+                {_RETURNING_COLS}
+                """
+            ),
             (note_id, project_scope, note_type, title, content, tags or [], pinned, meta_json),
         )
         row = cur.fetchone()
@@ -68,7 +71,7 @@ def update_note(note_id: str, **fields: Any) -> dict[str, Any] | None:
     set_parts.append("updated_at = NOW()")
     params.append(note_id)
 
-    query = f"UPDATE notes SET {', '.join(set_parts)} WHERE id = %s {_RETURNING_COLS}"
+    query = static_sql(f"UPDATE notes SET {', '.join(set_parts)} WHERE id = %s {_RETURNING_COLS}")
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(query, params)

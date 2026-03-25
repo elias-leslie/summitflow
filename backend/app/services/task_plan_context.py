@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, cast
 
 _STRING_FIELDS = ("objective", "spirit_anti", "testing_strategy")
 _LIST_FIELDS = (
@@ -53,19 +53,20 @@ def normalize_plan_steps(steps: Any) -> list[dict[str, Any]]:
 
     normalized: list[dict[str, Any]] = []
     for index, step in enumerate(steps, start=1):
-        if isinstance(step, dict):
-            description = _clean_text(step.get("description"))
+        if isinstance(step, Mapping):
+            step_data = cast(Mapping[str, Any], step)
+            description = _clean_text(step_data.get("description"))
             if not description:
                 continue
-            raw_passes = step.get("passes")
+            raw_passes = step_data.get("passes")
             normalized_step: dict[str, Any] = {
-                "step_number": int(step.get("step_number") or index),
+                "step_number": int(step_data.get("step_number") or index),
                 "description": description,
                 "passes": bool(raw_passes),
             }
-            spec = step.get("spec")
-            if isinstance(spec, dict) and spec:
-                normalized_step["spec"] = spec
+            spec = step_data.get("spec")
+            if isinstance(spec, Mapping) and spec:
+                normalized_step["spec"] = dict(spec)
             normalized.append(normalized_step)
             continue
 
@@ -89,11 +90,14 @@ def normalize_plan_subtasks(subtasks: Any) -> list[dict[str, Any]]:
 
     normalized: list[dict[str, Any]] = []
     for index, subtask in enumerate(subtasks, start=1):
-        if not isinstance(subtask, dict):
+        if not isinstance(subtask, Mapping):
             continue
+        subtask_data = cast(Mapping[str, Any], subtask)
 
-        subtask_id = _clean_text(subtask.get("subtask_id") or subtask.get("id")) or f"{index}.1"
-        description = _clean_text(subtask.get("description"))
+        subtask_id = (
+            _clean_text(subtask_data.get("subtask_id") or subtask_data.get("id")) or f"{index}.1"
+        )
+        description = _clean_text(subtask_data.get("description"))
         if not description:
             continue
 
@@ -101,13 +105,13 @@ def normalize_plan_subtasks(subtasks: Any) -> list[dict[str, Any]]:
             "subtask_id": subtask_id,
             "description": description,
         }
-        if phase := _clean_text(subtask.get("phase")):
+        if phase := _clean_text(subtask_data.get("phase")):
             normalized_subtask["phase"] = phase
-        if subtask_type := _clean_text(subtask.get("subtask_type")):
+        if subtask_type := _clean_text(subtask_data.get("subtask_type")):
             normalized_subtask["subtask_type"] = subtask_type
-        if depends_on := _clean_string_list(subtask.get("depends_on")):
+        if depends_on := _clean_string_list(subtask_data.get("depends_on")):
             normalized_subtask["depends_on"] = depends_on
-        if steps := normalize_plan_steps(subtask.get("steps")):
+        if steps := normalize_plan_steps(subtask_data.get("steps")):
             normalized_subtask["steps"] = steps
         normalized.append(normalized_subtask)
 

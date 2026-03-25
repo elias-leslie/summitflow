@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from ...logging_config import get_logger
@@ -39,7 +40,7 @@ def _fetch_task_if_needed(task_id: str, current_task: dict[str, Any] | None) -> 
     return task
 
 
-def _build_conversation_string(history: list[dict[str, str]]) -> str:
+def _build_conversation_string(history: Sequence[Mapping[str, str]]) -> str:
     """Format conversation history into a readable string.
 
     Args:
@@ -131,7 +132,7 @@ def discuss_task(
     project_id: str,
     task_id: str,
     message: str,
-    history: list[dict[str, str]] | None = None,
+    history: Sequence[Mapping[str, str]] | None = None,
     current_task: dict[str, Any] | None = None,
 ) -> DiscussionResponse:
     """Have a discussion about a task with AI.

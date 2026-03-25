@@ -302,7 +302,7 @@ async def build_project_dashboard(
     merges_resp = build_recent_merges_response(limit=10, project_id=project_id)
     commits = get_recent_commits(repo_path, limit=commits_limit)
     snapshots = list_snapshots(repo_path)
-    enrich_snapshots(snapshots, project_id)
+    enrich_snapshots(snapshots)
     conflicts = build_conflicts_response(project_id=project_id)
     return ProjectDashboardResponse(
         worktrees=worktrees,
@@ -429,7 +429,7 @@ def collect_snapshots(project_id: str | None) -> list[SnapshotInfo]:
     if project_id:
         try:
             all_snapshots = list(list_snapshots(get_project_path(project_id)))
-            enrich_snapshots(all_snapshots, project_id)
+            enrich_snapshots(all_snapshots)
         except HTTPException as exc:
             _logger.debug("Snapshot collection failed for project", project_id=project_id, status=exc.status_code)
     else:

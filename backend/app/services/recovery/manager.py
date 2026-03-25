@@ -122,8 +122,11 @@ class RecoveryManager:
             RecoveryStrategy enum value.
         """
         # Check for circular fix
+        attempt_history = self._state.get("attempt_history", [])
         previous_errors = [
-            a["error_text"] for a in self._state.get("attempt_history", []) if "error_text" in a
+            str(attempt["error_text"])
+            for attempt in attempt_history
+            if isinstance(attempt, dict) and "error_text" in attempt
         ]
         is_circular = is_circular_fix(error_text, previous_errors)
 

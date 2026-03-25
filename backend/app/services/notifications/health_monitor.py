@@ -118,7 +118,10 @@ def _get_last_status() -> str | None:
     try:
         r = get_redis()
         raw = r.get(_REDIS_KEY)
-        if raw:
+        if isinstance(raw, bytes):
+            data = json.loads(raw.decode("utf-8"))
+            return cast(str, data.get("status"))
+        if isinstance(raw, str):
             data = json.loads(raw)
             return cast(str, data.get("status"))
     except Exception:

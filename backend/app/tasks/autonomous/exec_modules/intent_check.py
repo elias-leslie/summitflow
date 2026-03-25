@@ -18,7 +18,7 @@ logger = get_logger(__name__)
 CONFIDENCE_THRESHOLD = 90
 
 _GENERIC_DONE_WHEN = {
-    "All quality gates pass (ruff, types, pytest)",
+    "All configured quality gates pass",
     "No regressions - all existing tests pass",
     "No console errors in browser",
 }

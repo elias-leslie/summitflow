@@ -4,6 +4,7 @@ import clsx from 'clsx'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { usePathname } from 'next/navigation'
 import { useState, useEffect } from 'react'
+import { getProjectIdFromPathname } from '@/lib/project-config'
 import { useSidebarState } from './hooks/useSidebarState'
 import { SidebarHeader } from './SidebarHeader'
 import { ProjectsAccordion } from './ProjectsAccordion'
@@ -13,9 +14,7 @@ export function SidebarContent() {
   const { isCollapsed, mounted, toggleCollapsed } = useSidebarState()
   const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null)
 
-  // Extract current project ID from URL
-  const projectMatch = pathname.match(/^\/projects\/([^/]+)/)
-  const currentProjectId = projectMatch ? projectMatch[1] : null
+  const currentProjectId = getProjectIdFromPathname(pathname)
 
   // Auto-expand current project
   useEffect(() => {

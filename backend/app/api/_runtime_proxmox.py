@@ -11,7 +11,7 @@ import json
 import os
 import re
 import ssl
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 
@@ -185,9 +185,10 @@ async def get_proxmox_status() -> ProxmoxStatus:
         if not isinstance(row, dict):
             continue
         vmid = _int_value(row.get("vmid"))
-        guest_type = str(row.get("type") or "")
-        if vmid is None or guest_type not in {"qemu", "lxc"}:
+        guest_type_raw = row.get("type")
+        if vmid is None or guest_type_raw not in {"qemu", "lxc"}:
             continue
+        guest_type = cast(Literal["qemu", "lxc"], guest_type_raw)
         guests.append(
             ProxmoxGuestStatus(
                 vmid=vmid,

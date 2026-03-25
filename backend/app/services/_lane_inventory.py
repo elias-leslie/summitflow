@@ -28,6 +28,13 @@ def _owner_list(owner: dict[str, object], key: str) -> list[object]:
     return list(val) if isinstance(val, list) else []
 
 
+def _as_object_dict(value: object) -> dict[str, object]:
+    """Return a dict[str, object] view of a JSON object, or an empty dict."""
+    if not isinstance(value, dict):
+        return {}
+    return {str(key): item for key, item in value.items()}
+
+
 def _owner_to_session(owner: dict[str, object]) -> dict[str, object]:
     """Convert a live-ownership record to the normalized session shape."""
     return {
@@ -57,16 +64,16 @@ def _parse_ownership_payload(
     owners = payload.get("active_owners")
     specialists = payload.get("active_specialists")
     if isinstance(owners, list):
-        owner_sessions = [_owner_to_session(o) for o in owners if isinstance(o, dict)]
+        owner_sessions = [_owner_to_session(_as_object_dict(o)) for o in owners if isinstance(o, dict)]
         specialist_rows = cast(
             list[dict[str, object]],
-            [r for r in specialists if isinstance(r, dict)] if isinstance(specialists, list) else [],
+            [_as_object_dict(r) for r in specialists if isinstance(r, dict)] if isinstance(specialists, list) else [],
         )
         return owner_sessions, specialist_rows
 
     sessions_raw = payload.get("sessions")
     if isinstance(sessions_raw, list):
-        return cast(list[dict[str, object]], [r for r in sessions_raw if isinstance(r, dict)]), []
+        return [_as_object_dict(r) for r in sessions_raw if isinstance(r, dict)], []
     return None
 
 

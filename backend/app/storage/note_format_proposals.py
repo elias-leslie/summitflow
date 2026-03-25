@@ -51,6 +51,8 @@ def create_proposal(
         )
         result = cur.fetchone()
         conn.commit()
+    if result is None:
+        raise RuntimeError("Failed to create note format proposal")
     return _row_to_dict(result)
 
 

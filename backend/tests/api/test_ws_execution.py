@@ -20,6 +20,7 @@ from app.api.ws_execution import (
     ConnectionManager,
     Message,
     MessageType,
+    _forward_redis_events,
     _handle_stop_signal,
     manager,
     register_stop_handler,
@@ -241,6 +242,23 @@ class TestHelperFunctions:
             attributes={"requested_by": "websocket"},
         )
         mock_broadcast.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_forward_redis_events_coerces_non_dict_payload(self, mocker: MockerFixture) -> None:
+        """Redis events with invalid payloads should still broadcast safely."""
+        mock_broadcast = mocker.patch.object(manager, "broadcast", new_callable=AsyncMock)
+
+        async def _events():
+            yield {"type": "not-a-real-type", "data": "bad-payload"}
+
+        mocker.patch("app.api.ws_execution.subscribe_ws_events", return_value=_events())
+
+        await _forward_redis_events("task-1")
+
+        mock_broadcast.assert_called_once()
+        message = mock_broadcast.await_args.args[1]
+        assert message.type == MessageType.LOG
+        assert message.data == {}
 
 
 class TestWebSocketEndpoint:

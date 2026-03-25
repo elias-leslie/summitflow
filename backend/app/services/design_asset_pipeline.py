@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import contextlib
 import json
 from pathlib import Path
 
@@ -350,19 +351,33 @@ def generate_asset_image(
 # ---------------------------------------------------------------------------
 
 
+def _coerce_positive_int(value: object) -> int | None:
+    """Coerce sprite-sheet metadata values to positive integers."""
+    if isinstance(value, int):
+        return value if value > 0 else None
+    if isinstance(value, float):
+        coerced = int(value)
+        return coerced if coerced > 0 else None
+    if isinstance(value, str):
+        with contextlib.suppress(ValueError):
+            coerced = int(value)
+            return coerced if coerced > 0 else None
+    return None
+
+
 def _validate_sheet_asset(asset: dict[str, object]) -> tuple[int, int, int, int]:
     """Validate sprite sheet metadata and return (frame_w, frame_h, cols, rows)."""
     if not asset.get("file_path"):
         raise ValueError("Asset has no file to export")
     if asset["asset_type"] != "sprite_sheet":
         raise ValueError("Only sprite sheet assets support frame exports")
-    frame_w = asset.get("frame_width")
-    frame_h = asset.get("frame_height")
-    cols = asset.get("sheet_columns")
-    rows = asset.get("sheet_rows")
-    if not all([frame_w, frame_h, cols, rows]):
+    frame_w = _coerce_positive_int(asset.get("frame_width"))
+    frame_h = _coerce_positive_int(asset.get("frame_height"))
+    cols = _coerce_positive_int(asset.get("sheet_columns"))
+    rows = _coerce_positive_int(asset.get("sheet_rows"))
+    if frame_w is None or frame_h is None or cols is None or rows is None:
         raise ValueError("Sprite sheet export requires frame dimensions and grid metadata")
-    return int(frame_w), int(frame_h), int(cols), int(rows)
+    return frame_w, frame_h, cols, rows
 
 
 def _slice_frames(
@@ -417,6 +432,9 @@ def _write_atlas_manifest(
 def export_sprite_sheet_frames(asset: dict[str, object]) -> dict[str, object]:
     """Slice a sprite sheet into frame exports plus a JSON atlas manifest."""
     frame_width, frame_height, sheet_columns, sheet_rows = _validate_sheet_asset(asset)
+    asset_id = asset.get("id")
+    if not isinstance(asset_id, int):
+        raise ValueError("Sprite sheet asset is missing a valid database id")
 
     image_path = Path(str(asset["file_path"]))
     if not image_path.exists():
@@ -426,7 +444,12 @@ def export_sprite_sheet_frames(asset: dict[str, object]) -> dict[str, object]:
     export_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = image_path.parent / "exports" / "atlas.json"
 
-    animation_labels: list[str] = list(asset.get("animation_labels") or [])
+    animation_labels_value = asset.get("animation_labels")
+    animation_labels: list[str] = (
+        [str(label) for label in animation_labels_value]
+        if isinstance(animation_labels_value, list)
+        else []
+    )
     atlas_frames = _slice_frames(
         image_path,
         export_dir,
@@ -440,14 +463,14 @@ def export_sprite_sheet_frames(asset: dict[str, object]) -> dict[str, object]:
 
     frame_count = sheet_columns * sheet_rows
     export_record = design_assets.create_asset_export(
-        asset["id"],
+        asset_id,
         "sprite_frames",
         str(export_dir),
         manifest_path=str(manifest_path),
         metadata={"frame_count": frame_count, "frame_width": frame_width, "frame_height": frame_height},
     )
     design_assets.create_asset_export(
-        asset["id"],
+        asset_id,
         "atlas_json",
         str(manifest_path),
         metadata={"frame_count": frame_count},

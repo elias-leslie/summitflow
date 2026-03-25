@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 from ._events_models import Event, EventLevel, EventsQueryResult, EventVisibility, row_to_event
 from .connection import get_cursor
@@ -68,8 +68,7 @@ def get_events_by_trace(
 
     with get_cursor() as cur:
         cur.execute(
-            f"{_SELECT_COLUMNS}WHERE {' AND '.join(conditions)}"
-            " ORDER BY timestamp ASC LIMIT %s",
+            cast(Any, f"{_SELECT_COLUMNS}WHERE {' AND '.join(conditions)}" " ORDER BY timestamp ASC LIMIT %s"),
             params,
         )
         rows = cur.fetchall()
@@ -126,14 +125,14 @@ def _fetch_events_stats(
 ) -> tuple[int, dict[str, int]]:
     """Run COUNT and GROUP BY level queries; return (total, summary)."""
     cur.execute(
-        f"SELECT COUNT(*) FROM events WHERE {where_clause}",
+        cast(Any, f"SELECT COUNT(*) FROM events WHERE {where_clause}"),
         params,
     )
     count_row = cur.fetchone()
     total: int = count_row[0] if count_row else 0
 
     cur.execute(
-        f"SELECT level, COUNT(*) FROM events WHERE {where_clause} GROUP BY level",
+        cast(Any, f"SELECT level, COUNT(*) FROM events WHERE {where_clause} GROUP BY level"),
         params,
     )
     summary: dict[str, int] = {row[0]: row[1] for row in cur.fetchall()}
@@ -147,8 +146,7 @@ def _fetch_events_page(
     """Run paginated SELECT for events; return list of Event records."""
     query_params = [*params, limit, offset]
     cur.execute(
-        f"{_SELECT_COLUMNS}WHERE {where_clause}"
-        " ORDER BY timestamp DESC LIMIT %s OFFSET %s",
+        cast(Any, f"{_SELECT_COLUMNS}WHERE {where_clause}" " ORDER BY timestamp DESC LIMIT %s OFFSET %s"),
         query_params,
     )
     return [row_to_event(row) for row in cur.fetchall()]

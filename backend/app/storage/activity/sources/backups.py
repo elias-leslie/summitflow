@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+from ..._sql import static_sql
 from ...connection import get_cursor
 from ..types import ActivityEvent, BackupMetadata
 
@@ -38,13 +39,15 @@ def _fetch_backup_rows(
     """Execute the backup query and return raw rows."""
     with get_cursor() as cur:
         cur.execute(
-            f"""
-            SELECT id, project_id, backup_type, status, size_bytes, completed_at, created_at
-            FROM backups
-            {where_clause}
-            ORDER BY COALESCE(completed_at, created_at) DESC
-            LIMIT %s
-            """,
+            static_sql(
+                f"""
+                SELECT id, project_id, backup_type, status, size_bytes, completed_at, created_at
+                FROM backups
+                {where_clause}
+                ORDER BY COALESCE(completed_at, created_at) DESC
+                LIMIT %s
+                """
+            ),
             [*params, limit],
         )
         return cur.fetchall()

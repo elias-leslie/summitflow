@@ -29,7 +29,18 @@ class AgentConfig(TypedDict, total=False):
     autonomous_enabled: bool  # Enable autonomous task pickup and execution
     autonomous_start_hour: int  # Hour (0-23) when autonomous execution can start
     autonomous_end_hour: int  # Hour (0-23) when autonomous execution must stop
+    autonomous_frequency_minutes: int  # How often to check for work
     autonomous_max_concurrent: int  # Max concurrent autonomous tasks (1-3)
+    autonomous_auto_merge_tiers: list[int]  # Tiers eligible for auto-merge
+    autonomous_task_types: list[str]  # Labels eligible for autonomous execution
+    autonomous_max_tasks_per_day: int | None  # Max tasks per day
+    autonomous_cooldown_minutes: int  # Gap between autonomous dispatches
+    autonomous_allowed_types: list[str] | None  # Allowed task types
+    autonomous_max_self_fix_attempts: int  # Max self-fix attempts
+    autonomous_max_supervisor_attempts: int  # Max supervisor attempts
+    autonomous_max_extensions: int  # Max extension requests
+    autonomous_auto_merge_enabled: bool  # Enable automatic merging
+    autonomous_require_review: bool  # Require review before merge
 
     # Quality gate configuration
     quality_gate_tools: list[str]  # e.g. ["ruff", "types", "biome", "tsc"] — empty = dt --quick
@@ -49,7 +60,18 @@ DEFAULT_AGENT_CONFIG: AgentConfig = {
     "autonomous_enabled": False,
     "autonomous_start_hour": 0,  # Default: 24/7 execution allowed
     "autonomous_end_hour": 24,  # 24 means end of day (midnight)
+    "autonomous_frequency_minutes": 30,
     "autonomous_max_concurrent": 1,  # Default: 1 concurrent task
+    "autonomous_auto_merge_tiers": [1],
+    "autonomous_task_types": ["auto-generated"],
+    "autonomous_max_tasks_per_day": None,
+    "autonomous_cooldown_minutes": 0,
+    "autonomous_allowed_types": None,
+    "autonomous_max_self_fix_attempts": 3,
+    "autonomous_max_supervisor_attempts": 3,
+    "autonomous_max_extensions": 3,
+    "autonomous_auto_merge_enabled": True,
+    "autonomous_require_review": True,
     # Quality gate defaults
     "quality_gate_tools": [],  # Empty = use dt --quick (default behavior)
     "quality_gate_mode": "quick",

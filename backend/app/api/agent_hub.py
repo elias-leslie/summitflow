@@ -9,8 +9,8 @@ This avoids CORS issues and keeps credentials server-side.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-from typing import Any
+from collections.abc import AsyncIterator, Mapping
+from typing import cast
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -70,11 +70,15 @@ def _raise_from_request_error(exc: httpx.RequestError) -> None:
     ) from exc
 
 
-async def _get_json(url: str, **kwargs: object) -> object:
+async def _get_json(
+    url: str,
+    *,
+    params: dict[str, str | int] | None = None,
+) -> object:
     """Perform a GET request and return parsed JSON, raising HTTPException on error."""
     async with httpx.AsyncClient(timeout=_TIMEOUT_DEFAULT) as client:
         try:
-            response = await client.get(url, headers=_auth_headers(), **kwargs)
+            response = await client.get(url, headers=_auth_headers(), params=params)
             response.raise_for_status()
             return response.json()
         except httpx.HTTPStatusError as exc:
@@ -106,20 +110,33 @@ class CodingAgentsListResponse(BaseModel):
 
 def _parse_agents(data: object) -> CodingAgentsListResponse:
     """Parse raw Agent Hub response data into CodingAgentsListResponse."""
-    raw: list[dict[str, Any]] = []
-    if isinstance(data, dict):
-        raw = data.get("agents") or []
-    return CodingAgentsListResponse(
-        agents=[
+    if not isinstance(data, Mapping):
+        return CodingAgentsListResponse(agents=[])
+
+    payload = cast(Mapping[str, object], data)
+    raw_agents = payload.get("agents")
+    if not isinstance(raw_agents, list):
+        return CodingAgentsListResponse(agents=[])
+
+    agents: list[CodingAgentResponse] = []
+    for agent in raw_agents:
+        if not isinstance(agent, Mapping):
+            continue
+        agent_data = cast(Mapping[str, object], agent)
+        slug = agent_data.get("slug")
+        name = agent_data.get("name")
+        if not isinstance(slug, str) or not isinstance(name, str):
+            continue
+        description = agent_data.get("description")
+        agents.append(
             CodingAgentResponse(
-                slug=agent["slug"],
-                name=agent["name"],
-                description=agent.get("description"),
-                is_coding_agent=agent.get("is_coding_agent", True),
+                slug=slug,
+                name=name,
+                description=description if isinstance(description, str) else None,
+                is_coding_agent=bool(agent_data.get("is_coding_agent", True)),
             )
-            for agent in raw
-        ]
-    )
+        )
+    return CodingAgentsListResponse(agents=agents)
 
 
 @router.get("/agent-hub/agents", response_model=CodingAgentsListResponse)
@@ -191,7 +208,7 @@ async def list_agent_hub_sessions(
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> object:
     """Proxy to Agent Hub to list sessions with filtering."""
-    params: dict[str, object] = {
+    params: dict[str, str | int] = {
         "page": page,
         "page_size": page_size,
     }

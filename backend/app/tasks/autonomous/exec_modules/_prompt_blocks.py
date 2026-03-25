@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 # Event classification markers
@@ -76,7 +77,7 @@ def build_failures_block(failed_steps: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def classify_events(events: list[dict[str, Any]]) -> tuple[list[str], list[str]]:
+def classify_events(events: Sequence[Mapping[str, Any]]) -> tuple[list[str], list[str]]:
     """Classify events into wind-down messages and error messages."""
     wind_down_msgs: list[str] = []
     error_msgs: list[str] = []

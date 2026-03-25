@@ -107,6 +107,7 @@ def validate_task_ready(task_id: str, project_id: str) -> TaskValidationResult:
     task, early = _check_task_exists_in_project(task_id, project_id)
     if early is not None:
         return early
+    assert task is not None
 
     status_result = _check_task_status(task)
     if status_result is not None:
