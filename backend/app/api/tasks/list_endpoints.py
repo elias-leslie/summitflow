@@ -4,6 +4,7 @@ Handles:
 - list_tasks: List tasks with filtering, pagination, and optional related data
 - list_ready_tasks: List tasks ready to work on (not blocked by dependencies)
 - list_blocked_tasks: List tasks blocked by incomplete dependencies
+- ready_all_overview: Cross-project ready/blocked/active/stale overview for agentic consumers
 """
 
 from __future__ import annotations
@@ -14,7 +15,11 @@ from typing import Any
 from fastapi import APIRouter, Query
 from fastapi.responses import PlainTextResponse
 
+from cli.commands.tasks_ready_all import lane_task_id, render_ready_all_compact, task_sort_key
+
 from ...schemas.tasks import TaskListResponse
+from ...services._lane_inventory import fetch_live_project_inventory
+from ...storage import projects as project_store
 from ...storage import task_dependencies as dep_store
 from ...storage import tasks as task_store
 from .formatting import get_hints, toon_format_task_list
@@ -68,6 +73,155 @@ async def _fetch_filtered_tasks(
         task_ids = [t["id"] for t in tasks]
         await _enrich_tasks_with_blockers(tasks, task_ids)
     return tasks, total
+
+
+async def _collect_execution_ready_tasks(
+    project_id: str,
+    limit: int,
+) -> tuple[list[dict[str, object]], int]:
+    """Collect execution-ready tasks using the same readiness scan as /tasks/ready."""
+    from ...services.task_execution_readiness import sync_task_execution_readiness
+
+    scan_batch_size = min(max(limit * 10, 25), 100)
+    scan_offset = 0
+    ready_tasks: list[dict[str, object]] = []
+    total_ready = 0
+
+    while scan_offset < 500:
+        tasks = await asyncio.to_thread(
+            task_store.list_ready_tasks,
+            project_id,
+            limit=scan_batch_size,
+            offset=scan_offset,
+        )
+        if not tasks:
+            break
+
+        for task in tasks:
+            readiness = await asyncio.to_thread(sync_task_execution_readiness, task["id"])
+            if not readiness.ready:
+                continue
+            total_ready += 1
+            if len(ready_tasks) < limit:
+                ready_tasks.append(task)
+
+        if len(tasks) < scan_batch_size:
+            break
+        scan_offset += scan_batch_size
+
+    return ready_tasks, total_ready
+
+
+async def _fetch_live_lane_task_ids(project_id: str) -> set[str]:
+    """Return live task ids with active owner/specialist evidence from Agent Hub."""
+    owner_sessions, specialist_rows = await asyncio.to_thread(fetch_live_project_inventory, project_id)
+    live_task_ids = {
+        task_id
+        for session in owner_sessions
+        if (task_id := lane_task_id(session))
+    }
+    live_task_ids.update(
+        str(row.get("task_id"))
+        for row in specialist_rows
+        if isinstance(row.get("task_id"), str) and row.get("task_id")
+    )
+    return live_task_ids
+
+
+async def _collect_ready_all_project_data(
+    project_id: str,
+    project_name: str,
+    limit_per_project: int,
+) -> dict[str, Any]:
+    """Collect the canonical ready-all data for one project without self-HTTP."""
+    ready_tasks, ready_count = await _collect_execution_ready_tasks(project_id, limit_per_project)
+    blocked_tasks = await asyncio.to_thread(task_store.list_blocked_tasks, project_id, limit=limit_per_project)
+    live_lane_task_ids = await _fetch_live_lane_task_ids(project_id)
+    pending_tasks, running_tasks = await asyncio.gather(
+        asyncio.to_thread(task_store.list_tasks, project_id, status_filter="pending", limit=100, offset=0),
+        asyncio.to_thread(task_store.list_tasks, project_id, status_filter="running", limit=100, offset=0),
+    )
+
+    active_tasks: list[dict[str, object]] = list(pending_tasks)
+    stale_tasks: list[dict[str, object]] = []
+    for task in running_tasks:
+        if str(task.get("id") or "") in live_lane_task_ids:
+            active_tasks.append(task)
+        else:
+            stale_tasks.append(task)
+
+    return {
+        "project_id": project_id,
+        "project_name": project_name,
+        "ready_tasks": sorted(ready_tasks, key=task_sort_key),
+        "ready_count": ready_count,
+        "blocked_tasks": sorted(blocked_tasks, key=task_sort_key),
+        "blocked_count": len(blocked_tasks),
+        "active_tasks": active_tasks,
+        "active_count": len(active_tasks),
+        "stale_tasks": stale_tasks,
+        "stale_count": len(stale_tasks),
+    }
+
+
+async def _build_ready_all_overview_response(
+    *,
+    limit_per_project: int,
+    project_id: str | None = None,
+) -> dict[str, object]:
+    """Build the canonical ready-all API response with payload plus rendered text."""
+    projects = await asyncio.to_thread(project_store.list_projects)
+    if project_id is not None:
+        projects = [project for project in projects if project.get("id") == project_id]
+
+    if not projects:
+        return {
+            "payload": {
+                "summary": {
+                    "ready": 0,
+                    "blocked": 0,
+                    "active": 0,
+                    "stale": 0,
+                    "projects": 0,
+                },
+                "projects": [],
+            },
+            "raw": "",
+        }
+
+    results = await asyncio.gather(
+        *[
+            _collect_ready_all_project_data(
+                str(project.get("id") or ""),
+                str(project.get("name") or project.get("id") or ""),
+                limit_per_project,
+            )
+            for project in projects
+            if project.get("id")
+        ]
+    )
+    ordered_results = sorted(
+        results,
+        key=lambda item: (
+            -int(item["blocked_count"]),
+            -int(item["stale_count"]),
+            -int(item["active_count"]),
+            -int(item["ready_count"]),
+        ),
+    )
+    return {
+        "payload": {
+            "summary": {
+                "ready": sum(int(item["ready_count"]) for item in ordered_results),
+                "blocked": sum(int(item["blocked_count"]) for item in ordered_results),
+                "active": sum(int(item["active_count"]) for item in ordered_results),
+                "stale": sum(int(item["stale_count"]) for item in ordered_results),
+                "projects": len(ordered_results),
+            },
+            "projects": ordered_results,
+        },
+        "raw": render_ready_all_compact(ordered_results, limit_per_project),
+    }
 
 
 @router.get("/projects/{project_id}/tasks", response_model=None)
@@ -125,34 +279,7 @@ async def list_ready_tasks(
     ),
 ) -> TaskListResponse | PlainTextResponse:
     """List tasks ready to work on (not blocked by dependencies)."""
-    from ...services.task_execution_readiness import sync_task_execution_readiness
-
-    scan_batch_size = min(max(limit * 10, 25), 100)
-    scan_offset = 0
-    ready_tasks: list[dict[str, object]] = []
-    total_ready = 0
-
-    while scan_offset < 500:
-        tasks = await asyncio.to_thread(
-            task_store.list_ready_tasks,
-            project_id,
-            limit=scan_batch_size,
-            offset=scan_offset,
-        )
-        if not tasks:
-            break
-
-        for task in tasks:
-            readiness = await asyncio.to_thread(sync_task_execution_readiness, task["id"])
-            if not readiness.ready:
-                continue
-            total_ready += 1
-            if len(ready_tasks) < limit:
-                ready_tasks.append(task)
-
-        if len(tasks) < scan_batch_size:
-            break
-        scan_offset += scan_batch_size
+    ready_tasks, total_ready = await _collect_execution_ready_tasks(project_id, limit)
 
     # Batch fetch criteria counts to avoid N+1 queries
     task_ids = [str(t["id"]) for t in ready_tasks]
@@ -201,3 +328,20 @@ async def list_blocked_tasks(
         total=len(tasks),
         hints=get_hints(task_responses, project_id, endpoint_type="failed"),
     )
+
+
+@router.get("/tasks/ready-all", response_model=None)
+async def ready_all_overview(
+    limit: int = Query(3, ge=1, le=20, description="Top tasks shown per project"),
+) -> dict[str, object]:
+    """Return the canonical cross-project ready-all overview with rendered text."""
+    return await _build_ready_all_overview_response(limit_per_project=limit)
+
+
+@router.get("/projects/{project_id}/tasks/ready-all", response_model=None)
+async def project_ready_all_overview(
+    project_id: str,
+    limit: int = Query(3, ge=1, le=20, description="Top tasks shown for the project"),
+) -> dict[str, object]:
+    """Return the canonical ready-all overview for a single project."""
+    return await _build_ready_all_overview_response(limit_per_project=limit, project_id=project_id)

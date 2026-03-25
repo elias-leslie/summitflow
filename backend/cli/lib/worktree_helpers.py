@@ -47,6 +47,9 @@ def force_remove_worktree(worktree_path: Path, repo_root: Path) -> None:
     """Remove worktree via git, falling back to direct removal on failure."""
     try:
         run_git(["worktree", "remove", str(worktree_path), "--force"], cwd=repo_root)
+        if worktree_path.exists():
+            _remove_path(worktree_path)
+            run_git(["worktree", "prune"], cwd=repo_root, check=False)
         return
     except WorktreeError:
         pass

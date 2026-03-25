@@ -8,7 +8,7 @@ from .._output_formatters import truncate
 from ..client import APIError, STClient
 
 
-def _task_sort_key(task: dict[str, Any]) -> tuple[int, int, str]:
+def task_sort_key(task: dict[str, Any]) -> tuple[int, int, str]:
     """Sort key: bugs first, then by priority (lower = higher), then title."""
     task_type = task.get("task_type", "task")
     type_order = 0 if task_type == "bug" else 1 if task_type == "feature" else 2
@@ -27,7 +27,7 @@ def _format_task_line(task: dict[str, Any], prefix: str = " ") -> str:
     return f"  {prefix} {task_id} P{priority} {task_type:8} [{mode}] {title}"
 
 
-def _lane_task_id(session: dict[str, Any]) -> str | None:
+def lane_task_id(session: dict[str, Any]) -> str | None:
     external_id = session.get("external_id")
     if isinstance(external_id, str) and external_id.startswith("task-"):
         return external_id
@@ -46,7 +46,7 @@ def _fetch_live_lane_task_ids(client: STClient, project_id: str) -> set[str]:
     return {
         task_id
         for session in sessions
-        if (task_id := _lane_task_id(session))
+        if (task_id := lane_task_id(session))
     }
 
 
@@ -135,9 +135,9 @@ def _collect_project_data(
     return {
         "project_id": pid,
         "project_name": pname,
-        "ready_tasks": sorted(ready_tasks, key=_task_sort_key),
+        "ready_tasks": sorted(ready_tasks, key=task_sort_key),
         "ready_count": ready_count,
-        "blocked_tasks": sorted(blocked_tasks, key=_task_sort_key),
+        "blocked_tasks": sorted(blocked_tasks, key=task_sort_key),
         "blocked_count": blocked_count,
         "active_tasks": active_tasks,
         "active_count": active_count,
@@ -146,8 +146,8 @@ def _collect_project_data(
     }
 
 
-def _print_project_result(r: dict[str, Any], limit: int) -> None:
-    """Print the ready/blocked/active/stale summary for one project."""
+def _render_project_result_lines(r: dict[str, Any], limit: int) -> list[str]:
+    """Render the ready/blocked/active/stale summary lines for one project."""
     pid = r["project_id"]
     parts = [f"{r['ready_count']} ready"]
     if r["blocked_count"]:
@@ -156,24 +156,46 @@ def _print_project_result(r: dict[str, Any], limit: int) -> None:
         parts.append(f"{r['active_count']} active")
     if r["stale_count"]:
         parts.append(f"{r['stale_count']} stale")
-    print(f"\n{pid} ({', '.join(parts)})")
+    lines = ["", f"{pid} ({', '.join(parts)})"]
 
     for task in r["active_tasks"][:limit]:
         status = task.get("status", "running")
-        print(_format_task_line(task, prefix="~") + f" [{status}]")
+        lines.append(_format_task_line(task, prefix="~") + f" [{status}]")
 
     for task in r["stale_tasks"][:limit]:
-        print(_format_task_line(task, prefix="?") + " [stale-running]")
+        lines.append(_format_task_line(task, prefix="?") + " [stale-running]")
 
     for task in r["blocked_tasks"][:limit]:
-        print(_format_task_line(task, prefix="!"))
+        lines.append(_format_task_line(task, prefix="!"))
 
     for task in r["ready_tasks"][:limit]:
         prefix = "*" if task.get("task_type") == "bug" else " "
-        print(_format_task_line(task, prefix=prefix))
+        lines.append(_format_task_line(task, prefix=prefix))
 
     if not r["blocked_tasks"] and not r["ready_tasks"] and not r["active_tasks"]:
-        print("  (no pending tasks)")
+        lines.append("  (no pending tasks)")
+    return lines
+
+
+def render_ready_all_compact(results: list[dict[str, Any]], limit_per_project: int) -> str:
+    """Render the canonical ready-all compact text from aggregated project results."""
+    total_ready = sum(r["ready_count"] for r in results)
+    total_blocked = sum(r["blocked_count"] for r in results)
+    total_active = sum(r["active_count"] for r in results)
+    total_stale = sum(r["stale_count"] for r in results)
+
+    lines = [
+        (
+            f"READY-ALL[{total_ready} ready, {total_blocked} blocked, "
+            f"{total_active} active, {total_stale} stale across {len(results)} projects]"
+        )
+    ]
+    for result in results:
+        lines.extend(_render_project_result_lines(result, limit_per_project))
+    lines.append(
+        f"\nTOTAL: {total_ready} ready | {total_blocked} blocked | {total_active} active | {total_stale} stale"
+    )
+    return "\n".join(lines)
 
 
 def list_ready_all(
@@ -199,17 +221,5 @@ def list_ready_all(
         for p in projects
     ]
 
-    total_ready = sum(r["ready_count"] for r in results)
-    total_blocked = sum(r["blocked_count"] for r in results)
-    total_active = sum(r["active_count"] for r in results)
-    total_stale = sum(r["stale_count"] for r in results)
-
     results.sort(key=lambda r: (-(r["blocked_count"]), -(r["stale_count"]), -(r["active_count"]), -(r["ready_count"])))
-
-    print(
-        f"READY-ALL[{total_ready} ready, {total_blocked} blocked, "
-        f"{total_active} active, {total_stale} stale across {len(results)} projects]"
-    )
-    for r in results:
-        _print_project_result(r, limit_per_project)
-    print(f"\nTOTAL: {total_ready} ready | {total_blocked} blocked | {total_active} active | {total_stale} stale")
+    print(render_ready_all_compact(results, limit_per_project))

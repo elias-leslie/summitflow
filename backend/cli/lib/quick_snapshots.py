@@ -787,6 +787,33 @@ def find_orphaned_lane_manifest_dirs(project_id: str) -> list[SnapshotResidue]:
     return residues
 
 
+def find_empty_lane_dirs(project_id: str) -> list[SnapshotResidue]:
+    """Find empty non-worktree lane directories left behind after lane cleanup."""
+    lanes_base = get_lanes_base_dir(project_id)
+    if not lanes_base.is_dir():
+        return []
+
+    residues: list[SnapshotResidue] = []
+    for entry in sorted(lanes_base.iterdir()):
+        if not entry.is_dir():
+            continue
+        if (entry / ".git").exists():
+            continue
+        try:
+            next(entry.iterdir())
+        except StopIteration:
+            residues.append(
+                SnapshotResidue(
+                    project_id=project_id,
+                    residue_name=entry.name,
+                    path=entry,
+                    residue_type="empty-lane-dir",
+                )
+            )
+
+    return residues
+
+
 def find_legacy_manifest_dirs(project_id: str) -> list[SnapshotResidue]:
     """Find legacy snapshot manifest dirs that do not match current scope keys."""
     manifest_root = _snapshot_manifest_root(project_id)
@@ -858,6 +885,7 @@ def find_snapshot_residue(
 
     project_ids = [project_id] if project_id else managed_project_ids
     for pid in project_ids:
+        residues.extend(find_empty_lane_dirs(pid))
         residues.extend(find_orphaned_lane_manifest_dirs(pid))
         residues.extend(find_legacy_manifest_dirs(pid))
 

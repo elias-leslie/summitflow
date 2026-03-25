@@ -50,6 +50,14 @@ def _format_owner(owner: dict[str, Any]) -> str:
     return "OWN " + " | ".join(details)
 
 
+def _session_actor_label(session: dict[str, Any]) -> str:
+    for key in ("agent_slug", "source_client", "request_source", "session_type"):
+        value = session.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return "?"
+
+
 def _format_session(session: dict[str, Any]) -> str:
     live = session.get("live_activity") if isinstance(session.get("live_activity"), dict) else {}
     touched = live.get("files_touched") if isinstance(live, dict) else []
@@ -59,7 +67,7 @@ def _format_session(session: dict[str, Any]) -> str:
     model = session.get("effective_model") or session.get("requested_model") or "unknown"
     details = [
         str(session.get("lane_role") or "observer"),
-        str(session.get("agent_slug") or session.get("session_type") or "?"),
+        _session_actor_label(session),
         str(session.get("id") or "?")[:8],
         str(model).split("/")[-1],
         f"{live.get('health', session.get('status', 'unknown'))}/{live.get('phase', session.get('status', 'unknown'))}",
@@ -79,7 +87,7 @@ def _format_stale_session(session: dict[str, Any]) -> str:
     state = live.get("lifecycle_state") or live.get("health") or session.get("status") or "unknown"
     details = [
         str(session.get("lane_role") or "observer"),
-        str(session.get("agent_slug") or session.get("session_type") or "?"),
+        _session_actor_label(session),
         str(session.get("id") or "?")[:8],
         str(model).split("/")[-1],
         str(state),

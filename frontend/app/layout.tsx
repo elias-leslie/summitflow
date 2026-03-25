@@ -7,12 +7,7 @@ import {
   IBM_Plex_Mono,
 } from 'next/font/google'
 import clsx from 'clsx'
-import Script from 'next/script'
 import './globals.css'
-import { AppShell } from '@/components/layout/AppShell'
-import { Sidebar } from '@/components/layout/Sidebar'
-import { TopBar } from '@/components/layout/TopBar'
-import { Providers } from './providers'
 
 // Primary body font — warm geometric sans
 const outfit = Outfit({
@@ -91,37 +86,7 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-title" content="SummitFlow" />
       </head>
       <body className="antialiased">
-        <Providers>
-          <div className="flex flex-col h-screen overflow-hidden">
-            {/* Top navigation bar */}
-            <TopBar />
-
-            {/* Main content area with sidebar */}
-            <AppShell>
-              <div className="flex flex-1 overflow-hidden">
-                {/* Sidebar - shows on all pages, adapts to context */}
-                <Sidebar />
-
-                {/* Main content */}
-                <main className="flex-1 overflow-auto bg-grid">{children}</main>
-              </div>
-            </AppShell>
-          </div>
-        </Providers>
-        <Script
-          id="sw-register"
-          strategy="afterInteractive"
-          // biome-ignore lint/security/noDangerouslySetInnerHtml: Static service worker registration code
-          dangerouslySetInnerHTML={{
-            __html: `
-              if ('serviceWorker' in navigator) {
-                window.addEventListener('load', function() {
-                  navigator.serviceWorker.register('/sw.js?v=23').catch(function(e) { if (process.env.NODE_ENV === 'development') console.warn('SW registration failed:', e); });
-                });
-              }
-            `,
-          }}
-        />
+        {children}
       </body>
     </html>
   )

@@ -57,15 +57,14 @@ def _build_branch_preview(repo: RepoEntry) -> str:
     return f" {' '.join(parts)}" if parts else ""
 
 
-def print_repo_compact(repo: RepoEntry) -> None:
-    """Print compact status line for one repo entry."""
+def build_repo_compact_line(repo: RepoEntry) -> str:
+    """Build compact status line for one repo entry."""
     if not repo["needs_cleanup"] and not repo["active_worktrees"]:
-        print(f"{repo['project_id']} clean")
-        return
+        return f"{repo['project_id']} clean"
     preview = f" tasks:{','.join(repo['worktree_task_ids'])}" if repo["worktree_task_ids"] else ""
     stale = f" stale_cp:{repo['stale_checkpoints']}" if repo["stale_checkpoints"] else ""
     snap = f" snap:{repo['snapshot_residue']}" if repo["snapshot_residue"] else ""
-    print(
+    return (
         f"{repo['project_id']} worktrees:{repo['active_worktrees']} "
         f"dirty:{repo['dirty_worktrees']}{stale}{snap} "
         f"orphan:{repo['orphan_task_branches']} "
@@ -74,12 +73,12 @@ def print_repo_compact(repo: RepoEntry) -> None:
     )
 
 
-def format_cleanup_status_compact(data: dict[str, Any], all_projects: bool) -> None:
-    """Emit TOON summary for cleanup status."""
+def render_cleanup_status_compact(data: dict[str, Any], all_projects: bool) -> str:
+    """Render compact cleanup status text."""
     summary = data["summary"]
     assert isinstance(summary, dict)
     scope = "all" if all_projects else "current"
-    print(
+    lines = [
         "CLEANUP[{scope}]:repos={repos} needs_cleanup={needs} worktrees={worktrees} "
         "dirty={dirty} stale_cp={stale_cp} snap={snap} orphan={orphan} prunable={prunable}".format(
             scope=scope,
@@ -92,11 +91,22 @@ def format_cleanup_status_compact(data: dict[str, Any], all_projects: bool) -> N
             orphan=summary["orphan_task_branches"],
             prunable=summary["prunable_task_branches"],
         )
-    )
+    ]
     repositories = data["repositories"]
     assert isinstance(repositories, list)
     for repo in repositories:
-        print_repo_compact(repo)
+        lines.append(build_repo_compact_line(repo))
+    return "\n".join(lines)
+
+
+def print_repo_compact(repo: RepoEntry) -> None:
+    """Print compact status line for one repo entry."""
+    print(build_repo_compact_line(repo))
+
+
+def format_cleanup_status_compact(data: dict[str, Any], all_projects: bool) -> None:
+    """Emit TOON summary for cleanup status."""
+    print(render_cleanup_status_compact(data, all_projects))
 
 
 def print_git_residue_report(

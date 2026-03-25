@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -86,6 +87,32 @@ def _setup_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     return workspaces_root
 
 
+def _backdate_manifest_entries(
+    cwd: Path,
+    *,
+    project_id: str,
+    minutes_ago: int,
+) -> None:
+    from cli.lib.quick_snapshots import (
+        QuickSnapshot,
+        _resolve_repo_root,
+        load_manifest,
+        resolve_scope,
+        save_manifest,
+    )
+
+    repo_root = _resolve_repo_root(cwd)
+    scope = resolve_scope(repo_root, project_id)
+    entries = load_manifest(project_id, scope)
+    stale_time = (datetime.now(UTC) - timedelta(minutes=minutes_ago)).isoformat()
+    rewritten = []
+    for entry in entries:
+        data = asdict(entry)
+        data["created_at"] = stale_time
+        rewritten.append(QuickSnapshot.from_dict(data))
+    save_manifest(project_id, scope, rewritten)
+
+
 # --- ensure_baseline ---
 
 
@@ -126,42 +153,40 @@ def test_ensure_baseline_creates_when_baseline_is_stale(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from cli.lib.autosnapshot import AutosnapshotPolicy, ensure_baseline
-    from cli.lib.quick_snapshots import (
-        _resolve_repo_root,
-        capture_snapshot,
-        load_manifest,
-        resolve_scope,
-        save_manifest,
-    )
+    from cli.lib.quick_snapshots import capture_snapshot
 
     workspaces_root = _setup_env(monkeypatch, tmp_path)
     _, lane = _create_lane_repo(workspaces_root)
     monkeypatch.chdir(lane)
 
     # Create a snapshot and backdate it
-    snap = capture_snapshot("old-snap", project_id="summitflow", cwd=lane)
-    repo_root = _resolve_repo_root(lane)
-    scope = resolve_scope(repo_root, "summitflow")
-    entries = load_manifest("summitflow", scope)
-
-    stale_time = (datetime.now(UTC) - timedelta(minutes=60)).isoformat()
-    for entry in entries:
-        if entry.id == snap.id:
-            # Replace with backdated entry
-            idx = entries.index(entry)
-            from dataclasses import asdict
-
-            from cli.lib.quick_snapshots import QuickSnapshot
-
-            d = asdict(entry)
-            d["created_at"] = stale_time
-            entries[idx] = QuickSnapshot.from_dict(d)
-    save_manifest("summitflow", scope, entries)
+    capture_snapshot("old-snap", project_id="summitflow", cwd=lane)
+    (lane / "tracked.txt").write_text("two\n", encoding="utf-8")
+    _backdate_manifest_entries(lane, project_id="summitflow", minutes_ago=60)
 
     policy = AutosnapshotPolicy(baseline_stale_minutes=30)
     result = ensure_baseline(project_id="summitflow", cwd=lane, policy=policy)
     assert result is not None
     assert result.source == "auto-baseline"
+
+
+def test_ensure_baseline_skips_stale_clean_scope_without_head_change(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cli.lib.autosnapshot import AutosnapshotPolicy, ensure_baseline
+    from cli.lib.quick_snapshots import capture_snapshot
+
+    workspaces_root = _setup_env(monkeypatch, tmp_path)
+    _, lane = _create_lane_repo(workspaces_root, lane_name="task-clean")
+    monkeypatch.chdir(lane)
+
+    capture_snapshot("old-snap", project_id="summitflow", cwd=lane)
+    _backdate_manifest_entries(lane, project_id="summitflow", minutes_ago=60)
+
+    policy = AutosnapshotPolicy(baseline_stale_minutes=30)
+    result = ensure_baseline(project_id="summitflow", cwd=lane, policy=policy)
+
+    assert result is None
 
 
 def test_ensure_all_baselines_creates_for_due_active_scopes(
@@ -254,6 +279,28 @@ def test_sweep_skips_lanes_with_recent_snapshots(
     # Lane should be skipped, but project may still get one
     lane_snaps = [s for s in created if s.scope_type == "lane" and s.scope_name == "task-recent"]
     assert len(lane_snaps) == 0
+
+
+def test_sweep_skips_clean_scope_when_head_is_unchanged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cli.lib.autosnapshot import sweep_periodic
+    from cli.lib.quick_snapshots import capture_snapshot
+
+    workspaces_root = _setup_env(monkeypatch, tmp_path)
+    _, lane = _create_lane_repo(workspaces_root, lane_name="task-same-head")
+    monkeypatch.chdir(lane)
+
+    capture_snapshot("older", project_id="summitflow", cwd=lane, source="auto-periodic")
+    _backdate_manifest_entries(lane, project_id="summitflow", minutes_ago=120)
+
+    created = sweep_periodic()
+
+    lane_snaps = [
+        s for s in created
+        if s.scope_type == "lane" and s.scope_name == "task-same-head"
+    ]
+    assert lane_snaps == []
 
 
 # --- prune ---
@@ -510,3 +557,133 @@ def test_prune_all_prunes_orphaned_lane_scopes(
             assert not Path(snap.snapshot_path).exists()
         else:
             assert Path(snap.snapshot_path).exists()
+
+
+def test_prune_all_limits_archived_auto_lane_scope_count_per_project(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cli.lib.autosnapshot import AutosnapshotPolicy, enumerate_snapshot_scopes, prune_all
+    from cli.lib.quick_snapshots import capture_snapshot
+
+    workspaces_root = _setup_env(monkeypatch, tmp_path)
+    canonical = None
+    lane_names = [
+        "task-older-1",
+        "task-older-2",
+        "task-keep-1",
+        "task-keep-2",
+        "task-keep-3",
+    ]
+
+    for lane_name in lane_names:
+        maybe_canonical, lane = _create_lane_repo(workspaces_root, lane_name=lane_name)
+        canonical = canonical or maybe_canonical
+        monkeypatch.chdir(lane)
+        capture_snapshot(
+            f"{lane_name}-auto",
+            project_id="summitflow",
+            cwd=lane,
+            source="auto-periodic",
+        )
+        _git(canonical, "worktree", "remove", str(lane), "--force")
+
+    assert canonical is not None
+
+    results = prune_all(
+        policy=AutosnapshotPolicy(
+            archived_lane_keep_per_project=3,
+            archived_lane_auto_keep_per_scope=1,
+        )
+    )
+
+    assert "summitflow/lane:task-older-1" in results
+    assert "summitflow/lane:task-older-2" in results
+    assert "summitflow/lane:task-keep-1" not in results
+    assert "summitflow/lane:task-keep-2" not in results
+    assert "summitflow/lane:task-keep-3" not in results
+
+    remaining_archived = {
+        scope.scope_name
+        for project_id, scope, state in enumerate_snapshot_scopes(include_archived=True)
+        if project_id == "summitflow" and state == "archived" and scope.scope_type == "lane"
+    }
+    assert remaining_archived == {"task-keep-1", "task-keep-2", "task-keep-3"}
+
+
+def test_prune_all_preserves_manual_archived_lane_scope_outside_auto_cap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cli.lib.autosnapshot import AutosnapshotPolicy, enumerate_snapshot_scopes, prune_all
+    from cli.lib.quick_snapshots import capture_snapshot
+
+    workspaces_root = _setup_env(monkeypatch, tmp_path)
+    canonical = None
+
+    for lane_name in ["task-auto-1", "task-auto-2", "task-auto-3", "task-manual"]:
+        maybe_canonical, lane = _create_lane_repo(workspaces_root, lane_name=lane_name)
+        canonical = canonical or maybe_canonical
+        monkeypatch.chdir(lane)
+        source = "manual" if lane_name == "task-manual" else "auto-periodic"
+        capture_snapshot(
+            f"{lane_name}-snap",
+            project_id="summitflow",
+            cwd=lane,
+            source=source,
+        )
+        _git(canonical, "worktree", "remove", str(lane), "--force")
+
+    assert canonical is not None
+
+    results = prune_all(
+        policy=AutosnapshotPolicy(
+            archived_lane_keep_per_project=1,
+            archived_lane_auto_keep_per_scope=1,
+        )
+    )
+
+    assert "summitflow/lane:task-auto-1" in results
+    assert "summitflow/lane:task-auto-2" in results
+    assert "summitflow/lane:task-manual" not in results
+
+    remaining_archived = {
+        scope.scope_name
+        for project_id, scope, state in enumerate_snapshot_scopes(include_archived=True)
+        if project_id == "summitflow" and state == "archived" and scope.scope_type == "lane"
+    }
+    assert remaining_archived == {"task-auto-3", "task-manual"}
+
+
+def test_prune_all_uses_tighter_auto_limit_for_archived_lane_scopes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cli.lib.autosnapshot import AutosnapshotPolicy, prune_all
+    from cli.lib.quick_snapshots import capture_snapshot, load_manifest, resolve_scope
+
+    workspaces_root = _setup_env(monkeypatch, tmp_path)
+    canonical, lane = _create_lane_repo(workspaces_root, lane_name="task-archived-retention")
+    monkeypatch.chdir(lane)
+
+    for i in range(4):
+        capture_snapshot(
+            f"archived-auto-{i}",
+            project_id="summitflow",
+            cwd=lane,
+            source="auto-periodic",
+        )
+
+    scope = resolve_scope(lane, "summitflow")
+    _git(canonical, "worktree", "remove", str(lane), "--force")
+
+    results = prune_all(
+        policy=AutosnapshotPolicy(
+            lane_auto_keep_per_scope=24,
+            archived_lane_auto_keep_per_scope=2,
+            archived_lane_keep_per_project=3,
+        )
+    )
+
+    assert len(results["summitflow/lane:task-archived-retention"]) == 2
+
+    remaining = load_manifest("summitflow", scope)
+    assert len(remaining) == 2
+    assert all(entry.source == "auto-periodic" for entry in remaining)

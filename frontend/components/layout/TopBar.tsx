@@ -3,6 +3,7 @@
 import { useParams, usePathname } from 'next/navigation'
 import { useMemo, useState } from 'react'
 import { NotificationBell } from '@/components/notifications'
+import { NotesButton, NotesProvider } from '@summitflow/notes-ui'
 import { DEFAULT_PROJECT_ID, getProjectIdOrDefault } from '@/lib/project-config'
 
 import { AnimatedLogo } from './topbar/AnimatedLogo'
@@ -43,6 +44,9 @@ export function TopBar() {
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
           <TaskSearch onExpandedChange={setIsSearchExpanded} />
+          <NotesProvider apiPrefix="/api" projectScope="summitflow">
+            <NotesButton />
+          </NotesProvider>
           <NotificationBell projectId={notificationProjectId} />
         </div>
       </header>

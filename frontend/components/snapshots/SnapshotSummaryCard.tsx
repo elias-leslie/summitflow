@@ -120,7 +120,8 @@ export function SnapshotSummaryCard({
               Scopes
             </div>
             <div className="text-xs text-slate-200">
-              {summary.scope_count}
+              {summary.active_scope_count} active
+              {summary.archived_scope_count > 0 ? ` / ${summary.archived_scope_count} archived` : ''}
             </div>
           </div>
           <div className="min-w-0 rounded bg-slate-950/50 px-2 py-1.5">
@@ -139,6 +140,11 @@ export function SnapshotSummaryCard({
           {summary.policy.lane_auto_keep_per_scope} &middot; Projects: every{' '}
           {Math.round(summary.policy.project_interval_minutes / 60)}h, keep{' '}
           {summary.policy.project_auto_keep_per_scope}
+        </div>
+        <div className="mt-1 text-[10px] text-slate-600 leading-relaxed">
+          Archived auto lanes: keep {summary.policy.archived_lane_keep_per_project}{' '}
+          recent scopes per project, {summary.policy.archived_lane_auto_keep_per_scope}{' '}
+          auto snapshot{summary.policy.archived_lane_auto_keep_per_scope === 1 ? '' : 's'} each
         </div>
 
         {/* Actions */}

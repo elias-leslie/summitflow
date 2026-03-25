@@ -50,6 +50,11 @@ const SCOPE_ACCENT: Record<string, string> = {
   lane: 'border-l-blue-500',
 }
 
+const STATE_BADGE: Record<string, string> = {
+  active: 'bg-emerald-500/12 text-emerald-400 border-emerald-500/20',
+  archived: 'bg-amber-500/12 text-amber-300 border-amber-500/20',
+}
+
 // ─── Snapshot Row ───────────────────────────────────────────────
 
 function SnapshotRow({ snap }: { snap: BtrfsSnapshot }) {
@@ -134,19 +139,20 @@ function ScopeCard({ scope }: { scope: BtrfsScope }) {
   const [expanded, setExpanded] = useState(false)
 
   const { data: snapshots, isLoading } = useQuery({
-    queryKey: ['snapshot-scope', scope.project_id, scope.scope_type, scope.scope_name],
-    queryFn: () => fetchSnapshots(scope.project_id, scope.scope_type),
+    queryKey: ['snapshot-scope', scope.project_id, scope.scope_type, scope.scope_name, scope.scope_state],
+    queryFn: () => fetchSnapshots(
+      scope.project_id,
+      scope.scope_type,
+      scope.scope_name,
+      scope.scope_state === 'archived',
+    ),
     enabled: expanded,
     staleTime: STALE_GIT,
   })
 
-  // Filter to this scope
-  const scopeSnaps = snapshots?.filter(
-    (s) => s.scope_name === scope.scope_name && s.scope_type === scope.scope_type,
-  )
-
   const accentClass = SCOPE_ACCENT[scope.scope_type] ?? 'border-l-slate-600'
   const typeStyle = SCOPE_TYPE_STYLE[scope.scope_type] ?? 'bg-slate-600 text-slate-300 border-slate-500'
+  const stateStyle = STATE_BADGE[scope.scope_state] ?? 'bg-slate-700/50 text-slate-400 border-slate-600/40'
 
   return (
     <div
@@ -180,6 +186,14 @@ function ScopeCard({ scope }: { scope: BtrfsScope }) {
         >
           {scope.scope_type}
         </span>
+        <span
+          className={clsx(
+            'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] uppercase tracking-[0.12em] font-medium border leading-none shrink-0',
+            stateStyle,
+          )}
+        >
+          {scope.scope_state}
+        </span>
         <span className="text-sm text-slate-100 font-medium truncate">
           {scope.scope_name}
         </span>
@@ -212,8 +226,8 @@ function ScopeCard({ scope }: { scope: BtrfsScope }) {
                 <Loader2 className="w-3 h-3 animate-spin" />
                 Loading snapshots...
               </div>
-            ) : scopeSnaps && scopeSnaps.length > 0 ? (
-              scopeSnaps.map((snap) => (
+            ) : snapshots && snapshots.length > 0 ? (
+              snapshots.map((snap) => (
                 <SnapshotRow key={snap.id} snap={snap} />
               ))
             ) : (
@@ -243,11 +257,20 @@ export function ScopeList({ scopes }: ScopeListProps) {
     )
   }
 
+  const sortedScopes = [...scopes].sort((left, right) => {
+    const leftNewest = left.newest_at ?? ''
+    const rightNewest = right.newest_at ?? ''
+    if (leftNewest !== rightNewest) {
+      return rightNewest.localeCompare(leftNewest)
+    }
+    return left.scope_name.localeCompare(right.scope_name)
+  })
+
   return (
     <div className="space-y-2">
-      {scopes.map((scope) => (
+      {sortedScopes.map((scope) => (
         <ScopeCard
-          key={`${scope.project_id}-${scope.scope_type}-${scope.scope_name}`}
+          key={`${scope.project_id}-${scope.scope_type}-${scope.scope_name}-${scope.scope_state}`}
           scope={scope}
         />
       ))}

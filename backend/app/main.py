@@ -27,6 +27,7 @@ from .api import (
     files,
     git,
     mockups,
+    notes,
     notifications,
     pipeline,
     projects,
@@ -111,6 +112,7 @@ app.include_router(files.router, prefix="/api/projects", tags=["files"])
 
 app.include_router(tasks.router, prefix="/api", tags=["tasks"])
 app.include_router(notifications.router, prefix="/api", tags=["notifications"])
+app.include_router(notes.router, prefix="/api", tags=["notes"])
 app.include_router(agent_sessions.router, prefix="/api/projects", tags=["agent-sessions"])
 app.include_router(autonomous.router, prefix="/api/projects", tags=["autonomous"])
 app.include_router(refactor_sessions.router, prefix="/api/projects", tags=["refactoring"])

@@ -97,3 +97,29 @@ def test_create_worktree_removes_created_subvolume_if_git_add_fails(
     assert ["subvolume", "create", str(worktree_path)] in calls
     assert ["subvolume", "delete", str(worktree_path)] in calls
     assert not worktree_path.exists()
+
+
+def test_force_remove_worktree_cleans_empty_lane_left_after_git_remove_success(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cli.lib.worktree_helpers import force_remove_worktree
+
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    worktree_path = tmp_path / "srv" / "workspaces" / "lanes" / "summitflow" / "task-empty"
+    worktree_path.mkdir(parents=True)
+    calls: list[tuple[str, ...]] = []
+
+    def _fake_run_git(args: list[str], cwd: Path, check: bool = True):
+        calls.append(tuple(args))
+        assert cwd == repo_root
+        assert check in (True, False)
+
+    monkeypatch.setattr("cli.lib.worktree_helpers.run_git", _fake_run_git)
+
+    force_remove_worktree(worktree_path, repo_root)
+
+    assert ("worktree", "remove", str(worktree_path), "--force") in calls
+    assert ("worktree", "prune") in calls
+    assert not worktree_path.exists()

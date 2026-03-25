@@ -14,7 +14,7 @@ import {
   Unplug,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { getStateInfo } from '@/app/git/utils'
+import { getStateInfo } from '@/app/(app)/git/utils'
 import { type RepoStatus, smartSyncProject } from '@/lib/api'
 import { DashboardContent } from './project-row/DashboardContent'
 import { SyncResultBlock } from './project-row/SyncResultBlock'

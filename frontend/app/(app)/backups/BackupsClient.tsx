@@ -305,11 +305,19 @@ export function BackupsClient() {
 
   const { data: snapshotScopes = [] } = useQuery({
     queryKey: ['snapshot-scopes'],
-    queryFn: () => fetchScopes(),
+    queryFn: () => fetchScopes(undefined, true),
     staleTime: STALE_GIT,
   })
 
   const backups = backupsData?.backups ?? []
+  const activeSnapshotScopes = useMemo(
+    () => snapshotScopes.filter((scope) => scope.scope_state === 'active'),
+    [snapshotScopes],
+  )
+  const archivedSnapshotScopes = useMemo(
+    () => snapshotScopes.filter((scope) => scope.scope_state === 'archived'),
+    [snapshotScopes],
+  )
 
   // ─── Handlers ───────────────────────────────────────────────────
 
@@ -469,7 +477,7 @@ export function BackupsClient() {
             Snapshots & Recovery
           </h2>
           <p className="mt-0.5 text-xs text-slate-500">
-            Btrfs filesystem snapshots for lane and project state
+            Active Btrfs protection for live scopes, plus archived recovery for retired lanes
           </p>
         </div>
         <SnapshotSummaryCard
@@ -477,7 +485,34 @@ export function BackupsClient() {
           isLoading={snapshotLoading}
           onMutated={refreshSnapshots}
         />
-        <ScopeList scopes={snapshotScopes} />
+        <div className="space-y-2">
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500 mb-1.5">
+              Active Protection Scopes
+            </div>
+            <ScopeList scopes={activeSnapshotScopes} />
+          </div>
+          {archivedSnapshotScopes.length > 0 && (
+            <details className="rounded-lg border border-slate-700/60 bg-slate-800/30 overflow-hidden">
+              <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                    Archived Recovery Scopes
+                  </div>
+                  <div className="mt-0.5 text-xs text-slate-400">
+                    Retained snapshots for deleted or retired lanes
+                  </div>
+                </div>
+                <div className="text-xs text-amber-300 font-medium">
+                  {archivedSnapshotScopes.length}
+                </div>
+              </summary>
+              <div className="border-t border-slate-800/60 px-4 py-3">
+                <ScopeList scopes={archivedSnapshotScopes} />
+              </div>
+            </details>
+          )}
+        </div>
       </section>
 
       {/* Backup History */}

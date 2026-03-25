@@ -14,6 +14,7 @@ from .tables import (
     create_core_tables,
     create_design_tables,
     create_explorer_tables,
+    create_notes_tables,
     create_notifications_tables,
 )
 
@@ -60,6 +61,7 @@ def _do_init_schema(conn: psycopg.Connection, cur: psycopg.Cursor) -> None:
     create_core_tables(cur)
     create_agent_tables(cur)
     create_notifications_tables(cur)
+    create_notes_tables(cur)
     create_design_tables(cur)
     create_explorer_tables(cur)
 

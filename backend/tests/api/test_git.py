@@ -56,6 +56,78 @@ class TestGitStatus:
         assert data["repositories"][0]["workspace_summary"]["dirty_worktrees"] == 1
 
 
+class TestGitCleanupStatus:
+    """Tests for cleanup-status API surfaces."""
+
+    def test_cleanup_status_returns_payload_and_compact(self, mocker: MockerFixture) -> None:
+        payload = {
+            "summary": {
+                "repos": 1,
+                "repos_needing_cleanup": 1,
+                "active_worktrees": 1,
+                "dirty_worktrees": 0,
+                "stale_checkpoints": 0,
+                "snapshot_residue": 0,
+                "orphan_task_branches": 1,
+                "prunable_task_branches": 0,
+            },
+            "repositories": [],
+            "worktrees": [],
+            "total": 0,
+        }
+        mock_build = mocker.patch(
+            "app.api.git.build_cleanup_status_payload",
+            return_value=payload,
+        )
+        mock_render = mocker.patch(
+            "app.api.git.render_cleanup_status_compact",
+            return_value="CLEANUP[all]:repos=1 needs_cleanup=1",
+        )
+
+        response = client.get("/api/git/cleanup-status")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["payload"] == payload
+        assert data["compact"] == "CLEANUP[all]:repos=1 needs_cleanup=1"
+        mock_build.assert_called_once_with(True, project_id_override=None)
+        mock_render.assert_called_once_with(payload, True)
+
+    def test_project_cleanup_status_scopes_to_requested_project(self, mocker: MockerFixture) -> None:
+        payload = {
+            "summary": {
+                "repos": 1,
+                "repos_needing_cleanup": 0,
+                "active_worktrees": 0,
+                "dirty_worktrees": 0,
+                "stale_checkpoints": 0,
+                "snapshot_residue": 0,
+                "orphan_task_branches": 0,
+                "prunable_task_branches": 0,
+            },
+            "repositories": [{"project_id": "agent-hub"}],
+            "worktrees": [],
+            "total": 0,
+        }
+        mock_build = mocker.patch(
+            "app.api.git.build_cleanup_status_payload",
+            return_value=payload,
+        )
+        mock_render = mocker.patch(
+            "app.api.git.render_cleanup_status_compact",
+            return_value="agent-hub clean",
+        )
+
+        response = client.get("/api/projects/agent-hub/git/cleanup-status")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["payload"] == payload
+        assert data["compact"] == "agent-hub clean"
+        mock_build.assert_called_once_with(False, project_id_override="agent-hub")
+        mock_render.assert_called_once_with(payload, False)
+
+
 class TestGitBranches:
     """Tests for GET /api/git/branches."""
 

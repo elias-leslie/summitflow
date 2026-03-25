@@ -446,7 +446,7 @@ def test_analyze_worktree_treats_clean_cancelled_conflict_as_safe_delete(tmp_pat
         patch("cli.commands.cleanup_analysis.get_last_commit_age_days", return_value=3),
         patch("cli.commands.cleanup_analysis.is_already_merged", return_value=False),
     ):
-        analysis = analyze_worktree(worktree, client=SimpleNamespace())
+        analysis = analyze_worktree(worktree)
 
     assert analysis.action == CleanupAction.SAFE_DELETE
     assert analysis.task_status == "cancelled"
@@ -464,7 +464,7 @@ def test_analyze_worktree_treats_missing_path_as_safe_delete() -> None:
     )
 
     with patch("cli.commands.cleanup_analysis.get_task_info", return_value=("completed", "Missing path")):
-        analysis = analyze_worktree(worktree, client=SimpleNamespace())
+        analysis = analyze_worktree(worktree)
 
     assert analysis.action == CleanupAction.SAFE_DELETE
     assert analysis.commits_ahead == 0
@@ -491,7 +491,7 @@ def test_analyze_worktree_routes_blocked_unmerged_worktree_to_review(tmp_path: P
         patch("cli.commands.cleanup_analysis.get_last_commit_age_days", return_value=1),
         patch("cli.commands.cleanup_analysis.is_already_merged", return_value=False),
     ):
-        analysis = analyze_worktree(worktree, client=SimpleNamespace())
+        analysis = analyze_worktree(worktree)
 
     assert analysis.action == CleanupAction.NEEDS_MERGE
     assert analysis.task_status == "blocked"
@@ -631,3 +631,31 @@ def test_cleanup_salvage_rolls_back_task_if_worktree_creation_fails() -> None:
         deletion_source="cli:cleanup.salvage_rollback",
     )
     assert "failed to create worktree" in result.output
+
+
+def test_build_cleanup_status_payload_respects_project_override() -> None:
+    repo_paths = [Path("/repos/summitflow"), Path("/repos/agent-hub")]
+
+    with (
+        patch("cli.commands.cleanup._get_managed_repos", return_value=repo_paths),
+        patch("cli.commands.cleanup.get_stale_checkpoints", return_value=[]),
+        patch("cli.lib.quick_snapshots.find_snapshot_residue", return_value=[]),
+        patch(
+            "cli.commands.cleanup.build_repo_workspace_summary",
+            return_value=SimpleNamespace(
+                active_worktrees=0,
+                orphan_branches=0,
+                prunable_branches=0,
+                worktree_task_ids=[],
+                orphan_branch_names=[],
+                prunable_branch_names=[],
+                salvage_task_ids=[],
+                review_orphan_task_ids=[],
+            ),
+        ),
+        patch("cli.commands.cleanup.get_active_worktrees", side_effect=[[], []]),
+    ):
+        payload = build_cleanup_status_payload(all_projects=False, project_id_override="agent-hub")
+
+    assert payload["summary"]["repos"] == 1
+    assert payload["repositories"][0]["project_id"] == "agent-hub"

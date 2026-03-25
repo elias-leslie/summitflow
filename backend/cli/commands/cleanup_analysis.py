@@ -5,7 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from ..client import APIError, STClient
+from app.storage import tasks as task_store
+
 from ..lib.worktree import WorktreeInfo, remove_worktree
 from .cleanup_git import (
     get_commits_ahead_behind,
@@ -43,13 +44,12 @@ class WorktreeAnalysis:
     reason: str
 
 
-def get_task_info(client: STClient, task_id: str) -> tuple[str | None, str | None]:
+def get_task_info(task_id: str) -> tuple[str | None, str | None]:
     """Get task status and title. Returns (status, title) or (None, None) if not found."""
-    try:
-        task = client.get_task(task_id)
-        return task.get("status"), task.get("title")
-    except APIError:
+    task = task_store.get_task(task_id)
+    if not task:
         return None, None
+    return task.get("status"), task.get("title")
 
 
 def _determine_action(
@@ -90,9 +90,9 @@ def _determine_action(
     return CleanupAction.MANUAL_REVIEW, "Complex state"
 
 
-def analyze_worktree(worktree: WorktreeInfo, client: STClient) -> WorktreeAnalysis:
+def analyze_worktree(worktree: WorktreeInfo) -> WorktreeAnalysis:
     """Analyze a worktree and recommend cleanup action."""
-    task_status, task_title = get_task_info(client, worktree.task_id)
+    task_status, task_title = get_task_info(worktree.task_id)
 
     if not worktree.path.exists() or not (worktree.path / ".git").exists():
         return WorktreeAnalysis(

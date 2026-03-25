@@ -338,6 +338,22 @@ class TestSnapshotResidue:
             ("task-ghost", "orphan-lane-manifest"),
         }
 
+    def test_find_snapshot_residue_includes_empty_lane_dirs(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from cli.lib.quick_snapshots import find_snapshot_residue
+
+        workspaces_root, _ = _setup_workspace(tmp_path, monkeypatch)
+        empty_lane = workspaces_root / "lanes" / "summitflow" / "task-empty"
+        empty_lane.mkdir(parents=True)
+
+        residues = find_snapshot_residue(["summitflow"], project_id="summitflow")
+
+        assert ("task-empty", "empty-lane-dir") in {
+            (residue.residue_name, residue.residue_type)
+            for residue in residues
+        }
+
 
 class TestDeleteLaneSnapshotDir:
     def test_delete_lane_cleans_snapshot_parent_dir(
@@ -368,7 +384,10 @@ class TestCleanupLanesCommand:
         orphan_lane = workspaces_root / "lanes" / "summitflow" / "orphan-lane"
         orphan_lane.mkdir(parents=True)
 
-        monkeypatch.setattr("cli.commands.cleanup.get_project_id", lambda all_projects=False: "summitflow")
+        monkeypatch.setattr(
+            "cli.commands.cleanup.get_project_id",
+            lambda all_projects=False, project_id_override=None: "summitflow",
+        )
         monkeypatch.setattr("cli.lib.confirm_token.generate_token", lambda key: "deadbeef")
 
         result = runner.invoke(app, ["lanes"])
@@ -384,7 +403,10 @@ class TestCleanupLanesCommand:
         workspaces_root, canonical = _setup_workspace(tmp_path, monkeypatch)
         _create_lane(canonical, workspaces_root, "kept-lane")
 
-        monkeypatch.setattr("cli.commands.cleanup.get_project_id", lambda all_projects=False: "summitflow")
+        monkeypatch.setattr(
+            "cli.commands.cleanup.get_project_id",
+            lambda all_projects=False, project_id_override=None: "summitflow",
+        )
         monkeypatch.setattr("cli.lib.confirm_token.generate_token", lambda key: "deadbeef")
 
         result = runner.invoke(app, ["lanes", "kept-lane"])
@@ -401,7 +423,10 @@ class TestCleanupLanesCommand:
         stale_path = workspaces_root / "lanes" / "summitflow" / "task-stale"
         _create_checkpoint_meta(tmp_path, "task-stale", stale_path)
 
-        monkeypatch.setattr("cli.commands.cleanup.get_project_id", lambda all_projects=False: "summitflow")
+        monkeypatch.setattr(
+            "cli.commands.cleanup.get_project_id",
+            lambda all_projects=False, project_id_override=None: "summitflow",
+        )
         monkeypatch.setattr("cli.lib.confirm_token.generate_token", lambda key: "deadbeef")
 
         result = runner.invoke(app, ["lanes"])
@@ -415,7 +440,10 @@ class TestCleanupLanesCommand:
     ) -> None:
         _setup_workspace(tmp_path, monkeypatch)
 
-        monkeypatch.setattr("cli.commands.cleanup.get_project_id", lambda all_projects=False: "summitflow")
+        monkeypatch.setattr(
+            "cli.commands.cleanup.get_project_id",
+            lambda all_projects=False, project_id_override=None: "summitflow",
+        )
 
         result = runner.invoke(app, ["lanes", "missing-lane", "--confirm", "deadbeef"])
 
@@ -429,7 +457,10 @@ class TestCleanupLanesCommand:
         stale_path = workspaces_root / "lanes" / "summitflow" / "task-stale"
         meta_path = _create_checkpoint_meta(tmp_path, "task-stale", stale_path)
 
-        monkeypatch.setattr("cli.commands.cleanup.get_project_id", lambda all_projects=False: "summitflow")
+        monkeypatch.setattr(
+            "cli.commands.cleanup.get_project_id",
+            lambda all_projects=False, project_id_override=None: "summitflow",
+        )
         monkeypatch.setattr("cli.lib.confirm_token.validate_token", lambda key, token: True)
 
         result = runner.invoke(app, ["lanes", "--confirm", "deadbeef"])
@@ -447,7 +478,10 @@ class TestCleanupSnapshotsCommand:
         _create_legacy_snapshot_root(workspaces_root, "summitflow-pilot-v1")
         _create_manifest_dir(tmp_path, "repo-legacy123")
 
-        monkeypatch.setattr("cli.commands.cleanup.get_project_id", lambda all_projects=False: "summitflow")
+        monkeypatch.setattr(
+            "cli.commands.cleanup.get_project_id",
+            lambda all_projects=False, project_id_override=None: "summitflow",
+        )
         monkeypatch.setattr("cli.lib.confirm_token.generate_token", lambda key: "deadbeef")
 
         result = runner.invoke(app, ["snapshots"])
@@ -463,7 +497,10 @@ class TestCleanupSnapshotsCommand:
     ) -> None:
         _setup_workspace(tmp_path, monkeypatch)
 
-        monkeypatch.setattr("cli.commands.cleanup.get_project_id", lambda all_projects=False: "summitflow")
+        monkeypatch.setattr(
+            "cli.commands.cleanup.get_project_id",
+            lambda all_projects=False, project_id_override=None: "summitflow",
+        )
 
         result = runner.invoke(app, ["snapshots", "missing-snapshot", "--confirm", "deadbeef"])
 
@@ -478,7 +515,10 @@ class TestCleanupSnapshotsCommand:
         legacy_manifest = _create_manifest_dir(tmp_path, "repo-legacy123")
         orphan_lane_manifest = _create_manifest_dir(tmp_path, "lane-task-ghost")
 
-        monkeypatch.setattr("cli.commands.cleanup.get_project_id", lambda all_projects=False: "summitflow")
+        monkeypatch.setattr(
+            "cli.commands.cleanup.get_project_id",
+            lambda all_projects=False, project_id_override=None: "summitflow",
+        )
         monkeypatch.setattr("cli.lib.confirm_token.validate_token", lambda key, token: True)
 
         result = runner.invoke(app, ["snapshots", "--confirm", "deadbeef"])

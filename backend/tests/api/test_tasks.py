@@ -472,6 +472,147 @@ class TestReadyEndpoint:
             "task-ready-2",
         ]
 
+    def test_ready_all_overview_returns_payload_and_raw_text(
+        self,
+        client: Any,
+        test_project_id: str,
+    ) -> None:
+        ready_task = {
+            "id": "task-ready",
+            "title": "Ready fix",
+            "priority": 1,
+            "task_type": "bug",
+            "execution_mode": "autonomous",
+            "status": "pending",
+        }
+        blocked_task = {
+            "id": "task-blocked",
+            "title": "Blocked fix",
+            "priority": 2,
+            "task_type": "task",
+            "execution_mode": "manual",
+            "status": "pending",
+        }
+        live_task = {
+            "id": "task-live",
+            "title": "Live lane task",
+            "priority": 1,
+            "task_type": "task",
+            "execution_mode": "manual",
+            "status": "running",
+        }
+        stale_task = {
+            "id": "task-stale",
+            "title": "Stale lane task",
+            "priority": 2,
+            "task_type": "task",
+            "execution_mode": "manual",
+            "status": "running",
+        }
+
+        def _fake_list_tasks(
+            project_id: str,
+            status_filter: str | None = None,
+            limit: int = 50,
+            offset: int = 0,
+            **_: object,
+        ) -> list[dict[str, object]]:
+            assert project_id == test_project_id
+            assert limit in {100, 500}
+            assert offset == 0
+            if status_filter == "pending":
+                return [ready_task, blocked_task]
+            if status_filter == "running":
+                return [live_task, stale_task]
+            raise AssertionError(f"unexpected status_filter: {status_filter}")
+
+        def _fake_sync(task_id: str):
+            class _Readiness:
+                def __init__(self, ready: bool):
+                    self.ready = ready
+
+            return _Readiness(task_id == "task-ready")
+
+        with (
+            patch(
+                "app.api.tasks.list_endpoints.project_store.list_projects",
+                return_value=[{"id": test_project_id, "name": test_project_id}],
+            ),
+            patch(
+                "app.api.tasks.list_endpoints.task_store.list_ready_tasks",
+                return_value=[ready_task],
+            ),
+            patch(
+                "app.services.task_execution_readiness.sync_task_execution_readiness",
+                side_effect=_fake_sync,
+            ),
+            patch(
+                "app.api.tasks.list_endpoints.task_store.list_blocked_tasks",
+                return_value=[blocked_task],
+            ),
+            patch(
+                "app.api.tasks.list_endpoints.fetch_live_project_inventory",
+                return_value=(
+                    [{"external_id": "task-live", "current_branch": "task-live/main"}],
+                    [{"task_id": "task-live"}],
+                ),
+            ),
+            patch(
+                "app.api.tasks.list_endpoints.task_store.list_tasks",
+                side_effect=_fake_list_tasks,
+            ),
+        ):
+            response = client.get("/api/tasks/ready-all?limit=3")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["payload"]["summary"] == {
+            "ready": 1,
+            "blocked": 1,
+            "active": 3,
+            "stale": 1,
+            "projects": 1,
+        }
+        assert "READY-ALL[1 ready, 1 blocked, 3 active, 1 stale across 1 projects]" in payload["raw"]
+        assert "~ task-live" in payload["raw"]
+        assert "? task-stale" in payload["raw"]
+
+    def test_project_ready_all_overview_scopes_to_requested_project(
+        self,
+        client: Any,
+        test_project_id: str,
+    ) -> None:
+        with (
+            patch(
+                "app.api.tasks.list_endpoints.project_store.list_projects",
+                return_value=[
+                    {"id": test_project_id, "name": test_project_id},
+                    {"id": "other-project", "name": "other-project"},
+                ],
+            ),
+            patch(
+                "app.api.tasks.list_endpoints._collect_ready_all_project_data",
+                return_value={
+                    "project_id": test_project_id,
+                    "project_name": test_project_id,
+                    "ready_tasks": [],
+                    "ready_count": 0,
+                    "blocked_tasks": [],
+                    "blocked_count": 0,
+                    "active_tasks": [],
+                    "active_count": 0,
+                    "stale_tasks": [],
+                    "stale_count": 0,
+                },
+            ) as mock_collect,
+        ):
+            response = client.get(f"/api/projects/{test_project_id}/tasks/ready-all?limit=2")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["payload"]["summary"]["projects"] == 1
+        mock_collect.assert_called_once_with(test_project_id, test_project_id, 2)
+
     def test_create_task_stays_draft_when_execution_details_missing(
         self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
     ) -> None:

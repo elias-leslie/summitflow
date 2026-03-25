@@ -64,6 +64,8 @@ def test_pulse_compact_renders_canonical_summary() -> None:
                 "id": "sess-stale",
                 "lane_role": "observer",
                 "session_type": "agent",
+                "request_source": "codex-transcript-sync",
+                "source_client": "summitflow/codex-session-sync",
                 "effective_model": "claude-sonnet-4-6",
                 "status": "active",
                 "live_activity": {
@@ -85,7 +87,7 @@ def test_pulse_compact_renders_canonical_summary() -> None:
     assert "RUN task-1 | running | P2 | Refactor timeline" in result.output
     assert "OWN task-1 | refactor | sess-own | kind=scoped | paths=frontend/src/app.tsx" in result.output
     assert "SES owner | refactor | sess-own | claude-sonnet-4-6 | active/reading_file" in result.output
-    assert "STALE observer | agent | sess-sta | claude-sonnet-4-6 | reapable | reason=heartbeat_only+no_lane" in result.output
+    assert "STALE observer | summitflow/codex-session-sync | sess-sta | claude-sonnet-4-6 | reapable | reason=heartbeat_only+no_lane" in result.output
 
 
 def test_pulse_compact_labels_task_worktree_owner_more_usefully() -> None:
@@ -159,6 +161,8 @@ def test_pulse_compact_surfaces_stranded_running_tasks() -> None:
                 "id": "sess-stale",
                 "lane_role": "observer",
                 "session_type": "agent",
+                "request_source": "codex-transcript-sync",
+                "source_client": "summitflow/codex-session-sync",
                 "effective_model": "claude-sonnet-4-6",
                 "status": "active",
                 "live_activity": {"lifecycle_state": "reapable", "reapable_reason": "heartbeat_only+no_lane"},
@@ -175,6 +179,49 @@ def test_pulse_compact_surfaces_stranded_running_tasks() -> None:
     assert result.exit_code == 0
     assert "PULSE:agent-hub|tasks=1|owners=0|specialists=0|sessions=0|stale=1|reapable=1|worktrees=1|dirty=1|cleanup=yes|stranded=1" in result.output
     assert "STRANDED task-3 | running | no_owner_session | Refactor tool handlers" in result.output
+
+
+def test_pulse_prefers_source_client_for_observer_session_label() -> None:
+    mock_client = MagicMock()
+    mock_client.get.return_value = {
+        "project_id": "agent-hub",
+        "summary": {
+            "running_tasks": 0,
+            "active_owners": 0,
+            "active_specialists": 0,
+            "active_sessions": 1,
+            "stale_sessions": 0,
+            "reapable_sessions": 0,
+            "stranded_tasks": 0,
+        },
+        "cleanup": {
+            "active_worktrees": 0,
+            "dirty_worktrees": 0,
+            "needs_cleanup": False,
+        },
+        "running_tasks": [],
+        "active_owners": [],
+        "active_sessions": [
+            {
+                "id": "sess-observer",
+                "lane_role": "observer",
+                "session_type": "agent",
+                "request_source": "codex-transcript-sync",
+                "source_client": "summitflow/codex-session-sync",
+                "effective_model": "codex/gpt-5.4",
+                "status": "active",
+                "live_activity": {"health": "quiet", "phase": "waiting_for_model", "files_touched": []},
+            }
+        ],
+        "stale_sessions": [],
+        "stranded_tasks": [],
+    }
+
+    with patch("cli.commands.pulse.STClient", return_value=mock_client):
+        result = runner.invoke(app, ["pulse", "--project", "agent-hub"])
+
+    assert result.exit_code == 0
+    assert "SES observer | summitflow/codex-session-sync | sess-obs | gpt-5.4 | quiet/waiting_for_model" in result.output
 
 
 def test_pulse_defaults_to_cross_project_overview() -> None:

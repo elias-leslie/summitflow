@@ -47,6 +47,7 @@ class ScopeResponse(BaseModel):
     project_id: str
     scope_type: str
     scope_name: str
+    scope_state: str = "active"
     snapshot_count: int
     total_bytes: int | None = None
     newest_at: str | None = None
@@ -59,6 +60,8 @@ class PolicyResponse(BaseModel):
     baseline_stale_minutes: int
     lane_auto_keep_per_scope: int
     project_auto_keep_per_scope: int
+    archived_lane_auto_keep_per_scope: int
+    archived_lane_keep_per_project: int
     manual_keep_per_scope: int
 
 
@@ -68,6 +71,10 @@ class SnapshotSummaryResponse(BaseModel):
     by_source: dict[str, int]
     by_scope_type: dict[str, int]
     scope_count: int
+    active_snapshot_count: int
+    archived_snapshot_count: int
+    active_scope_count: int
+    archived_scope_count: int
     policy: PolicyResponse
     autosnap_timer_active: bool
 
@@ -128,7 +135,7 @@ def _get_cli_libs() -> tuple[Any, ...]:
     """Lazy-import CLI libraries to avoid import-time side effects."""
     from cli.lib.autosnapshot import (
         DEFAULT_POLICY,
-        enumerate_prunable_scopes,
+        enumerate_snapshot_scopes,
         prune_all,
     )
     from cli.lib.quick_snapshots import (
@@ -141,7 +148,7 @@ def _get_cli_libs() -> tuple[Any, ...]:
     return (
         capture_snapshot, list_snapshots,
         recover_snapshot, load_manifest,
-        DEFAULT_POLICY, enumerate_prunable_scopes, prune_all,
+        DEFAULT_POLICY, enumerate_snapshot_scopes, prune_all,
     )
 
 
@@ -154,21 +161,27 @@ async def snapshot_summary(project_id: str | None = None) -> SnapshotSummaryResp
     (
         _, _,
         _, load_manifest,
-        DEFAULT_POLICY, enumerate_prunable_scopes, _,
+        DEFAULT_POLICY, enumerate_snapshot_scopes, _,
     ) = _get_cli_libs()
 
-    scopes = list(enumerate_prunable_scopes())
+    scopes = list(enumerate_snapshot_scopes(include_archived=True))
     if project_id:
         scopes = [s for s in scopes if s[0] == project_id]
 
     total_snapshots = 0
+    active_snapshot_count = 0
+    archived_snapshot_count = 0
     by_source: dict[str, int] = {}
     by_scope_type: dict[str, int] = {}
 
-    for pid, scope in scopes:
+    for pid, scope, scope_state in scopes:
         entries = load_manifest(pid, scope)
         for snap in entries:
             total_snapshots += 1
+            if scope_state == "active":
+                active_snapshot_count += 1
+            else:
+                archived_snapshot_count += 1
             src = snap.source or "manual"
             by_source[src] = by_source.get(src, 0) + 1
             by_scope_type[snap.scope_type] = by_scope_type.get(snap.scope_type, 0) + 1
@@ -180,26 +193,33 @@ async def snapshot_summary(project_id: str | None = None) -> SnapshotSummaryResp
         by_source=by_source,
         by_scope_type=by_scope_type,
         scope_count=len(scopes),
+        active_snapshot_count=active_snapshot_count,
+        archived_snapshot_count=archived_snapshot_count,
+        active_scope_count=sum(1 for _, _, state in scopes if state == "active"),
+        archived_scope_count=sum(1 for _, _, state in scopes if state == "archived"),
         policy=PolicyResponse(**policy.to_dict()),
         autosnap_timer_active=_is_timer_active(),
     )
 
 
 @router.get("/snapshots/scopes", response_model=list[ScopeResponse])
-async def snapshot_scopes(project_id: str | None = None) -> list[ScopeResponse]:
+async def snapshot_scopes(
+    project_id: str | None = None,
+    include_archived: bool = False,
+) -> list[ScopeResponse]:
     """List all snapshot scopes with counts and usage."""
     (
         _, _,
         _, load_manifest,
-        _, enumerate_prunable_scopes, _,
+        _, enumerate_snapshot_scopes, _,
     ) = _get_cli_libs()
 
-    scopes = list(enumerate_prunable_scopes())
+    scopes = list(enumerate_snapshot_scopes(include_archived=include_archived))
     if project_id:
         scopes = [s for s in scopes if s[0] == project_id]
 
     results: list[ScopeResponse] = []
-    for pid, scope in scopes:
+    for pid, scope, scope_state in scopes:
         entries = load_manifest(pid, scope)
         if not entries:
             continue
@@ -209,6 +229,7 @@ async def snapshot_scopes(project_id: str | None = None) -> list[ScopeResponse]:
             project_id=pid,
             scope_type=scope.scope_type,
             scope_name=scope.scope_name,
+            scope_state=scope_state,
             snapshot_count=len(entries),
             total_bytes=None,
             newest_at=max(timestamps) if timestamps else None,
@@ -222,22 +243,26 @@ async def snapshot_scopes(project_id: str | None = None) -> list[ScopeResponse]:
 async def list_all_snapshots(
     project_id: str | None = None,
     scope_type: str | None = None,
+    scope_name: str | None = None,
+    include_archived: bool = False,
 ) -> list[SnapshotResponse]:
     """List all snapshots, optionally filtered by project and scope type."""
     (
         _, _,
         _, load_manifest,
-        _, enumerate_prunable_scopes, _,
+        _, enumerate_snapshot_scopes, _,
     ) = _get_cli_libs()
 
-    scopes = list(enumerate_prunable_scopes())
+    scopes = list(enumerate_snapshot_scopes(include_archived=include_archived))
     if project_id:
         scopes = [s for s in scopes if s[0] == project_id]
     if scope_type:
         scopes = [s for s in scopes if s[1].scope_type == scope_type]
+    if scope_name:
+        scopes = [s for s in scopes if s[1].scope_name == scope_name]
 
     results: list[SnapshotResponse] = []
-    for pid, scope in scopes:
+    for pid, scope, _ in scopes:
         entries = load_manifest(pid, scope)
         for snap in entries:
             results.append(_snapshot_to_response(snap))

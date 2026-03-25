@@ -8,6 +8,7 @@ from .core import create_core_tables
 from .design import create_design_tables
 from .explorer import create_explorer_tables
 from .migrations import apply_schema_migrations
+from .notes import create_notes_tables
 from .notifications import create_notifications_tables
 
 __all__ = [
@@ -16,5 +17,6 @@ __all__ = [
     "create_core_tables",
     "create_design_tables",
     "create_explorer_tables",
+    "create_notes_tables",
     "create_notifications_tables",
 ]

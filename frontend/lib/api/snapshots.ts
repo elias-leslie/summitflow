@@ -25,6 +25,7 @@ export interface BtrfsScope {
   project_id: string
   scope_type: 'lane' | 'project'
   scope_name: string
+  scope_state: 'active' | 'archived'
   snapshot_count: number
   total_bytes: number | null
   newest_at: string | null
@@ -37,6 +38,8 @@ export interface BtrfsPolicy {
   baseline_stale_minutes: number
   lane_auto_keep_per_scope: number
   project_auto_keep_per_scope: number
+  archived_lane_auto_keep_per_scope: number
+  archived_lane_keep_per_project: number
   manual_keep_per_scope: number
 }
 
@@ -46,22 +49,39 @@ export interface BtrfsSummary {
   by_source: Record<string, number>
   by_scope_type: Record<string, number>
   scope_count: number
+  active_snapshot_count: number
+  archived_snapshot_count: number
+  active_scope_count: number
+  archived_scope_count: number
   policy: BtrfsPolicy
   autosnap_timer_active: boolean
 }
 
 // ─── API Functions ──────────────────────────────────────────────
 
-export function fetchSnapshots(projectId?: string, scopeType?: string): Promise<BtrfsSnapshot[]> {
+export function fetchSnapshots(
+  projectId?: string,
+  scopeType?: string,
+  scopeName?: string,
+  includeArchived = false,
+): Promise<BtrfsSnapshot[]> {
   return fetchWithErrorHandling<BtrfsSnapshot[]>(
-    `/api/snapshots${buildQueryString({ project_id: projectId, scope_type: scopeType })}`,
+    `/api/snapshots${buildQueryString({
+      project_id: projectId,
+      scope_type: scopeType,
+      scope_name: scopeName,
+      include_archived: includeArchived,
+    })}`,
     { errorMessage: 'Failed to fetch snapshots' },
   )
 }
 
-export function fetchScopes(projectId?: string): Promise<BtrfsScope[]> {
+export function fetchScopes(projectId?: string, includeArchived = false): Promise<BtrfsScope[]> {
   return fetchWithErrorHandling<BtrfsScope[]>(
-    `/api/snapshots/scopes${buildQueryString({ project_id: projectId })}`,
+    `/api/snapshots/scopes${buildQueryString({
+      project_id: projectId,
+      include_archived: includeArchived,
+    })}`,
     { errorMessage: 'Failed to fetch snapshot scopes' },
   )
 }

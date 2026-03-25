@@ -21,7 +21,6 @@ from app.utils._git_branches import (
 from app.utils._git_core import run_git
 from app.utils.git_helpers import build_repo_workspace_summary
 
-from ..client import STClient
 from ..config import get_config_optional
 from ..lib.checkpoint import get_stale_checkpoints
 from ..lib.worktree import create_worktree, get_active_worktrees
@@ -82,27 +81,29 @@ def cleanup_callback(ctx: typer.Context) -> None:
         ctx.obj = OutputContext()
 
 
-def get_project_id(all_projects: bool) -> str | None:
+def get_project_id(all_projects: bool, project_id_override: str | None = None) -> str | None:
     """Get project ID based on --all flag."""
     if all_projects:
         return None
+    if project_id_override:
+        return project_id_override
     return get_config_optional().project_id or None
 
 
-def _iter_target_repos(all_projects: bool) -> list[Path]:
+def _iter_target_repos(all_projects: bool, project_id_override: str | None = None) -> list[Path]:
     """Return managed repositories relevant to the cleanup status request."""
     repos = [repo for repo in _get_managed_repos() if not repo.name.startswith(".")]
     if all_projects:
         return repos
-    project_id = get_project_id(False)
+    project_id = get_project_id(False, project_id_override)
     if project_id:
         return [repo for repo in repos if repo.name == project_id]
     return repos[:1] if repos else []
 
 
-def _iter_target_project_ids(all_projects: bool) -> list[str]:
+def _iter_target_project_ids(all_projects: bool, project_id_override: str | None = None) -> list[str]:
     """Return managed project IDs relevant to the cleanup request."""
-    return [repo.name for repo in _iter_target_repos(all_projects)]
+    return [repo.name for repo in _iter_target_repos(all_projects, project_id_override)]
 
 
 def _categorize_analyses(analyses: list[WorktreeAnalysis]) -> tuple[list[str], list[str], list[str]]:
@@ -127,8 +128,7 @@ def _build_repo_cleanup_entry(repo_path: Path) -> RepoEntry:
 
     ws = build_repo_workspace_summary(repo_path)
     active_worktrees = get_active_worktrees(project_id)
-    client = STClient(require_project=False)
-    analyses = [analyze_worktree(wt, client) for wt in active_worktrees]
+    analyses = [analyze_worktree(wt) for wt in active_worktrees]
     dirty_worktrees = sum(1 for wt in active_worktrees if has_uncommitted_changes(wt.path))
     stale_checkpoints = len(get_stale_checkpoints(project_id))
     snapshot_residue = len(find_snapshot_residue([project_id], project_id=project_id))
@@ -152,11 +152,18 @@ def _build_repo_cleanup_entry(repo_path: Path) -> RepoEntry:
     )
 
 
-def build_cleanup_status_payload(all_projects: bool) -> dict[str, Any]:
+def build_cleanup_status_payload(
+    all_projects: bool,
+    *,
+    project_id_override: str | None = None,
+) -> dict[str, Any]:
     """Build the canonical cross-repo cleanup summary payload."""
-    project_id = get_project_id(all_projects)
+    project_id = get_project_id(all_projects, project_id_override)
     worktrees = get_active_worktrees(project_id)
-    repositories = [_build_repo_cleanup_entry(p) for p in _iter_target_repos(all_projects)]
+    repositories = [
+        _build_repo_cleanup_entry(p)
+        for p in _iter_target_repos(all_projects, project_id_override)
+    ]
     summary: dict[str, int] = {
         "repos": len(repositories),
         "repos_needing_cleanup": sum(1 for r in repositories if r["needs_cleanup"]),
@@ -180,10 +187,11 @@ def build_cleanup_status_payload(all_projects: bool) -> dict[str, Any]:
 
 
 def _analyze_and_display(
-    worktrees: list, client: STClient, stale_days: int
+    worktrees: list,
+    stale_days: int,
 ) -> tuple[list[WorktreeAnalysis], object]:
     """Analyze worktrees, print summary, and return (analyses, categorization)."""
-    analyses = [analyze_worktree(wt, client) for wt in worktrees]
+    analyses = [analyze_worktree(wt) for wt in worktrees]
     categorization = categorize_worktrees(analyses, stale_days)
     print_worktree_summary(len(worktrees), categorization, stale_days)
     for analysis in analyses:
@@ -252,8 +260,7 @@ def cleanup_worktrees(
         return
 
     typer.echo(f"Analyzing {len(worktrees)} worktree(s)...")
-    client = STClient(require_project=False)
-    analyses, categorization = _analyze_and_display(worktrees, client, stale_days)
+    analyses, categorization = _analyze_and_display(worktrees, stale_days)
 
     if not auto and not force:
         typer.echo("")

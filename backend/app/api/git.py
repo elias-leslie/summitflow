@@ -6,6 +6,9 @@ from typing import cast
 
 from fastapi import APIRouter, HTTPException, Query
 
+from cli.commands.cleanup import build_cleanup_status_payload
+from cli.commands.cleanup_display import render_cleanup_status_compact
+
 from ..storage import tasks as task_store
 from ..storage.tasks.update import update_task_fields
 from ..tasks.autonomous.cleanup.merge_operations import merge_and_cleanup_task_worktree
@@ -56,6 +59,15 @@ from .models.git_models import (
 router = APIRouter()
 
 
+def _build_cleanup_status_response(*, all_projects: bool, project_id: str | None = None) -> dict[str, object]:
+    """Return canonical cleanup payload plus compact text."""
+    payload = build_cleanup_status_payload(all_projects, project_id_override=project_id)
+    return {
+        "payload": payload,
+        "compact": render_cleanup_status_compact(payload, all_projects),
+    }
+
+
 @router.get("/git/status", response_model=GitStatusResponse, tags=["git"])
 async def get_git_status() -> GitStatusResponse:
     """Get git status for all managed repositories."""
@@ -65,6 +77,12 @@ async def get_git_status() -> GitStatusResponse:
         if repo_status:
             repos.append(repo_status)
     return GitStatusResponse(repositories=repos, total=len(repos))
+
+
+@router.get("/git/cleanup-status", tags=["git"])
+async def get_cleanup_status() -> dict[str, object]:
+    """Get canonical cleanup status across all managed repositories."""
+    return _build_cleanup_status_response(all_projects=True)
 
 
 @router.get(
@@ -79,6 +97,12 @@ async def get_project_git_status(project_id: str) -> GitStatusResponse:
     if not repo_status:
         return GitStatusResponse(repositories=[], total=0)
     return GitStatusResponse(repositories=[repo_status], total=1)
+
+
+@router.get("/projects/{project_id}/git/cleanup-status", tags=["git"])
+async def get_project_cleanup_status(project_id: str) -> dict[str, object]:
+    """Get canonical cleanup status for one managed repository."""
+    return _build_cleanup_status_response(all_projects=False, project_id=project_id)
 
 
 @router.post("/git/sync", response_model=GitSyncResponse, tags=["git"])
