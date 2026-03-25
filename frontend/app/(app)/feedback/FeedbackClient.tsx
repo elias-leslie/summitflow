@@ -1,7 +1,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { MessageSquareWarning, Sparkles, TriangleAlert } from 'lucide-react'
+import { MessageSquareWarning, TriangleAlert } from 'lucide-react'
 import { motion } from 'motion/react'
 import { useState } from 'react'
 import { ComponentSummary } from '@/components/feedback/ComponentSummary'
@@ -64,144 +64,94 @@ export function FeedbackClient() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-[1500px] space-y-6 px-4 py-6 md:px-6 lg:px-8">
+      <div className="mx-auto max-w-[1500px] space-y-5 px-4 py-5 md:px-5 lg:px-6">
         <motion.section
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
-          className="card-elevated hero-glow relative overflow-hidden px-6 py-6 md:px-8 md:py-8"
+          className="panel-glass px-4 py-4 md:px-5"
         >
-          <div className="pointer-events-none absolute inset-y-0 right-0 w-[34%] bg-[radial-gradient(circle_at_top_right,rgba(244,63,94,0.16),transparent_60%)] opacity-80" />
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_360px]">
-            <div className="relative z-10 space-y-6">
+          <div className="space-y-4">
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
               <div className="flex items-start gap-3">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-rose-500/20 bg-rose-500/10">
-                  <MessageSquareWarning className="h-6 w-6 text-rose-300" />
+                <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-rose-500/20 bg-rose-500/10">
+                  <MessageSquareWarning className="h-5 w-5 text-rose-300" />
                 </div>
                 <div>
                   <div className="eyebrow">Agent signals</div>
-                  <h1 className="display mt-2 text-4xl font-semibold tracking-tight text-slate-50">
+                  <h1 className="display mt-1.5 text-2xl font-semibold tracking-tight text-slate-50 lg:text-3xl">
                     Agent feedback
                   </h1>
-                  <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-300 sm:text-base">
+                  <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-slate-300">
                     Surface friction, ideas, praise, and unresolved operational
-                    pain in a layout that makes the loudest problems obvious.
+                    pain, with the live feedback stream moved up above the fold.
                   </p>
                 </div>
               </div>
 
-              {summary ? (
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <div className="rounded-[1.35rem] border border-slate-700/70 bg-slate-950/60 px-4 py-4">
-                    <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
-                      Total signals
-                    </div>
-                    <div className="mt-3 font-mono text-3xl text-slate-50">
-                      {summary.total}
-                    </div>
-                    <div className="mt-1 text-xs text-slate-400">
-                      All recorded feedback items.
-                    </div>
+              {spotlight && spotlightTone ? (
+                <div className="rounded-[1.2rem] border border-slate-800/70 bg-slate-950/72 px-4 py-3 xl:max-w-sm">
+                  <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-slate-500">
+                    <TriangleAlert className="h-3.5 w-3.5 text-rose-300" />
+                    Spotlight
                   </div>
-                  <div className="rounded-[1.35rem] border border-rose-500/20 bg-rose-500/10 px-4 py-4">
-                    <div className="text-[11px] uppercase tracking-[0.18em] text-rose-200/70">
-                      Active attention
-                    </div>
-                    <div className="mt-3 font-mono text-3xl text-slate-50">
-                      {activeSignals}
-                    </div>
-                    <div className="mt-1 text-xs text-rose-100/70">
-                      Open and acknowledged items.
-                    </div>
+                  <div className="mt-2 text-sm font-medium text-slate-100">
+                    {spotlight.title}
                   </div>
-                  <div className="rounded-[1.35rem] border border-emerald-500/20 bg-emerald-500/10 px-4 py-4">
-                    <div className="text-[11px] uppercase tracking-[0.18em] text-emerald-200/70">
-                      Praise signals
-                    </div>
-                    <div className="mt-3 font-mono text-3xl text-slate-50">
-                      {summary.by_type?.praise ?? 0}
-                    </div>
-                    <div className="mt-1 text-xs text-emerald-100/70">
-                      Positive reinforcement worth preserving.
-                    </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <span
+                      className={`rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] ${spotlightTone.bg} ${spotlightTone.color} ${spotlightTone.border}`}
+                    >
+                      {spotlightTone.label}
+                    </span>
+                    <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-amber-300">
+                      {spotlight.vote_count} votes
+                    </span>
+                  </div>
+                  <div className="mt-1 text-[11px] text-slate-500">
+                    {spotlight.component_id}
                   </div>
                 </div>
               ) : null}
             </div>
 
-            <div className="relative z-10 space-y-4">
-              {spotlight && spotlightTone ? (
-                <div className="card-elevated px-5 py-5">
-                  <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-slate-500">
-                    <TriangleAlert className="h-3.5 w-3.5 text-rose-300" />
-                    Spotlight
+            {summary ? (
+              <div className="grid gap-2 sm:grid-cols-3">
+                <div className="rounded-[1.15rem] border border-slate-700/70 bg-slate-950/72 px-3.5 py-3">
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-slate-500">
+                    Total signals
                   </div>
-                  <h2 className="mt-3 text-lg font-semibold text-slate-100">
-                    {spotlight.title}
-                  </h2>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <span
-                      className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.16em] ${spotlightTone.bg} ${spotlightTone.color} ${spotlightTone.border}`}
-                    >
-                      {spotlightTone.label}
-                    </span>
-                    <span className="rounded-full border border-slate-700/70 bg-slate-950/70 px-3 py-1 text-[10px] uppercase tracking-[0.16em] text-slate-300">
-                      {spotlight.component_id}
-                    </span>
-                    <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-[10px] uppercase tracking-[0.16em] text-amber-300">
-                      {spotlight.vote_count} votes
-                    </span>
+                  <div className="mt-2 font-mono text-xl text-slate-50">
+                    {summary.total}
                   </div>
-                  <p className="mt-4 text-sm leading-relaxed text-slate-300">
-                    Highest-voted unresolved feedback item in the current
-                    summary. Use the stream below to inspect context and
-                    resolution state.
-                  </p>
                 </div>
-              ) : (
-                <div className="card-elevated px-5 py-5">
-                  <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-slate-500">
-                    <Sparkles className="h-3.5 w-3.5 text-phosphor-300" />
-                    Signal health
+                <div className="rounded-[1.15rem] border border-rose-500/20 bg-rose-500/10 px-3.5 py-3">
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-rose-200/70">
+                    Active attention
                   </div>
-                  <p className="mt-3 text-sm leading-relaxed text-slate-300">
-                    Feedback is flowing. Once a high-signal unresolved item
-                    appears, it will surface here automatically.
-                  </p>
+                  <div className="mt-2 font-mono text-xl text-slate-50">
+                    {activeSignals}
+                  </div>
                 </div>
-              )}
-            </div>
+                <div className="rounded-[1.15rem] border border-emerald-500/20 bg-emerald-500/10 px-3.5 py-3">
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-emerald-200/70">
+                    Praise signals
+                  </div>
+                  <div className="mt-2 font-mono text-xl text-slate-50">
+                    {summary.by_type?.praise ?? 0}
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
         </motion.section>
-
-        {error && (
-          <div className="rounded-[1.35rem] border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-300">
-            Failed to load feedback data. Verify the backend is running.
-          </div>
-        )}
-
-        <FeedbackStats
-          summary={summary}
-          isLoading={summaryLoading}
-          activeType={filters.feedback_type}
-          activeStatus={filters.status}
-          onTypeClick={handleTypeClick}
-          onStatusClick={handleStatusClick}
-        />
-
-        <ComponentSummary
-          summary={summary}
-          isLoading={summaryLoading}
-          activeComponent={filters.component_id}
-          onComponentClick={handleComponentClick}
-        />
 
         <motion.section
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{
             duration: 0.4,
-            delay: 0.08,
+            delay: 0.06,
             ease: [0.25, 0.46, 0.45, 0.94],
           }}
           className="space-y-3"
@@ -214,6 +164,24 @@ export function FeedbackClient() {
               Filter, review, and resolve the underlying signals.
             </p>
           </div>
+        </motion.section>
+
+        {error && (
+          <div className="rounded-[1.35rem] border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-300">
+            Failed to load feedback data. Verify the backend is running.
+          </div>
+        )}
+
+        <motion.section
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{
+            duration: 0.4,
+            delay: 0.08,
+            ease: [0.25, 0.46, 0.45, 0.94],
+          }}
+          className="space-y-4"
+        >
           <FeedbackBoard
             items={itemsData?.items ?? []}
             total={itemsData?.total ?? 0}
@@ -222,6 +190,21 @@ export function FeedbackClient() {
             onFiltersChange={handleFiltersChange}
             onItemClick={setSelectedId}
             selectedId={selectedId}
+          />
+          <FeedbackStats
+            summary={summary}
+            isLoading={summaryLoading}
+            activeType={filters.feedback_type}
+            activeStatus={filters.status}
+            onTypeClick={handleTypeClick}
+            onStatusClick={handleStatusClick}
+          />
+
+          <ComponentSummary
+            summary={summary}
+            isLoading={summaryLoading}
+            activeComponent={filters.component_id}
+            onComponentClick={handleComponentClick}
           />
         </motion.section>
       </div>

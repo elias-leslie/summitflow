@@ -14,7 +14,6 @@ import {
   GitBranch,
   ListTodo,
   Plus,
-  Sparkles,
   StickyNote,
   Target,
 } from 'lucide-react'
@@ -82,35 +81,34 @@ export function DashboardClient() {
   ]
 
   return (
-    <div className="mx-auto max-w-[1500px] space-y-8 px-4 py-6 md:px-6 lg:px-8">
+    <div className="mx-auto max-w-[1500px] space-y-6 px-4 py-5 md:px-5 lg:px-6">
       <motion.section
         {...fadeUp}
         transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
-        className="card-elevated hero-glow relative overflow-hidden px-6 py-6 md:px-8 md:py-8"
+        className="panel-glass px-4 py-4 md:px-5"
       >
-        <div className="pointer-events-none absolute inset-y-0 right-0 w-[38%] bg-[radial-gradient(circle_at_top_right,rgba(0,245,255,0.14),transparent_60%)] opacity-80" />
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_380px]">
-          <div className="relative z-10 space-y-6">
-            <div className="space-y-4">
+        <div className="space-y-4">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+            <div className="space-y-3">
               <div className="eyebrow">Operations cockpit</div>
-              <div>
-                <h1 className="display text-4xl font-extrabold tracking-tight text-slate-50 sm:text-5xl">
+              <div className="space-y-2">
+                <h1 className="display text-2xl font-bold tracking-tight text-slate-50 lg:text-3xl">
                   Command Center
                 </h1>
-                <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-300 sm:text-base">
-                  Track live work across every repo, surface quality pressure
-                  early, and move straight into the next high-leverage action.
+                <p className="max-w-2xl text-sm leading-relaxed text-slate-300">
+                  Track live work across every repo and move into the next
+                  high-leverage action without scrolling through decoration first.
                 </p>
               </div>
-              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                <span className="rounded-full border border-slate-700/60 bg-slate-950/60 px-3 py-1.5">
+              <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+                <span className="rounded-full border border-slate-700/60 bg-slate-950/72 px-3 py-1.5">
                   {new Date().toLocaleDateString('en-US', {
                     weekday: 'long',
                     month: 'long',
                     day: 'numeric',
                   })}
                 </span>
-                <span className="rounded-full border border-slate-700/60 bg-slate-950/60 px-3 py-1.5">
+                <span className="rounded-full border border-slate-700/60 bg-slate-950/72 px-3 py-1.5">
                   {totalProjects} active projects
                 </span>
                 <span className="rounded-full border border-phosphor-500/18 bg-phosphor-500/10 px-3 py-1.5 text-phosphor-300">
@@ -119,133 +117,68 @@ export function DashboardClient() {
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap gap-2">
               <Link
                 href="/projects/new"
-                className="btn-primary inline-flex items-center gap-2 px-4 py-2.5 text-sm"
+                className="btn-primary inline-flex items-center gap-2 px-4 py-2 text-sm"
               >
                 <Plus className="h-4 w-4" />
                 Add Project
               </Link>
               <Link
                 href="/notes"
-                className="btn-secondary inline-flex items-center gap-2 px-4 py-2.5 text-sm"
+                className="btn-secondary inline-flex items-center gap-2 px-4 py-2 text-sm"
               >
                 <StickyNote className="h-4 w-4" />
                 Open Notes
               </Link>
             </div>
+          </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              {stats.map((stat, i) => {
-                const Icon = stat.icon
-                return (
-                  <motion.div
-                    key={stat.label}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.35, delay: 0.06 + i * 0.05, ease: [0.25, 0.46, 0.45, 0.94] }}
-                    className="metric-tile px-5 py-4"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className={clsx('rounded-2xl p-3 ring-1 ring-white/5', stat.iconBg)}>
-                        <Icon className={clsx('h-5 w-5', stat.iconColor)} />
-                      </div>
-                      <Sparkles className="h-4 w-4 text-slate-700" />
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+            {stats.map((stat, i) => {
+              const Icon = stat.icon
+              return (
+                <motion.div
+                  key={stat.label}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.35, delay: 0.04 + i * 0.04, ease: [0.25, 0.46, 0.45, 0.94] }}
+                  className="rounded-[1.15rem] border border-slate-800/80 bg-slate-950/72 px-3.5 py-3"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={clsx('rounded-xl p-2 ring-1 ring-white/5', stat.iconBg)}>
+                      <Icon className={clsx('h-4 w-4', stat.iconColor)} />
                     </div>
-                    <div className="mt-5">
-                      <div className={clsx('text-[32px] font-extrabold leading-none tracking-tight tabular-nums', stat.color)}>
+                    <div className="min-w-0">
+                      <div className={clsx('font-mono text-xl font-semibold leading-none tabular-nums', stat.color)}>
                         {stat.value}
                       </div>
-                      <div className="mt-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                      <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
                         {stat.label}
                       </div>
                     </div>
-                  </motion.div>
-                )
-              })}
-            </div>
-          </div>
-
-          <div className="relative z-10 space-y-4">
-            <div className="panel-glass p-5">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="eyebrow">System load</div>
-                  <h2 className="display mt-2 text-xl font-semibold text-slate-100">
-                    Live platform health
-                  </h2>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Native services, workers, and shared infrastructure.
-                  </p>
-                </div>
-                <span className="rounded-full border border-phosphor-500/16 bg-phosphor-500/10 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-phosphor-300">
-                  Monitoring
-                </span>
-              </div>
-              <div className="mt-4">
-                <SystemHealthWidget />
-              </div>
-            </div>
-
-            <div className="panel-glass p-5">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="eyebrow">Jump points</div>
-                  <h2 className="mt-2 text-lg font-semibold text-slate-100">
-                    High-signal surfaces
-                  </h2>
-                </div>
-                <ArrowRight className="h-4 w-4 text-slate-600" />
-              </div>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                {quickLinks.map((link) => {
-                  const Icon = link.icon
-
-                  return (
-                    <Link
-                      key={link.href}
-                      href={link.href}
-                      className={clsx(
-                        'group/link rounded-2xl border border-slate-800/70 bg-slate-950/55 px-4 py-4 transition-all duration-200 hover:-translate-y-0.5',
-                        link.hoverBorder,
-                        link.hoverBg,
-                      )}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className={clsx('rounded-xl p-2.5 ring-1 ring-white/5 transition-all duration-200 group-hover/link:scale-105', link.iconBg)}>
-                          <Icon className={clsx('h-4 w-4 transition-colors', link.iconColor)} />
-                        </div>
-                        <ArrowRight className="h-4 w-4 text-slate-700 transition-transform duration-200 group-hover/link:translate-x-0.5" />
-                      </div>
-                      <div className="mt-4 text-sm font-medium text-slate-100">
-                        {link.label}
-                      </div>
-                      <div className="mt-1 text-xs leading-relaxed text-slate-500">
-                        {link.sub}
-                      </div>
-                    </Link>
-                  )
-                })}
-              </div>
-            </div>
+                  </div>
+                </motion.div>
+              )
+            })}
           </div>
         </div>
       </motion.section>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.28fr)_400px]">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_360px]">
         <motion.section
           {...fadeUp}
-          transition={{ duration: 0.4, delay: 0.1, ease: [0.25, 0.46, 0.45, 0.94] }}
+          transition={{ duration: 0.4, delay: 0.08, ease: [0.25, 0.46, 0.45, 0.94] }}
           className="space-y-4"
         >
-          <div className="flex flex-col gap-4 rounded-[1.6rem] border border-slate-800/70 bg-slate-950/40 px-5 py-5 sm:flex-row sm:items-end sm:justify-between">
+          <div className="flex flex-col gap-3 rounded-[1.4rem] border border-slate-800/70 bg-slate-950/58 px-4 py-3.5 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <div className="eyebrow">Projects</div>
-              <h2 className="display mt-2 text-2xl font-semibold text-slate-100">
+              <h2 className="display mt-1.5 text-xl font-semibold text-slate-100">
                 Operational portfolio
               </h2>
-              <p className="mt-2 max-w-2xl text-sm text-slate-500">
+              <p className="mt-1.5 max-w-2xl text-sm text-slate-500">
                 Review ownership, quality pressure, and service readiness
                 without leaving the dashboard.
               </p>
@@ -296,22 +229,82 @@ export function DashboardClient() {
           />
         </motion.section>
 
-        <motion.section
-          {...fadeUp}
-          transition={{ duration: 0.4, delay: 0.14, ease: [0.25, 0.46, 0.45, 0.94] }}
-          className="space-y-4"
-        >
-          <div className="rounded-[1.6rem] border border-slate-800/70 bg-slate-950/40 px-5 py-5">
-            <div className="eyebrow">Recent activity</div>
-            <h2 className="display mt-2 text-2xl font-semibold text-slate-100">
-              Live coordination feed
-            </h2>
-            <p className="mt-2 text-sm text-slate-500">
-              Follow commits, tasks, agents, and backup signals as they land.
-            </p>
-          </div>
-          <ActivityFeed />
-        </motion.section>
+        <div className="space-y-4">
+          <motion.section
+            {...fadeUp}
+            transition={{ duration: 0.4, delay: 0.12, ease: [0.25, 0.46, 0.45, 0.94] }}
+            className="panel-glass p-4"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="eyebrow">System load</div>
+                <h2 className="display mt-1.5 text-lg font-semibold text-slate-100">
+                  Live platform health
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Native services, workers, and shared infrastructure.
+                </p>
+              </div>
+              <span className="rounded-full border border-phosphor-500/16 bg-phosphor-500/10 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-phosphor-300">
+                Monitoring
+              </span>
+            </div>
+            <div className="mt-3.5">
+              <SystemHealthWidget />
+            </div>
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              {quickLinks.map((link) => {
+                const Icon = link.icon
+
+                return (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    className={clsx(
+                      'group/link rounded-xl border border-slate-800/70 bg-slate-950/72 px-3 py-3 transition-all duration-200 hover:-translate-y-0.5',
+                      link.hoverBorder,
+                      link.hoverBg,
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className={clsx('rounded-lg p-2 ring-1 ring-white/5', link.iconBg)}>
+                          <Icon className={clsx('h-4 w-4 transition-colors', link.iconColor)} />
+                        </div>
+                        <div>
+                          <div className="text-sm font-medium text-slate-100">
+                            {link.label}
+                          </div>
+                          <div className="mt-0.5 text-[11px] leading-relaxed text-slate-500">
+                            {link.sub}
+                          </div>
+                        </div>
+                      </div>
+                      <ArrowRight className="h-4 w-4 text-slate-700 transition-transform duration-200 group-hover/link:translate-x-0.5" />
+                    </div>
+                  </Link>
+                )
+              })}
+            </div>
+          </motion.section>
+
+          <motion.section
+            {...fadeUp}
+            transition={{ duration: 0.4, delay: 0.16, ease: [0.25, 0.46, 0.45, 0.94] }}
+            className="space-y-4"
+          >
+            <div className="rounded-[1.4rem] border border-slate-800/70 bg-slate-950/58 px-4 py-3.5">
+              <div className="eyebrow">Recent activity</div>
+              <h2 className="display mt-1.5 text-xl font-semibold text-slate-100">
+                Live coordination feed
+              </h2>
+              <p className="mt-1.5 text-sm text-slate-500">
+                Follow commits, tasks, agents, and backup signals as they land.
+              </p>
+            </div>
+            <ActivityFeed />
+          </motion.section>
+        </div>
       </div>
     </div>
   )

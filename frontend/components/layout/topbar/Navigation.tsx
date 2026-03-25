@@ -52,8 +52,8 @@ export function Navigation({
 
         const className = clsx(
           'group relative flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full font-medium transition-all duration-200',
-          dense ? 'gap-1 text-xs' : 'text-sm',
-          compact ? 'p-2.5' : dense ? 'px-2.5 py-2' : 'px-4 py-2',
+          dense ? 'gap-1 text-[11px]' : 'text-[13px]',
+          compact ? 'p-2' : dense ? 'px-2.5 py-1.5' : 'px-3 py-1.5 lg:px-3.5 lg:py-2',
           isActive
             ? `${ac.bg} ${ac.text} shadow-[0_18px_38px_-30px_rgba(0,0,0,0.95)] ring-1 ring-white/5`
             : 'text-slate-400 hover:bg-slate-800/72 hover:text-slate-200',
@@ -79,7 +79,7 @@ export function Navigation({
             )}
             {isActive && (
               <span
-                className="absolute inset-x-4 bottom-1 h-px rounded-full bg-current opacity-65"
+                className="absolute inset-x-3 bottom-1 h-px rounded-full bg-current opacity-65"
                 style={{ boxShadow: '0 0 12px currentColor' }}
                 aria-hidden="true"
               />

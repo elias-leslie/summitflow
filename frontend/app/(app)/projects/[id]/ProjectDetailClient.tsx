@@ -245,23 +245,24 @@ export function ProjectDetailClient() {
   return (
     <div className="h-full flex flex-col">
       <div className="flex-none border-b border-slate-800/80 bg-slate-950/55 backdrop-blur-sm">
-        <div className="mx-auto w-full max-w-[1600px] px-4 py-5 md:px-6">
-          <div className="card-elevated relative overflow-hidden px-5 py-5 md:px-6">
-            <div className="pointer-events-none absolute inset-y-0 right-0 w-[34%] bg-[radial-gradient(circle_at_top_right,rgba(0,245,255,0.12),transparent_62%)]" />
-            <div className="relative z-10 flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-              <div className="space-y-4">
-                <div>
-                  <div className="eyebrow">Project cockpit</div>
-                  <h1 className="display mt-2 text-2xl font-semibold tracking-tight text-slate-100 md:text-3xl">
+        <div className="mx-auto w-full max-w-[1600px] px-4 py-3 md:px-5">
+          <div className="panel-glass px-4 py-3 md:px-5 md:py-3.5">
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+              <div className="space-y-2.5">
+                <div className="eyebrow">Project cockpit</div>
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <h1 className="display text-lg font-semibold tracking-tight text-slate-100 sm:text-xl xl:text-2xl">
                     {project.name}
                   </h1>
-                  <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-300">
-                    {TAB_COPY[activeTab].description}
-                  </p>
+                  <span className="rounded-full border border-slate-700/60 bg-slate-950/72 px-3 py-1 text-[10px] uppercase tracking-[0.16em] text-slate-300">
+                    {TAB_COPY[activeTab].label}
+                  </span>
                 </div>
-
-                <div className="flex flex-wrap items-center gap-2 text-xs">
-                  <span className="rounded-full border border-slate-700/60 bg-slate-950/60 px-3 py-1.5 font-mono text-slate-300">
+                <p className="max-w-3xl text-sm leading-relaxed text-slate-300">
+                  {TAB_COPY[activeTab].description}
+                </p>
+                <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                  <span className="rounded-full border border-slate-700/60 bg-slate-950/72 px-3 py-1.5 font-mono text-slate-300">
                     {project.id}
                   </span>
                   <span
@@ -276,50 +277,35 @@ export function ProjectDetailClient() {
                     : 'rounded-full border border-amber-500/18 bg-amber-500/10 px-3 py-1.5 text-amber-300'}>
                     {project.root_path ? 'root path configured' : 'root path missing'}
                   </span>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-3 xl:items-end">
-                <div className="max-w-full rounded-2xl border border-slate-800/70 bg-slate-950/55 px-4 py-3 text-sm">
-                  <div className="eyebrow">Current focus</div>
-                  <div className="mt-2 text-base font-medium text-slate-100">
-                    {TAB_COPY[activeTab].label}
-                  </div>
-                  <div className="mt-2 text-xs text-slate-500">
-                    <a
-                      href={project.base_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="font-mono text-slate-300 transition-colors hover:text-phosphor-300"
-                    >
-                      {project.base_url}
-                    </a>
-                    {project.root_path && (
-                      <div className="mt-1 truncate font-mono text-slate-500" title={project.root_path}>
-                        {project.root_path}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
                   <a
                     href={project.base_url}
                     target="_blank"
                     rel="noreferrer"
-                    className="btn-secondary inline-flex items-center gap-2 px-4 py-2 text-sm"
+                    className="max-w-full truncate rounded-full border border-slate-700/60 bg-slate-950/72 px-3 py-1.5 font-mono text-slate-300 transition-colors hover:text-phosphor-300"
+                    title={project.base_url}
                   >
-                    <ExternalLink className="h-4 w-4" />
-                    Open app
+                    {project.base_url}
                   </a>
-                  <Link
-                    href={`/projects/${project.id}/settings`}
-                    className="btn-secondary inline-flex items-center gap-2 px-4 py-2 text-sm"
-                  >
-                    <Settings2 className="h-4 w-4" />
-                    Settings
-                  </Link>
                 </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2 xl:justify-end">
+                <a
+                  href={project.base_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn-secondary inline-flex items-center gap-2 px-4 py-1.5 text-sm"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  Open app
+                </a>
+                <Link
+                  href={`/projects/${project.id}/settings`}
+                  className="btn-secondary inline-flex items-center gap-2 px-4 py-1.5 text-sm"
+                >
+                  <Settings2 className="h-4 w-4" />
+                  Settings
+                </Link>
               </div>
             </div>
           </div>
@@ -328,7 +314,7 @@ export function ProjectDetailClient() {
 
       <section className="flex-1 overflow-hidden">
         {activeTab === 'tasks' && (
-          <div className="h-full overflow-auto p-4 space-y-4">
+          <div className="h-full overflow-auto p-3 sm:p-4 space-y-4">
             <TasksViewToolbar
               viewMode={viewMode}
               onViewModeChange={setViewMode}
@@ -374,7 +360,7 @@ export function ProjectDetailClient() {
           </div>
         )}
         {activeTab === 'explorer' && (
-          <div className="h-full overflow-auto p-4">
+          <div className="h-full overflow-auto p-3 sm:p-4">
             <ExplorerTab
               projectId={projectId}
               initialType={explorerType}
@@ -383,7 +369,7 @@ export function ProjectDetailClient() {
           </div>
         )}
         {activeTab === 'health' && (
-          <div className="h-full overflow-auto p-4">
+          <div className="h-full overflow-auto p-3 sm:p-4">
             <HealthTab projectId={projectId} />
           </div>
         )}
