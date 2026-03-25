@@ -77,7 +77,7 @@ export function ServiceCard({
     <>
       <div
         className={clsx(
-          'card-elevated flex h-full flex-col gap-4 px-4 py-4 transition-all duration-200 hover:-translate-y-0.5',
+          'card-elevated flex h-full flex-col gap-3 px-3 py-3 transition-colors',
           healthAccentClass(tone),
         )}
       >
@@ -125,17 +125,14 @@ export function ServiceCard({
           </button>
         </div>
 
-        <div className="rounded-[1.35rem] border border-slate-800/60 bg-slate-950/45 p-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500">
-              Service identifier
-            </div>
-            <code className="truncate rounded-full border border-slate-700/70 bg-slate-950/80 px-2.5 py-1 text-[10px] text-slate-300">
+        <div className="rounded-lg border border-slate-800/60 bg-slate-950/45 p-2.5">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <code className="truncate font-mono text-[10px] text-slate-400">
               {container.service}
             </code>
           </div>
 
-          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          <div className="grid gap-1.5 sm:grid-cols-2">
             <MetricStat
               label="CPU"
               value={metric?.cpu_percent ?? (metricsLoading ? '…' : '—')}
@@ -200,10 +197,6 @@ export function ServiceCard({
           )}
         </div>
 
-        <p className="text-xs leading-relaxed text-slate-500">
-          Use quick actions for immediate recovery, then open logs if the health
-          signal stays degraded.
-        </p>
       </div>
 
       {showLogs && (

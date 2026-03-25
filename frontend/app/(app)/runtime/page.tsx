@@ -67,67 +67,56 @@ export default function RuntimePage() {
   ]
 
   return (
-    <div className="mx-auto max-w-[1500px] space-y-5 px-4 py-5 md:px-5 lg:px-6">
+    <div className="mx-auto max-w-[1500px] space-y-4 px-4 py-4 md:px-5 lg:px-6">
       <motion.section
         {...fadeUp}
-        transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
-        className="panel-glass px-4 py-4 md:px-5"
+        transition={{ duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
+        className="space-y-3"
       >
-        <div className="space-y-4">
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-            <div className="space-y-2.5">
-              <div className="eyebrow">Runtime control</div>
-              <div className="flex items-start gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-cyan-500/18 bg-cyan-500/10">
-                  <Boxes className="h-5 w-5 text-cyan-300" />
-                </div>
-                <div>
-                  <h1 className="display text-2xl font-semibold tracking-tight text-slate-50 lg:text-3xl">
-                    Runtime Management
-                  </h1>
-                  <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-slate-300">
-                    Scan service health fast, then drop into the live service
-                    grid without losing space to oversized status cards.
-                  </p>
-                </div>
-              </div>
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex items-center gap-3">
+            <Boxes className="h-5 w-5 text-cyan-300" />
+            <div>
+              <h1 className="display text-xl font-semibold tracking-tight text-slate-50">
+                Runtime Management
+              </h1>
+              <p className="text-sm text-slate-400">
+                Service health, native apps, and shared infrastructure
+              </p>
             </div>
-
-            {error && !isLoading && (
-              <div className="rounded-2xl border border-rose-500/20 bg-rose-500/8 px-3.5 py-3 text-sm text-rose-200 xl:max-w-sm">
-                Failed to load runtime data. Verify the backend is up and the
-                service monitor endpoints are reachable.
-              </div>
-            )}
           </div>
 
-          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-            {statCards.map((card) => {
-              const Icon = card.icon
-              return (
-                <div key={card.label} className="rounded-[1.15rem] border border-slate-800/80 bg-slate-950/72 px-3.5 py-3">
-                  <div className="flex items-center gap-3">
-                    <div className={`rounded-xl p-2 ${card.iconBg}`}>
-                      <Icon className={`h-4 w-4 ${card.iconColor}`} />
-                    </div>
-                    <div className="min-w-0">
-                      <div className={`font-mono text-2xl font-bold leading-none tabular-nums ${card.tone}`}>
-                        {card.value}
-                      </div>
-                      <div className="mt-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        {card.label}
-                      </div>
-                    </div>
+          {error && !isLoading && (
+            <div className="rounded-lg border border-rose-500/20 bg-rose-500/8 px-3 py-2 text-sm text-rose-200 xl:max-w-sm">
+              Failed to load runtime data. Verify the backend is reachable.
+            </div>
+          )}
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          {statCards.map((card) => {
+            const Icon = card.icon
+            return (
+              <div key={card.label} className="rounded-lg border border-slate-800/80 bg-slate-950/72 px-3 py-2">
+                <div className="flex items-center gap-2.5">
+                  <Icon className={`h-3.5 w-3.5 ${card.iconColor}`} />
+                  <div className="min-w-0 flex items-baseline gap-2">
+                    <span className={`font-mono text-lg font-bold leading-none tabular-nums ${card.tone}`}>
+                      {card.value}
+                    </span>
+                    <span className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                      {card.label}
+                    </span>
                   </div>
                 </div>
-              )
-            })}
-          </div>
+              </div>
+            )
+          })}
+        </div>
 
-          <div className="space-y-3">
-            {services && services.length > 0 && <HealthBar services={services} />}
-            <RuntimeModeBanner />
-          </div>
+        <div className="space-y-2">
+          {services && services.length > 0 && <HealthBar services={services} />}
+          <RuntimeModeBanner />
         </div>
       </motion.section>
 

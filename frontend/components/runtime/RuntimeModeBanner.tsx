@@ -70,26 +70,25 @@ export function RuntimeModeBanner() {
   ]
 
   return (
-    <div className="card-elevated px-5 py-5">
-      <div className="flex items-start justify-between gap-4">
+    <div className="card-elevated px-4 py-3">
+      <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <div className="eyebrow">Runtime posture</div>
-          <h2 className="display mt-2 text-2xl font-semibold text-slate-50">
+          <h2 className="display text-sm font-semibold text-slate-100">
             {rt.runtime === 'hybrid'
-              ? 'Hybrid operations'
+              ? 'Hybrid Operations'
               : rt.runtime === 'native'
-                ? 'Native operations'
+                ? 'Native Operations'
                 : rt.runtime === 'docker'
-                  ? 'Docker operations'
-                  : 'Standby posture'}
+                  ? 'Docker Operations'
+                  : 'Standby'}
           </h2>
-          <p className="mt-2 text-sm leading-relaxed text-slate-300">
+          <p className="text-xs text-slate-400">
             {runtimeSummary(rt)}
           </p>
         </div>
         <span
           className={clsx(
-            'inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]',
+            'rounded-full border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em]',
             runtimeBadge[rt.runtime] ?? runtimeBadge['docker-stopped'],
           )}
         >
@@ -97,22 +96,22 @@ export function RuntimeModeBanner() {
         </span>
       </div>
 
-      <div className="mt-5 grid gap-3 sm:grid-cols-2">
+      <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         {details.map((detail) => {
           const Icon = detail.icon
           return (
             <div
               key={detail.label}
               className={clsx(
-                'rounded-2xl border px-4 py-3 transition-colors',
+                'rounded-lg border px-2.5 py-1.5',
                 detail.tone,
               )}
             >
-              <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-slate-400">
-                <Icon className="h-3.5 w-3.5 text-current" />
+              <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.14em] text-slate-400">
+                <Icon className="h-3 w-3 text-current" />
                 {detail.label}
               </div>
-              <div className="mt-2 text-sm font-medium capitalize text-slate-100">
+              <div className="mt-0.5 text-xs font-medium capitalize text-slate-100">
                 {detail.value}
               </div>
             </div>

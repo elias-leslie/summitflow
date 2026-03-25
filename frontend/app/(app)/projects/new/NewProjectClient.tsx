@@ -138,34 +138,31 @@ export function NewProjectClient() {
   const healthPreview = buildHealthPreview(baseUrl, healthEndpoint)
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 px-4 py-5 md:px-5 lg:px-6">
+    <div className="mx-auto max-w-4xl space-y-4 px-4 py-4 md:px-5 lg:px-6">
       <header className="animate-in">
         <Link
           href="/"
-          className="mb-4 inline-flex items-center gap-1.5 rounded-full border border-slate-800/60 bg-slate-950/60 px-3 py-1.5 text-xs text-slate-400 transition-colors hover:border-phosphor-500/30 hover:text-phosphor-300"
+          className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-slate-800/60 bg-slate-950/60 px-2.5 py-1 text-xs text-slate-400 transition-colors hover:border-phosphor-500/30 hover:text-phosphor-300"
         >
           <ArrowLeft className="h-3 w-3" />
-          Back to Dashboard
+          Back
         </Link>
 
-        <div className="flex items-center gap-4">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-phosphor-500/20 bg-phosphor-500/10 shadow-[0_18px_36px_-30px_rgba(0,0,0,0.95)]">
-            <FolderPlus className="h-7 w-7 text-phosphor-400" />
-          </div>
+        <div className="flex items-center gap-3">
+          <FolderPlus className="h-5 w-5 text-phosphor-400" />
           <div>
-            <div className="eyebrow">Registration</div>
-            <h1 className="display mt-1 text-2xl font-bold text-slate-100 tracking-tight lg:text-3xl">
+            <h1 className="display text-xl font-bold text-slate-100 tracking-tight">
               Create Project
             </h1>
-            <p className="mt-1.5 text-sm leading-relaxed text-slate-300">
-              Register the app once, then let SummitFlow track health, scans, and active work against a real root path.
+            <p className="text-sm text-slate-400">
+              Register the app, then SummitFlow tracks health, scans, and work
             </p>
           </div>
         </div>
       </header>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
-        <form onSubmit={handleSubmit} className="card space-y-5 p-6">
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_260px]">
+        <form onSubmit={handleSubmit} className="card space-y-4 p-4">
           {errors.submit && (
             <div className="flex items-center gap-2 rounded-lg border border-rose-500/20 bg-rose-500/10 p-3 text-sm text-rose-400">
               <AlertCircle className="h-4 w-4 shrink-0" />
@@ -285,38 +282,35 @@ export function NewProjectClient() {
           </div>
         </form>
 
-        <aside className="space-y-4">
-          <div className="card space-y-4 p-5">
-            <div>
-              <div className="eyebrow">Live preview</div>
-              <p className="mt-1.5 text-sm text-slate-400">
-                SummitFlow will use these normalized values immediately after create.
-              </p>
+        <aside className="space-y-3">
+          <div className="card space-y-3 p-4">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+              Live preview
             </div>
 
-            <div className="space-y-3 text-xs text-slate-400">
+            <div className="space-y-2 text-xs text-slate-400">
               <div>
-                <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">Project ID</span>
-                <div className="mt-1.5 break-all rounded-lg border border-slate-800/70 bg-slate-950/60 px-3 py-2 font-mono text-slate-200">
+                <span className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Project ID</span>
+                <div className="mt-1 break-all rounded-md border border-slate-800/70 bg-slate-950/60 px-2 py-1.5 font-mono text-slate-200">
                   {projectId || <span className="text-slate-600">not-set</span>}
                 </div>
               </div>
               <div>
-                <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">Health Check</span>
-                <div className="mt-1.5 break-all rounded-lg border border-slate-800/70 bg-slate-950/60 px-3 py-2 font-mono text-slate-200">
+                <span className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Health Check</span>
+                <div className="mt-1 break-all rounded-md border border-slate-800/70 bg-slate-950/60 px-2 py-1.5 font-mono text-slate-200">
                   {healthPreview}
                 </div>
               </div>
               <div>
-                <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">Root Path</span>
-                <div className="mt-1.5 break-all rounded-lg border border-slate-800/70 bg-slate-950/60 px-3 py-2 font-mono text-slate-200">
+                <span className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Root Path</span>
+                <div className="mt-1 break-all rounded-md border border-slate-800/70 bg-slate-950/60 px-2 py-1.5 font-mono text-slate-200">
                   {normalizedRootPath || <span className="text-slate-600">not configured</span>}
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="card space-y-3 p-5">
+          <div className="card space-y-2 p-4">
             <div className="flex items-center gap-2 text-sm font-medium text-slate-200">
               <HeartPulse className="h-4 w-4 text-emerald-400" />
               Operational Coverage

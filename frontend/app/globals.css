@@ -224,17 +224,17 @@ body::after {
 }
 
 .card-elevated {
-  @apply rounded-[1.75rem];
+  @apply rounded-xl;
   background: linear-gradient(180deg, rgba(23, 16, 34, 0.99) 0%, rgba(10, 8, 18, 0.985) 100%);
   border: 1px solid rgba(123, 83, 170, 0.32);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.04),
-    0 22px 48px -40px rgba(0, 0, 0, 0.84);
+    0 14px 28px -24px rgba(0, 0, 0, 0.76);
 }
 
-/* Interactive card with hover lift and glow */
+/* Interactive card with hover lift */
 .card-interactive {
-  @apply cursor-pointer relative overflow-hidden rounded-[1.6rem];
+  @apply cursor-pointer relative overflow-hidden rounded-xl;
   background: linear-gradient(
     180deg,
     rgba(22, 14, 34, 0.95) 0%,
@@ -243,36 +243,16 @@ body::after {
   border: 1px solid rgba(111, 74, 154, 0.32);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.03),
-    0 22px 54px -42px rgba(0, 0, 0, 0.92),
-    0 0 0 1px rgba(255, 0, 102, 0.05);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    0 14px 28px -24px rgba(0, 0, 0, 0.76);
+  transition: all 0.2s ease;
 }
 
 .card-interactive:hover {
-  border-color: rgba(0, 245, 255, 0.28);
-  transform: translateY(-4px);
+  border-color: rgba(132, 94, 180, 0.45);
+  transform: translateY(-2px);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    0 32px 80px -48px rgba(0, 0, 0, 1),
-    0 0 0 1px rgba(0, 245, 255, 0.14),
-    0 0 40px rgba(0, 245, 255, 0.08),
-    0 0 80px rgba(0, 245, 255, 0.03);
-}
-
-.card-interactive::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 10%;
-  right: 10%;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(0, 245, 255, 0.25), transparent);
-  opacity: 0;
-  transition: opacity 0.3s ease;
-}
-
-.card-interactive:hover::after {
-  opacity: 1;
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 18px 36px -28px rgba(0, 0, 0, 0.9);
 }
 
 /* Subtle card for secondary surfaces */
@@ -367,28 +347,24 @@ body::after {
 }
 
 .panel-glass {
-  border-radius: 1.5rem;
+  border-radius: 1rem;
   border: 1px solid rgba(96, 67, 133, 0.34);
   background: linear-gradient(180deg, rgba(18, 12, 28, 0.985) 0%, rgba(9, 7, 16, 0.98) 100%);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.04),
-    0 18px 40px -36px rgba(0, 0, 0, 0.82),
-    0 0 0 1px rgba(255, 0, 102, 0.03);
+    0 12px 28px -24px rgba(0, 0, 0, 0.76);
 }
 
 .metric-tile {
-  border-radius: 1.25rem;
+  border-radius: 0.75rem;
   border: 1px solid rgba(102, 70, 142, 0.32);
   background: linear-gradient(180deg, rgba(17, 11, 26, 0.99) 0%, rgba(9, 7, 16, 0.985) 100%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.03),
-    0 14px 28px -24px rgba(0, 0, 0, 0.76);
-  transition: border-color 0.2s ease, transform 0.15s ease;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  transition: border-color 0.2s ease;
 }
 
 .metric-tile:hover {
   border-color: rgba(132, 94, 180, 0.4);
-  transform: translateY(-1px);
 }
 
 .eyebrow {

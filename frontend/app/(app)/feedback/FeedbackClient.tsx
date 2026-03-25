@@ -64,127 +64,93 @@ export function FeedbackClient() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-[1500px] space-y-5 px-4 py-5 md:px-5 lg:px-6">
+      <div className="mx-auto max-w-[1500px] space-y-4 px-4 py-4 md:px-5 lg:px-6">
         <motion.section
-          initial={{ opacity: 0, y: 14 }}
+          initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
-          className="panel-glass px-4 py-4 md:px-5"
+          transition={{ duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
+          className="space-y-3"
         >
-          <div className="space-y-4">
-            <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-              <div className="flex items-start gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-rose-500/20 bg-rose-500/10">
-                  <MessageSquareWarning className="h-5 w-5 text-rose-300" />
-                </div>
-                <div>
-                  <div className="eyebrow">Agent signals</div>
-                  <h1 className="display mt-1.5 text-2xl font-semibold tracking-tight text-slate-50 lg:text-3xl">
-                    Agent feedback
-                  </h1>
-                  <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-slate-300">
-                    Surface friction, ideas, praise, and unresolved operational
-                    pain, with the live feedback stream moved up above the fold.
-                  </p>
-                </div>
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+            <div className="flex items-center gap-3">
+              <MessageSquareWarning className="h-5 w-5 text-rose-300" />
+              <div>
+                <h1 className="display text-xl font-semibold tracking-tight text-slate-50">
+                  Agent Feedback
+                </h1>
+                <p className="text-sm text-slate-400">
+                  Friction, ideas, praise, and unresolved operational signals
+                </p>
               </div>
-
-              {spotlight && spotlightTone ? (
-                <div className="rounded-[1.2rem] border border-slate-800/70 bg-slate-950/72 px-4 py-3 xl:max-w-sm">
-                  <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-slate-500">
-                    <TriangleAlert className="h-3.5 w-3.5 text-rose-300" />
-                    Spotlight
-                  </div>
-                  <div className="mt-2 text-sm font-medium text-slate-100">
-                    {spotlight.title}
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <span
-                      className={`rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] ${spotlightTone.bg} ${spotlightTone.color} ${spotlightTone.border}`}
-                    >
-                      {spotlightTone.label}
-                    </span>
-                    <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-amber-300">
-                      {spotlight.vote_count} votes
-                    </span>
-                  </div>
-                  <div className="mt-1 text-[11px] text-slate-500">
-                    {spotlight.component_id}
-                  </div>
-                </div>
-              ) : null}
             </div>
 
-            {summary ? (
-              <div className="grid gap-2 sm:grid-cols-3">
-                <div className="rounded-[1.15rem] border border-slate-800/80 bg-slate-950/72 px-3.5 py-3">
-                  <div className="flex items-center gap-3">
-                    <div className="rounded-xl bg-slate-800/60 p-2 ring-1 ring-white/5">
-                      <Signal className="h-4 w-4 text-slate-400" />
-                    </div>
-                    <div>
-                      <div className="font-mono text-2xl font-bold tabular-nums text-slate-50">
-                        {summary.total.toLocaleString()}
-                      </div>
-                      <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        Total signals
-                      </div>
-                    </div>
-                  </div>
+            {spotlight && spotlightTone ? (
+              <div className="rounded-lg border border-slate-800/70 bg-slate-950/72 px-3 py-2 xl:max-w-sm">
+                <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                  <TriangleAlert className="h-3 w-3 text-rose-300" />
+                  Spotlight
                 </div>
-                <div className="rounded-[1.15rem] border border-rose-500/20 bg-rose-500/10 px-3.5 py-3">
-                  <div className="flex items-center gap-3">
-                    <div className="rounded-xl bg-rose-500/15 p-2 ring-1 ring-rose-500/10">
-                      <Flame className="h-4 w-4 text-rose-400" />
-                    </div>
-                    <div>
-                      <div className="font-mono text-2xl font-bold tabular-nums text-slate-50">
-                        {activeSignals.toLocaleString()}
-                      </div>
-                      <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-rose-200/70">
-                        Active attention
-                      </div>
-                    </div>
-                  </div>
+                <div className="mt-1 text-sm font-medium text-slate-100">
+                  {spotlight.title}
                 </div>
-                <div className="rounded-[1.15rem] border border-emerald-500/20 bg-emerald-500/10 px-3.5 py-3">
-                  <div className="flex items-center gap-3">
-                    <div className="rounded-xl bg-emerald-500/15 p-2 ring-1 ring-emerald-500/10">
-                      <Heart className="h-4 w-4 text-emerald-400" />
-                    </div>
-                    <div>
-                      <div className="font-mono text-2xl font-bold tabular-nums text-slate-50">
-                        {(summary.by_type?.praise ?? 0).toLocaleString()}
-                      </div>
-                      <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-200/70">
-                        Praise signals
-                      </div>
-                    </div>
-                  </div>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  <span
+                    className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] ${spotlightTone.bg} ${spotlightTone.color} ${spotlightTone.border}`}
+                  >
+                    {spotlightTone.label}
+                  </span>
+                  <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-amber-300">
+                    {spotlight.vote_count} votes
+                  </span>
+                  <span className="text-[10px] text-slate-500">{spotlight.component_id}</span>
                 </div>
               </div>
             ) : null}
           </div>
-        </motion.section>
 
-        <motion.section
-          initial={{ opacity: 0, y: 14 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{
-            duration: 0.4,
-            delay: 0.06,
-            ease: [0.25, 0.46, 0.45, 0.94],
-          }}
-          className="space-y-3"
-        >
-          <div>
-            <h2 className="display text-sm font-semibold uppercase tracking-[0.16em] text-slate-300">
-              Feedback stream
-            </h2>
-            <p className="mt-0.5 text-xs text-slate-500">
-              Filter, review, and resolve the underlying signals.
-            </p>
-          </div>
+          {summary ? (
+            <div className="grid gap-2 sm:grid-cols-3">
+              <div className="rounded-lg border border-slate-800/80 bg-slate-950/72 px-3 py-2">
+                <div className="flex items-center gap-2.5">
+                  <Signal className="h-3.5 w-3.5 text-slate-400" />
+                  <div className="flex items-baseline gap-2">
+                    <span className="font-mono text-lg font-bold tabular-nums text-slate-50">
+                      {summary.total.toLocaleString()}
+                    </span>
+                    <span className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                      Total
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-2">
+                <div className="flex items-center gap-2.5">
+                  <Flame className="h-3.5 w-3.5 text-rose-400" />
+                  <div className="flex items-baseline gap-2">
+                    <span className="font-mono text-lg font-bold tabular-nums text-slate-50">
+                      {activeSignals.toLocaleString()}
+                    </span>
+                    <span className="text-[10px] uppercase tracking-[0.14em] text-rose-200/70">
+                      Active
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2">
+                <div className="flex items-center gap-2.5">
+                  <Heart className="h-3.5 w-3.5 text-emerald-400" />
+                  <div className="flex items-baseline gap-2">
+                    <span className="font-mono text-lg font-bold tabular-nums text-slate-50">
+                      {(summary.by_type?.praise ?? 0).toLocaleString()}
+                    </span>
+                    <span className="text-[10px] uppercase tracking-[0.14em] text-emerald-200/70">
+                      Praise
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </motion.section>
 
         {error && (

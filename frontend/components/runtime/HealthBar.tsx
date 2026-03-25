@@ -70,29 +70,24 @@ export function HealthBar({ services }: HealthBarProps) {
     .filter((item) => item.count > 0)
 
   return (
-    <div className="card-elevated px-5 py-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="eyebrow">Fleet signal</div>
-          <h2 className="display mt-2 text-xl font-semibold text-slate-50">
-            {alertCount === 0 ? 'All services look steady' : 'Attention lanes are visible'}
+    <div className="card-elevated px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <div className="flex items-center gap-2">
+          <h2 className="display text-sm font-semibold text-slate-100">
+            Fleet Health
           </h2>
-          <p className="mt-2 text-sm text-slate-300">
-            Instant scan of the current runtime fleet before you drop into
-            per-service controls.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 text-[11px]">
-          <span className="rounded-full border border-slate-700/70 bg-slate-950/70 px-3 py-1 text-slate-300">
+          <span className="rounded-full border border-slate-700/70 bg-slate-950/70 px-2 py-0.5 text-[10px] text-slate-400">
             {services.length} monitored
           </span>
-          <span className="rounded-full border border-phosphor-500/18 bg-phosphor-500/10 px-3 py-1 text-phosphor-300">
-            {alertCount} needing attention
-          </span>
+          {alertCount > 0 && (
+            <span className="rounded-full border border-rose-500/18 bg-rose-500/10 px-2 py-0.5 text-[10px] text-rose-300">
+              {alertCount} attention
+            </span>
+          )}
         </div>
       </div>
 
-      <div className="mt-4 flex h-3 rounded-full overflow-hidden border border-white/5 bg-slate-800/60">
+      <div className="flex h-2.5 rounded-full overflow-hidden border border-white/5 bg-slate-800/60">
         {services.map((s) => {
           const tone = resolveHealthTone(s.state, s.health)
           const colors = toneColors[tone] ?? toneColors.unknown
@@ -107,7 +102,7 @@ export function HealthBar({ services }: HealthBarProps) {
         })}
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-2">
+      <div className="mt-2 flex flex-wrap gap-1.5">
         {legend.map((item) => (
           <span
             key={item.key}

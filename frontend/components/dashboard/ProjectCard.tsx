@@ -141,69 +141,52 @@ export function ProjectCard({ project }: ProjectCardProps) {
 
   return (
     <article
-      className="card-interactive group flex h-full flex-col p-6"
+      className="card-interactive group flex h-full flex-col p-4"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onFocusCapture={() => setHovered(true)}
     >
-      <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.18),transparent)] opacity-70" />
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex min-w-0 items-start gap-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
           {project.logo_url ? (
-            <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl border border-slate-700/60 bg-slate-800/80 shadow-[0_18px_36px_-30px_rgba(0,0,0,0.95)]">
+            <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl border border-slate-700/60 bg-slate-800/80">
               <Image
                 src={project.logo_url}
                 alt={project.name}
-                width={56}
-                height={56}
+                width={40}
+                height={40}
                 className="object-cover w-full h-full"
               />
             </div>
           ) : (
             <div
-              className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 shadow-[0_18px_36px_-30px_rgba(0,0,0,0.95)]"
+              className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10"
               style={{
                 background: `linear-gradient(135deg, ${gradient.from} 0%, ${gradient.to} 100%)`,
               }}
             >
-              <span className="display text-xl font-bold text-slate-100">
+              <span className="display text-sm font-bold text-slate-100">
                 {firstLetter}
               </span>
             </div>
           )}
           <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
               <Link
                 href={`/projects/${project.id}`}
-                className="display text-lg font-semibold text-slate-100 transition-colors hover:text-phosphor-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phosphor-500/60 rounded-sm"
+                className="display text-sm font-semibold text-slate-100 transition-colors hover:text-phosphor-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phosphor-500/60 rounded-sm"
               >
                 {project.name}
               </Link>
-              <span className="rounded-full border border-slate-700/60 bg-slate-900/70 px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-slate-400">
+              <span className="rounded-full border border-slate-700/60 bg-slate-900/70 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.14em] text-slate-500">
                 {project.id}
               </span>
             </div>
-            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-              <span className="rounded-full border border-slate-700/60 bg-slate-900/70 px-2.5 py-1 font-mono text-slate-300">
-                {projectHost}
-              </span>
-              {project.root_path ? (
-                <span
-                  className="max-w-[260px] truncate rounded-full border border-slate-800/70 bg-slate-900/60 px-2.5 py-1 font-mono text-slate-500"
-                  title={project.root_path}
-                >
-                  {project.root_path}
-                </span>
-              ) : (
-                <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-amber-300">
-                  Root path missing
-                </span>
-              )}
-            </div>
-            <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px]">
+            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500">
+              <span className="font-mono text-slate-400">{projectHost}</span>
               <span
                 className={clsx(
-                  'rounded-full border px-2.5 py-1 uppercase tracking-[0.16em]',
+                  'rounded-full border px-2 py-0.5 uppercase tracking-[0.14em]',
                   health?.healthy === false
                     ? 'border-rose-500/20 bg-rose-500/10 text-rose-300'
                     : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300',
@@ -214,12 +197,12 @@ export function ProjectCard({ project }: ProjectCardProps) {
                     ? health.response_time_ms != null
                       ? `${Math.round(health.response_time_ms)}ms`
                       : 'healthy'
-                    : 'service issue'
-                  : 'service pending'}
+                    : 'issue'
+                  : 'pending'}
               </span>
               <span
                 className={clsx(
-                  'rounded-full border px-2.5 py-1 uppercase tracking-[0.16em]',
+                  'rounded-full border px-2 py-0.5 uppercase tracking-[0.14em]',
                   qualityGate && !qualityGate.overall_pass
                     ? 'border-amber-500/20 bg-amber-500/10 text-amber-300'
                     : 'border-violet-500/20 bg-violet-500/10 text-violet-300',
@@ -227,7 +210,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
               >
                 {qualityGate
                   ? qualityGate.overall_pass
-                    ? 'quality passing'
+                    ? 'quality ok'
                     : `${qualityGate.total_unfixed} open`
                   : 'quality pending'}
               </span>
@@ -235,7 +218,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
           </div>
         </div>
 
-        <div className="flex items-center gap-2 rounded-full border border-slate-800/70 bg-slate-950/60 px-2.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+        <div className="flex items-center gap-1.5 rounded-full border border-slate-800/70 bg-slate-950/60 px-2 py-1.5">
           {qualityLoading ? (
             <div className="w-3 h-3 border border-slate-600 border-t-purple-500 rounded-full animate-spin" />
           ) : qualityGate ? (
@@ -299,17 +282,17 @@ export function ProjectCard({ project }: ProjectCardProps) {
       </div>
 
       {checkpoint && (
-        <div className="mt-5 rounded-2xl border border-phosphor-500/14 bg-phosphor-500/8 px-4 py-3 text-xs text-phosphor-300">
+        <div className="mt-3 rounded-lg border border-phosphor-500/14 bg-phosphor-500/8 px-3 py-2 text-xs text-phosphor-300">
           <div className="flex flex-wrap items-center gap-2">
-            <Database className="h-3.5 w-3.5" />
-            <span className="font-medium text-slate-100">Active checkpoint</span>
+            <Database className="h-3 w-3" />
+            <span className="font-medium text-slate-100">Checkpoint</span>
             <span className="font-mono">{checkpoint.task_id}</span>
             <span className="text-slate-500">{checkpoint.age}</span>
           </div>
         </div>
       )}
 
-      <div className="mt-5 grid grid-cols-2 gap-2 xl:grid-cols-4">
+      <div className="mt-3 grid grid-cols-2 gap-1.5 xl:grid-cols-4">
         {metrics.map((metric) => {
           const Icon = metric.icon
 
@@ -319,17 +302,15 @@ export function ProjectCard({ project }: ProjectCardProps) {
               key={metric.key}
               onClick={(e) => handleStatClick(e, metric.key)}
               title={metric.title}
-              className="rounded-2xl border border-slate-800/70 bg-slate-950/55 px-3 py-3 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-700/80 hover:bg-slate-900/80"
+              className="rounded-lg border border-slate-800/70 bg-slate-950/55 px-2 py-1.5 text-left transition-colors hover:border-slate-700/80 hover:bg-slate-900/80"
             >
-              <div className="flex items-center justify-between gap-2">
-                <span className={clsx('rounded-xl bg-slate-900/85 p-2 ring-1 ring-white/5', metric.activeClass)}>
-                  <Icon className="h-3.5 w-3.5" />
-                </span>
-                <span className="font-mono text-xl font-bold tabular-nums text-slate-100">
+              <div className="flex items-center justify-between gap-1.5">
+                <Icon className={clsx('h-3 w-3', metric.activeClass)} />
+                <span className="font-mono text-sm font-bold tabular-nums text-slate-100">
                   {metric.count}
                 </span>
               </div>
-              <div className="mt-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+              <div className="mt-1 text-[9px] uppercase tracking-[0.14em] text-slate-500">
                 {metric.label}
               </div>
             </button>
@@ -337,29 +318,28 @@ export function ProjectCard({ project }: ProjectCardProps) {
         })}
       </div>
 
-      <div className="mt-5 flex flex-wrap items-center gap-2">
+      <div className="mt-3 flex flex-wrap items-center gap-1.5">
         <Link
           href={`/projects/${project.id}/settings`}
-          className="inline-flex items-center gap-1.5 rounded-full border border-slate-700/60 bg-slate-900/70 px-3 py-1.5 text-xs text-slate-300 transition-all hover:border-slate-500 hover:text-slate-100"
+          className="inline-flex items-center gap-1 rounded-full border border-slate-700/60 bg-slate-900/70 px-2.5 py-1 text-[10px] text-slate-300 transition-all hover:border-slate-500 hover:text-slate-100"
         >
-          <Settings2 className="h-3.5 w-3.5" />
+          <Settings2 className="h-3 w-3" />
           Settings
         </Link>
         <a
           href={project.base_url}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex items-center gap-1.5 rounded-full border border-slate-700/60 bg-slate-900/70 px-3 py-1.5 text-xs text-slate-300 transition-all hover:border-slate-500 hover:text-slate-100"
+          className="inline-flex items-center gap-1 rounded-full border border-slate-700/60 bg-slate-900/70 px-2.5 py-1 text-[10px] text-slate-300 transition-all hover:border-slate-500 hover:text-slate-100"
         >
-          <ExternalLink className="h-3.5 w-3.5" />
-          Open app
+          <ExternalLink className="h-3 w-3" />
+          Open
         </a>
-        <span className="ml-auto flex items-center gap-1.5 font-mono text-[11px] text-slate-500">
-          <Clock className="h-3 w-3" />
+        <span className="ml-auto flex items-center gap-1 font-mono text-[10px] text-slate-500">
+          <Clock className="h-2.5 w-2.5" />
           {new Date(project.created_at).toLocaleDateString('en-US', {
             month: 'short',
             day: 'numeric',
-            year: 'numeric',
           })}
         </span>
       </div>

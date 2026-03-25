@@ -81,111 +81,93 @@ export function DashboardClient() {
   ]
 
   return (
-    <div className="mx-auto max-w-[1500px] space-y-6 px-4 py-5 md:px-5 lg:px-6">
+    <div className="mx-auto max-w-[1500px] space-y-4 px-4 py-4 md:px-5 lg:px-6">
       <motion.section
         {...fadeUp}
         transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
-        className="panel-glass px-4 py-4 md:px-5"
+        className="space-y-3"
       >
-        <div className="space-y-4">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-            <div className="space-y-3">
-              <div className="eyebrow">Operations cockpit</div>
-              <div className="space-y-2">
-                <h1 className="display text-2xl font-bold tracking-tight text-slate-50 lg:text-3xl">
-                  Command Center
-                </h1>
-                <p className="max-w-2xl text-sm leading-relaxed text-slate-300">
-                  Track live work across every repo and move into the next
-                  high-leverage action without scrolling through decoration first.
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
-                <span className="rounded-full border border-slate-700/60 bg-slate-950/72 px-3 py-1.5">
-                  {new Date().toLocaleDateString('en-US', {
-                    weekday: 'long',
-                    month: 'long',
-                    day: 'numeric',
-                  })}
-                </span>
-                <span className="rounded-full border border-slate-700/60 bg-slate-950/72 px-3 py-1.5">
-                  {totalProjects} active projects
-                </span>
-                <span className="rounded-full border border-phosphor-500/18 bg-phosphor-500/10 px-3 py-1.5 text-phosphor-300">
-                  Live coordination signal
-                </span>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <Link
-                href="/projects/new"
-                className="btn-primary inline-flex items-center gap-2 px-4 py-2 text-sm"
-              >
-                <Plus className="h-4 w-4" />
-                Add Project
-              </Link>
-              <Link
-                href="/notes"
-                className="btn-secondary inline-flex items-center gap-2 px-4 py-2 text-sm"
-              >
-                <StickyNote className="h-4 w-4" />
-                Open Notes
-              </Link>
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex items-center gap-3">
+            <FolderKanban className="h-5 w-5 text-phosphor-400" />
+            <div>
+              <h1 className="display text-xl font-bold tracking-tight text-slate-50">
+                Command Center
+              </h1>
+              <p className="text-sm text-slate-400">
+                {totalProjects} projects &middot; {new Date().toLocaleDateString('en-US', {
+                  weekday: 'short',
+                  month: 'short',
+                  day: 'numeric',
+                })}
+              </p>
             </div>
           </div>
 
-          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
-            {stats.map((stat, i) => {
-              const Icon = stat.icon
-              return (
-                <motion.div
-                  key={stat.label}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.35, delay: 0.04 + i * 0.04, ease: [0.25, 0.46, 0.45, 0.94] }}
-                  className="rounded-[1.15rem] border border-slate-800/80 bg-slate-950/72 px-3.5 py-3"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={clsx('rounded-xl p-2 ring-1 ring-white/5', stat.iconBg)}>
-                      <Icon className={clsx('h-4 w-4', stat.iconColor)} />
-                    </div>
-                    <div className="min-w-0">
-                      <div className={clsx('font-mono text-2xl font-bold leading-none tabular-nums', stat.color)}>
-                        {stat.value.toLocaleString()}
-                      </div>
-                      <div className="mt-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        {stat.label}
-                      </div>
-                    </div>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/projects/new"
+              className="btn-primary inline-flex items-center gap-2 px-3 py-1.5 text-sm"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add Project
+            </Link>
+            <Link
+              href="/notes"
+              className="btn-secondary inline-flex items-center gap-2 px-3 py-1.5 text-sm"
+            >
+              <StickyNote className="h-3.5 w-3.5" />
+              Notes
+            </Link>
+          </div>
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+          {stats.map((stat, i) => {
+            const Icon = stat.icon
+            return (
+              <motion.div
+                key={stat.label}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: i * 0.03, ease: [0.25, 0.46, 0.45, 0.94] }}
+                className="rounded-lg border border-slate-800/80 bg-slate-950/72 px-3 py-2"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Icon className={clsx('h-3.5 w-3.5', stat.iconColor)} />
+                  <div className="min-w-0 flex items-baseline gap-2">
+                    <span className={clsx('font-mono text-lg font-bold leading-none tabular-nums', stat.color)}>
+                      {stat.value.toLocaleString()}
+                    </span>
+                    <span className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                      {stat.label}
+                    </span>
                   </div>
-                </motion.div>
-              )
-            })}
-          </div>
+                </div>
+              </motion.div>
+            )
+          })}
         </div>
       </motion.section>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_360px]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_340px]">
         <motion.section
           {...fadeUp}
           transition={{ duration: 0.4, delay: 0.08, ease: [0.25, 0.46, 0.45, 0.94] }}
-          className="space-y-4"
+          className="space-y-3"
         >
-          <div className="flex flex-col gap-3 rounded-[1.4rem] border border-slate-800/70 bg-slate-950/58 px-4 py-3.5 sm:flex-row sm:items-end sm:justify-between">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <div className="eyebrow">Projects</div>
-              <h2 className="display mt-1.5 text-xl font-semibold text-slate-100">
-                Operational portfolio
+              <h2 className="display text-sm font-semibold uppercase tracking-[0.16em] text-slate-300">
+                Projects
               </h2>
-              <p className="mt-1.5 max-w-2xl text-sm text-slate-500">
-                Review ownership, quality pressure, and service readiness
-                without leaving the dashboard.
+              <p className="mt-0.5 text-xs text-slate-500">
+                Ownership, quality, and service readiness
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2">
               {totalPages > 1 && (
-                <div className="flex items-center gap-2 rounded-full border border-slate-700/60 bg-slate-900/70 px-3 py-1.5 text-xs">
+                <div className="flex items-center gap-1.5 rounded-full border border-slate-700/60 bg-slate-900/70 px-2.5 py-1 text-xs">
                   <span className="text-slate-500">
                     {Math.min(startIndex + 1, totalProjects)}-
                     {Math.min(endIndex, totalProjects)} of {totalProjects}
@@ -194,7 +176,7 @@ export function DashboardClient() {
                     type="button"
                     onClick={handlePrevPage}
                     disabled={page === 0}
-                    className="rounded-full p-1 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-30"
+                    className="rounded-full p-0.5 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-30"
                     aria-label="Previous page"
                   >
                     <ChevronLeft className="h-3.5 w-3.5" />
@@ -206,7 +188,7 @@ export function DashboardClient() {
                     type="button"
                     onClick={handleNextPage}
                     disabled={page === totalPages - 1}
-                    className="rounded-full p-1 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-30"
+                    className="rounded-full p-0.5 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-30"
                     aria-label="Next page"
                   >
                     <ChevronRight className="h-3.5 w-3.5" />
@@ -215,9 +197,9 @@ export function DashboardClient() {
               )}
               <Link
                 href="/projects/new"
-                className="btn-primary inline-flex items-center gap-2 px-4 py-2 text-sm"
+                className="btn-primary inline-flex items-center gap-1.5 px-3 py-1.5 text-xs"
               >
-                <Plus className="h-4 w-4" />
+                <Plus className="h-3.5 w-3.5" />
                 Add Project
               </Link>
             </div>
@@ -229,30 +211,22 @@ export function DashboardClient() {
           />
         </motion.section>
 
-        <div className="space-y-4">
+        <div className="space-y-3">
           <motion.section
             {...fadeUp}
             transition={{ duration: 0.4, delay: 0.12, ease: [0.25, 0.46, 0.45, 0.94] }}
-            className="panel-glass p-4"
+            className="panel-glass p-3"
           >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="eyebrow">System load</div>
-                <h2 className="display mt-1.5 text-lg font-semibold text-slate-100">
-                  Live platform health
-                </h2>
-                <p className="mt-1 text-sm text-slate-500">
-                  Native services, workers, and shared infrastructure.
-                </p>
-              </div>
-              <span className="rounded-full border border-phosphor-500/16 bg-phosphor-500/10 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-phosphor-300">
-                Monitoring
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <h2 className="display text-sm font-semibold uppercase tracking-[0.16em] text-slate-300">
+                Platform health
+              </h2>
+              <span className="rounded-full border border-phosphor-500/16 bg-phosphor-500/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-phosphor-300">
+                Live
               </span>
             </div>
-            <div className="mt-3.5">
-              <SystemHealthWidget />
-            </div>
-            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            <SystemHealthWidget />
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
               {quickLinks.map((link) => {
                 const Icon = link.icon
 
@@ -261,26 +235,24 @@ export function DashboardClient() {
                     key={link.href}
                     href={link.href}
                     className={clsx(
-                      'group/link rounded-xl border border-slate-800/70 bg-slate-950/72 px-3 py-3 transition-all duration-200 hover:-translate-y-0.5',
+                      'group/link rounded-lg border border-slate-800/70 bg-slate-950/72 px-2.5 py-2 transition-colors',
                       link.hoverBorder,
                       link.hoverBg,
                     )}
                   >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2.5">
-                        <div className={clsx('rounded-lg p-2 ring-1 ring-white/5', link.iconBg)}>
-                          <Icon className={clsx('h-4 w-4 transition-colors', link.iconColor)} />
-                        </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Icon className={clsx('h-3.5 w-3.5', link.iconColor)} />
                         <div>
-                          <div className="text-sm font-medium text-slate-100">
+                          <div className="text-xs font-medium text-slate-100">
                             {link.label}
                           </div>
-                          <div className="mt-0.5 text-[11px] leading-relaxed text-slate-500">
+                          <div className="text-[10px] text-slate-500">
                             {link.sub}
                           </div>
                         </div>
                       </div>
-                      <ArrowRight className="h-4 w-4 text-slate-700 transition-transform duration-200 group-hover/link:translate-x-0.5" />
+                      <ArrowRight className="h-3 w-3 text-slate-700 transition-transform duration-200 group-hover/link:translate-x-0.5" />
                     </div>
                   </Link>
                 )
@@ -291,17 +263,11 @@ export function DashboardClient() {
           <motion.section
             {...fadeUp}
             transition={{ duration: 0.4, delay: 0.16, ease: [0.25, 0.46, 0.45, 0.94] }}
-            className="space-y-4"
+            className="space-y-2"
           >
-            <div className="rounded-[1.4rem] border border-slate-800/70 bg-slate-950/58 px-4 py-3.5">
-              <div className="eyebrow">Recent activity</div>
-              <h2 className="display mt-1.5 text-xl font-semibold text-slate-100">
-                Live coordination feed
-              </h2>
-              <p className="mt-1.5 text-sm text-slate-500">
-                Follow commits, tasks, agents, and backup signals as they land.
-              </p>
-            </div>
+            <h2 className="display text-sm font-semibold uppercase tracking-[0.16em] text-slate-300">
+              Recent activity
+            </h2>
             <ActivityFeed />
           </motion.section>
         </div>

@@ -202,41 +202,31 @@ export function ServiceGrid() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="card-elevated px-5 py-5">
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
-          <div className="space-y-4">
-            <div>
-              <div className="eyebrow">Services</div>
-              <h2 className="display mt-2 text-3xl font-semibold text-slate-50">
-                Control deck
-              </h2>
-              <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-300">
-                Scan the runtime fleet at a glance, then switch to the denser
-                list view when you need action-by-action operational detail.
-              </p>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="space-y-4">
+      <div className="card-elevated px-4 py-3">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="space-y-2">
+            <h2 className="display text-sm font-semibold uppercase tracking-[0.16em] text-slate-300">
+              Service Control Deck
+            </h2>
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
               {overviewCards.map((card) => {
                 const Icon = card.icon
                 return (
                   <div
                     key={card.label}
-                    className={clsx('rounded-[1.35rem] border px-4 py-4', card.tone)}
+                    className={clsx('rounded-lg border px-3 py-2', card.tone)}
                   >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-2.5">
-                        <Icon className="h-4 w-4 text-current" />
+                    <div className="flex items-center gap-2.5">
+                      <Icon className="h-3.5 w-3.5 text-current" />
+                      <div className="flex items-baseline gap-2">
+                        <span className="font-mono text-lg tabular-nums text-slate-50">
+                          {card.value}
+                        </span>
+                        <span className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                          {card.label}
+                        </span>
                       </div>
-                      <span className="font-mono text-3xl tabular-nums text-slate-50">
-                        {card.value}
-                      </span>
-                    </div>
-                    <div className="mt-4 text-[11px] uppercase tracking-[0.18em] text-slate-500">
-                      {card.label}
-                    </div>
-                    <div className="mt-1 text-xs text-slate-400">
-                      {card.detail}
                     </div>
                   </div>
                 )
@@ -244,39 +234,33 @@ export function ServiceGrid() {
             </div>
           </div>
 
-          <div className="space-y-3 xl:w-[260px]">
-            <div className="flex items-center gap-1 rounded-full border border-slate-700/50 bg-slate-950/70 p-1">
-              <button
-                onClick={() => setView('grid')}
-                className={clsx(
-                  'flex flex-1 items-center justify-center gap-2 rounded-full px-3 py-2 text-xs font-medium transition-all duration-200',
-                  view === 'grid'
-                    ? 'bg-phosphor-500/15 text-phosphor-300 shadow-[0_12px_24px_rgba(14,165,233,0.15)]'
-                    : 'text-slate-500 hover:bg-slate-900/80 hover:text-slate-200',
-                )}
-                aria-label="Grid view"
-              >
-                <LayoutGrid className="h-3.5 w-3.5" />
-                Grid
-              </button>
-              <button
-                onClick={() => setView('list')}
-                className={clsx(
-                  'flex flex-1 items-center justify-center gap-2 rounded-full px-3 py-2 text-xs font-medium transition-all duration-200',
-                  view === 'list'
-                    ? 'bg-phosphor-500/15 text-phosphor-300 shadow-[0_12px_24px_rgba(14,165,233,0.15)]'
-                    : 'text-slate-500 hover:bg-slate-900/80 hover:text-slate-200',
-                )}
-                aria-label="List view"
-              >
-                <List className="h-3.5 w-3.5" />
-                List
-              </button>
-            </div>
-            <p className="rounded-[1.35rem] border border-slate-800/70 bg-slate-950/45 px-4 py-4 text-xs leading-relaxed text-slate-400">
-              Grid view favors fast anomaly scanning. List view favors denser
-              metrics and quick action batching.
-            </p>
+          <div className="flex items-center gap-1 rounded-full border border-slate-700/50 bg-slate-950/70 p-1">
+            <button
+              onClick={() => setView('grid')}
+              className={clsx(
+                'flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all',
+                view === 'grid'
+                  ? 'bg-phosphor-500/15 text-phosphor-300'
+                  : 'text-slate-500 hover:bg-slate-900/80 hover:text-slate-200',
+              )}
+              aria-label="Grid view"
+            >
+              <LayoutGrid className="h-3.5 w-3.5" />
+              Grid
+            </button>
+            <button
+              onClick={() => setView('list')}
+              className={clsx(
+                'flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all',
+                view === 'list'
+                  ? 'bg-phosphor-500/15 text-phosphor-300'
+                  : 'text-slate-500 hover:bg-slate-900/80 hover:text-slate-200',
+              )}
+              aria-label="List view"
+            >
+              <List className="h-3.5 w-3.5" />
+              List
+            </button>
           </div>
         </div>
       </div>
@@ -286,34 +270,26 @@ export function ServiceGrid() {
         const SectionIcon = theme.icon
 
         return (
-          <section key={section.id} className="card-elevated space-y-4 px-5 py-5">
-            <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-              <div className="flex items-start gap-3">
-                <div
-                  className={clsx(
-                    'flex h-12 w-12 items-center justify-center rounded-2xl border',
-                    theme.tone,
-                  )}
-                >
-                  <SectionIcon className="h-5 w-5 text-current" />
-                </div>
+          <section key={section.id} className="card-elevated space-y-3 px-4 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <SectionIcon className={clsx('h-4 w-4', theme.tone.includes('cyan') ? 'text-cyan-300' : theme.tone.includes('emerald') ? 'text-emerald-300' : 'text-amber-300')} />
                 <div>
-                  <div className="eyebrow">{section.id.replace('-', ' ')}</div>
-                  <h2 className="display mt-2 text-xl font-semibold text-slate-100">
+                  <h2 className="display text-sm font-semibold text-slate-100">
                     {section.title}
                   </h2>
-                  <p className="mt-2 text-sm text-slate-400">
+                  <p className="text-xs text-slate-500">
                     {section.description}
                   </p>
                 </div>
               </div>
               <span
                 className={clsx(
-                  'rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.16em]',
+                  'rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.14em]',
                   theme.badge,
                 )}
               >
-                {section.items.length} services
+                {section.items.length}
               </span>
             </div>
 

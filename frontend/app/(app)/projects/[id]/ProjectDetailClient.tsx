@@ -246,67 +246,54 @@ export function ProjectDetailClient() {
     <div className="h-full flex flex-col">
       <div className="flex-none border-b border-slate-800/80 bg-slate-950/55 backdrop-blur-sm">
         <div className="mx-auto w-full max-w-[1600px] px-4 py-3 md:px-5">
-          <div className="panel-glass px-4 py-3 md:px-5 md:py-3.5">
-            <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-              <div className="space-y-2.5">
-                <div className="eyebrow">Project cockpit</div>
-                <div className="flex flex-wrap items-center gap-2.5">
-                  <h1 className="display text-lg font-semibold tracking-tight text-slate-100 sm:text-xl xl:text-2xl">
-                    {project.name}
-                  </h1>
-                  <span className="rounded-full border border-slate-700/60 bg-slate-950/72 px-3 py-1 text-[10px] uppercase tracking-[0.16em] text-slate-300">
-                    {TAB_COPY[activeTab].label}
-                  </span>
-                </div>
-                <p className="max-w-3xl text-sm leading-relaxed text-slate-300">
-                  {TAB_COPY[activeTab].description}
-                </p>
-                <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                  <span className="rounded-full border border-slate-700/60 bg-slate-950/72 px-3 py-1.5 font-mono text-slate-300">
-                    {project.id}
-                  </span>
-                  <span
-                    className={project.health_status === 'healthy'
-                      ? 'rounded-full border border-emerald-500/18 bg-emerald-500/10 px-3 py-1.5 uppercase tracking-[0.16em] text-emerald-300'
-                      : 'rounded-full border border-amber-500/18 bg-amber-500/10 px-3 py-1.5 uppercase tracking-[0.16em] text-amber-300'}
-                  >
-                    {project.health_status === 'healthy' ? 'healthy service' : 'monitoring'}
-                  </span>
-                  <span className={project.root_path
-                    ? 'rounded-full border border-phosphor-500/18 bg-phosphor-500/10 px-3 py-1.5 text-phosphor-300'
-                    : 'rounded-full border border-amber-500/18 bg-amber-500/10 px-3 py-1.5 text-amber-300'}>
-                    {project.root_path ? 'root path configured' : 'root path missing'}
-                  </span>
-                  <a
-                    href={project.base_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="max-w-full truncate rounded-full border border-slate-700/60 bg-slate-950/72 px-3 py-1.5 font-mono text-slate-300 transition-colors hover:text-phosphor-300"
-                    title={project.base_url}
-                  >
-                    {project.base_url}
-                  </a>
-                </div>
+          <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="display text-lg font-semibold tracking-tight text-slate-100">
+                  {project.name}
+                </h1>
+                <span className="rounded-full border border-slate-700/60 bg-slate-950/72 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-slate-300">
+                  {TAB_COPY[activeTab].label}
+                </span>
+                <span
+                  className={project.health_status === 'healthy'
+                    ? 'rounded-full border border-emerald-500/18 bg-emerald-500/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-emerald-300'
+                    : 'rounded-full border border-amber-500/18 bg-amber-500/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-amber-300'}
+                >
+                  {project.health_status === 'healthy' ? 'healthy' : 'watch'}
+                </span>
               </div>
-
-              <div className="flex flex-wrap gap-2 xl:justify-end">
+              <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px]">
+                <span className="font-mono text-slate-500">{project.id}</span>
                 <a
                   href={project.base_url}
                   target="_blank"
                   rel="noreferrer"
-                  className="btn-secondary inline-flex items-center gap-2 px-4 py-1.5 text-sm"
+                  className="max-w-[200px] truncate font-mono text-slate-400 transition-colors hover:text-phosphor-300"
+                  title={project.base_url}
                 >
-                  <ExternalLink className="h-4 w-4" />
-                  Open app
+                  {project.base_url}
                 </a>
-                <Link
-                  href={`/projects/${project.id}/settings`}
-                  className="btn-secondary inline-flex items-center gap-2 px-4 py-1.5 text-sm"
-                >
-                  <Settings2 className="h-4 w-4" />
-                  Settings
-                </Link>
               </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2 xl:justify-end">
+              <a
+                href={project.base_url}
+                target="_blank"
+                rel="noreferrer"
+                className="btn-secondary inline-flex items-center gap-1.5 px-3 py-1.5 text-xs"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                Open app
+              </a>
+              <Link
+                href={`/projects/${project.id}/settings`}
+                className="btn-secondary inline-flex items-center gap-1.5 px-3 py-1.5 text-xs"
+              >
+                <Settings2 className="h-3.5 w-3.5" />
+                Settings
+              </Link>
             </div>
           </div>
         </div>
