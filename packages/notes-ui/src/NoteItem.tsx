@@ -28,10 +28,10 @@ export function NoteItem({ note, selected, onClick }: NoteItemProps) {
             type="button"
             onClick={onClick}
             className={clsx(
-                'w-full text-left px-3 py-2.5 transition-all duration-150 group',
+                'w-full text-left px-3 py-2.5 transition-all duration-200 group',
                 'border-l-2',
                 selected
-                    ? 'bg-slate-800/70 border-l-[var(--color-phosphor-500,#00f5ff)]'
+                    ? 'bg-slate-800/70 border-l-[var(--color-phosphor-500,#00f5ff)] shadow-[inset_0_0_20px_-10px_var(--color-phosphor-500,#00f5ff)]'
                     : 'border-transparent hover:bg-slate-800/40 hover:border-l-slate-600',
             )}
         >
@@ -50,9 +50,10 @@ export function NoteItem({ note, selected, onClick }: NoteItemProps) {
                     <div className="flex items-start gap-1.5">
                         <span
                             className={clsx(
-                                'text-[11px] leading-snug transition-colors duration-150',
+                                'text-[11px] leading-snug transition-colors duration-200',
                                 selected ? 'text-slate-100 font-medium' : 'text-slate-300 group-hover:text-slate-200',
                             )}
+                            style={{ fontFamily: 'var(--font-display, inherit)' }}
                         >
                             {note.title || 'Untitled'}
                         </span>

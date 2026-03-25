@@ -5,12 +5,17 @@ import { NotesProvider, NotesPanel } from '@summitflow/notes-ui'
 export default function NotesPopoutPage() {
   return (
     <NotesProvider apiPrefix="/api" projectScope="summitflow">
-      <div className="h-screen flex flex-col bg-slate-900 overflow-hidden">
-        {/* Phosphor glow line */}
-        <div className="h-px w-full flex-shrink-0" style={{
-          background: 'linear-gradient(90deg, transparent 0%, var(--color-phosphor-500, #00f5ff) 30%, var(--color-phosphor-400, #33f7ff) 50%, var(--color-phosphor-500, #00f5ff) 70%, transparent 100%)',
-          opacity: 0.4,
-        }} />
+      <div className="h-screen flex flex-col bg-slate-950 overflow-hidden relative">
+        {/* Atmospheric radial glow */}
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background: 'radial-gradient(ellipse 80% 60% at 50% 0%, var(--color-slate-800, #1a0a2e) 0%, transparent 70%)',
+            opacity: 0.5,
+          }}
+        />
+        {/* Chrome accent line */}
+        <div className="chrome-line flex-shrink-0" />
         <NotesPanel />
       </div>
     </NotesProvider>

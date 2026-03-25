@@ -256,7 +256,7 @@ export function NoteEditor({ note, onDeleted }: NoteEditorProps) {
         const titleChanged = !!proposal.proposed_title && proposal.proposed_title !== title;
         const contentChanged = proposal.proposed_content !== content;
         return (
-            <div className="flex flex-col h-full min-w-0" style={{ backgroundColor: '#0f172a' }}>
+            <div className="flex flex-col h-full min-w-0 bg-slate-900">
                 <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-700/50">
                     <div className="flex items-center gap-2">
                         <Wand2 className="w-3.5 h-3.5 text-amber-400" />
@@ -290,7 +290,7 @@ export function NoteEditor({ note, onDeleted }: NoteEditorProps) {
                 )}
                 <div className="flex flex-1 min-h-0 overflow-hidden">
                     <div className="flex-1 min-w-0 border-r border-slate-800/50 overflow-y-auto">
-                        <div className="px-3 py-1.5 border-b border-slate-800/30 sticky top-0" style={{ backgroundColor: '#0f172a' }}>
+                        <div className="px-3 py-1.5 border-b border-slate-800/30 sticky top-0 bg-slate-900">
                             <span className="text-[10px] text-rose-400/70 uppercase tracking-wider">Current</span>
                         </div>
                         {contentChanged ? (
@@ -300,7 +300,7 @@ export function NoteEditor({ note, onDeleted }: NoteEditorProps) {
                         )}
                     </div>
                     <div className="flex-1 min-w-0 overflow-y-auto">
-                        <div className="px-3 py-1.5 border-b border-slate-800/30 sticky top-0" style={{ backgroundColor: '#0f172a' }}>
+                        <div className="px-3 py-1.5 border-b border-slate-800/30 sticky top-0 bg-slate-900">
                             <span className="text-[10px] text-emerald-400/70 uppercase tracking-wider">Proposed</span>
                         </div>
                         {contentChanged ? (
@@ -319,7 +319,7 @@ export function NoteEditor({ note, onDeleted }: NoteEditorProps) {
     // ── Version history view ──
     if (showHistory) {
         return (
-            <div className="flex flex-col h-full min-w-0" style={{ backgroundColor: '#0f172a' }}>
+            <div className="flex flex-col h-full min-w-0 bg-slate-900">
                 <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-700/50">
                     <div className="flex items-center gap-2">
                         <History className="w-3.5 h-3.5 text-[var(--color-phosphor-400,#33f7ff)]" />
@@ -369,7 +369,7 @@ export function NoteEditor({ note, onDeleted }: NoteEditorProps) {
 
     // ── Normal editor mode ──
     return (
-        <div className="flex flex-col h-full min-w-0" style={{ backgroundColor: '#0f172a' }}>
+        <div className="flex flex-col h-full min-w-0 bg-slate-900">
             {/* Editor header */}
             <div className="flex items-center gap-3 px-4 py-2.5 border-b border-slate-700/50">
                 <input
@@ -377,6 +377,7 @@ export function NoteEditor({ note, onDeleted }: NoteEditorProps) {
                     onChange={e => handleTitleChange(e.target.value)}
                     placeholder="Untitled"
                     className="flex-1 bg-transparent text-slate-100 text-sm font-semibold placeholder:text-slate-600 outline-none min-w-0"
+                    style={{ fontFamily: 'var(--font-display, inherit)' }}
                 />
                 <div className="flex items-center gap-0.5 flex-shrink-0">
                     {formatState === 'pending' && (

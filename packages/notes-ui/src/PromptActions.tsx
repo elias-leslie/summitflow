@@ -50,7 +50,7 @@ export function PromptActions({ content, noteId, onRefineStarted }: PromptAction
     }, [handleRefine]);
 
     return (
-        <div className="border-t border-slate-700/60" style={{ backgroundColor: 'rgb(10 16 28)' }}>
+        <div className="border-t border-slate-700/60 bg-slate-950/60">
             {/* Refinement input */}
             <div className="flex items-center gap-2 px-3 py-2">
                 <input

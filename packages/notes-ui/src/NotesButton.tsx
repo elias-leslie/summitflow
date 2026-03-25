@@ -93,13 +93,12 @@ export function NotesButton({ className, popOutUrl = '/notes' }: { className?: s
                 <div
                     ref={panelRef}
                     className={clsx(
-                        'fixed flex flex-col',
+                        'fixed flex flex-col bg-slate-900',
                         'border border-slate-700/70 rounded-lg',
                         'shadow-2xl shadow-black/60',
                         'overflow-hidden',
                     )}
                     style={{
-                        backgroundColor: '#0f172a',
                         width: 700,
                         height: 'calc(100vh - 80px)',
                         maxHeight: 900,

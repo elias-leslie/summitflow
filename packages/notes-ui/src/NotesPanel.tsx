@@ -24,12 +24,12 @@ export function NotesPanel({ onPopOut }: NotesPanelProps) {
     if (!scopes.includes(projectScope)) scopes.push(projectScope);
 
     return (
-        <div className="flex flex-col flex-1 min-h-0" style={{ backgroundColor: '#0f172a' }}>
+        <div className="flex flex-col flex-1 min-h-0 bg-slate-900">
             {/* ── Header bar ── */}
-            <div className="flex items-center justify-between px-3 py-2.5 border-b border-slate-700/50 flex-shrink-0" style={{ backgroundColor: '#0f172a' }}>
+            <div className="flex items-center justify-between px-3 py-2.5 border-b border-slate-700/50 flex-shrink-0 bg-slate-950/60">
                 <div className="flex items-center gap-2">
                     <StickyNote className="w-3.5 h-3.5 text-[var(--color-phosphor-400,#33f7ff)]" />
-                    <span className="text-xs font-medium text-slate-300 tracking-wide">Notes</span>
+                    <span className="text-xs font-semibold text-slate-200 tracking-wide" style={{ fontFamily: 'var(--font-display, inherit)' }}>Notes</span>
                 </div>
 
                 <div className="flex items-center gap-1.5">
@@ -118,24 +118,30 @@ export function NotesPanel({ onPopOut }: NotesPanelProps) {
             </div>
 
             {/* ── Body: list + editor ── */}
-            <div className="flex flex-1 min-h-0 overflow-hidden" style={{ backgroundColor: '#0f172a' }}>
+            <div className="flex flex-1 min-h-0 overflow-hidden bg-slate-900">
                 <NotesList
                     activeTab={activeTab}
                     scopeFilter={scopeFilter}
                     selectedId={selectedNote?.id ?? null}
                     onSelect={setSelectedNote}
                 />
-                <div className="flex-1 min-w-0" style={{ backgroundColor: '#0f172a' }}>
+                <div className="flex-1 min-w-0 bg-slate-900">
                     {selectedNote ? (
                         <NoteEditor
                             note={selectedNote}
                             onDeleted={() => setSelectedNote(null)}
                         />
                     ) : (
-                        <div className="flex items-center justify-center h-full" style={{ backgroundColor: '#0f172a' }}>
-                            <div className="text-center">
-                                <StickyNote className="w-8 h-8 mx-auto mb-2 text-slate-800" />
-                                <p className="text-[11px] text-slate-600">Select or create a {activeTab}</p>
+                        <div className="flex items-center justify-center h-full bg-slate-900">
+                            <div className="text-center space-y-3">
+                                <div className="relative mx-auto w-12 h-12 flex items-center justify-center">
+                                    <div className="absolute inset-0 rounded-xl bg-[var(--color-phosphor-500,#00f5ff)]/5 border border-[var(--color-phosphor-500,#00f5ff)]/10" />
+                                    <StickyNote className="w-5 h-5 text-slate-600 relative" />
+                                </div>
+                                <div>
+                                    <p className="text-xs text-slate-500 font-medium">Select or create a {activeTab}</p>
+                                    <p className="text-[10px] text-slate-600 mt-1">Use the sidebar to browse, or press + to start fresh</p>
+                                </div>
                             </div>
                         </div>
                     )}
