@@ -14,7 +14,7 @@ export function Skeleton({ className }: SkeletonProps) {
         className,
       )}
     >
-      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[rgba(191,0,255,0.04)] to-transparent animate-shimmer" />
+      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[rgba(191,0,255,0.06)] to-transparent animate-shimmer" />
     </div>
   )
 }

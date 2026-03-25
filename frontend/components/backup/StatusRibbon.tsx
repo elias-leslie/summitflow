@@ -20,7 +20,7 @@ const HEALTH_TONE: Record<string, string> = {
 function BackupHealthBar({ sources }: { sources: BackupHealthItem[] }) {
   if (sources.length === 0) return null
   return (
-    <div className="flex gap-0.5 h-2 rounded-full overflow-hidden bg-slate-800/50">
+    <div className="flex gap-0.5 h-2.5 rounded-full overflow-hidden bg-slate-800/50 ring-1 ring-white/5">
       {sources.map((s) => (
         <div
           key={s.source_id}

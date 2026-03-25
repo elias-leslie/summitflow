@@ -202,18 +202,23 @@ export function ProjectDetailClient() {
   if (error || !project) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="card p-8 text-center max-w-md">
-          <AlertCircle className="w-10 h-10 text-rose-500 mx-auto mb-4" />
-          <h2 className="display text-lg font-semibold text-slate-100 mb-2">
-            Project Not Found
-          </h2>
-          <p className="text-slate-400 mb-6">
-            The project you&apos;re looking for doesn&apos;t exist or
-            couldn&apos;t be loaded.
-          </p>
-          <Link href="/" className="btn-primary inline-flex items-center gap-2">
-            Back to Dashboard
-          </Link>
+        <div className="card-elevated p-10 text-center max-w-md relative overflow-hidden">
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-32 bg-rose-500/6 rounded-full blur-3xl pointer-events-none" />
+          <div className="relative">
+            <div className="w-16 h-16 mx-auto mb-5 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center">
+              <AlertCircle className="w-8 h-8 text-rose-400" />
+            </div>
+            <h2 className="display text-xl font-bold text-slate-100 mb-2 tracking-tight">
+              Project Not Found
+            </h2>
+            <p className="text-sm text-slate-400 mb-8 leading-relaxed">
+              The project you&apos;re looking for doesn&apos;t exist or
+              couldn&apos;t be loaded.
+            </p>
+            <Link href="/" className="btn-primary inline-flex items-center gap-2">
+              Back to Dashboard
+            </Link>
+          </div>
         </div>
       </div>
     )

@@ -122,14 +122,14 @@ export function TaskSearch({ onExpandedChange }: TaskSearchProps) {
   const resultsDropdown = (
     <>
       {isSearchFocused && searchValue && searchResults.length > 0 && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-slate-800 border border-slate-700 rounded-lg shadow-xl overflow-hidden z-50">
+        <div className="absolute top-full left-0 right-0 mt-1.5 bg-slate-800/95 backdrop-blur-sm border border-slate-700/80 rounded-lg shadow-xl shadow-black/40 overflow-hidden z-50">
           {searchResults.map((task, index) => (
             <button
               type="button"
               key={task.id}
               onClick={() => navigateToTask(task)}
               className={clsx(
-                'w-full px-3 py-2 flex items-center gap-2 text-left hover:bg-slate-700/50 transition-colors',
+                'w-full px-3 py-2 flex items-center gap-2 text-left hover:bg-slate-700/50 transition-colors duration-150',
                 index === selectedIndex && 'bg-slate-700/50',
               )}
             >
@@ -159,7 +159,7 @@ export function TaskSearch({ onExpandedChange }: TaskSearchProps) {
         </div>
       )}
       {isSearchFocused && searchValue && searchResults.length === 0 && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-slate-800 border border-slate-700 rounded-lg shadow-xl p-3 z-50">
+        <div className="absolute top-full left-0 right-0 mt-1.5 bg-slate-800/95 backdrop-blur-sm border border-slate-700/80 rounded-lg shadow-xl shadow-black/40 p-3 z-50">
           <span className="text-sm text-slate-500">No tasks found</span>
         </div>
       )}

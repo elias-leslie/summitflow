@@ -47,7 +47,7 @@ function RatioBar({ data }: { data: ComponentBreakdown }) {
   const total = data.friction + data.idea + data.praise
   if (total === 0) return null
   return (
-    <div className="flex gap-px h-1.5 rounded-full overflow-hidden bg-slate-800/50 w-16 shrink-0">
+    <div className="flex gap-px h-2 rounded-full overflow-hidden bg-slate-800/50 w-16 shrink-0">
       {data.friction > 0 && (
         <div
           className="bg-red-500 transition-all duration-300"
