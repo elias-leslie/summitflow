@@ -29,7 +29,7 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(
           className,
         )}
       >
-        {checked && <Check className="w-3 h-3 text-white" />}
+        {checked && <Check className="w-3 h-3 text-slate-50" />}
         <input
           ref={ref}
           type="checkbox"
