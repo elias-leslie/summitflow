@@ -11,6 +11,7 @@ import {
 } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import { fetchProjects } from '@/lib/api'
+import { getRouteProjectId } from '@/lib/project-config'
 
 const PROJECT_STORAGE_KEY = 'summitflow_selected_project'
 
@@ -37,7 +38,7 @@ export function ProjectSelector({ onProjectChange }: ProjectSelectorProps) {
 
   // Detect project from URL - clear selection when not on a project page
   useEffect(() => {
-    const urlProjectId = params.id as string | undefined
+    const urlProjectId = getRouteProjectId(params.id as string | undefined)
     if (urlProjectId) {
       setSelectedProjectId(urlProjectId)
       localStorage.setItem(PROJECT_STORAGE_KEY, urlProjectId)
@@ -194,7 +195,7 @@ export function useSelectedProject() {
   )
 
   useEffect(() => {
-    const urlProjectId = params.id as string | undefined
+    const urlProjectId = getRouteProjectId(params.id as string | undefined)
     if (urlProjectId) {
       setSelectedProjectId(urlProjectId)
     } else if (pathname === '/') {

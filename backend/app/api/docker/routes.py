@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -78,7 +79,10 @@ async def update_runtime_mode(payload: RuntimeModeUpdate) -> ActionResult:
     )
 
 
-def _handle_non_docker_mode_update(runtime: RuntimeModeStatus, mode: str) -> ActionResult:
+def _handle_non_docker_mode_update(
+    runtime: RuntimeModeStatus,
+    mode: Literal["dev", "prod"],
+) -> ActionResult:
     """Handle runtime mode update when not in full Docker mode."""
     if runtime.configured_mode == mode:
         return ActionResult(

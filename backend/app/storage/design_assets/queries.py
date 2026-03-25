@@ -6,6 +6,7 @@ from typing import Any
 
 from psycopg import sql
 
+from .._sql import join_static_sql, static_sql
 from ..connection import get_cursor
 from .core import ASSET_SELECT_COLUMNS, _row_to_asset, _row_to_export
 
@@ -14,7 +15,9 @@ def get_asset(project_id: str, asset_id: str) -> dict[str, Any] | None:
     """Get a single asset."""
     with get_cursor() as cur:
         cur.execute(
-            f"SELECT {ASSET_SELECT_COLUMNS} FROM design_assets WHERE project_id = %s AND asset_id = %s",
+            static_sql(
+                f"SELECT {ASSET_SELECT_COLUMNS} FROM design_assets WHERE project_id = %s AND asset_id = %s"
+            ),
             (project_id, asset_id),
         )
         row = cur.fetchone()
@@ -53,14 +56,14 @@ def list_assets(
         clauses.append("%s = ANY(tags)")
         params.append(tag)
 
-    where_sql = sql.SQL(" AND ").join(sql.SQL(clause) for clause in clauses)
+    where_sql = join_static_sql(clauses, " AND ")
     with get_cursor() as cur:
-        cur.execute(sql.SQL("SELECT COUNT(*) FROM design_assets WHERE ") + where_sql, params)
+        cur.execute(static_sql("SELECT COUNT(*) FROM design_assets WHERE ") + where_sql, params)
         total_row = cur.fetchone()
         total = int(total_row[0]) if total_row and total_row[0] else 0
 
         cur.execute(
-            sql.SQL(f"SELECT {ASSET_SELECT_COLUMNS} FROM design_assets WHERE ")
+            static_sql(f"SELECT {ASSET_SELECT_COLUMNS} FROM design_assets WHERE ")
             + where_sql
             + sql.SQL(" ORDER BY created_at DESC LIMIT %s OFFSET %s"),
             [*params, limit, offset],

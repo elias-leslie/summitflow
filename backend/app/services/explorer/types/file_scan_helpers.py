@@ -47,10 +47,10 @@ def compute_file_complexity(
 def compute_refactor_fields(
     complexity: ComplexityResult,
     lines: int,
-    health_flags: list[str] | None,
+    health_flags: dict[str, bool] | None,
     bloat_level: str | None,
-    magic_strings: list[str] | None,
-    compat_cruft: list[str] | None,
+    magic_strings: dict[str, int] | None,
+    compat_cruft: dict[str, int] | None,
 ) -> tuple[str, list[str] | None]:
     """Return (refactor_priority, refactor_issues) for a file."""
     priority = calculate_refactor_priority(
@@ -79,9 +79,9 @@ def build_file_metadata(
     complexity: ComplexityResult,
     refactor_priority: str,
     refactor_issues: list[str] | None,
-    magic_strings: list[str] | None,
-    compat_cruft: list[str] | None,
-    health_flags: list[str] | None,
+    magic_strings: dict[str, int] | None,
+    compat_cruft: dict[str, int] | None,
+    health_flags: dict[str, bool] | None,
     symbol_count: int = 0,
     symbol_kinds: dict[str, int] | None = None,
 ) -> dict[str, object]:

@@ -322,14 +322,14 @@ export function ProjectCard({ project }: ProjectCardProps) {
               className="rounded-2xl border border-slate-800/70 bg-slate-950/55 px-3 py-3 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-700/80 hover:bg-slate-900/80"
             >
               <div className="flex items-center justify-between gap-2">
-                <span className={clsx('rounded-xl bg-slate-900/85 p-2', metric.activeClass)}>
+                <span className={clsx('rounded-xl bg-slate-900/85 p-2 ring-1 ring-white/5', metric.activeClass)}>
                   <Icon className="h-3.5 w-3.5" />
                 </span>
-                <span className="font-mono text-lg text-slate-100">
+                <span className="font-mono text-xl font-bold tabular-nums text-slate-100">
                   {metric.count}
                 </span>
               </div>
-              <div className="mt-3 text-[11px] uppercase tracking-[0.16em] text-slate-500">
+              <div className="mt-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
                 {metric.label}
               </div>
             </button>
@@ -354,11 +354,12 @@ export function ProjectCard({ project }: ProjectCardProps) {
           <ExternalLink className="h-3.5 w-3.5" />
           Open app
         </a>
-        <span className="ml-auto flex items-center gap-1 font-mono text-[11px] text-slate-600">
+        <span className="ml-auto flex items-center gap-1.5 font-mono text-[11px] text-slate-500">
           <Clock className="h-3 w-3" />
           {new Date(project.created_at).toLocaleDateString('en-US', {
             month: 'short',
             day: 'numeric',
+            year: 'numeric',
           })}
         </span>
       </div>

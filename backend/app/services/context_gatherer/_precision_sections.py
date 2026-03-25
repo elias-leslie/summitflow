@@ -14,6 +14,13 @@ _SOURCE_SYMBOL_LIMIT = 2
 _RELATED_ENTRY_LIMIT = 2
 
 
+def _as_object_dict(value: object) -> dict[str, object]:
+    """Normalize untyped metadata payloads into plain object dicts."""
+    if not isinstance(value, dict):
+        return {}
+    return {str(key): item for key, item in value.items()}
+
+
 def read_symbol_source(
     project_id: str,
     symbol: dict[str, object],
@@ -87,12 +94,11 @@ def _format_related_entry(entry: dict[str, object]) -> str | None:
     """Format a related explorer entry as a one-line string."""
     entry_type = entry.get("entry_type")
     path = str(entry.get("path", "unknown"))
-    metadata = entry.get("metadata") or {}
-    if not isinstance(metadata, dict):
-        metadata = {}
+    metadata = _as_object_dict(entry.get("metadata"))
 
     if entry_type == "endpoint":
-        tables = metadata.get("depends_on_tables") or []
+        tables_value = metadata.get("depends_on_tables")
+        tables = list(tables_value) if isinstance(tables_value, list) else []
         suffix = f" | tables: {', '.join(str(t) for t in tables)}" if tables else ""
         return f"endpoint {path}{suffix}"
 
@@ -154,9 +160,10 @@ def build_text_section(text_results: dict[str, object]) -> str:
     for item in items:
         if not isinstance(item, dict):
             continue
-        path = str(item.get("path") or "unknown")
-        line = item.get("line")
-        content = str(item.get("content") or "").strip()
+        item_dict = _as_object_dict(item)
+        path = str(item_dict.get("path") or "unknown")
+        line = item_dict.get("line")
+        content = str(item_dict.get("content") or "").strip()
         lines.append(f"- {path}:{line} - {content}")
 
     return "\n".join(lines).strip()

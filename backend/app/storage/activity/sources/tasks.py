@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+from ..._sql import static_sql
 from ...connection import get_cursor
 from ..types import ActivityEvent, TaskMetadata
 
@@ -59,13 +60,15 @@ def get_recent_task_events(
 
     with get_cursor() as cur:
         cur.execute(
-            f"""
-            SELECT id, project_id, title, status, completed_at, created_at
-            FROM tasks
-            {where_clause}
-            ORDER BY COALESCE(completed_at, created_at) DESC
-            LIMIT %s
-            """,
+            static_sql(
+                f"""
+                SELECT id, project_id, title, status, completed_at, created_at
+                FROM tasks
+                {where_clause}
+                ORDER BY COALESCE(completed_at, created_at) DESC
+                LIMIT %s
+                """
+            ),
             [*params, limit],
         )
         rows = cur.fetchall()

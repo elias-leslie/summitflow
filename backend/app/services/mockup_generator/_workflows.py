@@ -24,7 +24,7 @@ logger = get_logger(__name__)
 
 def get_design_standard(project_id: str, standards_id: str) -> dict[str, Any] | None:
     """Get design standard by ID."""
-    from ..storage.design_standards import get_base_standard, get_project_standard
+    from ...storage.design_standards import get_base_standard, get_project_standard
 
     if standards_id == "base":
         design_standard = get_base_standard()
@@ -133,7 +133,7 @@ async def run_analyze_page_design(
             generation_time_ms=_elapsed_ms(start_time),
         )
 
-    from ..storage.design_standards import get_effective_rules
+    from ...storage.design_standards import get_effective_rules
     design_rules = get_effective_rules(project_id) or []
     recommendations, issues_count, analysis_error = analyze_screenshot_with_vision(
         project_id, screenshot_path, design_rules, page_url

@@ -111,10 +111,10 @@ export default function RuntimePage() {
                       <Icon className={`h-4 w-4 ${card.iconColor}`} />
                     </div>
                     <div className="min-w-0">
-                      <div className={`font-mono text-xl font-semibold leading-none ${card.tone}`}>
+                      <div className={`font-mono text-2xl font-bold leading-none tabular-nums ${card.tone}`}>
                         {card.value}
                       </div>
-                      <div className="mt-1 text-[10px] uppercase tracking-[0.16em] text-slate-500">
+                      <div className="mt-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
                         {card.label}
                       </div>
                     </div>

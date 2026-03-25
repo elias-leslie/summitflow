@@ -14,6 +14,8 @@ This module is organized as follows:
 
 from __future__ import annotations
 
+from typing import Any
+
 from ...logging_config import get_logger
 from ._workflows import get_design_standard, run_analyze_page_design
 from .models import DesignAnalysisResult, MockupResult
@@ -24,7 +26,7 @@ logger = get_logger(__name__)
 
 def _fetch_page_info(explorer_entry_id: int) -> dict[str, object] | MockupResult:
     """Fetch page info from explorer entry. Returns dict on success, MockupResult on failure."""
-    from ..storage.explorer_entries import get_entry_by_id
+    from ...storage.explorer_entries import get_entry_by_id
 
     entry = get_entry_by_id(explorer_entry_id)
     if not entry:
@@ -36,7 +38,7 @@ def _run_with_fallback(
     project_id: str,
     explorer_entry_id: int,
     page_info: dict[str, object],
-    design_standard: object,
+    design_standard: dict[str, Any],
     design_direction: str | None,
 ) -> MockupResult:
     """Try Gemini first, fall back to Claude HTML if it fails."""
@@ -64,7 +66,7 @@ def generate_mockup(
     explorer_entry_id: int,
     standards_id: str = "base",
     design_direction: str | None = None,
-    page_info: dict | None = None,
+    page_info: dict[str, object] | None = None,
 ) -> MockupResult:
     """Generate a mockup using design standards (Gemini primary, Claude fallback)."""
     if page_info is None:

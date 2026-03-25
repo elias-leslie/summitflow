@@ -1,7 +1,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { MessageSquareWarning, TriangleAlert } from 'lucide-react'
+import { MessageSquareWarning, Signal, Flame, Heart, TriangleAlert } from 'lucide-react'
 import { motion } from 'motion/react'
 import { useState } from 'react'
 import { ComponentSummary } from '@/components/feedback/ComponentSummary'
@@ -117,28 +117,49 @@ export function FeedbackClient() {
 
             {summary ? (
               <div className="grid gap-2 sm:grid-cols-3">
-                <div className="rounded-[1.15rem] border border-slate-700/70 bg-slate-950/72 px-3.5 py-3">
-                  <div className="text-[10px] uppercase tracking-[0.16em] text-slate-500">
-                    Total signals
-                  </div>
-                  <div className="mt-2 font-mono text-xl text-slate-50">
-                    {summary.total}
+                <div className="rounded-[1.15rem] border border-slate-800/80 bg-slate-950/72 px-3.5 py-3">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-xl bg-slate-800/60 p-2 ring-1 ring-white/5">
+                      <Signal className="h-4 w-4 text-slate-400" />
+                    </div>
+                    <div>
+                      <div className="font-mono text-2xl font-bold tabular-nums text-slate-50">
+                        {summary.total.toLocaleString()}
+                      </div>
+                      <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Total signals
+                      </div>
+                    </div>
                   </div>
                 </div>
                 <div className="rounded-[1.15rem] border border-rose-500/20 bg-rose-500/10 px-3.5 py-3">
-                  <div className="text-[10px] uppercase tracking-[0.16em] text-rose-200/70">
-                    Active attention
-                  </div>
-                  <div className="mt-2 font-mono text-xl text-slate-50">
-                    {activeSignals}
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-xl bg-rose-500/15 p-2 ring-1 ring-rose-500/10">
+                      <Flame className="h-4 w-4 text-rose-400" />
+                    </div>
+                    <div>
+                      <div className="font-mono text-2xl font-bold tabular-nums text-slate-50">
+                        {activeSignals.toLocaleString()}
+                      </div>
+                      <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-rose-200/70">
+                        Active attention
+                      </div>
+                    </div>
                   </div>
                 </div>
                 <div className="rounded-[1.15rem] border border-emerald-500/20 bg-emerald-500/10 px-3.5 py-3">
-                  <div className="text-[10px] uppercase tracking-[0.16em] text-emerald-200/70">
-                    Praise signals
-                  </div>
-                  <div className="mt-2 font-mono text-xl text-slate-50">
-                    {summary.by_type?.praise ?? 0}
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-xl bg-emerald-500/15 p-2 ring-1 ring-emerald-500/10">
+                      <Heart className="h-4 w-4 text-emerald-400" />
+                    </div>
+                    <div>
+                      <div className="font-mono text-2xl font-bold tabular-nums text-slate-50">
+                        {(summary.by_type?.praise ?? 0).toLocaleString()}
+                      </div>
+                      <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-200/70">
+                        Praise signals
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>

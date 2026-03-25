@@ -9,6 +9,7 @@ Uses 3-2-1 escalation pattern:
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import psycopg
 
@@ -63,7 +64,7 @@ def _build_prompt(
 
 
 def _apply_and_verify(
-    conn: psycopg.Connection[dict[str, object]],
+    conn: psycopg.Connection[Any],
     result_id: int,
     check_result: dict[str, object],
     project_path: Path,
@@ -88,7 +89,7 @@ def _apply_and_verify(
 
 
 def fix_lint_type_error(
-    conn: psycopg.Connection[dict[str, object]], result_id: int
+    conn: psycopg.Connection[Any], result_id: int
 ) -> FixAttemptResult:
     """Attempt to fix a lint/type error using 3-2-1 escalation."""
     check_result = qcr_store.get_check_result(conn, result_id)

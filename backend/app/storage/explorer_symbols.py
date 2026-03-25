@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
 from psycopg import sql
 
+from ._sql import join_static_sql
 from .connection import get_connection, get_cursor
 from .explorer_helpers import row_to_entry, to_iso_string
 
@@ -35,7 +37,11 @@ def _row_to_symbol(row: tuple[Any, ...]) -> dict[str, Any]:
     }
 
 
-def replace_file_symbols(project_id: str, file_path: str, symbols: list[dict[str, Any]]) -> int:
+def replace_file_symbols(
+    project_id: str,
+    file_path: str,
+    symbols: Sequence[Mapping[str, Any]],
+) -> int:
     """Replace all symbols for a file with a fresh snapshot."""
     now = datetime.now(UTC)
 
@@ -250,7 +256,7 @@ def search_symbols(
         ORDER BY score DESC, name ASC, start_line ASC
         LIMIT %s
         """
-    ).format(where_clause=sql.SQL(" AND ").join(sql.SQL(c) for c in conditions))
+    ).format(where_clause=join_static_sql(conditions, " AND "))
 
     ranking_params = [exact, exact, fuzzy, fuzzy, fuzzy, fuzzy, fuzzy, fuzzy]
 

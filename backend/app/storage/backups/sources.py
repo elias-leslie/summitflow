@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from .._sql import static_sql
 from ..connection import get_connection, get_cursor
 
 SOURCE_COLUMNS = """id, name, path, source_type, project_id, enabled, frequency,
@@ -44,7 +45,7 @@ def list_sources(source_type: str | None = None) -> list[dict[str, Any]]:
 
     with get_cursor() as cur:
         cur.execute(
-            f"SELECT {SOURCE_COLUMNS} FROM backup_sources {where} ORDER BY source_type, name",
+            static_sql(f"SELECT {SOURCE_COLUMNS} FROM backup_sources {where} ORDER BY source_type, name"),
             params,
         )
         rows = cur.fetchall()
@@ -56,7 +57,7 @@ def get_source(source_id: str) -> dict[str, Any] | None:
     """Get a single backup source by ID."""
     with get_cursor() as cur:
         cur.execute(
-            f"SELECT {SOURCE_COLUMNS} FROM backup_sources WHERE id = %s",
+            static_sql(f"SELECT {SOURCE_COLUMNS} FROM backup_sources WHERE id = %s"),
             (source_id,),
         )
         row = cur.fetchone()
@@ -74,11 +75,13 @@ def create_source(
     """Register a new backup source."""
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            f"""
-            INSERT INTO backup_sources (id, name, path, source_type, project_id)
-            VALUES (%s, %s, %s, %s, %s)
-            RETURNING {SOURCE_COLUMNS}
-            """,
+            static_sql(
+                f"""
+                INSERT INTO backup_sources (id, name, path, source_type, project_id)
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING {SOURCE_COLUMNS}
+                """
+            ),
             (source_id, name, path, source_type, project_id),
         )
         row = cur.fetchone()
@@ -111,7 +114,9 @@ def update_source(source_id: str, **fields: Any) -> dict[str, Any] | None:
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            f"UPDATE backup_sources SET {', '.join(updates)} WHERE id = %s RETURNING {SOURCE_COLUMNS}",
+            static_sql(
+                f"UPDATE backup_sources SET {', '.join(updates)} WHERE id = %s RETURNING {SOURCE_COLUMNS}"
+            ),
             params,
         )
         row = cur.fetchone()
@@ -134,11 +139,13 @@ def list_due_sources() -> list[dict[str, Any]]:
     """Get all sources that are due for a scheduled backup."""
     with get_cursor() as cur:
         cur.execute(
-            f"""
-            SELECT {SOURCE_COLUMNS} FROM backup_sources
-            WHERE enabled = TRUE AND (next_run_at IS NULL OR next_run_at <= NOW())
-            ORDER BY next_run_at ASC NULLS FIRST
-            """
+            static_sql(
+                f"""
+                SELECT {SOURCE_COLUMNS} FROM backup_sources
+                WHERE enabled = TRUE AND (next_run_at IS NULL OR next_run_at <= NOW())
+                ORDER BY next_run_at ASC NULLS FIRST
+                """
+            )
         )
         rows = cur.fetchall()
 

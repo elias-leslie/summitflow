@@ -11,11 +11,15 @@ from ..storage.notifications import create_notification
 from ..utils.shared_paths import resolve_script
 from .backup_lock import acquire_backup_lock, release_backup_lock
 from .backup_utils import (
+    as_mapping,
     build_script_error_message,
     build_storage_env,
     build_verification_kwargs,
+    get_bool_field,
+    get_int_field,
     get_project_root,
     get_source_path,
+    get_str_field,
     parse_backup_output,
 )
 
@@ -128,23 +132,23 @@ def _handle_backup_success(
     """Handle successful backup completion."""
     size_info = dict(parsed_output)
     verification_raw = size_info.pop("verification", None)
-    verification = verification_raw if isinstance(verification_raw, dict) else None
+    verification = as_mapping(verification_raw)
     archive_name = str(size_info.pop("archive_name", "") or "")
     size_info.pop("pending_path", None)
     vkw = build_verification_kwargs(verification) if verification else {}
     backup_store.update_backup_status(
         backup_id, "completed",
         name=archive_name or None,
-        size_bytes=size_info.get("total_bytes"),
-        db_size_bytes=size_info.get("db_bytes"),
-        files_size_bytes=size_info.get("files_bytes"),
-        location=size_info.get("location"),
+        size_bytes=get_int_field(size_info, "total_bytes"),
+        db_size_bytes=get_int_field(size_info, "db_bytes"),
+        files_size_bytes=get_int_field(size_info, "files_bytes"),
+        location=get_str_field(size_info, "location"),
         **vkw,
     )
     logger.info(
         "create_backup_completed", backup_id=backup_id, project_id=project_id,
-        size_bytes=size_info.get("total_bytes"),
-        verified=verification.get("verified") if verification else None,
+        size_bytes=get_int_field(size_info, "total_bytes"),
+        verified=get_bool_field(verification, "verified") if verification else None,
     )
     return {"status": "completed", "backup_id": backup_id, "project_id": project_id, **size_info}
 
@@ -157,7 +161,7 @@ def _handle_backup_pending(
     """Handle backups that completed locally but are still pending SMB upload."""
     size_info = dict(parsed_output)
     verification_raw = size_info.pop("verification", None)
-    verification = verification_raw if isinstance(verification_raw, dict) else None
+    verification = as_mapping(verification_raw)
     archive_name = str(size_info.pop("archive_name", "") or "")
     pending_path = str(size_info.get("pending_path", "") or "")
     vkw = build_verification_kwargs(verification) if verification else {}
@@ -165,9 +169,9 @@ def _handle_backup_pending(
         backup_id,
         "completed_pending_upload",
         name=archive_name or None,
-        size_bytes=size_info.get("total_bytes"),
-        db_size_bytes=size_info.get("db_bytes"),
-        files_size_bytes=size_info.get("files_bytes"),
+        size_bytes=get_int_field(size_info, "total_bytes"),
+        db_size_bytes=get_int_field(size_info, "db_bytes"),
+        files_size_bytes=get_int_field(size_info, "files_bytes"),
         location=pending_path or "pending_upload",
         **vkw,
     )

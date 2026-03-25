@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+from ..._sql import static_sql
 from ...connection import get_cursor
 from ..types import ActivityEvent, GitMetadata
 
@@ -28,13 +29,15 @@ def _fetch_git_rows(
     """Execute git event query and return raw rows."""
     with get_cursor() as cur:
         cur.execute(
-            f"""
-            SELECT project_id, git_commit_sha, notes, ended_at, agent_type
-            FROM agent_sessions
-            {where_clause}
-            ORDER BY ended_at DESC NULLS LAST
-            LIMIT %s
-            """,
+            static_sql(
+                f"""
+                SELECT project_id, git_commit_sha, notes, ended_at, agent_type
+                FROM agent_sessions
+                {where_clause}
+                ORDER BY ended_at DESC NULLS LAST
+                LIMIT %s
+                """
+            ),
             [*params, limit],
         )
         return cur.fetchall()

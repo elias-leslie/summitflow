@@ -15,7 +15,8 @@ logger = get_logger(__name__)
 
 def _build_worktree_response(task_id: str) -> WorktreeResponse | None:
     """Build WorktreeResponse from worktree info, or return None if not found."""
-    from ...cli.lib.worktree import get_worktree_info
+    from cli.lib.worktree import get_worktree_info
+
     worktree_info = get_worktree_info(task_id)
     if not worktree_info:
         return None

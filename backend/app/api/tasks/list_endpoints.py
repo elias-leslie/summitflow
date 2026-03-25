@@ -100,7 +100,7 @@ async def _collect_execution_ready_tasks(
         readiness_results = await asyncio.gather(
             *(asyncio.to_thread(sync_task_execution_readiness, task["id"]) for task in tasks)
         )
-        for task, readiness in zip(tasks, readiness_results):
+        for task, readiness in zip(tasks, readiness_results, strict=True):
             if not readiness.ready:
                 continue
             total_ready += 1

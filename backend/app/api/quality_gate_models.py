@@ -7,6 +7,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
+QualityCheckType = Literal["pytest", "vitest", "ruff", "types", "biome", "tsc"]
+FixableQualityCheckType = Literal["pytest", "ruff", "types", "biome", "tsc"]
+
 
 class CheckResultResponse(BaseModel):
     """Response model for a quality check result."""
@@ -54,7 +57,7 @@ class HealthSummaryResponse(BaseModel):
 class CreateCheckResultRequest(BaseModel):
     """Request to create a check result."""
 
-    check_type: Literal["pytest", "ruff", "types", "biome", "tsc"]
+    check_type: QualityCheckType
     status: Literal["pass", "fail", "error", "skipped"]
     check_name: str | None = None
     error_count: int = 0
@@ -71,7 +74,7 @@ class CreateCheckResultRequest(BaseModel):
 class SyncResultsRequest(BaseModel):
     """Request to sync results from dt output."""
 
-    check_type: Literal["pytest", "ruff", "types", "biome", "tsc"]
+    check_type: QualityCheckType
     status: Literal["pass", "fail", "error", "skipped"]
     error_count: int = 0
     warning_count: int = 0
@@ -94,7 +97,7 @@ class SyncResultsResponse(BaseModel):
 class AutoFixRequest(BaseModel):
     """Request to trigger auto-fix."""
 
-    check_type: Literal["pytest", "ruff", "types", "biome", "tsc"] | None = None
+    check_type: FixableQualityCheckType | None = None
     limit: int = 10
 
 

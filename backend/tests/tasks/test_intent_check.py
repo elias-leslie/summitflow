@@ -69,7 +69,7 @@ class TestCheckIntent:
     ) -> None:
         mock_spirit.return_value = {
             "done_when": [
-                "All quality gates pass (ruff, types, pytest)",
+                "All configured quality gates pass",
                 "No functions exceed 50 lines",
                 "No regressions - all existing tests pass",
             ],
@@ -107,7 +107,7 @@ class TestCheckIntent:
     ) -> None:
         mock_spirit.return_value = {
             "done_when": [
-                "All quality gates pass (ruff, types, pytest)",
+                "All configured quality gates pass",
                 "No functions exceed 50 lines",
                 "No regressions - all existing tests pass",
             ],

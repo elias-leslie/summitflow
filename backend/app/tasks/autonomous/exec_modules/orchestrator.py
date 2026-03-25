@@ -146,6 +146,7 @@ def execute_task_locked(
     error, project_path, task_type, agent_override = _prepare_execution(task_id, project_id)
     if error:
         return error
+    assert project_path is not None
 
     task = task_store.get_task(task_id)
     if task and task.get("status") != "running":

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from typing import Any
 
 from ....logging_config import get_logger
 from ....services.agent_hub_client import get_sync_client
@@ -49,7 +50,7 @@ def _task_status(task_id: str) -> str | None:
     return str(task.get("status") or "")
 
 
-def _apply_auto_merge_status(task_id: str, merge_result: dict[str, object] | None) -> str:
+def _apply_auto_merge_status(task_id: str, merge_result: MergeResult | None) -> str:
     if merge_result is None:
         task_store.update_task_status(task_id, STATUS_COMPLETED)
         return "ready for manual merge"
@@ -64,7 +65,7 @@ def _apply_auto_merge_status(task_id: str, merge_result: dict[str, object] | Non
     return "auto-merge failed"
 
 
-def _send_notification(task_id: str, project_id: str, fn: Callable[..., None], **kwargs: str) -> None:
+def _send_notification(task_id: str, project_id: str, fn: Callable[..., object], **kwargs: Any) -> None:
     try:
         task = task_store.get_task(task_id)
         title = task.get("title", "Unknown") if task else "Unknown"
@@ -93,7 +94,7 @@ def supervisor_resolve_escalation(task_id: str, review_summary: str, project_id:
         return "block"
 
 
-def route_based_on_verdict(task_id: str, complexity: str, review_result: dict[str, str | list[str]]) -> None:
+def route_based_on_verdict(task_id: str, complexity: str, review_result: Mapping[str, Any]) -> None:
     """Route task based on AI review verdict."""
     verdict = str(review_result.get("verdict", "")).upper()
     concerns = [str(c) for c in review_result.get("concerns", [])]
@@ -140,12 +141,12 @@ def _handle_approved(task_id: str, complexity: str) -> None:
         _send_notification(task_id, project_id, create_task_completion_notification, detail=f"{label} after QA approval.")
 
 
-def _handle_needs_fix(task_id: str, review_result: dict[str, str | list[str]]) -> None:
+def _handle_needs_fix(task_id: str, review_result: Mapping[str, Any]) -> None:
     from ..cleanup.worktree_cleanup import cleanup_task_worktree
     from ..exec_modules.completion_status import wake_persona
 
-    concerns = review_result.get("concerns", [])
-    verdict = review_result.get("verdict", VERDICT_NEEDS_FIX)
+    concerns = [str(c) for c in review_result.get("concerns", [])]
+    verdict = str(review_result.get("verdict", VERDICT_NEEDS_FIX))
     project_id = _get_project_id(task_id)
     if not concerns:
         log_task_event(task_id, f"AI Review: {verdict} with no concerns - treating as APPROVED")
@@ -184,7 +185,7 @@ def _handle_needs_fix(task_id: str, review_result: dict[str, str | list[str]]) -
     logger.info("QA loop exhausted, fix subtask created", task_id=task_id)
 
 
-def _handle_escalation(task_id: str, review_result: dict[str, str | list[str]]) -> None:
+def _handle_escalation(task_id: str, review_result: Mapping[str, Any]) -> None:
     project_id = _get_project_id(task_id)
     summary = str(review_result.get("summary", "Unknown issue"))
     decision = supervisor_resolve_escalation(task_id, summary, project_id)

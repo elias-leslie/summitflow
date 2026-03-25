@@ -73,7 +73,7 @@ def _build_issue_aware_done_when(
     is_frontend: bool,
 ) -> list[str]:
     """Build done_when criteria from actual issues."""
-    criteria = ["All quality gates pass (ruff, types, pytest)"]
+    criteria = ["All configured quality gates pass"]
 
     if any(i in _SIZE_ISSUES for i in refactor_issues):
         criteria.append(

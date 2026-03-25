@@ -6,16 +6,37 @@ project_permissions. This service handles execution behavior settings only.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TypedDict
 
-from ..storage.agent_configs import get_agent_config, update_agent_config
+from ..storage.agent_configs import AgentConfig, get_agent_config, update_agent_config
 from .autonomous_models import (
     AutonomousSettings,
     AutonomousSettingsUpdate,
 )
 
 
-def _parse_core_settings(config: dict[str, Any]) -> dict[str, Any]:
+class _CoreSettingsPayload(TypedDict):
+    frequency_minutes: int
+    auto_merge_tiers: list[int]
+    task_types: list[str]
+    max_concurrent: int
+    max_tasks_per_day: int | None
+    cooldown_minutes: int
+    allowed_types: list[str] | None
+
+
+class _AdvancedSettingsPayload(TypedDict):
+    max_self_fix_attempts: int
+    max_supervisor_attempts: int
+    max_extensions: int
+    auto_merge_enabled: bool
+    require_review: bool
+    quality_gate_tools: list[str]
+    quality_gate_mode: str
+    quality_gate_fix_enabled: bool
+
+
+def _parse_core_settings(config: AgentConfig) -> _CoreSettingsPayload:
     """Parse execution behavior settings from config."""
     frequency_minutes = int(config.get("autonomous_frequency_minutes", 30) or 30)
     auto_merge_tiers_raw = config.get("autonomous_auto_merge_tiers")
@@ -37,7 +58,7 @@ def _parse_core_settings(config: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _parse_advanced_settings(config: dict[str, Any]) -> dict[str, Any]:
+def _parse_advanced_settings(config: AgentConfig) -> _AdvancedSettingsPayload:
     """Parse self-healing, auto-merge, and quality gate settings from config."""
     qg_tools_raw = config.get("quality_gate_tools", [])
     return {
@@ -58,9 +79,9 @@ def get_autonomous_settings(project_id: str) -> AutonomousSettings:
     return AutonomousSettings(**_parse_core_settings(config), **_parse_advanced_settings(config))
 
 
-def _build_updates(settings: AutonomousSettingsUpdate) -> dict[str, Any]:
+def _build_updates(settings: AutonomousSettingsUpdate) -> AgentConfig:
     """Build the updates dict from an AutonomousSettingsUpdate."""
-    updates: dict[str, Any] = {}
+    updates: AgentConfig = {}
 
     if settings.frequency_minutes is not None:
         updates["autonomous_frequency_minutes"] = settings.frequency_minutes

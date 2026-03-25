@@ -174,7 +174,7 @@ class FileScanner(BaseScanner):
         return symbols
 
 
-def _count_symbol_kinds(symbols: list[dict[str, object]]) -> dict[str, int] | None:
+def _count_symbol_kinds(symbols: list[SymbolRecord]) -> dict[str, int] | None:
     """Count symbol kinds for file metadata."""
     if not symbols:
         return None

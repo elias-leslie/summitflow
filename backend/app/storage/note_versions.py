@@ -53,6 +53,8 @@ def create_version(
         )
         result = cur.fetchone()
         conn.commit()
+    if result is None:
+        raise RuntimeError("Failed to create note version")
     return _row_to_dict(result)
 
 

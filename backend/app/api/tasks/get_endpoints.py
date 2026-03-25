@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+from agent_hub.models import MessageInput, ToolResultMessage
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 
@@ -122,10 +123,13 @@ async def review_task(task_id: str) -> dict[str, Any]:
     )
 
     client = await asyncio.to_thread(get_sync_client)
+    messages: list[dict[str, str] | MessageInput | ToolResultMessage] = [
+        MessageInput(role="user", content=prompt)
+    ]
     response = await asyncio.to_thread(
         client.complete,
         agent_slug="reviewer",
-        messages=[{"role": "user", "content": prompt}],
+        messages=messages,
         project_id=project_id,
         execute_tools=False,
     )

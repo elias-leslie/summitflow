@@ -34,7 +34,7 @@ def health_default(ctx: typer.Context) -> None:
 def status(ctx: typer.Context) -> None:
     """Show quality gate health summary for current project.
 
-    Displays the latest status for each check type (pytest, ruff, types, biome, tsc)
+    Displays the latest status for each check type (pytest, vitest, ruff, types, biome, tsc)
     and the overall pass/fail status.
 
     Examples:
@@ -62,7 +62,7 @@ def results(
     ctx: typer.Context,
     check_type: Annotated[
         str | None,
-        typer.Option("--type", "-t", help="Filter by check type (pytest, ruff, types, biome, tsc)"),
+        typer.Option("--type", "-t", help="Filter by check type (pytest, vitest, ruff, types, biome, tsc)"),
     ] = None,
     status_filter: Annotated[
         str | None,
@@ -104,7 +104,7 @@ def results(
 @app.command()
 def sync(
     ctx: typer.Context,
-    check_type: Annotated[str, typer.Argument(help="Check type (pytest, ruff, types, biome, tsc)")],
+    check_type: Annotated[str, typer.Argument(help="Check type (pytest, vitest, ruff, types, biome, tsc)")],
     status_val: Annotated[str, typer.Argument(help="Status (pass, fail, error, skipped)")],
     error_count: Annotated[int, typer.Option("--errors", "-e", help="Number of errors")] = 0,
     warning_count: Annotated[int, typer.Option("--warnings", "-w", help="Number of warnings")] = 0,
@@ -120,6 +120,7 @@ def sync(
 
     Examples:
         st health sync pytest pass
+        st health sync vitest fail --errors 2
         st health sync ruff fail --errors 5
         st health sync types fail --errors 3 --triggered-by manual
     """

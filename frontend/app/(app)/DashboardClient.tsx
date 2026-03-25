@@ -151,10 +151,10 @@ export function DashboardClient() {
                       <Icon className={clsx('h-4 w-4', stat.iconColor)} />
                     </div>
                     <div className="min-w-0">
-                      <div className={clsx('font-mono text-xl font-semibold leading-none tabular-nums', stat.color)}>
-                        {stat.value}
+                      <div className={clsx('font-mono text-2xl font-bold leading-none tabular-nums', stat.color)}>
+                        {stat.value.toLocaleString()}
                       </div>
-                      <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                      <div className="mt-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
                         {stat.label}
                       </div>
                     </div>

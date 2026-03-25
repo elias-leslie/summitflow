@@ -13,7 +13,7 @@ from .models import (
     RestoreRequest,
     RestoreResponse,
 )
-from .utils import parse_iso_datetime
+from .utils import optional_bool, optional_str, parse_iso_datetime
 
 router = APIRouter()
 
@@ -29,13 +29,13 @@ def _source_to_response(source: dict[str, object]) -> BackupSourceResponse:
         enabled=bool(source["enabled"]),
         frequency=str(source["frequency"]),
         retention_days=int(str(source["retention_days"])),
-        last_run_at=parse_iso_datetime(source.get("last_run_at")),
-        next_run_at=parse_iso_datetime(source.get("next_run_at")),
-        created_at=parse_iso_datetime(source.get("created_at")),
-        updated_at=parse_iso_datetime(source.get("updated_at")),
-        last_drill_at=parse_iso_datetime(source.get("last_drill_at")),
-        last_drill_ok=source.get("last_drill_ok"),
-        last_drill_backup_id=source.get("last_drill_backup_id"),
+        last_run_at=parse_iso_datetime(optional_str(source.get("last_run_at"))),
+        next_run_at=parse_iso_datetime(optional_str(source.get("next_run_at"))),
+        created_at=parse_iso_datetime(optional_str(source.get("created_at"))),
+        updated_at=parse_iso_datetime(optional_str(source.get("updated_at"))),
+        last_drill_at=parse_iso_datetime(optional_str(source.get("last_drill_at"))),
+        last_drill_ok=optional_bool(source.get("last_drill_ok")),
+        last_drill_backup_id=optional_str(source.get("last_drill_backup_id")),
     )
 
 

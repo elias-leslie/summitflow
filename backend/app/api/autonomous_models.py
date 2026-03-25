@@ -76,7 +76,7 @@ class AutonomousSettings(BaseModel):
 
 
 VALID_QUALITY_GATE_MODES = ["quick", "check", "changed-only"]
-VALID_QUALITY_GATE_TOOLS = ["pytest", "ruff", "types", "biome", "tsc", "sqlfluff", "squawk"]
+VALID_QUALITY_GATE_TOOLS = ["pytest", "vitest", "ruff", "types", "biome", "tsc", "sqlfluff", "squawk"]
 
 
 class AutonomousSettingsUpdate(BaseModel):

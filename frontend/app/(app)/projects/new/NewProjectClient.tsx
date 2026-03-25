@@ -138,25 +138,26 @@ export function NewProjectClient() {
   const healthPreview = buildHealthPreview(baseUrl, healthEndpoint)
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 p-6">
+    <div className="mx-auto max-w-4xl space-y-6 px-4 py-5 md:px-5 lg:px-6">
       <header className="animate-in">
         <Link
           href="/"
-          className="mb-3 flex items-center gap-1 text-xs text-slate-500 transition-colors hover:text-phosphor-400"
+          className="mb-4 inline-flex items-center gap-1.5 rounded-full border border-slate-800/60 bg-slate-950/60 px-3 py-1.5 text-xs text-slate-400 transition-colors hover:border-phosphor-500/30 hover:text-phosphor-300"
         >
           <ArrowLeft className="h-3 w-3" />
           Back to Dashboard
         </Link>
 
-        <div className="flex items-center gap-4 hero-glow">
-          <div className="relative z-10 flex h-14 w-14 items-center justify-center rounded-xl bg-slate-800 border border-slate-700/50">
+        <div className="flex items-center gap-4">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-phosphor-500/20 bg-phosphor-500/10 shadow-[0_18px_36px_-30px_rgba(0,0,0,0.95)]">
             <FolderPlus className="h-7 w-7 text-phosphor-400" />
           </div>
-          <div className="relative z-10">
-            <h1 className="display text-2xl font-bold text-slate-100 tracking-tight">
+          <div>
+            <div className="eyebrow">Registration</div>
+            <h1 className="display mt-1 text-2xl font-bold text-slate-100 tracking-tight lg:text-3xl">
               Create Project
             </h1>
-            <p className="mt-1 text-sm text-slate-400">
+            <p className="mt-1.5 text-sm leading-relaxed text-slate-300">
               Register the app once, then let SummitFlow track health, scans, and active work against a real root path.
             </p>
           </div>
@@ -287,31 +288,29 @@ export function NewProjectClient() {
         <aside className="space-y-4">
           <div className="card space-y-4 p-5">
             <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                Registration Preview
-              </p>
-              <p className="mt-1 text-sm text-slate-400">
+              <div className="eyebrow">Live preview</div>
+              <p className="mt-1.5 text-sm text-slate-400">
                 SummitFlow will use these normalized values immediately after create.
               </p>
             </div>
 
             <div className="space-y-3 text-xs text-slate-400">
               <div>
-                <span className="text-slate-500">Project ID</span>
-                <div className="mt-1 break-all font-mono text-slate-200">
-                  {projectId || 'not-set'}
+                <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">Project ID</span>
+                <div className="mt-1.5 break-all rounded-lg border border-slate-800/70 bg-slate-950/60 px-3 py-2 font-mono text-slate-200">
+                  {projectId || <span className="text-slate-600">not-set</span>}
                 </div>
               </div>
               <div>
-                <span className="text-slate-500">Health Check</span>
-                <div className="mt-1 break-all font-mono text-slate-200">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">Health Check</span>
+                <div className="mt-1.5 break-all rounded-lg border border-slate-800/70 bg-slate-950/60 px-3 py-2 font-mono text-slate-200">
                   {healthPreview}
                 </div>
               </div>
               <div>
-                <span className="text-slate-500">Root Path</span>
-                <div className="mt-1 break-all font-mono text-slate-200">
-                  {normalizedRootPath || 'not configured'}
+                <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">Root Path</span>
+                <div className="mt-1.5 break-all rounded-lg border border-slate-800/70 bg-slate-950/60 px-3 py-2 font-mono text-slate-200">
+                  {normalizedRootPath || <span className="text-slate-600">not configured</span>}
                 </div>
               </div>
             </div>

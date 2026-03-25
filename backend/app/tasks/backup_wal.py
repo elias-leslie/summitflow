@@ -15,6 +15,7 @@ import psycopg
 
 from ..config import settings
 from ..logging_config import get_logger
+from ..storage._sql import static_sql
 from ..storage.connection import get_cursor
 
 logger = get_logger(__name__)
@@ -33,7 +34,7 @@ def _autocommit_execute(*statements: str) -> None:
     url = _get_admin_url()
     with psycopg.connect(url, autocommit=True) as conn, conn.cursor() as cur:
         for stmt in statements:
-            cur.execute(psycopg.sql.SQL(stmt))
+            cur.execute(static_sql(stmt))
 
 
 def get_wal_status() -> dict[str, Any]:

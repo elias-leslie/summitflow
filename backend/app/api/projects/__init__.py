@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, HTTPException
+from psycopg import sql
 
 from ...services import explorer
 from ...storage.connection import get_connection, get_cursor
@@ -160,33 +161,33 @@ async def update_project(project_id: str, update: ProjectUpdate) -> ProjectRespo
             raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
 
         # Build update query dynamically
-        updates = []
-        params = []
+        updates: list[sql.Composed] = []
+        params: list[object] = []
         if update.name is not None:
-            updates.append("name = %s")
+            updates.append(sql.SQL("name = {}").format(sql.Placeholder()))
             params.append(update.name)
         if update.base_url is not None:
-            updates.append("base_url = %s")
+            updates.append(sql.SQL("base_url = {}").format(sql.Placeholder()))
             params.append(update.base_url)
         if update.health_endpoint is not None:
-            updates.append("health_endpoint = %s")
+            updates.append(sql.SQL("health_endpoint = {}").format(sql.Placeholder()))
             params.append(update.health_endpoint)
         if update.root_path is not None:
-            updates.append("root_path = %s")
+            updates.append(sql.SQL("root_path = {}").format(sql.Placeholder()))
             params.append(update.root_path)
 
         if not updates:
             raise HTTPException(status_code=400, detail="No fields to update")
 
         params.append(project_id)
-        cur.execute(
-            f"""
-                UPDATE projects SET {", ".join(updates)}
+        query = sql.SQL(
+            """
+                UPDATE projects SET {updates}
                 WHERE id = %s
                 RETURNING id, name, base_url, health_endpoint, root_path, created_at
-                """,
-            params,
-        )
+                """
+        ).format(updates=sql.SQL(", ").join(updates))
+        cur.execute(query, params)
         row = cur.fetchone()
         conn.commit()
 

@@ -24,6 +24,14 @@ class MergeBlocked(TypedDict):
     reason: str
 
 
+class MergeFailed(TypedDict):
+    """Generic failed merge result without conflict details."""
+
+    task_id: str
+    status: Literal["failed"]
+    reason: str
+
+
 class MergeSkipped(TypedDict):
     """Skipped merge result."""
 
@@ -64,6 +72,7 @@ class MergeConflicted(TypedDict):
 MergeResult = (
     MergeSuccess
     | MergeBlocked
+    | MergeFailed
     | MergeSkipped
     | MergeRolledBack
     | MergeError

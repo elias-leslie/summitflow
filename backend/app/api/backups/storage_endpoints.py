@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException
 
 from ...storage import backups as backup_store
 from .models import StorageBackendCreate, StorageBackendResponse, StorageBackendUpdate
-from .utils import parse_iso_datetime
+from .utils import as_object_dict, optional_bool, optional_str, parse_iso_datetime
 
 router = APIRouter()
 
@@ -32,18 +32,18 @@ def _write_smb_credentials(username: str, password: str) -> str:
 
 def _backend_to_response(backend: dict[str, object]) -> StorageBackendResponse:
     """Convert storage backend dict to response model."""
-    config = backend.get("config")
+    config = as_object_dict(backend.get("config"))
     return StorageBackendResponse(
         id=str(backend["id"]),
         name=str(backend["name"]),
         backend_type=str(backend["backend_type"]),
-        config=config if isinstance(config, dict) else {},
+        config=config,
         is_default=bool(backend["is_default"]),
         enabled=bool(backend["enabled"]),
-        last_test_at=parse_iso_datetime(backend.get("last_test_at")),
-        last_test_ok=backend.get("last_test_ok"),
-        created_at=parse_iso_datetime(backend.get("created_at")),
-        updated_at=parse_iso_datetime(backend.get("updated_at")),
+        last_test_at=parse_iso_datetime(optional_str(backend.get("last_test_at"))),
+        last_test_ok=optional_bool(backend.get("last_test_ok")),
+        created_at=parse_iso_datetime(optional_str(backend.get("created_at"))),
+        updated_at=parse_iso_datetime(optional_str(backend.get("updated_at"))),
     )
 
 
@@ -60,10 +60,10 @@ async def create_storage_backend(request: StorageBackendCreate) -> StorageBacken
     config = request.config or {}
 
     # If SMB password provided, write credentials file
-    password = config.pop("password", None)
+    password = optional_str(config.pop("password", None))
     if password and request.backend_type == "smb":
         config["credentials_file"] = _write_smb_credentials(
-            config.get("user", "backup-svc"), password
+            optional_str(config.get("user")) or "backup-svc", password
         )
 
     backend = backup_store.create_backend(
@@ -111,10 +111,14 @@ async def update_storage_backend(
 
     # Handle password update for SMB
     if "config" in fields and isinstance(fields["config"], dict):
-        password = fields["config"].pop("password", None)
+        password = optional_str(fields["config"].pop("password", None))
         if password:
-            existing_config = existing.get("config", {}) if isinstance(existing.get("config"), dict) else {}
-            username = fields["config"].get("user", existing_config.get("user", "backup-svc"))
+            existing_config = as_object_dict(existing.get("config"))
+            username = (
+                optional_str(fields["config"].get("user"))
+                or optional_str(existing_config.get("user"))
+                or "backup-svc"
+            )
             fields["config"]["credentials_file"] = _write_smb_credentials(username, password)
 
     updated = backup_store.update_backend(backend_id, **fields)

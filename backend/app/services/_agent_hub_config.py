@@ -47,6 +47,7 @@ SUMMITFLOW_REQUEST_SOURCE = os.getenv("SUMMITFLOW_REQUEST_SOURCE") or _ENV_LOCAL
 HEADER_CLIENT_ID: Final = "X-Client-Id"
 HEADER_REQUEST_SOURCE: Final = "X-Request-Source"
 DEFAULT_REQUEST_SOURCE: Final = "summitflow"
+DEFAULT_AGENT_HUB_TIMEOUT: Final = 120.0
 
 
 def resolve_agent_hub_request_source(
@@ -76,6 +77,11 @@ def build_agent_hub_headers(
     return headers
 
 
+def _resolve_timeout(timeout: float | None) -> float:
+    """Normalize optional timeout values to the client library's concrete float."""
+    return DEFAULT_AGENT_HUB_TIMEOUT if timeout is None else timeout
+
+
 def get_sync_client(
     base_url: str | None = None,
     api_key: str | None = None,
@@ -97,7 +103,7 @@ def get_sync_client(
     return AgentHubClient(
         base_url=base_url or AGENT_HUB_URL,
         api_key=api_key or AGENT_HUB_API_KEY,
-        timeout=timeout,
+        timeout=_resolve_timeout(timeout),
         client_name=client_name,
         client_id=SUMMITFLOW_CLIENT_ID,
         request_source=resolve_agent_hub_request_source(),
@@ -125,7 +131,7 @@ def get_async_client(
     return AsyncAgentHubClient(
         base_url=base_url or AGENT_HUB_URL,
         api_key=api_key or AGENT_HUB_API_KEY,
-        timeout=timeout,
+        timeout=_resolve_timeout(timeout),
         client_name=client_name,
         client_id=SUMMITFLOW_CLIENT_ID,
         request_source=resolve_agent_hub_request_source(),

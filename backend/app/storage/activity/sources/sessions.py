@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+from ..._sql import static_sql
 from ...connection import get_cursor
 from ..types import ActivityEvent, SessionMetadata
 
@@ -46,14 +47,16 @@ def _fetch_session_rows(
     """
     with get_cursor() as cur:
         cur.execute(
-            f"""
-            SELECT session_id, project_id, agent_type, status, ended_at, started_at,
-                   tests_passed, tests_failed
-            FROM agent_sessions
-            {where_clause}
-            ORDER BY COALESCE(ended_at, started_at) DESC
-            LIMIT %s
-            """,
+            static_sql(
+                f"""
+                SELECT session_id, project_id, agent_type, status, ended_at, started_at,
+                       tests_passed, tests_failed
+                FROM agent_sessions
+                {where_clause}
+                ORDER BY COALESCE(ended_at, started_at) DESC
+                LIMIT %s
+                """
+            ),
             [*params, limit],
         )
         return cur.fetchall()

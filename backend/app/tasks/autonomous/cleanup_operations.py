@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from app.storage import log_task_event
 from app.storage import tasks as task_store
@@ -86,6 +86,7 @@ def _create_schema_task_for_violation(
 
     tier = VIOLATION_TIER_MAP.get(violation_type, 1)
     try:
+        steps = cast(list[dict[str, object]], get_violation_steps(violation_type, table_name, detail))
         task_id, _ = create_schema_task(
             project_id=project_id,
             table_name=table_name,
@@ -93,7 +94,7 @@ def _create_schema_task_for_violation(
             detail=detail,
             severity=severity,
             metadata={"column_count": column_count},
-            steps=get_violation_steps(violation_type, table_name, detail),
+            steps=steps,
             title=get_violation_title(violation_type, table_name),
             objective=get_violation_objective(violation_type, table_name, detail),
             done_when=get_violation_done_when(violation_type, table_name),

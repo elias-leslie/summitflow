@@ -70,7 +70,10 @@ def _get_last_status() -> str | None:
     """Read last known smoke test status from Redis."""
     try:
         raw = get_redis().get(_REDIS_KEY)
-        if raw:
+        if isinstance(raw, bytes):
+            data = json.loads(raw.decode("utf-8"))
+            return data.get("status")
+        if isinstance(raw, str):
             data = json.loads(raw)
             return data.get("status")
     except Exception:

@@ -94,3 +94,34 @@ def test_list_projects_with_stats_returns_feature_task_bug_counts(client) -> Non
             )
             cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
             conn.commit()
+
+
+def test_update_project_updates_selected_fields(client) -> None:
+    """PATCH should update only the provided project fields."""
+    project_id = f"patch-{uuid4().hex[:8]}"
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO projects (id, name, base_url, health_endpoint, root_path)
+            VALUES (%s, %s, %s, %s, %s)
+            """,
+            (project_id, "Old Name", "http://old.example", "/healthz", "/old/root"),
+        )
+        conn.commit()
+
+    try:
+        response = client.patch(
+            f"/api/projects/{project_id}",
+            json={"name": "New Name", "root_path": "/new/root"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["name"] == "New Name"
+        assert response.json()["root_path"] == "/new/root"
+        assert response.json()["base_url"] == "http://old.example"
+        assert response.json()["health_endpoint"] == "/healthz"
+    finally:
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
+            conn.commit()

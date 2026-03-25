@@ -6,6 +6,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from psycopg import sql
+
 from ...logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -73,14 +75,14 @@ def sync_ports_to_db(project_id: str, backend_port: int | None, frontend_port: i
     """Sync detected ports to projects table."""
     from ...storage.connection import get_connection
 
-    updates: list[str] = []
+    updates: list[sql.Composed] = []
     params: list[int | str] = []
 
     if backend_port is not None:
-        updates.append("backend_port = %s")
+        updates.append(sql.SQL("backend_port = {}").format(sql.Placeholder()))
         params.append(backend_port)
     if frontend_port is not None:
-        updates.append("frontend_port = %s")
+        updates.append(sql.SQL("frontend_port = {}").format(sql.Placeholder()))
         params.append(frontend_port)
 
     if not updates:
@@ -89,10 +91,10 @@ def sync_ports_to_db(project_id: str, backend_port: int | None, frontend_port: i
     params.append(project_id)
 
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            f"UPDATE projects SET {', '.join(updates)} WHERE id = %s",
-            params,
+        query = sql.SQL("UPDATE projects SET {updates} WHERE id = %s").format(
+            updates=sql.SQL(", ").join(updates)
         )
+        cur.execute(query, params)
         conn.commit()
 
     logger.debug(

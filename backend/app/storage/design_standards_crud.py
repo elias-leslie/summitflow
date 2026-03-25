@@ -5,6 +5,7 @@ Low-level database operations for design standards management.
 
 from typing import Any
 
+from ._sql import static_sql
 from .connection import get_connection, get_cursor
 
 # SQL constants
@@ -31,8 +32,10 @@ def get_base_standard() -> dict[str, Any] | None:
     """Get the base (global) design standard."""
     with get_cursor() as cur:
         cur.execute(
-            f"SELECT {_STANDARD_COLS} FROM design_standards "
-            "WHERE is_base = TRUE AND project_id IS NULL LIMIT 1"
+            static_sql(
+                f"SELECT {_STANDARD_COLS} FROM design_standards "
+                "WHERE is_base = TRUE AND project_id IS NULL LIMIT 1"
+            )
         )
         row = cur.fetchone()
     return _row_to_standard(row) if row else None
@@ -42,7 +45,7 @@ def get_standard_by_id(standard_id: int) -> dict[str, Any] | None:
     """Get a design standard by ID."""
     with get_cursor() as cur:
         cur.execute(
-            f"SELECT {_STANDARD_COLS} FROM design_standards WHERE id = %s",
+            static_sql(f"SELECT {_STANDARD_COLS} FROM design_standards WHERE id = %s"),
             (standard_id,),
         )
         row = cur.fetchone()
@@ -54,14 +57,18 @@ def get_project_standard(project_id: str, name: str | None = None) -> dict[str, 
     with get_cursor() as cur:
         if name:
             cur.execute(
-                f"SELECT {_STANDARD_COLS} FROM design_standards "
-                "WHERE project_id = %s AND name = %s",
+                static_sql(
+                    f"SELECT {_STANDARD_COLS} FROM design_standards "
+                    "WHERE project_id = %s AND name = %s"
+                ),
                 (project_id, name),
             )
         else:
             cur.execute(
-                f"SELECT {_STANDARD_COLS} FROM design_standards "
-                "WHERE project_id = %s ORDER BY created_at ASC LIMIT 1",
+                static_sql(
+                    f"SELECT {_STANDARD_COLS} FROM design_standards "
+                    "WHERE project_id = %s ORDER BY created_at ASC LIMIT 1"
+                ),
                 (project_id,),
             )
         row = cur.fetchone()
@@ -73,15 +80,19 @@ def list_standards(project_id: str | None = None) -> list[dict[str, Any]]:
     with get_cursor() as cur:
         if project_id:
             cur.execute(
-                f"SELECT {_STANDARD_COLS} FROM design_standards "
-                "WHERE project_id = %s OR (is_base = TRUE AND project_id IS NULL) "
-                "ORDER BY is_base DESC, created_at ASC",
+                static_sql(
+                    f"SELECT {_STANDARD_COLS} FROM design_standards "
+                    "WHERE project_id = %s OR (is_base = TRUE AND project_id IS NULL) "
+                    "ORDER BY is_base DESC, created_at ASC"
+                ),
                 (project_id,),
             )
         else:
             cur.execute(
-                f"SELECT {_STANDARD_COLS} FROM design_standards "
-                "WHERE is_base = TRUE AND project_id IS NULL ORDER BY created_at ASC"
+                static_sql(
+                    f"SELECT {_STANDARD_COLS} FROM design_standards "
+                    "WHERE is_base = TRUE AND project_id IS NULL ORDER BY created_at ASC"
+                )
             )
         rows = cur.fetchall()
     return [_row_to_standard(row) for row in rows]
@@ -97,9 +108,11 @@ def create_standard(
     """Create a new design standard."""
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            f"INSERT INTO design_standards (project_id, name, description, "
-            f"base_standard_id, is_base, created_at, updated_at) "
-            f"VALUES (%s, %s, %s, %s, %s, NOW(), NOW()) RETURNING {_STANDARD_COLS}",
+            static_sql(
+                f"INSERT INTO design_standards (project_id, name, description, "
+                f"base_standard_id, is_base, created_at, updated_at) "
+                f"VALUES (%s, %s, %s, %s, %s, NOW(), NOW()) RETURNING {_STANDARD_COLS}"
+            ),
             (project_id, name, description, base_standard_id, is_base),
         )
         row = cur.fetchone()
@@ -129,8 +142,10 @@ def update_standard(
     params.append(standard_id)
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            f"UPDATE design_standards SET {', '.join(updates)} "
-            f"WHERE id = %s RETURNING {_STANDARD_COLS}",
+            static_sql(
+                f"UPDATE design_standards SET {', '.join(updates)} "
+                f"WHERE id = %s RETURNING {_STANDARD_COLS}"
+            ),
             params,
         )
         row = cur.fetchone()

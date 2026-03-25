@@ -9,7 +9,9 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Query
 
 from ..storage.events import (
+    Event,
     EventLevel,
+    EventsQueryResult,
     EventVisibility,
     get_events_by_trace,
     get_events_with_filters,
@@ -18,8 +20,8 @@ from ..storage.events import (
 router = APIRouter()
 
 
-def _serialize_event(e: dict[str, Any], include_trace_id: bool = False) -> dict[str, Any]:
-    """Serialize a raw event row to API response format."""
+def _serialize_event(e: Event, include_trace_id: bool = False) -> dict[str, Any]:
+    """Serialize an event row to API response format."""
     result: dict[str, Any] = {
         "id": e["id"],
         "span_id": e["span_id"],
@@ -55,7 +57,7 @@ async def get_events(
 
     Returns events with summary statistics (total count, by_level breakdown).
     """
-    result = await asyncio.to_thread(
+    result: EventsQueryResult = await asyncio.to_thread(
         get_events_with_filters,
         project_id=project_id,
         trace_id=trace_id,
@@ -92,7 +94,7 @@ async def get_events_for_trace(
     Returns events ordered by timestamp ascending.
     Supports time-range pagination via `after` parameter.
     """
-    events = await asyncio.to_thread(
+    events: list[Event] = await asyncio.to_thread(
         get_events_by_trace,
         trace_id=trace_id,
         visibility=visibility,

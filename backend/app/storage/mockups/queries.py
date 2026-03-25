@@ -6,6 +6,7 @@ from typing import Any
 
 from psycopg import sql
 
+from .._sql import join_static_sql, static_sql
 from ..connection import get_cursor
 from .core import MOCKUP_SELECT_COLUMNS, _row_to_mockup
 
@@ -14,7 +15,9 @@ def get_mockup(project_id: str, mockup_id: str) -> dict[str, Any] | None:
     """Get a mockup by project_id and mockup_id."""
     with get_cursor() as cur:
         cur.execute(
-            f"SELECT {MOCKUP_SELECT_COLUMNS} FROM mockups WHERE project_id = %s AND mockup_id = %s",
+            static_sql(
+                f"SELECT {MOCKUP_SELECT_COLUMNS} FROM mockups WHERE project_id = %s AND mockup_id = %s"
+            ),
             (project_id, mockup_id),
         )
         row = cur.fetchone()
@@ -103,13 +106,13 @@ def list_mockups(
         generator=generator,
         search=search,
     )
-    where_sql = sql.SQL(" AND ").join(sql.SQL(c) for c in where_clauses)
+    where_sql = join_static_sql(where_clauses, " AND ")
 
     with get_cursor() as cur:
         total = _count_mockups(cur, where_sql, params.copy())
 
         cur.execute(
-            sql.SQL(f"SELECT {MOCKUP_SELECT_COLUMNS} FROM mockups WHERE ")
+            static_sql(f"SELECT {MOCKUP_SELECT_COLUMNS} FROM mockups WHERE ")
             + where_sql
             + sql.SQL(" ORDER BY created_at DESC LIMIT %s OFFSET %s"),
             [*params, limit, offset],
@@ -137,7 +140,7 @@ def get_mockups_for_task(
 
         query += " ORDER BY created_at DESC"
 
-        cur.execute(query, params)
+        cur.execute(static_sql(query), params)
         rows = cur.fetchall()
 
         return [_row_to_mockup(row) for row in rows]
@@ -161,7 +164,7 @@ def get_mockups_for_page(
 
         query += " ORDER BY version DESC, created_at DESC"
 
-        cur.execute(query, params)
+        cur.execute(static_sql(query), params)
         rows = cur.fetchall()
 
         return [_row_to_mockup(row) for row in rows]

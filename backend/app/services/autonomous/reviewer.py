@@ -136,7 +136,7 @@ def opus_review(
 
     prompt = build_review_prompt(diff, diff_stats, task, [])
     response_text = _call_review_agent(prompt)
-    if isinstance(response_text, dict):
+    if not isinstance(response_text, str):
         return response_text
 
     result = parse_review_response(response_text)

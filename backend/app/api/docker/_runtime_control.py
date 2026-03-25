@@ -27,6 +27,14 @@ __all__ = [
     "_write_runtime_mode",
 ]
 
+RuntimeMode = Literal["dev", "prod"]
+
+
+def _normalize_runtime_mode(value: str, *, fallback: RuntimeMode = "dev") -> RuntimeMode:
+    if value in {"dev", "prod"}:
+        return cast(RuntimeMode, value)
+    return fallback
+
 
 async def _clear_service_ports(svc: dict[str, Any]) -> None:
     for port in svc.get("ports", []):
@@ -38,17 +46,17 @@ async def _clear_service_ports(svc: dict[str, Any]) -> None:
         await _h._signal_port_listeners(port, signal=9)
 
 
-def _persisted_runtime_mode() -> tuple[Literal["dev", "prod"], Literal["persisted", "default"]]:
+def _persisted_runtime_mode() -> tuple[RuntimeMode, Literal["persisted", "default"]]:
     from .constants import _DEFAULT_STACK_MODE, _RUNTIME_MODE_FILE
 
     if _RUNTIME_MODE_FILE.exists():
         raw = _RUNTIME_MODE_FILE.read_text().strip()
         if raw in {"dev", "prod"}:
-            return cast(Literal["dev", "prod"], raw), "persisted"
-    return cast(Literal["dev", "prod"], _DEFAULT_STACK_MODE), "default"
+            return cast(RuntimeMode, raw), "persisted"
+    return _normalize_runtime_mode(_DEFAULT_STACK_MODE), "default"
 
 
-def _write_runtime_mode(mode: Literal["dev", "prod"]) -> None:
+def _write_runtime_mode(mode: RuntimeMode) -> None:
     from .constants import _RUNTIME_MODE_FILE
 
     _RUNTIME_MODE_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -93,7 +101,7 @@ async def _helper_image_ref() -> str:
     raise HTTPException(status_code=503, detail="Unable to resolve helper image for Docker mode switch")
 
 
-async def _launch_runtime_switch(mode: Literal["dev", "prod"], script_path: Path) -> str:
+async def _launch_runtime_switch(mode: RuntimeMode, script_path: Path) -> str:
     helper_image = await _h._helper_image_ref()
     helper_name = f"{_h.COMPOSE_PROJECT}-mode-switch"
     quoted_script = shlex.quote(str(script_path))
@@ -125,6 +133,7 @@ async def _launch_runtime_switch(mode: Literal["dev", "prod"], script_path: Path
 async def _get_runtime_status() -> RuntimeModeStatus:
     from .constants import _COMPOSE_FILE, _DEFAULT_STACK_MODE
 
+    default_mode = _normalize_runtime_mode(_DEFAULT_STACK_MODE)
     configured_mode, source = _persisted_runtime_mode()
     statuses = await _h._runtime_service_statuses()
     native_running = any(svc.state == "running" for svc in statuses if svc.manager == "systemd")
@@ -139,7 +148,7 @@ async def _get_runtime_status() -> RuntimeModeStatus:
             infra_runtime="stopped",
             current_mode=configured_mode,
             configured_mode=configured_mode,
-            default_mode=_DEFAULT_STACK_MODE,
+            default_mode=default_mode,
             source=source,
             is_running=native_running,
         )
@@ -164,7 +173,7 @@ async def _get_runtime_status() -> RuntimeModeStatus:
         infra_runtime=infra_runtime,
         current_mode=current_mode,
         configured_mode=configured_mode,
-        default_mode=_DEFAULT_STACK_MODE,
+        default_mode=default_mode,
         source=current_source,
         is_running=native_running or docker_running or docker_app_running,
     )

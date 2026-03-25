@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal, TypedDict
+
 from fastapi import APIRouter, HTTPException, Query
 
 from ...logging_config import get_logger
@@ -19,6 +21,15 @@ from .response import task_to_response
 
 logger = get_logger(__name__)
 router = APIRouter()
+
+DiscussionRole = Literal["user", "assistant"]
+
+
+class DiscussionHistoryEntry(TypedDict):
+    """Stored discussion turn used by the enrichment endpoint."""
+
+    role: DiscussionRole
+    content: str
 
 
 async def _run_sync_enrichment(project_id: str, task_id: str, raw_request: str) -> EnrichmentResponse:
@@ -59,7 +70,7 @@ async def _queue_async_enrichment(project_id: str, task_id: str, raw_request: st
     )
 
 
-def _get_discussion_history(task: dict) -> list[dict[str, str]]:
+def _get_discussion_history(task: dict[str, object]) -> list[DiscussionHistoryEntry]:
     """Extract discussion history from task metadata.
 
     NOTE: Discussion history storage is not currently implemented.
@@ -68,7 +79,11 @@ def _get_discussion_history(task: dict) -> list[dict[str, str]]:
     return []
 
 
-def _save_discussion_history(task_id: str, task: dict, history: list[dict[str, str]]) -> None:
+def _save_discussion_history(
+    task_id: str,
+    task: dict[str, object],
+    history: list[DiscussionHistoryEntry],
+) -> None:
     """Persist updated discussion history and enrichment status to storage.
 
     NOTE: Discussion history persistence is not currently implemented.
@@ -107,9 +122,13 @@ async def discuss_task_endpoint(
     from ...services.enrichment_service import apply_discussion_changes, discuss_task
 
     history = _get_discussion_history(task)
+    service_history: list[dict[str, str]] = [
+        {"role": entry["role"], "content": entry["content"]}
+        for entry in history
+    ]
     result = discuss_task(
         project_id=project_id, task_id=task_id,
-        message=request.message, history=history, current_task=task,
+        message=request.message, history=service_history, current_task=task,
     )
     history.append({"role": "user", "content": request.message})
     history.append({"role": "assistant", "content": result.response})

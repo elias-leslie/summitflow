@@ -9,6 +9,7 @@ import fnmatch
 from pathlib import Path
 
 from ....logging_config import get_logger
+from ..analyzers.ast_analyzer import ClassEntry, FunctionEntry
 from .file_constants import (
     CODE_HEALTH_THRESHOLDS,
     COMPAT_CRUFT_EXCLUDE_PATTERNS,
@@ -87,7 +88,7 @@ def detect_compat_cruft(rel_path: str, content: str) -> dict[str, int]:
     )
 
 
-def _has_long_functions(functions: list[dict]) -> bool:
+def _has_long_functions(functions: list[FunctionEntry]) -> bool:
     """Return True if any function exceeds the max line threshold."""
     return any(
         f["lines"] > CODE_HEALTH_THRESHOLDS["max_function_lines"]
@@ -95,7 +96,7 @@ def _has_long_functions(functions: list[dict]) -> bool:
     )
 
 
-def _has_large_classes(classes: list[dict]) -> bool:
+def _has_large_classes(classes: list[ClassEntry]) -> bool:
     """Return True if any class has too many methods."""
     return any(
         len(cls["methods"]) > CODE_HEALTH_THRESHOLDS["max_class_methods"]

@@ -52,6 +52,21 @@ __all__ = [
 router = APIRouter()
 
 
+def _coerce_message_type(value: object) -> MessageType:
+    """Convert an untrusted message-type value to a known enum member."""
+    if isinstance(value, str):
+        with contextlib.suppress(ValueError):
+            return MessageType(value)
+    return MessageType.LOG
+
+
+def _as_object_dict(value: object) -> dict[str, object]:
+    """Return a websocket-safe payload mapping, or an empty dict."""
+    if not isinstance(value, dict):
+        return {}
+    return {str(key): item for key, item in value.items()}
+
+
 async def _validate_task(websocket: WebSocket, task_id: str) -> bool:
     """Validate that the task exists. Returns True if valid, False if invalid (and closes connection)."""
     from ..storage import tasks as task_store
@@ -81,9 +96,15 @@ async def _forward_redis_events(task_id: str) -> None:
     """Forward events from Redis to all connected clients via ConnectionManager."""
     async for event in subscribe_ws_events(task_id):
         try:
-            msg_type_str = event.get("type", "log")
-            msg_type = MessageType(msg_type_str) if msg_type_str in MessageType.__members__.values() else MessageType.LOG
-            await manager.broadcast(task_id, Message(type=msg_type, task_id=task_id, data=event.get("data", {})))
+            msg_type = _coerce_message_type(event.get("type", MessageType.LOG.value))
+            await manager.broadcast(
+                task_id,
+                Message(
+                    type=msg_type,
+                    task_id=task_id,
+                    data=_as_object_dict(event.get("data")),
+                ),
+            )
         except Exception:
             logger.debug("Error forwarding Redis event to WebSocket clients", exc_info=True)
             break
@@ -127,9 +148,7 @@ async def _process_client_message(task_id: str, data: dict[str, object]) -> None
     if msg_type == MessageType.STOP_SIGNAL.value:
         await _handle_stop_signal(task_id)
     elif msg_type == MessageType.CHAT_MESSAGE.value:
-        message_data = data.get("data", {})
-        if isinstance(message_data, dict):
-            await _handle_chat_message(task_id, message_data)
+        await _handle_chat_message(task_id, _as_object_dict(data.get("data")))
 
 
 @router.websocket("/ws/execution/{task_id}")
@@ -151,7 +170,8 @@ async def websocket_execution(websocket: WebSocket, task_id: str) -> None:
 
         while True:
             data = await websocket.receive_json()
-            await _process_client_message(task_id, data)
+            if isinstance(data, dict):
+                await _process_client_message(task_id, _as_object_dict(data))
 
     except WebSocketDisconnect:
         pass

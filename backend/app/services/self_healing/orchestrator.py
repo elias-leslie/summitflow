@@ -8,7 +8,7 @@ Implements 3-2-1 escalation through existing fix_agent infrastructure.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypedDict, cast
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from ...logging_config import get_logger
 from .config import (
@@ -67,7 +67,7 @@ def _aggregate_check_types(by_project: dict[str, ProjectData]) -> ByCheckType:
 
 
 def _process_project_into_results(
-    conn: psycopg.Connection,
+    conn: psycopg.Connection[Any],
     results: OrchestrateResult,
     project_id: str,
     unfixed_counts: dict[str, int],
@@ -106,7 +106,7 @@ class SelfHealingOrchestrator:
 
     def __init__(
         self,
-        conn: psycopg.Connection,
+        conn: psycopg.Connection[Any],
         max_errors_per_run: int = MAX_ERRORS_PER_RUN,
         max_errors_per_project: int = MAX_ERRORS_PER_PROJECT,
     ) -> None:
@@ -164,6 +164,6 @@ class SelfHealingOrchestrator:
         return results
 
 
-def poll_and_fix_all(conn: psycopg.Connection, max_errors: int = MAX_ERRORS_PER_RUN) -> OrchestrateResult:
+def poll_and_fix_all(conn: psycopg.Connection[Any], max_errors: int = MAX_ERRORS_PER_RUN) -> OrchestrateResult:
     """Convenience function for scheduled workflow task."""
     return SelfHealingOrchestrator(conn, max_errors_per_run=max_errors).poll_and_fix()

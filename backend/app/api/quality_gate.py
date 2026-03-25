@@ -14,6 +14,7 @@ from .quality_gate_models import (
     CheckResultResponse,
     CreateCheckResultRequest,
     HealthSummaryResponse,
+    QualityCheckType,
     SyncResultsRequest,
     SyncResultsResponse,
 )
@@ -44,7 +45,7 @@ async def get_health_summary(project_id: str) -> HealthSummaryResponse:
 @router.get("/projects/{project_id}/quality/results")
 async def list_check_results(
     project_id: str,
-    check_type: Literal["pytest", "ruff", "types", "biome", "tsc"] | None = None,
+    check_type: QualityCheckType | None = None,
     status: Literal["pass", "fail", "error", "skipped"] | None = None,
     unfixed_only: bool = False,
     limit: int = Query(default=100, le=500),

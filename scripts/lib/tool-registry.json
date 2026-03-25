@@ -69,38 +69,55 @@
         "pass_path": true
       }
     },
-    {
-      "name": "biome",
+  {
+    "name": "biome",
       "component_id": "sf.dt",
       "redirect_patterns": [
         "(npx\\s+)?biome\\b"
       ],
       "redirect_message": "Use 'dt biome [args]' — handles TOON output and project detection.",
-      "dt": {
-        "label": "BIOME",
-        "binary": "npx",
-        "args": "biome lint . --max-diagnostics=100",
-        "count_method": "biome_parse",
-        "working_dir": "frontend",
-        "fallback_global": true,
-        "pass_path": false
+    "dt": {
+      "label": "BIOME",
+      "binary": "npx",
+      "args": "biome lint . --max-diagnostics=100",
+      "count_method": "biome_parse",
+      "working_dir": "frontend",
+      "fallback_global": true,
+      "pass_path": false
       }
     },
-    {
-      "name": "tsc",
+  {
+    "name": "tsc",
       "component_id": "sf.dt",
       "redirect_patterns": [
         "(npx\\s+)?tsc\\b"
       ],
       "redirect_message": "Use 'dt tsc' — handles TOON output and project detection.",
-      "dt": {
-        "label": "TSC",
-        "binary": "npx",
-        "args": "tsc --noEmit",
-        "count_method": "grep_error_ts",
-        "working_dir": "frontend",
-        "fallback_global": true,
-        "pass_path": false
+    "dt": {
+      "label": "TSC",
+      "binary": "npx",
+      "args": "tsc --noEmit",
+      "count_method": "grep_error_ts",
+      "working_dir": "frontend",
+      "fallback_global": true,
+      "pass_path": false
+      }
+    },
+  {
+    "name": "vitest",
+      "component_id": "sf.dt",
+      "redirect_patterns": [
+        "(npx\\s+|pnpm(?:\\s+exec)?\\s+)?vitest\\b"
+      ],
+      "redirect_message": "Use 'dt vitest [args]' — handles project detection and TOON output.",
+    "dt": {
+      "label": "VITEST",
+      "binary": "vitest",
+      "args": "run",
+      "count_method": "vitest_parse",
+      "working_dir": "frontend",
+      "fallback_global": true,
+      "pass_path": false
       }
     },
     {

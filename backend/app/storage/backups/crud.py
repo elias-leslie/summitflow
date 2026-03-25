@@ -6,6 +6,7 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
+from .._sql import static_sql
 from ..connection import generate_prefixed_id, get_connection, get_cursor
 from .models import BACKUP_COLUMNS, build_backup_updates, row_to_backup
 
@@ -45,11 +46,13 @@ def create_backup_record(
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            f"""
-            INSERT INTO backups (id, project_id, name, backup_type, status, note, source_id)
-            VALUES (%s, %s, %s, %s, 'pending', %s, %s)
-            RETURNING {BACKUP_COLUMNS}
-            """,
+            static_sql(
+                f"""
+                INSERT INTO backups (id, project_id, name, backup_type, status, note, source_id)
+                VALUES (%s, %s, %s, %s, 'pending', %s, %s)
+                RETURNING {BACKUP_COLUMNS}
+                """
+            ),
             (backup_id, project_id, name, backup_type, note, resolved_source_id),
         )
         row = cur.fetchone()
@@ -71,7 +74,7 @@ def get_backup(backup_id: str) -> dict[str, Any] | None:
     """
     with get_cursor() as cur:
         cur.execute(
-            f"SELECT {BACKUP_COLUMNS} FROM backups WHERE id = %s",
+            static_sql(f"SELECT {BACKUP_COLUMNS} FROM backups WHERE id = %s"),
             (backup_id,),
         )
         row = cur.fetchone()
@@ -116,14 +119,16 @@ def list_backups(
 
     with get_cursor() as cur:
         # Get total count
-        cur.execute(f"SELECT COUNT(*) FROM backups WHERE {where_sql}", params)
+        cur.execute(static_sql(f"SELECT COUNT(*) FROM backups WHERE {where_sql}"), params)
         count_row = cur.fetchone()
         total = int(count_row[0]) if count_row else 0
 
         # Get paginated results
         cur.execute(
-            f"SELECT {BACKUP_COLUMNS} FROM backups WHERE {where_sql} "
-            "ORDER BY created_at DESC LIMIT %s OFFSET %s",
+            static_sql(
+                f"SELECT {BACKUP_COLUMNS} FROM backups WHERE {where_sql} "
+                "ORDER BY created_at DESC LIMIT %s OFFSET %s"
+            ),
             [*params, limit, offset],
         )
         rows = cur.fetchall()
@@ -186,7 +191,9 @@ def update_backup_status(
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            f"UPDATE backups SET {', '.join(updates)} WHERE id = %s RETURNING {BACKUP_COLUMNS}",
+            static_sql(
+                f"UPDATE backups SET {', '.join(updates)} WHERE id = %s RETURNING {BACKUP_COLUMNS}"
+            ),
             params,
         )
         row = cur.fetchone()

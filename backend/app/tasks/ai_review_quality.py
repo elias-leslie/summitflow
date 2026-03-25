@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, cast
 
@@ -17,7 +18,7 @@ logger = get_logger(__name__)
 
 
 def _build_review_result(
-    parsed: dict[str, Any],
+    parsed: Mapping[str, Any],
     low_conf_log_event: str,
 ) -> dict[str, Any]:
     """Build a standardised review result dict, applying confidence filtering."""

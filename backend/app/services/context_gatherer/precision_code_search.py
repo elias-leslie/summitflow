@@ -265,7 +265,7 @@ def _text_fallback(
 
     # If phrase search found nothing, try individual terms (longest first)
     if not text_results.get("items") and " " in text_query:
-        terms = sorted(text_query.split(), key=len, reverse=True)
+        terms: list[str] = sorted(text_query.split(), key=lambda term: len(term), reverse=True)
         for term in terms:
             if len(term) < 3:
                 continue

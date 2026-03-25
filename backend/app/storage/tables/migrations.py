@@ -12,6 +12,7 @@ import psycopg
 from psycopg import sql
 
 from ...logging_config import get_logger
+from .._sql import static_sql
 
 logger = get_logger(__name__)
 
@@ -238,7 +239,7 @@ def _try_add_column(cur: psycopg.Cursor, table: str, column: str) -> None:
         # Note: table and column names come from controlled internal list, not user input
         query = sql.SQL("ALTER TABLE {} ADD COLUMN IF NOT EXISTS {}").format(
             sql.Identifier(table),
-            sql.SQL(column),
+            static_sql(column),
         )
         cur.execute(query)
         cur.execute(sql.SQL("RELEASE SAVEPOINT {}").format(sql.Identifier(savepoint)))

@@ -11,8 +11,11 @@ from ..storage.notifications import create_notification
 from ..utils.shared_paths import get_repo_root, resolve_script
 from .backup_lock import acquire_backup_lock, release_backup_lock
 from .backup_utils import (
+    as_mapping,
     build_script_error_message,
     build_verification_kwargs,
+    get_int_field,
+    get_str_field,
     parse_backup_output,
 )
 
@@ -102,7 +105,7 @@ def _handle_success(backup_id: str, parsed: dict[str, object]) -> dict[str, obje
     """Handle successful infrastructure backup."""
     info = dict(parsed)
     verification_raw = info.pop("verification", None)
-    verification = verification_raw if isinstance(verification_raw, dict) else None
+    verification = as_mapping(verification_raw)
     archive_name = str(info.pop("archive_name", "") or "")
     info.pop("pending_path", None)
     vkw = build_verification_kwargs(verification) if verification else {}
@@ -110,10 +113,10 @@ def _handle_success(backup_id: str, parsed: dict[str, object]) -> dict[str, obje
     backup_store.update_backup_status(
         backup_id, "completed",
         name=archive_name or None,
-        size_bytes=info.get("total_bytes"),
-        db_size_bytes=info.get("db_bytes"),
-        files_size_bytes=info.get("files_bytes"),
-        location=info.get("location"),
+        size_bytes=get_int_field(info, "total_bytes"),
+        db_size_bytes=get_int_field(info, "db_bytes"),
+        files_size_bytes=get_int_field(info, "files_bytes"),
+        location=get_str_field(info, "location"),
         **vkw,
     )
     logger.info("create_infra_backup_completed", backup_id=backup_id)
@@ -124,7 +127,7 @@ def _handle_pending(backup_id: str, parsed: dict[str, object]) -> dict[str, obje
     """Handle infrastructure backup pending SMB upload."""
     info = dict(parsed)
     verification_raw = info.pop("verification", None)
-    verification = verification_raw if isinstance(verification_raw, dict) else None
+    verification = as_mapping(verification_raw)
     archive_name = str(info.pop("archive_name", "") or "")
     pending_path = str(info.get("pending_path", "") or "")
     vkw = build_verification_kwargs(verification) if verification else {}
@@ -132,9 +135,9 @@ def _handle_pending(backup_id: str, parsed: dict[str, object]) -> dict[str, obje
     backup_store.update_backup_status(
         backup_id, "completed_pending_upload",
         name=archive_name or None,
-        size_bytes=info.get("total_bytes"),
-        db_size_bytes=info.get("db_bytes"),
-        files_size_bytes=info.get("files_bytes"),
+        size_bytes=get_int_field(info, "total_bytes"),
+        db_size_bytes=get_int_field(info, "db_bytes"),
+        files_size_bytes=get_int_field(info, "files_bytes"),
         location=pending_path or "pending_upload",
         **vkw,
     )

@@ -1,7 +1,7 @@
 """Storage module for quality check results.
 
-Tracks results from dt quality gate checks (pytest, ruff, types, biome, tsc)
-and their fix status.
+Tracks results from dt quality gate checks (pytest, vitest, ruff, types, biome,
+tsc) and their fix status.
 """
 
 from __future__ import annotations
@@ -18,9 +18,10 @@ from ._qcr_helpers import (
     fetch_health_data,
     row_to_dict,
 )
+from ._sql import static_sql
 from .connection import get_connection
 
-CheckType = Literal["pytest", "ruff", "types", "biome", "tsc"]
+CheckType = Literal["pytest", "vitest", "ruff", "types", "biome", "tsc"]
 Status = Literal["pass", "fail", "error", "skipped"]
 TriggerType = Literal["commit", "manual", "ci", "agent"]
 
@@ -67,7 +68,7 @@ def get_check_result(conn: psycopg.Connection, result_id: int) -> CheckResult | 
     """Get a check result by ID."""
     with conn.cursor() as cur:
         cur.execute(
-            f"SELECT {SELECT_COLS} FROM quality_check_results WHERE id = %s", (result_id,)
+            static_sql(f"SELECT {SELECT_COLS} FROM quality_check_results WHERE id = %s"), (result_id,)
         )
         row = cur.fetchone()
         return row_to_dict(row) if row else None
@@ -99,8 +100,10 @@ def list_check_results(
     where_clause = " AND ".join(conditions)
     with conn.cursor() as cur:
         cur.execute(
-            f"SELECT {SELECT_COLS} FROM quality_check_results"
-            f" WHERE {where_clause} ORDER BY created_at DESC LIMIT %s OFFSET %s",
+            static_sql(
+                f"SELECT {SELECT_COLS} FROM quality_check_results"
+                f" WHERE {where_clause} ORDER BY created_at DESC LIMIT %s OFFSET %s"
+            ),
             params,
         )
         return [row_to_dict(row) for row in cur.fetchall()]
@@ -117,8 +120,10 @@ def get_unfixed_count(
         params.append(check_type)
     with conn.cursor() as cur:
         cur.execute(
-            f"SELECT COUNT(*) FROM quality_check_results"
-            f" WHERE project_id = %s AND status = 'fail' AND fixed_at IS NULL{type_filter}",
+            static_sql(
+                f"SELECT COUNT(*) FROM quality_check_results"
+                f" WHERE project_id = %s AND status = 'fail' AND fixed_at IS NULL{type_filter}"
+            ),
             params,
         )
         row = cur.fetchone()

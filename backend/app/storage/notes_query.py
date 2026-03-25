@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ._sql import static_sql
 from .connection import get_cursor
 from .notes_helpers import NoteType, _row_to_dict
 
@@ -17,7 +18,7 @@ _SELECT_COLS = """
 def get_note(note_id: str) -> dict[str, Any] | None:
     """Get a note by ID."""
     with get_cursor() as cur:
-        cur.execute(_SELECT_COLS + "WHERE id = %s", (note_id,))
+        cur.execute(static_sql(_SELECT_COLS + "WHERE id = %s"), (note_id,))
         row = cur.fetchone()
     return _row_to_dict(row) if row else None
 
@@ -67,7 +68,7 @@ def list_notes(
     params.extend([limit, offset])
 
     with get_cursor() as cur:
-        cur.execute(query, params)
+        cur.execute(static_sql(query), params)
         rows = cur.fetchall()
     return [_row_to_dict(row) for row in rows]
 
@@ -104,7 +105,7 @@ def count_notes(
     query = "SELECT COUNT(*) FROM notes" + where
 
     with get_cursor() as cur:
-        cur.execute(query, params)
+        cur.execute(static_sql(query), params)
         row = cur.fetchone()
     return row[0] if row else 0
 
@@ -119,6 +120,6 @@ def list_tags(project_scope: str | None = None) -> list[str]:
         params = ()
 
     with get_cursor() as cur:
-        cur.execute(query, params)
+        cur.execute(static_sql(query), params)
         rows = cur.fetchall()
     return [row[0] for row in rows]
