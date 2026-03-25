@@ -4,6 +4,7 @@ import clsx from 'clsx'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { usePathname } from 'next/navigation'
 import { useState, useEffect } from 'react'
+import { getProjectIdFromPathname } from '@/lib/project-config'
 import { useSidebarState } from './hooks/useSidebarState'
 import { SidebarHeader } from './SidebarHeader'
 import { ProjectsAccordion } from './ProjectsAccordion'
@@ -13,9 +14,7 @@ export function SidebarContent() {
   const { isCollapsed, mounted, toggleCollapsed } = useSidebarState()
   const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null)
 
-  // Extract current project ID from URL
-  const projectMatch = pathname.match(/^\/projects\/([^/]+)/)
-  const currentProjectId = projectMatch ? projectMatch[1] : null
+  const currentProjectId = getProjectIdFromPathname(pathname)
 
   // Auto-expand current project
   useEffect(() => {
@@ -31,8 +30,8 @@ export function SidebarContent() {
     return (
       <nav
         className={clsx(
-          'h-full bg-slate-900/50 border-r border-slate-700/50 flex-col',
-          'w-16',
+          'hidden h-full flex-col border-r border-slate-700/60 bg-[linear-gradient(180deg,rgba(9,6,16,0.96),rgba(10,7,18,0.92)_40%,rgba(8,5,14,0.97))]',
+          'w-[88px]',
           'hidden md:flex',
         )}
       />
@@ -42,20 +41,22 @@ export function SidebarContent() {
   return (
     <nav
       className={clsx(
-        'h-full bg-slate-900/50 border-r border-slate-700/50 flex flex-col transition-all duration-300',
-        isCollapsed ? 'w-16' : 'w-56',
+        'relative hidden h-full flex-col border-r border-slate-700/60 bg-[linear-gradient(180deg,rgba(9,6,16,0.96),rgba(10,7,18,0.92)_40%,rgba(8,5,14,0.97))] shadow-[inset_-1px_0_0_rgba(255,255,255,0.02)] transition-all duration-300 md:flex',
+        isCollapsed ? 'w-[88px]' : 'w-[304px]',
         'hidden md:flex',
       )}
     >
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-[radial-gradient(circle_at_top,rgba(255,0,102,0.16),transparent_70%)] opacity-70" />
+
       {/* Header */}
       <div
-        className={clsx('border-b border-slate-700/50', isCollapsed && 'px-1')}
+        className={clsx('border-b border-slate-700/60 px-2 pt-2', isCollapsed && 'px-2')}
       >
         <SidebarHeader isCollapsed={isCollapsed} />
       </div>
 
       {/* Projects List */}
-      <div className="flex-1 overflow-y-auto py-3 px-2">
+      <div className="flex-1 overflow-y-auto px-3 py-4">
         <ProjectsAccordion
           isCollapsed={isCollapsed}
           expandedProjectId={expandedProjectId}
@@ -64,11 +65,11 @@ export function SidebarContent() {
       </div>
 
       {/* Collapse Toggle */}
-      <div className="p-2 border-t border-slate-700/50">
+      <div className="border-t border-slate-700/60 p-3">
         <button
           type="button"
           onClick={toggleCollapsed}
-          className="w-full flex items-center justify-center p-2 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 transition-colors"
+          className="flex w-full items-center justify-center rounded-2xl border border-slate-700/60 bg-slate-900/60 px-3 py-2.5 text-slate-500 transition-all hover:border-slate-600 hover:bg-slate-800/70 hover:text-slate-200"
           title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >

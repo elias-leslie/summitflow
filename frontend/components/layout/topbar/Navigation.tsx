@@ -27,7 +27,7 @@ export function Navigation({
       className={clsx(
         'flex min-w-0 items-center transition-all duration-300',
         measure ? 'w-max gap-1 whitespace-nowrap' : 'w-full overflow-hidden',
-        dense ? 'justify-start gap-0' : 'justify-center gap-1',
+        dense ? 'justify-start gap-1' : 'justify-center gap-1.5',
       )}
     >
       {navItems.map((item) => {
@@ -51,17 +51,17 @@ export function Navigation({
         const label = item.label
 
         const className = clsx(
-          'group relative flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg font-medium transition-all duration-200',
+          'group relative flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full font-medium transition-all duration-200',
           dense ? 'gap-1 text-xs' : 'text-sm',
-          compact ? 'p-2' : dense ? 'px-1.5 py-1.5' : 'px-3 py-1.5',
+          compact ? 'p-2.5' : dense ? 'px-2.5 py-2' : 'px-4 py-2',
           isActive
-            ? `${ac.bg} ${ac.text}`
-            : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-300',
+            ? `${ac.bg} ${ac.text} shadow-[0_18px_38px_-30px_rgba(0,0,0,0.95)] ring-1 ring-white/5`
+            : 'text-slate-400 hover:bg-slate-800/72 hover:text-slate-200',
         )
 
         const iconClassName = clsx(
           'w-4 h-4 transition-colors duration-200',
-          isActive ? ac.text : 'text-slate-500 group-hover:text-slate-400',
+          isActive ? ac.text : 'text-slate-500 group-hover:text-slate-300',
         )
 
         const content = (
@@ -79,8 +79,8 @@ export function Navigation({
             )}
             {isActive && (
               <span
-                className="absolute bottom-0 left-1/2 -translate-x-1/2 h-0.5 w-3/5 rounded-full bg-current opacity-70"
-                style={{ boxShadow: '0 2px 8px currentColor' }}
+                className="absolute inset-x-4 bottom-1 h-px rounded-full bg-current opacity-65"
+                style={{ boxShadow: '0 0 12px currentColor' }}
                 aria-hidden="true"
               />
             )}

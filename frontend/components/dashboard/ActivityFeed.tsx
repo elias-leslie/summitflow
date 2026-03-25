@@ -108,37 +108,46 @@ function ActivityRow({
   return (
     <div
       style={style}
-      className="flex items-center gap-3 border-b border-slate-800/50 px-4 hover:bg-slate-800/40 transition-colors duration-150"
+      className="px-4 py-1.5"
       data-testid={`activity-item-${event.type}`}
       title={event.timestamp ? formatDate(event.timestamp) : undefined}
     >
-      <div className={clsx('flex-shrink-0 rounded-lg p-2', config.color.bg)}>
-        {isFailed ? (
-          <XCircle className="h-4 w-4 text-red-400" />
-        ) : (
-          <Icon className={clsx('h-4 w-4', config.color.text)} />
-        )}
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm text-slate-300">{event.message}</p>
-        <p className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-          <span className="uppercase tracking-wide text-slate-600">{config.label}</span>
-          <Link
-            href={`/projects/${event.project_id}`}
-            className="font-mono text-slate-400 hover:text-phosphor-300"
-          >
-            {event.project_id}
-          </Link>
-          {event.metadata.status && (
-            <span className={clsx('rounded px-1.5 py-0.5 text-xs', getStatusBadgeClass(event.metadata.status))}>
-              {event.metadata.status}
+      <div className="flex h-full items-center gap-4 rounded-2xl border border-transparent bg-slate-950/20 px-3 py-3 transition-all duration-150 hover:border-slate-700/50 hover:bg-slate-950/72">
+        <div className="relative flex h-full w-11 flex-shrink-0 items-center justify-center">
+          <span className="absolute inset-y-0 w-px bg-slate-800/70" aria-hidden="true" />
+          <div className={clsx('relative z-10 rounded-xl p-2 shadow-[0_12px_26px_-20px_rgba(0,0,0,0.95)]', config.color.bg)}>
+            {isFailed ? (
+              <XCircle className="h-4 w-4 text-red-400" />
+            ) : (
+              <Icon className={clsx('h-4 w-4', config.color.text)} />
+            )}
+          </div>
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="line-clamp-2 text-sm leading-relaxed text-slate-200">
+            {event.message}
+          </p>
+          <p className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+            <span className="rounded-full border border-slate-800/70 bg-slate-900/70 px-2 py-0.5 uppercase tracking-[0.16em] text-[10px] text-slate-500">
+              {config.label}
             </span>
-          )}
-        </p>
+            <Link
+              href={`/projects/${event.project_id}`}
+              className="font-mono text-slate-400 hover:text-phosphor-300"
+            >
+              {event.project_id}
+            </Link>
+            {event.metadata.status && (
+              <span className={clsx('rounded-full px-2 py-0.5 text-[10px] uppercase tracking-[0.14em]', getStatusBadgeClass(event.metadata.status))}>
+                {event.metadata.status}
+              </span>
+            )}
+          </p>
+        </div>
+        <span className="flex-shrink-0 font-mono text-xs text-slate-500">
+          {formatTimeAgo(event.timestamp)}
+        </span>
       </div>
-      <span className="flex-shrink-0 font-mono text-xs text-slate-500">
-        {formatTimeAgo(event.timestamp)}
-      </span>
     </div>
   )
 }
@@ -224,12 +233,12 @@ export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedP
   return (
     <div
       ref={containerRef}
-      className={clsx('card overflow-hidden', className)}
+      className={clsx('panel-glass overflow-hidden', className)}
       data-testid="activity-feed"
     >
-      <div className="border-b border-slate-800/60 px-3 py-2.5">
+      <div className="border-b border-slate-800/60 px-4 py-4">
         <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-0.5 rounded-lg bg-slate-800/40 border border-slate-700/40 p-0.5">
+          <div className="flex items-center gap-0.5 rounded-full border border-slate-700/50 bg-slate-900/66 p-1">
             {TYPE_FILTERS.map((filter) => {
               const Icon = filter.icon
               return (
@@ -239,7 +248,7 @@ export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedP
                   onClick={() => setTypeFilter(filter.value)}
                   aria-pressed={typeFilter === filter.value}
                   className={clsx(
-                    'flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all duration-200',
+                    'flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-200',
                     typeFilter === filter.value
                       ? 'bg-slate-700/80 text-slate-100 shadow-sm ring-1 ring-white/5'
                       : 'text-slate-500 hover:bg-slate-800/60 hover:text-slate-300',
@@ -254,13 +263,13 @@ export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedP
           <button
             type="button"
             onClick={() => refetch()}
-            className="inline-flex items-center gap-1 text-2xs text-slate-500 transition-colors hover:text-slate-300"
+            className="inline-flex items-center gap-1.5 rounded-full border border-slate-700/60 bg-slate-900/66 px-3 py-1.5 text-xs text-slate-300 transition-colors hover:border-slate-600 hover:text-slate-100"
           >
             <RefreshCw className={clsx('h-3 w-3', (isRefetching || isFetchingNextPage) && 'animate-spin')} />
             Refresh
           </button>
         </div>
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-2xs text-slate-500">
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
           <span>
             {isLoading
               ? 'Loading latest activity'
@@ -291,7 +300,7 @@ export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedP
           </button>
         </div>
       ) : items.length === 0 ? (
-        <div className="p-8 text-center">
+        <div className="p-10 text-center">
           <Activity className="mx-auto mb-3 h-10 w-10 text-slate-600" />
           <p className="text-sm text-slate-500">{emptyLabel}</p>
           <p className="mt-1 text-xs text-slate-600">
@@ -305,11 +314,11 @@ export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedP
           <List
             rowComponent={ActivityRow}
             rowCount={items.length}
-            rowHeight={64}
+            rowHeight={92}
             rowProps={{ items }}
             style={{ height: listHeight }}
           />
-          <div className="border-t border-slate-800/60 p-3 text-center">
+          <div className="border-t border-slate-800/60 p-4 text-center">
             <p className="text-xs text-slate-500">
               Showing {items.length} of {total} events
             </p>
@@ -318,7 +327,7 @@ export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedP
                 type="button"
                 onClick={() => fetchNextPage()}
                 disabled={isFetchingNextPage}
-                className="mt-2 inline-flex items-center gap-1 text-xs text-phosphor-400 transition-colors hover:text-phosphor-300 disabled:cursor-not-allowed disabled:opacity-50"
+                className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-phosphor-500/18 bg-phosphor-500/10 px-3 py-1.5 text-xs text-phosphor-300 transition-colors hover:bg-phosphor-500/14 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isFetchingNextPage ? (
                   <>

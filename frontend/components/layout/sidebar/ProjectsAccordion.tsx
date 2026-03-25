@@ -39,16 +39,16 @@ export function ProjectsAccordion({
   if (isCollapsed) {
     // Show mini project icons when collapsed
     return (
-      <div className="space-y-1 py-2">
+      <div className="space-y-2 py-2">
         {projects?.slice(0, 5).map((p) => (
           <Link
             key={p.id}
             href={`/projects/${p.id}`}
             className={clsx(
-              'flex items-center justify-center w-10 h-10 mx-auto rounded-lg transition-all duration-200 border',
+              'mx-auto flex h-11 w-11 items-center justify-center rounded-2xl border transition-all duration-200',
               p.id === currentProjectId
-                ? 'bg-outrun-500/20 text-outrun-400 border-outrun-500/30 shadow-[0_0_12px_rgba(255,0,102,0.2)]'
-                : 'text-slate-500 border-transparent hover:text-slate-300 hover:bg-slate-800/50 hover:border-slate-700/50',
+                ? 'border-outrun-500/30 bg-outrun-500/18 text-outrun-300 shadow-[0_18px_36px_-30px_rgba(255,0,102,0.95)]'
+                : 'border-slate-800/60 bg-slate-900/55 text-slate-500 hover:border-slate-700/60 hover:bg-slate-800/70 hover:text-slate-300',
             )}
             title={p.name}
           >
@@ -58,7 +58,7 @@ export function ProjectsAccordion({
           </Link>
         ))}
         {projects && projects.length > 5 && (
-          <div className="flex items-center justify-center w-10 h-10 mx-auto text-xs text-slate-600">
+          <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-800/60 bg-slate-900/55 text-xs text-slate-500">
             +{projects.length - 5}
           </div>
         )}
@@ -69,7 +69,7 @@ export function ProjectsAccordion({
   return (
     <div
       ref={accordionRef}
-      className="space-y-1"
+      className="space-y-2"
       data-testid="projects-accordion"
     >
       {projects?.map((p) => {

@@ -1,7 +1,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { AlertCircle } from 'lucide-react'
+import { AlertCircle, ExternalLink, Settings2 } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
@@ -31,6 +31,24 @@ import { taskQueryKeys } from '@/lib/task-cache'
 import { useTaskMutationSync } from '@/lib/task-mutation-sync'
 import { STALE_GIT } from '@/lib/polling'
 import { getErrorMessage } from '@/lib/utils'
+
+const TAB_COPY: Record<TabId, { label: string; description: string }> = {
+  tasks: {
+    label: 'Execution board',
+    description:
+      'Drive planning and delivery with board and table views that keep momentum visible.',
+  },
+  explorer: {
+    label: 'Code intelligence',
+    description:
+      'Inspect indexed code structure, scan coverage, and precision-search the project surface.',
+  },
+  health: {
+    label: 'Health and quality',
+    description:
+      'Monitor quality gate signals, runtime health, and the operational pressure around this project.',
+  },
+}
 
 export function ProjectDetailClient() {
   const params = useParams()
@@ -226,7 +244,88 @@ export function ProjectDetailClient() {
 
   return (
     <div className="h-full flex flex-col">
-      {/* Tab Content - Full height, no header redundancy */}
+      <div className="flex-none border-b border-slate-800/80 bg-slate-950/55 backdrop-blur-sm">
+        <div className="mx-auto w-full max-w-[1600px] px-4 py-5 md:px-6">
+          <div className="card-elevated relative overflow-hidden px-5 py-5 md:px-6">
+            <div className="pointer-events-none absolute inset-y-0 right-0 w-[34%] bg-[radial-gradient(circle_at_top_right,rgba(0,245,255,0.12),transparent_62%)]" />
+            <div className="relative z-10 flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+              <div className="space-y-4">
+                <div>
+                  <div className="eyebrow">Project cockpit</div>
+                  <h1 className="display mt-2 text-2xl font-semibold tracking-tight text-slate-100 md:text-3xl">
+                    {project.name}
+                  </h1>
+                  <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-300">
+                    {TAB_COPY[activeTab].description}
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="rounded-full border border-slate-700/60 bg-slate-950/60 px-3 py-1.5 font-mono text-slate-300">
+                    {project.id}
+                  </span>
+                  <span
+                    className={project.health_status === 'healthy'
+                      ? 'rounded-full border border-emerald-500/18 bg-emerald-500/10 px-3 py-1.5 uppercase tracking-[0.16em] text-emerald-300'
+                      : 'rounded-full border border-amber-500/18 bg-amber-500/10 px-3 py-1.5 uppercase tracking-[0.16em] text-amber-300'}
+                  >
+                    {project.health_status === 'healthy' ? 'healthy service' : 'monitoring'}
+                  </span>
+                  <span className={project.root_path
+                    ? 'rounded-full border border-phosphor-500/18 bg-phosphor-500/10 px-3 py-1.5 text-phosphor-300'
+                    : 'rounded-full border border-amber-500/18 bg-amber-500/10 px-3 py-1.5 text-amber-300'}>
+                    {project.root_path ? 'root path configured' : 'root path missing'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-3 xl:items-end">
+                <div className="max-w-full rounded-2xl border border-slate-800/70 bg-slate-950/55 px-4 py-3 text-sm">
+                  <div className="eyebrow">Current focus</div>
+                  <div className="mt-2 text-base font-medium text-slate-100">
+                    {TAB_COPY[activeTab].label}
+                  </div>
+                  <div className="mt-2 text-xs text-slate-500">
+                    <a
+                      href={project.base_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-mono text-slate-300 transition-colors hover:text-phosphor-300"
+                    >
+                      {project.base_url}
+                    </a>
+                    {project.root_path && (
+                      <div className="mt-1 truncate font-mono text-slate-500" title={project.root_path}>
+                        {project.root_path}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <a
+                    href={project.base_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="btn-secondary inline-flex items-center gap-2 px-4 py-2 text-sm"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    Open app
+                  </a>
+                  <Link
+                    href={`/projects/${project.id}/settings`}
+                    className="btn-secondary inline-flex items-center gap-2 px-4 py-2 text-sm"
+                  >
+                    <Settings2 className="h-4 w-4" />
+                    Settings
+                  </Link>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <section className="flex-1 overflow-hidden">
         {activeTab === 'tasks' && (
           <div className="h-full overflow-auto p-4 space-y-4">

@@ -35,12 +35,15 @@ export function ProjectAccordionItem({
   const pathname = usePathname()
   const tier = useProjectPermissionTier(project.id)
   const badge = tier ? TIER_BADGE_CONFIG[tier as keyof typeof TIER_BADGE_CONFIG] : null
+  const healthLabel = project.health_status === 'healthy' ? 'healthy' : 'watch'
 
   return (
     <div
       className={clsx(
-        'rounded-lg overflow-hidden transition-all duration-200',
-        isActive && 'border-l-2 border-outrun-500/60',
+        'overflow-hidden rounded-[1.35rem] border transition-all duration-200',
+        isActive
+          ? 'border-outrun-500/24 bg-gradient-to-br from-outrun-500/12 via-transparent to-violet-500/8 shadow-[0_24px_60px_-46px_rgba(255,0,102,0.9)]'
+          : 'border-slate-800/70 bg-slate-900/52 hover:border-slate-700/65 hover:bg-slate-900/76',
       )}
       data-testid="project-accordion-item"
       data-expanded={isExpanded}
@@ -51,23 +54,23 @@ export function ProjectAccordionItem({
         onClick={onToggleExpand}
         data-testid={`project-accordion-${project.id}`}
         className={clsx(
-          'w-full flex items-center gap-2.5 px-3 py-2.5 transition-all duration-200 group',
-          isActive ? 'bg-outrun-500/10' : 'hover:bg-slate-800/50',
+          'group flex w-full items-center gap-3 px-3.5 py-3 text-left transition-all duration-200',
+          isActive ? 'bg-transparent' : 'hover:bg-slate-800/30',
         )}
       >
         {/* Project icon with health indicator */}
         <div className="relative flex-shrink-0">
           <div
             className={clsx(
-              'w-8 h-8 rounded-lg flex items-center justify-center border transition-all duration-200',
+              'flex h-10 w-10 items-center justify-center rounded-2xl border transition-all duration-200',
               isActive
-                ? 'bg-gradient-to-br from-outrun-500/20 to-pink-500/10 border-outrun-500/40'
-                : 'bg-slate-800/50 border-slate-700/50 group-hover:border-slate-600',
+                ? 'border-outrun-500/28 bg-gradient-to-br from-outrun-500/22 to-violet-500/14'
+                : 'border-slate-700/60 bg-slate-800/60 group-hover:border-slate-600/80',
             )}
           >
             <span
               className={clsx(
-                'text-xs font-bold transition-colors',
+                'text-sm font-bold transition-colors',
                 isActive
                   ? 'text-outrun-400'
                   : 'text-slate-400 group-hover:text-slate-300',
@@ -91,13 +94,19 @@ export function ProjectAccordionItem({
         <div className="flex-1 min-w-0 text-left">
           <div
             className={clsx(
-              'text-sm font-medium truncate transition-colors',
+              'truncate text-sm font-semibold transition-colors',
               isActive
                 ? 'text-slate-100'
                 : 'text-slate-300 group-hover:text-slate-100',
             )}
           >
             {project.name}
+          </div>
+          <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-500">
+            <span className="truncate font-mono">{project.id}</span>
+            <span className="rounded-full border border-slate-700/60 bg-slate-900/60 px-1.5 py-0.5 uppercase tracking-[0.16em] text-[9px] text-slate-400">
+              {healthLabel}
+            </span>
           </div>
         </div>
 
@@ -132,7 +141,8 @@ export function ProjectAccordionItem({
           isExpanded ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0',
         )}
       >
-        <div className="pl-4 pr-2 pb-2 space-y-0.5">
+        <div className="mx-3 mb-3 rounded-2xl border border-slate-800/70 bg-slate-950/40 p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
+          <div className="space-y-1">
           {projectNavItems.map((item) => {
             const isItemActive = isActive && activeTab === item.id
             const href = getProjectNavHref(project.id, item)
@@ -151,7 +161,7 @@ export function ProjectAccordionItem({
           <Link
             href={`/projects/${project.id}/settings`}
             className={clsx(
-              'group flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200',
+              'group flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200',
               isActive && pathname.includes('/settings')
                 ? 'bg-slate-500/15 text-slate-300'
                 : 'text-slate-400 hover:bg-slate-500/10 hover:text-slate-300',
@@ -167,6 +177,7 @@ export function ProjectAccordionItem({
             />
             <span className="truncate">Settings</span>
           </Link>
+        </div>
         </div>
       </div>
     </div>
