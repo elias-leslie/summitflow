@@ -63,21 +63,26 @@ export function ProjectGitClient() {
   if (error) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-6rem)]">
-        <div className="card p-8 text-center max-w-md">
-          <AlertTriangle className="w-10 h-10 text-amber-400 mx-auto mb-4" />
-          <h2 className="display text-lg font-semibold text-slate-100 mb-2">
-            Failed to Load
-          </h2>
-          <p className="text-slate-400 mb-6">
-            Could not connect to git status service.
-          </p>
-          <button
-            type="button"
-            onClick={() => refetch()}
-            className="btn-primary"
-          >
-            Retry
-          </button>
+        <div className="card-elevated p-10 text-center max-w-md relative overflow-hidden">
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-32 bg-amber-500/6 rounded-full blur-3xl pointer-events-none" />
+          <div className="relative">
+            <div className="w-16 h-16 mx-auto mb-5 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
+              <AlertTriangle className="w-8 h-8 text-amber-400" />
+            </div>
+            <h2 className="display text-xl font-bold text-slate-100 mb-2 tracking-tight">
+              Failed to Load
+            </h2>
+            <p className="text-sm text-slate-400 mb-8 leading-relaxed">
+              Could not connect to git status service.
+            </p>
+            <button
+              type="button"
+              onClick={() => refetch()}
+              className="btn-primary"
+            >
+              Retry
+            </button>
+          </div>
         </div>
       </div>
     )

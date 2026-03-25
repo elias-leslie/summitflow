@@ -111,7 +111,7 @@ export function FileContextMenu({ position, target, onClose }: FileContextMenuPr
     <div
       ref={menuRef}
       className={cn(
-        'fixed z-50 min-w-[180px] rounded-lg border border-slate-700 bg-slate-900 py-1 shadow-xl',
+        'fixed z-50 min-w-[180px] rounded-lg border border-slate-700/80 bg-slate-900/95 backdrop-blur-sm py-1 shadow-xl shadow-black/40',
         'animate-in fade-in-0 zoom-in-95',
       )}
       style={{ left: adjustedPosition.x, top: adjustedPosition.y }}
