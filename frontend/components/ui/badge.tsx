@@ -9,6 +9,7 @@ type BadgeVariant =
   | 'amber'
   | 'rose'
   | 'emerald'
+  | 'indigo'
   | 'slate'
   | 'violet'
   | 'outline'
@@ -28,6 +29,7 @@ const variants: Record<BadgeVariant, string> = {
   amber: 'bg-amber-500/15 text-amber-400 border border-amber-500/30',
   rose: 'bg-rose-500/15 text-rose-400 border border-rose-500/30',
   emerald: 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30',
+  indigo: 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/30',
   violet: 'bg-violet-500/15 text-violet-400 border border-violet-500/30',
   slate: 'bg-slate-800 text-slate-400 border border-slate-700',
   outline: 'bg-transparent text-slate-400 border border-slate-600',

@@ -250,6 +250,11 @@ body::before {
   @apply rounded-lg;
   background: rgba(15, 10, 24, 0.5);
   border: 1px solid rgba(45, 29, 66, 0.4);
+  transition: border-color 0.2s ease;
+}
+
+.card-subtle:hover {
+  border-color: rgba(45, 29, 66, 0.6);
 }
 
 /* Compact info card — minimal padding, for status strips */
@@ -261,6 +266,11 @@ body::before {
     rgba(15, 10, 24, 0.9) 100%
   );
   border: 1px solid rgba(45, 29, 66, 0.5);
+  transition: border-color 0.2s ease;
+}
+
+.card-compact:hover {
+  border-color: rgba(45, 29, 66, 0.7);
 }
 
 /* Button styles — CSS utility classes for non-component usage (Links, etc.) */

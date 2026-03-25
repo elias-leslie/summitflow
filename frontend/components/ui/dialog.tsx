@@ -82,7 +82,7 @@ export function DialogContent({
       animate={{ opacity: 1, scale: 1, x: '-50%', y: '-50%' }}
       exit={{ opacity: 0, scale: 0.95, x: '-50%', y: 'calc(-50% + 10px)' }}
       transition={{ duration: 0.2, ease: 'easeOut' }}
-      className={clsx('fixed left-1/2 top-1/2 z-50 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl shadow-phosphor-500/5', className)}
+      className={clsx('fixed left-1/2 top-1/2 z-50 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl shadow-black/50', className)}
       onClick={(e) => e.stopPropagation()}
     >
       {children}
@@ -125,7 +125,7 @@ export function DialogClose({ onClose, className = '' }: DialogCloseProps) {
     <button
       onClick={onClose}
       aria-label="Close dialog"
-      className={clsx('absolute right-4 top-4 p-1.5 rounded-md text-slate-500 hover:text-phosphor-400 hover:bg-slate-800 transition-colors', className)}
+      className={clsx('absolute right-4 top-4 p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-slate-800/80 transition-all duration-150', className)}
     >
       <X className="w-4 h-4" />
     </button>
