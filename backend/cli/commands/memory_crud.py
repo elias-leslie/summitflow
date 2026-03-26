@@ -19,6 +19,7 @@ from ._api_paths import (
     MEMORY_STATS_PATH,
 )
 from ._memory_crud_helpers import (
+    _validate_update_and_normalize,
     build_save_payload,
     fetch_episode_tags,
     fetch_existing_episode,
@@ -28,8 +29,6 @@ from ._memory_crud_helpers import (
     replace_episode_tags,
     update_episode_content_or_tier,
     validate_save_inputs,
-    validate_summary_input,
-    validate_tier,
 )
 from .memory_api import agent_hub_request
 from .memory_formatters import (
@@ -52,6 +51,21 @@ def _emit(out: OutputContext, result: dict[str, object], compact_fn) -> None:  #
         output_json(result)
 
 
+def _resolve_existing_state(
+    uuid: str,
+    content: str | None,
+    normalized_tier: str | None,
+    replacement_tags: list[str] | None,
+) -> tuple[dict[str, object] | None, str | None, str, list[str]]:
+    if content is None and normalized_tier is None:
+        return None, normalized_tier, uuid, []
+    existing = fetch_existing_episode(uuid)
+    effective_tier = normalized_tier or str(existing.get("injection_tier", "reference"))
+    target_uuid = str(existing.get("uuid", uuid))
+    existing_tags = fetch_episode_tags(uuid) if replacement_tags is None else []
+    return existing, effective_tier, target_uuid, existing_tags
+
+
 def stats_impl(out: OutputContext, scope: str, scope_id: str | None) -> None:
     result = agent_hub_request(
         "GET", MEMORY_STATS_PATH, scope=scope, scope_id=scope_id, tool_name="st memory stats"
@@ -60,25 +74,11 @@ def stats_impl(out: OutputContext, scope: str, scope_id: str | None) -> None:
 
 
 def save_impl(
-    out: OutputContext,
-    content: str,
-    summary: str,
-    tier: str,
-    confidence: int,
-    context: str | None,
-    pinned: bool,
-    trigger_types: str | None,
-    trigger_phases: str | None,
-    context_kind: str | None,
-    consumer_profiles: str | None,
-    exclude_consumer_profiles: str | None,
-    agent_slugs: str | None,
-    exclude_agent_slugs: str | None,
-    audience_tags: str | None,
-    exclude_audience_tags: str | None,
-    tags: str | None,
-    scope: str,
-    scope_id: str | None,
+    out: OutputContext, content: str, summary: str, tier: str, confidence: int,
+    context: str | None, pinned: bool, trigger_types: str | None, trigger_phases: str | None,
+    context_kind: str | None, consumer_profiles: str | None, exclude_consumer_profiles: str | None,
+    agent_slugs: str | None, exclude_agent_slugs: str | None, audience_tags: str | None,
+    exclude_audience_tags: str | None, tags: str | None, scope: str, scope_id: str | None,
     change_reason: str | None = None,
 ) -> None:
     summary = validate_save_inputs(tier, confidence, summary)
@@ -100,12 +100,8 @@ def save_impl(
 
 
 def list_impl(
-    out: OutputContext,
-    limit: int,
-    cursor: str | None,
-    tier: str | None,
-    scope: str,
-    scope_id: str | None,
+    out: OutputContext, limit: int, cursor: str | None, tier: str | None,
+    scope: str, scope_id: str | None,
 ) -> None:
     params: dict[str, object] = {"limit": limit}
     if cursor:
@@ -120,13 +116,8 @@ def list_impl(
 
 
 def search_impl(
-    out: OutputContext,
-    query: str,
-    limit: int,
-    min_score: float,
-    tier: str | None,
-    scope: str,
-    scope_id: str | None,
+    out: OutputContext, query: str, limit: int, min_score: float,
+    tier: str | None, scope: str, scope_id: str | None,
 ) -> None:
     params: dict[str, object] = {"query": query, "limit": limit, "min_score": min_score}
     if tier:
@@ -159,8 +150,7 @@ def delete_impl(uuids: list[str], *, change_reason: str | None = None) -> None:
         _delete_single(uuids[0], change_reason=change_reason)
         return
     result = agent_hub_request(
-        "POST",
-        MEMORY_BULK_DELETE_PATH,
+        "POST", MEMORY_BULK_DELETE_PATH,
         json={"ids": uuids, "change_reason": change_reason},
         tool_name="st memory delete",
     )
@@ -171,8 +161,7 @@ def delete_impl(uuids: list[str], *, change_reason: str | None = None) -> None:
 
 def _delete_single(uuid: str, *, change_reason: str | None = None) -> None:
     result = agent_hub_request(
-        "DELETE",
-        MEMORY_EPISODE_PATH.format(uuid=uuid),
+        "DELETE", MEMORY_EPISODE_PATH.format(uuid=uuid),
         params={"change_reason": change_reason} if change_reason else None,
         tool_name="st memory delete",
     )
@@ -184,97 +173,72 @@ def _delete_single(uuid: str, *, change_reason: str | None = None) -> None:
         typer.echo("\nDeleted: 0, Failed: 1")
 
 
-def update_impl(
-    uuid: str,
-    content: str | None,
-    tier: str | None,
-    summary: str | None,
-    trigger_types: str | None,
-    trigger_phases: str | None,
-    pinned: bool | None,
-    context_kind: str | None,
-    consumer_profiles: str | None,
-    exclude_consumer_profiles: str | None,
-    agent_slugs: str | None,
-    exclude_agent_slugs: str | None,
-    audience_tags: str | None,
-    exclude_audience_tags: str | None,
-    clear_applicability: bool,
-    tags: str | None,
-    clear_tags: bool,
-    change_reason: str | None = None,
-) -> None:
-    if tags and clear_tags:
-        typer.echo("Error: Specify only one of --tags or --clear-tags")
-        raise typer.Exit(1)
-    _nullable = (content, tier, summary, trigger_types, trigger_phases, pinned, context_kind,
-                 consumer_profiles, exclude_consumer_profiles, agent_slugs, exclude_agent_slugs,
-                 audience_tags, exclude_audience_tags, tags)
-    if not any(f is not None for f in _nullable) and not clear_applicability and not clear_tags:
-        typer.echo(
-            "Error: Must specify at least one of: --content, --tier, --summary, --trigger-types,"
-            " --trigger-phases, --pinned, --context-kind, applicability options, --tags, --clear-tags, --clear-applicability"
-        )
-        raise typer.Exit(1)
-    if content is not None:
-        validate_episode_content_present(content)
-    normalized_summary = validate_summary_input(summary, required=False) if summary is not None else None
-    normalized_tier = validate_tier(tier) if tier is not None else None
-    replacement_tags = [] if clear_tags else parse_tags_csv(tags)
-    content_or_tier_changed = content is not None or normalized_tier is not None
-    _app_fields = (consumer_profiles, exclude_consumer_profiles, agent_slugs, exclude_agent_slugs,
-                   audience_tags, exclude_audience_tags)
-    applicability_changed = any(f is not None for f in _app_fields) or clear_applicability
-    properties_changed = (
+def _apply_properties_patch(
+    target_uuid: str, existing: dict[str, object] | None, uuid: str,
+    normalized_summary: str | None, trigger_types: str | None, trigger_phases: str | None,
+    pinned: bool | None, context_kind: str | None, app_fields: tuple[str | None, ...],
+    clear_applicability: bool, cr_kwargs: dict[str, object],
+) -> bool:
+    consumer_profiles, exclude_consumer_profiles, agent_slugs, exclude_agent_slugs, audience_tags, exclude_audience_tags = app_fields
+    applicability_changed = any(f is not None for f in app_fields) or clear_applicability
+    if not (
         any(f is not None for f in (normalized_summary, trigger_types, trigger_phases, pinned, context_kind))
         or applicability_changed
+    ):
+        return False
+    applicability = None
+    if applicability_changed:
+        existing = existing if existing is not None else fetch_existing_episode(uuid)
+        applicability = merge_applicability_payload(
+            existing,
+            consumer_profiles=consumer_profiles, exclude_consumer_profiles=exclude_consumer_profiles,
+            agent_slugs=agent_slugs, exclude_agent_slugs=exclude_agent_slugs,
+            audience_tags=audience_tags, exclude_audience_tags=exclude_audience_tags,
+            clear_applicability=clear_applicability,
+        )
+    patch_episode_properties(
+        target_uuid, normalized_summary, trigger_types, trigger_phases,
+        pinned, context_kind, applicability, **cr_kwargs,
     )
-    tags_changed = replacement_tags is not None or clear_tags
-    existing: dict[str, object] | None = None
-    existing_tags: list[str] = []
-    effective_tier = normalized_tier
-    if content_or_tier_changed:
-        existing = fetch_existing_episode(uuid)
-        effective_tier = normalized_tier or str(existing.get("injection_tier", "reference"))
+    return True
+
+
+def update_impl(
+    uuid: str, content: str | None, tier: str | None, summary: str | None,
+    trigger_types: str | None, trigger_phases: str | None, pinned: bool | None,
+    context_kind: str | None, consumer_profiles: str | None, exclude_consumer_profiles: str | None,
+    agent_slugs: str | None, exclude_agent_slugs: str | None, audience_tags: str | None,
+    exclude_audience_tags: str | None, clear_applicability: bool, tags: str | None,
+    clear_tags: bool, change_reason: str | None = None,
+) -> None:
+    normalized_summary, normalized_tier, replacement_tags = _validate_update_and_normalize(
+        content, tier, summary, tags, clear_tags, clear_applicability, trigger_types, trigger_phases,
+        pinned, context_kind, consumer_profiles, exclude_consumer_profiles, agent_slugs,
+        exclude_agent_slugs, audience_tags, exclude_audience_tags,
+    )
+    existing, effective_tier, target_uuid, existing_tags = _resolve_existing_state(
+        uuid, content, normalized_tier, replacement_tags
+    )
     if content is not None:
-        assert existing is not None
-        validate_content_format(content, normalized_summary or str(existing.get("summary", "")), effective_tier)
-    target_uuid = str(existing.get("uuid", uuid)) if existing else uuid
-    if content_or_tier_changed and replacement_tags is None:
-        existing_tags = fetch_episode_tags(uuid)
+        validate_content_format(content, normalized_summary or str(existing.get("summary", "")), effective_tier)  # type: ignore[union-attr]
+    content_or_tier_changed = content is not None or normalized_tier is not None
+    tags_changed = replacement_tags is not None or clear_tags
     cr_kwargs: dict[str, object] = {"change_reason": change_reason} if change_reason else {}
     if content_or_tier_changed:
-        assert existing is not None
-        update_episode_content_or_tier(target_uuid, content=content, tier=effective_tier, **cr_kwargs)
+        update_episode_content_or_tier(target_uuid, content=content, tier=effective_tier, **cr_kwargs)  # type: ignore[union-attr]
         replace_episode_tags(target_uuid, replacement_tags if replacement_tags is not None else existing_tags)
-    if properties_changed:
-        applicability = None
-        if applicability_changed:
-            if existing is None:
-                existing = fetch_existing_episode(uuid)
-            applicability = merge_applicability_payload(
-                existing,
-                consumer_profiles=consumer_profiles, exclude_consumer_profiles=exclude_consumer_profiles,
-                agent_slugs=agent_slugs, exclude_agent_slugs=exclude_agent_slugs,
-                audience_tags=audience_tags, exclude_audience_tags=exclude_audience_tags,
-                clear_applicability=clear_applicability,
-            )
-        patch_episode_properties(
-            target_uuid, normalized_summary, trigger_types, trigger_phases,
-            pinned, context_kind, applicability, **cr_kwargs,
-        )
+    _app = (consumer_profiles, exclude_consumer_profiles, agent_slugs, exclude_agent_slugs, audience_tags, exclude_audience_tags)
+    properties_patched = _apply_properties_patch(
+        target_uuid, existing, uuid, normalized_summary, trigger_types, trigger_phases,
+        pinned, context_kind, _app, clear_applicability, cr_kwargs,
+    )
     if not content_or_tier_changed and tags_changed:
         replace_episode_tags(target_uuid, replacement_tags or [])
-    if not content_or_tier_changed and not properties_changed and not tags_changed:
+    if not content_or_tier_changed and not properties_patched and not tags_changed:
         typer.echo("No changes made.")
 
 
-def tag_impl(
-    uuids: list[str],
-    *,
-    add_tags: str | None,
-    remove_tags: str | None,
-) -> None:
+def tag_impl(uuids: list[str], *, add_tags: str | None, remove_tags: str | None) -> None:
     """Add/remove tags across one or more memory episodes."""
     parsed_add_tags = parse_tags_csv(add_tags) or []
     parsed_remove_tags = parse_tags_csv(remove_tags) or []
@@ -283,41 +247,27 @@ def tag_impl(
         raise typer.Exit(1)
 
     result = agent_hub_request(
-        "POST",
-        MEMORY_BULK_TAG_PATH,
-        json={
-            "uuids": uuids,
-            "add_tags": parsed_add_tags,
-            "remove_tags": parsed_remove_tags,
-        },
+        "POST", MEMORY_BULK_TAG_PATH,
+        json={"uuids": uuids, "add_tags": parsed_add_tags, "remove_tags": parsed_remove_tags},
         tool_name="st memory tag",
     )
-    typer.echo(
-        f"Tagged: updated={result.get('updated', 0)} failed={result.get('failed', 0)}"
-    )
+    typer.echo(f"Tagged: updated={result.get('updated', 0)} failed={result.get('failed', 0)}")
 
 
 def revisions_impl(out: OutputContext, uuid: str, limit: int) -> None:
     """Fetch immutable revision history for one memory episode."""
     result = agent_hub_request(
-        "GET",
-        MEMORY_EPISODE_REVISIONS_PATH.format(uuid=uuid),
-        params={"limit": limit},
+        "GET", MEMORY_EPISODE_REVISIONS_PATH.format(uuid=uuid), params={"limit": limit},
         tool_name="st memory revisions",
     )
-    if out.is_compact:
-        format_revisions_compact(uuid, result)
-    else:
-        output_json(result)
+    _emit(out, result, lambda r: format_revisions_compact(uuid, r))
 
 
 def restore_impl(uuid: str, revision_id: str, *, change_reason: str | None = None) -> None:
     """Restore a memory episode to one historical revision."""
     payload = {"change_reason": change_reason} if change_reason else {}
     result = agent_hub_request(
-        "POST",
-        MEMORY_EPISODE_RESTORE_PATH.format(uuid=uuid, revision_id=revision_id),
-        json=payload,
-        tool_name="st memory restore",
+        "POST", MEMORY_EPISODE_RESTORE_PATH.format(uuid=uuid, revision_id=revision_id),
+        json=payload, tool_name="st memory restore",
     )
     format_restore_compact(uuid, revision_id, result)
