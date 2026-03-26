@@ -145,12 +145,6 @@ def build_conflict_context(task_id: str) -> str:
         return ""
 
 
-def _build_spirit_block(spirit_anti: str) -> str:
-    if not spirit_anti:
-        return ""
-    return f"\n# Guiding Principles\n{spirit_anti}"
-
-
 def _build_done_when_block(done_when: list[Any]) -> str:
     items = [str(item).strip() for item in done_when if str(item).strip()]
     if not items:
@@ -367,6 +361,20 @@ def _build_snapshot_sections(
     ]
 
 
+def _append_block(
+    prompt: str,
+    label: str,
+    block: str,
+    snapshot_sections: list[dict[str, Any]],
+    *,
+    separator: str = "",
+) -> str:
+    if not block:
+        return prompt
+    snapshot_sections.append({"label": label, "estimated_tokens": estimate_prompt_tokens(block)})
+    return prompt + separator + block
+
+
 def build_subtask_prompt_payload(
     task_id: str,
     subtask: dict[str, Any],
@@ -380,23 +388,16 @@ def build_subtask_prompt_payload(
     project_root = get_project_root_path(project_id)
     subtask_short_id = subtask.get("subtask_id", "")
     handoff = get_handoff_context(task_id, subtask_short_id)
-
     task = task_store.get_task(task_id)
     objective = (task.get("description") or task.get("title") or "") if task else ""
+
     done_when_block = _build_done_when_block(done_when)
-    scope_block = _build_scope_block(
-        context,
-        execution_root=project_path,
-        project_root=project_root,
-    )
+    scope_block = _build_scope_block(context, execution_root=project_path, project_root=project_root)
     contract_block = _build_execution_contract_block(context)
     handoff_block = _build_handoff_block(handoff)
     steps_block = build_steps_block(_get_subtask_steps(subtask))
 
-    template = _get_template_with_transient_fallback(
-        _SLUG_AUTOCODE_SUBTASK,
-        _TRANSIENT_SUBTASK_TEMPLATE,
-    )
+    template = _get_template_with_transient_fallback(_SLUG_AUTOCODE_SUBTASK, _TRANSIENT_SUBTASK_TEMPLATE)
     prompt = template.format_map({
         "objective": objective,
         "spirit_anti_block": "",
@@ -411,45 +412,18 @@ def build_subtask_prompt_payload(
     })
 
     snapshot_sections = _build_snapshot_sections(
-        objective,
-        done_when_block,
-        scope_block,
-        contract_block,
-        handoff_block,
-        subtask,
-        project_path,
+        objective, done_when_block, scope_block, contract_block, handoff_block, subtask, project_path
     )
+    prompt = _append_block(prompt, "Precision Code Search", _build_precision_code_search_block(project_id, objective, subtask), snapshot_sections)
+    prompt = _append_block(prompt, "Resume Context", build_resume_context(task_id), snapshot_sections)
+    prompt = _append_block(prompt, "Merge Conflict Context", build_conflict_context(task_id), snapshot_sections)
+    prompt = _append_block(prompt, "System Health Warning", build_health_context(project_id), snapshot_sections, separator="\n\n")
 
-    precision_block = _build_precision_code_search_block(project_id, objective, subtask)
-    if precision_block:
-        prompt += precision_block
-        snapshot_sections.append(
-            {"label": "Precision Code Search", "estimated_tokens": estimate_prompt_tokens(precision_block)}
-        )
-
-    resume_block = build_resume_context(task_id)
-    if resume_block:
-        prompt += resume_block
-        snapshot_sections.append(
-            {"label": "Resume Context", "estimated_tokens": estimate_prompt_tokens(resume_block)}
-        )
-    conflict_block = build_conflict_context(task_id)
-    if conflict_block:
-        prompt += conflict_block
-        snapshot_sections.append(
-            {"label": "Merge Conflict Context", "estimated_tokens": estimate_prompt_tokens(conflict_block)}
-        )
-    health_block = build_health_context(project_id)
-    if health_block:
-        prompt += f"\n\n{health_block}"
-        snapshot_sections.append(
-            {"label": "System Health Warning", "estimated_tokens": estimate_prompt_tokens(health_block)}
-        )
-
+    contract_summary = summarize_execution_contract(context.get("execution_contract"))
     return prompt, {
-        "mode": summarize_execution_contract(context.get("execution_contract")).get("mode", "code_only"),
+        "mode": contract_summary.get("mode", "code_only"),
         "sections": snapshot_sections,
-        "execution_contract": summarize_execution_contract(context.get("execution_contract")),
+        "execution_contract": contract_summary,
     }
 
 
