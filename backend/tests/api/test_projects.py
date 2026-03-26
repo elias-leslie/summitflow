@@ -170,7 +170,10 @@ def test_update_project_syncs_backup_source(client) -> None:
             conn.commit()
 
 
-def test_list_projects_with_stats_returns_feature_task_bug_counts(client) -> None:
+def test_list_projects_with_stats_returns_feature_task_bug_counts(
+    client,
+    monkeypatch,
+) -> None:
     """Project stats should expose distinct feature, task, and bug counts."""
     project_id = f"stats-{uuid4().hex[:8]}"
     task_ids = {
@@ -237,6 +240,13 @@ def test_list_projects_with_stats_returns_feature_task_bug_counts(client) -> Non
         conn.commit()
 
     try:
+        async def _healthy_statuses(projects):
+            return {project[0]: "healthy" for project in projects}
+
+        monkeypatch.setattr(
+            "app.api.projects._resolve_project_health_statuses",
+            _healthy_statuses,
+        )
         response = client.get("/api/projects/with-stats")
 
         assert response.status_code == 200
@@ -249,12 +259,47 @@ def test_list_projects_with_stats_returns_feature_task_bug_counts(client) -> Non
             "bugs": 1,
             "blocked": 0,
         }
+        assert project["health_status"] == "healthy"
     finally:
         with get_connection() as conn, conn.cursor() as cur:
             cur.execute(
                 "DELETE FROM tasks WHERE id = ANY(%s)",
                 (list(task_ids.values()),),
             )
+            cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
+            conn.commit()
+
+
+def test_list_projects_includes_live_health_status(client, monkeypatch) -> None:
+    """Project list responses should include live health labels for selectors/sidebar."""
+    project_id = f"health-{uuid4().hex[:8]}"
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO projects (id, name, base_url, health_endpoint)
+            VALUES (%s, %s, %s, %s)
+            """,
+            (project_id, "Health Project", "http://localhost:3999", "/health"),
+        )
+        conn.commit()
+
+    async def _warning_statuses(projects):
+        return {project[0]: "warning" for project in projects}
+
+    monkeypatch.setattr(
+        "app.api.projects._resolve_project_health_statuses",
+        _warning_statuses,
+    )
+
+    try:
+        response = client.get("/api/projects")
+
+        assert response.status_code == 200
+        project = next(item for item in response.json() if item["id"] == project_id)
+        assert project["health_status"] == "warning"
+    finally:
+        with get_connection() as conn, conn.cursor() as cur:
             cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
             conn.commit()
 

@@ -40,6 +40,7 @@ function renderRow() {
           workspace_summary: {
             active_worktrees: 1,
             dirty_worktrees: 0,
+            dirty_main_repo: true,
             branches_with_worktrees: 1,
             task_branches: 1,
             orphan_branches: 0,
@@ -76,6 +77,7 @@ function renderConfigRow() {
           workspace_summary: {
             active_worktrees: 0,
             dirty_worktrees: 0,
+            dirty_main_repo: false,
             branches_with_worktrees: 0,
             task_branches: 0,
             orphan_branches: 0,

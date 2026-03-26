@@ -1,5 +1,7 @@
 """Projects API - Register and manage target applications."""
 
+import asyncio
+from collections.abc import Iterable
 from datetime import UTC, datetime
 
 import httpx
@@ -32,6 +34,40 @@ from .pulse import router as pulse_router
 router = APIRouter()
 
 router.include_router(pulse_router, tags=["projects"])
+
+_PROJECT_HEALTH_TIMEOUT = httpx.Timeout(2.0, connect=0.5)
+
+
+async def _probe_project_health(
+    client: httpx.AsyncClient,
+    project_id: str,
+    base_url: str,
+    health_endpoint: str,
+) -> tuple[str, str]:
+    """Return a lightweight health label for project listings."""
+    try:
+        response = await client.get(f"{base_url}{health_endpoint}")
+    except httpx.HTTPError:
+        return project_id, "warning"
+    return project_id, "healthy" if response.status_code == 200 else "warning"
+
+
+async def _resolve_project_health_statuses(
+    projects: Iterable[tuple[str, str, str]],
+) -> dict[str, str]:
+    """Fetch live health labels for project list/detail responses."""
+    targets = list(projects)
+    if not targets:
+        return {}
+
+    async with httpx.AsyncClient(timeout=_PROJECT_HEALTH_TIMEOUT) as client:
+        results = await asyncio.gather(
+            *(
+                _probe_project_health(client, project_id, base_url, health_endpoint)
+                for project_id, base_url, health_endpoint in targets
+            )
+        )
+    return dict(results)
 
 
 @router.post("", response_model=ProjectResponse)
@@ -85,6 +121,10 @@ async def list_projects() -> list[ProjectResponse]:
         )
         rows = cur.fetchall()
 
+    health_statuses = await _resolve_project_health_statuses(
+        (row[0], row[2], row[3]) for row in rows
+    )
+
     return [
         ProjectResponse(
             id=row[0],
@@ -93,6 +133,7 @@ async def list_projects() -> list[ProjectResponse]:
             health_endpoint=row[3],
             root_path=row[4],
             created_at=row[5],
+            health_status=health_statuses.get(row[0]),
         )
         for row in rows
     ]
@@ -117,14 +158,25 @@ async def list_projects_with_stats() -> ProjectsWithStatsResponse:
     project_ids = [p[0] for p in projects]
     stats_dict = fetch_project_stats(project_ids)
 
+    health_statuses = await _resolve_project_health_statuses(
+        (row[0], row[2], row[3]) for row in projects
+    )
     result = [build_project_with_stats(row, stats_dict[row[0]]) for row in projects]
+    for project in result:
+        project.health_status = health_statuses.get(project.id)
     return ProjectsWithStatsResponse(projects=result, total=len(result))
 
 
 @router.get("/{project_id}", response_model=ProjectResponse)
 async def get_project(project_id: str) -> ProjectResponse:
     """Get a specific project."""
-    return get_project_from_db(project_id)
+    project = get_project_from_db(project_id)
+    project.health_status = (
+        await _resolve_project_health_statuses(
+            [(project.id, project.base_url, project.health_endpoint)]
+        )
+    ).get(project.id)
+    return project
 
 
 @router.get("/{project_id}/health", response_model=ProjectHealthResponse)

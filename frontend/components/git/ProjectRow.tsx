@@ -36,6 +36,9 @@ export function ProjectRow({ repo }: ProjectRowProps) {
   const queryClient = useQueryClient()
   const workspaceSummary = repo.workspace_summary
   const repoKey = repo.project_id ?? repo.name
+  const dirtyWorkspaceCount =
+    (workspaceSummary?.dirty_worktrees ?? 0) +
+    (workspaceSummary?.dirty_main_repo ? 1 : 0)
 
   const syncMutation = useMutation({
     mutationFn: () => smartSyncProject(repoKey),
@@ -74,10 +77,10 @@ export function ProjectRow({ repo }: ProjectRowProps) {
         label: 'wt',
         tone: 'text-phosphor-400',
       })
-    if (workspaceSummary.dirty_worktrees > 0)
+    if (dirtyWorkspaceCount > 0)
       wsBadges.push({
         icon: AlertTriangle,
-        count: workspaceSummary.dirty_worktrees,
+        count: dirtyWorkspaceCount,
         label: 'dirty',
         tone: 'text-rose-400',
       })

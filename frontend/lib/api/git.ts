@@ -8,6 +8,7 @@ import { fetchWithErrorHandling } from './utils'
 export interface RepoWorkspaceSummary {
   active_worktrees: number
   dirty_worktrees: number
+  dirty_main_repo?: boolean
   branches_with_worktrees: number
   task_branches: number
   orphan_branches: number
@@ -37,6 +38,51 @@ export interface GitStatusResponse {
   total: number
 }
 
+export interface GitCleanupSummary {
+  repos: number
+  repos_needing_cleanup: number
+  active_worktrees: number
+  dirty_worktrees: number
+  stale_checkpoints: number
+  snapshot_residue: number
+  orphan_task_branches: number
+  prunable_task_branches: number
+}
+
+export interface GitCleanupRepository {
+  project_id: string
+  path: string
+  active_worktrees: number
+  dirty_worktrees: number
+  dirty_main_repo?: boolean
+  stale_checkpoints: number
+  snapshot_residue: number
+  orphan_task_branches: number
+  prunable_task_branches: number
+  needs_merge_count: number
+  conflict_count: number
+  review_count: number
+  needs_cleanup: boolean
+}
+
+export interface GitCleanupPayload {
+  summary: GitCleanupSummary
+  repositories: GitCleanupRepository[]
+  worktrees: Array<{
+    task_id: string
+    path: string
+    branch: string
+    base_branch: string
+    project_id?: string | null
+  }>
+  total: number
+}
+
+export interface GitCleanupStatusResponse {
+  payload: GitCleanupPayload
+  compact: string
+}
+
 export interface SyncResult {
   path: string
   name: string
@@ -60,6 +106,13 @@ export async function fetchGitStatus(): Promise<GitStatusResponse> {
   return fetchWithErrorHandling<GitStatusResponse>(
     `${getApiBaseUrl()}/api/git/status`,
     { errorMessage: 'Failed to fetch git status' },
+  )
+}
+
+export async function fetchGitCleanupStatus(): Promise<GitCleanupStatusResponse> {
+  return fetchWithErrorHandling<GitCleanupStatusResponse>(
+    `${getApiBaseUrl()}/api/git/cleanup-status`,
+    { errorMessage: 'Failed to fetch cleanup status' },
   )
 }
 

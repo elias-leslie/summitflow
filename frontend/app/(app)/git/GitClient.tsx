@@ -12,7 +12,7 @@ import {
 import { motion } from 'motion/react'
 import { ConflictAlerts } from '@/components/git/ConflictAlerts'
 import { ProjectRow } from '@/components/git/ProjectRow'
-import { useGitStatus } from './useGitStatus'
+import { useGitCleanupStatus, useGitStatus } from './useGitStatus'
 
 const fadeUp = {
   initial: { opacity: 0, y: 14 },
@@ -47,16 +47,18 @@ function StatPill({
 
 export function GitClient() {
   const { data: gitStatus, isLoading, isError } = useGitStatus()
+  const { data: cleanupStatus } = useGitCleanupStatus()
   const repos = gitStatus?.repositories ?? []
+  const cleanupSummary = cleanupStatus?.payload.summary
 
   const dirtyRepos = repos.filter(
     (r) => r.state === 'dirty' || r.state === 'ahead',
   ).length
-  const activeWorktrees = repos.reduce(
+  const activeWorktreesFallback = repos.reduce(
     (s, r) => s + (r.workspace_summary?.active_worktrees ?? 0),
     0,
   )
-  const dirtyWorktrees = repos.reduce(
+  const dirtyWorktreesFallback = repos.reduce(
     (s, r) => s + (r.workspace_summary?.dirty_worktrees ?? 0),
     0,
   )
@@ -68,9 +70,11 @@ export function GitClient() {
     (s, r) => s + (r.workspace_summary?.prunable_branches ?? 0),
     0,
   )
-  const hasIssues =
-    dirtyRepos + dirtyWorktrees + orphanBranches + prunableBranches > 0
-  const reviewDebt = orphanBranches + prunableBranches
+  const worktreeCount = cleanupSummary?.active_worktrees ?? activeWorktreesFallback
+  const dirtyCount = cleanupSummary?.dirty_worktrees ?? dirtyWorktreesFallback
+  const cleanupCount =
+    cleanupSummary?.repos_needing_cleanup ?? orphanBranches + prunableBranches
+  const hasSignals = dirtyCount + worktreeCount + cleanupCount + dirtyRepos > 0
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-3 px-4 py-3 md:px-5 lg:px-6">
@@ -93,23 +97,23 @@ export function GitClient() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {gitStatus && !isLoading && hasIssues ? (
+            {gitStatus && !isLoading && hasSignals ? (
               <>
                 <StatPill
                   icon={AlertTriangle}
-                  value={dirtyRepos}
+                  value={dirtyCount}
                   label="dirty"
                   tone="bg-pink-500/8 text-pink-300 border-pink-500/20"
                 />
                 <StatPill
                   icon={Layers}
-                  value={activeWorktrees}
+                  value={worktreeCount}
                   label="worktrees"
                   tone="bg-phosphor-500/8 text-phosphor-300 border-phosphor-500/20"
                 />
                 <StatPill
                   icon={Scissors}
-                  value={reviewDebt}
+                  value={cleanupCount}
                   label="cleanup"
                   tone="bg-amber-500/8 text-amber-300 border-amber-500/20"
                 />
