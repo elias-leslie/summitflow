@@ -13,6 +13,7 @@ from __future__ import annotations
 import contextlib
 import json
 import shutil
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -29,6 +30,8 @@ from .worktree_paths import (
     get_workspaces_root,
     workspaces_root_available,
 )
+
+_AUTO_SOURCE_PREFIX = "auto-"
 
 
 @dataclass(frozen=True)
@@ -90,12 +93,9 @@ def _minutes_since(iso_timestamp: str) -> float:
     return (datetime.now(UTC) - created).total_seconds() / 60.0
 
 
-def _newest_snapshot_age_minutes(entries: list[QuickSnapshot]) -> float | None:
-    """Age of the most recent snapshot in *entries*, or None if empty."""
-    if not entries:
-        return None
-    newest = max(entries, key=lambda e: e.created_at)
-    return _minutes_since(newest.created_at)
+def _latest_entry(entries: list[QuickSnapshot]) -> QuickSnapshot:
+    """Return the most recently created snapshot from *entries*."""
+    return max(entries, key=lambda e: e.created_at)
 
 
 def _load_manifest_entries(manifest_path: Path) -> list[QuickSnapshot] | None:
@@ -111,12 +111,45 @@ def _load_manifest_entries(manifest_path: Path) -> list[QuickSnapshot] | None:
         return None
 
 
-def _scope_is_due(entries: list[QuickSnapshot], interval_minutes: float, repo_root: Path) -> bool:
-    """Return True when a new automatic snapshot should be taken for the scope."""
-    age = _newest_snapshot_age_minutes(entries)
-    if age is not None and age < interval_minutes:
-        return False
-    return not entries or _scope_state_needs_snapshot(repo_root, entries)
+def _scope_state_needs_snapshot(repo_root: Path, entries: list[QuickSnapshot]) -> bool:
+    """Return True when a new automatic snapshot would capture new clean-state protection."""
+    from .quick_snapshots import _git, _head_oid
+
+    current_head = _head_oid(repo_root)
+    if current_head is None:
+        return True
+    status = _git(repo_root, ["status", "--short", "--untracked-files=all"], check=True)
+    if status.stdout.strip():
+        return True
+    return _latest_entry(entries).head_oid != current_head
+
+
+def _iter_archived_manifest_scopes(
+    root: Path,
+) -> Iterator[tuple[Path, str, SnapshotScope]]:
+    """Yield (scope_dir, project_id, scope) for each readable manifest under root."""
+    if not root.is_dir():
+        return
+    for project_dir in sorted(root.iterdir()):
+        if not project_dir.is_dir():
+            continue
+        for scope_dir in sorted(project_dir.iterdir()):
+            entries = _load_manifest_entries(scope_dir / "manifest.json")
+            if not entries:
+                continue
+            latest = _latest_entry(entries)
+            yield scope_dir, latest.project_id, SnapshotScope(
+                latest.scope_type, latest.scope_name, Path(latest.worktree_path)
+            )
+
+
+def _find_manifest_scope_dir(project_id: str, scope: SnapshotScope) -> Path | None:
+    key = _scope_key(project_id, scope)
+    snaps_root = Path.home() / ".local" / "share" / "st" / "snaps"
+    return next(
+        (sd for sd, pid, s in _iter_archived_manifest_scopes(snaps_root) if _scope_key(pid, s) == key),
+        None,
+    )
 
 
 def ensure_baseline(
@@ -135,10 +168,11 @@ def ensure_baseline(
     repo_root = _resolve_repo_root(cwd)
     scope = resolve_scope(repo_root, project_id)
     entries = load_manifest(project_id, scope)
-
-    if not _scope_is_due(entries, policy.baseline_stale_minutes, repo_root):
+    age = _minutes_since(_latest_entry(entries).created_at) if entries else None
+    if age is not None and age < policy.baseline_stale_minutes:
         return None
-
+    if entries and not _scope_state_needs_snapshot(repo_root, entries):
+        return None
     return capture_snapshot(
         "auto-baseline", project_id=project_id, cwd=cwd, source=source,
     )
@@ -188,6 +222,17 @@ def capture_lifecycle_baseline(
         return None
 
 
+def _lane_scopes_for_project(
+    project_dir: Path, project_id: str
+) -> list[tuple[str, SnapshotScope]]:
+    """Return (project_id, scope) pairs for lane dirs containing a .git entry."""
+    return [
+        (project_id, SnapshotScope("lane", lane_dir.name, lane_dir.resolve()))
+        for lane_dir in sorted(project_dir.iterdir())
+        if lane_dir.is_dir() and (lane_dir / ".git").exists()
+    ]
+
+
 def enumerate_active_scopes() -> list[tuple[str, SnapshotScope]]:
     """Walk Btrfs workspaces and return ``(project_id, scope)`` pairs.
 
@@ -203,15 +248,8 @@ def enumerate_active_scopes() -> list[tuple[str, SnapshotScope]]:
     lanes_root = root / "lanes"
     if lanes_root.is_dir():
         for project_dir in sorted(lanes_root.iterdir()):
-            if not project_dir.is_dir():
-                continue
-            project_id = project_dir.name
-            for lane_dir in sorted(project_dir.iterdir()):
-                if lane_dir.is_dir() and (lane_dir / ".git").exists():
-                    scopes.append((
-                        project_id,
-                        SnapshotScope("lane", lane_dir.name, lane_dir.resolve()),
-                    ))
+            if project_dir.is_dir():
+                scopes.extend(_lane_scopes_for_project(project_dir, project_dir.name))
 
     # Projects: /srv/workspaces/projects/<project>/
     projects_root = root / "projects"
@@ -224,40 +262,6 @@ def enumerate_active_scopes() -> list[tuple[str, SnapshotScope]]:
                 ))
 
     return scopes
-
-
-def _scope_from_manifest_entries(entries: list[QuickSnapshot]) -> tuple[str, SnapshotScope] | None:
-    if not entries:
-        return None
-    latest = max(entries, key=lambda entry: entry.created_at)
-    return (
-        latest.project_id,
-        SnapshotScope(
-            latest.scope_type,
-            latest.scope_name,
-            Path(latest.worktree_path),
-        ),
-    )
-
-
-def _scope_state_needs_snapshot(repo_root: Path, entries: list[QuickSnapshot]) -> bool:
-    """Return True when a new automatic snapshot would capture new clean-state protection."""
-    from .quick_snapshots import _git, _head_oid
-
-    current_head = _head_oid(repo_root)
-    if current_head is None:
-        return True
-
-    status = _git(
-        repo_root,
-        ["status", "--short", "--untracked-files=all"],
-        check=True,
-    )
-    if status.stdout.strip():
-        return True
-
-    latest = max(entries, key=lambda entry: entry.created_at)
-    return latest.head_oid != current_head
 
 
 def enumerate_snapshot_scopes(
@@ -276,24 +280,11 @@ def enumerate_snapshot_scopes(
     if not include_archived:
         return list(scopes_by_key.values())
 
-    manifests_root = Path.home() / ".local" / "share" / "st" / "snaps"
-    if not manifests_root.is_dir():
-        return list(scopes_by_key.values())
-
-    for project_dir in sorted(manifests_root.iterdir()):
-        if not project_dir.is_dir():
-            continue
-        for scope_dir in sorted(project_dir.iterdir()):
-            entries = _load_manifest_entries(scope_dir / "manifest.json")
-            if entries is None:
-                continue
-            resolved = _scope_from_manifest_entries(entries)
-            if resolved is None:
-                continue
-            project_id, scope = resolved
-            key = _scope_key(project_id, scope)
-            if key not in scopes_by_key:
-                scopes_by_key[key] = (project_id, scope, "archived")
+    snaps_root = Path.home() / ".local" / "share" / "st" / "snaps"
+    for _, project_id, scope in _iter_archived_manifest_scopes(snaps_root):
+        key = _scope_key(project_id, scope)
+        if key not in scopes_by_key:
+            scopes_by_key[key] = (project_id, scope, "archived")
 
     return list(scopes_by_key.values())
 
@@ -304,25 +295,6 @@ def enumerate_prunable_scopes() -> list[tuple[str, SnapshotScope]]:
         (project_id, scope)
         for project_id, scope, _ in enumerate_snapshot_scopes(include_archived=True)
     ]
-
-
-def _find_manifest_scope_dir(project_id: str, scope: SnapshotScope) -> Path | None:
-    manifests_root = Path.home() / ".local" / "share" / "st" / "snaps" / project_id
-    if not manifests_root.is_dir():
-        return None
-
-    wanted_key = _scope_key(project_id, scope)
-    for scope_dir in sorted(manifests_root.iterdir()):
-        entries = _load_manifest_entries(scope_dir / "manifest.json")
-        if entries is None:
-            continue
-        resolved = _scope_from_manifest_entries(entries)
-        if resolved is None:
-            continue
-        manifest_project_id, manifest_scope = resolved
-        if _scope_key(manifest_project_id, manifest_scope) == wanted_key:
-            return scope_dir
-    return None
 
 
 def _delete_entries(
@@ -353,59 +325,6 @@ def _delete_entries(
                 snapshot_root.rmdir()
 
 
-def _prune_entire_scope(
-    *,
-    project_id: str,
-    scope: SnapshotScope,
-    dry_run: bool = False,
-) -> list[QuickSnapshot]:
-    entries = load_manifest(project_id, scope)
-    if not entries:
-        return []
-
-    if dry_run:
-        return entries
-
-    manifest_dir = _find_manifest_scope_dir(project_id, scope)
-    _delete_entries(
-        project_id=project_id,
-        scope=scope,
-        entries=entries,
-        manifest_dir=manifest_dir,
-    )
-    if manifest_dir and manifest_dir.exists():
-        shutil.rmtree(manifest_dir, ignore_errors=True)
-    return entries
-
-
-def _archived_auto_lane_scopes_to_prune(
-    scopes: list[tuple[str, SnapshotScope, str]],
-    *,
-    policy: AutosnapshotPolicy,
-) -> set[str]:
-    keep_per_project = max(0, policy.archived_lane_keep_per_project)
-    archived_by_project: dict[str, list[tuple[str, SnapshotScope, list[QuickSnapshot]]]] = {}
-
-    for project_id, scope, scope_state in scopes:
-        if scope_state != "archived" or scope.scope_type != "lane":
-            continue
-        entries = load_manifest(project_id, scope)
-        if not entries:
-            continue
-        if any(not entry.source.startswith("auto-") for entry in entries):
-            continue
-        newest_at = max(entry.created_at for entry in entries)
-        archived_by_project.setdefault(project_id, []).append((newest_at, scope, entries))
-
-    prune_keys: set[str] = set()
-    for project_id, items in archived_by_project.items():
-        items.sort(key=lambda item: (item[0], item[1].scope_name), reverse=True)
-        for _, scope, _ in items[keep_per_project:]:
-            prune_keys.add(_scope_key(project_id, scope))
-
-    return prune_keys
-
-
 def sweep_periodic(
     *,
     policy: AutosnapshotPolicy = DEFAULT_POLICY,
@@ -419,9 +338,11 @@ def sweep_periodic(
             if scope.scope_type == "lane"
             else policy.project_interval_minutes
         )
-
         entries = load_manifest(project_id, scope)
-        if not _scope_is_due(entries, interval, scope.path):
+        age = _minutes_since(_latest_entry(entries).created_at) if entries else None
+        if age is not None and age < interval:
+            continue
+        if entries and not _scope_state_needs_snapshot(scope.path, entries):
             continue
 
         try:
@@ -452,18 +373,20 @@ def prune_scope(
     if not entries:
         return []
 
-    auto_entries = [e for e in entries if e.source.startswith("auto-")]
-    manual_entries = [e for e in entries if not e.source.startswith("auto-")]
-
-    # Sort oldest-first for pruning
-    auto_entries.sort(key=lambda e: e.created_at)
-    manual_entries.sort(key=lambda e: e.created_at)
+    auto_entries = sorted(
+        [e for e in entries if e.source.startswith(_AUTO_SOURCE_PREFIX)],
+        key=lambda e: e.created_at,
+    )
+    manual_entries = sorted(
+        [e for e in entries if not e.source.startswith(_AUTO_SOURCE_PREFIX)],
+        key=lambda e: e.created_at,
+    )
 
     auto_limit = policy.auto_keep_for_scope(scope, scope_state=scope_state)
-    auto_excess = auto_entries[: max(0, len(auto_entries) - auto_limit)]
-    manual_excess = manual_entries[: max(0, len(manual_entries) - policy.manual_keep_per_scope)]
-    to_prune = auto_excess + manual_excess
-
+    to_prune = (
+        auto_entries[: max(0, len(auto_entries) - auto_limit)]
+        + manual_entries[: max(0, len(manual_entries) - policy.manual_keep_per_scope)]
+    )
     if not to_prune:
         return []
 
@@ -495,16 +418,39 @@ def prune_all(
     """Enforce retention policy across active and retained orphan scopes."""
     results: dict[str, list[QuickSnapshot]] = {}
     scopes = list(enumerate_snapshot_scopes(include_archived=True))
-    drop_scope_keys = _archived_auto_lane_scopes_to_prune(scopes, policy=policy)
+
+    # Build the set of archived auto-only lane scopes that exceed the per-project cap.
+    keep_per_project = max(0, policy.archived_lane_keep_per_project)
+    archived_by_project: dict[str, list[tuple[str, SnapshotScope, list[QuickSnapshot]]]] = {}
+    for project_id, scope, scope_state in scopes:
+        if scope_state != "archived" or scope.scope_type != "lane":
+            continue
+        entries = load_manifest(project_id, scope)
+        if not entries or any(not e.source.startswith(_AUTO_SOURCE_PREFIX) for e in entries):
+            continue
+        archived_by_project.setdefault(project_id, []).append(
+            (max(e.created_at for e in entries), scope, entries)
+        )
+    drop_scope_keys: set[str] = set()
+    for proj_id, items in archived_by_project.items():
+        items.sort(key=lambda item: (item[0], item[1].scope_name), reverse=True)
+        for _, scope, _ in items[keep_per_project:]:
+            drop_scope_keys.add(_scope_key(proj_id, scope))
 
     for project_id, scope, scope_state in scopes:
         key = _scope_key(project_id, scope)
         if key in drop_scope_keys:
-            pruned = _prune_entire_scope(
-                project_id=project_id,
-                scope=scope,
-                dry_run=dry_run,
-            )
+            entries = load_manifest(project_id, scope)
+            if not entries:
+                continue
+            if not dry_run:
+                manifest_dir = _find_manifest_scope_dir(project_id, scope)
+                _delete_entries(
+                    project_id=project_id, scope=scope, entries=entries, manifest_dir=manifest_dir,
+                )
+                if manifest_dir and manifest_dir.exists():
+                    shutil.rmtree(manifest_dir, ignore_errors=True)
+            results[key] = entries
         else:
             pruned = prune_scope(
                 project_id=project_id,
@@ -513,6 +459,6 @@ def prune_all(
                 scope_state=scope_state,
                 dry_run=dry_run,
             )
-        if pruned:
-            results[key] = pruned
+            if pruned:
+                results[key] = pruned
     return results
