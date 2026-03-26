@@ -14,6 +14,26 @@ export interface Project {
   root_path?: string
 }
 
+export interface ProjectPermissionBootstrap {
+  permission_tier?: string
+  auto_exec_enabled?: boolean
+  execution_start_hour?: number
+  execution_end_hour?: number
+  root_path?: string
+  daily_cost_budget_usd?: number
+  monthly_cost_budget_usd?: number
+  budget_alert_threshold?: number
+}
+
+export interface ProjectCreate {
+  id: string
+  name: string
+  base_url: string
+  health_endpoint?: string
+  root_path?: string
+  agent_hub_permission?: ProjectPermissionBootstrap
+}
+
 export interface ProjectStats {
   features: number
   tasks: number

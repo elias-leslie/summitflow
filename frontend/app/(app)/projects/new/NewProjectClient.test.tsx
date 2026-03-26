@@ -90,6 +90,12 @@ describe('NewProjectClient', () => {
       base_url: 'https://example.com',
       health_endpoint: '/healthz',
       root_path: '/tmp/my-project',
+      agent_hub_permission: {
+        permission_tier: 'read',
+        auto_exec_enabled: false,
+        execution_start_hour: 0,
+        execution_end_hour: 24,
+      },
     })
   })
 
@@ -112,5 +118,30 @@ describe('NewProjectClient', () => {
       await screen.findByText('Root path must be an absolute path'),
     ).toBeInTheDocument()
     expect(apiMocks.createProject).not.toHaveBeenCalled()
+  })
+
+  it('allows skipping Agent Hub permission bootstrap', async () => {
+    renderClient()
+
+    fireEvent.change(screen.getByLabelText('Project Name *'), {
+      target: { value: 'No Bootstrap' },
+    })
+    fireEvent.change(screen.getByLabelText('Base URL *'), {
+      target: { value: 'https://example.com' },
+    })
+    fireEvent.click(screen.getByLabelText('Provision Agent Hub permission'))
+    fireEvent.click(screen.getByRole('button', { name: 'Create Project' }))
+
+    await waitFor(() => {
+      expect(apiMocks.createProject).toHaveBeenCalled()
+    })
+    expect(apiMocks.createProject.mock.calls[0]?.[0]).toEqual({
+      id: 'no-bootstrap',
+      name: 'No Bootstrap',
+      base_url: 'https://example.com',
+      health_endpoint: '/health',
+      root_path: undefined,
+      agent_hub_permission: undefined,
+    })
   })
 })

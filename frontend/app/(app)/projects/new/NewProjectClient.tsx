@@ -31,6 +31,9 @@ export function NewProjectClient() {
   const [baseUrl, setBaseUrl] = useState('')
   const [healthEndpoint, setHealthEndpoint] = useState(DEFAULT_HEALTH_ENDPOINT)
   const [rootPath, setRootPath] = useState('')
+  const [syncAgentHubPermission, setSyncAgentHubPermission] = useState(true)
+  const [permissionTier, setPermissionTier] = useState('read')
+  const [autoExecEnabled, setAutoExecEnabled] = useState(false)
   const [errors, setErrors] = useState<FormErrors>({})
 
   const mutation = useMutation({
@@ -131,6 +134,14 @@ export function NewProjectClient() {
       base_url: normalized.baseUrl,
       health_endpoint: normalized.healthEndpoint,
       root_path: normalized.rootPath || undefined,
+      agent_hub_permission: syncAgentHubPermission
+        ? {
+            permission_tier: permissionTier,
+            auto_exec_enabled: autoExecEnabled,
+            execution_start_hour: 0,
+            execution_end_hour: 24,
+          }
+        : undefined,
     })
   }
 
@@ -258,6 +269,58 @@ export function NewProjectClient() {
             )}
           </div>
 
+          <div className="chrome-line my-1" />
+
+          <div className="space-y-3 rounded-xl border border-slate-800/70 bg-slate-950/40 p-4">
+            <div className="space-y-1">
+              <div className="text-sm font-medium text-slate-100">
+                Agent Hub Access Bootstrap
+              </div>
+              <p className="text-xs text-slate-500">
+                Create the matching project permission row at the same time so the new project is immediately visible to Jenny and specialist agents.
+              </p>
+            </div>
+
+            <label className="flex items-center gap-2 text-sm text-slate-300">
+              <input
+                type="checkbox"
+                checked={syncAgentHubPermission}
+                onChange={(event) => setSyncAgentHubPermission(event.target.checked)}
+                className="h-4 w-4 rounded border-slate-700 bg-slate-950"
+              />
+              Provision Agent Hub permission
+            </label>
+
+            {syncAgentHubPermission && (
+              <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
+                <div className="space-y-2">
+                  <Label htmlFor="permissionTier">Permission Tier</Label>
+                  <select
+                    id="permissionTier"
+                    value={permissionTier}
+                    onChange={(event) => setPermissionTier(event.target.value)}
+                    className="flex h-10 w-full rounded-md border border-slate-800 bg-slate-950 px-3 text-sm text-slate-100"
+                  >
+                    <option value="off">Off</option>
+                    <option value="read">Read</option>
+                    <option value="write">Write</option>
+                    <option value="yolo">YOLO</option>
+                  </select>
+                </div>
+
+                <label className="flex items-center gap-2 rounded-md border border-slate-800 bg-slate-950 px-3 text-sm text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={autoExecEnabled}
+                    onChange={(event) => setAutoExecEnabled(event.target.checked)}
+                    className="h-4 w-4 rounded border-slate-700 bg-slate-950"
+                  />
+                  Auto Exec
+                </label>
+              </div>
+            )}
+          </div>
+
           <div className="flex items-center gap-3 pt-2">
             <button
               type="submit"
@@ -305,6 +368,12 @@ export function NewProjectClient() {
                 <span className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Root Path</span>
                 <div className="mt-1 break-all rounded-md border border-slate-800/70 bg-slate-950/60 px-2 py-1.5 font-mono text-slate-200">
                   {normalizedRootPath || <span className="text-slate-600">not configured</span>}
+                </div>
+              </div>
+              <div>
+                <span className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Agent Hub Access</span>
+                <div className="mt-1 rounded-md border border-slate-800/70 bg-slate-950/60 px-2 py-1.5 font-mono text-slate-200">
+                  {syncAgentHubPermission ? `${permissionTier}${autoExecEnabled ? ' + auto-exec' : ''}` : 'disabled'}
                 </div>
               </div>
             </div>

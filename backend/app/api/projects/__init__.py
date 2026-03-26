@@ -8,9 +8,14 @@ from psycopg import sql
 
 from ...services import explorer
 from ...storage.connection import get_connection, get_cursor
+from .agent_hub import (
+    delete_agent_hub_project_permission,
+    sync_agent_hub_project_permission,
+)
 from .db_helpers import (
     build_project_with_stats,
     create_project_in_db,
+    delete_project_in_db,
     fetch_project_stats,
     get_project_from_db,
     sync_project_backup_source,
@@ -44,6 +49,17 @@ async def create_project(
         project.health_endpoint,
         project.root_path,
     )
+
+    if project.agent_hub_permission is not None:
+        try:
+            await sync_agent_hub_project_permission(
+                project.id,
+                project.agent_hub_permission,
+                project.root_path,
+            )
+        except Exception:
+            delete_project_in_db(project.id)
+            raise
 
     # Trigger initial Explorer scan in background (all types)
     background_tasks.add_task(
@@ -210,12 +226,9 @@ async def update_project(project_id: str, update: ProjectUpdate) -> ProjectRespo
 @router.delete("/{project_id}")
 async def delete_project(project_id: str) -> dict[str, str]:
     """Delete a project."""
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("DELETE FROM projects WHERE id = %s RETURNING id", (project_id,))
-        row = cur.fetchone()
-        conn.commit()
+    project = get_project_from_db(project_id)
+    await delete_agent_hub_project_permission(project_id)
+    delete_project_in_db(project_id)
 
-    if not row:
-        raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
-
+    return {"status": "deleted", "project_id": project.id}
     return {"status": "deleted", "id": project_id}

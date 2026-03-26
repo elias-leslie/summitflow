@@ -8,6 +8,7 @@
 import { fetchWithErrorHandling, patchJson, postJson } from './utils'
 import type {
   Project,
+  ProjectCreate,
   ProjectHealth,
   ProjectUpdate,
   ProjectsWithStatsResponse,
@@ -42,13 +43,7 @@ export async function fetchProject(id: string): Promise<Project> {
   })
 }
 
-export async function createProject(project: {
-  id: string
-  name: string
-  base_url: string
-  health_endpoint?: string
-  root_path?: string
-}): Promise<Project> {
+export async function createProject(project: ProjectCreate): Promise<Project> {
   return postJson('/api/projects', project, 'Failed to create project')
 }
 
@@ -76,4 +71,3 @@ export async function fetchQualityGateHealth(
     errorMessage: 'Failed to fetch quality gate health',
   })
 }
-

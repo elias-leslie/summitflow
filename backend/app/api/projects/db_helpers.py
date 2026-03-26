@@ -188,3 +188,11 @@ def create_project_in_db(
         root_path=row[4],
         created_at=row[5],
     )
+
+
+def delete_project_in_db(project_id: str) -> None:
+    """Delete a project plus its matching backup source."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM backup_sources WHERE id = %s", (project_id,))
+        cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
+        conn.commit()

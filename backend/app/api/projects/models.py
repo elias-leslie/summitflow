@@ -2,7 +2,27 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
+
+
+class ProjectPermissionBootstrap(BaseModel):
+    """Optional Agent Hub permission bootstrap for a newly registered project."""
+
+    permission_tier: str = "read"
+    auto_exec_enabled: bool = False
+    execution_start_hour: int = Field(default=0, ge=0, le=23)
+    execution_end_hour: int = Field(default=24, ge=1, le=24)
+    root_path: str | None = None
+    daily_cost_budget_usd: float | None = Field(default=None, ge=0)
+    monthly_cost_budget_usd: float | None = Field(default=None, ge=0)
+    budget_alert_threshold: float = Field(default=0.8, ge=0.0, le=1.0)
+
+    @model_validator(mode="after")
+    def validate_window(self) -> "ProjectPermissionBootstrap":
+        """Reject no-op execution windows."""
+        if self.execution_start_hour == self.execution_end_hour:
+            raise ValueError("execution_start_hour and execution_end_hour cannot be the same")
+        return self
 
 
 class ProjectCreate(BaseModel):
@@ -15,6 +35,7 @@ class ProjectCreate(BaseModel):
     root_path: str | None = None  # Filesystem path for file scanning
     frontend_port: int | None = None  # Canonical frontend port
     backend_port: int | None = None  # Canonical backend port
+    agent_hub_permission: ProjectPermissionBootstrap | None = None
 
 
 class ProjectResponse(BaseModel):
@@ -77,5 +98,4 @@ class ProjectsWithStatsResponse(BaseModel):
 
     projects: list[ProjectWithStats]
     total: int
-
 

@@ -39,3 +39,41 @@ def test_projects_root_requires_root_path() -> None:
 
     assert result.exit_code == 1
     assert "has no root_path configured" in result.output
+
+
+def test_projects_create_sends_permission_bootstrap_fields() -> None:
+    with patch(
+        "cli.commands._projects_helpers.projects_api",
+        return_value={"id": "test2", "name": "Testbed"},
+    ) as mock_projects_api:
+        result = runner.invoke(
+            app,
+            [
+                "create",
+                "test2",
+                "Testbed",
+                "--base-url",
+                "https://test2.summitflow.dev",
+                "--root-path",
+                "/srv/workspaces/projects/test2",
+                "--permission-tier",
+                "yolo",
+                "--auto-exec",
+            ],
+        )
+
+    assert result.exit_code == 0
+    mock_projects_api.assert_called_once_with(
+        "POST",
+        json={
+            "id": "test2",
+            "name": "Testbed",
+            "base_url": "https://test2.summitflow.dev",
+            "health_endpoint": "/health",
+            "root_path": "/srv/workspaces/projects/test2",
+            "agent_hub_permission": {
+                "permission_tier": "yolo",
+                "auto_exec_enabled": True,
+            },
+        },
+    )

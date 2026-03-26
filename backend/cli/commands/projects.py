@@ -112,14 +112,41 @@ def create_project(
         str,
         typer.Option("--health-endpoint", help="Health check endpoint path"),
     ] = DEFAULT_HEALTH_ENDPOINT,
+    permission_tier: Annotated[
+        str | None,
+        typer.Option("--permission-tier", help="Bootstrap matching Agent Hub permission tier"),
+    ] = None,
+    auto_exec_enabled: Annotated[
+        bool | None,
+        typer.Option("--auto-exec/--no-auto-exec", help="Bootstrap Agent Hub auto-exec setting"),
+    ] = None,
+    execution_start_hour: Annotated[
+        int | None,
+        typer.Option("--execution-start-hour", min=0, max=23, help="Bootstrap Agent Hub execution window start hour"),
+    ] = None,
+    execution_end_hour: Annotated[
+        int | None,
+        typer.Option("--execution-end-hour", min=1, max=24, help="Bootstrap Agent Hub execution window end hour"),
+    ] = None,
 ) -> None:
     """Create a new project.
 
     Examples:
         st projects create persona-sandbox "Persona Sandbox" --base-url http://localhost:3003
         st projects create my-app "My App" -u http://localhost:8080 -r /home/user/my-app
+        st projects create test2 "Testbed" -u https://test2.summitflow.dev -r /srv/workspaces/projects/test2 --permission-tier yolo --auto-exec
     """
-    run_create(project_id, name, base_url, root_path, health_endpoint)
+    run_create(
+        project_id,
+        name,
+        base_url,
+        root_path,
+        health_endpoint,
+        permission_tier=permission_tier,
+        auto_exec_enabled=auto_exec_enabled,
+        execution_start_hour=execution_start_hour,
+        execution_end_hour=execution_end_hour,
+    )
 
 
 @app.command("update")

@@ -147,6 +147,10 @@ def run_create(
     base_url: str,
     root_path: str | None,
     health_endpoint: str,
+    permission_tier: str | None = None,
+    auto_exec_enabled: bool | None = None,
+    execution_start_hour: int | None = None,
+    execution_end_hour: int | None = None,
 ) -> None:
     """Implementation for `projects create`."""
     body: dict[str, Any] = {
@@ -157,6 +161,17 @@ def run_create(
     }
     if root_path is not None:
         body["root_path"] = root_path
+    permission_payload = {
+        "permission_tier": permission_tier,
+        "auto_exec_enabled": auto_exec_enabled,
+        "execution_start_hour": execution_start_hour,
+        "execution_end_hour": execution_end_hour,
+    }
+    normalized_permission_payload = {
+        key: value for key, value in permission_payload.items() if value is not None
+    }
+    if normalized_permission_payload:
+        body["agent_hub_permission"] = normalized_permission_payload
     result = projects_api("POST", json=body)
     output_success(f"Created project '{project_id}'")
     output_json(result)

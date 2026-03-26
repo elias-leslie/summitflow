@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
 from uuid import uuid4
+
+from fastapi import HTTPException
 
 from app.storage.connection import get_connection
 
@@ -40,6 +43,87 @@ def test_create_project_creates_backup_source(client, monkeypatch) -> None:
             cur.execute("DELETE FROM backup_sources WHERE id = %s", (project_id,))
             cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
             conn.commit()
+
+
+def test_create_project_syncs_agent_hub_permission_when_requested(client, monkeypatch) -> None:
+    """POST /api/projects should provision Agent Hub permission bootstrap when requested."""
+    project_id = f"bootstrap-{uuid4().hex[:8]}"
+    root_path = f"/srv/workspaces/projects/{project_id}"
+    sync_mock = AsyncMock()
+    monkeypatch.setattr("app.api.projects.explorer.run_scan_job", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.api.projects.sync_agent_hub_project_permission", sync_mock)
+
+    try:
+        response = client.post(
+            "/api/projects",
+            json={
+                "id": project_id,
+                "name": "Bootstrap Project",
+                "base_url": "https://bootstrap.example",
+                "health_endpoint": "/health",
+                "root_path": root_path,
+                "agent_hub_permission": {
+                    "permission_tier": "yolo",
+                    "auto_exec_enabled": True,
+                    "execution_start_hour": 0,
+                    "execution_end_hour": 24,
+                },
+            },
+        )
+
+        assert response.status_code == 200
+        sync_mock.assert_awaited_once()
+        args = sync_mock.await_args.args
+        assert args[0] == project_id
+        assert args[1].permission_tier == "yolo"
+        assert args[1].auto_exec_enabled is True
+        assert args[2] == root_path
+    finally:
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM backup_sources WHERE id = %s", (project_id,))
+            cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
+            conn.commit()
+
+
+def test_create_project_rolls_back_when_agent_hub_sync_fails(client, monkeypatch) -> None:
+    """POST /api/projects should remove the project record when bootstrap sync fails."""
+    project_id = f"rollback-{uuid4().hex[:8]}"
+    root_path = f"/srv/workspaces/projects/{project_id}"
+
+    async def _fail_sync(*_args, **_kwargs) -> None:
+        raise HTTPException(status_code=502, detail="Agent Hub unavailable")
+
+    monkeypatch.setattr("app.api.projects.explorer.run_scan_job", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.api.projects.sync_agent_hub_project_permission", _fail_sync)
+
+    response = client.post(
+        "/api/projects",
+        json={
+            "id": project_id,
+            "name": "Rollback Project",
+            "base_url": "https://rollback.example",
+            "health_endpoint": "/health",
+            "root_path": root_path,
+            "agent_hub_permission": {
+                "permission_tier": "yolo",
+                "auto_exec_enabled": True,
+                "execution_start_hour": 0,
+                "execution_end_hour": 24,
+            },
+        },
+    )
+
+    assert response.status_code == 502
+    assert response.json()["message"] == "Agent Hub unavailable"
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
+        project_row = cur.fetchone()
+        cur.execute("SELECT id FROM backup_sources WHERE id = %s", (project_id,))
+        backup_row = cur.fetchone()
+
+    assert project_row is None
+    assert backup_row is None
 
 
 def test_update_project_syncs_backup_source(client) -> None:
@@ -204,3 +288,54 @@ def test_update_project_updates_selected_fields(client) -> None:
         with get_connection() as conn, conn.cursor() as cur:
             cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
             conn.commit()
+
+
+def test_delete_project_removes_backup_source_and_agent_hub_permission(client, monkeypatch) -> None:
+    """DELETE /api/projects should clean up backup metadata and Agent Hub permission."""
+    project_id = f"delete-{uuid4().hex[:8]}"
+    delete_mock = AsyncMock()
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO projects (id, name, base_url, health_endpoint, root_path)
+            VALUES (%s, %s, %s, %s, %s)
+            """,
+            (
+                project_id,
+                "Delete Project",
+                "https://delete.example",
+                "/health",
+                f"/srv/workspaces/projects/{project_id}",
+            ),
+        )
+        cur.execute(
+            """
+            INSERT INTO backup_sources (id, name, path, source_type, project_id)
+            VALUES (%s, %s, %s, 'project', %s)
+            """,
+            (
+                project_id,
+                "Delete Project",
+                f"/srv/workspaces/projects/{project_id}",
+                project_id,
+            ),
+        )
+        conn.commit()
+
+    monkeypatch.setattr("app.api.projects.delete_agent_hub_project_permission", delete_mock)
+
+    response = client.delete(f"/api/projects/{project_id}")
+
+    assert response.status_code == 200
+    delete_mock.assert_awaited_once_with(project_id)
+    assert response.json() == {"status": "deleted", "project_id": project_id}
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
+        project_row = cur.fetchone()
+        cur.execute("SELECT id FROM backup_sources WHERE id = %s", (project_id,))
+        backup_row = cur.fetchone()
+
+    assert project_row is None
+    assert backup_row is None
