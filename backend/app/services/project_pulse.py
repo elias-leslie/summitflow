@@ -191,12 +191,31 @@ def _normalize_running_task(task: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _task_is_stranded(task: dict[str, Any], owner_task_ids: set[str], specialist_task_ids: set[str]) -> bool:
+def _session_linked_task_id(session: dict[str, Any]) -> str:
+    """Return the task-xxx ID linked to a session via external_id or branch, or empty string."""
+    external_id = str(session.get("external_id") or "")
+    if external_id.startswith("task-"):
+        return external_id
+    branch = str(session.get("current_branch") or "")
+    first_segment = branch.split("/")[0]
+    if first_segment.startswith("task-"):
+        return first_segment
+    return ""
+
+
+def _task_is_stranded(
+    task: dict[str, Any],
+    owner_task_ids: set[str],
+    specialist_task_ids: set[str],
+    session_linked_task_ids: set[str],
+) -> bool:
     """Return True when a running task appears to have lost its live execution lane."""
     task_id = str(task.get("id") or "")
     if not task_id:
         return False
     if task_id in owner_task_ids or task_id in specialist_task_ids:
+        return False
+    if task_id in session_linked_task_ids:
         return False
     updated_at = parse_iso_datetime(task.get("updated_at"))
     if updated_at is None:
@@ -209,12 +228,13 @@ def _partition_running_tasks(
     tasks: list[dict[str, Any]],
     owner_task_ids: set[str],
     specialist_task_ids: set[str],
+    session_linked_task_ids: set[str],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Split task rows into live running work and stranded remnants."""
     running: list[dict[str, Any]] = []
     stranded: list[dict[str, Any]] = []
     for task in tasks:
-        if _task_is_stranded(task, owner_task_ids, specialist_task_ids):
+        if _task_is_stranded(task, owner_task_ids, specialist_task_ids, session_linked_task_ids):
             stranded.append(task)
         else:
             running.append(task)
@@ -270,6 +290,11 @@ async def build_project_pulse(project_id: str) -> dict[str, Any]:
         _normalize_active_session(session, owner_session_ids, specialist_session_ids)
         for session in _dedupe_active_sessions(active_raw_sessions)
     ]
+    session_linked_task_ids = {
+        task_id
+        for session in active_raw_sessions
+        if (task_id := _session_linked_task_id(session))
+    }
 
     reapable_sessions = [
         session
@@ -288,6 +313,7 @@ async def build_project_pulse(project_id: str) -> dict[str, Any]:
         raw_running_tasks,
         owner_task_ids,
         specialist_task_ids,
+        session_linked_task_ids,
     )
     cleanup = build_project_cleanup_status(project_id)
 

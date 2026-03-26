@@ -378,3 +378,177 @@ async def test_build_project_pulse_reapable_counts_lifecycle_state_without_boole
 
     assert payload["summary"]["stale_sessions"] == 1
     assert payload["summary"]["reapable_sessions"] == 1
+
+
+@pytest.mark.asyncio
+async def test_build_project_pulse_active_session_with_external_id_prevents_stranded() -> None:
+    """Active session with external_id=task-xxx protects that task from stranded classification."""
+    stale = (datetime.now(UTC) - timedelta(minutes=5)).isoformat().replace("+00:00", "Z")
+    fresh = (datetime.now(UTC) - timedelta(seconds=30)).isoformat().replace("+00:00", "Z")
+
+    ownership_payload = {"active_owners": [], "active_specialists": []}
+    sessions_payload = {
+        "sessions": [
+            {
+                "id": "sess-wrapper",
+                "status": "active",
+                "session_type": "claude_code",
+                "external_id": "task-wrapper-abc",
+                "updated_at": fresh,
+                "live_activity": {"lifecycle_state": "active", "health": "active"},
+            }
+        ]
+    }
+
+    with (
+        patch(
+            "app.services.project_pulse._agent_hub_get",
+            new=AsyncMock(side_effect=[ownership_payload, sessions_payload]),
+        ),
+        patch(
+            "app.services.project_pulse.list_tasks",
+            return_value=[
+                {
+                    "id": "task-wrapper-abc",
+                    "title": "Wrapper dispatched task",
+                    "status": "running",
+                    "task_type": "task",
+                    "priority": 2,
+                    "updated_at": stale,
+                }
+            ],
+        ),
+        patch(
+            "app.services.project_pulse.build_project_cleanup_status",
+            return_value={
+                "project_id": "summitflow",
+                "active_worktrees": 0,
+                "dirty_worktrees": 0,
+                "needs_cleanup": False,
+            },
+        ),
+    ):
+        from app.services.project_pulse import build_project_pulse
+
+        payload = await build_project_pulse("summitflow")
+
+    assert [task["id"] for task in payload["running_tasks"]] == ["task-wrapper-abc"]
+    assert payload["stranded_tasks"] == []
+    assert payload["summary"]["running_tasks"] == 1
+    assert payload["summary"]["stranded_tasks"] == 0
+
+
+@pytest.mark.asyncio
+async def test_build_project_pulse_active_session_with_task_branch_prevents_stranded() -> None:
+    """Active session with current_branch=task-xxx/main protects that task from stranded classification."""
+    stale = (datetime.now(UTC) - timedelta(minutes=5)).isoformat().replace("+00:00", "Z")
+    fresh = (datetime.now(UTC) - timedelta(seconds=30)).isoformat().replace("+00:00", "Z")
+
+    ownership_payload = {"active_owners": [], "active_specialists": []}
+    sessions_payload = {
+        "sessions": [
+            {
+                "id": "sess-branch-worker",
+                "status": "active",
+                "session_type": "claude_code",
+                "current_branch": "task-branch-xyz/main",
+                "updated_at": fresh,
+                "live_activity": {"lifecycle_state": "active", "health": "active"},
+            }
+        ]
+    }
+
+    with (
+        patch(
+            "app.services.project_pulse._agent_hub_get",
+            new=AsyncMock(side_effect=[ownership_payload, sessions_payload]),
+        ),
+        patch(
+            "app.services.project_pulse.list_tasks",
+            return_value=[
+                {
+                    "id": "task-branch-xyz",
+                    "title": "Branch-linked task",
+                    "status": "running",
+                    "task_type": "task",
+                    "priority": 2,
+                    "updated_at": stale,
+                }
+            ],
+        ),
+        patch(
+            "app.services.project_pulse.build_project_cleanup_status",
+            return_value={
+                "project_id": "summitflow",
+                "active_worktrees": 0,
+                "dirty_worktrees": 0,
+                "needs_cleanup": False,
+            },
+        ),
+    ):
+        from app.services.project_pulse import build_project_pulse
+
+        payload = await build_project_pulse("summitflow")
+
+    assert [task["id"] for task in payload["running_tasks"]] == ["task-branch-xyz"]
+    assert payload["stranded_tasks"] == []
+    assert payload["summary"]["running_tasks"] == 1
+    assert payload["summary"]["stranded_tasks"] == 0
+
+
+@pytest.mark.asyncio
+async def test_build_project_pulse_stale_session_does_not_prevent_stranded() -> None:
+    """A stale (non-active) session linked to a task does not protect it from stranded classification."""
+    stale = (datetime.now(UTC) - timedelta(minutes=5)).isoformat().replace("+00:00", "Z")
+    very_stale = (datetime.now(UTC) - timedelta(hours=7)).isoformat().replace("+00:00", "Z")
+
+    ownership_payload = {"active_owners": [], "active_specialists": []}
+    sessions_payload = {
+        "sessions": [
+            {
+                "id": "sess-dead",
+                "status": "active",
+                "session_type": "claude_code",
+                "external_id": "task-dead-abc",
+                "updated_at": very_stale,
+                "live_activity": {"lifecycle_state": "reapable", "health": "stalled", "reapable": True},
+            }
+        ]
+    }
+
+    with (
+        patch(
+            "app.services.project_pulse._agent_hub_get",
+            new=AsyncMock(side_effect=[ownership_payload, sessions_payload]),
+        ),
+        patch(
+            "app.services.project_pulse.list_tasks",
+            return_value=[
+                {
+                    "id": "task-dead-abc",
+                    "title": "Dead lane task",
+                    "status": "running",
+                    "task_type": "task",
+                    "priority": 2,
+                    "updated_at": stale,
+                }
+            ],
+        ),
+        patch(
+            "app.services.project_pulse.build_project_cleanup_status",
+            return_value={
+                "project_id": "summitflow",
+                "active_worktrees": 0,
+                "dirty_worktrees": 0,
+                "needs_cleanup": False,
+            },
+        ),
+    ):
+        from app.services.project_pulse import build_project_pulse
+
+        payload = await build_project_pulse("summitflow")
+
+    assert payload["running_tasks"] == []
+    assert [task["id"] for task in payload["stranded_tasks"]] == ["task-dead-abc"]
+    assert payload["summary"]["running_tasks"] == 0
+    assert payload["summary"]["stranded_tasks"] == 1
