@@ -154,18 +154,27 @@ class TestAutoRollback:
     @patch("app.tasks.autonomous.cleanup.validation.create_regression_fix_task")
     @patch("app.tasks.autonomous.cleanup.validation.task_store")
     @patch("app.storage.log_task_event")
+    @patch("app.tasks.autonomous.cleanup.validation._get_merge_affected_files")
+    @patch("app.tasks.autonomous.cleanup.validation._get_head_commit")
     @patch("app.tasks.autonomous.cleanup.validation.revert_merge_commit")
     def test_successful_rollback(
-        self, mock_revert: MagicMock, mock_log: MagicMock,
-        mock_store: MagicMock, mock_create: MagicMock, mock_learn: MagicMock,
+        self, mock_revert: MagicMock, mock_head: MagicMock, mock_files: MagicMock,
+        mock_log: MagicMock, mock_store: MagicMock, mock_create: MagicMock, mock_learn: MagicMock,
     ) -> None:
         mock_revert.return_value = True
+        mock_head.return_value = "abc1234"
+        mock_files.return_value = ["src/foo.py"]
 
         result = auto_rollback("task-1", "/tmp/project", "test-project", "task-1/main")
 
         assert result
         mock_revert.assert_called_once_with("task-1", "/tmp/project")
-        mock_create.assert_called_once_with("task-1", "test-project", "task-1/main")
+        mock_create.assert_called_once_with(
+            "task-1", "test-project", "task-1/main",
+            failure_detail=None,
+            merge_commit="abc1234",
+            affected_files=["src/foo.py"],
+        )
         mock_store.update_task_status.assert_called_once_with("task-1", "failed")
         mock_learn.assert_called_once()
 
@@ -173,16 +182,22 @@ class TestAutoRollback:
     @patch("app.tasks.autonomous.cleanup.validation.create_regression_fix_task")
     @patch("app.tasks.autonomous.cleanup.validation.task_store")
     @patch("app.storage.log_task_event")
+    @patch("app.tasks.autonomous.cleanup.validation._get_merge_affected_files")
+    @patch("app.tasks.autonomous.cleanup.validation._get_head_commit")
     @patch("app.tasks.autonomous.cleanup.validation.revert_merge_commit")
     def test_successful_rollback_from_completed_forces_failed_transition(
         self,
         mock_revert: MagicMock,
+        mock_head: MagicMock,
+        mock_files: MagicMock,
         mock_log: MagicMock,
         mock_store: MagicMock,
         mock_create: MagicMock,
         mock_learn: MagicMock,
     ) -> None:
         mock_revert.return_value = True
+        mock_head.return_value = "abc1234"
+        mock_files.return_value = []
         mock_store.get_task.return_value = {"status": "completed"}
 
         result = auto_rollback("task-1", "/tmp/project", "test-project", "task-1/main")
@@ -236,8 +251,14 @@ class TestAutoRollback:
 class TestCreateRegressionFixTask:
     """Tests for regression task creation after rollback."""
 
+    @patch("app.tasks.autonomous.cleanup.validation._create_regression_subtasks")
+    @patch("app.storage.task_spirit.update_task_spirit")
     @patch("app.storage.tasks.core.create_task")
-    def test_creates_task_with_correct_fields(self, mock_create: MagicMock) -> None:
+    def test_creates_task_with_correct_fields(
+        self, mock_create: MagicMock, mock_spirit: MagicMock, mock_subtasks: MagicMock,
+    ) -> None:
+        mock_create.return_value = {"id": "task-new-1"}
+
         create_regression_fix_task("task-1", "test-project", "task-1/main")
 
         mock_create.assert_called_once()
@@ -248,6 +269,30 @@ class TestCreateRegressionFixTask:
         assert kwargs["parent_task_id"] == "task-1"
         assert kwargs["autonomous"]
         assert "task-1" in kwargs["title"]
+        assert "task-1/main" in kwargs["title"]
+        mock_spirit.assert_called_once_with("task-new-1", done_when=mock_spirit.call_args.kwargs["done_when"])
+        assert len(mock_spirit.call_args.kwargs["done_when"]) == 3
+        mock_subtasks.assert_called_once_with("task-new-1", "task-1/main", None)
+
+    @patch("app.tasks.autonomous.cleanup.validation._create_regression_subtasks")
+    @patch("app.storage.task_spirit.update_task_spirit")
+    @patch("app.storage.tasks.core.create_task")
+    def test_includes_failure_detail_and_commit_in_description(
+        self, mock_create: MagicMock, mock_spirit: MagicMock, mock_subtasks: MagicMock,
+    ) -> None:
+        mock_create.return_value = {"id": "task-new-2"}
+
+        create_regression_fix_task(
+            "task-1", "test-project", "task-1/main",
+            failure_detail="RUFF:FAIL\nsrc/foo.py: error",
+            merge_commit="abc1234",
+            affected_files=["src/foo.py", "src/bar.py"],
+        )
+
+        kwargs = mock_create.call_args.kwargs
+        assert "abc1234" in kwargs["description"]
+        assert "src/foo.py" in kwargs["description"]
+        assert "RUFF:FAIL" in kwargs["description"]
 
     @patch("app.storage.tasks.core.create_task")
     def test_handles_creation_error_gracefully(self, mock_create: MagicMock) -> None:

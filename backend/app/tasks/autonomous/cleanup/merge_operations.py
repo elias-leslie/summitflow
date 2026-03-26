@@ -204,7 +204,7 @@ def _finalize_merge(
     _git(["git", "worktree", "prune"], project_root)
     branch_deleted = delete_task_branch(project_root, task_branch, task_id)
     validation = run_post_merge_validation(task_id, project_root, project_id)
-    if validation["should_rollback"] and auto_rollback(task_id, project_root, project_id, task_branch):
+    if validation["should_rollback"] and auto_rollback(task_id, project_root, project_id, task_branch, validation.get("detail")):
         return {
             "task_id": task_id, "status": "rolled_back",
             "task_branch": task_branch, "base_branch": base_branch,
