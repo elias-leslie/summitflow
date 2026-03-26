@@ -8,6 +8,7 @@ import pytest
 import typer
 
 from cli.commands._abandon_helpers import abandon_task
+from cli.commands.abandon import abandon_command
 
 
 def test_abandon_preview_does_not_capture_or_delete() -> None:
@@ -69,3 +70,23 @@ def test_abandon_confirm_captures_before_removing_snapshot() -> None:
     mock_delete.assert_called_once_with("task-123")
     assert order == ["capture", "remove", "delete"]
     assert result["snapshot_removed"] is True
+
+
+def test_abandon_command_reports_cancelled_status_for_tasks() -> None:
+    with (
+        patch("cli.commands.abandon.STClient"),
+        patch("cli.commands.abandon.is_subtask_id", return_value=False),
+        patch("cli.commands.abandon.abandon_task") as mock_abandon,
+        patch("cli.commands.abandon.output_success") as mock_success,
+    ):
+        abandon_command("task-123")
+
+    assert mock_abandon.call_count == 1
+    client_arg, task_id_arg, confirm_arg, reason_arg = mock_abandon.call_args.args
+    assert client_arg is not None
+    assert task_id_arg == "task-123"
+    assert confirm_arg is None
+    assert reason_arg is None
+    mock_success.assert_called_once_with(
+        "Task task-123 abandoned. Branches deleted, status set to 'cancelled'."
+    )
