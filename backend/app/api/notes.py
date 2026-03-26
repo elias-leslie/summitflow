@@ -12,7 +12,7 @@ import asyncio
 import re
 from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Body, HTTPException
 from pydantic import BaseModel
 
 from ..logging_config import get_logger
@@ -29,8 +29,6 @@ router = APIRouter(tags=["Notes"])
 
 
 class NoteResponse(BaseModel):
-    """Note response model."""
-
     id: str
     project_scope: str
     type: str
@@ -43,16 +41,7 @@ class NoteResponse(BaseModel):
     updated_at: str | None
 
 
-class NoteListResponse(BaseModel):
-    """Response for listing notes."""
-
-    items: list[NoteResponse]
-    total: int
-
-
 class CreateNoteRequest(BaseModel):
-    """Request to create a note."""
-
     title: str
     content: str = ""
     project_scope: str = "global"
@@ -63,8 +52,6 @@ class CreateNoteRequest(BaseModel):
 
 
 class UpdateNoteRequest(BaseModel):
-    """Request to update a note (partial)."""
-
     title: str | None = None
     content: str | None = None
     project_scope: str | None = None
@@ -74,10 +61,28 @@ class UpdateNoteRequest(BaseModel):
     metadata: dict[str, Any] | None = None
 
 
-class TagListResponse(BaseModel):
-    """Response for listing tags."""
+class ProposalResponse(BaseModel):
+    id: str
+    note_id: str
+    status: str
+    original_title: str
+    original_content: str
+    proposed_title: str | None
+    proposed_content: str | None
+    error_message: str | None
+    created_at: str | None
+    completed_at: str | None
 
+
+class VersionResponse(BaseModel):
+    id: str
+    note_id: str
+    version: int
+    title: str
+    content: str
     tags: list[str]
+    change_source: str
+    created_at: str | None
 
 
 # ============================================================================
@@ -85,8 +90,18 @@ class TagListResponse(BaseModel):
 # ============================================================================
 
 
+def _iso(dt: Any) -> str | None:
+    return dt.isoformat() if dt else None
+
+
+def _get_note_or_404(note_id: str) -> dict[str, Any]:
+    note = note_store.get_note(note_id)
+    if not note:
+        raise HTTPException(status_code=404, detail=f"Note {note_id} not found")
+    return note
+
+
 def _note_to_response(note: dict[str, Any]) -> NoteResponse:
-    """Convert storage note dict to API response."""
     return NoteResponse(
         id=note["id"],
         project_scope=note["project_scope"],
@@ -96,26 +111,51 @@ def _note_to_response(note: dict[str, Any]) -> NoteResponse:
         tags=note.get("tags", []),
         pinned=note["pinned"],
         metadata=note.get("metadata", {}),
-        created_at=note["created_at"].isoformat() if note.get("created_at") else None,
-        updated_at=note["updated_at"].isoformat() if note.get("updated_at") else None,
+        created_at=_iso(note.get("created_at")),
+        updated_at=_iso(note.get("updated_at")),
+    )
+
+
+def _proposal_to_response(p: dict[str, Any]) -> ProposalResponse:
+    return ProposalResponse(
+        id=p["id"],
+        note_id=p["note_id"],
+        status=p["status"],
+        original_title=p["original_title"],
+        original_content=p["original_content"],
+        proposed_title=p.get("proposed_title"),
+        proposed_content=p.get("proposed_content"),
+        error_message=p.get("error_message"),
+        created_at=_iso(p.get("created_at")),
+        completed_at=_iso(p.get("completed_at")),
+    )
+
+
+def _version_to_response(v: dict[str, Any]) -> VersionResponse:
+    return VersionResponse(
+        id=v["id"],
+        note_id=v["note_id"],
+        version=v["version"],
+        title=v["title"],
+        content=v["content"],
+        tags=v.get("tags", []),
+        change_source=v["change_source"],
+        created_at=_iso(v.get("created_at")),
     )
 
 
 # ============================================================================
-# Endpoints
+# CRUD Endpoints
 # ============================================================================
 
 
-@router.get("/notes/tags", response_model=TagListResponse)
-async def get_tags(
-    project_scope: str | None = None,
-) -> TagListResponse:
+@router.get("/notes/tags")
+async def get_tags(project_scope: str | None = None) -> dict[str, Any]:
     """Get all distinct tags, optionally filtered by project scope."""
-    tags = note_store.list_tags(project_scope)
-    return TagListResponse(tags=tags)
+    return {"tags": note_store.list_tags(project_scope)}
 
 
-@router.get("/notes", response_model=NoteListResponse)
+@router.get("/notes")
 async def list_notes(
     project_scope: str | None = None,
     type: Literal["note", "prompt"] | None = None,
@@ -124,50 +164,32 @@ async def list_notes(
     pinned: bool | None = None,
     limit: int = 50,
     offset: int = 0,
-) -> NoteListResponse:
+) -> dict[str, Any]:
     """List notes with optional filters."""
     items = note_store.list_notes(
-        project_scope=project_scope,
-        note_type=type,
-        tags=tag,
-        search=search,
-        pinned=pinned,
-        limit=limit,
-        offset=offset,
+        project_scope=project_scope, note_type=type, tags=tag,
+        search=search, pinned=pinned, limit=limit, offset=offset,
     )
     total = note_store.count_notes(
-        project_scope=project_scope,
-        note_type=type,
-        tags=tag,
-        search=search,
-        pinned=pinned,
+        project_scope=project_scope, note_type=type, tags=tag,
+        search=search, pinned=pinned,
     )
-    return NoteListResponse(
-        items=[_note_to_response(n) for n in items],
-        total=total,
-    )
+    return {"items": [_note_to_response(n) for n in items], "total": total}
 
 
 @router.get("/notes/{note_id}", response_model=NoteResponse)
 async def get_note(note_id: str) -> NoteResponse:
     """Get a single note by ID."""
-    note = note_store.get_note(note_id)
-    if not note:
-        raise HTTPException(status_code=404, detail=f"Note {note_id} not found")
-    return _note_to_response(note)
+    return _note_to_response(_get_note_or_404(note_id))
 
 
 @router.post("/notes", response_model=NoteResponse, status_code=201)
 async def create_note(request: CreateNoteRequest) -> NoteResponse:
     """Create a new note or prompt."""
     note = note_store.create_note(
-        title=request.title,
-        content=request.content,
-        project_scope=request.project_scope,
-        note_type=request.type,
-        tags=request.tags,
-        pinned=request.pinned,
-        metadata=request.metadata,
+        title=request.title, content=request.content,
+        project_scope=request.project_scope, note_type=request.type,
+        tags=request.tags, pinned=request.pinned, metadata=request.metadata,
     )
     return _note_to_response(note)
 
@@ -175,38 +197,18 @@ async def create_note(request: CreateNoteRequest) -> NoteResponse:
 @router.patch("/notes/{note_id}", response_model=NoteResponse)
 async def update_note(note_id: str, request: UpdateNoteRequest) -> NoteResponse:
     """Update a note (partial update)."""
-    existing = note_store.get_note(note_id)
-    if not existing:
-        raise HTTPException(status_code=404, detail=f"Note {note_id} not found")
-
-    fields: dict[str, Any] = {}
-    if request.title is not None:
-        fields["title"] = request.title
-    if request.content is not None:
-        fields["content"] = request.content
-    if request.project_scope is not None:
-        fields["project_scope"] = request.project_scope
-    if request.type is not None:
-        fields["type"] = request.type
-    if request.tags is not None:
-        fields["tags"] = request.tags
-    if request.pinned is not None:
-        fields["pinned"] = request.pinned
-    if request.metadata is not None:
-        fields["metadata"] = request.metadata
-
+    _get_note_or_404(note_id)
+    fields = {k: v for k, v in request.model_dump().items() if v is not None}
     note = note_store.update_note(note_id, **fields)
     if not note:
         raise HTTPException(status_code=500, detail="Failed to update note")
     return _note_to_response(note)
 
 
-@router.delete("/notes/{note_id}", response_model=dict[str, Any])
+@router.delete("/notes/{note_id}")
 async def delete_note(note_id: str) -> dict[str, Any]:
     """Delete a note."""
-    existing = note_store.get_note(note_id)
-    if not existing:
-        raise HTTPException(status_code=404, detail=f"Note {note_id} not found")
+    _get_note_or_404(note_id)
     if not note_store.delete_note(note_id):
         raise HTTPException(status_code=500, detail="Failed to delete note")
     return {"deleted": True, "id": note_id}
@@ -231,17 +233,14 @@ def _parse_format_response(raw: str) -> dict[str, str]:
     cleaned = _CODE_FENCE_RE.sub("", cleaned).strip()
     try:
         data = _json.loads(cleaned)
-        title = str(data.get("title", "")).strip()[:120]
-        content = str(data.get("content", "")).strip()
-        return {"title": title, "content": content}
+        return {"title": str(data.get("title", "")).strip()[:120], "content": str(data.get("content", "")).strip()}
     except _json.JSONDecodeError:
         return {"title": "", "content": ""}
 
 
 def _extract_title(raw: str) -> str:
     """Extract a title from note-titler agent output."""
-    cleaned = _TAG_RE.sub("", raw).strip()
-    cleaned = _CODE_FENCE_RE.sub("", cleaned).strip()
+    cleaned = _CODE_FENCE_RE.sub("", _TAG_RE.sub("", raw)).strip()
     for line in cleaned.splitlines():
         line = line.strip()
         m = _TITLE_PREFIX_RE.match(line)
@@ -257,122 +256,114 @@ def _extract_title(raw: str) -> str:
     return ""
 
 
-# ── Background format task ──
+async def _run_agent_task(
+    proposal_id: str, agent_slug: str, prompt: str, parse_fn: str,
+    fallback_title: str, fallback_content: str,
+) -> None:
+    """Async task: call agent and write result to DB."""
+    from ..services.agent_hub_client import AgentHubLLMClient
+    from ..storage import note_format_proposals as proposals
+
+    try:
+        client = AgentHubLLMClient(agent_slug=agent_slug, use_memory=(agent_slug != "note-formatter"))
+        raw = await asyncio.to_thread(
+            lambda: client.generate(prompt, temperature=0.3, purpose="notes").content
+        )
+        if parse_fn == "format":
+            parsed = _parse_format_response(raw)
+            proposed_title = parsed["title"] or fallback_title or "Untitled"
+            proposed_content = parsed["content"] or fallback_content
+        else:
+            proposed_title = ""
+            proposed_content = _CODE_FENCE_RE.sub("", _TAG_RE.sub("", raw)).strip()
+        proposals.complete_proposal(proposal_id, proposed_title, proposed_content)
+        logger.info("Proposal %s completed (agent=%s)", proposal_id, agent_slug)
+    except Exception as e:
+        logger.warning("Proposal %s failed (agent=%s): %s", proposal_id, agent_slug, e)
+        proposals.fail_proposal(proposal_id, str(e))
 
 
 def _run_agent_in_background(
     proposal_id: str, agent_slug: str, prompt: str, parse_fn: str,
     fallback_title: str = "", fallback_content: str = "",
 ) -> None:
-    """Fire-and-forget: call an agent, write result to DB."""
-    from ..storage import note_format_proposals as proposals
-
-    async def _do_call() -> None:
-        try:
-            from ..services.agent_hub_client import AgentHubLLMClient
-
-            client = AgentHubLLMClient(agent_slug=agent_slug, use_memory=(agent_slug != "note-formatter"))
-
-            def _call() -> str:
-                resp = client.generate(prompt, temperature=0.3, purpose="notes")
-                return resp.content
-
-            raw = await asyncio.to_thread(_call)
-            cleaned = _CODE_FENCE_RE.sub("", _TAG_RE.sub("", raw)).strip()
-
-            if parse_fn == "format":
-                parsed = _parse_format_response(raw)
-                proposed_title = parsed["title"] or fallback_title or "Untitled"
-                proposed_content = parsed["content"] or fallback_content
-            else:
-                # refine: raw output is the full prompt text
-                proposed_title = ""
-                proposed_content = cleaned
-
-            proposals.complete_proposal(proposal_id, proposed_title, proposed_content)
-            logger.info("Proposal %s completed (agent=%s)", proposal_id, agent_slug)
-        except Exception as e:
-            logger.warning("Proposal %s failed (agent=%s): %s", proposal_id, agent_slug, e)
-            proposals.fail_proposal(proposal_id, str(e))
-
+    """Fire-and-forget: schedule _run_agent_task on the running event loop."""
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
         return
-    task = loop.create_task(_do_call())
+    task = loop.create_task(
+        _run_agent_task(proposal_id, agent_slug, prompt, parse_fn, fallback_title, fallback_content)
+    )
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)
 
 
-# ── Format endpoints ──
+def _accept_proposal(proposal_id: str) -> None:
+    """Apply an accepted format proposal: snapshot, update, record post-state version."""
+    from ..storage import note_versions as versions
+    from ..storage.connection import get_cursor
 
-
-class FormatNoteRequest(BaseModel):
-    note_id: str
-    content: str
-    current_title: str = ""
-
-
-class ProposalResponse(BaseModel):
-    id: str
-    note_id: str
-    status: str
-    original_title: str
-    original_content: str
-    proposed_title: str | None
-    proposed_content: str | None
-    error_message: str | None
-    created_at: str | None
-    completed_at: str | None
-
-
-def _proposal_to_response(p: dict[str, Any]) -> ProposalResponse:
-    return ProposalResponse(
-        id=p["id"],
-        note_id=p["note_id"],
-        status=p["status"],
-        original_title=p["original_title"],
-        original_content=p["original_content"],
-        proposed_title=p.get("proposed_title"),
-        proposed_content=p.get("proposed_content"),
-        error_message=p.get("error_message"),
-        created_at=p["created_at"].isoformat() if p.get("created_at") else None,
-        completed_at=p["completed_at"].isoformat() if p.get("completed_at") else None,
-    )
+    with get_cursor() as cur:
+        cur.execute(
+            "SELECT note_id, proposed_title, proposed_content FROM note_format_proposals WHERE id = %s",
+            (proposal_id,),
+        )
+        row = cur.fetchone()
+    if not row:
+        return
+    note_id, proposed_title, proposed_content = row
+    existing = note_store.get_note(note_id)
+    if existing:
+        versions.create_version(
+            note_id=note_id, title=existing["title"], content=existing["content"],
+            tags=existing.get("tags", []), change_source="pre_format",
+        )
+    if proposed_title or proposed_content:
+        updates = {k: v for k, v in [("title", proposed_title), ("content", proposed_content)] if v}
+        note_store.update_note(note_id, **updates)
+        versions.create_version(
+            note_id=note_id,
+            title=proposed_title or (existing["title"] if existing else ""),
+            content=proposed_content or (existing["content"] if existing else ""),
+            tags=existing.get("tags", []) if existing else [],
+            change_source="format_accept",
+        )
 
 
 @router.post("/notes/format", response_model=ProposalResponse, status_code=202)
-async def format_note(request: FormatNoteRequest) -> ProposalResponse:
+async def format_note(
+    note_id: str = Body(...),
+    content: str = Body(...),
+    current_title: str = Body(""),
+) -> ProposalResponse:
     """Start a background format job. Returns the proposal immediately with status='pending'."""
-    if len(request.content.strip()) < 20:
+    if len(content.strip()) < 20:
         raise HTTPException(status_code=400, detail="Content too short to format")
-
     from ..storage import note_format_proposals as proposals
 
-    proposal = proposals.create_proposal(request.note_id, request.current_title, request.content)
-    _run_agent_in_background(
-        proposal["id"], "note-formatter", request.content[:3000], "format",
-        fallback_title=request.current_title, fallback_content=request.content,
-    )
+    proposal = proposals.create_proposal(note_id, current_title, content)
+    _run_agent_in_background(proposal["id"], "note-formatter", content[:3000], "format",
+                             fallback_title=current_title, fallback_content=content)
     return _proposal_to_response(proposal)
 
 
-class RefinePromptRequest(BaseModel):
-    note_id: str
-    current_content: str = ""
-    instruction: str
-
-
 @router.post("/notes/refine-prompt", response_model=ProposalResponse, status_code=202)
-async def refine_prompt(request: RefinePromptRequest) -> ProposalResponse:
+async def refine_prompt(
+    note_id: str = Body(...),
+    current_content: str = Body(""),
+    instruction: str = Body(...),
+) -> ProposalResponse:
     """Start a background prompt refinement. Returns the proposal immediately."""
-    if not request.instruction.strip():
+    if not instruction.strip():
         raise HTTPException(status_code=400, detail="Instruction is required")
-
     from ..storage import note_format_proposals as proposals
 
-    prompt = f"CURRENT PROMPT:\n{request.current_content}\n\nREFINEMENT:\n{request.instruction}" if request.current_content.strip() else request.instruction
-    proposal = proposals.create_proposal(request.note_id, "", request.current_content)
+    prompt = (
+        f"CURRENT PROMPT:\n{current_content}\n\nREFINEMENT:\n{instruction}"
+        if current_content.strip() else instruction
+    )
+    proposal = proposals.create_proposal(note_id, "", current_content)
     _run_agent_in_background(proposal["id"], "prompt-builder", prompt, "refine")
     return _proposal_to_response(proposal)
 
@@ -383,97 +374,41 @@ async def get_format_proposal(note_id: str) -> ProposalResponse | None:
     from ..storage import note_format_proposals as proposals
 
     p = proposals.get_latest_proposal(note_id)
-    if not p:
-        return None
-    return _proposal_to_response(p)
-
-
-class ResolveProposalRequest(BaseModel):
-    action: str  # "accept" or "discard"
+    return _proposal_to_response(p) if p else None
 
 
 @router.post("/notes/format-proposals/{proposal_id}/resolve")
-async def resolve_format_proposal(proposal_id: str, request: ResolveProposalRequest) -> dict[str, Any]:
+async def resolve_format_proposal(
+    proposal_id: str, action: str = Body(..., embed=True),
+) -> dict[str, Any]:
     """Accept or discard a format proposal."""
     from ..storage import note_format_proposals as proposals
 
-    if request.action not in ("accept", "discard"):
+    if action not in ("accept", "discard"):
         raise HTTPException(status_code=400, detail="action must be 'accept' or 'discard'")
-
-    if request.action == "accept":
-        from ..storage import note_versions as versions
-        from ..storage.connection import get_cursor
-
-        with get_cursor() as cur:
-            cur.execute(
-                "SELECT note_id, proposed_title, proposed_content FROM note_format_proposals WHERE id = %s",
-                (proposal_id,),
-            )
-            row = cur.fetchone()
-        if row:
-            note_id, proposed_title, proposed_content = row
-            # Snapshot current state before applying format
-            existing = note_store.get_note(note_id)
-            if existing:
-                versions.create_version(
-                    note_id=note_id,
-                    title=existing["title"],
-                    content=existing["content"],
-                    tags=existing.get("tags", []),
-                    change_source="pre_format",
-                )
-            # Apply the formatted version
-            if proposed_title or proposed_content:
-                updates: dict[str, Any] = {}
-                if proposed_title:
-                    updates["title"] = proposed_title
-                if proposed_content:
-                    updates["content"] = proposed_content
-                note_store.update_note(note_id, **updates)
-                # Record the format as a version
-                versions.create_version(
-                    note_id=note_id,
-                    title=proposed_title or (existing["title"] if existing else ""),
-                    content=proposed_content or (existing["content"] if existing else ""),
-                    tags=existing.get("tags", []) if existing else [],
-                    change_source="format_accept",
-                )
-
-    status = "accepted" if request.action == "accept" else "discarded"
+    if action == "accept":
+        _accept_proposal(proposal_id)
+    status = "accepted" if action == "accept" else "discarded"
     proposals.resolve_proposal(proposal_id, status)
     return {"resolved": True, "status": status}
 
 
-# ── Title-only generation ──
-
-
-class GenerateTitleRequest(BaseModel):
-    content: str
-
-
-class GenerateTitleResponse(BaseModel):
-    title: str
-
-
-@router.post("/notes/generate-title", response_model=GenerateTitleResponse)
-async def generate_title(request: GenerateTitleRequest) -> GenerateTitleResponse:
+@router.post("/notes/generate-title")
+async def generate_title(content: str = Body(..., embed=True)) -> dict[str, Any]:
     """Generate a title only (no content formatting). Uses the fast note-titler agent."""
-    if len(request.content.strip()) < 20:
+    if len(content.strip()) < 20:
         raise HTTPException(status_code=400, detail="Content too short")
-
     try:
         from ..services.agent_hub_client import AgentHubLLMClient
 
         client = AgentHubLLMClient(agent_slug="note-titler", use_memory=False)
-
-        def _call() -> str:
-            return client.generate(request.content[:1000], temperature=0.3, purpose="note_title").content
-
-        raw = await asyncio.to_thread(_call)
+        raw = await asyncio.to_thread(
+            lambda: client.generate(content[:1000], temperature=0.3, purpose="note_title").content
+        )
         title = _extract_title(raw)
         if not title:
             raise HTTPException(status_code=502, detail="Title generation returned empty result")
-        return GenerateTitleResponse(title=title)
+        return {"title": title}
     except HTTPException:
         raise
     except Exception as e:
@@ -486,38 +421,12 @@ async def generate_title(request: GenerateTitleRequest) -> GenerateTitleResponse
 # ============================================================================
 
 
-class VersionResponse(BaseModel):
-    id: str
-    note_id: str
-    version: int
-    title: str
-    content: str
-    tags: list[str]
-    change_source: str
-    created_at: str | None
-
-
-def _version_to_response(v: dict[str, Any]) -> VersionResponse:
-    return VersionResponse(
-        id=v["id"],
-        note_id=v["note_id"],
-        version=v["version"],
-        title=v["title"],
-        content=v["content"],
-        tags=v.get("tags", []),
-        change_source=v["change_source"],
-        created_at=v["created_at"].isoformat() if v.get("created_at") else None,
-    )
-
-
 @router.get("/notes/{note_id}/versions", response_model=list[VersionResponse])
 async def list_versions(note_id: str) -> list[VersionResponse]:
     """List version history for a note."""
     from ..storage import note_versions as versions
 
-    existing = note_store.get_note(note_id)
-    if not existing:
-        raise HTTPException(status_code=404, detail=f"Note {note_id} not found")
+    _get_note_or_404(note_id)
     return [_version_to_response(v) for v in versions.list_versions(note_id)]
 
 
@@ -537,15 +446,10 @@ async def create_version_endpoint(note_id: str) -> VersionResponse:
     """Manually snapshot the current state of a note."""
     from ..storage import note_versions as versions
 
-    existing = note_store.get_note(note_id)
-    if not existing:
-        raise HTTPException(status_code=404, detail=f"Note {note_id} not found")
+    existing = _get_note_or_404(note_id)
     v = versions.create_version(
-        note_id=note_id,
-        title=existing["title"],
-        content=existing["content"],
-        tags=existing.get("tags", []),
-        change_source="manual_snapshot",
+        note_id=note_id, title=existing["title"], content=existing["content"],
+        tags=existing.get("tags", []), change_source="manual_snapshot",
     )
     return _version_to_response(v)
 
@@ -555,39 +459,20 @@ async def revert_to_version(note_id: str, version_id: str) -> NoteResponse:
     """Revert a note to a previous version. Creates a version snapshot before reverting."""
     from ..storage import note_versions as versions
 
-    existing = note_store.get_note(note_id)
-    if not existing:
-        raise HTTPException(status_code=404, detail=f"Note {note_id} not found")
+    existing = _get_note_or_404(note_id)
     v = versions.get_version(version_id)
     if not v or v["note_id"] != note_id:
         raise HTTPException(status_code=404, detail=f"Version {version_id} not found for note {note_id}")
 
-    # Snapshot current state before reverting
     versions.create_version(
-        note_id=note_id,
-        title=existing["title"],
-        content=existing["content"],
-        tags=existing.get("tags", []),
-        change_source="pre_revert",
+        note_id=note_id, title=existing["title"], content=existing["content"],
+        tags=existing.get("tags", []), change_source="pre_revert",
     )
-
-    # Apply the old version
-    note = note_store.update_note(
-        note_id,
-        title=v["title"],
-        content=v["content"],
-        tags=v["tags"],
-    )
+    note = note_store.update_note(note_id, title=v["title"], content=v["content"], tags=v["tags"])
     if not note:
         raise HTTPException(status_code=500, detail="Failed to revert note")
-
-    # Record the revert as a version too
     versions.create_version(
-        note_id=note_id,
-        title=v["title"],
-        content=v["content"],
-        tags=v["tags"],
-        change_source="revert",
+        note_id=note_id, title=v["title"], content=v["content"],
+        tags=v["tags"], change_source="revert",
     )
-
     return _note_to_response(note)
