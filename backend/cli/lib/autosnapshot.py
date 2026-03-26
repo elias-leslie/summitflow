@@ -98,6 +98,27 @@ def _newest_snapshot_age_minutes(entries: list[QuickSnapshot]) -> float | None:
     return _minutes_since(newest.created_at)
 
 
+def _load_manifest_entries(manifest_path: Path) -> list[QuickSnapshot] | None:
+    """Parse a manifest.json, returning entries or None on any error (including missing file)."""
+    try:
+        raw = manifest_path.read_text(encoding="utf-8")
+        return [
+            QuickSnapshot.from_dict(item)
+            for item in json.loads(raw)
+            if isinstance(item, dict)
+        ]
+    except Exception:
+        return None
+
+
+def _scope_is_due(entries: list[QuickSnapshot], interval_minutes: float, repo_root: Path) -> bool:
+    """Return True when a new automatic snapshot should be taken for the scope."""
+    age = _newest_snapshot_age_minutes(entries)
+    if age is not None and age < interval_minutes:
+        return False
+    return not entries or _scope_state_needs_snapshot(repo_root, entries)
+
+
 def ensure_baseline(
     *,
     project_id: str,
@@ -115,11 +136,7 @@ def ensure_baseline(
     scope = resolve_scope(repo_root, project_id)
     entries = load_manifest(project_id, scope)
 
-    age = _newest_snapshot_age_minutes(entries)
-    if age is not None and age < policy.baseline_stale_minutes:
-        return None
-
-    if entries and not _scope_state_needs_snapshot(repo_root, entries):
+    if not _scope_is_due(entries, policy.baseline_stale_minutes, repo_root):
         return None
 
     return capture_snapshot(
@@ -267,26 +284,16 @@ def enumerate_snapshot_scopes(
         if not project_dir.is_dir():
             continue
         for scope_dir in sorted(project_dir.iterdir()):
-            manifest_path = scope_dir / "manifest.json"
-            if not manifest_path.is_file():
-                continue
-            try:
-                raw = manifest_path.read_text(encoding="utf-8")
-                entries = [
-                    QuickSnapshot.from_dict(item)
-                    for item in json.loads(raw)
-                    if isinstance(item, dict)
-                ]
-            except Exception:
+            entries = _load_manifest_entries(scope_dir / "manifest.json")
+            if entries is None:
                 continue
             resolved = _scope_from_manifest_entries(entries)
             if resolved is None:
                 continue
             project_id, scope = resolved
             key = _scope_key(project_id, scope)
-            if key in scopes_by_key:
-                continue
-            scopes_by_key[key] = (project_id, scope, "archived")
+            if key not in scopes_by_key:
+                scopes_by_key[key] = (project_id, scope, "archived")
 
     return list(scopes_by_key.values())
 
@@ -306,17 +313,8 @@ def _find_manifest_scope_dir(project_id: str, scope: SnapshotScope) -> Path | No
 
     wanted_key = _scope_key(project_id, scope)
     for scope_dir in sorted(manifests_root.iterdir()):
-        manifest_path = scope_dir / "manifest.json"
-        if not manifest_path.is_file():
-            continue
-        try:
-            raw = manifest_path.read_text(encoding="utf-8")
-            entries = [
-                QuickSnapshot.from_dict(item)
-                for item in json.loads(raw)
-                if isinstance(item, dict)
-            ]
-        except Exception:
+        entries = _load_manifest_entries(scope_dir / "manifest.json")
+        if entries is None:
             continue
         resolved = _scope_from_manifest_entries(entries)
         if resolved is None:
@@ -423,10 +421,7 @@ def sweep_periodic(
         )
 
         entries = load_manifest(project_id, scope)
-        age = _newest_snapshot_age_minutes(entries)
-        if age is not None and age < interval:
-            continue
-        if entries and not _scope_state_needs_snapshot(scope.path, entries):
+        if not _scope_is_due(entries, interval, scope.path):
             continue
 
         try:
@@ -503,8 +498,8 @@ def prune_all(
     drop_scope_keys = _archived_auto_lane_scopes_to_prune(scopes, policy=policy)
 
     for project_id, scope, scope_state in scopes:
-        key = f"{project_id}/{scope.scope_type}:{scope.scope_name}"
-        if _scope_key(project_id, scope) in drop_scope_keys:
+        key = _scope_key(project_id, scope)
+        if key in drop_scope_keys:
             pruned = _prune_entire_scope(
                 project_id=project_id,
                 scope=scope,
