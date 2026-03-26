@@ -18,7 +18,7 @@ from ...services._agent_hub_config import (
     SUMMITFLOW_CLIENT_ID,
     build_agent_hub_headers,
 )
-from ...storage.tasks.core import get_agent_hub_sessions
+from ...storage.tasks.core import add_agent_hub_session, get_agent_hub_sessions
 from .helpers import verify_task_project
 
 logger = get_logger(__name__)
@@ -175,6 +175,55 @@ def _fetch_session_summary(session_id: str) -> dict[str, Any] | None:
         return None
 
 
+def _fetch_task_sessions_by_external_id(
+    project_id: str,
+    task_id: str,
+    page_size: int = 100,
+) -> list[dict[str, Any]]:
+    """Fetch Agent Hub sessions linked by external_id for a task.
+
+    This is the canonical fallback when SummitFlow has not yet persisted
+    `agent_hub_session_ids` for a task-scoped wake session.
+    """
+    client_id = _get_client_id()
+    headers = build_agent_hub_headers(
+        client_id=client_id,
+        default_request_source=DEFAULT_REQUEST_SOURCE,
+    )
+    agent_hub_url = AGENT_HUB_URL
+    url = f"{agent_hub_url}/api/sessions"
+    params = {
+        "project_id": project_id,
+        "external_id": task_id,
+        "page": 1,
+        "page_size": page_size,
+    }
+    try:
+        with httpx.Client(timeout=HTTP_TIMEOUT) as client:
+            response = client.get(url, headers=headers, params=params)
+        if response.status_code >= 400:
+            logger.warning(
+                "Agent Hub session list API error",
+                task_id=task_id,
+                project_id=project_id,
+                status=response.status_code,
+                detail=response.text[:200],
+            )
+            return []
+        payload = dict(response.json())
+        raw_sessions = payload.get("sessions", [])
+        if not isinstance(raw_sessions, list):
+            return []
+        sessions = [dict(session) for session in raw_sessions if isinstance(session, dict)]
+        return [session for session in sessions if session.get("external_id") == task_id]
+    except httpx.ConnectError:
+        logger.warning("Cannot connect to Agent Hub", url=agent_hub_url)
+        return []
+    except Exception as e:
+        logger.error("Failed to fetch Agent Hub sessions by external_id", error=str(e))
+        return []
+
+
 def _build_agent_event(event: dict[str, Any], session_id: str, session_idx: int) -> AgentHubEvent:
     """Build an AgentHubEvent from a raw event dict."""
     return AgentHubEvent(
@@ -234,6 +283,40 @@ def _collect_session_summaries(session_ids: list[str]) -> list[AgentHubSessionSu
     return summaries
 
 
+def _resolve_task_sessions(
+    project_id: str,
+    task_id: str,
+) -> tuple[list[str], list[AgentHubSessionSummary]]:
+    """Resolve task-linked session IDs and summaries, with self-healing fallback.
+
+    Primary source is the persisted task.agent_hub_session_ids array. When that
+    array is empty or incomplete, fall back to Agent Hub sessions discovered by
+    external_id=task_id and persist any missing links back onto the task.
+    """
+    stored_session_ids = get_agent_hub_sessions(task_id)
+    discovered_sessions = _fetch_task_sessions_by_external_id(project_id, task_id)
+    discovered_by_id = {
+        str(session_id): session
+        for session in discovered_sessions
+        if isinstance((session_id := session.get("id")), str) and session_id
+    }
+
+    missing_session_ids = [
+        session_id for session_id in discovered_by_id
+        if session_id not in stored_session_ids
+    ]
+    for session_id in missing_session_ids:
+        add_agent_hub_session(task_id, session_id)
+
+    session_ids = [*stored_session_ids, *missing_session_ids]
+    summaries: list[AgentHubSessionSummary] = []
+    for session_id in session_ids:
+        payload = discovered_by_id.get(session_id) or _fetch_session_summary(session_id)
+        if isinstance(payload, dict):
+            summaries.append(_build_session_summary(payload))
+    return session_ids, summaries
+
+
 @router.get("/projects/{project_id}/tasks/{task_id}/agent-events", response_model=AgentHubEventsResponse)
 async def get_task_agent_events(
     project_id: str,
@@ -250,7 +333,7 @@ async def get_task_agent_events(
     from all Agent Hub sessions linked to this task, ordered by (session, turn, sequence).
     """
     verify_task_project(task_id, project_id)
-    session_ids = get_agent_hub_sessions(task_id)
+    session_ids, sessions = _resolve_task_sessions(project_id, task_id)
     if not session_ids:
         return AgentHubEventsResponse(
             task_id=task_id,
@@ -260,7 +343,6 @@ async def get_task_agent_events(
             total=0,
             max_turn=0,
         )
-    sessions = _collect_session_summaries(session_ids)
     events, total, max_turn = _collect_session_events(session_ids, event_type, turn, page, page_size)
     return AgentHubEventsResponse(
         task_id=task_id,
@@ -276,6 +358,6 @@ async def get_task_agent_events(
 async def get_task_agent_sessions(project_id: str, task_id: str) -> dict[str, Any]:
     """Get Agent Hub session IDs linked to a task."""
     verify_task_project(task_id, project_id)
-    session_ids = get_agent_hub_sessions(task_id)
-    sessions = [summary.model_dump() for summary in _collect_session_summaries(session_ids)]
+    session_ids, summaries = _resolve_task_sessions(project_id, task_id)
+    sessions = [summary.model_dump() for summary in summaries]
     return {"task_id": task_id, "session_ids": session_ids, "count": len(session_ids), "sessions": sessions}
