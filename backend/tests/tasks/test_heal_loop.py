@@ -81,7 +81,12 @@ class TestMergeBlockedWhenTaskRunning:
         mock_checkout.return_value = None
         mock_merge.return_value = MagicMock(success=True, merge_sha="abc123", conflicting_files=None)
         mock_delete_branch.return_value = True
-        mock_validation.return_value = True
+        mock_validation.return_value = {
+            "status": "passed",
+            "passed": True,
+            "should_rollback": False,
+            "detail": None,
+        }
         mock_git.return_value = MagicMock(returncode=0, stdout="")
 
         result = merge_and_cleanup_task_worktree("task-1", "test-project")

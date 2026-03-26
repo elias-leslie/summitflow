@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+from typing import Literal, TypedDict
 
 from app.storage import tasks as task_store
 from app.storage.agent_configs_quality import build_dt_command
@@ -12,6 +13,15 @@ from ..exec_modules.quality_utils import find_dev_tools
 from .git_operations import revert_merge_commit
 
 logger = get_logger(__name__)
+
+
+class PostMergeValidationResult(TypedDict):
+    """Outcome of post-merge validation."""
+
+    status: Literal["passed", "failed", "timed_out", "skipped", "error"]
+    passed: bool
+    should_rollback: bool
+    detail: str | None
 
 
 def _log_validation_failure(task_id: str, output: str) -> None:
@@ -44,14 +54,23 @@ def _log_validation_skip(task_id: str, reason: str) -> None:
     )
 
 
-def _run_dt_quick(project_root: str, task_id: str, project_id: str) -> bool:
-    """Run configured dt validation and return True on pass or safe skip."""
+def _run_dt_quick(
+    project_root: str,
+    task_id: str,
+    project_id: str,
+) -> PostMergeValidationResult:
+    """Run configured dt validation and classify the outcome."""
     from app.storage import log_task_event
 
     cmd = _resolve_dt_command(project_id)
     if not cmd:
         _log_validation_skip(task_id, "dt not available")
-        return True
+        return {
+            "status": "skipped",
+            "passed": True,
+            "should_rollback": False,
+            "detail": "dt not available",
+        }
 
     result = subprocess.run(
         cmd,
@@ -64,18 +83,28 @@ def _run_dt_quick(project_root: str, task_id: str, project_id: str) -> bool:
     if result.returncode == 0:
         log_task_event(task_id, "Post-merge validation: PASSED")
         logger.info("Post-merge validation passed", extra={"task_id": task_id})
-        return True
+        return {
+            "status": "passed",
+            "passed": True,
+            "should_rollback": False,
+            "detail": None,
+        }
 
     output = (result.stdout + result.stderr)[-500:]
     _log_validation_failure(task_id, output)
-    return False
+    return {
+        "status": "failed",
+        "passed": False,
+        "should_rollback": True,
+        "detail": output,
+    }
 
 
 def run_post_merge_validation(
     task_id: str,
     project_root: str,
     project_id: str,
-) -> bool:
+) -> PostMergeValidationResult:
     """Run quality checks on the merged main branch.
 
     Runs the configured dt quality gate on the project after merge.
@@ -87,7 +116,7 @@ def run_post_merge_validation(
         project_id: Project ID
 
     Returns:
-        True if validation passed, False otherwise
+        Structured validation outcome.
     """
     from app.storage import log_task_event
 
@@ -96,17 +125,32 @@ def run_post_merge_validation(
     except subprocess.TimeoutExpired:
         log_task_event(task_id, "Post-merge validation: TIMEOUT (120s)")
         logger.warning("Post-merge validation timed out", extra={"task_id": task_id})
-        return False
+        return {
+            "status": "timed_out",
+            "passed": False,
+            "should_rollback": False,
+            "detail": "validation timed out after 120s",
+        }
     except FileNotFoundError as e:
         _log_validation_skip(task_id, f"validation tool missing ({e})")
-        return True
+        return {
+            "status": "skipped",
+            "passed": True,
+            "should_rollback": False,
+            "detail": f"validation tool missing ({e})",
+        }
     except Exception as e:
         log_task_event(task_id, f"Post-merge validation: ERROR - {e}")
         logger.warning(
             "Post-merge validation error",
             extra={"task_id": task_id, "error": str(e)},
         )
-        return False
+        return {
+            "status": "error",
+            "passed": False,
+            "should_rollback": False,
+            "detail": str(e),
+        }
 
 
 def _apply_rollback_side_effects(

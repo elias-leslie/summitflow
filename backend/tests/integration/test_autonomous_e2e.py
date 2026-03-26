@@ -1199,7 +1199,12 @@ class TestAutoRollbackE2E:
             ),
             patch(
                 "app.tasks.autonomous.cleanup._run_post_merge_validation",
-                return_value=True,
+                return_value={
+                    "status": "passed",
+                    "passed": True,
+                    "should_rollback": False,
+                    "detail": None,
+                },
             ),
         ):
             result = merge_and_cleanup_task_worktree(task_id, test_project_id)
@@ -1249,7 +1254,12 @@ class TestAutoRollbackE2E:
             ),
             patch(
                 "app.tasks.autonomous.cleanup._run_post_merge_validation",
-                return_value=False,
+                return_value={
+                    "status": "failed",
+                    "passed": False,
+                    "should_rollback": True,
+                    "detail": "FAIL",
+                },
             ),
             patch(
                 "app.tasks.autonomous.cleanup._auto_rollback",

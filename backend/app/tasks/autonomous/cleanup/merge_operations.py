@@ -100,6 +100,7 @@ def _safe_finalize_branch_without_worktree(task_id: str, project_id: str) -> Mer
             "base_branch": base_branch,
             "branch_deleted": True,
             "post_merge_valid": True,
+            "post_merge_validation_status": "skipped",
         }
     _clear_checkpoint_residue(task_id, project_id)
     return {
@@ -202,8 +203,8 @@ def _finalize_merge(
     remove_task_worktree(task_id, delete_branch=False, project_id=project_id)
     _git(["git", "worktree", "prune"], project_root)
     branch_deleted = delete_task_branch(project_root, task_branch, task_id)
-    validation_passed = run_post_merge_validation(task_id, project_root, project_id)
-    if not validation_passed and auto_rollback(task_id, project_root, project_id, task_branch):
+    validation = run_post_merge_validation(task_id, project_root, project_id)
+    if validation["should_rollback"] and auto_rollback(task_id, project_root, project_id, task_branch):
         return {
             "task_id": task_id, "status": "rolled_back",
             "task_branch": task_branch, "base_branch": base_branch,
@@ -213,7 +214,9 @@ def _finalize_merge(
     return {
         "task_id": task_id, "status": "merged",
         "task_branch": task_branch, "base_branch": base_branch,
-        "branch_deleted": branch_deleted, "post_merge_valid": validation_passed,
+        "branch_deleted": branch_deleted,
+        "post_merge_valid": validation["passed"],
+        "post_merge_validation_status": validation["status"],
     }
 
 

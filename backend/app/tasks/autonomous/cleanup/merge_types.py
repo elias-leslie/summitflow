@@ -14,6 +14,7 @@ class MergeSuccess(TypedDict):
     base_branch: str
     branch_deleted: bool
     post_merge_valid: bool
+    post_merge_validation_status: Literal["passed", "failed", "timed_out", "skipped", "error"]
 
 
 class MergeBlocked(TypedDict):
