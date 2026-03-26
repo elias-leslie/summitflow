@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from pathlib import Path
 
@@ -36,6 +37,7 @@ async def _communicate_with_timeout(
         try:
             stdout, stderr = await proc.communicate()
         except Exception:
+            logging.getLogger(__name__).warning("Failed to read output after killing timed-out process", exc_info=True)
             stdout, stderr = b"", b""
         detail = f"Timed out after {timeout:.2f}s" if timeout is not None else "Timed out"
         return stdout.decode(), detail, 124

@@ -152,6 +152,10 @@ async def _stream_logs(svc: dict, tail: int):
             yield f"data: {line.decode().rstrip()}\n\n"
     finally:
         proc.terminate()
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=5)
+        except (TimeoutError, ProcessLookupError):
+            proc.kill()
 
 
 async def _fetch_logs(svc: dict, service: str, tail: int) -> dict[str, str]:
