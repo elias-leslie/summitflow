@@ -45,6 +45,8 @@ PROJECTS=(
     [portfolio-ai]="portfolio-backend.service|portfolio-frontend.service|portfolio-hatchet-worker.service||8000|3000|backend|frontend"
     [terminal]="summitflow-terminal.service|summitflow-terminal-frontend.service|||8002|3002|.|frontend"
     [monkey-fight]="|monkey-fight.service|||0|4001|.|."
+    [test2]="test2-backend.service|test2-frontend.service|||9002|4002|backend|frontend"
+    [test3]="test3-backend.service|test3-frontend.service|||9003|4003|backend|frontend"
 )
 
 INCLUDE_ALL_WORKERS=false
@@ -73,7 +75,7 @@ show_projects() {
     echo "Usage: rebuild.sh [--detach] [--include-all-workers] <project>"
     echo ""
     echo "Available projects:"
-    for p in summitflow agent-hub portfolio-ai terminal monkey-fight; do
+    for p in $(printf '%s\n' "${!PROJECTS[@]}" | sort); do
         [ -n "${PROJECTS[$p]}" ] || continue
         root="$(resolve_project_root "$p" 2>/dev/null || echo "unresolved")"
         IFS='|' read -r _ _ _ _ bp fp _ _ <<< "${PROJECTS[$p]}"
@@ -341,7 +343,7 @@ if [ "$STATUS_MODE" = true ]; then
     fi
     # All projects
     errors=0
-    for p in summitflow agent-hub portfolio-ai terminal monkey-fight; do
+    for p in $(printf '%s\n' "${!PROJECTS[@]}" | sort); do
         show_status "$p" || ((errors++))
     done
     exit $errors

@@ -11,7 +11,8 @@ import pytest
 def test_reset_testbed_to_baseline_skips_unknown_global_rebuild(monkeypatch, tmp_path: Path) -> None:
     from cli.lib.testbed_backups import reset_testbed_to_baseline
 
-    project_root = tmp_path / "test2"
+    project_id = "scratchbox"
+    project_root = tmp_path / project_id
     project_root.mkdir()
 
     monkeypatch.setattr(
@@ -19,7 +20,7 @@ def test_reset_testbed_to_baseline_skips_unknown_global_rebuild(monkeypatch, tmp
         lambda project_id, backup_id=None: {
             "id": "bkp-123",
             "project_id": project_id,
-            "name": "test2-baseline.tar.gz",
+            "name": f"{project_id}-baseline.tar.gz",
             "db_size_bytes": 0,
             "verification_json": {
                 "has_db": False,
@@ -37,16 +38,16 @@ def test_reset_testbed_to_baseline_skips_unknown_global_rebuild(monkeypatch, tmp
 
     def _fake_run(cmd, cwd=None, capture_output=True, text=True, check=False):
         del cwd, capture_output, text, check
-        assert cmd == ["rebuild.sh", "test2"]
-        return subprocess.CompletedProcess(cmd, 1, "", "Unknown project: test2")
+        assert cmd == ["rebuild.sh", project_id]
+        return subprocess.CompletedProcess(cmd, 1, "", f"Unknown project: {project_id}")
 
     monkeypatch.setattr("cli.lib.testbed_backups.subprocess.run", _fake_run)
 
-    result = reset_testbed_to_baseline("test2", rebuild=True)
+    result = reset_testbed_to_baseline(project_id, rebuild=True)
 
     assert result["rebuild_ran"] is False
     assert result["rebuild_method"] == "skipped"
-    assert "Unknown project 'test2'" in str(result["rebuild_reason"])
+    assert f"Unknown project '{project_id}'" in str(result["rebuild_reason"])
 
 
 def test_preview_testbed_reset_blocks_when_called_inside_target_root(
