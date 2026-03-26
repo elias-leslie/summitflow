@@ -275,7 +275,10 @@ async def build_project_pulse(project_id: str) -> dict[str, Any]:
         session
         for session in stale_sessions
         if isinstance(session.get("live_activity"), dict)
-        and bool(session["live_activity"].get("reapable"))
+        and (
+            bool(session["live_activity"].get("reapable"))
+            or str(session["live_activity"].get("lifecycle_state") or "").strip() == "reapable"
+        )
     ]
     raw_running_tasks = [
         _normalize_running_task(task)
