@@ -4,12 +4,10 @@ import { GitClient } from './GitClient'
 
 const hookMocks = vi.hoisted(() => ({
   useGitStatus: vi.fn(),
-  useGitCleanupStatus: vi.fn(),
 }))
 
 vi.mock('./useGitStatus', () => ({
   useGitStatus: hookMocks.useGitStatus,
-  useGitCleanupStatus: hookMocks.useGitCleanupStatus,
 }))
 
 vi.mock('@/components/git/ConflictAlerts', () => ({
@@ -23,7 +21,7 @@ vi.mock('@/components/git/ProjectRow', () => ({
 }))
 
 describe('GitClient', () => {
-  it('uses canonical cleanup summary counts for the header pills', () => {
+  it('derives the header pills from repo workspace summaries', () => {
     hookMocks.useGitStatus.mockReturnValue({
       data: {
         repositories: [
@@ -37,15 +35,36 @@ describe('GitClient', () => {
             behind: 0,
             state: 'clean',
             workspace_summary: {
-              active_worktrees: 3,
+              active_worktrees: 5,
               dirty_worktrees: 1,
               dirty_main_repo: true,
               branches_with_worktrees: 3,
-              task_branches: 2,
-              orphan_branches: 0,
-              prunable_branches: 0,
+              task_branches: 4,
+              orphan_branches: 2,
+              prunable_branches: 1,
               needs_cleanup: true,
               worktree_task_ids: ['task-1'],
+            },
+          },
+          {
+            path: '/srv/workspaces/projects/agent-hub',
+            name: 'agent-hub',
+            project_id: 'agent-hub',
+            branch: 'main',
+            uncommitted: 0,
+            ahead: 1,
+            behind: 0,
+            state: 'ahead',
+            workspace_summary: {
+              active_worktrees: 10,
+              dirty_worktrees: 8,
+              dirty_main_repo: false,
+              branches_with_worktrees: 8,
+              task_branches: 9,
+              orphan_branches: 1,
+              prunable_branches: 3,
+              needs_cleanup: true,
+              worktree_task_ids: ['task-2'],
             },
           },
         ],
@@ -53,31 +72,11 @@ describe('GitClient', () => {
       isLoading: false,
       isError: false,
     })
-    hookMocks.useGitCleanupStatus.mockReturnValue({
-      data: {
-        payload: {
-          summary: {
-            repos: 8,
-            repos_needing_cleanup: 7,
-            active_worktrees: 15,
-            dirty_worktrees: 10,
-            stale_checkpoints: 0,
-            snapshot_residue: 1,
-            orphan_task_branches: 1,
-            prunable_task_branches: 1,
-          },
-          repositories: [],
-          worktrees: [],
-          total: 15,
-        },
-        compact: 'CLEANUP[all]:repos=8 needs_cleanup=7 worktrees=15 dirty=10',
-      },
-    })
 
     render(<GitClient />)
 
     expect(screen.getByText('10')).toBeInTheDocument()
     expect(screen.getByText('15')).toBeInTheDocument()
-    expect(screen.getByText('7')).toBeInTheDocument()
+    expect(screen.getByText('2')).toBeInTheDocument()
   })
 })

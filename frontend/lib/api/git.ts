@@ -109,13 +109,6 @@ export async function fetchGitStatus(): Promise<GitStatusResponse> {
   )
 }
 
-export async function fetchGitCleanupStatus(): Promise<GitCleanupStatusResponse> {
-  return fetchWithErrorHandling<GitCleanupStatusResponse>(
-    `${getApiBaseUrl()}/api/git/cleanup-status`,
-    { errorMessage: 'Failed to fetch cleanup status' },
-  )
-}
-
 /**
  * Get git status for a specific project.
  */

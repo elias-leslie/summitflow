@@ -106,6 +106,8 @@ describe('ProjectRow', () => {
 
     renderRow()
 
+    expect(screen.queryByTestId('dashboard-content')).not.toBeInTheDocument()
+
     // Click the row header to expand
     const row = screen.getByRole('button', { name: /repo-folder/i })
     fireEvent.click(row)

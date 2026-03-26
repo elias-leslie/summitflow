@@ -12,7 +12,7 @@ import {
 import { motion } from 'motion/react'
 import { ConflictAlerts } from '@/components/git/ConflictAlerts'
 import { ProjectRow } from '@/components/git/ProjectRow'
-import { useGitCleanupStatus, useGitStatus } from './useGitStatus'
+import { useGitStatus } from './useGitStatus'
 
 const fadeUp = {
   initial: { opacity: 0, y: 14 },
@@ -47,33 +47,25 @@ function StatPill({
 
 export function GitClient() {
   const { data: gitStatus, isLoading, isError } = useGitStatus()
-  const { data: cleanupStatus } = useGitCleanupStatus()
   const repos = gitStatus?.repositories ?? []
-  const cleanupSummary = cleanupStatus?.payload.summary
 
   const dirtyRepos = repos.filter(
     (r) => r.state === 'dirty' || r.state === 'ahead',
   ).length
-  const activeWorktreesFallback = repos.reduce(
+  const worktreeCount = repos.reduce(
     (s, r) => s + (r.workspace_summary?.active_worktrees ?? 0),
     0,
   )
-  const dirtyWorktreesFallback = repos.reduce(
+  const dirtyWorktreeCount = repos.reduce(
     (s, r) => s + (r.workspace_summary?.dirty_worktrees ?? 0),
     0,
   )
-  const orphanBranches = repos.reduce(
-    (s, r) => s + (r.workspace_summary?.orphan_branches ?? 0),
+  const dirtyMainRepoCount = repos.reduce(
+    (s, r) => s + (r.workspace_summary?.dirty_main_repo ? 1 : 0),
     0,
   )
-  const prunableBranches = repos.reduce(
-    (s, r) => s + (r.workspace_summary?.prunable_branches ?? 0),
-    0,
-  )
-  const worktreeCount = cleanupSummary?.active_worktrees ?? activeWorktreesFallback
-  const dirtyCount = cleanupSummary?.dirty_worktrees ?? dirtyWorktreesFallback
-  const cleanupCount =
-    cleanupSummary?.repos_needing_cleanup ?? orphanBranches + prunableBranches
+  const dirtyCount = dirtyWorktreeCount + dirtyMainRepoCount
+  const cleanupCount = repos.filter((r) => r.workspace_summary?.needs_cleanup).length
   const hasSignals = dirtyCount + worktreeCount + cleanupCount + dirtyRepos > 0
 
   return (

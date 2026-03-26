@@ -238,7 +238,7 @@ export function ProjectRow({ repo }: ProjectRowProps) {
       >
         <div className="overflow-hidden">
           <div className="border-t border-slate-800/40 px-4 py-3">
-            <DashboardContent projectId={repoKey} />
+            {expanded ? <DashboardContent projectId={repoKey} /> : null}
           </div>
         </div>
       </div>
