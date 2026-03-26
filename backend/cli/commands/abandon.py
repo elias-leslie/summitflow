@@ -64,4 +64,4 @@ def abandon_command(
         output_success(f"Subtask {id} abandoned. Branch deleted.")
     else:
         abandon_task(client, id, confirm, reason)
-        output_success(f"Task {id} abandoned. Branches deleted, status set to 'abandoned'.")
+        output_success(f"Task {id} abandoned. Branches deleted, status set to 'cancelled'.")

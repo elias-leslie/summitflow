@@ -164,6 +164,17 @@ class TestUpdateTaskStatus:
         assert result["status"] == "running"
         assert result["completed_at"] is None
 
+    def test_status_failed_to_cancelled_allowed(self, test_task: dict[str, Any]) -> None:
+        """Failed tasks should be abandonable without lying about the final state."""
+        task_store.update_task_status(test_task["id"], "running")
+        task_store.update_task_status(test_task["id"], "failed")
+
+        result = task_store.update_task_status(test_task["id"], "cancelled")
+
+        assert result is not None
+        assert result["status"] == "cancelled"
+        assert result["completed_at"] is not None
+
     def test_status_cancelled_to_pending_reopens_task(self, test_task: dict[str, Any]) -> None:
         """Cancelled tasks should be reopenable."""
         task_store.update_task_status(test_task["id"], "cancelled")

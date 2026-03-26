@@ -17,7 +17,7 @@ VALID_TRANSITIONS: dict[str, set[str]] = {
     "pending": {"running", "cancelled"},
     "running": {"completed", "failed", "cancelled", "pending"},
     "completed": {"pending"},
-    "failed": {"pending", "running"},
+    "failed": {"pending", "running", "cancelled"},
     "cancelled": {"pending"},
 }
 
