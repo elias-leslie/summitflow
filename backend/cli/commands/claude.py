@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 import subprocess
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -22,6 +24,17 @@ _AGENT_HUB_PROJECT_ID = "agent-hub"
 _DEFAULT_MODEL = "claude-sonnet-4-6"
 _DEFAULT_TIMEOUT_SECONDS = 1800
 _DEFAULT_SOURCE = "st-cli"
+_DEFAULT_MAX_SUBAGENTS = 4
+
+
+@dataclass(frozen=True)
+class WorkerDispatch:
+    index: int
+    task_id: str
+    project_id: str
+    project_root: Path
+    command: list[str]
+    cwd: Path
 
 
 def _fetch_task(task_id: str) -> dict[str, Any]:
@@ -146,6 +159,141 @@ def _run_worker(*, command: list[str], cwd: Path) -> int:
     return int(result.returncode)
 
 
+def _resolve_task_worktree(task_id: str) -> Path:
+    """Resolve the active worktree path for a task."""
+    task = _fetch_task(task_id)
+    worktree = task.get("worktree")
+    if not isinstance(worktree, dict):
+        output_error(f"Task {task_id} has no active worktree to commit/close")
+        raise typer.Exit(1)
+    worktree_path = worktree.get("path")
+    if not isinstance(worktree_path, str) or not worktree_path.strip():
+        output_error(f"Task {task_id} returned an invalid worktree path")
+        raise typer.Exit(1)
+    return Path(worktree_path).resolve()
+
+
+def _prepare_worker_dispatch(
+    *,
+    task_id: str,
+    model: str,
+    timeout_seconds: int,
+    claim_if_needed: bool,
+    allow_unready: bool,
+    feedback_text: str | None,
+    index: int = 0,
+) -> WorkerDispatch:
+    """Prepare one Claude worker dispatch with resolved project roots."""
+    task = _fetch_task(task_id)
+    resolved_task_id = str(task.get("id", task_id))
+    project_id = str(task.get("project_id") or "")
+    if not project_id:
+        output_error(f"Task {resolved_task_id} has no project_id")
+        raise typer.Exit(1)
+
+    _validate_task_readiness(
+        task_id=resolved_task_id,
+        project_id=project_id,
+        allow_unready=allow_unready,
+    )
+    project_root = _resolve_project_root(project_id)
+    python_bin, script_path = _resolve_agent_hub_paths()
+    command = _build_worker_command(
+        python_bin=python_bin,
+        script_path=script_path,
+        task_id=resolved_task_id,
+        project_id=project_id,
+        project_root=project_root,
+        model=model,
+        timeout_seconds=timeout_seconds,
+        claim_if_needed=claim_if_needed,
+        feedback_text=feedback_text,
+    )
+    return WorkerDispatch(
+        index=index,
+        task_id=resolved_task_id,
+        project_id=project_id,
+        project_root=project_root,
+        command=command,
+        cwd=script_path.parent.parent,
+    )
+
+
+def _run_dispatch(spec: WorkerDispatch) -> tuple[WorkerDispatch, int]:
+    """Execute one prepared worker dispatch."""
+    return spec, _run_worker(command=spec.command, cwd=spec.cwd)
+
+
+def _run_batch_workers(
+    dispatches: list[WorkerDispatch],
+    *,
+    max_subagents: int,
+    stop_on_error: bool,
+) -> list[tuple[WorkerDispatch, int]]:
+    """Run prepared worker dispatches with bounded parallelism."""
+    if not dispatches:
+        return []
+
+    results: list[tuple[WorkerDispatch, int]] = []
+    limit = max(1, min(max_subagents, len(dispatches)))
+    next_index = 0
+    stop_submitting = False
+
+    with ThreadPoolExecutor(max_workers=limit) as executor:
+        futures: dict[Any, WorkerDispatch] = {}
+
+        while next_index < len(dispatches) and len(futures) < limit:
+            spec = dispatches[next_index]
+            next_index += 1
+            futures[executor.submit(_run_dispatch, spec)] = spec
+
+        while futures:
+            done, _ = wait(futures, return_when=FIRST_COMPLETED)
+            for future in done:
+                spec = futures.pop(future)
+                completed_spec, exit_code = future.result()
+                results.append((completed_spec, exit_code))
+                if stop_on_error and exit_code != 0:
+                    stop_submitting = True
+            while (
+                not stop_submitting
+                and next_index < len(dispatches)
+                and len(futures) < limit
+            ):
+                spec = dispatches[next_index]
+                next_index += 1
+                futures[executor.submit(_run_dispatch, spec)] = spec
+
+    results.sort(key=lambda item: item[0].index)
+    return results
+
+
+def _commit_and_done_task(spec: WorkerDispatch) -> int:
+    """Commit/push the task worktree, then run canonical closeout."""
+    worktree_path = _resolve_task_worktree(spec.task_id)
+    commit_result = subprocess.run(
+        [
+            "commit.sh",
+            "--current",
+            "--push",
+            "--task",
+            spec.task_id,
+            "--msg",
+            f"claude(batch): complete {spec.task_id}",
+        ],
+        cwd=worktree_path,
+        check=False,
+    )
+    if commit_result.returncode != 0:
+        return int(commit_result.returncode)
+    done_result = subprocess.run(
+        ["st", "done", spec.task_id],
+        cwd=spec.project_root,
+        check=False,
+    )
+    return int(done_result.returncode)
+
+
 @app.command("task")
 def run_task(
     task_id: Annotated[str, _Arg(help="Task ID to dispatch through the Claude worker wrapper")],
@@ -172,33 +320,98 @@ def run_task(
     ] = None,
 ) -> None:
     """Run a task through the canonical Agent Hub Claude worker wrapper."""
-    task = _fetch_task(task_id)
-    resolved_task_id = str(task.get("id", task_id))
-    project_id = str(task.get("project_id") or "")
-    if not project_id:
-        output_error(f"Task {resolved_task_id} has no project_id")
-        raise typer.Exit(1)
-
-    _validate_task_readiness(
-        task_id=resolved_task_id,
-        project_id=project_id,
-        allow_unready=allow_unready,
-    )
-    project_root = _resolve_project_root(project_id)
-    python_bin, script_path = _resolve_agent_hub_paths()
     feedback = _resolve_feedback_text(feedback_text, feedback_file)
-    command = _build_worker_command(
-        python_bin=python_bin,
-        script_path=script_path,
-        task_id=resolved_task_id,
-        project_id=project_id,
-        project_root=project_root,
+    dispatch = _prepare_worker_dispatch(
+        task_id=task_id,
         model=model,
         timeout_seconds=timeout_seconds,
         claim_if_needed=claim_if_needed,
+        allow_unready=allow_unready,
         feedback_text=feedback,
     )
-
-    exit_code = _run_worker(command=command, cwd=script_path.parent.parent)
+    exit_code = _run_worker(command=dispatch.command, cwd=dispatch.cwd)
     if exit_code != 0:
         raise typer.Exit(exit_code)
+
+
+@app.command("batch")
+def run_batch(
+    task_ids: Annotated[list[str], _Arg(help="Task IDs to dispatch through the Claude worker wrapper")],
+    model: Annotated[str, _Opt("--model", help="Claude model override")] = _DEFAULT_MODEL,
+    timeout_seconds: Annotated[
+        int,
+        _Opt("--timeout-seconds", min=1, help="Worker timeout budget in seconds"),
+    ] = _DEFAULT_TIMEOUT_SECONDS,
+    max_subagents: Annotated[
+        int,
+        _Opt("--max-subagents", min=1, help="Maximum concurrent Claude worker runs"),
+    ] = _DEFAULT_MAX_SUBAGENTS,
+    claim_if_needed: Annotated[
+        bool,
+        _Opt("--claim-if-needed/--no-claim-if-needed", help="Claim tasks if needed before dispatch"),
+    ] = True,
+    allow_unready: Annotated[
+        bool,
+        _Opt("--allow-unready", help="Skip execution-readiness validation"),
+    ] = False,
+    stop_on_error: Annotated[
+        bool,
+        _Opt("--stop-on-error/--keep-going", help="Stop submitting new tasks after the first worker failure"),
+    ] = False,
+    commit_and_done: Annotated[
+        bool,
+        _Opt("--commit-and-done/--no-commit-and-done", help="Commit/push each successful task worktree and run st done"),
+    ] = False,
+    feedback_text: Annotated[
+        str | None,
+        _Opt("--feedback-text", help="Inline evaluator feedback for a redrive"),
+    ] = None,
+    feedback_file: Annotated[
+        Path | None,
+        _Opt("--feedback-file", help="Read evaluator feedback from a file"),
+    ] = None,
+) -> None:
+    """Run multiple tasks through the canonical Claude worker wrapper with bounded parallelism."""
+    if not task_ids:
+        output_error("Provide at least one task id.")
+        raise typer.Exit(1)
+
+    feedback = _resolve_feedback_text(feedback_text, feedback_file)
+    dispatches = [
+        _prepare_worker_dispatch(
+            task_id=task_id,
+            model=model,
+            timeout_seconds=timeout_seconds,
+            claim_if_needed=claim_if_needed,
+            allow_unready=allow_unready,
+            feedback_text=feedback,
+            index=index,
+        )
+        for index, task_id in enumerate(task_ids)
+    ]
+
+    results = _run_batch_workers(
+        dispatches,
+        max_subagents=max_subagents,
+        stop_on_error=stop_on_error,
+    )
+    worker_failed = False
+    closeout_failed = False
+
+    for spec, exit_code in results:
+        if exit_code != 0:
+            worker_failed = True
+            output_error(f"Worker failed for {spec.task_id} (exit {exit_code})")
+            continue
+        typer.echo(f"Worker completed for {spec.task_id}")
+        if not commit_and_done:
+            continue
+        closeout_code = _commit_and_done_task(spec)
+        if closeout_code != 0:
+            closeout_failed = True
+            output_error(f"Closeout failed for {spec.task_id} (exit {closeout_code})")
+        else:
+            typer.echo(f"Committed and closed {spec.task_id}")
+
+    if worker_failed or closeout_failed:
+        raise typer.Exit(1)

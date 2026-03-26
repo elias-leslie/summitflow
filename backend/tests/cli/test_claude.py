@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from typer.testing import CliRunner
 
-from cli.commands.claude import app
+from cli.commands.claude import WorkerDispatch, app
 
 runner = CliRunner()
 
@@ -45,7 +45,7 @@ def test_claude_task_invokes_worker_with_resolved_roots(tmp_path: Path) -> None:
         mock_client.validate_ready.return_value = {"ready": True}
         mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0)
 
-        result = runner.invoke(app, ["task-abc", "--timeout-seconds", "900"])
+        result = runner.invoke(app, ["task", "task-abc", "--timeout-seconds", "900"])
 
     assert result.exit_code == 0
     mock_run.assert_called_once()
@@ -85,7 +85,7 @@ def test_claude_task_passes_feedback_file_contents(tmp_path: Path) -> None:
         mock_client.validate_ready.return_value = {"ready": True}
         mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0)
 
-        result = runner.invoke(app, ["task-xyz", "--feedback-file", str(feedback_file)])
+        result = runner.invoke(app, ["task", "task-xyz", "--feedback-file", str(feedback_file)])
 
     assert result.exit_code == 0
     command = mock_run.call_args.args[0]
@@ -103,7 +103,7 @@ def test_claude_task_blocks_unready_task(tmp_path: Path) -> None:
             "suggestions": ["Run st context task-abc and fill task spirit"],
         }
 
-        result = runner.invoke(app, ["task-abc"])
+        result = runner.invoke(app, ["task", "task-abc"])
 
     assert result.exit_code == 1
     assert "not execution-ready" in result.output
@@ -111,8 +111,60 @@ def test_claude_task_blocks_unready_task(tmp_path: Path) -> None:
 
 
 def test_claude_task_help_mentions_feedback_options() -> None:
-    result = runner.invoke(app, ["--help"])
+    result = runner.invoke(app, ["task", "--help"])
 
     assert result.exit_code == 0
     assert "--feedback-text" in result.output
     assert "--feedback-file" in result.output
+
+
+def test_claude_batch_runs_multiple_tasks_and_optional_closeout() -> None:
+    dispatches = [
+        WorkerDispatch(
+            index=0,
+            task_id="task-a",
+            project_id="summitflow",
+            project_root=Path("/tmp/project-a"),
+            command=["worker-a"],
+            cwd=Path("/tmp/agent-hub/backend"),
+        ),
+        WorkerDispatch(
+            index=1,
+            task_id="task-b",
+            project_id="agent-hub",
+            project_root=Path("/tmp/project-b"),
+            command=["worker-b"],
+            cwd=Path("/tmp/agent-hub/backend"),
+        ),
+    ]
+
+    with (
+        patch("cli.commands.claude._prepare_worker_dispatch", side_effect=dispatches) as mock_prepare,
+        patch("cli.commands.claude._run_batch_workers", return_value=[(dispatches[0], 0), (dispatches[1], 0)]),
+        patch("cli.commands.claude._commit_and_done_task", return_value=0) as mock_closeout,
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "batch",
+                "task-a",
+                "task-b",
+                "--max-subagents",
+                "2",
+                "--commit-and-done",
+            ],
+        )
+
+    assert result.exit_code == 0
+    assert mock_prepare.call_count == 2
+    assert mock_closeout.call_count == 2
+    assert "Committed and closed task-a" in result.output
+    assert "Committed and closed task-b" in result.output
+
+
+def test_claude_batch_help_mentions_batch_flags() -> None:
+    result = runner.invoke(app, ["batch", "--help"])
+
+    assert result.exit_code == 0
+    assert "--max-subagents" in result.output
+    assert "--commit-and-done" in result.output
