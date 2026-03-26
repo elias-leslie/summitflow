@@ -87,19 +87,20 @@ def _run_smart_prereqs(client: STClient, task_id: str, project_id: str | None) -
     _auto_verify_readiness(client, task_id)
 
 
-def _bridge_pending_to_running(client: STClient, task_id: str) -> None:
-    """Advance a pending task to running before completing.
+def _completion_status_kwargs(client: STClient, task_id: str) -> dict[str, bool]:
+    """Return the completion update kwargs needed for the current task state.
 
-    A task claimed but never explicitly started cannot transition directly
-    from pending to completed. This bridges the gap silently so the merge
-    result is recorded correctly without requiring --admin recovery.
+    Claimed tasks can still be left in ``pending`` when completion runs.
+    In that case, complete them through the existing skip_gates path, which
+    also disables transition validation for the final status update.
     """
     try:
         task = client.get_task(task_id)
-        if task.get("status") == "pending":
-            client.update_status(task_id, "running")
     except APIError:
-        pass
+        return {}
+    if task.get("status") == "pending":
+        return {"skip_gates": True}
+    return {}
 
 
 def _perform_completion(
@@ -126,9 +127,8 @@ def _perform_completion(
         _run_smart_prereqs(client, task_id, project_id)
 
     merge_task_branch(task_id, project_id=project_id)
-    _bridge_pending_to_running(client, task_id)
     try:
-        client.update_status(task_id, "completed")
+        client.update_status(task_id, "completed", **_completion_status_kwargs(client, task_id))
     except APIError as e:
         output_warning(
             f"Code merged but status update failed: {e.detail}\n"

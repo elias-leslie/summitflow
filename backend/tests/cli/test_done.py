@@ -529,7 +529,7 @@ class TestCompleteTaskSmart:
     @patch("cli.commands.done_task.is_working_tree_clean", return_value=True)
     @patch("cli.commands.done_task._publish_completed_work")
     @patch("cli.commands.done_task.output_warning")
-    def test_pending_task_bridges_through_running_on_complete(
+    def test_pending_task_completes_with_skip_gates(
         self,
         mock_warning: MagicMock,
         mock_publish: MagicMock,
@@ -541,7 +541,7 @@ class TestCompleteTaskSmart:
         mock_capture: MagicMock,
         mock_snapshot: MagicMock,
     ) -> None:
-        """A pending task is bridged through running before completed — no warning emitted."""
+        """A pending task completes directly with skip_gates enabled."""
         mock_snapshot.return_value = {"worktree_path": None, "project_id": "test"}
         mock_sync.return_value = MagicMock(synced=[], syncable=[], skipped=[])
         client = self._setup_mocks()
@@ -551,10 +551,7 @@ class TestCompleteTaskSmart:
         result = complete_task(client, "task-123")
 
         assert result["merged"]
-        status_calls = [c.args[1] for c in client.update_status.call_args_list]
-        assert "running" in status_calls
-        assert "completed" in status_calls
-        assert status_calls.index("running") < status_calls.index("completed")
+        client.update_status.assert_called_once_with("task-123", "completed", skip_gates=True)
         mock_warning.assert_not_called()
 
     @patch("cli.commands.done_task.get_snapshot_info")
