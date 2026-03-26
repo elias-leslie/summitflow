@@ -75,18 +75,6 @@ def _claim_task(
         output_error(f"Failed to create checkpoint: {e}")
         raise typer.Exit(1) from None
 
-    if meta.worktree_path:
-        try:
-            adopt_dirty_changes_to_worktree(meta.worktree_path)
-        except Exception as e:
-            remove_snapshot(task_id, remove_worktree=True, project_id=project_id)
-            try:
-                client.release_task(task_id)
-            except Exception as release_error:
-                output_warning(f"Failed to release task claim after adoption error: {release_error}")
-            output_error(f"Failed to adopt current changes into worktree: {e}")
-            raise typer.Exit(1) from None
-
     return {
         "task_id": task_id,
         "action": "claimed",

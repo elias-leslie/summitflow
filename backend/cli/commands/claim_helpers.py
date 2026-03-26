@@ -118,7 +118,7 @@ def require_claim_safe_tree() -> None:
     if _git_status_lines():
         output_warning(
             "Working tree has uncommitted changes, but no claim-blocking hazards were found. "
-            "Proceeding with checkpoint baseline capture."
+            "Claim will proceed with a clean lane; run `st adopt <task-id>` afterward if you intentionally want to copy current dirty paths into the new worktree."
         )
 
 

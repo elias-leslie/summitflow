@@ -156,7 +156,7 @@ class TestClaimTaskErrorsAndAdoption:
         mock_warning.assert_called_once()
         assert "release failed" in mock_warning.call_args.args[0]
 
-    def test_claim_task_adopts_dirty_changes_into_worktree(self) -> None:
+    def test_claim_task_does_not_auto_adopt_dirty_changes(self) -> None:
         client = MagicMock()
         client.get_task.return_value = {"id": "task-1", "project_id": "summitflow", "status": "pending"}
 
@@ -172,49 +172,10 @@ class TestClaimTaskErrorsAndAdoption:
                     frontend_port=3127,
                 ),
             ),
-            patch("cli.commands.claim.adopt_dirty_changes_to_worktree") as mock_adopt,
         ):
             _claim_task(client, "task-1")
 
-        mock_adopt.assert_called_once_with("/tmp/task-1")
-
-    def test_claim_task_adoption_failure_releases_lock(self) -> None:
-        client = MagicMock()
-        client.get_task.return_value = {"id": "task-1", "project_id": "summitflow", "status": "pending"}
-        client.claim_task.return_value = {
-            "id": "task-1",
-            "status": "running",
-            "claimed_by": "worker-1",
-        }
-
-        with (
-            patch("cli.commands.claim.get_snapshot_info", return_value=None),
-            patch("cli.commands.claim.require_claim_safe_tree"),
-            patch(
-                "cli.commands.claim.create_task_snapshot",
-                return_value=SimpleNamespace(
-                    base_branch="main",
-                    worktree_path="/tmp/task-1",
-                    backend_port=8127,
-                    frontend_port=3127,
-                ),
-            ),
-            patch(
-                "cli.commands.claim.adopt_dirty_changes_to_worktree",
-                side_effect=RuntimeError("copy failed"),
-            ),
-            patch("cli.commands.claim.remove_snapshot") as mock_remove_snapshot,
-            pytest.raises(typer.Exit) as exc_info,
-        ):
-            _claim_task(client, "task-1")
-
-        assert exc_info.value.exit_code == 1
-        client.release_task.assert_called_once_with("task-1")
-        mock_remove_snapshot.assert_called_once_with(
-            "task-1",
-            remove_worktree=True,
-            project_id="summitflow",
-        )
+        assert client.claim_task.called
 
 
 class TestClaimTreeSafety:
@@ -226,6 +187,7 @@ class TestClaimTreeSafety:
             require_claim_safe_tree()
 
         mock_warning.assert_called_once()
+        assert "st adopt <task-id>" in mock_warning.call_args.args[0]
 
     def test_require_claim_safe_tree_blocks_unmerged_conflicts(self) -> None:
         with (
