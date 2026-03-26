@@ -108,7 +108,7 @@ async def get_metrics() -> list[RuntimeServiceMetrics]:
     return await _runtime_metrics()
 
 
-@router.get("/logs/{service}", response_model=None)
+@router.get("/logs/{service}", response_model=None, dependencies=[Depends(_require_auth)])
 async def get_logs(
     service: str,
     tail: int = Query(default=100, ge=1, le=5000),

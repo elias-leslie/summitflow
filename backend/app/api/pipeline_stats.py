@@ -180,7 +180,7 @@ def _fetch_autonomous_data(cur: psycopg.Cursor, project_id: str) -> tuple[int, i
         (project_id,),
     )
     next_task = cur.fetchone()
-    next_scheduled = next_task[0].isoformat() if next_task else None
+    next_scheduled = next_task[0].isoformat() if next_task and next_task[0] else None
     return running, queue, next_scheduled
 
 

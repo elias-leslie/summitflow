@@ -65,7 +65,7 @@ def _proxmox_config() -> dict[str, Any]:
         "api_url": os.environ.get("PROXMOX_API_URL", "").strip().rstrip("/"),
         "token_id": os.environ.get("PROXMOX_TOKEN_ID", "").strip(),
         "token_secret": os.environ.get("PROXMOX_TOKEN_SECRET", "").strip(),
-        "verify_ssl": _bool_env("PROXMOX_VERIFY_SSL", default=False),
+        "verify_ssl": _bool_env("PROXMOX_VERIFY_SSL", default=True),
     }
 
 
