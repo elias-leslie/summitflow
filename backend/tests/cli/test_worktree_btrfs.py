@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -123,3 +124,68 @@ def test_force_remove_worktree_cleans_empty_lane_left_after_git_remove_success(
     assert ("worktree", "remove", str(worktree_path), "--force") in calls
     assert ("worktree", "prune") in calls
     assert not worktree_path.exists()
+
+
+def test_remove_worktree_prunes_registration_and_branch_when_path_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cli.lib.worktree import remove_worktree
+
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    worktree_path = tmp_path / "srv" / "workspaces" / "lanes" / "agent-hub" / "task-missing"
+    calls: list[tuple[str, ...]] = []
+
+    monkeypatch.setattr(
+        "cli.lib.worktree.get_worktree_path",
+        lambda task_id, project_id=None: worktree_path,
+    )
+    monkeypatch.setattr("cli.lib.worktree.get_project_cwd", lambda project_id: repo_root)
+    monkeypatch.setattr("cli.lib.worktree.get_repo_root", lambda cwd=None: repo_root)
+
+    def _fake_run_git(args: list[str], cwd: Path, check: bool = True):
+        calls.append(tuple(args))
+        assert cwd == repo_root
+        assert check in (True, False)
+
+    monkeypatch.setattr("cli.lib.worktree.run_git", _fake_run_git)
+
+    removed = remove_worktree("task-missing", delete_branch=True, project_id="agent-hub")
+
+    assert removed is True
+    assert ("worktree", "prune") in calls
+    assert ("branch", "-D", "task-missing/main") in calls
+
+
+def test_merge_task_branch_reconciles_git_state_even_without_live_worktree(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cli.lib.checkpoint_branches import merge_task_branch
+
+    calls: list[tuple[str, ...]] = []
+
+    monkeypatch.setattr("app.storage.tasks.get_task", lambda task_id: {"id": task_id, "status": "pending"})
+    monkeypatch.setattr(
+        "cli.lib.checkpoint_branches.load_snapshot_meta",
+        lambda task_id: SimpleNamespace(project_id="agent-hub", base_branch="main"),
+    )
+    monkeypatch.setattr("cli.lib.checkpoint_branches._get_repo_cwd", lambda project_id: "/repo")
+    monkeypatch.setattr("cli.lib.checkpoint_branches._get_current_branch", lambda cwd=None: "main")
+    monkeypatch.setattr("cli.lib.worktree.get_worktree_info", lambda task_id, project_id=None: None)
+
+    def _fake_run_git(args: list[str], cwd: str | None = None, check: bool = True):
+        calls.append(tuple(args))
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    remove_calls: list[tuple[str, bool, str | None]] = []
+
+    monkeypatch.setattr("cli.lib.checkpoint_branches._run_git", _fake_run_git)
+    monkeypatch.setattr(
+        "cli.lib.worktree.remove_worktree",
+        lambda task_id, delete_branch, project_id=None: remove_calls.append((task_id, delete_branch, project_id)) or True,
+    )
+
+    assert merge_task_branch("task-ghost", project_id="agent-hub") is True
+    assert ("git", "merge", "--no-ff", "task-ghost/main", "-m", "Merge task task-ghost") in calls
+    assert remove_calls == [("task-ghost", False, "agent-hub")]

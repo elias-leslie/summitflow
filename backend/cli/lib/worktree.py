@@ -158,12 +158,21 @@ def remove_worktree(
     task_id = canonicalize_task_id(task_id)
     worktree_path = get_worktree_path(task_id, project_id)
     branch_name = get_branch_name(task_id)
-    if not worktree_path.exists():
-        return False
-    repo_root = resolve_repo_root(worktree_path)
-    if repo_root is None:
-        return True
-    force_remove_worktree(worktree_path, repo_root)
+    repo_root = None
+    if worktree_path.exists():
+        repo_root = resolve_repo_root(worktree_path)
+        if repo_root is None:
+            with contextlib.suppress(WorktreeError):
+                repo_root = get_repo_root(cwd=get_project_cwd(project_id))
+            if repo_root is None:
+                return True
+        force_remove_worktree(worktree_path, repo_root)
+    else:
+        with contextlib.suppress(WorktreeError):
+            repo_root = get_repo_root(cwd=get_project_cwd(project_id))
+        if repo_root is None:
+            return False
+        run_git(["worktree", "prune"], cwd=repo_root, check=False)
     if delete_branch:
         with contextlib.suppress(WorktreeError):
             run_git(["branch", "-D", branch_name], cwd=repo_root, check=False)

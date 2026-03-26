@@ -147,7 +147,7 @@ def merge_task_branch(task_id: str, project_id: str | None = None) -> bool:
     worktree_info = get_worktree_info(task_id, project_id)
     if worktree_info:
         print(f"Removing worktree: {worktree_info.path}")
-        remove_worktree(task_id, delete_branch=False, project_id=project_id)
+    remove_worktree(task_id, delete_branch=False, project_id=project_id)
 
     with contextlib.suppress(subprocess.CalledProcessError):
         _run_git(["git", "branch", "-d", task_branch], repo_cwd)
