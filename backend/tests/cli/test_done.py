@@ -427,12 +427,19 @@ class TestCompleteTaskSmart:
         mock_snapshot.return_value = {"worktree_path": None, "project_id": "test"}
         mock_clean.return_value = False
         client = self._setup_mocks()
+        order: list[str] = []
+
+        mock_stash_push.side_effect = lambda: order.append("stash-push") or True
+        mock_merge.side_effect = lambda *args, **kwargs: order.append("merge")
+        mock_publish.side_effect = lambda *args, **kwargs: order.append("publish")
+        mock_stash_pop.side_effect = lambda: order.append("stash-pop")
 
         complete_task(client, "task-123")
 
         mock_stash_push.assert_called_once()
         mock_stash_pop.assert_called_once()
         mock_publish.assert_called_once_with("task-123", "test")
+        assert order == ["stash-push", "merge", "publish", "stash-pop"]
 
     @patch("cli.commands.done_task.get_snapshot_info")
     @patch("cli.commands.done_task.is_working_tree_clean")

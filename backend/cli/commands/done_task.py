@@ -245,11 +245,10 @@ def complete_task(
 
     try:
         _perform_completion(client, task_id, snapshot_info, project_id, strict, skip_diff_gate)
+        _publish_completed_work(task_id, project_id)
     except SystemExit as exc:
         raise typer.Exit(exc.code) from None
     finally:
         if stashed:
             git_stash_pop()
-
-    _publish_completed_work(task_id, project_id)
     return _done_result(task_id, merged=True, snapshot_removed=True, base_branch=base_branch)
