@@ -10,7 +10,7 @@ from ._api_paths import (
     MEMORY_EPISODE_TAGS_PATH,
 )
 from .memory_api import agent_hub_request
-from .memory_validation import validate_summary_length
+from .memory_validation import validate_episode_content_present, validate_summary_length
 
 VALID_TIERS = ("mandate", "guardrail", "reference")
 VALID_CONTEXT_KINDS = ("policy", "reference", "capability", "continuity", "signal")
@@ -308,3 +308,32 @@ def replace_episode_tags(target_uuid: str, tags: list[str]) -> None:
         typer.echo(f"Warning: Failed to update tags on {target_uuid[:8]}")
         return
     typer.echo(f"  Tags: {', '.join(tags) if tags else '(cleared)'}")
+
+
+def _validate_update_and_normalize(
+    content: str | None, tier: str | None, summary: str | None, tags: str | None,
+    clear_tags: bool, clear_applicability: bool, trigger_types: str | None,
+    trigger_phases: str | None, pinned: bool | None, context_kind: str | None,
+    consumer_profiles: str | None, exclude_consumer_profiles: str | None,
+    agent_slugs: str | None, exclude_agent_slugs: str | None,
+    audience_tags: str | None, exclude_audience_tags: str | None,
+) -> tuple[str | None, str | None, list[str] | None]:
+    if tags and clear_tags:
+        typer.echo("Error: Specify only one of --tags or --clear-tags")
+        raise typer.Exit(1)
+    _nullable = (content, tier, summary, trigger_types, trigger_phases, pinned, context_kind,
+                 consumer_profiles, exclude_consumer_profiles, agent_slugs, exclude_agent_slugs,
+                 audience_tags, exclude_audience_tags, tags)
+    if not any(f is not None for f in _nullable) and not clear_applicability and not clear_tags:
+        typer.echo(
+            "Error: Must specify at least one of: --content, --tier, --summary, --trigger-types,"
+            " --trigger-phases, --pinned, --context-kind, applicability options, --tags, --clear-tags, --clear-applicability"
+        )
+        raise typer.Exit(1)
+    if content is not None:
+        validate_episode_content_present(content)
+    return (
+        validate_summary_input(summary, required=False) if summary is not None else None,
+        validate_tier(tier) if tier is not None else None,
+        [] if clear_tags else parse_tags_csv(tags),
+    )
