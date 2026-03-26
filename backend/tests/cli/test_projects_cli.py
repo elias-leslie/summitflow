@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from typer.testing import CliRunner
 
+from cli.commands._projects_helpers import detect_current_project
 from cli.commands.projects import app
 
 runner = CliRunner()
@@ -77,6 +78,13 @@ def test_projects_create_sends_permission_bootstrap_fields() -> None:
             },
         },
     )
+
+
+def test_detect_current_project_returns_none_when_cwd_deleted() -> None:
+    with patch("cli.commands._projects_helpers.Path.cwd", side_effect=FileNotFoundError("deleted")):
+        result = detect_current_project()
+
+    assert result is None
 
 
 def test_projects_create_derives_hosted_defaults() -> None:

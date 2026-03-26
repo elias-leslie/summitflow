@@ -76,7 +76,10 @@ def projects_api(
 
 def detect_current_project() -> str | None:
     """Detect project from current working directory."""
-    cwd = Path.cwd().resolve()
+    try:
+        cwd = Path.cwd().resolve()
+    except OSError:
+        return None
     raw = projects_api("GET") or []
     if not isinstance(raw, list):
         return None

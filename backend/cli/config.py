@@ -164,7 +164,10 @@ def _detect_project_from_cwd(api_base: str, max_retries: int = 3) -> tuple[str |
     Returns:
         Tuple of (project_id, root_path) or (None, None) if not found.
     """
-    cwd = Path.cwd().resolve()
+    try:
+        cwd = Path.cwd().resolve()
+    except OSError:
+        return None, None
     project_id, root_path = _detect_project_from_local_metadata(cwd)
     if project_id:
         return project_id, root_path
