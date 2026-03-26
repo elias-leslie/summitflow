@@ -92,3 +92,39 @@ class TestProjectDetection:
 
         assert project_id == "summitflow"
         assert root_path == fake_root
+
+    def test_detect_project_from_cwd_returns_none_when_cwd_deleted(self) -> None:
+        """Deleted worktree dir must not crash — returns (None, None) without calling the API."""
+        with (
+            patch("cli.config.Path.cwd", side_effect=FileNotFoundError("deleted")),
+            patch.object(config_mod, "_fetch_projects_with_retry") as fetch_projects,
+        ):
+            project_id, root_path = config_mod._detect_project_from_cwd("http://localhost:8001/api")
+
+        assert project_id is None
+        assert root_path is None
+        fetch_projects.assert_not_called()
+
+    def test_detect_project_from_cwd_returns_none_on_oserror(self) -> None:
+        """Any OSError on cwd (e.g. PermissionError) must be handled gracefully."""
+        with (
+            patch("cli.config.Path.cwd", side_effect=OSError("permission denied")),
+            patch.object(config_mod, "_fetch_projects_with_retry") as fetch_projects,
+        ):
+            project_id, root_path = config_mod._detect_project_from_cwd("http://localhost:8001/api")
+
+        assert project_id is None
+        assert root_path is None
+        fetch_projects.assert_not_called()
+
+    def test_project_override_bypasses_cwd_when_cwd_deleted(self) -> None:
+        """-P flag (project override) must work even when the cwd no longer exists."""
+        config_mod.set_project_override("summitflow")
+        try:
+            with patch("cli.config.Path.cwd", side_effect=FileNotFoundError("deleted")):
+                project_id, _root_path, source = config_mod._resolve_project("http://localhost:8001/api")
+        finally:
+            config_mod.set_project_override(None)
+
+        assert project_id == "summitflow"
+        assert source == "flag"
