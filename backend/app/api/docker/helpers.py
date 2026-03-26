@@ -21,6 +21,7 @@ from fastapi import Header, HTTPException
 # This import is NOT circular: _process_execution depends only on constants.
 from ._process_execution import _run_docker
 from .constants import (
+    _DOCKER_GID,  # noqa: F401 — used via helpers.* in _runtime_control
     _DOCKER_SOCKET,  # noqa: F401 — mocked at helpers.* in tests
     _HOST_HOME_PATH,  # noqa: F401 — mocked at helpers.* in tests
     _HOST_REPO_ROOT,  # noqa: F401 — mocked at helpers.* in tests

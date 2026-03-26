@@ -51,6 +51,9 @@ dev = [
     "types-jsonschema>=4.26.0",
 ]
 
+[tool.uv]
+constraint-dependencies = ["requests>=2.33.0"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

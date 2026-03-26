@@ -105,7 +105,10 @@ async def _launch_runtime_switch(mode: RuntimeMode, script_path: Path) -> str:
     helper_image = await _h._helper_image_ref()
     helper_name = f"{_h.COMPOSE_PROJECT}-mode-switch"
     quoted_script = shlex.quote(str(script_path))
-    docker_sock_gid = _h._DOCKER_SOCKET.stat().st_gid if _h._DOCKER_SOCKET.exists() else None
+    docker_sock_gid = (
+        _h._DOCKER_SOCKET.stat().st_gid if _h._DOCKER_SOCKET.exists()
+        else _h._DOCKER_GID
+    )
 
     await _h._run_docker("docker", "rm", "-f", helper_name)
     run_args = [

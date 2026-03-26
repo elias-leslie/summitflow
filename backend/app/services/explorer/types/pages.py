@@ -45,12 +45,13 @@ def _build_nextjs_entry(
     """Build an ExplorerEntryCreate for a Next.js page file."""
     rel_path = page_file.parent.relative_to(app_dir)
     route = re.sub(r"\[([^\]]+)\]", r":\1", "/" + str(rel_path).replace("\\", "/"))
-    route = route.replace("/(", "/").replace(")/", "/")
-    display_path = "/" if route == "/." else route
+    # Strip Next.js route groups — parenthesised dirs like (app) don't appear in URLs
+    route = re.sub(r"/\([^)]+\)", "", route)
+    display_path = "/" if route in ("/.", "") else route
     name = page_file.parent.name
     if name.startswith("[") and name.endswith("]"):
         name = f"{page_file.parent.parent.name}/:{name[1:-1]}"
-    elif not name or name == ".":
+    elif not name or name == "." or display_path == "/":
         name = "home"
     return ExplorerEntryCreate(
         path=display_path,

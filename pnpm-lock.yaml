@@ -6,6 +6,7 @@ settings:
 
 overrides:
   '@agent-hub/passport-client': file:docker/workspace-packages/agent-hub-passport-client-0.1.0.tgz
+  flatted: '>=3.4.2'
 
 importers:
 
@@ -167,9 +168,6 @@ importers:
 
   packages/notes-ui:
     dependencies:
-      '@dnd-kit/core':
-        specifier: ^6.0.0
-        version: 6.3.1(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@tanstack/react-query':
         specifier: ^5.0.0
         version: 5.95.2(react@19.2.4)
@@ -1734,8 +1732,8 @@ packages:
   fix-dts-default-cjs-exports@1.0.1:
     resolution: {integrity: sha512-pVIECanWFC61Hzl2+oOCtoJ3F17kglZC/6N94eRWycFgBH35hHx0Li604ZIzhseh97mf2p0cv7vVrOZGoqhlEg==}
 
-  flatted@3.4.0:
-    resolution: {integrity: sha512-kC6Bb+ooptOIvWj5B63EQWkF0FEnNjV2ZNkLMLZRDDduIiWeFF4iKnslwhiWxjAdbg4NzTNo6h0qLuvFrcx+Sw==}
+  flatted@3.4.2:
+    resolution: {integrity: sha512-PjDse7RzhcPkIJwy5t7KPWQSZ9cAbzQXcafsetQoD7sOJRQlGikNbx7yZp2OotDnJyrDcbyRq3Ttb18iYOqkxA==}
 
   framer-motion@12.38.0:
     resolution: {integrity: sha512-rFYkY/pigbcswl1XQSb7q424kSTQ8q6eAC+YUsSKooHQYuLdzdHjrt6uxUC+PRAO++q5IS7+TamgIw1AphxR+g==}
@@ -3950,7 +3948,7 @@ snapshots:
     dependencies:
       '@vitest/utils': 4.1.1
       fflate: 0.8.2
-      flatted: 3.4.0
+      flatted: 3.4.2
       pathe: 2.0.3
       sirv: 3.0.2
       tinyglobby: 0.2.15
@@ -4158,7 +4156,7 @@ snapshots:
       mlly: 1.8.2
       rollup: 4.60.0
 
-  flatted@3.4.0: {}
+  flatted@3.4.2: {}
 
   framer-motion@12.38.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4):
     dependencies:

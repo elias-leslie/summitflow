@@ -43,8 +43,10 @@ if _DEFAULT_STACK_MODE not in {"dev", "prod"}:
 _COMPOSE_DIR = Path(os.environ.get("COMPOSE_DIR", str(_REPO_ROOT / "docker" / "compose")))
 _COMPOSE_FILE = _COMPOSE_DIR / "docker-compose.yml"
 _RUNTIME_MODE_FILE = _COMPOSE_DIR / ".runtime-mode"
-_INFRA_SERVICES = {"postgres", "redis", "hatchet", "hatchet-migrate", "hatchet-setup-config"}
+_INFRA_SERVICES = {"postgres", "redis", "hatchet", "hatchet-migrate", "hatchet-setup-config", "docker-socket-proxy"}
 _DOCKER_SOCKET = Path("/var/run/docker.sock")
+_DOCKER_GID_RAW = os.environ.get("DOCKER_GID", "")
+_DOCKER_GID: int | None = int(_DOCKER_GID_RAW) if _DOCKER_GID_RAW.isdigit() else None
 _USER_UID = os.getuid()
 _USER_RUNTIME_DIR = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{_USER_UID}"))
 _USER_DBUS_ADDRESS = os.environ.get(

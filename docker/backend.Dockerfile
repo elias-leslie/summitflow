@@ -6,7 +6,7 @@
 # ── Stage 1: Builder ─────────────────────────────────────────────
 FROM python:3.13-slim-bookworm AS builder
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.10.10 /uv /usr/local/bin/uv
 
 WORKDIR /app
 

@@ -6,7 +6,7 @@
 # ── Stage 0: Dev Runtime ─────────────────────────────────────────
 FROM node:20-slim AS dev
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@10.28.0 --activate
 
 WORKDIR /app
 
@@ -30,7 +30,7 @@ CMD ["pnpm", "dev", "--hostname", "0.0.0.0", "--port", "3001"]
 # ── Stage 1: Build ───────────────────────────────────────────────
 FROM node:20-slim AS builder
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@10.28.0 --activate
 
 WORKDIR /app
 

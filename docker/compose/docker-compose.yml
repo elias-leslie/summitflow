@@ -32,7 +32,7 @@ services:
       timeout: 3s
       retries: 5
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     restart: unless-stopped
 
   redis:
@@ -48,7 +48,7 @@ services:
       timeout: 3s
       retries: 5
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     restart: unless-stopped
 
   hatchet-migrate:
@@ -99,8 +99,8 @@ services:
       hatchet-migrate:
         condition: service_completed_successfully
     ports:
-      - "7070:7070"
-      - "8888:8733"
+      - "127.0.0.1:7070:7070"
+      - "127.0.0.1:8888:8733"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8733/ready"]
       interval: 10s
@@ -109,12 +109,28 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.3
+    profiles: [infra, summitflow, full]
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      INFO: 1
+      VERSION: 1
+      POST: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:2375/version"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+
   # ─── SummitFlow ──────────────────────────────────────────────────
   summitflow-api:
     image: ghcr.io/summitflow-solutions/summitflow-api:${TAG:-latest}
     profiles: [summitflow, full]
-    group_add:
-      - "${DOCKER_GID:-990}"
     environment:
       DATABASE_URL: "postgresql://summitflow_app:${SF_DB_PASSWORD:-changeme}@postgres:5432/summitflow"
       DATABASE_ADMIN_URL: "postgresql://admin:${POSTGRES_PASSWORD}@postgres:5432/summitflow"
@@ -123,6 +139,8 @@ services:
       HATCHET_CLIENT_TOKEN: "${HATCHET_CLIENT_TOKEN}"
       HATCHET_CLIENT_TLS_STRATEGY: "none"
       HATCHET_CLIENT_HOST_PORT: "hatchet:7070"
+      DOCKER_HOST: "tcp://docker-socket-proxy:2375"
+      DOCKER_GID: "${DOCKER_GID:-990}"
       AGENT_HUB_URL: "http://agent-hub-api:8003"
       SUMMITFLOW_CLIENT_ID: "${SUMMITFLOW_CLIENT_ID}"
       SUMMITFLOW_CLIENT_SECRET: "${SUMMITFLOW_CLIENT_SECRET}"
@@ -144,10 +162,11 @@ services:
         condition: service_healthy
       hatchet:
         condition: service_healthy
+      docker-socket-proxy:
+        condition: service_healthy
     ports:
       - "8001:8001"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - .:/compose:ro
       - ${HOST_HOME_PATH:?}:${HOST_HOME_PATH:?}
     healthcheck:
@@ -417,8 +436,7 @@ services:
     image: ghcr.io/summitflow-solutions/agent-browser:${TAG:-latest}
     profiles: [browser, full]
     shm_size: '2gb'
-    security_opt:
-      - seccomp=unconfined
+    # Chrome runs with --no-sandbox; default seccomp profile is sufficient
     environment:
       AGENT_BROWSER_SESSION: default
     restart: unless-stopped
