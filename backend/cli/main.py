@@ -15,6 +15,7 @@ from .commands import (
     backup,
     checkpoints,
     claim,
+    claude,
     cleanup,
     complete,
     deps,
@@ -141,6 +142,9 @@ SESSIONS: sessions list [--status S] | sessions show <id> | sessions close <id> 
 
 AUTONOMOUS: autonomous enable | disable | status
 
+CLAUDE:
+  claude task <task-id> [--feedback-text X|--feedback-file path] [--timeout-seconds N]
+
 PROMPT: prompt list [--global] | get <slug> | create <slug> <name> -f path | update <slug> -f path | delete <slug>
         prompt assign <agent> <prompt> <role> [-p N] | unassign <agent> <prompt> | assignments <agent>
         prompt export [slug] [-o file] | import <file> [--dry-run]
@@ -210,6 +214,7 @@ EXAMPLES:
   st abandon task-abc                      # preview blast radius
   st abandon task-abc --confirm TOKEN     # execute with confirm token
   st checkpoints                           # show active checkpoints
+  st claude task task-abc                  # run task through Claude Code worker wrapper
 
 SEARCH (Precision Code Search):
   search <query>                           # symbol-first search with fallback
@@ -244,6 +249,7 @@ app.add_typer(design.app, name="design")
 app.add_typer(tests.app, name="test")
 app.add_typer(subtask.app, name="subtask")
 app.add_typer(autonomous.app, name="autonomous")
+app.add_typer(claude.app, name="claude")
 app.add_typer(sessions.app, name="sessions")
 app.add_typer(projects.app, name="projects")
 app.add_typer(git.app, name="git")
