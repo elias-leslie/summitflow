@@ -103,7 +103,10 @@ def get_project_root(
 def create_project(
     project_id: Annotated[str, typer.Argument(help="Unique project ID (slug)")],
     name: Annotated[str, typer.Argument(help="Display name for the project")],
-    base_url: Annotated[str, typer.Option("--base-url", "-u", help="Base URL for the project API")],
+    base_url: Annotated[
+        str | None,
+        typer.Option("--base-url", "-u", help="Base URL for the project API"),
+    ] = None,
     root_path: Annotated[
         str | None,
         typer.Option("--root-path", "-r", help="Filesystem root path for the project"),
@@ -112,6 +115,13 @@ def create_project(
         str,
         typer.Option("--health-endpoint", help="Health check endpoint path"),
     ] = DEFAULT_HEALTH_ENDPOINT,
+    summitflow_hosted: Annotated[
+        bool,
+        typer.Option(
+            "--summitflow-hosted",
+            help="Derive https://<project-id>.summitflow.dev and /srv/workspaces/projects/<project-id> defaults",
+        ),
+    ] = False,
     permission_tier: Annotated[
         str | None,
         typer.Option("--permission-tier", help="Bootstrap matching Agent Hub permission tier"),
@@ -134,7 +144,7 @@ def create_project(
     Examples:
         st projects create persona-sandbox "Persona Sandbox" --base-url http://localhost:3003
         st projects create my-app "My App" -u http://localhost:8080 -r /home/user/my-app
-        st projects create test2 "Testbed" -u https://test2.summitflow.dev -r /srv/workspaces/projects/test2 --permission-tier yolo --auto-exec
+        st projects create test2 "Testbed" --summitflow-hosted --permission-tier yolo --auto-exec
     """
     run_create(
         project_id,
@@ -142,6 +152,7 @@ def create_project(
         base_url,
         root_path,
         health_endpoint,
+        summitflow_hosted=summitflow_hosted,
         permission_tier=permission_tier,
         auto_exec_enabled=auto_exec_enabled,
         execution_start_hour=execution_start_hour,

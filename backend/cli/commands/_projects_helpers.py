@@ -23,6 +23,7 @@ ENV_PROJECT_ID = "ST_PROJECT_ID"
 DEFAULT_HEALTH_ENDPOINT = "/health"
 NO_PROJECTS_MSG = "No projects found or API unavailable"
 UNEXPECTED_RESPONSE_MSG = "Unexpected API response"
+CREATE_FIELDS_MSG = "Provide --base-url or use --summitflow-hosted to derive hosted defaults"
 UPDATE_FIELDS_MSG = (
     "At least one field must be provided "
     "(--name, --base-url, --root-path, --health-endpoint)"
@@ -144,23 +145,32 @@ def run_root(project_id: str) -> None:
 def run_create(
     project_id: str,
     name: str,
-    base_url: str,
+    base_url: str | None,
     root_path: str | None,
     health_endpoint: str,
+    summitflow_hosted: bool = False,
     permission_tier: str | None = None,
     auto_exec_enabled: bool | None = None,
     execution_start_hour: int | None = None,
     execution_end_hour: int | None = None,
 ) -> None:
     """Implementation for `projects create`."""
+    effective_base_url = base_url
+    effective_root_path = root_path
+    if summitflow_hosted:
+        effective_base_url = effective_base_url or f"https://{project_id}.summitflow.dev"
+        effective_root_path = effective_root_path or f"/srv/workspaces/projects/{project_id}"
+    if not effective_base_url:
+        output_error(CREATE_FIELDS_MSG)
+        raise typer.Exit(1)
     body: dict[str, Any] = {
         "id": project_id,
         "name": name,
-        "base_url": base_url,
+        "base_url": effective_base_url,
         "health_endpoint": health_endpoint,
     }
-    if root_path is not None:
-        body["root_path"] = root_path
+    if effective_root_path is not None:
+        body["root_path"] = effective_root_path
     permission_payload = {
         "permission_tier": permission_tier,
         "auto_exec_enabled": auto_exec_enabled,

@@ -10,6 +10,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { createProject } from '@/lib/api'
 import {
+  buildHostedBaseUrl,
+  buildHostedRootPath,
   buildHealthPreview,
   DEFAULT_HEALTH_ENDPOINT,
   normalizeProjectFormValues,
@@ -61,17 +63,32 @@ export function NewProjectClient() {
     })
   }
 
+  const syncHostedDefaults = (nextProjectId: string, previousProjectId: string) => {
+    const previousBaseUrl = buildHostedBaseUrl(previousProjectId)
+    const previousRootPath = buildHostedRootPath(previousProjectId)
+    const nextBaseUrl = buildHostedBaseUrl(nextProjectId)
+    const nextRootPath = buildHostedRootPath(nextProjectId)
+
+    setProjectId(nextProjectId)
+    setBaseUrl((current) =>
+      !current || current === previousBaseUrl ? nextBaseUrl : current,
+    )
+    setRootPath((current) =>
+      !current || current === previousRootPath ? nextRootPath : current,
+    )
+  }
+
   const handleNameChange = (value: string) => {
     clearError('name')
     setName(value)
     if (!projectId || projectId === normalizeProjectId(name)) {
-      setProjectId(normalizeProjectId(value))
+      syncHostedDefaults(normalizeProjectId(value), projectId)
     }
   }
 
   const handleProjectIdChange = (value: string) => {
     clearError('projectId')
-    setProjectId(normalizeProjectId(value))
+    syncHostedDefaults(normalizeProjectId(value), projectId)
   }
 
   const handleBaseUrlChange = (value: string) => {
@@ -224,7 +241,7 @@ export function NewProjectClient() {
               className={errors.baseUrl ? 'border-rose-500/50' : ''}
             />
             <p className="text-xs text-slate-500">
-              Root URL used for health checks and operator links.
+              Root URL used for health checks and operator links. SummitFlow-hosted projects auto-fill to `https://&lt;project-id&gt;.summitflow.dev`.
             </p>
             {errors.baseUrl && (
               <p className="text-xs text-rose-400">{errors.baseUrl}</p>
@@ -262,7 +279,7 @@ export function NewProjectClient() {
               className={clsx('mono', errors.rootPath && 'border-rose-500/50')}
             />
             <p className="text-xs text-slate-500">
-              Strongly recommended. Enables file browsing, service config discovery, and safer project-aware automation.
+              Strongly recommended. SummitFlow-hosted projects auto-fill to `/srv/workspaces/projects/&lt;project-id&gt;`.
             </p>
             {errors.rootPath && (
               <p className="text-xs text-rose-400">{errors.rootPath}</p>

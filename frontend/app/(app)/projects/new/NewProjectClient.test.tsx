@@ -99,6 +99,21 @@ describe('NewProjectClient', () => {
     })
   })
 
+  it('auto-fills SummitFlow-hosted defaults from the project id', async () => {
+    renderClient()
+
+    fireEvent.change(screen.getByLabelText('Project Name *'), {
+      target: { value: 'Hosted Example' },
+    })
+
+    expect(screen.getByLabelText('Base URL *')).toHaveValue(
+      'https://hosted-example.summitflow.dev',
+    )
+    expect(screen.getByLabelText('Root Path')).toHaveValue(
+      '/srv/workspaces/projects/hosted-example',
+    )
+  })
+
   it('blocks submission when the root path is relative', async () => {
     renderClient()
 
@@ -140,7 +155,7 @@ describe('NewProjectClient', () => {
       name: 'No Bootstrap',
       base_url: 'https://example.com',
       health_endpoint: '/health',
-      root_path: undefined,
+      root_path: '/srv/workspaces/projects/no-bootstrap',
       agent_hub_permission: undefined,
     })
   })

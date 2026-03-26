@@ -77,3 +77,31 @@ def test_projects_create_sends_permission_bootstrap_fields() -> None:
             },
         },
     )
+
+
+def test_projects_create_derives_hosted_defaults() -> None:
+    with patch(
+        "cli.commands._projects_helpers.projects_api",
+        return_value={"id": "test3", "name": "Testbed 3"},
+    ) as mock_projects_api:
+        result = runner.invoke(
+            app,
+            [
+                "create",
+                "test3",
+                "Testbed 3",
+                "--summitflow-hosted",
+            ],
+        )
+
+    assert result.exit_code == 0
+    mock_projects_api.assert_called_once_with(
+        "POST",
+        json={
+            "id": "test3",
+            "name": "Testbed 3",
+            "base_url": "https://test3.summitflow.dev",
+            "health_endpoint": "/health",
+            "root_path": "/srv/workspaces/projects/test3",
+        },
+    )

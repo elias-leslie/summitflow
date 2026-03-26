@@ -16,6 +16,16 @@ export interface ProjectFormErrors {
 
 export const DEFAULT_HEALTH_ENDPOINT = '/health'
 
+export function buildHostedBaseUrl(projectId: string): string {
+  const normalized = normalizeProjectId(projectId)
+  return normalized ? `https://${normalized}.summitflow.dev` : ''
+}
+
+export function buildHostedRootPath(projectId: string): string {
+  const normalized = normalizeProjectId(projectId)
+  return normalized ? `/srv/workspaces/projects/${normalized}` : ''
+}
+
 export function normalizeProjectId(value: string): string {
   return value
     .toLowerCase()
