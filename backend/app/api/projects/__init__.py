@@ -231,4 +231,3 @@ async def delete_project(project_id: str) -> dict[str, str]:
     delete_project_in_db(project_id)
 
     return {"status": "deleted", "project_id": project.id}
-    return {"status": "deleted", "id": project_id}
