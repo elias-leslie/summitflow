@@ -13,7 +13,7 @@ export function NotesButton({ className, popOutUrl = '/notes' }: { className?: s
     const [available, setAvailable] = useState(true);
     const buttonRef = useRef<HTMLButtonElement>(null);
     const panelRef = useRef<HTMLDivElement>(null);
-    const [panelPos, setPanelPos] = useState({ top: 0, right: 0 });
+    const [panelStyle, setPanelStyle] = useState<React.CSSProperties>({});
 
     useEffect(() => {
         api.list({ limit: 1 })
@@ -21,14 +21,39 @@ export function NotesButton({ className, popOutUrl = '/notes' }: { className?: s
             .catch(() => setAvailable(false));
     }, [api]);
 
-    // Position the portal panel relative to the button
+    // Position the portal panel relative to the button, adapting to its screen quadrant
     useEffect(() => {
         if (!open || !buttonRef.current) return;
         const rect = buttonRef.current.getBoundingClientRect();
-        setPanelPos({
-            top: rect.bottom + 8,
-            right: window.innerWidth - rect.right,
-        });
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const GAP = 8;
+        const PANEL_W = 700;
+        const style: React.CSSProperties = { width: PANEL_W, zIndex: 9999 };
+
+        // Vertical: open downward if button is in top half, upward if bottom half
+        if (rect.top < vh / 2) {
+            style.top = rect.bottom + GAP;
+            style.height = `calc(100vh - ${rect.bottom + GAP + 16}px)`;
+        } else {
+            style.bottom = vh - rect.top + GAP;
+            style.height = `calc(100vh - ${vh - rect.top + GAP + 16}px)`;
+        }
+        style.maxHeight = 900;
+
+        // Horizontal: open leftward if button is on the right, rightward if on the left
+        if (rect.left < vw / 2) {
+            style.left = Math.max(rect.left, GAP);
+        } else {
+            style.right = Math.max(vw - rect.right, GAP);
+        }
+
+        // Clamp panel width if it would overflow viewport
+        if ((style.left ?? 0) + PANEL_W > vw - GAP) {
+            style.width = vw - (style.left as number) - GAP;
+        }
+
+        setPanelStyle(style);
     }, [open]);
 
     // Close on click outside
@@ -98,14 +123,7 @@ export function NotesButton({ className, popOutUrl = '/notes' }: { className?: s
                         'shadow-2xl shadow-black/60',
                         'overflow-hidden',
                     )}
-                    style={{
-                        width: 700,
-                        height: 'calc(100vh - 80px)',
-                        maxHeight: 900,
-                        top: panelPos.top,
-                        right: panelPos.right,
-                        zIndex: 9999,
-                    }}
+                    style={panelStyle}
                 >
                     {/* Phosphor glow line */}
                     <div className="h-px w-full flex-shrink-0" style={{
