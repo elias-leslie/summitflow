@@ -350,7 +350,7 @@ class TestReadyEndpoint:
                 def __init__(self, ready: bool):
                     self.ready = ready
 
-            return _Readiness(task_id == "task-ready")
+            return _Readiness(task_id in {"task-ready", "task-ready-live"})
 
         with (
             patch(
@@ -477,6 +477,22 @@ class TestReadyEndpoint:
             "execution_mode": "autonomous",
             "status": "pending",
         }
+        ready_live_task = {
+            "id": "task-ready-live",
+            "title": "Ready but already executing",
+            "priority": 1,
+            "task_type": "task",
+            "execution_mode": "autonomous",
+            "status": "pending",
+        }
+        pending_live_task = {
+            "id": "task-pending-live",
+            "title": "Pending live task",
+            "priority": 2,
+            "task_type": "task",
+            "execution_mode": "manual",
+            "status": "pending",
+        }
         blocked_task = {
             "id": "task-blocked",
             "title": "Blocked fix",
@@ -513,7 +529,7 @@ class TestReadyEndpoint:
             assert limit in {100, 500}
             assert offset == 0
             if status_filter == "pending":
-                return [ready_task, blocked_task]
+                return [ready_task, ready_live_task, blocked_task, pending_live_task]
             if status_filter == "running":
                 return [live_task, stale_task]
             raise AssertionError(f"unexpected status_filter: {status_filter}")
@@ -545,8 +561,22 @@ class TestReadyEndpoint:
             patch(
                 "app.api.tasks.list_endpoints.fetch_live_project_inventory",
                 return_value=(
-                    [{"external_id": "task-live", "current_branch": "task-live/main"}],
-                    [{"task_id": "task-live"}],
+                    [
+                        {"external_id": "task-live", "current_branch": "task-live/main"},
+                        {
+                            "external_id": "task-ready-live",
+                            "current_branch": "task-ready-live/main",
+                        },
+                        {
+                            "external_id": "task-pending-live",
+                            "current_branch": "task-pending-live/main",
+                        },
+                    ],
+                    [
+                        {"task_id": "task-live"},
+                        {"task_id": "task-ready-live"},
+                        {"task_id": "task-pending-live"},
+                    ],
                 ),
             ),
             patch(
@@ -567,7 +597,10 @@ class TestReadyEndpoint:
         }
         assert "READY-ALL[1 ready, 1 blocked, 3 active, 1 stale across 1 projects]" in payload["raw"]
         assert "~ task-live" in payload["raw"]
+        assert "~ task-ready-live" in payload["raw"]
+        assert "~ task-pending-live" in payload["raw"]
         assert "? task-stale" in payload["raw"]
+        assert "task-blocked [pending]" not in payload["raw"]
 
     def test_project_ready_all_overview_scopes_to_requested_project(
         self,

@@ -77,6 +77,7 @@ async def _fetch_filtered_tasks(
 async def _collect_execution_ready_tasks(
     project_id: str,
     limit: int,
+    exclude_task_ids: set[str] | None = None,
 ) -> tuple[list[dict[str, object]], int]:
     """Collect execution-ready tasks using the same readiness scan as /tasks/ready."""
     from ...services.task_execution_readiness import sync_task_execution_readiness
@@ -85,6 +86,7 @@ async def _collect_execution_ready_tasks(
     scan_offset = 0
     ready_tasks: list[dict[str, object]] = []
     total_ready = 0
+    excluded = exclude_task_ids or set()
 
     while scan_offset < 500:
         tasks = await asyncio.to_thread(
@@ -102,6 +104,8 @@ async def _collect_execution_ready_tasks(
         )
         for task, readiness in zip(tasks, readiness_results, strict=True):
             if not readiness.ready:
+                continue
+            if str(task.get("id") or "") in excluded:
                 continue
             total_ready += 1
             if len(ready_tasks) < limit:
@@ -136,15 +140,23 @@ async def _collect_ready_all_project_data(
     limit_per_project: int,
 ) -> dict[str, Any]:
     """Collect the canonical ready-all data for one project without self-HTTP."""
-    ready_tasks, ready_count = await _collect_execution_ready_tasks(project_id, limit_per_project)
-    blocked_tasks = await asyncio.to_thread(task_store.list_blocked_tasks, project_id, limit=limit_per_project)
     live_lane_task_ids = await _fetch_live_lane_task_ids(project_id)
+    ready_tasks, ready_count = await _collect_execution_ready_tasks(
+        project_id,
+        limit_per_project,
+        exclude_task_ids=live_lane_task_ids,
+    )
+    blocked_tasks = await asyncio.to_thread(task_store.list_blocked_tasks, project_id, limit=limit_per_project)
     pending_tasks, running_tasks = await asyncio.gather(
         asyncio.to_thread(task_store.list_tasks, project_id, status_filter="pending", limit=100, offset=0),
         asyncio.to_thread(task_store.list_tasks, project_id, status_filter="running", limit=100, offset=0),
     )
 
-    active_tasks: list[dict[str, object]] = list(pending_tasks)
+    active_tasks: list[dict[str, object]] = [
+        task
+        for task in pending_tasks
+        if str(task.get("id") or "") in live_lane_task_ids
+    ]
     stale_tasks: list[dict[str, object]] = []
     for task in running_tasks:
         if str(task.get("id") or "") in live_lane_task_ids:

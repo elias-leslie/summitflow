@@ -50,10 +50,10 @@ def _fetch_live_lane_task_ids(client: STClient, project_id: str) -> set[str]:
     }
 
 
-def _fetch_ready_tasks(client: STClient, pid: str, limit: int) -> tuple[list[dict[str, Any]], int]:
+def _fetch_ready_tasks(client: STClient, pid: str) -> tuple[list[dict[str, Any]], int]:
     """Fetch ready tasks for a project, returning (tasks, total_count)."""
     try:
-        resp = client.get(f"{client.base_url}/projects/{pid}/tasks/ready?limit={limit}")
+        resp = client.get(f"{client.base_url}/projects/{pid}/tasks/ready?limit=100")
         tasks = resp.get("tasks", [])
         return tasks, resp.get("total", len(tasks))
     except APIError:
@@ -104,8 +104,9 @@ def _fetch_active_stale(
             continue
 
         if status == "pending":
-            active.extend(batch)
-            active_count += resp.get("total", len(batch))
+            live_pending = [task for task in batch if task.get("id") in live_lane_task_ids]
+            active.extend(live_pending)
+            active_count += len(live_pending)
             continue
 
         for task in batch:
@@ -127,7 +128,9 @@ def _collect_project_data(
 ) -> dict[str, Any]:
     """Fetch and aggregate all task data for a single project."""
     live_lane_task_ids = _fetch_live_lane_task_ids(client, pid)
-    ready_tasks, ready_count = _fetch_ready_tasks(client, pid, limit)
+    ready_tasks, _ready_total = _fetch_ready_tasks(client, pid)
+    ready_tasks = [task for task in ready_tasks if task.get("id") not in live_lane_task_ids]
+    ready_count = len(ready_tasks)
     blocked_tasks, blocked_count = _fetch_blocked_tasks(client, pid, limit)
     active_tasks, active_count, stale_tasks, stale_count = _fetch_active_stale(
         client, pid, live_lane_task_ids, limit
