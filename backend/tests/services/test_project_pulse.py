@@ -232,3 +232,149 @@ async def test_build_project_pulse_excludes_stranded_tasks_from_running_summary(
     assert [task["id"] for task in payload["stranded_tasks"]] == ["task-stranded"]
     assert payload["summary"]["running_tasks"] == 0
     assert payload["summary"]["stranded_tasks"] == 1
+
+
+@pytest.mark.asyncio
+async def test_build_project_pulse_stranded_task_with_unrelated_active_owners() -> None:
+    """OWNERSHIP[N] + STRANDED: active owners for other tasks don't protect unowned running tasks."""
+    stale = (datetime.now(UTC) - timedelta(minutes=5)).isoformat().replace("+00:00", "Z")
+
+    ownership_payload = {
+        "active_owners": [
+            {"session_id": "sess-owner-a", "task_id": "task-other-a"},
+            {"session_id": "sess-owner-b", "task_id": "task-other-b"},
+        ],
+        "active_specialists": [],
+    }
+    sessions_payload = {"sessions": []}
+
+    with (
+        patch(
+            "app.services.project_pulse._agent_hub_get",
+            new=AsyncMock(side_effect=[ownership_payload, sessions_payload]),
+        ),
+        patch(
+            "app.services.project_pulse.list_tasks",
+            return_value=[
+                {
+                    "id": "task-orphan",
+                    "title": "Orphaned running task",
+                    "status": "running",
+                    "task_type": "task",
+                    "priority": 2,
+                    "updated_at": stale,
+                }
+            ],
+        ),
+        patch(
+            "app.services.project_pulse.build_project_cleanup_status",
+            return_value={
+                "project_id": "agent-hub",
+                "active_worktrees": 0,
+                "dirty_worktrees": 0,
+                "needs_cleanup": False,
+            },
+        ),
+    ):
+        from app.services.project_pulse import build_project_pulse
+
+        payload = await build_project_pulse("agent-hub")
+
+    assert payload["running_tasks"] == []
+    assert [task["id"] for task in payload["stranded_tasks"]] == ["task-orphan"]
+    assert payload["summary"]["running_tasks"] == 0
+    assert payload["summary"]["stranded_tasks"] == 1
+    assert payload["summary"]["active_owners"] == 2
+
+
+@pytest.mark.asyncio
+async def test_build_project_pulse_active_owner_prevents_stranded_classification() -> None:
+    """A running task with a live active owner is not classified as stranded."""
+    stale = (datetime.now(UTC) - timedelta(minutes=5)).isoformat().replace("+00:00", "Z")
+
+    ownership_payload = {
+        "active_owners": [
+            {"session_id": "sess-owner", "task_id": "task-owned"},
+        ],
+        "active_specialists": [],
+    }
+    sessions_payload = {"sessions": []}
+
+    with (
+        patch(
+            "app.services.project_pulse._agent_hub_get",
+            new=AsyncMock(side_effect=[ownership_payload, sessions_payload]),
+        ),
+        patch(
+            "app.services.project_pulse.list_tasks",
+            return_value=[
+                {
+                    "id": "task-owned",
+                    "title": "Actively owned task",
+                    "status": "running",
+                    "task_type": "task",
+                    "priority": 2,
+                    "updated_at": stale,
+                }
+            ],
+        ),
+        patch(
+            "app.services.project_pulse.build_project_cleanup_status",
+            return_value={
+                "project_id": "agent-hub",
+                "active_worktrees": 0,
+                "dirty_worktrees": 0,
+                "needs_cleanup": False,
+            },
+        ),
+    ):
+        from app.services.project_pulse import build_project_pulse
+
+        payload = await build_project_pulse("agent-hub")
+
+    assert [task["id"] for task in payload["running_tasks"]] == ["task-owned"]
+    assert payload["stranded_tasks"] == []
+    assert payload["summary"]["running_tasks"] == 1
+    assert payload["summary"]["stranded_tasks"] == 0
+
+
+@pytest.mark.asyncio
+async def test_build_project_pulse_reapable_counts_lifecycle_state_without_boolean_flag() -> None:
+    """A stale session with lifecycle_state=reapable but no boolean flag counts as reapable."""
+    stale = (datetime.now(UTC) - timedelta(hours=6)).isoformat().replace("+00:00", "Z")
+
+    ownership_payload = {"active_owners": [], "active_specialists": []}
+    sessions_payload = {
+        "sessions": [
+            {
+                "id": "sess-reapable-no-flag",
+                "status": "active",
+                "session_type": "agent",
+                "updated_at": stale,
+                "live_activity": {"lifecycle_state": "reapable", "health": "stalled"},
+            },
+        ]
+    }
+
+    with (
+        patch(
+            "app.services.project_pulse._agent_hub_get",
+            new=AsyncMock(side_effect=[ownership_payload, sessions_payload]),
+        ),
+        patch("app.services.project_pulse.list_tasks", return_value=[]),
+        patch(
+            "app.services.project_pulse.build_project_cleanup_status",
+            return_value={
+                "project_id": "agent-hub",
+                "active_worktrees": 0,
+                "dirty_worktrees": 0,
+                "needs_cleanup": False,
+            },
+        ),
+    ):
+        from app.services.project_pulse import build_project_pulse
+
+        payload = await build_project_pulse("agent-hub")
+
+    assert payload["summary"]["stale_sessions"] == 1
+    assert payload["summary"]["reapable_sessions"] == 1
