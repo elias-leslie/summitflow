@@ -205,6 +205,22 @@ def _task_is_stranded(task: dict[str, Any], owner_task_ids: set[str], specialist
     return age_minutes >= _STRANDED_TASK_MINUTES
 
 
+def _partition_running_tasks(
+    tasks: list[dict[str, Any]],
+    owner_task_ids: set[str],
+    specialist_task_ids: set[str],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split task rows into live running work and stranded remnants."""
+    running: list[dict[str, Any]] = []
+    stranded: list[dict[str, Any]] = []
+    for task in tasks:
+        if _task_is_stranded(task, owner_task_ids, specialist_task_ids):
+            stranded.append(task)
+        else:
+            running.append(task)
+    return running, stranded
+
+
 async def build_project_pulse(project_id: str) -> dict[str, Any]:
     """Return the canonical live coordination payload for one project."""
     ownership = await _agent_hub_get(f"/api/ownership/projects/{project_id}/live")
@@ -261,14 +277,15 @@ async def build_project_pulse(project_id: str) -> dict[str, Any]:
         if isinstance(session.get("live_activity"), dict)
         and bool(session["live_activity"].get("reapable"))
     ]
-    running_tasks = [
+    raw_running_tasks = [
         _normalize_running_task(task)
         for task in list_tasks(project_id, status_filter="running", limit=_TASK_LIMIT)
     ]
-    stranded_tasks = [
-        task for task in running_tasks
-        if _task_is_stranded(task, owner_task_ids, specialist_task_ids)
-    ]
+    running_tasks, stranded_tasks = _partition_running_tasks(
+        raw_running_tasks,
+        owner_task_ids,
+        specialist_task_ids,
+    )
     cleanup = build_project_cleanup_status(project_id)
 
     return {

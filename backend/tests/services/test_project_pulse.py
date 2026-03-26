@@ -187,3 +187,48 @@ async def test_build_project_pulse_preserves_session_request_identity_fields() -
     assert observer["request_source"] == "codex-transcript-sync"
     assert observer["source_client"] == "summitflow/codex-session-sync"
     assert observer["source_path"] == "/home/kasadis/bin/codex-session-sync.py"
+
+
+@pytest.mark.asyncio
+async def test_build_project_pulse_excludes_stranded_tasks_from_running_summary() -> None:
+    stale = (datetime.now(UTC) - timedelta(minutes=5)).isoformat().replace("+00:00", "Z")
+
+    ownership_payload = {"active_owners": [], "active_specialists": []}
+    sessions_payload = {"sessions": []}
+
+    with (
+        patch(
+            "app.services.project_pulse._agent_hub_get",
+            new=AsyncMock(side_effect=[ownership_payload, sessions_payload]),
+        ),
+        patch(
+            "app.services.project_pulse.list_tasks",
+            return_value=[
+                {
+                    "id": "task-stranded",
+                    "title": "Refactor dead lane",
+                    "status": "running",
+                    "task_type": "refactor",
+                    "priority": 2,
+                    "updated_at": stale,
+                }
+            ],
+        ),
+        patch(
+            "app.services.project_pulse.build_project_cleanup_status",
+            return_value={
+                "project_id": "agent-hub",
+                "active_worktrees": 0,
+                "dirty_worktrees": 0,
+                "needs_cleanup": False,
+            },
+        ),
+    ):
+        from app.services.project_pulse import build_project_pulse
+
+        payload = await build_project_pulse("agent-hub")
+
+    assert payload["running_tasks"] == []
+    assert [task["id"] for task in payload["stranded_tasks"]] == ["task-stranded"]
+    assert payload["summary"]["running_tasks"] == 0
+    assert payload["summary"]["stranded_tasks"] == 1

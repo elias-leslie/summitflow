@@ -138,7 +138,7 @@ def test_pulse_compact_surfaces_stranded_running_tasks() -> None:
     mock_client.get.return_value = {
         "project_id": "agent-hub",
         "summary": {
-            "running_tasks": 1,
+            "running_tasks": 0,
             "active_owners": 0,
             "active_specialists": 0,
             "active_sessions": 0,
@@ -151,9 +151,7 @@ def test_pulse_compact_surfaces_stranded_running_tasks() -> None:
             "dirty_worktrees": 1,
             "needs_cleanup": True,
         },
-        "running_tasks": [
-            {"id": "task-3", "status": "running", "priority": 2, "title": "Refactor tool handlers"}
-        ],
+        "running_tasks": [],
         "active_owners": [],
         "active_sessions": [],
         "stale_sessions": [
@@ -177,7 +175,7 @@ def test_pulse_compact_surfaces_stranded_running_tasks() -> None:
         result = runner.invoke(app, ["pulse", "--project", "agent-hub"])
 
     assert result.exit_code == 0
-    assert "PULSE:agent-hub|tasks=1|owners=0|specialists=0|sessions=0|stale=1|reapable=1|worktrees=1|dirty=1|cleanup=yes|stranded=1" in result.output
+    assert "PULSE:agent-hub|tasks=0|owners=0|specialists=0|sessions=0|stale=1|reapable=1|worktrees=1|dirty=1|cleanup=yes|stranded=1" in result.output
     assert "STRANDED task-3 | running | no_owner_session | Refactor tool handlers" in result.output
 
 
