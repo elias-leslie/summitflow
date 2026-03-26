@@ -23,7 +23,6 @@ from ._memory_crud_helpers import (
     fetch_episode_tags,
     fetch_existing_episode,
     merge_applicability_payload,
-    parse_csv_values,
     parse_tags_csv,
     patch_episode_properties,
     replace_episode_tags,
@@ -46,14 +45,18 @@ from .memory_formatters import (
 from .memory_validation import validate_content_format, validate_episode_content_present
 
 
+def _emit(out: OutputContext, result: dict[str, object], compact_fn) -> None:  # type: ignore[type-arg]
+    if out.is_compact:
+        compact_fn(result)
+    else:
+        output_json(result)
+
+
 def stats_impl(out: OutputContext, scope: str, scope_id: str | None) -> None:
     result = agent_hub_request(
         "GET", MEMORY_STATS_PATH, scope=scope, scope_id=scope_id, tool_name="st memory stats"
     )
-    if out.is_compact:
-        format_stats_compact(result)
-    else:
-        output_json(result)
+    _emit(out, result, format_stats_compact)
 
 
 def save_impl(
@@ -82,22 +85,9 @@ def save_impl(
     validate_episode_content_present(content)
     validate_content_format(content, summary, tier)
     payload = build_save_payload(
-        content,
-        summary,
-        tier,
-        confidence,
-        context,
-        pinned,
-        trigger_types,
-        trigger_phases,
-        context_kind,
-        consumer_profiles,
-        exclude_consumer_profiles,
-        agent_slugs,
-        exclude_agent_slugs,
-        audience_tags,
-        exclude_audience_tags,
-        change_reason,
+        content, summary, tier, confidence, context, pinned, trigger_types, trigger_phases,
+        context_kind, consumer_profiles, exclude_consumer_profiles, agent_slugs, exclude_agent_slugs,
+        audience_tags, exclude_audience_tags, change_reason,
     )
     result = agent_hub_request(
         "POST", MEMORY_SAVE_LEARNING_PATH, json=payload,
@@ -106,10 +96,7 @@ def save_impl(
     parsed_tags = parse_tags_csv(tags)
     if parsed_tags is not None and result.get("uuid"):
         replace_episode_tags(str(result["uuid"]), parsed_tags)
-    if out.is_compact:
-        format_save_compact(result)
-    else:
-        output_json(result)
+    _emit(out, result, format_save_compact)
 
 
 def list_impl(
@@ -129,10 +116,7 @@ def list_impl(
         "GET", MEMORY_LIST_PATH, params=params,
         scope=scope, scope_id=scope_id, tool_name="st memory list",
     )
-    if out.is_compact:
-        format_list_compact(result)
-    else:
-        output_json(result)
+    _emit(out, result, format_list_compact)
 
 
 def search_impl(
@@ -151,10 +135,7 @@ def search_impl(
         "GET", MEMORY_SEARCH_PATH, params=params,
         scope=scope, scope_id=scope_id, tool_name="st memory search",
     )
-    if out.is_compact:
-        format_search_compact(result)
-    else:
-        output_json(result)
+    _emit(out, result, format_search_compact)
 
 
 def get_impl(out: OutputContext, uuids: list[str]) -> None:
@@ -166,17 +147,11 @@ def get_impl(out: OutputContext, uuids: list[str]) -> None:
         result = agent_hub_request(
             "POST", MEMORY_BATCH_GET_PATH, json={"uuids": uuids}, tool_name="st memory get"
         )
-        if out.is_compact:
-            format_batch_get_compact(result)
-        else:
-            output_json(result)
+        _emit(out, result, format_batch_get_compact)
         return
 
     result = agent_hub_request("GET", MEMORY_EPISODE_PATH.format(uuid=uuids[0]), tool_name="st memory get")
-    if out.is_compact:
-        format_get_compact(result)
-    else:
-        output_json(result)
+    _emit(out, result, format_get_compact)
 
 
 def delete_impl(uuids: list[str], *, change_reason: str | None = None) -> None:
@@ -232,145 +207,64 @@ def update_impl(
     if tags and clear_tags:
         typer.echo("Error: Specify only one of --tags or --clear-tags")
         raise typer.Exit(1)
-
-    if not any(
-        [
-            content is not None,
-            tier is not None,
-            summary is not None,
-            trigger_types is not None,
-            trigger_phases is not None,
-            pinned is not None,
-            context_kind is not None,
-            consumer_profiles is not None,
-            exclude_consumer_profiles is not None,
-            agent_slugs is not None,
-            exclude_agent_slugs is not None,
-            audience_tags is not None,
-            exclude_audience_tags is not None,
-            clear_applicability,
-            tags is not None,
-            clear_tags,
-        ]
-    ):
+    _nullable = (content, tier, summary, trigger_types, trigger_phases, pinned, context_kind,
+                 consumer_profiles, exclude_consumer_profiles, agent_slugs, exclude_agent_slugs,
+                 audience_tags, exclude_audience_tags, tags)
+    if not any(f is not None for f in _nullable) and not clear_applicability and not clear_tags:
         typer.echo(
-            "Error: Must specify at least one of: --content, --tier, --summary, --trigger-types, --trigger-phases, --pinned, --context-kind, applicability options, --tags, --clear-tags, --clear-applicability"
+            "Error: Must specify at least one of: --content, --tier, --summary, --trigger-types,"
+            " --trigger-phases, --pinned, --context-kind, applicability options, --tags, --clear-tags, --clear-applicability"
         )
         raise typer.Exit(1)
-
     if content is not None:
         validate_episode_content_present(content)
-
     normalized_summary = validate_summary_input(summary, required=False) if summary is not None else None
     normalized_tier = validate_tier(tier) if tier is not None else None
     replacement_tags = [] if clear_tags else parse_tags_csv(tags)
     content_or_tier_changed = content is not None or normalized_tier is not None
-    applicability_changed = any(
-        [
-            consumer_profiles is not None,
-            exclude_consumer_profiles is not None,
-            agent_slugs is not None,
-            exclude_agent_slugs is not None,
-            audience_tags is not None,
-            exclude_audience_tags is not None,
-            clear_applicability,
-        ]
-    )
-    properties_changed = any(
-        [
-            normalized_summary is not None,
-            trigger_types is not None,
-            trigger_phases is not None,
-            pinned is not None,
-            context_kind is not None,
-            applicability_changed,
-        ]
+    _app_fields = (consumer_profiles, exclude_consumer_profiles, agent_slugs, exclude_agent_slugs,
+                   audience_tags, exclude_audience_tags)
+    applicability_changed = any(f is not None for f in _app_fields) or clear_applicability
+    properties_changed = (
+        any(f is not None for f in (normalized_summary, trigger_types, trigger_phases, pinned, context_kind))
+        or applicability_changed
     )
     tags_changed = replacement_tags is not None or clear_tags
-
     existing: dict[str, object] | None = None
     existing_tags: list[str] = []
     effective_tier = normalized_tier
-
     if content_or_tier_changed:
         existing = fetch_existing_episode(uuid)
         effective_tier = normalized_tier or str(existing.get("injection_tier", "reference"))
-
     if content is not None:
         assert existing is not None
         validate_content_format(content, normalized_summary or str(existing.get("summary", "")), effective_tier)
-
     target_uuid = str(existing.get("uuid", uuid)) if existing else uuid
-
     if content_or_tier_changed and replacement_tags is None:
         existing_tags = fetch_episode_tags(uuid)
-
+    cr_kwargs: dict[str, object] = {"change_reason": change_reason} if change_reason else {}
     if content_or_tier_changed:
         assert existing is not None
-        # Only send content when it actually changed — sending unchanged content
-        # with a new tier triggers content re-validation against the new tier's rules.
-        patch_content = content if content is not None else None
-        if change_reason is None:
-            update_episode_content_or_tier(
-                target_uuid,
-                content=patch_content,
-                tier=effective_tier,
-            )
-        else:
-            update_episode_content_or_tier(
-                target_uuid,
-                content=patch_content,
-                tier=effective_tier,
-                change_reason=change_reason,
-            )
+        update_episode_content_or_tier(target_uuid, content=content, tier=effective_tier, **cr_kwargs)
         replace_episode_tags(target_uuid, replacement_tags if replacement_tags is not None else existing_tags)
-
     if properties_changed:
-        normalized_trigger_types = None
-        if trigger_types is not None:
-            normalized_trigger_types = ",".join(parse_csv_values(trigger_types) or [])
-        normalized_trigger_phases = None
-        if trigger_phases is not None:
-            normalized_trigger_phases = ",".join(parse_csv_values(trigger_phases) or [])
         applicability = None
         if applicability_changed:
             if existing is None:
                 existing = fetch_existing_episode(uuid)
             applicability = merge_applicability_payload(
                 existing,
-                consumer_profiles=consumer_profiles,
-                exclude_consumer_profiles=exclude_consumer_profiles,
-                agent_slugs=agent_slugs,
-                exclude_agent_slugs=exclude_agent_slugs,
-                audience_tags=audience_tags,
-                exclude_audience_tags=exclude_audience_tags,
+                consumer_profiles=consumer_profiles, exclude_consumer_profiles=exclude_consumer_profiles,
+                agent_slugs=agent_slugs, exclude_agent_slugs=exclude_agent_slugs,
+                audience_tags=audience_tags, exclude_audience_tags=exclude_audience_tags,
                 clear_applicability=clear_applicability,
             )
-        if change_reason is None:
-            patch_episode_properties(
-                target_uuid,
-                normalized_summary,
-                normalized_trigger_types,
-                normalized_trigger_phases,
-                pinned,
-                context_kind,
-                applicability,
-            )
-        else:
-            patch_episode_properties(
-                target_uuid,
-                normalized_summary,
-                normalized_trigger_types,
-                normalized_trigger_phases,
-                pinned,
-                context_kind,
-                applicability,
-                change_reason=change_reason,
-            )
-
+        patch_episode_properties(
+            target_uuid, normalized_summary, trigger_types, trigger_phases,
+            pinned, context_kind, applicability, **cr_kwargs,
+        )
     if not content_or_tier_changed and tags_changed:
         replace_episode_tags(target_uuid, replacement_tags or [])
-
     if not content_or_tier_changed and not properties_changed and not tags_changed:
         typer.echo("No changes made.")
 
