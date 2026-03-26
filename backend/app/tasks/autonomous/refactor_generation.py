@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from app.services.explorer import scan
@@ -116,6 +117,9 @@ def _build_and_create_task(
 ) -> tuple[bool, int]:
     """Create a refactor issue + task, deduplicating against any existing canonical task."""
     file_path = f"{project_root}/{relative_path}" if project_root else relative_path
+    if not Path(file_path).exists():
+        logger.info("Skipping %s: file no longer exists on disk", relative_path)
+        return False, 0
     issue_id = create_refactor_issue(
         project_id, relative_path, complexity, lines, target_lines,
         target.get("reason", "High complexity"),

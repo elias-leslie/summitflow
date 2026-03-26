@@ -47,8 +47,10 @@ class TestGenerateTasksFromScan:
     @patch("app.tasks.autonomous.refactor_generation.get_task_spirit")
     @patch("app.tasks.autonomous.refactor_generation.create_refactor_issue")
     @patch("app.tasks.autonomous.refactor_generation.create_refactor_task")
+    @patch("app.tasks.autonomous.refactor_generation.Path")
     def test_creates_refactor_task_type(
         self,
+        mock_path_cls: MagicMock,
         mock_create_task: MagicMock,
         mock_create_issue: MagicMock,
         mock_get_spirit: MagicMock,
@@ -60,6 +62,7 @@ class TestGenerateTasksFromScan:
         _mock_scan: MagicMock,
         _mock_get_project_root: MagicMock,
     ) -> None:
+        mock_path_cls.return_value.exists.return_value = True
         """Test that refactor tasks are created from scan targets."""
         mock_get_targets.return_value = {
             "targets": [
@@ -150,8 +153,10 @@ class TestGenerateTasksFromScan:
     @patch("app.tasks.autonomous.refactor_generation.task_store")
     @patch("app.tasks.autonomous.refactor_generation.create_refactor_issue")
     @patch("app.tasks.autonomous.refactor_generation.create_refactor_task")
+    @patch("app.tasks.autonomous.refactor_generation.Path")
     def test_regenerate_sync_closes_resolved_and_only_creates_missing_tasks(
         self,
+        mock_path_cls: MagicMock,
         mock_create_task: MagicMock,
         mock_create_issue: MagicMock,
         mock_store: MagicMock,
@@ -161,6 +166,7 @@ class TestGenerateTasksFromScan:
         mock_scan: MagicMock,
         mock_get_project_root: MagicMock,
     ) -> None:
+        mock_path_cls.return_value.exists.return_value = True
         mock_get_project_root.return_value = "/tmp/project"
         mock_close_resolved.return_value = 2
         mock_get_targets.return_value = {
@@ -203,8 +209,10 @@ class TestGenerateTasksFromScan:
     @patch("app.tasks.autonomous.refactor_generation.create_refactor_issue")
     @patch("app.tasks.autonomous.refactor_generation.create_refactor_task")
     @patch("app.tasks.autonomous.refactor_generation.log_task_event")
+    @patch("app.tasks.autonomous.refactor_generation.Path")
     def test_reuses_linked_canonical_task_and_cancels_duplicate_refactor_tasks(
         self,
+        mock_path_cls: MagicMock,
         mock_log_task_event: MagicMock,
         mock_create_task: MagicMock,
         mock_create_issue: MagicMock,
@@ -217,6 +225,7 @@ class TestGenerateTasksFromScan:
         _mock_scan: MagicMock,
         _mock_get_project_root: MagicMock,
     ) -> None:
+        mock_path_cls.return_value.exists.return_value = True
         mock_get_targets.return_value = {
             "targets": [
                 {
@@ -263,8 +272,10 @@ class TestGenerateTasksFromScan:
     @patch("app.tasks.autonomous.refactor_generation.create_refactor_issue")
     @patch("app.tasks.autonomous.refactor_generation.create_refactor_task")
     @patch("app.tasks.autonomous.refactor_generation.log_task_event")
+    @patch("app.tasks.autonomous.refactor_generation.Path")
     def test_relinks_issue_to_existing_active_refactor_task_before_creating_new_one(
         self,
+        mock_path_cls: MagicMock,
         mock_log_task_event: MagicMock,
         mock_create_task: MagicMock,
         mock_create_issue: MagicMock,
@@ -278,6 +289,7 @@ class TestGenerateTasksFromScan:
         _mock_scan: MagicMock,
         _mock_get_project_root: MagicMock,
     ) -> None:
+        mock_path_cls.return_value.exists.return_value = True
         mock_get_targets.return_value = {
             "targets": [
                 {
@@ -345,6 +357,47 @@ class TestGenerateTasksFromScan:
         assert result["scanned_count"] == 1
         assert result["skipped_count"] == 1
         mock_store.create_task.assert_not_called()
+
+    @patch("app.tasks.autonomous.refactor_generation.get_project_root_path", return_value="/tmp/project")
+    @patch("app.tasks.autonomous.refactor_generation.scan")
+    @patch("app.tasks.autonomous.refactor_generation.check_and_close_resolved_issues", return_value=0)
+    @patch("app.tasks.autonomous.refactor_generation.get_refactor_targets")
+    @patch("app.tasks.autonomous.refactor_generation.task_store")
+    @patch("app.tasks.autonomous.refactor_generation.create_refactor_task")
+    @patch("app.tasks.autonomous.refactor_generation.Path")
+    def test_skips_target_when_file_missing_on_disk(
+        self,
+        mock_path_cls: MagicMock,
+        mock_create_task: MagicMock,
+        mock_store: MagicMock,
+        mock_get_targets: MagicMock,
+        _mock_close_resolved: MagicMock,
+        _mock_scan: MagicMock,
+        _mock_get_project_root: MagicMock,
+    ) -> None:
+        """Task must not be created when the target file no longer exists on disk."""
+        mock_get_targets.return_value = {
+            "targets": [
+                {
+                    "path": "backend/app/services/deleted.py",
+                    "priority": "high",
+                    "reason": "High cyclomatic complexity",
+                    "complexity_score": 20.0,
+                    "lines_of_code": 400,
+                    "hotspot_score": 180.0,
+                    "commit_count_90d": 6,
+                    "test_file_exists": False,
+                    "refactor_issues": ["high_complexity", "deep_nesting"],
+                }
+            ]
+        }
+        mock_store.task_exists_for_file.return_value = False
+        mock_path_cls.return_value.exists.return_value = False
+
+        result = regenerate_refactor_tasks_sync("test-project")
+
+        assert result["created_count"] == 0
+        mock_create_task.assert_not_called()
 
 
 class TestCleanupStaleTasks:
