@@ -130,16 +130,18 @@ def _build_repo_cleanup_entry(repo_path: Path) -> RepoEntry:
     active_worktrees = get_active_worktrees(project_id)
     analyses = [analyze_worktree(wt) for wt in active_worktrees]
     dirty_worktrees = sum(1 for wt in active_worktrees if has_uncommitted_changes(wt.path))
+    dirty_main_repo = bool(getattr(ws, "dirty_main_repo", False))
     stale_checkpoints = len(get_stale_checkpoints(project_id))
     snapshot_residue = len(find_snapshot_residue([project_id], project_id=project_id))
     needs_merge_tasks, conflict_tasks, review_tasks = _categorize_analyses(analyses)
     needs_cleanup = any((
-        dirty_worktrees, stale_checkpoints, snapshot_residue, ws.orphan_branches, ws.prunable_branches,
+        dirty_main_repo, dirty_worktrees, stale_checkpoints, snapshot_residue, ws.orphan_branches, ws.prunable_branches,
         needs_merge_tasks, conflict_tasks, review_tasks,
     ))
     return RepoEntry(
         project_id=project_id, path=str(repo_path),
         active_worktrees=ws.active_worktrees, dirty_worktrees=dirty_worktrees,
+        dirty_main_repo=dirty_main_repo,
         stale_checkpoints=stale_checkpoints, snapshot_residue=snapshot_residue,
         orphan_task_branches=ws.orphan_branches, prunable_task_branches=ws.prunable_branches,
         worktree_task_ids=ws.worktree_task_ids, orphan_branch_names=ws.orphan_branch_names,
@@ -168,7 +170,10 @@ def build_cleanup_status_payload(
         "repos": len(repositories),
         "repos_needing_cleanup": sum(1 for r in repositories if r["needs_cleanup"]),
         "active_worktrees": sum(r["active_worktrees"] for r in repositories),
-        "dirty_worktrees": sum(r["dirty_worktrees"] for r in repositories),
+        "dirty_worktrees": sum(
+            int(r["dirty_worktrees"]) + int(bool(r.get("dirty_main_repo")))
+            for r in repositories
+        ),
         "stale_checkpoints": sum(r["stale_checkpoints"] for r in repositories),
         "snapshot_residue": sum(r["snapshot_residue"] for r in repositories),
         "orphan_task_branches": sum(r["orphan_task_branches"] for r in repositories),

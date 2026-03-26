@@ -15,6 +15,7 @@ def test_build_project_cleanup_status_uses_canonical_cleanup_payload() -> None:
                 "path": "/srv/workspaces/projects/agent-hub",
                 "active_worktrees": 2,
                 "dirty_worktrees": 1,
+                "dirty_main_repo": False,
                 "stale_checkpoints": 0,
                 "snapshot_residue": 1,
                 "orphan_task_branches": 0,
@@ -39,6 +40,7 @@ def test_build_project_cleanup_status_uses_canonical_cleanup_payload() -> None:
         "path": "/srv/workspaces/projects/agent-hub",
         "active_worktrees": 2,
         "dirty_worktrees": 1,
+        "dirty_main_repo": False,
         "stale_checkpoints": 0,
         "snapshot_residue": 1,
         "orphan_task_branches": 0,
@@ -64,6 +66,7 @@ def test_build_project_cleanup_status_handles_missing_repo_entry() -> None:
         "path": None,
         "active_worktrees": 0,
         "dirty_worktrees": 0,
+        "dirty_main_repo": False,
         "stale_checkpoints": 0,
         "snapshot_residue": 0,
         "orphan_task_branches": 0,
@@ -74,3 +77,36 @@ def test_build_project_cleanup_status_handles_missing_repo_entry() -> None:
         "worktree_task_ids": [],
         "needs_cleanup": False,
     }
+
+
+def test_build_project_cleanup_status_counts_dirty_main_repo() -> None:
+    payload = {
+        "repositories": [
+            {
+                "project_id": "test2",
+                "path": "/srv/workspaces/projects/test2",
+                "active_worktrees": 0,
+                "dirty_worktrees": 0,
+                "dirty_main_repo": True,
+                "stale_checkpoints": 0,
+                "snapshot_residue": 0,
+                "orphan_task_branches": 0,
+                "prunable_task_branches": 0,
+                "needs_merge_count": 0,
+                "conflict_count": 0,
+                "review_count": 0,
+                "worktree_task_ids": [],
+                "needs_cleanup": True,
+            }
+        ]
+    }
+
+    with patch(
+        "app.services.workspace_status.build_cleanup_status_payload",
+        return_value=payload,
+    ):
+        result = build_project_cleanup_status("test2")
+
+    assert result["dirty_worktrees"] == 1
+    assert result["dirty_main_repo"] is True
+    assert result["needs_cleanup"] is True

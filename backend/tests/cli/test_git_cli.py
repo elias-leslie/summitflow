@@ -201,18 +201,14 @@ class TestGetRepoStatus:
 class TestManagedRepos:
     """Tests for managed repo resolution helpers."""
 
-    def test_get_managed_repos_skips_shadowed_fallback_project_paths(self, tmp_path: Path) -> None:
-        canonical_terminal = tmp_path / "srv" / "workspaces" / "projects" / "terminal"
-        shadow_terminal = tmp_path / "home" / "kasadis" / "terminal"
-        config_repo = tmp_path / "home" / "kasadis" / ".claude"
+    def test_get_managed_repos_uses_shared_db_backed_core_helper(self, tmp_path: Path) -> None:
+        testbed_repo = tmp_path / "srv" / "workspaces" / "projects" / "test2"
+        (testbed_repo / ".git").mkdir(parents=True)
 
-        for repo in (canonical_terminal, shadow_terminal, config_repo):
-            (repo / ".git").mkdir(parents=True)
-
-        with (
-            patch("cli.commands._git_helpers._repos_from_api", return_value=[canonical_terminal]),
-            patch("cli.commands._git_helpers._repos_from_fallback", return_value=[shadow_terminal, config_repo]),
+        with patch(
+            "cli.commands._git_helpers._get_managed_repos_from_db",
+            return_value=[testbed_repo],
         ):
             repos = _get_managed_repos()
 
-        assert repos == [canonical_terminal, config_repo]
+        assert repos == [testbed_repo]

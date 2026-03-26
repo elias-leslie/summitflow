@@ -179,6 +179,39 @@ def test_pulse_compact_surfaces_stranded_running_tasks() -> None:
     assert "STRANDED task-3 | running | no_owner_session | Refactor tool handlers" in result.output
 
 
+def test_pulse_compact_counts_dirty_main_repo_without_worktrees() -> None:
+    mock_client = MagicMock()
+    mock_client.get.return_value = {
+        "project_id": "test2",
+        "summary": {
+            "running_tasks": 0,
+            "active_owners": 0,
+            "active_specialists": 0,
+            "active_sessions": 0,
+            "stale_sessions": 0,
+            "reapable_sessions": 0,
+            "stranded_tasks": 0,
+        },
+        "cleanup": {
+            "active_worktrees": 0,
+            "dirty_worktrees": 1,
+            "dirty_main_repo": True,
+            "needs_cleanup": True,
+        },
+        "running_tasks": [],
+        "active_owners": [],
+        "active_sessions": [],
+        "stale_sessions": [],
+        "stranded_tasks": [],
+    }
+
+    with patch("cli.commands.pulse.STClient", return_value=mock_client):
+        result = runner.invoke(app, ["pulse", "--project", "test2"])
+
+    assert result.exit_code == 0
+    assert "PULSE:test2|tasks=0|owners=0|specialists=0|sessions=0|stale=0|reapable=0|worktrees=0|dirty=1|cleanup=yes|stranded=0" in result.output
+
+
 def test_pulse_prefers_source_client_for_observer_session_label() -> None:
     mock_client = MagicMock()
     mock_client.get.return_value = {

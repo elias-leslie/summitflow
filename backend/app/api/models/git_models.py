@@ -24,6 +24,7 @@ class RepoWorkspaceSummary(BaseModel):
 
     active_worktrees: int = 0
     dirty_worktrees: int = 0
+    dirty_main_repo: bool = False
     branches_with_worktrees: int = 0
     task_branches: int = 0
     orphan_branches: int = 0

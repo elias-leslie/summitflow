@@ -2,120 +2,23 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any
 
-import httpx
-
-from app.config import DEFAULT_API_BASE
+from app.utils._git_core import get_managed_repos as _get_managed_repos_from_db
 from app.utils._git_core import run_git as _run_git
 
-FALLBACK_FILE = Path.home() / ".claude/config/managed-repos.txt"
 REMOTE_REF_TEMPLATE = "{branch}...origin/{branch}"
 ALREADY_UP_TO_DATE = "Already up to date"
-
-
-def _get_summitflow_api_url() -> str:
-    return f"{os.getenv('ST_API_BASE', DEFAULT_API_BASE)}/projects"
-
-
-def _get_backup_sources_api_url() -> str:
-    return f"{os.getenv('ST_API_BASE', DEFAULT_API_BASE)}/backup-sources"
 
 
 def _is_valid_git_path(path: Path) -> bool:
     return path.exists() and (path / ".git").exists()
 
 
-def _normalize_repo_path(path: Path) -> Path:
-    try:
-        return path.resolve()
-    except OSError:
-        return path
-
-
-def _project_roots_from_projects_response(projects: list[dict[str, Any]]) -> dict[str, Path]:
-    roots: dict[str, Path] = {}
-    for project in projects:
-        project_id = project.get("id")
-        root_path = project.get("root_path")
-        if not project_id or not root_path:
-            continue
-        candidate = Path(root_path)
-        if not _is_valid_git_path(candidate):
-            continue
-        roots[str(project_id)] = _normalize_repo_path(candidate)
-    return roots
-
-
-def _is_shadowed_project_repo(path: Path, project_roots: dict[str, Path]) -> bool:
-    registered_root = project_roots.get(path.name)
-    if registered_root is None:
-        return False
-    return _normalize_repo_path(path) != registered_root
-
-
-def _repos_from_api() -> list[Path]:
-    repos: list[Path] = []
-    project_roots: dict[str, Path] = {}
-
-    projects_response = httpx.get(_get_summitflow_api_url(), timeout=2.0)
-    if projects_response.status_code == 200:
-        projects = projects_response.json()
-        project_roots = _project_roots_from_projects_response(projects)
-        repos.extend(project_roots.values())
-
-    sources_response = httpx.get(_get_backup_sources_api_url(), timeout=2.0)
-    if sources_response.status_code == 200:
-        for source in sources_response.json():
-            if source.get("source_type") not in {"config", "workspace"}:
-                continue
-            raw_path = source.get("path")
-            if not raw_path:
-                continue
-            path = Path(raw_path)
-            if not _is_valid_git_path(path):
-                continue
-            if _is_shadowed_project_repo(path, project_roots):
-                continue
-            repos.append(path)
-
-    deduped: list[Path] = []
-    for repo in repos:
-        if repo not in deduped:
-            deduped.append(repo)
-    return deduped
-
-
-def _repos_from_fallback() -> list[Path]:
-    if not FALLBACK_FILE.exists():
-        return []
-    repos = []
-    for raw in FALLBACK_FILE.read_text().splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        path = Path(line).expanduser()
-        if _is_valid_git_path(path):
-            repos.append(path)
-    return repos
-
-
 def _get_managed_repos() -> list[Path]:
-    """Get managed repos from API, falling back to the local managed-repos file."""
-    try:
-        repos = _repos_from_api()
-    except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError):
-        repos = _repos_from_fallback()
-    else:
-        project_roots = {repo.name: _normalize_repo_path(repo) for repo in repos}
-        for repo in _repos_from_fallback():
-            if _is_shadowed_project_repo(repo, project_roots):
-                continue
-            if repo not in repos:
-                repos.append(repo)
-    return repos
+    """Get managed repos from the shared DB-backed git core helper."""
+    return _get_managed_repos_from_db()
 
 
 def _get_ahead_behind(repo_path: Path, branch: str) -> tuple[int, int]:

@@ -38,7 +38,7 @@ class TestBuildRepoWorkspaceSummary:
         )
         mocker.patch(
             "app.utils._git_core.has_uncommitted_changes",
-            side_effect=[False, True],
+            side_effect=[False, False, True],
         )
         mocker.patch("app.utils._git_branches._detect_base_branch", return_value="main")
         mocker.patch(
@@ -78,6 +78,33 @@ class TestBuildRepoWorkspaceSummary:
         assert summary.salvage_task_ids == []
         assert summary.review_orphan_task_ids == ["task-789"]
 
+    def test_marks_dirty_main_repo_as_cleanup_even_without_worktrees(self, mocker) -> None:
+        repo_path = Path("/repos/test2")
+        mocker.patch(
+            "app.utils._git_branches.get_all_branches",
+            return_value=[BranchInfo(name="main", is_current=True, has_worktree=False)],
+        )
+        mocker.patch("app.utils._git_branches._get_active_worktrees", return_value=[])
+        mocker.patch(
+            "app.utils._git_core.has_uncommitted_changes",
+            return_value=True,
+        )
+        mocker.patch(
+            "app.utils._git_branches.list_prunable_task_branches",
+            return_value=[],
+        )
+        mocker.patch(
+            "app.utils._git_branches.assess_orphan_task_branches",
+            return_value=[],
+        )
+
+        summary = build_repo_workspace_summary(repo_path, project_id="test2")
+
+        assert summary.active_worktrees == 0
+        assert summary.dirty_worktrees == 0
+        assert summary.dirty_main_repo is True
+        assert summary.needs_cleanup is True
+
     def test_uses_explicit_project_id_for_worktree_lookup(self, mocker) -> None:
         repo_path = Path("/repos/custom-folder")
         mock_branches = mocker.patch(
@@ -87,6 +114,10 @@ class TestBuildRepoWorkspaceSummary:
         mock_worktrees = mocker.patch(
             "app.utils._git_branches._get_active_worktrees",
             return_value=[],
+        )
+        mocker.patch(
+            "app.utils._git_core.has_uncommitted_changes",
+            return_value=False,
         )
         mocker.patch(
             "app.utils._git_branches.list_prunable_task_branches",

@@ -251,6 +251,7 @@ def build_repo_workspace_summary(
     resolved_project_id = _resolve_project_id(repo_path, project_id)
     branches = get_all_branches(repo_path, resolved_project_id)
     active_worktrees = _get_active_worktrees(resolved_project_id) if resolved_project_id else []
+    dirty_main_repo = has_uncommitted_changes(repo_path)
     dirty_worktrees = sum(1 for wt in active_worktrees if has_uncommitted_changes(wt.path))
     task_branches = [b for b in branches if b.task_id]
     orphan_branches = [b for b in task_branches if not b.has_worktree]
@@ -261,11 +262,12 @@ def build_repo_workspace_summary(
     return RepoWorkspaceSummary(
         active_worktrees=len(active_worktrees),
         dirty_worktrees=dirty_worktrees,
+        dirty_main_repo=dirty_main_repo,
         branches_with_worktrees=sum(1 for b in task_branches if b.has_worktree),
         task_branches=len(task_branches),
         orphan_branches=len(orphan_branches),
         prunable_branches=len(prunable_branches),
-        needs_cleanup=bool(dirty_worktrees or orphan_branches or prunable_branches),
+        needs_cleanup=bool(dirty_main_repo or dirty_worktrees or orphan_branches or prunable_branches),
         worktree_task_ids=[wt.task_id for wt in active_worktrees[:2]],
         orphan_branch_names=[b.name for b in orphan_branches[:5]],
         prunable_branch_names=[b.name for b in prunable_branches[:5]],

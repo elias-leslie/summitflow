@@ -64,9 +64,11 @@ def build_repo_compact_line(repo: RepoEntry) -> str:
     preview = f" tasks:{','.join(repo['worktree_task_ids'])}" if repo["worktree_task_ids"] else ""
     stale = f" stale_cp:{repo['stale_checkpoints']}" if repo["stale_checkpoints"] else ""
     snap = f" snap:{repo['snapshot_residue']}" if repo["snapshot_residue"] else ""
+    main_dirty = " main_dirty" if repo.get("dirty_main_repo") else ""
+    dirty_total = int(repo["dirty_worktrees"]) + int(bool(repo.get("dirty_main_repo")))
     return (
         f"{repo['project_id']} worktrees:{repo['active_worktrees']} "
-        f"dirty:{repo['dirty_worktrees']}{stale}{snap} "
+        f"dirty:{dirty_total}{main_dirty}{stale}{snap} "
         f"orphan:{repo['orphan_task_branches']} "
         f"prunable:{repo['prunable_task_branches']}{preview}"
         f"{_build_attention(repo)}{_build_branch_preview(repo)}"

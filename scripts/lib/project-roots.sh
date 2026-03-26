@@ -3,8 +3,40 @@
 PROJECT_ROOTS_WORKSPACES_ROOT="${ST_WORKSPACES_ROOT:-/srv/workspaces}"
 PROJECT_ROOTS_MANAGED_REPOS_FILE="${PROJECT_ROOTS_MANAGED_REPOS_FILE:-$HOME/.claude/config/managed-repos.txt}"
 
-project_root_ids() {
+project_root_ids_static() {
     printf '%s\n' summitflow agent-hub portfolio-ai terminal monkey-fight
+}
+
+project_root_ids() {
+    command -v st >/dev/null 2>&1 || {
+        project_root_ids_static
+        return 0
+    }
+
+    local project_ids
+    project_ids="$(
+        ST_PROGRESS_ONLY=1 st projects list 2>/dev/null | python3 -c '
+import json, sys
+try:
+    payload = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+if not isinstance(payload, list):
+    sys.exit(1)
+for item in payload:
+    if isinstance(item, dict):
+        project_id = item.get("id")
+        if project_id:
+            print(project_id)
+' 2>/dev/null
+    )" || true
+
+    if [ -n "$project_ids" ]; then
+        printf '%s\n' "$project_ids"
+        return 0
+    fi
+
+    project_root_ids_static
 }
 
 project_root_from_cli() {

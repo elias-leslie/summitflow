@@ -18,6 +18,7 @@ def build_project_cleanup_status(project_id: str) -> dict[str, Any]:
             "path": None,
             "active_worktrees": 0,
             "dirty_worktrees": 0,
+            "dirty_main_repo": False,
             "stale_checkpoints": 0,
             "snapshot_residue": 0,
             "orphan_task_branches": 0,
@@ -29,11 +30,15 @@ def build_project_cleanup_status(project_id: str) -> dict[str, Any]:
             "needs_cleanup": False,
         }
 
+    dirty_total = int(repo_entry.get("dirty_worktrees") or 0) + int(
+        bool(repo_entry.get("dirty_main_repo"))
+    )
     return {
         "project_id": project_id,
         "path": repo_entry.get("path"),
         "active_worktrees": int(repo_entry.get("active_worktrees") or 0),
-        "dirty_worktrees": int(repo_entry.get("dirty_worktrees") or 0),
+        "dirty_worktrees": dirty_total,
+        "dirty_main_repo": bool(repo_entry.get("dirty_main_repo")),
         "stale_checkpoints": int(repo_entry.get("stale_checkpoints") or 0),
         "snapshot_residue": int(repo_entry.get("snapshot_residue") or 0),
         "orphan_task_branches": int(repo_entry.get("orphan_task_branches") or 0),
