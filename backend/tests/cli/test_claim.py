@@ -254,6 +254,38 @@ class TestClaimTreeSafety:
         assert exc_info.value.exit_code == 1
         assert "merge in progress" in mock_error.call_args.args[0]
 
+    def test_require_claim_safe_tree_allows_stale_rebase_head_without_rebase_dir(
+        self, tmp_path: Path
+    ) -> None:
+        git_dir = tmp_path / ".git"
+        git_dir.mkdir()
+        (git_dir / "REBASE_HEAD").write_text("stale", encoding="utf-8")
+
+        with (
+            patch("cli.commands.claim_helpers._git_status_lines", return_value=[" M frontend/app/page.tsx"]),
+            patch("cli.commands.claim_helpers.Path", return_value=git_dir),
+            patch("cli.commands.claim_helpers.output_warning") as mock_warning,
+        ):
+            require_claim_safe_tree()
+
+        mock_warning.assert_called_once()
+
+    def test_require_claim_safe_tree_blocks_rebase_dir_in_progress(self, tmp_path: Path) -> None:
+        git_dir = tmp_path / ".git"
+        git_dir.mkdir()
+        (git_dir / "rebase-merge").mkdir()
+
+        with (
+            patch("cli.commands.claim_helpers._git_status_lines", return_value=[]),
+            patch("cli.commands.claim_helpers.Path", return_value=git_dir),
+            patch("cli.commands.claim_helpers.output_error") as mock_error,
+            pytest.raises(typer.Exit) as exc_info,
+        ):
+            require_claim_safe_tree()
+
+        assert exc_info.value.exit_code == 1
+        assert "rebase in progress" in mock_error.call_args.args[0]
+
     def test_adopt_dirty_changes_to_worktree_copies_modified_and_untracked_files(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -284,3 +316,33 @@ class TestClaimTreeSafety:
         assert adopted == 2
         assert (worktree_root / "backend" / "app.py").read_text(encoding="utf-8") == "print('new')\n"
         assert (worktree_root / "new.txt").read_text(encoding="utf-8") == "hello\n"
+
+    def test_adopt_dirty_changes_to_worktree_skips_transient_artifact_roots(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from cli.commands.claim_helpers import adopt_dirty_changes_to_worktree
+
+        repo_root = tmp_path / "repo"
+        worktree_root = tmp_path / "worktree"
+        repo_root.mkdir()
+        worktree_root.mkdir()
+        (repo_root / ".pnpm-store").mkdir()
+        (repo_root / ".pnpm-store" / "temp.txt").write_text("cache\n", encoding="utf-8")
+        (repo_root / "src").mkdir()
+        (repo_root / "src" / "keep.txt").write_text("keep\n", encoding="utf-8")
+
+        monkeypatch.chdir(repo_root)
+
+        with (
+            patch(
+                "cli.commands.claim_helpers._git_status_lines",
+                return_value=["?? .pnpm-store/temp.txt", "?? src/keep.txt"],
+            ),
+            patch("cli.commands.claim_helpers.get_repo_root", return_value=repo_root),
+            patch("cli.commands.claim_helpers.output_success"),
+        ):
+            adopted = adopt_dirty_changes_to_worktree(str(worktree_root))
+
+        assert adopted == 1
+        assert not (worktree_root / ".pnpm-store").exists()
+        assert (worktree_root / "src" / "keep.txt").read_text(encoding="utf-8") == "keep\n"

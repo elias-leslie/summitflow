@@ -19,10 +19,14 @@ from ..output import output_error, output_success, output_warning
 _UNMERGED_PREFIXES = {"DD", "AU", "UD", "UA", "DU", "AA", "UU"}
 _IN_PROGRESS_FILES = (
     "MERGE_HEAD",
-    "REBASE_HEAD",
     "CHERRY_PICK_HEAD",
     "BISECT_LOG",
 )
+_IN_PROGRESS_DIRS = (
+    "rebase-merge",
+    "rebase-apply",
+)
+_ADOPTION_SKIP_ROOTS = frozenset({".pnpm-store", "node_modules", ".next", "dist", "build"})
 
 
 def _copy_path(src: Path, dest: Path) -> None:
@@ -73,6 +77,14 @@ def _parse_status_paths(line: str) -> tuple[str | None, str | None]:
     return None, path_field
 
 
+def _should_skip_dirty_adoption(path_str: str | None) -> bool:
+    """Skip transient build/package-manager artifacts during dirty adoption."""
+    if not path_str:
+        return False
+    first_segment = Path(path_str).parts[0] if Path(path_str).parts else ""
+    return first_segment in _ADOPTION_SKIP_ROOTS
+
+
 def _find_claim_hazards() -> list[str]:
     """Return concrete hazards that should block st claim."""
     hazards: list[str] = []
@@ -88,6 +100,9 @@ def _find_claim_hazards() -> list[str]:
             if (git_dir / marker).exists():
                 readable = marker.lower().replace("_head", "").replace("_", " ")
                 hazards.append(f"{readable} in progress")
+        for marker_dir in _IN_PROGRESS_DIRS:
+            if (git_dir / marker_dir).exists():
+                hazards.append("rebase in progress")
     return list(dict.fromkeys(hazards))
 
 
@@ -119,10 +134,10 @@ def adopt_dirty_changes_to_worktree(worktree_path: str) -> int:
 
     for line in status_lines:
         old_path, new_path = _parse_status_paths(line)
-        if old_path:
+        if old_path and not _should_skip_dirty_adoption(old_path):
             _remove_path(worktree_root / old_path)
 
-        if not new_path:
+        if not new_path or _should_skip_dirty_adoption(new_path):
             continue
 
         src = repo_root / new_path
