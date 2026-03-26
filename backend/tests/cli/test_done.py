@@ -521,6 +521,43 @@ class TestCompleteTaskSmart:
         assert result["merged"]
 
     @patch("cli.commands.done_task.get_snapshot_info")
+    @patch("cli.commands.done_task.capture_lifecycle_baseline")
+    @patch("cli.commands.done_task.remove_snapshot")
+    @patch("cli.commands.done_task.merge_task_branch")
+    @patch("cli.commands.done_task.auto_close_subtasks")
+    @patch("cli.commands.done_task.sync_completed_subtasks")
+    @patch("cli.commands.done_task.is_working_tree_clean", return_value=True)
+    @patch("cli.commands.done_task._publish_completed_work")
+    @patch("cli.commands.done_task.output_warning")
+    def test_pending_task_bridges_through_running_on_complete(
+        self,
+        mock_warning: MagicMock,
+        mock_publish: MagicMock,
+        mock_clean: MagicMock,
+        mock_sync: MagicMock,
+        mock_auto: MagicMock,
+        mock_merge: MagicMock,
+        mock_remove: MagicMock,
+        mock_capture: MagicMock,
+        mock_snapshot: MagicMock,
+    ) -> None:
+        """A pending task is bridged through running before completed — no warning emitted."""
+        mock_snapshot.return_value = {"worktree_path": None, "project_id": "test"}
+        mock_sync.return_value = MagicMock(synced=[], syncable=[], skipped=[])
+        client = self._setup_mocks()
+        client.get_task.return_value = {"status": "pending"}
+        client.get_subtasks.return_value = {"subtasks": []}
+
+        result = complete_task(client, "task-123")
+
+        assert result["merged"]
+        status_calls = [c.args[1] for c in client.update_status.call_args_list]
+        assert "running" in status_calls
+        assert "completed" in status_calls
+        assert status_calls.index("running") < status_calls.index("completed")
+        mock_warning.assert_not_called()
+
+    @patch("cli.commands.done_task.get_snapshot_info")
     @patch("cli.commands.done_task.remove_snapshot")
     @patch("cli.commands.done_task.merge_task_branch")
     @patch("cli.commands.done_task.auto_close_subtasks")
