@@ -32,13 +32,12 @@ class CleanupTarget:
 
 
 def _get_project_root() -> Path:
-    """Resolve the active project root or git repo root."""
-    config = get_config_optional()
-    if config.project_root:
-        return Path(config.project_root).resolve()
-
+    """Resolve the active git/worktree root, falling back to configured project root."""
     repo_root = get_repo_root()
     if repo_root is None:
+        config = get_config_optional()
+        if config.project_root:
+            return Path(config.project_root).resolve()
         output_error("Could not determine repository root. Run from inside a git repo or registered project.")
         raise typer.Exit(1)
     return repo_root.resolve()

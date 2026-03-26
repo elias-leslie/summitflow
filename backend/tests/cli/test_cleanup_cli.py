@@ -3,17 +3,35 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from typer.testing import CliRunner
 
 from cli.commands.cleanup import app
+from cli.commands.cleanup_paths import _get_project_root
 
 runner = CliRunner()
 
 
 class TestCleanupPath:
     """Tests for safe repo-local cleanup."""
+
+    def test_get_project_root_prefers_current_git_worktree_over_configured_project_root(self) -> None:
+        """Worktree-local cleanup should resolve against the active git root first."""
+        lane_root = Path("/srv/workspaces/lanes/summitflow/task-fd552cef")
+        project_root = Path("/srv/workspaces/projects/summitflow")
+
+        with (
+            patch("cli.commands.cleanup_paths.get_repo_root", return_value=lane_root),
+            patch(
+                "cli.commands.cleanup_paths.get_config_optional",
+                return_value=SimpleNamespace(project_root=str(project_root)),
+            ),
+        ):
+            resolved = _get_project_root()
+
+        assert resolved == lane_root
 
     def test_cleanup_path_dry_run_reports_repo_relative_target(self, tmp_path: Path) -> None:
         """Dry-run should report the target without deleting it."""
