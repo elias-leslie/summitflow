@@ -162,6 +162,7 @@ class TestUpdateTaskStatus:
 
         assert result is not None
         assert result["status"] == "running"
+        assert result["completed_at"] is None
 
     def test_status_cancelled_to_pending_reopens_task(self, test_task: dict[str, Any]) -> None:
         """Cancelled tasks should be reopenable."""
@@ -171,6 +172,19 @@ class TestUpdateTaskStatus:
 
         assert result is not None
         assert result["status"] == "pending"
+
+    def test_status_completed_to_pending_clears_completed_at(
+        self, test_task: dict[str, Any]
+    ) -> None:
+        """Reopened tasks should not retain stale terminal timestamps."""
+        task_store.update_task_status(test_task["id"], "running")
+        task_store.update_task_status(test_task["id"], "completed")
+
+        result = task_store.update_task_status(test_task["id"], "pending")
+
+        assert result is not None
+        assert result["status"] == "pending"
+        assert result["completed_at"] is None
 
     def test_invalid_status_raises_error(self, test_task: dict[str, Any]) -> None:
         """Test that invalid status raises ValueError."""

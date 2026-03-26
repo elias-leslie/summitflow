@@ -46,13 +46,12 @@ def smoke_test_module(
     Returns:
         Error dict with 'module' and 'error' keys, or None if passed.
     """
-    backend_path = Path(project_path) / "backend"
     import_cmd = f"import {module_name}"
 
     try:
         result = subprocess.run(
             ["python", "-c", import_cmd],
-            cwd=str(backend_path) if backend_path.exists() else project_path,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=30,

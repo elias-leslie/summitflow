@@ -28,7 +28,11 @@ VALID_STATUSES: frozenset[str] = frozenset(VALID_TRANSITIONS.keys())
 _UPDATE_SQL = f"""
     UPDATE tasks SET status = %s,
         started_at = CASE WHEN %s = 'running' THEN COALESCE(started_at, NOW()) ELSE started_at END,
-        completed_at = CASE WHEN %s IN ('completed','failed','cancelled') THEN NOW() ELSE completed_at END,
+        completed_at = CASE
+            WHEN %s IN ('completed','failed','cancelled') THEN NOW()
+            WHEN %s IN ('pending','running') THEN NULL
+            ELSE completed_at
+        END,
         error_message = CASE WHEN %s = 'running' THEN NULL WHEN %s IN ('completed','failed') THEN %s ELSE error_message END,
         current_phase = CASE WHEN %s = 'completed' THEN 'complete' ELSE current_phase END,
         claimed_by = CASE WHEN %s IN ('completed','failed','cancelled') THEN NULL ELSE claimed_by END,
@@ -69,7 +73,7 @@ def _execute_status_update(
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             _UPDATE_SQL,
-            (status, status, status, status, status, error_message,
+            (status, status, status, status, status, status, error_message,
              status, status, status, status, resolved_task_id),
         )
         row = cur.fetchone()

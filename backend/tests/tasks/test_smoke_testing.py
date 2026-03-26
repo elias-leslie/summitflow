@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -29,6 +30,26 @@ class TestSmokeTestModule:
         assert result is None
         mock_run.assert_called_once()
         assert "import app.models" in mock_run.call_args[0][0]
+
+    @patch("app.tasks.autonomous.smoke_testing.subprocess.run")
+    def test_frontend_import_runs_from_project_root_even_when_backend_exists(
+        self,
+        mock_run: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Frontend imports need the project root on sys.path, not backend/ as cwd."""
+        (tmp_path / "backend").mkdir()
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+
+        result = smoke_test_module(
+            str(tmp_path),
+            "frontend.server",
+            {"PATH": "/usr/bin"},
+        )
+
+        assert result is None
+        mock_run.assert_called_once()
+        assert mock_run.call_args.kwargs["cwd"] == str(tmp_path)
 
     @patch("app.tasks.autonomous.smoke_testing.subprocess.run")
     def test_import_error(self, mock_run: MagicMock) -> None:
