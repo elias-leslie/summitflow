@@ -13,6 +13,7 @@ from .db_helpers import (
     create_project_in_db,
     fetch_project_stats,
     get_project_from_db,
+    sync_project_backup_source,
 )
 from .models import (
     ProjectCreate,
@@ -189,6 +190,8 @@ async def update_project(project_id: str, update: ProjectUpdate) -> ProjectRespo
         ).format(updates=sql.SQL(", ").join(updates))
         cur.execute(query, params)
         row = cur.fetchone()
+        if row:
+            sync_project_backup_source(cur, row[0], row[1], row[4])
         conn.commit()
 
     if not row:

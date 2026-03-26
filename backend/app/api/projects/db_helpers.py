@@ -10,6 +10,30 @@ from ...storage.connection import get_connection, get_cursor
 from .models import ProjectResponse, ProjectStats, ProjectWithStats
 
 
+def sync_project_backup_source(
+    cur: psycopg.Cursor[Any],
+    project_id: str,
+    name: str,
+    root_path: str | None,
+) -> None:
+    """Ensure a project-scoped backup source exists and reflects the project root."""
+    if not root_path:
+        return
+
+    cur.execute(
+        """
+        INSERT INTO backup_sources (id, name, path, source_type, project_id)
+        VALUES (%s, %s, %s, 'project', %s)
+        ON CONFLICT (id) DO UPDATE
+        SET name = EXCLUDED.name,
+            path = EXCLUDED.path,
+            project_id = EXCLUDED.project_id,
+            updated_at = NOW()
+        """,
+        (project_id, name, root_path, project_id),
+    )
+
+
 def get_project_from_db(project_id: str) -> ProjectResponse:
     """Fetch a project from the database by ID."""
     with get_cursor() as cur:
@@ -150,6 +174,7 @@ def create_project_in_db(
             (project_id, name, base_url, health_endpoint, root_path, now),
         )
         row = cur.fetchone()
+        sync_project_backup_source(cur, project_id, name, root_path)
         conn.commit()
 
     if not row:

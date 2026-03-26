@@ -39,6 +39,65 @@ wait_for_http_ok() {
     return 1
 }
 
+seed_reset_markers() {
+    local db_env="${PROJECT_ID^^}_DB_URL"
+    local db_url="${!db_env:-}"
+    [ -n "$db_url" ] || return 0
+
+    "$VENV_DIR/bin/python" - <<'PY'
+from __future__ import annotations
+
+import os
+
+import psycopg
+
+project_id = os.environ["PROJECT_ID"]
+db_env = f"{project_id.upper()}_DB_URL"
+db_url = os.environ.get(db_env)
+if not db_url:
+    raise SystemExit(0)
+
+with psycopg.connect(db_url) as conn, conn.cursor() as cur:
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS reset_markers (
+            label TEXT PRIMARY KEY,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+    cur.execute(
+        """
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'reset_markers'
+        ORDER BY ordinal_position
+        """
+    )
+    columns = {row[0] for row in cur.fetchall()}
+
+    if "label" in columns:
+        cur.execute(
+            """
+            INSERT INTO reset_markers (label)
+            VALUES (%s)
+            ON CONFLICT (label) DO NOTHING
+            """,
+            (f"baseline:{project_id}",),
+        )
+    elif {"marker_id", "note"}.issubset(columns):
+        cur.execute(
+            """
+            INSERT INTO reset_markers (marker_id, note)
+            VALUES (%s, %s)
+            ON CONFLICT (marker_id) DO NOTHING
+            """,
+            (f"baseline:{project_id}", "Runtime shell baseline"),
+        )
+    conn.commit()
+PY
+}
+
 require_bin() {
     command -v "$1" >/dev/null 2>&1 || {
         echo "Missing required command: $1"
@@ -231,6 +290,15 @@ fi
 log "Installing backend runtime packages..."
 "$VENV_DIR/bin/pip" install --quiet --upgrade pip
 "$VENV_DIR/bin/pip" install --quiet -r "$BACKEND_DIR/requirements.txt"
+
+log "Seeding reset markers..."
+export PROJECT_ID
+if [ -f "$HOME/.env.local" ]; then
+    set -a
+    . "$HOME/.env.local"
+    set +a
+fi
+seed_reset_markers
 
 write_file_if_changed "$SYSTEMD_DIR/${PROJECT_ID}-backend.service" <<EOF
 [Unit]
