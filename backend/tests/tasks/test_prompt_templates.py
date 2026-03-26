@@ -68,6 +68,7 @@ class TestPromptTemplateFallbacks:
             "Use the Precision Code Search block as the first code-navigation pass."
         ),
     )
+    @patch(f"{_PROMPTS}.get_project_root_path", return_value="/srv/workspaces/projects/agent-hub")
     @patch(f"{_PROMPTS}.get_handoff_context", return_value={})
     @patch(f"{_PROMPTS}.task_store")
     @patch(f"{_PROMPTS}.get_task_spirit")
@@ -79,6 +80,7 @@ class TestPromptTemplateFallbacks:
         mock_logger: MagicMock,
         mock_get_task_spirit: MagicMock,
         mock_task_store: MagicMock,
+        _mock_project_root: MagicMock,
         _mock_handoff: MagicMock,
         _mock_precision: MagicMock,
         _mock_resume: MagicMock,
@@ -127,6 +129,7 @@ class TestPromptTemplateFallbacks:
     @patch(f"{_PROMPTS}.build_conflict_context", return_value="")
     @patch(f"{_PROMPTS}.build_resume_context", return_value="")
     @patch(f"{_PROMPTS}._build_precision_code_search_block", return_value="")
+    @patch(f"{_PROMPTS}.get_project_root_path", return_value="/srv/workspaces/projects/agent-hub")
     @patch(f"{_PROMPTS}.get_handoff_context", return_value={})
     @patch(f"{_PROMPTS}.task_store")
     @patch(f"{_PROMPTS}.get_task_spirit")
@@ -136,6 +139,7 @@ class TestPromptTemplateFallbacks:
         _mock_template: MagicMock,
         mock_get_task_spirit: MagicMock,
         mock_task_store: MagicMock,
+        _mock_project_root: MagicMock,
         _mock_handoff: MagicMock,
         _mock_precision: MagicMock,
         _mock_resume: MagicMock,
@@ -187,6 +191,7 @@ class TestPromptTemplateFallbacks:
     @patch(f"{_PROMPTS}.build_conflict_context", return_value="")
     @patch(f"{_PROMPTS}.build_resume_context", return_value="")
     @patch(f"{_PROMPTS}._build_precision_code_search_block", return_value="")
+    @patch(f"{_PROMPTS}.get_project_root_path", return_value="/srv/workspaces/projects/summitflow")
     @patch(f"{_PROMPTS}.get_handoff_context", return_value={})
     @patch(f"{_PROMPTS}.task_store")
     @patch(f"{_PROMPTS}.get_task_spirit")
@@ -199,6 +204,7 @@ class TestPromptTemplateFallbacks:
         _mock_template: MagicMock,
         mock_get_task_spirit: MagicMock,
         mock_task_store: MagicMock,
+        _mock_project_root: MagicMock,
         _mock_handoff: MagicMock,
         _mock_precision: MagicMock,
         _mock_resume: MagicMock,
@@ -245,3 +251,60 @@ class TestPromptTemplateFallbacks:
         assert "/app/dashboard" in prompt
         assert "Open dashboard" in prompt
         assert "Dense card layout can regress visually" in prompt
+
+    @patch(f"{_PROMPTS}.build_health_context", return_value="")
+    @patch(f"{_PROMPTS}.build_conflict_context", return_value="")
+    @patch(f"{_PROMPTS}.build_resume_context", return_value="")
+    @patch(f"{_PROMPTS}._build_precision_code_search_block", return_value="")
+    @patch(f"{_PROMPTS}.get_project_root_path", return_value="/srv/workspaces/projects/test2")
+    @patch(f"{_PROMPTS}.get_handoff_context", return_value={})
+    @patch(f"{_PROMPTS}.task_store")
+    @patch(f"{_PROMPTS}.get_task_spirit")
+    @patch(
+        f"{_PROMPTS}.get_prompt_template",
+        return_value="{scope_block}\n# Working Directory\n{project_path}",
+    )
+    def test_build_subtask_prompt_remaps_absolute_project_root_scope_paths_to_relative(
+        self,
+        _mock_template: MagicMock,
+        mock_get_task_spirit: MagicMock,
+        mock_task_store: MagicMock,
+        _mock_project_root: MagicMock,
+        _mock_handoff: MagicMock,
+        _mock_precision: MagicMock,
+        _mock_resume: MagicMock,
+        _mock_conflict: MagicMock,
+        _mock_health: MagicMock,
+    ) -> None:
+        from app.tasks.autonomous.exec_modules.prompts import build_subtask_prompt
+
+        mock_get_task_spirit.return_value = {
+            "done_when": [],
+            "context": {
+                "files_to_modify": [
+                    "/srv/workspaces/projects/test2/backend/app/main.py",
+                    "frontend/server.py",
+                ],
+                "files_to_create": [
+                    "/srv/workspaces/projects/test2/frontend/app/page.tsx",
+                ],
+            },
+        }
+        mock_task_store.get_task.return_value = {"id": "task-1", "description": "Fix testbed bootstrap"}
+
+        prompt = build_subtask_prompt(
+            task_id="task-1",
+            subtask={
+                "subtask_id": "1.1",
+                "description": "Repair the bootstrap path handling",
+                "steps_from_table": [{"step_number": 1, "description": "Keep lane-safe scope paths"}],
+            },
+            project_id="test2",
+            project_path="/home/kasadis/.local/share/st/worktrees/test2/task-1",
+        )
+
+        assert "backend/app/main.py" in prompt
+        assert "frontend/server.py" in prompt
+        assert "frontend/app/page.tsx" in prompt
+        assert "/srv/workspaces/projects/test2/backend/app/main.py" not in prompt
+        assert "/srv/workspaces/projects/test2/frontend/app/page.tsx" not in prompt

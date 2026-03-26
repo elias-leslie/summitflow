@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from ....logging_config import get_logger
+from ....services._lane_scope import normalize_scope_values
 from ....services.context_gatherer import (
     PRECISION_CODE_SEARCH_GUIDANCE,
     collect_precision_code_search_context,
@@ -12,6 +14,7 @@ from ....services.context_gatherer import (
 from ....services.task_harness import estimate_prompt_tokens, summarize_execution_contract
 from ....storage import tasks as task_store
 from ....storage.events import get_events_by_trace
+from ....storage.projects import get_project_root_path
 from ....storage.subtasks import get_handoff_context
 from ....storage.task_spirit import get_task_spirit
 from ...autonomous.pickup_guards import check_system_health
@@ -157,11 +160,77 @@ def _build_done_when_block(done_when: list[Any]) -> str:
     return "\n".join(lines)
 
 
-def _build_scope_block(context: dict[str, Any]) -> str:
+def _normalize_scope_path_for_prompt(
+    raw: object,
+    *,
+    execution_root: str | None,
+    project_root: str | None,
+) -> str | None:
+    if not isinstance(raw, str):
+        return None
+    candidate = raw.strip()
+    if not candidate:
+        return None
+    normalized = normalize_scope_values([candidate])
+    if normalized:
+        return next(iter(normalized))
+    path = Path(candidate)
+    if not path.is_absolute():
+        return None
+    for root in (execution_root, project_root):
+        if not root:
+            continue
+        try:
+            relative = path.relative_to(Path(root))
+        except ValueError:
+            continue
+        remapped = normalize_scope_values([relative.as_posix()])
+        if remapped:
+            return next(iter(remapped))
+    return None
+
+
+def _normalize_scope_paths_for_prompt(
+    values: object,
+    *,
+    execution_root: str | None,
+    project_root: str | None,
+) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    normalized_paths: list[str] = []
+    seen: set[str] = set()
+    for raw in values:
+        normalized = _normalize_scope_path_for_prompt(
+            raw,
+            execution_root=execution_root,
+            project_root=project_root,
+        )
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        normalized_paths.append(normalized)
+    return normalized_paths
+
+
+def _build_scope_block(
+    context: dict[str, Any],
+    *,
+    execution_root: str | None = None,
+    project_root: str | None = None,
+) -> str:
     if not isinstance(context, dict):
         return ""
-    files_to_modify = [str(path).strip() for path in context.get("files_to_modify", []) if str(path).strip()]
-    files_to_create = [str(path).strip() for path in context.get("files_to_create", []) if str(path).strip()]
+    files_to_modify = _normalize_scope_paths_for_prompt(
+        context.get("files_to_modify"),
+        execution_root=execution_root,
+        project_root=project_root,
+    )
+    files_to_create = _normalize_scope_paths_for_prompt(
+        context.get("files_to_create"),
+        execution_root=execution_root,
+        project_root=project_root,
+    )
     risks = [str(item).strip() for item in context.get("risks", []) if str(item).strip()]
     if not files_to_modify and not files_to_create and not risks:
         return ""
@@ -308,13 +377,18 @@ def build_subtask_prompt_payload(
     spirit = get_task_spirit(task_id)
     done_when = spirit.get("done_when", []) if spirit else []
     context = spirit.get("context", {}) if spirit else {}
+    project_root = get_project_root_path(project_id)
     subtask_short_id = subtask.get("subtask_id", "")
     handoff = get_handoff_context(task_id, subtask_short_id)
 
     task = task_store.get_task(task_id)
     objective = (task.get("description") or task.get("title") or "") if task else ""
     done_when_block = _build_done_when_block(done_when)
-    scope_block = _build_scope_block(context)
+    scope_block = _build_scope_block(
+        context,
+        execution_root=project_path,
+        project_root=project_root,
+    )
     contract_block = _build_execution_contract_block(context)
     handoff_block = _build_handoff_block(handoff)
     steps_block = build_steps_block(_get_subtask_steps(subtask))
