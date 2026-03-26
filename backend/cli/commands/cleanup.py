@@ -10,20 +10,15 @@ from typing import Annotated, Any
 
 import typer
 
-from app.storage import tasks as task_store
-from app.utils._git_branches import (
-    assess_orphan_task_branches,
-    prune_closed_orphan_task_branches,
-    prune_equivalent_orphan_task_branches,
-    prune_prunable_task_branches,
-    prune_worktree_registrations,
-)
-from app.utils._git_core import run_git
+from app.utils._git_branches import assess_orphan_task_branches
 from app.utils.git_helpers import build_repo_workspace_summary
 
 from ..config import get_config_optional
 from ..lib.checkpoint import get_stale_checkpoints
-from ..lib.worktree import create_worktree, get_active_worktrees
+from ..lib.confirm_token import confirm_gate, format_preview, generate_token
+from ..lib.quick_snapshots import find_snapshot_residue
+from ..lib.worktree import get_active_worktrees
+from ..lib.worktree_paths import workspaces_root_available
 from ..output import output_error, output_json, output_success
 from ..output_context import OutputContext
 from ._git_helpers import _get_managed_repos
@@ -36,23 +31,22 @@ from .cleanup_analysis import (
 )
 from .cleanup_btrfs import (
     build_lane_preview_lines,
-    collect_lane_inspections,
-    collect_orphaned_snap_dirs,
-    collect_stale_checkpoints_for_lanes,
-    escape_cwd,
-    execute_lane_deletions,
-    execute_snapshot_deletions,
+    collect_lane_targets,
+    exit_if_empty,
+    resolve_lanes_project_ids,
+    run_lane_deletions,
+    run_snapshot_deletions,
 )
 from .cleanup_display import RepoEntry, format_cleanup_status_compact, print_git_residue_report
 from .cleanup_git import has_uncommitted_changes
 from .cleanup_handlers import (
-    categorize_worktrees,
-    execute_cleanup,
-    print_cleanup_results,
-    print_worktree_summary,
+    analyze_and_display,
+    build_force_worktree_preview,
+    cleanup_safe_git_residue,
+    run_worktree_cleanup,
 )
 from .cleanup_paths import cleanup_paths_command
-from .cleanup_salvage import validate_salvage_candidate
+from .cleanup_salvage import recover_orphan_task, validate_salvage_candidate
 
 # Re-export for backward compatibility
 __all__ = [
@@ -124,8 +118,6 @@ def _categorize_analyses(analyses: list[WorktreeAnalysis]) -> tuple[list[str], l
 def _build_repo_cleanup_entry(repo_path: Path) -> RepoEntry:
     """Build cleanup counters for one managed repository."""
     project_id = repo_path.name
-    from ..lib.quick_snapshots import find_snapshot_residue
-
     ws = build_repo_workspace_summary(repo_path)
     active_worktrees = get_active_worktrees(project_id)
     analyses = [analyze_worktree(wt) for wt in active_worktrees]
@@ -191,51 +183,6 @@ def build_cleanup_status_payload(
     }
 
 
-def _analyze_and_display(
-    worktrees: list,
-    stale_days: int,
-) -> tuple[list[WorktreeAnalysis], object]:
-    """Analyze worktrees, print summary, and return (analyses, categorization)."""
-    analyses = [analyze_worktree(wt) for wt in worktrees]
-    categorization = categorize_worktrees(analyses, stale_days)
-    print_worktree_summary(len(worktrees), categorization, stale_days)
-    for analysis in analyses:
-        typer.echo(format_analysis(analysis))
-    return analyses, categorization
-
-
-def _cleanup_safe_git_residue(repos: list[Path], dry_run: bool) -> tuple[int, int, int, int]:
-    """Prune stale worktree registrations and safe orphan task branches."""
-    if dry_run:
-        return (0, 0, 0, 0)
-    pruned_regs = pruned_branches = pruned_equiv = pruned_closed = 0
-    for repo_path in repos:
-        prune_worktree_registrations(repo_path)
-        pruned_regs += 1
-        pruned_branches += len(prune_prunable_task_branches(repo_path))
-        pruned_equiv += len(prune_equivalent_orphan_task_branches(repo_path))
-        pruned_closed += len(prune_closed_orphan_task_branches(repo_path))
-    return pruned_regs, pruned_branches, pruned_equiv, pruned_closed
-
-
-def _get_branch_subject(repo_path: Path, branch_name: str) -> str | None:
-    """Return the latest commit subject for a branch."""
-    result = run_git(["log", "-1", "--format=%s", branch_name], repo_path)
-    if result.returncode != 0:
-        return None
-    return result.stdout.strip() or None
-
-
-def _build_salvage_description(task_id: str, branch_name: str, repo_path: Path) -> str:
-    """Build a compact description for a recovered orphan branch task."""
-    subject = _get_branch_subject(repo_path, branch_name)
-    detail = f"Latest commit: {subject}." if subject else "Latest commit subject unavailable."
-    return (
-        f"Recovered from orphan branch {branch_name} in {repo_path.name}. "
-        f"{detail} Resume review, salvage, or discard from the restored lane."
-    )
-
-
 # ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
@@ -250,13 +197,11 @@ def cleanup_worktrees(
     confirm: Annotated[str | None, typer.Option("--confirm", help="Confirm token from preview run")] = None,
 ) -> None:
     """List orphaned/stale worktrees with recommendations. Actions: SAFE, MERGED, NEEDS_MERGE, CONFLICT, REVIEW, ACTIVE."""
-    from ..lib.confirm_token import confirm_gate
-
     project_id = get_project_id(all_projects)
     worktrees = get_active_worktrees(project_id)
 
     if not worktrees:
-        counts = _cleanup_safe_git_residue(_iter_target_repos(all_projects), dry_run) if auto else (0, 0, 0, 0)
+        counts = cleanup_safe_git_residue(_iter_target_repos(all_projects), dry_run) if auto else (0, 0, 0, 0)
         if auto and dry_run:
             typer.echo(_DRY_RUN_MSG)
         output_success("No worktrees found")
@@ -265,44 +210,30 @@ def cleanup_worktrees(
         return
 
     typer.echo(f"Analyzing {len(worktrees)} worktree(s)...")
-    analyses, categorization = _analyze_and_display(worktrees, stale_days)
+    analyses, categorization = analyze_and_display(worktrees, stale_days)
 
     if not auto and not force:
         typer.echo("")
         typer.echo(_NO_CLEANUP_FLAG_MSG)
         return
 
-    # --auto cleans only safe cases, no confirmation needed
+    repos = _iter_target_repos(all_projects)
+
     if auto and not force:
         typer.echo("")
         if dry_run:
             typer.echo(_DRY_RUN_MSG)
-        results = execute_cleanup(categorization.safe_to_delete, force=False, dry_run=dry_run)
-        print_cleanup_results(results, dry_run)
-        counts = _cleanup_safe_git_residue(_iter_target_repos(all_projects), dry_run)
-        if not dry_run:
-            print_git_residue_report(*counts)
+        run_worktree_cleanup(categorization.safe_to_delete, force=False, dry_run=dry_run, repos=repos)
         return
 
     # --force requires two-pass confirmation
-    command_key = f"cleanup-worktrees-{project_id or 'all'}"
-    preview_lines = [f"FORCE CLEANUP will remove ALL {len(analyses)} worktrees:"]
-    for analysis in analyses:
-        action = analysis.action.value if hasattr(analysis.action, "value") else str(analysis.action)
-        preview_lines.append(f"  {analysis.worktree.path} [{action}]")
-    if categorization.needs_merge:
-        preview_lines.append(f"  WARNING: {len(categorization.needs_merge)} have unmerged commits")
-    scope = "--all" if all_projects else ""
-    confirm_gate(command_key, confirm, preview_lines, f"st cleanup worktrees --force {scope}".strip())
+    command_key, preview_lines, cmd = build_force_worktree_preview(analyses, categorization, project_id, all_projects)
+    confirm_gate(command_key, confirm, preview_lines, cmd)
 
     typer.echo("")
     if dry_run:
         typer.echo(_DRY_RUN_MSG)
-    results = execute_cleanup(analyses, force=True, dry_run=dry_run)
-    print_cleanup_results(results, dry_run)
-    counts = _cleanup_safe_git_residue(_iter_target_repos(all_projects), dry_run)
-    if not dry_run:
-        print_git_residue_report(*counts)
+    run_worktree_cleanup(analyses, force=True, dry_run=dry_run, repos=repos)
 
 
 @app.command("inspect-orphans")
@@ -359,27 +290,7 @@ def salvage_orphan(
     repo_path, item = match
     if not validate_salvage_candidate(item, task_id):
         raise typer.Exit(1)
-
-    title = _get_branch_subject(repo_path, item.branch_name) or f"Recover orphan branch {task_id}"
-    description = _build_salvage_description(task_id, item.branch_name, repo_path)
-    created = task_store.create_task(
-        project_id=repo_path.name, title=title, description=description,
-        task_id=task_id, labels=["cleanup:salvaged"],
-    )
-    task_store.update_task(task_id, branch_name=item.branch_name)
-    try:
-        worktree = create_worktree(task_id, project_id=repo_path.name)
-    except Exception as exc:
-        task_store.delete_task(task_id, deletion_source="cli:cleanup.salvage_rollback")
-        output_error(f"Recovered task record for {task_id}, but failed to create worktree: {exc}")
-        raise typer.Exit(1) from exc
-
-    output_success(f"Recovered orphan branch {item.branch_name} into task {created['id']}")
-    typer.echo(f"  project: {repo_path.name}")
-    typer.echo(f"  title: {title}")
-    typer.echo(f"  worktree: {worktree.path}")
-    if item.has_node_modules_artifact:
-        typer.echo("  note: branch includes node_modules artifact changes; inspect before merge")
+    recover_orphan_task(repo_path, item, task_id)
 
 
 @app.command("lanes")
@@ -398,9 +309,6 @@ def cleanup_lanes(
     Uses two-pass confirmation: first run shows blast radius, second run with
     --confirm TOKEN executes.
     """
-    from ..lib.confirm_token import confirm_gate
-    from ..lib.worktree_paths import get_workspaces_root, workspaces_root_available
-
     if not workspaces_root_available():
         output_error("Btrfs workspaces not available — nothing to clean up.")
         raise typer.Exit(1)
@@ -410,28 +318,15 @@ def cleanup_lanes(
         output_error("Could not determine project. Use --all or run from a project directory.")
         raise typer.Exit(1)
 
-    if all_projects:
-        lanes_root = get_workspaces_root() / "lanes"
-        project_ids = sorted(d.name for d in lanes_root.iterdir() if d.is_dir()) if lanes_root.is_dir() else []
-    else:
-        project_ids = [project_id]
+    project_ids = resolve_lanes_project_ids(all_projects, project_id)
+    inspections, orphaned_snap_dirs, stale_checkpoints = collect_lane_targets(project_ids, lane_name)
 
-    all_inspections = collect_lane_inspections(project_ids, lane_name)
-    inspections = all_inspections if lane_name else [i for i in all_inspections if not i.is_git_worktree]
-    orphaned_snap_dirs = collect_orphaned_snap_dirs(project_ids, lane_name)
-    stale_checkpoints = collect_stale_checkpoints_for_lanes(project_ids, lane_name)
-
-    if not inspections and not orphaned_snap_dirs and not stale_checkpoints:
-        msg = (
-            "No matching lane, orphaned snapshots, or stale checkpoints found to clean up."
-            if lane_name else
-            "No orphaned lanes, orphaned snapshots, or stale checkpoints found to clean up."
-        )
-        if lane_name:
-            output_error(msg)
-            raise typer.Exit(1)
-        output_success(msg)
-        return
+    exit_if_empty(
+        not inspections and not orphaned_snap_dirs and not stale_checkpoints,
+        lane_name,
+        "No matching lane, orphaned snapshots, or stale checkpoints found to clean up.",
+        "No orphaned lanes, orphaned snapshots, or stale checkpoints found to clean up.",
+    )
 
     scope_label = "all" if all_projects else project_ids[0]
     command_key = f"cleanup-lanes-{scope_label}-{lane_name or 'all-lanes'}"
@@ -439,30 +334,13 @@ def cleanup_lanes(
     cmd = " ".join(["st cleanup lanes"] + ([lane_name] if lane_name else []) + (["--all"] if all_projects else []))
 
     if confirm is None and dry_run:
-        from ..lib.confirm_token import format_preview, generate_token
-
         token = generate_token(command_key)
         print(format_preview(cmd, preview_lines, token))
         typer.echo("  (dry-run: no token needed)")
         raise typer.Exit(0)
 
     confirm_gate(command_key, confirm, preview_lines, cmd)
-
-    if dry_run:
-        typer.echo("DRY RUN — would delete:")
-        for insp in inspections:
-            typer.echo(f"  {insp.project_id}/{insp.lane_name} ({insp.total_items} subvolumes)")
-        for orphan in orphaned_snap_dirs:
-            typer.echo(f"  {orphan.project_id}/{orphan.lane_name} orphaned snapshots ({orphan.total_items})")
-        for cp in stale_checkpoints:
-            typer.echo(f"  {cp.project_id}/{cp.task_id} stale checkpoint metadata")
-        return
-
-    escape_cwd([insp.lane_path for insp in inspections])
-    deleted, errors = execute_lane_deletions(inspections, orphaned_snap_dirs, stale_checkpoints)
-    output_success(f"Deleted {deleted} target(s), {len(errors)} error(s)")
-    for err in errors:
-        typer.echo(f"  ERROR {err}", err=True)
+    run_lane_deletions(inspections, orphaned_snap_dirs, stale_checkpoints, dry_run)
 
 
 @app.command("snapshots")
@@ -473,10 +351,6 @@ def cleanup_snapshots(
     confirm: Annotated[str | None, typer.Option("--confirm", help="Confirm token from preview run")] = None,
 ) -> None:
     """Delete legacy snapshot residue outside the current managed lane/project layout."""
-    from ..lib.confirm_token import confirm_gate
-    from ..lib.quick_snapshots import find_snapshot_residue
-    from ..lib.worktree_paths import workspaces_root_available
-
     if not workspaces_root_available():
         output_error("Btrfs workspaces not available — nothing to clean up.")
         raise typer.Exit(1)
@@ -487,13 +361,12 @@ def cleanup_snapshots(
     if residue_name:
         residues = [r for r in residues if r.residue_name == residue_name]
 
-    if not residues:
-        msg = "No matching snapshot residue found to clean up." if residue_name else "No legacy snapshot residue found to clean up."
-        if residue_name:
-            output_error(msg)
-            raise typer.Exit(1)
-        output_success(msg)
-        return
+    exit_if_empty(
+        not residues,
+        residue_name,
+        "No matching snapshot residue found to clean up.",
+        "No legacy snapshot residue found to clean up.",
+    )
 
     scope_label = "all" if all_projects else (current_project_id or "unknown")
     command_key = f"cleanup-snapshots-{scope_label}-{residue_name or 'all-snapshots'}"
@@ -505,18 +378,7 @@ def cleanup_snapshots(
 
     cmd = " ".join(["st cleanup snapshots"] + ([residue_name] if residue_name else []) + (["--all"] if all_projects else []))
     confirm_gate(command_key, confirm, preview_lines, cmd)
-
-    if dry_run:
-        typer.echo("DRY RUN — would delete:")
-        for residue in residues:
-            typer.echo(f"  {residue.project_id or 'unowned'}/{residue.residue_name} ({residue.residue_type})")
-        return
-
-    escape_cwd([residue.path for residue in residues])
-    deleted, errors = execute_snapshot_deletions(residues)
-    output_success(f"Deleted {deleted} target(s), {len(errors)} error(s)")
-    for err in errors:
-        typer.echo(f"  ERROR {err}", err=True)
+    run_snapshot_deletions(residues, dry_run)
 
 
 @app.command("status")

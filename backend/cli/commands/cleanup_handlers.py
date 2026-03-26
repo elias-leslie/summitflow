@@ -14,7 +14,13 @@ from app.utils._git_branches import (
     prune_worktree_registrations,
 )
 
-from .cleanup_analysis import CleanupAction, WorktreeAnalysis, cleanup_worktree
+from .cleanup_analysis import (
+    CleanupAction,
+    WorktreeAnalysis,
+    analyze_worktree,
+    cleanup_worktree,
+    format_analysis,
+)
 
 
 @dataclass
@@ -131,6 +137,44 @@ def print_cleanup_results(results: CleanupResults, dry_run: bool) -> None:
     else:
         message = f"Cleaned {results.cleaned}, skipped {results.skipped}, errors {results.errors}"
     output_success(message)
+
+
+def analyze_and_display(
+    worktrees: list, stale_days: int
+) -> tuple[list[WorktreeAnalysis], WorktreeCategorization]:
+    """Analyze worktrees, print summary, and return (analyses, categorization)."""
+    analyses = [analyze_worktree(wt) for wt in worktrees]
+    categorization = categorize_worktrees(analyses, stale_days)
+    print_worktree_summary(len(worktrees), categorization, stale_days)
+    for analysis in analyses:
+        typer.echo(format_analysis(analysis))
+    return analyses, categorization
+
+
+def run_worktree_cleanup(targets, force: bool, dry_run: bool, repos: list[Path]) -> None:
+    """Execute worktree cleanup and print results and git residue report."""
+    from .cleanup_display import print_git_residue_report
+
+    results = execute_cleanup(targets, force=force, dry_run=dry_run)
+    print_cleanup_results(results, dry_run)
+    counts = cleanup_safe_git_residue(repos, dry_run)
+    if not dry_run:
+        print_git_residue_report(*counts)
+
+
+def build_force_worktree_preview(
+    analyses: list, categorization: WorktreeCategorization, project_id: str | None, all_projects: bool
+) -> tuple[str, list[str], str]:
+    """Build command_key, preview_lines, and cmd for --force worktree cleanup."""
+    command_key = f"cleanup-worktrees-{project_id or 'all'}"
+    preview_lines = [f"FORCE CLEANUP will remove ALL {len(analyses)} worktrees:"]
+    for analysis in analyses:
+        action = analysis.action.value if hasattr(analysis.action, "value") else str(analysis.action)
+        preview_lines.append(f"  {analysis.worktree.path} [{action}]")
+    if categorization.needs_merge:
+        preview_lines.append(f"  WARNING: {len(categorization.needs_merge)} have unmerged commits")
+    scope = "--all" if all_projects else ""
+    return command_key, preview_lines, f"st cleanup worktrees --force {scope}".strip()
 
 
 def cleanup_safe_git_residue(repos: list[Path], dry_run: bool) -> tuple[int, int, int, int]:
