@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +12,7 @@ from app.services.refactor_promotion import assess_refactor_target
 from app.services.task_issue_mapper import link_issue_to_task
 from app.storage import qa_issues as qa_storage
 from app.storage import tasks as task_store
+from app.storage.connection import get_connection
 from app.storage.events import log_task_event
 from app.storage.explorer_analysis import (
     DEFAULT_REFACTOR_TARGET_LIMIT,
@@ -27,6 +30,24 @@ from ...logging_config import get_logger
 logger = get_logger(__name__)
 
 _SIZE_ISSUES = {"oversized", "large_file", "bloat_critical", "bloat_warning"}
+_REFACTOR_REGENERATE_LOCK_PREFIX = "summitflow:refactor-regenerate:"
+
+
+def _regenerate_lock_id(project_id: str) -> int:
+    digest = hashlib.sha1(f"{_REFACTOR_REGENERATE_LOCK_PREFIX}{project_id}".encode()).digest()
+    return int.from_bytes(digest[:8], "big", signed=True)
+
+
+@contextmanager
+def _regenerate_lock(project_id: str):
+    lock_id = _regenerate_lock_id(project_id)
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT pg_advisory_lock(%s)", (lock_id,))
+        try:
+            yield
+        finally:
+            cur.execute("SELECT pg_advisory_unlock(%s)", (lock_id,))
+            conn.commit()
 
 
 def _ensure_refactor_scope(task_id: str, relative_path: str) -> None:
@@ -254,22 +275,27 @@ def generate_refactor_tasks_internal(
 
 def regenerate_refactor_tasks_impl(project_id: str) -> dict[str, Any]:
     """Scan, close resolved refactor tasks, and create only newly needed tasks."""
-    project_root = get_project_root_path(project_id)
-    if not project_root:
-        logger.error("Project %s not found or has no root_path", project_id)
-        return {
-            "error": f"Project {project_id} not found",
-            "closed_count": 0,
-            "created_count": 0,
-            "scanned_count": 0,
-        }
+    with _regenerate_lock(project_id):
+        project_root = get_project_root_path(project_id)
+        if not project_root:
+            logger.error("Project %s not found or has no root_path", project_id)
+            return {
+                "error": f"Project {project_id} not found",
+                "closed_count": 0,
+                "created_count": 0,
+                "scanned_count": 0,
+            }
 
-    scan(project_id, "file")
-    closed_count = check_and_close_resolved_issues(project_id)
-    result = generate_refactor_tasks_internal(project_id, skip_existing=True, project_root=project_root)
-    logger.info(
-        "Refactor task sync complete for %s: closed=%d, created=%d, retired=%d, scanned=%d, skipped=%d",
-        project_id, closed_count, result['created_count'],
-        result['retired_count'], result['scanned_count'], result['skipped_count'],
-    )
-    return {"closed_count": closed_count, **result}
+        scan(project_id, "file")
+        closed_count = check_and_close_resolved_issues(project_id)
+        result = generate_refactor_tasks_internal(
+            project_id,
+            skip_existing=True,
+            project_root=project_root,
+        )
+        logger.info(
+            "Refactor task sync complete for %s: closed=%d, created=%d, retired=%d, scanned=%d, skipped=%d",
+            project_id, closed_count, result['created_count'],
+            result['retired_count'], result['scanned_count'], result['skipped_count'],
+        )
+        return {"closed_count": closed_count, **result}
