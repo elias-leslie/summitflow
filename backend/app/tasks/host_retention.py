@@ -26,10 +26,10 @@ class HostRetentionPolicy:
 
     pressure_disk_percent: float = 75.0
     pressure_min_free_gb: float = 25.0
-    builder_cache_target_gb: int = 5
-    builder_cache_pressure_target_gb: int = 2
-    image_max_age_hours: int = 14 * 24
-    image_pressure_max_age_hours: int = 3 * 24
+    builder_cache_target_gb: int = 2
+    builder_cache_pressure_target_gb: int = 1
+    image_max_age_hours: int = 0
+    image_pressure_max_age_hours: int = 0
     anonymous_volume_max_age_hours: int = 7 * 24
     npx_max_age_hours: int = 7 * 24
     playwright_max_age_hours: int = 14 * 24
@@ -58,13 +58,13 @@ class HostRetentionPolicy:
         return cls(
             pressure_disk_percent=_float_env("SF_HOST_RETENTION_PRESSURE_DISK_PERCENT", 75.0),
             pressure_min_free_gb=_float_env("SF_HOST_RETENTION_PRESSURE_MIN_FREE_GB", 25.0),
-            builder_cache_target_gb=_int_env("SF_HOST_RETENTION_BUILDER_CACHE_TARGET_GB", 5),
+            builder_cache_target_gb=_int_env("SF_HOST_RETENTION_BUILDER_CACHE_TARGET_GB", 2),
             builder_cache_pressure_target_gb=_int_env(
-                "SF_HOST_RETENTION_BUILDER_CACHE_PRESSURE_TARGET_GB", 2
+                "SF_HOST_RETENTION_BUILDER_CACHE_PRESSURE_TARGET_GB", 1
             ),
-            image_max_age_hours=_int_env("SF_HOST_RETENTION_IMAGE_MAX_AGE_HOURS", 14 * 24),
+            image_max_age_hours=_int_env("SF_HOST_RETENTION_IMAGE_MAX_AGE_HOURS", 0),
             image_pressure_max_age_hours=_int_env(
-                "SF_HOST_RETENTION_IMAGE_PRESSURE_MAX_AGE_HOURS", 3 * 24
+                "SF_HOST_RETENTION_IMAGE_PRESSURE_MAX_AGE_HOURS", 0
             ),
             anonymous_volume_max_age_hours=_int_env(
                 "SF_HOST_RETENTION_ANON_VOLUME_MAX_AGE_HOURS", 7 * 24
@@ -269,18 +269,16 @@ def _prune_images(
         if pressure_mode
         else policy.image_max_age_hours
     )
-    proc = _run_command(
-        [
-            "docker",
-            "image",
-            "prune",
-            "--force",
-            "--all",
-            "--filter",
-            f"until={max_age_hours}h",
-        ],
-        timeout=300,
-    )
+    args = [
+        "docker",
+        "image",
+        "prune",
+        "--force",
+        "--all",
+    ]
+    if max_age_hours > 0:
+        args.extend(["--filter", f"until={max_age_hours}h"])
+    proc = _run_command(args, timeout=300)
     if proc.returncode != 0:
         return {
             "status": "error",

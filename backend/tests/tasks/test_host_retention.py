@@ -7,6 +7,38 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 
+def test_host_retention_policy_defaults_keep_docker_cache_minimal() -> None:
+    from app.tasks.host_retention import HostRetentionPolicy
+
+    policy = HostRetentionPolicy()
+
+    assert policy.builder_cache_target_gb == 2
+    assert policy.builder_cache_pressure_target_gb == 1
+    assert policy.image_max_age_hours == 0
+    assert policy.image_pressure_max_age_hours == 0
+
+
+def test_prune_images_without_age_grace_prunes_all_unused_images(mocker) -> None:
+    from app.tasks.host_retention import HostRetentionPolicy, _prune_images
+
+    run_command = mocker.patch(
+        "app.tasks.host_retention._run_command",
+        return_value=type("Proc", (), {"returncode": 0, "stdout": "ok", "stderr": ""})(),
+    )
+
+    result = _prune_images(policy=HostRetentionPolicy(image_max_age_hours=0), pressure_mode=False)
+
+    assert run_command.call_args.args[0] == [
+        "docker",
+        "image",
+        "prune",
+        "--force",
+        "--all",
+    ]
+    assert result["status"] == "success"
+    assert result["max_age_hours"] == 0
+
+
 def test_cleanup_host_artifacts_prunes_rebuildable_data_and_reports_review_candidates(
     mocker,
     tmp_path: Path,
