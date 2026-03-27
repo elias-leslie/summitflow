@@ -1,175 +1,37 @@
 'use client'
 
 import clsx from 'clsx'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { AlertCircle, ArrowLeft, FolderPlus, FolderTree, HeartPulse } from 'lucide-react'
+import { AlertCircle, ArrowLeft, FolderPlus } from 'lucide-react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { useState } from 'react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { createProject } from '@/lib/api'
-import {
-  buildHostedBaseUrl,
-  buildHostedRootPath,
-  buildHealthPreview,
-  DEFAULT_HEALTH_ENDPOINT,
-  normalizeProjectFormValues,
-  normalizeProjectId,
-  normalizeRootPath,
-  type ProjectFormErrors,
-  validateProjectForm,
-} from '@/lib/project-registration'
-
-type FormErrors = ProjectFormErrors & { submit?: string }
-type ErrorField = keyof FormErrors
+import { DEFAULT_HEALTH_ENDPOINT } from '@/lib/project-registration'
+import { ROUTE_HOME } from './constants'
+import { AgentHubSection } from './AgentHubSection'
+import { ProjectPreviewPanel } from './ProjectPreviewPanel'
+import { useNewProjectForm } from './useNewProjectForm'
 
 export function NewProjectClient() {
-  const router = useRouter()
-  const queryClient = useQueryClient()
-
-  const [name, setName] = useState('')
-  const [projectId, setProjectId] = useState('')
-  const [baseUrl, setBaseUrl] = useState('')
-  const [healthEndpoint, setHealthEndpoint] = useState(DEFAULT_HEALTH_ENDPOINT)
-  const [rootPath, setRootPath] = useState('')
-  const [syncAgentHubPermission, setSyncAgentHubPermission] = useState(true)
-  const [permissionTier, setPermissionTier] = useState('read')
-  const [autoExecEnabled, setAutoExecEnabled] = useState(false)
-  const [errors, setErrors] = useState<FormErrors>({})
-
-  const mutation = useMutation({
-    mutationFn: createProject,
-    onSuccess: (project) => {
-      queryClient.invalidateQueries({ queryKey: ['projects'] })
-      queryClient.invalidateQueries({ queryKey: ['projects-with-stats'] })
-      router.push(`/projects/${project.id}`)
-    },
-    onError: (error: Error) => {
-      setErrors({ submit: error.message })
-    },
-  })
-
-  const clearError = (field: ErrorField) => {
-    setErrors((current) => {
-      if (!(field in current) && !('submit' in current)) {
-        return current
-      }
-
-      const next = { ...current }
-      delete next[field]
-      delete next.submit
-      return next
-    })
-  }
-
-  const syncHostedDefaults = (nextProjectId: string, previousProjectId: string) => {
-    const previousBaseUrl = buildHostedBaseUrl(previousProjectId)
-    const previousRootPath = buildHostedRootPath(previousProjectId)
-    const nextBaseUrl = buildHostedBaseUrl(nextProjectId)
-    const nextRootPath = buildHostedRootPath(nextProjectId)
-
-    setProjectId(nextProjectId)
-    setBaseUrl((current) =>
-      !current || current === previousBaseUrl ? nextBaseUrl : current,
-    )
-    setRootPath((current) =>
-      !current || current === previousRootPath ? nextRootPath : current,
-    )
-  }
-
-  const handleNameChange = (value: string) => {
-    clearError('name')
-    setName(value)
-    if (!projectId || projectId === normalizeProjectId(name)) {
-      syncHostedDefaults(normalizeProjectId(value), projectId)
-    }
-  }
-
-  const handleProjectIdChange = (value: string) => {
-    clearError('projectId')
-    syncHostedDefaults(normalizeProjectId(value), projectId)
-  }
-
-  const handleBaseUrlChange = (value: string) => {
-    clearError('baseUrl')
-    setBaseUrl(value)
-  }
-
-  const handleHealthEndpointChange = (value: string) => {
-    clearError('healthEndpoint')
-    setHealthEndpoint(value)
-  }
-
-  const handleRootPathChange = (value: string) => {
-    clearError('rootPath')
-    setRootPath(value)
-  }
-
-  const validate = (): boolean => {
-    const newErrors = validateProjectForm({
-      name,
-      projectId,
-      baseUrl,
-      healthEndpoint,
-      rootPath,
-    })
-    setErrors(newErrors)
-
-    if (Object.keys(newErrors).length === 0) {
-      const normalized = normalizeProjectFormValues({
-        name,
-        projectId,
-        baseUrl,
-        healthEndpoint,
-        rootPath,
-      })
-      setProjectId(normalized.projectId ?? '')
-      setBaseUrl(normalized.baseUrl)
-      setHealthEndpoint(normalized.healthEndpoint)
-      setRootPath(normalized.rootPath)
-    }
-
-    return Object.keys(newErrors).length === 0
-  }
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!validate()) return
-
-    const normalized = normalizeProjectFormValues({
-      name,
-      projectId,
-      baseUrl,
-      healthEndpoint,
-      rootPath,
-    })
-
-    mutation.mutate({
-      id: normalized.projectId ?? '',
-      name: normalized.name,
-      base_url: normalized.baseUrl,
-      health_endpoint: normalized.healthEndpoint,
-      root_path: normalized.rootPath || undefined,
-      agent_hub_permission: syncAgentHubPermission
-        ? {
-            permission_tier: permissionTier,
-            auto_exec_enabled: autoExecEnabled,
-            execution_start_hour: 0,
-            execution_end_hour: 24,
-          }
-        : undefined,
-    })
-  }
-
-  const normalizedRootPath = normalizeRootPath(rootPath)
-  const healthPreview = buildHealthPreview(baseUrl, healthEndpoint)
+  const { fields, agentHub, errors, isPending, preview, handlers } = useNewProjectForm()
+  const { name, projectId, baseUrl, healthEndpoint, rootPath } = fields
+  const { syncAgentHubPermission, permissionTier, autoExecEnabled } = agentHub
+  const {
+    handleNameChange,
+    handleProjectIdChange,
+    handleBaseUrlChange,
+    handleHealthEndpointChange,
+    handleRootPathChange,
+    handleSubmit,
+    setSyncAgentHubPermission,
+    setPermissionTier,
+    setAutoExecEnabled,
+  } = handlers
 
   return (
     <div className="mx-auto max-w-4xl space-y-4 px-4 py-4 md:px-5 lg:px-6">
       <header className="animate-in">
         <Link
-          href="/"
+          href={ROUTE_HOME}
           className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-slate-800/60 bg-slate-950/60 px-2.5 py-1 text-xs text-slate-400 transition-colors hover:border-phosphor-500/30 hover:text-phosphor-300"
         >
           <ArrowLeft className="h-3 w-3" />
@@ -288,63 +150,22 @@ export function NewProjectClient() {
 
           <div className="chrome-line my-1" />
 
-          <div className="space-y-3 rounded-xl border border-slate-800/70 bg-slate-950/40 p-4">
-            <div className="space-y-1">
-              <div className="text-sm font-medium text-slate-100">
-                Agent Hub Access Bootstrap
-              </div>
-              <p className="text-xs text-slate-500">
-                Create the matching project permission row at the same time so the new project is immediately visible to Jenny and specialist agents.
-              </p>
-            </div>
-
-            <label className="flex items-center gap-2 text-sm text-slate-300">
-              <input
-                type="checkbox"
-                checked={syncAgentHubPermission}
-                onChange={(event) => setSyncAgentHubPermission(event.target.checked)}
-                className="h-4 w-4 rounded border-slate-700 bg-slate-950"
-              />
-              Provision Agent Hub permission
-            </label>
-
-            {syncAgentHubPermission && (
-              <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
-                <div className="space-y-2">
-                  <Label htmlFor="permissionTier">Permission Tier</Label>
-                  <select
-                    id="permissionTier"
-                    value={permissionTier}
-                    onChange={(event) => setPermissionTier(event.target.value)}
-                    className="flex h-10 w-full rounded-md border border-slate-800 bg-slate-950 px-3 text-sm text-slate-100"
-                  >
-                    <option value="off">Off</option>
-                    <option value="read">Read</option>
-                    <option value="write">Write</option>
-                    <option value="yolo">YOLO</option>
-                  </select>
-                </div>
-
-                <label className="flex items-center gap-2 rounded-md border border-slate-800 bg-slate-950 px-3 text-sm text-slate-300">
-                  <input
-                    type="checkbox"
-                    checked={autoExecEnabled}
-                    onChange={(event) => setAutoExecEnabled(event.target.checked)}
-                    className="h-4 w-4 rounded border-slate-700 bg-slate-950"
-                  />
-                  Auto Exec
-                </label>
-              </div>
-            )}
-          </div>
+          <AgentHubSection
+            syncAgentHubPermission={syncAgentHubPermission}
+            permissionTier={permissionTier}
+            autoExecEnabled={autoExecEnabled}
+            onSyncChange={setSyncAgentHubPermission}
+            onTierChange={setPermissionTier}
+            onAutoExecChange={setAutoExecEnabled}
+          />
 
           <div className="flex items-center gap-3 pt-2">
             <button
               type="submit"
-              disabled={mutation.isPending}
+              disabled={isPending}
               className="btn-primary flex items-center gap-2 text-sm"
             >
-              {mutation.isPending ? (
+              {isPending ? (
                 <>
                   <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
                   Creating...
@@ -356,67 +177,20 @@ export function NewProjectClient() {
                 </>
               )}
             </button>
-            <Link href="/" className="btn-secondary text-sm">
+            <Link href={ROUTE_HOME} className="btn-secondary text-sm">
               Cancel
             </Link>
           </div>
         </form>
 
-        <aside className="space-y-3">
-          <div className="card space-y-3 p-4">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-              Live preview
-            </div>
-
-            <div className="space-y-2 text-xs text-slate-400">
-              <div>
-                <span className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Project ID</span>
-                <div className="mt-1 break-all rounded-md border border-slate-800/70 bg-slate-950/60 px-2 py-1.5 font-mono text-slate-200">
-                  {projectId || <span className="text-slate-600">not-set</span>}
-                </div>
-              </div>
-              <div>
-                <span className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Health Check</span>
-                <div className="mt-1 break-all rounded-md border border-slate-800/70 bg-slate-950/60 px-2 py-1.5 font-mono text-slate-200">
-                  {healthPreview}
-                </div>
-              </div>
-              <div>
-                <span className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Root Path</span>
-                <div className="mt-1 break-all rounded-md border border-slate-800/70 bg-slate-950/60 px-2 py-1.5 font-mono text-slate-200">
-                  {normalizedRootPath || <span className="text-slate-600">not configured</span>}
-                </div>
-              </div>
-              <div>
-                <span className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Agent Hub Access</span>
-                <div className="mt-1 rounded-md border border-slate-800/70 bg-slate-950/60 px-2 py-1.5 font-mono text-slate-200">
-                  {syncAgentHubPermission ? `${permissionTier}${autoExecEnabled ? ' + auto-exec' : ''}` : 'disabled'}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="card space-y-2 p-4">
-            <div className="flex items-center gap-2 text-sm font-medium text-slate-200">
-              <HeartPulse className="h-4 w-4 text-emerald-400" />
-              Operational Coverage
-            </div>
-            <div className="space-y-3 text-xs text-slate-400">
-              <p>
-                Health checks start working as soon as the base URL and endpoint are correct.
-              </p>
-              <div className="flex items-start gap-2 rounded-lg border border-slate-800 bg-slate-950/50 p-3">
-                <FolderTree className="mt-0.5 h-4 w-4 text-phosphor-400" />
-                <div>
-                  <p className="text-slate-300">Root path unlocks the rest</p>
-                  <p className="mt-1">
-                    Without a repo path, SummitFlow can still track metadata, but file browsing and service discovery stay blind.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </aside>
+        <ProjectPreviewPanel
+          projectId={projectId}
+          healthPreview={preview.healthPreview}
+          normalizedRootPath={preview.normalizedRootPath}
+          syncAgentHubPermission={syncAgentHubPermission}
+          permissionTier={permissionTier}
+          autoExecEnabled={autoExecEnabled}
+        />
       </div>
     </div>
   )

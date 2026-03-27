@@ -1,0 +1,171 @@
+'use client'
+
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useRouter } from 'next/navigation'
+import { useState } from 'react'
+import { createProject } from '@/lib/api'
+import {
+  buildHostedBaseUrl,
+  buildHostedRootPath,
+  buildHealthPreview,
+  DEFAULT_HEALTH_ENDPOINT,
+  normalizeProjectFormValues,
+  normalizeProjectId,
+  normalizeRootPath,
+  type ProjectFormErrors,
+  validateProjectForm,
+} from '@/lib/project-registration'
+import {
+  DEFAULT_PERMISSION_TIER,
+  EXECUTION_END_HOUR,
+  EXECUTION_START_HOUR,
+  QUERY_KEYS,
+  ROUTE_PROJECT,
+} from './constants'
+
+type FormErrors = ProjectFormErrors & { submit?: string }
+type ErrorField = keyof FormErrors
+
+export type { FormErrors }
+
+export function useNewProjectForm() {
+  const router = useRouter()
+  const queryClient = useQueryClient()
+
+  const [name, setName] = useState('')
+  const [projectId, setProjectId] = useState('')
+  const [baseUrl, setBaseUrl] = useState('')
+  const [healthEndpoint, setHealthEndpoint] = useState(DEFAULT_HEALTH_ENDPOINT)
+  const [rootPath, setRootPath] = useState('')
+  const [syncAgentHubPermission, setSyncAgentHubPermission] = useState(true)
+  const [permissionTier, setPermissionTier] = useState(DEFAULT_PERMISSION_TIER)
+  const [autoExecEnabled, setAutoExecEnabled] = useState(false)
+  const [errors, setErrors] = useState<FormErrors>({})
+
+  const mutation = useMutation({
+    mutationFn: createProject,
+    onSuccess: (project) => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.projects })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.projectsWithStats })
+      router.push(ROUTE_PROJECT(project.id))
+    },
+    onError: (error: Error) => {
+      setErrors({ submit: error.message })
+    },
+  })
+
+  const clearError = (field: ErrorField) => {
+    setErrors((current) => {
+      if (!(field in current) && !('submit' in current)) {
+        return current
+      }
+      const next = { ...current }
+      delete next[field]
+      delete next.submit
+      return next
+    })
+  }
+
+  const syncHostedDefaults = (nextProjectId: string, previousProjectId: string) => {
+    const previousBaseUrl = buildHostedBaseUrl(previousProjectId)
+    const previousRootPath = buildHostedRootPath(previousProjectId)
+    const nextBaseUrl = buildHostedBaseUrl(nextProjectId)
+    const nextRootPath = buildHostedRootPath(nextProjectId)
+
+    setProjectId(nextProjectId)
+    setBaseUrl((current) =>
+      !current || current === previousBaseUrl ? nextBaseUrl : current,
+    )
+    setRootPath((current) =>
+      !current || current === previousRootPath ? nextRootPath : current,
+    )
+  }
+
+  const handleNameChange = (value: string) => {
+    clearError('name')
+    setName(value)
+    if (!projectId || projectId === normalizeProjectId(name)) {
+      syncHostedDefaults(normalizeProjectId(value), projectId)
+    }
+  }
+
+  const handleProjectIdChange = (value: string) => {
+    clearError('projectId')
+    syncHostedDefaults(normalizeProjectId(value), projectId)
+  }
+
+  const handleBaseUrlChange = (value: string) => {
+    clearError('baseUrl')
+    setBaseUrl(value)
+  }
+
+  const handleHealthEndpointChange = (value: string) => {
+    clearError('healthEndpoint')
+    setHealthEndpoint(value)
+  }
+
+  const handleRootPathChange = (value: string) => {
+    clearError('rootPath')
+    setRootPath(value)
+  }
+
+  const validate = (): boolean => {
+    const newErrors = validateProjectForm({ name, projectId, baseUrl, healthEndpoint, rootPath })
+    setErrors(newErrors)
+
+    if (Object.keys(newErrors).length === 0) {
+      const normalized = normalizeProjectFormValues({ name, projectId, baseUrl, healthEndpoint, rootPath })
+      setProjectId(normalized.projectId ?? '')
+      setBaseUrl(normalized.baseUrl)
+      setHealthEndpoint(normalized.healthEndpoint)
+      setRootPath(normalized.rootPath)
+    }
+
+    return Object.keys(newErrors).length === 0
+  }
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!validate()) return
+
+    const normalized = normalizeProjectFormValues({ name, projectId, baseUrl, healthEndpoint, rootPath })
+
+    mutation.mutate({
+      id: normalized.projectId ?? '',
+      name: normalized.name,
+      base_url: normalized.baseUrl,
+      health_endpoint: normalized.healthEndpoint,
+      root_path: normalized.rootPath || undefined,
+      agent_hub_permission: syncAgentHubPermission
+        ? {
+            permission_tier: permissionTier,
+            auto_exec_enabled: autoExecEnabled,
+            execution_start_hour: EXECUTION_START_HOUR,
+            execution_end_hour: EXECUTION_END_HOUR,
+          }
+        : undefined,
+    })
+  }
+
+  const normalizedRootPath = normalizeRootPath(rootPath)
+  const healthPreview = buildHealthPreview(baseUrl, healthEndpoint)
+
+  return {
+    fields: { name, projectId, baseUrl, healthEndpoint, rootPath },
+    agentHub: { syncAgentHubPermission, permissionTier, autoExecEnabled },
+    errors,
+    isPending: mutation.isPending,
+    preview: { normalizedRootPath, healthPreview },
+    handlers: {
+      handleNameChange,
+      handleProjectIdChange,
+      handleBaseUrlChange,
+      handleHealthEndpointChange,
+      handleRootPathChange,
+      handleSubmit,
+      setSyncAgentHubPermission,
+      setPermissionTier,
+      setAutoExecEnabled,
+    },
+  }
+}
