@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import PurePosixPath
 
 from ..storage.task_spirit import get_task_spirit
+from ._scope_paths import normalize_scope_values
 
 _SHARED_PLUMBING_PREFIXES = (
     "backend/app/adapters/",
@@ -30,36 +30,6 @@ class LaneScope:
 # Scope confidence literal
 _SCOPE_CONFIDENCE_OBSERVED_READ = "observed_read"
 _UNKNOWN_TASK = "unknown task"
-
-
-def normalize_scope_values(values: object) -> frozenset[str]:
-    """Normalize a list of path strings into a clean frozenset."""
-    if not isinstance(values, list):
-        return frozenset()
-    result: set[str] = set()
-    for raw in values:
-        normalized = _normalize_single_path(raw)
-        if normalized:
-            result.add(normalized)
-    return frozenset(result)
-
-
-def _normalize_single_path(raw: object) -> str | None:
-    """Normalize a single path value, returning None if invalid."""
-    if not isinstance(raw, str):
-        return None
-    path = raw.strip()
-    while path.startswith("./"):
-        path = path[2:]
-    if not path or path.startswith("/"):
-        return None
-    if "\\" in path or "//" in path or path.endswith("/"):
-        return None
-    parts = path.split("/")
-    if any(part in {"", ".", ".."} for part in parts):
-        return None
-    normalized = str(PurePosixPath(path))
-    return normalized if normalized != "." and not normalized.endswith("/") else None
 
 
 def load_task_scope(task_id: str) -> TaskScope | None:

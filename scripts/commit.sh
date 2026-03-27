@@ -30,6 +30,8 @@ BACKUP_SOURCES_API="${ST_API_BASE:-http://localhost:8001/api}/backup-sources"
 FALLBACK_FILE="$HOME/.claude/config/managed-repos.txt"
 MAIN_BRANCHES=("main" "master")
 QUALITY_GATE_STATE="${QUALITY_GATE_STATE:-$HOME/.claude/hooks/.quality-gate-state.json}"
+SUMMITFLOW_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+GUARD_BIN="$SCRIPT_DIR/lib/command-guard"
 
 PUSH=true
 FORCE=false
@@ -322,6 +324,26 @@ run_quality_gates() {
     fi
 }
 
+run_destructive_path_guard() {
+    local repo_root
+    repo_root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+
+    if [[ ! -x "$GUARD_BIN" ]]; then
+        echo "Destructive-path guard unavailable: missing $GUARD_BIN"
+        return 1
+    fi
+
+    local guard_out="" guard_status=0
+    guard_out=$("$GUARD_BIN" --staged-git --cwd "$repo_root" 2>&1) || guard_status=$?
+
+    if [[ $guard_status -eq 0 ]]; then
+        return 0
+    fi
+
+    echo "$guard_out"
+    return "$guard_status"
+}
+
 get_managed_repos() {
     local repos=()
 
@@ -472,6 +494,16 @@ commit_project_repo() {
 
     scope_add_all
 
+    local guard_out="" guard_status=0
+    guard_out=$(run_destructive_path_guard 2>&1) || guard_status=$?
+    if [[ $guard_status -ne 0 ]]; then
+        emit_result "BLOCKED" "$repo_name" "" "" "false" "destructive_guard:FAIL" "destructive_path_conflict"
+        if ! $JSON_OUTPUT; then
+            echo "$guard_out" | sed 's/^/  /'
+        fi
+        return 1
+    fi
+
     local gates=""
     if ! $SKIP_CHECKS; then
         local gates_out gates_status=0
@@ -578,6 +610,16 @@ commit_config_repo() {
     fi
 
     scope_add_all
+
+    local guard_out="" guard_status=0
+    guard_out=$(run_destructive_path_guard 2>&1) || guard_status=$?
+    if [[ $guard_status -ne 0 ]]; then
+        emit_result "BLOCKED" "$repo_name" "" "" "false" "destructive_guard:FAIL" "destructive_path_conflict"
+        if ! $JSON_OUTPUT; then
+            echo "$guard_out" | sed 's/^/  /'
+        fi
+        return 1
+    fi
 
     local message
     message="${CUSTOM_MSG:-$(generate_simple_message)}"

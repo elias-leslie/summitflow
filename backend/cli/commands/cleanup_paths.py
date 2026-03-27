@@ -8,6 +8,12 @@ from pathlib import Path
 
 import typer
 
+from app.services.destructive_path_guard import (
+    DestructivePathGuardError,
+    check_destructive_paths,
+    format_guard_report,
+)
+
 from ..config import get_config_optional
 from ..output import output_error, output_json
 from .cleanup_git import get_repo_root
@@ -149,6 +155,17 @@ def cleanup_path_targets(paths: list[str], recursive: bool, dry_run: bool) -> li
     """Validate and optionally delete repo-local paths."""
     repo_root = _get_project_root()
     validated = [validate_cleanup_target(path, repo_root, recursive) for path in paths]
+    repo_local_paths = [target.relative_path for target in validated if target.absolute_path.is_relative_to(repo_root)]
+
+    if not dry_run and repo_local_paths:
+        try:
+            decision = check_destructive_paths(repo_root, repo_local_paths)
+        except DestructivePathGuardError as exc:
+            output_error(str(exc))
+            raise typer.Exit(1) from exc
+        if decision.blocked:
+            output_error(format_guard_report(decision))
+            raise typer.Exit(1)
 
     results: list[dict[str, object]] = []
     for target in validated:

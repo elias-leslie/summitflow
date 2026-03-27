@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from typer.testing import CliRunner
 
+from app.services.destructive_path_guard import GuardConflict, GuardDecision
 from cli.commands.cleanup import app
 from cli.commands.cleanup_paths import _get_project_root
 
@@ -87,3 +88,38 @@ class TestCleanupPath:
         assert result.exit_code == 0
         assert '"deleted": true' in result.output
         assert not target.exists()
+
+    def test_cleanup_path_blocks_foreign_live_owner(self, tmp_path: Path) -> None:
+        """Cleanup should refuse destructive deletes in another live session's checkout."""
+        repo_root = tmp_path / "repo"
+        target = repo_root / "docs" / "plans" / "vantage-rollout-plan.md"
+        target.parent.mkdir(parents=True)
+        target.write_text("plan\n", encoding="utf-8")
+
+        blocked = GuardDecision(
+            blocked=True,
+            project_id="summitflow",
+            repo_root=str(repo_root),
+            current_session_id="sess-self",
+            destructive_paths=("docs/plans/vantage-rollout-plan.md",),
+            conflicts=(
+                GuardConflict(
+                    session_id="sess-foreign",
+                    task_id=None,
+                    branch="main",
+                    worktree_path=str(repo_root),
+                    reason="unknown_scope",
+                    paths=("docs/plans/vantage-rollout-plan.md",),
+                ),
+            ),
+        )
+
+        with (
+            patch("cli.commands.cleanup_paths._get_project_root", return_value=repo_root),
+            patch("cli.commands.cleanup_paths.check_destructive_paths", return_value=blocked),
+        ):
+            result = runner.invoke(app, ["path", str(target)])
+
+        assert result.exit_code == 1
+        assert "Refusing destructive path action" in result.output
+        assert target.exists()
