@@ -198,6 +198,24 @@ def _get_diff_summary(project_path: str) -> str:
         return "(diff unavailable)"
 
 
+def _read_one_file(project_path: str, filepath: str, max_lines: int) -> str | None:
+    """Read a single file with line numbers; return None on failure or empty output."""
+    try:
+        result = subprocess.run(
+            ["head", "-n", str(max_lines), filepath],
+            cwd=project_path, capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return None
+        numbered = "\n".join(
+            f"{i+1}: {line}"
+            for i, line in enumerate(result.stdout.split("\n")[:max_lines])
+        )
+        return f"### {filepath}\n```\n{numbered}\n```"
+    except Exception:
+        return None
+
+
 def _read_modified_files(
     project_path: str,
     modified_files: list[str],
@@ -208,22 +226,11 @@ def _read_modified_files(
     if not modified_files:
         return "(no modified files)"
 
-    sections: list[str] = []
-    for filepath in modified_files[:max_files]:
-        try:
-            result = subprocess.run(
-                ["head", "-n", str(max_lines_per_file), filepath],
-                cwd=project_path, capture_output=True, text=True, timeout=5,
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                # Add line numbers
-                numbered = "\n".join(
-                    f"{i+1}: {line}"
-                    for i, line in enumerate(result.stdout.split("\n")[:max_lines_per_file])
-                )
-                sections.append(f"### {filepath}\n```\n{numbered}\n```")
-        except Exception:
-            continue
+    sections = [
+        section
+        for filepath in modified_files[:max_files]
+        if (section := _read_one_file(project_path, filepath, max_lines_per_file)) is not None
+    ]
 
     if not sections:
         return "(files could not be read)"
@@ -314,6 +321,22 @@ def _evaluate_completion_gate(
         return _trivial_pass(f"Completion gate unavailable: {e}")
 
 
+def _parse_confidence(line: str) -> int:
+    """Extract integer confidence from a CONFIDENCE: line."""
+    try:
+        return int(line.split(":", 1)[1].strip().split()[0])
+    except (ValueError, IndexError):
+        return 0
+
+
+def _parse_gaps(line: str) -> list[str]:
+    """Extract gap list from a GAPS: line; returns [] when NONE."""
+    gaps_text = line.split(":", 1)[1].strip()
+    if gaps_text.upper() == "NONE":
+        return []
+    return [g.strip() for g in gaps_text.split(",") if g.strip()]
+
+
 def _parse_gate_response(content: str, done_when: list[str]) -> IntentCheckResult:
     """Parse structured completion gate response."""
     state = _ParseState()
@@ -326,14 +349,9 @@ def _parse_gate_response(content: str, done_when: list[str]) -> IntentCheckResul
         if line.startswith("CRITERION_"):
             _parse_criterion_line(line, done_when, state)
         elif line.startswith("CONFIDENCE:"):
-            try:
-                state.confidence = int(line.split(":", 1)[1].strip().split()[0])
-            except (ValueError, IndexError):
-                state.confidence = 0
+            state.confidence = _parse_confidence(line)
         elif line.startswith("GAPS:"):
-            gaps_text = line.split(":", 1)[1].strip()
-            if gaps_text.upper() != "NONE":
-                state.gaps = [g.strip() for g in gaps_text.split(",") if g.strip()]
+            state.gaps = _parse_gaps(line)
         elif line.startswith("ANTI_CHECK:"):
             state.anti_check = line.split(":", 1)[1].strip()
 
