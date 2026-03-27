@@ -168,3 +168,174 @@ def test_claude_batch_help_mentions_batch_flags() -> None:
     assert result.exit_code == 0
     assert "--max-subagents" in result.output
     assert "--commit-and-done" in result.output
+
+
+def test_claude_orchestrator_invokes_single_worker_with_prompt_and_agents(tmp_path: Path) -> None:
+    agent_hub_root = _prepare_agent_hub_root(tmp_path)
+    project_root = tmp_path / "target-project"
+    worktree_a = tmp_path / "lanes" / "task-a"
+    worktree_b = tmp_path / "lanes" / "task-b"
+    project_root.mkdir()
+    worktree_a.mkdir(parents=True)
+    worktree_b.mkdir(parents=True)
+
+    with (
+        patch("cli.commands.claude.STClient") as mock_client_cls,
+        patch(
+            "cli.commands.claude.projects_api",
+            side_effect=[
+                {"id": "agent-hub", "root_path": str(project_root)},
+                {"id": "agent-hub", "root_path": str(project_root)},
+                {"id": "agent-hub", "root_path": str(agent_hub_root)},
+            ],
+        ),
+        patch(
+            "cli.commands.claude._run_text_command",
+            side_effect=[
+                "TASK:task-a|pending|P3|refactor|SIMPLE\nCONTEXT:modify:backend/a.py\n",
+                "TASK:task-b|pending|P3|refactor|SIMPLE\nCONTEXT:modify:backend/b.py\n",
+            ],
+        ),
+        patch("cli.commands.claude.subprocess.run") as mock_run,
+    ):
+        mock_client = mock_client_cls.return_value
+        mock_client.get_task.side_effect = [
+            {
+                "id": "task-a",
+                "project_id": "agent-hub",
+                "worktree": {"path": str(worktree_a), "branch": "task-a/main", "is_active": True},
+            },
+            {
+                "id": "task-b",
+                "project_id": "agent-hub",
+                "worktree": {"path": str(worktree_b), "branch": "task-b/main", "is_active": True},
+            },
+        ]
+        mock_client.validate_ready.return_value = {"ready": True}
+        mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0)
+
+        result = runner.invoke(
+            app,
+            ["orchestrator", "task-a", "task-b", "--max-subagents", "2"],
+        )
+
+    assert result.exit_code == 0
+    mock_run.assert_called_once()
+    command = mock_run.call_args.args[0]
+    assert "--prompt-file" in command
+    assert "--agents-file" in command
+    assert "--source" in command
+    assert "st-cli-orchestrator" in command
+    assert "--allowed-tools" in command
+    assert "Read,Agent,Edit,MultiEdit,Write,Bash,Glob,Grep,LS" in command
+
+
+def test_claude_orchestrator_blocks_mixed_projects(tmp_path: Path) -> None:
+    with patch("cli.commands.claude.STClient") as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        mock_client.get_task.side_effect = [
+            {"id": "task-a", "project_id": "agent-hub", "worktree": {"path": "/tmp/a", "branch": "task-a/main", "is_active": True}},
+            {"id": "task-b", "project_id": "summitflow", "worktree": {"path": "/tmp/b", "branch": "task-b/main", "is_active": True}},
+        ]
+        mock_client.validate_ready.return_value = {"ready": True}
+
+        with patch(
+            "cli.commands.claude.projects_api",
+            side_effect=[
+                {"id": "agent-hub", "root_path": "/tmp/agent-hub"},
+                {"id": "summitflow", "root_path": "/tmp/summitflow"},
+            ],
+        ), patch("cli.commands.claude._run_text_command", return_value="TASK:task-a|pending|P3|refactor|SIMPLE\n"):
+            result = runner.invoke(app, ["orchestrator", "task-a", "task-b"])
+
+    assert result.exit_code == 1
+    assert "same project" in result.output
+
+
+def test_claude_orchestrator_claims_missing_lane_before_dispatch(tmp_path: Path) -> None:
+    agent_hub_root = _prepare_agent_hub_root(tmp_path)
+    project_root = tmp_path / "target-project"
+    worktree = tmp_path / "lanes" / "task-a"
+    project_root.mkdir()
+    worktree.mkdir(parents=True)
+
+    with (
+        patch("cli.commands.claude.STClient") as mock_client_cls,
+        patch(
+            "cli.commands.claude.projects_api",
+            side_effect=[
+                {"id": "agent-hub", "root_path": str(project_root)},
+                {"id": "agent-hub", "root_path": str(agent_hub_root)},
+            ],
+        ),
+        patch("cli.commands.claude._run_text_command") as mock_text_command,
+        patch("cli.commands.claude.subprocess.run") as mock_run,
+    ):
+        mock_client = mock_client_cls.return_value
+        mock_client.get_task.side_effect = [
+            {"id": "task-a", "project_id": "agent-hub"},
+            {
+                "id": "task-a",
+                "project_id": "agent-hub",
+                "worktree": {"path": str(worktree), "branch": "task-a/main", "is_active": True},
+            },
+        ]
+        mock_client.validate_ready.return_value = {"ready": True}
+        mock_text_command.side_effect = [
+            "CLAIMED task-a\n",
+            "TASK:task-a|pending|P3|refactor|SIMPLE\nCONTEXT:modify:backend/a.py\n",
+        ]
+        mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0)
+
+        result = runner.invoke(app, ["orchestrator", "task-a"])
+
+    assert result.exit_code == 0
+    assert mock_text_command.call_args_list[0].kwargs["command"] == ["st", "claim", "task-a"]
+    assert mock_text_command.call_args_list[1].kwargs["command"] == ["st", "context", "task-a"]
+
+
+def test_claude_orchestrator_accepts_running_task_with_active_worktree(tmp_path: Path) -> None:
+    agent_hub_root = _prepare_agent_hub_root(tmp_path)
+    project_root = tmp_path / "target-project"
+    worktree = tmp_path / "lanes" / "task-a"
+    project_root.mkdir()
+    worktree.mkdir(parents=True)
+
+    with (
+        patch("cli.commands.claude.STClient") as mock_client_cls,
+        patch(
+            "cli.commands.claude.projects_api",
+            side_effect=[
+                {"id": "agent-hub", "root_path": str(project_root)},
+                {"id": "agent-hub", "root_path": str(agent_hub_root)},
+            ],
+        ),
+        patch(
+            "cli.commands.claude._run_text_command",
+            return_value=(
+                "TASK:task-a|running|P3|refactor|SIMPLE\n"
+                f"WORKTREE_PATH:{worktree}\n"
+            ),
+        ) as mock_text_command,
+        patch("cli.commands.claude.subprocess.run") as mock_run,
+    ):
+        mock_client = mock_client_cls.return_value
+        mock_client.get_task.return_value = {
+            "id": "task-a",
+            "project_id": "agent-hub",
+            "status": "running",
+        }
+        mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0)
+
+        result = runner.invoke(app, ["orchestrator", "task-a"])
+
+    assert result.exit_code == 0
+    mock_client.validate_ready.assert_not_called()
+    assert [call.kwargs["command"] for call in mock_text_command.call_args_list] == [["st", "context", "task-a"]]
+
+
+def test_claude_orchestrator_help_mentions_subagent_flag() -> None:
+    result = runner.invoke(app, ["orchestrator", "--help"])
+
+    assert result.exit_code == 0
+    assert "--max-subagents" in result.output
