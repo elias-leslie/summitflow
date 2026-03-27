@@ -157,51 +157,28 @@ def save(
     """Save a learning to the memory system."""
     resolved_content = _resolve_content(content, content_file, require_value=True)
     assert resolved_content is not None
-    if change_reason is None:
-        save_impl(
-            ctx.obj,
-            resolved_content,
-            summary,
-            tier,
-            confidence,
-            context,
-            pinned,
-            trigger_types,
-            trigger_phases,
-            context_kind,
-            consumer_profiles,
-            exclude_consumer_profiles,
-            agent_slugs,
-            exclude_agent_slugs,
-            audience_tags,
-            exclude_audience_tags,
-            tags,
-            scope,
-            scope_id,
-        )
-    else:
-        save_impl(
-            ctx.obj,
-            resolved_content,
-            summary,
-            tier,
-            confidence,
-            context,
-            pinned,
-            trigger_types,
-            trigger_phases,
-            context_kind,
-            consumer_profiles,
-            exclude_consumer_profiles,
-            agent_slugs,
-            exclude_agent_slugs,
-            audience_tags,
-            exclude_audience_tags,
-            tags,
-            scope,
-            scope_id,
-            change_reason,
-        )
+    save_impl(
+        ctx.obj,
+        resolved_content,
+        summary,
+        tier,
+        confidence,
+        context,
+        pinned,
+        trigger_types,
+        trigger_phases,
+        context_kind,
+        consumer_profiles,
+        exclude_consumer_profiles,
+        agent_slugs,
+        exclude_agent_slugs,
+        audience_tags,
+        exclude_audience_tags,
+        tags,
+        scope,
+        scope_id,
+        change_reason,
+    )
 
 
 @app.command("format")
@@ -303,47 +280,26 @@ def update(
 ) -> None:
     """Update an episode in place (content/tier and properties)."""
     resolved_content = _resolve_content(content, content_file, require_value=False)
-    if change_reason is None:
-        update_impl(
-            uuid,
-            resolved_content,
-            tier,
-            summary,
-            trigger_types,
-            trigger_phases,
-            pinned,
-            context_kind,
-            consumer_profiles,
-            exclude_consumer_profiles,
-            agent_slugs,
-            exclude_agent_slugs,
-            audience_tags,
-            exclude_audience_tags,
-            clear_applicability,
-            tags,
-            clear_tags,
-        )
-    else:
-        update_impl(
-            uuid,
-            resolved_content,
-            tier,
-            summary,
-            trigger_types,
-            trigger_phases,
-            pinned,
-            context_kind,
-            consumer_profiles,
-            exclude_consumer_profiles,
-            agent_slugs,
-            exclude_agent_slugs,
-            audience_tags,
-            exclude_audience_tags,
-            clear_applicability,
-            tags,
-            clear_tags,
-            change_reason,
-        )
+    update_impl(
+        uuid,
+        resolved_content,
+        tier,
+        summary,
+        trigger_types,
+        trigger_phases,
+        pinned,
+        context_kind,
+        consumer_profiles,
+        exclude_consumer_profiles,
+        agent_slugs,
+        exclude_agent_slugs,
+        audience_tags,
+        exclude_audience_tags,
+        clear_applicability,
+        tags,
+        clear_tags,
+        change_reason,
+    )
 
 
 @app.command("tag")
