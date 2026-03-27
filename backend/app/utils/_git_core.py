@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -12,16 +11,27 @@ if TYPE_CHECKING:
 
 from ..logging_config import get_logger
 
+# Re-export repo-source helpers so existing imports and mocks on this module work.
+from ._git_repo_sources import (  # noqa: F401
+    FALLBACK_FILE,
+    WORKTREES_BASE_DIR,
+    _collect_db_extra_repos,
+    _collect_db_repos,
+    _is_shadowed_project_repo,
+    _load_repo_paths_from_file,
+    _normalize_repo_path,
+    _query_db_extra_repos,
+    _query_db_project_roots,
+    _query_db_root_paths,
+    _registered_project_roots,
+    _resolve_project_id,
+    _translate_path,
+    get_managed_repos,
+)
+
 logger = get_logger(__name__)
 
-# Docker path translation: when running in Docker, host paths in the DB
-# (e.g. /home/kasadis/summitflow) need to be mapped to the container mount
-# (e.g. /host-home/summitflow). Set HOST_HOME_PATH + BACKUP_HOST_ROOT.
-_HOST_HOME_PATH = os.environ.get("HOST_HOME_PATH", "")
-_DOCKER_HOME_MOUNT = os.environ.get("BACKUP_HOST_ROOT", "")
-FALLBACK_FILE = Path.home() / ".claude" / "config" / "managed-repos.txt"
-CONFIG_REPOS: list[Path] = []
-WORKTREES_BASE_DIR = Path.home() / ".summitflow" / "worktrees"
+CONFIG_REPOS: list[Path] = _load_repo_paths_from_file(FALLBACK_FILE)
 
 # Git subcommands and arguments
 _GIT_REV_PARSE_HEAD = ["rev-parse", "--abbrev-ref", "HEAD"]
@@ -29,14 +39,7 @@ _GIT_STATUS_PORCELAIN = ["status", "--porcelain"]
 _GIT_FETCH_ALL = ["fetch", "--all", "--prune"]
 _GIT_PULL_FF = ["pull", "--ff-only"]
 _GIT_PUSH = ["push"]
-
-# SQL
-_SQL_SELECT_ROOT_PATHS = "SELECT root_path FROM projects WHERE root_path IS NOT NULL"
-_SQL_SELECT_PROJECT_ROOTS = "SELECT id, root_path FROM projects WHERE root_path IS NOT NULL"
-_SQL_SELECT_EXTRA_REPOS = (
-    "SELECT id, path FROM backup_sources "
-    "WHERE path IS NOT NULL AND source_type IN ('config', 'workspace')"
-)
+_GIT_REV_LIST_LR_COUNT = ["rev-list", "--left-right", "--count"]
 
 # Status and state values
 _STATUS_FAILED = "failed"
@@ -56,9 +59,6 @@ _GIT_ALREADY_UP_TO_DATE = "Already up to date"
 # Error / reason messages
 _ERR_NO_REPO_STATUS = "Could not get repository status"
 _REASON_UNCOMMITTED = "uncommitted changes"
-
-# Rev-list format for ahead/behind tracking
-_GIT_REV_LIST_LR_COUNT = ["rev-list", "--left-right", "--count"]
 
 
 def run_git(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -82,159 +82,6 @@ def has_uncommitted_changes(worktree_path: Path) -> bool:
     """Check if worktree has uncommitted changes."""
     result = run_git(["status", "--porcelain"], worktree_path)
     return bool(result.stdout.strip())
-
-
-def _load_repo_paths_from_file(path: Path) -> list[Path]:
-    """Return valid git repo paths from a newline-delimited config file."""
-    if not path.exists():
-        return []
-
-    repos: list[Path] = []
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        candidate = Path(line).expanduser()
-        if is_valid_git_repo(candidate):
-            repos.append(candidate)
-    return repos
-
-
-CONFIG_REPOS = _load_repo_paths_from_file(FALLBACK_FILE)
-
-
-def _query_db_root_paths() -> list[str]:
-    """Return raw root_path values from the projects table, or [] on error."""
-    from ..storage.connection import get_cursor
-
-    try:
-        with get_cursor() as cur:
-            cur.execute(_SQL_SELECT_ROOT_PATHS)
-            return [row[0] for row in cur.fetchall()]
-    except Exception:
-        logger.debug("Failed to query managed repos from database", exc_info=True)
-        return []
-
-
-def _query_db_project_roots() -> list[tuple[str, str]]:
-    """Return project ids and raw root_path values from the projects table, or [] on error."""
-    from ..storage.connection import get_cursor
-
-    try:
-        with get_cursor() as cur:
-            cur.execute(_SQL_SELECT_PROJECT_ROOTS)
-            return [(str(row[0]), str(row[1])) for row in cur.fetchall()]
-    except Exception:
-        logger.debug("Failed to query project repo mapping from database", exc_info=True)
-        return []
-
-
-def _query_db_extra_repos() -> list[tuple[str, str]]:
-    """Return non-project managed repo ids and paths from backup_sources, or [] on error."""
-    from ..storage.connection import get_cursor
-
-    try:
-        with get_cursor() as cur:
-            cur.execute(_SQL_SELECT_EXTRA_REPOS)
-            return [(str(row[0]), str(row[1])) for row in cur.fetchall()]
-    except Exception:
-        logger.debug("Failed to query config/workspace repos from backup_sources", exc_info=True)
-        return []
-
-
-def _translate_path(raw: str) -> Path:
-    """Translate host path to Docker mount path if running in Docker."""
-    if _HOST_HOME_PATH and _DOCKER_HOME_MOUNT and raw.startswith(_HOST_HOME_PATH):
-        return Path(_DOCKER_HOME_MOUNT + raw[len(_HOST_HOME_PATH):])
-    return Path(raw)
-
-
-def _normalize_repo_path(path: Path) -> Path:
-    try:
-        return path.resolve()
-    except OSError:
-        return path
-
-
-def _registered_project_roots() -> dict[str, Path]:
-    roots: dict[str, Path] = {}
-    for db_project_id, raw_root in _query_db_project_roots():
-        translated = _translate_path(raw_root)
-        if not is_valid_git_repo(translated):
-            continue
-        roots[db_project_id] = _normalize_repo_path(translated)
-    return roots
-
-
-def _is_shadowed_project_repo(path: Path, project_roots: dict[str, Path]) -> bool:
-    registered_root = project_roots.get(path.name)
-    if registered_root is None:
-        return False
-    return _normalize_repo_path(path) != registered_root
-
-
-def _collect_db_repos() -> list[Path]:
-    """Return valid git repo paths from the database."""
-    repos: list[Path] = []
-    for raw in _query_db_root_paths():
-        path = _translate_path(raw)
-        if is_valid_git_repo(path):
-            repos.append(path)
-    return repos
-
-
-def _collect_db_extra_repos() -> list[Path]:
-    """Return valid config/workspace repo paths from backup_sources."""
-    repos: list[Path] = []
-    for _, raw in _query_db_extra_repos():
-        path = _translate_path(raw)
-        if is_valid_git_repo(path):
-            repos.append(path)
-    return repos
-
-
-def _resolve_project_id(repo_path: Path, project_id: str | None = None) -> str | None:
-    """Resolve the project id for a repo path when it is a registered project root.
-
-    Only repositories from the projects table should receive a project_id.
-    Config/workspace/backup repos are managed, but they are not project repos
-    and should remain unscoped so the UI can treat them separately.
-    """
-    if project_id:
-        return project_id
-
-    try:
-        candidate = repo_path.resolve()
-    except OSError:
-        candidate = repo_path
-
-    for db_project_id, raw_root in _query_db_project_roots():
-        translated_root = _translate_path(raw_root)
-        try:
-            root_path = translated_root.resolve()
-        except OSError:
-            root_path = translated_root
-        if candidate == root_path:
-            return db_project_id
-
-    return None
-
-
-def get_managed_repos() -> list[Path]:
-    """Get list of managed repos from DB-backed sources plus local fallback repos."""
-    repos = _collect_db_repos()
-    project_roots = _registered_project_roots()
-    for extra_repo in _collect_db_extra_repos():
-        if _is_shadowed_project_repo(extra_repo, project_roots):
-            continue
-        if extra_repo not in repos:
-            repos.append(extra_repo)
-    for config_repo in _load_repo_paths_from_file(FALLBACK_FILE):
-        if _is_shadowed_project_repo(config_repo, project_roots):
-            continue
-        if is_valid_git_repo(config_repo) and config_repo not in repos:
-            repos.append(config_repo)
-    return repos
 
 
 def _make_failed_sync(repo_path: Path, branch: str = _STATUS_UNKNOWN, error: str = "") -> SyncResult:
