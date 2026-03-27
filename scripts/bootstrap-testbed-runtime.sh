@@ -125,10 +125,30 @@ mkdir -p "$BACKEND_APP_DIR" "$FRONTEND_DIR" "$ROOT_DIR/.st" "$SYSTEMD_DIR"
 
 write_file_if_changed "$ROOT_DIR/.gitignore" <<EOF
 .index.yaml
+.env
+.env.local
+.env*.local
+.dev-tools/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+node_modules/
+.next/
+frontend/.next/
+*.tsbuildinfo
+.summitflow/
 backend/.venv/
 backend/__pycache__/
 backend/app/__pycache__/
 frontend/__pycache__/
+EOF
+
+write_file_if_changed "$ROOT_DIR/.st/.gitignore" <<'EOF'
+*
+!.gitignore
+snapshots/
 EOF
 
 write_file_if_changed "$ROOT_DIR/.st/services.yaml" <<EOF
