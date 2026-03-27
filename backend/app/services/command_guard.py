@@ -25,11 +25,9 @@ from ._command_guard_helpers import (
     explicit_repo_target,
     force_pushes_shared_main,
     git_checkout_decision,
-    git_clean_is_destructive,
     git_has_flag,
     git_restore_decision,
     git_revert_decision,
-    git_rm_paths,
     is_inside_git_repo,
     normalize_repo_paths,
     normalize_segment,
@@ -182,7 +180,11 @@ def _git_decision(segment: Sequence[str], cwd: Path) -> CommandGuardDecision | N
             message="BLOCKED:git reset --hard:Destroys uncommitted work without recovery. Commit or stash first.",
             source="git", command=segment_text,
         )
-    if subcommand == "clean" and git_clean_is_destructive(args):
+    if subcommand == "clean" and (
+        any(set(token) >= {"f", "d"} for token in args if token.startswith("-"))
+        or ("-f" in args and "-d" in args)
+        or ("-d" in args and "-f" in args)
+    ):
         return CommandGuardDecision(
             blocked=True, code="git_clean_fd",
             message="BLOCKED:git clean -fd:Permanently deletes untracked files. Preview with 'git clean -n' first.",
@@ -205,7 +207,9 @@ def _git_decision(segment: Sequence[str], cwd: Path) -> CommandGuardDecision | N
     if subcommand == "restore":
         return git_restore_decision(args, segment_text, check_fn)
     if subcommand == "rm":
-        return check_fn(git_rm_paths(args), segment_text)
+        explicit = [token for token in args[args.index("--") + 1:] if token and not token.startswith("-")] if "--" in args else []
+        paths = [token for token in args if token and not token.startswith("-")]
+        return check_fn(explicit or paths, segment_text)
     if subcommand == "revert":
         return git_revert_decision(args, segment_text, root, check_fn, CommandGuardError)
     return None

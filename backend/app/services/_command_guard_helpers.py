@@ -190,11 +190,6 @@ def git_restore_paths(args: Sequence[str]) -> tuple[list[str], bool]:
     return [token for token in cleaned if not token.startswith("-")], False
 
 
-def git_rm_paths(args: Sequence[str]) -> list[str]:
-    explicit = git_paths_after_double_dash(args)
-    return explicit if explicit else [t for t in args if t and not t.startswith("-")]
-
-
 def git_revert_paths(repo_root: Path, args: Sequence[str], error_class: type[Exception]) -> list[str]:
     cleaned = strip_git_option_values(
         args, value_flags={"-m", "--mainline", "-X", "--strategy-option", "--strategy"},
@@ -272,13 +267,13 @@ def explicit_repo_target(tokens: Sequence[str], cwd: Path) -> bool:
         return False
     command = tokens[0]
     if command in {"rm", "rmdir"}:
-        for token in tokens[1:]:
-            if token.startswith("-"):
-                continue
-            target = Path(token).expanduser()
-            if not target.is_absolute():
-                target = (cwd / target).resolve()
-            return is_inside_git_repo(target.parent if not target.exists() else target)
+        target_token = next((token for token in tokens[1:] if not token.startswith("-")), None)
+        if not target_token:
+            return False
+        target = Path(target_token).expanduser()
+        if not target.is_absolute():
+            target = (cwd / target).resolve()
+        return is_inside_git_repo(target.parent if not target.exists() else target)
         return False
     if command == "find":
         for token in tokens[1:]:
@@ -297,29 +292,21 @@ def explicit_repo_target(tokens: Sequence[str], cwd: Path) -> bool:
 # --- Git subcommand decision helpers ---
 
 
-def git_clean_is_destructive(args: list[str]) -> bool:
-    return (
-        any(set(token) >= {"f", "d"} for token in args if token.startswith("-"))
-        or ("-f" in args and "-d" in args)
-        or ("-d" in args and "-f" in args)
-    )
-
-
-def _make_blocked(code: str, message: str, command: str) -> CommandGuardDecision:
-    return CommandGuardDecision(blocked=True, code=code, message=message, source="git", command=command)
-
-
 def git_checkout_decision(
     args: list[str], segment_text: str, check_fn: PathConflictFn,
 ) -> CommandGuardDecision | None:
     _blocked_all = "BLOCKED:git checkout .:Discards all uncommitted changes at once."
     if args[:1] == ["."] or args[:2] == ["--", "."]:
-        return _make_blocked("git_checkout_all", _blocked_all, segment_text)
+        return CommandGuardDecision(
+            blocked=True, code="git_checkout_all", message=_blocked_all, source="git", command=segment_text,
+        )
     paths = git_paths_after_double_dash(args)
     if not paths:
         return None
     if "." in paths:
-        return _make_blocked("git_checkout_all", _blocked_all, segment_text)
+        return CommandGuardDecision(
+            blocked=True, code="git_checkout_all", message=_blocked_all, source="git", command=segment_text,
+        )
     return check_fn(paths, segment_text)
 
 
@@ -328,12 +315,16 @@ def git_restore_decision(
 ) -> CommandGuardDecision | None:
     _blocked_all = "BLOCKED:git restore .:Discards all uncommitted changes at once."
     if args[:1] == ["."]:
-        return _make_blocked("git_restore_all", _blocked_all, segment_text)
+        return CommandGuardDecision(
+            blocked=True, code="git_restore_all", message=_blocked_all, source="git", command=segment_text,
+        )
     paths, staging_only = git_restore_paths(args)
     if staging_only:
         return None
     if "." in paths:
-        return _make_blocked("git_restore_all", _blocked_all, segment_text)
+        return CommandGuardDecision(
+            blocked=True, code="git_restore_all", message=_blocked_all, source="git", command=segment_text,
+        )
     return check_fn(paths, segment_text)
 
 
