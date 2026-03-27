@@ -185,7 +185,8 @@ def abandon_task(
     try:
         client.update_status(task_id, "cancelled")
     except APIError as e:
-        typer.echo(f"Warning: Could not update task status: {e.detail}", err=True)
+        output_error(f"Failed to cancel task before cleanup: {e.detail}")
+        raise typer.Exit(1) from None
 
     raw_pid = snapshot_info.get("project_id") if snapshot_info else None
     project_id: str | None = str(raw_pid) if raw_pid is not None else None

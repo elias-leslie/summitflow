@@ -16,8 +16,8 @@ from .core import TASK_COLUMNS, _row_to_dict, canonicalize_task_id, get_task
 VALID_TRANSITIONS: dict[str, set[str]] = {
     "pending": {"running", "cancelled"},
     "running": {"completed", "failed", "cancelled", "pending"},
-    "completed": {"pending"},
-    "failed": {"pending", "running", "cancelled"},
+    "completed": {"pending", "cancelled"},
+    "failed": {"pending", "running", "cancelled", "completed"},
     "cancelled": {"pending"},
 }
 
