@@ -262,7 +262,7 @@ def evaluate_destructive_paths(
             continue
 
         task_id = _derive_task_id(session)
-        scope = load_live_lane_scope(session, task_id) if task_id else None
+        scope = load_live_lane_scope(session, task_id)
         if scope is None:
             conflicts.append(
                 GuardConflict(

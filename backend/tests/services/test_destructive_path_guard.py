@@ -62,6 +62,33 @@ def test_evaluate_destructive_paths_blocks_foreign_scoped_path_same_checkout(tmp
     assert decision.conflicts[0].paths == ("docs/plans/vantage-rollout-plan.md",)
 
 
+def test_evaluate_destructive_paths_uses_observed_scope_without_task_id(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+
+    decision = evaluate_destructive_paths(
+        repo_root,
+        ["docs/plans/vantage-rollout-plan.md", "README.md"],
+        [
+            {
+                "id": "sess-foreign",
+                "current_branch": "main",
+                "worktree_path": str(repo_root),
+                "observed_write_paths": ["docs/plans/vantage-rollout-plan.md"],
+                "scope_confidence": "observed_write",
+            }
+        ],
+        project_id="summitflow",
+        current_session_id="sess-self",
+        current_branch="main",
+    )
+
+    assert decision.blocked is True
+    assert len(decision.conflicts) == 1
+    assert decision.conflicts[0].reason == "scope_overlap"
+    assert decision.conflicts[0].paths == ("docs/plans/vantage-rollout-plan.md",)
+
+
 def test_evaluate_destructive_paths_ignores_foreign_session_in_other_worktree(tmp_path: Path) -> None:
     repo_root = tmp_path / "repo"
     other_root = tmp_path / "other"

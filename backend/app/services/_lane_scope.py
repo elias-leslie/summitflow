@@ -54,7 +54,7 @@ def load_task_scope(task_id: str) -> TaskScope | None:
     return TaskScope(task_id=task_id, paths=frozenset(sorted(merged)))
 
 
-def load_live_lane_scope(session: dict[str, object], task_id: str) -> LaneScope | None:
+def load_live_lane_scope(session: dict[str, object], task_id: str | None) -> LaneScope | None:
     """Prefer live session scope, falling back to task spirit scope for managed lanes."""
     declared_paths = normalize_scope_values(session.get("declared_scope_paths"))
     write_paths = declared_paths | normalize_scope_values(session.get("observed_write_paths"))
@@ -69,12 +69,14 @@ def load_live_lane_scope(session: dict[str, object], task_id: str) -> LaneScope 
             write_paths = write_paths | scope_paths
 
     if not write_paths and not read_paths:
+        if not task_id:
+            return None
         fallback = load_task_scope(task_id)
         if fallback is None:
             return None
         return LaneScope(task_id=task_id, write_paths=fallback.paths, read_paths=frozenset())
 
-    return LaneScope(task_id=task_id, write_paths=write_paths, read_paths=read_paths)
+    return LaneScope(task_id=task_id or _UNKNOWN_TASK, write_paths=write_paths, read_paths=read_paths)
 
 
 def classify_lane_scopes(
