@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+from app.storage.explorer_analysis import DEFAULT_REFACTOR_TARGET_LIMIT
 from app.tasks.autonomous.task_generation import (
     cleanup_stale_tasks,
     generate_tasks_from_scan,
@@ -96,6 +97,28 @@ class TestGenerateTasksFromScan:
         )
         # Verify task creation was counted
         assert result["created_count"] == 1
+
+    @patch("app.tasks.autonomous.refactor_generation.get_project_root_path", return_value="/tmp/project")
+    @patch("app.tasks.autonomous.refactor_generation.scan")
+    @patch("app.tasks.autonomous.refactor_generation.check_and_close_resolved_issues", return_value=0)
+    @patch("app.tasks.autonomous.refactor_generation.get_refactor_targets")
+    def test_regenerate_sync_uses_canonical_refactor_target_limit(
+        self,
+        mock_get_targets: MagicMock,
+        _mock_close_resolved: MagicMock,
+        _mock_scan: MagicMock,
+        _mock_get_project_root: MagicMock,
+    ) -> None:
+        mock_get_targets.return_value = {"targets": []}
+
+        result = regenerate_refactor_tasks_sync("test-project")
+
+        assert result["created_count"] == 0
+        assert result["scanned_count"] == 0
+        mock_get_targets.assert_called_once_with(
+            "test-project",
+            limit=DEFAULT_REFACTOR_TARGET_LIMIT,
+        )
 
     @patch("app.tasks.autonomous.refactor_generation.get_project_root_path", return_value="/tmp/project")
     @patch("app.tasks.autonomous.refactor_generation.scan")

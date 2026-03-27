@@ -28,6 +28,7 @@ from .explorer_symbols import summarize_symbols_for_file
 
 # Extensions for code files that can be refactored
 REFACTORABLE_EXTENSIONS = {".py", ".ts", ".tsx", ".js", ".mjs"}
+DEFAULT_REFACTOR_TARGET_LIMIT = 50
 
 # Path patterns to exclude from refactor targets (tests, config, etc.)
 REFACTOR_EXCLUDE_PATTERNS = {"test_", "tests/", "__test__", ".test.", ".spec."}
@@ -89,7 +90,7 @@ def get_refactor_targets(
     priority: str | None = None,
     min_complexity: float | None = None,
     min_lines: int | None = None,
-    limit: int = 50,
+    limit: int = DEFAULT_REFACTOR_TARGET_LIMIT,
     code_only: bool = True,
     extensions: list[str] | None = None,
 ) -> dict[str, Any]:

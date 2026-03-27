@@ -25,6 +25,7 @@ from ..logging_config import get_logger
 from ..services import explorer
 from ..storage import explorer as explorer_storage
 from ..storage import scan_history
+from ..storage.explorer_analysis import DEFAULT_REFACTOR_TARGET_LIMIT
 from . import explorer_helpers as helpers
 from .dependencies import validate_project_exists
 
@@ -324,7 +325,12 @@ async def get_refactor_targets(
     priority: str | None = Query(None, description="Filter by priority: high, medium"),
     min_complexity: float | None = Query(None, description="Minimum complexity score"),
     min_lines: int | None = Query(None, description="Minimum lines of code"),
-    limit: int = Query(50, ge=1, le=200, description="Max results"),
+    limit: int = Query(
+        DEFAULT_REFACTOR_TARGET_LIMIT,
+        ge=1,
+        le=200,
+        description="Max results",
+    ),
     code_only: bool = Query(True, description="Filter to code files only"),
     extensions: str | None = Query(None, description="Comma-separated extensions (.py,.ts)"),
 ) -> dict[str, Any]:

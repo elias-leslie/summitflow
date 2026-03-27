@@ -11,7 +11,10 @@ from app.services.task_issue_mapper import link_issue_to_task
 from app.storage import qa_issues as qa_storage
 from app.storage import tasks as task_store
 from app.storage.events import log_task_event
-from app.storage.explorer_analysis import get_refactor_targets
+from app.storage.explorer_analysis import (
+    DEFAULT_REFACTOR_TARGET_LIMIT,
+    get_refactor_targets,
+)
 from app.storage.projects import get_project_root_path
 from app.storage.task_spirit import get_task_spirit, update_task_spirit
 from app.tasks.autonomous._issue_builder import create_refactor_issue
@@ -226,7 +229,10 @@ def generate_refactor_tasks_internal(
     project_id: str, skip_existing: bool, project_root: str | None = None
 ) -> dict[str, Any]:
     """Generate refactoring tasks from Explorer scan results."""
-    targets = get_refactor_targets(project_id, limit=15).get("targets", [])
+    targets = get_refactor_targets(
+        project_id,
+        limit=DEFAULT_REFACTOR_TARGET_LIMIT,
+    ).get("targets", [])
     created = 0
     retired = 0
     for target in targets:
