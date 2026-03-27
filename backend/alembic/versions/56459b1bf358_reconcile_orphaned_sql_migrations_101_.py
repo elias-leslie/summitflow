@@ -100,48 +100,25 @@ def _add_fk_if_missing(table: str, constraint: str, column: str,
     """
 
 
-def upgrade() -> None:
-    """Reconcile orphaned SQL migrations 101-105 into Alembic tracking."""
-
-    # =========================================================================
-    # 101: ADD COLUMN tasks.agent_override
-    # =========================================================================
-    op.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS agent_override VARCHAR(50)")
-
-    # =========================================================================
-    # 102: ADD PRIMARY KEYs and UNIQUE constraints
-    # Dedup steps skipped — already executed, no-op on clean DB.
-    # Tables that may have been dropped by later migrations (ideas,
-    # backup_schedules, celery_taskmeta) are guarded by IF EXISTS.
-    # =========================================================================
-
-    # Primary keys — serial/int id
+def _upgrade_102_primary_keys() -> None:
+    """102: Add missing PRIMARY KEY constraints."""
     for table in [
         "agent_sessions", "explorer_entries", "migration_backup",
         "mockups", "qa_issues", "quality_check_results", "scan_history",
         "subtask_dependencies", "subtask_summaries", "task_dependencies",
-        "task_subtask_steps",
-    ]:
-        op.execute(_add_pk_if_missing(table))
-
-    # Primary keys — text/varchar id
-    for table in ["backups", "task_subtasks"]:
-        op.execute(_add_pk_if_missing(table))
-
-    # Primary keys — UUID id
-    for table in [
+        "task_subtask_steps", "backups", "task_subtasks",
         "events", "subtask_citations", "terminal_panes",
         "terminal_sessions", "user_prompts",
     ]:
         op.execute(_add_pk_if_missing(table))
-
-    # Primary keys — natural keys
     op.execute(_add_pk_if_missing("scan_states", "project_id"))
     op.execute(_add_pk_if_missing("terminal_project_settings", "project_id"))
     op.execute(_add_pk_if_missing("task_labels", "task_id, label"))
     op.execute(_add_pk_if_missing("alembic_version", "version_num"))
 
-    # Unique constraints
+
+def _upgrade_102_unique_constraints() -> None:
+    """102: Add missing UNIQUE constraints."""
     op.execute(_add_unique_if_missing(
         "explorer_entries", "explorer_entries_project_entry_path_key",
         "project_id, entry_type, path"))
@@ -157,18 +134,15 @@ def upgrade() -> None:
         "task_subtask_steps", "task_subtask_steps_subtask_step_key",
         "subtask_id, step_number"))
 
-    # =========================================================================
-    # 103: ADD FOREIGN KEYs
-    # Orphan cleanup required before FK creation to prevent violations.
-    # =========================================================================
 
+def _upgrade_103_cleanup_orphans() -> None:
+    """103: Delete orphaned rows before FK creation."""
     # Subtask-level orphans
     op.execute(_safe_delete("task_subtask_steps", "subtask_id NOT IN (SELECT id FROM task_subtasks)"))
     op.execute(_safe_delete("subtask_dependencies", "subtask_id NOT IN (SELECT id FROM task_subtasks)"))
     op.execute(_safe_delete("subtask_dependencies", "depends_on_subtask_id NOT IN (SELECT id FROM task_subtasks)"))
     op.execute(_safe_delete("subtask_summaries", "subtask_id NOT IN (SELECT id FROM task_subtasks)"))
     op.execute(_safe_delete("subtask_citations", "subtask_id NOT IN (SELECT id FROM task_subtasks)"))
-
     # Task-level orphans
     op.execute(_safe_delete("task_subtasks", "task_id NOT IN (SELECT id FROM tasks)"))
     op.execute(_safe_delete("task_spirit", "task_id NOT IN (SELECT id FROM tasks)"))
@@ -178,8 +152,7 @@ def upgrade() -> None:
     op.execute(_safe_delete("mockups", "task_id IS NOT NULL AND task_id NOT IN (SELECT id FROM tasks)"))
     op.execute(_safe_delete("quality_check_results",
                             "escalation_task_id IS NOT NULL AND escalation_task_id NOT IN (SELECT id FROM tasks)"))
-
-    # Project-level orphans (tables may have been dropped by later migrations)
+    # Project-level orphans
     for table in [
         "events", "mockups", "backups", "explorer_entries", "qa_issues",
         "quality_check_results", "scan_history", "scan_states",
@@ -188,26 +161,21 @@ def upgrade() -> None:
         "code_health_lists",
     ]:
         op.execute(_safe_delete(table, "project_id NOT IN (SELECT id FROM projects)"))
-
     # Explorer-level orphans
     op.execute(_safe_delete("explorer_sub_elements", "explorer_entry_id NOT IN (SELECT id FROM explorer_entries)"))
     op.execute(_safe_delete("qa_issues", "entry_id IS NOT NULL AND entry_id NOT IN (SELECT id FROM explorer_entries)"))
 
-    # Task hierarchy
-    op.execute(_add_fk_if_missing("task_subtasks", "task_subtasks_task_id_fkey",
-                                   "task_id", "tasks"))
+
+def _upgrade_103_task_fks() -> None:
+    """103: Add FK constraints for task and subtask hierarchy."""
+    op.execute(_add_fk_if_missing("task_subtasks", "task_subtasks_task_id_fkey", "task_id", "tasks"))
     op.execute(_add_fk_if_missing("task_subtask_steps", "task_subtask_steps_subtask_id_fkey",
                                    "subtask_id", "task_subtasks"))
-    op.execute(_add_fk_if_missing("task_spirit", "task_spirit_task_id_fkey",
-                                   "task_id", "tasks"))
-    op.execute(_add_fk_if_missing("task_labels", "task_labels_task_id_fkey",
-                                   "task_id", "tasks"))
-    op.execute(_add_fk_if_missing("task_dependencies", "task_dependencies_task_id_fkey",
-                                   "task_id", "tasks"))
+    op.execute(_add_fk_if_missing("task_spirit", "task_spirit_task_id_fkey", "task_id", "tasks"))
+    op.execute(_add_fk_if_missing("task_labels", "task_labels_task_id_fkey", "task_id", "tasks"))
+    op.execute(_add_fk_if_missing("task_dependencies", "task_dependencies_task_id_fkey", "task_id", "tasks"))
     op.execute(_add_fk_if_missing("task_dependencies", "task_dependencies_depends_on_task_id_fkey",
                                    "depends_on_task_id", "tasks"))
-
-    # Subtask hierarchy
     op.execute(_add_fk_if_missing("subtask_dependencies", "subtask_dependencies_subtask_id_fkey",
                                    "subtask_id", "task_subtasks"))
     op.execute(_add_fk_if_missing("subtask_dependencies", "subtask_dependencies_depends_on_subtask_id_fkey",
@@ -217,53 +185,56 @@ def upgrade() -> None:
     op.execute(_add_fk_if_missing("subtask_citations", "subtask_citations_subtask_id_fkey",
                                    "subtask_id", "task_subtasks"))
 
-    # Project references
-    op.execute(_add_fk_if_missing("tasks", "tasks_project_id_fkey",
-                                   "project_id", "projects"))
+
+def _upgrade_103_project_fks() -> None:
+    """103: Add FK constraints from various tables to projects/tasks."""
+    op.execute(_add_fk_if_missing("tasks", "tasks_project_id_fkey", "project_id", "projects"))
     op.execute(_add_fk_if_missing("tasks", "tasks_parent_task_id_fkey",
                                    "parent_task_id", "tasks", on_delete="SET NULL"))
-    op.execute(_add_fk_if_missing("events", "events_project_id_fkey",
-                                   "project_id", "projects"))
-    op.execute(_add_fk_if_missing("mockups", "mockups_project_id_fkey",
-                                   "project_id", "projects"))
+    op.execute(_add_fk_if_missing("events", "events_project_id_fkey", "project_id", "projects"))
+    op.execute(_add_fk_if_missing("mockups", "mockups_project_id_fkey", "project_id", "projects"))
     op.execute(_add_fk_if_missing("mockups", "mockups_task_id_fkey",
                                    "task_id", "tasks", on_delete="SET NULL"))
     op.execute(_add_fk_if_missing("explorer_entries", "explorer_entries_project_id_fkey",
                                    "project_id", "projects"))
     op.execute(_add_fk_if_missing("explorer_sub_elements", "explorer_sub_elements_explorer_entry_id_fkey",
                                    "explorer_entry_id", "explorer_entries"))
-    op.execute(_add_fk_if_missing("qa_issues", "qa_issues_project_id_fkey",
-                                   "project_id", "projects"))
+    op.execute(_add_fk_if_missing("qa_issues", "qa_issues_project_id_fkey", "project_id", "projects"))
     op.execute(_add_fk_if_missing("qa_issues", "qa_issues_entry_id_fkey",
                                    "entry_id", "explorer_entries", on_delete="SET NULL"))
     op.execute(_add_fk_if_missing("quality_check_results", "quality_check_results_project_id_fkey",
                                    "project_id", "projects"))
     op.execute(_add_fk_if_missing("quality_check_results", "quality_check_results_escalation_task_id_fkey",
                                    "escalation_task_id", "tasks", on_delete="SET NULL"))
-    op.execute(_add_fk_if_missing("scan_history", "scan_history_project_id_fkey",
-                                   "project_id", "projects"))
-    op.execute(_add_fk_if_missing("scan_states", "scan_states_project_id_fkey",
-                                   "project_id", "projects"))
+    op.execute(_add_fk_if_missing("scan_history", "scan_history_project_id_fkey", "project_id", "projects"))
+    op.execute(_add_fk_if_missing("scan_states", "scan_states_project_id_fkey", "project_id", "projects"))
     op.execute(_add_fk_if_missing("refactor_sessions", "refactor_sessions_project_id_fkey",
                                    "project_id", "projects"))
-    op.execute(_add_fk_if_missing("user_prompts", "user_prompts_project_id_fkey",
-                                   "project_id", "projects"))
-    op.execute(_add_fk_if_missing("agent_sessions", "agent_sessions_project_id_fkey",
-                                   "project_id", "projects"))
-    op.execute(_add_fk_if_missing("notifications", "notifications_project_id_fkey",
-                                   "project_id", "projects"))
+    op.execute(_add_fk_if_missing("user_prompts", "user_prompts_project_id_fkey", "project_id", "projects"))
+    op.execute(_add_fk_if_missing("agent_sessions", "agent_sessions_project_id_fkey", "project_id", "projects"))
+    op.execute(_add_fk_if_missing("notifications", "notifications_project_id_fkey", "project_id", "projects"))
     op.execute(_add_fk_if_missing("project_agent_config", "project_agent_config_project_id_fkey",
                                    "project_id", "projects"))
-    op.execute(_add_fk_if_missing("sitemap_entries", "sitemap_entries_project_id_fkey",
-                                   "project_id", "projects"))
+    op.execute(_add_fk_if_missing("sitemap_entries", "sitemap_entries_project_id_fkey", "project_id", "projects"))
     op.execute(_add_fk_if_missing("code_health_lists", "code_health_lists_project_id_fkey",
                                    "project_id", "projects"))
 
-    # =========================================================================
-    # 104: DROP ideas table
-    # Also cleans up idx_notification_idea from Alembic migration a14ee32465a1
-    # which added idea_id on Feb 14, one day before 104 dropped it.
-    # =========================================================================
+
+def upgrade() -> None:
+    """Reconcile orphaned SQL migrations 101-105 into Alembic tracking."""
+    # 101: ADD COLUMN tasks.agent_override
+    op.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS agent_override VARCHAR(50)")
+
+    # 102: ADD PRIMARY KEYs and UNIQUE constraints
+    _upgrade_102_primary_keys()
+    _upgrade_102_unique_constraints()
+
+    # 103: ADD FOREIGN KEYs (orphan cleanup first to prevent violations)
+    _upgrade_103_cleanup_orphans()
+    _upgrade_103_task_fks()
+    _upgrade_103_project_fks()
+
+    # 104: DROP ideas table and related column/index
     op.execute("""
         DO $$ BEGIN
             IF EXISTS (SELECT 1 FROM information_schema.tables
@@ -277,37 +248,14 @@ def upgrade() -> None:
     op.execute("DROP INDEX IF EXISTS idx_notification_idea")
     op.execute("ALTER TABLE notifications DROP COLUMN IF EXISTS idea_id")
 
-    # =========================================================================
     # 105: ADD COLUMN tasks.ai_review
-    # =========================================================================
     op.execute(
         "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS ai_review BOOLEAN NOT NULL DEFAULT TRUE"
     )
 
 
-def downgrade() -> None:
-    """Reverse reconciliation — best-effort, not all steps are reversible."""
-
-    # 105: drop ai_review
-    op.execute("ALTER TABLE tasks DROP COLUMN IF EXISTS ai_review")
-
-    # 104: recreate ideas table (structure only, data is gone)
-    op.execute("""
-        CREATE TABLE IF NOT EXISTS ideas (
-            id TEXT PRIMARY KEY,
-            project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
-            task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
-            title TEXT NOT NULL,
-            description TEXT,
-            source TEXT,
-            status TEXT DEFAULT 'new',
-            created_at TIMESTAMPTZ DEFAULT NOW(),
-            updated_at TIMESTAMPTZ DEFAULT NOW()
-        )
-    """)
-    op.execute("ALTER TABLE notifications ADD COLUMN IF NOT EXISTS idea_id TEXT")
-
-    # 103: drop FKs (reverse of additions)
+def _downgrade_103_drop_fks() -> None:
+    """103 downgrade: drop all FK constraints added in upgrade."""
     fks = [
         ("code_health_lists", "code_health_lists_project_id_fkey"),
         ("sitemap_entries", "sitemap_entries_project_id_fkey"),
@@ -342,6 +290,31 @@ def downgrade() -> None:
     ]
     for table, constraint in fks:
         op.execute(f"ALTER TABLE {table} DROP CONSTRAINT IF EXISTS {constraint}")
+
+
+def downgrade() -> None:
+    """Reverse reconciliation — best-effort, not all steps are reversible."""
+    # 105: drop ai_review
+    op.execute("ALTER TABLE tasks DROP COLUMN IF EXISTS ai_review")
+
+    # 104: recreate ideas table (structure only, data is gone)
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS ideas (
+            id TEXT PRIMARY KEY,
+            project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+            task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+            title TEXT NOT NULL,
+            description TEXT,
+            source TEXT,
+            status TEXT DEFAULT 'new',
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+    """)
+    op.execute("ALTER TABLE notifications ADD COLUMN IF NOT EXISTS idea_id TEXT")
+
+    # 103: drop FKs (reverse of additions)
+    _downgrade_103_drop_fks()
 
     # 102: drop unique constraints (PKs are not reversed — too destructive)
     op.execute("ALTER TABLE task_subtask_steps DROP CONSTRAINT IF EXISTS task_subtask_steps_subtask_step_key")
