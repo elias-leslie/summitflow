@@ -61,6 +61,13 @@ def test_blocks_nested_shell_git_reset(tmp_path: Path) -> None:
     assert decision.code == "git_reset_hard"
 
 
+def test_blocks_git_clean_fd(tmp_path: Path) -> None:
+    decision = evaluate_shell_command("git clean -fd", tmp_path)
+
+    assert decision.blocked is True
+    assert decision.code == "git_clean_fd"
+
+
 def test_blocks_git_restore_on_foreign_owned_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
@@ -95,13 +102,30 @@ def test_blocks_git_revert_path_overlap(monkeypatch: pytest.MonkeyPatch, tmp_pat
     target = "docs/plans/vantage-rollout-plan.md"
 
     monkeypatch.setattr("app.services.command_guard._repo_root", lambda cwd: repo_root)
-    monkeypatch.setattr("app.services.command_guard._git_revert_paths", lambda root, args: [target])
+    monkeypatch.setattr("app.services._command_guard_helpers.git_revert_paths", lambda root, args, error_class: [target])
     monkeypatch.setattr(
         "app.services.command_guard.check_destructive_paths",
         lambda root, paths: _blocked_decision(repo_root, target),
     )
 
     decision = evaluate_shell_command("git revert --no-edit e4f23efc7", repo_root)
+
+    assert decision.blocked is True
+    assert decision.code == "ownership_conflict"
+
+
+def test_blocks_git_rm_on_foreign_owned_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    target = "docs/plans/vantage-rollout-plan.md"
+
+    monkeypatch.setattr("app.services.command_guard._repo_root", lambda cwd: repo_root)
+    monkeypatch.setattr(
+        "app.services.command_guard.check_destructive_paths",
+        lambda root, paths: _blocked_decision(repo_root, target),
+    )
+
+    decision = evaluate_shell_command(f"git rm -- {target}", repo_root)
 
     assert decision.blocked is True
     assert decision.code == "ownership_conflict"
