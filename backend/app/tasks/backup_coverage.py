@@ -112,6 +112,108 @@ class CoverageResult:
     components: list[ComponentResult]
 
 
+def _parse_tree_context(
+    verification_json: dict[str, Any] | None,
+) -> tuple[set[str], bool, bool, int]:
+    """Extract tree-matching signals from verification_json.
+
+    Returns:
+        (tree_keys, has_db, infra_wrapped, infra_file_count)
+    """
+    tree = verification_json.get("tree", {}) if verification_json else {}
+    tree_keys = set(tree.keys()) if tree else set()
+    has_db = verification_json.get("has_db", False) if verification_json else False
+
+    # Infrastructure archives wrap everything under infrastructure/ prefix.
+    # When tree only has the prefix key, use file count + has_db as signals.
+    infra_wrapped = "infrastructure" in tree_keys and len(tree_keys) == 1
+    infra_file_count = tree.get("infrastructure", {}).get("count", 0) if infra_wrapped else 0
+
+    return tree_keys, has_db, infra_wrapped, infra_file_count
+
+
+def _marker_present(
+    marker: str,
+    tree_keys: set[str],
+    has_db: bool,
+    infra_wrapped: bool,
+    infra_file_count: int,
+) -> bool:
+    """Determine whether a single archive marker is present.
+
+    Infrastructure archives nest everything under "infrastructure/" prefix,
+    so tree may be {"infrastructure": {"count": N}} — check total_files instead.
+    configs/ files: env.local, compose-env, smbcredentials, redis-dump.rdb,
+    hatchet-config/* (at least 1 file) = minimum 5 config files.
+    Total: pgdumpall.sql.gz + configs/* = at least 6 files.
+    """
+    if marker == "pgdumpall.sql.gz":
+        return has_db or marker in tree_keys
+
+    if infra_wrapped:
+        # Config files present if total >= 6 (pgdump + 5 config items)
+        if "configs/" in marker:
+            return infra_file_count >= 6
+        return marker in tree_keys
+
+    if "/" in marker:
+        # Path like "configs/env.local" — check if parent dir exists in tree
+        parent = marker.split("/")[0]
+        return parent in tree_keys
+
+    return marker in tree_keys
+
+
+def _check_component(
+    comp: CoverageComponent,
+    tree_keys: set[str],
+    has_db: bool,
+    infra_wrapped: bool,
+    infra_file_count: int,
+) -> ComponentResult:
+    """Evaluate a single coverage component and return its result."""
+    if comp.category == "excluded" or comp.archive_marker is None:
+        return ComponentResult(
+            key=comp.key, label=comp.label, category=comp.category,
+            present=False,
+        )
+
+    present = _marker_present(
+        comp.archive_marker, tree_keys, has_db, infra_wrapped, infra_file_count,
+    )
+    error = (
+        f"{comp.label} not found in archive"
+        if not present and comp.category == "required"
+        else None
+    )
+    return ComponentResult(
+        key=comp.key, label=comp.label, category=comp.category,
+        present=present, error=error,
+    )
+
+
+def _tally_required(components: list[ComponentResult]) -> tuple[int, int, list[str]]:
+    """Count required components and collect missing keys.
+
+    Returns:
+        (required_count, present_count, missing_keys)
+    """
+    required_count = 0
+    present_count = 0
+    missing: list[str] = []
+
+    for c in components:
+        if c.category != "required":
+            continue
+        required_count += 1
+        if c.present:
+            present_count += 1
+        else:
+            missing.append(c.key)
+
+    return required_count, present_count, missing
+
+
 def verify_archive_coverage(verification_json: dict[str, Any] | None) -> CoverageResult:
     """Check an archive's verification data against the coverage contract.
 
@@ -122,76 +224,14 @@ def verify_archive_coverage(verification_json: dict[str, Any] | None) -> Coverag
     Returns:
         CoverageResult with per-component pass/fail.
     """
-    tree = verification_json.get("tree", {}) if verification_json else {}
+    tree_keys, has_db, infra_wrapped, infra_file_count = _parse_tree_context(verification_json)
 
-    # Flatten tree keys for matching — tree uses top-level dir names as keys
-    # e.g. {"configs": {"count": 5}, "pgdumpall.sql.gz": {"count": 1}}
-    # Infrastructure archives nest everything under "infrastructure/" prefix,
-    # so tree may be {"infrastructure": {"count": N}} — check total_files instead.
-    tree_keys = set(tree.keys()) if tree else set()
+    components = [
+        _check_component(comp, tree_keys, has_db, infra_wrapped, infra_file_count)
+        for comp in INFRA_COVERAGE
+    ]
 
-    # Also check the full file listing if available
-    has_db = verification_json.get("has_db", False) if verification_json else False
-
-    # Infrastructure archives wrap everything under infrastructure/ prefix.
-    # When tree only has the prefix key, use file count + has_db as signals.
-    infra_wrapped = "infrastructure" in tree_keys and len(tree_keys) == 1
-    infra_file_count = tree.get("infrastructure", {}).get("count", 0) if infra_wrapped else 0
-
-    components: list[ComponentResult] = []
-    required_count = 0
-    present_count = 0
-    missing: list[str] = []
-
-    for comp in INFRA_COVERAGE:
-        if comp.category == "excluded":
-            components.append(ComponentResult(
-                key=comp.key, label=comp.label, category=comp.category,
-                present=False,
-            ))
-            continue
-
-        if comp.archive_marker is None:
-            # Optional with no marker — skip verification
-            components.append(ComponentResult(
-                key=comp.key, label=comp.label, category=comp.category,
-                present=False,
-            ))
-            continue
-
-        # Check presence
-        marker = comp.archive_marker
-        present = False
-
-        if marker == "pgdumpall.sql.gz":
-            # Special case: check has_db flag or tree key
-            present = has_db or marker in tree_keys
-        elif infra_wrapped:
-            # Infrastructure-prefixed archive — infer presence from file count.
-            # configs/ files: env.local, compose-env, smbcredentials, redis-dump.rdb,
-            # hatchet-config/* (at least 1 file) = minimum 5 config files.
-            # Total: pgdumpall.sql.gz + configs/* = at least 6 files.
-            # Config files present if total >= 6 (pgdump + 5 config items)
-            present = infra_file_count >= 6 if "configs/" in marker else marker in tree_keys
-        elif "/" in marker:
-            # Path like "configs/env.local" — check if parent dir exists in tree
-            parent = marker.split("/")[0]
-            present = parent in tree_keys
-        else:
-            present = marker in tree_keys
-
-        if comp.category == "required":
-            required_count += 1
-            if present:
-                present_count += 1
-            else:
-                missing.append(comp.key)
-
-        components.append(ComponentResult(
-            key=comp.key, label=comp.label, category=comp.category,
-            present=present,
-            error=f"{comp.label} not found in archive" if not present and comp.category == "required" else None,
-        ))
+    required_count, present_count, missing = _tally_required(components)
 
     return CoverageResult(
         complete=present_count == required_count,
