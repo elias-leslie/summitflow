@@ -793,8 +793,13 @@ status_dashboard() {
 # Tool definitions loaded from centralized registry (tool-registry.json)
 # Format: LABEL|binary|args|count_method|working_dir_type|fallback_global|pass_path
 declare -A TOOL_DEFS
+REGISTRY_DUPLICATES=()
 if [ -f "$TOOL_REGISTRY" ]; then
     while IFS='|' read -r name label binary args count_method working_dir fallback_global pass_path; do
+        if [[ -n "${TOOL_DEFS[$name]+x}" ]]; then
+            REGISTRY_DUPLICATES+=("$name")
+            continue
+        fi
         TOOL_DEFS[$name]="${label}|${binary}|${args}|${count_method}|${working_dir}|${fallback_global}|${pass_path}"
     done < <(jq -r '.tools[] | select(.dt) | [
         .name,
@@ -806,6 +811,11 @@ if [ -f "$TOOL_REGISTRY" ]; then
         (if .dt.fallback_global then "1" else "0" end),
         (if .dt.pass_path then "1" else "0" end)
     ] | join("|")' "$TOOL_REGISTRY")
+    if [[ ${#REGISTRY_DUPLICATES[@]} -gt 0 ]]; then
+        mapfile -t _unique_registry_duplicates < <(printf '%s\n' "${REGISTRY_DUPLICATES[@]}" | sort -u)
+        echo "ERROR:duplicate_tool_names:${_unique_registry_duplicates[*]// /,}" >&2
+        exit 1
+    fi
 else
     echo "ERROR:registry_not_found:$TOOL_REGISTRY" >&2
 fi
