@@ -178,6 +178,36 @@ async def _collect_ready_all_project_data(
     }
 
 
+def _empty_ready_all_response() -> dict[str, object]:
+    """Return a ready-all response with zero counts and no projects."""
+    return {
+        "payload": {
+            "summary": {"ready": 0, "blocked": 0, "active": 0, "stale": 0, "projects": 0},
+            "projects": [],
+        },
+        "raw": "",
+    }
+
+
+def _assemble_ready_all_response(
+    ordered_results: list[dict[str, Any]], limit_per_project: int
+) -> dict[str, object]:
+    """Build the final ready-all response from sorted project results."""
+    return {
+        "payload": {
+            "summary": {
+                "ready": sum(int(item["ready_count"]) for item in ordered_results),
+                "blocked": sum(int(item["blocked_count"]) for item in ordered_results),
+                "active": sum(int(item["active_count"]) for item in ordered_results),
+                "stale": sum(int(item["stale_count"]) for item in ordered_results),
+                "projects": len(ordered_results),
+            },
+            "projects": ordered_results,
+        },
+        "raw": render_ready_all_compact(ordered_results, limit_per_project),
+    }
+
+
 async def _build_ready_all_overview_response(
     *,
     limit_per_project: int,
@@ -186,22 +216,10 @@ async def _build_ready_all_overview_response(
     """Build the canonical ready-all API response with payload plus rendered text."""
     projects = await asyncio.to_thread(project_store.list_projects)
     if project_id is not None:
-        projects = [project for project in projects if project.get("id") == project_id]
+        projects = [p for p in projects if p.get("id") == project_id]
 
     if not projects:
-        return {
-            "payload": {
-                "summary": {
-                    "ready": 0,
-                    "blocked": 0,
-                    "active": 0,
-                    "stale": 0,
-                    "projects": 0,
-                },
-                "projects": [],
-            },
-            "raw": "",
-        }
+        return _empty_ready_all_response()
 
     results = await asyncio.gather(
         *[
@@ -223,19 +241,7 @@ async def _build_ready_all_overview_response(
             -int(item["ready_count"]),
         ),
     )
-    return {
-        "payload": {
-            "summary": {
-                "ready": sum(int(item["ready_count"]) for item in ordered_results),
-                "blocked": sum(int(item["blocked_count"]) for item in ordered_results),
-                "active": sum(int(item["active_count"]) for item in ordered_results),
-                "stale": sum(int(item["stale_count"]) for item in ordered_results),
-                "projects": len(ordered_results),
-            },
-            "projects": ordered_results,
-        },
-        "raw": render_ready_all_compact(ordered_results, limit_per_project),
-    }
+    return _assemble_ready_all_response(ordered_results, limit_per_project)
 
 
 @router.get("/projects/{project_id}/tasks", response_model=None)
