@@ -45,6 +45,11 @@ from .memory_options import (
     ExcludeAgentSlugsOpt,
     ExcludeAudienceTagsOpt,
     ExcludeConsumerProfilesOpt,
+    FormatInstructionOpt,
+    FormatProhibitionOpt,
+    FormatSummaryOpt,
+    FormatTopicOpt,
+    FormatWhyOpt,
     FullExportOpt,
     HistoryLimitOpt,
     InputFileOpt,
@@ -58,6 +63,7 @@ from .memory_options import (
     PinnedUpdateOpt,
     QueryArg,
     RevisionArg,
+    SaveSummaryOpt,
     ScopeIdOpt,
     ScopeOpt,
     SearchLimitOpt,
@@ -107,14 +113,26 @@ def _resolve_content(content: str | None, content_file: str | None, *, require_v
         return path.read_text(encoding="utf-8")
     except FileNotFoundError:
         from ..output import output_error
-
         output_error(f"Content file not found: {content_file}")
         raise typer.Exit(1) from None
     except PermissionError:
         from ..output import output_error
-
         output_error(f"Permission denied reading content file: {content_file}")
         raise typer.Exit(1) from None
+
+
+def _resolve_and_validate_save(
+    summary: str | None, content: str | None, content_file: str | None,
+) -> str:
+    """Validate save inputs, emitting quickstart on error; return resolved content."""
+    missing_summary = summary is None or not summary.strip()
+    missing_content = content_file is None and not (content and content.strip())
+    if missing_summary or missing_content:
+        emit_save_quickstart_error(missing_summary=missing_summary, missing_content=missing_content)
+    resolved = _resolve_content(content, content_file, require_value=False)
+    if resolved is None or not resolved.strip():
+        emit_save_quickstart_error(blank_content=True)
+    return resolved  # type: ignore[return-value]
 
 
 @app.callback(invoke_without_command=True)
@@ -125,11 +143,7 @@ def memory_default(ctx: typer.Context) -> None:
 
 
 @app.command()
-def stats(
-    ctx: typer.Context,
-    scope: ScopeOpt = "global",
-    scope_id: ScopeIdOpt = None,
-) -> None:
+def stats(ctx: typer.Context, scope: ScopeOpt = "global", scope_id: ScopeIdOpt = None) -> None:
     """Get memory statistics."""
     stats_impl(ctx.obj, scope, scope_id)
 
@@ -137,10 +151,7 @@ def stats(
 @app.command()
 def save(
     ctx: typer.Context,
-    summary: Annotated[
-        str | None,
-        typer.Option("--summary", "-S", help="Action phrase for TOON index (10-40 chars)"),
-    ] = None,
+    summary: SaveSummaryOpt = None,
     content: ContentArg = None,
     content_file: ContentFileOpt = None,
     tier: TierOpt = "reference",
@@ -162,66 +173,24 @@ def save(
     change_reason: ChangeReasonOpt = None,
 ) -> None:
     """Save a learning to the memory system."""
-    missing_summary = summary is None or not summary.strip()
-    missing_content = content_file is None and not (content and content.strip())
-    if missing_summary or missing_content:
-        emit_save_quickstart_error(
-            missing_summary=missing_summary,
-            missing_content=missing_content,
-        )
-
-    resolved_content = _resolve_content(content, content_file, require_value=False)
-    if resolved_content is None or not resolved_content.strip():
-        emit_save_quickstart_error(blank_content=True)
-
+    resolved_content = _resolve_and_validate_save(summary, content, content_file)
     assert summary is not None
     save_impl(
-        ctx.obj,
-        resolved_content,
-        summary,
-        tier,
-        confidence,
-        context,
-        pinned,
-        trigger_types,
-        trigger_phases,
-        context_kind,
-        consumer_profiles,
-        exclude_consumer_profiles,
-        agent_slugs,
-        exclude_agent_slugs,
-        audience_tags,
-        exclude_audience_tags,
-        tags,
-        scope,
-        scope_id,
-        change_reason,
+        ctx.obj, resolved_content, summary, tier, confidence, context, pinned,
+        trigger_types, trigger_phases, context_kind, consumer_profiles,
+        exclude_consumer_profiles, agent_slugs, exclude_agent_slugs,
+        audience_tags, exclude_audience_tags, tags, scope, scope_id, change_reason,
     )
 
 
 @app.command("format")
 def format_cmd(
     tier: TierOpt = "reference",
-    topic: Annotated[
-        str,
-        typer.Option("--topic", help="Required compact topic header, without markdown or colon"),
-    ] = ...,
-    instruction: Annotated[
-        str,
-        typer.Option("--instruction", help="Required primary instruction sentence"),
-    ] = ...,
-    prohibition: Annotated[
-        str | None,
-        typer.Option("--prohibition", help="Optional second sentence for a direct prohibition"),
-    ] = None,
-    why: Annotated[
-        str | None,
-        typer.Option("--why", help="Optional brief rationale; emitted as 'Why: ...'"),
-    ] = None,
-    summary: Annotated[
-        str | None,
-        typer.Option("--summary", "-S", help="Optional summary override (default: suggested from instruction)"),
-    ] = None,
+    topic: FormatTopicOpt = ...,
+    instruction: FormatInstructionOpt = ...,
+    prohibition: FormatProhibitionOpt = None,
+    why: FormatWhyOpt = None,
+    summary: FormatSummaryOpt = None,
 ) -> None:
     """Generate a standard memory episode body and compact summary."""
     content = build_episode_content(topic, instruction, prohibition, why)
@@ -266,10 +235,7 @@ def get(ctx: typer.Context, uuids: UUIDsArg) -> None:
 
 
 @app.command()
-def delete(
-    uuids: UUIDsDeleteArg,
-    change_reason: ChangeReasonOpt = None,
-) -> None:
+def delete(uuids: UUIDsDeleteArg, change_reason: ChangeReasonOpt = None) -> None:
     """Delete one or more episodes from memory."""
     delete_impl(uuids, change_reason=change_reason)
 
@@ -299,59 +265,31 @@ def update(
     """Update an episode in place (content/tier and properties)."""
     resolved_content = _resolve_content(content, content_file, require_value=False)
     update_impl(
-        uuid,
-        resolved_content,
-        tier,
-        summary,
-        trigger_types,
-        trigger_phases,
-        pinned,
-        context_kind,
-        consumer_profiles,
-        exclude_consumer_profiles,
-        agent_slugs,
-        exclude_agent_slugs,
-        audience_tags,
-        exclude_audience_tags,
-        clear_applicability,
-        tags,
-        clear_tags,
-        change_reason,
+        uuid, resolved_content, tier, summary, trigger_types, trigger_phases,
+        pinned, context_kind, consumer_profiles, exclude_consumer_profiles,
+        agent_slugs, exclude_agent_slugs, audience_tags, exclude_audience_tags,
+        clear_applicability, tags, clear_tags, change_reason,
     )
 
 
 @app.command("tag")
 def tag(
     uuids: UUIDsArg,
-    add_tags: Annotated[
-        str | None,
-        typer.Option("--add-tags", help="Comma-separated tags to add"),
-    ] = None,
-    remove_tags: Annotated[
-        str | None,
-        typer.Option("--remove-tags", help="Comma-separated tags to remove"),
-    ] = None,
+    add_tags: Annotated[str | None, typer.Option("--add-tags", help="Comma-separated tags to add")] = None,
+    remove_tags: Annotated[str | None, typer.Option("--remove-tags", help="Comma-separated tags to remove")] = None,
 ) -> None:
     """Add/remove tags on one or more episodes without replacing the full list."""
     tag_impl(uuids, add_tags=add_tags, remove_tags=remove_tags)
 
 
 @app.command("revisions")
-def revisions(
-    ctx: typer.Context,
-    uuid: UUIDArg,
-    limit: HistoryLimitOpt = 20,
-) -> None:
+def revisions(ctx: typer.Context, uuid: UUIDArg, limit: HistoryLimitOpt = 20) -> None:
     """List immutable revision history for one episode."""
     revisions_impl(ctx.obj, uuid, limit)
 
 
 @app.command()
-def restore(
-    uuid: UUIDArg,
-    revision_id: RevisionArg,
-    change_reason: ChangeReasonOpt = None,
-) -> None:
+def restore(uuid: UUIDArg, revision_id: RevisionArg, change_reason: ChangeReasonOpt = None) -> None:
     """Restore an episode to a historical revision."""
     restore_impl(uuid, revision_id, change_reason=change_reason)
 
