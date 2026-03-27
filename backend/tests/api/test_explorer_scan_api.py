@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
@@ -90,3 +90,21 @@ class TestExplorerTriggerScanEndpoint:
         assert response.status_code == 409
         assert response.json()["message"] == "Explorer scan already running"
         assert response.json()["scan_status"] == current_status
+
+    def test_sync_regenerate_runs_off_event_loop(self, client: TestClient) -> None:
+        result = {"closed_count": 1, "created_count": 2, "scanned_count": 3, "retired_count": 0}
+        to_thread = AsyncMock(return_value=result)
+
+        with (
+            patch("app.api.explorer.validate_project_exists"),
+            patch("app.api.explorer.asyncio.to_thread", to_thread),
+            patch("app.api.explorer.regenerate_refactor_tasks_sync", create=True),
+        ):
+            response = client.post(
+                "/api/projects/summitflow/explorer/regenerate-refactor-tasks",
+                params={"sync": "true"},
+            )
+
+        assert response.status_code == 200
+        assert response.json() == {"status": "completed", "project_id": "summitflow", **result}
+        to_thread.assert_awaited_once()

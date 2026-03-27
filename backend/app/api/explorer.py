@@ -15,6 +15,7 @@ Endpoints:
 - GET /api/projects/{id}/explorer/children - Get children for tree nav
 """
 
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -419,7 +420,7 @@ async def regenerate_refactor_tasks(
         from ..tasks.autonomous.task_generation import regenerate_refactor_tasks_sync
 
         try:
-            result = regenerate_refactor_tasks_sync(project_id)
+            result = await asyncio.to_thread(regenerate_refactor_tasks_sync, project_id)
         except Exception as e:
             logger.exception("Sync regeneration failed for %s", project_id)
             result = {"error": str(e), "deleted_count": 0, "created_count": 0, "scanned_count": 0}

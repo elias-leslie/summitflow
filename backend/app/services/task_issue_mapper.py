@@ -6,13 +6,14 @@ when issues are resolved.
 
 from __future__ import annotations
 
-import subprocess
 from dataclasses import dataclass
 
 from psycopg import Connection
 
 from ..logging_config import get_logger
+from ..storage import tasks as task_store
 from ..storage.connection import get_connection
+from ..storage.events import log_task_event
 
 logger = get_logger(__name__)
 
@@ -21,10 +22,6 @@ __all__ = [
     "close_task_for_issue",
     "link_issue_to_task",
 ]
-
-# ── Constants ──────────────────────────────────────────────────────────
-
-ST_COMMAND_TIMEOUT = 30
 
 SQL_UPDATE_TASK_LINK = """
     UPDATE qa_issues
@@ -45,30 +42,6 @@ class QAIssue:
     description: str | None
     file_path: str | None
     st_task_id: str | None
-
-
-# ── Helpers ────────────────────────────────────────────────────────────
-
-
-def _run_st_command(args: list[str]) -> tuple[bool, str]:
-    """Run an st CLI command and return (success, output)."""
-    try:
-        result = subprocess.run(
-            ["st", *args],
-            capture_output=True,
-            text=True,
-            timeout=ST_COMMAND_TIMEOUT,
-        )
-        if result.returncode == 0:
-            return True, result.stdout.strip()
-        logger.warning("st command failed: %s", result.stderr)
-        return False, result.stderr.strip()
-    except subprocess.TimeoutExpired:
-        logger.error("st command timed out")
-        return False, "Command timed out"
-    except FileNotFoundError:
-        logger.error("st CLI not found in PATH")
-        return False, "st CLI not found"
 
 
 def _db_link_issue_to_task(
@@ -117,9 +90,24 @@ def close_task_for_issue(issue: QAIssue) -> bool:
         return False
 
     reason = f"Auto-closed: QA issue #{issue.id} resolved"
-    success, output = _run_st_command(["cancel", issue.st_task_id, "--reason", reason])
-    if success:
-        logger.info("Auto-cancelled task %s for resolved issue %d", issue.st_task_id, issue.id)
+    task = task_store.get_task(issue.st_task_id)
+    if not task:
+        logger.warning("Task %s linked to issue %d no longer exists", issue.st_task_id, issue.id)
+        return False
+
+    current_status = task.get("status")
+    if current_status in {"completed", "cancelled"}:
+        logger.info(
+            "Skipping auto-cancel for task %s in terminal status %s",
+            issue.st_task_id,
+            current_status,
+        )
+        return False
+
+    try:
+        task_store.update_task_status(issue.st_task_id, "cancelled")
+        log_task_event(issue.st_task_id, reason, source="explorer_resolution")
         return True
-    logger.warning("Failed to cancel task %s: %s", issue.st_task_id, output)
-    return False
+    except Exception:
+        logger.exception("Failed to cancel task %s for resolved issue %d", issue.st_task_id, issue.id)
+        return False
