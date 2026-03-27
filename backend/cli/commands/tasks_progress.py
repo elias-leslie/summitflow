@@ -78,6 +78,87 @@ def analyze_subtask_sync(subtasks: list[dict[str, object]]) -> SyncAnalysis:
     return SyncAnalysis(synced=[], syncable=syncable, skipped=skipped)
 
 
+def _ensure_citations_acknowledged(
+    client: STClient,
+    task_id: str,
+    subtask_id: str,
+    subtask: dict[str, object],
+    acknowledge_none: bool,
+) -> bool:
+    """Acknowledge missing citations if requested; return True if acknowledged or already set."""
+    if bool(subtask.get("citations_acknowledged_at")):
+        return True
+    if not acknowledge_none:
+        return False
+    try:
+        client.acknowledge_no_citations(task_id, subtask_id)
+    except APIError as e:
+        handle_api_error(e)
+        raise typer.Exit(1) from None
+    subtask["citations_acknowledged_at"] = True
+    return True
+
+
+def _mark_subtask_passed(
+    client: STClient,
+    task_id: str,
+    subtask_id: str,
+    subtask: dict[str, object],
+    analysis: SyncAnalysis,
+) -> None:
+    """Call the API to mark a subtask passed and record it in the analysis."""
+    try:
+        client.update_subtask(task_id, subtask_id, passes=True)
+    except APIError as e:
+        handle_api_error(e)
+        raise typer.Exit(1) from None
+    subtask["passes"] = True
+    analysis.synced.append(subtask_id)
+
+
+def _sync_plan_context_subtask(
+    client: STClient,
+    task_id: str,
+    subtask_id: str,
+    subtask: dict[str, object],
+    acknowledge_none: bool,
+    analysis: SyncAnalysis,
+) -> None:
+    """Sync a subtask whose steps come from plan context (steps are guidance, not blockers)."""
+    acknowledged = _ensure_citations_acknowledged(
+        client, task_id, subtask_id, subtask, acknowledge_none
+    )
+    if not acknowledged:
+        analysis.skipped.append(f"{subtask_id}:citations")
+        return
+    _mark_subtask_passed(client, task_id, subtask_id, subtask, analysis)
+
+
+def _sync_regular_subtask(
+    client: STClient,
+    task_id: str,
+    subtask_id: str,
+    subtask: dict[str, object],
+    steps: list[dict[str, object]],
+    acknowledge_none: bool,
+    analysis: SyncAnalysis,
+) -> None:
+    """Sync a regular subtask, checking step completion and citations."""
+    incomplete = _incomplete_step_numbers(steps)
+    if incomplete:
+        analysis.skipped.append(f"{subtask_id}:steps-{','.join(str(s) for s in incomplete)}")
+        return
+
+    acknowledged = _ensure_citations_acknowledged(
+        client, task_id, subtask_id, subtask, acknowledge_none
+    )
+    if not acknowledged:
+        analysis.skipped.append(f"{subtask_id}:citations")
+        return
+
+    _mark_subtask_passed(client, task_id, subtask_id, subtask, analysis)
+
+
 def sync_completed_subtasks(
     client: STClient,
     task_id: str,
@@ -96,55 +177,19 @@ def sync_completed_subtasks(
         if not steps:
             analysis.skipped.append(f"{subtask_id}:no-steps")
             continue
+
         if _uses_plan_context_steps(subtask):
-            citations_acknowledged = bool(subtask.get("citations_acknowledged_at"))
-            if not citations_acknowledged:
-                if not acknowledge_none:
-                    analysis.skipped.append(f"{subtask_id}:citations")
-                    continue
-                try:
-                    client.acknowledge_no_citations(task_id, subtask_id)
-                except APIError as e:
-                    handle_api_error(e)
-                    raise typer.Exit(1) from None
-                subtask["citations_acknowledged_at"] = True
-            try:
-                client.update_subtask(task_id, subtask_id, passes=True)
-            except APIError as e:
-                handle_api_error(e)
-                raise typer.Exit(1) from None
-            subtask["passes"] = True
-            analysis.synced.append(subtask_id)
-            continue
+            _sync_plan_context_subtask(
+                client, task_id, subtask_id, subtask, acknowledge_none, analysis
+            )
+        else:
+            _sync_regular_subtask(
+                client, task_id, subtask_id, subtask, steps, acknowledge_none, analysis
+            )
 
-        incomplete = _incomplete_step_numbers(steps)
-        if incomplete:
-            analysis.skipped.append(f"{subtask_id}:steps-{','.join(str(step) for step in incomplete)}")
-            continue
-
-        citations_acknowledged = bool(subtask.get("citations_acknowledged_at"))
-        if not citations_acknowledged:
-            if not acknowledge_none:
-                analysis.skipped.append(f"{subtask_id}:citations")
-                continue
-            try:
-                client.acknowledge_no_citations(task_id, subtask_id)
-            except APIError as e:
-                handle_api_error(e)
-                raise typer.Exit(1) from None
-            subtask["citations_acknowledged_at"] = True
-
-        try:
-            client.update_subtask(task_id, subtask_id, passes=True)
-        except APIError as e:
-            handle_api_error(e)
-            raise typer.Exit(1) from None
-        subtask["passes"] = True
-        analysis.synced.append(subtask_id)
-
-    remaining_analysis = analyze_subtask_sync(subtasks)
-    analysis.syncable = remaining_analysis.syncable
-    analysis.skipped = remaining_analysis.skipped
+    remaining = analyze_subtask_sync(subtasks)
+    analysis.syncable = remaining.syncable
+    analysis.skipped = remaining.skipped
     return analysis
 
 
