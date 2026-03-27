@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Annotated, Any, cast
 
 import httpx
@@ -16,6 +17,18 @@ from ._http_errors import parse_error_detail, raise_connect_error, raise_timeout
 app = typer.Typer(help="Tool usage metrics (Agent Hub)")
 
 
+def _build_internal_headers() -> dict[str, str]:
+    """Build env-backed internal headers for read-only Agent Hub admin surfaces."""
+    secret = os.getenv("INTERNAL_SERVICE_SECRET", "").strip()
+    if not secret:
+        output_error(
+            "INTERNAL_SERVICE_SECRET is not configured. "
+            "st tools requires the shared internal Agent Hub auth header."
+        )
+        raise typer.Exit(1) from None
+    return {"X-Agent-Hub-Internal": secret}
+
+
 def _handle_response(response: httpx.Response, agent_hub_url: str) -> dict[str, Any]:
     """Validate and parse a successful HTTP response."""
     if response.status_code >= 400:
@@ -28,7 +41,7 @@ def _handle_response(response: httpx.Response, agent_hub_url: str) -> dict[str, 
 def _api_request(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
     """Make request to Agent Hub admin API."""
     agent_hub_url = get_agent_hub_url()
-    headers = {"X-Agent-Hub-Internal": "agent-hub-internal-v1"}
+    headers = _build_internal_headers()
     url = f"{agent_hub_url}{path}"
 
     try:
