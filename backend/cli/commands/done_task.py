@@ -88,7 +88,7 @@ def _completion_status_kwargs(client: STClient, task_id: str) -> dict[str, bool]
         task = client.get_task(task_id)
     except APIError:
         return {}
-    return {"skip_gates": True} if task.get("status") == "pending" else {}
+    return {"skip_gates": True} if task.get("status") in {"pending", "failed"} else {}
 
 
 def _close_task_safely(client: STClient, task_id: str, message: str | None) -> None:

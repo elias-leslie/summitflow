@@ -72,6 +72,34 @@ def test_abandon_confirm_captures_before_removing_snapshot() -> None:
     assert result["snapshot_removed"] is True
 
 
+def test_abandon_confirm_exits_before_cleanup_when_cancel_fails() -> None:
+    client = MagicMock()
+    from cli._client_base import APIError
+
+    with (
+        patch("cli.commands._abandon_helpers.get_snapshot_info", return_value={"project_id": "test", "worktree_path": "/tmp/task-123"}),
+        patch("cli.commands._abandon_helpers.count_unmerged_commits", return_value=2),
+        patch("cli.commands._abandon_helpers.get_subtask_branches", return_value=["task-123/1.1"]),
+        patch("cli.commands._abandon_helpers.get_dirty_files", return_value=[]),
+        patch("cli.commands._abandon_helpers.confirm_gate"),
+        patch("cli.commands._abandon_helpers.capture_lifecycle_baseline") as mock_capture,
+        patch("cli.commands._abandon_helpers.remove_snapshot") as mock_remove,
+        patch("cli.commands._abandon_helpers.delete_task_branches") as mock_delete,
+        patch("cli.commands._abandon_helpers.output_error") as mock_error,
+        pytest.raises(typer.Exit) as exc,
+    ):
+        client.update_status.side_effect = APIError(400, "Invalid transition")
+        abandon_task(client, "task-123", confirm="deadbeef")
+
+    assert exc.value.exit_code == 1
+    mock_error.assert_called_once_with(
+        "Failed to cancel task before cleanup: Invalid transition"
+    )
+    mock_capture.assert_not_called()
+    mock_remove.assert_not_called()
+    mock_delete.assert_not_called()
+
+
 def test_abandon_command_reports_cancelled_status_for_tasks() -> None:
     with (
         patch("cli.commands.abandon.STClient"),

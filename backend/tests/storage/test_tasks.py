@@ -58,9 +58,10 @@ class TestValidTransitions:
             f"State '{state}' missing from VALID_TRANSITIONS"
         )
 
-    def test_reopenable_terminal_states_can_return_to_pending(self) -> None:
-        """Completed and cancelled tasks can be reopened to pending."""
-        assert VALID_TRANSITIONS["completed"] == {"pending"}
+    def test_terminal_states_keep_truthful_recovery_paths(self) -> None:
+        """Terminal states should support the recovery paths the CLI relies on."""
+        assert VALID_TRANSITIONS["completed"] == {"pending", "cancelled"}
+        assert VALID_TRANSITIONS["failed"] == {"pending", "running", "cancelled", "completed"}
         assert VALID_TRANSITIONS["cancelled"] == {"pending"}
 
 
@@ -168,6 +169,28 @@ class TestUpdateTaskStatus:
         """Failed tasks should be abandonable without lying about the final state."""
         task_store.update_task_status(test_task["id"], "running")
         task_store.update_task_status(test_task["id"], "failed")
+
+        result = task_store.update_task_status(test_task["id"], "cancelled")
+
+        assert result is not None
+        assert result["status"] == "cancelled"
+        assert result["completed_at"] is not None
+
+    def test_status_failed_to_completed_allowed(self, test_task: dict[str, Any]) -> None:
+        """Merged recovery should be able to finalize a previously failed task."""
+        task_store.update_task_status(test_task["id"], "running")
+        task_store.update_task_status(test_task["id"], "failed")
+
+        result = task_store.update_task_status(test_task["id"], "completed")
+
+        assert result is not None
+        assert result["status"] == "completed"
+        assert result["completed_at"] is not None
+
+    def test_status_completed_to_cancelled_allowed(self, test_task: dict[str, Any]) -> None:
+        """Discarding stale completed work should leave the task truthful."""
+        task_store.update_task_status(test_task["id"], "running")
+        task_store.update_task_status(test_task["id"], "completed")
 
         result = task_store.update_task_status(test_task["id"], "cancelled")
 
