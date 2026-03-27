@@ -124,6 +124,7 @@ require_bin systemctl
 mkdir -p "$BACKEND_APP_DIR" "$FRONTEND_DIR" "$ROOT_DIR/.st" "$SYSTEMD_DIR"
 
 write_file_if_changed "$ROOT_DIR/.gitignore" <<EOF
+.index.yaml
 backend/.venv/
 backend/__pycache__/
 backend/app/__pycache__/
