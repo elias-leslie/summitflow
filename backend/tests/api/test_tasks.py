@@ -376,6 +376,86 @@ class TestReadyEndpoint:
         assert payload["total"] == 1
         assert [task["id"] for task in payload["tasks"]] == ["task-ready"]
 
+    def test_ready_endpoint_excludes_tasks_with_worktree(
+        self, client: Any, test_project_id: str
+    ) -> None:
+        ready_task = {
+            "id": "task-ready",
+            "project_id": test_project_id,
+            "capability_id": None,
+            "title": "Idle ready task",
+            "description": "Ready to execute",
+            "status": "pending",
+            "error_message": None,
+            "branch_name": None,
+            "commits": [],
+            "total_sessions": 0,
+            "total_tokens_used": 0,
+            "created_at": None,
+            "started_at": None,
+            "completed_at": None,
+            "priority": 1,
+            "labels": [],
+            "task_type": "bug",
+            "parent_task_id": None,
+            "acceptance_criteria": None,
+            "current_phase": None,
+            "verification_result": None,
+            "done_when": ["GET /health returns 200"],
+            "complexity": "SIMPLE",
+            "raw_request": None,
+            "enrichment_status": "none",
+            "enriched_by": None,
+            "enriched_at": None,
+            "subtask_summary": {"total": 0, "completed": 0, "progress_percent": 0.0},
+            "execution_mode": "autonomous",
+            "autonomous": True,
+            "ai_review": True,
+            "agent_override": None,
+            "plan_status": "approved",
+            "plan_approved_at": None,
+            "plan_approved_by": None,
+            "context": None,
+            "worktree": None,
+        }
+        ready_worktree_task = {
+            **ready_task,
+            "id": "task-ready-worktree",
+            "title": "Ready but already has worktree",
+        }
+
+        def _fake_sync(task_id: str):
+            class _Readiness:
+                def __init__(self, ready: bool):
+                    self.ready = ready
+
+            return _Readiness(task_id in {"task-ready", "task-ready-worktree"})
+
+        with (
+            patch(
+                "app.api.tasks.list_endpoints.task_store.list_ready_tasks",
+                return_value=[ready_task, ready_worktree_task],
+            ),
+            patch(
+                "app.services.task_execution_readiness.sync_task_execution_readiness",
+                side_effect=_fake_sync,
+            ),
+            patch(
+                "app.api.tasks.list_endpoints.get_worktree_response",
+                side_effect=lambda task_id, project_id=None: (
+                    {"path": "/tmp/lane"}
+                    if task_id == "task-ready-worktree" and project_id == test_project_id
+                    else None
+                ),
+            ),
+        ):
+            response = client.get(f"/api/projects/{test_project_id}/tasks/ready?limit=20")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["total"] == 1
+        assert [task["id"] for task in payload["tasks"]] == ["task-ready"]
+
     def test_ready_endpoint_filters_out_execution_unready_tasks(
         self, client: Any, test_project_id: str
     ) -> None:
@@ -685,6 +765,106 @@ class TestReadyEndpoint:
         assert "~ task-pending-live" in payload["raw"]
         assert "? task-stale" in payload["raw"]
         assert "task-blocked [pending]" not in payload["raw"]
+
+    def test_ready_all_overview_treats_worktree_backed_tasks_as_active(
+        self,
+        client: Any,
+        test_project_id: str,
+    ) -> None:
+        ready_worktree_task = {
+            "id": "task-ready-worktree",
+            "title": "Ready but already has worktree",
+            "priority": 1,
+            "task_type": "task",
+            "execution_mode": "autonomous",
+            "status": "pending",
+        }
+        pending_worktree_task = {
+            "id": "task-pending-worktree",
+            "title": "Pending with worktree",
+            "priority": 2,
+            "task_type": "task",
+            "execution_mode": "manual",
+            "status": "pending",
+        }
+        running_worktree_task = {
+            "id": "task-running-worktree",
+            "title": "Running with worktree",
+            "priority": 1,
+            "task_type": "task",
+            "execution_mode": "manual",
+            "status": "running",
+        }
+
+        def _fake_list_tasks(
+            project_id: str,
+            status_filter: str | None = None,
+            limit: int = 50,
+            offset: int = 0,
+            **_: object,
+        ) -> list[dict[str, object]]:
+            assert project_id == test_project_id
+            assert limit in {100, 500}
+            assert offset == 0
+            if status_filter == "pending":
+                return [pending_worktree_task]
+            if status_filter == "running":
+                return [running_worktree_task]
+            raise AssertionError(f"unexpected status_filter: {status_filter}")
+
+        with (
+            patch(
+                "app.api.tasks.list_endpoints.project_store.list_projects",
+                return_value=[{"id": test_project_id, "name": test_project_id}],
+            ),
+            patch(
+                "app.api.tasks.list_endpoints.task_store.list_ready_tasks",
+                return_value=[ready_worktree_task],
+            ),
+            patch(
+                "app.services.task_execution_readiness.sync_task_execution_readiness",
+                return_value=type("_Readiness", (), {"ready": True})(),
+            ),
+            patch(
+                "app.api.tasks.list_endpoints.task_store.list_blocked_tasks",
+                return_value=[],
+            ),
+            patch(
+                "app.api.tasks.list_endpoints.fetch_live_project_inventory",
+                return_value=([], []),
+            ),
+            patch(
+                "app.api.tasks.list_endpoints.task_store.list_tasks",
+                side_effect=_fake_list_tasks,
+            ),
+            patch(
+                "app.api.tasks.list_endpoints.get_worktree_response",
+                side_effect=lambda task_id, project_id=None: (
+                    {"path": f"/tmp/{task_id}"}
+                    if project_id == test_project_id
+                    and task_id in {
+                        "task-ready-worktree",
+                        "task-pending-worktree",
+                        "task-running-worktree",
+                    }
+                    else None
+                ),
+            ),
+        ):
+            response = client.get("/api/tasks/ready-all?limit=3")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["payload"]["summary"] == {
+            "ready": 0,
+            "blocked": 0,
+            "active": 2,
+            "stale": 0,
+            "projects": 1,
+        }
+        assert "task-ready-worktree" not in payload["raw"]
+        assert "~ task-pending-worktree" in payload["raw"]
+        assert "~ task-running-worktree" in payload["raw"]
 
     def test_project_ready_all_overview_scopes_to_requested_project(
         self,

@@ -23,6 +23,7 @@ from ...storage import projects as project_store
 from ...storage import task_dependencies as dep_store
 from ...storage import tasks as task_store
 from .formatting import get_hints, toon_format_task_list
+from .helpers import get_worktree_response
 from .response import task_to_response
 
 router = APIRouter()
@@ -105,7 +106,10 @@ async def _collect_execution_ready_tasks(
         for task, readiness in zip(tasks, readiness_results, strict=True):
             if not readiness.ready:
                 continue
-            if str(task.get("id") or "") in excluded:
+            task_id = str(task.get("id") or "")
+            if task_id in excluded:
+                continue
+            if get_worktree_response(task_id, project_id) is not None:
                 continue
             total_ready += 1
             if len(ready_tasks) < limit:
@@ -156,10 +160,12 @@ async def _collect_ready_all_project_data(
         task
         for task in pending_tasks
         if str(task.get("id") or "") in live_lane_task_ids
+        or get_worktree_response(str(task.get("id") or ""), project_id) is not None
     ]
     stale_tasks: list[dict[str, object]] = []
     for task in running_tasks:
-        if str(task.get("id") or "") in live_lane_task_ids:
+        task_id = str(task.get("id") or "")
+        if task_id in live_lane_task_ids or get_worktree_response(task_id, project_id) is not None:
             active_tasks.append(task)
         else:
             stale_tasks.append(task)

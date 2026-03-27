@@ -13,11 +13,11 @@ from ...storage import tasks as task_store
 logger = get_logger(__name__)
 
 
-def _build_worktree_response(task_id: str) -> WorktreeResponse | None:
+def _build_worktree_response(task_id: str, project_id: str | None = None) -> WorktreeResponse | None:
     """Build WorktreeResponse from worktree info, or return None if not found."""
     from cli.lib.worktree import get_worktree_info
 
-    worktree_info = get_worktree_info(task_id)
+    worktree_info = get_worktree_info(task_id, project_id)
     if not worktree_info:
         return None
     return WorktreeResponse(
@@ -27,14 +27,19 @@ def _build_worktree_response(task_id: str) -> WorktreeResponse | None:
     )
 
 
-def get_worktree_response(task_id: str) -> WorktreeResponse | None:
+def get_worktree_response(task_id: str, project_id: str | None = None) -> WorktreeResponse | None:
     """Get worktree info for a task if it exists, or None."""
     try:
-        return _build_worktree_response(task_id)
+        return _build_worktree_response(task_id, project_id)
     except ImportError:
         pass
     except Exception as e:
-        logger.debug("Failed to get worktree info", task_id=task_id, error=str(e))
+        logger.debug(
+            "Failed to get worktree info",
+            task_id=task_id,
+            project_id=project_id,
+            error=str(e),
+        )
     return None
 
 

@@ -1,4 +1,3 @@
-import { buildApiUrl } from '../api-config'
 import { fetchWithErrorHandling, postJson } from './utils'
 
 export interface RuntimeServiceStatus {
@@ -79,7 +78,9 @@ export interface ProxmoxStatus {
 }
 
 function apiUrl(path: string): string {
-  return buildApiUrl(path)
+  // Keep runtime traffic same-origin so Next can proxy protected actions/logs
+  // and inject the internal service secret server-side, including SSE requests.
+  return path
 }
 
 export const runtimeApi = {
@@ -127,5 +128,5 @@ export const runtimeApi = {
     postJson<RuntimeActionResult>(apiUrl('/api/docker/runtime'), { mode }, 'Failed to switch runtime mode'),
 
   logStreamUrl: (service: string, tail = 100) =>
-    buildApiUrl(`/api/docker/logs/${service}?follow=true&tail=${tail}`),
+    apiUrl(`/api/docker/logs/${service}?follow=true&tail=${tail}`),
 }

@@ -6,6 +6,7 @@ Wants=summitflow-backend.service
 [Service]
 Type=simple
 WorkingDirectory=__SUMMITFLOW_ROOT__/frontend
+EnvironmentFile=-%h/.env.local
 Environment="NODE_ENV=production"
 Environment="PORT=3001"
 Environment="API_URL=http://localhost:8001"

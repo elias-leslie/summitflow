@@ -25,6 +25,12 @@ const nextConfig: NextConfig = {
           source: '/api/agent-hub/:path*',
           destination: '/proxy-hub/agent-hub/:path*',
         },
+        // Runtime proxy: Route Handler at app/proxy-runtime/docker/[...path]/route.ts
+        // injects the internal runtime secret for first-party UI controls/logs.
+        {
+          source: '/api/docker/:path*',
+          destination: '/proxy-runtime/docker/:path*',
+        },
         // Voice STT/TTS: proxy to Agent Hub backend (not SummitFlow)
         // Must be in beforeFiles so /api/:path* catch-all doesn't grab it
         {

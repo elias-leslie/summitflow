@@ -6,6 +6,7 @@ from typing import Any
 
 from .._output_formatters import truncate
 from ..client import APIError, STClient
+from ..lib.worktree import get_worktree_info
 
 
 def task_sort_key(task: dict[str, Any]) -> tuple[int, int, str]:
@@ -48,6 +49,12 @@ def _fetch_live_lane_task_ids(client: STClient, project_id: str) -> set[str]:
         for session in sessions
         if (task_id := lane_task_id(session))
     }
+
+
+def _task_has_worktree(task_id: str | None, project_id: str) -> bool:
+    if not isinstance(task_id, str) or not task_id:
+        return False
+    return get_worktree_info(task_id, project_id) is not None
 
 
 def _fetch_ready_tasks(client: STClient, pid: str) -> tuple[list[dict[str, Any]], int]:
@@ -104,13 +111,18 @@ def _fetch_active_stale(
             continue
 
         if status == "pending":
-            live_pending = [task for task in batch if task.get("id") in live_lane_task_ids]
+            live_pending = [
+                task
+                for task in batch
+                if task.get("id") in live_lane_task_ids
+                or _task_has_worktree(task.get("id"), pid)
+            ]
             active.extend(live_pending)
             active_count += len(live_pending)
             continue
 
         for task in batch:
-            if task.get("id") in live_lane_task_ids:
+            if task.get("id") in live_lane_task_ids or _task_has_worktree(task.get("id"), pid):
                 active.append(task)
                 active_count += 1
             else:
@@ -129,7 +141,12 @@ def _collect_project_data(
     """Fetch and aggregate all task data for a single project."""
     live_lane_task_ids = _fetch_live_lane_task_ids(client, pid)
     ready_tasks, _ready_total = _fetch_ready_tasks(client, pid)
-    ready_tasks = [task for task in ready_tasks if task.get("id") not in live_lane_task_ids]
+    ready_tasks = [
+        task
+        for task in ready_tasks
+        if task.get("id") not in live_lane_task_ids
+        and not _task_has_worktree(task.get("id"), pid)
+    ]
     ready_count = len(ready_tasks)
     blocked_tasks, blocked_count = _fetch_blocked_tasks(client, pid, limit)
     active_tasks, active_count, stale_tasks, stale_count = _fetch_active_stale(

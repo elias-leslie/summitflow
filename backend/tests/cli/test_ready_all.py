@@ -208,3 +208,65 @@ def test_ready_all_excludes_ready_tasks_with_live_lane(
     assert "READY-ALL[1 ready, 0 blocked, 1 active, 1 stale across 1 projects]" in output
     assert "task-ready-idle" in output
     assert "task-ready-live" not in output
+
+
+def test_ready_all_treats_worktree_backed_tasks_as_active(
+    dummy_client: _DummyClient,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dummy_client._responses["http://test/api/projects/agent-hub/tasks/ready?limit=100"] = {
+        "tasks": [
+            {
+                "id": "task-ready-worktree",
+                "priority": 1,
+                "task_type": "task",
+                "title": "Ready but already has a lane",
+                "execution_mode": "manual",
+            }
+        ],
+        "total": 1,
+    }
+    dummy_client._responses["http://test/api/projects/agent-hub/tasks?status=pending&limit=100"] = {
+        "tasks": [
+            {
+                "id": "task-pending-worktree",
+                "priority": 2,
+                "task_type": "task",
+                "title": "Pending with worktree",
+                "execution_mode": "manual",
+                "status": "pending",
+            }
+        ],
+        "total": 1,
+    }
+    dummy_client._responses["http://test/api/projects/agent-hub/tasks?status=running&limit=100"] = {
+        "tasks": [
+            {
+                "id": "task-running-worktree",
+                "priority": 1,
+                "task_type": "task",
+                "title": "Running with worktree",
+                "execution_mode": "manual",
+                "status": "running",
+            }
+        ],
+        "total": 1,
+    }
+    monkeypatch.setattr(
+        "cli.commands.tasks_ready_all._task_has_worktree",
+        lambda task_id, project_id: task_id in {
+            "task-ready-worktree",
+            "task-pending-worktree",
+            "task-running-worktree",
+        },
+    )
+
+    list_ready_all(5, dummy_client)
+
+    output = capsys.readouterr().out
+
+    assert "READY-ALL[0 ready, 0 blocked, 2 active, 0 stale across 1 projects]" in output
+    assert "~ task-pending-worktree" in output
+    assert "~ task-running-worktree" in output
+    assert "task-ready-worktree" not in output
