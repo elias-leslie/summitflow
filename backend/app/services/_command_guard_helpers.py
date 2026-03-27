@@ -1,0 +1,352 @@
+"""Helper utilities for command_guard.py — parsing, git argument extraction, and subcommand decisions."""
+
+from __future__ import annotations
+
+import re
+import shlex
+import subprocess
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from pathlib import Path
+
+_SHELL_SEPARATORS = frozenset({";", "&&", "||", "|"})
+
+BASH_INTERCEPT_WORDS: tuple[str, ...] = (
+    "git", "python", "python3", "pytest", "mypy", "ty", "ruff", "biome",
+    "npx", "pnpm", "npm", "vitest", "sqlfluff", "squawk", "coderabbit", "cr",
+    "docker", "env", "nohup", "nice", "stdbuf", "timeout", "bash", "sh",
+    "systemctl", "pkill", "killall", "uvicorn", "gunicorn", "next", "psql",
+    "rm", "rmdir", "find",
+)
+
+DANGEROUS_PATTERNS = (
+    (
+        re.compile(r"^rm\s+-[^\n]*r[^\n]*\s+(/\*?|\\\*)($|\s)"),
+        "BLOCKED:rm -r /:Recursive root deletion is never allowed.",
+    ),
+    (
+        re.compile(r"^mkfs(\.\S+)?(\s|$)"),
+        "BLOCKED:mkfs:Formatting filesystems is never allowed.",
+    ),
+    (
+        re.compile(r"^dd\b.*\bif=/dev/zero\b"),
+        "BLOCKED:dd if=/dev/zero:Raw disk overwrite is never allowed.",
+    ),
+    (
+        re.compile(r"^systemctl\s+(stop|disable)\b"),
+        "BLOCKED:systemctl stop/disable:Do not stop or disable services directly.",
+    ),
+)
+_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=.*$")
+_COMMAND_WRAPPERS = frozenset({"command", "builtin", "nohup"})
+_OPTION_WRAPPERS = frozenset({"nice", "stdbuf", "timeout"})
+GIT_ABORT_ACTIONS = frozenset({"--abort", "--continue", "--quit", "--skip"})
+SHELL_EXECUTABLES = frozenset({"bash", "sh", "zsh", "ksh"})
+_GIT_REPO_CHECK = ["git", "rev-parse", "--is-inside-work-tree"]
+
+# Type alias for the path-conflict checker callback
+PathConflictFn = Callable[[Sequence[str], str], "CommandGuardDecision | None"]
+
+
+@dataclass(frozen=True)
+class CommandGuardDecision:
+    """Result of evaluating one shell command."""
+
+    blocked: bool
+    code: str | None
+    message: str | None
+    source: str | None
+    command: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "blocked": self.blocked,
+            "code": self.code,
+            "message": self.message,
+            "source": self.source,
+            "command": self.command,
+        }
+
+
+# --- Segment parsing ---
+
+
+def normalize_segment(segment: Sequence[str]) -> str:
+    return shlex.join(list(segment))
+
+
+def split_shell_segments(command: str) -> list[list[str]]:
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|")
+    lexer.whitespace_split = True
+    segments: list[list[str]] = []
+    current: list[str] = []
+    try:
+        tokens = list(lexer)
+    except ValueError:
+        return [[command]]
+    for token in tokens:
+        if token in _SHELL_SEPARATORS:
+            if current:
+                segments.append(current)
+                current = []
+            continue
+        current.append(token)
+    if current:
+        segments.append(current)
+    return segments
+
+
+def unwrap_segment(segment: Sequence[str]) -> list[str]:
+    tokens = list(segment)
+    idx = 0
+    while idx < len(tokens) and _ASSIGNMENT_RE.match(tokens[idx]):
+        idx += 1
+    tokens = tokens[idx:]
+    while tokens:
+        lead = tokens[0]
+        if lead == "env":
+            tokens = _unwrap_env(tokens)
+        elif lead in _COMMAND_WRAPPERS:
+            tokens = tokens[1:]
+        elif lead in _OPTION_WRAPPERS:
+            tokens = _unwrap_option_wrapper(tokens)
+        else:
+            break
+    return tokens
+
+
+def _unwrap_env(tokens: list[str]) -> list[str]:
+    idx = 1
+    while idx < len(tokens):
+        token = tokens[idx]
+        if token == "-u" and idx + 1 < len(tokens):
+            idx += 2
+        elif token.startswith("-") or _ASSIGNMENT_RE.match(token):
+            idx += 1
+        else:
+            break
+    return tokens[idx:]
+
+
+def _unwrap_option_wrapper(tokens: list[str]) -> list[str]:
+    idx = 1
+    while idx < len(tokens) and tokens[idx].startswith("-"):
+        option = tokens[idx]
+        idx += 1
+        if option in {"-n", "--adjustment", "-s", "--signal", "-k"} and idx < len(tokens):
+            idx += 1
+    return tokens[idx:]
+
+
+# --- Git argument utilities ---
+
+
+def git_has_flag(args: Sequence[str], *flags: str) -> bool:
+    return any(
+        arg in flags or any(arg.startswith(f"{flag}=") for flag in flags)
+        for arg in args
+    )
+
+
+def shell_exec_args(args: Sequence[str]) -> str | None:
+    for idx, arg in enumerate(args):
+        if arg == "-c" and idx + 1 < len(args):
+            return args[idx + 1]
+        if arg.startswith("-") and "c" in arg[1:] and idx + 1 < len(args):
+            return args[idx + 1]
+    return None
+
+
+def git_paths_after_double_dash(args: Sequence[str]) -> list[str]:
+    args_list = list(args)
+    if "--" not in args_list:
+        return []
+    idx = args_list.index("--")
+    return [token for token in args_list[idx + 1:] if not token.startswith("-")]
+
+
+def strip_git_option_values(args: Sequence[str], *, value_flags: set[str]) -> list[str]:
+    stripped: list[str] = []
+    idx = 0
+    while idx < len(args):
+        token = args[idx]
+        if token in value_flags:
+            idx += 2
+        elif any(token.startswith(f"{flag}=") for flag in value_flags):
+            idx += 1
+        else:
+            stripped.append(token)
+            idx += 1
+    return stripped
+
+
+def git_restore_paths(args: Sequence[str]) -> tuple[list[str], bool]:
+    if git_has_flag(args, "--staged") and not git_has_flag(args, "--worktree"):
+        return [], True
+    cleaned = strip_git_option_values(args, value_flags={"--source", "--pathspec-from-file"})
+    explicit = git_paths_after_double_dash(cleaned)
+    if explicit:
+        return explicit, False
+    return [token for token in cleaned if not token.startswith("-")], False
+
+
+def git_rm_paths(args: Sequence[str]) -> list[str]:
+    explicit = git_paths_after_double_dash(args)
+    return explicit if explicit else [t for t in args if t and not t.startswith("-")]
+
+
+def git_revert_paths(repo_root: Path, args: Sequence[str], error_class: type[Exception]) -> list[str]:
+    cleaned = strip_git_option_values(
+        args, value_flags={"-m", "--mainline", "-X", "--strategy-option", "--strategy"},
+    )
+    revisions = [arg for arg in cleaned if arg and not arg.startswith("-")]
+    if not revisions:
+        return []
+    try:
+        result = subprocess.run(
+            ["git", "show", "--format=", "--name-only", "--no-renames", *revisions],
+            cwd=repo_root, capture_output=True, text=True, check=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise error_class(
+            f"Failed to inspect git revert paths for {' '.join(revisions)}: {exc}"
+        ) from exc
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def force_pushes_shared_main(args: Sequence[str]) -> bool:
+    if not git_has_flag(args, "-f", "--force"):
+        return False
+    return any(
+        arg in {"main", "master", "origin/main", "origin/master"}
+        or arg.endswith(":main") or arg.endswith(":master")
+        for arg in args
+    )
+
+
+def normalize_repo_paths(repo_root: Path, raw_paths: Sequence[str]) -> list[str]:
+    normalized: list[str] = []
+    for raw in raw_paths:
+        path = raw.strip()
+        if not path:
+            continue
+        target = Path(path).expanduser()
+        if target.is_absolute():
+            try:
+                target = target.resolve().relative_to(repo_root)
+            except (OSError, ValueError):
+                continue
+            normalized.append(target.as_posix())
+        else:
+            normalized.append(path)
+    return normalized
+
+
+# --- Git and filesystem checks ---
+
+
+def is_inside_git_repo(path: Path) -> bool:
+    try:
+        result = subprocess.run(
+            _GIT_REPO_CHECK, cwd=path, capture_output=True, text=True, check=False,
+        )
+    except OSError:
+        return False
+    return result.returncode == 0 and result.stdout.strip() == "true"
+
+
+def repo_root(cwd: Path) -> Path | None:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=cwd, capture_output=True, text=True, check=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    root = result.stdout.strip()
+    return Path(root).resolve() if root else None
+
+
+def explicit_repo_target(tokens: Sequence[str], cwd: Path) -> bool:
+    if not tokens:
+        return False
+    command = tokens[0]
+    if command in {"rm", "rmdir"}:
+        for token in tokens[1:]:
+            if token.startswith("-"):
+                continue
+            target = Path(token).expanduser()
+            if not target.is_absolute():
+                target = (cwd / target).resolve()
+            return is_inside_git_repo(target.parent if not target.exists() else target)
+        return False
+    if command == "find":
+        for token in tokens[1:]:
+            if token == "-delete":
+                break
+            if token.startswith("-"):
+                continue
+            target = Path(token).expanduser()
+            if not target.is_absolute():
+                target = (cwd / target).resolve()
+            if is_inside_git_repo(target):
+                return True
+    return False
+
+
+# --- Git subcommand decision helpers ---
+
+
+def git_clean_is_destructive(args: list[str]) -> bool:
+    return (
+        any(set(token) >= {"f", "d"} for token in args if token.startswith("-"))
+        or ("-f" in args and "-d" in args)
+        or ("-d" in args and "-f" in args)
+    )
+
+
+def _make_blocked(code: str, message: str, command: str) -> CommandGuardDecision:
+    return CommandGuardDecision(blocked=True, code=code, message=message, source="git", command=command)
+
+
+def git_checkout_decision(
+    args: list[str], segment_text: str, check_fn: PathConflictFn,
+) -> CommandGuardDecision | None:
+    _blocked_all = "BLOCKED:git checkout .:Discards all uncommitted changes at once."
+    if args[:1] == ["."] or args[:2] == ["--", "."]:
+        return _make_blocked("git_checkout_all", _blocked_all, segment_text)
+    paths = git_paths_after_double_dash(args)
+    if not paths:
+        return None
+    if "." in paths:
+        return _make_blocked("git_checkout_all", _blocked_all, segment_text)
+    return check_fn(paths, segment_text)
+
+
+def git_restore_decision(
+    args: list[str], segment_text: str, check_fn: PathConflictFn,
+) -> CommandGuardDecision | None:
+    _blocked_all = "BLOCKED:git restore .:Discards all uncommitted changes at once."
+    if args[:1] == ["."]:
+        return _make_blocked("git_restore_all", _blocked_all, segment_text)
+    paths, staging_only = git_restore_paths(args)
+    if staging_only:
+        return None
+    if "." in paths:
+        return _make_blocked("git_restore_all", _blocked_all, segment_text)
+    return check_fn(paths, segment_text)
+
+
+def git_revert_decision(
+    args: list[str],
+    segment_text: str,
+    root: Path | None,
+    check_fn: PathConflictFn,
+    error_class: type[Exception],
+) -> CommandGuardDecision | None:
+    if any(flag in args for flag in GIT_ABORT_ACTIONS):
+        return None
+    if not root:
+        return None
+    paths = git_revert_paths(root, args, error_class)
+    return check_fn(paths, segment_text)
