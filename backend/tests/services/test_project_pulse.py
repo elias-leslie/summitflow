@@ -573,6 +573,75 @@ async def test_build_project_pulse_active_orchestrator_files_touched_prevents_st
 
 
 @pytest.mark.asyncio
+async def test_build_project_pulse_active_orchestrator_batch_task_ids_prevent_stranded() -> None:
+    """A batch orchestrator session should protect queued second-wave tasks before first file touch."""
+    stale = (datetime.now(UTC) - timedelta(minutes=5)).isoformat().replace("+00:00", "Z")
+    fresh = (datetime.now(UTC) - timedelta(seconds=30)).isoformat().replace("+00:00", "Z")
+
+    ownership_payload = {"active_owners": [], "active_specialists": []}
+    sessions_payload = {
+        "sessions": [
+            {
+                "id": "sess-batch",
+                "status": "active",
+                "session_type": "claude_code",
+                "current_branch": "main",
+                "working_dir": "/srv/workspaces/projects/summitflow",
+                "repo_root": "/srv/workspaces/projects/summitflow",
+                "batch_task_ids": ["task-alpha123", "task-beta456"],
+                "updated_at": fresh,
+                "live_activity": {"lifecycle_state": "active", "health": "active"},
+            }
+        ]
+    }
+
+    with (
+        patch(
+            "app.services.project_pulse._agent_hub_get",
+            new=AsyncMock(side_effect=[ownership_payload, sessions_payload]),
+        ),
+        patch(
+            "app.services.project_pulse.list_tasks",
+            return_value=[
+                {
+                    "id": "task-alpha123",
+                    "title": "Batch alpha task",
+                    "status": "running",
+                    "task_type": "task",
+                    "priority": 2,
+                    "updated_at": stale,
+                },
+                {
+                    "id": "task-beta456",
+                    "title": "Batch beta task",
+                    "status": "running",
+                    "task_type": "task",
+                    "priority": 2,
+                    "updated_at": stale,
+                },
+            ],
+        ),
+        patch(
+            "app.services.project_pulse.build_project_cleanup_status",
+            return_value={
+                "project_id": "summitflow",
+                "active_worktrees": 2,
+                "dirty_worktrees": 2,
+                "needs_cleanup": True,
+            },
+        ),
+    ):
+        from app.services.project_pulse import build_project_pulse
+
+        payload = await build_project_pulse("summitflow")
+
+    assert [task["id"] for task in payload["running_tasks"]] == ["task-alpha123", "task-beta456"]
+    assert payload["stranded_tasks"] == []
+    assert payload["summary"]["running_tasks"] == 2
+    assert payload["summary"]["stranded_tasks"] == 0
+
+
+@pytest.mark.asyncio
 async def test_build_project_pulse_stale_session_does_not_prevent_stranded() -> None:
     """A stale (non-active) session linked to a task does not protect it from stranded classification."""
     stale = (datetime.now(UTC) - timedelta(minutes=5)).isoformat().replace("+00:00", "Z")

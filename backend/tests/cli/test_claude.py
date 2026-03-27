@@ -228,6 +228,9 @@ def test_claude_orchestrator_invokes_single_worker_with_prompt_and_agents(tmp_pa
     assert "st-cli-orchestrator" in command
     assert "--allowed-tools" in command
     assert "Read,Agent,Edit,MultiEdit,Write,Bash,Glob,Grep,LS" in command
+    assert command.count("--batch-task-id") == 2
+    assert "task-a" in command
+    assert "task-b" in command
 
 
 def test_claude_orchestrator_blocks_mixed_projects(tmp_path: Path) -> None:

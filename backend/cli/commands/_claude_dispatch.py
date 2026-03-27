@@ -264,6 +264,7 @@ def execute_orchestrator(
         command = build_prompt_worker_command(
             python_bin=python_bin, script_path=script_path,
             prompt_file=prompt_file, agents_file=agents_file,
+            batch_task_ids=[task.task_id for task in tasks],
             project_id=project_id, project_root=project_root,
             model=model, timeout_seconds=timeout_seconds,
         )

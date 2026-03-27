@@ -48,6 +48,7 @@ def build_prompt_worker_command(
     script_path: Path,
     prompt_file: Path,
     agents_file: Path | None,
+    batch_task_ids: list[str] | None,
     project_id: str,
     project_root: Path,
     model: str,
@@ -64,6 +65,8 @@ def build_prompt_worker_command(
         "--timeout-seconds", str(timeout_seconds),
         "--source", _ORCHESTRATOR_SOURCE,
     ]
+    for task_id in batch_task_ids or []:
+        command.extend(["--batch-task-id", task_id])
     if agents_file is not None:
         command.extend(["--agents-file", str(agents_file)])
     return command

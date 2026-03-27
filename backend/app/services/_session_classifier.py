@@ -101,7 +101,11 @@ def _extract_task_ids_from_text(value: object) -> set[str]:
 
 def _session_linked_task_ids(session: dict[str, Any]) -> set[str]:
     """Return task ids linked to a session via ids, branches, or live lane paths."""
-    task_ids: set[str] = set()
+    task_ids = {
+        str(task_id).strip()
+        for task_id in session.get("batch_task_ids", [])
+        if isinstance(task_id, str) and str(task_id).strip()
+    }
 
     external_id = str(session.get("external_id") or "")
     if external_id.startswith(_TASK_ID_PREFIX):
