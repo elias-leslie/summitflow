@@ -16,6 +16,11 @@ from ...storage.tasks.dedup import bug_task_exists_for_error
 
 logger = get_logger(__name__)
 
+_ENTRY_COLS = (
+    "id", "project_id", "entry_type", "path", "name",
+    "health_status", "metadata", "last_scanned_at", "created_at", "updated_at",
+)
+
 
 @dataclass
 class BrowserError:
@@ -30,135 +35,86 @@ class BrowserError:
 
 
 def compute_console_error_hash(page_path: str, error_message: str) -> str:
-    """Compute a stable hash for a console error for deduplication.
-
-    Args:
-        page_path: URL path of the page
-        error_message: Console error message
-
-    Returns:
-        Hex digest of the error hash (16 characters)
-    """
-    # Normalize: lowercase, strip whitespace
+    """Compute a stable 16-char SHA-256 hash for deduplication."""
     normalized = error_message.lower().strip()
-
-    # Truncate long messages for stable hashing
-    parts = [page_path, normalized[:200]]
-    content = "|".join(parts)
+    content = "|".join([page_path, normalized[:200]])
     return hashlib.sha256(content.encode()).hexdigest()[:16]
 
 
+def _row_to_entry(row: tuple[Any, ...]) -> dict[str, Any]:
+    """Convert a DB row tuple to an entry dict."""
+    entry = dict(zip(_ENTRY_COLS, row, strict=True))
+    entry["metadata"] = entry["metadata"] or {}
+    for ts_key in ("last_scanned_at", "created_at", "updated_at"):
+        val = entry[ts_key]
+        entry[ts_key] = val.isoformat() if val else None
+    return entry
+
+
+_CONSOLE_ERROR_QUERY = """
+    SELECT id, project_id, entry_type, path, name, health_status,
+           metadata, last_scanned_at, created_at, updated_at
+    FROM explorer_entries
+    WHERE project_id = %s
+      AND entry_type IN ('page', 'endpoint')
+      AND (metadata->'console_error_count')::int > 0
+    ORDER BY (metadata->'console_error_count')::int DESC, path
+"""
+
+
 def get_entries_with_console_errors(project_id: str) -> list[dict[str, Any]]:
-    """Get page/endpoint entries that have console errors.
-
-    Queries explorer_entries where health_data.console_error_count > 0.
-
-    Args:
-        project_id: Project ID to query
-
-    Returns:
-        List of entry dicts with console errors
-    """
+    """Get page/endpoint entries that have console errors."""
     from ...storage.connection import get_cursor
 
     with get_cursor() as cur:
-        cur.execute(
-            """
-            SELECT id, project_id, entry_type, path, name, health_status,
-                   metadata, last_scanned_at, created_at, updated_at
-            FROM explorer_entries
-            WHERE project_id = %s
-              AND entry_type IN ('page', 'endpoint')
-              AND (metadata->'console_error_count')::int > 0
-            ORDER BY (metadata->'console_error_count')::int DESC, path
-            """,
-            (project_id,),
-        )
+        cur.execute(_CONSOLE_ERROR_QUERY, (project_id,))
         rows = cur.fetchall()
+    return [_row_to_entry(row) for row in rows]
 
-    entries = []
-    for row in rows:
-        entry = {
-            "id": row[0],
-            "project_id": row[1],
-            "entry_type": row[2],
-            "path": row[3],
-            "name": row[4],
-            "health_status": row[5],
-            "metadata": row[6] if row[6] else {},
-            "last_scanned_at": row[7].isoformat() if row[7] else None,
-            "created_at": row[8].isoformat() if row[8] else None,
-            "updated_at": row[9].isoformat() if row[9] else None,
-        }
-        entries.append(entry)
 
-    return entries
+def _errors_from_entry(entry: dict[str, Any]) -> list[BrowserError]:
+    """Extract BrowserError objects from a single explorer entry."""
+    metadata = entry.get("metadata", {})
+    console_errors = metadata.get("console_errors", [])
+    error_count = metadata.get("console_error_count", 0)
+    detected_at = entry.get("last_scanned_at") or entry.get("updated_at") or ""
+    errors: list[BrowserError] = []
+    for error_msg in console_errors:
+        if not error_msg or not isinstance(error_msg, str):
+            continue
+        errors.append(
+            BrowserError(
+                page_path=entry["path"],
+                page_id=entry["id"],
+                error_message=error_msg,
+                error_count=error_count,
+                detected_at=detected_at,
+                error_hash=compute_console_error_hash(entry["path"], error_msg),
+            )
+        )
+    return errors
 
 
 class BrowserErrorMonitor:
-    """Monitor for browser console errors.
+    """Monitor for browser console errors from explorer_entries."""
 
-    Queries explorer_entries for pages with console errors and provides
-    them for bug task creation.
-    """
-
-    def __init__(self, project_id: str):
-        """Initialize the monitor.
-
-        Args:
-            project_id: Project ID to monitor
-        """
+    def __init__(self, project_id: str) -> None:
         self.project_id = project_id
         self._seen_hashes: set[str] = set()
 
     def detect_errors(self) -> list[BrowserError]:
-        """Detect browser console errors from explorer entries.
-
-        Returns:
-            List of BrowserError objects
-        """
+        """Detect browser console errors from explorer entries."""
         entries = get_entries_with_console_errors(self.project_id)
         errors: list[BrowserError] = []
-
         for entry in entries:
-            metadata = entry.get("metadata", {})
-            console_errors = metadata.get("console_errors", [])
-            error_count = metadata.get("console_error_count", 0)
-            detected_at = entry.get("last_scanned_at") or entry.get("updated_at") or ""
-
-            # Create BrowserError for each unique error message
-            for error_msg in console_errors:
-                if not error_msg or not isinstance(error_msg, str):
-                    continue
-
-                error_hash = compute_console_error_hash(entry["path"], error_msg)
-                errors.append(
-                    BrowserError(
-                        page_path=entry["path"],
-                        page_id=entry["id"],
-                        error_message=error_msg,
-                        error_count=error_count,
-                        detected_at=detected_at,
-                        error_hash=error_hash,
-                    )
-                )
-
+            errors.extend(_errors_from_entry(entry))
         return errors
 
     def get_new_errors(self) -> list[BrowserError]:
-        """Get new errors that haven't been seen before.
-
-        Returns:
-            List of new BrowserError objects
-        """
+        """Return errors not yet seen, updating the seen-hash set."""
         all_errors = self.detect_errors()
-        new_errors = []
-
-        for error in all_errors:
-            if error.error_hash not in self._seen_hashes:
-                new_errors.append(error)
-                self._seen_hashes.add(error.error_hash)
-
+        new_errors = [e for e in all_errors if e.error_hash not in self._seen_hashes]
+        self._seen_hashes.update(e.error_hash for e in new_errors)
         if new_errors:
             logger.info(
                 "new_browser_errors_detected",
@@ -166,7 +122,6 @@ class BrowserErrorMonitor:
                 total_seen=len(all_errors),
                 project_id=self.project_id,
             )
-
         return new_errors
 
     def mark_seen(self, error_hash: str) -> None:
@@ -174,71 +129,38 @@ class BrowserErrorMonitor:
         self._seen_hashes.add(error_hash)
 
 
+def _build_error_description(error: BrowserError) -> str:
+    """Build markdown description for a browser error task."""
+    return "\n".join([
+        f"**Detected:** {error.detected_at}",
+        f"**Page:** {error.page_path}",
+        f"**Error Count:** {error.error_count} total errors on this page",
+        "", "**Console Error:**", "```", error.error_message, "```",
+        "", f"**Error Hash:** {error.error_hash}", "",
+        "This bug was auto-created from browser console error monitoring.",
+        "The error was detected during page health checks.",
+    ])
+
+
 def create_browser_error_task(
     project_id: str,
     error: BrowserError,
     skip_dedup: bool = False,
 ) -> dict[str, Any] | None:
-    """Create a bug task from a browser console error.
+    """Create a bug task from a browser error; returns None if duplicate exists."""
+    preview = error.error_message[:60] + ("..." if len(error.error_message) > 60 else "")
+    title = f"Fix console error: {preview}"
 
-    Args:
-        project_id: Project ID to create the task in
-        error: BrowserError to create task from
-        skip_dedup: If True, skip deduplication check
-
-    Returns:
-        Created task dict, or None if task already exists
-    """
-    # Build title from error message
-    message_preview = error.error_message[:60]
-    if len(error.error_message) > 60:
-        message_preview += "..."
-    title = f"Fix console error: {message_preview}"
-
-    # Check for duplicate
     if not skip_dedup and bug_task_exists_for_error(project_id, title):
-        logger.info(
-            "skipping_duplicate_browser_error_task",
-            error_hash=error.error_hash,
-            title=title[:50],
-        )
+        logger.info("skipping_duplicate_browser_error_task", error_hash=error.error_hash, title=title[:50])
         return None
 
-    # Build description with context
-    description_parts = [
-        f"**Detected:** {error.detected_at}",
-        f"**Page:** {error.page_path}",
-        f"**Error Count:** {error.error_count} total errors on this page",
-        "",
-        "**Console Error:**",
-        "```",
-        error.error_message,
-        "```",
-        "",
-        f"**Error Hash:** {error.error_hash}",
-        "",
-        "This bug was auto-created from browser console error monitoring.",
-        "The error was detected during page health checks.",
-    ]
-    description = "\n".join(description_parts)
-
     task = create_task(
-        project_id=project_id,
-        title=title,
-        description=description,
-        priority=2,  # P2 - standard priority
-        task_type="bug",
-        complexity="STANDARD",
-        autonomous=True,  # Enable autonomous fixing
+        project_id=project_id, title=title,
+        description=_build_error_description(error),
+        priority=2, task_type="bug", complexity="STANDARD", autonomous=True,
     )
-
-    logger.info(
-        "created_browser_error_task",
-        task_id=task["id"],
-        error_hash=error.error_hash,
-        page_path=error.page_path,
-    )
-
+    logger.info("created_browser_error_task", task_id=task["id"], error_hash=error.error_hash, page_path=error.page_path)
     return task
 
 
@@ -246,51 +168,23 @@ def process_browser_errors(
     project_id: str,
     monitor: BrowserErrorMonitor | None = None,
 ) -> dict[str, int]:
-    """Process browser console errors and create bug tasks.
-
-    Main entry point for the browser error monitoring workflow.
-
-    Args:
-        project_id: Project ID for task creation
-        monitor: Optional BrowserErrorMonitor instance
-
-    Returns:
-        Dict with counts: created, skipped, errors
-    """
+    """Process browser console errors, creating bug tasks. Returns created/skipped/errors counts."""
     if monitor is None:
         monitor = BrowserErrorMonitor(project_id)
-
-    results = {"created": 0, "skipped": 0, "errors": 0}
-
+    results: dict[str, int] = {"created": 0, "skipped": 0, "errors": 0}
     try:
-        new_errors = monitor.get_new_errors()
-
-        for error in new_errors:
+        for error in monitor.get_new_errors():
             try:
                 task = create_browser_error_task(project_id, error)
-                if task:
-                    results["created"] += 1
-                else:
-                    results["skipped"] += 1
+                results["created" if task else "skipped"] += 1
             except Exception as e:
-                logger.error(
-                    "browser_task_creation_failed",
-                    error_hash=error.error_hash,
-                    error=str(e),
-                )
+                logger.error("browser_task_creation_failed", error_hash=error.error_hash, error=str(e))
                 results["errors"] += 1
-
     except Exception as e:
         logger.error("process_browser_errors_failed", error=str(e))
         results["errors"] += 1
-
     if results["created"] > 0:
-        logger.info(
-            "browser_error_processing_complete",
-            project_id=project_id,
-            **results,
-        )
-
+        logger.info("browser_error_processing_complete", project_id=project_id, **results)
     return results
 
 
