@@ -410,6 +410,47 @@ def prune_scope(
     return to_prune
 
 
+def _build_drop_scope_keys(
+    scopes: list[tuple[str, SnapshotScope, str]],
+    keep_per_project: int,
+) -> set[str]:
+    """Return scope keys for archived auto-only lane scopes that exceed the per-project cap."""
+    archived_by_project: dict[str, list[tuple[str, SnapshotScope]]] = {}
+    for project_id, scope, scope_state in scopes:
+        if scope_state != "archived" or scope.scope_type != "lane":
+            continue
+        entries = load_manifest(project_id, scope)
+        if not entries or any(not e.source.startswith(_AUTO_SOURCE_PREFIX) for e in entries):
+            continue
+        latest = max(e.created_at for e in entries)
+        archived_by_project.setdefault(project_id, []).append((latest, scope))
+
+    drop_keys: set[str] = set()
+    for proj_id, items in archived_by_project.items():
+        items.sort(key=lambda item: (item[0], item[1].scope_name), reverse=True)
+        for _, scope in items[keep_per_project:]:
+            drop_keys.add(_scope_key(proj_id, scope))
+    return drop_keys
+
+
+def _drop_scope_entries(
+    *,
+    project_id: str,
+    scope: SnapshotScope,
+    dry_run: bool,
+) -> list[QuickSnapshot]:
+    """Delete all entries for a scope that is being fully dropped; return those entries."""
+    entries = load_manifest(project_id, scope)
+    if not entries:
+        return []
+    if not dry_run:
+        manifest_dir = _find_manifest_scope_dir(project_id, scope)
+        _delete_entries(project_id=project_id, scope=scope, entries=entries, manifest_dir=manifest_dir)
+        if manifest_dir and manifest_dir.exists():
+            shutil.rmtree(manifest_dir, ignore_errors=True)
+    return entries
+
+
 def prune_all(
     *,
     policy: AutosnapshotPolicy = DEFAULT_POLICY,
@@ -418,47 +459,23 @@ def prune_all(
     """Enforce retention policy across active and retained orphan scopes."""
     results: dict[str, list[QuickSnapshot]] = {}
     scopes = list(enumerate_snapshot_scopes(include_archived=True))
-
-    # Build the set of archived auto-only lane scopes that exceed the per-project cap.
     keep_per_project = max(0, policy.archived_lane_keep_per_project)
-    archived_by_project: dict[str, list[tuple[str, SnapshotScope, list[QuickSnapshot]]]] = {}
-    for project_id, scope, scope_state in scopes:
-        if scope_state != "archived" or scope.scope_type != "lane":
-            continue
-        entries = load_manifest(project_id, scope)
-        if not entries or any(not e.source.startswith(_AUTO_SOURCE_PREFIX) for e in entries):
-            continue
-        archived_by_project.setdefault(project_id, []).append(
-            (max(e.created_at for e in entries), scope, entries)
-        )
-    drop_scope_keys: set[str] = set()
-    for proj_id, items in archived_by_project.items():
-        items.sort(key=lambda item: (item[0], item[1].scope_name), reverse=True)
-        for _, scope, _ in items[keep_per_project:]:
-            drop_scope_keys.add(_scope_key(proj_id, scope))
+    drop_scope_keys = _build_drop_scope_keys(scopes, keep_per_project)
 
     for project_id, scope, scope_state in scopes:
         key = _scope_key(project_id, scope)
         if key in drop_scope_keys:
-            entries = load_manifest(project_id, scope)
-            if not entries:
-                continue
-            if not dry_run:
-                manifest_dir = _find_manifest_scope_dir(project_id, scope)
-                _delete_entries(
-                    project_id=project_id, scope=scope, entries=entries, manifest_dir=manifest_dir,
-                )
-                if manifest_dir and manifest_dir.exists():
-                    shutil.rmtree(manifest_dir, ignore_errors=True)
-            results[key] = entries
-        else:
-            pruned = prune_scope(
-                project_id=project_id,
-                scope=scope,
-                policy=policy,
-                scope_state=scope_state,
-                dry_run=dry_run,
-            )
-            if pruned:
-                results[key] = pruned
+            dropped = _drop_scope_entries(project_id=project_id, scope=scope, dry_run=dry_run)
+            if dropped:
+                results[key] = dropped
+            continue
+        pruned = prune_scope(
+            project_id=project_id,
+            scope=scope,
+            policy=policy,
+            scope_state=scope_state,
+            dry_run=dry_run,
+        )
+        if pruned:
+            results[key] = pruned
     return results
