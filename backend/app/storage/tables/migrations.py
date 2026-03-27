@@ -38,6 +38,13 @@ def _create_task_related_tables(cur: psycopg.Cursor) -> None:
     These tables are not in the core tables module because they were added by
     SQL migrations (072-series) that predated the tables/ module system.
     """
+    _create_task_spirit_table(cur)
+    _create_task_subtask_tables(cur)
+    _create_task_labels_table(cur)
+    _create_task_table_indexes(cur)
+
+
+def _create_task_spirit_table(cur: psycopg.Cursor) -> None:
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS task_spirit (
@@ -54,6 +61,9 @@ def _create_task_related_tables(cur: psycopg.Cursor) -> None:
         )
         """
     )
+
+
+def _create_task_subtask_tables(cur: psycopg.Cursor) -> None:
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS task_subtasks (
@@ -87,6 +97,9 @@ def _create_task_related_tables(cur: psycopg.Cursor) -> None:
         )
         """
     )
+
+
+def _create_task_labels_table(cur: psycopg.Cursor) -> None:
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS task_labels (
@@ -98,6 +111,9 @@ def _create_task_related_tables(cur: psycopg.Cursor) -> None:
         )
         """
     )
+
+
+def _create_task_table_indexes(cur: psycopg.Cursor) -> None:
     cur.execute(
         "CREATE INDEX IF NOT EXISTS idx_task_spirit_complexity"
         " ON task_spirit(complexity)"
@@ -253,11 +269,13 @@ def _try_add_column(cur: psycopg.Cursor, table: str, column: str) -> None:
 
 
 def _create_migration_indexes(cur: psycopg.Cursor) -> None:
-    """Create indexes for columns added via migrations.
+    """Create indexes for columns added via migrations."""
+    _create_escalation_index(cur)
+    _create_tasks_indexes(cur)
+    _create_misc_indexes(cur)
 
-    Suppresses errors if the referenced columns don't exist (e.g., in fresh databases
-    where quality_check_results table hasn't been created yet).
-    """
+
+def _create_escalation_index(cur: psycopg.Cursor) -> None:
     with contextlib.suppress(psycopg.errors.UndefinedColumn):
         cur.execute(
             """
@@ -266,10 +284,16 @@ def _create_migration_indexes(cur: psycopg.Cursor) -> None:
             WHERE escalation_task_id IS NOT NULL
             """
         )
+
+
+def _create_tasks_indexes(cur: psycopg.Cursor) -> None:
     with contextlib.suppress(psycopg.errors.UndefinedColumn):
         cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_capability ON tasks(capability_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_feature ON tasks(feature_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_updated ON tasks(updated_at DESC)")
+
+
+def _create_misc_indexes(cur: psycopg.Cursor) -> None:
     with contextlib.suppress(psycopg.errors.UndefinedTable, psycopg.errors.UndefinedColumn):
         cur.execute(
             'CREATE INDEX IF NOT EXISTS idx_events_trace_timestamp ON events(trace_id, "timestamp" ASC)'
