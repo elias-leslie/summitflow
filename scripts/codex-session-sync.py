@@ -71,7 +71,7 @@ class TranscriptInfo:
 
 
 # ---------------------------------------------------------------------------
-# Utilities
+# Utilities / state
 # ---------------------------------------------------------------------------
 
 
@@ -82,23 +82,19 @@ def log(message: str) -> None:
         handle.write(f"[{timestamp}] {message}\n")
 
 
-def _parse_env_value(raw: str) -> str:
-    stripped = raw.rstrip()
-    if len(stripped) >= 2 and stripped[0] in ("'", '"') and stripped.endswith(stripped[0]):
-        return stripped[1:-1]
-    return raw.split("#")[0].strip()
-
-
 def load_env_credentials() -> tuple[str, str]:
     if not ENV_FILE.exists():
         return "", ""
-    client_id = ""
-    client_secret = ""
+    client_id = client_secret = ""
     for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
-        if line.startswith(f"{ENV_KEY_CLIENT_ID}="):
-            client_id = _parse_env_value(line.split("=", 1)[1])
-        elif line.startswith(f"{ENV_KEY_CLIENT_SECRET}="):
-            client_secret = _parse_env_value(line.split("=", 1)[1])
+        for key, attr in ((ENV_KEY_CLIENT_ID, "client_id"), (ENV_KEY_CLIENT_SECRET, "client_secret")):
+            if line.startswith(f"{key}="):
+                raw = line.split("=", 1)[1].rstrip()
+                val = raw[1:-1] if len(raw) >= 2 and raw[0] in ("'", '"') and raw.endswith(raw[0]) else raw.split("#")[0].strip()
+                if attr == "client_id":
+                    client_id = val
+                else:
+                    client_secret = val
     return client_id, client_secret
 
 
@@ -116,51 +112,61 @@ def save_state(state: dict[str, object]) -> None:
     STATE_PATH.write_text(json.dumps(state, indent=2, sort_keys=True), encoding="utf-8")
 
 
+def update_state_entry(
+    state: dict[str, object], info: TranscriptInfo,
+    status: str, detail: str, checkpoint: str | None = None,
+) -> None:
+    transcripts = state.setdefault("transcripts", {})
+    if not isinstance(transcripts, dict):
+        state["transcripts"] = {}
+        transcripts = state["transcripts"]
+    transcripts[str(info.path)] = {
+        "session_id": info.session_id, "mtime": info.mtime, "size": info.size,
+        "status": status, "detail": detail, "checkpoint": checkpoint,
+        "updated_at": datetime.now(UTC).isoformat(),
+    }
+
+
+def should_sync(info: TranscriptInfo, state: dict[str, object], force: bool) -> bool:
+    if force:
+        return True
+    entries = state.get("transcripts") or {}
+    if not isinstance(entries, dict):
+        return True
+    entry = entries.get(str(info.path))
+    if not isinstance(entry, dict):
+        return True
+    return entry.get("mtime") != info.mtime or entry.get("size") != info.size
+
+
 # ---------------------------------------------------------------------------
 # Transcript discovery
 # ---------------------------------------------------------------------------
 
 
-def _parse_transcript_line(
-    obj: dict[str, object], session_id: str, cwd: str, model: str
-) -> tuple[str, str, str]:
-    obj_type = obj.get("type")
-    payload = obj.get("payload") or {}
-    if not isinstance(payload, dict):
-        return session_id, cwd, model
-    if obj_type == "session_meta":
-        session_id = str(payload.get("id") or session_id)
-        cwd = str(payload.get("cwd") or cwd)
-    elif obj_type == "turn_context" and not model:
-        model = str(payload.get("model") or model)
-    return session_id, cwd, model
-
-
-def _parse_jsonl_line(line: str) -> dict[str, object] | None:
-    try:
-        return json.loads(line)  # type: ignore[return-value]
-    except json.JSONDecodeError:
-        return None
-
-
-def _scan_transcript_headers(path: Path) -> tuple[str, str, str]:
-    """Return (session_id, cwd, model) from early lines of a transcript."""
-    session_id = cwd = model = ""
-    with path.open(encoding="utf-8") as f:
-        for i, line in enumerate(f):
-            if i >= 100:
-                break
-            obj = _parse_jsonl_line(line)
-            if obj is not None:
-                session_id, cwd, model = _parse_transcript_line(obj, session_id, cwd, model)
-            if session_id and cwd and model:
-                break
-    return session_id, cwd, model
-
-
 def read_transcript_info(path: Path) -> TranscriptInfo | None:
+    """Parse a JSONL transcript file and return metadata from its header lines."""
+    session_id = cwd = model = ""
     try:
-        session_id, cwd, model = _scan_transcript_headers(path)
+        with path.open(encoding="utf-8") as f:
+            for i, line in enumerate(f):
+                if i >= 100:
+                    break
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                payload = obj.get("payload") or {}
+                if not isinstance(payload, dict):
+                    continue
+                obj_type = obj.get("type")
+                if obj_type == "session_meta":
+                    session_id = str(payload.get("id") or session_id)
+                    cwd = str(payload.get("cwd") or cwd)
+                elif obj_type == "turn_context" and not model:
+                    model = str(payload.get("model") or model)
+                if session_id and cwd and model:
+                    break
     except OSError as exc:
         log(f"[WARN] Failed to read transcript {path}: {exc}")
         return None
@@ -220,12 +226,9 @@ def build_project_context(cwd: Path) -> dict[str, object] | None:
         if not any(ln.startswith(p) or p in ln for p in GIT_FILTER_PREFIXES)
     ]
     return {
-        "project_dir": project_path,
-        "project_id": project_path.name,
-        "branch": branch,
-        "is_worktree": (project_path / ".git").is_file(),
-        "repo_root": str(project_path),
-        "git_context": "\n".join(git_lines[:GIT_LOG_LIMIT]),
+        "project_dir": project_path, "project_id": project_path.name,
+        "branch": branch, "is_worktree": (project_path / ".git").is_file(),
+        "repo_root": str(project_path), "git_context": "\n".join(git_lines[:GIT_LOG_LIMIT]),
     }
 
 
@@ -270,125 +273,8 @@ def _checked_post(
 
 
 # ---------------------------------------------------------------------------
-# State management
-# ---------------------------------------------------------------------------
-
-
-def update_state_entry(
-    state: dict[str, object], info: TranscriptInfo,
-    status: str, detail: str, checkpoint: str | None = None,
-) -> None:
-    transcripts = state.setdefault("transcripts", {})
-    if not isinstance(transcripts, dict):
-        state["transcripts"] = {}
-        transcripts = state["transcripts"]
-    transcripts[str(info.path)] = {
-        "session_id": info.session_id,
-        "mtime": info.mtime,
-        "size": info.size,
-        "status": status,
-        "detail": detail,
-        "checkpoint": checkpoint,
-        "updated_at": datetime.now(UTC).isoformat(),
-    }
-
-
-def should_sync(info: TranscriptInfo, state: dict[str, object], force: bool) -> bool:
-    if force:
-        return True
-    entries = state.get("transcripts") or {}
-    if not isinstance(entries, dict):
-        return True
-    entry = entries.get(str(info.path))
-    if not isinstance(entry, dict):
-        return True
-    return entry.get("mtime") != info.mtime or entry.get("size") != info.size
-
-
-# ---------------------------------------------------------------------------
 # Sync logic
 # ---------------------------------------------------------------------------
-
-
-def _build_meta(info: TranscriptInfo, project: dict[str, object]) -> dict[str, object]:
-    return {
-        "transcript_path": str(info.path),
-        "repo_root": project["repo_root"],
-        "worktree_path": str(info.cwd),
-        "host": os.uname().nodename,
-    }
-
-
-def _get_checkpoint(state: dict[str, object], info: TranscriptInfo) -> str | None:
-    ts = state.get("transcripts") or {}
-    if not isinstance(ts, dict):
-        return None
-    entry = ts.get(str(info.path))
-    return entry.get("checkpoint") if isinstance(entry, dict) else None  # type: ignore[return-value]
-
-
-def _upsert_session(
-    api_url: str, info: TranscriptInfo, project: dict[str, object],
-    client_id: str, client_secret: str,
-) -> tuple[bool, str]:
-    """Register or update the Agent Hub session."""
-    ok, _, err = _checked_post(api_url, ENDPOINT_UPSERT, {
-        "session_id": info.session_id, "project_id": project["project_id"],
-        "provider": PROVIDER, "model": f"{PROVIDER}/{info.model}",
-        "session_type": SESSION_TYPE, "cwd": str(info.cwd),
-        "current_branch": project["branch"], "scope_confidence": SCOPE_CONFIDENCE,
-        "provider_metadata": _build_meta(info, project),
-    }, client_id, client_secret, "session upsert")
-    return ok, err
-
-
-def _ingest_transcript(
-    api_url: str, info: TranscriptInfo, state: dict[str, object],
-    client_id: str, client_secret: str,
-) -> tuple[bool, str, str | None]:
-    """Send transcript events and return (ok, error, checkpoint)."""
-    ok, payload, err = _checked_post(
-        api_url, ENDPOINT_TRANSCRIPT.format(sid=info.session_id),
-        {"provider": PROVIDER, "transcript_path": str(info.path),
-         "checkpoint": _get_checkpoint(state, info)},
-        client_id, client_secret, "transcript ingest",
-    )
-    if not ok:
-        return False, err, None
-    try:
-        ingest_data = json.loads(payload)
-    except json.JSONDecodeError as exc:
-        return False, f"transcript ingest returned invalid JSON: {exc}", None
-
-    next_cp = ingest_data.get("next_checkpoint")
-    checkpoint = str(next_cp) if next_cp else None
-    update_state_entry(
-        state, info, "synced",
-        f"appended={ingest_data.get('events_appended', 0)} skipped={ingest_data.get('events_skipped', 0)}",
-        checkpoint=checkpoint,
-    )
-    return True, "", checkpoint
-
-
-def _send_heartbeat_and_finalize(
-    api_url: str, info: TranscriptInfo, project: dict[str, object],
-    client_id: str, client_secret: str,
-) -> tuple[bool, str]:
-    """Send heartbeat and finalize calls."""
-    ok, _, err = _checked_post(api_url, ENDPOINT_HEARTBEAT.format(sid=info.session_id), {
-        "cwd": str(info.cwd), "current_branch": project["branch"],
-        "phase": HEARTBEAT_PHASE, "status": HEARTBEAT_STATUS,
-        "summary": f"Transcript sync heartbeat for {info.session_id}",
-        "last_event_type": HEARTBEAT_EVENT_TYPE, "provider_metadata": _build_meta(info, project),
-    }, client_id, client_secret, "heartbeat")
-    if not ok:
-        return False, err
-
-    ok, _, err = _checked_post(api_url, ENDPOINT_FINALIZE.format(sid=info.session_id), {
-        "branch": project["branch"], "git_context": project["git_context"],
-        "is_worktree": project["is_worktree"],
-    }, client_id, client_secret, "finalize")
-    return ok, err
 
 
 def sync_transcript(
@@ -399,15 +285,56 @@ def sync_transcript(
     if project is None:
         return False, f"skip non-git cwd={info.cwd}"
 
-    ok, err = _upsert_session(api_url, info, project, client_id, client_secret)
+    meta = {
+        "transcript_path": str(info.path), "repo_root": project["repo_root"],
+        "worktree_path": str(info.cwd), "host": os.uname().nodename,
+    }
+
+    ok, _, err = _checked_post(api_url, ENDPOINT_UPSERT, {
+        "session_id": info.session_id, "project_id": project["project_id"],
+        "provider": PROVIDER, "model": f"{PROVIDER}/{info.model}",
+        "session_type": SESSION_TYPE, "cwd": str(info.cwd),
+        "current_branch": project["branch"], "scope_confidence": SCOPE_CONFIDENCE,
+        "provider_metadata": meta,
+    }, client_id, client_secret, "session upsert")
     if not ok:
         return False, err
 
-    ok, err, _checkpoint = _ingest_transcript(api_url, info, state, client_id, client_secret)
+    ts_entries = state.get("transcripts") or {}
+    prev_entry = ts_entries.get(str(info.path)) if isinstance(ts_entries, dict) else None
+    checkpoint = prev_entry.get("checkpoint") if isinstance(prev_entry, dict) else None
+
+    ok, payload, err = _checked_post(
+        api_url, ENDPOINT_TRANSCRIPT.format(sid=info.session_id),
+        {"provider": PROVIDER, "transcript_path": str(info.path), "checkpoint": checkpoint},
+        client_id, client_secret, "transcript ingest",
+    )
+    if not ok:
+        return False, err
+    try:
+        ingest_data = json.loads(payload)
+    except json.JSONDecodeError as exc:
+        return False, f"transcript ingest returned invalid JSON: {exc}"
+    next_cp = ingest_data.get("next_checkpoint")
+    update_state_entry(
+        state, info, "synced",
+        f"appended={ingest_data.get('events_appended', 0)} skipped={ingest_data.get('events_skipped', 0)}",
+        checkpoint=str(next_cp) if next_cp else None,
+    )
+
+    ok, _, err = _checked_post(api_url, ENDPOINT_HEARTBEAT.format(sid=info.session_id), {
+        "cwd": str(info.cwd), "current_branch": project["branch"],
+        "phase": HEARTBEAT_PHASE, "status": HEARTBEAT_STATUS,
+        "summary": f"Transcript sync heartbeat for {info.session_id}",
+        "last_event_type": HEARTBEAT_EVENT_TYPE, "provider_metadata": meta,
+    }, client_id, client_secret, "heartbeat")
     if not ok:
         return False, err
 
-    ok, err = _send_heartbeat_and_finalize(api_url, info, project, client_id, client_secret)
+    ok, _, err = _checked_post(api_url, ENDPOINT_FINALIZE.format(sid=info.session_id), {
+        "branch": project["branch"], "git_context": project["git_context"],
+        "is_worktree": project["is_worktree"],
+    }, client_id, client_secret, "finalize")
     if not ok:
         return False, err
 
