@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -23,11 +24,7 @@ def test_cleanup_host_artifacts_prunes_rebuildable_data_and_reports_review_candi
     (playwright_old / "browser.bin").write_text("playwright cache", encoding="utf-8")
     (legacy_root / "README.txt").write_text("legacy snapshot", encoding="utf-8")
 
-    old_time = (datetime.now(UTC) - timedelta(days=10)).timestamp()
-    for path in (npx_old, playwright_old, legacy_root):
-        path.touch()
-        (path / next(iter(p.name for p in path.iterdir()))).touch()
-        Path(path).chmod(0o755)
+    old_time = (datetime.now(UTC) - timedelta(days=20)).timestamp()
     for path in (
         npx_old,
         npx_old / "artifact.txt",
@@ -36,8 +33,6 @@ def test_cleanup_host_artifacts_prunes_rebuildable_data_and_reports_review_candi
         legacy_root,
         legacy_root / "README.txt",
     ):
-        import os
-
         os.utime(path, (old_time, old_time))
 
     mocker.patch(
@@ -51,14 +46,17 @@ def test_cleanup_host_artifacts_prunes_rebuildable_data_and_reports_review_candi
 
     def _run_command(args: list[str], *, timeout: int = 0, cwd: str | None = None):
         _ = timeout, cwd
+        anon_name = "a" * 64
         if args[:4] == ["docker", "volume", "ls", "-q"]:
-            return type("Proc", (), {"returncode": 0, "stdout": "abc123\nnot-anon\n", "stderr": ""})()
+            return type(
+                "Proc",
+                (),
+                {"returncode": 0, "stdout": f"{anon_name}\nnot-anon\n", "stderr": ""},
+            )()
         if args[:3] == ["docker", "volume", "inspect"]:
             name = args[-1]
-            if name == "abc123":
-                stdout = (
-                    '[{"Name":"abc123","CreatedAt":"2026-03-01T00:00:00Z"}]'
-                )
+            if name == anon_name:
+                stdout = f'[{{"Name":"{anon_name}","CreatedAt":"2026-03-01T00:00:00Z"}}]'
             else:
                 stdout = (
                     '[{"Name":"not-anon","CreatedAt":"2026-03-01T00:00:00Z"}]'

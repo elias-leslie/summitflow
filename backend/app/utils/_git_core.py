@@ -31,6 +31,12 @@ from ._git_repo_sources import (  # noqa: F401
 
 logger = get_logger(__name__)
 
+
+def is_valid_git_repo(path: Path) -> bool:
+    """Return True if path exists and has a .git directory."""
+    return path.exists() and (path / ".git").exists()
+
+
 CONFIG_REPOS: list[Path] = _load_repo_paths_from_file(FALLBACK_FILE)
 
 # Git subcommands and arguments
@@ -71,11 +77,6 @@ def run_git(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
         encoding="utf-8",
         errors="replace",
     )
-
-
-def is_valid_git_repo(path: Path) -> bool:
-    """Return True if path exists and has a .git directory."""
-    return path.exists() and (path / ".git").exists()
 
 
 def has_uncommitted_changes(worktree_path: Path) -> bool:

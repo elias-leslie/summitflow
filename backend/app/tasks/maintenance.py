@@ -15,6 +15,7 @@ from ..storage import quality_check_results as qcr_store
 from ..storage import scan_history
 from ..storage.tasks import purge_terminal_tasks
 from .autonomous.cleanup_operations import cleanup_stale_tasks
+from .host_retention import cleanup_host_artifacts
 
 logger = get_logger(__name__)
 
@@ -31,7 +32,12 @@ def _run_step(name: str, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> A
 
 
 def _step_failed(result: Any) -> bool:
-    return isinstance(result, dict) and "error" in result
+    if not isinstance(result, dict):
+        return False
+    if "error" in result:
+        return True
+    status = result.get("status")
+    return isinstance(status, str) and status in {"partial", "failed", "error"}
 
 
 def _deleted_count(result: Any) -> int:
@@ -99,6 +105,17 @@ def run_daily_maintenance(
             "expired_backups",
             backup_store.cleanup_expired_backup_records,
         )
+        host_retention = _run_step("host_retention", cleanup_host_artifacts)
+        host_retention_deleted = (
+            host_retention.get("items_deleted", 0)
+            if isinstance(host_retention, dict)
+            else 0
+        )
+        host_retention_reclaimed = (
+            host_retention.get("bytes_reclaimed", 0)
+            if isinstance(host_retention, dict)
+            else 0
+        )
 
         rows_cleaned = sum(
             [
@@ -116,6 +133,7 @@ def run_daily_maintenance(
                 _deleted_count(maintenance_runs_deleted),
                 _deleted_count(stale_backups_deleted),
                 _deleted_count(expired_backups_deleted),
+                _deleted_count(host_retention_deleted),
             ]
         )
         result = {
@@ -133,10 +151,12 @@ def run_daily_maintenance(
                     maintenance_runs_deleted,
                     stale_backups_deleted,
                     expired_backups_deleted,
+                    host_retention,
                 )
             )
             else "success",
             "rows_cleaned": rows_cleaned,
+            "bytes_reclaimed": host_retention_reclaimed,
             "stale_tasks": task_cleanup,
             "purged_tasks": task_purge,
             "stale_running_scans_failed": stale_scan_failures,
@@ -147,6 +167,7 @@ def run_daily_maintenance(
             "maintenance_runs_deleted": maintenance_runs_deleted,
             "stale_backups_deleted": stale_backups_deleted,
             "expired_backups_deleted": expired_backups_deleted,
+            "host_retention": host_retention,
         }
         finished_at = datetime.now(UTC)
         maintenance_store.record_maintenance_run(
@@ -172,6 +193,8 @@ def run_daily_maintenance(
             maintenance_runs_deleted=_deleted_count(maintenance_runs_deleted),
             stale_backups_deleted=_deleted_count(stale_backups_deleted),
             expired_backups_deleted=_deleted_count(expired_backups_deleted),
+            host_retention_deleted=_deleted_count(host_retention_deleted),
+            host_retention_bytes_reclaimed=host_retention_reclaimed,
         )
         return result
     except Exception as exc:

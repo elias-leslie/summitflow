@@ -25,6 +25,11 @@ _SQL_SELECT_EXTRA_REPOS = (
 )
 
 
+def is_valid_git_repo(path: Path) -> bool:
+    """Return True if path exists and has a .git directory."""
+    return path.exists() and (path / ".git").exists()
+
+
 def _translate_path(raw: str) -> Path:
     """Translate host path to Docker mount path if running in Docker."""
     if _HOST_HOME_PATH and _DOCKER_HOME_MOUNT and raw.startswith(_HOST_HOME_PATH):
@@ -41,8 +46,6 @@ def _normalize_repo_path(path: Path) -> Path:
 
 def _load_repo_paths_from_file(path: Path) -> list[Path]:
     """Return valid git repo paths from a newline-delimited config file."""
-    from ._git_core import is_valid_git_repo
-
     if not path.exists():
         return []
 
@@ -97,8 +100,6 @@ def _query_db_extra_repos() -> list[tuple[str, str]]:
 
 
 def _registered_project_roots() -> dict[str, Path]:
-    from ._git_core import is_valid_git_repo
-
     roots: dict[str, Path] = {}
     for db_project_id, raw_root in _query_db_project_roots():
         translated = _translate_path(raw_root)
@@ -117,8 +118,6 @@ def _is_shadowed_project_repo(path: Path, project_roots: dict[str, Path]) -> boo
 
 def _collect_db_repos() -> list[Path]:
     """Return valid git repo paths from the database."""
-    from ._git_core import is_valid_git_repo
-
     repos: list[Path] = []
     for raw in _query_db_root_paths():
         path = _translate_path(raw)
@@ -129,8 +128,6 @@ def _collect_db_repos() -> list[Path]:
 
 def _collect_db_extra_repos() -> list[Path]:
     """Return valid config/workspace repo paths from backup_sources."""
-    from ._git_core import is_valid_git_repo
-
     repos: list[Path] = []
     for _, raw in _query_db_extra_repos():
         path = _translate_path(raw)
@@ -168,8 +165,6 @@ def _resolve_project_id(repo_path: Path, project_id: str | None = None) -> str |
 
 def get_managed_repos() -> list[Path]:
     """Get list of managed repos from DB-backed sources plus local fallback repos."""
-    from ._git_core import is_valid_git_repo
-
     repos = _collect_db_repos()
     project_roots = _registered_project_roots()
     for extra_repo in _collect_db_extra_repos():
