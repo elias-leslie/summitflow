@@ -297,7 +297,12 @@ async def list_ready_tasks(
     ),
 ) -> TaskListResponse | PlainTextResponse:
     """List tasks ready to work on (not blocked by dependencies)."""
-    ready_tasks, total_ready = await _collect_execution_ready_tasks(project_id, limit)
+    live_lane_task_ids = await _fetch_live_lane_task_ids(project_id)
+    ready_tasks, total_ready = await _collect_execution_ready_tasks(
+        project_id,
+        limit,
+        exclude_task_ids=live_lane_task_ids,
+    )
 
     task_responses = [task_to_response(t) for t in ready_tasks]
 

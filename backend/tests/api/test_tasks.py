@@ -292,6 +292,90 @@ class TestShortTaskIdApiResolution:
 class TestReadyEndpoint:
     """Execution-ready filtering for /tasks/ready."""
 
+    def test_ready_endpoint_excludes_tasks_with_live_lane(
+        self, client: Any, test_project_id: str
+    ) -> None:
+        ready_task = {
+            "id": "task-ready",
+            "project_id": test_project_id,
+            "capability_id": None,
+            "title": "Idle ready task",
+            "description": "Ready to execute",
+            "status": "pending",
+            "error_message": None,
+            "branch_name": None,
+            "commits": [],
+            "total_sessions": 0,
+            "total_tokens_used": 0,
+            "created_at": None,
+            "started_at": None,
+            "completed_at": None,
+            "priority": 1,
+            "labels": [],
+            "task_type": "bug",
+            "parent_task_id": None,
+            "acceptance_criteria": None,
+            "current_phase": None,
+            "verification_result": None,
+            "done_when": ["GET /health returns 200"],
+            "complexity": "SIMPLE",
+            "raw_request": None,
+            "enrichment_status": "none",
+            "enriched_by": None,
+            "enriched_at": None,
+            "subtask_summary": {"total": 0, "completed": 0, "progress_percent": 0.0},
+            "execution_mode": "autonomous",
+            "autonomous": True,
+            "ai_review": True,
+            "agent_override": None,
+            "plan_status": "approved",
+            "plan_approved_at": None,
+            "plan_approved_by": None,
+            "context": None,
+            "worktree": None,
+        }
+        ready_live_task = {
+            **ready_task,
+            "id": "task-ready-live",
+            "title": "Already executing ready task",
+        }
+
+        def _fake_sync(task_id: str):
+            class _Readiness:
+                def __init__(self, ready: bool):
+                    self.ready = ready
+
+            return _Readiness(task_id in {"task-ready", "task-ready-live"})
+
+        with (
+            patch(
+                "app.api.tasks.list_endpoints.task_store.list_ready_tasks",
+                return_value=[ready_task, ready_live_task],
+            ),
+            patch(
+                "app.services.task_execution_readiness.sync_task_execution_readiness",
+                side_effect=_fake_sync,
+            ),
+            patch(
+                "app.api.tasks.list_endpoints.fetch_live_project_inventory",
+                return_value=(
+                    [
+                        {
+                            "external_id": "task-ready-live",
+                            "current_branch": "task-ready-live/main",
+                        }
+                    ],
+                    [{"task_id": "task-ready-live"}],
+                ),
+            ),
+        ):
+            response = client.get(f"/api/projects/{test_project_id}/tasks/ready?limit=20")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["total"] == 1
+        assert [task["id"] for task in payload["tasks"]] == ["task-ready"]
+
     def test_ready_endpoint_filters_out_execution_unready_tasks(
         self, client: Any, test_project_id: str
     ) -> None:
