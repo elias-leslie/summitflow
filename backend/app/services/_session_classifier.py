@@ -1,6 +1,7 @@
 """Session classification, normalization, and bucketing for project pulse."""
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from typing import Any
 
@@ -14,6 +15,7 @@ _ACTIVE_BUCKET = "active"
 _STALE_BUCKET = "stale"
 _REAPABLE_STATE = "reapable"
 _TASK_ID_PREFIX = "task-"
+_TASK_ID_PATTERN = re.compile(r"\b(task-[a-z0-9]+)\b")
 _ACTIVE_AGE_SECS = 30 * 60
 _STALE_AGE_SECS = 6 * 60 * 60
 
@@ -90,16 +92,39 @@ def _classify_session_coordination_bucket(session: dict[str, Any]) -> str | None
     return None
 
 
-def _session_linked_task_id(session: dict[str, Any]) -> str:
-    """Return the task-xxx ID linked to a session via external_id or branch, or empty string."""
+def _extract_task_ids_from_text(value: object) -> set[str]:
+    """Return all task ids discovered in a text value."""
+    if not isinstance(value, str):
+        return set()
+    return {match.group(1) for match in _TASK_ID_PATTERN.finditer(value)}
+
+
+def _session_linked_task_ids(session: dict[str, Any]) -> set[str]:
+    """Return task ids linked to a session via ids, branches, or live lane paths."""
+    task_ids: set[str] = set()
+
     external_id = str(session.get("external_id") or "")
     if external_id.startswith(_TASK_ID_PREFIX):
-        return external_id
+        task_ids.add(external_id)
+
     branch = str(session.get("current_branch") or "")
     first_segment = branch.split("/")[0]
     if first_segment.startswith(_TASK_ID_PREFIX):
-        return first_segment
-    return ""
+        task_ids.add(first_segment)
+
+    for key in ("working_dir", "worktree_path", "repo_root"):
+        task_ids.update(_extract_task_ids_from_text(session.get(key)))
+
+    live_activity = session.get("live_activity")
+    if isinstance(live_activity, dict):
+        for key in ("last_read_path", "last_write_path", "last_command", "summary"):
+            task_ids.update(_extract_task_ids_from_text(live_activity.get(key)))
+        files_touched = live_activity.get("files_touched")
+        if isinstance(files_touched, list):
+            for value in files_touched:
+                task_ids.update(_extract_task_ids_from_text(value))
+
+    return task_ids
 
 
 def _bucket_sessions(
@@ -122,7 +147,7 @@ def _bucket_sessions(
         _normalize_active_session(s, owner_session_ids, specialist_session_ids)
         for s in _dedupe_active_sessions(active_raw)
     ]
-    linked_ids = {task_id for s in active_raw if (task_id := _session_linked_task_id(s))}
+    linked_ids = {task_id for s in active_raw for task_id in _session_linked_task_ids(s)}
     return active, stale, linked_ids
 
 

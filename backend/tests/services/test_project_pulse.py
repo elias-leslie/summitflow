@@ -497,6 +497,82 @@ async def test_build_project_pulse_active_session_with_task_branch_prevents_stra
 
 
 @pytest.mark.asyncio
+async def test_build_project_pulse_active_orchestrator_files_touched_prevents_stranded() -> None:
+    """An active orchestrator session touching task worktree paths protects those tasks from stranded classification."""
+    stale = (datetime.now(UTC) - timedelta(minutes=5)).isoformat().replace("+00:00", "Z")
+    fresh = (datetime.now(UTC) - timedelta(seconds=30)).isoformat().replace("+00:00", "Z")
+
+    ownership_payload = {"active_owners": [], "active_specialists": []}
+    sessions_payload = {
+        "sessions": [
+            {
+                "id": "sess-orchestrator",
+                "status": "active",
+                "session_type": "claude_code",
+                "working_dir": "/srv/workspaces/projects/agent-hub",
+                "repo_root": "/srv/workspaces/projects/agent-hub",
+                "updated_at": fresh,
+                "live_activity": {
+                    "lifecycle_state": "active",
+                    "health": "active",
+                    "last_command": "cd /srv/workspaces/lanes/agent-hub/task-alpha123 && dt --quick --changed-only",
+                    "last_write_path": "/srv/workspaces/lanes/agent-hub/task-beta456/backend/app/services/example.py",
+                    "files_touched": [
+                        "/srv/workspaces/lanes/agent-hub/task-alpha123/backend/app/services/alpha.py",
+                        "/srv/workspaces/lanes/agent-hub/task-beta456/backend/app/services/beta.py",
+                    ],
+                },
+            }
+        ]
+    }
+
+    with (
+        patch(
+            "app.services.project_pulse._agent_hub_get",
+            new=AsyncMock(side_effect=[ownership_payload, sessions_payload]),
+        ),
+        patch(
+            "app.services.project_pulse.list_tasks",
+            return_value=[
+                {
+                    "id": "task-alpha123",
+                    "title": "Lane-backed alpha task",
+                    "status": "running",
+                    "task_type": "task",
+                    "priority": 2,
+                    "updated_at": stale,
+                },
+                {
+                    "id": "task-beta456",
+                    "title": "Lane-backed beta task",
+                    "status": "running",
+                    "task_type": "task",
+                    "priority": 2,
+                    "updated_at": stale,
+                },
+            ],
+        ),
+        patch(
+            "app.services.project_pulse.build_project_cleanup_status",
+            return_value={
+                "project_id": "agent-hub",
+                "active_worktrees": 2,
+                "dirty_worktrees": 2,
+                "needs_cleanup": True,
+            },
+        ),
+    ):
+        from app.services.project_pulse import build_project_pulse
+
+        payload = await build_project_pulse("agent-hub")
+
+    assert [task["id"] for task in payload["running_tasks"]] == ["task-alpha123", "task-beta456"]
+    assert payload["stranded_tasks"] == []
+    assert payload["summary"]["running_tasks"] == 2
+    assert payload["summary"]["stranded_tasks"] == 0
+
+
+@pytest.mark.asyncio
 async def test_build_project_pulse_stale_session_does_not_prevent_stranded() -> None:
     """A stale (non-active) session linked to a task does not protect it from stranded classification."""
     stale = (datetime.now(UTC) - timedelta(minutes=5)).isoformat().replace("+00:00", "Z")
