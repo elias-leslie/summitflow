@@ -24,6 +24,23 @@ class PostMergeValidationResult(TypedDict):
     detail: str | None
 
 
+def _skipped_result(detail: str) -> PostMergeValidationResult:
+    return {"status": "skipped", "passed": True, "should_rollback": False, "detail": detail}
+
+
+def _error_result(detail: str) -> PostMergeValidationResult:
+    return {"status": "error", "passed": False, "should_rollback": False, "detail": detail}
+
+
+def _timeout_result() -> PostMergeValidationResult:
+    return {
+        "status": "timed_out",
+        "passed": False,
+        "should_rollback": False,
+        "detail": "validation timed out after 120s",
+    }
+
+
 def _log_validation_failure(task_id: str, output: str) -> None:
     """Log a post-merge validation failure with truncated output."""
     from app.storage import log_task_event
@@ -33,14 +50,6 @@ def _log_validation_failure(task_id: str, output: str) -> None:
         "Post-merge validation failed",
         extra={"task_id": task_id, "output": output[:200]},
     )
-
-
-def _resolve_dt_command(project_id: str) -> list[str] | None:
-    """Return the configured dt command for post-merge validation."""
-    dt_cmd = find_dev_tools()
-    if not dt_cmd:
-        return None
-    return build_dt_command(dt_cmd, project_id)
 
 
 def _log_validation_skip(task_id: str, reason: str) -> None:
@@ -54,6 +63,14 @@ def _log_validation_skip(task_id: str, reason: str) -> None:
     )
 
 
+def _resolve_dt_command(project_id: str) -> list[str] | None:
+    """Return the configured dt command for post-merge validation."""
+    dt_cmd = find_dev_tools()
+    if not dt_cmd:
+        return None
+    return build_dt_command(dt_cmd, project_id)
+
+
 def _run_dt_quick(
     project_root: str,
     task_id: str,
@@ -65,12 +82,7 @@ def _run_dt_quick(
     cmd = _resolve_dt_command(project_id)
     if not cmd:
         _log_validation_skip(task_id, "dt not available")
-        return {
-            "status": "skipped",
-            "passed": True,
-            "should_rollback": False,
-            "detail": "dt not available",
-        }
+        return _skipped_result("dt not available")
 
     result = subprocess.run(
         cmd,
@@ -83,21 +95,11 @@ def _run_dt_quick(
     if result.returncode == 0:
         log_task_event(task_id, "Post-merge validation: PASSED")
         logger.info("Post-merge validation passed", extra={"task_id": task_id})
-        return {
-            "status": "passed",
-            "passed": True,
-            "should_rollback": False,
-            "detail": None,
-        }
+        return {"status": "passed", "passed": True, "should_rollback": False, "detail": None}
 
     output = (result.stdout + result.stderr)[-500:]
     _log_validation_failure(task_id, output)
-    return {
-        "status": "failed",
-        "passed": False,
-        "should_rollback": True,
-        "detail": output,
-    }
+    return {"status": "failed", "passed": False, "should_rollback": True, "detail": output}
 
 
 def run_post_merge_validation(
@@ -106,9 +108,6 @@ def run_post_merge_validation(
     project_id: str,
 ) -> PostMergeValidationResult:
     """Run quality checks on the merged main branch.
-
-    Runs the configured dt quality gate on the project after merge.
-    Logs results to task events.
 
     Args:
         task_id: Task ID for logging
@@ -125,32 +124,17 @@ def run_post_merge_validation(
     except subprocess.TimeoutExpired:
         log_task_event(task_id, "Post-merge validation: TIMEOUT (120s)")
         logger.warning("Post-merge validation timed out", extra={"task_id": task_id})
-        return {
-            "status": "timed_out",
-            "passed": False,
-            "should_rollback": False,
-            "detail": "validation timed out after 120s",
-        }
+        return _timeout_result()
     except FileNotFoundError as e:
         _log_validation_skip(task_id, f"validation tool missing ({e})")
-        return {
-            "status": "skipped",
-            "passed": True,
-            "should_rollback": False,
-            "detail": f"validation tool missing ({e})",
-        }
+        return _skipped_result(f"validation tool missing ({e})")
     except Exception as e:
         log_task_event(task_id, f"Post-merge validation: ERROR - {e}")
         logger.warning(
             "Post-merge validation error",
             extra={"task_id": task_id, "error": str(e)},
         )
-        return {
-            "status": "error",
-            "passed": False,
-            "should_rollback": False,
-            "detail": str(e),
-        }
+        return _error_result(str(e))
 
 
 def _get_head_commit(project_root: str) -> str | None:
@@ -222,9 +206,6 @@ def auto_rollback(
 ) -> bool:
     """Auto-revert a merge commit when post-merge validation fails.
 
-    Reverts the most recent merge commit (HEAD), creates a regression fix task,
-    and stores the rollback pattern as a memory episode.
-
     Args:
         task_id: Source task ID that caused the regression
         project_root: Path to project root
@@ -241,11 +222,8 @@ def auto_rollback(
         merge_commit = _get_head_commit(project_root)
         if not revert_merge_commit(task_id, project_root):
             return False
-
         affected_files = (
-            _get_merge_affected_files(project_root, merge_commit)
-            if merge_commit
-            else None
+            _get_merge_affected_files(project_root, merge_commit) if merge_commit else None
         )
         _apply_rollback_side_effects(
             task_id, project_id, task_branch,
@@ -254,7 +232,6 @@ def auto_rollback(
             affected_files=affected_files,
         )
         return True
-
     except subprocess.TimeoutExpired:
         log_task_event(task_id, "Auto-rollback: git revert timed out")
         return False
@@ -293,6 +270,47 @@ def _create_regression_subtasks(
             )
 
 
+def _build_regression_description(
+    task_id: str,
+    task_branch: str,
+    failure_detail: str | None,
+    merge_commit: str | None,
+    affected_files: list[str] | None,
+) -> str:
+    """Build the description body for a regression fix task."""
+    parts = [
+        f"Auto-rollback triggered: merge of task {task_id} (branch {task_branch}) "
+        f"caused post-merge validation failure. The merge has been reverted."
+    ]
+    if merge_commit:
+        parts.append(f"Reverted merge commit: {merge_commit}")
+    if affected_files:
+        files_str = "\n".join(f"  - {f}" for f in affected_files)
+        parts.append(f"Files changed in rolled-back merge:\n{files_str}")
+    if failure_detail:
+        parts.append(f"Validation failure output:\n{failure_detail[:400].strip()}")
+    return "\n\n".join(parts)
+
+
+def _finalize_regression_task(new_task_id: str, task_branch: str, failure_detail: str | None) -> None:
+    """Set done_when criteria and subtasks on a new regression fix task."""
+    from app.storage.task_spirit import update_task_spirit
+
+    done_when = [
+        "Run `dt --quick` — all checks pass (exit 0)",
+        "Root cause of the validation failure is identified and fixed",
+        "Fix is re-merged to main without triggering another rollback",
+    ]
+    try:
+        update_task_spirit(new_task_id, done_when=done_when)
+    except Exception as e:
+        logger.warning(
+            "Failed to set done_when on regression task",
+            extra={"task_id": new_task_id, "error": str(e)},
+        )
+    _create_regression_subtasks(new_task_id, task_branch, failure_detail)
+
+
 def create_regression_fix_task(
     task_id: str,
     project_id: str,
@@ -311,27 +329,16 @@ def create_regression_fix_task(
         merge_commit: Short hash of the reverted merge commit
         affected_files: Files changed in the rolled-back merge
     """
-    from app.storage.task_spirit import update_task_spirit
     from app.storage.tasks.core import create_task
 
-    desc_parts = [
-        f"Auto-rollback triggered: merge of task {task_id} (branch {task_branch}) "
-        f"caused post-merge validation failure. The merge has been reverted."
-    ]
-    if merge_commit:
-        desc_parts.append(f"Reverted merge commit: {merge_commit}")
-    if affected_files:
-        files_str = "\n".join(f"  - {f}" for f in affected_files)
-        desc_parts.append(f"Files changed in rolled-back merge:\n{files_str}")
-    if failure_detail:
-        truncated = failure_detail[:400].strip()
-        desc_parts.append(f"Validation failure output:\n{truncated}")
-
+    description = _build_regression_description(
+        task_id, task_branch, failure_detail, merge_commit, affected_files
+    )
     try:
         task = create_task(
             project_id=project_id,
             title=f"Fix: regression from {task_id} ({task_branch})",
-            description="\n\n".join(desc_parts),
+            description=description,
             task_type="regression",
             priority=1,
             parent_task_id=task_id,
@@ -345,22 +352,7 @@ def create_regression_fix_task(
         )
         return
 
-    new_task_id = task["id"]
-
-    done_when = [
-        "Run `dt --quick` — all checks pass (exit 0)",
-        "Root cause of the validation failure is identified and fixed",
-        "Fix is re-merged to main without triggering another rollback",
-    ]
-    try:
-        update_task_spirit(new_task_id, done_when=done_when)
-    except Exception as e:
-        logger.warning(
-            "Failed to set done_when on regression task",
-            extra={"task_id": new_task_id, "error": str(e)},
-        )
-
-    _create_regression_subtasks(new_task_id, task_branch, failure_detail)
+    _finalize_regression_task(task["id"], task_branch, failure_detail)
 
 
 def save_rollback_learning(
