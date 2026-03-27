@@ -216,38 +216,43 @@ def is_natural_language_query(queries: list[str]) -> bool:
     return len(words) >= 2 and combined == combined.lower() and not has_explicit_code_signal(queries)
 
 
+def _try_add(candidate: str, terms: list[str], seen: set[str]) -> bool:
+    """Add *candidate* to *terms* if unseen. Return True when the cap is reached."""
+    lowered = candidate.lower()
+    if lowered in seen:
+        return False
+    terms.append(candidate)
+    seen.add(lowered)
+    return len(terms) >= _MAX_TERMS
+
+
+def _add_with_variants(
+    base: str, terms: list[str], seen: set[str]
+) -> bool:
+    """Add *base* and its case variants. Return True when the cap is reached."""
+    if _try_add(base, terms, seen):
+        return True
+    for variant in expand_case_variants(base):
+        if variant != base and variant.lower() not in seen and _try_add(variant, terms, seen):
+            return True
+    return False
+
+
 def extract_query_terms(queries: list[str]) -> list[str]:
     terms: list[str] = []
     seen: set[str] = set()
 
-    def _add(candidate: str) -> bool:
-        lowered = candidate.lower()
-        if lowered in seen:
-            return False
-        terms.append(candidate)
-        seen.add(lowered)
-        return len(terms) >= _MAX_TERMS
-
     for query in queries:
-        if len(query) <= 80:
-            if _add(query):
-                return terms
-            # Generate case variants for the full query (e.g. "file_scanner" -> "FileScanner")
-            for variant in expand_case_variants(query):
-                if variant != query and variant.lower() not in seen and _add(variant):
-                    return terms
+        if len(query) <= 80 and _add_with_variants(query, terms, seen):
+            return terms
 
         for token in query.replace("`", " ").replace(",", " ").split():
             candidate = token.strip("()[]{}:.;'\"")
             lowered = candidate.lower()
             if len(candidate) < 3 or lowered in seen or lowered in _STOP_WORDS:
                 continue
-            if _add(candidate):
+            if _add_with_variants(candidate, terms, seen):
                 return terms
-            # Generate case variants for multi-word identifiers
-            for variant in expand_case_variants(candidate):
-                if variant != candidate and variant.lower() not in seen and _add(variant):
-                    return terms
 
     return terms
 
