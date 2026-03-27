@@ -57,6 +57,18 @@ SummaryOpt = Annotated[
     ),
 ]
 
+SaveSummaryOpt = Annotated[
+    str | None,
+    typer.Option("--summary", "-S", help="Action phrase for TOON index (10-40 chars)"),
+]
+
+# Format command options
+FormatTopicOpt = Annotated[str, typer.Option("--topic", help="Required compact topic header, without markdown or colon")]
+FormatInstructionOpt = Annotated[str, typer.Option("--instruction", help="Required primary instruction sentence")]
+FormatProhibitionOpt = Annotated[str | None, typer.Option("--prohibition", help="Optional second sentence for a direct prohibition")]
+FormatWhyOpt = Annotated[str | None, typer.Option("--why", help="Optional brief rationale; emitted as 'Why: ...'")]
+FormatSummaryOpt = Annotated[str | None, typer.Option("--summary", "-S", help="Optional summary override (default: suggested from instruction)")]
+
 SummaryUpdateOpt = Annotated[
     str | None,
     typer.Option("--summary", "-S", help="Update summary (10-40 chars for TOON index)"),
