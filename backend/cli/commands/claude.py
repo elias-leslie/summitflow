@@ -6,15 +6,36 @@ import json
 import os
 import subprocess
 import tempfile
-from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
-from dataclasses import dataclass
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from pathlib import Path
-from typing import Annotated, Any, NoReturn
+from typing import Annotated, NoReturn
 
 import typer
 
 from ..client import APIError, STClient
 from ..output import handle_api_error, output_error
+from ._claude_builders import (
+    build_orchestrator_prompt,
+    build_prompt_worker_command,
+    build_worker_command,
+)
+from ._claude_constants import (
+    _AGENT_HUB_PROJECT_ID,
+    _BACKEND_SUBDIR,
+    _COMMIT_SCRIPT,
+    _DEFAULT_MAX_SUBAGENTS,
+    _DEFAULT_MODEL,
+    _DEFAULT_SOURCE,
+    _DEFAULT_TIMEOUT_SECONDS,
+    _ORCHESTRATE_TMPDIR_PREFIX,
+    _ORCHESTRATOR_AGENTS_FNAME,
+    _ORCHESTRATOR_PROMPT_FNAME,
+    _TASK_STATUS_RUNNING,
+    _WORKER_SUBAGENT_PAYLOAD,
+    _WORKTREE_PATH_PREFIX,
+    OrchestratorTask,
+    WorkerDispatch,
+)
 from ._projects_helpers import UNEXPECTED_RESPONSE_MSG, projects_api
 
 app = typer.Typer(help="Claude Code worker dispatch")
@@ -22,66 +43,13 @@ app = typer.Typer(help="Claude Code worker dispatch")
 _Opt = typer.Option
 _Arg = typer.Argument
 
-_AGENT_HUB_PROJECT_ID = "agent-hub"
-_DEFAULT_MODEL = "claude-sonnet-4-6"
-_DEFAULT_TIMEOUT_SECONDS = 1800
-_DEFAULT_SOURCE = "st-cli"
-_DEFAULT_MAX_SUBAGENTS = 4
-_ORCHESTRATOR_SOURCE = "st-cli-orchestrator"
-_ORCHESTRATOR_ALLOWED_TOOLS = "Read,Agent,Edit,MultiEdit,Write,Bash,Glob,Grep,LS"
-_BACKEND_SUBDIR = "backend"
-_TASK_STATUS_RUNNING = "running"
-_WORKER_SUBAGENT_NAME = "task-worker"
-_WORKER_SUBAGENT_MODEL = "sonnet"
-_COMMIT_SCRIPT = "commit.sh"
-_WORKTREE_PATH_PREFIX = "WORKTREE_PATH:"
-_ORCHESTRATE_TMPDIR_PREFIX = "st-claude-orchestrate-"
-_ORCHESTRATOR_PROMPT_FNAME = "orchestrator_prompt.md"
-_ORCHESTRATOR_AGENTS_FNAME = "orchestrator_agents.json"
-
-_WORKER_SUBAGENT_PAYLOAD: dict[str, Any] = {
-    _WORKER_SUBAGENT_NAME: {
-        "description": "Lane-bound task implementation worker",
-        "prompt": (
-            "You are assigned exactly one SummitFlow task lane. Work only inside the provided "
-            "task worktree and only on files required for that task. Preserve behavior unless "
-            "the task explicitly changes it. Run task-appropriate verification and `dt --quick "
-            "--changed-only` before reporting success. If everything passes, run "
-            '`commit.sh --current --push --task <task-id> --msg "..."` from the assigned '
-            "worktree. Do not run `st done`; report back to the orchestrator."
-        ),
-        "tools": ["Read", "Edit", "MultiEdit", "Write", "Bash", "Glob", "Grep", "LS"],
-        "model": _WORKER_SUBAGENT_MODEL,
-    }
-}
-
-
-@dataclass(frozen=True)
-class WorkerDispatch:
-    index: int
-    task_id: str
-    project_id: str
-    project_root: Path
-    command: list[str]
-    cwd: Path
-
-
-@dataclass(frozen=True)
-class OrchestratorTask:
-    index: int
-    task_id: str
-    project_id: str
-    project_root: Path
-    worktree_path: Path
-    context_text: str
-
 
 def _fatal(msg: str) -> NoReturn:
     output_error(msg)
     raise typer.Exit(1)
 
 
-def _fetch_task(task_id: str) -> dict[str, Any]:
+def _fetch_task(task_id: str) -> dict[str, object]:
     """Fetch task details from SummitFlow."""
     client = STClient(require_project=False)
     try:
@@ -142,14 +110,9 @@ def _resolve_feedback_text(feedback_text: str | None, feedback_file: Path | None
 
 
 def _run_text_command(*, command: list[str], cwd: Path) -> str:
-    """Run a text command and return stdout, surfacing failures through Typer."""
+    """Run a command and return stdout, surfacing failures through Typer."""
     result = subprocess.run(
-        command,
-        cwd=cwd,
-        env=os.environ.copy(),
-        check=False,
-        capture_output=True,
-        text=True,
+        command, cwd=cwd, env=os.environ.copy(), check=False, capture_output=True, text=True,
     )
     if result.returncode == 0:
         return result.stdout
@@ -157,35 +120,6 @@ def _run_text_command(*, command: list[str], cwd: Path) -> str:
     output_error(f"Command failed: {' '.join(command)}")
     output_error(f"  {stderr}")
     raise typer.Exit(1)
-
-
-def _build_worker_command(
-    *,
-    python_bin: Path,
-    script_path: Path,
-    task_id: str,
-    project_id: str,
-    project_root: Path,
-    model: str,
-    timeout_seconds: int,
-    claim_if_needed: bool,
-    feedback_text: str | None,
-) -> list[str]:
-    """Build the canonical Claude worker wrapper command."""
-    command = [
-        str(python_bin), str(script_path),
-        "--project-id", project_id,
-        "--task-id", task_id,
-        "--task-root", str(project_root),
-        "--model", model,
-        "--timeout-seconds", str(timeout_seconds),
-        "--source", _DEFAULT_SOURCE,
-    ]
-    if claim_if_needed:
-        command.append("--claim-if-needed")
-    if feedback_text:
-        command.extend(["--feedback-text", feedback_text])
-    return command
 
 
 def _run_worker(*, command: list[str], cwd: Path) -> int:
@@ -196,7 +130,7 @@ def _run_worker(*, command: list[str], cwd: Path) -> int:
     return int(result.returncode)
 
 
-def _extract_worktree_path(task: dict[str, Any]) -> Path | None:
+def _extract_worktree_path(task: dict[str, object]) -> Path | None:
     worktree = task.get("worktree")
     if not isinstance(worktree, dict):
         return None
@@ -227,7 +161,7 @@ def _prepare_worker_dispatch(
     )
     project_root = _resolve_project_root(project_id)
     python_bin, script_path = _resolve_agent_hub_paths()
-    command = _build_worker_command(
+    command = build_worker_command(
         python_bin=python_bin,
         script_path=script_path,
         task_id=resolved_task_id,
@@ -235,6 +169,7 @@ def _prepare_worker_dispatch(
         project_root=project_root,
         model=model,
         timeout_seconds=timeout_seconds,
+        source=_DEFAULT_SOURCE,
         claim_if_needed=claim_if_needed,
         feedback_text=feedback_text,
     )
@@ -250,7 +185,7 @@ def _prepare_worker_dispatch(
 
 def _prepare_orchestrator_task(
     *,
-    task: dict[str, Any],
+    task: dict[str, object],
     allow_unready: bool,
     claim_if_needed: bool,
     index: int,
@@ -275,12 +210,7 @@ def _prepare_orchestrator_task(
         worktree_path = _extract_worktree_path(task)
     context_text = _run_text_command(command=["st", "context", resolved_task_id], cwd=project_root)
     if worktree_path is None:
-        for raw_line in context_text.splitlines():
-            if raw_line.startswith(_WORKTREE_PATH_PREFIX):
-                raw_path = raw_line.split(":", 1)[1].strip()
-                if raw_path:
-                    worktree_path = Path(raw_path).resolve()
-                    break
+        worktree_path = _worktree_from_context(context_text)
     if worktree_path is None:
         _fatal(f"Task {resolved_task_id} has no active worktree for orchestration")
     return OrchestratorTask(
@@ -293,81 +223,14 @@ def _prepare_orchestrator_task(
     )
 
 
-def _build_orchestrator_prompt(
-    *, project_id: str, project_root: Path, max_subagents: int, tasks: list[OrchestratorTask],
-) -> str:
-    """Build a single Claude orchestrator prompt for multiple same-project tasks."""
-    task_blocks = "".join(
-        f"\n\n=== Task {t.task_id} ===\n"
-        f"Worktree: `{t.worktree_path}`\n"
-        "Canonical task context:\n"
-        "```text\n"
-        f"{t.context_text}\n"
-        "```"
-        for t in tasks
-    )
-    return (
-        f"You are the main Claude orchestrator for project `{project_id}`.\n\nGoal:\n"
-        f"- Complete the assigned task set from project root `{project_root}`.\n"
-        f"- Launch up to {max_subagents} Agent subagents in parallel using the named subagent `{_WORKER_SUBAGENT_NAME}`.\n"
-        "- Use one subagent per task lane when tasks are safely parallelizable;"
-        " serialize if they converge on shared files or shared plumbing.\n"
-        "- You own task coordination, review, git, cleanup, and closeout."
-        " Subagents are implementation workers, not the final authority.\n\n"
-        "Main orchestrator responsibilities:\n"
-        "1. Confirm each listed task stays mapped to exactly one worktree and one subagent.\n"
-        "2. Dispatch the task-worker subagents across the listed tasks, up to the concurrency limit.\n"
-        "3. Ensure each subagent works only inside its assigned worktree.\n"
-        "4. Review each subagent result yourself: changed files, verification output,"
-        " and whether the task spirit was actually met.\n"
-        "5. Require each subagent to run task-appropriate verification plus"
-        " `dt --quick --changed-only` before claiming success.\n"
-        "6. If a subagent misses task spirit, drifts scope, or fails verification,"
-        " redrive or fix it within this same orchestrator session before closeout.\n"
-        '7. Require each successful subagent to run `commit.sh --current --push --task <task-id> --msg "..."`'
-        " from its assigned worktree.\n"
-        f"8. Before each `st done <task-id>` call from `{project_root}`, check `st cleanup status`"
-        " and resolve any task-related git or lane cleanup blockers.\n"
-        "9. Run `st done <task-id>` yourself, serially, only after review and cleanup are satisfied.\n\n"
-        "Hard constraints:\n"
-        "- Do not mix files between task lanes.\n"
-        "- Do not treat subagent output as final without review.\n"
-        "- Do not edit task files directly when a subagent can do the work,"
-        " unless you are explicitly fixing a failed pass.\n"
-        "- No partial completions, placeholders, or unrelated cleanup.\n"
-        f"- Stay within this project only.\n\nTask set:{task_blocks}\n\n"
-        "Final response must include:\n"
-        "- task ids completed\n"
-        "- files changed per task\n"
-        "- verification commands run per task\n"
-        "- whether `commit.sh` and `st done` succeeded for each task"
-    )
-
-
-def _build_prompt_worker_command(
-    *,
-    python_bin: Path,
-    script_path: Path,
-    prompt_file: Path,
-    agents_file: Path | None,
-    project_id: str,
-    project_root: Path,
-    model: str,
-    timeout_seconds: int,
-) -> list[str]:
-    command = [
-        str(python_bin), str(script_path),
-        "--prompt-file", str(prompt_file),
-        "--project-id", project_id,
-        "--workdir", str(project_root),
-        "--model", model,
-        "--allowed-tools", _ORCHESTRATOR_ALLOWED_TOOLS,
-        "--timeout-seconds", str(timeout_seconds),
-        "--source", _ORCHESTRATOR_SOURCE,
-    ]
-    if agents_file is not None:
-        command.extend(["--agents-file", str(agents_file)])
-    return command
+def _worktree_from_context(context_text: str) -> Path | None:
+    """Extract a worktree path from context output lines."""
+    for raw_line in context_text.splitlines():
+        if raw_line.startswith(_WORKTREE_PATH_PREFIX):
+            raw_path = raw_line.split(":", 1)[1].strip()
+            if raw_path:
+                return Path(raw_path).resolve()
+    return None
 
 
 def _run_batch_workers(
@@ -379,12 +242,10 @@ def _run_batch_workers(
     """Run prepared worker dispatches with bounded parallelism."""
     if not dispatches:
         return []
-
     results: list[tuple[WorkerDispatch, int]] = []
     limit = max(1, min(max_subagents, len(dispatches)))
-
     with ThreadPoolExecutor(max_workers=limit) as executor:
-        futures: dict[Any, WorkerDispatch] = {}
+        futures: dict[Future[tuple[WorkerDispatch, int]], WorkerDispatch] = {}
         next_index = 0
         stop_submitting = False
 
@@ -395,7 +256,7 @@ def _run_batch_workers(
                 next_index += 1
                 futures[executor.submit(lambda s=spec: (s, _run_worker(command=s.command, cwd=s.cwd)))] = spec
 
-        def drain_done(done: Any) -> None:
+        def drain_done(done: set[Future[tuple[WorkerDispatch, int]]]) -> None:
             nonlocal stop_submitting
             for future in done:
                 futures.pop(future)
@@ -409,7 +270,6 @@ def _run_batch_workers(
             done, _ = wait(futures, return_when=FIRST_COMPLETED)
             drain_done(done)
             enqueue()
-
     results.sort(key=lambda item: item[0].index)
     return results
 
@@ -467,35 +327,26 @@ def run_task(
     task_id: Annotated[str, _Arg(help="Task ID to dispatch through the Claude worker wrapper")],
     model: Annotated[str, _Opt("--model", help="Claude model override")] = _DEFAULT_MODEL,
     timeout_seconds: Annotated[
-        int,
-        _Opt("--timeout-seconds", min=1, help="Worker timeout budget in seconds"),
+        int, _Opt("--timeout-seconds", min=1, help="Worker timeout budget in seconds"),
     ] = _DEFAULT_TIMEOUT_SECONDS,
     claim_if_needed: Annotated[
-        bool,
-        _Opt("--claim-if-needed/--no-claim-if-needed", help="Claim the task if it is not already claimed"),
+        bool, _Opt("--claim-if-needed/--no-claim-if-needed", help="Claim the task if not already claimed"),
     ] = True,
     allow_unready: Annotated[
-        bool,
-        _Opt("--allow-unready", help="Skip execution-readiness validation"),
+        bool, _Opt("--allow-unready", help="Skip execution-readiness validation"),
     ] = False,
     feedback_text: Annotated[
-        str | None,
-        _Opt("--feedback-text", help="Inline evaluator feedback for a redrive"),
+        str | None, _Opt("--feedback-text", help="Inline evaluator feedback for a redrive"),
     ] = None,
     feedback_file: Annotated[
-        Path | None,
-        _Opt("--feedback-file", help="Read evaluator feedback from a file"),
+        Path | None, _Opt("--feedback-file", help="Read evaluator feedback from a file"),
     ] = None,
 ) -> None:
     """Run a task through the canonical Agent Hub Claude worker wrapper."""
     feedback = _resolve_feedback_text(feedback_text, feedback_file)
     dispatch = _prepare_worker_dispatch(
-        task_id=task_id,
-        model=model,
-        timeout_seconds=timeout_seconds,
-        claim_if_needed=claim_if_needed,
-        allow_unready=allow_unready,
-        feedback_text=feedback,
+        task_id=task_id, model=model, timeout_seconds=timeout_seconds,
+        claim_if_needed=claim_if_needed, allow_unready=allow_unready, feedback_text=feedback,
     )
     exit_code = _run_worker(command=dispatch.command, cwd=dispatch.cwd)
     if exit_code != 0:
@@ -506,14 +357,30 @@ def run_task(
 def run_batch(
     task_ids: Annotated[list[str], _Arg(help="Task IDs to dispatch through the Claude worker wrapper")],
     model: Annotated[str, _Opt("--model", help="Claude model override")] = _DEFAULT_MODEL,
-    timeout_seconds: Annotated[int, _Opt("--timeout-seconds", min=1, help="Worker timeout budget in seconds")] = _DEFAULT_TIMEOUT_SECONDS,
-    max_subagents: Annotated[int, _Opt("--max-subagents", min=1, help="Maximum concurrent Claude worker runs")] = _DEFAULT_MAX_SUBAGENTS,
-    claim_if_needed: Annotated[bool, _Opt("--claim-if-needed/--no-claim-if-needed", help="Claim tasks if needed before dispatch")] = True,
-    allow_unready: Annotated[bool, _Opt("--allow-unready", help="Skip execution-readiness validation")] = False,
-    stop_on_error: Annotated[bool, _Opt("--stop-on-error/--keep-going", help="Stop submitting new tasks after the first worker failure")] = False,
-    commit_and_done: Annotated[bool, _Opt("--commit-and-done/--no-commit-and-done", help="Commit/push each successful task worktree and run st done")] = False,
-    feedback_text: Annotated[str | None, _Opt("--feedback-text", help="Inline evaluator feedback for a redrive")] = None,
-    feedback_file: Annotated[Path | None, _Opt("--feedback-file", help="Read evaluator feedback from a file")] = None,
+    timeout_seconds: Annotated[
+        int, _Opt("--timeout-seconds", min=1, help="Worker timeout budget in seconds"),
+    ] = _DEFAULT_TIMEOUT_SECONDS,
+    max_subagents: Annotated[
+        int, _Opt("--max-subagents", min=1, help="Maximum concurrent Claude worker runs"),
+    ] = _DEFAULT_MAX_SUBAGENTS,
+    claim_if_needed: Annotated[
+        bool, _Opt("--claim-if-needed/--no-claim-if-needed", help="Claim tasks if needed before dispatch"),
+    ] = True,
+    allow_unready: Annotated[
+        bool, _Opt("--allow-unready", help="Skip execution-readiness validation"),
+    ] = False,
+    stop_on_error: Annotated[
+        bool, _Opt("--stop-on-error/--keep-going", help="Stop submitting after first worker failure"),
+    ] = False,
+    commit_and_done: Annotated[
+        bool, _Opt("--commit-and-done/--no-commit-and-done", help="Commit/push and run st done on success"),
+    ] = False,
+    feedback_text: Annotated[
+        str | None, _Opt("--feedback-text", help="Inline evaluator feedback for a redrive"),
+    ] = None,
+    feedback_file: Annotated[
+        Path | None, _Opt("--feedback-file", help="Read evaluator feedback from a file"),
+    ] = None,
 ) -> None:
     """Run multiple tasks through the canonical Claude worker wrapper with bounded parallelism."""
     if not task_ids:
@@ -521,13 +388,9 @@ def run_batch(
     feedback = _resolve_feedback_text(feedback_text, feedback_file)
     dispatches = [
         _prepare_worker_dispatch(
-            task_id=tid,
-            model=model,
-            timeout_seconds=timeout_seconds,
-            claim_if_needed=claim_if_needed,
-            allow_unready=allow_unready,
-            feedback_text=feedback,
-            index=index,
+            task_id=tid, model=model, timeout_seconds=timeout_seconds,
+            claim_if_needed=claim_if_needed, allow_unready=allow_unready,
+            feedback_text=feedback, index=index,
         )
         for index, tid in enumerate(task_ids)
     ]
@@ -539,10 +402,18 @@ def run_batch(
 def orchestrate_tasks(
     task_ids: Annotated[list[str], _Arg(help="Task IDs to orchestrate through a single Claude session")],
     model: Annotated[str, _Opt("--model", help="Claude model override")] = _DEFAULT_MODEL,
-    timeout_seconds: Annotated[int, _Opt("--timeout-seconds", min=1, help="Worker timeout budget in seconds")] = _DEFAULT_TIMEOUT_SECONDS,
-    max_subagents: Annotated[int, _Opt("--max-subagents", min=1, help="Maximum concurrent Claude subagents to instruct the orchestrator to use")] = _DEFAULT_MAX_SUBAGENTS,
-    claim_if_needed: Annotated[bool, _Opt("--claim-if-needed/--no-claim-if-needed", help="Claim tasks if needed before orchestration")] = True,
-    allow_unready: Annotated[bool, _Opt("--allow-unready", help="Skip execution-readiness validation")] = False,
+    timeout_seconds: Annotated[
+        int, _Opt("--timeout-seconds", min=1, help="Worker timeout budget in seconds"),
+    ] = _DEFAULT_TIMEOUT_SECONDS,
+    max_subagents: Annotated[
+        int, _Opt("--max-subagents", min=1, help="Maximum concurrent Claude subagents for the orchestrator"),
+    ] = _DEFAULT_MAX_SUBAGENTS,
+    claim_if_needed: Annotated[
+        bool, _Opt("--claim-if-needed/--no-claim-if-needed", help="Claim tasks if needed before orchestration"),
+    ] = True,
+    allow_unready: Annotated[
+        bool, _Opt("--allow-unready", help="Skip execution-readiness validation"),
+    ] = False,
 ) -> None:
     """Run multiple same-project tasks through one Claude orchestrator session."""
     if not task_ids:
@@ -562,7 +433,7 @@ def orchestrate_tasks(
     project_id = tasks[0].project_id
     project_root = tasks[0].project_root
     python_bin, script_path = _resolve_agent_hub_paths()
-    prompt = _build_orchestrator_prompt(
+    prompt = build_orchestrator_prompt(
         project_id=project_id, project_root=project_root, max_subagents=max_subagents, tasks=tasks,
     )
     with tempfile.TemporaryDirectory(prefix=_ORCHESTRATE_TMPDIR_PREFIX) as temp_dir:
@@ -571,7 +442,7 @@ def orchestrate_tasks(
         agents_file = temp_root / _ORCHESTRATOR_AGENTS_FNAME
         prompt_file.write_text(prompt)
         agents_file.write_text(json.dumps(_WORKER_SUBAGENT_PAYLOAD, indent=2))
-        command = _build_prompt_worker_command(
+        command = build_prompt_worker_command(
             python_bin=python_bin, script_path=script_path,
             prompt_file=prompt_file, agents_file=agents_file,
             project_id=project_id, project_root=project_root,
