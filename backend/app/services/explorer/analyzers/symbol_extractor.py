@@ -75,14 +75,24 @@ def _extract_python_symbols(source: str, rel_path: str) -> list[SymbolRecord]:
                 symbols.append(_python_symbol(child, source, rel_path, offsets, parents, kind))
             elif isinstance(child, (ast.If, ast.With, ast.For, ast.AsyncFor, ast.While, ast.Try, ast.Match)):
                 visit(child, parents)
-            # Module-level constants (UPPER_CASE or _UPPER_CASE assignments)
             elif not parents and isinstance(child, ast.Assign):
-                for target in child.targets:
-                    if isinstance(target, ast.Name) and _CONSTANT_NAME_RE.match(target.id):
-                        symbols.append(_python_constant(child, target.id, source, rel_path, offsets))
+                _collect_constants(child, source, rel_path, offsets, symbols)
 
     visit(tree, [])
     return symbols
+
+
+def _collect_constants(
+    node: ast.Assign,
+    source: str,
+    rel_path: str,
+    offsets: list[int],
+    symbols: list[SymbolRecord],
+) -> None:
+    """Append module-level UPPER_CASE constants from an assignment node."""
+    for target in node.targets:
+        if isinstance(target, ast.Name) and _CONSTANT_NAME_RE.match(target.id):
+            symbols.append(_python_constant(node, target.id, source, rel_path, offsets))
 
 
 def _python_symbol(
@@ -129,7 +139,6 @@ def _python_constant(
     start = _byte_index(offsets, node.lineno, node.col_offset)
     end = _byte_index(offsets, node.end_lineno, node.end_col_offset)
     segment = source[start:end]
-    # Use the first line as signature
     first_line = segment.split("\n", 1)[0].strip()
     return cast(SymbolRecord, {
         "symbol_id": f"{rel_path}::{name}#constant",
@@ -154,7 +163,6 @@ def _extract_decorators(node: ast.ClassDef | _FuncNode) -> list[str]:
     decorators: list[str] = []
     for decorator in node.decorator_list:
         try:
-            # Handle @name, @module.name, @module.name(args)
             if isinstance(decorator, ast.Call):
                 decorators.append(ast.unparse(decorator.func))
             else:
@@ -247,23 +255,28 @@ def _find_matching_brace(source: str, open_index: int) -> int | None:
     for index in range(open_index, len(source)):
         char = source[index]
         if in_string:
-            if escape:
-                escape = False
-            elif char == "\\":
-                escape = True
-            elif char == in_string:
-                in_string = None
+            escape, in_string = _advance_string_state(char, escape, in_string)
             continue
         if char in {"'", '"', "`"}:
             in_string = char
-            continue
-        if char == "{":
+        elif char == "{":
             depth += 1
-        elif char == "}":
+        elif char == "}" and depth > 1:
             depth -= 1
-            if depth == 0:
-                return index
+        elif char == "}":
+            return index
     return None
+
+
+def _advance_string_state(char: str, escape: bool, in_string: str) -> tuple[bool, str | None]:
+    """Advance escape/string-tracking state for one character inside a string."""
+    if escape:
+        return False, in_string
+    if char == "\\":
+        return True, in_string
+    if char == in_string:
+        return False, None
+    return False, in_string
 
 
 def _line_offsets(lines: list[str]) -> list[int]:
