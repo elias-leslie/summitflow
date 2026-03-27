@@ -6,6 +6,7 @@ observability, including thinking blocks, tool calls, memory events, etc.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import httpx
@@ -28,6 +29,7 @@ router = APIRouter()
 DEFAULT_REQUEST_SOURCE = "summitflow-observability"
 HTTP_TIMEOUT = 30.0
 EMPTY_SESSION_RESULT: dict[str, Any] = {"events": [], "total": 0, "max_turn": 0}
+_TASK_ID_PATH_RE = re.compile(r"(?:^|[\\/])(task-[A-Za-z0-9]+)(?=[^A-Za-z0-9]|$)")
 
 
 class AgentHubEvent(BaseModel):
@@ -180,7 +182,7 @@ def _fetch_task_sessions_by_external_id(
     task_id: str,
     page_size: int = 100,
 ) -> list[dict[str, Any]]:
-    """Fetch Agent Hub sessions linked by external_id for a task.
+    """Fetch Agent Hub sessions linked to a task by explicit or lane-derived task ID.
 
     This is the canonical fallback when SummitFlow has not yet persisted
     `agent_hub_session_ids` for a task-scoped wake session.
@@ -194,7 +196,7 @@ def _fetch_task_sessions_by_external_id(
     url = f"{agent_hub_url}/api/sessions"
     params = {
         "project_id": project_id,
-        "external_id": task_id,
+        "status": "active",
         "page": 1,
         "page_size": page_size,
     }
@@ -215,13 +217,51 @@ def _fetch_task_sessions_by_external_id(
         if not isinstance(raw_sessions, list):
             return []
         sessions = [dict(session) for session in raw_sessions if isinstance(session, dict)]
-        return [session for session in sessions if session.get("external_id") == task_id]
+        linked_sessions: list[dict[str, Any]] = []
+        seen_session_ids: set[str] = set()
+        for session in sessions:
+            session_task_id = _infer_session_task_id(session)
+            session_id = session.get("id")
+            if session_task_id != task_id or not isinstance(session_id, str) or not session_id:
+                continue
+            if session_id in seen_session_ids:
+                continue
+            seen_session_ids.add(session_id)
+            linked_sessions.append(session)
+        return linked_sessions
     except httpx.ConnectError:
         logger.warning("Cannot connect to Agent Hub", url=agent_hub_url)
         return []
     except Exception as e:
         logger.error("Failed to fetch Agent Hub sessions by external_id", error=str(e))
         return []
+
+
+def _task_id_from_path(path: object) -> str | None:
+    if not isinstance(path, str) or not path:
+        return None
+    match = _TASK_ID_PATH_RE.search(path)
+    if not match:
+        return None
+    return match.group(1)
+
+
+def _infer_session_task_id(session: dict[str, Any]) -> str | None:
+    external_id = session.get("external_id")
+    if isinstance(external_id, str) and external_id.startswith("task-"):
+        return external_id
+
+    current_branch = session.get("current_branch")
+    if isinstance(current_branch, str) and current_branch:
+        branch_prefix = current_branch.split("/", 1)[0]
+        if branch_prefix.startswith("task-"):
+            return branch_prefix
+
+    for key in ("working_dir", "worktree_path", "repo_root"):
+        task_id = _task_id_from_path(session.get(key))
+        if task_id:
+            return task_id
+    return None
 
 
 def _build_agent_event(event: dict[str, Any], session_id: str, session_idx: int) -> AgentHubEvent:

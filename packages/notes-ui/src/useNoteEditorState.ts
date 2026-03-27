@@ -11,6 +11,7 @@ interface UseNoteEditorStateOptions {
 }
 
 export interface NoteEditorState {
+    pinned: boolean;
     title: string;
     setTitle: (v: string) => void;
     content: string;
@@ -36,6 +37,7 @@ export interface NoteEditorState {
 }
 
 export function useNoteEditorState({ note, onDeleted }: UseNoteEditorStateOptions): NoteEditorState {
+    const [pinned, setPinned] = useState(note.pinned);
     const [title, setTitle] = useState(note.title);
     const [content, setContent] = useState(note.content);
     const [tags, setTags] = useState<string[]>(note.tags);
@@ -60,6 +62,7 @@ export function useNoteEditorState({ note, onDeleted }: UseNoteEditorStateOption
         if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null; }
         if (pendingRef.current) { mutateRef.current(pendingRef.current); pendingRef.current = null; }
         prevIdRef.current = note.id;
+        setPinned(note.pinned);
         setTitle(note.title);
         setContent(note.content);
         setTags(note.tags);
@@ -127,7 +130,11 @@ export function useNoteEditorState({ note, onDeleted }: UseNoteEditorStateOption
         save({ tags: next });
     };
 
-    const togglePin = () => { save({ pinned: !note.pinned }); };
+    const togglePin = () => {
+        const next = !pinned;
+        setPinned(next);
+        save({ pinned: next });
+    };
 
     const handleDelete = () => {
         if (!confirmDelete) {
@@ -139,6 +146,7 @@ export function useNoteEditorState({ note, onDeleted }: UseNoteEditorStateOption
     };
 
     return {
+        pinned,
         title, setTitle, content, setContent, tags, setTags,
         tagInput, setTagInput, mode, setMode,
         saveState, setSaveState, confirmDelete,

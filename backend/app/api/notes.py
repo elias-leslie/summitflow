@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 from fastapi import APIRouter, Body, HTTPException
@@ -21,6 +22,9 @@ from ..storage import notes as note_store
 logger = get_logger(__name__)
 
 router = APIRouter(tags=["Notes"])
+
+_EDIT_VERSION_FIELDS = {"title", "content", "tags"}
+_EDIT_CHECKPOINT_COOLDOWN = timedelta(minutes=5)
 
 
 # ============================================================================
@@ -144,6 +148,68 @@ def _version_to_response(v: dict[str, Any]) -> VersionResponse:
     )
 
 
+def _normalize_tags(tags: list[str] | None) -> list[str]:
+    return tags or []
+
+
+def _note_state_matches(
+    snapshot: dict[str, Any], *, title: str, content: str, tags: list[str] | None
+) -> bool:
+    return (
+        snapshot["title"] == title
+        and snapshot["content"] == content
+        and _normalize_tags(snapshot.get("tags")) == _normalize_tags(tags)
+    )
+
+
+def _has_meaningful_note_changes(existing: dict[str, Any], fields: dict[str, Any]) -> bool:
+    if not _EDIT_VERSION_FIELDS.intersection(fields):
+        return False
+    next_title = fields.get("title", existing["title"])
+    next_content = fields.get("content", existing["content"])
+    next_tags = fields.get("tags", existing.get("tags", []))
+    return not _note_state_matches(
+        existing,
+        title=next_title,
+        content=next_content,
+        tags=next_tags,
+    )
+
+
+def _within_edit_checkpoint_window(created_at: Any) -> bool:
+    if not isinstance(created_at, datetime):
+        return False
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=UTC)
+    return created_at >= datetime.now(tz=UTC) - _EDIT_CHECKPOINT_COOLDOWN
+
+
+def _maybe_create_edit_checkpoint(note_id: str, existing: dict[str, Any], fields: dict[str, Any]) -> None:
+    if not _has_meaningful_note_changes(existing, fields):
+        return
+
+    from ..storage import note_versions as versions
+
+    latest = versions.get_latest_version(note_id)
+    if latest and _note_state_matches(
+        latest,
+        title=existing["title"],
+        content=existing["content"],
+        tags=existing.get("tags", []),
+    ):
+        return
+    if latest and _within_edit_checkpoint_window(latest.get("created_at")):
+        return
+
+    versions.create_version(
+        note_id=note_id,
+        title=existing["title"],
+        content=existing["content"],
+        tags=existing.get("tags", []),
+        change_source="edit_checkpoint",
+    )
+
+
 # ============================================================================
 # CRUD Endpoints
 # ============================================================================
@@ -197,8 +263,9 @@ async def create_note(request: CreateNoteRequest) -> NoteResponse:
 @router.patch("/notes/{note_id}", response_model=NoteResponse)
 async def update_note(note_id: str, request: UpdateNoteRequest) -> NoteResponse:
     """Update a note (partial update)."""
-    _get_note_or_404(note_id)
+    existing = _get_note_or_404(note_id)
     fields = {k: v for k, v in request.model_dump().items() if v is not None}
+    _maybe_create_edit_checkpoint(note_id, existing, fields)
     note = note_store.update_note(note_id, **fields)
     if not note:
         raise HTTPException(status_code=500, detail="Failed to update note")

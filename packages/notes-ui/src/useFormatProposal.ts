@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import type { FormatProposal } from './types';
 
 export type FormatState = 'idle' | 'pending' | 'ready' | 'failed';
@@ -28,6 +29,7 @@ export interface FormatProposalState {
 }
 
 export function useFormatProposal({ noteId, api, onAccepted }: UseFormatProposalOptions): FormatProposalState {
+    const queryClient = useQueryClient();
     const [formatState, setFormatState] = useState<FormatState>('idle');
     const [proposal, setProposal] = useState<FormatProposal | null>(null);
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -91,13 +93,17 @@ export function useFormatProposal({ noteId, api, onAccepted }: UseFormatProposal
         if (!proposal || (!proposal.proposed_title && !proposal.proposed_content)) return;
         try {
             await api.resolveProposal(proposal.id, 'accept');
+            await Promise.all([
+                queryClient.invalidateQueries({ queryKey: ['notes'] }),
+                queryClient.invalidateQueries({ queryKey: ['notes-tags'] }),
+            ]);
             onAccepted(proposal.proposed_title, proposal.proposed_content);
             setProposal(null);
             setFormatState('idle');
         } catch (err) {
             console.warn('Accept proposal failed:', err);
         }
-    }, [proposal, api, onAccepted]);
+    }, [proposal, api, onAccepted, queryClient]);
 
     const discardProposal = useCallback(async () => {
         if (!proposal) return;

@@ -94,6 +94,7 @@ export function NoteEditor({ note, onDeleted }: NoteEditorProps) {
             <NoteEditorHistoryView
                 versions={history.versions}
                 loadingVersions={history.loadingVersions}
+                versionError={history.versionError}
                 onClose={() => history.setShowHistory(false)}
                 onRevert={history.revertToVersion}
             />
@@ -104,7 +105,7 @@ export function NoteEditor({ note, onDeleted }: NoteEditorProps) {
         <div className="flex flex-col h-full min-w-0 bg-slate-900">
             <NoteEditorHeader
                 title={editor.title}
-                pinned={note.pinned}
+                pinned={editor.pinned}
                 mode={editor.mode}
                 saveState={editor.saveState}
                 formatState={format.formatState}

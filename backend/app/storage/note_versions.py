@@ -69,6 +69,17 @@ def list_versions(note_id: str, limit: int = 50) -> list[dict[str, Any]]:
     return [_row_to_dict(row) for row in rows]
 
 
+def get_latest_version(note_id: str) -> dict[str, Any] | None:
+    """Get the newest version for a note."""
+    with get_cursor() as cur:
+        cur.execute(
+            _SELECT_COLS + "WHERE note_id = %s ORDER BY version DESC LIMIT 1",
+            (note_id,),
+        )
+        row = cur.fetchone()
+    return _row_to_dict(row) if row else None
+
+
 def get_version(version_id: str) -> dict[str, Any] | None:
     """Get a specific version by ID."""
     with get_cursor() as cur:
