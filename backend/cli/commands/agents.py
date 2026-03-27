@@ -171,6 +171,63 @@ def _print_agent(agent: dict[str, Any]) -> None:
     print(f"  memory_config={json.dumps(agent.get('memory_config'), sort_keys=True)}")
 
 
+def _build_agent_payload(
+    *,
+    name: str | None,
+    description: str | None,
+    primary_model: str | None,
+    temperature: float | None,
+    thinking_level: str | None,
+    active: bool | None,
+    coding_agent: bool | None,
+    fallback_model: list[str] | None,
+    change_reason: str | None,
+    system_prompt_file: Path | None,
+) -> dict[str, Any]:
+    """Build the base update payload from scalar CLI flags."""
+    payload: dict[str, Any] = {}
+    for key, val in [
+        ("name", name), ("description", description), ("primary_model_id", primary_model),
+        ("temperature", temperature), ("thinking_level", thinking_level),
+        ("is_active", active), ("is_coding_agent", coding_agent),
+        ("fallback_models", fallback_model), ("change_reason", change_reason),
+    ]:
+        if val is not None:
+            payload[key] = val
+    if system_prompt_file is not None:
+        payload["system_prompt"] = _load_text_file(system_prompt_file, "System prompt")
+    return payload
+
+
+def _collect_memory_flags(
+    *,
+    memory_enabled: bool | None,
+    include_mandates: bool | None,
+    include_guardrails: bool | None,
+    include_references: bool | None,
+    continuity_enabled: bool | None,
+    continuity_max_sessions: int | None,
+    audience_tags: str | None,
+    add_audience_tags: str | None,
+    remove_audience_tags: str | None,
+    clear_audience_tags: bool,
+    exclude_tags: str | None,
+    add_exclude_tags: str | None,
+    remove_exclude_tags: str | None,
+    clear_exclude_tags: bool,
+) -> _MemoryFlags:
+    """Collect memory-related CLI flags into a _MemoryFlags dataclass."""
+    return _MemoryFlags(
+        memory_enabled=memory_enabled, include_mandates=include_mandates,
+        include_guardrails=include_guardrails, include_references=include_references,
+        continuity_enabled=continuity_enabled, continuity_max_sessions=continuity_max_sessions,
+        audience_tags=audience_tags, add_audience_tags=add_audience_tags,
+        remove_audience_tags=remove_audience_tags, clear_audience_tags=clear_audience_tags,
+        exclude_tags=exclude_tags, add_exclude_tags=add_exclude_tags,
+        remove_exclude_tags=remove_exclude_tags, clear_exclude_tags=clear_exclude_tags,
+    )
+
+
 @app.callback(invoke_without_command=True)
 def agents_default(ctx: typer.Context) -> None:
     """List agents by default."""
@@ -275,10 +332,7 @@ def update_agent(
     include_guardrails: Annotated[bool | None, typer.Option("--include-guardrails/--no-include-guardrails")] = None,
     include_references: Annotated[bool | None, typer.Option("--include-references/--no-include-references")] = None,
     continuity_enabled: Annotated[bool | None, typer.Option("--continuity-enabled/--no-continuity-enabled")] = None,
-    continuity_max_sessions: Annotated[
-        int | None,
-        typer.Option("--continuity-max-sessions", min=1, max=20),
-    ] = None,
+    continuity_max_sessions: Annotated[int | None, typer.Option("--continuity-max-sessions", min=1, max=20)] = None,
     audience_tags: Annotated[str | None, typer.Option("--audience-tags")] = None,
     add_audience_tags: Annotated[str | None, typer.Option("--add-audience-tags")] = None,
     remove_audience_tags: Annotated[str | None, typer.Option("--remove-audience-tags")] = None,
@@ -290,34 +344,23 @@ def update_agent(
     change_reason: Annotated[str | None, typer.Option("--change-reason")] = None,
 ) -> None:
     """Update an agent using the Agent Hub API."""
-    payload: dict[str, Any] = {}
-    for key, val in [
-        ("name", name), ("description", description), ("primary_model_id", primary_model),
-        ("temperature", temperature), ("thinking_level", thinking_level),
-        ("is_active", active), ("is_coding_agent", coding_agent),
-        ("fallback_models", fallback_model), ("change_reason", change_reason),
-    ]:
-        if val is not None:
-            payload[key] = val
-    if system_prompt_file is not None:
-        payload["system_prompt"] = _load_text_file(system_prompt_file, "System prompt")
-
-    mem = _MemoryFlags(
+    payload = _build_agent_payload(
+        name=name, description=description, primary_model=primary_model, temperature=temperature,
+        thinking_level=thinking_level, active=active, coding_agent=coding_agent,
+        fallback_model=fallback_model, change_reason=change_reason, system_prompt_file=system_prompt_file,
+    )
+    mem = _collect_memory_flags(
         memory_enabled=memory_enabled, include_mandates=include_mandates,
         include_guardrails=include_guardrails, include_references=include_references,
         continuity_enabled=continuity_enabled, continuity_max_sessions=continuity_max_sessions,
         audience_tags=audience_tags, add_audience_tags=add_audience_tags,
         remove_audience_tags=remove_audience_tags, clear_audience_tags=clear_audience_tags,
-        exclude_tags=exclude_tags, add_exclude_tags=add_exclude_tags,
-        remove_exclude_tags=remove_exclude_tags, clear_exclude_tags=clear_exclude_tags,
+        exclude_tags=exclude_tags, add_exclude_tags=add_exclude_tags, remove_exclude_tags=remove_exclude_tags, clear_exclude_tags=clear_exclude_tags,
     )
     memory_result = _resolve_memory_config(slug, mem, memory_config_file, clear_memory_config)
     if memory_result is not False:
         payload["memory_config"] = memory_result
-
     if not payload:
         output_error("Nothing to update. Provide at least one update flag.")
         raise typer.Exit(1)
-
-    updated = agents_api("PUT", f"/{slug}", json=payload)
-    _print_agent(updated)
+    _print_agent(agents_api("PUT", f"/{slug}", json=payload))
