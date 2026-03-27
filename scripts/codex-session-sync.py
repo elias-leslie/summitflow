@@ -4,75 +4,46 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
-import subprocess
 import sys
-from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
-from urllib import error, request
+
+# Ensure scripts/lib is importable regardless of cwd
+sys.path.insert(0, str(Path(__file__).parent / "lib"))
+
+from codex_sync_api import (  # noqa: E402
+    finalize_and_close,
+    ingest_transcript,
+    send_heartbeat,
+    upsert_session,
+)
+from codex_sync_credentials import load_env_credentials  # noqa: E402
+from codex_sync_git import build_project_context  # noqa: E402
+from codex_sync_state import (  # noqa: E402
+    get_checkpoint,
+    load_state,
+    save_state,
+    should_sync,
+    update_state_entry,
+)
+from codex_sync_transcripts import (  # noqa: E402
+    TranscriptInfo,
+    iter_recent_transcripts,
+    read_transcript_info,
+)
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
 DEFAULT_API = os.environ.get("AGENT_HUB_API", "http://localhost:8003/api")
-STATE_PATH = Path.home() / ".local" / "state" / "codex-session-sync" / "state.json"
 LOG_PATH = Path.home() / ".codex" / "session-integrations" / "codex-session-sync.log"
-TRANSCRIPTS_ROOT = Path.home() / ".codex" / "sessions"
-ENV_FILE = Path.home() / ".env.local"
-
-ENV_KEY_CLIENT_ID = "SUMMITFLOW_CLIENT_ID"
-ENV_KEY_CLIENT_SECRET = "SUMMITFLOW_CLIENT_SECRET"
-DEFAULT_MODEL = "gpt-5.4"
-GIT_LOG_SINCE = "12 hours ago"
-GIT_LOG_LIMIT = 10
-HTTP_TIMEOUT = 20
-
-HEADER_CONTENT_TYPE = "Content-Type"
-HEADER_CLIENT_ID = "X-Client-Id"
-HEADER_CLIENT_SECRET = "X-Client-Secret"
-HEADER_REQUEST_SOURCE = "X-Request-Source"
-HEADER_SOURCE_CLIENT = "X-Source-Client"
-HEADER_SOURCE_PATH = "X-Source-Path"
-
-ENDPOINT_UPSERT = "/session-ingestion/sessions/upsert?include_session=false"
-ENDPOINT_TRANSCRIPT = "/session-ingestion/sessions/{sid}/transcript-events"
-ENDPOINT_HEARTBEAT = "/session-ingestion/sessions/{sid}/heartbeat?include_session=false"
-ENDPOINT_FINALIZE = "/session-ingestion/sessions/{sid}/finalize"
-ENDPOINT_CLOSE = "/sessions/{sid}/close"
-
-REQUEST_SOURCE = "codex-transcript-sync"
-SOURCE_CLIENT = "summitflow/codex-session-sync"
-PROVIDER = "codex"
-SESSION_TYPE = "agent"
-SCOPE_CONFIDENCE = "unknown"
-HEARTBEAT_PHASE = "waiting_for_model"
-HEARTBEAT_STATUS = "active"
-HEARTBEAT_EVENT_TYPE = "heartbeat"
-
-GIT_FILTER_PREFIXES = ("chore: auto-fix", "chore(.index")
-TRANSCRIPT_SCAN_LINES = 100
+_SOURCE_PATH = str(Path(__file__))
 
 
 # ---------------------------------------------------------------------------
-# Data model
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class TranscriptInfo:
-    path: Path
-    session_id: str
-    cwd: Path
-    model: str
-    mtime: float
-    size: int
-
-
-# ---------------------------------------------------------------------------
-# Utilities / state
+# Logging
 # ---------------------------------------------------------------------------
 
 
@@ -83,319 +54,49 @@ def log(message: str) -> None:
         handle.write(f"[{timestamp}] {message}\n")
 
 
-def _parse_env_value(raw: str) -> str:
-    """Strip quotes and inline comments from a .env file value."""
-    if len(raw) >= 2 and raw[0] in ("'", '"') and raw.endswith(raw[0]):
-        return raw[1:-1]
-    return raw.split("#")[0].strip()
-
-
-def load_env_credentials() -> tuple[str, str]:
-    if not ENV_FILE.exists():
-        return "", ""
-    client_id = client_secret = ""
-    for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
-        if line.startswith(f"{ENV_KEY_CLIENT_ID}="):
-            client_id = _parse_env_value(line.split("=", 1)[1].rstrip())
-        elif line.startswith(f"{ENV_KEY_CLIENT_SECRET}="):
-            client_secret = _parse_env_value(line.split("=", 1)[1].rstrip())
-    return client_id, client_secret
-
-
-def load_state() -> dict[str, object]:
-    if not STATE_PATH.exists():
-        return {"transcripts": {}}
-    try:
-        data = json.loads(STATE_PATH.read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else {"transcripts": {}}
-    except json.JSONDecodeError:
-        return {"transcripts": {}}
-
-
-def save_state(state: dict[str, object]) -> None:
-    STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    STATE_PATH.write_text(json.dumps(state, indent=2, sort_keys=True), encoding="utf-8")
-
-
-def update_state_entry(
-    state: dict[str, object], info: TranscriptInfo,
-    status: str, detail: str, checkpoint: str | None = None,
-) -> None:
-    transcripts = state.setdefault("transcripts", {})
-    if not isinstance(transcripts, dict):
-        state["transcripts"] = {}
-        transcripts = state["transcripts"]
-    transcripts[str(info.path)] = {
-        "session_id": info.session_id, "mtime": info.mtime, "size": info.size,
-        "status": status, "detail": detail, "checkpoint": checkpoint,
-        "updated_at": datetime.now(UTC).isoformat(),
-    }
-
-
-def should_sync(info: TranscriptInfo, state: dict[str, object], force: bool) -> bool:
-    if force:
-        return True
-    entries = state.get("transcripts") or {}
-    if not isinstance(entries, dict):
-        return True
-    entry = entries.get(str(info.path))
-    if not isinstance(entry, dict):
-        return True
-    return entry.get("mtime") != info.mtime or entry.get("size") != info.size
-
-
-# ---------------------------------------------------------------------------
-# Transcript discovery
-# ---------------------------------------------------------------------------
-
-
-def _extract_transcript_fields(path: Path) -> tuple[str, str, str]:
-    """Read up to TRANSCRIPT_SCAN_LINES lines and extract session_id, cwd, model."""
-    session_id = cwd = model = ""
-    with path.open(encoding="utf-8") as f:
-        for i, line in enumerate(f):
-            if i >= TRANSCRIPT_SCAN_LINES:
-                break
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            payload = obj.get("payload") or {}
-            if not isinstance(payload, dict):
-                continue
-            obj_type = obj.get("type")
-            if obj_type == "session_meta":
-                session_id = str(payload.get("id") or session_id)
-                cwd = str(payload.get("cwd") or cwd)
-            elif obj_type == "turn_context" and not model:
-                model = str(payload.get("model") or model)
-            if session_id and cwd and model:
-                break
-    return session_id, cwd, model
-
-
-def read_transcript_info(path: Path) -> TranscriptInfo | None:
-    """Parse a JSONL transcript file and return metadata from its header lines."""
-    try:
-        session_id, cwd, model = _extract_transcript_fields(path)
-    except OSError as exc:
-        log(f"[WARN] Failed to read transcript {path}: {exc}")
-        return None
-    if not session_id or not cwd:
-        return None
-    stat = path.stat()
-    return TranscriptInfo(
-        path=path, session_id=session_id, cwd=Path(cwd),
-        model=model or DEFAULT_MODEL, mtime=stat.st_mtime, size=stat.st_size,
-    )
-
-
-def iter_recent_transcripts(recent_hours: int) -> list[TranscriptInfo]:
-    if not TRANSCRIPTS_ROOT.exists():
-        return []
-    cutoff = datetime.now(UTC) - timedelta(hours=recent_hours)
-    transcripts: list[TranscriptInfo] = []
-    for path in TRANSCRIPTS_ROOT.rglob("*.jsonl"):
-        try:
-            modified_at = datetime.fromtimestamp(path.stat().st_mtime, UTC)
-        except OSError:
-            continue
-        if modified_at < cutoff:
-            continue
-        info = read_transcript_info(path)
-        if info is not None:
-            transcripts.append(info)
-    transcripts.sort(key=lambda item: item.mtime)
-    return transcripts
-
-
-# ---------------------------------------------------------------------------
-# Git context
-# ---------------------------------------------------------------------------
-
-
-def build_project_context(cwd: Path) -> dict[str, object] | None:
-    try:
-        project_dir = subprocess.check_output(
-            ["git", "-C", str(cwd), "rev-parse", "--show-toplevel"],
-            stderr=subprocess.DEVNULL, text=True,
-        ).strip()
-    except subprocess.CalledProcessError:
-        return None
-    project_path = Path(project_dir)
-    branch = subprocess.run(
-        ["git", "-C", str(project_path), "rev-parse", "--abbrev-ref", "HEAD"],
-        capture_output=True, text=True, check=False,
-    ).stdout.strip()
-    raw_log = subprocess.run(
-        ["git", "-C", str(project_path), "log", "--oneline",
-         f"--since={GIT_LOG_SINCE}", "--no-merges", "--format=%h %s"],
-        capture_output=True, text=True, check=False,
-    ).stdout.strip()
-    git_lines = [
-        ln for ln in raw_log.splitlines()
-        if not any(ln.startswith(p) or p in ln for p in GIT_FILTER_PREFIXES)
-    ]
-    return {
-        "project_dir": project_path, "project_id": project_path.name,
-        "branch": branch, "is_worktree": (project_path / ".git").is_file(),
-        "repo_root": str(project_path), "git_context": "\n".join(git_lines[:GIT_LOG_LIMIT]),
-    }
-
-
-# ---------------------------------------------------------------------------
-# HTTP
-# ---------------------------------------------------------------------------
-
-
-def post_json(
-    api_url: str, endpoint: str, body: dict[str, object] | None,
-    client_id: str, client_secret: str,
-) -> tuple[int | None, str]:
-    headers = {
-        HEADER_CONTENT_TYPE: "application/json",
-        HEADER_CLIENT_ID: client_id,
-        HEADER_CLIENT_SECRET: client_secret,
-        HEADER_REQUEST_SOURCE: REQUEST_SOURCE,
-        HEADER_SOURCE_CLIENT: SOURCE_CLIENT,
-        HEADER_SOURCE_PATH: str(Path(__file__)),
-    }
-    data = json.dumps(body).encode("utf-8") if body is not None else None
-    url = f"{api_url.rstrip('/')}/{endpoint.lstrip('/')}"
-    req = request.Request(url, data=data, headers=headers, method="POST")
-    try:
-        with request.urlopen(req, timeout=HTTP_TIMEOUT) as resp:
-            return resp.status, resp.read().decode("utf-8")
-    except error.HTTPError as exc:
-        return exc.code, exc.read().decode("utf-8")
-    except Exception as exc:  # noqa: BLE001
-        return None, str(exc)
-
-
-def _checked_post(
-    api_url: str, endpoint: str, body: dict[str, object] | None,
-    client_id: str, client_secret: str, label: str,
-) -> tuple[bool, str, str]:
-    """Return (ok, response_body, error_msg)."""
-    status, payload = post_json(api_url, endpoint, body, client_id, client_secret)
-    if status != 200:
-        return False, payload, f"{label} failed status={status} body={payload[:300]}"
-    return True, payload, ""
-
-
-# ---------------------------------------------------------------------------
-# Sync steps
-# ---------------------------------------------------------------------------
-
-
-def _upsert_session(
-    info: TranscriptInfo, project: dict[str, object],
-    api_url: str, client_id: str, client_secret: str,
-) -> tuple[bool, str]:
-    ok, _, err = _checked_post(api_url, ENDPOINT_UPSERT, {
-        "session_id": info.session_id, "project_id": project["project_id"],
-        "provider": PROVIDER, "model": f"{PROVIDER}/{info.model}",
-        "session_type": SESSION_TYPE, "cwd": str(info.cwd),
-        "current_branch": project["branch"], "scope_confidence": SCOPE_CONFIDENCE,
-        "provider_metadata": {
-            "transcript_path": str(info.path), "repo_root": project["repo_root"],
-            "worktree_path": str(info.cwd), "host": os.uname().nodename,
-        },
-    }, client_id, client_secret, "session upsert")
-    return ok, err
-
-
-def _ingest_transcript(
-    info: TranscriptInfo, state: dict[str, object],
-    api_url: str, client_id: str, client_secret: str,
-) -> tuple[bool, str | None, str]:
-    """Return (ok, next_checkpoint, error_msg)."""
-    ts_entries = state.get("transcripts") or {}
-    prev_entry = ts_entries.get(str(info.path)) if isinstance(ts_entries, dict) else None
-    checkpoint = prev_entry.get("checkpoint") if isinstance(prev_entry, dict) else None
-    ok, payload, err = _checked_post(
-        api_url, ENDPOINT_TRANSCRIPT.format(sid=info.session_id),
-        {"provider": PROVIDER, "transcript_path": str(info.path), "checkpoint": checkpoint},
-        client_id, client_secret, "transcript ingest",
-    )
-    if not ok:
-        return False, None, err
-    try:
-        ingest_data = json.loads(payload)
-    except json.JSONDecodeError as exc:
-        return False, None, f"transcript ingest returned invalid JSON: {exc}"
-    next_cp = ingest_data.get("next_checkpoint")
-    update_state_entry(
-        state, info, "synced",
-        f"appended={ingest_data.get('events_appended', 0)} skipped={ingest_data.get('events_skipped', 0)}",
-        checkpoint=str(next_cp) if next_cp else None,
-    )
-    return True, str(next_cp) if next_cp else None, ""
-
-
-def _send_heartbeat(
-    info: TranscriptInfo, project: dict[str, object], meta: dict[str, object],
-    api_url: str, client_id: str, client_secret: str,
-) -> tuple[bool, str]:
-    ok, _, err = _checked_post(api_url, ENDPOINT_HEARTBEAT.format(sid=info.session_id), {
-        "cwd": str(info.cwd), "current_branch": project["branch"],
-        "phase": HEARTBEAT_PHASE, "status": HEARTBEAT_STATUS,
-        "summary": f"Transcript sync heartbeat for {info.session_id}",
-        "last_event_type": HEARTBEAT_EVENT_TYPE, "provider_metadata": meta,
-    }, client_id, client_secret, "heartbeat")
-    return ok, err
-
-
-def _finalize_and_close(
-    info: TranscriptInfo, project: dict[str, object], close_session: bool,
-    api_url: str, client_id: str, client_secret: str,
-) -> tuple[bool, str]:
-    ok, _, err = _checked_post(api_url, ENDPOINT_FINALIZE.format(sid=info.session_id), {
-        "branch": project["branch"], "git_context": project["git_context"],
-        "is_worktree": project["is_worktree"],
-    }, client_id, client_secret, "finalize")
-    if not ok:
-        return False, err
-    if not close_session:
-        return True, ""
-    ok, _, err = _checked_post(
-        api_url, ENDPOINT_CLOSE.format(sid=info.session_id),
-        None, client_id, client_secret, "close",
-    )
-    return ok, err
-
-
 # ---------------------------------------------------------------------------
 # Sync orchestration
 # ---------------------------------------------------------------------------
 
 
 def sync_transcript(
-    info: TranscriptInfo, state: dict[str, object], api_url: str,
-    client_id: str, client_secret: str, close_session: bool, verbose: bool,
+    info: TranscriptInfo,
+    state: dict[str, object],
+    api_url: str,
+    client_id: str,
+    client_secret: str,
+    close_session: bool,
+    verbose: bool,
 ) -> tuple[bool, str]:
     project = build_project_context(info.cwd)
     if project is None:
         return False, f"skip non-git cwd={info.cwd}"
 
     meta: dict[str, object] = {
-        "transcript_path": str(info.path), "repo_root": project["repo_root"],
-        "worktree_path": str(info.cwd), "host": os.uname().nodename,
+        "transcript_path": str(info.path),
+        "repo_root": project["repo_root"],
+        "worktree_path": str(info.cwd),
+        "host": os.uname().nodename,
     }
+    kw = dict(api_url=api_url, client_id=client_id, client_secret=client_secret,
+               source_path=_SOURCE_PATH)
 
-    ok, err = _upsert_session(info, project, api_url, client_id, client_secret)
+    ok, err = upsert_session(info.session_id, project, info.model, info.cwd, info.path, **kw)
     if not ok:
         return False, err
 
-    ok, _, err = _ingest_transcript(info, state, api_url, client_id, client_secret)
+    checkpoint = get_checkpoint(info.path, state)
+    ok, next_cp, detail, err = ingest_transcript(info.session_id, info.path, checkpoint, **kw)
+    if not ok:
+        return False, err
+    update_state_entry(state, info.path, info.session_id, info.mtime, info.size,
+                       "synced", detail, checkpoint=next_cp)
+
+    ok, err = send_heartbeat(info.session_id, info.cwd, project, meta, **kw)
     if not ok:
         return False, err
 
-    ok, err = _send_heartbeat(info, project, meta, api_url, client_id, client_secret)
-    if not ok:
-        return False, err
-
-    ok, err = _finalize_and_close(info, project, close_session, api_url, client_id, client_secret)
+    ok, err = finalize_and_close(info.session_id, project, close_session, **kw)
     if not ok:
         return False, err
 
@@ -415,9 +116,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--scan", action="store_true", help="Scan recent Codex transcripts")
     parser.add_argument("--transcript", type=Path, help="Sync a specific transcript path")
     parser.add_argument("--recent-hours", type=int, default=24, help="Recent hours to scan")
-    parser.add_argument("--close", action="store_true", help="Close the Agent Hub session after analysis")
-    parser.add_argument("--force", action="store_true", help="Sync even if transcript state is unchanged")
-    parser.add_argument("--verbose", action="store_true", help="Write success entries to the sync log")
+    parser.add_argument("--close", action="store_true",
+                        help="Close the Agent Hub session after analysis")
+    parser.add_argument("--force", action="store_true",
+                        help="Sync even if transcript state is unchanged")
+    parser.add_argument("--verbose", action="store_true",
+                        help="Write success entries to the sync log")
     return parser.parse_args(argv)
 
 
@@ -433,13 +137,13 @@ def main(argv: list[str]) -> int:
 
     state = load_state()
     if args.transcript is not None:
-        info = read_transcript_info(args.transcript)
+        info = read_transcript_info(args.transcript, log_fn=log)
         infos: list[TranscriptInfo] = [info] if info is not None else []
     else:
-        infos = iter_recent_transcripts(args.recent_hours)
+        infos = iter_recent_transcripts(args.recent_hours, log_fn=log)
 
     for info in infos:
-        if not should_sync(info, state, args.force):
+        if not should_sync(info.path, info.mtime, info.size, state, args.force):
             continue
         ok, detail = sync_transcript(
             info=info, state=state, api_url=DEFAULT_API,
@@ -447,7 +151,8 @@ def main(argv: list[str]) -> int:
             close_session=args.close, verbose=args.verbose,
         )
         if not ok:
-            update_state_entry(state, info, "error", detail)
+            update_state_entry(state, info.path, info.session_id, info.mtime, info.size,
+                               "error", detail)
             log(f"[WARN] Failed sync for {info.path}: {detail}")
 
     save_state(state)
