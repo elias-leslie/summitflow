@@ -46,7 +46,26 @@ Limits:
   content    : must start with **Topic**: then imperative verb
 """
 
-FORMAT_STANDARD_HELP = """
+FORMAT_EXAMPLE = """
+Generate a valid body first:
+  st memory format --topic "Quality Gates" \\
+    --instruction "Use dt for all checks" \\
+    --prohibition "Never run raw pytest" \\
+    --why "hooks enforce dt path"
+"""
+
+SAVE_QUICKSTART = f"""
+Quickstart:
+  st memory save -s project --scope-id terminal -t guardrail \\
+    -S "Never bypass quality gates" \\
+    "**Quality Gates**: Use dt for all checks. Never run raw pytest. Why: hooks enforce dt path."
+
+{FORMAT_EXAMPLE}
+"""
+
+FORMAT_STANDARD_HELP = f"""
+{SAVE_QUICKSTART}
+
 FORMAT_STANDARD for memory episodes:
 
 | # | Rule | Check |
@@ -125,6 +144,32 @@ def validate_episode_content_present(content: str) -> str:
         output_error("Content is required and cannot be blank.")
         raise typer.Exit(1)
     return content
+
+
+def emit_save_quickstart_error(
+    *,
+    missing_summary: bool = False,
+    missing_content: bool = False,
+    blank_content: bool = False,
+) -> None:
+    """Print a self-contained `st memory save` quickstart error and exit."""
+    problems: list[str] = []
+    if missing_summary:
+        problems.append("--summary")
+    if missing_content:
+        problems.append("content or --content-file")
+
+    if blank_content and not missing_content:
+        message = "st memory save content cannot be blank."
+    elif problems:
+        joined = " and ".join(problems)
+        message = f"st memory save requires {joined}."
+    else:
+        message = "st memory save input is invalid."
+
+    output_error(message)
+    typer.echo(SAVE_QUICKSTART, err=True)
+    raise typer.Exit(1)
 
 
 def build_episode_content(
@@ -237,7 +282,7 @@ def validate_summary_length(summary: str) -> None:
     """Validate summary length and raise error if invalid."""
     if len(summary) > 40:
         output_error(f"Summary too long ({len(summary)} chars). Keep it under 40 chars.")
-        typer.echo(SAVE_EXAMPLE, err=True)
+        typer.echo(SAVE_QUICKSTART, err=True)
         raise typer.Exit(1)
 
 

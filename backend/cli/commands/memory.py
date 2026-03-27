@@ -62,7 +62,6 @@ from .memory_options import (
     ScopeOpt,
     SearchLimitOpt,
     StaleOpt,
-    SummaryOpt,
     SummaryUpdateOpt,
     TagsOpt,
     TagsUpdateOpt,
@@ -80,7 +79,12 @@ from .memory_options import (
     UUIDsDeleteArg,
     UUIDsOptArg,
 )
-from .memory_validation import build_episode_content, suggest_summary, validate_content_format
+from .memory_validation import (
+    build_episode_content,
+    emit_save_quickstart_error,
+    suggest_summary,
+    validate_content_format,
+)
 
 app = typer.Typer(help="Memory system commands (Agent Hub)")
 
@@ -133,7 +137,10 @@ def stats(
 @app.command()
 def save(
     ctx: typer.Context,
-    summary: SummaryOpt,
+    summary: Annotated[
+        str | None,
+        typer.Option("--summary", "-S", help="Action phrase for TOON index (10-40 chars)"),
+    ] = None,
     content: ContentArg = None,
     content_file: ContentFileOpt = None,
     tier: TierOpt = "reference",
@@ -155,8 +162,19 @@ def save(
     change_reason: ChangeReasonOpt = None,
 ) -> None:
     """Save a learning to the memory system."""
-    resolved_content = _resolve_content(content, content_file, require_value=True)
-    assert resolved_content is not None
+    missing_summary = summary is None or not summary.strip()
+    missing_content = content_file is None and not (content and content.strip())
+    if missing_summary or missing_content:
+        emit_save_quickstart_error(
+            missing_summary=missing_summary,
+            missing_content=missing_content,
+        )
+
+    resolved_content = _resolve_content(content, content_file, require_value=False)
+    if resolved_content is None or not resolved_content.strip():
+        emit_save_quickstart_error(blank_content=True)
+
+    assert summary is not None
     save_impl(
         ctx.obj,
         resolved_content,

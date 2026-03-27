@@ -48,6 +48,7 @@ class TestMemoryUpdateContentInput:
             False,
             None,
             False,
+            None,
         )
 
     def test_update_accepts_content_from_stdin(self) -> None:
@@ -80,6 +81,7 @@ class TestMemoryUpdateContentInput:
             False,
             None,
             False,
+            None,
         )
 
     def test_update_rejects_inline_and_file_content_together(self, tmp_path: Path) -> None:
@@ -172,6 +174,41 @@ class TestMemorySaveContentInput:
         assert "Specify only one of --content or --content-file" in result.output
         mock_save_impl.assert_not_called()
 
+    def test_save_missing_summary_shows_quickstart(self) -> None:
+        """Missing summary should show a self-contained quickstart."""
+        with patch("cli.commands.memory.save_impl") as mock_save_impl:
+            result = runner.invoke(
+                app,
+                [
+                    "save",
+                    "**Quality Checks**: Use dt for all quality checks.",
+                ],
+            )
+
+        assert result.exit_code == 1
+        assert "st memory save requires --summary." in result.output
+        assert 'st memory save -s project --scope-id terminal -t guardrail' in result.output
+        assert 'st memory format --topic "Quality Gates"' in result.output
+        mock_save_impl.assert_not_called()
+
+    def test_save_missing_content_shows_quickstart(self) -> None:
+        """Missing content should show a self-contained quickstart."""
+        with patch("cli.commands.memory.save_impl") as mock_save_impl:
+            result = runner.invoke(
+                app,
+                [
+                    "save",
+                    "--summary",
+                    "Use dt for checks",
+                ],
+            )
+
+        assert result.exit_code == 1
+        assert "st memory save requires content or --content-file." in result.output
+        assert 'st memory save -s project --scope-id terminal -t guardrail' in result.output
+        assert 'st memory format --topic "Quality Gates"' in result.output
+        mock_save_impl.assert_not_called()
+
 
 class TestMemoryFormatCommand:
     """Tests for the mechanical memory formatter helper."""
@@ -241,6 +278,7 @@ class TestMemoryTagOptions:
             "finance-relevant,portfolio",
             "global",
             None,
+            None,
         )
 
     def test_save_forwards_change_reason_to_impl(self) -> None:
@@ -293,6 +331,7 @@ class TestMemoryTagOptions:
             False,
             "finance-relevant",
             False,
+            None,
         )
 
     def test_save_forwards_context_routing_to_impl(self) -> None:
@@ -424,6 +463,7 @@ class TestMemoryTagOptions:
             True,
             None,
             False,
+            None,
         )
 
     def test_delete_forwards_change_reason_to_impl(self) -> None:

@@ -52,6 +52,19 @@ def test_validate_content_format_rejects_conversational_language() -> None:
         )
 
 
+def test_validate_content_format_error_includes_quickstart(capsys) -> None:
+    with pytest.raises(typer.Exit):
+        validate_content_format(
+            "Use dt for all quality checks.",
+            "Use dt for checks",
+            "mandate",
+        )
+
+    err = capsys.readouterr().err
+    assert 'st memory save -s project --scope-id terminal -t guardrail' in err
+    assert 'st memory format --topic "Quality Gates"' in err
+
+
 def test_validate_content_format_warns_but_allows_long_single_rule(capsys) -> None:
     validate_content_format(
         (
