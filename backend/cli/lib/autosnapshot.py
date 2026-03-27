@@ -11,13 +11,16 @@ Provides the automation backbone for Btrfs-backed snapshots:
 from __future__ import annotations
 
 import contextlib
-import json
 import shutil
-from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from .autosnapshot_helpers import (
+    find_manifest_scope_dir,
+    iter_archived_manifest_scopes,
+    lane_scopes_for_project,
+)
 from .quick_snapshots import (
     QuickSnapshot,
     SnapshotScope,
@@ -98,19 +101,6 @@ def _latest_entry(entries: list[QuickSnapshot]) -> QuickSnapshot:
     return max(entries, key=lambda e: e.created_at)
 
 
-def _load_manifest_entries(manifest_path: Path) -> list[QuickSnapshot] | None:
-    """Parse a manifest.json, returning entries or None on any error (including missing file)."""
-    try:
-        raw = manifest_path.read_text(encoding="utf-8")
-        return [
-            QuickSnapshot.from_dict(item)
-            for item in json.loads(raw)
-            if isinstance(item, dict)
-        ]
-    except Exception:
-        return None
-
-
 def _scope_state_needs_snapshot(repo_root: Path, entries: list[QuickSnapshot]) -> bool:
     """Return True when a new automatic snapshot would capture new clean-state protection."""
     from .quick_snapshots import _git, _head_oid
@@ -122,34 +112,6 @@ def _scope_state_needs_snapshot(repo_root: Path, entries: list[QuickSnapshot]) -
     if status.stdout.strip():
         return True
     return _latest_entry(entries).head_oid != current_head
-
-
-def _iter_archived_manifest_scopes(
-    root: Path,
-) -> Iterator[tuple[Path, str, SnapshotScope]]:
-    """Yield (scope_dir, project_id, scope) for each readable manifest under root."""
-    if not root.is_dir():
-        return
-    for project_dir in sorted(root.iterdir()):
-        if not project_dir.is_dir():
-            continue
-        for scope_dir in sorted(project_dir.iterdir()):
-            entries = _load_manifest_entries(scope_dir / "manifest.json")
-            if not entries:
-                continue
-            latest = _latest_entry(entries)
-            yield scope_dir, latest.project_id, SnapshotScope(
-                latest.scope_type, latest.scope_name, Path(latest.worktree_path)
-            )
-
-
-def _find_manifest_scope_dir(project_id: str, scope: SnapshotScope) -> Path | None:
-    key = _scope_key(project_id, scope)
-    snaps_root = Path.home() / ".local" / "share" / "st" / "snaps"
-    return next(
-        (sd for sd, pid, s in _iter_archived_manifest_scopes(snaps_root) if _scope_key(pid, s) == key),
-        None,
-    )
 
 
 def ensure_baseline(
@@ -222,17 +184,6 @@ def capture_lifecycle_baseline(
         return None
 
 
-def _lane_scopes_for_project(
-    project_dir: Path, project_id: str
-) -> list[tuple[str, SnapshotScope]]:
-    """Return (project_id, scope) pairs for lane dirs containing a .git entry."""
-    return [
-        (project_id, SnapshotScope("lane", lane_dir.name, lane_dir.resolve()))
-        for lane_dir in sorted(project_dir.iterdir())
-        if lane_dir.is_dir() and (lane_dir / ".git").exists()
-    ]
-
-
 def enumerate_active_scopes() -> list[tuple[str, SnapshotScope]]:
     """Walk Btrfs workspaces and return ``(project_id, scope)`` pairs.
 
@@ -249,7 +200,7 @@ def enumerate_active_scopes() -> list[tuple[str, SnapshotScope]]:
     if lanes_root.is_dir():
         for project_dir in sorted(lanes_root.iterdir()):
             if project_dir.is_dir():
-                scopes.extend(_lane_scopes_for_project(project_dir, project_dir.name))
+                scopes.extend(lane_scopes_for_project(project_dir, project_dir.name))
 
     # Projects: /srv/workspaces/projects/<project>/
     projects_root = root / "projects"
@@ -281,7 +232,7 @@ def enumerate_snapshot_scopes(
         return list(scopes_by_key.values())
 
     snaps_root = Path.home() / ".local" / "share" / "st" / "snaps"
-    for _, project_id, scope in _iter_archived_manifest_scopes(snaps_root):
+    for _, project_id, scope in iter_archived_manifest_scopes(snaps_root):
         key = _scope_key(project_id, scope)
         if key not in scopes_by_key:
             scopes_by_key[key] = (project_id, scope, "archived")
@@ -393,7 +344,8 @@ def prune_scope(
     if dry_run:
         return to_prune
 
-    manifest_dir = _find_manifest_scope_dir(project_id, scope)
+    key = _scope_key(project_id, scope)
+    manifest_dir = find_manifest_scope_dir(project_id, scope, key)
     prune_ids = {e.id for e in to_prune}
     _delete_entries(
         project_id=project_id,
@@ -444,7 +396,8 @@ def _drop_scope_entries(
     if not entries:
         return []
     if not dry_run:
-        manifest_dir = _find_manifest_scope_dir(project_id, scope)
+        key = _scope_key(project_id, scope)
+        manifest_dir = find_manifest_scope_dir(project_id, scope, key)
         _delete_entries(project_id=project_id, scope=scope, entries=entries, manifest_dir=manifest_dir)
         if manifest_dir and manifest_dir.exists():
             shutil.rmtree(manifest_dir, ignore_errors=True)
