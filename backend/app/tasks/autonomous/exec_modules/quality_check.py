@@ -76,6 +76,107 @@ def _allows_no_code_verification(task_id: str) -> bool:
     return any(marker in haystack for marker in _NO_CODE_MARKERS)
 
 
+def _append_smoke_failure(
+    task_id: str,
+    project_id: str,
+    step_results: list[dict[str, Any]],
+    failure: dict[str, Any],
+) -> None:
+    """Record a single smoke test failure into step_results and emit a log."""
+    step_results.append({
+        "step_number": 999,
+        "passed": False,
+        "output": f"Import failed: {failure['error']}",
+        "reason": f"smoke_test_failed:{failure['module']}",
+        "returncode": 1,
+    })
+    emit_log(
+        task_id, "error",
+        f"Smoke test failed: {failure['module']} - {failure['error'][:100]}",
+        source="verify", project_id=project_id,
+    )
+
+
+def _run_smoke_tests(
+    task_id: str,
+    project_path: str,
+    project_id: str,
+    step_results: list[dict[str, Any]],
+) -> bool:
+    """Run smoke tests and populate step_results on failure. Returns True if passed."""
+    emit_log(
+        task_id, "info", "Running smoke tests on changed files...",
+        source="verify", project_id=project_id,
+    )
+
+    smoke_result = run_smoke_tests(project_path, project_id=project_id)
+
+    if not smoke_result.passed:
+        for failure in smoke_result.failures:
+            _append_smoke_failure(task_id, project_id, step_results, failure)
+        return False
+
+    tested_count = len(smoke_result.files_tested)
+    if tested_count > 0:
+        emit_log(
+            task_id, "info", f"Smoke tests passed ({tested_count} modules)",
+            source="verify", project_id=project_id,
+        )
+    return True
+
+
+def _append_targeted_failure(
+    task_id: str,
+    project_id: str,
+    step_results: list[dict[str, Any]],
+    failure: dict[str, Any],
+) -> None:
+    """Record a single targeted test failure into step_results and emit a log."""
+    step_results.append({
+        "step_number": 998,
+        "passed": False,
+        "output": f"Tests failed: {failure['error'][:500]}",
+        "reason": f"targeted_test_failed:{failure['test_files'][:100]}",
+        "returncode": 1,
+    })
+    emit_log(
+        task_id, "error",
+        f"Targeted tests failed: {failure['test_files'][:80]}",
+        source="verify", project_id=project_id,
+    )
+
+
+def _run_targeted_tests(
+    task_id: str,
+    project_path: str,
+    project_id: str,
+    step_results: list[dict[str, Any]],
+) -> bool:
+    """Run targeted tests and populate step_results on failure. Returns True if passed."""
+    emit_log(
+        task_id, "info", "Running targeted tests for changed files...",
+        source="verify", project_id=project_id,
+    )
+
+    test_result = run_targeted_tests(project_path, project_id=project_id)
+
+    if not test_result.tests_run:
+        return True
+
+    if not test_result.passed:
+        for failure in test_result.failures:
+            _append_targeted_failure(task_id, project_id, step_results, failure)
+        return False
+
+    emit_log(
+        task_id, "info",
+        f"Targeted tests passed ({len(test_result.tests_run)} test files, "
+        f"{len(test_result.tests_skipped)} skipped)",
+        source="verify", project_id=project_id,
+    )
+    return True
+
+
 def _run_smoke_and_targeted_tests(
     task_id: str,
     project_path: str,
@@ -83,69 +184,10 @@ def _run_smoke_and_targeted_tests(
     step_results: list[dict[str, Any]],
 ) -> bool:
     """Run smoke tests and targeted tests on changed files."""
-    all_passed = True
-
-    emit_log(
-        task_id, "info", "Running smoke tests on changed files...",
-        source="verify", project_id=project_id,
-    )
-
-    smoke_result = run_smoke_tests(project_path, project_id=project_id)
-    if not smoke_result.passed:
-        all_passed = False
-        for failure in smoke_result.failures:
-            step_results.append({
-                "step_number": 999,
-                "passed": False,
-                "output": f"Import failed: {failure['error']}",
-                "reason": f"smoke_test_failed:{failure['module']}",
-                "returncode": 1,
-            })
-            emit_log(
-                task_id, "error",
-                f"Smoke test failed: {failure['module']} - {failure['error'][:100]}",
-                source="verify", project_id=project_id,
-            )
-    else:
-        tested_count = len(smoke_result.files_tested)
-        if tested_count > 0:
-            emit_log(
-                task_id, "info", f"Smoke tests passed ({tested_count} modules)",
-                source="verify", project_id=project_id,
-            )
-
-    if all_passed:
-        emit_log(
-            task_id, "info", "Running targeted tests for changed files...",
-            source="verify", project_id=project_id,
-        )
-
-        test_result = run_targeted_tests(project_path, project_id=project_id)
-        if test_result.tests_run:
-            if not test_result.passed:
-                all_passed = False
-                for failure in test_result.failures:
-                    step_results.append({
-                        "step_number": 998,
-                        "passed": False,
-                        "output": f"Tests failed: {failure['error'][:500]}",
-                        "reason": f"targeted_test_failed:{failure['test_files'][:100]}",
-                        "returncode": 1,
-                    })
-                    emit_log(
-                        task_id, "error",
-                        f"Targeted tests failed: {failure['test_files'][:80]}",
-                        source="verify", project_id=project_id,
-                    )
-            else:
-                emit_log(
-                    task_id, "info",
-                    f"Targeted tests passed ({len(test_result.tests_run)} test files, "
-                    f"{len(test_result.tests_skipped)} skipped)",
-                    source="verify", project_id=project_id,
-                )
-
-    return all_passed
+    smoke_passed = _run_smoke_tests(task_id, project_path, project_id, step_results)
+    if not smoke_passed:
+        return False
+    return _run_targeted_tests(task_id, project_path, project_id, step_results)
 
 
 def run_execution_quality_check(
