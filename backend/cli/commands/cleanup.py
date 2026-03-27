@@ -115,11 +115,16 @@ def _categorize_analyses(analyses: list[WorktreeAnalysis]) -> tuple[list[str], l
     return needs_merge, conflicts, review
 
 
+def _existing_worktrees(worktrees: list) -> list:
+    """Filter out worktrees whose paths disappeared mid-cleanup."""
+    return [wt for wt in worktrees if Path(wt.path).exists()]
+
+
 def _build_repo_cleanup_entry(repo_path: Path) -> RepoEntry:
     """Build cleanup counters for one managed repository."""
     project_id = repo_path.name
     ws = build_repo_workspace_summary(repo_path)
-    active_worktrees = get_active_worktrees(project_id)
+    active_worktrees = _existing_worktrees(get_active_worktrees(project_id))
     analyses = [analyze_worktree(wt) for wt in active_worktrees]
     dirty_worktrees = sum(1 for wt in active_worktrees if has_uncommitted_changes(wt.path))
     dirty_main_repo = bool(getattr(ws, "dirty_main_repo", False))
@@ -153,7 +158,7 @@ def build_cleanup_status_payload(
 ) -> dict[str, Any]:
     """Build the canonical cross-repo cleanup summary payload."""
     project_id = get_project_id(all_projects, project_id_override)
-    worktrees = get_active_worktrees(project_id)
+    worktrees = _existing_worktrees(get_active_worktrees(project_id))
     repositories = [
         _build_repo_cleanup_entry(p)
         for p in _iter_target_repos(all_projects, project_id_override)

@@ -14,18 +14,30 @@ from cli.commands.cleanup_analysis import CleanupAction, analyze_worktree
 runner = CliRunner()
 
 
-def test_build_cleanup_status_payload_aggregates_repo_hygiene() -> None:
+def _make_existing_worktree(tmp_path: Path, task_id: str, project_id: str) -> SimpleNamespace:
+    path = tmp_path / task_id
+    path.mkdir()
+    return SimpleNamespace(
+        task_id=task_id,
+        path=path,
+        branch=f"{task_id}/main",
+        base_branch="main",
+        project_id=project_id,
+    )
+
+
+def test_build_cleanup_status_payload_aggregates_repo_hygiene(tmp_path: Path) -> None:
     repo_paths = [Path("/repos/summitflow"), Path("/repos/agent-hub")]
     summitflow_worktrees = [
-        SimpleNamespace(task_id="task-1", path=Path("/wt/1"), branch="task-1/main", base_branch="main", project_id="summitflow"),
-        SimpleNamespace(task_id="task-2", path=Path("/wt/2"), branch="task-2/main", base_branch="main", project_id="summitflow"),
+        _make_existing_worktree(tmp_path, "task-1", "summitflow"),
+        _make_existing_worktree(tmp_path, "task-2", "summitflow"),
     ]
 
     with (
         patch("cli.commands.cleanup._get_managed_repos", return_value=repo_paths),
         patch("cli.commands.cleanup.get_project_id", return_value=None),
         patch("cli.commands.cleanup.get_stale_checkpoints", side_effect=[[], []]),
-        patch("cli.lib.quick_snapshots.find_snapshot_residue", return_value=[]),
+        patch("cli.commands.cleanup.find_snapshot_residue", return_value=[]),
         patch(
             "cli.commands.cleanup.build_repo_workspace_summary",
             side_effect=[
@@ -103,17 +115,17 @@ def test_build_cleanup_status_payload_aggregates_repo_hygiene() -> None:
     assert payload["total"] == 2
 
 
-def test_cleanup_status_compact_reports_cross_repo_summary() -> None:
+def test_cleanup_status_compact_reports_cross_repo_summary(tmp_path: Path) -> None:
     repo_paths = [Path("/repos/summitflow"), Path("/repos/agent-hub")]
     summitflow_worktrees = [
-        SimpleNamespace(task_id="task-1", path=Path("/wt/1"), branch="task-1/main", base_branch="main", project_id="summitflow"),
+        _make_existing_worktree(tmp_path, "task-1", "summitflow"),
     ]
 
     with (
         patch("cli.commands.cleanup._get_managed_repos", return_value=repo_paths),
         patch("cli.commands.cleanup.get_project_id", return_value=None),
         patch("cli.commands.cleanup.get_stale_checkpoints", side_effect=[[], []]),
-        patch("cli.lib.quick_snapshots.find_snapshot_residue", return_value=[]),
+        patch("cli.commands.cleanup.find_snapshot_residue", return_value=[]),
         patch(
             "cli.commands.cleanup.build_repo_workspace_summary",
             side_effect=[
@@ -168,21 +180,15 @@ def test_cleanup_status_compact_reports_cross_repo_summary() -> None:
     assert "agent-hub clean" in result.output
 
 
-def test_cleanup_status_routes_missing_task_merge_candidates_to_review() -> None:
+def test_cleanup_status_routes_missing_task_merge_candidates_to_review(tmp_path: Path) -> None:
     repo_paths = [Path("/repos/agent-hub")]
-    worktree = SimpleNamespace(
-        task_id="task-missing",
-        path=Path("/wt/missing"),
-        branch="task-missing/main",
-        base_branch="main",
-        project_id="agent-hub",
-    )
+    worktree = _make_existing_worktree(tmp_path, "task-missing", "agent-hub")
 
     with (
         patch("cli.commands.cleanup._get_managed_repos", return_value=repo_paths),
         patch("cli.commands.cleanup.get_project_id", return_value="agent-hub"),
         patch("cli.commands.cleanup.get_stale_checkpoints", return_value=[]),
-        patch("cli.lib.quick_snapshots.find_snapshot_residue", return_value=[]),
+        patch("cli.commands.cleanup.find_snapshot_residue", return_value=[]),
         patch(
             "cli.commands.cleanup.build_repo_workspace_summary",
             return_value=SimpleNamespace(
@@ -310,7 +316,7 @@ def test_cleanup_status_counts_stale_checkpoints_as_residue() -> None:
         patch("cli.commands.cleanup._get_managed_repos", return_value=repo_paths),
         patch("cli.commands.cleanup.get_project_id", return_value="summitflow"),
         patch("cli.commands.cleanup.get_stale_checkpoints", return_value=[SimpleNamespace(task_id="task-stale")]),
-        patch("cli.lib.quick_snapshots.find_snapshot_residue", return_value=[]),
+        patch("cli.commands.cleanup.find_snapshot_residue", return_value=[]),
         patch(
             "cli.commands.cleanup.build_repo_workspace_summary",
             return_value=SimpleNamespace(
@@ -339,10 +345,7 @@ def test_cleanup_status_counts_snapshot_residue() -> None:
         patch("cli.commands.cleanup._get_managed_repos", return_value=repo_paths),
         patch("cli.commands.cleanup.get_project_id", return_value="summitflow"),
         patch("cli.commands.cleanup.get_stale_checkpoints", return_value=[]),
-        patch(
-            "cli.lib.quick_snapshots.find_snapshot_residue",
-            return_value=[SimpleNamespace(), SimpleNamespace()],
-        ),
+        patch("cli.commands.cleanup.find_snapshot_residue", return_value=[SimpleNamespace(), SimpleNamespace()]),
         patch(
             "cli.commands.cleanup.build_repo_workspace_summary",
             return_value=SimpleNamespace(
@@ -384,21 +387,23 @@ def test_cleanup_worktrees_auto_prunes_git_residue() -> None:
         patch("cli.commands.cleanup.get_project_id", return_value="agent-hub"),
         patch("cli.commands.cleanup._iter_target_repos", return_value=[Path("/repos/agent-hub")]),
         patch("cli.commands.cleanup.get_active_worktrees", return_value=[worktree]),
-        patch("cli.commands.cleanup._analyze_and_display", return_value=([analysis], SimpleNamespace(needs_merge=[], safe_to_delete=[analysis]))),
-        patch("cli.commands.cleanup.execute_cleanup") as mock_execute,
-        patch("cli.commands.cleanup.prune_worktree_registrations") as mock_prune_worktrees,
-        patch("cli.commands.cleanup.prune_prunable_task_branches", return_value=["task-1/main", "task-2/main"]) as mock_prune_branches,
-        patch("cli.commands.cleanup.prune_equivalent_orphan_task_branches", return_value=["task-3/main"]) as mock_prune_equivalent,
-        patch("cli.commands.cleanup.prune_closed_orphan_task_branches", return_value=["task-3/main"]) as mock_prune_closed,
+        patch(
+            "cli.commands.cleanup.analyze_and_display",
+            return_value=([analysis], SimpleNamespace(needs_merge=[], safe_to_delete=[analysis])),
+        ),
+        patch(
+            "cli.commands.cleanup_handlers.execute_cleanup",
+            return_value=SimpleNamespace(cleaned=1, skipped=0, errors=0),
+        ),
+        patch(
+            "cli.commands.cleanup_handlers.cleanup_safe_git_residue",
+            return_value=(1, 2, 1, 1),
+        ) as mock_cleanup_residue,
     ):
-        mock_execute.return_value = SimpleNamespace(cleaned=1, skipped=0, errors=0)
         result = runner.invoke(app, ["worktrees", "--auto"])
 
     assert result.exit_code == 0
-    mock_prune_worktrees.assert_called_once_with(Path("/repos/agent-hub"))
-    mock_prune_branches.assert_called_once_with(Path("/repos/agent-hub"))
-    mock_prune_equivalent.assert_called_once_with(Path("/repos/agent-hub"))
-    mock_prune_closed.assert_called_once_with(Path("/repos/agent-hub"))
+    mock_cleanup_residue.assert_called_once_with([Path("/repos/agent-hub")], False)
     assert "Pruned git worktree registrations in 1 repo(s)" in result.output
     assert "Pruned merged orphan task branches: 2" in result.output
     assert "Pruned equivalent orphan task branches: 1" in result.output
@@ -410,15 +415,12 @@ def test_cleanup_worktrees_auto_prunes_git_residue_without_worktrees() -> None:
         patch("cli.commands.cleanup.get_project_id", return_value="agent-hub"),
         patch("cli.commands.cleanup._iter_target_repos", return_value=[Path("/repos/agent-hub")]),
         patch("cli.commands.cleanup.get_active_worktrees", return_value=[]),
-        patch("cli.commands.cleanup.prune_worktree_registrations") as mock_prune_regs,
-        patch("cli.commands.cleanup.prune_prunable_task_branches", return_value=["task-1/main", "task-2/main"]),
-        patch("cli.commands.cleanup.prune_equivalent_orphan_task_branches", return_value=["task-3/main"]),
-        patch("cli.commands.cleanup.prune_closed_orphan_task_branches", return_value=["task-3/main"]),
+        patch("cli.commands.cleanup.cleanup_safe_git_residue", return_value=(1, 2, 1, 1)) as mock_cleanup_residue,
     ):
         result = runner.invoke(app, ["worktrees", "--auto"])
 
     assert result.exit_code == 0
-    mock_prune_regs.assert_called_once_with(Path("/repos/agent-hub"))
+    mock_cleanup_residue.assert_called_once_with([Path("/repos/agent-hub")], False)
     assert "No worktrees found" in result.output
     assert "Pruned git worktree registrations in 1 repo(s)" in result.output
     assert "Pruned merged orphan task branches: 2" in result.output
@@ -540,14 +542,14 @@ def test_cleanup_salvage_recovers_missing_task_orphan_branch() -> None:
                 ),
             ],
         ),
-        patch("cli.commands.cleanup._get_branch_subject", return_value="Refactor storage helper"),
+        patch("cli.commands.cleanup_salvage.get_branch_subject", return_value="Refactor storage helper"),
         patch(
-            "cli.commands.cleanup.task_store.create_task",
+            "cli.commands.cleanup_salvage.task_store.create_task",
             return_value={"id": "task-24310aaf"},
         ) as mock_create_task,
-        patch("cli.commands.cleanup.task_store.update_task") as mock_update_task,
+        patch("cli.commands.cleanup_salvage.task_store.update_task") as mock_update_task,
         patch(
-            "cli.commands.cleanup.create_worktree",
+            "cli.commands.cleanup_salvage.create_worktree",
             return_value=SimpleNamespace(path=Path("/wt/task-24310aaf")),
         ) as mock_create_worktree,
     ):
@@ -611,17 +613,17 @@ def test_cleanup_salvage_rolls_back_task_if_worktree_creation_fails() -> None:
                 ),
             ],
         ),
-        patch("cli.commands.cleanup._get_branch_subject", return_value="Refactor storage helper"),
+        patch("cli.commands.cleanup_salvage.get_branch_subject", return_value="Refactor storage helper"),
         patch(
-            "cli.commands.cleanup.task_store.create_task",
+            "cli.commands.cleanup_salvage.task_store.create_task",
             return_value={"id": "task-24310aaf"},
         ),
-        patch("cli.commands.cleanup.task_store.update_task"),
+        patch("cli.commands.cleanup_salvage.task_store.update_task"),
         patch(
-            "cli.commands.cleanup.create_worktree",
+            "cli.commands.cleanup_salvage.create_worktree",
             side_effect=RuntimeError("worktree add failed"),
         ),
-        patch("cli.commands.cleanup.task_store.delete_task") as mock_delete_task,
+        patch("cli.commands.cleanup_salvage.task_store.delete_task") as mock_delete_task,
     ):
         result = runner.invoke(app, ["salvage", "task-24310aaf", "--all"])
 
@@ -639,7 +641,7 @@ def test_build_cleanup_status_payload_respects_project_override() -> None:
     with (
         patch("cli.commands.cleanup._get_managed_repos", return_value=repo_paths),
         patch("cli.commands.cleanup.get_stale_checkpoints", return_value=[]),
-        patch("cli.lib.quick_snapshots.find_snapshot_residue", return_value=[]),
+        patch("cli.commands.cleanup.find_snapshot_residue", return_value=[]),
         patch(
             "cli.commands.cleanup.build_repo_workspace_summary",
             return_value=SimpleNamespace(
@@ -659,3 +661,72 @@ def test_build_cleanup_status_payload_respects_project_override() -> None:
 
     assert payload["summary"]["repos"] == 1
     assert payload["repositories"][0]["project_id"] == "agent-hub"
+
+
+def test_build_cleanup_status_payload_skips_missing_worktrees(tmp_path) -> None:
+    repo_path = Path("/repos/terminal")
+    existing_path = tmp_path / "task-live"
+    existing_path.mkdir()
+    existing_worktree = SimpleNamespace(
+        task_id="task-live",
+        path=existing_path,
+        branch="task-live/main",
+        base_branch="main",
+        project_id="terminal",
+    )
+    missing_worktree = SimpleNamespace(
+        task_id="task-missing",
+        path=tmp_path / "task-missing",
+        branch="task-missing/main",
+        base_branch="main",
+        project_id="terminal",
+    )
+
+    with (
+        patch("cli.commands.cleanup._get_managed_repos", return_value=[repo_path]),
+        patch("cli.commands.cleanup.get_project_id", return_value="terminal"),
+        patch("cli.commands.cleanup.get_stale_checkpoints", return_value=[]),
+        patch("cli.commands.cleanup.find_snapshot_residue", return_value=[]),
+        patch(
+            "cli.commands.cleanup.build_repo_workspace_summary",
+            return_value=SimpleNamespace(
+                active_worktrees=1,
+                orphan_branches=0,
+                prunable_branches=0,
+                worktree_task_ids=["task-live"],
+                orphan_branch_names=[],
+                prunable_branch_names=[],
+                salvage_task_ids=[],
+                review_orphan_task_ids=[],
+            ),
+        ),
+        patch(
+            "cli.commands.cleanup.get_active_worktrees",
+            side_effect=[
+                [existing_worktree, missing_worktree],
+                [existing_worktree, missing_worktree],
+            ],
+        ),
+        patch("cli.commands.cleanup.has_uncommitted_changes", return_value=False),
+        patch(
+            "cli.commands.cleanup.analyze_worktree",
+            return_value=SimpleNamespace(
+                worktree=existing_worktree,
+                action=CleanupAction.SAFE_DELETE,
+                task_status="pending",
+            ),
+        ) as mock_analyze,
+    ):
+        payload = build_cleanup_status_payload(all_projects=False)
+
+    assert payload["total"] == 1
+    assert payload["worktrees"] == [
+        {
+            "task_id": "task-live",
+            "path": str(existing_path),
+            "branch": "task-live/main",
+            "base_branch": "main",
+            "project_id": "terminal",
+        }
+    ]
+    assert mock_analyze.call_count == 1

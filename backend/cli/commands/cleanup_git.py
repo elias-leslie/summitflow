@@ -53,7 +53,7 @@ def get_commits_ahead_behind(worktree_path: Path, base_branch: str = "main") -> 
         behind = int(result.stdout.strip()) if result.returncode == 0 else 0
 
         return ahead, behind
-    except (subprocess.CalledProcessError, ValueError):
+    except (subprocess.CalledProcessError, ValueError, OSError):
         return 0, 0
 
 
@@ -102,7 +102,7 @@ def has_merge_conflicts(worktree_path: Path, base_branch: str = "main") -> bool:
         run_git(["merge", "--abort"], cwd=worktree_path, check=False)
 
         return has_conflict
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, OSError):
         return False
 
 
@@ -111,7 +111,7 @@ def has_uncommitted_changes(worktree_path: Path) -> bool:
     try:
         result = run_git(["status", "--porcelain"], cwd=worktree_path, check=False)
         return bool(result.stdout.strip())
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, OSError):
         return False
 
 
@@ -129,7 +129,7 @@ def get_last_commit_age_days(worktree_path: Path) -> int | None:
         commit_time = datetime.fromtimestamp(timestamp, tz=UTC)
         age = datetime.now(UTC) - commit_time
         return age.days
-    except (subprocess.CalledProcessError, ValueError):
+    except (subprocess.CalledProcessError, ValueError, OSError):
         return None
 
 
@@ -149,5 +149,5 @@ def is_already_merged(worktree_path: Path, base_branch: str = "main") -> bool:
             check=False,
         )
         return result.returncode == 0
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, OSError):
         return False
