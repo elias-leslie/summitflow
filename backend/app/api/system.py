@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from ..services.resource_monitor import (
     get_cpu_usage,
     get_disk_usage,
+    get_disk_usages,
     get_memory_usage,
 )
 from ..storage import maintenance_runs as maintenance_store
@@ -23,6 +24,8 @@ MONITORED_MAINTENANCE_WORKFLOWS = ("daily_maintenance", "scheduled_backups")
 class DiskUsageResponse(BaseModel):
     """Disk usage information."""
 
+    label: str | None = None
+    mount_path: str | None = None
     total_gb: float
     used_gb: float
     free_gb: float
@@ -52,6 +55,7 @@ class ResourcesResponse(BaseModel):
     """System resources response."""
 
     disk: DiskUsageResponse
+    disks: list[DiskUsageResponse] = Field(default_factory=list)
     memory: MemoryUsageResponse
     cpu: CpuUsageResponse
     timestamp: datetime = Field(
@@ -90,7 +94,8 @@ def get_system_resources() -> ResourcesResponse:
     """
     try:
         # Get resource statistics
-        disk = get_disk_usage()
+        disks = get_disk_usages()
+        disk = next((disk for disk in disks if disk["mount_path"] == "/"), get_disk_usage())
         memory = get_memory_usage()
         cpu = get_cpu_usage()
 
@@ -99,6 +104,7 @@ def get_system_resources() -> ResourcesResponse:
 
         return ResourcesResponse(
             disk=DiskUsageResponse(**disk),
+            disks=[DiskUsageResponse(**item) for item in disks],
             memory=MemoryUsageResponse(**memory),
             cpu=CpuUsageResponse(
                 percent_used=cpu["percent_used"],

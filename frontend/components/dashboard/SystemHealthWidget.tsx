@@ -8,6 +8,16 @@ interface SystemHealthWidgetProps {
   className?: string
 }
 
+function formatDiskSize(gb: number): string {
+  if (gb >= 100) {
+    return `${Math.round(gb)}G`
+  }
+  if (gb >= 10) {
+    return `${gb.toFixed(1)}G`
+  }
+  return `${gb.toFixed(1)}G`
+}
+
 const STATUS_COLORS = {
   ok: { bar: 'bg-neon-cyan', text: 'text-neon-cyan', glow: '0 0 8px rgba(0, 245, 255, 0.3)' },
   warning: { bar: 'bg-amber-400', text: 'text-amber-400', glow: '0 0 8px rgba(251, 191, 36, 0.3)' },
@@ -47,32 +57,55 @@ export function SystemHealthWidget({ className }: SystemHealthWidgetProps) {
     { label: 'RAM', percent: data.memory.percent_used, status: data.memory.status },
     { label: 'Disk', percent: data.disk.percent_used, status: data.disk.status },
   ] as const
+  const monitoredDisks = data.disks?.length ? data.disks : [data.disk]
 
   return (
-    <div className={cn('flex flex-wrap items-center gap-3', className)}>
-      {metrics.map((m) => (
-        <div key={m.label} className="flex items-center gap-1.5" title={`${m.label}: ${m.percent}%`}>
-          <span className="text-2xs text-slate-500 font-medium tracking-wide">{m.label}</span>
-          <div className="w-16 sm:w-20 h-1.5 bg-slate-800 rounded-full overflow-hidden ring-1 ring-white/[0.03]">
-            <div
-              className={cn('h-full rounded-full transition-all duration-700', STATUS_COLORS[m.status].bar)}
-              style={{ width: `${Math.min(m.percent, 100)}%`, boxShadow: STATUS_COLORS[m.status].glow }}
-            />
+    <div className={cn('space-y-2.5', className)}>
+      <div className="flex flex-wrap items-center gap-3">
+        {metrics.map((m) => (
+          <div key={m.label} className="flex items-center gap-1.5" title={`${m.label}: ${m.percent}%`}>
+            <span className="text-2xs text-slate-500 font-medium tracking-wide">{m.label}</span>
+            <div className="w-16 sm:w-20 h-1.5 bg-slate-800 rounded-full overflow-hidden ring-1 ring-white/[0.03]">
+              <div
+                className={cn('h-full rounded-full transition-all duration-700', STATUS_COLORS[m.status].bar)}
+                style={{ width: `${Math.min(m.percent, 100)}%`, boxShadow: STATUS_COLORS[m.status].glow }}
+              />
+            </div>
+            <span className={cn('text-2xs font-mono tabular-nums', STATUS_COLORS[m.status].text)}>
+              {m.percent}%
+            </span>
           </div>
-          <span className={cn('text-2xs font-mono tabular-nums', STATUS_COLORS[m.status].text)}>
-            {m.percent}%
-          </span>
-        </div>
-      ))}
-      <button
-        type="button"
-        onClick={() => refetch()}
-        disabled={isFetching}
-        className="p-1 rounded text-slate-600 hover:text-slate-400 transition-colors"
-        aria-label="Refresh system status"
-      >
-        <RefreshCw className={cn('w-3 h-3', isFetching && 'animate-spin')} />
-      </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => refetch()}
+          disabled={isFetching}
+          className="p-1 rounded text-slate-600 hover:text-slate-400 transition-colors"
+          aria-label="Refresh system status"
+        >
+          <RefreshCw className={cn('w-3 h-3', isFetching && 'animate-spin')} />
+        </button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        {monitoredDisks.map((disk) => (
+          <div
+            key={disk.mount_path ?? disk.label ?? 'disk'}
+            className="flex items-center gap-2 rounded-lg border border-white/[0.06] bg-slate-900/45 px-2.5 py-1.5"
+          >
+            <span className="text-2xs font-medium text-slate-300">{disk.label ?? 'Disk'}</span>
+            {disk.mount_path && (
+              <span className="text-2xs font-mono text-slate-500">{disk.mount_path}</span>
+            )}
+            <span className={cn('text-2xs font-mono tabular-nums', STATUS_COLORS[disk.status].text)}>
+              {Math.round(disk.percent_used)}%
+            </span>
+            <span className="text-2xs font-mono tabular-nums text-slate-500">
+              {formatDiskSize(disk.used_gb)} / {formatDiskSize(disk.total_gb)}
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

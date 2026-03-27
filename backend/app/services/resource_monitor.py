@@ -7,15 +7,24 @@ Provides functions to monitor:
 - Database connection pool statistics
 """
 
+import os
 import shutil
 from typing import TypedDict
 
 import psutil
 
+MONITORED_DISK_PATHS = ("/", "/srv/workspaces")
+DISK_LABELS = {
+    "/": "Root",
+    "/srv/workspaces": "Workspaces",
+}
+
 
 class DiskUsageDict(TypedDict):
     """Disk usage statistics."""
 
+    label: str
+    mount_path: str
     total_gb: float
     used_gb: float
     free_gb: float
@@ -41,18 +50,20 @@ class CPUUsageDict(TypedDict):
     status: str
 
 
-def get_disk_usage() -> DiskUsageDict:
-    """Get disk usage statistics for root filesystem.
+def get_disk_usage(path: str = "/") -> DiskUsageDict:
+    """Get disk usage statistics for a filesystem mount.
 
     Returns:
         Dict containing:
+            - label: Human-friendly mount label
+            - mount_path: Mounted filesystem path
             - total_gb: Total disk space in GB
             - used_gb: Used disk space in GB
             - free_gb: Free disk space in GB
             - percent_used: Percentage of disk space used
             - status: "ok" | "warning" | "critical"
     """
-    usage = shutil.disk_usage("/")
+    usage = shutil.disk_usage(path)
 
     # Convert bytes to GB
     total_gb = usage.total / (1024**3)
@@ -69,12 +80,24 @@ def get_disk_usage() -> DiskUsageDict:
         status = "ok"
 
     return {
+        "label": DISK_LABELS.get(path, path),
+        "mount_path": path,
         "total_gb": round(total_gb, 2),
         "used_gb": round(used_gb, 2),
         "free_gb": round(free_gb, 2),
         "percent_used": round(percent_used, 2),
         "status": status,
     }
+
+
+def get_disk_usages() -> list[DiskUsageDict]:
+    """Get disk usage statistics for the monitored mounted filesystems."""
+    disks: list[DiskUsageDict] = []
+    for path in MONITORED_DISK_PATHS:
+        if path != "/" and not os.path.ismount(path):
+            continue
+        disks.append(get_disk_usage(path))
+    return disks
 
 
 def get_memory_usage() -> MemoryUsageDict:

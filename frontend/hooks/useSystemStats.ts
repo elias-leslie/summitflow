@@ -5,6 +5,8 @@ import { fetchWithErrorHandling } from '@/lib/api'
 import { POLL_FAST, STALE_FAST } from '@/lib/polling'
 
 interface DiskUsage {
+    label?: string
+    mount_path?: string
     total_gb: number
     used_gb: number
     free_gb: number
@@ -28,6 +30,7 @@ interface CpuUsage {
 
 export interface SystemStats {
     disk: DiskUsage
+    disks?: DiskUsage[]
     memory: MemoryUsage
     cpu: CpuUsage
     timestamp: string

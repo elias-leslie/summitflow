@@ -46,6 +46,26 @@ describe('SystemHealthWidget', () => {
           percent_used: 24,
           status: 'ok',
         },
+        disks: [
+          {
+            label: 'Root',
+            mount_path: '/',
+            total_gb: 512,
+            used_gb: 121,
+            free_gb: 391,
+            percent_used: 24,
+            status: 'ok',
+          },
+          {
+            label: 'Workspaces',
+            mount_path: '/srv/workspaces',
+            total_gb: 200,
+            used_gb: 8,
+            free_gb: 192,
+            percent_used: 4,
+            status: 'ok',
+          },
+        ],
         timestamp: '2026-03-11T15:30:00Z',
       },
       isLoading: false,
@@ -60,6 +80,8 @@ describe('SystemHealthWidget', () => {
     expect(screen.getByText('RAM')).toBeInTheDocument()
     expect(screen.getByText('Disk')).toBeInTheDocument()
     expect(screen.getByText('12%')).toBeInTheDocument()
+    expect(screen.getByText('Workspaces')).toBeInTheDocument()
+    expect(screen.getByText('/srv/workspaces')).toBeInTheDocument()
   })
 
   it('shows unavailable state when no data and no error', () => {
