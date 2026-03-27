@@ -11,7 +11,7 @@ import contextlib
 import subprocess
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from ..logging_config import get_logger
@@ -24,12 +24,6 @@ router = APIRouter()
 # ─── Models ──────────────────────────────────────────────────────
 
 
-class SnapshotUsageResponse(BaseModel):
-    total_bytes: int
-    exclusive_bytes: int
-    shared_bytes: int
-
-
 class SnapshotResponse(BaseModel):
     id: str
     name: str | None = None
@@ -40,7 +34,7 @@ class SnapshotResponse(BaseModel):
     head_oid: str | None = None
     created_at: str
     source: str = "manual"
-    usage: SnapshotUsageResponse | None = None
+    usage: dict[str, int] | None = None
 
 
 class ScopeResponse(BaseModel):
@@ -79,18 +73,9 @@ class SnapshotSummaryResponse(BaseModel):
     autosnap_timer_active: bool
 
 
-class SnapRequest(BaseModel):
+class SnapshotRequest(BaseModel):
     project_id: str
     name: str | None = None
-
-
-class RecoverRequest(BaseModel):
-    project_id: str
-    name: str | None = None
-
-
-class PruneRequest(BaseModel):
-    dry_run: bool = True
 
 
 # ─── Helpers ─────────────────────────────────────────────────────
@@ -98,13 +83,13 @@ class PruneRequest(BaseModel):
 
 def _snapshot_to_response(snap: Any, usage: Any | None = None) -> SnapshotResponse:
     """Convert a QuickSnapshot to API response."""
-    usage_resp = None
+    usage_dict = None
     if usage is not None:
-        usage_resp = SnapshotUsageResponse(
-            total_bytes=usage.total_bytes,
-            exclusive_bytes=usage.exclusive_bytes,
-            shared_bytes=usage.shared_bytes,
-        )
+        usage_dict = {
+            "total_bytes": usage.total_bytes,
+            "exclusive_bytes": usage.exclusive_bytes,
+            "shared_bytes": usage.shared_bytes,
+        }
     return SnapshotResponse(
         id=snap.id,
         name=snap.name,
@@ -115,7 +100,7 @@ def _snapshot_to_response(snap: Any, usage: Any | None = None) -> SnapshotRespon
         head_oid=snap.head_oid,
         created_at=snap.created_at,
         source=snap.source,
-        usage=usage_resp,
+        usage=usage_dict,
     )
 
 
@@ -133,11 +118,7 @@ def _is_timer_active() -> bool:
 
 def _get_cli_libs() -> tuple[Any, ...]:
     """Lazy-import CLI libraries to avoid import-time side effects."""
-    from cli.lib.autosnapshot import (
-        DEFAULT_POLICY,
-        enumerate_snapshot_scopes,
-        prune_all,
-    )
+    from cli.lib.autosnapshot import DEFAULT_POLICY, enumerate_snapshot_scopes, prune_all
     from cli.lib.quick_snapshots import (
         capture_snapshot,
         list_snapshots,
@@ -145,11 +126,8 @@ def _get_cli_libs() -> tuple[Any, ...]:
         recover_snapshot,
     )
 
-    return (
-        capture_snapshot, list_snapshots,
-        recover_snapshot, load_manifest,
-        DEFAULT_POLICY, enumerate_snapshot_scopes, prune_all,
-    )
+    return (capture_snapshot, list_snapshots, recover_snapshot, load_manifest,
+            DEFAULT_POLICY, enumerate_snapshot_scopes, prune_all)
 
 
 # ─── Endpoints ───────────────────────────────────────────────────
@@ -158,11 +136,7 @@ def _get_cli_libs() -> tuple[Any, ...]:
 @router.get("/snapshots/summary", response_model=SnapshotSummaryResponse)
 async def snapshot_summary(project_id: str | None = None) -> SnapshotSummaryResponse:
     """Aggregate snapshot summary with policy and timer status."""
-    (
-        _, _,
-        _, load_manifest,
-        DEFAULT_POLICY, enumerate_snapshot_scopes, _,
-    ) = _get_cli_libs()
+    _, _, _, load_manifest, DEFAULT_POLICY, enumerate_snapshot_scopes, _ = _get_cli_libs()
 
     scopes = list(enumerate_snapshot_scopes(include_archived=True))
     if project_id:
@@ -175,8 +149,7 @@ async def snapshot_summary(project_id: str | None = None) -> SnapshotSummaryResp
     by_scope_type: dict[str, int] = {}
 
     for pid, scope, scope_state in scopes:
-        entries = load_manifest(pid, scope)
-        for snap in entries:
+        for snap in load_manifest(pid, scope):
             total_snapshots += 1
             if scope_state == "active":
                 active_snapshot_count += 1
@@ -186,7 +159,6 @@ async def snapshot_summary(project_id: str | None = None) -> SnapshotSummaryResp
             by_source[src] = by_source.get(src, 0) + 1
             by_scope_type[snap.scope_type] = by_scope_type.get(snap.scope_type, 0) + 1
 
-    policy = DEFAULT_POLICY
     return SnapshotSummaryResponse(
         total_snapshots=total_snapshots,
         total_usage_bytes=0,
@@ -197,7 +169,7 @@ async def snapshot_summary(project_id: str | None = None) -> SnapshotSummaryResp
         archived_snapshot_count=archived_snapshot_count,
         active_scope_count=sum(1 for _, _, state in scopes if state == "active"),
         archived_scope_count=sum(1 for _, _, state in scopes if state == "archived"),
-        policy=PolicyResponse(**policy.to_dict()),
+        policy=PolicyResponse(**DEFAULT_POLICY.to_dict()),
         autosnap_timer_active=_is_timer_active(),
     )
 
@@ -208,11 +180,7 @@ async def snapshot_scopes(
     include_archived: bool = False,
 ) -> list[ScopeResponse]:
     """List all snapshot scopes with counts and usage."""
-    (
-        _, _,
-        _, load_manifest,
-        _, enumerate_snapshot_scopes, _,
-    ) = _get_cli_libs()
+    _, _, _, load_manifest, _, enumerate_snapshot_scopes, _ = _get_cli_libs()
 
     scopes = list(enumerate_snapshot_scopes(include_archived=include_archived))
     if project_id:
@@ -223,7 +191,6 @@ async def snapshot_scopes(
         entries = load_manifest(pid, scope)
         if not entries:
             continue
-
         timestamps = [e.created_at for e in entries if e.created_at]
         results.append(ScopeResponse(
             project_id=pid,
@@ -247,11 +214,7 @@ async def list_all_snapshots(
     include_archived: bool = False,
 ) -> list[SnapshotResponse]:
     """List all snapshots, optionally filtered by project and scope type."""
-    (
-        _, _,
-        _, load_manifest,
-        _, enumerate_snapshot_scopes, _,
-    ) = _get_cli_libs()
+    _, _, _, load_manifest, _, enumerate_snapshot_scopes, _ = _get_cli_libs()
 
     scopes = list(enumerate_snapshot_scopes(include_archived=include_archived))
     if project_id:
@@ -261,13 +224,7 @@ async def list_all_snapshots(
     if scope_name:
         scopes = [s for s in scopes if s[1].scope_name == scope_name]
 
-    results: list[SnapshotResponse] = []
-    for pid, scope, _ in scopes:
-        entries = load_manifest(pid, scope)
-        for snap in entries:
-            results.append(_snapshot_to_response(snap))
-
-    # Sort newest first
+    results = [_snapshot_to_response(snap) for pid, scope, _ in scopes for snap in load_manifest(pid, scope)]
     results.sort(key=lambda s: s.created_at, reverse=True)
     return results
 
@@ -281,19 +238,17 @@ async def snapshot_policy() -> PolicyResponse:
 
 
 @router.post("/snapshots/snap", response_model=SnapshotResponse)
-async def create_snapshot(req: SnapRequest) -> SnapshotResponse:
+async def create_snapshot(req: SnapshotRequest) -> SnapshotResponse:
     """Create a manual Btrfs snapshot."""
     from cli.lib.quick_snapshots import capture_snapshot as do_capture
     from cli.lib.quick_snapshots import get_snapshot_usage
     from cli.lib.worktree_paths import get_projects_base_dir
 
     cwd = str(get_projects_base_dir(req.project_id))
-
     try:
         snap = do_capture(name=req.name, project_id=req.project_id, cwd=cwd)
     except Exception as e:
         logger.exception("snapshot_create_failed", project_id=req.project_id)
-        from fastapi import HTTPException
         raise HTTPException(status_code=500, detail=str(e)) from None
 
     usage = None
@@ -304,7 +259,7 @@ async def create_snapshot(req: SnapRequest) -> SnapshotResponse:
 
 
 @router.post("/snapshots/{snapshot_id}/recover")
-async def recover_snap(snapshot_id: str, req: RecoverRequest) -> dict:
+async def recover_snap(snapshot_id: str, req: SnapshotRequest) -> dict:
     """Recover a snapshot to a sibling scope (non-destructive)."""
     from cli.lib.quick_snapshots import recover_snapshot as do_recover
 
@@ -317,16 +272,16 @@ async def recover_snap(snapshot_id: str, req: RecoverRequest) -> dict:
 
 
 @router.post("/snapshots/prune")
-async def prune_snapshots(req: PruneRequest) -> dict:
+async def prune_snapshots(dry_run: bool = True) -> dict:
     """Run retention pruning across all scopes."""
     from cli.lib.autosnapshot import DEFAULT_POLICY
     from cli.lib.autosnapshot import prune_all as do_prune
 
     try:
-        results = do_prune(policy=DEFAULT_POLICY, dry_run=req.dry_run)
+        results = do_prune(policy=DEFAULT_POLICY, dry_run=dry_run)
         return {
             "ok": True,
-            "dry_run": req.dry_run,
+            "dry_run": dry_run,
             "pruned": results if isinstance(results, int) else len(results) if results else 0,
         }
     except Exception as e:
