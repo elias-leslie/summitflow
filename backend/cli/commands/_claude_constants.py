@@ -8,7 +8,7 @@ from typing import Any
 
 _AGENT_HUB_PROJECT_ID = "agent-hub"
 _DEFAULT_MODEL = "claude-sonnet-4-6"
-_DEFAULT_TIMEOUT_SECONDS = 1800
+_DEFAULT_TIMEOUT_SECONDS = 7200
 _DEFAULT_SOURCE = "st-cli"
 _DEFAULT_MAX_SUBAGENTS = 4
 _ORCHESTRATOR_SOURCE = "st-cli-orchestrator"
@@ -22,6 +22,11 @@ _WORKTREE_PATH_PREFIX = "WORKTREE_PATH:"
 _ORCHESTRATE_TMPDIR_PREFIX = "st-claude-orchestrate-"
 _ORCHESTRATOR_PROMPT_FNAME = "orchestrator_prompt.md"
 _ORCHESTRATOR_AGENTS_FNAME = "orchestrator_agents.json"
+_PATIENCE_NOTE = (
+    "Long Claude runs, especially Opus, may stay in analysis or rate-limit recovery for 30+ "
+    "minutes. Do not redrive early. Use `st session-events <session-id>` and worker progress "
+    "timestamps before deciding a run is stalled."
+)
 
 _WORKER_SUBAGENT_PAYLOAD: dict[str, Any] = {
     _WORKER_SUBAGENT_NAME: {

@@ -15,6 +15,7 @@ from ._claude_constants import (
     _DEFAULT_MAX_SUBAGENTS,
     _DEFAULT_MODEL,
     _DEFAULT_TIMEOUT_SECONDS,
+    _PATIENCE_NOTE,
     OrchestratorTask,
     WorkerDispatch,
 )
@@ -111,7 +112,14 @@ def _commit_and_done_task(spec: WorkerDispatch) -> int:
 # --- CLI commands ---
 
 _StrOpt = lambda flag, help: _Opt(flag, help=help)  # noqa: E731
-_TimeoutArg = Annotated[int, _Opt("--timeout-seconds", min=1, help="Worker timeout in seconds")]
+_TimeoutArg = Annotated[
+    int,
+    _Opt(
+        "--timeout-seconds",
+        min=1,
+        help="Worker timeout in seconds. Defaults to 7200 to allow long-running Opus sessions.",
+    ),
+]
 _ModelArg = Annotated[str, _Opt("--model", help="Claude model override")]
 _MaxSubArg = Annotated[int, _Opt("--max-subagents", min=1, help="Maximum concurrent Claude workers")]
 _ClaimArg = Annotated[bool, _Opt("--claim-if-needed/--no-claim-if-needed", help="Claim the task if unclaimed")]
@@ -149,6 +157,7 @@ def run_task(
         claim_if_needed=claim_if_needed, allow_unready=allow_unready, feedback_text=feedback,
         effort=effort, append_system_prompt=append_system_prompt, skills=skills or [],
     )
+    typer.echo(f"NOTE { _PATIENCE_NOTE }")
     exit_code = run_worker(command=dispatch.command, cwd=dispatch.cwd)
     if exit_code != 0:
         raise typer.Exit(exit_code)
@@ -187,6 +196,7 @@ def run_batch(
         )
         for index, tid in enumerate(task_ids)
     ]
+    typer.echo(f"NOTE { _PATIENCE_NOTE }")
     results = _run_batch_workers(dispatches, max_subagents=max_subagents, stop_on_error=stop_on_error)
     process_batch_results(results, commit_and_done=commit_and_done, commit_fn=_commit_and_done_task)
 
@@ -204,6 +214,7 @@ def orchestrate_tasks(
     skills: _SkillArg = None,
 ) -> None:
     """Run multiple same-project tasks through one Claude orchestrator session."""
+    typer.echo(f"NOTE { _PATIENCE_NOTE }")
     exit_code = execute_orchestrator(
         task_ids=task_ids, model=model, timeout_seconds=timeout_seconds,
         max_subagents=max_subagents, claim_if_needed=claim_if_needed, allow_unready=allow_unready,

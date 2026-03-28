@@ -163,6 +163,34 @@ def test_claude_task_help_mentions_feedback_options() -> None:
     assert result.exit_code == 0
     assert "--feedback-text" in result.output
     assert "--feedback-file" in result.output
+    assert "7200" in result.output
+
+
+def test_claude_task_prints_patience_note(tmp_path: Path) -> None:
+    agent_hub_root = _prepare_agent_hub_root(tmp_path)
+    project_root = tmp_path / "target-project"
+    project_root.mkdir()
+
+    with (
+        patch("cli.commands.claude.STClient") as mock_client_cls,
+        patch(
+            "cli.commands.claude.projects_api",
+            side_effect=[
+                {"id": "vantage", "root_path": str(project_root)},
+                {"id": "agent-hub", "root_path": str(agent_hub_root)},
+            ],
+        ),
+        patch("cli.commands.claude.subprocess.run") as mock_run,
+    ):
+        mock_client = mock_client_cls.return_value
+        mock_client.get_task.return_value = {"id": "task-ui", "project_id": "vantage"}
+        mock_client.validate_ready.return_value = {"ready": True}
+        mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0)
+
+        result = runner.invoke(app, ["task", "task-ui"])
+
+    assert result.exit_code == 0
+    assert "Do not redrive early" in result.output
 
 
 def test_claude_batch_runs_multiple_tasks_and_optional_closeout() -> None:
