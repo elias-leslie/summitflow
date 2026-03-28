@@ -72,12 +72,14 @@ def _run_text_command(*, command: list[str], cwd: Path) -> str:
 
 def _prepare_worker_dispatch(
     *, task_id: str, model: str, timeout_seconds: int, claim_if_needed: bool,
-    allow_unready: bool, feedback_text: str | None, index: int = 0,
+    allow_unready: bool, feedback_text: str | None, effort: str | None,
+    append_system_prompt: str | None, skills: list[str] | None, index: int = 0,
 ) -> WorkerDispatch:
     return prepare_worker_dispatch(
         task_id=task_id, model=model, timeout_seconds=timeout_seconds,
         claim_if_needed=claim_if_needed, allow_unready=allow_unready,
-        feedback_text=feedback_text, index=index,
+        feedback_text=feedback_text, effort=effort, append_system_prompt=append_system_prompt,
+        skills=skills or [], index=index,
         fetch_task_fn=_fetch_task, validate_readiness_fn=_validate_task_readiness,
         resolve_root_fn=_resolve_project_root, resolve_hub_fn=_resolve_agent_hub_paths,
     )
@@ -116,6 +118,15 @@ _ClaimArg = Annotated[bool, _Opt("--claim-if-needed/--no-claim-if-needed", help=
 _UnreadyArg = Annotated[bool, _Opt("--allow-unready", help="Skip execution-readiness validation")]
 _FeedbackText = Annotated[str | None, _Opt("--feedback-text", help="Inline evaluator feedback for a redrive")]
 _FeedbackFile = Annotated[Path | None, _Opt("--feedback-file", help="Read evaluator feedback from a file")]
+_EffortArg = Annotated[str | None, _Opt("--effort", help="Claude effort override (low, medium, high, max)")]
+_AppendSystemPrompt = Annotated[
+    str | None,
+    _Opt("--append-system-prompt", help="Append a system prompt for the Claude session"),
+]
+_SkillArg = Annotated[
+    list[str] | None,
+    _Opt("--skill", help="Claude skill to invoke at session start (repeatable)"),
+]
 
 
 @app.command("task")
@@ -127,12 +138,16 @@ def run_task(
     allow_unready: _UnreadyArg = False,
     feedback_text: _FeedbackText = None,
     feedback_file: _FeedbackFile = None,
+    effort: _EffortArg = None,
+    append_system_prompt: _AppendSystemPrompt = None,
+    skills: _SkillArg = None,
 ) -> None:
     """Run a task through the canonical Agent Hub Claude worker wrapper."""
     feedback = _resolve_feedback_text(feedback_text, feedback_file)
     dispatch = _prepare_worker_dispatch(
         task_id=task_id, model=model, timeout_seconds=timeout_seconds,
         claim_if_needed=claim_if_needed, allow_unready=allow_unready, feedback_text=feedback,
+        effort=effort, append_system_prompt=append_system_prompt, skills=skills or [],
     )
     exit_code = run_worker(command=dispatch.command, cwd=dispatch.cwd)
     if exit_code != 0:
@@ -155,6 +170,9 @@ def run_batch(
     ] = False,
     feedback_text: _FeedbackText = None,
     feedback_file: _FeedbackFile = None,
+    effort: _EffortArg = None,
+    append_system_prompt: _AppendSystemPrompt = None,
+    skills: _SkillArg = None,
 ) -> None:
     """Run multiple tasks through the canonical Claude worker wrapper with bounded parallelism."""
     if not task_ids:
@@ -164,7 +182,8 @@ def run_batch(
         _prepare_worker_dispatch(
             task_id=tid, model=model, timeout_seconds=timeout_seconds,
             claim_if_needed=claim_if_needed, allow_unready=allow_unready,
-            feedback_text=feedback, index=index,
+            feedback_text=feedback, effort=effort, append_system_prompt=append_system_prompt,
+            skills=skills or [], index=index,
         )
         for index, tid in enumerate(task_ids)
     ]
@@ -180,11 +199,15 @@ def orchestrate_tasks(
     max_subagents: _MaxSubArg = _DEFAULT_MAX_SUBAGENTS,
     claim_if_needed: _ClaimArg = True,
     allow_unready: _UnreadyArg = False,
+    effort: _EffortArg = None,
+    append_system_prompt: _AppendSystemPrompt = None,
+    skills: _SkillArg = None,
 ) -> None:
     """Run multiple same-project tasks through one Claude orchestrator session."""
     exit_code = execute_orchestrator(
         task_ids=task_ids, model=model, timeout_seconds=timeout_seconds,
         max_subagents=max_subagents, claim_if_needed=claim_if_needed, allow_unready=allow_unready,
+        effort=effort, append_system_prompt=append_system_prompt, skills=skills or [],
         fetch_task_fn=_fetch_task, prepare_task_fn=_prepare_orchestrator_task,
         resolve_hub_fn=_resolve_agent_hub_paths,
         run_worker_fn=lambda *, command, cwd: run_worker(command=command, cwd=cwd),

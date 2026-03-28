@@ -70,7 +70,7 @@ class Settings(BaseSettings):
         f"http://localhost:{AGENT_HUB_FRONTEND_PORT}",
         # Production
         "https://dev.summitflow.dev",
-        "https://test1.summitflow.dev",
+        "https://mf.summitflow.dev",
         "https://agent.summitflow.dev",
     ]
 

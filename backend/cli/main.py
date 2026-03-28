@@ -149,7 +149,7 @@ PROMPT: prompt list [--global] | get <slug> | create <slug> <name> -f path | upd
         prompt assign <agent> <prompt> <role> [-p N] | unassign <agent> <prompt> | assignments <agent>
         prompt export [slug] [-o file] | import <file> [--dry-run]
 
-MEMORY: memory stats | save <text> [--tier T] | list | search <query> | get <id> | delete <id>
+MEMORY: memory stats | memory status [--scope S --scope-id X --consumer-profile P] | save <text> [--tier T] | list | search <query> | get <id> | delete <id>
         memory tag <id...> [--add-tags T] [--remove-tags T]
 
 FEEDBACK: feedback report <component> <title> [--type T] [--severity S] [--session SID] [--vote-if-match] | feedback search <query>

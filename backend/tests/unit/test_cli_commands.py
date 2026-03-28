@@ -545,6 +545,36 @@ class TestPlanSchemaConsistency:
 
         jsonschema.validate(plan, schema)
 
+    def test_plan_schema_accepts_execution_contract(self) -> None:
+        schema_path = Path(__file__).resolve().parents[2] / "app" / "schemas" / "plan.schema.json"
+        schema = json.loads(schema_path.read_text())
+        plan = {
+            "title": "Execution contract schema smoke",
+            "objective": "Validate runtime-evaluation contract metadata in task plans.",
+            "complexity": "STANDARD",
+            "done_when": ["Schema validation passes"],
+            "execution_contract": {
+                "mode": "runtime_eval_plus_design",
+                "target_urls": ["/"],
+                "user_flows": [
+                    {
+                        "title": "Open the home page",
+                        "actions": ["Visit /"],
+                        "expected_outcomes": ["The hero renders"],
+                    }
+                ],
+                "api_checks": [{"method": "GET", "path": "/api/health", "status": 200}],
+                "design_criteria": {"rubric": ["clarity", "craft"]},
+                "risk_notes": ["Responsive layout can regress during polish."],
+            },
+            "context": {
+                "files_to_modify": ["frontend/src/app/page.tsx"],
+                "testing_strategy": "Use sf-browser to verify the landing page route.",
+            },
+        }
+
+        jsonschema.validate(plan, schema)
+
 
 class TestCreateFromFileErrors:
     """Test error handling for st create --from-file.

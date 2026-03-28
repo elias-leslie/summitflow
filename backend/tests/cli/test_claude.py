@@ -93,6 +93,53 @@ def test_claude_task_passes_feedback_file_contents(tmp_path: Path) -> None:
     assert "Tighten the extraction and keep constants grouped." in command
 
 
+def test_claude_task_passes_effort_skills_and_system_prompt(tmp_path: Path) -> None:
+    agent_hub_root = _prepare_agent_hub_root(tmp_path)
+    project_root = tmp_path / "target-project"
+    project_root.mkdir()
+
+    with (
+        patch("cli.commands.claude.STClient") as mock_client_cls,
+        patch(
+            "cli.commands.claude.projects_api",
+            side_effect=[
+                {"id": "vantage", "root_path": str(project_root)},
+                {"id": "agent-hub", "root_path": str(agent_hub_root)},
+            ],
+        ),
+        patch("cli.commands.claude.subprocess.run") as mock_run,
+    ):
+        mock_client = mock_client_cls.return_value
+        mock_client.get_task.return_value = {"id": "task-ui", "project_id": "vantage"}
+        mock_client.validate_ready.return_value = {"ready": True}
+        mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0)
+
+        result = runner.invoke(
+            app,
+            [
+                "task",
+                "task-ui",
+                "--model",
+                "claude-opus-4-6",
+                "--effort",
+                "max",
+                "--append-system-prompt",
+                "Use /frontend-design before editing.",
+                "--skill",
+                "frontend-design",
+            ],
+        )
+
+    assert result.exit_code == 0
+    command = mock_run.call_args.args[0]
+    assert "--effort" in command
+    assert "max" in command
+    assert "--append-system-prompt" in command
+    assert "Use /frontend-design before editing." in command
+    assert "--skill" in command
+    assert "frontend-design" in command
+
+
 def test_claude_task_blocks_unready_task(tmp_path: Path) -> None:
     with patch("cli.commands.claude.STClient") as mock_client_cls:
         mock_client = mock_client_cls.return_value

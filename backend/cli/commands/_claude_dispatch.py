@@ -151,6 +151,9 @@ def prepare_worker_dispatch(
     claim_if_needed: bool,
     allow_unready: bool,
     feedback_text: str | None,
+    effort: str | None,
+    append_system_prompt: str | None,
+    skills: list[str] | None,
     index: int = 0,
     fetch_task_fn: _FetchFn,
     validate_readiness_fn: Callable,
@@ -174,6 +177,7 @@ def prepare_worker_dispatch(
         project_id=project_id, project_root=project_root, model=model,
         timeout_seconds=timeout_seconds, source=_DEFAULT_SOURCE,
         claim_if_needed=claim_if_needed, feedback_text=feedback_text,
+        effort=effort, append_system_prompt=append_system_prompt, skills=skills,
     )
     return WorkerDispatch(
         index=index, task_id=resolved_task_id, project_id=project_id,
@@ -230,6 +234,9 @@ def execute_orchestrator(
     max_subagents: int,
     claim_if_needed: bool,
     allow_unready: bool,
+    effort: str | None,
+    append_system_prompt: str | None,
+    skills: list[str] | None,
     fetch_task_fn: _FetchFn,
     prepare_task_fn: Callable,
     resolve_hub_fn: Callable,
@@ -267,5 +274,6 @@ def execute_orchestrator(
             batch_task_ids=[task.task_id for task in tasks],
             project_id=project_id, project_root=project_root,
             model=model, timeout_seconds=timeout_seconds,
+            effort=effort, append_system_prompt=append_system_prompt, skills=skills,
         )
         return run_worker_fn(command=command, cwd=script_path.parent.parent)

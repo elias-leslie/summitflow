@@ -10,11 +10,13 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" <<-EOSQL
   CREATE USER summitflow_app WITH PASSWORD '${SF_DB_PASSWORD:-changeme}';
   CREATE USER agent_hub_app WITH PASSWORD '${AH_DB_PASSWORD:-changeme}';
   CREATE USER portfolio_app WITH PASSWORD '${PA_DB_PASSWORD:-changeme}';
+  CREATE USER vantage_app WITH PASSWORD '${VA_DB_PASSWORD:-changeme}';
 
   -- Create project databases owned by their app users
   CREATE DATABASE summitflow OWNER summitflow_app;
   CREATE DATABASE agent_hub OWNER agent_hub_app;
   CREATE DATABASE portfolio_ai OWNER portfolio_app;
+  CREATE DATABASE vantage OWNER vantage_app;
   CREATE DATABASE hatchet;
 
   -- Test databases (for pytest)
@@ -24,7 +26,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" <<-EOSQL
 EOSQL
 
 # Create extensions as superuser (app users can't do this)
-for db in summitflow agent_hub portfolio_ai summitflow_test agent_hub_test portfolio_ai_test; do
+for db in summitflow agent_hub portfolio_ai vantage summitflow_test agent_hub_test portfolio_ai_test; do
   psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" -d "$db" -c \
     "CREATE EXTENSION IF NOT EXISTS vector; CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";" 2>/dev/null || true
 done

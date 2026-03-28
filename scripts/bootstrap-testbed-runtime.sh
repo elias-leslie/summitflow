@@ -16,7 +16,7 @@ BACKEND_APP_DIR="$BACKEND_DIR/app"
 VENV_DIR="$BACKEND_DIR/.venv"
 SYSTEMD_DIR="$HOME/.config/systemd/user"
 FRONTEND_URL="https://${PROJECT_ID}.summitflow.dev"
-API_URL="https://${PROJECT_ID}api.summitflow.dev"
+API_URL="$FRONTEND_URL"
 PATH_PREFIX="$HOME/.local/bin:$VENV_DIR/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 log() {
@@ -95,6 +95,64 @@ with psycopg.connect(db_url) as conn, conn.cursor() as cur:
             (f"baseline:{project_id}", "Runtime shell baseline"),
         )
     conn.commit()
+PY
+}
+
+ensure_testbed_database() {
+    local db_env="${PROJECT_ID^^}_DB_URL"
+    local db_url="${!db_env:-}"
+    local admin_url="${POSTGRES_ADMIN_URL:-${DATABASE_ADMIN_URL:-}}"
+    [ -n "$db_url" ] || return 0
+    [ -n "$admin_url" ] || return 0
+
+    export PROJECT_ID TESTBED_DB_URL="$db_url" TESTBED_DB_ADMIN_URL="$admin_url"
+    "$VENV_DIR/bin/python" - <<'PY'
+from __future__ import annotations
+
+import os
+from urllib.parse import urlsplit, urlunsplit
+
+import psycopg
+from psycopg import sql
+
+project_id = os.environ["PROJECT_ID"]
+db_url = os.environ["TESTBED_DB_URL"]
+admin_url = os.environ["TESTBED_DB_ADMIN_URL"]
+
+db_parts = urlsplit(db_url)
+db_name = db_parts.path.lstrip("/")
+app_user = db_parts.username
+if not db_name or not app_user:
+    raise SystemExit(0)
+
+admin_parts = urlsplit(admin_url)
+maintenance_db = admin_parts.path.lstrip("/") or "postgres"
+if maintenance_db != "postgres":
+    admin_url = urlunsplit(admin_parts._replace(path="/postgres"))
+
+with psycopg.connect(admin_url, autocommit=True) as conn, conn.cursor() as cur:
+    cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (db_name,))
+    exists = cur.fetchone() is not None
+    if not exists:
+        cur.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(db_name)))
+
+with psycopg.connect(admin_url, autocommit=True) as conn, conn.cursor() as cur:
+    cur.execute(sql.SQL("GRANT ALL PRIVILEGES ON DATABASE {} TO {}").format(sql.Identifier(db_name), sql.Identifier(app_user)))
+
+with psycopg.connect(
+    urlunsplit(admin_parts._replace(path=f"/{db_name}")),
+    autocommit=True,
+) as conn, conn.cursor() as cur:
+    cur.execute(sql.SQL("GRANT USAGE, CREATE ON SCHEMA public TO {}").format(sql.Identifier(app_user)))
+    cur.execute(
+        sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO {}").format(sql.Identifier(app_user))
+    )
+    cur.execute(
+        sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO {}").format(sql.Identifier(app_user))
+    )
+    cur.execute(
+        sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO {}").format(sql.Identifier(app_user))
+    )
 PY
 }
 
@@ -236,14 +294,19 @@ EOF
 write_file_if_changed "$FRONTEND_DIR/server.py" <<'EOF'
 from __future__ import annotations
 
+import json
 import os
 from datetime import UTC, datetime
+from urllib.error import HTTPError, URLError
+from urllib.request import urlopen
 
 from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 PROJECT_ID = os.getenv("PROJECT_ID", "testbed")
-API_URL = os.getenv("API_URL", "")
+API_URL = os.getenv("API_URL", "").rstrip("/")
+BACKEND_URL = os.getenv("BACKEND_URL", "").rstrip("/")
+INFO_URL = f"{BACKEND_URL}/api/info" if BACKEND_URL else ""
 
 app = FastAPI(title=f"{PROJECT_ID} frontend")
 
@@ -257,8 +320,39 @@ async def health() -> dict[str, str]:
     }
 
 
+def _fetch_backend_info() -> dict[str, object]:
+    if not INFO_URL:
+        return {
+            "project_id": PROJECT_ID,
+            "status": "backend_unconfigured",
+            "frontend_url": API_URL or None,
+            "api_url": None,
+            "db_configured": False,
+            "db_ok": False,
+        }
+
+    try:
+        with urlopen(INFO_URL, timeout=5.0) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError, UnicodeDecodeError):
+        return {
+            "project_id": PROJECT_ID,
+            "status": "backend_unreachable",
+            "frontend_url": API_URL or None,
+            "api_url": INFO_URL,
+            "db_configured": False,
+            "db_ok": False,
+        }
+
+
+@app.get("/api/info")
+async def proxy_info() -> JSONResponse:
+    return JSONResponse(_fetch_backend_info())
+
+
 @app.get("/", response_class=HTMLResponse)
 async def home() -> str:
+    info = _fetch_backend_info()
     return f"""<!doctype html>
 <html lang="en">
   <head>
@@ -296,7 +390,8 @@ async def home() -> str:
     <main>
       <h1>{PROJECT_ID} testbed shell</h1>
       <p>Public frontend for the SummitFlow proving-ground project.</p>
-      <p>API: <a href="{API_URL}/api/info">{API_URL}/api/info</a></p>
+      <p>API: <a href="/api/info">/api/info</a></p>
+      <p>Database: <code>{"connected" if info.get("db_ok") else "unavailable"}</code></p>
       <p>Health: <code>/health</code></p>
     </main>
   </body>
@@ -312,13 +407,16 @@ log "Installing backend runtime packages..."
 "$VENV_DIR/bin/pip" install --quiet --upgrade pip
 "$VENV_DIR/bin/pip" install --quiet -r "$BACKEND_DIR/requirements.txt"
 
-log "Seeding reset markers..."
 export PROJECT_ID
 if [ -f "$HOME/.env.local" ]; then
     set -a
     . "$HOME/.env.local"
     set +a
 fi
+log "Ensuring database exists with testbed grants..."
+ensure_testbed_database
+
+log "Seeding reset markers..."
 seed_reset_markers
 
 write_file_if_changed "$SYSTEMD_DIR/${PROJECT_ID}-backend.service" <<EOF
@@ -362,6 +460,7 @@ Environment="PATH=$PATH_PREFIX"
 Environment="HOME=%h"
 Environment="PROJECT_ID=$PROJECT_ID"
 Environment="API_URL=$API_URL"
+Environment="BACKEND_URL=http://127.0.0.1:$BACKEND_PORT"
 EnvironmentFile=-%h/.env.local
 Environment="PYTHONUNBUFFERED=1"
 ExecStart=$VENV_DIR/bin/uvicorn server:app --host 0.0.0.0 --port $FRONTEND_PORT

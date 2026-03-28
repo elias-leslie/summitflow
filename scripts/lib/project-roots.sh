@@ -4,7 +4,7 @@ PROJECT_ROOTS_WORKSPACES_ROOT="${ST_WORKSPACES_ROOT:-/srv/workspaces}"
 PROJECT_ROOTS_MANAGED_REPOS_FILE="${PROJECT_ROOTS_MANAGED_REPOS_FILE:-$HOME/.claude/config/managed-repos.txt}"
 
 project_root_ids_static() {
-    printf '%s\n' summitflow agent-hub portfolio-ai terminal monkey-fight
+    printf '%s\n' summitflow agent-hub portfolio-ai terminal monkey-fight vantage test1 test2 test3
 }
 
 project_root_ids() {
@@ -56,7 +56,7 @@ default_home_root_for_project() {
             [ -n "${SUMMITFLOW_ROOT_OVERRIDE:-}" ] || return 1
             printf '%s\n' "$SUMMITFLOW_ROOT_OVERRIDE"
             ;;
-        agent-hub | portfolio-ai | terminal | monkey-fight)
+        agent-hub | portfolio-ai | terminal | monkey-fight | vantage)
             printf '%s\n' "$HOME/$1"
             ;;
         *)

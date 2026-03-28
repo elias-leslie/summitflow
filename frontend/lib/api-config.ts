@@ -2,15 +2,13 @@
  * API configuration for SummitFlow frontend.
  *
  * Provides consistent URL resolution for:
- * - Development (localhost:8001)
- * - Production (devapi.summitflow.dev)
+ * - Development on localhost (direct backend access)
+ * - Any deployed or LAN host (same-origin via Next.js rewrites)
  *
  * This pattern is self-contained - no external dependencies required.
  */
 
 export const PORTS = { frontend: 3001, backend: 8001, agentHub: 8003 }
-const PROD_DOMAIN = 'dev.summitflow.dev'
-const PROD_API_DOMAIN = 'devapi.summitflow.dev'
 
 function isLocalDev(): boolean {
   if (typeof window === 'undefined') return false
@@ -21,7 +19,7 @@ function isLocalDev(): boolean {
 /**
  * Get the base URL for SummitFlow backend API calls.
  *
- * @returns Full URL (e.g., http://localhost:8001 or https://devapi.summitflow.dev)
+ * @returns Full URL (e.g., http://localhost:8001) or same-origin base ('')
  */
 export function getApiBaseUrl(): string {
   // Server-side: use API_URL env var (set by Docker compose) or localhost fallback
@@ -34,23 +32,15 @@ export function getApiBaseUrl(): string {
     return `http://localhost:${PORTS.backend}`
   }
 
-  // Production: use same-origin to avoid CF Access CORS issues
-  // Next.js rewrites /api/* to backend, so we don't need cross-origin URL
-  if (window.location.hostname === PROD_DOMAIN) {
-    return '' // Empty string = same-origin (uses current domain)
-  }
-
-  // Non-local hosts (e.g. Docker): use same-origin via rewrites
+  // Any non-local browser host should stay same-origin via rewrites.
   return ''
 }
 
 /**
  * Get WebSocket URL for a given path.
  *
- * IMPORTANT: WebSockets connect directly to the API domain (devapi.summitflow.dev)
- * not the frontend domain. This is because:
- * 1. Next.js rewrites don't work for WebSocket connections
- * 2. CF Tunnel supports WebSocket passthrough to the API backend
+ * Non-local browser hosts use the current origin so CF Access cookies stay
+ * same-origin for both tunnel and LAN/Caddy access.
  *
  * @param path - WebSocket path (e.g., /ws/execution/task-123)
  * @returns Full WebSocket URL
@@ -66,13 +56,7 @@ export function getWsUrl(path: string): string {
     return `ws://localhost:${PORTS.backend}${path}`
   }
 
-  // Production: connect directly to API domain for WebSocket
-  // CF Tunnel routes devapi.summitflow.dev -> localhost:8001
-  if (window.location.hostname === PROD_DOMAIN) {
-    return `wss://${PROD_API_DOMAIN}${path}`
-  }
-
-  // Non-local hosts (e.g. Docker): same-origin WS
+  // Any non-local browser host should stay same-origin via rewrites.
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   return `${protocol}//${window.location.host}${path}`
 }
@@ -96,8 +80,8 @@ export const API_PATHS = {
  * Get Agent Hub voice WebSocket URL.
  * Returns null server-side (voice is client-only).
  *
- * Uses same-origin routing in production to avoid CF Access cookie issues:
- * Browser → wss://dev.summitflow.dev/api/voice/ws → CF tunnel → Next.js → rewrite → Agent Hub
+ * Uses same-origin routing on any non-local browser host to avoid CF Access
+ * cookie issues and to keep LAN access working without a second API hostname.
  */
 export function getVoiceWsUrl(): string | null {
   const voiceUrl = process.env.NEXT_PUBLIC_VOICE_URL
@@ -112,12 +96,8 @@ export function getVoiceWsUrl(): string | null {
     return `ws://localhost:${PORTS.agentHub}/api/voice/ws?${params}`
   }
 
-  // Production: same-origin WebSocket via CF tunnel + Next.js rewrite
-  if (window.location.hostname === PROD_DOMAIN) {
-    return `wss://${PROD_DOMAIN}/api/voice/ws?${params}`
-  }
-
-  return null
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${protocol}//${window.location.host}/api/voice/ws?${params}`
 }
 
 /**
@@ -135,11 +115,6 @@ export function getTtsBaseUrl(): string | null {
     return `http://localhost:${PORTS.agentHub}`
   }
 
-  // Production: same-origin (rewrite proxies /api/voice/tts to Agent Hub)
-  // Return explicit origin — useVoice checks !ttsBaseUrl, and '' is falsy
-  if (window.location.hostname === PROD_DOMAIN) {
-    return window.location.origin
-  }
-
-  return null
+  // Any non-local browser host stays same-origin via rewrites.
+  return window.location.origin
 }

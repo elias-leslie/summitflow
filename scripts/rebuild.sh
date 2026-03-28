@@ -12,6 +12,8 @@
 #   rebuild.sh terminal         # Rebuild terminal
 #   rebuild.sh portfolio-ai     # Rebuild portfolio-ai
 #   rebuild.sh monkey-fight     # Rebuild monkey-fight
+#   rebuild.sh vantage          # Rebuild Vantage
+#   rebuild.sh test1            # Rebuild testbed 1
 #   rebuild.sh                  # No args = show available projects
 #
 # Always rebuilds frontend, backend, and the project's default worker services.
@@ -45,6 +47,8 @@ PROJECTS=(
     [portfolio-ai]="portfolio-backend.service|portfolio-frontend.service|portfolio-hatchet-worker.service||8000|3000|backend|frontend"
     [terminal]="summitflow-terminal.service|summitflow-terminal-frontend.service|||8002|3002|.|frontend"
     [monkey-fight]="|monkey-fight.service|||0|4001|.|."
+    [vantage]="vantage-backend.service|vantage-frontend.service|vantage-hatchet-worker.service||8004|3004|backend|frontend"
+    [test1]="test1-backend.service|test1-frontend.service|||9001|4004|backend|frontend"
     [test2]="test2-backend.service|test2-frontend.service|||9002|4002|backend|frontend"
     [test3]="test3-backend.service|test3-frontend.service|||9003|4003|backend|frontend"
 )
@@ -209,6 +213,12 @@ run_migrations() {
 
     log "Running migrations..."
     (
+        if [ -f "$HOME/.env.local" ]; then
+            set -a
+            # shellcheck disable=SC1090
+            . "$HOME/.env.local"
+            set +a
+        fi
         cd "$BACKEND_DIR" &&
         env -u DATABASE_URL -u REDIS_URL -u AGENT_HUB_DB_URL -u AGENT_HUB_REDIS_URL \
             -u PORTFOLIO_DB_URL -u PORTFOLIO_AI_DB_URL -u HATCHET_CLIENT_TOKEN \

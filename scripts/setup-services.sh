@@ -228,7 +228,7 @@ mkdir -p "$USER_SYSTEMD_DIR"
 echo "  Rendering unit files..."
 render_unit_tree "$SUMMITFLOW_DIR/scripts/systemd"
 
-for external_project in agent-hub portfolio-ai monkey-fight; do
+for external_project in agent-hub portfolio-ai monkey-fight vantage test1 test2 test3; do
     external_root="$(resolve_project_root "$external_project" 2>/dev/null || true)"
     [ -n "$external_root" ] || continue
     render_unit_tree "$external_root/scripts/systemd" "$external_root"

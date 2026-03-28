@@ -14,6 +14,7 @@ from ._api_paths import (
     MEMORY_EPISODE_RESTORE_PATH,
     MEMORY_EPISODE_REVISIONS_PATH,
     MEMORY_LIST_PATH,
+    MEMORY_PROGRESSIVE_CONTEXT_PATH,
     MEMORY_SAVE_LEARNING_PATH,
     MEMORY_SEARCH_PATH,
     MEMORY_STATS_PATH,
@@ -71,6 +72,57 @@ def stats_impl(out: OutputContext, scope: str, scope_id: str | None) -> None:
         "GET", MEMORY_STATS_PATH, scope=scope, scope_id=scope_id, tool_name="st memory stats"
     )
     _emit(out, result, format_stats_compact)
+
+
+def status_impl(
+    out: OutputContext,
+    scope: str,
+    scope_id: str | None,
+    consumer_profile: str,
+    current_branch: str | None,
+) -> bool:
+    """Probe progressive-context health through the live Agent Hub path."""
+    params: dict[str, object] = {
+        "query": "memory status probe",
+        "consumer_profile": consumer_profile,
+    }
+    if current_branch:
+        params["current_branch"] = current_branch
+    result = agent_hub_request(
+        "GET",
+        MEMORY_PROGRESSIVE_CONTEXT_PATH,
+        params=params,
+        scope=scope,
+        scope_id=scope_id,
+        tool_name="st memory status",
+        retries=3,
+    )
+    summary = {
+        "healthy": result.get("status", "ok") == "ok",
+        "status": result.get("status", "ok"),
+        "scope": scope,
+        "scope_id": scope_id,
+        "consumer_profile": consumer_profile,
+        "attempts": result.get("attempts", 1),
+        "latency_ms": result.get("latency_ms", 0),
+        "failure": result.get("failure"),
+    }
+    if out.is_compact:
+        health = "OK" if summary["healthy"] else "FAILED"
+        typer.echo(
+            f"memory={health} scope={scope} scope_id={scope_id or '-'} "
+            f"profile={consumer_profile} attempts={summary['attempts']} latency_ms={summary['latency_ms']}"
+        )
+        failure = summary.get("failure")
+        if isinstance(failure, dict):
+            typer.echo(
+                f"failure={failure.get('error_type', 'unknown')} "
+                f"operation={failure.get('operation', 'progressive-context')} "
+                f"message={failure.get('error_message', '')}"
+            )
+        return bool(summary["healthy"])
+    output_json(summary)
+    return bool(summary["healthy"])
 
 
 def save_impl(

@@ -758,6 +758,77 @@ class TestMemoryTagOptions:
 
         mock_fetch_existing.assert_not_called()
 
+
+class TestMemoryStatusCommand:
+    """Tests for the operator-facing memory status command."""
+
+    def test_status_command_forwards_cli_options(self) -> None:
+        with patch("cli.commands.memory.status_impl", return_value=True) as mock_status_impl:
+            result = runner.invoke(
+                app,
+                [
+                    "status",
+                    "--scope",
+                    "project",
+                    "--scope-id",
+                    "agent-hub",
+                    "--consumer-profile",
+                    "codex_startup",
+                    "--branch",
+                    "main",
+                ],
+            )
+
+        assert result.exit_code == 0
+        assert mock_status_impl.call_args.args[1:] == (
+            "project",
+            "agent-hub",
+            "codex_startup",
+            "main",
+        )
+
+    def test_status_command_exits_nonzero_when_probe_fails(self) -> None:
+        with patch("cli.commands.memory.status_impl", return_value=False):
+            result = runner.invoke(app, ["status"])
+
+        assert result.exit_code == 1
+
+    def test_status_impl_renders_failed_probe_compactly(self) -> None:
+        out = SimpleNamespace(is_compact=True)
+        result = {
+            "status": "failed",
+            "attempts": 3,
+            "latency_ms": 912,
+            "failure": {
+                "operation": "progressive-context",
+                "error_type": "RuntimeError",
+                "error_message": "database unavailable",
+            },
+        }
+
+        with (
+            patch("cli.commands.memory_crud.agent_hub_request", return_value=result) as mock_request,
+            patch("cli.commands.memory_crud.typer.echo") as mock_echo,
+        ):
+            from cli.commands.memory_crud import status_impl
+
+            healthy = status_impl(out, "project", "agent-hub", "claude_session_start", "main")
+
+        assert mock_request.call_args.args == ("GET", "/api/memory/progressive-context")
+        assert mock_request.call_args.kwargs["params"] == {
+            "query": "memory status probe",
+            "consumer_profile": "claude_session_start",
+            "current_branch": "main",
+        }
+        assert mock_request.call_args.kwargs["tool_name"] == "st memory status"
+        assert mock_request.call_args.kwargs["retries"] == 3
+        assert healthy is False
+        first = mock_echo.call_args_list[0].args[0]
+        second = mock_echo.call_args_list[1].args[0]
+        assert "memory=FAILED" in first
+        assert "attempts=3" in first
+        assert "failure=RuntimeError" in second
+
     def test_update_impl_rejects_blank_summary(self) -> None:
         """Blank summaries should fail instead of writing whitespace."""
         with patch("cli.commands.memory_crud.fetch_existing_episode") as mock_fetch_existing:

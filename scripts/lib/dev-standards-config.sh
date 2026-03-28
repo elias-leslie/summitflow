@@ -45,12 +45,16 @@ export LINT_EXCLUDE_DIRS
 # =============================================================================
 
 # Projects registered in SummitFlow (auto-discovered via API if available)
-# Note: Only Python projects with backend - JS-only projects (monkey-fight) excluded
+# Note: JS-only projects such as monkey-fight stay outside the Python-managed list.
 MANAGED_PROJECTS=(
     "summitflow"
     "agent-hub"
     "terminal"
     "portfolio-ai"
+    "vantage"
+    "test1"
+    "test2"
+    "test3"
     "persona-sandbox"
 )
 export MANAGED_PROJECTS
@@ -62,6 +66,10 @@ PROJECT_VENV_MAP=(
     "agent-hub:backend/.venv:backend"
     "terminal:.venv:terminal"
     "portfolio-ai:backend/.venv:backend"
+    "vantage:backend/.venv:backend"
+    "test1:backend/.venv:backend"
+    "test2:backend/.venv:backend"
+    "test3:backend/.venv:backend"
 )
 export PROJECT_VENV_MAP
 

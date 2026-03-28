@@ -7,17 +7,20 @@ const CONFIG_FILE = path.join(os.homedir(), '.cloudflare-access');
 
 const CLOUDFLARE_DOMAINS = [
   'agent.summitflow.dev',
-  'agentapi.summitflow.dev',
   'dev.summitflow.dev',
-  'devapi.summitflow.dev',
   'terminal.summitflow.dev',
-  'terminalapi.summitflow.dev',
   'port.summitflow.dev',
-  'portapi.summitflow.dev',
+  'vantage.summitflow.dev',
   'summitflow.dev',
 ];
 
-const WEBSOCKET_DOMAINS = ['terminal.summitflow.dev', 'terminalapi.summitflow.dev'];
+const WEBSOCKET_DOMAINS = [
+  'agent.summitflow.dev',
+  'dev.summitflow.dev',
+  'terminal.summitflow.dev',
+  'port.summitflow.dev',
+  'vantage.summitflow.dev',
+];
 
 let cachedCredentials = null;
 
@@ -98,12 +101,7 @@ function needsWebSocketAuth(url) {
 }
 
 function getApiHost(frontendHost) {
-  const apiHostMap = {
-    'terminal.summitflow.dev': 'terminalapi.summitflow.dev',
-    'dev.summitflow.dev': 'devapi.summitflow.dev',
-    'port.summitflow.dev': 'portapi.summitflow.dev',
-  };
-  return apiHostMap[frontendHost] || frontendHost.replace(/^([^.]+)\./, '$1api.');
+  return frontendHost;
 }
 
 async function getCFAuthCookie(host) {
@@ -116,7 +114,9 @@ async function getCFAuthCookie(host) {
     return await new Promise((resolve) => {
       const req = https.request({
         hostname: host,
-        path: '/health',
+        // Hitting the protected frontend origin is enough to mint the CF cookie.
+        // This keeps WebSocket auth same-origin and avoids legacy *api hostnames.
+        path: '/',
         method: 'GET',
         headers: {
           'CF-Access-Client-Id': creds.clientId,

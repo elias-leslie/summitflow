@@ -22,6 +22,7 @@ from .memory_commands import (
     search_impl,
     seed_impl,
     stats_impl,
+    status_impl,
     tag_impl,
     update_impl,
 )
@@ -146,6 +147,26 @@ def memory_default(ctx: typer.Context) -> None:
 def stats(ctx: typer.Context, scope: ScopeOpt = "global", scope_id: ScopeIdOpt = None) -> None:
     """Get memory statistics."""
     stats_impl(ctx.obj, scope, scope_id)
+
+
+@app.command()
+def status(
+    ctx: typer.Context,
+    scope: ScopeOpt = "global",
+    scope_id: ScopeIdOpt = None,
+    consumer_profile: Annotated[
+        str,
+        typer.Option("--consumer-profile", help="Consumer profile to probe"),
+    ] = "claude_session_start",
+    current_branch: Annotated[
+        str | None,
+        typer.Option("--branch", help="Optional branch for continuity-scoped probes"),
+    ] = None,
+) -> None:
+    """Check live progressive-context delivery health."""
+    healthy = status_impl(ctx.obj, scope, scope_id, consumer_profile, current_branch)
+    if not healthy:
+        raise typer.Exit(1)
 
 
 @app.command()

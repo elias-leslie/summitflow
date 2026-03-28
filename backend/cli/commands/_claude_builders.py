@@ -24,6 +24,9 @@ def build_worker_command(
     source: str,
     claim_if_needed: bool,
     feedback_text: str | None,
+    effort: str | None,
+    append_system_prompt: str | None,
+    skills: list[str] | None,
 ) -> list[str]:
     """Build the canonical Claude worker wrapper command."""
     command = [
@@ -39,6 +42,12 @@ def build_worker_command(
         command.append("--claim-if-needed")
     if feedback_text:
         command.extend(["--feedback-text", feedback_text])
+    if effort:
+        command.extend(["--effort", effort])
+    if append_system_prompt:
+        command.extend(["--append-system-prompt", append_system_prompt])
+    for skill in skills or []:
+        command.extend(["--skill", skill])
     return command
 
 
@@ -53,6 +62,9 @@ def build_prompt_worker_command(
     project_root: Path,
     model: str,
     timeout_seconds: int,
+    effort: str | None,
+    append_system_prompt: str | None,
+    skills: list[str] | None,
 ) -> list[str]:
     """Build the orchestrator prompt-based worker command."""
     command = [
@@ -65,8 +77,14 @@ def build_prompt_worker_command(
         "--timeout-seconds", str(timeout_seconds),
         "--source", _ORCHESTRATOR_SOURCE,
     ]
+    if effort:
+        command.extend(["--effort", effort])
+    if append_system_prompt:
+        command.extend(["--append-system-prompt", append_system_prompt])
     for task_id in batch_task_ids or []:
         command.extend(["--batch-task-id", task_id])
+    for skill in skills or []:
+        command.extend(["--skill", skill])
     if agents_file is not None:
         command.extend(["--agents-file", str(agents_file)])
     return command

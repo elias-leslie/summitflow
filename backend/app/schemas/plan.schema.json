@@ -73,6 +73,66 @@
       "description": "Whether this task should be executed autonomously"
     },
 
+    "execution_contract": {
+      "type": "object",
+      "description": "Optional runtime-evaluation contract for frontend or hosted UX work.",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["code_only", "runtime_eval", "runtime_eval_plus_design"]
+        },
+        "target_urls": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "user_flows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "flow_id": { "type": "string" },
+              "title": { "type": "string" },
+              "target_url": { "type": "string" },
+              "setup": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "actions": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "expected_outcomes": {
+                "type": "array",
+                "items": { "type": "string" }
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "api_checks": {
+          "type": "array",
+          "items": { "type": "object", "additionalProperties": true }
+        },
+        "negative_cases": {
+          "type": "array",
+          "items": { "type": "object", "additionalProperties": true }
+        },
+        "evidence_requirements": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "design_criteria": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "risk_notes": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": true
+    },
+
     "subtasks": {
       "type": "array",
       "description": "Work breakdown. Each subtask has steps. Optional for intent-only plans.",

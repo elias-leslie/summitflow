@@ -20,6 +20,7 @@ MEMORY_CLEANUP_PATH = "/api/memory/cleanup"
 MEMORY_TASK_OUTCOME_PATH = "/api/memory/task-outcome"
 MEMORY_TRIGGERED_REFS_PATH = "/api/memory/triggered-references"
 MEMORY_PHASE_TRIGGERED_REFS_PATH = "/api/memory/phase-triggered-references"
+MEMORY_PROGRESSIVE_CONTEXT_PATH = "/api/memory/progressive-context"
 
 # Parameterized (use .format())
 MEMORY_EPISODE_PATH = "/api/memory/episode/{uuid}"

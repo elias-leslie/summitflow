@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json as jsonlib
+import time
 from typing import Any, cast
 
 import httpx
@@ -14,6 +15,9 @@ from ..output import output_error
 from ._http_errors import raise_connect_error, raise_timeout_error
 
 _HTTP_TIMEOUT_READ = 90.0
+_DEFAULT_RETRY_ATTEMPTS = 3
+_DEFAULT_RETRY_BACKOFF_SECONDS = 0.25
+_DEFAULT_RETRY_MAX_BACKOFF_SECONDS = 1.0
 
 
 def _dispatch(client: httpx.Client, method: str, url: str, **kw: Any) -> httpx.Response:
@@ -71,6 +75,14 @@ def _check_response(response: httpx.Response, agent_hub_url: str) -> dict[str, A
     return cast(dict[str, Any], response.json())
 
 
+def _sleep_backoff(attempt: int) -> None:
+    delay = min(
+        _DEFAULT_RETRY_BACKOFF_SECONDS * (2 ** max(attempt - 1, 0)),
+        _DEFAULT_RETRY_MAX_BACKOFF_SECONDS,
+    )
+    time.sleep(delay)
+
+
 def agent_hub_request(
     method: str,
     path: str,
@@ -80,6 +92,7 @@ def agent_hub_request(
     scope: str = "global",
     scope_id: str | None = None,
     tool_name: str = "st memory",
+    retries: int = 1,
 ) -> dict[str, Any]:
     """Make a request to Agent Hub API with proper authentication."""
     client_id, request_source = load_credentials(default_source="st-memory")
@@ -98,16 +111,25 @@ def agent_hub_request(
     url = f"{agent_hub_url}{path}"
     # Graphiti embedding + Neo4j writes can take 30-60s; generous timeout prevents partial ops.
     timeout = httpx.Timeout(connect=5.0, read=_HTTP_TIMEOUT_READ, write=30.0, pool=30.0)
-    try:
-        with httpx.Client(timeout=timeout) as client:
-            response = _dispatch(client, method, url, params=params, json=json, headers=headers)
-            return _check_response(response, agent_hub_url)
-    except httpx.ConnectError as e:
-        raise_connect_error("Agent Hub", agent_hub_url, e)
-    except httpx.TimeoutException as e:
-        raise_timeout_error("Agent Hub", agent_hub_url, _HTTP_TIMEOUT_READ, e)
-    except typer.Exit:
-        raise
-    except Exception as e:
-        output_error(f"Request failed: {e}")
-        raise typer.Exit(1) from None
+    attempts = max(retries, 1)
+    for attempt in range(1, attempts + 1):
+        try:
+            with httpx.Client(timeout=timeout) as client:
+                response = _dispatch(client, method, url, params=params, json=json, headers=headers)
+                return _check_response(response, agent_hub_url)
+        except typer.Exit:
+            raise
+        except httpx.ConnectError as e:
+            if attempt >= attempts:
+                raise_connect_error("Agent Hub", agent_hub_url, e)
+            _sleep_backoff(attempt)
+        except httpx.TimeoutException as e:
+            if attempt >= attempts:
+                raise_timeout_error("Agent Hub", agent_hub_url, _HTTP_TIMEOUT_READ, e)
+            _sleep_backoff(attempt)
+        except Exception as e:
+            if attempt >= attempts:
+                output_error(f"Request failed: {e}")
+                raise typer.Exit(1) from None
+            _sleep_backoff(attempt)
+    raise typer.Exit(1)
