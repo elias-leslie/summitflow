@@ -37,18 +37,70 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
+read_project_id_from_index() {
+    local root="$1"
+    local index_path="$root/.index.yaml"
+
+    if [[ ! -f "$index_path" ]]; then
+        return 1
+    fi
+
+    awk '
+        /^project:[[:space:]]*/ {
+            sub(/^project:[[:space:]]*/, "", $0)
+            gsub(/["'"'"']/, "", $0)
+            if ($0 != "") {
+                print $0
+                exit
+            }
+        }
+    ' "$index_path"
+}
+
+detect_local_project_context() {
+    local candidate="${1:-$PWD}"
+
+    while [[ -n "$candidate" ]]; do
+        if [[ -f "$candidate/.index.yaml" ]]; then
+            local project_id
+            project_id="$(read_project_id_from_index "$candidate")"
+            if [[ -n "$project_id" ]]; then
+                DT_CONTEXT_ROOT="$candidate"
+                DT_CONTEXT_PROJECT="$project_id"
+                return 0
+            fi
+        fi
+
+        if [[ "$candidate" == "/" ]]; then
+            break
+        fi
+        candidate="$(dirname "$candidate")"
+    done
+
+    return 1
+}
+
 # Project detection - handles both main repos and worktrees
 PROJECT_DIR=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 PROJECT_NAME=$(basename "$PROJECT_DIR")
 MAIN_REPO_DIR="$PROJECT_DIR"
+DT_CONTEXT_ROOT=""
+DT_CONTEXT_PROJECT=""
+detect_local_project_context "$PWD" || detect_local_project_context "$PROJECT_DIR" || true
+if [[ -n "$DT_CONTEXT_PROJECT" ]]; then
+    PROJECT_NAME="$DT_CONTEXT_PROJECT"
+fi
 
 # Detect ANY git worktree (Claude Code .claude/worktrees, SummitFlow st worktrees, etc.)
 # Use `git worktree list` to find the primary checkout — it's always listed first.
 # If we're in a linked worktree, use the primary checkout for venv (worktrees share it).
 _primary_worktree=$(git worktree list 2>/dev/null | head -1 | awk '{print $1}')
 if [[ -n "$_primary_worktree" && "$_primary_worktree" != "$PROJECT_DIR" ]]; then
-    MAIN_REPO_DIR="$_primary_worktree"
-    PROJECT_NAME=$(basename "$MAIN_REPO_DIR")
+    if [[ -x "$PROJECT_DIR/backend/.venv/bin/python" || -x "$PROJECT_DIR/.venv/bin/python" ]]; then
+        MAIN_REPO_DIR="$PROJECT_DIR"
+    else
+        MAIN_REPO_DIR="$_primary_worktree"
+    fi
 fi
 
 # Use main repo for venv (tools), but PROJECT_DIR for backend (code to lint)
