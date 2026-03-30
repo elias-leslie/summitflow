@@ -42,7 +42,7 @@ def _make_dry_run_detail(proj_id: str, proj_name: str) -> dict[str, Any]:
     return {"project_id": proj_id, "project_name": proj_name, "status": "would_scan"}
 
 
-def _dispatch_post_scan_tasks(dispatch: Callable[[str, str, str], None], proj_id: str) -> None:
+def dispatch_post_scan_tasks(dispatch: Callable[[str, str, str], None], proj_id: str) -> None:
     """Trigger post-scan downstream tasks via the dispatch callback."""
     logger.info("triggering_post_scan_tasks", project_id=proj_id)
     dispatch("generate_tasks", "", proj_id)
@@ -78,7 +78,7 @@ def _scan_single_project(
         )
         if dispatch:
             try:
-                _dispatch_post_scan_tasks(dispatch, proj_id)
+                dispatch_post_scan_tasks(dispatch, proj_id)
             except Exception:
                 logger.exception("post_scan_dispatch_failed", project_id=proj_id)
         detail = {

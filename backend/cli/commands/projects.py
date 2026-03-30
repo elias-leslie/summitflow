@@ -17,6 +17,7 @@ from ._projects_helpers import (
     run_create,
     run_delete,
     run_list,
+    run_onboard,
     run_root,
     run_update,
 )
@@ -138,6 +139,25 @@ def create_project(
         int | None,
         typer.Option("--execution-end-hour", min=1, max=24, help="Bootstrap Agent Hub execution window end hour"),
     ] = None,
+    onboard: Annotated[
+        bool | None,
+        typer.Option(
+            "--onboard/--no-onboard",
+            help="Queue standard SummitFlow onboarding (backups, scan, post-scan task sync). Defaults to on for --summitflow-hosted.",
+        ),
+    ] = None,
+    backup_frequency: Annotated[
+        str,
+        typer.Option("--backup-frequency", help="Onboarding backup frequency"),
+    ] = "daily",
+    backup_retention_days: Annotated[
+        int,
+        typer.Option("--backup-retention-days", min=1, help="Onboarding backup retention in days"),
+    ] = 30,
+    initial_backup: Annotated[
+        bool,
+        typer.Option("--initial-backup/--no-initial-backup", help="Queue an initial baseline backup during onboarding"),
+    ] = True,
 ) -> None:
     """Create a new project.
 
@@ -146,6 +166,8 @@ def create_project(
         st projects create my-app "My App" -u http://localhost:8080 -r /home/user/my-app
         st projects create test2 "Testbed" --summitflow-hosted --permission-tier yolo --auto-exec
     """
+    effective_onboard = summitflow_hosted if onboard is None else onboard
+
     run_create(
         project_id,
         name,
@@ -157,6 +179,10 @@ def create_project(
         auto_exec_enabled=auto_exec_enabled,
         execution_start_hour=execution_start_hour,
         execution_end_hour=execution_end_hour,
+        onboarding=effective_onboard,
+        backup_frequency=backup_frequency,
+        backup_retention_days=backup_retention_days,
+        queue_initial_backup=initial_backup,
     )
 
 
@@ -179,6 +205,36 @@ def update_project(
         st projects update my-app --base-url http://localhost:9090 --root-path /new/path
     """
     run_update(project_id, name, base_url, root_path, health_endpoint)
+
+
+@app.command("onboard")
+def onboard_project(
+    project_id: Annotated[str, typer.Argument(help="Project ID to onboard")],
+    backup_frequency: Annotated[
+        str,
+        typer.Option("--backup-frequency", help="Standard backup frequency"),
+    ] = "daily",
+    backup_retention_days: Annotated[
+        int,
+        typer.Option("--backup-retention-days", min=1, help="Backup retention in days"),
+    ] = 30,
+    initial_backup: Annotated[
+        bool,
+        typer.Option("--initial-backup/--no-initial-backup", help="Queue an initial baseline backup when none exist"),
+    ] = True,
+) -> None:
+    """Queue standard SummitFlow onboarding for an existing project.
+
+    Examples:
+        st projects onboard vantage
+        st projects onboard test2 --no-initial-backup
+    """
+    run_onboard(
+        project_id,
+        backup_frequency=backup_frequency,
+        backup_retention_days=backup_retention_days,
+        queue_initial_backup=initial_backup,
+    )
 
 
 @app.command("delete")

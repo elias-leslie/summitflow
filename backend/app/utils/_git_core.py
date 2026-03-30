@@ -19,14 +19,14 @@ from ._git_repo_sources import (  # noqa: F401
     _collect_db_repos,
     _is_shadowed_project_repo,
     _load_repo_paths_from_file,
+    _merge_managed_repos,
     _normalize_repo_path,
     _query_db_extra_repos,
     _query_db_project_roots,
     _query_db_root_paths,
     _registered_project_roots,
-    _resolve_project_id,
+    _resolve_project_id_from_sources,
     _translate_path,
-    get_managed_repos,
 )
 
 logger = get_logger(__name__)
@@ -65,6 +65,32 @@ _GIT_ALREADY_UP_TO_DATE = "Already up to date"
 # Error / reason messages
 _ERR_NO_REPO_STATUS = "Could not get repository status"
 _REASON_UNCOMMITTED = "uncommitted changes"
+
+
+def _resolve_project_id(repo_path: Path, project_id: str | None = None) -> str | None:
+    """Resolve a project id using this module's repo-source collaborators.
+
+    Keeping this wrapper in `_git_core` preserves the long-standing patch surface
+    for tests and callers that mock `_git_core` helpers directly.
+    """
+    return _resolve_project_id_from_sources(
+        repo_path,
+        _query_db_project_roots(),
+        project_id=project_id,
+        translate_path=_translate_path,
+    )
+
+
+def get_managed_repos() -> list[Path]:
+    """Get managed repos using this module's locally patchable helper surface."""
+    return _merge_managed_repos(
+        _collect_db_repos(),
+        _collect_db_extra_repos(),
+        _registered_project_roots(),
+        _load_repo_paths_from_file(FALLBACK_FILE),
+        validate_repo=is_valid_git_repo,
+        is_shadowed_project_repo=_is_shadowed_project_repo,
+    )
 
 
 def run_git(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:

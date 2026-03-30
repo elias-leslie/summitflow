@@ -111,5 +111,60 @@ def test_projects_create_derives_hosted_defaults() -> None:
             "base_url": "https://test3.summitflow.dev",
             "health_endpoint": "/health",
             "root_path": "/srv/workspaces/projects/test3",
+            "onboarding": {
+                "enable_backup_schedule": True,
+                "backup_frequency": "daily",
+                "backup_retention_days": 30,
+                "queue_initial_backup": True,
+            },
+        },
+    )
+
+
+def test_projects_create_can_disable_hosted_onboarding() -> None:
+    with patch(
+        "cli.commands._projects_helpers.projects_api",
+        return_value={"id": "test3", "name": "Testbed 3"},
+    ) as mock_projects_api:
+        result = runner.invoke(
+            app,
+            [
+                "create",
+                "test3",
+                "Testbed 3",
+                "--summitflow-hosted",
+                "--no-onboard",
+            ],
+        )
+
+    assert result.exit_code == 0
+    mock_projects_api.assert_called_once_with(
+        "POST",
+        json={
+            "id": "test3",
+            "name": "Testbed 3",
+            "base_url": "https://test3.summitflow.dev",
+            "health_endpoint": "/health",
+            "root_path": "/srv/workspaces/projects/test3",
+        },
+    )
+
+
+def test_projects_onboard_queues_standard_payload() -> None:
+    with patch(
+        "cli.commands._projects_helpers.projects_api",
+        return_value={"status": "queued", "project_id": "vantage"},
+    ) as mock_projects_api:
+        result = runner.invoke(app, ["onboard", "vantage", "--no-initial-backup"])
+
+    assert result.exit_code == 0
+    mock_projects_api.assert_called_once_with(
+        "POST",
+        "/vantage/onboard",
+        json={
+            "enable_backup_schedule": True,
+            "backup_frequency": "daily",
+            "backup_retention_days": 30,
+            "queue_initial_backup": False,
         },
     )

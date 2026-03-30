@@ -25,6 +25,13 @@ export interface ProjectPermissionBootstrap {
   budget_alert_threshold?: number
 }
 
+export interface ProjectOnboardingRequest {
+  enable_backup_schedule?: boolean
+  backup_frequency?: 'daily' | 'weekly' | 'monthly' | 'hourly'
+  backup_retention_days?: number
+  queue_initial_backup?: boolean
+}
+
 export interface ProjectCreate {
   id: string
   name: string
@@ -32,6 +39,7 @@ export interface ProjectCreate {
   health_endpoint?: string
   root_path?: string
   agent_hub_permission?: ProjectPermissionBootstrap
+  onboarding?: ProjectOnboardingRequest
 }
 
 export interface ProjectStats {

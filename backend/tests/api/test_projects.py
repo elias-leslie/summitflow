@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 from fastapi import HTTPException
@@ -85,6 +85,52 @@ def test_create_project_syncs_agent_hub_permission_when_requested(client, monkey
             conn.commit()
 
 
+def test_create_project_queues_standard_onboarding_when_requested(client, monkeypatch) -> None:
+    """POST /api/projects should use the shared onboarding flow when requested."""
+    project_id = f"onboard-{uuid4().hex[:8]}"
+    root_path = f"/srv/workspaces/projects/{project_id}"
+    onboarding_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    monkeypatch.setattr(
+        "app.api.projects.run_project_onboarding",
+        lambda *args, **kwargs: onboarding_calls.append((args, kwargs)),
+    )
+    monkeypatch.setattr(
+        "app.api.projects.explorer.run_scan_job",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("raw scan should not be queued")),
+    )
+
+    try:
+        response = client.post(
+            "/api/projects",
+            json={
+                "id": project_id,
+                "name": "Onboarded Project",
+                "base_url": "https://onboard.example",
+                "health_endpoint": "/health",
+                "root_path": root_path,
+                "onboarding": {
+                    "backup_frequency": "daily",
+                    "backup_retention_days": 30,
+                    "queue_initial_backup": True,
+                },
+            },
+        )
+
+        assert response.status_code == 200
+        assert len(onboarding_calls) == 1
+        args, kwargs = onboarding_calls[0]
+        assert args[0] == project_id
+        assert args[1].backup_frequency == "daily"
+        assert args[1].backup_retention_days == 30
+        assert kwargs["triggered_by"] == "project_create"
+    finally:
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM backup_sources WHERE id = %s", (project_id,))
+            cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
+            conn.commit()
+
+
 def test_create_project_rolls_back_when_agent_hub_sync_fails(client, monkeypatch) -> None:
     """POST /api/projects should remove the project record when bootstrap sync fails."""
     project_id = f"rollback-{uuid4().hex[:8]}"
@@ -124,6 +170,126 @@ def test_create_project_rolls_back_when_agent_hub_sync_fails(client, monkeypatch
 
     assert project_row is None
     assert backup_row is None
+
+
+def test_onboard_project_queues_standard_onboarding(client, monkeypatch) -> None:
+    """POST /api/projects/{project_id}/onboard should queue the shared onboarding helper."""
+    project_id = f"manual-onboard-{uuid4().hex[:8]}"
+    root_path = f"/srv/workspaces/projects/{project_id}"
+    onboarding_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO projects (id, name, base_url, health_endpoint, root_path)
+            VALUES (%s, %s, %s, %s, %s)
+            """,
+            (project_id, "Manual Onboard", "https://manual.example", "/health", root_path),
+        )
+        cur.execute(
+            """
+            INSERT INTO backup_sources (id, name, path, source_type, project_id)
+            VALUES (%s, %s, %s, 'project', %s)
+            """,
+            (project_id, "Manual Onboard", root_path, project_id),
+        )
+        conn.commit()
+
+    monkeypatch.setattr(
+        "app.api.projects.run_project_onboarding",
+        lambda *args, **kwargs: onboarding_calls.append((args, kwargs)),
+    )
+
+    try:
+        response = client.post(
+            f"/api/projects/{project_id}/onboard",
+            json={
+                "backup_frequency": "daily",
+                "backup_retention_days": 30,
+                "queue_initial_backup": True,
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "status": "queued",
+            "project_id": project_id,
+            "backup_schedule_enabled": True,
+            "backup_frequency": "daily",
+            "backup_retention_days": 30,
+            "queue_initial_backup": True,
+        }
+        assert len(onboarding_calls) == 1
+        args, kwargs = onboarding_calls[0]
+        assert args[0] == project_id
+        assert args[1].backup_frequency == "daily"
+        assert args[1].backup_retention_days == 30
+        assert kwargs["triggered_by"] == "project_onboard"
+    finally:
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM backup_sources WHERE id = %s", (project_id,))
+            cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
+            conn.commit()
+
+
+def test_run_project_onboarding_seeds_backup_schedule_anchor(monkeypatch) -> None:
+    """Onboarding should seed the first scheduled run after queuing a baseline backup."""
+    from app.api.projects.models import ProjectOnboardingRequest
+    from app.api.projects.onboarding import run_project_onboarding
+
+    update_source_last_run = MagicMock()
+
+    monkeypatch.setattr(
+        "app.api.projects.onboarding.get_project_root_path",
+        lambda _project_id: "/srv/workspaces/projects/vantage",
+    )
+    monkeypatch.setattr(
+        "app.api.projects.onboarding.backup_store.get_source",
+        lambda _project_id: {"id": "vantage", "last_run_at": None},
+    )
+    monkeypatch.setattr(
+        "app.api.projects.onboarding.backup_store.update_source",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "app.api.projects.onboarding.backup_store.list_backups",
+        lambda **_kwargs: ([], 0),
+    )
+    monkeypatch.setattr(
+        "app.api.projects.onboarding.backup_store.get_latest_backup",
+        lambda **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "app.api.projects.onboarding._queue_initial_backup",
+        lambda _project_id: None,
+    )
+    monkeypatch.setattr(
+        "app.api.projects.onboarding.backup_store.update_source_last_run",
+        update_source_last_run,
+    )
+    monkeypatch.setattr(
+        "app.api.projects.onboarding.explorer.run_scan_job",
+        lambda *_args, **_kwargs: {"scan_id": 7},
+    )
+    monkeypatch.setattr(
+        "app.api.projects.onboarding.dispatch_post_scan_tasks",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "app.api.projects.onboarding._make_dispatch_callback",
+        lambda: None,
+    )
+
+    run_project_onboarding(
+        "vantage",
+        ProjectOnboardingRequest(),
+        triggered_by="project_onboard",
+    )
+
+    update_source_last_run.assert_called_once()
+    args = update_source_last_run.call_args.args
+    assert args[0] == "vantage"
+    assert args[1] is not None
 
 
 def test_update_project_syncs_backup_source(client) -> None:

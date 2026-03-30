@@ -30,6 +30,21 @@ UPDATE_FIELDS_MSG = (
 )
 
 
+def _build_onboarding_payload(
+    *,
+    backup_frequency: str,
+    backup_retention_days: int,
+    queue_initial_backup: bool,
+) -> dict[str, Any]:
+    """Build the standard project onboarding payload."""
+    return {
+        "enable_backup_schedule": True,
+        "backup_frequency": backup_frequency,
+        "backup_retention_days": backup_retention_days,
+        "queue_initial_backup": queue_initial_backup,
+    }
+
+
 def get_api_base() -> str:
     """Return the configured API base URL."""
     return os.getenv(ENV_API_BASE, DEFAULT_API_BASE)
@@ -156,6 +171,10 @@ def run_create(
     auto_exec_enabled: bool | None = None,
     execution_start_hour: int | None = None,
     execution_end_hour: int | None = None,
+    onboarding: bool = False,
+    backup_frequency: str = "daily",
+    backup_retention_days: int = 30,
+    queue_initial_backup: bool = True,
 ) -> None:
     """Implementation for `projects create`."""
     effective_base_url = base_url
@@ -185,8 +204,16 @@ def run_create(
     }
     if normalized_permission_payload:
         body["agent_hub_permission"] = normalized_permission_payload
+    if onboarding:
+        body["onboarding"] = _build_onboarding_payload(
+            backup_frequency=backup_frequency,
+            backup_retention_days=backup_retention_days,
+            queue_initial_backup=queue_initial_backup,
+        )
     result = projects_api("POST", json=body)
     output_success(f"Created project '{project_id}'")
+    if onboarding:
+        output_success(f"Queued onboarding for '{project_id}'")
     output_json(result)
 
 
@@ -213,6 +240,24 @@ def run_update(
         raise typer.Exit(1)
     result = projects_api("PATCH", f"/{project_id}", json=fields)
     output_success(f"Updated project '{project_id}'")
+    output_json(result)
+
+
+def run_onboard(
+    project_id: str,
+    *,
+    backup_frequency: str = "daily",
+    backup_retention_days: int = 30,
+    queue_initial_backup: bool = True,
+) -> None:
+    """Implementation for `projects onboard`."""
+    payload = _build_onboarding_payload(
+        backup_frequency=backup_frequency,
+        backup_retention_days=backup_retention_days,
+        queue_initial_backup=queue_initial_backup,
+    )
+    result = projects_api("POST", f"/{project_id}/onboard", json=payload)
+    output_success(f"Queued onboarding for project '{project_id}'")
     output_json(result)
 
 

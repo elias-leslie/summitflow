@@ -1,6 +1,7 @@
 """Pydantic models for projects API."""
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -25,6 +26,26 @@ class ProjectPermissionBootstrap(BaseModel):
         return self
 
 
+class ProjectOnboardingRequest(BaseModel):
+    """Standard SummitFlow onboarding settings for a project."""
+
+    enable_backup_schedule: bool = True
+    backup_frequency: Literal["daily", "weekly", "monthly", "hourly"] = "daily"
+    backup_retention_days: int = Field(default=30, ge=1)
+    queue_initial_backup: bool = True
+
+
+class ProjectOnboardingResponse(BaseModel):
+    """Queued onboarding response."""
+
+    status: str
+    project_id: str
+    backup_schedule_enabled: bool
+    backup_frequency: str
+    backup_retention_days: int
+    queue_initial_backup: bool
+
+
 class ProjectCreate(BaseModel):
     """Request model for creating a project."""
 
@@ -36,6 +57,7 @@ class ProjectCreate(BaseModel):
     frontend_port: int | None = None  # Canonical frontend port
     backend_port: int | None = None  # Canonical backend port
     agent_hub_permission: ProjectPermissionBootstrap | None = None
+    onboarding: ProjectOnboardingRequest | None = None
 
 
 class ProjectResponse(BaseModel):
@@ -98,4 +120,3 @@ class ProjectsWithStatsResponse(BaseModel):
 
     projects: list[ProjectWithStats]
     total: int
-

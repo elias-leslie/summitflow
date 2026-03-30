@@ -17,6 +17,7 @@ from fastapi.responses import PlainTextResponse
 
 from cli.commands.tasks_ready_all import lane_task_id, render_ready_all_compact, task_sort_key
 
+from ...logging_config import get_logger
 from ...schemas.tasks import TaskListResponse
 from ...services._lane_inventory import fetch_live_project_inventory
 from ...storage import projects as project_store
@@ -27,6 +28,7 @@ from .helpers import get_worktree_response
 from .response import task_to_response
 
 router = APIRouter()
+logger = get_logger(__name__)
 
 
 def _build_filter_kwargs(
@@ -124,7 +126,15 @@ async def _collect_execution_ready_tasks(
 
 async def _fetch_live_lane_task_ids(project_id: str) -> set[str]:
     """Return live task ids with active owner/specialist evidence from Agent Hub."""
-    owner_sessions, specialist_rows = await asyncio.to_thread(fetch_live_project_inventory, project_id)
+    try:
+        owner_sessions, specialist_rows = await asyncio.to_thread(fetch_live_project_inventory, project_id)
+    except Exception as exc:
+        logger.warning(
+            "ready_tasks_live_inventory_unavailable",
+            project_id=project_id,
+            error=str(exc),
+        )
+        return set()
     live_task_ids = {
         task_id
         for session in owner_sessions

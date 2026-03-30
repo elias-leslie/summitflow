@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from pathlib import Path
 
 from ..logging_config import get_logger
@@ -136,6 +137,48 @@ def _collect_db_extra_repos() -> list[Path]:
     return repos
 
 
+def _resolve_project_id_from_sources(
+    repo_path: Path,
+    project_roots: list[tuple[str, str]],
+    *,
+    project_id: str | None = None,
+    translate_path: Callable[[str], Path] = _translate_path,
+) -> str | None:
+    """Resolve a project id from raw project roots while allowing caller-local collaborators."""
+    if project_id:
+        return project_id
+
+    candidate = _normalize_repo_path(repo_path)
+    for db_project_id, raw_root in project_roots:
+        if candidate == _normalize_repo_path(translate_path(raw_root)):
+            return db_project_id
+    return None
+
+
+def _merge_managed_repos(
+    db_repos: list[Path],
+    extra_repos: list[Path],
+    project_roots: dict[str, Path],
+    config_repos: list[Path],
+    *,
+    validate_repo: Callable[[Path], bool] = is_valid_git_repo,
+    is_shadowed_project_repo: Callable[[Path, dict[str, Path]], bool] = _is_shadowed_project_repo,
+) -> list[Path]:
+    """Merge repo sources without duplicating project-shadowed or invalid config repos."""
+    repos = list(db_repos)
+    for extra_repo in extra_repos:
+        if is_shadowed_project_repo(extra_repo, project_roots):
+            continue
+        if extra_repo not in repos:
+            repos.append(extra_repo)
+    for config_repo in config_repos:
+        if is_shadowed_project_repo(config_repo, project_roots):
+            continue
+        if validate_repo(config_repo) and config_repo not in repos:
+            repos.append(config_repo)
+    return repos
+
+
 def _resolve_project_id(repo_path: Path, project_id: str | None = None) -> str | None:
     """Resolve the project id for a repo path when it is a registered project root.
 
@@ -143,38 +186,21 @@ def _resolve_project_id(repo_path: Path, project_id: str | None = None) -> str |
     Config/workspace/backup repos are managed, but they are not project repos
     and should remain unscoped so the UI can treat them separately.
     """
-    if project_id:
-        return project_id
-
-    try:
-        candidate = repo_path.resolve()
-    except OSError:
-        candidate = repo_path
-
-    for db_project_id, raw_root in _query_db_project_roots():
-        translated_root = _translate_path(raw_root)
-        try:
-            root_path = translated_root.resolve()
-        except OSError:
-            root_path = translated_root
-        if candidate == root_path:
-            return db_project_id
-
-    return None
+    return _resolve_project_id_from_sources(
+        repo_path,
+        _query_db_project_roots(),
+        project_id=project_id,
+        translate_path=_translate_path,
+    )
 
 
 def get_managed_repos() -> list[Path]:
     """Get list of managed repos from DB-backed sources plus local fallback repos."""
-    repos = _collect_db_repos()
-    project_roots = _registered_project_roots()
-    for extra_repo in _collect_db_extra_repos():
-        if _is_shadowed_project_repo(extra_repo, project_roots):
-            continue
-        if extra_repo not in repos:
-            repos.append(extra_repo)
-    for config_repo in _load_repo_paths_from_file(FALLBACK_FILE):
-        if _is_shadowed_project_repo(config_repo, project_roots):
-            continue
-        if is_valid_git_repo(config_repo) and config_repo not in repos:
-            repos.append(config_repo)
-    return repos
+    return _merge_managed_repos(
+        _collect_db_repos(),
+        _collect_db_extra_repos(),
+        _registered_project_roots(),
+        _load_repo_paths_from_file(FALLBACK_FILE),
+        validate_repo=is_valid_git_repo,
+        is_shadowed_project_repo=_is_shadowed_project_repo,
+    )

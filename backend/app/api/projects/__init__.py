@@ -9,6 +9,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from psycopg import sql
 
 from ...services import explorer
+from ...storage import backups as backup_store
 from ...storage.connection import get_connection, get_cursor
 from .agent_hub import (
     delete_agent_hub_project_permission,
@@ -25,10 +26,13 @@ from .db_helpers import (
 from .models import (
     ProjectCreate,
     ProjectHealthResponse,
+    ProjectOnboardingRequest,
+    ProjectOnboardingResponse,
     ProjectResponse,
     ProjectsWithStatsResponse,
     ProjectUpdate,
 )
+from .onboarding import build_onboarding_response, run_project_onboarding
 from .pulse import router as pulse_router
 
 router = APIRouter()
@@ -78,6 +82,9 @@ async def create_project(
 
     Triggers an initial Explorer scan for all types in the background.
     """
+    if project.onboarding is not None and not project.root_path:
+        raise HTTPException(status_code=400, detail="Project onboarding requires root_path")
+
     response = create_project_in_db(
         project.id,
         project.name,
@@ -97,13 +104,21 @@ async def create_project(
             delete_project_in_db(project.id)
             raise
 
-    # Trigger initial Explorer scan in background (all types)
-    background_tasks.add_task(
-        explorer.run_scan_job,
-        project.id,
-        None,
-        triggered_by="project_create",
-    )
+    if project.onboarding is not None:
+        background_tasks.add_task(
+            run_project_onboarding,
+            project.id,
+            project.onboarding,
+            triggered_by="project_create",
+        )
+    else:
+        # Trigger initial Explorer scan in background (all types)
+        background_tasks.add_task(
+            explorer.run_scan_job,
+            project.id,
+            None,
+            triggered_by="project_create",
+        )
 
     return response
 
@@ -273,6 +288,28 @@ async def update_project(project_id: str, update: ProjectUpdate) -> ProjectRespo
         root_path=row[4],
         created_at=row[5],
     )
+
+
+@router.post("/{project_id}/onboard", response_model=ProjectOnboardingResponse)
+async def onboard_project(
+    project_id: str,
+    request: ProjectOnboardingRequest,
+    background_tasks: BackgroundTasks,
+) -> ProjectOnboardingResponse:
+    """Queue standard SummitFlow onboarding for an existing project."""
+    project = get_project_from_db(project_id)
+    if not project.root_path:
+        raise HTTPException(status_code=400, detail="Project onboarding requires root_path")
+    if not backup_store.get_source(project_id):
+        raise HTTPException(status_code=400, detail="Project onboarding requires a backup source")
+
+    background_tasks.add_task(
+        run_project_onboarding,
+        project_id,
+        request,
+        triggered_by="project_onboard",
+    )
+    return build_onboarding_response(project_id, request)
 
 
 @router.delete("/{project_id}")
