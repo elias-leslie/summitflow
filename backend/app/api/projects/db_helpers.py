@@ -5,9 +5,10 @@ from typing import Any
 
 import psycopg
 from fastapi import HTTPException
+from psycopg import sql
 
 from ...storage.connection import get_connection, get_cursor
-from .models import ProjectResponse, ProjectStats, ProjectWithStats
+from .models import ProjectResponse, ProjectStats, ProjectUpdate, ProjectWithStats
 
 
 def sync_project_backup_source(
@@ -196,3 +197,50 @@ def delete_project_in_db(project_id: str) -> None:
         cur.execute("DELETE FROM backup_sources WHERE id = %s", (project_id,))
         cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
         conn.commit()
+
+
+def update_project_in_db(project_id: str, update: ProjectUpdate) -> ProjectResponse:
+    """Apply partial updates to a project and return the updated record."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+
+        field_map = {
+            "name": update.name,
+            "base_url": update.base_url,
+            "health_endpoint": update.health_endpoint,
+            "root_path": update.root_path,
+        }
+        updates = [
+            sql.SQL("{} = {}").format(sql.Identifier(col), sql.Placeholder())
+            for col, val in field_map.items()
+            if val is not None
+        ]
+        params: list[object] = [val for val in field_map.values() if val is not None]
+
+        if not updates:
+            raise HTTPException(status_code=400, detail="No fields to update")
+
+        params.append(project_id)
+        query = sql.SQL(
+            "UPDATE projects SET {updates} WHERE id = %s"
+            " RETURNING id, name, base_url, health_endpoint, root_path, created_at"
+        ).format(updates=sql.SQL(", ").join(updates))
+        cur.execute(query, params)
+        row = cur.fetchone()
+        if row:
+            sync_project_backup_source(cur, row[0], row[1], row[4])
+        conn.commit()
+
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+
+    return ProjectResponse(
+        id=row[0],
+        name=row[1],
+        base_url=row[2],
+        health_endpoint=row[3],
+        root_path=row[4],
+        created_at=row[5],
+    )
