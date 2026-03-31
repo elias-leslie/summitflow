@@ -6,11 +6,10 @@ from datetime import UTC, datetime
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, HTTPException
-from psycopg import sql
 
 from ...services import explorer
 from ...storage import backups as backup_store
-from ...storage.connection import get_connection, get_cursor
+from ...storage.connection import get_cursor
 from .agent_hub import (
     delete_agent_hub_project_permission,
     sync_agent_hub_project_permission,
@@ -21,7 +20,7 @@ from .db_helpers import (
     delete_project_in_db,
     fetch_project_stats,
     get_project_from_db,
-    sync_project_backup_source,
+    update_project_in_db,
 )
 from .models import (
     ProjectCreate,
@@ -36,10 +35,26 @@ from .onboarding import build_onboarding_response, run_project_onboarding
 from .pulse import router as pulse_router
 
 router = APIRouter()
-
 router.include_router(pulse_router, tags=["projects"])
 
+# Timeouts
 _PROJECT_HEALTH_TIMEOUT = httpx.Timeout(2.0, connect=0.5)
+_HEALTH_CHECK_FULL_TIMEOUT = 10
+
+# Triggered-by labels
+_TRIGGER_PROJECT_CREATE = "project_create"
+_TRIGGER_PROJECT_ONBOARD = "project_onboard"
+
+# Shared SQL
+_SQL_LIST_PROJECTS = """
+    SELECT id, name, base_url, health_endpoint, root_path, created_at
+    FROM projects
+    ORDER BY created_at DESC
+"""
+
+# Error messages
+_ERR_ONBOARDING_REQUIRES_ROOT = "Project onboarding requires root_path"
+_ERR_ONBOARDING_REQUIRES_BACKUP = "Project onboarding requires a backup source"
 
 
 async def _probe_project_health(
@@ -63,12 +78,11 @@ async def _resolve_project_health_statuses(
     targets = list(projects)
     if not targets:
         return {}
-
     async with httpx.AsyncClient(timeout=_PROJECT_HEALTH_TIMEOUT) as client:
         results = await asyncio.gather(
             *(
-                _probe_project_health(client, project_id, base_url, health_endpoint)
-                for project_id, base_url, health_endpoint in targets
+                _probe_project_health(client, pid, url, ep)
+                for pid, url, ep in targets
             )
         )
     return dict(results)
@@ -83,7 +97,7 @@ async def create_project(
     Triggers an initial Explorer scan for all types in the background.
     """
     if project.onboarding is not None and not project.root_path:
-        raise HTTPException(status_code=400, detail="Project onboarding requires root_path")
+        raise HTTPException(status_code=400, detail=_ERR_ONBOARDING_REQUIRES_ROOT)
 
     response = create_project_in_db(
         project.id,
@@ -109,15 +123,14 @@ async def create_project(
             run_project_onboarding,
             project.id,
             project.onboarding,
-            triggered_by="project_create",
+            triggered_by=_TRIGGER_PROJECT_CREATE,
         )
     else:
-        # Trigger initial Explorer scan in background (all types)
         background_tasks.add_task(
             explorer.run_scan_job,
             project.id,
             None,
-            triggered_by="project_create",
+            triggered_by=_TRIGGER_PROJECT_CREATE,
         )
 
     return response
@@ -127,19 +140,12 @@ async def create_project(
 async def list_projects() -> list[ProjectResponse]:
     """List all registered projects."""
     with get_cursor() as cur:
-        cur.execute(
-            """
-                SELECT id, name, base_url, health_endpoint, root_path, created_at
-                FROM projects
-                ORDER BY created_at DESC
-                """
-        )
+        cur.execute(_SQL_LIST_PROJECTS)
         rows = cur.fetchall()
 
     health_statuses = await _resolve_project_health_statuses(
         (row[0], row[2], row[3]) for row in rows
     )
-
     return [
         ProjectResponse(
             id=row[0],
@@ -158,21 +164,13 @@ async def list_projects() -> list[ProjectResponse]:
 async def list_projects_with_stats() -> ProjectsWithStatsResponse:
     """List all projects with aggregated stats (features, tasks, bugs, blocked)."""
     with get_cursor() as cur:
-        cur.execute(
-            """
-            SELECT id, name, base_url, health_endpoint, root_path, created_at
-            FROM projects
-            ORDER BY created_at DESC
-            """
-        )
+        cur.execute(_SQL_LIST_PROJECTS)
         projects = cur.fetchall()
 
     if not projects:
         return ProjectsWithStatsResponse(projects=[], total=0)
 
-    project_ids = [p[0] for p in projects]
-    stats_dict = fetch_project_stats(project_ids)
-
+    stats_dict = fetch_project_stats([p[0] for p in projects])
     health_statuses = await _resolve_project_health_statuses(
         (row[0], row[2], row[3]) for row in projects
     )
@@ -197,7 +195,6 @@ async def get_project(project_id: str) -> ProjectResponse:
 @router.get("/{project_id}/health", response_model=ProjectHealthResponse)
 async def check_project_health(project_id: str) -> ProjectHealthResponse:
     """Check health of a registered project."""
-    # Get project
     with get_cursor() as cur:
         cur.execute(
             "SELECT base_url, health_endpoint FROM projects WHERE id = %s",
@@ -208,16 +205,12 @@ async def check_project_health(project_id: str) -> ProjectHealthResponse:
     if not row:
         raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
 
-    base_url, health_endpoint = row
-    url = f"{base_url}{health_endpoint}"
-
-    # Check health
+    url = f"{row[0]}{row[1]}"
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
+        async with httpx.AsyncClient(timeout=_HEALTH_CHECK_FULL_TIMEOUT) as client:
             start = datetime.now(UTC)
             response = await client.get(url)
             elapsed = (datetime.now(UTC) - start).total_seconds() * 1000
-
         return ProjectHealthResponse(
             project_id=project_id,
             healthy=response.status_code == 200,
@@ -234,60 +227,10 @@ async def check_project_health(project_id: str) -> ProjectHealthResponse:
         )
 
 
-
 @router.patch("/{project_id}", response_model=ProjectResponse)
 async def update_project(project_id: str, update: ProjectUpdate) -> ProjectResponse:
     """Update a project."""
-    with get_connection() as conn, conn.cursor() as cur:
-        # Check if project exists
-        cur.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
-        if not cur.fetchone():
-            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
-
-        # Build update query dynamically
-        updates: list[sql.Composed] = []
-        params: list[object] = []
-        if update.name is not None:
-            updates.append(sql.SQL("name = {}").format(sql.Placeholder()))
-            params.append(update.name)
-        if update.base_url is not None:
-            updates.append(sql.SQL("base_url = {}").format(sql.Placeholder()))
-            params.append(update.base_url)
-        if update.health_endpoint is not None:
-            updates.append(sql.SQL("health_endpoint = {}").format(sql.Placeholder()))
-            params.append(update.health_endpoint)
-        if update.root_path is not None:
-            updates.append(sql.SQL("root_path = {}").format(sql.Placeholder()))
-            params.append(update.root_path)
-
-        if not updates:
-            raise HTTPException(status_code=400, detail="No fields to update")
-
-        params.append(project_id)
-        query = sql.SQL(
-            """
-                UPDATE projects SET {updates}
-                WHERE id = %s
-                RETURNING id, name, base_url, health_endpoint, root_path, created_at
-                """
-        ).format(updates=sql.SQL(", ").join(updates))
-        cur.execute(query, params)
-        row = cur.fetchone()
-        if row:
-            sync_project_backup_source(cur, row[0], row[1], row[4])
-        conn.commit()
-
-    if not row:
-        raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
-
-    return ProjectResponse(
-        id=row[0],
-        name=row[1],
-        base_url=row[2],
-        health_endpoint=row[3],
-        root_path=row[4],
-        created_at=row[5],
-    )
+    return update_project_in_db(project_id, update)
 
 
 @router.post("/{project_id}/onboard", response_model=ProjectOnboardingResponse)
@@ -299,15 +242,15 @@ async def onboard_project(
     """Queue standard SummitFlow onboarding for an existing project."""
     project = get_project_from_db(project_id)
     if not project.root_path:
-        raise HTTPException(status_code=400, detail="Project onboarding requires root_path")
+        raise HTTPException(status_code=400, detail=_ERR_ONBOARDING_REQUIRES_ROOT)
     if not backup_store.get_source(project_id):
-        raise HTTPException(status_code=400, detail="Project onboarding requires a backup source")
+        raise HTTPException(status_code=400, detail=_ERR_ONBOARDING_REQUIRES_BACKUP)
 
     background_tasks.add_task(
         run_project_onboarding,
         project_id,
         request,
-        triggered_by="project_onboard",
+        triggered_by=_TRIGGER_PROJECT_ONBOARD,
     )
     return build_onboarding_response(project_id, request)
 
@@ -318,5 +261,4 @@ async def delete_project(project_id: str) -> dict[str, str]:
     project = get_project_from_db(project_id)
     await delete_agent_hub_project_permission(project_id)
     delete_project_in_db(project_id)
-
     return {"status": "deleted", "project_id": project.id}
