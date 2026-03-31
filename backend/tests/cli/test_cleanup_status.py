@@ -9,7 +9,7 @@ from unittest.mock import patch
 from typer.testing import CliRunner
 
 from cli.commands.cleanup import app, build_cleanup_status_payload
-from cli.commands.cleanup_analysis import CleanupAction, analyze_worktree
+from cli.commands.cleanup_analysis import CleanupAction, analyze_worktree, cleanup_worktree
 
 runner = CliRunner()
 
@@ -221,6 +221,70 @@ def test_cleanup_status_routes_missing_task_merge_candidates_to_review(tmp_path:
     assert payload["repositories"][0]["needs_merge_tasks"] == []
     assert payload["repositories"][0]["review_tasks"] == ["task-missing"]
 
+
+
+
+def test_cleanup_status_treats_reconciled_or_authoritative_lanes_as_cleanup_only_residue(tmp_path: Path) -> None:
+    repo_paths = [Path("/repos/terminal")]
+    worktree = _make_existing_worktree(tmp_path, "task-reconciled", "terminal")
+
+    with (
+        patch("cli.commands.cleanup._get_managed_repos", return_value=repo_paths),
+        patch("cli.commands.cleanup.get_project_id", return_value="terminal"),
+        patch("cli.commands.cleanup.get_stale_checkpoints", return_value=[]),
+        patch("cli.commands.cleanup.find_snapshot_residue", return_value=[]),
+        patch(
+            "cli.commands.cleanup.build_repo_workspace_summary",
+            return_value=SimpleNamespace(
+                active_worktrees=1,
+                orphan_branches=0,
+                prunable_branches=0,
+                worktree_task_ids=["task-reconciled"],
+                orphan_branch_names=[],
+                prunable_branch_names=[],
+                salvage_task_ids=[],
+                review_orphan_task_ids=[],
+                dirty_main_repo=False,
+            ),
+        ),
+        patch(
+            "cli.commands.cleanup.get_active_worktrees",
+            side_effect=[[worktree], [worktree]],
+        ),
+        patch("cli.commands.cleanup.has_uncommitted_changes", return_value=False),
+        patch(
+            "cli.commands.cleanup.analyze_worktree",
+            return_value=SimpleNamespace(
+                worktree=worktree,
+                action=CleanupAction.SAFE_DELETE,
+                task_status="reconciled",
+            ),
+        ),
+    ):
+        payload = build_cleanup_status_payload(all_projects=False)
+
+    assert payload["repositories"][0]["needs_merge_tasks"] == []
+    assert payload["repositories"][0]["review_tasks"] == []
+    assert payload["repositories"][0]["needs_cleanup"] is False
+
+
+def test_cleanup_worktree_uses_task_id_cleanup_api(tmp_path: Path) -> None:
+    worktree = _make_existing_worktree(tmp_path, "task-safe", "terminal")
+    analysis = SimpleNamespace(
+        worktree=worktree,
+        action=CleanupAction.SAFE_DELETE,
+        reason="Already merged",
+    )
+
+    with patch("cli.commands.cleanup_analysis.remove_worktree", return_value=True) as mock_remove:
+        result = cleanup_worktree(analysis)
+
+    assert result == (True, "Removed task-safe")
+    mock_remove.assert_called_once_with(
+        "task-safe",
+        delete_branch=True,
+        project_id="terminal",
+    )
 
 def test_cleanup_status_fail_on_residue_returns_nonzero() -> None:
     with patch(

@@ -28,6 +28,21 @@ class CleanupAction(StrEnum):
     TASK_ACTIVE = "task_active"  # Task still running/pending
 
 
+_TERMINAL_RESIDUE_TASK_STATUSES = {
+    "completed",
+    "completed_ready_for_closure",
+    "reconciled",
+    "done",
+}
+
+_TERMINAL_RESIDUE_LIFECYCLES = {
+    "authoritative,superseded",
+    "reconciled",
+    "retired",
+    "retired_lane_no_action",
+}
+
+
 @dataclass
 class WorktreeAnalysis:
     """Analysis result for a worktree."""
@@ -49,7 +64,11 @@ def get_task_info(task_id: str) -> tuple[str | None, str | None]:
     task = task_store.get_task(task_id)
     if not task:
         return None, None
-    return task.get("status"), task.get("title")
+    status = task.get("status")
+    lifecycle = task.get("lifecycle")
+    if lifecycle in _TERMINAL_RESIDUE_LIFECYCLES and status not in _TERMINAL_RESIDUE_TASK_STATUSES:
+        status = "reconciled"
+    return status, task.get("title")
 
 
 def _determine_action(
@@ -80,6 +99,12 @@ def _determine_action(
             action = CleanupAction.MANUAL_REVIEW
             reason = f"{task_status.capitalize()} task has unmerged commits and requires review before cleanup"
         return action, reason
+    if task_status in _TERMINAL_RESIDUE_TASK_STATUSES:
+        if is_merged or commits_ahead == 0:
+            action = CleanupAction.ALREADY_MERGED if is_merged else CleanupAction.SAFE_DELETE
+            reason = "Already merged" if is_merged else f"{task_status.capitalize()} residue can be discarded"
+            return action, reason
+        return CleanupAction.MANUAL_REVIEW, f"{task_status.capitalize()} residue still has unmerged commits"
     if has_conflicts:
         return CleanupAction.HAS_CONFLICTS, "Would conflict with main"
     if is_merged or commits_ahead == 0:
@@ -130,55 +155,45 @@ def analyze_worktree(worktree: WorktreeInfo) -> WorktreeAnalysis:
     )
 
 
-_ACTION_ICONS = {
-    CleanupAction.SAFE_DELETE: "[SAFE]",
-    CleanupAction.ALREADY_MERGED: "[MERGED]",
-    CleanupAction.NEEDS_MERGE: "[NEEDS_MERGE]",
-    CleanupAction.HAS_CONFLICTS: "[CONFLICT]",
-    CleanupAction.MANUAL_REVIEW: "[REVIEW]",
-    CleanupAction.TASK_ACTIVE: "[ACTIVE]",
-}
+def categorize_analysis(analysis: WorktreeAnalysis) -> tuple[str, str]:
+    """Return category label and display reason for a worktree analysis."""
+    if analysis.action in (CleanupAction.SAFE_DELETE, CleanupAction.ALREADY_MERGED):
+        return "SAFE", analysis.reason
+    if analysis.action == CleanupAction.NEEDS_MERGE:
+        return "NEEDS_MERGE", analysis.reason
+    if analysis.action == CleanupAction.HAS_CONFLICTS:
+        return "CONFLICT", analysis.reason
+    if analysis.action == CleanupAction.TASK_ACTIVE:
+        return "ACTIVE", analysis.reason
+    return "REVIEW", analysis.reason
 
 
 def format_analysis(analysis: WorktreeAnalysis) -> str:
-    """Format analysis for display."""
-    icon = _ACTION_ICONS.get(analysis.action, "[?]")
-    task_info = f"task:{analysis.task_status or 'NOT_FOUND'}"
-    title = analysis.task_title[:40] if analysis.task_title else "?"
-    age = analysis.last_commit_age_days
-    age_str = f"{age}d" if age is not None else "?"
-    commits_str = f"+{analysis.commits_ahead}/-{analysis.commits_behind}"
-    flags = (["dirty"] if analysis.has_uncommitted else []) + (
-        ["conflicts"] if analysis.has_conflicts else []
-    )
-    flags_str = ",".join(flags) if flags else "-"
-    tid = analysis.worktree.task_id
-    return (
-        f"{icon} {tid}|{task_info}|{commits_str}|age:{age_str}|"
-        f"{flags_str}|{analysis.reason}|{title}"
-    )
+    """Render a compact cleanup analysis line."""
+    category, reason = categorize_analysis(analysis)
+    return f"{analysis.worktree.task_id} [{category}] {reason}"
 
 
 def cleanup_worktree(analysis: WorktreeAnalysis, force: bool = False) -> tuple[bool, str]:
-    """Cleanup a worktree based on analysis. Returns (success, message)."""
-    action = analysis.action
-    if not analysis.worktree.path.exists():
-        return True, "Already removed"
-    if not force and action == CleanupAction.TASK_ACTIVE:
-        return False, f"Skipped: task is {analysis.task_status}"
-    if not force and action == CleanupAction.NEEDS_MERGE:
-        return False, f"Skipped: has {analysis.commits_ahead} unmerged commit(s)"
-    if not force and action == CleanupAction.HAS_CONFLICTS:
-        return False, "Skipped: would conflict with main"
-    if not force and action == CleanupAction.MANUAL_REVIEW:
-        return False, f"Skipped: {analysis.reason}"
+    """Cleanup a worktree based on analysis.
+
+    Returns:
+        (success, message)
+    """
+    if analysis.action == CleanupAction.TASK_ACTIVE and not force:
+        return False, "Cannot remove active task worktree without --force"
+
+    if analysis.action in (CleanupAction.NEEDS_MERGE, CleanupAction.HAS_CONFLICTS, CleanupAction.MANUAL_REVIEW) and not force:
+        return False, f"Worktree requires manual review: {analysis.reason}"
+
     try:
         success = remove_worktree(
             analysis.worktree.task_id,
             delete_branch=True,
             project_id=analysis.worktree.project_id,
         )
-    except Exception as e:
-        return False, f"Error: {e}"
-
-    return (True, "Removed") if success else (False, "Worktree not found")
+    except Exception as exc:
+        return False, f"Error: {exc}"
+    if success:
+        return True, f"Removed {analysis.worktree.task_id}"
+    return False, f"Failed to remove {analysis.worktree.task_id}"
