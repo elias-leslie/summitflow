@@ -120,9 +120,10 @@ def _warn_on_publish_failure(result: subprocess.CompletedProcess[str]) -> None:
     repo_result = payload.get("repos", [{}])[0] if payload.get("repos") else {}
     status = str(repo_result.get("status", payload.get("status", "UNKNOWN")))
     reason = str(repo_result.get("reason", "") or "")
+    detail_text = str(repo_result.get("detail", "") or "")
     if result.returncode == 0 and status in {"SUCCESS", "SKIP"}:
         return
-    detail = reason or stderr or stdout[:200] or "unknown publish failure"
+    detail = detail_text or reason or stderr or stdout[:200] or "unknown publish failure"
     output_warning(f"Task merged but publish did not complete cleanly: {status} ({detail})")
 
 

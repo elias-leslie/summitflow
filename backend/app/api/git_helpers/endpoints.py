@@ -69,20 +69,29 @@ def _parse_smart_sync_output(output: str, stderr_text: str, returncode: int) -> 
         data = json.loads(output)
     except json.JSONDecodeError:
         return {
-            "success": False, "status": "UNKNOWN", "gates": "",
-            "errors": [stderr_text[:200]], "message": "", "reason": "json_parse_failed",
-            "pushed": False, "raw_output": output + stderr_text,
+            "success": False,
+            "status": "UNKNOWN",
+            "gates": "",
+            "errors": [stderr_text[:200]],
+            "message": "",
+            "reason": "json_parse_failed",
+            "detail": stderr_text[:200],
+            "pushed": False,
+            "raw_output": output + stderr_text,
         }
     repo_data = data.get("repos", [{}])[0] if data.get("repos") else {}
+    detail = str(repo_data.get("detail", "") or stderr_text or "")
+    error_text = detail or str(repo_data.get("reason", "") or "")
     return {
         "success": returncode == 0,
         "status": repo_data.get("status", data.get("status", "UNKNOWN")),
         "gates": repo_data.get("gates", ""),
-        "errors": [repo_data["reason"]] if repo_data.get("reason") else [],
+        "errors": [error_text] if error_text else [],
         "message": repo_data.get("message", ""),
         "reason": repo_data.get("reason", ""),
+        "detail": detail,
         "pushed": repo_data.get("pushed", False),
-        "raw_output": output,
+        "raw_output": output + stderr_text,
     }
 
 

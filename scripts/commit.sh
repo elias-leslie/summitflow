@@ -44,6 +44,8 @@ TASK_ID=""
 COMMIT_PATHS=()
 LAST_STATUS=""
 JSON_RESULTS=()
+LAST_PUSH_DETAIL=""
+LAST_PULL_DETAIL=""
 
 show_help() {
     sed -n '2,/^$/p' "$0" | sed 's/^# //' | sed 's/^#//'
@@ -104,6 +106,12 @@ scope_add_all() {
     fi
 }
 
+scope_reset_index() {
+    if has_commit_scope; then
+        git reset -q HEAD -- . >/dev/null 2>&1 || true
+    fi
+}
+
 is_project_repo() {
     local repo=$1
     [[ -d "$repo/backend" ]] || [[ -f "$repo/pyproject.toml" ]] || [[ -d "$repo/frontend" ]]
@@ -113,14 +121,31 @@ push_current_branch() {
     local branch=$1
     [[ -z "$branch" ]] && return 1
 
+    LAST_PUSH_DETAIL=""
     local push_args=()
     $FORCE && push_args+=(--force-with-lease)
 
+    local push_out="" push_status=0
     if git rev-parse --abbrev-ref --symbolic-full-name "@{upstream}" >/dev/null 2>&1; then
-        git push "${push_args[@]}" >/dev/null 2>&1
+        push_out=$(git push "${push_args[@]}" 2>&1) || push_status=$?
     else
-        git push "${push_args[@]}" --set-upstream origin "$branch" >/dev/null 2>&1
+        push_out=$(git push "${push_args[@]}" --set-upstream origin "$branch" 2>&1) || push_status=$?
     fi
+
+    if [[ $push_status -eq 0 ]]; then
+        return 0
+    fi
+
+    LAST_PUSH_DETAIL=$(printf '%s\n' "$push_out" | tail -n 20 | awk '
+        NF {
+            gsub(/[[:space:]]+/, " ")
+            sub(/^ /, "")
+            sub(/ $/, "")
+            printf "%s%s", sep, $0
+            sep = " | "
+        }
+    ')
+    return 1
 }
 
 resolve_repo_name() {
@@ -141,7 +166,20 @@ safe_pull() {
     local branch=$2
     local upstream="origin/$branch"
 
-    if ! git fetch origin "$branch" >/dev/null 2>&1; then
+    LAST_PULL_DETAIL=""
+
+    local fetch_out="" fetch_status=0
+    fetch_out=$(git fetch origin "$branch" 2>&1) || fetch_status=$?
+    if [[ $fetch_status -ne 0 ]]; then
+        LAST_PULL_DETAIL=$(printf '%s\n' "$fetch_out" | tail -n 20 | awk '
+            NF {
+                gsub(/[[:space:]]+/, " ")
+                sub(/^ /, "")
+                sub(/ $/, "")
+                printf "%s%s", sep, $0
+                sep = " | "
+            }
+        ')
         return 1
     fi
 
@@ -152,13 +190,24 @@ safe_pull() {
     local original_head
     original_head=$(git rev-parse HEAD)
 
-    if ! git rebase "$upstream" >/dev/null 2>&1; then
+    local rebase_out="" rebase_status=0
+    rebase_out=$(git rebase "$upstream" 2>&1) || rebase_status=$?
+    if [[ $rebase_status -ne 0 ]]; then
         git rebase --abort >/dev/null 2>&1 || true
         local current_head
         current_head=$(git rev-parse HEAD)
         if [[ "$original_head" != "$current_head" ]]; then
             git reset --hard "$original_head" >/dev/null 2>&1 || true
         fi
+        LAST_PULL_DETAIL=$(printf '%s\n' "$rebase_out" | tail -n 20 | awk '
+            NF {
+                gsub(/[[:space:]]+/, " ")
+                sub(/^ /, "")
+                sub(/ $/, "")
+                printf "%s%s", sep, $0
+                sep = " | "
+            }
+        ')
         return 1
     fi
 
@@ -406,15 +455,15 @@ json_escape() {
 }
 
 # Emit result in TOON or JSON. Sets LAST_STATUS for counting.
-# Args: status name sha message pushed gates reason
+# Args: status name sha message pushed gates reason [detail]
 emit_result() {
-    local status=$1 name=$2 sha=$3 message=$4 pushed=$5 gates=$6 reason=$7
+    local status=$1 name=$2 sha=$3 message=$4 pushed=$5 gates=$6 reason=$7 detail=${8:-}
     LAST_STATUS="$status"
 
     if $JSON_OUTPUT; then
         local json_entry
-        json_entry=$(printf '{"name":"%s","status":"%s","sha":"%s","message":"%s","pushed":%s,"gates":"%s","reason":"%s"}' \
-            "$(json_escape "$name")" "$status" "$sha" "$(json_escape "$message")" "$pushed" "$(json_escape "$gates")" "$(json_escape "$reason")")
+        json_entry=$(printf '{"name":"%s","status":"%s","sha":"%s","message":"%s","pushed":%s,"gates":"%s","reason":"%s","detail":"%s"}' \
+            "$(json_escape "$name")" "$status" "$sha" "$(json_escape "$message")" "$pushed" "$(json_escape "$gates")" "$(json_escape "$reason")" "$(json_escape "$detail")")
         JSON_RESULTS+=("$json_entry")
     else
         case "$status" in
@@ -429,10 +478,12 @@ emit_result() {
                 ;;
             PARTIAL)
                 echo "  WARN:${name}:${sha}:committed_not_pushed:${reason}"
+                [[ -n "$detail" ]] && echo "    detail: $detail"
                 ;;
             ERROR)
-                local detail="${reason:-$gates}"
-                echo "  ERROR:${name}:${detail}"
+                local label="${reason:-$gates}"
+                echo "  ERROR:${name}:${label}"
+                [[ -n "$detail" ]] && echo "    detail: $detail"
                 ;;
         esac
     fi
@@ -533,6 +584,7 @@ commit_project_repo() {
     commit_out=$(git commit -m "$message" 2>&1) || commit_status=$?
 
     if [[ $commit_status -ne 0 ]]; then
+        scope_reset_index
         if scope_has_changes; then
             scope_add_all
             commit_out=$(git commit -m "$message" 2>&1) || commit_status=$?
@@ -547,6 +599,7 @@ commit_project_repo() {
     local sha
     sha=$(git rev-parse --short HEAD)
 
+    scope_reset_index
     if scope_has_changes; then
         scope_add_all
         local followup_status=0
@@ -565,7 +618,7 @@ commit_project_repo() {
     if $PUSH; then
         if is_main_branch "$branch" && ! $FORCE; then
             if ! safe_pull "$repo_name" "$branch"; then
-                emit_result "PARTIAL" "$repo_name" "$sha" "$message" "false" "$gates" "pull_conflict"
+                emit_result "PARTIAL" "$repo_name" "$sha" "$message" "false" "$gates" "pull_conflict" "$LAST_PULL_DETAIL"
                 return 1
             fi
             sha=$(git rev-parse --short HEAD)
@@ -574,7 +627,7 @@ commit_project_repo() {
         if push_current_branch "$branch"; then
             pushed="true"
         else
-            emit_result "PARTIAL" "$repo_name" "$sha" "$message" "false" "$gates" "push_failed"
+            emit_result "PARTIAL" "$repo_name" "$sha" "$message" "false" "$gates" "push_failed" "$LAST_PUSH_DETAIL"
             return 1
         fi
     fi
@@ -644,7 +697,7 @@ commit_config_repo() {
     if $PUSH; then
         if is_main_branch "$branch" && ! $FORCE; then
             if ! safe_pull "$repo_name" "$branch"; then
-                emit_result "PARTIAL" "$repo_name" "$sha" "$message" "false" "" "pull_conflict"
+                emit_result "PARTIAL" "$repo_name" "$sha" "$message" "false" "" "pull_conflict" "$LAST_PULL_DETAIL"
                 return 1
             fi
             sha=$(git rev-parse --short HEAD)
@@ -653,7 +706,7 @@ commit_config_repo() {
         if push_current_branch "$branch"; then
             pushed="true"
         else
-            emit_result "PARTIAL" "$repo_name" "$sha" "$message" "false" "" "push_failed"
+            emit_result "PARTIAL" "$repo_name" "$sha" "$message" "false" "" "push_failed" "$LAST_PUSH_DETAIL"
             return 1
         fi
     fi
@@ -674,7 +727,7 @@ handle_push_only() {
             if [[ "$ahead" -gt 0 ]]; then
                 if is_main_branch "$branch" && ! $FORCE; then
                     if ! safe_pull "$repo_name" "$branch"; then
-                        emit_result "ERROR" "$repo_name" "" "" "false" "" "pull_conflict"
+                        emit_result "ERROR" "$repo_name" "" "" "false" "" "pull_conflict" "$LAST_PULL_DETAIL"
                         return 1
                     fi
                 fi
@@ -683,7 +736,7 @@ handle_push_only() {
                     emit_result "SUCCESS" "$repo_name" "$(git rev-parse --short HEAD)" "pushed_${ahead}_commits" "true" "" ""
                     return 0
                 fi
-                emit_result "ERROR" "$repo_name" "" "" "false" "" "push_failed"
+                emit_result "ERROR" "$repo_name" "" "" "false" "" "push_failed" "$LAST_PUSH_DETAIL"
                 return 1
             fi
         fi

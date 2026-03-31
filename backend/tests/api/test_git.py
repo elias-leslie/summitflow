@@ -405,3 +405,34 @@ class TestPREndpoints:
 
         assert response.status_code == 404
         assert "not found" in response.json()["detail"].lower()
+
+
+class TestSmartSyncParsing:
+    """Tests for smart-sync output parsing."""
+
+    def test_parse_smart_sync_output_prefers_detail_for_errors(self) -> None:
+        from app.api.git_helpers.endpoints import _parse_smart_sync_output
+
+        payload = (
+            '{"status":"FAILED","repos":[{"status":"ERROR","reason":"push_failed",'
+            '"detail":"remote rejected the push","message":"Publish change","pushed":false}]}'
+        )
+
+        result = _parse_smart_sync_output(payload, "", 1)
+
+        assert result["success"] is False
+        assert result["reason"] == "push_failed"
+        assert result["detail"] == "remote rejected the push"
+        assert result["errors"] == ["remote rejected the push"]
+        assert result["message"] == "Publish change"
+
+    def test_parse_smart_sync_output_uses_stderr_when_json_missing_detail(self) -> None:
+        from app.api.git_helpers.endpoints import _parse_smart_sync_output
+
+        payload = '{"status":"FAILED","repos":[{"status":"ERROR","reason":"push_failed","pushed":false}]}'
+
+        result = _parse_smart_sync_output(payload, "ssh: connect to host github.com timed out", 1)
+
+        assert result["detail"] == "ssh: connect to host github.com timed out"
+        assert result["errors"] == ["ssh: connect to host github.com timed out"]
+        assert result["raw_output"].endswith("ssh: connect to host github.com timed out")

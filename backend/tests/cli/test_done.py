@@ -645,6 +645,32 @@ class TestPublishCompletedWork:
 
     @patch("cli.commands.done_task.output_warning")
     @patch("subprocess.run")
+    def test_publish_warns_with_detail_when_commit_flow_includes_it(
+        self,
+        mock_run: MagicMock,
+        mock_warning: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(
+            "app.storage.projects.get_project_root_path",
+            lambda project_id: "/repos/summitflow",
+        )
+        mock_run.return_value = MagicMock(
+            returncode=1,
+            stdout=(
+                '{"status":"FAILED","repos":[{"status":"ERROR","reason":"push_failed",'
+                '"detail":"remote rejected the push"}]}'
+            ),
+            stderr="",
+        )
+
+        _publish_completed_work("task-123", "summitflow")
+
+        mock_warning.assert_called_once()
+        assert "remote rejected the push" in mock_warning.call_args.args[0]
+
+    @patch("cli.commands.done_task.output_warning")
+    @patch("subprocess.run")
     def test_publish_skips_warning_on_success(
         self,
         mock_run: MagicMock,
