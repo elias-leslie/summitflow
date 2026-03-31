@@ -19,7 +19,7 @@ from _scan_models import (
     Rule,
 )
 from _scan_parser import parse_added_lines, parse_runtime_lines
-from _scan_reporter import emit_json, print_findings, summarize
+from _scan_reporter import emit_json, print_findings
 
 
 def load_rules(pattern_file: Path) -> list[Rule]:
