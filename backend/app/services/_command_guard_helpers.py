@@ -85,12 +85,12 @@ def split_shell_segments(command: str) -> list[list[str]]:
     except ValueError:
         return [[command]]
     for token in tokens:
-        if token in _SHELL_SEPARATORS:
-            if current:
-                segments.append(current)
-                current = []
+        if token not in _SHELL_SEPARATORS:
+            current.append(token)
             continue
-        current.append(token)
+        if current:
+            segments.append(current)
+        current = []
     if current:
         segments.append(current)
     return segments
@@ -219,22 +219,22 @@ def force_pushes_shared_main(args: Sequence[str]) -> bool:
     )
 
 
+def _normalize_one_path(raw: str, repo_root: Path) -> str | None:
+    """Normalize a single raw path relative to repo_root; returns None to skip."""
+    path = raw.strip()
+    if not path:
+        return None
+    target = Path(path).expanduser()
+    if not target.is_absolute():
+        return path
+    try:
+        return target.resolve().relative_to(repo_root).as_posix()
+    except (OSError, ValueError):
+        return None
+
+
 def normalize_repo_paths(repo_root: Path, raw_paths: Sequence[str]) -> list[str]:
-    normalized: list[str] = []
-    for raw in raw_paths:
-        path = raw.strip()
-        if not path:
-            continue
-        target = Path(path).expanduser()
-        if target.is_absolute():
-            try:
-                target = target.resolve().relative_to(repo_root)
-            except (OSError, ValueError):
-                continue
-            normalized.append(target.as_posix())
-        else:
-            normalized.append(path)
-    return normalized
+    return [p for raw in raw_paths if (p := _normalize_one_path(raw, repo_root)) is not None]
 
 
 # --- Git and filesystem checks ---
@@ -262,69 +262,72 @@ def repo_root(cwd: Path) -> Path | None:
     return Path(root).resolve() if root else None
 
 
+def _rm_target_in_git_repo(tokens: Sequence[str], cwd: Path) -> bool:
+    """Return True if the rm/rmdir target is inside a git repo."""
+    target_token = next((t for t in tokens[1:] if not t.startswith("-")), None)
+    if not target_token:
+        return False
+    target = Path(target_token).expanduser()
+    if not target.is_absolute():
+        target = (cwd / target).resolve()
+    check = target.parent if not target.exists() else target
+    return is_inside_git_repo(check)
+
+
+def _find_touches_git_repo(tokens: Sequence[str], cwd: Path) -> bool:
+    """Return True if any find path argument is inside a git repo."""
+    for token in tokens[1:]:
+        if token == "-delete":
+            break
+        if token.startswith("-"):
+            continue
+        target = Path(token).expanduser()
+        if not target.is_absolute():
+            target = (cwd / target).resolve()
+        if is_inside_git_repo(target):
+            return True
+    return False
+
+
 def explicit_repo_target(tokens: Sequence[str], cwd: Path) -> bool:
     if not tokens:
         return False
     command = tokens[0]
     if command in {"rm", "rmdir"}:
-        target_token = next((token for token in tokens[1:] if not token.startswith("-")), None)
-        if not target_token:
-            return False
-        target = Path(target_token).expanduser()
-        if not target.is_absolute():
-            target = (cwd / target).resolve()
-        return is_inside_git_repo(target.parent if not target.exists() else target)
-        return False
+        return _rm_target_in_git_repo(tokens, cwd)
     if command == "find":
-        for token in tokens[1:]:
-            if token == "-delete":
-                break
-            if token.startswith("-"):
-                continue
-            target = Path(token).expanduser()
-            if not target.is_absolute():
-                target = (cwd / target).resolve()
-            if is_inside_git_repo(target):
-                return True
+        return _find_touches_git_repo(tokens, cwd)
     return False
 
 
 # --- Git subcommand decision helpers ---
 
 
+def _git_blocked(code: str, message: str, command: str) -> CommandGuardDecision:
+    return CommandGuardDecision(blocked=True, code=code, message=message, source="git", command=command)
+
+
 def git_checkout_decision(
     args: list[str], segment_text: str, check_fn: PathConflictFn,
 ) -> CommandGuardDecision | None:
-    _blocked_all = "BLOCKED:git checkout .:Discards all uncommitted changes at once."
-    if args[:1] == ["."] or args[:2] == ["--", "."]:
-        return CommandGuardDecision(
-            blocked=True, code="git_checkout_all", message=_blocked_all, source="git", command=segment_text,
-        )
+    msg = "BLOCKED:git checkout .:Discards all uncommitted changes at once."
     paths = git_paths_after_double_dash(args)
-    if not paths:
-        return None
-    if "." in paths:
-        return CommandGuardDecision(
-            blocked=True, code="git_checkout_all", message=_blocked_all, source="git", command=segment_text,
-        )
-    return check_fn(paths, segment_text)
+    if args[:1] == ["."] or args[:2] == ["--", "."] or "." in paths:
+        return _git_blocked("git_checkout_all", msg, segment_text)
+    return check_fn(paths, segment_text) if paths else None
 
 
 def git_restore_decision(
     args: list[str], segment_text: str, check_fn: PathConflictFn,
 ) -> CommandGuardDecision | None:
-    _blocked_all = "BLOCKED:git restore .:Discards all uncommitted changes at once."
+    msg = "BLOCKED:git restore .:Discards all uncommitted changes at once."
     if args[:1] == ["."]:
-        return CommandGuardDecision(
-            blocked=True, code="git_restore_all", message=_blocked_all, source="git", command=segment_text,
-        )
+        return _git_blocked("git_restore_all", msg, segment_text)
     paths, staging_only = git_restore_paths(args)
     if staging_only:
         return None
     if "." in paths:
-        return CommandGuardDecision(
-            blocked=True, code="git_restore_all", message=_blocked_all, source="git", command=segment_text,
-        )
+        return _git_blocked("git_restore_all", msg, segment_text)
     return check_fn(paths, segment_text)
 
 
