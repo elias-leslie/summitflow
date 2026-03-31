@@ -36,7 +36,7 @@ class HostRetentionPolicy:
     builder_cache_pressure_target_gb: int = 1
     image_max_age_hours: int = 0
     image_pressure_max_age_hours: int = 0
-    anonymous_volume_max_age_hours: int = 7 * 24
+    anonymous_volume_max_age_hours: int = 2 * 24
     npx_max_age_hours: int = 7 * 24
     playwright_max_age_hours: int = 14 * 24
     legacy_report_max_age_hours: int = 3 * 24
@@ -55,7 +55,7 @@ class HostRetentionPolicy:
                 "SF_HOST_RETENTION_IMAGE_PRESSURE_MAX_AGE_HOURS", 0
             ),
             anonymous_volume_max_age_hours=_int_env(
-                "SF_HOST_RETENTION_ANON_VOLUME_MAX_AGE_HOURS", 7 * 24
+                "SF_HOST_RETENTION_ANON_VOLUME_MAX_AGE_HOURS", 2 * 24
             ),
             npx_max_age_hours=_int_env("SF_HOST_RETENTION_NPX_MAX_AGE_HOURS", 7 * 24),
             playwright_max_age_hours=_int_env(

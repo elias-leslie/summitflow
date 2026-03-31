@@ -52,7 +52,7 @@ dev = [
 ]
 
 [tool.uv]
-constraint-dependencies = ["requests>=2.33.0"]
+constraint-dependencies = ["requests>=2.33.0", "cryptography>=46.0.6"]
 
 [build-system]
 requires = ["hatchling"]
