@@ -44,6 +44,11 @@ vi.mock('@/lib/api', () => ({
   fetchProjectHealth: apiMocks.fetchProjectHealth,
   fetchQualityGateHealth: apiMocks.fetchQualityGateHealth,
   updateProject: apiMocks.updateProject,
+  PROJECT_CATEGORY_LABELS: {
+    production: 'Production',
+    testing: 'Testing',
+    dev: 'Dev',
+  },
 }))
 
 function renderClient() {
@@ -83,6 +88,8 @@ describe('ProjectSettingsClient', () => {
       base_url: 'https://dev.summitflow.dev',
       health_endpoint: '/healthz',
       root_path: '/home/testuser/summitflow',
+      category: 'production',
+      sidebar_rank: 1,
       created_at: '2026-03-12T09:00:00Z',
     })
   })
@@ -111,6 +118,8 @@ describe('ProjectSettingsClient', () => {
       base_url: 'https://dev.summitflow.dev',
       health_endpoint: '/health',
       root_path: '/home/testuser/summitflow',
+      category: 'production',
+      sidebar_rank: 1,
       created_at: '2026-03-12T09:00:00Z',
     })
 
@@ -135,6 +144,8 @@ describe('ProjectSettingsClient', () => {
       base_url: 'https://dev.summitflow.dev',
       health_endpoint: '/health',
       root_path: '/home/testuser/summitflow',
+      category: 'production',
+      sidebar_rank: 1,
       created_at: '2026-03-12T09:00:00Z',
     })
 
@@ -154,6 +165,8 @@ describe('ProjectSettingsClient', () => {
     fireEvent.change(screen.getByLabelText('Root Path'), {
       target: { value: '/home/testuser/summitflow///' },
     })
+    fireEvent.click(screen.getByLabelText('Sidebar Category'))
+    fireEvent.click(screen.getByRole('button', { name: 'Testing' }))
 
     fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
 
@@ -163,6 +176,7 @@ describe('ProjectSettingsClient', () => {
         base_url: 'https://dev.summitflow.dev',
         health_endpoint: '/healthz',
         root_path: '/home/testuser/summitflow',
+        category: 'testing',
       })
     })
     expect(

@@ -12,6 +12,7 @@ import json
 from collections.abc import Callable
 from typing import Any
 from unittest.mock import patch
+from uuid import uuid4
 
 from app.storage import tasks as task_store
 from app.storage.connection import get_connection
@@ -250,6 +251,75 @@ class TestShortTaskIdApiResolution:
 
         assert response.status_code == 200
         assert response.json()["id"] == task_id
+
+    def test_completion_readiness_ignores_synthetic_no_step_subtasks(self, client: Any) -> None:
+        task_id = f"task-{uuid4()}"
+        task = {
+            "id": task_id,
+            "syncable_subtasks_skipped": ["1.1:no-steps", "1.2:no-steps", "1.3:no-steps"],
+        }
+        subtasks = [
+            {"subtask_id": "1.1", "passes": False, "steps": []},
+            {"subtask_id": "1.2", "passes": False, "steps": []},
+            {"subtask_id": "1.3", "passes": False, "steps": []},
+        ]
+
+        with (
+            patch("app.api.tasks.get_endpoints.get_task_or_404", return_value=task),
+            patch("app.api.tasks.get_endpoints.get_subtasks_for_task", return_value=subtasks),
+        ):
+            result = client.get(f"/api/tasks/{task_id}/completion-readiness")
+
+        assert result.status_code == 200
+        assert result.json() == {"ready": True, "gates": []}
+
+    def test_completion_readiness_ignores_synthetic_zero_step_summary_subtasks(self, client: Any) -> None:
+        task_id = f"task-{uuid4()}"
+        task = {
+            "id": task_id,
+            "syncable_subtasks_skipped": ["1.1:no-steps"],
+        }
+        subtasks = [
+            {
+                "subtask_id": "1.1",
+                "passes": False,
+                "steps": [],
+                "steps_from_table": [],
+                "step_summary": {"completed": 0, "total": 0},
+            },
+        ]
+
+        with (
+            patch("app.api.tasks.get_endpoints.get_task_or_404", return_value=task),
+            patch("app.api.tasks.get_endpoints.get_subtasks_for_task", return_value=subtasks),
+        ):
+            result = client.get(f"/api/tasks/{task_id}/completion-readiness")
+
+        assert result.status_code == 200
+        assert result.json() == {"ready": True, "gates": []}
+
+    def test_completion_readiness_keeps_real_incomplete_subtasks_blocking(self, client: Any) -> None:
+        task_id = f"task-{uuid4()}"
+        task = {
+            "id": task_id,
+            "syncable_subtasks_skipped": ["1.1:no-steps"],
+        }
+        subtasks = [
+            {"subtask_id": "1.1", "passes": False, "steps": []},
+            {"subtask_id": "1.2", "passes": False, "steps": [{"step_number": 1, "passes": False}]},
+        ]
+
+        with (
+            patch("app.api.tasks.get_endpoints.get_task_or_404", return_value=task),
+            patch("app.api.tasks.get_endpoints.get_subtasks_for_task", return_value=subtasks),
+        ):
+            result = client.get(f"/api/tasks/{task_id}/completion-readiness")
+
+        assert result.status_code == 200
+        assert result.json() == {
+            "ready": False,
+            "gates": [{"gate": "subtasks", "pass": False, "detail": ["1.2"]}],
+        }
 
     def test_completion_readiness_accepts_short_suffix(
         self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]

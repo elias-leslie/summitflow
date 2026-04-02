@@ -36,8 +36,14 @@ def test_create_project_creates_backup_source(client, monkeypatch) -> None:
                 (project_id,),
             )
             row = cur.fetchone()
+            cur.execute(
+                "SELECT category, sidebar_rank FROM projects WHERE id = %s",
+                (project_id,),
+            )
+            project_row = cur.fetchone()
 
         assert row == (project_id, "Create Project", root_path, "project", project_id)
+        assert project_row == ("dev", None)
     finally:
         with get_connection() as conn, conn.cursor() as cur:
             cur.execute("DELETE FROM backup_sources WHERE id = %s", (project_id,))
@@ -62,6 +68,7 @@ def test_create_project_syncs_agent_hub_permission_when_requested(client, monkey
                 "base_url": "https://bootstrap.example",
                 "health_endpoint": "/health",
                 "root_path": root_path,
+                "category": "testing",
                 "agent_hub_permission": {
                     "permission_tier": "yolo",
                     "auto_exec_enabled": True,
@@ -72,6 +79,7 @@ def test_create_project_syncs_agent_hub_permission_when_requested(client, monkey
         )
 
         assert response.status_code == 200
+        assert response.json()["category"] == "testing"
         sync_mock.assert_awaited_once()
         args = sync_mock.await_args.args
         assert args[0] == project_id
@@ -425,6 +433,8 @@ def test_list_projects_with_stats_returns_feature_task_bug_counts(
             "bugs": 1,
             "blocked": 0,
         }
+        assert project["category"] == "dev"
+        assert project["sidebar_rank"] is None
         assert project["health_status"] == "healthy"
     finally:
         with get_connection() as conn, conn.cursor() as cur:
@@ -487,7 +497,12 @@ def test_update_project_updates_selected_fields(client) -> None:
     try:
         response = client.patch(
             f"/api/projects/{project_id}",
-            json={"name": "New Name", "root_path": "/new/root"},
+            json={
+                "name": "New Name",
+                "root_path": "/new/root",
+                "category": "production",
+                "sidebar_rank": 2,
+            },
         )
 
         assert response.status_code == 200
@@ -495,9 +510,75 @@ def test_update_project_updates_selected_fields(client) -> None:
         assert response.json()["root_path"] == "/new/root"
         assert response.json()["base_url"] == "http://old.example"
         assert response.json()["health_endpoint"] == "/healthz"
+        assert response.json()["category"] == "production"
+        assert response.json()["sidebar_rank"] == 2
     finally:
         with get_connection() as conn, conn.cursor() as cur:
             cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
+            conn.commit()
+
+
+def test_list_projects_orders_by_category_rank_then_name(client, monkeypatch) -> None:
+    """Project list should group by category, then sidebar rank, then name."""
+    project_prefix = uuid4().hex[:8]
+    project_rows = [
+        (f"{project_prefix}-alpha", "Alpha", "production", None),
+        (f"{project_prefix}-bravo", "Bravo", "production", 0),
+        (f"{project_prefix}-delta", "Delta", "testing", None),
+        (f"{project_prefix}-charlie", "Charlie", "testing", 1),
+        (f"{project_prefix}-echo", "Echo", "dev", None),
+    ]
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.executemany(
+            """
+            INSERT INTO projects (id, name, base_url, health_endpoint, category, sidebar_rank)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """,
+            [
+                (
+                    project_id,
+                    name,
+                    f"https://{project_id}.example",
+                    "/health",
+                    category,
+                    sidebar_rank,
+                )
+                for project_id, name, category, sidebar_rank in project_rows
+            ],
+        )
+        conn.commit()
+
+    async def _healthy_statuses(projects):
+        return {project[0]: "healthy" for project in projects}
+
+    monkeypatch.setattr(
+        "app.api.projects._resolve_project_health_statuses",
+        _healthy_statuses,
+    )
+
+    try:
+        response = client.get("/api/projects")
+
+        assert response.status_code == 200
+        filtered = [
+            project["id"]
+            for project in response.json()
+            if project["id"] in {row[0] for row in project_rows}
+        ]
+        assert filtered == [
+            f"{project_prefix}-bravo",
+            f"{project_prefix}-alpha",
+            f"{project_prefix}-charlie",
+            f"{project_prefix}-delta",
+            f"{project_prefix}-echo",
+        ]
+    finally:
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM projects WHERE id = ANY(%s)",
+                ([row[0] for row in project_rows],),
+            )
             conn.commit()
 
 

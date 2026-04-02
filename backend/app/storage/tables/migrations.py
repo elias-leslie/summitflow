@@ -153,6 +153,14 @@ def _project_column_additions() -> list[tuple[str, str]]:
         ("backend_dir TEXT", "projects"),
         ("browser_scripts_dir TEXT", "projects"),
         ("data_dir TEXT", "projects"),
+        (
+            "category TEXT NOT NULL DEFAULT 'dev' CHECK (category IN ('production', 'testing', 'dev'))",
+            "projects",
+        ),
+        (
+            "sidebar_rank INTEGER CHECK (sidebar_rank IS NULL OR sidebar_rank >= 0)",
+            "projects",
+        ),
         # TDD test configuration for projects
         (
             """test_config JSONB DEFAULT '{

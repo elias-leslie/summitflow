@@ -21,9 +21,18 @@ import { AutonomousSettingsPanel } from '@/components/settings/AutonomousSetting
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   fetchProject,
   fetchProjectHealth,
   fetchQualityGateHealth,
+  PROJECT_CATEGORY_LABELS,
+  type ProjectCategory,
   updateProject,
 } from '@/lib/api'
 import {
@@ -37,6 +46,7 @@ import { getErrorMessage } from '@/lib/utils'
 type FormErrors = ProjectFormErrors & { submit?: string }
 type ErrorField = keyof FormErrors
 type SettingsTab = 'general' | 'automation'
+const CATEGORY_OPTIONS: ProjectCategory[] = ['production', 'testing', 'dev']
 
 export function ProjectSettingsClient() {
   const params = useParams()
@@ -48,6 +58,7 @@ export function ProjectSettingsClient() {
   const [baseUrl, setBaseUrl] = useState('')
   const [healthEndpoint, setHealthEndpoint] = useState('')
   const [rootPath, setRootPath] = useState('')
+  const [category, setCategory] = useState<ProjectCategory>('dev')
   const [errors, setErrors] = useState<FormErrors>({})
   const [saveState, setSaveState] = useState<string | null>(null)
 
@@ -78,6 +89,7 @@ export function ProjectSettingsClient() {
     setBaseUrl(project.base_url)
     setHealthEndpoint(project.health_endpoint)
     setRootPath(project.root_path ?? '')
+    setCategory(project.category)
     setErrors({})
   }, [project])
 
@@ -87,6 +99,7 @@ export function ProjectSettingsClient() {
       base_url: string
       health_endpoint: string
       root_path?: string
+      category: ProjectCategory
     }) => updateProject(projectId, payload),
     onSuccess: async (updatedProject) => {
       queryClient.setQueryData(['project', projectId], updatedProject)
@@ -128,7 +141,8 @@ export function ProjectSettingsClient() {
     (currentValues.name !== persistedValues.name ||
       currentValues.baseUrl !== persistedValues.baseUrl ||
       currentValues.healthEndpoint !== persistedValues.healthEndpoint ||
-      currentValues.rootPath !== persistedValues.rootPath)
+      currentValues.rootPath !== persistedValues.rootPath ||
+      category !== project.category)
   const fieldErrors = validateProjectForm(
     { name, baseUrl, healthEndpoint, rootPath },
     { requireProjectId: false },
@@ -150,6 +164,7 @@ export function ProjectSettingsClient() {
       base_url: currentValues.baseUrl,
       health_endpoint: currentValues.healthEndpoint,
       root_path: currentValues.rootPath || undefined,
+      category,
     })
   }
 
@@ -159,6 +174,7 @@ export function ProjectSettingsClient() {
     setBaseUrl(project.base_url)
     setHealthEndpoint(project.health_endpoint)
     setRootPath(project.root_path ?? '')
+    setCategory(project.category)
     setErrors({})
     setSaveState(null)
   }
@@ -387,6 +403,33 @@ export function ProjectSettingsClient() {
                 Required for file browsing, service discovery, and path-aware automation.
               </p>
               {errors.rootPath && <p className="text-xs text-red-400">{errors.rootPath}</p>}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="project-category">Sidebar Category</Label>
+              <Select
+                value={category}
+                onValueChange={(value) => setCategory(value as ProjectCategory)}
+                disabled={mutation.isPending}
+              >
+                <SelectTrigger
+                  id="project-category"
+                  aria-label="Sidebar Category"
+                  className="w-full"
+                >
+                  <SelectValue>{PROJECT_CATEGORY_LABELS[category]}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {CATEGORY_OPTIONS.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {PROJECT_CATEGORY_LABELS[option]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-slate-500">
+                Projects are grouped by category in the sidebar. Custom ordering within a group is managed by dragging in the sidebar.
+              </p>
             </div>
 
             <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3 text-sm">

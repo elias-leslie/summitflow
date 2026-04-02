@@ -71,6 +71,8 @@ describe('ProjectCard', () => {
     base_url: 'https://dev.summitflow.dev',
     health_endpoint: '/health',
     root_path: '/home/testuser/summitflow',
+    category: 'production',
+    sidebar_rank: 0,
     created_at: '2026-03-10T12:00:00Z',
     stats: {
       features: 3,

@@ -28,6 +28,10 @@ def _create_projects_table(cur: psycopg.Cursor) -> None:
             backend_dir TEXT,
             browser_scripts_dir TEXT,
             data_dir TEXT,
+            category TEXT NOT NULL DEFAULT 'dev'
+                CHECK (category IN ('production', 'testing', 'dev')),
+            sidebar_rank INTEGER
+                CHECK (sidebar_rank IS NULL OR sidebar_rank >= 0),
             agent_configs JSONB DEFAULT '{
                 "claude_enabled": true,
                 "gemini_enabled": true,

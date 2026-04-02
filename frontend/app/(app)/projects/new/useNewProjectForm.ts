@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { createProject } from '@/lib/api'
+import type { ProjectCategory } from '@/lib/api'
 import {
   buildHostedBaseUrl,
   buildHostedRootPath,
@@ -37,6 +38,7 @@ export function useNewProjectForm() {
   const [baseUrl, setBaseUrl] = useState('')
   const [healthEndpoint, setHealthEndpoint] = useState(DEFAULT_HEALTH_ENDPOINT)
   const [rootPath, setRootPath] = useState('')
+  const [category, setCategory] = useState<ProjectCategory>('dev')
   const [syncAgentHubPermission, setSyncAgentHubPermission] = useState(true)
   const [permissionTier, setPermissionTier] = useState(DEFAULT_PERMISSION_TIER)
   const [autoExecEnabled, setAutoExecEnabled] = useState(false)
@@ -109,6 +111,10 @@ export function useNewProjectForm() {
     setRootPath(value)
   }
 
+  const handleCategoryChange = (value: ProjectCategory) => {
+    setCategory(value)
+  }
+
   const validate = (): boolean => {
     const newErrors = validateProjectForm({ name, projectId, baseUrl, healthEndpoint, rootPath })
     setErrors(newErrors)
@@ -136,6 +142,7 @@ export function useNewProjectForm() {
       base_url: normalized.baseUrl,
       health_endpoint: normalized.healthEndpoint,
       root_path: normalized.rootPath || undefined,
+      category,
       agent_hub_permission: syncAgentHubPermission
         ? {
             permission_tier: permissionTier,
@@ -151,7 +158,7 @@ export function useNewProjectForm() {
   const healthPreview = buildHealthPreview(baseUrl, healthEndpoint)
 
   return {
-    fields: { name, projectId, baseUrl, healthEndpoint, rootPath },
+    fields: { name, projectId, baseUrl, healthEndpoint, rootPath, category },
     agentHub: { syncAgentHubPermission, permissionTier, autoExecEnabled },
     errors,
     isPending: mutation.isPending,
@@ -162,6 +169,7 @@ export function useNewProjectForm() {
       handleBaseUrlChange,
       handleHealthEndpointChange,
       handleRootPathChange,
+      handleCategoryChange,
       handleSubmit,
       setSyncAgentHubPermission,
       setPermissionTier,

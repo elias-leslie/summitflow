@@ -5,6 +5,14 @@ import { AlertCircle, ArrowLeft, FolderPlus } from 'lucide-react'
 import Link from 'next/link'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { PROJECT_CATEGORY_LABELS, type ProjectCategory } from '@/lib/api'
 import { DEFAULT_HEALTH_ENDPOINT } from '@/lib/project-registration'
 import { ROUTE_HOME } from './constants'
 import { AgentHubSection } from './AgentHubSection'
@@ -13,7 +21,7 @@ import { useNewProjectForm } from './useNewProjectForm'
 
 export function NewProjectClient() {
   const { fields, agentHub, errors, isPending, preview, handlers } = useNewProjectForm()
-  const { name, projectId, baseUrl, healthEndpoint, rootPath } = fields
+  const { name, projectId, baseUrl, healthEndpoint, rootPath, category } = fields
   const { syncAgentHubPermission, permissionTier, autoExecEnabled } = agentHub
   const {
     handleNameChange,
@@ -21,11 +29,13 @@ export function NewProjectClient() {
     handleBaseUrlChange,
     handleHealthEndpointChange,
     handleRootPathChange,
+    handleCategoryChange,
     handleSubmit,
     setSyncAgentHubPermission,
     setPermissionTier,
     setAutoExecEnabled,
   } = handlers
+  const categoryOptions: ProjectCategory[] = ['production', 'testing', 'dev']
 
   return (
     <div className="mx-auto max-w-4xl space-y-4 px-4 py-4 md:px-5 lg:px-6">
@@ -146,6 +156,33 @@ export function NewProjectClient() {
             {errors.rootPath && (
               <p className="text-xs text-rose-400">{errors.rootPath}</p>
             )}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="project-category">Sidebar Category</Label>
+            <Select
+              value={category}
+              onValueChange={(value) => handleCategoryChange(value as ProjectCategory)}
+              disabled={isPending}
+            >
+              <SelectTrigger
+                id="project-category"
+                aria-label="Sidebar Category"
+                className="w-full"
+              >
+                <SelectValue>{PROJECT_CATEGORY_LABELS[category]}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {categoryOptions.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {PROJECT_CATEGORY_LABELS[option]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-slate-500">
+              Controls which sidebar group the project appears in. Drag order is managed in the sidebar after creation.
+            </p>
           </div>
 
           <div className="chrome-line my-1" />

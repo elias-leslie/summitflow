@@ -346,8 +346,16 @@ CREATE TABLE public.backup_sources (
     next_run_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    CONSTRAINT source_frequency_check CHECK ((frequency = ANY (ARRAY['daily'::text, 'weekly'::text, 'monthly'::text]))),
-    CONSTRAINT source_type_check CHECK ((source_type = ANY (ARRAY['project'::text, 'config'::text, 'workspace'::text])))
+    storage_backend_id text,
+    last_restore_tested_at timestamp with time zone,
+    last_restore_test_ok boolean,
+    last_restore_test_error text,
+    last_drill_at timestamp with time zone,
+    last_drill_ok boolean,
+    last_drill_backup_id text,
+    last_drill_result jsonb,
+    CONSTRAINT source_frequency_check CHECK ((frequency = ANY (ARRAY['daily'::text, 'weekly'::text, 'monthly'::text, 'hourly'::text]))),
+    CONSTRAINT source_type_check CHECK ((source_type = ANY (ARRAY['project'::text, 'config'::text, 'workspace'::text, 'infrastructure'::text])))
 );
 
 
@@ -360,7 +368,7 @@ CREATE TABLE public.backups (
     project_id text NOT NULL,
     name character varying(100) NOT NULL,
     backup_type character varying(20) DEFAULT 'manual'::character varying NOT NULL,
-    status character varying(20) DEFAULT 'pending'::character varying NOT NULL,
+    status character varying(30) DEFAULT 'pending'::character varying NOT NULL,
     size_bytes bigint,
     db_size_bytes bigint,
     files_size_bytes bigint,
@@ -376,7 +384,10 @@ CREATE TABLE public.backups (
     total_files integer,
     verification_json jsonb,
     source_id text NOT NULL,
-    CONSTRAINT backups_status_check CHECK (((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('running'::character varying)::text, ('completed'::character varying)::text, ('failed'::character varying)::text]))),
+    storage_backend_id text,
+    wal_start_lsn text,
+    wal_end_lsn text,
+    CONSTRAINT backups_status_check CHECK (((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('running'::character varying)::text, ('completed'::character varying)::text, ('failed'::character varying)::text, ('completed_pending_upload'::character varying)::text]))),
     CONSTRAINT backups_type_check CHECK (((backup_type)::text = ANY (ARRAY[('manual'::character varying)::text, ('scheduled'::character varying)::text])))
 );
 
@@ -920,8 +931,12 @@ CREATE TABLE public.projects (
     backend_dir text,
     browser_scripts_dir text,
     data_dir text,
+    category text DEFAULT 'dev'::text NOT NULL,
+    sidebar_rank integer,
     agent_configs jsonb DEFAULT '{"claude_model": "sonnet", "gemini_model": "gemini-2.5-flash", "default_agent": "gemini", "claude_enabled": true, "gemini_enabled": true}'::jsonb,
-    test_config jsonb DEFAULT '{"node_path": "npx", "pytest_path": ".venv/bin/pytest", "backend_root": "backend", "frontend_root": "frontend", "test_patterns": {"pytest": "tests/**/*.py", "vitest": "**/*.test.{ts,tsx}", "playwright": "tests/e2e/**/*.spec.ts"}}'::jsonb
+    test_config jsonb DEFAULT '{"node_path": "npx", "pytest_path": ".venv/bin/pytest", "backend_root": "backend", "frontend_root": "frontend", "test_patterns": {"pytest": "tests/**/*.py", "vitest": "**/*.test.{ts,tsx}", "playwright": "tests/e2e/**/*.spec.ts"}}'::jsonb,
+    CONSTRAINT projects_category_check CHECK ((category = ANY (ARRAY['production'::text, 'testing'::text, 'dev'::text]))),
+    CONSTRAINT projects_sidebar_rank_check CHECK (((sidebar_rank IS NULL) OR (sidebar_rank >= 0)))
 );
 
 
@@ -1286,6 +1301,24 @@ CREATE SEQUENCE public.sitemap_entries_id_seq
 --
 
 ALTER SEQUENCE public.sitemap_entries_id_seq OWNED BY public.sitemap_entries.id;
+
+
+--
+-- Name: storage_backends; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.storage_backends (
+    id text NOT NULL,
+    name text NOT NULL,
+    backend_type text DEFAULT 'smb'::text NOT NULL,
+    config jsonb DEFAULT '{}'::jsonb NOT NULL,
+    is_default boolean DEFAULT false,
+    enabled boolean DEFAULT true,
+    last_test_at timestamp with time zone,
+    last_test_ok boolean,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now()
+);
 
 
 --
@@ -2448,6 +2481,14 @@ ALTER TABLE ONLY public.sitemap_entries
 
 ALTER TABLE ONLY public.sitemap_entries
     ADD CONSTRAINT sitemap_entries_project_id_port_path_method_key UNIQUE (project_id, port, path, method);
+
+
+--
+-- Name: storage_backends storage_backends_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.storage_backends
+    ADD CONSTRAINT storage_backends_pkey PRIMARY KEY (id);
 
 
 --
@@ -3713,6 +3754,14 @@ ALTER TABLE ONLY public.backup_sources
 
 
 --
+-- Name: backup_sources backup_sources_storage_backend_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.backup_sources
+    ADD CONSTRAINT backup_sources_storage_backend_id_fkey FOREIGN KEY (storage_backend_id) REFERENCES public.storage_backends(id);
+
+
+--
 -- Name: backups backups_source_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4029,4 +4078,3 @@ ALTER TABLE ONLY public.user_prompts
 --
 
 \unrestrict IQaHikaoYBGqGtEiTocohupnoeKE9aZh0xW9D8asSUTeeLb9JLfYgjbilD9gFdv
-

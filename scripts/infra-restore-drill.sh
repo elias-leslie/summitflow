@@ -55,21 +55,25 @@ fi
 PG_DUMP=$(find "$EXTRACT_ROOT" -name "pgdumpall.sql.gz" -type f 2>/dev/null | head -1)
 if [ -n "$PG_DUMP" ]; then
     # Start disposable postgres
-    docker run -d --name "$DRILL_PG_CONTAINER" \
+    if ! docker run -d --name "$DRILL_PG_CONTAINER" \
         -e POSTGRES_PASSWORD=drill_test \
         -e POSTGRES_USER=admin \
-        postgres:16-alpine >/dev/null 2>&1
+        postgres:16-alpine >/dev/null 2>&1; then
+        add_result "postgres_dump" "false" "Failed to start disposable postgres container (image missing?)"
+    else
+        # Wait for readiness (max 30s)
+        for i in $(seq 1 30); do
+            if docker exec "$DRILL_PG_CONTAINER" pg_isready -U admin >/dev/null 2>&1; then
+                break
+            fi
+            sleep 1
+        done
 
-    # Wait for readiness (max 30s)
-    for i in $(seq 1 30); do
-        if docker exec "$DRILL_PG_CONTAINER" pg_isready -U admin >/dev/null 2>&1; then
-            break
-        fi
-        sleep 1
-    done
+        # Load the dump — pg_dumpall output routinely produces harmless errors
+        # (duplicate roles, privilege conflicts), so ignore psql exit code and
+        # verify by checking whether user databases were actually created.
+        gunzip -c "$PG_DUMP" | docker exec -i "$DRILL_PG_CONTAINER" psql -U admin -d postgres >/dev/null 2>&1 || true
 
-    # Load the dump
-    if gunzip -c "$PG_DUMP" | docker exec -i "$DRILL_PG_CONTAINER" psql -U admin -d postgres >/dev/null 2>&1; then
         # Verify at least one user database exists
         db_count=$(docker exec "$DRILL_PG_CONTAINER" psql -U admin -d postgres -tAc \
             "SELECT count(*) FROM pg_database WHERE datistemplate = false AND datname != 'postgres'" 2>/dev/null || echo "0")
@@ -79,8 +83,6 @@ if [ -n "$PG_DUMP" ]; then
         else
             add_result "postgres_dump" "false" "Dump loaded but no user databases found"
         fi
-    else
-        add_result "postgres_dump" "false" "Failed to load pg_dumpall into disposable container"
     fi
 else
     add_result "postgres_dump" "false" "pgdumpall.sql.gz not found in archive"

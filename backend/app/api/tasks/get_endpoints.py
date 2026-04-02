@@ -1,4 +1,4 @@
-"""Tasks API - Get endpoints.
+"""Task GET endpoints.
 
 Handles:
 - get_task_global: Get task by ID without project context (for CLI tools)
@@ -37,8 +37,23 @@ async def check_completion_readiness(task_id: str) -> dict[str, Any]:
     task = get_task_or_404(task_id)
     canonical_task_id = str(task["id"])
 
-    subtasks = await asyncio.to_thread(get_subtasks_for_task, canonical_task_id)
-    incomplete = [s["subtask_id"] for s in subtasks if not s.get("passes")]
+    subtasks = await asyncio.to_thread(get_subtasks_for_task, canonical_task_id, True)
+    incomplete: list[str] = []
+    synthetic_skips = {
+        str(item).split(":", 1)[0]
+        for item in (task.get("syncable_subtasks_skipped") or [])
+        if isinstance(item, str) and item.endswith(":no-steps")
+    }
+    for subtask in subtasks:
+        if subtask.get("passes"):
+            continue
+        subtask_id = str(subtask.get("subtask_id") or "")
+        steps = subtask.get("steps") or subtask.get("steps_from_table") or []
+        step_summary = subtask.get("step_summary") or {}
+        step_total = int(step_summary.get("total") or 0)
+        if subtask_id in synthetic_skips and not steps and step_total == 0:
+            continue
+        incomplete.append(subtask_id)
 
     gates: list[dict[str, Any]] = []
     if incomplete:

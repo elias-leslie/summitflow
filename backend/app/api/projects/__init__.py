@@ -47,9 +47,18 @@ _TRIGGER_PROJECT_ONBOARD = "project_onboard"
 
 # Shared SQL
 _SQL_LIST_PROJECTS = """
-    SELECT id, name, base_url, health_endpoint, root_path, created_at
+    SELECT id, name, base_url, health_endpoint, root_path, category, sidebar_rank, created_at
     FROM projects
-    ORDER BY created_at DESC
+    ORDER BY
+        CASE category
+            WHEN 'production' THEN 0
+            WHEN 'testing' THEN 1
+            ELSE 2
+        END,
+        CASE WHEN sidebar_rank IS NULL THEN 1 ELSE 0 END,
+        sidebar_rank ASC,
+        LOWER(name) ASC,
+        created_at DESC
 """
 
 # Error messages
@@ -105,6 +114,7 @@ async def create_project(
         project.base_url,
         project.health_endpoint,
         project.root_path,
+        project.category,
     )
 
     if project.agent_hub_permission is not None:
@@ -153,7 +163,9 @@ async def list_projects() -> list[ProjectResponse]:
             base_url=row[2],
             health_endpoint=row[3],
             root_path=row[4],
-            created_at=row[5],
+            category=row[5],
+            sidebar_rank=row[6],
+            created_at=row[7],
             health_status=health_statuses.get(row[0]),
         )
         for row in rows

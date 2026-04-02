@@ -265,6 +265,8 @@ def test_cleanup_status_treats_reconciled_or_authoritative_lanes_as_cleanup_only
 
     assert payload["repositories"][0]["needs_merge_tasks"] == []
     assert payload["repositories"][0]["review_tasks"] == []
+    assert payload["repositories"][0]["worktree_task_ids"] == ["task-reconciled"]
+    assert payload["repositories"][0]["active_worktrees"] == 1
     assert payload["repositories"][0]["needs_cleanup"] is False
 
 

@@ -1,7 +1,8 @@
 import clsx from 'clsx'
-import { ChevronDown, Settings2 } from 'lucide-react'
+import { ChevronDown, GripVertical, Settings2 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import type { ButtonHTMLAttributes } from 'react'
 import type { Project } from '@/lib/api'
 import type { NavItemId } from './types'
 import { projectNavItems } from './constants'
@@ -22,6 +23,8 @@ interface ProjectAccordionItemProps {
   activeTab: NavItemId | null
   onToggleExpand: () => void
   getProjectNavHref: (projectId: string, item: typeof projectNavItems[number]) => string
+  dragHandleProps?: ButtonHTMLAttributes<HTMLButtonElement>
+  isDragging?: boolean
 }
 
 export function ProjectAccordionItem({
@@ -31,6 +34,8 @@ export function ProjectAccordionItem({
   activeTab,
   onToggleExpand,
   getProjectNavHref,
+  dragHandleProps,
+  isDragging = false,
 }: ProjectAccordionItemProps) {
   const pathname = usePathname()
   const tier = useProjectPermissionTier(project.id)
@@ -40,7 +45,8 @@ export function ProjectAccordionItem({
   return (
     <div
       className={clsx(
-        'overflow-hidden rounded-[1.35rem] border transition-all duration-200',
+        'group/project-item relative overflow-hidden rounded-[1.35rem] border transition-all duration-200',
+        isDragging && 'opacity-75',
         isActive
           ? 'border-outrun-500/24 bg-gradient-to-br from-outrun-500/12 via-transparent to-violet-500/8 shadow-[0_24px_60px_-46px_rgba(255,0,102,0.9)]'
           : 'border-slate-800/70 bg-slate-900/52 hover:border-slate-700/65 hover:bg-slate-900/76',
@@ -48,18 +54,40 @@ export function ProjectAccordionItem({
       data-testid="project-accordion-item"
       data-expanded={isExpanded}
     >
+      {dragHandleProps ? (
+        <button
+          type="button"
+          aria-label={`Reorder ${project.name}`}
+          title={`Reorder ${project.name}`}
+          {...dragHandleProps}
+          className={clsx(
+            'pointer-events-none absolute left-1.5 top-1/2 z-10 flex h-7 w-5 -translate-y-1/2 items-center justify-center rounded-full border border-slate-800/70 bg-slate-950/85 text-slate-500 opacity-0 shadow-lg shadow-black/25 transition-all duration-150',
+            'group-hover/project-item:pointer-events-auto group-hover/project-item:opacity-100',
+            'group-focus-within/project-item:pointer-events-auto group-focus-within/project-item:opacity-100',
+            'hover:border-slate-700/70 hover:text-slate-300',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-outrun-500/40',
+            isDragging && 'pointer-events-auto opacity-100',
+          )}
+        >
+          <GripVertical className="h-3.5 w-3.5" />
+        </button>
+      ) : null}
+
       {/* Project header */}
-      <button
-        type="button"
-        onClick={onToggleExpand}
-        data-testid={`project-accordion-${project.id}`}
+      <div
         className={clsx(
-          'group flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition-all duration-200',
+          'flex items-stretch gap-2 px-3 py-2.5',
           isActive ? 'bg-transparent' : 'hover:bg-slate-800/30',
         )}
       >
+        <button
+          type="button"
+          onClick={onToggleExpand}
+          data-testid={`project-accordion-${project.id}`}
+          className="group flex min-w-0 flex-1 items-start gap-2.5 text-left transition-all duration-200"
+        >
         {/* Project icon with health indicator */}
-        <div className="relative flex-shrink-0">
+          <div className="relative mt-0.5 flex-shrink-0">
           <div
             className={clsx(
               'flex h-8 w-8 items-center justify-center rounded-xl border transition-all duration-200',
@@ -88,13 +116,13 @@ export function ProjectAccordionItem({
                 : 'bg-slate-500',
             )}
           />
-        </div>
+          </div>
 
         {/* Project name */}
-        <div className="flex-1 min-w-0 text-left">
+          <div className="min-w-0 flex-1 text-left">
           <div
             className={clsx(
-              'truncate text-sm font-semibold transition-colors',
+              'break-words text-sm font-semibold leading-5 whitespace-normal transition-colors',
               isActive
                 ? 'text-slate-100'
                 : 'text-slate-300 group-hover:text-slate-100',
@@ -108,31 +136,32 @@ export function ProjectAccordionItem({
               {healthLabel}
             </span>
           </div>
-        </div>
+          </div>
 
         {/* Permission tier badge */}
-        {badge && (
-          <span
-            className={clsx(
-              'flex-shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none border',
-              badge.bg, badge.text, badge.border,
-            )}
-            title={`Permission tier: ${tier}`}
-          >
-            {badge.label}
-          </span>
-        )}
+          {badge && (
+            <span
+              className={clsx(
+                'mt-0.5 flex-shrink-0 rounded border px-1.5 py-0.5 text-[9px] font-bold leading-none',
+                badge.bg, badge.text, badge.border,
+              )}
+              title={`Permission tier: ${tier}`}
+            >
+              {badge.label}
+            </span>
+          )}
 
         {/* Expand chevron */}
         <ChevronDown
           className={clsx(
-            'w-4 h-4 transition-all duration-250 flex-shrink-0',
+            'mt-0.5 h-4 w-4 flex-shrink-0 transition-all duration-250',
             isExpanded
               ? 'rotate-180 text-outrun-400'
               : 'text-slate-500 group-hover:text-slate-400',
-          )}
-        />
-      </button>
+            )}
+          />
+        </button>
+      </div>
 
       {/* Expanded project nav */}
       <div

@@ -5,6 +5,7 @@ import { Check, ChevronDown } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import {
   createContext,
+  type ButtonHTMLAttributes,
   type ReactNode,
   useContext,
   useEffect,
@@ -68,7 +69,11 @@ interface SelectTriggerProps {
   className?: string
 }
 
-export function SelectTrigger({ children, className }: SelectTriggerProps) {
+export function SelectTrigger({
+  children,
+  className,
+  ...props
+}: SelectTriggerProps & ButtonHTMLAttributes<HTMLButtonElement>) {
   const { open, setOpen } = useSelect()
   const triggerRef = useRef<HTMLButtonElement>(null)
 
@@ -77,6 +82,7 @@ export function SelectTrigger({ children, className }: SelectTriggerProps) {
       ref={triggerRef}
       type="button"
       onClick={() => setOpen(!open)}
+      {...props}
       className={clsx(
         'flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm',
         'bg-slate-950/60 border border-slate-700/80 shadow-inner shadow-black/20',

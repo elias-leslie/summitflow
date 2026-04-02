@@ -4,11 +4,27 @@
  * Shared types for projects, health checks, and configuration.
  */
 
+export type ProjectCategory = 'production' | 'testing' | 'dev'
+
+export const PROJECT_CATEGORY_ORDER: ProjectCategory[] = [
+  'production',
+  'testing',
+  'dev',
+]
+
+export const PROJECT_CATEGORY_LABELS: Record<ProjectCategory, string> = {
+  production: 'Production',
+  testing: 'Testing',
+  dev: 'Dev',
+}
+
 export interface Project {
   id: string
   name: string
   base_url: string
   health_endpoint: string
+  category: ProjectCategory
+  sidebar_rank: number | null
   created_at: string
   health_status?: string
   root_path?: string
@@ -38,6 +54,7 @@ export interface ProjectCreate {
   base_url: string
   health_endpoint?: string
   root_path?: string
+  category?: ProjectCategory
   agent_hub_permission?: ProjectPermissionBootstrap
   onboarding?: ProjectOnboardingRequest
 }
@@ -56,6 +73,8 @@ export interface ProjectWithStats {
   health_endpoint: string
   root_path?: string
   logo_url?: string
+  category: ProjectCategory
+  sidebar_rank: number | null
   created_at: string
   health_status?: string
   stats: ProjectStats
@@ -66,6 +85,8 @@ export interface ProjectUpdate {
   base_url?: string
   health_endpoint?: string
   root_path?: string
+  category?: ProjectCategory
+  sidebar_rank?: number
 }
 
 export interface ProjectsWithStatsResponse {

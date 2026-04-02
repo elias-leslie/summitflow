@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+type ProjectCategory = Literal["production", "testing", "dev"]
+
 
 class ProjectPermissionBootstrap(BaseModel):
     """Optional Agent Hub permission bootstrap for a newly registered project."""
@@ -56,6 +58,7 @@ class ProjectCreate(BaseModel):
     root_path: str | None = None  # Filesystem path for file scanning
     frontend_port: int | None = None  # Canonical frontend port
     backend_port: int | None = None  # Canonical backend port
+    category: ProjectCategory = "dev"
     agent_hub_permission: ProjectPermissionBootstrap | None = None
     onboarding: ProjectOnboardingRequest | None = None
 
@@ -68,6 +71,8 @@ class ProjectResponse(BaseModel):
     base_url: str
     health_endpoint: str
     root_path: str | None = None
+    category: ProjectCategory
+    sidebar_rank: int | None = Field(default=None, ge=0)
     created_at: datetime
     health_status: str | None = None
 
@@ -90,6 +95,8 @@ class ProjectUpdate(BaseModel):
     base_url: str | None = None
     health_endpoint: str | None = None
     root_path: str | None = None
+    category: ProjectCategory | None = None
+    sidebar_rank: int | None = Field(default=None, ge=0)
 
 
 class ProjectStats(BaseModel):
@@ -110,6 +117,8 @@ class ProjectWithStats(BaseModel):
     health_endpoint: str
     root_path: str | None = None
     logo_url: str | None = None
+    category: ProjectCategory
+    sidebar_rank: int | None = Field(default=None, ge=0)
     created_at: datetime
     health_status: str | None = None
     stats: ProjectStats

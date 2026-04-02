@@ -33,6 +33,11 @@ vi.mock('next/link', () => ({
 
 vi.mock('@/lib/api', () => ({
   createProject: apiMocks.createProject,
+  PROJECT_CATEGORY_LABELS: {
+    production: 'Production',
+    testing: 'Testing',
+    dev: 'Dev',
+  },
 }))
 
 function renderClient() {
@@ -90,6 +95,7 @@ describe('NewProjectClient', () => {
       base_url: 'https://example.com',
       health_endpoint: '/healthz',
       root_path: '/tmp/my-project',
+      category: 'dev',
       agent_hub_permission: {
         permission_tier: 'read',
         auto_exec_enabled: false,
@@ -156,7 +162,30 @@ describe('NewProjectClient', () => {
       base_url: 'https://example.com',
       health_endpoint: '/health',
       root_path: '/srv/workspaces/projects/no-bootstrap',
+      category: 'dev',
       agent_hub_permission: undefined,
+    })
+  })
+
+  it('submits the selected sidebar category', async () => {
+    renderClient()
+
+    fireEvent.change(screen.getByLabelText('Project Name *'), {
+      target: { value: 'Testing Project' },
+    })
+    fireEvent.change(screen.getByLabelText('Base URL *'), {
+      target: { value: 'https://example.com' },
+    })
+    fireEvent.click(screen.getByLabelText('Sidebar Category'))
+    fireEvent.click(screen.getByRole('button', { name: 'Testing' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Create Project' }))
+
+    await waitFor(() => {
+      expect(apiMocks.createProject).toHaveBeenCalled()
+    })
+    expect(apiMocks.createProject.mock.calls[0]?.[0]).toMatchObject({
+      id: 'testing-project',
+      category: 'testing',
     })
   })
 })

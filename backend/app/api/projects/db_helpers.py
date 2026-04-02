@@ -8,7 +8,7 @@ from fastapi import HTTPException
 from psycopg import sql
 
 from ...storage.connection import get_connection, get_cursor
-from .models import ProjectResponse, ProjectStats, ProjectUpdate, ProjectWithStats
+from .models import ProjectCategory, ProjectResponse, ProjectStats, ProjectUpdate, ProjectWithStats
 
 
 def sync_project_backup_source(
@@ -40,7 +40,7 @@ def get_project_from_db(project_id: str) -> ProjectResponse:
     with get_cursor() as cur:
         cur.execute(
             """
-                SELECT id, name, base_url, health_endpoint, root_path, created_at
+                SELECT id, name, base_url, health_endpoint, root_path, category, sidebar_rank, created_at
                 FROM projects
                 WHERE id = %s
                 """,
@@ -57,7 +57,9 @@ def get_project_from_db(project_id: str) -> ProjectResponse:
         base_url=row[2],
         health_endpoint=row[3],
         root_path=row[4],
-        created_at=row[5],
+        category=row[5],
+        sidebar_rank=row[6],
+        created_at=row[7],
     )
 
 
@@ -135,7 +137,7 @@ def fetch_project_stats(project_ids: list[str]) -> dict[str, ProjectStats]:
 
 
 def build_project_with_stats(
-    row: tuple[str, str, str, str, str | None, datetime], stats: ProjectStats
+    row: tuple[str, str, str, str, str | None, ProjectCategory, int | None, datetime], stats: ProjectStats
 ) -> ProjectWithStats:
     """Build a ProjectWithStats object from a database row and stats."""
     return ProjectWithStats(
@@ -145,7 +147,9 @@ def build_project_with_stats(
         health_endpoint=row[3],
         root_path=row[4],
         logo_url=None,  # Logo support will be added later
-        created_at=row[5],
+        category=row[5],
+        sidebar_rank=row[6],
+        created_at=row[7],
         stats=stats,
     )
 
@@ -156,6 +160,7 @@ def create_project_in_db(
     base_url: str,
     health_endpoint: str,
     root_path: str | None,
+    category: str,
 ) -> ProjectResponse:
     """Create a new project in the database."""
     with get_connection() as conn, conn.cursor() as cur:
@@ -168,11 +173,11 @@ def create_project_in_db(
         now = datetime.now(UTC)
         cur.execute(
             """
-                INSERT INTO projects (id, name, base_url, health_endpoint, root_path, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                RETURNING id, name, base_url, health_endpoint, root_path, created_at
+                INSERT INTO projects (id, name, base_url, health_endpoint, root_path, category, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING id, name, base_url, health_endpoint, root_path, category, sidebar_rank, created_at
                 """,
-            (project_id, name, base_url, health_endpoint, root_path, now),
+            (project_id, name, base_url, health_endpoint, root_path, category, now),
         )
         row = cur.fetchone()
         sync_project_backup_source(cur, project_id, name, root_path)
@@ -187,7 +192,9 @@ def create_project_in_db(
         base_url=row[2],
         health_endpoint=row[3],
         root_path=row[4],
-        created_at=row[5],
+        category=row[5],
+        sidebar_rank=row[6],
+        created_at=row[7],
     )
 
 
@@ -211,6 +218,8 @@ def update_project_in_db(project_id: str, update: ProjectUpdate) -> ProjectRespo
             "base_url": update.base_url,
             "health_endpoint": update.health_endpoint,
             "root_path": update.root_path,
+            "category": update.category,
+            "sidebar_rank": update.sidebar_rank,
         }
         updates = [
             sql.SQL("{} = {}").format(sql.Identifier(col), sql.Placeholder())
@@ -225,7 +234,7 @@ def update_project_in_db(project_id: str, update: ProjectUpdate) -> ProjectRespo
         params.append(project_id)
         query = sql.SQL(
             "UPDATE projects SET {updates} WHERE id = %s"
-            " RETURNING id, name, base_url, health_endpoint, root_path, created_at"
+            " RETURNING id, name, base_url, health_endpoint, root_path, category, sidebar_rank, created_at"
         ).format(updates=sql.SQL(", ").join(updates))
         cur.execute(query, params)
         row = cur.fetchone()
@@ -242,5 +251,7 @@ def update_project_in_db(project_id: str, update: ProjectUpdate) -> ProjectRespo
         base_url=row[2],
         health_endpoint=row[3],
         root_path=row[4],
-        created_at=row[5],
+        category=row[5],
+        sidebar_rank=row[6],
+        created_at=row[7],
     )
