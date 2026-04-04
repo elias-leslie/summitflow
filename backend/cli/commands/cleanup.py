@@ -62,7 +62,21 @@ __all__ = [
     "format_analysis",
 ]
 
-app = typer.Typer(help="Cleanup commands for stale resources")
+app = typer.Typer(
+    help=(
+        "Clean up git/worktree residue plus managed lane and snapshot leftovers.\n\n"
+        "Read-only inventory:\n"
+        "  st cleanup status            # repo-level cleanup summary\n"
+        "  st cleanup worktrees         # analyze active worktrees, no deletion\n"
+        "  st cleanup inspect-orphans   # inspect orphan task branches\n\n"
+        "Cleanup modes:\n"
+        "  st cleanup worktrees --auto  # delete only SAFE/ALREADY_MERGED cases\n"
+        "  st cleanup worktrees --force # destructive preview, then rerun with --confirm TOKEN\n"
+        "  st cleanup lanes             # destructive preview, then rerun with --confirm TOKEN\n"
+        "  st cleanup snapshots         # destructive preview, then rerun with --confirm TOKEN\n\n"
+        "Path cleanup removes literal paths only. Globs are rejected and directories require --recursive."
+    )
+)
 
 _NO_CLEANUP_FLAG_MSG = "Use --auto to cleanup safe cases or --force for all"
 _DRY_RUN_MSG = "DRY RUN - No changes will be made:"
@@ -194,14 +208,47 @@ def build_cleanup_status_payload(
 
 @app.command("worktrees")
 def cleanup_worktrees(
-    auto: Annotated[bool, typer.Option("--auto", help="Auto-cleanup safe cases (merged, no commits ahead)")] = False,
-    force: Annotated[bool, typer.Option("--force", help="Force cleanup all worktrees")] = False,
-    stale_days: Annotated[int, typer.Option("--stale-days", help="Consider worktrees stale after N days")] = 7,
-    dry_run: Annotated[bool, typer.Option("--dry-run", help="Show what would be cleaned up without doing it")] = False,
-    all_projects: Annotated[bool, typer.Option("--all", help="Scan all projects (default: current project only)")] = False,
-    confirm: Annotated[str | None, typer.Option("--confirm", help="Confirm token from preview run")] = None,
+    auto: Annotated[
+        bool,
+        typer.Option(
+            "--auto",
+            help="Delete only SAFE/ALREADY_MERGED worktrees, then prune safe git residue.",
+        ),
+    ] = False,
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            help="Destructive: preview then remove every analyzed worktree, including ACTIVE/REVIEW/NEEDS_MERGE cases.",
+        ),
+    ] = False,
+    stale_days: Annotated[
+        int,
+        typer.Option("--stale-days", help="Mark worktrees stale after N days in the summary output."),
+    ] = 7,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Preview cleanup without deleting worktrees or pruning residue."),
+    ] = False,
+    all_projects: Annotated[
+        bool,
+        typer.Option("--all", help="Scan all managed projects instead of the current project only."),
+    ] = False,
+    confirm: Annotated[
+        str | None,
+        typer.Option("--confirm", help="Single-use confirm token from the preview run. Required for --force."),
+    ] = None,
 ) -> None:
-    """List orphaned/stale worktrees with recommendations. Actions: SAFE, MERGED, NEEDS_MERGE, CONFLICT, REVIEW, ACTIVE."""
+    """Analyze active task worktrees and recommend cleanup actions.
+
+    Default mode is read-only: it prints one line per worktree using the
+    action labels SAFE, NEEDS_MERGE, CONFLICT, REVIEW, and ACTIVE.
+
+    ``--auto`` only deletes SAFE/ALREADY_MERGED worktrees and then prunes safe
+    git residue. ``--force`` is destructive: it first prints a blast-radius
+    preview, then requires ``--confirm TOKEN`` to remove every analyzed
+    worktree, including active or unmerged lanes.
+    """
     project_id = get_project_id(all_projects)
     worktrees = get_active_worktrees(project_id)
 
@@ -243,9 +290,18 @@ def cleanup_worktrees(
 
 @app.command("inspect-orphans")
 def inspect_orphans(
-    all_projects: Annotated[bool, typer.Option("--all", help="Inspect all managed projects")] = False,
+    all_projects: Annotated[
+        bool,
+        typer.Option("--all", help="Inspect all managed projects instead of the current project only."),
+    ] = False,
 ) -> None:
-    """Inspect unresolved orphan task branches that need salvage or review."""
+    """Inspect orphan task branches that need salvage or manual review.
+
+    The output shows one line per unresolved orphan branch with its suggested
+    resolution:
+    - ``salvage``: task record is missing, but the branch should be restored
+    - ``review``: branch exists, but cleanup needs a human decision first
+    """
     lines: list[str] = []
     salvage_count = review_count = 0
     for repo_path in _iter_target_repos(all_projects):
@@ -276,10 +332,15 @@ def salvage_orphan(
     task_id: Annotated[str, typer.Argument(help="Missing-task orphan branch to recover")],
     all_projects: Annotated[
         bool,
-        typer.Option("--all", help="Search all managed projects instead of current project only"),
+        typer.Option("--all", help="Search all managed projects instead of the current project only."),
     ] = False,
 ) -> None:
-    """Recover a missing-task orphan branch into a normal task lane."""
+    """Recover a missing-task orphan branch into a normal task lane.
+
+    This only works for ``inspect-orphans`` entries marked ``resolution:salvage``.
+    It recreates the task record, restores the branch into a managed worktree,
+    and leaves the result for normal review, salvage, or discard.
+    """
     repos = _iter_target_repos(all_projects)
     match = next(
         ((repo, item) for repo in repos for item in assess_orphan_task_branches(repo) if item.task_id == task_id),
@@ -301,9 +362,18 @@ def salvage_orphan(
 @app.command("lanes")
 def cleanup_lanes(
     lane_name: Annotated[str | None, typer.Argument(help="Specific lane name to delete (omit to scan all)")] = None,
-    all_projects: Annotated[bool, typer.Option("--all", help="Scan all projects (default: current project only)")] = False,
-    dry_run: Annotated[bool, typer.Option("--dry-run", help="Show what would be deleted without deleting it")] = False,
-    confirm: Annotated[str | None, typer.Option("--confirm", help="Confirm token from preview run")] = None,
+    all_projects: Annotated[
+        bool,
+        typer.Option("--all", help="Scan all managed projects instead of the current project only."),
+    ] = False,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Preview lane/snapshot deletions without deleting anything."),
+    ] = False,
+    confirm: Annotated[
+        str | None,
+        typer.Option("--confirm", help="Single-use confirm token from the preview run."),
+    ] = None,
 ) -> None:
     """Delete orphaned Btrfs lanes and their snapshots.
 
@@ -351,11 +421,25 @@ def cleanup_lanes(
 @app.command("snapshots")
 def cleanup_snapshots(
     residue_name: Annotated[str | None, typer.Argument(help="Specific legacy snapshot residue to delete")] = None,
-    all_projects: Annotated[bool, typer.Option("--all", help="Scan all projects (default: current project only)")] = False,
-    dry_run: Annotated[bool, typer.Option("--dry-run", help="Show what would be deleted without deleting it")] = False,
-    confirm: Annotated[str | None, typer.Option("--confirm", help="Confirm token from preview run")] = None,
+    all_projects: Annotated[
+        bool,
+        typer.Option("--all", help="Scan all managed projects instead of the current project only."),
+    ] = False,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Preview residue deletion without deleting anything."),
+    ] = False,
+    confirm: Annotated[
+        str | None,
+        typer.Option("--confirm", help="Single-use confirm token from the preview run."),
+    ] = None,
 ) -> None:
-    """Delete legacy snapshot residue outside the current managed lane/project layout."""
+    """Delete legacy snapshot residue outside the current managed lane/project layout.
+
+    This command is destructive and always uses the two-pass confirm-token flow:
+    run once to preview targets, then rerun with ``--confirm TOKEN`` to
+    execute.
+    """
     if not workspaces_root_available():
         output_error("Btrfs workspaces not available — nothing to clean up.")
         raise typer.Exit(1)
@@ -391,14 +475,22 @@ def cleanup_status(
     ctx: typer.Context,
     all_projects: Annotated[
         bool,
-        typer.Option("--all", help="Show all projects (default: current project only)"),
+        typer.Option("--all", help="Show all managed projects instead of the current project only."),
     ] = False,
     fail_on_residue: Annotated[
         bool,
-        typer.Option("--fail-on-residue", help="Exit nonzero when any managed repo still needs cleanup"),
+        typer.Option(
+            "--fail-on-residue",
+            help="Exit 2 when any repo still has cleanup debt (dirty main, dirty worktrees, residue, or orphan branches).",
+        ),
     ] = False,
 ) -> None:
-    """Show summary of worktrees and their cleanup status."""
+    """Show cleanup debt for the current project or all managed projects.
+
+    The summary includes active worktrees, dirty worktrees, dirty main repos,
+    stale checkpoints, snapshot residue, orphan task branches, and prunable
+    task branches. Use this for closeout checks before declaring a repo clean.
+    """
     result = build_cleanup_status_payload(all_projects)
     if ctx.obj.is_compact:
         format_cleanup_status_compact(result, all_projects)
@@ -410,9 +502,24 @@ def cleanup_status(
 
 @app.command("path")
 def cleanup_path(
-    paths: Annotated[list[str], typer.Argument(help="Path(s) to remove (repo-relative or absolute)")],
-    recursive: Annotated[bool, typer.Option("--recursive", help="Allow directory deletion")] = False,
-    dry_run: Annotated[bool, typer.Option("--dry-run", help="Show what would be deleted without deleting it")] = False,
+    paths: Annotated[
+        list[str],
+        typer.Argument(help="Literal path(s) to remove (repo-relative or absolute). Globs are not allowed."),
+    ],
+    recursive: Annotated[
+        bool,
+        typer.Option("--recursive", help="Allow directory deletion. Required for directories."),
+    ] = False,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Preview deletion after validation without removing anything."),
+    ] = False,
 ) -> None:
-    """Safely remove paths with guardrails. Supports repo-local and non-repo paths under home."""
+    """Safely remove literal paths after repo and session guardrails pass.
+
+    Repo-relative paths are resolved against the active git/worktree root.
+    Absolute paths are allowed only inside the current repo or under ``$HOME``.
+    Directories require ``--recursive``. Globs, repo roots, and protected paths
+    such as ``.git`` and ``node_modules`` are rejected.
+    """
     cleanup_paths_command(paths, recursive=recursive, dry_run=dry_run)

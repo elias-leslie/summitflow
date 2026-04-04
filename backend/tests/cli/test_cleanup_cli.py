@@ -123,3 +123,35 @@ class TestCleanupPath:
         assert result.exit_code == 1
         assert "Refusing destructive path action" in result.output
         assert target.exists()
+
+
+def test_cleanup_help_explains_two_pass_destructive_commands() -> None:
+    """Top-level cleanup help should describe safe vs destructive modes."""
+    result = runner.invoke(app, ["--help"])
+
+    assert result.exit_code == 0
+    assert "st cleanup worktrees --auto" in result.output
+    assert "st cleanup worktrees --force" in result.output
+    assert "--confirm TOKEN" in result.output
+    assert "Path cleanup removes literal paths only" in result.output
+
+
+def test_cleanup_worktrees_help_explains_auto_vs_force() -> None:
+    """Worktree help should make the destructive boundary obvious."""
+    result = runner.invoke(app, ["worktrees", "--help"])
+
+    assert result.exit_code == 0
+    assert "Delete only SAFE/ALREADY_MERGED worktrees" in result.output
+    assert "preview then remove every analyzed" in result.output
+    assert "ACTIVE/REVIEW/NEEDS_MERGE" in result.output
+    assert "Single-use confirm token from the preview run" in result.output
+
+
+def test_cleanup_path_help_explains_literal_paths_only() -> None:
+    """Path help should spell out the literal-path and recursive-directory rules."""
+    result = runner.invoke(app, ["path", "--help"])
+
+    assert result.exit_code == 0
+    assert "Literal path(s) to remove" in result.output
+    assert "Globs are not allowed" in result.output
+    assert "Required for directories" in result.output

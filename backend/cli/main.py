@@ -172,14 +172,16 @@ HEALTH (quality gate):
   health sync <type> <status> [--errors N] [--warnings N] [--triggered-by commit|manual|ci|agent]
 
 CLEANUP (worktree maintenance):
-  cleanup worktrees                        # list orphaned/stale worktrees with recommendations
-  cleanup worktrees --auto                 # auto-cleanup safe cases (merged, no commits ahead)
-  cleanup worktrees --force                # cleanup all worktrees (with confirmation)
+  cleanup worktrees                        # analyze worktrees; read-only by default
+  cleanup worktrees --auto                 # delete only SAFE/ALREADY_MERGED worktrees
+  cleanup worktrees --force                # destructive preview; rerun with --confirm TOKEN
   cleanup worktrees --stale-days N         # configure stale threshold (default: 7)
-  cleanup status                           # quick worktree status overview
+  cleanup status                           # quick cleanup-debt overview (main + worktrees + residue)
+  cleanup inspect-orphans                  # list orphan task branches needing salvage/review
+  cleanup salvage <task-id>                # restore a missing-task orphan branch into a lane
   pulse [--project P]                      # cross-project coordination summary (default); drill down with --project
-  cleanup path <path> [<path>...]          # safe repo-local file cleanup
-  cleanup path <dir> --recursive           # safe repo-local directory cleanup
+  cleanup path <path> [<path>...]          # safe literal path cleanup
+  cleanup path <dir> --recursive           # safe literal directory cleanup
   cleanup path <path> --dry-run            # preview cleanup without deleting
 
 DOCKER:
