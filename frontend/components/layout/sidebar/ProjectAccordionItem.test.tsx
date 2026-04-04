@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Project } from '@/lib/api'
@@ -47,14 +47,21 @@ function buildProject(overrides: Partial<Project> = {}): Project {
   }
 }
 
-function renderItem(projectOverrides: Partial<Project> = {}) {
+function renderItem(
+  projectOverrides: Partial<Project> = {},
+  {
+    onToggleExpand = () => {},
+  }: {
+    onToggleExpand?: () => void
+  } = {},
+) {
   render(
     <ProjectAccordionItem
       project={buildProject(projectOverrides)}
       isExpanded={false}
       isActive={false}
       activeTab={null}
-      onToggleExpand={() => {}}
+      onToggleExpand={onToggleExpand}
       getProjectNavHref={(projectId, item) => `/projects/${projectId}${item.href}`}
       dragHandleProps={{ onPointerDown: () => {} }}
     />,
@@ -90,11 +97,30 @@ describe('ProjectAccordionItem', () => {
     renderItem({ name: projectName })
 
     const title = screen.getByText(projectName)
-    const toggle = screen.getByTestId('project-accordion-testing-1')
+    const link = screen.getByTestId('project-link-testing-1')
 
     expect(title.className).toContain('break-words')
     expect(title.className).toContain('whitespace-normal')
     expect(title.className).not.toContain('truncate')
-    expect(toggle.className).toContain('items-start')
+    expect(link.className).toContain('items-start')
+  })
+
+  it('navigates to the project overview from the project header', () => {
+    renderItem()
+
+    expect(screen.getByTestId('project-link-testing-1')).toHaveAttribute(
+      'href',
+      '/projects/testing-1',
+    )
+  })
+
+  it('uses the chevron button to expand project navigation', () => {
+    const onToggleExpand = vi.fn()
+
+    renderItem({}, { onToggleExpand })
+
+    fireEvent.click(screen.getByTestId('project-accordion-toggle-testing-1'))
+
+    expect(onToggleExpand).toHaveBeenCalledTimes(1)
   })
 })

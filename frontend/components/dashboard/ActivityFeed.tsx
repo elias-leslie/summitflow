@@ -5,7 +5,6 @@ import clsx from 'clsx'
 import {
   Activity,
   Archive,
-  Bot,
   CheckCircle2,
   ChevronDown,
   GitCommit,
@@ -46,14 +45,6 @@ const eventConfig: Record<
     },
     label: 'Task',
   },
-  session: {
-    icon: Bot,
-    color: {
-      text: 'text-purple-400',
-      bg: 'bg-purple-500/10',
-    },
-    label: 'Agent',
-  },
   backup: {
     icon: Archive,
     color: {
@@ -91,12 +82,14 @@ function getStatusBadgeClass(status: string): string {
 
 interface ActivityRowProps {
   items: ActivityEvent[]
+  showProjectLink: boolean
 }
 
 function ActivityRow({
   index,
   style,
   items,
+  showProjectLink,
 }: RowComponentProps<ActivityRowProps>): ReactElement | null {
   const event = items[index]
   if (!event) return null
@@ -123,12 +116,14 @@ function ActivityRow({
         <p className="truncate text-sm text-slate-300">{event.message}</p>
         <p className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-500">
           <span className="uppercase tracking-wide text-slate-600">{config.label}</span>
-          <Link
-            href={`/projects/${event.project_id}`}
-            className="font-mono text-slate-400 hover:text-phosphor-300"
-          >
-            {event.project_id}
-          </Link>
+          {showProjectLink ? (
+            <Link
+              href={`/projects/${event.project_id}`}
+              className="font-mono text-slate-400 hover:text-phosphor-300"
+            >
+              {event.project_id}
+            </Link>
+          ) : null}
           {event.metadata.status && (
             <span className={clsx('rounded px-1.5 py-0.5 text-xs', getStatusBadgeClass(event.metadata.status))}>
               {event.metadata.status}
@@ -149,7 +144,6 @@ const TYPE_FILTERS: {
   icon: React.ElementType
 }[] = [
   { value: 'all', label: 'All', icon: Activity },
-  { value: 'session', label: 'Agents', icon: Bot },
   { value: 'task', label: 'Tasks', icon: CheckCircle2 },
   { value: 'git', label: 'Git', icon: GitCommit },
   { value: 'backup', label: 'Backups', icon: Archive },
@@ -158,9 +152,14 @@ const TYPE_FILTERS: {
 interface ActivityFeedProps {
   className?: string
   defaultFilter?: ActivityEventType | 'all'
+  projectId?: string
 }
 
-export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedProps) {
+export function ActivityFeed({
+  className,
+  defaultFilter = 'all',
+  projectId,
+}: ActivityFeedProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [listHeight, setListHeight] = useState(400)
   const [typeFilter, setTypeFilter] = useState<ActivityEventType | 'all'>(defaultFilter)
@@ -178,9 +177,10 @@ export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedP
     isFetchingNextPage,
     dataUpdatedAt,
   } = useInfiniteQuery({
-    queryKey: ['activity-feed', typeFilter],
+    queryKey: ['activity-feed', projectId ?? 'all-projects', typeFilter],
     queryFn: ({ pageParam }) =>
       fetchActivity({
+        project_id: projectId,
         limit: PAGE_SIZE,
         offset: pageParam,
         types: typeFilter === 'all' ? undefined : [typeFilter],
@@ -218,7 +218,9 @@ export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedP
     dataUpdatedAt > 0 ? formatTimeAgo(new Date(dataUpdatedAt).toISOString(), 'never') : 'never'
   const emptyLabel =
     typeFilter === 'all'
-      ? 'No recent activity'
+      ? projectId
+        ? 'No recent activity for this project'
+        : 'No recent activity'
       : `No recent ${TYPE_FILTERS.find((filter) => filter.value === typeFilter)?.label.toLowerCase()} activity`
 
   return (
@@ -264,7 +266,7 @@ export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedP
           <span>
             {isLoading
               ? 'Loading latest activity'
-              : `${total} item${total === 1 ? '' : 's'}${typeFilter === 'all' ? '' : ` in ${TYPE_FILTERS.find((filter) => filter.value === typeFilter)?.label.toLowerCase()}`}`}
+              : `${total} item${total === 1 ? '' : 's'}${projectId && typeFilter === 'all' ? ' for this project' : typeFilter === 'all' ? '' : ` in ${TYPE_FILTERS.find((filter) => filter.value === typeFilter)?.label.toLowerCase()}`}`}
           </span>
           <span>Updated {lastUpdated}</span>
         </div>
@@ -306,7 +308,7 @@ export function ActivityFeed({ className, defaultFilter = 'all' }: ActivityFeedP
             rowComponent={ActivityRow}
             rowCount={items.length}
             rowHeight={64}
-            rowProps={{ items }}
+            rowProps={{ items, showProjectLink: !projectId }}
             style={{ height: listHeight }}
           />
           <div className="border-t border-slate-800/60 p-3 text-center">

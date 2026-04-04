@@ -22,18 +22,34 @@ SUMMITFLOW_ROOT_OVERRIDE="$SUMMITFLOW_ROOT"
 
 OUT_DIR="${1:-/tmp/workspace-packages}"
 mkdir -p "$OUT_DIR"
+OUT_DIR="$(cd "$OUT_DIR" && pwd)"
 
 AGENT_HUB_ROOT="${AGENT_HUB_ROOT:-$(resolve_project_root agent-hub)}"
 PACKAGES_DIR="${AGENT_HUB_PACKAGES:-$AGENT_HUB_ROOT/packages}"
 
-# ── JavaScript packages ──────────────────────────────────────────
-for pkg in chat-ui push-client passport-client; do
-  pkg_dir="$PACKAGES_DIR/$pkg"
+remove_dir() {
+  python - "$1" <<'PY'
+import pathlib
+import shutil
+import sys
+
+path = pathlib.Path(sys.argv[1])
+if path.exists():
+    shutil.rmtree(path)
+PY
+}
+
+pack_js_package() {
+  local label="$1"
+  local pkg_dir="$2"
+  local tgz_name="$3"
+
   if [ ! -d "$pkg_dir" ]; then
     echo "SKIP: $pkg_dir not found"
-    continue
+    return
   fi
-  echo "Packing @agent-hub/$pkg..."
+
+  echo "Packing $label..."
 
   # 1. Build
   (cd "$pkg_dir" && pnpm run build 2>&1 | tail -3)
@@ -42,8 +58,9 @@ for pkg in chat-ui push-client passport-client; do
   (cd "$pkg_dir" && pnpm pack --pack-destination "$OUT_DIR")
 
   # 3-5. Patch tarball
-  tgz="$OUT_DIR/agent-hub-$pkg-0.1.0.tgz"
+  local tgz="$OUT_DIR/$tgz_name"
   if [ -f "$tgz" ]; then
+    local tmp_dir
     tmp_dir=$(mktemp -d)
     tar xzf "$tgz" -C "$tmp_dir"
 
@@ -80,10 +97,17 @@ for pkg in chat-ui push-client passport-client; do
 
     # Repack
     (cd "$tmp_dir" && tar czf "$tgz" package/)
-    rm -rf "$tmp_dir"
+    remove_dir "$tmp_dir"
     echo "  Patched"
   fi
+}
+
+# ── JavaScript packages ──────────────────────────────────────────
+for pkg in chat-ui push-client passport-client; do
+  pack_js_package "@agent-hub/$pkg" "$PACKAGES_DIR/$pkg" "agent-hub-$pkg-0.1.0.tgz"
 done
+
+pack_js_package "@summitflow/notes-ui" "$SUMMITFLOW_ROOT/packages/notes-ui" "summitflow-notes-ui-0.1.0.tgz"
 
 # ── Python package (uv build → .whl) ────────────────────────────
 PYTHON_PKG="$PACKAGES_DIR/agent-hub-client"

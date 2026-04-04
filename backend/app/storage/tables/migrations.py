@@ -150,6 +150,7 @@ def _project_column_additions() -> list[tuple[str, str]]:
     """Return column additions for the projects table."""
     return [
         ("root_path TEXT", "projects"),
+        ("public_url TEXT", "projects"),
         ("backend_dir TEXT", "projects"),
         ("browser_scripts_dir TEXT", "projects"),
         ("data_dir TEXT", "projects"),

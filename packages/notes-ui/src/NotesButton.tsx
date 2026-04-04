@@ -42,15 +42,16 @@ export function NotesButton({ className, popOutUrl = '/notes' }: { className?: s
         style.maxHeight = 900;
 
         // Horizontal: open leftward if button is on the right, rightward if on the left
-        if (rect.left < vw / 2) {
-            style.left = Math.max(rect.left, GAP);
+        const leftOffset = rect.left < vw / 2 ? Math.max(rect.left, GAP) : null;
+        if (leftOffset !== null) {
+            style.left = leftOffset;
         } else {
             style.right = Math.max(vw - rect.right, GAP);
         }
 
         // Clamp panel width if it would overflow viewport
-        if ((style.left ?? 0) + PANEL_W > vw - GAP) {
-            style.width = vw - (style.left as number) - GAP;
+        if (leftOffset !== null && leftOffset + PANEL_W > vw - GAP) {
+            style.width = vw - leftOffset - GAP;
         }
 
         setPanelStyle(style);

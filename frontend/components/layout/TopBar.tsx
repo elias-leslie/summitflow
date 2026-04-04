@@ -27,7 +27,7 @@ export function TopBar() {
 
   return (
     <>
-      <header className="flex-shrink-0 border-b border-slate-700/60 bg-slate-950/88 backdrop-blur-md">
+      <header className="flex-shrink-0 border-b border-slate-700/60 bg-slate-950/88 backdrop-blur-md z-40 relative">
         <div className="relative flex h-[64px] items-center gap-3 px-3 sm:px-4 lg:h-[68px] lg:px-5">
           <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.015),transparent)] opacity-60" />
           <div className="relative z-10 flex min-w-0 flex-1 items-center gap-3">

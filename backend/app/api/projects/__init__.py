@@ -32,6 +32,7 @@ from .models import (
     ProjectUpdate,
 )
 from .onboarding import build_onboarding_response, run_project_onboarding
+from .public_urls import build_project_urls, resolve_project_public_url
 from .pulse import router as pulse_router
 
 router = APIRouter()
@@ -47,7 +48,7 @@ _TRIGGER_PROJECT_ONBOARD = "project_onboard"
 
 # Shared SQL
 _SQL_LIST_PROJECTS = """
-    SELECT id, name, base_url, health_endpoint, root_path, category, sidebar_rank, created_at
+    SELECT id, name, base_url, public_url, health_endpoint, root_path, category, sidebar_rank, created_at
     FROM projects
     ORDER BY
         CASE category
@@ -64,6 +65,9 @@ _SQL_LIST_PROJECTS = """
 # Error messages
 _ERR_ONBOARDING_REQUIRES_ROOT = "Project onboarding requires root_path"
 _ERR_ONBOARDING_REQUIRES_BACKUP = "Project onboarding requires a backup source"
+_ERR_BASE_URL_REQUIRED = (
+    "Project base URL is required unless SummitFlow-hosted defaults are configured"
+)
 
 
 async def _probe_project_health(
@@ -108,10 +112,21 @@ async def create_project(
     if project.onboarding is not None and not project.root_path:
         raise HTTPException(status_code=400, detail=_ERR_ONBOARDING_REQUIRES_ROOT)
 
+    effective_base_url, effective_public_url = build_project_urls(
+        project.id,
+        base_url=project.base_url,
+        public_url=project.public_url,
+        root_path=project.root_path,
+        summitflow_hosted=project.summitflow_hosted,
+    )
+    if not effective_base_url:
+        raise HTTPException(status_code=400, detail=_ERR_BASE_URL_REQUIRED)
+
     response = create_project_in_db(
         project.id,
         project.name,
-        project.base_url,
+        effective_base_url,
+        effective_public_url,
         project.health_endpoint,
         project.root_path,
         project.category,
@@ -154,18 +169,24 @@ async def list_projects() -> list[ProjectResponse]:
         rows = cur.fetchall()
 
     health_statuses = await _resolve_project_health_statuses(
-        (row[0], row[2], row[3]) for row in rows
+        (row[0], row[2], row[4]) for row in rows
     )
     return [
         ProjectResponse(
             id=row[0],
             name=row[1],
             base_url=row[2],
-            health_endpoint=row[3],
-            root_path=row[4],
-            category=row[5],
-            sidebar_rank=row[6],
-            created_at=row[7],
+            public_url=resolve_project_public_url(
+                row[0],
+                base_url=row[2],
+                public_url=row[3],
+                root_path=row[5],
+            ),
+            health_endpoint=row[4],
+            root_path=row[5],
+            category=row[6],
+            sidebar_rank=row[7],
+            created_at=row[8],
             health_status=health_statuses.get(row[0]),
         )
         for row in rows
@@ -184,7 +205,7 @@ async def list_projects_with_stats() -> ProjectsWithStatsResponse:
 
     stats_dict = fetch_project_stats([p[0] for p in projects])
     health_statuses = await _resolve_project_health_statuses(
-        (row[0], row[2], row[3]) for row in projects
+        (row[0], row[2], row[4]) for row in projects
     )
     result = [build_project_with_stats(row, stats_dict[row[0]]) for row in projects]
     for project in result:

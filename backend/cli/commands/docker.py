@@ -37,13 +37,14 @@ ENV_PREFIX = "stenv-"
 _BUILD_PROJECTS = [
     ("summitflow",  "docker/backend.Dockerfile",  "ghcr.io/summitflow-solutions/summitflow-api"),
     ("summitflow",  "docker/frontend.Dockerfile", "ghcr.io/summitflow-solutions/summitflow-web"),
+    ("summitflow",  "docker/agent-browser.Dockerfile", "ghcr.io/summitflow-solutions/agent-browser"),
     ("agent-hub",   "docker/backend.Dockerfile",  "ghcr.io/summitflow-solutions/agent-hub-api"),
     ("agent-hub",   "docker/frontend.Dockerfile", "ghcr.io/summitflow-solutions/agent-hub-web"),
     ("terminal",    "docker/backend.Dockerfile",  "ghcr.io/summitflow-solutions/terminal-api"),
     ("terminal",    "docker/frontend.Dockerfile", "ghcr.io/summitflow-solutions/terminal-web"),
     ("portfolio-ai","docker/backend.Dockerfile",  "ghcr.io/summitflow-solutions/portfolio-api"),
     ("portfolio-ai","docker/frontend.Dockerfile", "ghcr.io/summitflow-solutions/portfolio-web"),
-    ("monkey-fight","docker/Dockerfile",          "ghcr.io/summitflow-solutions/monkey-fight"),
+    ("monkey-fight","Dockerfile",                 "ghcr.io/summitflow-solutions/monkey-fight"),
 ]
 
 # ─── Helpers ─────────────────────────────────────────────────────
@@ -64,6 +65,8 @@ def _run(
             proc.wait()
         except KeyboardInterrupt:
             proc.terminate()
+        if check and proc.returncode not in (0, None):
+            raise typer.Exit(proc.returncode)
         return None
 
     result = subprocess.run(args, capture_output=capture, text=True, env=env)
@@ -116,6 +119,25 @@ def _list_envs() -> list[dict]:
 def _env_compose_cmd(project_name: str, *args: str) -> list[str]:
     """Build a docker compose command targeting an ephemeral environment."""
     return ["docker", "compose", "--env-file", str(COMPOSE_ENV_FILE), "-p", project_name, *args]
+
+
+def _resolve_project_context(project: str) -> Path | None:
+    """Resolve a repo checkout for a buildable project.
+
+    Prefer sibling repos relative to the current SummitFlow checkout, then fall
+    back to historical `$HOME/<project>` paths that exist on older setups.
+    """
+    summitflow_root = Path(__file__).resolve().parents[3]
+    sibling_root = summitflow_root.parent
+    candidates = [
+        sibling_root / project,
+        Path.home() / project,
+    ]
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
 
 
 # ─── Status ──────────────────────────────────────────────────────
@@ -251,10 +273,12 @@ def build(
 ) -> None:
     """Build Docker images for all services."""
     typer.echo(f"Building images with tag: {tag}")
-    home = Path.home()
     for project, dockerfile, image_base in _BUILD_PROJECTS:
         image = f"{image_base}:{tag}"
-        context = home / project
+        context = _resolve_project_context(project)
+        if context is None:
+            typer.echo(f"  SKIP {image} (project checkout not found)")
+            continue
         df_path = context / dockerfile
         if not df_path.exists():
             typer.echo(f"  SKIP {image} (Dockerfile not found)")

@@ -1,9 +1,41 @@
 #!/bin/bash
 # SummitFlow Ecosystem — Self-Hosting Installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/summitflow-solutions/summitflow/main/docker/install.sh | bash
+# Usage:
+#   curl -fsSL https://raw.githubusercontent.com/summitflow-solutions/summitflow/main/docker/install.sh | bash
+#   INSTALL_CHOICE=3 bash install.sh
+#   bash install.sh --choice 2
 set -euo pipefail
 
 INSTALL_DIR="${INSTALL_DIR:-$HOME/summitflow-docker}"
+INSTALL_CHOICE="${INSTALL_CHOICE:-}"
+IMAGE_TAG="${IMAGE_TAG:-latest}"
+SKIP_PULL="${SKIP_PULL:-0}"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --choice)
+      INSTALL_CHOICE="${2:-}"
+      shift 2
+      ;;
+    -h|--help)
+      cat <<'EOF'
+Usage: install.sh [--choice <1|2|3>]
+
+Choices:
+  1  SummitFlow only
+  2  SummitFlow + Agent Hub
+  3  Full stack (all projects)
+
+You can also preset the selection with INSTALL_CHOICE=1|2|3.
+EOF
+      exit 0
+      ;;
+    *)
+      echo "ERROR: Unknown argument: $1" >&2
+      exit 1
+      ;;
+  esac
+done
 
 echo "============================================"
 echo "  SummitFlow Ecosystem — Self-Host Installer"
@@ -43,8 +75,17 @@ echo "  1) SummitFlow only"
 echo "  2) SummitFlow + Agent Hub"
 echo "  3) Full stack (all projects)"
 echo ""
-read -rp "Select [1-3, default: 3]: " CHOICE
-CHOICE="${CHOICE:-3}"
+
+if [[ -n "$INSTALL_CHOICE" ]]; then
+  CHOICE="$INSTALL_CHOICE"
+  echo "Using preset selection: ${CHOICE}"
+elif [[ -t 0 ]]; then
+  read -rp "Select [1-3, default: 3]: " CHOICE
+  CHOICE="${CHOICE:-3}"
+else
+  CHOICE="3"
+  echo "Non-interactive session detected; defaulting to full stack (3)."
+fi
 
 PROFILES=()
 COMPOSE_PROFILES_VALUE=""
@@ -85,8 +126,9 @@ mkdir -p "$INSTALL_DIR"
 cd "$INSTALL_DIR"
 
 # Download compose files
-REPO_BASE="https://raw.githubusercontent.com/summitflow-solutions/summitflow/main/docker/compose"
+REPO_BASE="${REPO_BASE_URL:-https://raw.githubusercontent.com/summitflow-solutions/summitflow/main/docker/compose}"
 echo "Downloading compose files..."
+echo "Source: $REPO_BASE"
 curl -fsSL "$REPO_BASE/docker-compose.yml" -o docker-compose.yml
 curl -fsSL "$REPO_BASE/init-db.sh" -o init-db.sh
 curl -fsSL "$REPO_BASE/redis.conf" -o redis.conf
@@ -116,7 +158,7 @@ SF_DB_PASSWORD=$SF_DB_PASSWORD
 AH_DB_PASSWORD=$AH_DB_PASSWORD
 PA_DB_PASSWORD=$PA_DB_PASSWORD
 REDIS_PASSWORD=$REDIS_PASSWORD
-TAG=latest
+TAG=$IMAGE_TAG
 HATCHET_TAG=latest
 DOCKER_GID=$DOCKER_GID
 
@@ -133,14 +175,18 @@ AGENT_HUB_ENCRYPTION_KEY=$AGENT_HUB_ENCRYPTION_KEY
 AGENT_HUB_SECRET_KEY=$AGENT_HUB_SECRET_KEY
 INTERNAL_SERVICE_SECRET=$INTERNAL_SERVICE_SECRET
 
-# ─── Client Credentials (auto-generated below) ──────────────────
-SUMMITFLOW_CLIENT_ID=
+# ─── First-party Client IDs ──────────────────────────────────────
+# Agent Hub reconciles these deterministic registrations at startup.
+SUMMITFLOW_CLIENT_ID=summitflow
+SUMMITFLOW_CLIENT_SECRET=
 SUMMITFLOW_REQUEST_SOURCE=summitflow
-AGENT_HUB_DASHBOARD_CLIENT_ID=
+AGENT_HUB_DASHBOARD_CLIENT_ID=agent-hub-dashboard
 AGENT_HUB_DASHBOARD_REQUEST_SOURCE=agent-hub-dashboard
-PORTFOLIO_CLIENT_ID=
+PORTFOLIO_CLIENT_ID=portfolio-ai
+PORTFOLIO_CLIENT_SECRET=
 PORTFOLIO_REQUEST_SOURCE=portfolio-ai
-MONKEY_FIGHT_CLIENT_ID=
+MONKEY_FIGHT_CLIENT_ID=monkey-fight
+MONKEY_FIGHT_CLIENT_SECRET=
 MONKEY_FIGHT_REQUEST_SOURCE=monkey-fight
 
 # ─── Hatchet ──────────────────────────────────────────────────
@@ -173,11 +219,21 @@ mkdir -p hatchet-config
 
 echo ""
 echo "Pulling images (this may take a few minutes)..."
-docker compose "${PROFILES[@]}" pull
+if [[ "$SKIP_PULL" == "1" ]]; then
+  echo "Skipping image pull because SKIP_PULL=1"
+else
+  docker compose "${PROFILES[@]}" pull
+fi
 
 echo ""
-echo "Starting services..."
-docker compose "${PROFILES[@]}" up -d
+echo "Starting infrastructure services..."
+docker compose up -d \
+  postgres \
+  redis \
+  docker-socket-proxy \
+  hatchet-migrate \
+  hatchet-setup-config \
+  hatchet
 
 # ─── Wait for Health ────────────────────────────────────────────
 
@@ -203,6 +259,12 @@ apply_hatchet_tuning() {
   local server_file="hatchet-config/server.yaml"
   local database_file="hatchet-config/database.yaml"
   local changed=0
+  local current_uid current_gid
+  current_uid="$(id -u)"
+  current_gid="$(id -g)"
+
+  docker compose run --rm --no-deps --entrypoint sh hatchet-setup-config \
+    -c "chown -R ${current_uid}:${current_gid} /hatchet/config" >/dev/null 2>&1 || true
 
   if [ ! -f "$server_file" ] || [ ! -f "$database_file" ]; then
     echo "  WARNING: Hatchet config files not found; skipping runtime tuning."
@@ -236,6 +298,52 @@ apply_hatchet_tuning() {
 wait_for_service "Hatchet" "http://localhost:8888/ready" 90
 apply_hatchet_tuning
 
+alembic_version_row_count() {
+  local db="$1"
+  local count=""
+
+  count=$(docker compose exec -T postgres psql -U admin -d "$db" -t -A \
+    -c "SELECT COUNT(*) FROM public.alembic_version" 2>/dev/null | tr -d '[:space:]' || true)
+
+  if [[ -z "$count" ]]; then
+    echo "missing"
+    return 0
+  fi
+
+  echo "$count"
+}
+
+stamp_schema_if_needed() {
+  local label="$1" service="$2" db="$3"
+  local version_rows=""
+
+  version_rows="$(alembic_version_row_count "$db")"
+  if [[ "$version_rows" == "missing" ]]; then
+    echo "  WARNING: ${label} alembic_version table is missing; skipping stamp."
+    return 0
+  fi
+
+  if [[ "$version_rows" != "0" ]]; then
+    echo "  ${label} schema already stamped"
+    return 0
+  fi
+
+  echo "  Stamping ${label} Alembic heads..."
+  docker compose run --rm --no-deps --entrypoint alembic "$service" stamp heads
+}
+
+echo ""
+echo "Ensuring imported schemas are stamped..."
+stamp_schema_if_needed "SummitFlow" "summitflow-api" "summitflow"
+
+if [[ "$CHOICE" == "2" || "$CHOICE" == "3" ]]; then
+  stamp_schema_if_needed "Agent Hub" "agent-hub-api" "agent_hub"
+fi
+
+if [[ "$CHOICE" == "3" ]]; then
+  stamp_schema_if_needed "Portfolio AI" "portfolio-api" "portfolio_ai"
+fi
+
 # ─── Generate Hatchet Client Token ────────────────────────────
 
 echo ""
@@ -266,47 +374,8 @@ else
 fi
 
 # Restart services to pick up Hatchet token
-echo "Restarting services with Hatchet token..."
+echo "Starting application services with Hatchet token..."
 docker compose "${PROFILES[@]}" up -d
-
-# ─── Auto-generate Client Credentials ────────────────────────────
-
-if [[ "$CHOICE" == "2" || "$CHOICE" == "3" ]]; then
-  wait_for_service "Agent Hub API" "http://localhost:8003/health" 60
-
-  create_client() {
-    local display_name="$1" env_var="$2" client_type="${3:-external}"
-    local response client_id
-    response=$(curl -sf -X POST "http://localhost:8003/api/access-control/clients" \
-      -H "Content-Type: application/json" \
-      -d "{\"display_name\": \"$display_name\", \"client_type\": \"$client_type\"}" 2>/dev/null) || true
-
-    if [ -n "$response" ]; then
-      client_id=$(echo "$response" | jq -r '.client_id // empty')
-      if [ -n "$client_id" ]; then
-        sed -i "s|^${env_var}=.*|${env_var}=$client_id|" .env
-        echo "  Created client '$display_name' → $client_id"
-        return 0
-      fi
-    fi
-    echo "  WARNING: Failed to create client '$display_name'"
-    return 1
-  }
-
-  echo ""
-  echo "Creating client credentials in Agent Hub..."
-  create_client "summitflow" "SUMMITFLOW_CLIENT_ID" "internal"
-  create_client "agent-hub-dashboard" "AGENT_HUB_DASHBOARD_CLIENT_ID" "internal"
-
-  if [[ "$CHOICE" == "3" ]]; then
-    create_client "portfolio-ai" "PORTFOLIO_CLIENT_ID" "internal"
-    create_client "monkey-fight" "MONKEY_FIGHT_CLIENT_ID" "external"
-  fi
-
-  # Restart services to pick up client IDs
-  echo "Restarting services with client credentials..."
-  docker compose "${PROFILES[@]}" up -d
-fi
 
 # ─── Final Health Check ──────────────────────────────────────────
 

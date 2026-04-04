@@ -11,7 +11,6 @@ from datetime import datetime
 from .sources import (
     get_recent_backup_events,
     get_recent_git_events,
-    get_recent_session_events,
     get_recent_task_events,
 )
 from .types import ActivityEvent
@@ -51,12 +50,12 @@ def get_aggregated_activity(
         project_id: Filter by project (None for all)
         limit: Max events per page
         offset: Pagination offset
-        event_types: Filter by event types (task, session, backup, git)
+        event_types: Filter by event types (task, backup, git)
 
     Returns:
         Tuple of (events, total_count_estimate)
     """
-    types_to_fetch = event_types or ["task", "session", "backup", "git"]
+    types_to_fetch = event_types or ["task", "backup", "git"]
 
     # Fetch more than needed to account for merging/sorting
     fetch_limit = limit + offset + 20
@@ -65,9 +64,6 @@ def get_aggregated_activity(
 
     if "task" in types_to_fetch:
         all_events.extend(get_recent_task_events(project_id, fetch_limit))
-
-    if "session" in types_to_fetch:
-        all_events.extend(get_recent_session_events(project_id, fetch_limit))
 
     if "backup" in types_to_fetch:
         all_events.extend(get_recent_backup_events(project_id, fetch_limit))

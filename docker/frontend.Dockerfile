@@ -13,11 +13,7 @@ WORKDIR /app
 COPY frontend/ ./
 COPY docker/workspace-packages/*.tgz /tmp/workspace-packages/
 
-RUN sed -i 's|"@agent-hub/chat-ui": "workspace:\*"|"@agent-hub/chat-ui": "file:/tmp/workspace-packages/agent-hub-chat-ui-0.1.0.tgz"|g' package.json \
-    && sed -i 's|"@agent-hub/push-client": "workspace:\*"|"@agent-hub/push-client": "file:/tmp/workspace-packages/agent-hub-push-client-0.1.0.tgz"|g' package.json
-
-RUN echo '{"overrides":{"@agent-hub/passport-client":"file:/tmp/workspace-packages/agent-hub-passport-client-0.1.0.tgz"}}' > /tmp/override.json && \
-    node -e "const p=require('./package.json'); const o=JSON.parse(require('fs').readFileSync('/tmp/override.json')); p.pnpm={...p.pnpm,...o}; require('fs').writeFileSync('package.json',JSON.stringify(p,null,2))" && \
+RUN node -e "const fs = require('fs'); const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8')); pkg.dependencies = { ...pkg.dependencies, '@agent-hub/chat-ui': 'file:/tmp/workspace-packages/agent-hub-chat-ui-0.1.0.tgz', '@agent-hub/push-client': 'file:/tmp/workspace-packages/agent-hub-push-client-0.1.0.tgz', '@summitflow/notes-ui': 'file:/tmp/workspace-packages/summitflow-notes-ui-0.1.0.tgz' }; pkg.pnpm = pkg.pnpm || {}; pkg.pnpm.overrides = { ...(pkg.pnpm.overrides || {}), '@agent-hub/passport-client': 'file:/tmp/workspace-packages/agent-hub-passport-client-0.1.0.tgz' }; fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));" && \
     CI=true pnpm install --no-frozen-lockfile
 
 ENV NODE_ENV=development
@@ -40,16 +36,10 @@ COPY frontend/ ./
 # Copy workspace package tarballs (built by pack-workspace-packages.sh)
 COPY docker/workspace-packages/*.tgz /tmp/workspace-packages/
 
-# Replace workspace:* references with file: paths to tarballs
-RUN sed -i 's|"@agent-hub/chat-ui": "workspace:\*"|"@agent-hub/chat-ui": "file:/tmp/workspace-packages/agent-hub-chat-ui-0.1.0.tgz"|g' package.json \
-    && sed -i 's|"@agent-hub/push-client": "workspace:\*"|"@agent-hub/push-client": "file:/tmp/workspace-packages/agent-hub-push-client-0.1.0.tgz"|g' package.json
-
 # Install dependencies and clean temp files in same layer
-# Override transitive passport-client dep (chat-ui depends on it)
-RUN echo '{"overrides":{"@agent-hub/passport-client":"file:/tmp/workspace-packages/agent-hub-passport-client-0.1.0.tgz"}}' > /tmp/override.json && \
-    node -e "const p=require('./package.json'); const o=JSON.parse(require('fs').readFileSync('/tmp/override.json')); p.pnpm={...p.pnpm,...o}; require('fs').writeFileSync('package.json',JSON.stringify(p,null,2))" && \
+RUN node -e "const fs = require('fs'); const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8')); pkg.dependencies = { ...pkg.dependencies, '@agent-hub/chat-ui': 'file:/tmp/workspace-packages/agent-hub-chat-ui-0.1.0.tgz', '@agent-hub/push-client': 'file:/tmp/workspace-packages/agent-hub-push-client-0.1.0.tgz', '@summitflow/notes-ui': 'file:/tmp/workspace-packages/summitflow-notes-ui-0.1.0.tgz' }; pkg.pnpm = pkg.pnpm || {}; pkg.pnpm.overrides = { ...(pkg.pnpm.overrides || {}), '@agent-hub/passport-client': 'file:/tmp/workspace-packages/agent-hub-passport-client-0.1.0.tgz' }; fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));" && \
     CI=true pnpm install --no-frozen-lockfile && \
-    rm -rf /tmp/override.json /tmp/workspace-packages
+    rm -rf /tmp/workspace-packages
 
 # Build with standalone output, then prune pnpm store
 ENV NEXT_TELEMETRY_DISABLED=1

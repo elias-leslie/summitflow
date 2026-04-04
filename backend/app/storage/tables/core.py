@@ -21,6 +21,7 @@ def _create_projects_table(cur: psycopg.Cursor) -> None:
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             base_url TEXT NOT NULL,
+            public_url TEXT,
             health_endpoint TEXT DEFAULT '/health',
             frontend_port INTEGER DEFAULT 3000,
             backend_port INTEGER DEFAULT 8000,

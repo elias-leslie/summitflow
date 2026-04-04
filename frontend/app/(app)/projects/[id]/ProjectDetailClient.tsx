@@ -1,7 +1,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { AlertCircle, ExternalLink, Settings2 } from 'lucide-react'
+import { AlertCircle } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
@@ -9,8 +9,8 @@ import { toast } from 'sonner'
 import { EscalationPanel } from '@/components/execution/EscalationPanel'
 import { ExplorerTab } from '@/components/explorer/ExplorerTab'
 import type { ExplorerType } from '@/components/explorer/types'
-import { HealthTab } from '@/components/health/HealthTab'
 import { TaskKanbanBoard } from '@/components/kanban/TaskKanbanBoard'
+import { ProjectOverview } from '@/components/projects/ProjectOverview'
 import { TaskIdeationDialog } from '@/components/tasks/TaskIdeationDialog'
 import type { TaskFilterValues } from '@/components/tasks/TaskFilters'
 import { TaskModal } from '@/components/tasks/TaskModal'
@@ -25,14 +25,21 @@ import {
   updateTaskStatus,
 } from '@/lib/api'
 import { executeTask } from '@/lib/api/tasks'
-import { type TabId, useTabPersistence } from '@/lib/hooks/useTabPersistence'
+import { parseExplorerType, parseProjectTab, type ProjectTab } from '@/lib/project-tabs'
 import { buildUrlWithUpdatedSearchParams } from '@/lib/search-params'
 import { taskQueryKeys } from '@/lib/task-cache'
 import { useTaskMutationSync } from '@/lib/task-mutation-sync'
 import { STALE_GIT } from '@/lib/polling'
 import { getErrorMessage } from '@/lib/utils'
 
-const TAB_COPY: Record<TabId, { label: string; description: string }> = {
+type ProjectSection = ProjectTab | 'overview'
+
+const SECTION_COPY: Record<ProjectSection, { label: string; description: string }> = {
+  overview: {
+    label: 'Project overview',
+    description:
+      'Start from the user-facing project summary, then branch into delivery, code exploration, files, and settings.',
+  },
   tasks: {
     label: 'Execution board',
     description:
@@ -42,11 +49,6 @@ const TAB_COPY: Record<TabId, { label: string; description: string }> = {
     label: 'Code intelligence',
     description:
       'Inspect indexed code structure, scan coverage, and precision-search the project surface.',
-  },
-  health: {
-    label: 'Health and quality',
-    description:
-      'Monitor quality gate signals, runtime health, and the operational pressure around this project.',
   },
 }
 
@@ -58,18 +60,15 @@ export function ProjectDetailClient() {
   const projectId = params.id as string
   const { invalidateTasks, syncUpdatedTask } = useTaskMutationSync(projectId)
 
-  // Tab persistence hook (handles localStorage and URL sync)
-  const urlTab = searchParams.get('tab') as TabId | null
-  const urlExplorerType = searchParams.get('type') as ExplorerType | null
-  const { activeTab, explorerType, setExplorerType } = useTabPersistence({
-    projectId,
-    urlTab,
-    urlExplorerType,
-  })
-
   // Get task filter params from URL
   const urlTaskStatus = searchParams.get('status')
   const urlTaskType = searchParams.get('taskType')
+  const urlTaskId = searchParams.get('task')
+  const urlModal = searchParams.get('modal')
+  const parsedTab = parseProjectTab(searchParams.get('tab'))
+  const activeTab = parsedTab ?? (urlTaskId || urlModal === 'create-task' ? 'tasks' : null)
+  const activeSection: ProjectSection = activeTab ?? 'overview'
+  const explorerType = parseExplorerType(searchParams.get('type')) as ExplorerType
   const taskInitialFilters: Partial<TaskFilterValues> = {}
   if (
     urlTaskStatus &&
@@ -100,15 +99,15 @@ export function ProjectDetailClient() {
     [pathname, router, searchParams],
   )
 
-  // Update URL when explorer type changes (without full navigation)
+  useEffect(() => {
+    if (searchParams.get('tab') && !parsedTab) {
+      updateUrlParams({ tab: null, type: null })
+    }
+  }, [parsedTab, searchParams, updateUrlParams])
+
   const handleExplorerTypeChange = (type: ExplorerType) => {
-    setExplorerType(type)
     updateUrlParams({ tab: 'explorer', type })
   }
-
-  // Auto-open task from URL query param
-  const urlTaskId = searchParams.get('task')
-  const urlModal = searchParams.get('modal')
 
   // View mode (board | table) for unified tasks tab
   const { viewMode, setViewMode } = useViewMode(projectId)
@@ -242,6 +241,8 @@ export function ProjectDetailClient() {
     )
   }
 
+  const appUrl = project.public_url || project.base_url
+
   return (
     <div className="h-full flex flex-col">
       <div className="flex-none border-b border-slate-800/80 bg-slate-950/55 backdrop-blur-sm">
@@ -253,7 +254,7 @@ export function ProjectDetailClient() {
                   {project.name}
                 </h1>
                 <span className="rounded-full border border-slate-700/60 bg-slate-950/72 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-slate-300">
-                  {TAB_COPY[activeTab].label}
+                  {SECTION_COPY[activeSection].label}
                 </span>
                 <span
                   className={project.health_status === 'healthy'
@@ -266,40 +267,27 @@ export function ProjectDetailClient() {
               <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px]">
                 <span className="font-mono text-slate-500">{project.id}</span>
                 <a
-                  href={project.base_url}
+                  href={appUrl}
                   target="_blank"
                   rel="noreferrer"
                   className="max-w-[200px] truncate font-mono text-slate-400 transition-colors hover:text-phosphor-300"
-                  title={project.base_url}
+                  title={appUrl}
                 >
-                  {project.base_url}
+                  {appUrl}
                 </a>
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-2 xl:justify-end">
-              <a
-                href={project.base_url}
-                target="_blank"
-                rel="noreferrer"
-                className="btn-secondary inline-flex items-center gap-1.5 px-3 py-1.5 text-xs"
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-                Open app
-              </a>
-              <Link
-                href={`/projects/${project.id}/settings`}
-                className="btn-secondary inline-flex items-center gap-1.5 px-3 py-1.5 text-xs"
-              >
-                <Settings2 className="h-3.5 w-3.5" />
-                Settings
-              </Link>
-            </div>
           </div>
         </div>
       </div>
 
       <section className="flex-1 overflow-hidden">
+        {activeTab === null && (
+          <div className="h-full overflow-auto p-3 sm:p-4">
+            <ProjectOverview project={project} />
+          </div>
+        )}
         {activeTab === 'tasks' && (
           <div className="h-full overflow-auto p-3 sm:p-4 space-y-4">
             <TasksViewToolbar
@@ -353,11 +341,6 @@ export function ProjectDetailClient() {
               initialType={explorerType}
               onTypeChange={handleExplorerTypeChange}
             />
-          </div>
-        )}
-        {activeTab === 'health' && (
-          <div className="h-full overflow-auto p-3 sm:p-4">
-            <HealthTab projectId={projectId} />
           </div>
         )}
       </section>

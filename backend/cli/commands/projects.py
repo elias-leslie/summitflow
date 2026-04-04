@@ -120,7 +120,7 @@ def create_project(
         bool,
         typer.Option(
             "--summitflow-hosted",
-            help="Derive https://<project-id>.summitflow.dev and /srv/workspaces/projects/<project-id> defaults",
+            help="Derive the canonical hosted app URL and /srv/workspaces/projects/<project-id> defaults",
         ),
     ] = False,
     permission_tier: Annotated[

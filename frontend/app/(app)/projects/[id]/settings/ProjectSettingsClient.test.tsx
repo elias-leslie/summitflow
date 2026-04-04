@@ -86,6 +86,7 @@ describe('ProjectSettingsClient', () => {
       id: 'summitflow',
       name: 'SummitFlow Ops',
       base_url: 'https://dev.summitflow.dev',
+      public_url: 'https://app.example.test',
       health_endpoint: '/healthz',
       root_path: '/home/testuser/summitflow',
       category: 'production',
@@ -116,6 +117,7 @@ describe('ProjectSettingsClient', () => {
       id: 'summitflow',
       name: 'SummitFlow',
       base_url: 'https://dev.summitflow.dev',
+      public_url: 'https://app.example.test',
       health_endpoint: '/health',
       root_path: '/home/testuser/summitflow',
       category: 'production',
@@ -142,6 +144,7 @@ describe('ProjectSettingsClient', () => {
       id: 'summitflow',
       name: 'SummitFlow',
       base_url: 'https://dev.summitflow.dev',
+      public_url: 'https://app.example.test',
       health_endpoint: '/health',
       root_path: '/home/testuser/summitflow',
       category: 'production',
@@ -182,5 +185,24 @@ describe('ProjectSettingsClient', () => {
     expect(
       await screen.findByText('Project registration details saved.'),
     ).toBeInTheDocument()
+  })
+
+  it('uses the stored public URL for the open app link', async () => {
+    apiMocks.fetchProject.mockResolvedValue({
+      id: 'summitflow',
+      name: 'SummitFlow',
+      base_url: 'http://localhost:3001',
+      public_url: 'https://app.example.test',
+      health_endpoint: '/health',
+      root_path: '/home/testuser/summitflow',
+      category: 'production',
+      sidebar_rank: 1,
+      created_at: '2026-03-12T09:00:00Z',
+    })
+
+    renderClient()
+
+    const link = await screen.findByRole('link', { name: 'Open app' })
+    expect(link).toHaveAttribute('href', 'https://app.example.test')
   })
 })

@@ -18,6 +18,12 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
+def _existing_task_columns() -> set[str]:
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    return {column["name"] for column in inspector.get_columns("tasks")}
+
+
 def upgrade() -> None:
     """Drop vestigial QA workflow columns from tasks table.
 
@@ -25,18 +31,28 @@ def upgrade() -> None:
     used in the autonomous pipeline. Triggers were already dropped in
     migration 088.
     """
-    op.drop_column("tasks", "qa_status")
-    op.drop_column("tasks", "qa_signoff_at")
-    op.drop_column("tasks", "qa_signoff_by")
-    op.drop_column("tasks", "qa_issues")
+    existing_columns = _existing_task_columns()
+    if "qa_status" in existing_columns:
+        op.drop_column("tasks", "qa_status")
+    if "qa_signoff_at" in existing_columns:
+        op.drop_column("tasks", "qa_signoff_at")
+    if "qa_signoff_by" in existing_columns:
+        op.drop_column("tasks", "qa_signoff_by")
+    if "qa_issues" in existing_columns:
+        op.drop_column("tasks", "qa_issues")
 
 
 def downgrade() -> None:
     """Restore QA workflow columns."""
-    op.add_column("tasks", sa.Column("qa_issues", sa.JSON(), nullable=True))
-    op.add_column("tasks", sa.Column("qa_signoff_by", sa.Text(), nullable=True))
-    op.add_column("tasks", sa.Column("qa_signoff_at", sa.DateTime(timezone=True), nullable=True))
-    op.add_column(
-        "tasks",
-        sa.Column("qa_status", sa.Text(), nullable=True, server_default="pending"),
-    )
+    existing_columns = _existing_task_columns()
+    if "qa_issues" not in existing_columns:
+        op.add_column("tasks", sa.Column("qa_issues", sa.JSON(), nullable=True))
+    if "qa_signoff_by" not in existing_columns:
+        op.add_column("tasks", sa.Column("qa_signoff_by", sa.Text(), nullable=True))
+    if "qa_signoff_at" not in existing_columns:
+        op.add_column("tasks", sa.Column("qa_signoff_at", sa.DateTime(timezone=True), nullable=True))
+    if "qa_status" not in existing_columns:
+        op.add_column(
+            "tasks",
+            sa.Column("qa_status", sa.Text(), nullable=True, server_default="pending"),
+        )

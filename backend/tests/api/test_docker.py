@@ -42,7 +42,7 @@ def _status(
 class TestDockerRuntime:
     """Tests for Docker runtime mode endpoints."""
 
-    def test_runtime_service_map_includes_split_agent_hub_workers(self) -> None:
+    def test_runtime_service_map_includes_registered_native_projects(self) -> None:
         from app.api import docker as docker_api
 
         assert docker_api._RUNTIME_SERVICE_MAP["agent-hub-worker"]["unit"] == (
@@ -51,6 +51,17 @@ class TestDockerRuntime:
         assert docker_api._RUNTIME_SERVICE_MAP["agent-hub-ops-worker"]["unit"] == (
             "agent-hub-hatchet-ops-worker.service"
         )
+        assert docker_api._RUNTIME_SERVICE_MAP["vantage-api"]["unit"] == "vantage-backend.service"
+        assert docker_api._RUNTIME_SERVICE_MAP["vantage-web"]["unit"] == "vantage-frontend.service"
+        assert docker_api._RUNTIME_SERVICE_MAP["vantage-worker"]["unit"] == (
+            "vantage-hatchet-worker.service"
+        )
+        assert docker_api._RUNTIME_SERVICE_MAP["test1-api"]["unit"] == "test1-backend.service"
+        assert docker_api._RUNTIME_SERVICE_MAP["test1-web"]["unit"] == "test1-frontend.service"
+        assert docker_api._RUNTIME_SERVICE_MAP["test2-api"]["unit"] == "test2-backend.service"
+        assert docker_api._RUNTIME_SERVICE_MAP["test2-web"]["unit"] == "test2-frontend.service"
+        assert docker_api._RUNTIME_SERVICE_MAP["test3-api"]["unit"] == "test3-backend.service"
+        assert docker_api._RUNTIME_SERVICE_MAP["test3-web"]["unit"] == "test3-frontend.service"
 
     def test_detect_repo_root_walks_up_container_layout(self, tmp_path) -> None:
         from app.api import docker as docker_api

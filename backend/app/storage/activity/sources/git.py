@@ -1,74 +1,71 @@
-"""Git Events Source - Fetch activity events for git commits."""
+"""Git Events Source - Fetch activity events from repository commit history."""
 
 from __future__ import annotations
 
+from datetime import datetime
+from pathlib import Path
 from typing import Any, cast
 
-from ..._sql import static_sql
-from ...connection import get_cursor
+from ....utils._git_core import _resolve_project_id, get_managed_repos
+from ....utils._git_diff import get_recent_commits
+from ...projects import get_project_root_path
 from ..types import ActivityEvent, GitMetadata
 
 
-def _build_git_query_params(
-    project_id: str | None,
-) -> tuple[str, list[str | int]]:
-    """Build WHERE clause and params for git event query."""
-    where_clause = "WHERE git_commit_sha IS NOT NULL"
-    params: list[str | int] = []
-    if project_id:
-        where_clause += " AND project_id = %s"
-        params.append(project_id)
-    return where_clause, params
-
-
-def _fetch_git_rows(
-    where_clause: str,
-    params: list[str | int],
-    limit: int,
-) -> list[tuple[Any, ...]]:
-    """Execute git event query and return raw rows."""
-    with get_cursor() as cur:
-        cur.execute(
-            static_sql(
-                f"""
-                SELECT project_id, git_commit_sha, notes, ended_at, agent_type
-                FROM agent_sessions
-                {where_clause}
-                ORDER BY ended_at DESC NULLS LAST
-                LIMIT %s
-                """
-            ),
-            [*params, limit],
-        )
-        return cur.fetchall()
-
-
-def _row_to_git_event(row: tuple[Any, ...]) -> ActivityEvent:
-    """Convert a database row to a git ActivityEvent."""
-    proj_id, sha, notes, ended_at, agent_type = row
-    short_sha = sha[:7] if sha else "unknown"
-    commit_msg = notes[:50] + "..." if notes and len(notes) > 50 else notes or "No message"
+def _to_git_event(commit: Any, project_id: str) -> ActivityEvent:
+    """Convert a git commit record into an activity event."""
     metadata: GitMetadata = {
-        "commit_sha": sha,
-        "agent_type": agent_type,
-        "notes": notes,
+        "commit_sha": commit.sha,
+        "repo_name": commit.repo_name,
+        "author_name": commit.author_name,
+        "files_changed": commit.files_changed,
+        "insertions": commit.insertions,
+        "deletions": commit.deletions,
     }
     return {
         "type": "git",
-        "message": f"Commit {short_sha}: {commit_msg}",
-        "timestamp": ended_at.isoformat() if ended_at else None,
-        "project_id": proj_id,
+        "message": f"Commit {commit.short_sha}: {commit.message}",
+        "timestamp": commit.date,
+        "project_id": project_id,
         "metadata": cast(dict[str, Any], metadata),
     }
+
+
+def _parse_event_timestamp(event: ActivityEvent) -> datetime:
+    """Parse activity timestamps for consistent cross-repo sorting."""
+    timestamp = event.get("timestamp")
+    if not isinstance(timestamp, str):
+        return datetime.min
+    return datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+
+
+def _get_project_git_events(project_id: str, limit: int) -> list[ActivityEvent]:
+    """Collect recent git activity for a single project repo."""
+    root_path = get_project_root_path(project_id)
+    if not root_path:
+        return []
+    repo_path = Path(root_path)
+    return [_to_git_event(commit, project_id) for commit in get_recent_commits(repo_path, limit=limit)]
+
+
+def _get_managed_repo_git_events(limit: int) -> list[ActivityEvent]:
+    """Collect and merge recent git activity across all managed repos."""
+    events: list[ActivityEvent] = []
+    for repo_path in get_managed_repos():
+        project_id = _resolve_project_id(repo_path)
+        if not project_id:
+            continue
+        for commit in get_recent_commits(repo_path, limit=limit):
+            events.append(_to_git_event(commit, project_id))
+    events.sort(key=_parse_event_timestamp, reverse=True)
+    return events[:limit]
 
 
 def get_recent_git_events(
     project_id: str | None = None,
     limit: int = 20,
 ) -> list[ActivityEvent]:
-    """Get recent git commit events from agent sessions.
-
-    Git commits are tracked via agent sessions that have a git_commit_sha.
+    """Get recent git commit events from repository history.
 
     Args:
         project_id: Filter by project (None for all)
@@ -77,6 +74,6 @@ def get_recent_git_events(
     Returns:
         List of activity events for git commits
     """
-    where_clause, params = _build_git_query_params(project_id)
-    rows = _fetch_git_rows(where_clause, params, limit)
-    return [_row_to_git_event(row) for row in rows]
+    if project_id:
+        return _get_project_git_events(project_id, limit)
+    return _get_managed_repo_git_events(limit)

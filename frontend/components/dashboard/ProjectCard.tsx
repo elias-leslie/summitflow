@@ -39,6 +39,7 @@ function getProjectHost(baseUrl: string): string {
 export function ProjectCard({ project }: ProjectCardProps) {
   const router = useRouter()
   const [hovered, setHovered] = useState(false)
+  const appUrl = project.public_url || project.base_url
 
   const { data: health, isLoading: healthLoading } = useQuery({
     queryKey: ['project-health', project.id],
@@ -75,7 +76,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
   const gradient = gradients[firstLetter] ?? gradients.default
 
   const { stats } = project
-  const projectHost = getProjectHost(project.base_url)
+  const projectHost = getProjectHost(appUrl)
   const metrics = [
     {
       key: 'features' as const,
@@ -202,7 +203,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
                 Settings
               </Link>
               <a
-                href={project.base_url}
+                href={appUrl}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-1 rounded-md border border-slate-700/60 bg-slate-800/40 px-2.5 py-1 text-slate-400 transition-all hover:border-slate-500 hover:text-slate-200 hover:bg-slate-750/60"

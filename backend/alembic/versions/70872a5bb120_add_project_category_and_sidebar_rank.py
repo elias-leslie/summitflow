@@ -17,26 +17,44 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
+def _existing_project_columns() -> set[str]:
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    return {column["name"] for column in inspector.get_columns("projects")}
+
+
+def _existing_project_constraints() -> set[str]:
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    return {constraint["name"] for constraint in inspector.get_check_constraints("projects")}
+
+
 def upgrade() -> None:
     """Upgrade schema."""
-    op.add_column(
-        "projects",
-        sa.Column("category", sa.Text(), nullable=False, server_default="dev"),
-    )
-    op.add_column(
-        "projects",
-        sa.Column("sidebar_rank", sa.Integer(), nullable=True),
-    )
-    op.create_check_constraint(
-        "projects_category_check",
-        "projects",
-        "category IN ('production', 'testing', 'dev')",
-    )
-    op.create_check_constraint(
-        "projects_sidebar_rank_check",
-        "projects",
-        "sidebar_rank IS NULL OR sidebar_rank >= 0",
-    )
+    existing_columns = _existing_project_columns()
+    if "category" not in existing_columns:
+        op.add_column(
+            "projects",
+            sa.Column("category", sa.Text(), nullable=False, server_default="dev"),
+        )
+    if "sidebar_rank" not in existing_columns:
+        op.add_column(
+            "projects",
+            sa.Column("sidebar_rank", sa.Integer(), nullable=True),
+        )
+    existing_constraints = _existing_project_constraints()
+    if "projects_category_check" not in existing_constraints:
+        op.create_check_constraint(
+            "projects_category_check",
+            "projects",
+            "category IN ('production', 'testing', 'dev')",
+        )
+    if "projects_sidebar_rank_check" not in existing_constraints:
+        op.create_check_constraint(
+            "projects_sidebar_rank_check",
+            "projects",
+            "sidebar_rank IS NULL OR sidebar_rank >= 0",
+        )
     op.execute(
         """
         UPDATE projects
@@ -74,7 +92,13 @@ def downgrade() -> None:
         WHERE id IN ('test1', 'test2', 'test3')
         """
     )
-    op.drop_constraint("projects_sidebar_rank_check", "projects", type_="check")
-    op.drop_constraint("projects_category_check", "projects", type_="check")
-    op.drop_column("projects", "sidebar_rank")
-    op.drop_column("projects", "category")
+    existing_constraints = _existing_project_constraints()
+    if "projects_sidebar_rank_check" in existing_constraints:
+        op.drop_constraint("projects_sidebar_rank_check", "projects", type_="check")
+    if "projects_category_check" in existing_constraints:
+        op.drop_constraint("projects_category_check", "projects", type_="check")
+    existing_columns = _existing_project_columns()
+    if "sidebar_rank" in existing_columns:
+        op.drop_column("projects", "sidebar_rank")
+    if "category" in existing_columns:
+        op.drop_column("projects", "category")

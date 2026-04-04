@@ -53,12 +53,14 @@ class ProjectCreate(BaseModel):
 
     id: str
     name: str
-    base_url: str
+    base_url: str | None = None
+    public_url: str | None = None
     health_endpoint: str = "/health"
     root_path: str | None = None  # Filesystem path for file scanning
     frontend_port: int | None = None  # Canonical frontend port
     backend_port: int | None = None  # Canonical backend port
     category: ProjectCategory = "dev"
+    summitflow_hosted: bool = False
     agent_hub_permission: ProjectPermissionBootstrap | None = None
     onboarding: ProjectOnboardingRequest | None = None
 
@@ -69,6 +71,7 @@ class ProjectResponse(BaseModel):
     id: str
     name: str
     base_url: str
+    public_url: str
     health_endpoint: str
     root_path: str | None = None
     category: ProjectCategory
@@ -93,6 +96,7 @@ class ProjectUpdate(BaseModel):
 
     name: str | None = None
     base_url: str | None = None
+    public_url: str | None = None
     health_endpoint: str | None = None
     root_path: str | None = None
     category: ProjectCategory | None = None
@@ -114,6 +118,7 @@ class ProjectWithStats(BaseModel):
     id: str
     name: str
     base_url: str
+    public_url: str
     health_endpoint: str
     root_path: str | None = None
     logo_url: str | None = None

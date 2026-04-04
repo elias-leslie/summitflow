@@ -71,7 +71,7 @@ describe('NewProjectClient', () => {
     fireEvent.change(screen.getByLabelText('Project Name *'), {
       target: { value: 'My Project!!' },
     })
-    fireEvent.change(screen.getByLabelText('Base URL *'), {
+    fireEvent.change(screen.getByLabelText('Base URL'), {
       target: { value: 'https://example.com///' },
     })
     fireEvent.change(screen.getByLabelText('Health Endpoint'), {
@@ -96,28 +96,59 @@ describe('NewProjectClient', () => {
       health_endpoint: '/healthz',
       root_path: '/tmp/my-project',
       category: 'dev',
+      summitflow_hosted: undefined,
       agent_hub_permission: {
         permission_tier: 'read',
         auto_exec_enabled: false,
         execution_start_hour: 0,
         execution_end_hour: 24,
       },
+      onboarding: {
+        enable_backup_schedule: true,
+        backup_frequency: 'daily',
+        backup_retention_days: 30,
+        queue_initial_backup: true,
+      },
     })
   })
 
-  it('auto-fills SummitFlow-hosted defaults from the project id', async () => {
+  it('auto-fills the managed workspace root and marks hosted setup on submit', async () => {
     renderClient()
 
     fireEvent.change(screen.getByLabelText('Project Name *'), {
       target: { value: 'Hosted Example' },
     })
 
-    expect(screen.getByLabelText('Base URL *')).toHaveValue(
-      'https://hosted-example.summitflow.dev',
-    )
     expect(screen.getByLabelText('Root Path')).toHaveValue(
       '/srv/workspaces/projects/hosted-example',
     )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create Project' }))
+
+    await waitFor(() => {
+      expect(apiMocks.createProject).toHaveBeenCalled()
+    })
+    expect(apiMocks.createProject.mock.calls[0]?.[0]).toEqual({
+      id: 'hosted-example',
+      name: 'Hosted Example',
+      base_url: undefined,
+      health_endpoint: '/health',
+      root_path: '/srv/workspaces/projects/hosted-example',
+      category: 'dev',
+      summitflow_hosted: true,
+      agent_hub_permission: {
+        permission_tier: 'read',
+        auto_exec_enabled: false,
+        execution_start_hour: 0,
+        execution_end_hour: 24,
+      },
+      onboarding: {
+        enable_backup_schedule: true,
+        backup_frequency: 'daily',
+        backup_retention_days: 30,
+        queue_initial_backup: true,
+      },
+    })
   })
 
   it('blocks submission when the root path is relative', async () => {
@@ -126,7 +157,7 @@ describe('NewProjectClient', () => {
     fireEvent.change(screen.getByLabelText('Project Name *'), {
       target: { value: 'My Project' },
     })
-    fireEvent.change(screen.getByLabelText('Base URL *'), {
+    fireEvent.change(screen.getByLabelText('Base URL'), {
       target: { value: 'https://example.com' },
     })
     fireEvent.change(screen.getByLabelText('Root Path'), {
@@ -147,7 +178,7 @@ describe('NewProjectClient', () => {
     fireEvent.change(screen.getByLabelText('Project Name *'), {
       target: { value: 'No Bootstrap' },
     })
-    fireEvent.change(screen.getByLabelText('Base URL *'), {
+    fireEvent.change(screen.getByLabelText('Base URL'), {
       target: { value: 'https://example.com' },
     })
     fireEvent.click(screen.getByLabelText('Provision Agent Hub permission'))
@@ -163,7 +194,14 @@ describe('NewProjectClient', () => {
       health_endpoint: '/health',
       root_path: '/srv/workspaces/projects/no-bootstrap',
       category: 'dev',
+      summitflow_hosted: true,
       agent_hub_permission: undefined,
+      onboarding: {
+        enable_backup_schedule: true,
+        backup_frequency: 'daily',
+        backup_retention_days: 30,
+        queue_initial_backup: true,
+      },
     })
   })
 
@@ -173,7 +211,7 @@ describe('NewProjectClient', () => {
     fireEvent.change(screen.getByLabelText('Project Name *'), {
       target: { value: 'Testing Project' },
     })
-    fireEvent.change(screen.getByLabelText('Base URL *'), {
+    fireEvent.change(screen.getByLabelText('Base URL'), {
       target: { value: 'https://example.com' },
     })
     fireEvent.click(screen.getByLabelText('Sidebar Category'))
@@ -186,6 +224,13 @@ describe('NewProjectClient', () => {
     expect(apiMocks.createProject.mock.calls[0]?.[0]).toMatchObject({
       id: 'testing-project',
       category: 'testing',
+      summitflow_hosted: true,
+      onboarding: {
+        enable_backup_schedule: true,
+        backup_frequency: 'daily',
+        backup_retention_days: 30,
+        queue_initial_backup: true,
+      },
     })
   })
 })

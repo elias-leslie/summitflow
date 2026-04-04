@@ -11,6 +11,8 @@ Create Date: 2026-02-11 11:00:54.970882
 
 from collections.abc import Sequence
 
+import sqlalchemy as sa
+
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -21,12 +23,15 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    columns = {column["name"] for column in sa.inspect(bind).get_columns("backup_schedules")}
     # Add retention_days column with default 14
-    op.execute(
-        "ALTER TABLE backup_schedules ADD COLUMN retention_days INTEGER NOT NULL DEFAULT 14"
-    )
+    if "retention_days" not in columns:
+        op.execute(
+            "ALTER TABLE backup_schedules ADD COLUMN retention_days INTEGER NOT NULL DEFAULT 14"
+        )
     op.execute("UPDATE backup_schedules SET retention_days = 14")
-    op.execute("ALTER TABLE backup_schedules DROP COLUMN retention_count")
+    op.execute("ALTER TABLE backup_schedules DROP COLUMN IF EXISTS retention_count")
 
     # Clean up orphaned completed backup records older than 14 days,
     # keeping the 3 newest per project
@@ -46,8 +51,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute(
-        "ALTER TABLE backup_schedules ADD COLUMN retention_count INTEGER NOT NULL DEFAULT 5"
-    )
+    bind = op.get_bind()
+    columns = {column["name"] for column in sa.inspect(bind).get_columns("backup_schedules")}
+    if "retention_count" not in columns:
+        op.execute(
+            "ALTER TABLE backup_schedules ADD COLUMN retention_count INTEGER NOT NULL DEFAULT 5"
+        )
     op.execute("UPDATE backup_schedules SET retention_count = 5")
-    op.execute("ALTER TABLE backup_schedules DROP COLUMN retention_days")
+    op.execute("ALTER TABLE backup_schedules DROP COLUMN IF EXISTS retention_days")

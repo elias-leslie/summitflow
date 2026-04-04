@@ -149,6 +149,7 @@ export function ProjectSettingsClient() {
   )
   const canSave = hasChanges && Object.keys(fieldErrors).length === 0 && !mutation.isPending
   const healthPreview = buildHealthPreview(baseUrl, healthEndpoint)
+  const publicAppUrl = project?.public_url || currentValues.baseUrl || project?.base_url || ''
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault()
@@ -373,6 +374,9 @@ export function ProjectSettingsClient() {
                   aria-invalid={Boolean(errors.baseUrl)}
                   className={errors.baseUrl ? 'border-red-500/50' : ''}
                 />
+                <p className="text-xs text-slate-500">
+                  Used for health checks and internal service probes. Public app links use the stored public URL when one is configured.
+                </p>
                 {errors.baseUrl && <p className="text-xs text-red-400">{errors.baseUrl}</p>}
               </div>
 
@@ -439,12 +443,12 @@ export function ProjectSettingsClient() {
                   <p className="mt-0.5 break-all font-mono text-sm text-slate-200">{healthPreview}</p>
                 </div>
                 <a
-                  href={currentValues.baseUrl || project.base_url}
+                  href={publicAppUrl}
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex items-center gap-1 text-xs text-phosphor-400 hover:text-phosphor-300"
                 >
-                  <ExternalLink className="h-3 w-3" /> Open
+                  <ExternalLink className="h-3 w-3" /> Open app
                 </a>
               </div>
             </div>

@@ -5,13 +5,15 @@
  * Re-exports automation and type definitions for backward compatibility.
  */
 
-import { fetchWithErrorHandling, patchJson, postJson } from './utils'
+import { buildQueryString, fetchWithErrorHandling, patchJson, postJson } from './utils'
 import type {
+  FetchQualityResultsOptions,
   Project,
   ProjectCreate,
   ProjectHealth,
   ProjectUpdate,
   ProjectsWithStatsResponse,
+  QualityCheckResultsResponse,
   QualityGateHealth,
 } from './projects-types'
 
@@ -69,5 +71,22 @@ export async function fetchQualityGateHealth(
 ): Promise<QualityGateHealth> {
   return fetchWithErrorHandling(`/api/projects/${id}/quality/health`, {
     errorMessage: 'Failed to fetch quality gate health',
+  })
+}
+
+export async function fetchQualityResults(
+  id: string,
+  options: FetchQualityResultsOptions = {},
+): Promise<QualityCheckResultsResponse> {
+  const query = buildQueryString({
+    check_type: options.check_type,
+    status: options.status,
+    unfixed_only: options.unfixed_only ? 'true' : undefined,
+    limit: options.limit ?? 100,
+    offset: options.offset,
+  })
+
+  return fetchWithErrorHandling(`/api/projects/${id}/quality/results${query}`, {
+    errorMessage: 'Failed to fetch quality results',
   })
 }

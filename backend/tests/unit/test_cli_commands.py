@@ -733,6 +733,22 @@ class TestBackupCommands:
             source="test",
         )
 
+    @pytest.fixture(autouse=True)
+    def mock_backup_apis(self) -> Generator[None]:
+        """Keep backup CLI tests off the live API."""
+        mock_project_api = MagicMock()
+        mock_project_api.list_backups.return_value = {"backups": [], "total": 0}
+        mock_project_api.latest_backup.return_value = None
+
+        mock_source_api = MagicMock()
+        mock_source_api.list_source_backups.return_value = {"backups": [], "total": 0}
+
+        with (
+            patch("cli.commands.backup._get_project_api", return_value=mock_project_api),
+            patch("cli.commands.backup._get_source_api", return_value=mock_source_api),
+        ):
+            yield
+
     def test_backup_list(self) -> None:
         """Test st backup list command."""
         from cli.commands.backup import app as backup_app
@@ -854,6 +870,27 @@ class TestVerifyPlanGates:
     Steps are now optional in plans (subtasks can have steps added later).
     Verification focuses on: schema compliance, complexity requirements, dep refs.
     """
+
+    @pytest.fixture(autouse=True)
+    def mock_verify_schema(self) -> Generator[None]:
+        """Mock schema fetch so verify tests stay local."""
+        mock_client = MagicMock()
+        mock_client.base_url = "http://localhost:8000"
+        mock_client.get.return_value = {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "objective": {"type": "string"},
+                "task_type": {"type": "string"},
+                "complexity": {"type": "string"},
+                "subtasks": {"type": "array"},
+                "done_when": {"type": "array"},
+            },
+            "required": ["title", "objective", "task_type", "complexity", "subtasks"],
+        }
+
+        with patch("cli.commands.tasks.STClient", return_value=mock_client):
+            yield
 
     def test_verify_accepts_subtask_without_steps(self) -> None:
         """st verify accepts subtasks that have no steps (steps added later)."""

@@ -9,6 +9,7 @@ from psycopg import sql
 
 from ...storage.connection import get_connection, get_cursor
 from .models import ProjectCategory, ProjectResponse, ProjectStats, ProjectUpdate, ProjectWithStats
+from .public_urls import build_project_urls, resolve_project_public_url
 
 
 def sync_project_backup_source(
@@ -40,7 +41,7 @@ def get_project_from_db(project_id: str) -> ProjectResponse:
     with get_cursor() as cur:
         cur.execute(
             """
-                SELECT id, name, base_url, health_endpoint, root_path, category, sidebar_rank, created_at
+                SELECT id, name, base_url, public_url, health_endpoint, root_path, category, sidebar_rank, created_at
                 FROM projects
                 WHERE id = %s
                 """,
@@ -55,11 +56,17 @@ def get_project_from_db(project_id: str) -> ProjectResponse:
         id=row[0],
         name=row[1],
         base_url=row[2],
-        health_endpoint=row[3],
-        root_path=row[4],
-        category=row[5],
-        sidebar_rank=row[6],
-        created_at=row[7],
+        public_url=resolve_project_public_url(
+            row[0],
+            base_url=row[2],
+            public_url=row[3],
+            root_path=row[5],
+        ),
+        health_endpoint=row[4],
+        root_path=row[5],
+        category=row[6],
+        sidebar_rank=row[7],
+        created_at=row[8],
     )
 
 
@@ -137,19 +144,26 @@ def fetch_project_stats(project_ids: list[str]) -> dict[str, ProjectStats]:
 
 
 def build_project_with_stats(
-    row: tuple[str, str, str, str, str | None, ProjectCategory, int | None, datetime], stats: ProjectStats
+    row: tuple[str, str, str, str | None, str, str | None, ProjectCategory, int | None, datetime],
+    stats: ProjectStats,
 ) -> ProjectWithStats:
     """Build a ProjectWithStats object from a database row and stats."""
     return ProjectWithStats(
         id=row[0],
         name=row[1],
         base_url=row[2],
-        health_endpoint=row[3],
-        root_path=row[4],
+        public_url=resolve_project_public_url(
+            row[0],
+            base_url=row[2],
+            public_url=row[3],
+            root_path=row[5],
+        ),
+        health_endpoint=row[4],
+        root_path=row[5],
         logo_url=None,  # Logo support will be added later
-        category=row[5],
-        sidebar_rank=row[6],
-        created_at=row[7],
+        category=row[6],
+        sidebar_rank=row[7],
+        created_at=row[8],
         stats=stats,
     )
 
@@ -158,6 +172,7 @@ def create_project_in_db(
     project_id: str,
     name: str,
     base_url: str,
+    public_url: str | None,
     health_endpoint: str,
     root_path: str | None,
     category: str,
@@ -173,11 +188,11 @@ def create_project_in_db(
         now = datetime.now(UTC)
         cur.execute(
             """
-                INSERT INTO projects (id, name, base_url, health_endpoint, root_path, category, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                RETURNING id, name, base_url, health_endpoint, root_path, category, sidebar_rank, created_at
+                INSERT INTO projects (id, name, base_url, public_url, health_endpoint, root_path, category, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id, name, base_url, public_url, health_endpoint, root_path, category, sidebar_rank, created_at
                 """,
-            (project_id, name, base_url, health_endpoint, root_path, category, now),
+            (project_id, name, base_url, public_url, health_endpoint, root_path, category, now),
         )
         row = cur.fetchone()
         sync_project_backup_source(cur, project_id, name, root_path)
@@ -190,11 +205,17 @@ def create_project_in_db(
         id=row[0],
         name=row[1],
         base_url=row[2],
-        health_endpoint=row[3],
-        root_path=row[4],
-        category=row[5],
-        sidebar_rank=row[6],
-        created_at=row[7],
+        public_url=resolve_project_public_url(
+            row[0],
+            base_url=row[2],
+            public_url=row[3],
+            root_path=row[5],
+        ),
+        health_endpoint=row[4],
+        root_path=row[5],
+        category=row[6],
+        sidebar_rank=row[7],
+        created_at=row[8],
     )
 
 
@@ -209,24 +230,63 @@ def delete_project_in_db(project_id: str) -> None:
 def update_project_in_db(project_id: str, update: ProjectUpdate) -> ProjectResponse:
     """Apply partial updates to a project and return the updated record."""
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
-        if not cur.fetchone():
+        cur.execute(
+            """
+            SELECT id, name, base_url, public_url, health_endpoint, root_path, category, sidebar_rank, created_at
+            FROM projects
+            WHERE id = %s
+            """,
+            (project_id,),
+        )
+        current = cur.fetchone()
+        if not current:
             raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+
+        root_path_updated = "root_path" in update.model_fields_set
+        base_url_updated = "base_url" in update.model_fields_set
+        public_url_updated = "public_url" in update.model_fields_set
+
+        merged_base_url, merged_public_url = build_project_urls(
+            project_id,
+            base_url=update.base_url if base_url_updated else current[2],
+            public_url=(
+                update.public_url
+                if public_url_updated
+                else (None if base_url_updated or root_path_updated else current[3])
+            ),
+            root_path=update.root_path if root_path_updated else current[5],
+        )
+        if base_url_updated and merged_base_url is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Project base URL is required unless SummitFlow-hosted defaults are configured",
+            )
 
         field_map = {
             "name": update.name,
-            "base_url": update.base_url,
+            "base_url": merged_base_url if base_url_updated else None,
             "health_endpoint": update.health_endpoint,
             "root_path": update.root_path,
             "category": update.category,
             "sidebar_rank": update.sidebar_rank,
         }
-        updates = [
+        updates: list[sql.Composable] = [
             sql.SQL("{} = {}").format(sql.Identifier(col), sql.Placeholder())
             for col, val in field_map.items()
             if val is not None
         ]
         params: list[object] = [val for val in field_map.values() if val is not None]
+        if public_url_updated or base_url_updated or root_path_updated:
+            if merged_public_url is None:
+                updates.append(sql.SQL("public_url = NULL"))
+            else:
+                updates.append(
+                    sql.SQL("{} = {}").format(
+                        sql.Identifier("public_url"),
+                        sql.Placeholder(),
+                    )
+                )
+                params.append(merged_public_url)
 
         if not updates:
             raise HTTPException(status_code=400, detail="No fields to update")
@@ -234,12 +294,12 @@ def update_project_in_db(project_id: str, update: ProjectUpdate) -> ProjectRespo
         params.append(project_id)
         query = sql.SQL(
             "UPDATE projects SET {updates} WHERE id = %s"
-            " RETURNING id, name, base_url, health_endpoint, root_path, category, sidebar_rank, created_at"
+            " RETURNING id, name, base_url, public_url, health_endpoint, root_path, category, sidebar_rank, created_at"
         ).format(updates=sql.SQL(", ").join(updates))
         cur.execute(query, params)
         row = cur.fetchone()
         if row:
-            sync_project_backup_source(cur, row[0], row[1], row[4])
+            sync_project_backup_source(cur, row[0], row[1], row[5])
         conn.commit()
 
     if not row:
@@ -249,9 +309,15 @@ def update_project_in_db(project_id: str, update: ProjectUpdate) -> ProjectRespo
         id=row[0],
         name=row[1],
         base_url=row[2],
-        health_endpoint=row[3],
-        root_path=row[4],
-        category=row[5],
-        sidebar_rank=row[6],
-        created_at=row[7],
+        public_url=resolve_project_public_url(
+            row[0],
+            base_url=row[2],
+            public_url=row[3],
+            root_path=row[5],
+        ),
+        health_endpoint=row[4],
+        root_path=row[5],
+        category=row[6],
+        sidebar_rank=row[7],
+        created_at=row[8],
     )

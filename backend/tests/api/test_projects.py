@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 
+from app.api.projects.public_urls import clear_public_url_config_cache, resolve_project_public_url
 from app.storage.connection import get_connection
 
 
@@ -338,6 +339,152 @@ def test_update_project_syncs_backup_source(client) -> None:
 
         assert row == ("New Name", "/new/root", project_id)
     finally:
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM backup_sources WHERE id = %s", (project_id,))
+            cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
+            conn.commit()
+
+
+def test_update_project_clears_stale_public_url_when_hosting_is_removed(client) -> None:
+    """PATCH /api/projects should clear stored public URLs that no longer apply."""
+    project_id = f"public-clear-{uuid4().hex[:8]}"
+    original_root = f"/srv/workspaces/projects/{project_id}"
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO projects (id, name, base_url, public_url, health_endpoint, root_path)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """,
+            (
+                project_id,
+                "Hosted Project",
+                "http://localhost:3999",
+                f"https://{project_id}.example.test",
+                "/health",
+                original_root,
+            ),
+        )
+        conn.commit()
+
+    try:
+        response = client.patch(
+            f"/api/projects/{project_id}",
+            json={"root_path": f"/tmp/{project_id}"},
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["public_url"] == "http://localhost:3999"
+
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("SELECT public_url, root_path FROM projects WHERE id = %s", (project_id,))
+            row = cur.fetchone()
+
+        assert row == (None, f"/tmp/{project_id}")
+    finally:
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
+            conn.commit()
+
+
+def test_resolve_project_public_url_uses_alias_for_hosted_local_project(monkeypatch) -> None:
+    """Hosted workspace projects should expose their canonical public alias."""
+    clear_public_url_config_cache()
+    monkeypatch.setenv("SUMMITFLOW_PROJECT_PUBLIC_BASE_DOMAIN", "example.test")
+    monkeypatch.setenv("SUMMITFLOW_PROJECT_PUBLIC_HOST_ALIASES", '{"monkey-fight":"mf"}')
+    assert (
+        resolve_project_public_url(
+            "monkey-fight",
+            base_url="http://localhost:4001",
+            public_url=None,
+            root_path="/srv/workspaces/projects/monkey-fight",
+        )
+        == "https://mf.example.test"
+    )
+    clear_public_url_config_cache()
+
+
+def test_resolve_project_public_url_preserves_public_base_url() -> None:
+    """External public URLs should stay user-facing when already configured."""
+    assert (
+        resolve_project_public_url(
+            "external-demo",
+            base_url="https://demo.example.com/",
+            public_url=None,
+            root_path="/opt/projects/external-demo",
+        )
+        == "https://demo.example.com"
+    )
+
+
+def test_get_project_returns_public_url_for_workspace_project(client, monkeypatch) -> None:
+    """GET /api/projects/{id} should expose the canonical public app URL."""
+    project_id = f"hosted-{uuid4().hex[:8]}"
+    root_path = f"/srv/workspaces/projects/{project_id}"
+    monkeypatch.setenv("SUMMITFLOW_PROJECT_PUBLIC_BASE_DOMAIN", "example.test")
+    monkeypatch.delenv("SUMMITFLOW_PROJECT_PUBLIC_HOST_ALIASES", raising=False)
+    clear_public_url_config_cache()
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO projects (id, name, base_url, health_endpoint, root_path)
+            VALUES (%s, %s, %s, %s, %s)
+            """,
+            (project_id, "Hosted Project", "http://localhost:3999", "/health", root_path),
+        )
+        conn.commit()
+
+    async def _warning_statuses(projects):
+        return {project[0]: "warning" for project in projects}
+
+    monkeypatch.setattr(
+        "app.api.projects._resolve_project_health_statuses",
+        _warning_statuses,
+    )
+
+    try:
+        response = client.get(f"/api/projects/{project_id}")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["base_url"] == "http://localhost:3999"
+        assert payload["public_url"] == f"https://{project_id}.example.test"
+        assert payload["health_status"] == "warning"
+    finally:
+        clear_public_url_config_cache()
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
+            conn.commit()
+
+
+def test_create_project_derives_hosted_urls_from_private_config(client, monkeypatch) -> None:
+    """POST /api/projects should derive hosted URLs without baking domains into code."""
+    project_id = f"hosted-create-{uuid4().hex[:8]}"
+    root_path = f"/srv/workspaces/projects/{project_id}"
+    monkeypatch.setenv("SUMMITFLOW_PROJECT_PUBLIC_BASE_DOMAIN", "example.test")
+    monkeypatch.delenv("SUMMITFLOW_PROJECT_PUBLIC_HOST_ALIASES", raising=False)
+    monkeypatch.setattr("app.api.projects.explorer.run_scan_job", lambda *args, **kwargs: None)
+    clear_public_url_config_cache()
+
+    try:
+        response = client.post(
+            "/api/projects",
+            json={
+                "id": project_id,
+                "name": "Hosted Create",
+                "root_path": root_path,
+                "summitflow_hosted": True,
+            },
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["base_url"] == f"https://{project_id}.example.test"
+        assert payload["public_url"] == f"https://{project_id}.example.test"
+    finally:
+        clear_public_url_config_cache()
         with get_connection() as conn, conn.cursor() as cur:
             cur.execute("DELETE FROM backup_sources WHERE id = %s", (project_id,))
             cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))

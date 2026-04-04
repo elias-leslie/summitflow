@@ -72,7 +72,7 @@ export function TaskSearch({ onExpandedChange }: TaskSearchProps) {
   }
 
   const navigateToTask = (task: Task) => {
-    router.push(`/projects/${task.project_id}?task=${task.id}`)
+    router.push(`/projects/${task.project_id}?tab=tasks&task=${task.id}`)
     setSearchValue('')
     setIsOpen(false)
     inputRef.current?.blur()

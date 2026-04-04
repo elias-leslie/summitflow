@@ -35,10 +35,10 @@ vi.mock('react-window', () => ({
       index: number
       style: React.CSSProperties
       items: unknown[]
-      nowMs: number
+      showProjectLink: boolean
     }) => ReactNode
     rowCount: number
-    rowProps: { items: unknown[]; nowMs: number }
+    rowProps: { items: unknown[]; showProjectLink: boolean }
   }) => (
     <div>
       {Array.from({ length: rowCount }, (_, index) => (
@@ -47,7 +47,7 @@ vi.mock('react-window', () => ({
             index,
             style: {},
             items: rowProps.items,
-            nowMs: rowProps.nowMs,
+            showProjectLink: rowProps.showProjectLink,
           })}
         </div>
       ))}
@@ -55,7 +55,7 @@ vi.mock('react-window', () => ({
   ),
 }))
 
-function renderFeed() {
+function renderFeed(projectId?: string) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -64,7 +64,7 @@ function renderFeed() {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <ActivityFeed />
+      <ActivityFeed projectId={projectId} />
     </QueryClientProvider>,
   )
 }
@@ -147,7 +147,38 @@ describe('ActivityFeed', () => {
     expect(fetchActivityMock).toHaveBeenNthCalledWith(2, {
       limit: 50,
       offset: 1,
+      project_id: undefined,
       types: undefined,
     })
+  })
+
+  it('scopes queries and row chrome to a single project overview', async () => {
+    fetchActivityMock.mockResolvedValue({
+      items: [
+        {
+          type: 'task',
+          message: 'Task created: Restore recent activity',
+          timestamp: '2026-04-04T12:00:00Z',
+          project_id: 'summitflow',
+          metadata: { status: 'pending' },
+        },
+      ],
+      total: 1,
+      limit: 50,
+      offset: 0,
+      has_more: false,
+    })
+
+    renderFeed('summitflow')
+
+    expect(await screen.findByText('Task created: Restore recent activity')).toBeInTheDocument()
+    expect(fetchActivityMock).toHaveBeenCalledWith({
+      limit: 50,
+      offset: 0,
+      project_id: 'summitflow',
+      types: undefined,
+    })
+    expect(screen.getByText('1 item for this project')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'summitflow' })).not.toBeInTheDocument()
   })
 })

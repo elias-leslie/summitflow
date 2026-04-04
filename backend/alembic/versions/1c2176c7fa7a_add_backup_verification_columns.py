@@ -20,6 +20,13 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
+def _existing_backup_columns() -> set[str]:
+    """Return the current column names on backups."""
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    return {column["name"] for column in inspector.get_columns("backups")}
+
+
 def upgrade() -> None:
     """Add verification columns to backups table.
 
@@ -30,20 +37,32 @@ def upgrade() -> None:
     - total_files: number of files in the archive
     - verification_json: full verification output (tree, errors, etc.)
     """
-    op.add_column("backups", sa.Column("verified", sa.Boolean(), nullable=True))
-    op.add_column(
-        "backups",
-        sa.Column("verified_at", sa.DateTime(timezone=True), nullable=True),
-    )
-    op.add_column("backups", sa.Column("checksum", sa.Text(), nullable=True))
-    op.add_column("backups", sa.Column("total_files", sa.Integer(), nullable=True))
-    op.add_column("backups", sa.Column("verification_json", JSONB(), nullable=True))
+    existing_columns = _existing_backup_columns()
+    if "verified" not in existing_columns:
+        op.add_column("backups", sa.Column("verified", sa.Boolean(), nullable=True))
+    if "verified_at" not in existing_columns:
+        op.add_column(
+            "backups",
+            sa.Column("verified_at", sa.DateTime(timezone=True), nullable=True),
+        )
+    if "checksum" not in existing_columns:
+        op.add_column("backups", sa.Column("checksum", sa.Text(), nullable=True))
+    if "total_files" not in existing_columns:
+        op.add_column("backups", sa.Column("total_files", sa.Integer(), nullable=True))
+    if "verification_json" not in existing_columns:
+        op.add_column("backups", sa.Column("verification_json", JSONB(), nullable=True))
 
 
 def downgrade() -> None:
     """Remove verification columns from backups table."""
-    op.drop_column("backups", "verification_json")
-    op.drop_column("backups", "total_files")
-    op.drop_column("backups", "checksum")
-    op.drop_column("backups", "verified_at")
-    op.drop_column("backups", "verified")
+    existing_columns = _existing_backup_columns()
+    if "verification_json" in existing_columns:
+        op.drop_column("backups", "verification_json")
+    if "total_files" in existing_columns:
+        op.drop_column("backups", "total_files")
+    if "checksum" in existing_columns:
+        op.drop_column("backups", "checksum")
+    if "verified_at" in existing_columns:
+        op.drop_column("backups", "verified_at")
+    if "verified" in existing_columns:
+        op.drop_column("backups", "verified")

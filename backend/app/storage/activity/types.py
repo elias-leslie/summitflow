@@ -14,16 +14,7 @@ class TaskMetadata(TypedDict):
     task_id: str
     status: str
     title: str
-
-
-class SessionMetadata(TypedDict):
-    """Metadata for session activity events."""
-
-    session_id: str
-    agent_type: str
-    status: str
-    tests_passed: int
-    tests_failed: int
+    action: str
 
 
 class BackupMetadata(TypedDict):
@@ -39,11 +30,14 @@ class GitMetadata(TypedDict):
     """Metadata for git commit activity events."""
 
     commit_sha: str
-    agent_type: str
-    notes: str | None
+    repo_name: str
+    author_name: str
+    files_changed: int
+    insertions: int
+    deletions: int
 
 
-EventType = Literal["task", "session", "backup", "git"]
+EventType = Literal["task", "backup", "git"]
 
 
 class ActivityEvent(TypedDict):

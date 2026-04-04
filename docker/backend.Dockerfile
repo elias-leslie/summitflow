@@ -58,6 +58,8 @@ COPY --chown=appuser:appuser --from=builder /app/cli ./cli
 COPY --chown=appuser:appuser --from=builder /app/alembic.ini ./
 COPY --chown=appuser:appuser --from=builder /app/alembic ./alembic
 
+RUN mkdir -p /app/logs && chown appuser:appuser /app/logs
+
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONUNBUFFERED=1
 

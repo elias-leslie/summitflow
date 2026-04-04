@@ -6,10 +6,10 @@ import { useState } from 'react'
 import { createProject } from '@/lib/api'
 import type { ProjectCategory } from '@/lib/api'
 import {
-  buildHostedBaseUrl,
-  buildHostedRootPath,
+  buildManagedRootPath,
   buildHealthPreview,
   DEFAULT_HEALTH_ENDPOINT,
+  isManagedWorkspaceRootPath,
   normalizeProjectFormValues,
   normalizeProjectId,
   normalizeRootPath,
@@ -17,6 +17,7 @@ import {
   validateProjectForm,
 } from '@/lib/project-registration'
 import {
+  DEFAULT_ONBOARDING,
   DEFAULT_PERMISSION_TIER,
   EXECUTION_END_HOUR,
   EXECUTION_START_HOUR,
@@ -68,16 +69,10 @@ export function useNewProjectForm() {
     })
   }
 
-  const syncHostedDefaults = (nextProjectId: string, previousProjectId: string) => {
-    const previousBaseUrl = buildHostedBaseUrl(previousProjectId)
-    const previousRootPath = buildHostedRootPath(previousProjectId)
-    const nextBaseUrl = buildHostedBaseUrl(nextProjectId)
-    const nextRootPath = buildHostedRootPath(nextProjectId)
-
+  const syncManagedDefaults = (nextProjectId: string, previousProjectId: string) => {
+    const previousRootPath = buildManagedRootPath(previousProjectId)
+    const nextRootPath = buildManagedRootPath(nextProjectId)
     setProjectId(nextProjectId)
-    setBaseUrl((current) =>
-      !current || current === previousBaseUrl ? nextBaseUrl : current,
-    )
     setRootPath((current) =>
       !current || current === previousRootPath ? nextRootPath : current,
     )
@@ -87,13 +82,13 @@ export function useNewProjectForm() {
     clearError('name')
     setName(value)
     if (!projectId || projectId === normalizeProjectId(name)) {
-      syncHostedDefaults(normalizeProjectId(value), projectId)
+      syncManagedDefaults(normalizeProjectId(value), projectId)
     }
   }
 
   const handleProjectIdChange = (value: string) => {
     clearError('projectId')
-    syncHostedDefaults(normalizeProjectId(value), projectId)
+    syncManagedDefaults(normalizeProjectId(value), projectId)
   }
 
   const handleBaseUrlChange = (value: string) => {
@@ -117,6 +112,9 @@ export function useNewProjectForm() {
 
   const validate = (): boolean => {
     const newErrors = validateProjectForm({ name, projectId, baseUrl, healthEndpoint, rootPath })
+    if (isManagedWorkspaceRootPath(rootPath) && !baseUrl.trim()) {
+      delete newErrors.baseUrl
+    }
     setErrors(newErrors)
 
     if (Object.keys(newErrors).length === 0) {
@@ -135,14 +133,16 @@ export function useNewProjectForm() {
     if (!validate()) return
 
     const normalized = normalizeProjectFormValues({ name, projectId, baseUrl, healthEndpoint, rootPath })
+    const summitflowHosted = isManagedWorkspaceRootPath(normalized.rootPath)
 
     mutation.mutate({
       id: normalized.projectId ?? '',
       name: normalized.name,
-      base_url: normalized.baseUrl,
+      base_url: normalized.baseUrl || undefined,
       health_endpoint: normalized.healthEndpoint,
       root_path: normalized.rootPath || undefined,
       category,
+      summitflow_hosted: summitflowHosted || undefined,
       agent_hub_permission: syncAgentHubPermission
         ? {
             permission_tier: permissionTier,
@@ -150,6 +150,9 @@ export function useNewProjectForm() {
             execution_start_hour: EXECUTION_START_HOUR,
             execution_end_hour: EXECUTION_END_HOUR,
           }
+        : undefined,
+      onboarding: normalized.rootPath
+        ? { ...DEFAULT_ONBOARDING }
         : undefined,
     })
   }

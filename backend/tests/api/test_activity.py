@@ -20,26 +20,28 @@ class TestActivityFeed:
             [
                 {
                     "type": "task",
-                    "message": "Task completed: Fix bug",
+                    "message": "Task updated: Fix bug",
                     "timestamp": "2026-01-17T12:00:00+00:00",
                     "project_id": "proj-123",
                     "metadata": {
                         "task_id": "task-abc",
-                        "status": "completed",
+                        "status": "in_progress",
                         "title": "Fix bug",
+                        "action": "updated",
                     },
                 },
                 {
-                    "type": "session",
-                    "message": "Claude session completed (5 passed, 0 failed)",
+                    "type": "git",
+                    "message": "Commit abc1234: Fix authentication bug",
                     "timestamp": "2026-01-17T11:00:00+00:00",
                     "project_id": "proj-123",
                     "metadata": {
-                        "session_id": "sess-def",
-                        "agent_type": "claude",
-                        "status": "completed",
-                        "tests_passed": 5,
-                        "tests_failed": 0,
+                        "commit_sha": "abc1234567890",
+                        "repo_name": "proj-123",
+                        "author_name": "Kas",
+                        "files_changed": 3,
+                        "insertions": 12,
+                        "deletions": 4,
                     },
                 },
             ],
@@ -63,7 +65,7 @@ class TestActivityFeed:
         # Check first event
         first = data["items"][0]
         assert first["type"] == "task"
-        assert first["message"] == "Task completed: Fix bug"
+        assert first["message"] == "Task updated: Fix bug"
         assert first["project_id"] == "proj-123"
 
     def test_activity_feed_pagination(self, mocker: MockerFixture) -> None:
@@ -101,14 +103,14 @@ class TestActivityFeed:
         mock_get_activity = mocker.patch("app.storage.activity.get_aggregated_activity")
         mock_get_activity.return_value = ([], 0)
 
-        response = client.get("/api/activity?types=task,session")
+        response = client.get("/api/activity?types=task,git")
         assert response.status_code == 200
 
         mock_get_activity.assert_called_once_with(
             project_id=None,
             limit=50,
             offset=0,
-            event_types=["task", "session"],
+            event_types=["task", "git"],
         )
 
     def test_activity_feed_invalid_types_ignored(self, mocker: MockerFixture) -> None:
@@ -180,37 +182,6 @@ class TestActivityEventTypes:
         assert event["metadata"]["task_id"] == "task-abc"
         assert event["metadata"]["status"] == "blocked"
 
-    def test_session_event_format(self, mocker: MockerFixture) -> None:
-        """Test session event has correct format."""
-        mock_get_activity = mocker.patch("app.storage.activity.get_aggregated_activity")
-        mock_get_activity.return_value = (
-            [
-                {
-                    "type": "session",
-                    "message": "Gemini session failed",
-                    "timestamp": "2026-01-17T12:00:00+00:00",
-                    "project_id": "proj-456",
-                    "metadata": {
-                        "session_id": "sess-xyz",
-                        "agent_type": "gemini",
-                        "status": "failed",
-                        "tests_passed": 3,
-                        "tests_failed": 2,
-                    },
-                }
-            ],
-            1,
-        )
-
-        response = client.get("/api/activity")
-        assert response.status_code == 200
-        event = response.json()["items"][0]
-
-        assert event["type"] == "session"
-        assert event["metadata"]["agent_type"] == "gemini"
-        assert event["metadata"]["tests_passed"] == 3
-        assert event["metadata"]["tests_failed"] == 2
-
     def test_backup_event_format(self, mocker: MockerFixture) -> None:
         """Test backup event has correct format."""
         mock_get_activity = mocker.patch("app.storage.activity.get_aggregated_activity")
@@ -252,8 +223,11 @@ class TestActivityEventTypes:
                     "project_id": "proj-123",
                     "metadata": {
                         "commit_sha": "abc1234567890",
-                        "agent_type": "claude",
-                        "notes": "Fix authentication bug",
+                        "repo_name": "proj-123",
+                        "author_name": "Kas",
+                        "files_changed": 3,
+                        "insertions": 12,
+                        "deletions": 4,
                     },
                 }
             ],
@@ -266,4 +240,4 @@ class TestActivityEventTypes:
 
         assert event["type"] == "git"
         assert event["metadata"]["commit_sha"] == "abc1234567890"
-        assert event["metadata"]["agent_type"] == "claude"
+        assert event["metadata"]["repo_name"] == "proj-123"

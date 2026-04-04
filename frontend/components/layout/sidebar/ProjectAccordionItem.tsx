@@ -80,65 +80,64 @@ export function ProjectAccordionItem({
           isActive ? 'bg-transparent' : 'hover:bg-slate-800/30',
         )}
       >
-        <button
-          type="button"
-          onClick={onToggleExpand}
-          data-testid={`project-accordion-${project.id}`}
-          className="group flex min-w-0 flex-1 items-start gap-2.5 text-left transition-all duration-200"
+        <Link
+          href={`/projects/${project.id}`}
+          data-testid={`project-link-${project.id}`}
+          className="group/project-link flex min-w-0 flex-1 items-start gap-2.5 rounded-[1rem] text-left transition-all duration-200"
         >
-        {/* Project icon with health indicator */}
+          {/* Project icon with health indicator */}
           <div className="relative mt-0.5 flex-shrink-0">
-          <div
-            className={clsx(
-              'flex h-8 w-8 items-center justify-center rounded-xl border transition-all duration-200',
-              isActive
-                ? 'border-outrun-500/28 bg-gradient-to-br from-outrun-500/22 to-violet-500/14'
-                : 'border-slate-700/60 bg-slate-800/60 group-hover:border-slate-600/80',
-            )}
-          >
-            <span
+            <div
               className={clsx(
-                'text-sm font-bold transition-colors',
+                'flex h-8 w-8 items-center justify-center rounded-xl border transition-all duration-200',
                 isActive
-                  ? 'text-outrun-400'
-                  : 'text-slate-400 group-hover:text-slate-300',
+                  ? 'border-outrun-500/28 bg-gradient-to-br from-outrun-500/22 to-violet-500/14'
+                  : 'border-slate-700/60 bg-slate-800/60 group-hover/project-link:border-slate-600/80',
               )}
             >
-              {project.name.charAt(0).toUpperCase()}
-            </span>
-          </div>
-          {/* Health dot */}
-          <div
-            className={clsx(
-              'absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-slate-900',
-              project.health_status === 'healthy'
-                ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.5)]'
-                : 'bg-slate-500',
-            )}
-          />
+              <span
+                className={clsx(
+                  'text-sm font-bold transition-colors',
+                  isActive
+                    ? 'text-outrun-400'
+                    : 'text-slate-400 group-hover/project-link:text-slate-300',
+                )}
+              >
+                {project.name.charAt(0).toUpperCase()}
+              </span>
+            </div>
+            {/* Health dot */}
+            <div
+              className={clsx(
+                'absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-slate-900',
+                project.health_status === 'healthy'
+                  ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.5)]'
+                  : 'bg-slate-500',
+              )}
+            />
           </div>
 
-        {/* Project name */}
+          {/* Project name */}
           <div className="min-w-0 flex-1 text-left">
-          <div
-            className={clsx(
-              'break-words text-sm font-semibold leading-5 whitespace-normal transition-colors',
-              isActive
-                ? 'text-slate-100'
-                : 'text-slate-300 group-hover:text-slate-100',
-            )}
-          >
-            {project.name}
-          </div>
-          <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-500">
-            <span className="truncate font-mono">{project.id}</span>
-            <span className="rounded-full border border-slate-700/60 bg-slate-900/60 px-1.5 py-0.5 uppercase tracking-[0.16em] text-[9px] text-slate-400">
-              {healthLabel}
-            </span>
-          </div>
+            <div
+              className={clsx(
+                'break-words text-sm font-semibold leading-5 whitespace-normal transition-colors',
+                isActive
+                  ? 'text-slate-100'
+                  : 'text-slate-300 group-hover/project-link:text-slate-100',
+              )}
+            >
+              {project.name}
+            </div>
+            <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-500">
+              <span className="truncate font-mono">{project.id}</span>
+              <span className="rounded-full border border-slate-700/60 bg-slate-900/60 px-1.5 py-0.5 uppercase tracking-[0.16em] text-[9px] text-slate-400">
+                {healthLabel}
+              </span>
+            </div>
           </div>
 
-        {/* Permission tier badge */}
+          {/* Permission tier badge */}
           {badge && (
             <span
               className={clsx(
@@ -150,14 +149,20 @@ export function ProjectAccordionItem({
               {badge.label}
             </span>
           )}
+        </Link>
 
-        {/* Expand chevron */}
-        <ChevronDown
-          className={clsx(
-            'mt-0.5 h-4 w-4 flex-shrink-0 transition-all duration-250',
-            isExpanded
-              ? 'rotate-180 text-outrun-400'
-              : 'text-slate-500 group-hover:text-slate-400',
+        <button
+          type="button"
+          onClick={onToggleExpand}
+          data-testid={`project-accordion-toggle-${project.id}`}
+          aria-expanded={isExpanded}
+          aria-label={`Toggle ${project.name} navigation`}
+          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl border border-slate-800/70 bg-slate-950/50 text-slate-500 transition-colors hover:border-slate-700/70 hover:bg-slate-900/80 hover:text-slate-300"
+        >
+          <ChevronDown
+            className={clsx(
+              'h-4 w-4 transition-all duration-250',
+              isExpanded && 'rotate-180 text-outrun-400',
             )}
           />
         </button>

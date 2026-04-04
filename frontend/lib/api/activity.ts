@@ -4,7 +4,7 @@
 
 import { buildQueryString, fetchWithErrorHandling } from './utils'
 
-export type ActivityEventType = 'task' | 'session' | 'backup' | 'git'
+export type ActivityEventType = 'task' | 'backup' | 'git'
 
 export interface ActivityEvent {
   type: ActivityEventType
@@ -13,17 +13,18 @@ export interface ActivityEvent {
   project_id: string
   metadata: {
     task_id?: string
-    session_id?: string
     backup_id?: string
     commit_sha?: string
     status?: string
     title?: string
-    agent_type?: string
+    action?: string
     backup_type?: string
     size_bytes?: number
-    tests_passed?: number
-    tests_failed?: number
-    notes?: string
+    repo_name?: string
+    author_name?: string
+    files_changed?: number
+    insertions?: number
+    deletions?: number
   }
 }
 

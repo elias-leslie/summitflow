@@ -1,5 +1,6 @@
 import { usePathname, useSearchParams } from 'next/navigation'
 import { getProjectIdFromPathname } from '@/lib/project-config'
+import { parseProjectTab } from '@/lib/project-tabs'
 import type { NavItemConfig, NavItemId } from '../types'
 
 interface UseProjectNavigationReturn {
@@ -16,13 +17,9 @@ export function useProjectNavigation(): UseProjectNavigationReturn {
 
   const getActiveTab = (): NavItemId | null => {
     if (!currentProjectId) return null
-    if (pathname.includes('/settings')) return 'settings' as NavItemId
-    if (pathname.includes('/git')) return 'git' as NavItemId
-    if (pathname.includes('/backups')) return 'backups' as NavItemId
     if (pathname.includes('/files')) return 'files'
     if (pathname.includes('/design')) return 'design'
-    const tab = searchParams.get('tab') as NavItemId | null
-    return tab || 'tasks'
+    return parseProjectTab(searchParams.get('tab'))
   }
 
   const getProjectNavHref = (projectId: string, item: NavItemConfig) => {

@@ -23,7 +23,9 @@ ENV_PROJECT_ID = "ST_PROJECT_ID"
 DEFAULT_HEALTH_ENDPOINT = "/health"
 NO_PROJECTS_MSG = "No projects found or API unavailable"
 UNEXPECTED_RESPONSE_MSG = "Unexpected API response"
-CREATE_FIELDS_MSG = "Provide --base-url or use --summitflow-hosted to derive hosted defaults"
+CREATE_FIELDS_MSG = (
+    "Provide --base-url or use --summitflow-hosted with backend-hosted defaults configured"
+)
 UPDATE_FIELDS_MSG = (
     "At least one field must be provided "
     "(--name, --base-url, --root-path, --health-endpoint)"
@@ -177,22 +179,23 @@ def run_create(
     queue_initial_backup: bool = True,
 ) -> None:
     """Implementation for `projects create`."""
-    effective_base_url = base_url
     effective_root_path = root_path
     if summitflow_hosted:
-        effective_base_url = effective_base_url or f"https://{project_id}.summitflow.dev"
         effective_root_path = effective_root_path or f"/srv/workspaces/projects/{project_id}"
-    if not effective_base_url:
+    if not base_url and not summitflow_hosted:
         output_error(CREATE_FIELDS_MSG)
         raise typer.Exit(1)
     body: dict[str, Any] = {
         "id": project_id,
         "name": name,
-        "base_url": effective_base_url,
         "health_endpoint": health_endpoint,
     }
+    if base_url is not None:
+        body["base_url"] = base_url
     if effective_root_path is not None:
         body["root_path"] = effective_root_path
+    if summitflow_hosted:
+        body["summitflow_hosted"] = True
     permission_payload = {
         "permission_tier": permission_tier,
         "auto_exec_enabled": auto_exec_enabled,

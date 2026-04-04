@@ -68,7 +68,8 @@ describe('ProjectCard', () => {
   const project: ProjectWithStats = {
     id: 'summitflow',
     name: 'SummitFlow',
-    base_url: 'https://dev.summitflow.dev',
+    base_url: 'http://localhost:3001',
+    public_url: 'https://public.example.test',
     health_endpoint: '/health',
     root_path: '/home/testuser/summitflow',
     category: 'production',
@@ -116,7 +117,7 @@ describe('ProjectCard', () => {
   it('shows the project host and root path trust signals', () => {
     renderCard(project)
 
-    expect(screen.getByText('dev.summitflow.dev')).toBeInTheDocument()
+    expect(screen.getByText('public.example.test')).toBeInTheDocument()
     expect(screen.getByTitle('/home/testuser/summitflow')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'SummitFlow' })).toHaveAttribute(
       'href',
@@ -128,7 +129,7 @@ describe('ProjectCard', () => {
     )
     expect(screen.getByRole('link', { name: /open app/i })).toHaveAttribute(
       'href',
-      'https://dev.summitflow.dev',
+      'https://public.example.test',
     )
   })
 

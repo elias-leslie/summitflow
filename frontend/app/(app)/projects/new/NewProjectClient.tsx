@@ -102,7 +102,7 @@ export function NewProjectClient() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="baseUrl">Base URL *</Label>
+            <Label htmlFor="baseUrl">Base URL</Label>
             <Input
               id="baseUrl"
               type="url"
@@ -113,7 +113,7 @@ export function NewProjectClient() {
               className={errors.baseUrl ? 'border-rose-500/50' : ''}
             />
             <p className="text-xs text-slate-500">
-              Root URL used for health checks and operator links. SummitFlow-hosted projects auto-fill to `https://&lt;project-id&gt;.summitflow.dev`.
+              Used for health checks and internal service probes. Leave it blank for managed workspace projects and SummitFlow will derive the public app URL server-side.
             </p>
             {errors.baseUrl && (
               <p className="text-xs text-rose-400">{errors.baseUrl}</p>

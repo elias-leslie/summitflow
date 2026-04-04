@@ -22,6 +22,7 @@ export interface Project {
   id: string
   name: string
   base_url: string
+  public_url?: string
   health_endpoint: string
   category: ProjectCategory
   sidebar_rank: number | null
@@ -51,10 +52,12 @@ export interface ProjectOnboardingRequest {
 export interface ProjectCreate {
   id: string
   name: string
-  base_url: string
+  base_url?: string
+  public_url?: string
   health_endpoint?: string
   root_path?: string
   category?: ProjectCategory
+  summitflow_hosted?: boolean
   agent_hub_permission?: ProjectPermissionBootstrap
   onboarding?: ProjectOnboardingRequest
 }
@@ -70,6 +73,7 @@ export interface ProjectWithStats {
   id: string
   name: string
   base_url: string
+  public_url?: string
   health_endpoint: string
   root_path?: string
   logo_url?: string
@@ -83,6 +87,7 @@ export interface ProjectWithStats {
 export interface ProjectUpdate {
   name?: string
   base_url?: string
+  public_url?: string
   health_endpoint?: string
   root_path?: string
   category?: ProjectCategory
@@ -116,6 +121,52 @@ export interface QualityGateHealth {
       unfixed_count: number
     }
   >
+}
+
+export type QualityCheckType =
+  | 'pytest'
+  | 'vitest'
+  | 'ruff'
+  | 'types'
+  | 'biome'
+  | 'tsc'
+
+export interface QualityCheckResult {
+  id: number
+  project_id: string
+  check_type: string
+  check_name: string | null
+  status: string
+  error_count: number
+  warning_count: number
+  error_message: string | null
+  file_path: string | null
+  line_number: number | null
+  column_number: number | null
+  run_duration_ms: number | null
+  git_sha: string | null
+  triggered_by: string | null
+  fix_attempted: boolean
+  fix_attempts: number
+  fixed_at: string | null
+  fixed_by: string | null
+  created_at: string
+  updated_at: string
+  escalation_task_id: string | null
+}
+
+export interface QualityCheckResultsResponse {
+  items: QualityCheckResult[]
+  total: number
+  unfixed_count: number
+}
+
+export interface FetchQualityResultsOptions {
+  check_type?: QualityCheckType
+  status?: 'pass' | 'fail' | 'error' | 'skipped'
+  unfixed_only?: boolean
+  limit?: number
+  offset?: number
 }
 
 

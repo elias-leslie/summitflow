@@ -12,6 +12,7 @@ import {
 import { useEffect, useRef, useState } from 'react'
 import { fetchProjects } from '@/lib/api'
 import { getRouteProjectId } from '@/lib/project-config'
+import { parseProjectTab } from '@/lib/project-tabs'
 
 const PROJECT_STORAGE_KEY = 'summitflow_selected_project'
 
@@ -72,7 +73,7 @@ export function ProjectSelector({ onProjectChange }: ProjectSelectorProps) {
       // Navigate to project page if not already there
       if (!pathname.startsWith(`/projects/${projectId}`)) {
         // Preserve current tab and sub-context when switching projects
-        const currentTab = searchParams.get('tab')
+        const currentTab = parseProjectTab(searchParams.get('tab'))
         const currentType = searchParams.get('type') // Explorer type context
 
         let targetUrl = `/projects/${projectId}`

@@ -12,6 +12,8 @@ The installer will:
 3. Generate secure passwords
 4. Pull images and start the stack
 
+Terminal is a special case in this stack: the Docker profile is useful for isolated container-mode demos and packaging checks, but it is **not** equivalent to Terminal's real host-native runtime. Terminal's canonical install path remains native `systemd --user` on the host so it can use the host tmux server, host working tree, and host CLI auth/session state.
+
 ## Manual Setup
 
 ```bash
@@ -36,11 +38,13 @@ docker compose --profile full up -d           # Everything
 | `infra` | PostgreSQL, Redis, Hatchet |
 | `summitflow` | SummitFlow API + Web + Worker + infra |
 | `agent-hub` | Agent Hub API + Web + Worker + infra |
-| `terminal` | Terminal API + Web + infra |
+| `terminal` | Terminal API + Web in isolated container mode + infra |
 | `portfolio` | Portfolio AI API + Web + Worker + infra |
 | `monkey-fight` | Monkey Fight + infra |
 | `browser` | Agent Browser (Chrome for Testing) |
 | `full` | All of the above |
+
+`terminal` and `full` therefore include Terminal only as an isolated container-mode web stack. They are useful for smoke tests and demos, not as proof of host-integrated Terminal behavior.
 
 ## Service Ports
 
@@ -114,13 +118,14 @@ st docker restore ~/docker-backups/docker-pgdump-20260314-120000.sql
 cat backup.sql | docker compose exec -T postgres psql -U admin
 ```
 
-## Terminal tmux Notes
+## Terminal Runtime Notes
 
-The Terminal service runs tmux inside its container for self-contained terminal sessions. Limitations:
+The Terminal service runs tmux inside its container for self-contained terminal sessions. Treat that as isolated demo/parity mode, not as the supported real-use runtime.
 
 - Cannot attach to host-level tmux sessions (Claude Code, etc.)
-- For full tmux integration on your dev machine, run Terminal natively (systemd)
-- Advanced: mount host tmux socket with `--pid host` for host tmux access
+- Cannot reuse the host user's Claude/Codex auth state or user-session process context
+- Bind-mounting workspaces only makes files visible inside the container; it does not make the container runtime equivalent to the host user session
+- For real Terminal use, run Terminal natively under `systemd --user`
 
 ## Troubleshooting
 

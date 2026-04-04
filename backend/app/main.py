@@ -30,7 +30,6 @@ from .api import (
     mockups,
     notes,
     notifications,
-    pipeline,
     projects,
     quality_gate,
     refactor_sessions,
@@ -133,7 +132,6 @@ app.include_router(mockups.router, prefix="/api", tags=["mockups"])
 app.include_router(checkpoints.router, tags=["checkpoints"])
 app.include_router(agent_hub.router, prefix="/api", tags=["agent-hub"])
 app.include_router(events.router, prefix="/api", tags=["events"])
-app.include_router(pipeline.router, prefix="/api", tags=["pipeline"])
 app.include_router(system.router, tags=["system"])
 app.include_router(ws_execution.router, tags=["execution"])
 app.include_router(docker.router, prefix="/api/docker", tags=["runtime"])

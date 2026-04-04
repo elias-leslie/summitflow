@@ -19,14 +19,12 @@ import clsx from 'clsx'
 import Link from 'next/link'
 import { useRef } from 'react'
 import {
-  fetchProject,
   fetchProjects,
   PROJECT_CATEGORY_LABELS,
   PROJECT_CATEGORY_ORDER,
   type Project,
   updateProject,
 } from '@/lib/api'
-import { POLL_SLOW } from '@/lib/polling'
 import { useProjectNavigation } from './hooks/useProjectNavigation'
 import { groupProjectsForSidebar, reorderProjectsWithinCategory, sortProjectsForSidebar } from './projectOrdering'
 import { SortableProjectAccordionItem } from './SortableProjectAccordionItem'
@@ -87,14 +85,6 @@ export function ProjectsAccordion({
         queryClient.invalidateQueries({ queryKey: ['projects-with-stats'] }),
       ])
     },
-  })
-
-  // Prefetch expanded project data for health indicators
-  useQuery({
-    queryKey: ['project', expandedProjectId],
-    queryFn: () => fetchProject(expandedProjectId!),
-    enabled: !!expandedProjectId,
-    staleTime: POLL_SLOW,
   })
 
   const handleDragEnd = (event: DragEndEvent) => {
