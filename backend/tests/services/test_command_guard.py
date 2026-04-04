@@ -96,6 +96,58 @@ def test_allows_git_restore_staged_only(monkeypatch: pytest.MonkeyPatch, tmp_pat
     assert decision.blocked is False
 
 
+def test_blocks_git_checkout_all_in_managed_repo(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    monkeypatch.setattr("app.services.command_guard._repo_root", lambda cwd: repo_root)
+    monkeypatch.setattr(
+        "app.services._command_guard_helpers.get_managed_repos",
+        lambda: [repo_root.resolve()],
+    )
+
+    decision = evaluate_shell_command("git checkout .", repo_root)
+
+    assert decision.blocked is True
+    assert decision.code == "git_checkout_all"
+
+
+def test_allows_git_checkout_all_in_unmanaged_temp_clone(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    repo_root = tmp_path / "temp-clone"
+    repo_root.mkdir()
+    monkeypatch.setattr("app.services.command_guard._repo_root", lambda cwd: repo_root)
+    monkeypatch.setattr("app.services._command_guard_helpers.get_managed_repos", lambda: [])
+
+    decision = evaluate_shell_command("git checkout .", repo_root)
+
+    assert decision.blocked is False
+
+
+def test_blocks_git_restore_all_in_managed_repo(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    monkeypatch.setattr("app.services.command_guard._repo_root", lambda cwd: repo_root)
+    monkeypatch.setattr(
+        "app.services._command_guard_helpers.get_managed_repos",
+        lambda: [repo_root.resolve()],
+    )
+
+    decision = evaluate_shell_command("git restore .", repo_root)
+
+    assert decision.blocked is True
+    assert decision.code == "git_restore_all"
+
+
+def test_allows_git_restore_all_in_unmanaged_temp_clone(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    repo_root = tmp_path / "temp-clone"
+    repo_root.mkdir()
+    monkeypatch.setattr("app.services.command_guard._repo_root", lambda cwd: repo_root)
+    monkeypatch.setattr("app.services._command_guard_helpers.get_managed_repos", lambda: [])
+
+    decision = evaluate_shell_command("git restore .", repo_root)
+
+    assert decision.blocked is False
+
+
 def test_blocks_git_revert_path_overlap(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     repo_root = tmp_path / "repo"
     repo_root.mkdir()

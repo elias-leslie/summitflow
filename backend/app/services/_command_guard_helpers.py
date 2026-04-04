@@ -10,6 +10,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..utils._git_core import get_managed_repos
+
 _SHELL_SEPARATORS = frozenset({";", "&&", "||", "|"})
 _ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=.*$")
 _COMMAND_WRAPPERS = frozenset({"command", "builtin", "nohup"})
@@ -208,6 +210,20 @@ def repo_root(cwd: Path) -> Path | None:
     root = result.stdout.strip()
     return Path(root).resolve() if root else None
 
+
+def is_managed_repo_root(root: Path | None) -> bool:
+    """Return True when root is a managed repo path; fail closed on lookup errors."""
+    if root is None:
+        return False
+    try:
+        resolved_root = root.resolve()
+    except OSError:
+        resolved_root = root
+    try:
+        return any(repo == resolved_root for repo in get_managed_repos())
+    except Exception:
+        return True
+
 def explicit_repo_target(tokens: Sequence[str], cwd: Path) -> bool:
     if not tokens:
         return False
@@ -235,25 +251,31 @@ def explicit_repo_target(tokens: Sequence[str], cwd: Path) -> bool:
     return False
 
 def git_checkout_decision(
-    args: list[str], segment_text: str, check_fn: PathConflictFn,
+    args: list[str], segment_text: str, root: Path | None, check_fn: PathConflictFn,
 ) -> CommandGuardDecision | None:
     msg = "BLOCKED:git checkout .:Discards all uncommitted changes at once."
     paths = git_paths_after_double_dash(args)
     if args[:1] == ["."] or args[:2] == ["--", "."] or "." in paths:
-        return CommandGuardDecision(blocked=True, code="git_checkout_all", message=msg, source="git", command=segment_text)
+        if is_managed_repo_root(root):
+            return CommandGuardDecision(blocked=True, code="git_checkout_all", message=msg, source="git", command=segment_text)
+        return None
     return check_fn(paths, segment_text) if paths else None
 
 def git_restore_decision(
-    args: list[str], segment_text: str, check_fn: PathConflictFn,
+    args: list[str], segment_text: str, root: Path | None, check_fn: PathConflictFn,
 ) -> CommandGuardDecision | None:
     msg = "BLOCKED:git restore .:Discards all uncommitted changes at once."
     if args[:1] == ["."]:
-        return CommandGuardDecision(blocked=True, code="git_restore_all", message=msg, source="git", command=segment_text)
+        if is_managed_repo_root(root):
+            return CommandGuardDecision(blocked=True, code="git_restore_all", message=msg, source="git", command=segment_text)
+        return None
     paths, staging_only = git_restore_paths(args)
     if staging_only:
         return None
     if "." in paths:
-        return CommandGuardDecision(blocked=True, code="git_restore_all", message=msg, source="git", command=segment_text)
+        if is_managed_repo_root(root):
+            return CommandGuardDecision(blocked=True, code="git_restore_all", message=msg, source="git", command=segment_text)
+        return None
     return check_fn(paths, segment_text)
 
 def git_revert_decision(

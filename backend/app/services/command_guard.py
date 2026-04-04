@@ -203,9 +203,9 @@ def _git_decision(segment: Sequence[str], cwd: Path) -> CommandGuardDecision | N
             source="git", command=segment_text,
         )
     if subcommand == "checkout":
-        return git_checkout_decision(args, segment_text, check_fn)
+        return git_checkout_decision(args, segment_text, root, check_fn)
     if subcommand == "restore":
-        return git_restore_decision(args, segment_text, check_fn)
+        return git_restore_decision(args, segment_text, root, check_fn)
     if subcommand == "rm":
         explicit = [token for token in args[args.index("--") + 1:] if token and not token.startswith("-")] if "--" in args else []
         paths = [token for token in args if token and not token.startswith("-")]
