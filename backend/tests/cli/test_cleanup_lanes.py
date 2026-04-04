@@ -225,6 +225,32 @@ class TestDeleteLane:
 
         assert not lane.exists()
 
+    def test_delete_lane_falls_back_for_orphan_plain_directory(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from cli.lib.quick_snapshots import SnapshotError, delete_lane, inspect_lane
+
+        workspaces_root, _canonical = _setup_workspace(tmp_path, monkeypatch)
+        lane = workspaces_root / "lanes" / "summitflow" / "plain-orphan"
+        lane.mkdir(parents=True)
+        (lane / "README.md").write_text("orphan lane\n", encoding="utf-8")
+
+        def _delete_subvolume_or_fail(path: Path) -> None:
+            if path == lane:
+                raise SnapshotError(
+                    f"Btrfs command failed: btrfs subvolume delete {path}\n"
+                    "ERROR: Not a Btrfs subvolume: Invalid argument"
+                )
+            _fake_delete_subvolume(path)
+
+        monkeypatch.setattr("cli.lib.quick_snapshots._delete_subvolume", _delete_subvolume_or_fail)
+
+        inspection = inspect_lane("summitflow", "plain-orphan")
+        monkeypatch.chdir(tmp_path)
+        delete_lane(inspection)
+
+        assert not lane.exists()
+
     def test_delete_lane_raises_when_git_worktree_removal_fails(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

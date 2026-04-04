@@ -462,7 +462,16 @@ def delete_lane(inspection: LaneInspection) -> None:
         with contextlib.suppress(OSError):
             inspection.snapshot_dir.rmdir()
 
-    _delete_subvolume(inspection.lane_path)
+    try:
+        _delete_subvolume(inspection.lane_path)
+    except SnapshotError as exc:
+        message = str(exc)
+        if "Invalid argument" not in message and "Not a Btrfs subvolume" not in message:
+            raise
+        if inspection.lane_path.is_dir():
+            shutil.rmtree(inspection.lane_path, ignore_errors=False)
+        elif inspection.lane_path.exists():
+            inspection.lane_path.unlink()
 
     if inspection.manifest_dir and inspection.manifest_dir.exists():
         shutil.rmtree(inspection.manifest_dir, ignore_errors=True)
