@@ -400,6 +400,35 @@ class TestSnapshotResidue:
 
         assert not legacy_root.exists()
 
+    def test_delete_snapshot_residue_rmdirs_empty_root_left_after_tree_cleanup(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from cli.lib.quick_snapshots import delete_snapshot_residue, find_snapshot_residue
+
+        workspaces_root, _canonical = _setup_workspace(tmp_path, monkeypatch)
+        legacy_root = _create_legacy_snapshot_root(workspaces_root, "summitflow-probes")
+
+        def _noop_delete_subvolume(path: Path) -> None:
+            assert path == legacy_root
+
+        def _leave_empty_dir(path: Path, ignore_errors: bool = False) -> None:
+            del ignore_errors
+            for child in list(path.iterdir()):
+                if child.is_dir():
+                    shutil.rmtree(child)
+                else:
+                    child.unlink()
+
+        monkeypatch.setattr("cli.lib.quick_snapshots._delete_subvolume", _noop_delete_subvolume)
+        monkeypatch.setattr("cli.lib.quick_snapshots.shutil.rmtree", _leave_empty_dir)
+
+        residues = find_snapshot_residue(["summitflow"], project_id="summitflow")
+        legacy_residue = next(r for r in residues if r.residue_name == "summitflow-probes")
+
+        delete_snapshot_residue(legacy_residue)
+
+        assert not legacy_root.exists()
+
 
 class TestDeleteLaneSnapshotDir:
     def test_delete_lane_cleans_snapshot_parent_dir(

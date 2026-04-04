@@ -512,6 +512,8 @@ def delete_snapshot_residue(residue: SnapshotResidue) -> None:
 
     if residue.path.is_dir():
         shutil.rmtree(residue.path, ignore_errors=False)
+        if residue.path.exists():
+            residue.path.rmdir()
     elif residue.path.exists():
         residue.path.unlink()
 
