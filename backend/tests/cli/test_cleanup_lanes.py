@@ -380,6 +380,26 @@ class TestSnapshotResidue:
             for residue in residues
         }
 
+    def test_delete_snapshot_residue_removes_legacy_root_when_btrfs_delete_leaves_dir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from cli.lib.quick_snapshots import delete_snapshot_residue, find_snapshot_residue
+
+        workspaces_root, _canonical = _setup_workspace(tmp_path, monkeypatch)
+        legacy_root = _create_legacy_snapshot_root(workspaces_root, "summitflow-pilot-v1")
+
+        def _noop_delete_subvolume(path: Path) -> None:
+            assert path == legacy_root
+
+        monkeypatch.setattr("cli.lib.quick_snapshots._delete_subvolume", _noop_delete_subvolume)
+
+        residues = find_snapshot_residue(["summitflow"], project_id="summitflow")
+        legacy_residue = next(r for r in residues if r.residue_name == "summitflow-pilot-v1")
+
+        delete_snapshot_residue(legacy_residue)
+
+        assert not legacy_root.exists()
+
 
 class TestDeleteLaneSnapshotDir:
     def test_delete_lane_cleans_snapshot_parent_dir(

@@ -503,11 +503,12 @@ def delete_snapshot_residue(residue: SnapshotResidue) -> None:
     if residue.residue_type == "legacy-snapshot-root":
         try:
             _delete_subvolume(residue.path)
-            return
         except SnapshotError as exc:
             message = str(exc)
             if "Invalid argument" not in message and "Not a Btrfs subvolume" not in message:
                 raise
+        if not residue.path.exists():
+            return
 
     if residue.path.is_dir():
         shutil.rmtree(residue.path, ignore_errors=False)
