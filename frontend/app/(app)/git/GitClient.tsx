@@ -89,7 +89,12 @@ export function GitClient() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {gitStatus && !isLoading && hasSignals ? (
+            {isLoading ? (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-phosphor-500/18 bg-phosphor-500/10 px-2.5 py-1 text-xs text-phosphor-200">
+                <RefreshCw className="h-3 w-3 animate-spin" />
+                Scanning repos...
+              </span>
+            ) : gitStatus && hasSignals ? (
               <>
                 <StatPill
                   icon={AlertTriangle}

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import cast
 
 from fastapi import APIRouter, HTTPException, Query
 
 from cli.commands.cleanup import build_cleanup_status_payload
 from cli.commands.cleanup_display import render_cleanup_status_compact
+from cli.lib.worktree import get_active_worktrees
 
 from ..storage import tasks as task_store
 from ..storage.tasks.update import update_task_fields
@@ -71,9 +73,17 @@ def _build_cleanup_status_response(*, all_projects: bool, project_id: str | None
 @router.get("/git/status", response_model=GitStatusResponse, tags=["git"])
 async def get_git_status() -> GitStatusResponse:
     """Get git status for all managed repositories."""
+    active_worktrees_by_project: dict[str, list] = defaultdict(list)
+    for worktree in get_active_worktrees():
+        if worktree.project_id:
+            active_worktrees_by_project[worktree.project_id].append(worktree)
+
     repos: list[RepoStatus] = []
     for repo_path in get_managed_repos():
-        repo_status = get_repo_status(repo_path)
+        repo_status = get_repo_status(
+            repo_path,
+            active_worktrees_by_project=active_worktrees_by_project,
+        )
         if repo_status:
             repos.append(repo_status)
     return GitStatusResponse(repositories=repos, total=len(repos))

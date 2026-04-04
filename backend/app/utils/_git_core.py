@@ -163,10 +163,15 @@ def _classify_state(uncommitted: int, behind: int, ahead: int) -> str:
     return _STATE_CLEAN
 
 
-def get_repo_status(repo_path: Path, project_id: str | None = None) -> RepoStatus | None:
+def get_repo_status(
+    repo_path: Path,
+    project_id: str | None = None,
+    *,
+    active_worktrees_by_project: dict[str, list] | None = None,
+) -> RepoStatus | None:
     """Get status information for a git repository."""
     from ..api.models.git_models import RepoStatus
-    from ._git_branches import build_repo_workspace_summary
+    from ._git_branches import build_repo_workspace_summary, get_all_branches
 
     if not is_valid_git_repo(repo_path):
         return None
@@ -179,6 +184,16 @@ def get_repo_status(repo_path: Path, project_id: str | None = None) -> RepoStatu
     ahead, behind = _get_ahead_behind(repo_path, branch)
     state = _classify_state(uncommitted, behind, ahead)
     resolved_project_id = _resolve_project_id(repo_path, project_id)
+    active_worktrees = (
+        active_worktrees_by_project.get(resolved_project_id, [])
+        if active_worktrees_by_project is not None and resolved_project_id
+        else None
+    )
+    branches = get_all_branches(
+        repo_path,
+        resolved_project_id,
+        active_worktrees=active_worktrees,
+    )
 
     return RepoStatus(
         path=str(repo_path),
@@ -189,7 +204,12 @@ def get_repo_status(repo_path: Path, project_id: str | None = None) -> RepoStatu
         ahead=ahead,
         behind=behind,
         state=state,
-        workspace_summary=build_repo_workspace_summary(repo_path, resolved_project_id),
+        workspace_summary=build_repo_workspace_summary(
+            repo_path,
+            resolved_project_id,
+            branches=branches,
+            active_worktrees=active_worktrees,
+        ),
     )
 
 
