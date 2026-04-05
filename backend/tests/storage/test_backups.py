@@ -383,3 +383,41 @@ class TestCleanupExpiredRecords:
         # Both records should still exist
         _remaining, total = backups.list_backups(project_id=cleanup_project)
         assert total == 2
+
+
+class TestFailStaleRunningBackups:
+    """Tests for fail_stale_running_backups."""
+
+    def test_fail_stale_running_backups_marks_old_rows_failed(
+        self, conn: Any, cleanup_project: str
+    ) -> None:
+        """Old running backups should be failed instead of lingering indefinitely."""
+        stale = backups.create_backup_record(cleanup_project, note="Stale")
+        fresh = backups.create_backup_record(cleanup_project, note="Fresh")
+
+        backups.update_backup_status(stale["id"], "running")
+        backups.update_backup_status(fresh["id"], "running")
+
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE backups SET started_at = NOW() - INTERVAL '2 hours' WHERE id = %s",
+                (stale["id"],),
+            )
+            cur.execute(
+                "UPDATE backups SET started_at = NOW() - INTERVAL '10 minutes' WHERE id = %s",
+                (fresh["id"],),
+            )
+            conn.commit()
+
+        failed = backups.fail_stale_running_backups(max_age_minutes=30)
+
+        stale_row = backups.get_backup(stale["id"])
+        fresh_row = backups.get_backup(fresh["id"])
+
+        assert failed == 1
+        assert stale_row is not None
+        assert stale_row["status"] == "failed"
+        assert stale_row["completed_at"] is not None
+        assert "exceeded expected runtime" in (stale_row["error_message"] or "")
+        assert fresh_row is not None
+        assert fresh_row["status"] == "running"

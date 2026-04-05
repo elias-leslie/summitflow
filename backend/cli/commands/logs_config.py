@@ -21,7 +21,7 @@ USER_SERVICES = {
     "ah-worker": "agent-hub-hatchet-agent-worker.service",
     "ah-agent-worker": "agent-hub-hatchet-agent-worker.service",
     "ah-ops-worker": "agent-hub-hatchet-ops-worker.service",
-    "terminal": "summitflow-terminal.service",
+    "aterm": "aterm-backend.service",
     "vantage": "vantage-backend.service",
     "vantage-web": "vantage-frontend.service",
     "vantage-worker": "vantage-hatchet-worker.service",

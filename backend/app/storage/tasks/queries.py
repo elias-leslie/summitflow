@@ -224,7 +224,7 @@ def purge_terminal_tasks(
             cur,
             all_ids,
             deletion_source="storage:purge_terminal_tasks",
-            deletion_reason="Terminal-task retention purge",
+            deletion_reason="Task retention purge",
         )
         if not archived_ids:
             conn.commit()

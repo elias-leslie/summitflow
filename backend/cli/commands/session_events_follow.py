@@ -27,7 +27,7 @@ def _emit_new_events(
 
 
 def _is_task_terminal(client: STClient, task_id: str) -> str:
-    """Return terminal status string if task is done, else empty string."""
+    """Return aterm status string if task is done, else empty string."""
     terminal_statuses = {"completed", "cancelled", "failed"}
     try:
         task = client.get_task(task_id)

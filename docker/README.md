@@ -12,7 +12,7 @@ The installer will:
 3. Generate secure passwords
 4. Pull images and start the stack
 
-Terminal is a special case in this stack: the Docker profile is useful for isolated container-mode demos and packaging checks, but it is **not** equivalent to Terminal's real host-native runtime. Terminal's canonical install path remains native `systemd --user` on the host so it can use the host tmux server, host working tree, and host CLI auth/session state.
+A-Term is a special case in this stack: the Docker profile is useful for isolated container-mode demos and packaging checks, but it is **not** equivalent to A-Term's real host-native runtime. A-Term's canonical install path remains native `systemd --user` on the host so it can use the host tmux server, host working tree, and host CLI auth/session state.
 
 ## Manual Setup
 
@@ -38,13 +38,13 @@ docker compose --profile full up -d           # Everything
 | `infra` | PostgreSQL, Redis, Hatchet |
 | `summitflow` | SummitFlow API + Web + Worker + infra |
 | `agent-hub` | Agent Hub API + Web + Worker + infra |
-| `terminal` | Terminal API + Web in isolated container mode + infra |
+| `aterm` | A-Term API + Web in isolated container mode + infra |
 | `portfolio` | Portfolio AI API + Web + Worker + infra |
 | `monkey-fight` | Monkey Fight + infra |
 | `browser` | Agent Browser (Chrome for Testing) |
 | `full` | All of the above |
 
-`terminal` and `full` therefore include Terminal only as an isolated container-mode web stack. They are useful for smoke tests and demos, not as proof of host-integrated Terminal behavior.
+`aterm` and `full` therefore include A-Term only as an isolated container-mode web stack. They are useful for smoke tests and demos, not as proof of host-integrated A-Term behavior.
 
 ## Service Ports
 
@@ -54,8 +54,8 @@ docker compose --profile full up -d           # Everything
 | SummitFlow API | 8001 |
 | Agent Hub Web | 3003 |
 | Agent Hub API | 8003 |
-| Terminal Web | 3002 |
-| Terminal API | 8002 |
+| A-Term Web | 3002 |
+| A-Term API | 8002 |
 | Portfolio AI Web | 3000 |
 | Portfolio AI API | 8000 |
 | Monkey Fight | 4001 |
@@ -118,14 +118,14 @@ st docker restore ~/docker-backups/docker-pgdump-20260314-120000.sql
 cat backup.sql | docker compose exec -T postgres psql -U admin
 ```
 
-## Terminal Runtime Notes
+## A-Term Runtime Notes
 
-The Terminal service runs tmux inside its container for self-contained terminal sessions. Treat that as isolated demo/parity mode, not as the supported real-use runtime.
+The A-Term service runs tmux inside its container for self-contained aterm sessions. Treat that as isolated demo/parity mode, not as the supported real-use runtime.
 
 - Cannot attach to host-level tmux sessions (Claude Code, etc.)
 - Cannot reuse the host user's Claude/Codex auth state or user-session process context
 - Bind-mounting workspaces only makes files visible inside the container; it does not make the container runtime equivalent to the host user session
-- For real Terminal use, run Terminal natively under `systemd --user`
+- For real A-Term use, run A-Term natively under `systemd --user`
 
 ## Troubleshooting
 

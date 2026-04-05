@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from ..logging_config import get_logger
+from ..project_identity import canonicalize_project_name
 from .connection import get_cursor
 
 logger = get_logger(__name__)
@@ -61,7 +62,11 @@ def find_project_by_cwd(cwd: str) -> dict[str, Any] | None:
     project = matches[0][1]
     return {
         "id": project["id"],
-        "name": project["name"],
+        "name": canonicalize_project_name(
+            project["id"],
+            project["name"],
+            project["root_path"],
+        ),
         "root_path": project["root_path"],
     }
 
@@ -133,6 +138,11 @@ def list_projects() -> list[dict[str, Any]]:
             "SELECT id, name, root_path, created_at FROM projects ORDER BY created_at"
         )
         return [
-            {"id": row[0], "name": row[1], "root_path": row[2], "created_at": row[3]}
+            {
+                "id": row[0],
+                "name": canonicalize_project_name(row[0], row[1], row[2]),
+                "root_path": row[2],
+                "created_at": row[3],
+            }
             for row in cur.fetchall()
         ]

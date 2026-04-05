@@ -542,7 +542,7 @@ run_tests() {
     local details_file="$OUTPUT_DIR/pytest-details.1.txt"
 
     # Prefer backend/ when it has tests/, otherwise run from project root.
-    # This keeps projects like terminal (tests/ at repo root) discoverable.
+    # This keeps projects like aterm (tests/ at repo root) discoverable.
     local test_dir="$backend"
     if [[ ! -d "$backend/tests" && -d "$project_dir/tests" ]]; then
         test_dir="$project_dir"
@@ -1419,7 +1419,7 @@ show_help() {
 # MAIN
 # =============================================================================
 
-# Safety net: ensure check actions always print a terminal summary, even on
+# Safety net: ensure check actions always print a aterm summary, even on
 # unexpected exit (e.g., signal, unhandled error in a sub-function).
 _DT_SUMMARY_PRINTED=0
 _dt_exit_trap() {

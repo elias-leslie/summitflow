@@ -9,7 +9,7 @@ from ..._sql import static_sql
 from ...connection import get_cursor
 from ..types import ActivityEvent, TaskMetadata
 
-_TERMINAL_STATUSES = {"completed", "cancelled", "blocked"}
+_FINAL_ACTIVITY_STATUSES = {"completed", "cancelled", "blocked"}
 
 
 def _build_task_query_params(
@@ -55,7 +55,7 @@ def _resolve_task_action(
     created_at: datetime | None,
 ) -> str:
     """Translate task row timing into a user-facing activity action."""
-    if status in _TERMINAL_STATUSES and completed_at is not None:
+    if status in _FINAL_ACTIVITY_STATUSES and completed_at is not None:
         return status
     if updated_at and (created_at is None or updated_at > created_at):
         return "updated"

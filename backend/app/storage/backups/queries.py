@@ -9,6 +9,42 @@ from ..connection import get_connection, get_cursor
 from .models import BACKUP_COLUMNS, row_to_backup
 
 
+def fail_stale_running_backups(
+    max_age_minutes: int = 30,
+    error_message: str | None = None,
+) -> int:
+    """Mark long-running backups as failed once they exceed the expected runtime.
+
+    Args:
+        max_age_minutes: Maximum allowed runtime before a backup is considered stale
+        error_message: Optional override for the failure reason stored on the row
+
+    Returns:
+        Number of running rows that were failed
+    """
+    resolved_error = error_message or (
+        f"Backup exceeded expected runtime and was marked failed after {max_age_minutes} minutes"
+    )
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE backups
+            SET status = 'failed',
+                error_message = COALESCE(error_message, %s),
+                completed_at = NOW()
+            WHERE status = 'running'
+              AND COALESCE(started_at, created_at) < NOW() - INTERVAL '1 minute' * %s
+            RETURNING id
+            """,
+            (resolved_error, max_age_minutes),
+        )
+        failed_rows = cur.fetchall()
+        conn.commit()
+
+    return len(failed_rows)
+
+
 def cleanup_stale_backup_records(max_age_days: int = 30) -> int:
     """Delete failed/running backup records older than max_age_days.
 

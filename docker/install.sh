@@ -207,7 +207,7 @@ if [[ "$CHOICE" == "2" || "$CHOICE" == "3" ]]; then
 fi
 if [[ "$CHOICE" == "3" ]]; then
   echo 'PORTFOLIO_HEALTH_URL=http://portfolio-api:8000/health' >> .env
-  echo 'TERMINAL_HEALTH_URL=http://terminal-api:8002/health' >> .env
+  echo 'ATERM_HEALTH_URL=http://aterm-api:8002/health' >> .env
 fi
 
 echo "Generated .env with random passwords and secrets"
@@ -403,7 +403,7 @@ if [[ "$CHOICE" == "2" || "$CHOICE" == "3" ]]; then
 fi
 
 if [[ "$CHOICE" == "3" ]]; then
-  echo "  Terminal:     http://localhost:3002"
+  echo "  A-Term:     http://localhost:3002"
   echo "  Portfolio AI: http://localhost:3000"
   echo "  Monkey Fight: http://localhost:4001"
 fi

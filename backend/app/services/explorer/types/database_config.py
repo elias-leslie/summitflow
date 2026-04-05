@@ -6,11 +6,13 @@ Handles database URL resolution and configuration for different projects.
 from __future__ import annotations
 
 import os
+from functools import lru_cache
 from pathlib import Path
 
 from dotenv import load_dotenv
 
 from ....logging_config import get_logger
+from ....project_identity import list_project_identities
 
 logger = get_logger(__name__)
 
@@ -19,20 +21,49 @@ _env_file = Path.home() / ".env.local"
 if _env_file.exists():
     load_dotenv(_env_file)
 
-# System tables to exclude (includes prefixed variants like terminal_alembic_version)
-SYSTEM_TABLES = {
-    "alembic_version",
-    "spatial_ref_sys",
-    "terminal_alembic_version",
-}
 
-# Projects that share a database use table prefixes to separate ownership.
-# The "host" project owns all unprefixed tables; "guest" projects own tables
-# with their prefix (e.g. terminal_ tables belong to the terminal project).
-# Format: project_id -> prefix (including trailing underscore).
-_GUEST_TABLE_PREFIXES: dict[str, str] = {
-    "terminal": "terminal_",
-}
+@lru_cache(maxsize=1)
+def _shared_database_layout() -> tuple[frozenset[str], dict[str, tuple[str, ...]]]:
+    system_tables = {"alembic_version", "spatial_ref_sys"}
+    guest_prefixes: dict[str, tuple[str, ...]] = {}
+
+    for identity in list_project_identities():
+        project = identity.get("project")
+        database = identity.get("database")
+        if not isinstance(project, dict) or not isinstance(database, dict):
+            continue
+
+        project_id = project.get("id")
+        if not isinstance(project_id, str) or not project_id:
+            continue
+
+        version_table = database.get("version_table")
+        if isinstance(version_table, str) and version_table:
+            system_tables.add(version_table)
+
+        legacy_version_tables = database.get("legacy_version_tables")
+        if isinstance(legacy_version_tables, list):
+            for table_name in legacy_version_tables:
+                if isinstance(table_name, str) and table_name:
+                    system_tables.add(table_name)
+
+        table_prefixes: list[str] = []
+        table_prefix = database.get("table_prefix")
+        if isinstance(table_prefix, str) and table_prefix:
+            table_prefixes.append(table_prefix)
+        legacy_table_prefixes = database.get("legacy_table_prefixes")
+        if isinstance(legacy_table_prefixes, list):
+            table_prefixes.extend(
+                prefix for prefix in legacy_table_prefixes if isinstance(prefix, str) and prefix
+            )
+
+        if database.get("shared_with") == "summitflow" and table_prefixes:
+            guest_prefixes[project_id] = tuple(dict.fromkeys(table_prefixes))
+
+    return frozenset(system_tables), guest_prefixes
+
+
+SYSTEM_TABLES, _GUEST_TABLE_PREFIXES = _shared_database_layout()
 
 
 def get_table_ownership_filter(project_id: str) -> tuple[str, ...] | None:
@@ -44,10 +75,7 @@ def get_table_ownership_filter(project_id: str) -> tuple[str, ...] | None:
             ``is_table_owned_by_project``).
         For projects with their own DB: None (no filtering needed).
     """
-    prefix = _GUEST_TABLE_PREFIXES.get(project_id)
-    if prefix:
-        return (prefix,)
-    return None
+    return _GUEST_TABLE_PREFIXES.get(project_id)
 
 
 def is_table_owned_by_project(project_id: str, table_name: str) -> bool:
@@ -59,20 +87,20 @@ def is_table_owned_by_project(project_id: str, table_name: str) -> bool:
       start with any guest prefix.
     - Projects with their own dedicated DB own all tables.
     """
-    guest_prefix = _GUEST_TABLE_PREFIXES.get(project_id)
-    if guest_prefix:
+    guest_prefixes = _GUEST_TABLE_PREFIXES.get(project_id)
+    if guest_prefixes:
         # Guest project: only own prefixed tables
-        return table_name.startswith(guest_prefix)
+        return any(table_name.startswith(prefix) for prefix in guest_prefixes)
 
     # Check if this project is a host sharing a DB with guests
     host_db_url = get_db_url_for_project(project_id)
     if host_db_url:
-        for guest_id, prefix in _GUEST_TABLE_PREFIXES.items():
+        for guest_id, prefixes in _GUEST_TABLE_PREFIXES.items():
             guest_db_url = get_db_url_for_project(guest_id)
             if (
                 guest_db_url
                 and _same_database(host_db_url, guest_db_url)
-                and table_name.startswith(prefix)
+                and any(table_name.startswith(prefix) for prefix in prefixes)
             ):
                 return False
 

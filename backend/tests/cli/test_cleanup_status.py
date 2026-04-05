@@ -225,12 +225,12 @@ def test_cleanup_status_routes_missing_task_merge_candidates_to_review(tmp_path:
 
 
 def test_cleanup_status_treats_reconciled_or_authoritative_lanes_as_cleanup_only_residue(tmp_path: Path) -> None:
-    repo_paths = [Path("/repos/terminal")]
-    worktree = _make_existing_worktree(tmp_path, "task-reconciled", "terminal")
+    repo_paths = [Path("/repos/aterm")]
+    worktree = _make_existing_worktree(tmp_path, "task-reconciled", "aterm")
 
     with (
         patch("cli.commands.cleanup._get_managed_repos", return_value=repo_paths),
-        patch("cli.commands.cleanup.get_project_id", return_value="terminal"),
+        patch("cli.commands.cleanup.get_project_id", return_value="aterm"),
         patch("cli.commands.cleanup.get_stale_checkpoints", return_value=[]),
         patch("cli.commands.cleanup.find_snapshot_residue", return_value=[]),
         patch(
@@ -271,7 +271,7 @@ def test_cleanup_status_treats_reconciled_or_authoritative_lanes_as_cleanup_only
 
 
 def test_cleanup_worktree_uses_task_id_cleanup_api(tmp_path: Path) -> None:
-    worktree = _make_existing_worktree(tmp_path, "task-safe", "terminal")
+    worktree = _make_existing_worktree(tmp_path, "task-safe", "aterm")
     analysis = SimpleNamespace(
         worktree=worktree,
         action=CleanupAction.SAFE_DELETE,
@@ -285,7 +285,7 @@ def test_cleanup_worktree_uses_task_id_cleanup_api(tmp_path: Path) -> None:
     mock_remove.assert_called_once_with(
         "task-safe",
         delete_branch=True,
-        project_id="terminal",
+        project_id="aterm",
     )
 
 def test_cleanup_status_fail_on_residue_returns_nonzero() -> None:
@@ -730,7 +730,7 @@ def test_build_cleanup_status_payload_respects_project_override() -> None:
 
 
 def test_build_cleanup_status_payload_skips_missing_worktrees(tmp_path) -> None:
-    repo_path = Path("/repos/terminal")
+    repo_path = Path("/repos/aterm")
     existing_path = tmp_path / "task-live"
     existing_path.mkdir()
     existing_worktree = SimpleNamespace(
@@ -738,19 +738,19 @@ def test_build_cleanup_status_payload_skips_missing_worktrees(tmp_path) -> None:
         path=existing_path,
         branch="task-live/main",
         base_branch="main",
-        project_id="terminal",
+        project_id="aterm",
     )
     missing_worktree = SimpleNamespace(
         task_id="task-missing",
         path=tmp_path / "task-missing",
         branch="task-missing/main",
         base_branch="main",
-        project_id="terminal",
+        project_id="aterm",
     )
 
     with (
         patch("cli.commands.cleanup._get_managed_repos", return_value=[repo_path]),
-        patch("cli.commands.cleanup.get_project_id", return_value="terminal"),
+        patch("cli.commands.cleanup.get_project_id", return_value="aterm"),
         patch("cli.commands.cleanup.get_stale_checkpoints", return_value=[]),
         patch("cli.commands.cleanup.find_snapshot_residue", return_value=[]),
         patch(
@@ -792,7 +792,7 @@ def test_build_cleanup_status_payload_skips_missing_worktrees(tmp_path) -> None:
             "path": str(existing_path),
             "branch": "task-live/main",
             "base_branch": "main",
-            "project_id": "terminal",
+            "project_id": "aterm",
         }
     ]
     assert mock_analyze.call_count == 1

@@ -10,7 +10,7 @@ from app.utils.datetime_helpers import parse_iso_datetime
 
 _LIVE_LIFECYCLE_STATES = {"active", "quiet", "stalled"}
 _STALE_LIFECYCLE_STATES = {"dead_candidate", "reapable"}
-_TERMINAL_HEALTH_STATES = {"completed", "failed", "error"}
+_FINAL_HEALTH_STATES = {"completed", "failed", "error"}
 _ACTIVE_BUCKET = "active"
 _STALE_BUCKET = "stale"
 _REAPABLE_STATE = "reapable"
@@ -78,7 +78,7 @@ def _classify_session_coordination_bucket(session: dict[str, Any]) -> str | None
         health = str(live_activity.get("health") or "").strip()
         if health in _LIVE_LIFECYCLE_STATES:
             return _ACTIVE_BUCKET
-        if health in _TERMINAL_HEALTH_STATES:
+        if health in _FINAL_HEALTH_STATES:
             return None
 
     updated_at = parse_iso_datetime(session.get("updated_at"))

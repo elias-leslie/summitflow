@@ -8,7 +8,7 @@ const CONFIG_FILE = path.join(os.homedir(), '.cloudflare-access');
 const CLOUDFLARE_DOMAINS = [
   'agent.summitflow.dev',
   'dev.summitflow.dev',
-  'terminal.summitflow.dev',
+  'aterm.summitflow.dev',
   'port.summitflow.dev',
   'vantage.summitflow.dev',
   'summitflow.dev',
@@ -17,7 +17,7 @@ const CLOUDFLARE_DOMAINS = [
 const WEBSOCKET_DOMAINS = [
   'agent.summitflow.dev',
   'dev.summitflow.dev',
-  'terminal.summitflow.dev',
+  'aterm.summitflow.dev',
   'port.summitflow.dev',
   'vantage.summitflow.dev',
 ];

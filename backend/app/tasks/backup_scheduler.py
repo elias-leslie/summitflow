@@ -12,6 +12,8 @@ from .backup_executor import create_backup
 from .backup_utils import calculate_next_run
 
 logger = get_logger(__name__)
+SUCCESS_STATUSES = {"completed", "completed_pending_upload"}
+STALE_RUNNING_AGE_MINUTES = 30
 
 
 def _cleanup_stale_records() -> int:
@@ -20,6 +22,14 @@ def _cleanup_stale_records() -> int:
     if cleaned:
         logger.info("cleaned_stale_backup_records", count=cleaned)
     return cleaned
+
+
+def _fail_stale_running_records() -> int:
+    """Fail backup rows that exceeded the expected runtime."""
+    failed = backup_store.fail_stale_running_backups(max_age_minutes=STALE_RUNNING_AGE_MINUTES)
+    if failed:
+        logger.warning("failed_stale_running_backups", count=failed)
+    return failed
 
 
 def _process_due_source(source: dict[str, Any]) -> dict[str, Any]:
@@ -95,6 +105,7 @@ def run_scheduled_backups() -> dict[str, Any]:
     logger.info("run_scheduled_backups_started")
 
     try:
+        stale_failed = _fail_stale_running_records()
         stale_cleaned = _cleanup_stale_records()
         expired_count = _cleanup_expired_records()
 
@@ -107,9 +118,10 @@ def run_scheduled_backups() -> dict[str, Any]:
                 "count": 0,
                 "succeeded": 0,
                 "failed": 0,
+                "stale_failed": stale_failed,
                 "stale_cleaned": stale_cleaned,
                 "expired_cleaned": expired_count,
-                "rows_cleaned": stale_cleaned + expired_count,
+                "rows_cleaned": stale_failed + stale_cleaned + expired_count,
                 "results": [],
             }
             maintenance_store.record_maintenance_run(
@@ -122,6 +134,7 @@ def run_scheduled_backups() -> dict[str, Any]:
             )
             logger.info(
                 "no_scheduled_backups_due",
+                stale_failed=stale_failed,
                 stale_cleaned=stale_cleaned,
                 expired_cleaned=expired_count,
             )
@@ -144,16 +157,17 @@ def run_scheduled_backups() -> dict[str, Any]:
                     }
                 )
 
-        succeeded = sum(1 for result in results if result.get("status") == "completed")
+        succeeded = sum(1 for result in results if result.get("status") in SUCCESS_STATUSES)
         failed = len(results) - succeeded
         result: dict[str, Any] = {
             "status": "success" if failed == 0 else "partial",
             "count": len(results),
             "succeeded": succeeded,
             "failed": failed,
+            "stale_failed": stale_failed,
             "stale_cleaned": stale_cleaned,
             "expired_cleaned": expired_count,
-            "rows_cleaned": stale_cleaned + expired_count,
+            "rows_cleaned": stale_failed + stale_cleaned + expired_count,
             "results": results,
         }
         maintenance_store.record_maintenance_run(
@@ -170,6 +184,7 @@ def run_scheduled_backups() -> dict[str, Any]:
             count=len(results),
             succeeded=succeeded,
             failed=failed,
+            stale_failed=stale_failed,
             stale_cleaned=stale_cleaned,
             expired_cleaned=expired_count,
         )

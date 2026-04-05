@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sync external tmux agent sessions from Terminal into Agent Hub."""
+"""Sync external tmux agent sessions from A-Term into Agent Hub."""
 
 from __future__ import annotations
 
@@ -213,8 +213,8 @@ def main() -> int:
                 "host": os.uname().nodename,
                 "tmux_session_name": tmux_session_name,
                 "tmux_pane_id": session.get("tmux_pane_id"),
-                "source": "terminal_tmux_sync",
-                "external_terminal_session_id": session.get("id"),
+                "source": "aterm_tmux_sync",
+                "external_aterm_session_id": session.get("id"),
             },
         }
         _api_request(
@@ -231,7 +231,7 @@ def main() -> int:
             "current_branch": current_branch,
             "phase": "running_tool" if session.get("claude_state") == "running" else "waiting_for_model",
             "status": "active",
-            "summary": f"tmux session {tmux_session_name} visible via Terminal",
+            "summary": f"tmux session {tmux_session_name} visible via A-Term",
             "current_tool_name": str(session.get("mode") or ""),
             "last_event_type": "heartbeat",
             "provider_metadata": {
@@ -240,7 +240,7 @@ def main() -> int:
                 "host": os.uname().nodename,
                 "tmux_session_name": tmux_session_name,
                 "tmux_pane_id": session.get("tmux_pane_id"),
-                "source": "terminal_tmux_sync",
+                "source": "aterm_tmux_sync",
             },
         }
         _api_request(

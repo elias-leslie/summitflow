@@ -28,14 +28,14 @@ class CleanupAction(StrEnum):
     TASK_ACTIVE = "task_active"  # Task still running/pending
 
 
-_TERMINAL_RESIDUE_TASK_STATUSES = {
+_CLEANUP_ELIGIBLE_TASK_STATUSES = {
     "completed",
     "completed_ready_for_closure",
     "reconciled",
     "done",
 }
 
-_TERMINAL_RESIDUE_LIFECYCLES = {
+_CLEANUP_ELIGIBLE_LIFECYCLES = {
     "authoritative,superseded",
     "reconciled",
     "retired",
@@ -66,7 +66,7 @@ def get_task_info(task_id: str) -> tuple[str | None, str | None]:
         return None, None
     status = task.get("status")
     lifecycle = task.get("lifecycle")
-    if lifecycle in _TERMINAL_RESIDUE_LIFECYCLES and status not in _TERMINAL_RESIDUE_TASK_STATUSES:
+    if lifecycle in _CLEANUP_ELIGIBLE_LIFECYCLES and status not in _CLEANUP_ELIGIBLE_TASK_STATUSES:
         status = "reconciled"
     return status, task.get("title")
 
@@ -99,7 +99,7 @@ def _determine_action(
             action = CleanupAction.MANUAL_REVIEW
             reason = f"{task_status.capitalize()} task has unmerged commits and requires review before cleanup"
         return action, reason
-    if task_status in _TERMINAL_RESIDUE_TASK_STATUSES:
+    if task_status in _CLEANUP_ELIGIBLE_TASK_STATUSES:
         if is_merged or commits_ahead == 0:
             action = CleanupAction.ALREADY_MERGED if is_merged else CleanupAction.SAFE_DELETE
             reason = "Already merged" if is_merged else f"{task_status.capitalize()} residue can be discarded"

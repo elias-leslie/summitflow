@@ -261,10 +261,12 @@ class TestScheduledBackups:
         from app.tasks.backup import run_scheduled_backups
 
         with (
+            patch("app.tasks.backup_scheduler.backup_store.fail_stale_running_backups") as mock_stale_fail,
             patch("app.tasks.backup_scheduler.backup_store.cleanup_expired_backup_records") as mock_cleanup,
             patch("app.tasks.backup_scheduler.backup_store.cleanup_stale_backup_records") as mock_stale_cleanup,
             patch("app.tasks.backup_scheduler.maintenance_store.record_maintenance_run") as mock_record,
         ):
+            mock_stale_fail.return_value = 3
             mock_cleanup.return_value = 4
             mock_stale_cleanup.return_value = 2
 
@@ -272,9 +274,11 @@ class TestScheduledBackups:
 
         assert result["status"] == "success"
         assert result["count"] == 0
+        assert result["stale_failed"] == 3
         assert result["stale_cleaned"] == 2
         assert result["expired_cleaned"] == 4
-        assert result["rows_cleaned"] == 6
+        assert result["rows_cleaned"] == 9
+        mock_stale_fail.assert_called_once()
         mock_cleanup.assert_called_once()
         mock_stale_cleanup.assert_called_once()
         mock_record.assert_called_once()
@@ -336,6 +340,37 @@ class TestScheduledBackups:
         source = backup_store.get_source(cleanup_project)
         assert source is not None
         assert source["last_run_at"] is None
+        assert source["next_run_at"] is not None
+
+    def test_run_scheduled_backups_treats_pending_upload_as_success(
+        self, cleanup_project: str, conn: Any
+    ) -> None:
+        """Pending-upload results should still advance the source schedule."""
+        from app.tasks.backup import run_scheduled_backups
+
+        backup_store.update_source(cleanup_project, enabled=True)
+
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE backup_sources SET last_run_at = NULL, next_run_at = NOW() - INTERVAL '1 hour' WHERE id = %s",
+                (cleanup_project,),
+            )
+            conn.commit()
+
+        with patch("app.tasks.backup_scheduler.create_backup") as mock_create:
+            mock_create.return_value = {
+                "status": "completed_pending_upload",
+                "backup_id": "mock-pending-upload-backup",
+            }
+
+            result = run_scheduled_backups()
+
+        assert result["status"] == "success"
+        assert result["succeeded"] >= 1
+        assert result["failed"] == 0
+        source = backup_store.get_source(cleanup_project)
+        assert source is not None
+        assert source["last_run_at"] is not None
         assert source["next_run_at"] is not None
 
     @pytest.fixture()

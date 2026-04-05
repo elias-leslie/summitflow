@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -136,6 +138,90 @@ def test_create_project_queues_standard_onboarding_when_requested(client, monkey
     finally:
         with get_connection() as conn, conn.cursor() as cur:
             cur.execute("DELETE FROM backup_sources WHERE id = %s", (project_id,))
+            cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
+            conn.commit()
+
+
+def test_create_project_prefers_manifest_display_name(client, monkeypatch, tmp_path) -> None:
+    """POST /api/projects should use manifest display names when available."""
+    project_id = f"manifest-{uuid4().hex[:8]}"
+    root_path = tmp_path / project_id
+    root_path.mkdir()
+    (root_path / "project.identity.json").write_text(
+        json.dumps(
+            {
+                "project": {
+                    "id": project_id,
+                    "display_name": "A-Term Preview",
+                }
+            }
+        )
+    )
+    monkeypatch.setattr("app.api.projects.explorer.run_scan_job", lambda *args, **kwargs: None)
+
+    try:
+        response = client.post(
+            "/api/projects",
+            json={
+                "id": project_id,
+                "name": "Old A-Term Name",
+                "base_url": "https://aterm.example",
+                "health_endpoint": "/health",
+                "root_path": str(root_path),
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json()["name"] == "A-Term Preview"
+
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("SELECT name FROM projects WHERE id = %s", (project_id,))
+            project_name = cur.fetchone()
+            cur.execute("SELECT name FROM backup_sources WHERE id = %s", (project_id,))
+            backup_name = cur.fetchone()
+
+        assert project_name == ("A-Term Preview",)
+        assert backup_name == ("A-Term Preview",)
+    finally:
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM backup_sources WHERE id = %s", (project_id,))
+            cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
+            conn.commit()
+
+
+def test_get_project_prefers_manifest_display_name_for_existing_rows(client, tmp_path) -> None:
+    """GET /api/projects/{id} should overlay manifest display names over stale DB values."""
+    project_id = f"existing-{uuid4().hex[:8]}"
+    root_path = tmp_path / project_id
+    root_path.mkdir()
+    (root_path / "project.identity.json").write_text(
+        json.dumps(
+            {
+                "project": {
+                    "id": project_id,
+                    "display_name": "A-Term",
+                }
+            }
+        )
+    )
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO projects (id, name, base_url, health_endpoint, root_path)
+            VALUES (%s, %s, %s, %s, %s)
+            """,
+            (project_id, "SummitFlow A-Term", "https://old.example", "/health", str(root_path)),
+        )
+        conn.commit()
+
+    try:
+        response = client.get(f"/api/projects/{project_id}")
+
+        assert response.status_code == 200
+        assert response.json()["name"] == "A-Term"
+    finally:
+        with get_connection() as conn, conn.cursor() as cur:
             cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
             conn.commit()
 
@@ -778,3 +864,92 @@ def test_delete_project_removes_backup_source_and_agent_hub_permission(client, m
 
     assert project_row is None
     assert backup_row is None
+
+
+def test_sync_project_identity_endpoint_reconciles_legacy_project_ids(client, monkeypatch, tmp_path: Path) -> None:
+    """POST /api/projects/{id}/sync-identity should rename legacy project rows to the manifest id."""
+    projects_root = tmp_path / "projects"
+    repo_root = projects_root / "aterm"
+    repo_root.mkdir(parents=True)
+    (repo_root / "project.identity.json").write_text(
+        json.dumps(
+            {
+                "project": {
+                    "id": "aterm",
+                    "repo_name": "aterm",
+                    "legacy_ids": ["terminal"],
+                    "repo_aliases": ["terminal"],
+                    "display_name": "A-Term",
+                }
+            }
+        )
+    )
+
+    from app import project_identity as project_identity_module
+
+    project_identity_module._workspace_manifest_paths.cache_clear()
+    project_identity_module._read_manifest.cache_clear()
+    monkeypatch.setattr(project_identity_module, "_PROJECTS_ROOT", projects_root)
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO projects (id, name, base_url, health_endpoint, root_path, category)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """,
+            (
+                "terminal",
+                "Legacy A-Term",
+                "http://localhost:8002",
+                "/health",
+                "/srv/workspaces/projects/legacy-aterm",
+                "production",
+            ),
+        )
+        cur.execute(
+            """
+            INSERT INTO backup_sources (id, name, path, source_type, project_id, enabled, retention_days)
+            VALUES (%s, %s, %s, 'project', %s, %s, %s)
+            """,
+            (
+                "terminal",
+                "Legacy A-Term",
+                "/srv/workspaces/projects/legacy-aterm",
+                "terminal",
+                True,
+                30,
+            ),
+        )
+        conn.commit()
+
+    try:
+        response = client.post("/api/projects/aterm/sync-identity")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["id"] == "aterm"
+        assert payload["name"] == "A-Term"
+        assert payload["root_path"] == str(repo_root)
+
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("SELECT id, name, root_path FROM projects WHERE id = 'aterm'")
+            project_row = cur.fetchone()
+            cur.execute("SELECT id FROM projects WHERE id = 'terminal'")
+            legacy_project_row = cur.fetchone()
+            cur.execute("SELECT id, name, path, project_id FROM backup_sources WHERE id = 'aterm'")
+            backup_row = cur.fetchone()
+            cur.execute("SELECT id FROM backup_sources WHERE id = 'terminal'")
+            legacy_backup_row = cur.fetchone()
+
+        assert project_row == ("aterm", "A-Term", str(repo_root))
+        assert legacy_project_row is None
+        assert backup_row == ("aterm", "A-Term", str(repo_root), "aterm")
+        assert legacy_backup_row is None
+    finally:
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM backup_sources WHERE id = ANY(%s)", (["terminal", "aterm"],))
+            cur.execute("DELETE FROM projects WHERE id = ANY(%s)", (["terminal", "aterm"],))
+            conn.commit()
+        project_identity_module._workspace_manifest_paths.cache_clear()
+        project_identity_module._read_manifest.cache_clear()
+

@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "project": {
+    "id": "summitflow",
+    "repo_name": "summitflow",
+    "display_name": "SummitFlow"
+  },
+  "branding": {
+    "short_name": "SummitFlow",
+    "description": "Project operations control plane for tasks, automation, and supporting services."
+  },
+  "runtime": {
+    "backend_port": 8001,
+    "frontend_port": 3001,
+    "backend_dir": "backend",
+    "frontend_dir": "frontend",
+    "health_endpoint": "/health"
+  },
+  "services": {
+    "backend": "summitflow-backend.service",
+    "frontend": "summitflow-frontend.service",
+    "default_workers": [
+      "summitflow-hatchet-worker.service"
+    ],
+    "optional_workers": []
+  },
+  "hosts": {
+    "production_frontend": "dev.summitflow.dev",
+    "production_api": "devapi.summitflow.dev"
+  }
+}

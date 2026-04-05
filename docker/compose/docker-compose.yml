@@ -5,7 +5,7 @@
 #   docker compose --profile agent-hub up -d      # Agent Hub + infra
 #   docker compose --profile full up -d           # Everything
 #
-# Profiles: infra, summitflow, agent-hub, terminal, portfolio, monkey-fight, browser, full
+# Profiles: infra, summitflow, agent-hub, aterm, portfolio, monkey-fight, browser, full
 
 name: summitflow-stack
 
@@ -13,7 +13,7 @@ services:
   # ─── Infrastructure ──────────────────────────────────────────────
   postgres:
     image: pgvector/pgvector:pg16
-    profiles: [infra, summitflow, agent-hub, terminal, portfolio, full]
+    profiles: [infra, summitflow, agent-hub, aterm, portfolio, full]
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
@@ -151,7 +151,7 @@ services:
       # Partial profiles leave these unset; smoke tests skip unconfigured services.
       AGENT_HUB_HEALTH_URL: "${AGENT_HUB_HEALTH_URL:-}"
       PORTFOLIO_HEALTH_URL: "${PORTFOLIO_HEALTH_URL:-}"
-      TERMINAL_HEALTH_URL: "${TERMINAL_HEALTH_URL:-}"
+      ATERM_HEALTH_URL: "${ATERM_HEALTH_URL:-}"
       COMPOSE_DIR: "/compose"
       BACKUP_DIR: "/app/docker-backups"
       BACKUP_HOST_ROOT: "${HOST_HOME_PATH:?}"
@@ -213,7 +213,7 @@ services:
       SUMMITFLOW_HEALTH_URL: "http://summitflow-api:8001/health"
       AGENT_HUB_HEALTH_URL: "${AGENT_HUB_HEALTH_URL:-}"
       PORTFOLIO_HEALTH_URL: "${PORTFOLIO_HEALTH_URL:-}"
-      TERMINAL_HEALTH_URL: "${TERMINAL_HEALTH_URL:-}"
+      ATERM_HEALTH_URL: "${ATERM_HEALTH_URL:-}"
       BACKUP_HOST_ROOT: "${HOST_HOME_PATH:?}"
       HOST_HOME_PATH: "${HOST_HOME_PATH:?Set HOST_HOME_PATH in .env}"
       HOME: "${HOST_HOME_PATH:?}"
@@ -318,19 +318,19 @@ services:
       - ${HOST_HOME_PATH:?}:${HOST_HOME_PATH:?}
     restart: unless-stopped
 
-  # ─── Terminal ────────────────────────────────────────────────────
-  # terminal-api runs on the host via systemd (needs native access to
+  # ─── A-Term ────────────────────────────────────────────────────
+  # aterm-api runs on the host via systemd (needs native access to
   # tmux, SSH, Docker, project venvs, Claude Code, Codex CLI).
-  # Only terminal-web runs in Docker (static Next.js frontend).
+  # Only aterm-web runs in Docker (static Next.js frontend).
 
-  terminal-web:
-    image: ghcr.io/summitflow-solutions/terminal-web:${TAG:-latest}
-    profiles: [terminal, full]
+  aterm-web:
+    image: ghcr.io/summitflow-solutions/aterm-web:${TAG:-latest}
+    profiles: [aterm, full]
     ports:
       - "3002:3002"
     extra_hosts:
-      # terminal-api runs on the host — alias so baked Next.js rewrites resolve
-      - "terminal-api:host-gateway"
+      # aterm-api runs on the host — alias so baked Next.js rewrites resolve
+      - "aterm-api:host-gateway"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3002/').then(r=>{if(!r.ok)throw r.status;process.exit(0)}).catch(()=>process.exit(1))"]
       interval: 10s

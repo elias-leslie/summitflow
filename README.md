@@ -139,7 +139,7 @@ alembic upgrade head
 # Start server
 uvicorn app.main:app --reload --port 8001
 
-# Start Hatchet worker (separate terminal)
+# Start Hatchet worker (separate aterm)
 python -m app.worker
 ```
 
@@ -191,7 +191,7 @@ curl -X POST http://localhost:8001/api/projects \
 
 ## Shared Scripts
 
-SummitFlow `scripts/` is the canonical source for shared development scripts. Other projects (portfolio-ai, agent-hub, terminal) symlink to these:
+SummitFlow `scripts/` is the canonical source for shared development scripts. Other projects (portfolio-ai, agent-hub, aterm) symlink to these:
 
 - `rebuild.sh` - Build and restart services (auto-detects Docker vs native)
 - `backup.sh` - Database + files backup to SMB share

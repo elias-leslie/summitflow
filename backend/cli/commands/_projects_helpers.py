@@ -162,6 +162,13 @@ def run_root(project_id: str) -> None:
     typer.echo(root_path)
 
 
+def run_sync_identity(project_id: str) -> None:
+    """Implementation for `projects sync-identity`."""
+    result = projects_api("POST", f"/{project_id}/sync-identity")
+    output_success(f"Synced project identity for '{project_id}'")
+    output_json(result)
+
+
 def run_create(
     project_id: str,
     name: str,

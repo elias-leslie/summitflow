@@ -16,30 +16,45 @@ def test_projects_root_prints_canonical_root_path() -> None:
     with patch(
         "cli.commands._projects_helpers.projects_api",
         return_value={
-            "id": "terminal",
-            "name": "Terminal",
-            "root_path": "/srv/workspaces/projects/terminal",
+            "id": "aterm",
+            "name": "A-Term",
+            "root_path": "/srv/workspaces/projects/aterm",
         },
     ):
-        result = runner.invoke(app, ["root", "terminal"])
+        result = runner.invoke(app, ["root", "aterm"])
 
     assert result.exit_code == 0
-    assert result.output.strip() == "/srv/workspaces/projects/terminal"
+    assert result.output.strip() == "/srv/workspaces/projects/aterm"
 
 
 def test_projects_root_requires_root_path() -> None:
     with patch(
         "cli.commands._projects_helpers.projects_api",
         return_value={
-            "id": "terminal",
-            "name": "Terminal",
+            "id": "aterm",
+            "name": "A-Term",
             "root_path": None,
         },
     ):
-        result = runner.invoke(app, ["root", "terminal"])
+        result = runner.invoke(app, ["root", "aterm"])
 
     assert result.exit_code == 1
     assert "has no root_path configured" in result.output
+
+
+def test_projects_sync_identity_hits_sync_endpoint() -> None:
+    with patch(
+        "cli.commands._projects_helpers.projects_api",
+        return_value={
+            "id": "aterm",
+            "name": "A-Term",
+            "root_path": "/srv/workspaces/projects/aterm",
+        },
+    ) as mock_projects_api:
+        result = runner.invoke(app, ["sync-identity", "terminal"])
+
+    assert result.exit_code == 0
+    mock_projects_api.assert_called_once_with("POST", "/terminal/sync-identity")
 
 
 def test_projects_create_sends_permission_bootstrap_fields() -> None:

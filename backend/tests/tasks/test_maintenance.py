@@ -36,6 +36,10 @@ def test_run_daily_maintenance_records_observable_summary(mocker) -> None:
         return_value=9,
     )
     mocker.patch(
+        "app.tasks.maintenance.backup_store.fail_stale_running_backups",
+        return_value=7,
+    )
+    mocker.patch(
         "app.tasks.maintenance.backup_store.cleanup_stale_backup_records",
         return_value=1,
     )
@@ -57,14 +61,15 @@ def test_run_daily_maintenance_records_observable_summary(mocker) -> None:
     result = run_daily_maintenance()
 
     assert result["status"] == "success"
-    assert result["rows_cleaned"] == 42
+    assert result["rows_cleaned"] == 49
     assert result["bytes_reclaimed"] == 4096
     assert result["events_deleted"]["total_deleted"] == 8
     assert result["maintenance_runs_deleted"] == 9
+    assert result["stale_running_backups_failed"] == 7
     assert result["host_retention"]["items_deleted"] == 3
     record_run.assert_called_once()
     assert record_run.call_args.args[:2] == ("daily_maintenance", "success")
-    assert record_run.call_args.kwargs["rows_cleaned"] == 42
+    assert record_run.call_args.kwargs["rows_cleaned"] == 49
     assert record_run.call_args.kwargs["summary"]["events_deleted"]["user_deleted"] == 6
 
 
@@ -100,6 +105,10 @@ def test_run_daily_maintenance_becomes_partial_when_host_retention_reports_parti
     )
     mocker.patch(
         "app.tasks.maintenance.maintenance_store.cleanup_old_maintenance_runs",
+        return_value=0,
+    )
+    mocker.patch(
+        "app.tasks.maintenance.backup_store.fail_stale_running_backups",
         return_value=0,
     )
     mocker.patch(

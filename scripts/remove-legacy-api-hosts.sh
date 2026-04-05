@@ -3,7 +3,7 @@ set -euo pipefail
 
 CLOUDFLARED_CONFIG="${CLOUDFLARED_CONFIG:-/etc/cloudflared/config.yml}"
 CADDY_CONFIG="${CADDY_CONFIG:-/etc/caddy/Caddyfile}"
-HOSTS_CSV="${HOSTS_CSV:-agentapi.summitflow.dev,devapi.summitflow.dev,portapi.summitflow.dev,terminalapi.summitflow.dev}"
+HOSTS_CSV="${HOSTS_CSV:-agentapi.summitflow.dev,devapi.summitflow.dev,portapi.summitflow.dev,atermapi.summitflow.dev}"
 
 if [[ "${EUID}" -ne 0 ]]; then
   echo "Run this script with sudo." >&2

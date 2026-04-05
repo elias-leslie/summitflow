@@ -19,6 +19,7 @@ from ._projects_helpers import (
     run_list,
     run_onboard,
     run_root,
+    run_sync_identity,
     run_update,
 )
 
@@ -95,9 +96,22 @@ def get_project_root(
 
     Examples:
         st projects root summitflow
-        st projects root terminal
+        st projects root aterm
     """
     run_root(project_id)
+
+
+@app.command("sync-identity")
+def sync_project_identity_command(
+    project_id: Annotated[str, typer.Argument(help="Project ID or legacy alias to reconcile")],
+) -> None:
+    """Sync a registered project's DB identity from its repo-local manifest.
+
+    Examples:
+        st projects sync-identity aterm
+        st projects sync-identity terminal
+    """
+    run_sync_identity(project_id)
 
 
 @app.command("create")

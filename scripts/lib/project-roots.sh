@@ -2,9 +2,11 @@
 
 PROJECT_ROOTS_WORKSPACES_ROOT="${ST_WORKSPACES_ROOT:-/srv/workspaces}"
 PROJECT_ROOTS_MANAGED_REPOS_FILE="${PROJECT_ROOTS_MANAGED_REPOS_FILE:-$HOME/.claude/config/managed-repos.txt}"
+SCRIPT_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$SCRIPT_LIB_DIR/project-identity.sh"
 
 project_root_ids_static() {
-    printf '%s\n' summitflow agent-hub portfolio-ai terminal monkey-fight vantage test1 test2 test3
+    project_identity_ids_from_workspace "$PROJECT_ROOTS_WORKSPACES_ROOT/projects"
 }
 
 project_root_ids() {
@@ -56,7 +58,7 @@ default_home_root_for_project() {
             [ -n "${SUMMITFLOW_ROOT_OVERRIDE:-}" ] || return 1
             printf '%s\n' "$SUMMITFLOW_ROOT_OVERRIDE"
             ;;
-        agent-hub | portfolio-ai | terminal | monkey-fight | vantage)
+        agent-hub | portfolio-ai | aterm | monkey-fight | vantage)
             printf '%s\n' "$HOME/$1"
             ;;
         *)
@@ -81,6 +83,7 @@ shared_cache_dir() {
 resolve_project_root() {
     local project="$1"
     local candidate
+    local manifest
 
     if [ "$project" = "summitflow" ] && [ -n "${SUMMITFLOW_ROOT_OVERRIDE:-}" ] && [ -d "${SUMMITFLOW_ROOT_OVERRIDE}" ]; then
         printf '%s\n' "$SUMMITFLOW_ROOT_OVERRIDE"
@@ -91,6 +94,15 @@ resolve_project_root() {
     if [ -n "$candidate" ] && [ -d "$candidate" ]; then
         printf '%s\n' "$candidate"
         return 0
+    fi
+
+    manifest="$(project_identity_manifest_for_project "$project" "$PROJECT_ROOTS_WORKSPACES_ROOT/projects" 2>/dev/null || true)"
+    if [ -n "$manifest" ]; then
+        candidate="$(dirname "$manifest")"
+        if [ -d "$candidate" ]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
     fi
 
     candidate="${PROJECT_ROOTS_WORKSPACES_ROOT}/projects/$project"

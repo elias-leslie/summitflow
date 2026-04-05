@@ -69,31 +69,31 @@ services:
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
 
-  # ─── Terminal ────────────────────────────────────────────────────
-  terminal-api:
+  # ─── A-Term ────────────────────────────────────────────────────
+  aterm-api:
     build:
-      context: ../../../terminal
+      context: ../../../aterm
       dockerfile: docker/backend.Dockerfile
     volumes:
-      - ../../../terminal/terminal:/app/terminal:cached
-    command: ["uvicorn", "terminal.main:app", "--host", "0.0.0.0", "--port", "8002", "--reload", "--reload-dir", "/app/terminal"]
+      - ../../../aterm/aterm:/app/aterm:cached
+    command: ["uvicorn", "aterm.main:app", "--host", "0.0.0.0", "--port", "8002", "--reload", "--reload-dir", "/app/aterm"]
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
 
-  terminal-web:
+  aterm-web:
     build:
-      context: ../../../terminal
+      context: ../../../aterm
       dockerfile: docker/frontend.Dockerfile
       target: dev
     volumes:
-      - ../../../terminal/frontend/app:/app/app:cached
-      - ../../../terminal/frontend/components:/app/components:cached
+      - ../../../aterm/frontend/app:/app/app:cached
+      - ../../../aterm/frontend/components:/app/components:cached
     command: ["pnpm", "dev", "--hostname", "0.0.0.0", "--port", "3002"]
-    # In dev mode terminal-api runs as a container (not on the host), so
+    # In dev mode aterm-api runs as a container (not on the host), so
     # drop the host-gateway alias and route via Docker network instead.
     extra_hosts: !reset []
     environment:
-      API_URL: "http://terminal-api:8002"
+      API_URL: "http://aterm-api:8002"
 
   # ─── Portfolio AI ────────────────────────────────────────────────
   portfolio-api:

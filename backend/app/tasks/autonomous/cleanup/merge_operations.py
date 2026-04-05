@@ -52,7 +52,7 @@ def _finalize_task_status(task_id: str, result: MergeResult) -> MergeResult:
         update_task_status(task_id, "completed", validate_transition=False)
         return result
     if status == "rolled_back":
-        # auto_rollback() owns the terminal task status update so it can
+        # auto_rollback() owns the aterm task status update so it can
         # account for the task's pre-rollback state without double-writing.
         return result
     if status == "failed":

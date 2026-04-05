@@ -32,14 +32,9 @@ render_unit_file() {
     escaped_root=$(escape_sed_replacement "$SUMMITFLOW_DIR")
     local escaped_project_root
     escaped_project_root=$(escape_sed_replacement "$project_root")
-    local terminal_root
-    terminal_root="$(resolve_project_root terminal 2>/dev/null || true)"
-    local escaped_terminal_root
-    escaped_terminal_root=$(escape_sed_replacement "$terminal_root")
     sed \
         -e "s|__SUMMITFLOW_ROOT__|$escaped_root|g" \
         -e "s|__PROJECT_ROOT__|$escaped_project_root|g" \
-        -e "s|__TERMINAL_ROOT__|$escaped_terminal_root|g" \
         "$src" > "$dest"
 }
 
@@ -132,7 +127,7 @@ install_cli_links() {
     local summitflow_st="$SUMMITFLOW_DIR/backend/.venv/bin/st"
     local summitflow_dt="$SUMMITFLOW_DIR/scripts/dev-tools.sh"
     local agent_hub_root=""
-    local terminal_root=""
+    local aterm_root=""
     local script_name=""
 
     mkdir -p "$BIN_DIR"
@@ -153,18 +148,18 @@ install_cli_links() {
         echo "  Linked db -> $agent_hub_root/scripts/db.sh"
     fi
 
-    terminal_root="$(resolve_project_root terminal 2>/dev/null || true)"
-    if [ -n "$terminal_root" ] && [ -f "$terminal_root/scripts/tcodex" ]; then
-        ln -sfnT "$terminal_root/scripts/tcodex" "$BIN_DIR/tcodex"
-        echo "  Linked tcodex -> $terminal_root/scripts/tcodex"
+    aterm_root="$(resolve_project_root aterm 2>/dev/null || true)"
+    if [ -n "$aterm_root" ] && [ -f "$aterm_root/scripts/tcodex" ]; then
+        ln -sfnT "$aterm_root/scripts/tcodex" "$BIN_DIR/tcodex"
+        echo "  Linked tcodex -> $aterm_root/scripts/tcodex"
     fi
-    if [ -n "$terminal_root" ] && [ -f "$terminal_root/scripts/tclaude" ]; then
-        ln -sfnT "$terminal_root/scripts/tclaude" "$BIN_DIR/tclaude"
-        echo "  Linked tclaude -> $terminal_root/scripts/tclaude"
+    if [ -n "$aterm_root" ] && [ -f "$aterm_root/scripts/tclaude" ]; then
+        ln -sfnT "$aterm_root/scripts/tclaude" "$BIN_DIR/tclaude"
+        echo "  Linked tclaude -> $aterm_root/scripts/tclaude"
     fi
-    if [ -n "$terminal_root" ] && [ -f "$terminal_root/scripts/tsession" ]; then
-        ln -sfnT "$terminal_root/scripts/tsession" "$BIN_DIR/tsession"
-        echo "  Linked tsession -> $terminal_root/scripts/tsession"
+    if [ -n "$aterm_root" ] && [ -f "$aterm_root/scripts/tsession" ]; then
+        ln -sfnT "$aterm_root/scripts/tsession" "$BIN_DIR/tsession"
+        echo "  Linked tsession -> $aterm_root/scripts/tsession"
     fi
 
     for script_name in rebuild.sh commit.sh start.sh status.sh stop.sh backup.sh backup-all.sh restore.sh setup-services.sh; do
@@ -228,7 +223,7 @@ mkdir -p "$USER_SYSTEMD_DIR"
 echo "  Rendering unit files..."
 render_unit_tree "$SUMMITFLOW_DIR/scripts/systemd"
 
-for external_project in agent-hub portfolio-ai monkey-fight vantage test1 test2 test3; do
+for external_project in aterm agent-hub portfolio-ai monkey-fight vantage test1 test2 test3; do
     external_root="$(resolve_project_root "$external_project" 2>/dev/null || true)"
     [ -n "$external_root" ] || continue
     render_unit_tree "$external_root/scripts/systemd" "$external_root"

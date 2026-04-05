@@ -9,7 +9,7 @@
 #                              # Rebuild agent-hub and restart the protected agent worker too
 #   rebuild.sh --detach agent-hub
 #                              # Queue an out-of-band rebuild and return immediately
-#   rebuild.sh terminal         # Rebuild terminal
+#   rebuild.sh aterm         # Rebuild aterm
 #   rebuild.sh portfolio-ai     # Rebuild portfolio-ai
 #   rebuild.sh monkey-fight     # Rebuild monkey-fight
 #   rebuild.sh vantage          # Rebuild Vantage
@@ -37,22 +37,6 @@ log_error()   { printf "${RED}[%s] ✗ %s${NC}\n" "$(date '+%H:%M:%S')" "$*"; }
 log_warn()    { printf "${YELLOW}[%s] ⚠ %s${NC}\n" "$(date '+%H:%M:%S')" "$*"; }
 
 # ─── Project registry ────────────────────────────────────────────
-# Each project: backend_service, frontend_service, default_worker_services,
-#               optional_worker_services, backend_port, frontend_port,
-#               backend_dir, frontend_dir
-declare -A PROJECTS
-PROJECTS=(
-    [summitflow]="summitflow-backend.service|summitflow-frontend.service|summitflow-hatchet-worker.service||8001|3001|backend|frontend"
-    [agent-hub]="agent-hub-backend.service|agent-hub-frontend.service|agent-hub-hatchet-ops-worker.service|agent-hub-hatchet-agent-worker.service|8003|3003|backend|frontend"
-    [portfolio-ai]="portfolio-backend.service|portfolio-frontend.service|portfolio-hatchet-worker.service||8000|3000|backend|frontend"
-    [terminal]="summitflow-terminal.service|summitflow-terminal-frontend.service|||8002|3002|.|frontend"
-    [monkey-fight]="|monkey-fight.service|||0|4001|.|."
-    [vantage]="vantage-backend.service|vantage-frontend.service|vantage-hatchet-worker.service||8004|3004|backend|frontend"
-    [test1]="test1-backend.service|test1-frontend.service|||9001|4004|backend|frontend"
-    [test2]="test2-backend.service|test2-frontend.service|||9002|4002|backend|frontend"
-    [test3]="test3-backend.service|test3-frontend.service|||9003|4003|backend|frontend"
-)
-
 INCLUDE_ALL_WORKERS=false
 STATUS_MODE=false
 DETACH_MODE=false
@@ -66,12 +50,27 @@ resolve_worker_svcs() {
 }
 
 parse_project() {
-    IFS='|' read -r BACKEND_SVC FRONTEND_SVC DEFAULT_WORKER_SVCS OPTIONAL_WORKER_SVCS BACKEND_PORT FRONTEND_PORT BACKEND_SUBDIR FRONTEND_SUBDIR <<< "${PROJECTS[$1]}"
     ROOT_DIR="$(resolve_project_root "$1")"
+    local manifest
+    manifest="$(project_identity_manifest_from_root "$ROOT_DIR")" || {
+        log_error "Missing project identity manifest for $1"
+        return 1
+    }
+    eval "$(project_identity_load_env_from_manifest "$manifest")"
+
+    BACKEND_SVC="$PROJECT_IDENTITY_BACKEND_SERVICE"
+    FRONTEND_SVC="$PROJECT_IDENTITY_FRONTEND_SERVICE"
+    DEFAULT_WORKER_SVCS="$PROJECT_IDENTITY_DEFAULT_WORKERS"
+    OPTIONAL_WORKER_SVCS="$PROJECT_IDENTITY_OPTIONAL_WORKERS"
+    BACKEND_PORT="$PROJECT_IDENTITY_BACKEND_PORT"
+    FRONTEND_PORT="$PROJECT_IDENTITY_FRONTEND_PORT"
+    BACKEND_SUBDIR="$PROJECT_IDENTITY_BACKEND_DIR"
+    FRONTEND_SUBDIR="$PROJECT_IDENTITY_FRONTEND_DIR"
+
     BACKEND_DIR="$ROOT_DIR/$BACKEND_SUBDIR"
     FRONTEND_DIR="$ROOT_DIR/$FRONTEND_SUBDIR"
-    if [ "$BACKEND_SUBDIR" = "." ]; then BACKEND_DIR="$ROOT_DIR"; fi
-    if [ "$FRONTEND_SUBDIR" = "." ]; then FRONTEND_DIR="$ROOT_DIR"; fi
+    [ "$BACKEND_SUBDIR" = "." ] && BACKEND_DIR="$ROOT_DIR"
+    [ "$FRONTEND_SUBDIR" = "." ] && FRONTEND_DIR="$ROOT_DIR"
     resolve_worker_svcs
 }
 
@@ -79,14 +78,25 @@ show_projects() {
     echo "Usage: rebuild.sh [--detach] [--include-all-workers] <project>"
     echo ""
     echo "Available projects:"
-    for p in $(printf '%s\n' "${!PROJECTS[@]}" | sort); do
-        [ -n "${PROJECTS[$p]}" ] || continue
+    while IFS= read -r p; do
+        [ -n "$p" ] || continue
         root="$(resolve_project_root "$p" 2>/dev/null || echo "unresolved")"
-        IFS='|' read -r _ _ _ _ bp fp _ _ <<< "${PROJECTS[$p]}"
+        manifest="$(project_identity_manifest_from_root "$root" 2>/dev/null || true)"
+        if [ -z "$manifest" ]; then
+            continue
+        fi
+        eval "$(project_identity_load_env_from_manifest "$manifest")"
         printf "  %-15s %s" "$p" "$root"
-        [ "$bp" != "0" ] && printf "  (:%s/:%s)" "$bp" "$fp" || printf "  (:%s)" "$fp"
+        if [ "$PROJECT_IDENTITY_BACKEND_PORT" != "0" ]; then
+            printf "  (:%s/:%s)" "$PROJECT_IDENTITY_BACKEND_PORT" "$PROJECT_IDENTITY_FRONTEND_PORT"
+        else
+            printf "  (:%s)" "$PROJECT_IDENTITY_FRONTEND_PORT"
+        fi
+        if [ -n "$PROJECT_IDENTITY_DISPLAY_NAME" ] && [ "$PROJECT_IDENTITY_DISPLAY_NAME" != "$p" ]; then
+            printf "  [%s]" "$PROJECT_IDENTITY_DISPLAY_NAME"
+        fi
         echo ""
-    done
+    done < <(project_root_ids)
     echo ""
     echo "Use --include-all-workers to restart optional protected workers."
     echo "Use --detach to queue the rebuild in a background user unit."
@@ -342,7 +352,7 @@ done
 if [ "$STATUS_MODE" = true ]; then
     PROJECT="${POSITIONAL[0]:-}"
     if [ -n "$PROJECT" ]; then
-        if [ -z "${PROJECTS[$PROJECT]}" ]; then
+        if ! resolve_project_root "$PROJECT" >/dev/null 2>&1; then
             echo "Unknown project: $PROJECT"
             echo ""
             show_projects
@@ -353,9 +363,10 @@ if [ "$STATUS_MODE" = true ]; then
     fi
     # All projects
     errors=0
-    for p in $(printf '%s\n' "${!PROJECTS[@]}" | sort); do
+    while IFS= read -r p; do
+        [ -n "$p" ] || continue
         show_status "$p" || ((errors++))
-    done
+    done < <(project_root_ids | sort)
     exit $errors
 fi
 
@@ -366,7 +377,7 @@ if [ -z "$PROJECT" ]; then
     exit 0
 fi
 
-if [ -z "${PROJECTS[$PROJECT]}" ]; then
+if ! resolve_project_root "$PROJECT" >/dev/null 2>&1; then
     echo "Unknown project: $PROJECT"
     echo ""
     show_projects

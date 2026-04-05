@@ -3,13 +3,18 @@
 import asyncio
 from collections.abc import Iterable
 from datetime import UTC, datetime
+from typing import cast
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 
+from ...project_identity import canonicalize_project_name
 from ...services import explorer
 from ...storage import backups as backup_store
 from ...storage.connection import get_cursor
+from ...storage.project_identity_sync import (
+    sync_project_identity as sync_registered_project_identity,
+)
 from .agent_hub import (
     delete_agent_hub_project_permission,
     sync_agent_hub_project_permission,
@@ -23,6 +28,7 @@ from .db_helpers import (
     update_project_in_db,
 )
 from .models import (
+    ProjectCategory,
     ProjectCreate,
     ProjectHealthResponse,
     ProjectOnboardingRequest,
@@ -34,6 +40,8 @@ from .models import (
 from .onboarding import build_onboarding_response, run_project_onboarding
 from .public_urls import build_project_urls, resolve_project_public_url
 from .pulse import router as pulse_router
+
+ProjectListRow = tuple[str, str, str, str | None, str, str | None, ProjectCategory, int | None, datetime]
 
 router = APIRouter()
 router.include_router(pulse_router, tags=["projects"])
@@ -50,16 +58,6 @@ _TRIGGER_PROJECT_ONBOARD = "project_onboard"
 _SQL_LIST_PROJECTS = """
     SELECT id, name, base_url, public_url, health_endpoint, root_path, category, sidebar_rank, created_at
     FROM projects
-    ORDER BY
-        CASE category
-            WHEN 'production' THEN 0
-            WHEN 'testing' THEN 1
-            ELSE 2
-        END,
-        CASE WHEN sidebar_rank IS NULL THEN 1 ELSE 0 END,
-        sidebar_rank ASC,
-        LOWER(name) ASC,
-        created_at DESC
 """
 
 # Error messages
@@ -99,6 +97,25 @@ async def _resolve_project_health_statuses(
             )
         )
     return dict(results)
+
+
+def _project_sort_key(
+    row: tuple[str, str, str, str | None, str, str | None, str, int | None, datetime],
+) -> tuple[int, int, int, str, float]:
+    category_rank = {
+        "production": 0,
+        "testing": 1,
+    }.get(row[6], 2)
+    sidebar_rank = row[7] if row[7] is not None else 10_000
+    canonical_name = canonicalize_project_name(row[0], row[1], row[5]) or row[1]
+    created_sort = -row[8].timestamp()
+    return (
+        category_rank,
+        1 if row[7] is None else 0,
+        sidebar_rank,
+        canonical_name.lower(),
+        created_sort,
+    )
 
 
 @router.post("", response_model=ProjectResponse)
@@ -166,7 +183,7 @@ async def list_projects() -> list[ProjectResponse]:
     """List all registered projects."""
     with get_cursor() as cur:
         cur.execute(_SQL_LIST_PROJECTS)
-        rows = cur.fetchall()
+        rows = cast(list[ProjectListRow], sorted(cur.fetchall(), key=_project_sort_key))
 
     health_statuses = await _resolve_project_health_statuses(
         (row[0], row[2], row[4]) for row in rows
@@ -174,7 +191,7 @@ async def list_projects() -> list[ProjectResponse]:
     return [
         ProjectResponse(
             id=row[0],
-            name=row[1],
+            name=canonicalize_project_name(row[0], row[1], row[5]),
             base_url=row[2],
             public_url=resolve_project_public_url(
                 row[0],
@@ -198,7 +215,7 @@ async def list_projects_with_stats() -> ProjectsWithStatsResponse:
     """List all projects with aggregated stats (features, tasks, bugs, blocked)."""
     with get_cursor() as cur:
         cur.execute(_SQL_LIST_PROJECTS)
-        projects = cur.fetchall()
+        projects = cast(list[ProjectListRow], sorted(cur.fetchall(), key=_project_sort_key))
 
     if not projects:
         return ProjectsWithStatsResponse(projects=[], total=0)
@@ -223,6 +240,16 @@ async def get_project(project_id: str) -> ProjectResponse:
         )
     ).get(project.id)
     return project
+
+
+@router.post("/{project_id}/sync-identity", response_model=ProjectResponse)
+async def sync_project_identity(project_id: str) -> ProjectResponse:
+    """Reconcile a registered project with its repo-local identity manifest."""
+    try:
+        synced = await asyncio.to_thread(sync_registered_project_identity, project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return get_project_from_db(str(synced["id"]))
 
 
 @router.get("/{project_id}/health", response_model=ProjectHealthResponse)

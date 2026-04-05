@@ -167,8 +167,8 @@ timeout 45s systemctl --user stop \
     agent-hub-hatchet-ops-worker.service \
     portfolio-ai-backend.service \
     portfolio-ai-frontend.service \
-    terminal-backend.service \
-    terminal-frontend.service \
+    aterm-backend.service \
+    aterm-frontend.service \
     monkey-fight.service \
     >/dev/null 2>&1 || true
 
@@ -331,9 +331,9 @@ fi
 if [[ "$INSTALL_CHOICE" == "3" ]]; then
     check_service "Portfolio API"   "http://localhost:8000/health"
     check_service "Portfolio Web"   "http://localhost:3000"
-    # Terminal in the Docker stack is only a container-mode smoke check.
-    # Real Terminal runtime validation must still happen on the native host path.
-    check_service "Terminal Web"    "http://localhost:3002"
+    # A-Term in the Docker stack is only a container-mode smoke check.
+    # Real A-Term runtime validation must still happen on the native host path.
+    check_service "A-Term Web"    "http://localhost:3002"
     check_service "Monkey Fight"    "http://localhost:4001"
 fi
 

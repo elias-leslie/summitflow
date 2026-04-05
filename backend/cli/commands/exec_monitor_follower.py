@@ -9,7 +9,7 @@ from ..client import APIError, STClient
 from ..output_context import OutputContext
 from .exec_monitor_formatters import print_events
 
-_TERMINAL_STATUSES = ("completed", "cancelled", "failed", "closed")
+_FINAL_TASK_STATUSES = ("completed", "cancelled", "failed", "closed")
 
 
 def _poll_once(
@@ -30,7 +30,7 @@ def _poll_once(
             current_status = new_status
             msg = {"type": "status_change", "status": current_status}
             print(json.dumps(msg) if json_output else f"\n[Status changed: {current_status}]")
-        if current_status in _TERMINAL_STATUSES:
+        if current_status in _FINAL_TASK_STATUSES:
             msg = {"type": "task_ended", "status": current_status}
             print(json.dumps(msg) if json_output else f"\n[Task {current_status}]")
             return current_status, last_event_id, True

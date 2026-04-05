@@ -1,5 +1,5 @@
 /**
- * CodeHealthPanel - Diagnostic terminal aesthetic for code health monitoring
+ * CodeHealthPanel - Diagnostic aterm aesthetic for code health monitoring
  *
  * Orchestrates code health visualization components:
  * - HealthMetricsBar with triage counts

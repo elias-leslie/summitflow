@@ -96,6 +96,11 @@ def run_daily_maintenance(
             "maintenance_run_retention",
             maintenance_store.cleanup_old_maintenance_runs,
         )
+        stale_running_backups_failed = _run_step(
+            "stale_running_backups",
+            backup_store.fail_stale_running_backups,
+            max_age_minutes=30,
+        )
         stale_backups_deleted = _run_step(
             "stale_backups",
             backup_store.cleanup_stale_backup_records,
@@ -131,6 +136,7 @@ def run_daily_maintenance(
                 _deleted_count(qcr_deleted),
                 _deleted_count(events_deleted),
                 _deleted_count(maintenance_runs_deleted),
+                _deleted_count(stale_running_backups_failed),
                 _deleted_count(stale_backups_deleted),
                 _deleted_count(expired_backups_deleted),
                 _deleted_count(host_retention_deleted),
@@ -149,6 +155,7 @@ def run_daily_maintenance(
                     qcr_deleted,
                     events_deleted,
                     maintenance_runs_deleted,
+                    stale_running_backups_failed,
                     stale_backups_deleted,
                     expired_backups_deleted,
                     host_retention,
@@ -165,6 +172,7 @@ def run_daily_maintenance(
             "quality_results_deleted": qcr_deleted,
             "events_deleted": events_deleted,
             "maintenance_runs_deleted": maintenance_runs_deleted,
+            "stale_running_backups_failed": stale_running_backups_failed,
             "stale_backups_deleted": stale_backups_deleted,
             "expired_backups_deleted": expired_backups_deleted,
             "host_retention": host_retention,
@@ -191,6 +199,7 @@ def run_daily_maintenance(
             quality_results_deleted=_deleted_count(qcr_deleted),
             events_deleted=_deleted_count(events_deleted),
             maintenance_runs_deleted=_deleted_count(maintenance_runs_deleted),
+            stale_running_backups_failed=_deleted_count(stale_running_backups_failed),
             stale_backups_deleted=_deleted_count(stale_backups_deleted),
             expired_backups_deleted=_deleted_count(expired_backups_deleted),
             host_retention_deleted=_deleted_count(host_retention_deleted),

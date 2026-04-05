@@ -7,6 +7,7 @@ import psycopg
 from fastapi import HTTPException
 from psycopg import sql
 
+from ...project_identity import canonicalize_project_name
 from ...storage.connection import get_connection, get_cursor
 from .models import ProjectCategory, ProjectResponse, ProjectStats, ProjectUpdate, ProjectWithStats
 from .public_urls import build_project_urls, resolve_project_public_url
@@ -21,6 +22,7 @@ def sync_project_backup_source(
     """Ensure a project-scoped backup source exists and reflects the project root."""
     if not root_path:
         return
+    backup_name = canonicalize_project_name(project_id, name, root_path)
 
     cur.execute(
         """
@@ -32,7 +34,7 @@ def sync_project_backup_source(
             project_id = EXCLUDED.project_id,
             updated_at = NOW()
         """,
-        (project_id, name, root_path, project_id),
+        (project_id, backup_name, root_path, project_id),
     )
 
 
@@ -54,7 +56,7 @@ def get_project_from_db(project_id: str) -> ProjectResponse:
 
     return ProjectResponse(
         id=row[0],
-        name=row[1],
+        name=canonicalize_project_name(row[0], row[1], row[5]),
         base_url=row[2],
         public_url=resolve_project_public_url(
             row[0],
@@ -150,7 +152,7 @@ def build_project_with_stats(
     """Build a ProjectWithStats object from a database row and stats."""
     return ProjectWithStats(
         id=row[0],
-        name=row[1],
+        name=canonicalize_project_name(row[0], row[1], row[5]),
         base_url=row[2],
         public_url=resolve_project_public_url(
             row[0],
@@ -178,6 +180,7 @@ def create_project_in_db(
     category: str,
 ) -> ProjectResponse:
     """Create a new project in the database."""
+    canonical_name = canonicalize_project_name(project_id, name, root_path)
     with get_connection() as conn, conn.cursor() as cur:
         # Check if already exists
         cur.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
@@ -192,10 +195,19 @@ def create_project_in_db(
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id, name, base_url, public_url, health_endpoint, root_path, category, sidebar_rank, created_at
                 """,
-            (project_id, name, base_url, public_url, health_endpoint, root_path, category, now),
+            (
+                project_id,
+                canonical_name,
+                base_url,
+                public_url,
+                health_endpoint,
+                root_path,
+                category,
+                now,
+            ),
         )
         row = cur.fetchone()
-        sync_project_backup_source(cur, project_id, name, root_path)
+        sync_project_backup_source(cur, project_id, canonical_name, root_path)
         conn.commit()
 
     if not row:
@@ -203,7 +215,7 @@ def create_project_in_db(
 
     return ProjectResponse(
         id=row[0],
-        name=row[1],
+        name=canonicalize_project_name(row[0], row[1], row[5]),
         base_url=row[2],
         public_url=resolve_project_public_url(
             row[0],
@@ -263,7 +275,15 @@ def update_project_in_db(project_id: str, update: ProjectUpdate) -> ProjectRespo
             )
 
         field_map = {
-            "name": update.name,
+            "name": (
+                canonicalize_project_name(
+                    project_id,
+                    update.name,
+                    update.root_path if root_path_updated else current[5],
+                )
+                if update.name is not None
+                else None
+            ),
             "base_url": merged_base_url if base_url_updated else None,
             "health_endpoint": update.health_endpoint,
             "root_path": update.root_path,
@@ -307,7 +327,7 @@ def update_project_in_db(project_id: str, update: ProjectUpdate) -> ProjectRespo
 
     return ProjectResponse(
         id=row[0],
-        name=row[1],
+        name=canonicalize_project_name(row[0], row[1], row[5]),
         base_url=row[2],
         public_url=resolve_project_public_url(
             row[0],

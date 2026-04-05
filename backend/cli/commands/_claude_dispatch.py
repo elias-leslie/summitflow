@@ -116,7 +116,7 @@ def run_text_command(*, command: list[str], cwd: Path) -> str:
 
 
 def run_worker(*, command: list[str], cwd: Path) -> int:
-    """Run the worker wrapper and stream output through the current terminal."""
+    """Run the worker wrapper and stream output through the current aterm."""
     env = os.environ.copy()
     env["PYTHONPATH"] = _BACKEND_SUBDIR
     result = subprocess.run(command, cwd=cwd, env=env, check=False)

@@ -1896,19 +1896,19 @@ CREATE SEQUENCE public.taskset_id_sequence
 
 
 --
--- Name: terminal_alembic_version; Type: TABLE; Schema: public; Owner: -
+-- Name: aterm_alembic_version; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE public.terminal_alembic_version (
+CREATE TABLE public.aterm_alembic_version (
     version_num character varying(32) NOT NULL
 );
 
 
 --
--- Name: terminal_maintenance_runs; Type: TABLE; Schema: public; Owner: -
+-- Name: aterm_maintenance_runs; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE public.terminal_maintenance_runs (
+CREATE TABLE public.aterm_maintenance_runs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     reason character varying(32) NOT NULL,
     status character varying(16) NOT NULL,
@@ -1927,15 +1927,15 @@ CREATE TABLE public.terminal_maintenance_runs (
     error text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT terminal_maintenance_runs_status_check CHECK (((status)::text = ANY ((ARRAY['running'::character varying, 'success'::character varying, 'skipped'::character varying, 'failed'::character varying])::text[])))
+    CONSTRAINT aterm_maintenance_runs_status_check CHECK (((status)::text = ANY ((ARRAY['running'::character varying, 'success'::character varying, 'skipped'::character varying, 'failed'::character varying])::text[])))
 );
 
 
 --
--- Name: terminal_panes; Type: TABLE; Schema: public; Owner: -
+-- Name: aterm_panes; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE public.terminal_panes (
+CREATE TABLE public.aterm_panes (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     pane_type character varying(10) NOT NULL,
     project_id character varying(64),
@@ -1948,15 +1948,15 @@ CREATE TABLE public.terminal_panes (
     grid_row integer DEFAULT 0,
     grid_col integer DEFAULT 0,
     CONSTRAINT chk_project_pane_id CHECK (((((pane_type)::text = 'adhoc'::text) AND (project_id IS NULL)) OR (((pane_type)::text = 'project'::text) AND (project_id IS NOT NULL)))),
-    CONSTRAINT terminal_panes_pane_type_check CHECK (((pane_type)::text = ANY (ARRAY[('project'::character varying)::text, ('adhoc'::character varying)::text])))
+    CONSTRAINT aterm_panes_pane_type_check CHECK (((pane_type)::text = ANY (ARRAY[('project'::character varying)::text, ('adhoc'::character varying)::text])))
 );
 
 
 --
--- Name: terminal_project_settings; Type: TABLE; Schema: public; Owner: -
+-- Name: aterm_project_settings; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE public.terminal_project_settings (
+CREATE TABLE public.aterm_project_settings (
     project_id character varying(64) NOT NULL,
     enabled boolean DEFAULT false NOT NULL,
     display_order integer DEFAULT 0 NOT NULL,
@@ -1967,17 +1967,17 @@ CREATE TABLE public.terminal_project_settings (
 
 
 --
--- Name: TABLE terminal_project_settings; Type: COMMENT; Schema: public; Owner: -
+-- Name: TABLE aterm_project_settings; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE public.terminal_project_settings IS 'Terminal settings per SummitFlow project';
+COMMENT ON TABLE public.aterm_project_settings IS 'A-Term settings per SummitFlow project';
 
 
 --
--- Name: terminal_sessions; Type: TABLE; Schema: public; Owner: -
+-- Name: aterm_sessions; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE public.terminal_sessions (
+CREATE TABLE public.aterm_sessions (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     name text NOT NULL,
     user_id text,
@@ -1992,7 +1992,7 @@ CREATE TABLE public.terminal_sessions (
     claude_state character varying(16) DEFAULT 'not_started'::character varying,
     session_number integer DEFAULT 1,
     pane_id uuid,
-    CONSTRAINT terminal_sessions_claude_state_check CHECK (((claude_state)::text = ANY (ARRAY[('not_started'::character varying)::text, ('starting'::character varying)::text, ('running'::character varying)::text, ('stopped'::character varying)::text, ('error'::character varying)::text])))
+    CONSTRAINT aterm_sessions_claude_state_check CHECK (((claude_state)::text = ANY (ARRAY[('not_started'::character varying)::text, ('starting'::character varying)::text, ('running'::character varying)::text, ('stopped'::character varying)::text, ('error'::character varying)::text])))
 );
 
 
@@ -2636,43 +2636,43 @@ ALTER TABLE ONLY public.tasks
 
 
 --
--- Name: terminal_alembic_version terminal_alembic_version_pkc; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: aterm_alembic_version aterm_alembic_version_pkc; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.terminal_alembic_version
-    ADD CONSTRAINT terminal_alembic_version_pkc PRIMARY KEY (version_num);
-
-
---
--- Name: terminal_maintenance_runs terminal_maintenance_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.terminal_maintenance_runs
-    ADD CONSTRAINT terminal_maintenance_runs_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.aterm_alembic_version
+    ADD CONSTRAINT aterm_alembic_version_pkc PRIMARY KEY (version_num);
 
 
 --
--- Name: terminal_panes terminal_panes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: aterm_maintenance_runs aterm_maintenance_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.terminal_panes
-    ADD CONSTRAINT terminal_panes_pkey PRIMARY KEY (id);
-
-
---
--- Name: terminal_project_settings terminal_project_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.terminal_project_settings
-    ADD CONSTRAINT terminal_project_settings_pkey PRIMARY KEY (project_id);
+ALTER TABLE ONLY public.aterm_maintenance_runs
+    ADD CONSTRAINT aterm_maintenance_runs_pkey PRIMARY KEY (id);
 
 
 --
--- Name: terminal_sessions terminal_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: aterm_panes aterm_panes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.terminal_sessions
-    ADD CONSTRAINT terminal_sessions_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.aterm_panes
+    ADD CONSTRAINT aterm_panes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: aterm_project_settings aterm_project_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aterm_project_settings
+    ADD CONSTRAINT aterm_project_settings_pkey PRIMARY KEY (project_id);
+
+
+--
+-- Name: aterm_sessions aterm_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aterm_sessions
+    ADD CONSTRAINT aterm_sessions_pkey PRIMARY KEY (id);
 
 
 --
@@ -3569,94 +3569,94 @@ CREATE INDEX idx_tasks_updated ON public.tasks USING btree (updated_at DESC);
 
 
 --
--- Name: idx_terminal_maintenance_runs_started_at; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_aterm_maintenance_runs_started_at; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_terminal_maintenance_runs_started_at ON public.terminal_maintenance_runs USING btree (started_at DESC);
-
-
---
--- Name: idx_terminal_maintenance_runs_status_started_at; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_terminal_maintenance_runs_status_started_at ON public.terminal_maintenance_runs USING btree (status, started_at DESC);
+CREATE INDEX idx_aterm_maintenance_runs_started_at ON public.aterm_maintenance_runs USING btree (started_at DESC);
 
 
 --
--- Name: idx_terminal_panes_order; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_aterm_maintenance_runs_status_started_at; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_terminal_panes_order ON public.terminal_panes USING btree (pane_order);
-
-
---
--- Name: idx_terminal_panes_project_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_terminal_panes_project_id ON public.terminal_panes USING btree (project_id) WHERE (project_id IS NOT NULL);
+CREATE INDEX idx_aterm_maintenance_runs_status_started_at ON public.aterm_maintenance_runs USING btree (status, started_at DESC);
 
 
 --
--- Name: idx_terminal_project_settings_display_order; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_aterm_panes_order; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_terminal_project_settings_display_order ON public.terminal_project_settings USING btree (display_order, project_id);
-
-
---
--- Name: idx_terminal_sessions_alive; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_terminal_sessions_alive ON public.terminal_sessions USING btree (is_alive);
+CREATE INDEX idx_aterm_panes_order ON public.aterm_panes USING btree (pane_order);
 
 
 --
--- Name: idx_terminal_sessions_dead_last_accessed; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_aterm_panes_project_id; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_terminal_sessions_dead_last_accessed ON public.terminal_sessions USING btree (last_accessed_at) WHERE (is_alive = false);
-
-
---
--- Name: idx_terminal_sessions_display_order_created; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_terminal_sessions_display_order_created ON public.terminal_sessions USING btree (display_order, created_at);
+CREATE INDEX idx_aterm_panes_project_id ON public.aterm_panes USING btree (project_id) WHERE (project_id IS NOT NULL);
 
 
 --
--- Name: idx_terminal_sessions_pane_id; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_aterm_project_settings_display_order; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_terminal_sessions_pane_id ON public.terminal_sessions USING btree (pane_id) WHERE (pane_id IS NOT NULL);
-
-
---
--- Name: idx_terminal_sessions_project; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_terminal_sessions_project ON public.terminal_sessions USING btree (project_id) WHERE (project_id IS NOT NULL);
+CREATE INDEX idx_aterm_project_settings_display_order ON public.aterm_project_settings USING btree (display_order, project_id);
 
 
 --
--- Name: idx_terminal_sessions_project_mode_alive_created; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_aterm_sessions_alive; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_terminal_sessions_project_mode_alive_created ON public.terminal_sessions USING btree (project_id, mode, is_alive, created_at DESC) WHERE (project_id IS NOT NULL);
+CREATE INDEX idx_aterm_sessions_alive ON public.aterm_sessions USING btree (is_alive);
 
 
 --
--- Name: idx_terminal_sessions_user; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_aterm_sessions_dead_last_accessed; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_terminal_sessions_user ON public.terminal_sessions USING btree (user_id);
+CREATE INDEX idx_aterm_sessions_dead_last_accessed ON public.aterm_sessions USING btree (last_accessed_at) WHERE (is_alive = false);
+
+
+--
+-- Name: idx_aterm_sessions_display_order_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_aterm_sessions_display_order_created ON public.aterm_sessions USING btree (display_order, created_at);
+
+
+--
+-- Name: idx_aterm_sessions_pane_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_aterm_sessions_pane_id ON public.aterm_sessions USING btree (pane_id) WHERE (pane_id IS NOT NULL);
+
+
+--
+-- Name: idx_aterm_sessions_project; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_aterm_sessions_project ON public.aterm_sessions USING btree (project_id) WHERE (project_id IS NOT NULL);
+
+
+--
+-- Name: idx_aterm_sessions_project_mode_alive_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_aterm_sessions_project_mode_alive_created ON public.aterm_sessions USING btree (project_id, mode, is_alive, created_at DESC) WHERE (project_id IS NOT NULL);
+
+
+--
+-- Name: idx_aterm_sessions_user; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_aterm_sessions_user ON public.aterm_sessions USING btree (user_id);
 
 
 --
 -- Name: idx_tps_enabled; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_tps_enabled ON public.terminal_project_settings USING btree (enabled) WHERE (enabled = true);
+CREATE INDEX idx_tps_enabled ON public.aterm_project_settings USING btree (enabled) WHERE (enabled = true);
 
 
 --
@@ -4058,11 +4058,11 @@ ALTER TABLE ONLY public.tasks
 
 
 --
--- Name: terminal_sessions terminal_sessions_pane_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: aterm_sessions aterm_sessions_pane_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.terminal_sessions
-    ADD CONSTRAINT terminal_sessions_pane_id_fkey FOREIGN KEY (pane_id) REFERENCES public.terminal_panes(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.aterm_sessions
+    ADD CONSTRAINT aterm_sessions_pane_id_fkey FOREIGN KEY (pane_id) REFERENCES public.aterm_panes(id) ON DELETE CASCADE;
 
 
 --

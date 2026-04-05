@@ -26,7 +26,7 @@ logger = get_logger(__name__)
 # -- Constants --
 
 _RETIRED_WORKSTREAMS: frozenset[str] = frozenset({"retired", "superseded"})
-_TERMINAL_TASK_STATUSES: frozenset[str] = frozenset(
+_FINAL_TASK_STATUSES: frozenset[str] = frozenset(
     {"completed", "cancelled", "failed"}
 )
 _STALE_ACTIVE_MINUTES = 10
@@ -182,7 +182,7 @@ def _apply_same_task_conflict(
     _set_owner_from_session(result, session)
 
     target_status = _task_status(task_id)
-    if target_status in _TERMINAL_TASK_STATUSES:
+    if target_status in _FINAL_TASK_STATUSES:
         result.overlap_kind = _STALE_SAME_TASK
         result.disposition = _RECONCILE
         result.issues.append(
@@ -407,7 +407,7 @@ def _partition_sessions(
         lane_id = _lane_task_id(session)
         if lane_id == task_id:
             same_task.append(session)
-        elif lane_id and _task_status(lane_id) not in _TERMINAL_TASK_STATUSES:
+        elif lane_id and _task_status(lane_id) not in _FINAL_TASK_STATUSES:
             other_lanes.append(session)
     return same_task, other_lanes
 

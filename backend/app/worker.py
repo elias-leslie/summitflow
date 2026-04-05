@@ -19,9 +19,11 @@ from app.workflows.pipeline import (
 )
 from app.workflows.scheduled import (
     health_monitor_wf,
+    pending_drain_wf,
     prod_smoke_test_wf,
     refresh_precision_indexes_wf,
     reset_claims_wf,
+    restore_tests_wf,
     scan_projects_wf,
     scheduled_backups_wf,
     self_healing_wf,
@@ -67,6 +69,8 @@ def main() -> None:
             self_healing_wf,
             prod_smoke_test_wf,
             health_monitor_wf,
+            pending_drain_wf,
+            restore_tests_wf,
             # Utility (10)
             backup_create_wf,
             backup_restore_wf,

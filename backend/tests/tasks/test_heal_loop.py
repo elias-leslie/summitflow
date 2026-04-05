@@ -415,7 +415,7 @@ class TestWorkProductDetection:
         mock_run.side_effect = [
             MagicMock(returncode=0, stdout="refs/remotes/origin/main\n"),  # detect base branch
             MagicMock(returncode=0, stdout=""),  # git log (no commits)
-            MagicMock(stdout=" M terminal/api/handlers/websocket_resize.py\n"),  # git status
+            MagicMock(stdout=" M aterm/api/handlers/websocket_resize.py\n"),  # git status
         ]
 
         assert _has_work_product("/tmp/test-worktree")

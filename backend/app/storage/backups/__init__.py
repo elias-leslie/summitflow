@@ -20,6 +20,7 @@ from .crud import (
 from .queries import (
     cleanup_expired_backup_records,
     cleanup_stale_backup_records,
+    fail_stale_running_backups,
     get_backup_health_summary,
     get_latest_backup,
     get_pending_upload_backups,
@@ -56,6 +57,7 @@ __all__ = [
     "delete_backend",
     "delete_backup_record",
     "delete_source",
+    "fail_stale_running_backups",
     "get_backend",
     "get_backup",
     "get_backup_health_summary",

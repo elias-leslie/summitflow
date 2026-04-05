@@ -17,6 +17,7 @@ from typing import Any
 import yaml
 
 from ...logging_config import get_logger
+from ...project_identity import get_project_identity
 from ...storage import explorer as storage
 from .base import get_project_root
 from .environment import get_cli_info, get_environment
@@ -170,10 +171,22 @@ def get_folders(project_id: str) -> dict[str, str]:
 
 def generate_index(project_id: str) -> str:
     """Generate a YAML index string from explorer data."""
+    identity = get_project_identity(project_id, get_project_root(project_id))
     index_data: dict[str, Any] = {
         "project": project_id,
         "generated_at": datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC"),
     }
+    if identity:
+        project_meta = identity.get("project", {})
+        branding = identity.get("branding", {})
+        identity_block = {
+            "display_name": project_meta.get("display_name"),
+            "short_name": branding.get("short_name"),
+            "legacy_names": project_meta.get("legacy_names"),
+        }
+        identity_block = {key: value for key, value in identity_block.items() if value}
+        if identity_block:
+            index_data["identity"] = identity_block
     for key, value in [
         ("environment", get_environment(project_id)),
         ("services", get_services(project_id)),

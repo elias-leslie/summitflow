@@ -212,7 +212,7 @@ def prune_equivalent_orphan_task_branches(repo_path: Path) -> list[str]:
 
 
 def list_closed_orphan_task_branches(repo_path: Path) -> list[str]:
-    """Return orphan task branches whose linked task is already terminal."""
+    """Return orphan task branches whose linked task is already aterm."""
     from app.storage import tasks as task_store
 
     return [

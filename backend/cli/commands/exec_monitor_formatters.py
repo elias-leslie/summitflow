@@ -99,7 +99,7 @@ def print_events(
         message = event.get("message", "")
         visibility = event.get("visibility", "user")
 
-        # Level colors for terminal
+        # Level colors for aterm
         level_prefix = {
             "DEBU": ".",
             "INFO": " ",

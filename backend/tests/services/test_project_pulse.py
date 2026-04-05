@@ -75,15 +75,15 @@ async def test_build_project_pulse_prefers_richer_active_session_over_tmux_prese
     sessions_payload = {
         "sessions": [
             {
-                "id": "tmux:codex-terminal",
+                "id": "tmux:codex-aterm",
                 "status": "active",
                 "provider": "codex",
                 "model": "codex/external-tmux",
                 "session_type": "agent",
                 "current_branch": "main",
-                "working_dir": "/home/kasadis/terminal",
-                "worktree_path": "/home/kasadis/terminal",
-                "repo_root": "/home/kasadis/terminal",
+                "working_dir": "/home/kasadis/aterm",
+                "worktree_path": "/home/kasadis/aterm",
+                "repo_root": "/home/kasadis/aterm",
                 "updated_at": fresh,
                 "live_activity": {"phase": "waiting_for_model", "health": "active", "lifecycle_state": "active"},
             },
@@ -94,22 +94,22 @@ async def test_build_project_pulse_prefers_richer_active_session_over_tmux_prese
                 "model": "codex/gpt-5.4",
                 "session_type": "agent",
                 "current_branch": "main",
-                "working_dir": "/home/kasadis/terminal",
-                "worktree_path": "/home/kasadis/terminal",
-                "repo_root": "/home/kasadis/terminal",
+                "working_dir": "/home/kasadis/aterm",
+                "worktree_path": "/home/kasadis/aterm",
+                "repo_root": "/home/kasadis/aterm",
                 "updated_at": fresh,
                 "live_activity": {"phase": "waiting_for_model", "health": "active", "lifecycle_state": "active"},
             },
             {
-                "id": "tmux:claude-terminal",
+                "id": "tmux:claude-aterm",
                 "status": "active",
                 "provider": "anthropic",
                 "model": "claude/external-tmux",
                 "session_type": "claude_code",
                 "current_branch": "main",
-                "working_dir": "/home/kasadis/terminal",
-                "worktree_path": "/home/kasadis/terminal",
-                "repo_root": "/home/kasadis/terminal",
+                "working_dir": "/home/kasadis/aterm",
+                "worktree_path": "/home/kasadis/aterm",
+                "repo_root": "/home/kasadis/aterm",
                 "updated_at": fresh,
                 "live_activity": {"phase": "waiting_for_model", "health": "active", "lifecycle_state": "active"},
             },
@@ -125,7 +125,7 @@ async def test_build_project_pulse_prefers_richer_active_session_over_tmux_prese
         patch(
             "app.services.project_pulse.build_project_cleanup_status",
             return_value={
-                "project_id": "terminal",
+                "project_id": "aterm",
                 "active_worktrees": 0,
                 "dirty_worktrees": 0,
                 "needs_cleanup": False,
@@ -134,11 +134,11 @@ async def test_build_project_pulse_prefers_richer_active_session_over_tmux_prese
     ):
         from app.services.project_pulse import build_project_pulse
 
-        payload = await build_project_pulse("terminal")
+        payload = await build_project_pulse("aterm")
 
     assert [session["id"] for session in payload["active_sessions"]] == [
         "sess-codex-rich",
-        "tmux:claude-terminal",
+        "tmux:claude-aterm",
     ]
     assert payload["summary"]["active_sessions"] == 2
 

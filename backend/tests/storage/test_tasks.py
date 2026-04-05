@@ -58,8 +58,8 @@ class TestValidTransitions:
             f"State '{state}' missing from VALID_TRANSITIONS"
         )
 
-    def test_terminal_states_keep_truthful_recovery_paths(self) -> None:
-        """Terminal states should support the recovery paths the CLI relies on."""
+    def test_final_states_keep_truthful_recovery_paths(self) -> None:
+        """Final states should support the recovery paths the CLI relies on."""
         assert VALID_TRANSITIONS["completed"] == {"pending", "cancelled"}
         assert VALID_TRANSITIONS["failed"] == {"pending", "running", "cancelled", "completed"}
         assert VALID_TRANSITIONS["cancelled"] == {"pending"}
@@ -210,7 +210,7 @@ class TestUpdateTaskStatus:
     def test_status_completed_to_pending_clears_completed_at(
         self, test_task: dict[str, Any]
     ) -> None:
-        """Reopened tasks should not retain stale terminal timestamps."""
+        """Reopened tasks should not retain stale aterm timestamps."""
         task_store.update_task_status(test_task["id"], "running")
         task_store.update_task_status(test_task["id"], "completed")
 
