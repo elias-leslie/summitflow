@@ -110,7 +110,7 @@ class TestDockerRuntime:
         mocker.patch("app.api.docker.helpers.COMPOSE_PROJECT", "summitflow-stack")
         mocker.patch(
             "app.api.docker.helpers._helper_image_ref",
-            new=mocker.AsyncMock(return_value="ghcr.io/summitflow-solutions/summitflow-api:test"),
+            new=mocker.AsyncMock(return_value="ghcr.io/elias-leslie/summitflow-api:test"),
         )
         run_docker = mocker.patch(
             "app.api.docker.helpers._run_docker",

@@ -14,7 +14,7 @@ def cancel_task_command(
     """Cancel a task (mark as cancelled from any state).
 
     Use this for tasks that are invalid, obsolete, or no longer needed.
-    Works from any non-aterm state (pending, running, paused, failed).
+    Works from any non-terminal state (pending, running, paused, failed).
 
     If no task_id is provided, uses the active context from 'st work'.
 

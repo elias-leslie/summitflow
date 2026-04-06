@@ -70,30 +70,30 @@ services:
       PYTHONDONTWRITEBYTECODE: "1"
 
   # ─── A-Term ────────────────────────────────────────────────────
-  aterm-api:
+  a-term-api:
     build:
-      context: ../../../aterm
+      context: ../../../a-term
       dockerfile: docker/backend.Dockerfile
     volumes:
-      - ../../../aterm/aterm:/app/aterm:cached
-    command: ["uvicorn", "aterm.main:app", "--host", "0.0.0.0", "--port", "8002", "--reload", "--reload-dir", "/app/aterm"]
+      - ../../../a-term/a_term:/app/a_term:cached
+    command: ["uvicorn", "a_term.main:app", "--host", "0.0.0.0", "--port", "8002", "--reload", "--reload-dir", "/app/a_term"]
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
 
-  aterm-web:
+  a-term-web:
     build:
-      context: ../../../aterm
+      context: ../../../a-term
       dockerfile: docker/frontend.Dockerfile
       target: dev
     volumes:
-      - ../../../aterm/frontend/app:/app/app:cached
-      - ../../../aterm/frontend/components:/app/components:cached
+      - ../../../a-term/frontend/app:/app/app:cached
+      - ../../../a-term/frontend/components:/app/components:cached
     command: ["pnpm", "dev", "--hostname", "0.0.0.0", "--port", "3002"]
-    # In dev mode aterm-api runs as a container (not on the host), so
+    # In dev mode a-term-api runs as a container (not on the host), so
     # drop the host-gateway alias and route via Docker network instead.
     extra_hosts: !reset []
     environment:
-      API_URL: "http://aterm-api:8002"
+      API_URL: "http://a-term-api:8002"
 
   # ─── Portfolio AI ────────────────────────────────────────────────
   portfolio-api:

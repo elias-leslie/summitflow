@@ -1,5 +1,5 @@
 # SummitFlow API — multi-stage Docker build
-# Image: ghcr.io/summitflow-solutions/summitflow-api
+# Image: ghcr.io/elias-leslie/summitflow-api
 # Port: 8001
 # Worker: same image with CMD ["python", "-m", "app.worker"]
 

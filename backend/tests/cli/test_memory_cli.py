@@ -187,7 +187,7 @@ class TestMemorySaveContentInput:
 
         assert result.exit_code == 1
         assert "st memory save requires --summary." in result.output
-        assert 'st memory save -s project --scope-id aterm -t guardrail' in result.output
+        assert 'st memory save -s project --scope-id a-term -t guardrail' in result.output
         assert 'st memory format --topic "Quality Gates"' in result.output
         mock_save_impl.assert_not_called()
 
@@ -205,7 +205,7 @@ class TestMemorySaveContentInput:
 
         assert result.exit_code == 1
         assert "st memory save requires content or --content-file." in result.output
-        assert 'st memory save -s project --scope-id aterm -t guardrail' in result.output
+        assert 'st memory save -s project --scope-id a-term -t guardrail' in result.output
         assert 'st memory format --topic "Quality Gates"' in result.output
         mock_save_impl.assert_not_called()
 

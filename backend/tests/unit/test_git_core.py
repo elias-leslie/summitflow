@@ -22,24 +22,24 @@ def test_resolve_project_id_uses_git_core_collaborators(mocker) -> None:
 
 
 def test_get_managed_repos_skips_shadowed_project_entries_from_fallback(mocker, tmp_path: Path) -> None:
-    canonical_aterm = tmp_path / "srv" / "workspaces" / "projects" / "aterm"
-    shadow_aterm = tmp_path / "home" / "kasadis" / "aterm"
+    canonical_a_term = tmp_path / "srv" / "workspaces" / "projects" / "a-term"
+    shadow_a_term = tmp_path / "home" / "kasadis" / "a-term"
     config_repo = tmp_path / "home" / "kasadis" / ".claude"
 
-    for repo in (canonical_aterm, shadow_aterm, config_repo):
+    for repo in (canonical_a_term, shadow_a_term, config_repo):
         (repo / ".git").mkdir(parents=True)
 
-    mocker.patch("app.utils._git_core._collect_db_repos", return_value=[canonical_aterm])
+    mocker.patch("app.utils._git_core._collect_db_repos", return_value=[canonical_a_term])
     mocker.patch("app.utils._git_core._collect_db_extra_repos", return_value=[])
     mocker.patch(
         "app.utils._git_core._registered_project_roots",
-        return_value={"aterm": canonical_aterm.resolve()},
+        return_value={"a-term": canonical_a_term.resolve()},
     )
     mocker.patch(
         "app.utils._git_core._load_repo_paths_from_file",
-        return_value=[shadow_aterm, config_repo],
+        return_value=[shadow_a_term, config_repo],
     )
 
     repos = _git_core.get_managed_repos()
 
-    assert repos == [canonical_aterm, config_repo]
+    assert repos == [canonical_a_term, config_repo]

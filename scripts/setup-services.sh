@@ -127,7 +127,7 @@ install_cli_links() {
     local summitflow_st="$SUMMITFLOW_DIR/backend/.venv/bin/st"
     local summitflow_dt="$SUMMITFLOW_DIR/scripts/dev-tools.sh"
     local agent_hub_root=""
-    local aterm_root=""
+    local a_term_root=""
     local script_name=""
 
     mkdir -p "$BIN_DIR"
@@ -148,18 +148,18 @@ install_cli_links() {
         echo "  Linked db -> $agent_hub_root/scripts/db.sh"
     fi
 
-    aterm_root="$(resolve_project_root aterm 2>/dev/null || true)"
-    if [ -n "$aterm_root" ] && [ -f "$aterm_root/scripts/tcodex" ]; then
-        ln -sfnT "$aterm_root/scripts/tcodex" "$BIN_DIR/tcodex"
-        echo "  Linked tcodex -> $aterm_root/scripts/tcodex"
+    a_term_root="$(resolve_project_root a-term 2>/dev/null || true)"
+    if [ -n "$a_term_root" ] && [ -f "$a_term_root/scripts/tcodex" ]; then
+        ln -sfnT "$a_term_root/scripts/tcodex" "$BIN_DIR/tcodex"
+        echo "  Linked tcodex -> $a_term_root/scripts/tcodex"
     fi
-    if [ -n "$aterm_root" ] && [ -f "$aterm_root/scripts/tclaude" ]; then
-        ln -sfnT "$aterm_root/scripts/tclaude" "$BIN_DIR/tclaude"
-        echo "  Linked tclaude -> $aterm_root/scripts/tclaude"
+    if [ -n "$a_term_root" ] && [ -f "$a_term_root/scripts/tclaude" ]; then
+        ln -sfnT "$a_term_root/scripts/tclaude" "$BIN_DIR/tclaude"
+        echo "  Linked tclaude -> $a_term_root/scripts/tclaude"
     fi
-    if [ -n "$aterm_root" ] && [ -f "$aterm_root/scripts/tsession" ]; then
-        ln -sfnT "$aterm_root/scripts/tsession" "$BIN_DIR/tsession"
-        echo "  Linked tsession -> $aterm_root/scripts/tsession"
+    if [ -n "$a_term_root" ] && [ -f "$a_term_root/scripts/tsession" ]; then
+        ln -sfnT "$a_term_root/scripts/tsession" "$BIN_DIR/tsession"
+        echo "  Linked tsession -> $a_term_root/scripts/tsession"
     fi
 
     for script_name in rebuild.sh commit.sh start.sh status.sh stop.sh backup.sh backup-all.sh restore.sh setup-services.sh; do
@@ -223,7 +223,7 @@ mkdir -p "$USER_SYSTEMD_DIR"
 echo "  Rendering unit files..."
 render_unit_tree "$SUMMITFLOW_DIR/scripts/systemd"
 
-for external_project in aterm agent-hub portfolio-ai monkey-fight vantage test1 test2 test3; do
+for external_project in a-term agent-hub portfolio-ai monkey-fight vantage test1 test2 test3; do
     external_root="$(resolve_project_root "$external_project" 2>/dev/null || true)"
     [ -n "$external_root" ] || continue
     render_unit_tree "$external_root/scripts/systemd" "$external_root"

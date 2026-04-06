@@ -45,7 +45,7 @@ def cleanup_old_scan_history(
     max_age_days: int = 90,
     keep_latest_per_type: int = 20,
 ) -> int:
-    """Delete old aterm scan rows that are no longer referenced elsewhere."""
+    """Delete old scan rows that are no longer referenced elsewhere."""
     with get_connection() as conn, conn.cursor() as cur:
         reference_clauses = [
             """

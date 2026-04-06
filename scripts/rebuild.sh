@@ -9,7 +9,7 @@
 #                              # Rebuild agent-hub and restart the protected agent worker too
 #   rebuild.sh --detach agent-hub
 #                              # Queue an out-of-band rebuild and return immediately
-#   rebuild.sh aterm         # Rebuild aterm
+#   rebuild.sh a-term        # Rebuild A-Term
 #   rebuild.sh portfolio-ai     # Rebuild portfolio-ai
 #   rebuild.sh monkey-fight     # Rebuild monkey-fight
 #   rebuild.sh vantage          # Rebuild Vantage

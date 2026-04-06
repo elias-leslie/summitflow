@@ -35,16 +35,16 @@ app = typer.Typer(
 ENV_PREFIX = "stenv-"
 
 _BUILD_PROJECTS = [
-    ("summitflow",  "docker/backend.Dockerfile",  "ghcr.io/summitflow-solutions/summitflow-api"),
-    ("summitflow",  "docker/frontend.Dockerfile", "ghcr.io/summitflow-solutions/summitflow-web"),
-    ("summitflow",  "docker/agent-browser.Dockerfile", "ghcr.io/summitflow-solutions/agent-browser"),
-    ("agent-hub",   "docker/backend.Dockerfile",  "ghcr.io/summitflow-solutions/agent-hub-api"),
-    ("agent-hub",   "docker/frontend.Dockerfile", "ghcr.io/summitflow-solutions/agent-hub-web"),
-    ("aterm",    "docker/backend.Dockerfile",  "ghcr.io/summitflow-solutions/aterm-api"),
-    ("aterm",    "docker/frontend.Dockerfile", "ghcr.io/summitflow-solutions/aterm-web"),
-    ("portfolio-ai","docker/backend.Dockerfile",  "ghcr.io/summitflow-solutions/portfolio-api"),
-    ("portfolio-ai","docker/frontend.Dockerfile", "ghcr.io/summitflow-solutions/portfolio-web"),
-    ("monkey-fight","Dockerfile",                 "ghcr.io/summitflow-solutions/monkey-fight"),
+    ("summitflow",  "docker/backend.Dockerfile",  "ghcr.io/elias-leslie/summitflow-api"),
+    ("summitflow",  "docker/frontend.Dockerfile", "ghcr.io/elias-leslie/summitflow-web"),
+    ("summitflow",  "docker/agent-browser.Dockerfile", "ghcr.io/elias-leslie/agent-browser"),
+    ("agent-hub",   "docker/backend.Dockerfile",  "ghcr.io/elias-leslie/agent-hub-api"),
+    ("agent-hub",   "docker/frontend.Dockerfile", "ghcr.io/elias-leslie/agent-hub-web"),
+    ("a-term",    "docker/backend.Dockerfile",  "ghcr.io/elias-leslie/a-term-api"),
+    ("a-term",    "docker/frontend.Dockerfile", "ghcr.io/elias-leslie/a-term-web"),
+    ("portfolio-ai","docker/backend.Dockerfile",  "ghcr.io/elias-leslie/portfolio-api"),
+    ("portfolio-ai","docker/frontend.Dockerfile", "ghcr.io/elias-leslie/portfolio-web"),
+    ("monkey-fight","Dockerfile",                 "ghcr.io/elias-leslie/monkey-fight"),
 ]
 
 # ─── Helpers ─────────────────────────────────────────────────────

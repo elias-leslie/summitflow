@@ -11,7 +11,7 @@ constraints = [
 [[package]]
 name = "agent-hub-client"
 version = "0.3.0"
-source = { git = "https://github.com/summitflow-solutions/agent-hub.git?subdirectory=packages%2Fagent-hub-client#877cae3cc3704a2f8b7c9540cd0c5f9df57a6b05" }
+source = { git = "https://github.com/elias-leslie/agent-hub.git?subdirectory=packages%2Fagent-hub-client#877cae3cc3704a2f8b7c9540cd0c5f9df57a6b05" }
 dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
@@ -1552,7 +1552,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agent-hub-client", git = "https://github.com/summitflow-solutions/agent-hub.git?subdirectory=packages%2Fagent-hub-client" },
+    { name = "agent-hub-client", git = "https://github.com/elias-leslie/agent-hub.git?subdirectory=packages%2Fagent-hub-client" },
     { name = "alembic", specifier = ">=1.13.0" },
     { name = "croniter", specifier = ">=3.0.0" },
     { name = "fastapi", specifier = ">=0.115.0" },

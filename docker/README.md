@@ -3,7 +3,7 @@
 ## Quick Start
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/summitflow-solutions/summitflow/main/docker/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/elias-leslie/summitflow/main/docker/install.sh | bash
 ```
 
 The installer will:
@@ -38,13 +38,13 @@ docker compose --profile full up -d           # Everything
 | `infra` | PostgreSQL, Redis, Hatchet |
 | `summitflow` | SummitFlow API + Web + Worker + infra |
 | `agent-hub` | Agent Hub API + Web + Worker + infra |
-| `aterm` | A-Term API + Web in isolated container mode + infra |
+| `a-term` | A-Term API + Web in isolated container mode + infra |
 | `portfolio` | Portfolio AI API + Web + Worker + infra |
 | `monkey-fight` | Monkey Fight + infra |
 | `browser` | Agent Browser (Chrome for Testing) |
 | `full` | All of the above |
 
-`aterm` and `full` therefore include A-Term only as an isolated container-mode web stack. They are useful for smoke tests and demos, not as proof of host-integrated A-Term behavior.
+`a-term` and `full` therefore include A-Term only as an isolated container-mode web stack. They are useful for smoke tests and demos, not as proof of host-integrated A-Term behavior.
 
 ## Service Ports
 
@@ -120,7 +120,7 @@ cat backup.sql | docker compose exec -T postgres psql -U admin
 
 ## A-Term Runtime Notes
 
-The A-Term service runs tmux inside its container for self-contained aterm sessions. Treat that as isolated demo/parity mode, not as the supported real-use runtime.
+The A-Term service runs tmux inside its container for self-contained A-Term sessions. Treat that as isolated demo/parity mode, not as the supported real-use runtime.
 
 - Cannot attach to host-level tmux sessions (Claude Code, etc.)
 - Cannot reuse the host user's Claude/Codex auth state or user-session process context

@@ -30,7 +30,7 @@ _PROJECT_DISPLAY: dict[str, str] = {
     "summitflow": "SF",
     "agent-hub": "AH",
     "portfolio-ai": "PA",
-    "aterm": "TM",
+    "a-term": "AT",
     "monkey-fight": "MF",
     "infrastructure": "Infra",
 }

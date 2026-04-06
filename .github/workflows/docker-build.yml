@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          repository: summitflow-solutions/agent-hub
+          repository: elias-leslie/agent-hub
           path: agent-hub-repo
           token: ${{ secrets.GITHUB_TOKEN }}
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4
@@ -75,8 +75,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ghcr.io/summitflow-solutions/summitflow-${{ matrix.image-suffix }}:latest
-            ghcr.io/summitflow-solutions/summitflow-${{ matrix.image-suffix }}:${{ inputs.tag || github.ref_name }}
+            ghcr.io/elias-leslie/summitflow-${{ matrix.image-suffix }}:latest
+            ghcr.io/elias-leslie/summitflow-${{ matrix.image-suffix }}:${{ inputs.tag || github.ref_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -97,7 +97,7 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ghcr.io/summitflow-solutions/agent-browser:latest
-            ghcr.io/summitflow-solutions/agent-browser:${{ inputs.tag || github.ref_name }}
+            ghcr.io/elias-leslie/agent-browser:latest
+            ghcr.io/elias-leslie/agent-browser:${{ inputs.tag || github.ref_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

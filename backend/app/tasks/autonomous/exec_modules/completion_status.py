@@ -255,7 +255,7 @@ def transition_to_review_or_complete(
     log_message: str,
     dispatch: Callable[[str, str, str], None] | None = None,
 ) -> str:
-    """Transition task to completed or a merge-derived aterm state.
+    """Transition task to completed or a merge-derived terminal state.
 
     Returns the final status: "completed" or "failed".
     """

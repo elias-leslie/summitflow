@@ -35,7 +35,7 @@ def _build_health_urls() -> dict[str, str]:
     for name, env_var in (
         ("agent-hub", "AGENT_HUB_HEALTH_URL"),
         ("portfolio-ai", "PORTFOLIO_HEALTH_URL"),
-        ("aterm", "ATERM_HEALTH_URL"),
+        ("a-term", "A_TERM_HEALTH_URL"),
     ):
         if url := os.getenv(env_var):
             urls[name] = url

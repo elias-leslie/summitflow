@@ -1,7 +1,7 @@
 #!/bin/bash
 # SummitFlow Ecosystem — Self-Hosting Installer
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/summitflow-solutions/summitflow/main/docker/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/elias-leslie/summitflow/main/docker/install.sh | bash
 #   INSTALL_CHOICE=3 bash install.sh
 #   bash install.sh --choice 2
 set -euo pipefail
@@ -126,7 +126,7 @@ mkdir -p "$INSTALL_DIR"
 cd "$INSTALL_DIR"
 
 # Download compose files
-REPO_BASE="${REPO_BASE_URL:-https://raw.githubusercontent.com/summitflow-solutions/summitflow/main/docker/compose}"
+REPO_BASE="${REPO_BASE_URL:-https://raw.githubusercontent.com/elias-leslie/summitflow/main/docker/compose}"
 echo "Downloading compose files..."
 echo "Source: $REPO_BASE"
 curl -fsSL "$REPO_BASE/docker-compose.yml" -o docker-compose.yml
@@ -207,7 +207,7 @@ if [[ "$CHOICE" == "2" || "$CHOICE" == "3" ]]; then
 fi
 if [[ "$CHOICE" == "3" ]]; then
   echo 'PORTFOLIO_HEALTH_URL=http://portfolio-api:8000/health' >> .env
-  echo 'ATERM_HEALTH_URL=http://aterm-api:8002/health' >> .env
+  echo 'A_TERM_HEALTH_URL=http://a-term-api:8002/health' >> .env
 fi
 
 echo "Generated .env with random passwords and secrets"

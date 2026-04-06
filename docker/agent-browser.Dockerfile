@@ -1,8 +1,8 @@
 # Agent Browser — Chrome for Testing in a container
-# Image: ghcr.io/summitflow-solutions/agent-browser
+# Image: ghcr.io/elias-leslie/agent-browser
 # Provides isolated browser sessions for automated UI testing
 #
-# Usage: docker run --rm --shm-size=2gb ghcr.io/summitflow-solutions/agent-browser
+# Usage: docker run --rm --shm-size=2gb ghcr.io/elias-leslie/agent-browser
 # Exposes Chrome DevTools Protocol on port 9222
 
 FROM node:20-slim

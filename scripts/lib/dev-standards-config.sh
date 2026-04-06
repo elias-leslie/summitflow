@@ -49,7 +49,7 @@ export LINT_EXCLUDE_DIRS
 MANAGED_PROJECTS=(
     "summitflow"
     "agent-hub"
-    "aterm"
+    "a-term"
     "portfolio-ai"
     "vantage"
     "test1"
@@ -64,7 +64,7 @@ export MANAGED_PROJECTS
 PROJECT_VENV_MAP=(
     "summitflow:backend/.venv:backend"
     "agent-hub:backend/.venv:backend"
-    "aterm:.venv:aterm"
+    "a-term:.venv:."
     "portfolio-ai:backend/.venv:backend"
     "vantage:backend/.venv:backend"
     "test1:backend/.venv:backend"

@@ -61,7 +61,7 @@ def test_validate_content_format_error_includes_quickstart(capsys) -> None:
         )
 
     err = capsys.readouterr().err
-    assert 'st memory save -s project --scope-id aterm -t guardrail' in err
+    assert 'st memory save -s project --scope-id a-term -t guardrail' in err
     assert 'st memory format --topic "Quality Gates"' in err
 
 

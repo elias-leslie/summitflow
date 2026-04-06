@@ -98,7 +98,7 @@ def close_task_for_issue(issue: QAIssue) -> bool:
     current_status = task.get("status")
     if current_status in {"completed", "cancelled"}:
         logger.info(
-            "Skipping auto-cancel for task %s in aterm status %s",
+            "Skipping auto-cancel for task %s in terminal status %s",
             issue.st_task_id,
             current_status,
         )

@@ -96,7 +96,7 @@ def get_project_root(
 
     Examples:
         st projects root summitflow
-        st projects root aterm
+        st projects root a-term
     """
     run_root(project_id)
 
@@ -108,7 +108,7 @@ def sync_project_identity_command(
     """Sync a registered project's DB identity from its repo-local manifest.
 
     Examples:
-        st projects sync-identity aterm
+        st projects sync-identity a-term
         st projects sync-identity terminal
     """
     run_sync_identity(project_id)

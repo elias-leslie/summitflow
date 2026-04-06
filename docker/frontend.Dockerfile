@@ -1,5 +1,5 @@
 # SummitFlow Web — multi-stage Docker build with standalone output
-# Image: ghcr.io/summitflow-solutions/summitflow-web
+# Image: ghcr.io/elias-leslie/summitflow-web
 # Port: 3001
 # Requires: workspace packages (chat-ui, push-client) pre-packed as tarballs
 

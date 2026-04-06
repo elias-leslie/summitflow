@@ -51,7 +51,7 @@ def cleanup_task_worktree(
 ) -> WorktreeCleanupResult:
     """Clean up worktree for a completed or cancelled task.
 
-    Called when a task reaches a aterm state (completed, cancelled, failed).
+    Called when a task reaches a terminal state (completed, cancelled, failed).
     Removes the worktree directory but preserves the branch by default
     (branch can be merged via PR or deleted manually).
 

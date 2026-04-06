@@ -36,7 +36,7 @@ CONVERSATIONAL_PATTERNS = [
 
 SAVE_EXAMPLE = """
 Example:
-  st memory save -s project --scope-id aterm -t guardrail -c 90 \\
+  st memory save -s project --scope-id a-term -t guardrail -c 90 \\
     -S "Never bypass quality gates" \\
     "**Quality Gates**: Use dt for all checks. Never run raw pytest. Why: hooks enforce dt path."
 
@@ -56,7 +56,7 @@ Generate a valid body first:
 
 SAVE_QUICKSTART = f"""
 Quickstart:
-  st memory save -s project --scope-id aterm -t guardrail \\
+  st memory save -s project --scope-id a-term -t guardrail \\
     -S "Never bypass quality gates" \\
     "**Quality Gates**: Use dt for all checks. Never run raw pytest. Why: hooks enforce dt path."
 

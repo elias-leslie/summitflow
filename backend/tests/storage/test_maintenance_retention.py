@@ -89,7 +89,7 @@ def _insert_event(
 
 
 class TestNotificationRetention:
-    """Notification cleanup removes only old aterm rows."""
+    """Notification cleanup removes only old terminal rows."""
 
     def test_cleanup_old_notifications_prunes_old_pending(self, ensure_test_project: str) -> None:
         project_id = ensure_test_project

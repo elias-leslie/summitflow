@@ -56,7 +56,7 @@ project_identity_manifest_for_project() {
     fi
 
     find "$workspace_projects_root" -maxdepth 2 -name "$PROJECT_IDENTITY_FILE_NAME" -print0 2>/dev/null |
-        python3 - "$project" <<'PY'
+        python3 - "$project" <<'INNERPY'
 import json
 import sys
 from pathlib import Path
@@ -88,15 +88,36 @@ for raw_path in sorted(sys.stdin.buffer.read().split(b"\0")):
     if target in aliases:
         print(path)
         break
-PY
+INNERPY
+}
+
+project_identity_repo_dir_for_project() {
+    local project="$1"
+    local workspace_projects_root="${2:-${PROJECT_ROOTS_WORKSPACES_ROOT:-/srv/workspaces}/projects}"
+    local manifest
+    manifest="$(project_identity_manifest_for_project "$project" "$workspace_projects_root" 2>/dev/null || true)"
+    [ -n "$manifest" ] || return 1
+
+    python3 - "$manifest" <<'INNERPY'
+import json
+import sys
+from pathlib import Path
+
+payload = json.loads(Path(sys.argv[1]).read_text())
+project = payload.get("project", {})
+repo_name = project.get("repo_name") or project.get("id")
+if isinstance(repo_name, str) and repo_name:
+    print(repo_name)
+INNERPY
 }
 
 project_identity_load_env_from_manifest() {
     local manifest="$1"
     [ -f "$manifest" ] || return 1
 
-    python3 - "$manifest" <<'PY'
+    python3 - "$manifest" <<'INNERPY'
 import json
+import re
 import shlex
 import sys
 from pathlib import Path
@@ -108,6 +129,8 @@ runtime = payload.get("runtime", {})
 services = payload.get("services", {})
 hosts = payload.get("hosts", {})
 artifacts = payload.get("artifacts", {})
+database = payload.get("database", {})
+repository = payload.get("repository", {})
 
 
 def _flatten(value):
@@ -117,6 +140,21 @@ def _flatten(value):
         return ""
     return str(value)
 
+
+def _default_env_prefix() -> str:
+    raw = project.get("id", "")
+    if not isinstance(raw, str):
+        raw = ""
+    raw = re.sub(r"[^A-Za-z0-9]+", "_", raw).strip("_")
+    return raw.upper()
+
+repo_name = repository.get("name") or project.get("repo_name", "")
+repo_owner = repository.get("owner", "")
+https_url = repository.get("https_url", "")
+ssh_url = repository.get("ssh_url", "")
+if repo_owner and repo_name:
+    https_url = https_url or f"https://github.com/{repo_owner}/{repo_name}"
+    ssh_url = ssh_url or f"git@github.com:{repo_owner}/{repo_name}.git"
 
 env = {
     "PROJECT_IDENTITY_ID": project.get("id", ""),
@@ -139,11 +177,18 @@ env = {
     "PROJECT_IDENTITY_PRODUCTION_API": hosts.get("production_api", ""),
     "PROJECT_IDENTITY_PYTHON_DISTRIBUTION": artifacts.get("python_distribution", ""),
     "PROJECT_IDENTITY_PYTHON_MODULE": artifacts.get("python_module", ""),
+    "PROJECT_IDENTITY_ENV_PREFIX": artifacts.get("env_prefix", _default_env_prefix()),
     "PROJECT_IDENTITY_CACHE_DIR_NAME": artifacts.get("cache_dir_name", ""),
     "PROJECT_IDENTITY_UPLOAD_DIR_NAME": artifacts.get("upload_dir_name", ""),
+    "PROJECT_IDENTITY_TABLE_PREFIX": database.get("table_prefix", ""),
+    "PROJECT_IDENTITY_VERSION_TABLE": database.get("version_table", ""),
+    "PROJECT_IDENTITY_REPO_OWNER": repo_owner,
+    "PROJECT_IDENTITY_REPOSITORY_NAME": repo_name,
+    "PROJECT_IDENTITY_REPO_HTTPS_URL": https_url,
+    "PROJECT_IDENTITY_REPO_SSH_URL": ssh_url,
 }
 
 for key, value in env.items():
     print(f"{key}={shlex.quote(_flatten(value))}")
-PY
+INNERPY
 }

@@ -6,8 +6,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SUMMITFLOW_DIR="$(dirname "$SCRIPT_DIR")"
 
-CLAUDE_CONFIG_REPO="${CLAUDE_CONFIG_REPO:-git@github.com:summitflow-solutions/claude-config.git}"
-CODEX_CONFIG_REPO="${CODEX_CONFIG_REPO:-git@github.com:summitflow-solutions/codex-config.git}"
+CLAUDE_CONFIG_REPO="${CLAUDE_CONFIG_REPO:-git@github.com:elias-leslie/claude-config.git}"
+CODEX_CONFIG_REPO="${CODEX_CONFIG_REPO:-git@github.com:elias-leslie/codex-config.git}"
 CLAUDE_HOME_DIR="${CLAUDE_HOME_DIR:-$HOME/.claude}"
 CODEX_HOME_DIR="${CODEX_HOME_DIR:-$HOME/.codex}"
 BIN_DIR="${BIN_DIR:-$HOME/bin}"

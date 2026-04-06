@@ -53,18 +53,17 @@ project_root_from_cli() {
 }
 
 default_home_root_for_project() {
-    case "$1" in
-        summitflow)
-            [ -n "${SUMMITFLOW_ROOT_OVERRIDE:-}" ] || return 1
-            printf '%s\n' "$SUMMITFLOW_ROOT_OVERRIDE"
-            ;;
-        agent-hub | portfolio-ai | aterm | monkey-fight | vantage)
-            printf '%s\n' "$HOME/$1"
-            ;;
-        *)
-            return 1
-            ;;
-    esac
+    local project="$1"
+    local repo_dir
+
+    if [ "$project" = "summitflow" ] && [ -n "${SUMMITFLOW_ROOT_OVERRIDE:-}" ]; then
+        printf '%s\n' "$SUMMITFLOW_ROOT_OVERRIDE"
+        return 0
+    fi
+
+    repo_dir="$(project_identity_repo_dir_for_project "$project" "$PROJECT_ROOTS_WORKSPACES_ROOT/projects" 2>/dev/null || true)"
+    [ -z "$repo_dir" ] && repo_dir="$project"
+    printf '%s\n' "$HOME/$repo_dir"
 }
 
 shared_workspaces_root() {
@@ -84,6 +83,7 @@ resolve_project_root() {
     local project="$1"
     local candidate
     local manifest
+    local repo_dir
 
     if [ "$project" = "summitflow" ] && [ -n "${SUMMITFLOW_ROOT_OVERRIDE:-}" ] && [ -d "${SUMMITFLOW_ROOT_OVERRIDE}" ]; then
         printf '%s\n' "$SUMMITFLOW_ROOT_OVERRIDE"
@@ -99,6 +99,15 @@ resolve_project_root() {
     manifest="$(project_identity_manifest_for_project "$project" "$PROJECT_ROOTS_WORKSPACES_ROOT/projects" 2>/dev/null || true)"
     if [ -n "$manifest" ]; then
         candidate="$(dirname "$manifest")"
+        if [ -d "$candidate" ]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    fi
+
+    repo_dir="$(project_identity_repo_dir_for_project "$project" "$PROJECT_ROOTS_WORKSPACES_ROOT/projects" 2>/dev/null || true)"
+    if [ -n "$repo_dir" ]; then
+        candidate="${PROJECT_ROOTS_WORKSPACES_ROOT}/projects/$repo_dir"
         if [ -d "$candidate" ]; then
             printf '%s\n' "$candidate"
             return 0

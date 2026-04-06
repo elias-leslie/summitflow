@@ -3,7 +3,7 @@
 ## Reporting a Vulnerability
 
 Please report suspected vulnerabilities using
-[GitHub's private vulnerability reporting](https://github.com/summitflow-solutions/summitflow/security/advisories/new).
+[GitHub's private vulnerability reporting](https://github.com/elias-leslie/summitflow/security/advisories/new).
 
 Include:
 

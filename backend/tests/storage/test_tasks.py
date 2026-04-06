@@ -210,7 +210,7 @@ class TestUpdateTaskStatus:
     def test_status_completed_to_pending_clears_completed_at(
         self, test_task: dict[str, Any]
     ) -> None:
-        """Reopened tasks should not retain stale aterm timestamps."""
+        """Reopened tasks should not retain stale terminal timestamps."""
         task_store.update_task_status(test_task["id"], "running")
         task_store.update_task_status(test_task["id"], "completed")
 

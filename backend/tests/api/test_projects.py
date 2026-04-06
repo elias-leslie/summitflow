@@ -165,7 +165,7 @@ def test_create_project_prefers_manifest_display_name(client, monkeypatch, tmp_p
             json={
                 "id": project_id,
                 "name": "Old A-Term Name",
-                "base_url": "https://aterm.example",
+                "base_url": "https://a-term.example",
                 "health_endpoint": "/health",
                 "root_path": str(root_path),
             },
@@ -869,16 +869,16 @@ def test_delete_project_removes_backup_source_and_agent_hub_permission(client, m
 def test_sync_project_identity_endpoint_reconciles_legacy_project_ids(client, monkeypatch, tmp_path: Path) -> None:
     """POST /api/projects/{id}/sync-identity should rename legacy project rows to the manifest id."""
     projects_root = tmp_path / "projects"
-    repo_root = projects_root / "aterm"
+    repo_root = projects_root / "a-term"
     repo_root.mkdir(parents=True)
     (repo_root / "project.identity.json").write_text(
         json.dumps(
             {
                 "project": {
-                    "id": "aterm",
-                    "repo_name": "aterm",
-                    "legacy_ids": ["terminal"],
-                    "repo_aliases": ["terminal"],
+                    "id": "a-term",
+                    "repo_name": "a-term",
+                    "legacy_ids": ["aterm", "terminal"],
+                    "repo_aliases": ["aterm", "terminal"],
                     "display_name": "A-Term",
                 }
             }
@@ -902,7 +902,7 @@ def test_sync_project_identity_endpoint_reconciles_legacy_project_ids(client, mo
                 "Legacy A-Term",
                 "http://localhost:8002",
                 "/health",
-                "/srv/workspaces/projects/legacy-aterm",
+                "/srv/workspaces/projects/legacy-a-term",
                 "production",
             ),
         )
@@ -914,7 +914,7 @@ def test_sync_project_identity_endpoint_reconciles_legacy_project_ids(client, mo
             (
                 "terminal",
                 "Legacy A-Term",
-                "/srv/workspaces/projects/legacy-aterm",
+                "/srv/workspaces/projects/legacy-a-term",
                 "terminal",
                 True,
                 30,
@@ -923,32 +923,32 @@ def test_sync_project_identity_endpoint_reconciles_legacy_project_ids(client, mo
         conn.commit()
 
     try:
-        response = client.post("/api/projects/aterm/sync-identity")
+        response = client.post("/api/projects/a-term/sync-identity")
 
         assert response.status_code == 200
         payload = response.json()
-        assert payload["id"] == "aterm"
+        assert payload["id"] == "a-term"
         assert payload["name"] == "A-Term"
         assert payload["root_path"] == str(repo_root)
 
         with get_connection() as conn, conn.cursor() as cur:
-            cur.execute("SELECT id, name, root_path FROM projects WHERE id = 'aterm'")
+            cur.execute("SELECT id, name, root_path FROM projects WHERE id = 'a-term'")
             project_row = cur.fetchone()
             cur.execute("SELECT id FROM projects WHERE id = 'terminal'")
             legacy_project_row = cur.fetchone()
-            cur.execute("SELECT id, name, path, project_id FROM backup_sources WHERE id = 'aterm'")
+            cur.execute("SELECT id, name, path, project_id FROM backup_sources WHERE id = 'a-term'")
             backup_row = cur.fetchone()
             cur.execute("SELECT id FROM backup_sources WHERE id = 'terminal'")
             legacy_backup_row = cur.fetchone()
 
-        assert project_row == ("aterm", "A-Term", str(repo_root))
+        assert project_row == ("a-term", "A-Term", str(repo_root))
         assert legacy_project_row is None
-        assert backup_row == ("aterm", "A-Term", str(repo_root), "aterm")
+        assert backup_row == ("a-term", "A-Term", str(repo_root), "a-term")
         assert legacy_backup_row is None
     finally:
         with get_connection() as conn, conn.cursor() as cur:
-            cur.execute("DELETE FROM backup_sources WHERE id = ANY(%s)", (["terminal", "aterm"],))
-            cur.execute("DELETE FROM projects WHERE id = ANY(%s)", (["terminal", "aterm"],))
+            cur.execute("DELETE FROM backup_sources WHERE id = ANY(%s)", (["terminal", "aterm", "a-term"],))
+            cur.execute("DELETE FROM projects WHERE id = ANY(%s)", (["terminal", "aterm", "a-term"],))
             conn.commit()
         project_identity_module._workspace_manifest_paths.cache_clear()
         project_identity_module._read_manifest.cache_clear()

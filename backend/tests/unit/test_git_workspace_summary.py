@@ -97,6 +97,7 @@ class TestBuildRepoWorkspaceSummary:
             "app.utils._git_branches.assess_orphan_task_branches",
             return_value=[],
         )
+        mocker.patch("app.utils._git_branches._detect_base_branch", return_value="main")
 
         summary = build_repo_workspace_summary(repo_path, project_id="test2")
 
@@ -127,10 +128,11 @@ class TestBuildRepoWorkspaceSummary:
             "app.utils._git_branches.assess_orphan_task_branches",
             return_value=[],
         )
+        mocker.patch("app.utils._git_branches._detect_base_branch", return_value="main")
 
         build_repo_workspace_summary(repo_path, project_id="project-alpha")
 
-        mock_branches.assert_called_once_with(repo_path, "project-alpha")
+        mock_branches.assert_called_once_with(repo_path, "project-alpha", active_worktrees=[])
         mock_worktrees.assert_called_once_with("project-alpha")
 
 

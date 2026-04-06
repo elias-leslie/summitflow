@@ -254,9 +254,9 @@ _resolve_systemd_services() {
             export DEFAULT_WORKER_SERVICES="portfolio-hatchet-worker.service"
             export BACKEND_PORT=8000 FRONTEND_PORT=3000
             ;;
-        aterm)
-            export BACKEND_SERVICE="aterm-backend.service"
-            export FRONTEND_SERVICE="aterm-frontend.service"
+        a-term)
+            export BACKEND_SERVICE="a-term-backend.service"
+            export FRONTEND_SERVICE="a-term-frontend.service"
             export BACKEND_DIR="$PROJECT_DIR"
             export BACKEND_PORT=8002 FRONTEND_PORT=3002
             ;;

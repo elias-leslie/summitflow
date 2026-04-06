@@ -5,7 +5,7 @@
 #   docker compose --profile agent-hub up -d      # Agent Hub + infra
 #   docker compose --profile full up -d           # Everything
 #
-# Profiles: infra, summitflow, agent-hub, aterm, portfolio, monkey-fight, browser, full
+# Profiles: infra, summitflow, agent-hub, a-term, portfolio, monkey-fight, browser, full
 
 name: summitflow-stack
 
@@ -13,7 +13,7 @@ services:
   # ─── Infrastructure ──────────────────────────────────────────────
   postgres:
     image: pgvector/pgvector:pg16
-    profiles: [infra, summitflow, agent-hub, aterm, portfolio, full]
+    profiles: [infra, summitflow, agent-hub, a-term, portfolio, full]
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
@@ -130,7 +130,7 @@ services:
 
   # ─── SummitFlow ──────────────────────────────────────────────────
   summitflow-api:
-    image: ghcr.io/summitflow-solutions/summitflow-api:${TAG:-latest}
+    image: ghcr.io/elias-leslie/summitflow-api:${TAG:-latest}
     profiles: [summitflow, full]
     environment:
       DATABASE_URL: "postgresql://summitflow_app:${SF_DB_PASSWORD:-changeme}@postgres:5432/summitflow"
@@ -151,7 +151,7 @@ services:
       # Partial profiles leave these unset; smoke tests skip unconfigured services.
       AGENT_HUB_HEALTH_URL: "${AGENT_HUB_HEALTH_URL:-}"
       PORTFOLIO_HEALTH_URL: "${PORTFOLIO_HEALTH_URL:-}"
-      ATERM_HEALTH_URL: "${ATERM_HEALTH_URL:-}"
+      A_TERM_HEALTH_URL: "${A_TERM_HEALTH_URL:-}"
       COMPOSE_DIR: "/compose"
       BACKUP_DIR: "/app/docker-backups"
       BACKUP_HOST_ROOT: "${HOST_HOME_PATH:?}"
@@ -178,7 +178,7 @@ services:
     restart: unless-stopped
 
   summitflow-web:
-    image: ghcr.io/summitflow-solutions/summitflow-web:${TAG:-latest}
+    image: ghcr.io/elias-leslie/summitflow-web:${TAG:-latest}
     profiles: [summitflow, full]
     depends_on:
       - summitflow-api
@@ -197,7 +197,7 @@ services:
     restart: unless-stopped
 
   summitflow-worker:
-    image: ghcr.io/summitflow-solutions/summitflow-api:${TAG:-latest}
+    image: ghcr.io/elias-leslie/summitflow-api:${TAG:-latest}
     profiles: [summitflow, full]
     command: ["python", "-m", "app.worker"]
     environment:
@@ -213,7 +213,7 @@ services:
       SUMMITFLOW_HEALTH_URL: "http://summitflow-api:8001/health"
       AGENT_HUB_HEALTH_URL: "${AGENT_HUB_HEALTH_URL:-}"
       PORTFOLIO_HEALTH_URL: "${PORTFOLIO_HEALTH_URL:-}"
-      ATERM_HEALTH_URL: "${ATERM_HEALTH_URL:-}"
+      A_TERM_HEALTH_URL: "${A_TERM_HEALTH_URL:-}"
       BACKUP_HOST_ROOT: "${HOST_HOME_PATH:?}"
       HOST_HOME_PATH: "${HOST_HOME_PATH:?Set HOST_HOME_PATH in .env}"
       HOME: "${HOST_HOME_PATH:?}"
@@ -233,7 +233,7 @@ services:
 
   # ─── Agent Hub ───────────────────────────────────────────────────
   agent-hub-api:
-    image: ghcr.io/summitflow-solutions/agent-hub-api:${TAG:-latest}
+    image: ghcr.io/elias-leslie/agent-hub-api:${TAG:-latest}
     profiles: [agent-hub, full]
     environment:
       AGENT_HUB_DB_URL: "postgresql://agent_hub_app:${AH_DB_PASSWORD:-changeme}@postgres:5432/agent_hub"
@@ -271,7 +271,7 @@ services:
     restart: unless-stopped
 
   agent-hub-web:
-    image: ghcr.io/summitflow-solutions/agent-hub-web:${TAG:-latest}
+    image: ghcr.io/elias-leslie/agent-hub-web:${TAG:-latest}
     profiles: [agent-hub, full]
     depends_on:
       - agent-hub-api
@@ -291,7 +291,7 @@ services:
     restart: unless-stopped
 
   agent-hub-worker:
-    image: ghcr.io/summitflow-solutions/agent-hub-api:${TAG:-latest}
+    image: ghcr.io/elias-leslie/agent-hub-api:${TAG:-latest}
     profiles: [agent-hub, full]
     command: ["python", "-m", "app.worker"]
     environment:
@@ -319,18 +319,18 @@ services:
     restart: unless-stopped
 
   # ─── A-Term ────────────────────────────────────────────────────
-  # aterm-api runs on the host via systemd (needs native access to
+  # a-term-api runs on the host via systemd (needs native access to
   # tmux, SSH, Docker, project venvs, Claude Code, Codex CLI).
-  # Only aterm-web runs in Docker (static Next.js frontend).
+  # Only a-term-web runs in Docker (static Next.js frontend).
 
-  aterm-web:
-    image: ghcr.io/summitflow-solutions/aterm-web:${TAG:-latest}
-    profiles: [aterm, full]
+  a-term-web:
+    image: ghcr.io/elias-leslie/a-term-web:${TAG:-latest}
+    profiles: [a-term, full]
     ports:
       - "3002:3002"
     extra_hosts:
-      # aterm-api runs on the host — alias so baked Next.js rewrites resolve
-      - "aterm-api:host-gateway"
+      # a-term-api runs on the host — alias so baked Next.js rewrites resolve
+      - "a-term-api:host-gateway"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3002/').then(r=>{if(!r.ok)throw r.status;process.exit(0)}).catch(()=>process.exit(1))"]
       interval: 10s
@@ -340,7 +340,7 @@ services:
 
   # ─── Portfolio AI ────────────────────────────────────────────────
   portfolio-api:
-    image: ghcr.io/summitflow-solutions/portfolio-api:${TAG:-latest}
+    image: ghcr.io/elias-leslie/portfolio-api:${TAG:-latest}
     profiles: [portfolio, full]
     environment:
       PORTFOLIO_DB_URL: "postgresql://portfolio_app:${PA_DB_PASSWORD:-changeme}@postgres:5432/portfolio_ai"
@@ -375,7 +375,7 @@ services:
     restart: unless-stopped
 
   portfolio-web:
-    image: ghcr.io/summitflow-solutions/portfolio-web:${TAG:-latest}
+    image: ghcr.io/elias-leslie/portfolio-web:${TAG:-latest}
     profiles: [portfolio, full]
     depends_on:
       - portfolio-api
@@ -391,7 +391,7 @@ services:
     restart: unless-stopped
 
   portfolio-worker:
-    image: ghcr.io/summitflow-solutions/portfolio-api:${TAG:-latest}
+    image: ghcr.io/elias-leslie/portfolio-api:${TAG:-latest}
     profiles: [portfolio, full]
     command: ["python", "-m", "app.worker"]
     environment:
@@ -415,7 +415,7 @@ services:
 
   # ─── Monkey Fight ────────────────────────────────────────────────
   monkey-fight:
-    image: ghcr.io/summitflow-solutions/monkey-fight:${TAG:-latest}
+    image: ghcr.io/elias-leslie/monkey-fight:${TAG:-latest}
     profiles: [monkey-fight, full]
     ports:
       - "4001:4001"
@@ -434,7 +434,7 @@ services:
 
   # ─── Agent Browser ──────────────────────────────────────────────
   agent-browser:
-    image: ghcr.io/summitflow-solutions/agent-browser:${TAG:-latest}
+    image: ghcr.io/elias-leslie/agent-browser:${TAG:-latest}
     profiles: [browser, full]
     shm_size: '2gb'
     # Chrome runs with --no-sandbox; default seccomp profile is sufficient
