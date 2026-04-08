@@ -5,13 +5,13 @@
 # Use --lp to force Lightpanda for lightweight DOM-only work.
 #
 # Usage:
-#   sf-browser health                          Check engine status
-#   sf-browser open <url>                      Open URL (Chrome, 1600x900 viewport)
-#   sf-browser screenshot [path]               Screenshot current page
-#   sf-browser check <url> [screenshot-path]   Open + screenshot + console errors (one command)
+#   sf-browser health                           Check engine status
+#   sf-browser open <url>                       Open URL (Chrome, 1600x900 viewport)
+#   sf-browser screenshot [path]                Screenshot current page
+#   sf-browser check <url> [screenshot-path]    Open + screenshot + console errors
 #   sf-browser snapshot                         Accessibility tree
-#   sf-browser eval <js>                       Run JavaScript
-#   sf-browser <any agent-browser command>     Pass-through to agent-browser
+#   sf-browser eval <js>                        Run JavaScript
+#   sf-browser [command] [args...]              Standardized browser interface
 #
 # Flags:
 #   --lp        Force Lightpanda engine
@@ -24,6 +24,81 @@ HOST="${SF_BROWSER_HOST:-192.168.8.234}"
 AGENT_BROWSER_BIN="${AGENT_BROWSER_BIN:-${HOME}/.local/bin/agent-browser}"
 MANAGED_AGENT_BROWSER_BIN="${HOME}/.local/share/agent-browser-managed/node_modules/.bin/agent-browser"
 LOCAL_WRAPPER_BIN="${SCRIPT_DIR}/agent-browser-wrapper.js"
+
+print_help() {
+    cat <<'EOF'
+sf-browser - SummitFlow browser automation wrapper
+
+Usage:
+  sf-browser health
+  sf-browser check <url> [screenshot-path]
+  sf-browser open <url>
+  sf-browser screenshot [path]
+  sf-browser snapshot
+  sf-browser eval <js>
+  sf-browser [--chrome|--lp|--engine <name>] <command> [args...]
+
+Behavior:
+  sf-browser is the canonical SummitFlow interface for browser UI verification.
+  It standardizes remote CDP attachment, engine selection, default viewport,
+  submit-button handling, and tab cleanup for all agents.
+
+Built-in commands:
+  health      Report remote Chrome and Lightpanda engine health
+  check       Open a URL, capture a screenshot, and report console/network issues
+  update      Show the managed browser package version and upgrade instructions
+
+Forwarded commands:
+  All other commands are executed through the underlying browser engine with
+  the active remote CDP session already attached. Common examples:
+    sf-browser open http://127.0.0.1:3002
+    sf-browser snapshot
+    sf-browser click "#save"
+    sf-browser eval "document.title"
+
+Flags:
+  --chrome    Force Chrome
+  --lp        Force Lightpanda
+  --engine    Explicit engine name (chrome or lightpanda)
+  -h, --help  Show this help
+EOF
+}
+
+maybe_print_help() {
+    local args=("$@")
+
+    if [[ $# -eq 0 ]]; then
+        print_help
+        exit 0
+    fi
+
+    local index=0
+    while [[ $index -lt ${#args[@]} ]]; do
+        local arg="${args[$index]}"
+        case "$arg" in
+            --chrome|--lp)
+                ((index += 1))
+                ;;
+            --engine)
+                ((index += 2))
+                ;;
+            -h|--help|help)
+                print_help
+                exit 0
+                ;;
+            *)
+                break
+                ;;
+        esac
+    done
+
+    if [[ $index -ge ${#args[@]} ]]; then
+        print_help
+        exit 0
+    fi
+}
+
+maybe_print_help "$@"
 
 if [[ ! -x "${AGENT_BROWSER_BIN}" ]]; then
     if command -v agent-browser >/dev/null 2>&1; then

@@ -105,6 +105,39 @@ def _run_sf_browser(tmp_path: Path, *, selector: str, submit_mode: str, extra_ar
     return _read_log(log_path)
 
 
+def test_sf_browser_help_describes_wrapper(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake_agent_browser = bin_dir / "agent-browser"
+    fake_curl = bin_dir / "curl"
+    log_path = tmp_path / "agent-browser-log.jsonl"
+
+    _write_executable(fake_agent_browser, _fake_agent_browser_script())
+    _write_executable(fake_curl, _fake_curl_script())
+
+    script_path = Path(__file__).resolve().parents[3] / "scripts" / "sf-browser"
+    env = {
+        **os.environ,
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "AGENT_BROWSER_BIN": str(fake_agent_browser),
+        "FAKE_AGENT_BROWSER_LOG": str(log_path),
+        "SF_BROWSER_HOST": "192.0.2.10",
+    }
+
+    result = subprocess.run(
+        [str(script_path), "--help"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+
+    assert result.returncode == 0
+    assert "sf-browser - SummitFlow browser automation wrapper" in result.stdout
+    assert "Usage: agent-browser" not in result.stdout
+    assert _read_log(log_path) == []
+
+
 def test_sf_browser_submit_button_uses_request_submit(tmp_path: Path) -> None:
     calls = _run_sf_browser(tmp_path, selector="#finance-entry-composer button[type='submit']", submit_mode="submit")
 
