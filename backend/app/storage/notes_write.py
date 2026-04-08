@@ -7,7 +7,7 @@ from typing import Any
 
 from ._sql import static_sql
 from .connection import generate_prefixed_id, get_connection
-from .notes_helpers import NoteType, _row_to_dict
+from .notes_helpers import NoteType, _row_to_dict, normalize_project_scope
 
 _RETURNING_COLS = (
     "RETURNING id, project_scope, type, title, content, tags, pinned, metadata,"
@@ -27,6 +27,7 @@ def create_note(
     """Create a new note."""
     note_id = generate_prefixed_id("note")
     meta_json = json.dumps(metadata or {})
+    normalized_scope = normalize_project_scope(project_scope)
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
@@ -37,7 +38,7 @@ def create_note(
                 {_RETURNING_COLS}
                 """
             ),
-            (note_id, project_scope, note_type, title, content, tags or [], pinned, meta_json),
+            (note_id, normalized_scope, note_type, title, content, tags or [], pinned, meta_json),
         )
         row = cur.fetchone()
         conn.commit()
@@ -64,6 +65,9 @@ def update_note(note_id: str, **fields: Any) -> dict[str, Any] | None:
         elif key == "metadata":
             set_parts.append("metadata = %s::jsonb")
             params.append(json.dumps(value))
+        elif key == "project_scope":
+            set_parts.append("project_scope = %s")
+            params.append(normalize_project_scope(value))
         else:
             set_parts.append(f"{key} = %s")
             params.append(value)

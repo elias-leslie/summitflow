@@ -6,7 +6,7 @@ from typing import Any
 
 from ._sql import static_sql
 from .connection import get_cursor
-from .notes_helpers import NoteType, _row_to_dict
+from .notes_helpers import NoteType, _row_to_dict, normalize_project_scope
 
 _SELECT_COLS = """
     SELECT id, project_scope, type, title, content, tags, pinned, metadata,
@@ -49,7 +49,7 @@ def list_notes(
 
     if project_scope is not None:
         conditions.append("project_scope = %s")
-        params.append(project_scope)
+        params.append(normalize_project_scope(project_scope))
     if note_type is not None:
         conditions.append("type = %s")
         params.append(note_type)
@@ -87,7 +87,7 @@ def count_notes(
 
     if project_scope is not None:
         conditions.append("project_scope = %s")
-        params.append(project_scope)
+        params.append(normalize_project_scope(project_scope))
     if note_type is not None:
         conditions.append("type = %s")
         params.append(note_type)
@@ -114,7 +114,7 @@ def list_tags(project_scope: str | None = None) -> list[str]:
     """Get all distinct tags, optionally filtered by project scope."""
     if project_scope:
         query = "SELECT DISTINCT unnest(tags) AS tag FROM notes WHERE project_scope = %s ORDER BY tag"
-        params: tuple[Any, ...] = (project_scope,)
+        params: tuple[Any, ...] = (normalize_project_scope(project_scope),)
     else:
         query = "SELECT DISTINCT unnest(tags) AS tag FROM notes ORDER BY tag"
         params = ()
@@ -123,3 +123,15 @@ def list_tags(project_scope: str | None = None) -> list[str]:
         cur.execute(static_sql(query), params)
         rows = cur.fetchall()
     return [row[0] for row in rows]
+
+
+def list_project_scopes() -> list[str]:
+    """List distinct persisted note scopes."""
+    with get_cursor() as cur:
+        cur.execute(static_sql("SELECT DISTINCT project_scope FROM notes ORDER BY project_scope"))
+        rows = cur.fetchall()
+    return list(
+        dict.fromkeys(
+            normalize_project_scope(row[0]) for row in rows if row and row[0]
+        )
+    )

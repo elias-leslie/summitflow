@@ -124,7 +124,12 @@ export function NotesButton({ className, popOutUrl = '/notes' }: { className?: s
                         'shadow-2xl shadow-black/60',
                         'overflow-hidden',
                     )}
-                    style={panelStyle}
+                    style={{
+                        ...panelStyle,
+                        backgroundColor: '#0f172a',
+                        borderColor: 'rgba(51, 65, 85, 0.7)',
+                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.55)',
+                    }}
                 >
                     {/* Phosphor glow line */}
                     <div className="h-px w-full flex-shrink-0" style={{

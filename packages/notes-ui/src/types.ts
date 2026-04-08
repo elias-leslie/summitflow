@@ -46,6 +46,18 @@ export interface NotesConfig {
     onInject?: (content: string) => void;
 }
 
+export interface NotesCapabilities {
+    title_generation: boolean;
+    formatting: boolean;
+    prompt_refinement: boolean;
+}
+
+export interface NotesScopeOption {
+    value: string;
+    label: string;
+    known: boolean;
+}
+
 export interface FormatProposal {
     id: string;
     note_id: string;

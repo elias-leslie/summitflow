@@ -1,4 +1,14 @@
-import type { Note, NoteListResponse, CreateNoteData, UpdateNoteData, TagListResponse, FormatProposal, NoteVersion } from './types';
+import type {
+    Note,
+    NoteListResponse,
+    CreateNoteData,
+    UpdateNoteData,
+    TagListResponse,
+    FormatProposal,
+    NoteVersion,
+    NotesCapabilities,
+    NotesScopeOption,
+} from './types';
 
 function buildQuery(params: Record<string, string | string[] | number | boolean | null | undefined>): string {
     const parts: string[] = [];
@@ -66,8 +76,18 @@ export function createNotesApi(apiPrefix: string) {
         },
 
         tags(projectScope?: string): Promise<TagListResponse> {
-            const query = projectScope ? `?project_scope=${encodeURIComponent(projectScope)}` : '';
+            const query = projectScope
+                ? `?project_scope=${encodeURIComponent(projectScope)}`
+                : '';
             return request<TagListResponse>(`${base}/tags${query}`);
+        },
+
+        capabilities(): Promise<NotesCapabilities> {
+            return request<NotesCapabilities>(`${base}/capabilities`);
+        },
+
+        scopes(): Promise<NotesScopeOption[]> {
+            return request<NotesScopeOption[]>(`${base}/scopes`);
         },
 
         generateTitle(content: string): Promise<{ title: string }> {

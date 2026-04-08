@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from typing import Annotated
 from urllib.parse import urlencode
 
@@ -19,6 +20,10 @@ app = typer.Typer(help="Precision Code Search")
 # ---------------------------------------------------------------------------
 
 _HINT_PREFIX = "hint: "
+_SEARCH_PROGRESS_DELAY_SECONDS = 1.5
+_SEARCH_PROGRESS_MESSAGE = (
+    "st search: still working; first precision search may refresh stale Explorer indexes before returning results."
+)
 
 
 def _generate_hint(query: str, mode: str, metadata: dict) -> str | None:
@@ -56,6 +61,40 @@ def _generate_hint(query: str, mode: str, metadata: dict) -> str | None:
             return "short/generic query may produce incidental symbol matches. Verify relevance or try a more specific identifier."
 
     return None
+
+
+def _emit_status(message: str) -> None:
+    """Write a human-oriented status line to stderr without polluting stdout payloads."""
+    typer.echo(message, err=True)
+
+
+def _start_delayed_status_timer(message: str) -> threading.Timer:
+    """Start a delayed stderr status note for slow precision searches."""
+    timer = threading.Timer(_SEARCH_PROGRESS_DELAY_SECONDS, _emit_status, args=(message,))
+    timer.daemon = True
+    timer.start()
+    return timer
+
+
+def _run_precision_search(client: STClient, query: str, budget: int, limit: int) -> dict:
+    """Run precision search with a delayed status line so stale refreshes don't look hung."""
+    params = urlencode({"q": query, "budget": budget, "limit": limit})
+    timer = _start_delayed_status_timer(_SEARCH_PROGRESS_MESSAGE)
+    try:
+        return client.get(client._url(f"/explorer/precision-search?{params}"))
+    finally:
+        timer.cancel()
+
+
+def _emit_precision_search_metadata_note(metadata: dict) -> None:
+    """Explain stale-index behavior after the search completes when relevant."""
+    if metadata.get("refreshed_index"):
+        _emit_status("st search: refreshed stale Explorer indexes before returning results.")
+        return
+    if metadata.get("stale_hit"):
+        _emit_status(
+            "st search: Explorer indexes are stale and refresh did not complete; verify results carefully or rerun after scan."
+        )
 
 
 @app.command()
@@ -143,11 +182,13 @@ def search(
             params = urlencode({"q": q, "limit": limit})
             result = client.get(client._url(f"/explorer/symbols/search?{params}"))
         else:
-            params = urlencode({"q": q, "budget": budget, "limit": limit})
-            result = client.get(client._url(f"/explorer/precision-search?{params}"))
+            result = _run_precision_search(client, q, budget, limit)
     except APIError as e:
         handle_api_error(e)
         return
+
+    if not text and not symbols:
+        _emit_precision_search_metadata_note(result.get("metadata", {}))
 
     if raw_json:
         output_json(result)

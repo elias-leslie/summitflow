@@ -9,6 +9,7 @@ interface NoteEditorHeaderProps {
     mode: EditMode;
     saveState: SaveState;
     formatState: FormatState;
+    canFormat: boolean;
     contentLength: number;
     confirmDelete: boolean;
     onTitleChange: (val: string) => void;
@@ -21,6 +22,7 @@ interface NoteEditorHeaderProps {
 
 export function NoteEditorHeader({
     title, pinned, mode, saveState, formatState, contentLength,
+    canFormat,
     confirmDelete, onTitleChange, onStartFormat, onToggleHistory,
     onTogglePin, onSetMode, onDelete,
 }: NoteEditorHeaderProps) {
@@ -48,16 +50,18 @@ export function NoteEditorHeader({
                         {saveState === 'saving' ? 'saving...' : 'saved'}
                     </span>
                 )}
-                <button type="button" onClick={onStartFormat}
-                    disabled={formatState === 'pending' || contentLength < 50}
-                    className={clsx(
-                        'p-1.5 rounded-md transition-all duration-150',
-                        formatState === 'pending' ? 'text-amber-400' :
-                        'text-slate-500 hover:text-amber-400 hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed',
-                    )}
-                    title="Format note (title + content cleanup)">
-                    {formatState === 'pending' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
-                </button>
+                {canFormat && (
+                    <button type="button" onClick={onStartFormat}
+                        disabled={formatState === 'pending' || contentLength < 50}
+                        className={clsx(
+                            'p-1.5 rounded-md transition-all duration-150',
+                            formatState === 'pending' ? 'text-amber-400' :
+                            'text-slate-500 hover:text-amber-400 hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed',
+                        )}
+                        title="Format note (title + content cleanup)">
+                        {formatState === 'pending' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
+                    </button>
+                )}
                 <button type="button" onClick={onToggleHistory}
                     className="p-1.5 rounded-md transition-all duration-150 text-slate-500 hover:text-[var(--color-phosphor-400,#33f7ff)] hover:bg-slate-800"
                     title="Version history">

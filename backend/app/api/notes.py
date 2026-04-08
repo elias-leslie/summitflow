@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from ..logging_config import get_logger
 from ..storage import notes as note_store
+from ..storage import projects as project_store
 
 logger = get_logger(__name__)
 
@@ -89,6 +90,18 @@ class VersionResponse(BaseModel):
     created_at: str | None
 
 
+class NotesCapabilitiesResponse(BaseModel):
+    title_generation: bool
+    formatting: bool
+    prompt_refinement: bool
+
+
+class NotesScopeOptionResponse(BaseModel):
+    value: str
+    label: str
+    known: bool
+
+
 # ============================================================================
 # Helpers
 # ============================================================================
@@ -152,6 +165,41 @@ def _normalize_tags(tags: list[str] | None) -> list[str]:
     return tags or []
 
 
+def _build_scope_options(
+    projects: list[dict[str, Any]],
+    observed_scopes: list[str],
+) -> list[NotesScopeOptionResponse]:
+    options = [
+        NotesScopeOptionResponse(value="global", label="Global", known=True),
+    ]
+    seen = {"global"}
+
+    for project in sorted(projects, key=lambda item: str(item.get("name") or item.get("id") or "").lower()):
+        project_id = str(project.get("id") or "").strip()
+        if not project_id or project_id in seen:
+            continue
+        label = str(project.get("name") or project_id).strip() or project_id
+        seen.add(project_id)
+        options.append(
+            NotesScopeOptionResponse(value=project_id, label=label, known=True)
+        )
+
+    for scope in observed_scopes:
+        normalized = str(scope or "").strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        options.append(
+            NotesScopeOptionResponse(
+                value=normalized,
+                label=normalized,
+                known=False,
+            )
+        )
+
+    return options
+
+
 def _note_state_matches(
     snapshot: dict[str, Any], *, title: str, content: str, tags: list[str] | None
 ) -> bool:
@@ -213,6 +261,25 @@ def _maybe_create_edit_checkpoint(note_id: str, existing: dict[str, Any], fields
 # ============================================================================
 # CRUD Endpoints
 # ============================================================================
+
+
+@router.get("/notes/capabilities", response_model=NotesCapabilitiesResponse)
+async def get_capabilities() -> NotesCapabilitiesResponse:
+    """Return Notes feature capabilities for this backend."""
+    return NotesCapabilitiesResponse(
+        title_generation=True,
+        formatting=True,
+        prompt_refinement=True,
+    )
+
+
+@router.get("/notes/scopes", response_model=list[NotesScopeOptionResponse])
+async def get_scopes() -> list[NotesScopeOptionResponse]:
+    """Return canonical note scopes from the project registry plus Global."""
+    return _build_scope_options(
+        project_store.list_projects(),
+        note_store.list_project_scopes(),
+    )
 
 
 @router.get("/notes/tags")

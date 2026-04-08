@@ -17,7 +17,7 @@ interface NoteEditorProps {
 }
 
 export function NoteEditor({ note, onDeleted }: NoteEditorProps) {
-    const { api } = useNotesContext();
+    const { api, capabilities } = useNotesContext();
 
     const editor = useNoteEditorState({ note, onDeleted });
 
@@ -57,6 +57,7 @@ export function NoteEditor({ note, onDeleted }: NoteEditorProps) {
 
     // Auto-title on load
     useEffect(() => {
+        if (!capabilities.title_generation) return;
         const isUntitled = !note.title.trim() || note.title === 'Untitled';
         if (isUntitled && note.content.trim().length >= 50 && !editor.autoFormatAttemptedRef.current) {
             editor.autoFormatAttemptedRef.current = true;
@@ -68,7 +69,7 @@ export function NoteEditor({ note, onDeleted }: NoteEditorProps) {
             }).catch(() => {});
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [note.id]);
+    }, [capabilities.title_generation, note.id]);
 
     // Flush polling on unmount
     useEffect(() => {
@@ -109,6 +110,7 @@ export function NoteEditor({ note, onDeleted }: NoteEditorProps) {
                 mode={editor.mode}
                 saveState={editor.saveState}
                 formatState={format.formatState}
+                canFormat={capabilities.formatting}
                 contentLength={editor.content.trim().length}
                 confirmDelete={editor.confirmDelete}
                 onTitleChange={editor.handleTitleChange}

@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 from typer.testing import CliRunner
 
+from cli.commands import search as search_command
 from cli.commands.search import app
 
 runner = CliRunner()
@@ -17,6 +18,13 @@ def _mock_client(result: dict[str, object]) -> MagicMock:
     client._url.side_effect = lambda path: f"http://testserver{path}"
     client.get.return_value = result
     return client
+
+
+def _immediate_status_timer(message: str) -> MagicMock:
+    search_command._emit_status(message)
+    timer = MagicMock()
+    timer.cancel.return_value = None
+    return timer
 
 
 def test_search_compact_output_renders_prompt_context() -> None:
@@ -306,3 +314,49 @@ def test_search_precision_passes_limit() -> None:
     call_url = mock_client.return_value.get.call_args[0][0]
     assert "limit=10" in call_url
     assert "/explorer/precision-search?" in call_url
+
+
+def test_search_precision_emits_delayed_status_note_for_slow_searches() -> None:
+    payload = {
+        "prompt_context": "Precision Code Search: symbol-first\n\n## Relevant Symbols",
+        "metadata": {
+            "symbol_count": 1,
+            "used_symbol_first": True,
+            "estimated_tokens_saved": 500,
+            "final_tokens": 200,
+        },
+    }
+
+    with (
+        patch("cli.commands.search.STClient", return_value=_mock_client(payload)),
+        patch("cli.commands.search.is_compact", return_value=True),
+        patch("cli.commands.search._start_delayed_status_timer", side_effect=_immediate_status_timer),
+    ):
+        result = runner.invoke(app, ["slow_symbol"])
+
+    assert result.exit_code == 0
+    assert "st search: still working;" in result.output
+    assert "SEARCH:slow_symbol|mode=symbol-first|symbols=1|tokens=200|saved=500" in result.output
+
+
+def test_search_precision_reports_completed_stale_refresh() -> None:
+    payload = {
+        "prompt_context": "Precision Code Search: symbol-first\n\n## Relevant Symbols",
+        "metadata": {
+            "symbol_count": 1,
+            "used_symbol_first": True,
+            "estimated_tokens_saved": 500,
+            "final_tokens": 200,
+            "refreshed_index": True,
+            "stale_hit": True,
+        },
+    }
+
+    with (
+        patch("cli.commands.search.STClient", return_value=_mock_client(payload)),
+        patch("cli.commands.search.is_compact", return_value=True),
+    ):
+        result = runner.invoke(app, ["stale_symbol"])
+
+    assert result.exit_code == 0
+    assert "refreshed stale Explorer indexes before returning results" in result.output

@@ -116,3 +116,41 @@ class TestNotesVersioning:
         assert versions[0]["change_source"] == "edit_checkpoint"
         assert versions[0]["content"] == "Updated once"
         assert versions[1]["content"] == "Original content"
+
+
+def test_notes_capabilities(client: TestClient) -> None:
+    response = client.get("/api/notes/capabilities")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "title_generation": True,
+        "formatting": True,
+        "prompt_refinement": True,
+    }
+
+
+def test_notes_scopes_returns_global_registry_and_observed_unknown_scopes(client: TestClient) -> None:
+    from unittest.mock import patch
+
+    with (
+        patch(
+            "app.api.notes.project_store.list_projects",
+            return_value=[
+                {"id": "summitflow", "name": "SummitFlow"},
+                {"id": "a-term", "name": "A-Term"},
+            ],
+        ),
+        patch(
+            "app.api.notes.note_store.list_project_scopes",
+            return_value=["a-term", "legacy-scope"],
+        ),
+    ):
+        response = client.get("/api/notes/scopes")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {"value": "global", "label": "Global", "known": True},
+        {"value": "a-term", "label": "A-Term", "known": True},
+        {"value": "summitflow", "label": "SummitFlow", "known": True},
+        {"value": "legacy-scope", "label": "legacy-scope", "known": False},
+    ]

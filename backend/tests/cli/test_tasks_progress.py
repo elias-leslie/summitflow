@@ -113,6 +113,7 @@ class TestSyncProgressCommand:
                     "subtask_id": "1.1",
                     "passes": False,
                     "citations_acknowledged_at": "2026-03-09T12:00:00Z",
+                    "steps_from_table": [],
                     "steps_source": "plan_context",
                     "steps": [
                         {"step_number": 1, "description": "Implement the change", "passes": False},

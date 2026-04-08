@@ -35,7 +35,7 @@ export function NotesList({ activeTab, scopeFilter, selectedId, onSelect }: Note
             {
                 title: '',
                 type: activeTab,
-                project_scope: scopeFilter ?? projectScope,
+                project_scope: scopeFilter ?? projectScope ?? 'global',
             },
             {
                 onSuccess: (note) => onSelect(note),
@@ -47,7 +47,16 @@ export function NotesList({ activeTab, scopeFilter, selectedId, onSelect }: Note
     const allTags = tagsData?.tags ?? [];
 
     return (
-        <div className="flex flex-col h-full border-r border-slate-700/50 bg-slate-950/40" style={{ width: '30%', minWidth: 180, maxWidth: 280 }}>
+        <div
+            className="flex flex-col h-full border-r border-slate-700/50 bg-slate-950/40"
+            style={{
+                width: '30%',
+                minWidth: 180,
+                maxWidth: 280,
+                backgroundColor: 'rgba(2, 6, 23, 0.55)',
+                borderColor: 'rgba(51, 65, 85, 0.5)',
+            }}
+        >
             {/* Search */}
             <div className="px-2 pt-2 pb-1.5">
                 <div className="relative">

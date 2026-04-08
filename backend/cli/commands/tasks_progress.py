@@ -21,12 +21,14 @@ def _incomplete_step_numbers(steps: list[dict[str, object]]) -> list[int]:
 
 
 def _subtask_steps(subtask: dict[str, object]) -> list[dict[str, object]]:
-    steps = subtask.get("steps_from_table")
-    if isinstance(steps, list):
-        return steps
+    steps_from_table = subtask.get("steps_from_table")
+    if isinstance(steps_from_table, list) and steps_from_table:
+        return steps_from_table
     steps = subtask.get("steps")
     if isinstance(steps, list):
         return steps
+    if isinstance(steps_from_table, list):
+        return steps_from_table
     return []
 
 
