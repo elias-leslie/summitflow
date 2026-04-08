@@ -68,12 +68,12 @@ def _checked_post(
     client_secret: str,
     label: str,
     source_path: str = "",
-) -> tuple[bool, str, str]:
-    """Return (ok, response_body, error_msg)."""
+) -> tuple[bool, str, str, int | None]:
+    """Return (ok, response_body, error_msg, status_code)."""
     status, payload = post_json(api_url, endpoint, body, client_id, client_secret, source_path)
     if status != 200:
-        return False, payload, f"{label} failed status={status} body={payload[:300]}"
-    return True, payload, ""
+        return False, payload, f"{label} failed status={status} body={payload[:300]}", status
+    return True, payload, "", status
 
 
 def upsert_session(
@@ -86,8 +86,8 @@ def upsert_session(
     client_id: str,
     client_secret: str,
     source_path: str = "",
-) -> tuple[bool, str]:
-    ok, _, err = _checked_post(
+) -> tuple[bool, str, int | None]:
+    ok, _, err, status = _checked_post(
         api_url,
         ENDPOINT_UPSERT,
         {
@@ -111,7 +111,7 @@ def upsert_session(
         "session upsert",
         source_path,
     )
-    return ok, err
+    return ok, err, status
 
 
 def ingest_transcript(
@@ -122,9 +122,9 @@ def ingest_transcript(
     client_id: str,
     client_secret: str,
     source_path: str = "",
-) -> tuple[bool, str | None, str, str]:
-    """Return (ok, next_checkpoint, ingest_detail, error_msg)."""
-    ok, payload, err = _checked_post(
+) -> tuple[bool, str | None, str, str, int | None]:
+    """Return (ok, next_checkpoint, ingest_detail, error_msg, status_code)."""
+    ok, payload, err, status = _checked_post(
         api_url,
         ENDPOINT_TRANSCRIPT.format(sid=session_id),
         {"provider": PROVIDER, "transcript_path": str(transcript_path), "checkpoint": checkpoint},
@@ -134,17 +134,17 @@ def ingest_transcript(
         source_path,
     )
     if not ok:
-        return False, None, "", err
+        return False, None, "", err, status
     try:
         ingest_data = json.loads(payload)
     except json.JSONDecodeError as exc:
-        return False, None, "", f"transcript ingest returned invalid JSON: {exc}"
+        return False, None, "", f"transcript ingest returned invalid JSON: {exc}", status
     next_cp = ingest_data.get("next_checkpoint")
     detail = (
         f"appended={ingest_data.get('events_appended', 0)}"
         f" skipped={ingest_data.get('events_skipped', 0)}"
     )
-    return True, str(next_cp) if next_cp else None, detail, ""
+    return True, str(next_cp) if next_cp else None, detail, "", status
 
 
 def send_heartbeat(
@@ -156,8 +156,8 @@ def send_heartbeat(
     client_id: str,
     client_secret: str,
     source_path: str = "",
-) -> tuple[bool, str]:
-    ok, _, err = _checked_post(
+) -> tuple[bool, str, int | None]:
+    ok, _, err, status = _checked_post(
         api_url,
         ENDPOINT_HEARTBEAT.format(sid=session_id),
         {
@@ -174,7 +174,7 @@ def send_heartbeat(
         "heartbeat",
         source_path,
     )
-    return ok, err
+    return ok, err, status
 
 
 def finalize_and_close(
@@ -185,8 +185,8 @@ def finalize_and_close(
     client_id: str,
     client_secret: str,
     source_path: str = "",
-) -> tuple[bool, str]:
-    ok, _, err = _checked_post(
+) -> tuple[bool, str, int | None]:
+    ok, _, err, status = _checked_post(
         api_url,
         ENDPOINT_FINALIZE.format(sid=session_id),
         {
@@ -200,10 +200,10 @@ def finalize_and_close(
         source_path,
     )
     if not ok:
-        return False, err
+        return False, err, status
     if not close_session:
-        return True, ""
-    ok, _, err = _checked_post(
+        return True, "", status
+    ok, _, err, status = _checked_post(
         api_url,
         ENDPOINT_CLOSE.format(sid=session_id),
         None,
@@ -212,4 +212,4 @@ def finalize_and_close(
         "close",
         source_path,
     )
-    return ok, err
+    return ok, err, status

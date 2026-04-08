@@ -21,6 +21,7 @@ from codex_sync_api import (  # noqa: E402
 from codex_sync_credentials import load_env_credentials  # noqa: E402
 from codex_sync_git import build_project_context  # noqa: E402
 from codex_sync_state import (  # noqa: E402
+    get_state_entry,
     get_checkpoint,
     load_state,
     save_state,
@@ -40,6 +41,7 @@ from codex_sync_transcripts import (  # noqa: E402
 DEFAULT_API = os.environ.get("AGENT_HUB_API", "http://localhost:8003/api")
 LOG_PATH = Path.home() / ".codex" / "session-integrations" / "codex-session-sync.log"
 _SOURCE_PATH = str(Path(__file__))
+_PERMANENT_HTTP_STATUSES = {400, 404, 410, 422}
 
 
 # ---------------------------------------------------------------------------
@@ -67,10 +69,10 @@ def sync_transcript(
     client_secret: str,
     close_session: bool,
     verbose: bool,
-) -> tuple[bool, str]:
+) -> tuple[bool, str, int | None]:
     project = build_project_context(info.cwd)
     if project is None:
-        return False, f"skip non-git cwd={info.cwd}"
+        return False, f"skip non-git cwd={info.cwd}", None
 
     meta: dict[str, object] = {
         "transcript_path": str(info.path),
@@ -80,30 +82,96 @@ def sync_transcript(
     }
     kw = dict(api_url=api_url, client_id=client_id, client_secret=client_secret,
                source_path=_SOURCE_PATH)
+    entry = get_state_entry(info.path, state)
 
-    ok, err = upsert_session(info.session_id, project, info.model, info.cwd, info.path, **kw)
-    if not ok:
-        return False, err
+    if _should_upsert(entry, info.session_id):
+        ok, err, status, project = _upsert_with_project_aliases(
+            info=info,
+            project=project,
+            kw=kw,
+        )
+        if not ok:
+            return False, err, status
 
     checkpoint = get_checkpoint(info.path, state)
-    ok, next_cp, detail, err = ingest_transcript(info.session_id, info.path, checkpoint, **kw)
+    ok, next_cp, detail, err, status = ingest_transcript(
+        info.session_id,
+        info.path,
+        checkpoint,
+        **kw,
+    )
     if not ok:
-        return False, err
-    update_state_entry(state, info.path, info.session_id, info.mtime, info.size,
-                       "synced", detail, checkpoint=next_cp)
+        return False, err, status
 
-    ok, err = send_heartbeat(info.session_id, info.cwd, project, meta, **kw)
+    ok, err, status = send_heartbeat(info.session_id, info.cwd, project, meta, **kw)
     if not ok:
-        return False, err
+        return False, err, status
 
-    ok, err = finalize_and_close(info.session_id, project, close_session, **kw)
-    if not ok:
-        return False, err
+    sync_status = "active"
+    if close_session:
+        ok, err, status = finalize_and_close(info.session_id, project, close_session, **kw)
+        if not ok:
+            return False, err, status
+        sync_status = "terminal"
+
+    update_state_entry(
+        state,
+        info.path,
+        info.session_id,
+        info.mtime,
+        info.size,
+        sync_status,
+        detail,
+        checkpoint=next_cp,
+    )
 
     if verbose:
         log(f"[INFO] Synced session={info.session_id} project={project['project_id']} "
             f"transcript={info.path} close={close_session}")
-    return True, "ok"
+    return True, "ok", None
+
+
+def _should_upsert(entry: dict[str, object] | None, session_id: str) -> bool:
+    if entry is None:
+        return True
+    return not (
+        entry.get("session_id") == session_id
+        and entry.get("status") in {"active", "synced", "terminal"}
+    )
+
+
+def _upsert_with_project_aliases(
+    *,
+    info: TranscriptInfo,
+    project: dict[str, object],
+    kw: dict[str, object],
+) -> tuple[bool, str, int | None, dict[str, object]]:
+    candidates = [project]
+    for alias in project.get("project_aliases", []):
+        if not isinstance(alias, str) or not alias:
+            continue
+        alias_project = dict(project)
+        alias_project["project_id"] = alias
+        candidates.append(alias_project)
+
+    last_err = ""
+    last_status: int | None = None
+    for candidate in candidates:
+        ok, err, status = upsert_session(
+            info.session_id,
+            candidate,
+            info.model,
+            info.cwd,
+            info.path,
+            **kw,
+        )
+        if ok:
+            return True, "", status, candidate
+        last_err = err
+        last_status = status
+        if status != 400 or "Unknown project_id" not in err:
+            break
+    return False, last_err, last_status, project
 
 
 # ---------------------------------------------------------------------------
@@ -116,6 +184,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--scan", action="store_true", help="Scan recent Codex transcripts")
     parser.add_argument("--transcript", type=Path, help="Sync a specific transcript path")
     parser.add_argument("--recent-hours", type=int, default=24, help="Recent hours to scan")
+    parser.add_argument("--cwd", type=Path, help="Only scan transcripts from this working directory")
     parser.add_argument("--close", action="store_true",
                         help="Close the Agent Hub session after analysis")
     parser.add_argument("--force", action="store_true",
@@ -141,18 +210,28 @@ def main(argv: list[str]) -> int:
         infos: list[TranscriptInfo] = [info] if info is not None else []
     else:
         infos = iter_recent_transcripts(args.recent_hours, log_fn=log)
+    if args.cwd is not None:
+        target_cwd = args.cwd.expanduser().resolve()
+        infos = [info for info in infos if info.cwd.expanduser().resolve() == target_cwd]
 
     for info in infos:
         if not should_sync(info.path, info.mtime, info.size, state, args.force):
             continue
-        ok, detail = sync_transcript(
+        ok, detail, status = sync_transcript(
             info=info, state=state, api_url=DEFAULT_API,
             client_id=client_id, client_secret=client_secret,
             close_session=args.close, verbose=args.verbose,
         )
         if not ok:
-            update_state_entry(state, info.path, info.session_id, info.mtime, info.size,
-                               "error", detail)
+            update_state_entry(
+                state,
+                info.path,
+                info.session_id,
+                info.mtime,
+                info.size,
+                "permanent_error" if status in _PERMANENT_HTTP_STATUSES else "error",
+                detail,
+            )
             log(f"[WARN] Failed sync for {info.path}: {detail}")
 
     save_state(state)

@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 STATE_PATH = Path.home() / ".local" / "state" / "codex-session-sync" / "state.json"
+ERROR_RETRY_SECONDS = 300
 
 
 def load_state() -> dict[str, object]:
@@ -22,6 +23,14 @@ def load_state() -> dict[str, object]:
 def save_state(state: dict[str, object]) -> None:
     STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
     STATE_PATH.write_text(json.dumps(state, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def get_state_entry(path: Path, state: dict[str, object]) -> dict[str, object] | None:
+    entries = state.get("transcripts") or {}
+    if not isinstance(entries, dict):
+        return None
+    entry = entries.get(str(path))
+    return entry if isinstance(entry, dict) else None
 
 
 def update_state_entry(
@@ -52,20 +61,45 @@ def update_state_entry(
 def should_sync(path: Path, mtime: float, size: int, state: dict[str, object], force: bool) -> bool:
     if force:
         return True
-    entries = state.get("transcripts") or {}
-    if not isinstance(entries, dict):
+    entry = get_state_entry(path, state)
+    if entry is None:
         return True
-    entry = entries.get(str(path))
-    if not isinstance(entry, dict):
+    if entry.get("status") == "terminal":
+        return False
+    if _entry_is_permanent_error(entry):
+        return False
+    if entry.get("mtime") != mtime or entry.get("size") != size:
         return True
-    return entry.get("mtime") != mtime or entry.get("size") != size
+    if entry.get("status") != "error":
+        return False
+    return _error_retry_due(entry)
 
 
 def get_checkpoint(path: Path, state: dict[str, object]) -> str | None:
-    entries = state.get("transcripts") or {}
-    if not isinstance(entries, dict):
-        return None
-    entry = entries.get(str(path))
-    if not isinstance(entry, dict):
+    entry = get_state_entry(path, state)
+    if entry is None:
         return None
     return entry.get("checkpoint")  # type: ignore[return-value]
+
+
+def _entry_is_permanent_error(entry: dict[str, object]) -> bool:
+    status = str(entry.get("status") or "")
+    if status == "permanent_error":
+        return True
+    if status != "error":
+        return False
+    detail = str(entry.get("detail") or "")
+    return any(token in detail for token in ("status=400", "status=404", "status=410", "status=422"))
+
+
+def _error_retry_due(entry: dict[str, object]) -> bool:
+    updated_at = entry.get("updated_at")
+    if not isinstance(updated_at, str) or not updated_at:
+        return True
+    try:
+        updated = datetime.fromisoformat(updated_at)
+    except ValueError:
+        return True
+    if updated.tzinfo is None:
+        updated = updated.replace(tzinfo=UTC)
+    return (datetime.now(UTC) - updated).total_seconds() >= ERROR_RETRY_SECONDS
