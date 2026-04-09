@@ -222,6 +222,78 @@ class TestContextEndpoint:
             "active_specialists": [],
         }
 
+    def test_context_hides_execution_readiness_noise_for_completed_task(
+        self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
+    ) -> None:
+        response = client.post(
+            f"/api/projects/{test_project_id}/tasks",
+            json={
+                "title": "Completed redesign task",
+                "description": "Completed context should stay focused.",
+                "task_type": "feature",
+                "priority": 1,
+                "complexity": "COMPLEX",
+                "labels": ["auth"],
+            },
+        )
+        assert response.status_code == 200
+        task_id = response.json()["id"]
+        cleanup_task(task_id)
+
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE tasks
+                SET status = %s, complexity = %s, priority = %s, task_type = %s, labels = %s
+                WHERE id = %s
+                """,
+                (
+                    "completed",
+                    "COMPLEX",
+                    1,
+                    "feature",
+                    ["auth"],
+                    task_id,
+                ),
+            )
+            cur.execute(
+                """
+                UPDATE task_spirit
+                SET done_when = %s::jsonb,
+                    context = %s::jsonb,
+                    plan_status = %s,
+                    complexity = %s
+                WHERE task_id = %s
+                """,
+                (
+                    json.dumps(["Task merged safely"]),
+                    json.dumps(
+                        {
+                            "files_to_modify": ["backend/app/api/tasks/workflow.py"],
+                            "testing_strategy": "Run context output coverage",
+                            "second_opinion": {
+                                "required": True,
+                                "stage": "both",
+                                "status": "pending",
+                            },
+                        }
+                    ),
+                    "draft",
+                    "COMPLEX",
+                    task_id,
+                ),
+            )
+            conn.commit()
+
+        response = client.get(f"/api/projects/{test_project_id}/tasks/{task_id}/context")
+        assert response.status_code == 200
+
+        content = response.text
+        assert "WORKFLOW:" not in content
+        assert "READINESS:" not in content
+        assert "2nd:" not in content
+        assert "CONTEXT:modify:backend/app/api/tasks/workflow.py | testing:Run context output coverage" in content
+
     @patch("app.api.tasks.workflow.check_task_lane_conflicts")
     def test_context_json_includes_lane_overlap_payload_when_present(
         self,

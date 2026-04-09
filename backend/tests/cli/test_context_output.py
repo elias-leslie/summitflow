@@ -174,6 +174,38 @@ class TestFormatContextTask:
         assert "SYNCABLE_SUBTASKS:1.1,1.2" in output
         assert "SYNC_SKIPS:1.3:citations | 1.4:steps-2" in output
 
+    def test_hides_execution_readiness_noise_for_completed_tasks(self) -> None:
+        task = {
+            "id": "task-791b",
+            "status": "completed",
+            "priority": 1,
+            "task_type": "feature",
+            "complexity": "COMPLEX",
+            "title": "Completed high-risk task",
+            "plan_status": "draft",
+            "execution_readiness": MagicMock(
+                ready=False,
+                issues=["Missing completed task-shape second opinion"],
+                missing_fields=["second_opinion"],
+            ),
+            "context": {
+                "files_to_modify": ["backend/app/api/tasks/workflow.py"],
+                "testing_strategy": "Run targeted tests",
+                "second_opinion": {
+                    "required": True,
+                    "stage": "both",
+                    "status": "pending",
+                },
+            },
+        }
+
+        output = format_context_task(task)
+
+        assert "WORKFLOW:" not in output
+        assert "READINESS:" not in output
+        assert "2nd:" not in output
+        assert "modify:backend/app/api/tasks/workflow.py" in output
+
     def test_hides_pending_step_only_sync_skips_without_syncable_subtasks(self) -> None:
         task = {
             "id": "task-792",
@@ -335,6 +367,38 @@ class TestTaskContextCommand:
             mock_sync.return_value.skipped = []
             get_task_context("task-1", None, client)
 
+        mock_lane.assert_not_called()
+
+    def test_get_task_context_skips_execution_readiness_for_completed_task(self) -> None:
+        client = MagicMock()
+        client.get_task.return_value = {
+            "id": "task-2",
+            "project_id": "summitflow",
+            "status": "completed",
+            "task_type": "feature",
+            "priority": 1,
+            "complexity": "COMPLEX",
+            "title": "Completed redesign task",
+        }
+        client.get_subtasks.return_value = {"subtasks": []}
+        client.list_dependencies.return_value = []
+        client.get_task_completion_readiness.return_value = {"ready": True, "gates": []}
+
+        with (
+            patch("cli.commands.tasks_context._enrich_task_from_spirit"),
+            patch("cli.commands.tasks_context.assess_task_execution_readiness") as mock_readiness,
+            patch("cli.commands.tasks_context.fetch_triggered_references", return_value=[]),
+            patch("cli.commands.tasks_context.analyze_subtask_sync") as mock_sync,
+            patch("cli.commands.tasks_context.output_context"),
+            patch("cli.commands.tasks_context.check_task_lane_conflicts") as mock_lane,
+            patch("cli.commands.tasks_context._load_snapshot_info", return_value=None),
+            patch("cli.commands.tasks_context.get_worktree_info", return_value=None),
+        ):
+            mock_sync.return_value.syncable = []
+            mock_sync.return_value.skipped = []
+            get_task_context("task-2", None, client)
+
+        mock_readiness.assert_not_called()
         mock_lane.assert_not_called()
 
     def test_get_task_context_falls_back_to_archived_snapshot(self) -> None:

@@ -12,6 +12,14 @@ from .task_harness import determine_task_harness, execution_contract_issues
 from .task_second_opinion import assess_second_opinion_readiness
 
 _NONTRIVIAL_TASK_TYPES = {"feature", "task", "refactor", "debt", "regression"}
+FINAL_TASK_STATUSES: frozenset[str] = frozenset(
+    {"completed", "cancelled", "failed", "abandoned", "closed"}
+)
+
+
+def is_final_task_status(status: object) -> bool:
+    """Return True when the task status is terminal for execution planning."""
+    return str(status or "").strip().lower() in FINAL_TASK_STATUSES
 
 
 def _has_scope_context(context: dict[str, Any] | None) -> bool:

@@ -7,12 +7,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from ...services.task_execution_readiness import TaskExecutionReadiness
+from ...services.task_execution_readiness import TaskExecutionReadiness, is_final_task_status
 from ...services.task_lane_preflight import TaskLaneConflictCheck, TaskLaneConflictCheckDict
 from ...storage.events import get_events_by_trace
 
 
-def _format_context_lines(spirit: dict[str, Any]) -> list[str]:
+def _format_context_lines(
+    spirit: dict[str, Any],
+    *,
+    include_execution_metadata: bool = True,
+) -> list[str]:
     """Return CONTEXT line(s) from spirit context dict."""
     ctx = spirit.get("context")
     if not ctx:
@@ -27,7 +31,7 @@ def _format_context_lines(spirit: dict[str, Any]) -> list[str]:
     if ctx.get("testing_strategy"):
         parts.append(f"testing:{ctx['testing_strategy'][:80]}")
     second_opinion = ctx.get("second_opinion")
-    if isinstance(second_opinion, dict):
+    if include_execution_metadata and isinstance(second_opinion, dict):
         parts.append(
             "2nd:"
             f"{second_opinion.get('stage', 'task_shape')}:"
@@ -97,12 +101,15 @@ def _format_event_log_lines(task_id: str) -> list[str]:
 
 
 def _format_workflow_readiness_lines(
+    task_status: object,
     plan_status: str,
     criteria_count: int,
     decisions_count: int,
     readiness: TaskExecutionReadiness | None,
 ) -> list[str]:
     """Return WORKFLOW and READINESS lines when relevant."""
+    if is_final_task_status(task_status):
+        return []
     lines: list[str] = []
     if plan_status != "draft" or criteria_count > 0 or decisions_count > 0 or readiness is not None:
         ready_flag = "yes" if readiness and readiness.ready else "no"
@@ -116,14 +123,23 @@ def _format_workflow_readiness_lines(
     return lines
 
 
-def _format_spirit_section_lines(spirit: dict[str, Any]) -> list[str]:
+def _format_spirit_section_lines(
+    spirit: dict[str, Any],
+    *,
+    include_execution_metadata: bool = True,
+) -> list[str]:
     """Return OBJECTIVE, SPIRIT_ANTI, DONE_WHEN, and CONTEXT lines from spirit."""
     lines: list[str] = []
     done_when_list = spirit.get("done_when") or []
     if done_when_list:
         strs = [str(d) for d in done_when_list]
         lines.append(f"DONE_WHEN[{len(strs)}]:{' | '.join(strs)}")
-    lines.extend(_format_context_lines(spirit))
+    lines.extend(
+        _format_context_lines(
+            spirit,
+            include_execution_metadata=include_execution_metadata,
+        )
+    )
     return lines
 
 
@@ -152,11 +168,25 @@ def format_toon_context(
         lines.append(f"DESCRIPTION:{description[:200]}{'...' if len(description) > 200 else ''}")
 
     plan_status = spirit.get("plan_status", "draft") if spirit else "draft"
+    final_status = is_final_task_status(task.get("status"))
     subtask_lines, criteria_count, criteria_verified = _format_subtask_lines(subtasks)
-    lines.extend(_format_workflow_readiness_lines(plan_status, criteria_count, 0, readiness))
+    lines.extend(
+        _format_workflow_readiness_lines(
+            task.get("status"),
+            plan_status,
+            criteria_count,
+            0,
+            readiness,
+        )
+    )
 
     if spirit:
-        lines.extend(_format_spirit_section_lines(spirit))
+        lines.extend(
+            _format_spirit_section_lines(
+                spirit,
+                include_execution_metadata=not final_status,
+            )
+        )
     lines.extend(_format_lane_line(lane_check))
     lines.extend(subtask_lines)
 

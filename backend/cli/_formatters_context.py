@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
+from app.services.task_execution_readiness import is_final_task_status
 from app.services.task_harness import summarize_execution_contract
 
 from ._formatters_compact import _safe_int, truncate
 
 
-def _format_context_lines(context: dict[str, Any] | None) -> list[str]:
+def _format_context_lines(
+    context: dict[str, Any] | None,
+    *,
+    include_execution_metadata: bool = True,
+) -> list[str]:
     """Build CONTEXT line parts from task context dict."""
     if not context or not isinstance(context, dict):
         return []
@@ -24,7 +29,7 @@ def _format_context_lines(context: dict[str, Any] | None) -> list[str]:
         parts.append(f"refs:{len(refs)}")
     if testing := context.get("testing_strategy"):
         parts.append(f"testing:{str(testing)[:50]}")
-    if isinstance(second_opinion := context.get("second_opinion"), dict):
+    if include_execution_metadata and isinstance(second_opinion := context.get("second_opinion"), dict):
         stage = second_opinion.get("stage", "task_shape")
         status = second_opinion.get("status", "pending")
         parts.append(f"2nd:{stage}:{status}")
@@ -62,13 +67,14 @@ def _format_specialist_group(group: object) -> str | None:
     """Format a single specialist group entry; returns None for invalid groups."""
     if not isinstance(group, dict):
         return None
-    agent_slug = str(group.get("agent_slug") or "unknown")
-    count = _safe_int(group.get("count"))
-    newest = _safe_int(group.get("newest_age_minutes"))
-    oldest = _safe_int(group.get("oldest_age_minutes"))
+    group_data = cast(dict[str, Any], group)
+    agent_slug = str(group_data.get("agent_slug") or "unknown")
+    count = _safe_int(group_data.get("count"))
+    newest = _safe_int(group_data.get("newest_age_minutes"))
+    oldest = _safe_int(group_data.get("oldest_age_minutes"))
     age_label = f"{newest}-{oldest}m" if newest != oldest else f"{oldest}m"
     segment = f"{agent_slug}:{count}:{age_label}"
-    request_sources = group.get("request_sources")
+    request_sources = group_data.get("request_sources")
     if isinstance(request_sources, list) and request_sources:
         segment += f":{','.join(str(s) for s in request_sources[:2])}"
     return segment
@@ -128,6 +134,8 @@ def _visible_sync_skips(task: dict[str, Any]) -> list[str]:
 
 def _format_workflow_line(task: dict[str, Any]) -> str | None:
     """Return WORKFLOW line if there's anything worth showing."""
+    if is_final_task_status(task.get("status")):
+        return None
     decisions_count = len(task.get("decisions") or [])
     readiness = task.get("execution_readiness")
     plan_status = task.get("plan_status") or "draft"
@@ -142,9 +150,10 @@ def _format_completion_readiness(completion_readiness: object) -> str | None:
     """Return COMPLETE_READY line if relevant."""
     if not isinstance(completion_readiness, dict):
         return None
-    if completion_readiness.get("ready"):
+    readiness_data = cast(dict[str, Any], completion_readiness)
+    if readiness_data.get("ready"):
         return "COMPLETE_READY:yes"
-    gates = completion_readiness.get("gates") or []
+    gates = readiness_data.get("gates") or []
     gate_codes = [
         str(g.get("gate") or g.get("code") or "unknown")
         for g in gates
@@ -157,6 +166,7 @@ def format_context_task(task: dict[str, Any]) -> str:
     """Format task header for context output."""
     task_id = task.get("id", "unknown")
     status = task.get("status", "pending")
+    final_status = is_final_task_status(status)
     priority = task.get("priority", 3)
     task_type = task.get("task_type", "task")
     complexity = task.get("complexity") or "SIMPLE"
@@ -185,7 +195,7 @@ def format_context_task(task: dict[str, Any]) -> str:
     if done_when := task.get("done_when") or []:
         lines.append(f"DONE_WHEN[{len(done_when)}]:{' | '.join(done_when)}")
     readiness = task.get("execution_readiness")
-    if readiness and readiness.missing_fields:
+    if not final_status and readiness and readiness.missing_fields:
         lines.append(f"READINESS:missing:{','.join(readiness.missing_fields)}")
     if cr_line := _format_completion_readiness(task.get("completion_readiness")):
         lines.append(cr_line)
@@ -194,7 +204,12 @@ def format_context_task(task: dict[str, Any]) -> str:
         lines.append(f"SYNCABLE_SUBTASKS:{','.join(str(item) for item in syncable)}")
     if skipped := _visible_sync_skips(task):
         lines.append(f"SYNC_SKIPS:{' | '.join(skipped[:8])}")
-    lines.extend(_format_context_lines(task.get("context")))
+    lines.extend(
+        _format_context_lines(
+            task.get("context"),
+            include_execution_metadata=not final_status,
+        )
+    )
     if contract_line := _format_contract_line(task.get("context")):
         lines.append(contract_line)
     lines.extend(_format_lane_lines(task.get("lane_preflight")))

@@ -14,7 +14,10 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 
-from ...services.task_execution_readiness import assess_task_execution_readiness
+from ...services.task_execution_readiness import (
+    assess_task_execution_readiness,
+    is_final_task_status,
+)
 from ...services.task_lane_preflight import check_task_lane_conflicts
 from ...storage import task_dependencies as dep_store
 from ...storage.events import get_events_by_trace
@@ -94,13 +97,15 @@ async def get_task_context(
     # Get blockers
     blockers = dep_store.get_blocking_tasks(task_id)
 
-    lane_check = check_task_lane_conflicts(task_id, project_id)
+    lane_check = None if is_final_task_status(task.get("status")) else check_task_lane_conflicts(task_id, project_id)
 
     if format == "json":
         return build_context_json(task, spirit, subtasks, blockers, lane_check)
 
     # Default: TOON format
-    readiness = assess_task_execution_readiness(task, spirit, get_subtasks_for_task(task_id, include_steps=True))
+    readiness = None
+    if not is_final_task_status(task.get("status")):
+        readiness = assess_task_execution_readiness(task, spirit, get_subtasks_for_task(task_id, include_steps=True))
     return PlainTextResponse(content=format_toon_context(task, spirit, subtasks, blockers, readiness, lane_check))
 
 
