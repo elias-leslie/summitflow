@@ -173,6 +173,42 @@ restart_svc() {
     systemctl --user start "$svc" && log_success "$svc" || { log_error "$svc failed"; return 1; }
 }
 
+sync_systemd_units() {
+    local systemd_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+    local synced=0
+
+    mkdir -p "$systemd_dir"
+
+    for svc in "$@"; do
+        [ -n "$svc" ] || continue
+        local template="$ROOT_DIR/scripts/systemd/$svc"
+        [ -f "$template" ] || continue
+
+        python3 - "$template" "$systemd_dir/$svc" "$ROOT_DIR" "$SUMMITFLOW_ROOT" <<'PY'
+from pathlib import Path
+import sys
+
+template_path = Path(sys.argv[1])
+destination_path = Path(sys.argv[2])
+project_root = sys.argv[3]
+summitflow_root = sys.argv[4]
+text = template_path.read_text()
+for placeholder, value in {
+    "__PROJECT_ROOT__": project_root,
+    "__SUMMITFLOW_ROOT__": summitflow_root,
+}.items():
+    text = text.replace(placeholder, value)
+destination_path.write_text(text)
+PY
+        log "Synced systemd unit from template: $svc"
+        synced=1
+    done
+
+    if [ "$synced" -eq 1 ]; then
+        systemctl --user daemon-reload
+    fi
+}
+
 ensure_infra() {
     local compose_dir="$SUMMITFLOW_ROOT/docker/compose"
     local compose_file="$compose_dir/docker-compose.yml"
@@ -415,6 +451,7 @@ if [ -n "$OPTIONAL_WORKER_SVCS" ] && [ "$INCLUDE_ALL_WORKERS" != true ]; then
 fi
 
 # 4. Restart all services
+sync_systemd_units "$BACKEND_SVC" "$FRONTEND_SVC" $WORKER_SVCS
 [ -n "$BACKEND_SVC" ] && { restart_svc "$BACKEND_SVC" "$BACKEND_PORT" || ((errors++)); }
 for svc in $WORKER_SVCS; do
     [ -n "$svc" ] && { restart_svc "$svc" || ((errors++)); }
