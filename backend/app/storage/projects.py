@@ -11,6 +11,7 @@ from typing import Any
 
 from ..logging_config import get_logger
 from ..project_identity import canonicalize_project_name
+from ..utils.env_files import project_env_files, scrub_env_keys_from_files
 from .connection import get_cursor
 
 logger = get_logger(__name__)
@@ -98,7 +99,9 @@ def build_project_env(project_id: str | None, working_dir: str | None = None) ->
 
     Single source of truth for subprocess environment in verification.
     Resolves the main repo's venv from project_id (handles worktrees
-    since worktrees don't have their own .venv).
+    since worktrees don't have their own .venv). Keys declared in the
+    project's env files are stripped first so stale shell exports cannot
+    override the repo's canonical .env/.env.local/.env.example sources.
 
     Args:
         project_id: Project ID for resolving venv paths.
@@ -113,6 +116,13 @@ def build_project_env(project_id: str | None, working_dir: str | None = None) ->
     main_repo = get_project_root_path(project_id)
     if not main_repo:
         return env
+
+    env_paths = project_env_files(Path(main_repo))
+    if working_dir:
+        working_root = Path(working_dir)
+        if working_root != Path(main_repo):
+            env_paths.extend(project_env_files(working_root))
+    env = scrub_env_keys_from_files(env, env_paths)
 
     venv_path = _resolve_venv(main_repo)
     if not venv_path:

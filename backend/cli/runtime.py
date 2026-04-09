@@ -7,6 +7,8 @@ import subprocess
 from pathlib import Path
 from typing import Literal
 
+from app.utils.env_files import scrub_env_keys_from_files
+
 # Compose file path for the SummitFlow ecosystem
 COMPOSE_DIR = Path(__file__).resolve().parent.parent.parent / "docker" / "compose"
 COMPOSE_FILE = COMPOSE_DIR / "docker-compose.yml"
@@ -28,16 +30,7 @@ def compose_env() -> dict[str, str]:
     inherited process environment so Docker Compose cannot override the file
     source with stale values from long-lived shells or tmux sessions.
     """
-    env = os.environ.copy()
-    if COMPOSE_ENV_FILE.exists():
-        for raw_line in COMPOSE_ENV_FILE.read_text().splitlines():
-            line = raw_line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key = line.split("=", 1)[0].strip()
-            if key:
-                env.pop(key, None)
-    return env
+    return scrub_env_keys_from_files(os.environ.copy(), [COMPOSE_ENV_FILE])
 
 
 def detect_runtime() -> RuntimeMode:

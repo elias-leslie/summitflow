@@ -265,3 +265,62 @@ class TestFindProjectByCwd:
 
         # Assert
         assert "PYTHONPATH" not in result
+
+    @patch("app.storage.projects.get_project_root_path")
+    def test_build_project_env_strips_keys_declared_by_project_env_files(
+        self,
+        mock_get_root: MagicMock,
+        tmp_path: pytest.TempPathFactory,
+    ) -> None:
+        from app.storage.projects import build_project_env
+
+        main_repo = tmp_path / "main-repo"
+        _make_venv(main_repo)
+        (main_repo / ".env.example").write_text(
+            "\n".join(
+                [
+                    "DATABASE_URL=postgresql://placeholder",
+                    "A_TERM_PORT=8002",
+                ]
+            )
+            + "\n"
+        )
+        mock_get_root.return_value = str(main_repo)
+
+        env_before = os.environ.copy()
+        env_before["DATABASE_URL"] = "postgresql://stale-shell"
+        env_before["A_TERM_PORT"] = "9999"
+        env_before["PATH"] = "/usr/bin"
+
+        with patch.dict(os.environ, env_before, clear=True):
+            result = build_project_env(project_id="proj-abc123")
+
+        assert "DATABASE_URL" not in result
+        assert "A_TERM_PORT" not in result
+        assert result["PATH"].startswith(str(main_repo / ".venv" / "bin"))
+
+    @patch("app.storage.projects.get_project_root_path")
+    def test_build_project_env_strips_worktree_env_keys_when_working_dir_present(
+        self,
+        mock_get_root: MagicMock,
+        tmp_path: pytest.TempPathFactory,
+    ) -> None:
+        from app.storage.projects import build_project_env
+
+        main_repo = tmp_path / "main-repo"
+        _make_venv(main_repo)
+        worktree = tmp_path / "worktrees" / "feature-branch"
+        worktree.mkdir(parents=True)
+        (worktree / ".env.local").write_text("FEATURE_FLAG=enabled\n")
+        mock_get_root.return_value = str(main_repo)
+
+        env_before = os.environ.copy()
+        env_before["FEATURE_FLAG"] = "stale-shell"
+
+        with patch.dict(os.environ, env_before, clear=True):
+            result = build_project_env(
+                project_id="proj-abc123",
+                working_dir=str(worktree),
+            )
+
+        assert "FEATURE_FLAG" not in result

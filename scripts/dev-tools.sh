@@ -10,6 +10,7 @@
 #   dt --fix              # Auto-fix + install deps + pre-commit install
 #   dt --fix-all          # Fix all managed projects
 #   dt --rebuild-venv     # Nuclear option: delete and recreate venv
+#   dt cleanroom -- ...   # Run a command in a clean snapshot of the working tree
 #   dt pytest             # Run pytest with TOON output
 #   dt ruff               # Run ruff with TOON output
 #   dt types              # Run ty with TOON output
@@ -131,7 +132,9 @@ TOOL_REGISTRY="$SCRIPT_DIR/lib/tool-registry.json"
 
 # Check for subcommands (first positional argument)
 # Tool names are read dynamically from the registry
-if [ -n "${1:-}" ] && [ -f "$TOOL_REGISTRY" ]; then
+if [[ "${1:-}" == "cleanroom" ]]; then
+    ACTION="cleanroom"; shift
+elif [ -n "${1:-}" ] && [ -f "$TOOL_REGISTRY" ]; then
     REGISTRY_TOOL_NAMES=$(jq -r '.tools[] | select(.dt) | .name' "$TOOL_REGISTRY" 2>/dev/null | tr '\n' '|')
     REGISTRY_TOOL_NAMES="${REGISTRY_TOOL_NAMES%|}"  # strip trailing pipe
     if [ -n "$REGISTRY_TOOL_NAMES" ] && echo "$1" | grep -qE "^(${REGISTRY_TOOL_NAMES})$"; then
@@ -145,6 +148,9 @@ fi
 # (e.g., `dt pytest -- -k "persona"` → pytest receives `-k persona`, not `-- -k persona`)
 CHANGED_ONLY=0
 EXTRA_ARGS=()
+CLEANROOM_ENV_VARS=()
+CLEANROOM_UNSET_KEYS=()
+CLEANROOM_KEEP_DIR=0
 if [[ "$ACTION" == "tool_toon" ]]; then
     _passthrough=0
     for arg in "$@"; do
@@ -155,6 +161,32 @@ if [[ "$ACTION" == "tool_toon" ]]; then
             esac
         fi
         EXTRA_ARGS+=("$arg")
+    done
+elif [[ "$ACTION" == "cleanroom" ]]; then
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --env)
+                CLEANROOM_ENV_VARS+=("$2")
+                shift 2
+                ;;
+            --unset)
+                CLEANROOM_UNSET_KEYS+=("$2")
+                shift 2
+                ;;
+            --keep-dir)
+                CLEANROOM_KEEP_DIR=1
+                shift
+                ;;
+            --)
+                shift
+                EXTRA_ARGS=("$@")
+                break
+                ;;
+            *)
+                EXTRA_ARGS=("$@")
+                break
+                ;;
+        esac
     done
 else
     for arg in "$@"; do
@@ -181,6 +213,42 @@ log_success() { echo -e "${GREEN}[OK]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log_header() { echo -e "\n${BOLD}${CYAN}=== $1 ===${NC}"; }
+
+run_cleanroom_command() {
+    local summitflow_python="$SUMMITFLOW_ROOT_OVERRIDE/backend/.venv/bin/python"
+    local cmd=()
+
+    if [[ ! -x "$summitflow_python" ]]; then
+        log_error "SummitFlow backend venv is missing: $summitflow_python"
+        return 1
+    fi
+    if [[ ${#EXTRA_ARGS[@]} -eq 0 ]]; then
+        log_error "dt cleanroom requires a command after '--'"
+        return 1
+    fi
+
+    cmd=(
+        "$summitflow_python"
+        -m cli.lib.cleanroom
+        --project-root "$PROJECT_DIR"
+    )
+
+    if [[ "$CLEANROOM_KEEP_DIR" -eq 1 ]]; then
+        cmd+=(--keep-dir)
+    fi
+    for assignment in "${CLEANROOM_ENV_VARS[@]}"; do
+        cmd+=(--env "$assignment")
+    done
+    for key in "${CLEANROOM_UNSET_KEYS[@]}"; do
+        cmd+=(--unset "$key")
+    done
+    cmd+=(-- "${EXTRA_ARGS[@]}")
+
+    (
+        cd "$SUMMITFLOW_ROOT_OVERRIDE/backend"
+        "${cmd[@]}"
+    )
+}
 
 # Get changed files (staged + unstaged) for a given extension pattern
 # Usage: get_changed_files "py" or get_changed_files "ts|tsx"
@@ -1397,6 +1465,7 @@ show_help() {
     echo "Usage: $0 [SUBCOMMAND] [OPTIONS]"
     echo ""
     echo "Subcommands (TOON output for Claude):"
+    echo "  cleanroom        Run a command in a clean snapshot of the working tree"
     echo "  pytest           Run pytest with TOON output (<100 bytes on pass)"
     echo "  ruff             Run ruff with TOON output (<50 bytes on clean)"
     echo "  types            Run ty with TOON output (<50 bytes on clean)"
@@ -1422,6 +1491,7 @@ show_help() {
     echo "  dt --check                 # Full check on all files"
     echo "  dt --quick --changed-only  # Fast check on changed files only (for commits)"
     echo "  dt -q -d                   # Same as above, short form"
+    echo "  dt cleanroom -- bash scripts/install.sh --skip-systemd"
     echo ""
     echo "Managed: ${MANAGED_PROJECTS[*]}"
 }
@@ -1480,5 +1550,8 @@ case "$ACTION" in
         ;;
     tool_toon)
         run_tool_toon "$TOOL_NAME"
+        ;;
+    cleanroom)
+        run_cleanroom_command
         ;;
 esac
