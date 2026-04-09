@@ -199,7 +199,7 @@ DOCKER:
   docker env-create <name> [--profile X]     # create ephemeral test environment
   docker env-list                            # list test environments
   docker env-destroy <name|--all>            # tear down test environment
-  docker env-exec <name> <cmd>               # run command in test environment
+  docker env-exec <name> <service> <cmd>     # run command in test environment service
   docker metrics                             # CPU/memory per container
 
 EXAMPLES:

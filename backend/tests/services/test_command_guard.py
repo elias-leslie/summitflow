@@ -46,6 +46,20 @@ def test_wrapper_commands_are_allowed(tmp_path: Path) -> None:
     assert decision.blocked is False
 
 
+def test_allows_raw_docker_run(tmp_path: Path) -> None:
+    decision = evaluate_shell_command("docker run --rm postgres:16", tmp_path)
+
+    assert decision.blocked is False
+
+
+def test_redirects_docker_compose_to_st_docker(tmp_path: Path) -> None:
+    decision = evaluate_shell_command("docker compose up -d", tmp_path)
+
+    assert decision.blocked is True
+    assert decision.code == "redirect"
+    assert "st docker" in (decision.message or "")
+
+
 def test_blocks_raw_git_commit(tmp_path: Path) -> None:
     decision = evaluate_shell_command("git commit -m 'test'", tmp_path)
 

@@ -175,8 +175,8 @@
   ],
   "docker_redirects": [
     {
-      "pattern": "docker\\s+(compose|run|exec|build|logs|ps)\\b",
-      "message": "Use 'st docker' commands for Docker lifecycle. Commands: st docker status, st docker up, st docker down, st docker logs <service>, st docker restart <service>, st docker build, st docker backup/restore, st docker metrics.",
+      "pattern": "docker\\s+compose\\b",
+      "message": "Use 'st docker' for the managed compose stack and named test environments. Commands: st docker status, st docker up, st docker down, st docker logs <service>, st docker restart <service>, st docker build, st docker backup/restore, st docker env-create <name>, st docker env-exec <name> <service> <cmd...>, st docker metrics.",
       "component_id": "sf.docker"
     }
   ],

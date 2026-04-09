@@ -406,17 +406,26 @@ def env_destroy(
         )
 
 
-@app.command("env-exec")
+@app.command(
+    "env-exec",
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+)
 def env_exec(
     name: Annotated[str, typer.Argument(help="Environment name")],
-    cmd: Annotated[list[str], typer.Argument(help="Command to run")],
+    service: Annotated[str, typer.Argument(help="Service name inside the test environment")],
+    cmd: Annotated[list[str], typer.Argument(help="Command to run inside the service container")],
 ) -> None:
-    """Run a command in a test environment service."""
+    """Run a command in a test environment service container."""
     if not cmd:
         typer.echo("Provide a command to run", err=True)
         raise typer.Exit(1)
     project_name = f"{ENV_PREFIX}{name}"
-    _run(_env_compose_cmd(project_name, "exec", *cmd), stream=True, check=False, env=compose_env())
+    _run(
+        _env_compose_cmd(project_name, "exec", service, *cmd),
+        stream=True,
+        check=False,
+        env=compose_env(),
+    )
 
 
 # ─── Metrics ─────────────────────────────────────────────────────

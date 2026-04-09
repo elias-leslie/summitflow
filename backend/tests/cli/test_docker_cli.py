@@ -56,3 +56,29 @@ class TestDockerUp:
 
         assert result.exit_code != 0
         assert "Choose either --dev or --prod" in result.output
+
+
+class TestDockerEnvExec:
+    """Tests for st docker env-exec."""
+
+    @patch("cli.commands.docker._run")
+    @patch("cli.commands.docker.compose_env")
+    def test_env_exec_targets_named_service(
+        self,
+        mock_compose_env: MagicMock,
+        mock_run: MagicMock,
+    ) -> None:
+        mock_compose_env.return_value = {"PATH": "/usr/bin"}
+
+        result = runner.invoke(app, ["env-exec", "ci", "postgres", "psql", "-c", "SELECT 1"])
+
+        assert result.exit_code == 0
+        mock_run.assert_called_once()
+        args = mock_run.call_args.args[0]
+        assert args[:3] == ["docker", "compose", "--env-file"]
+        assert args[4:] == ["-p", "stenv-ci", "exec", "postgres", "psql", "-c", "SELECT 1"]
+        assert mock_run.call_args.kwargs == {
+            "stream": True,
+            "check": False,
+            "env": {"PATH": "/usr/bin"},
+        }
