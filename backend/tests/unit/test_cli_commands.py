@@ -14,7 +14,7 @@ from collections.abc import Generator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import jsonschema
 import pytest
@@ -434,7 +434,21 @@ class TestTaskCliErgonomics:
             result = runner.invoke(tasks_app, ["log", "hello world", "task-123"])
 
         assert result.exit_code == 0
-        mock_append.assert_called_once()
+        mock_append.assert_called_once_with("hello world", "task-123", ANY)
+
+    def test_log_accepts_task_id_first(self) -> None:
+        with patch("cli.commands.tasks_commands.append_task_log") as mock_append:
+            result = runner.invoke(tasks_app, ["log", "task-123", "hello world"])
+
+        assert result.exit_code == 0
+        mock_append.assert_called_once_with("hello world", "task-123", ANY)
+
+    def test_log_accepts_explicit_task_option(self) -> None:
+        with patch("cli.commands.tasks_commands.append_task_log") as mock_append:
+            result = runner.invoke(tasks_app, ["log", "hello world", "--task", "task-123"])
+
+        assert result.exit_code == 0
+        mock_append.assert_called_once_with("hello world", "task-123", ANY)
 
     def test_import_plan_refreshes_subtasks_before_reporting(self) -> None:
         schema_path = Path(__file__).resolve().parents[2] / "app" / "schemas" / "plan.schema.json"

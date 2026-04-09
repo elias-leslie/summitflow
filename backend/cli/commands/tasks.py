@@ -29,6 +29,43 @@ _DEFAULT_CRITIQUE_AGENT = "specifier"
 _CAPTURE_KINDS = {"task", "bug", "idea"}
 
 
+def _looks_like_task_id(value: str | None) -> bool:
+    if not value:
+        return False
+    candidate = value.strip().lower()
+    return candidate.startswith("task-")
+
+
+def _resolve_log_inputs(
+    arg1: str,
+    arg2: str | None,
+    task_id: str | None,
+) -> tuple[str, str]:
+    if task_id:
+        return arg1, task_id
+    if not arg2:
+        typer.echo(
+            "Error: task id required via `st log <task-id> <message>` or `--task`",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    arg1_is_task_id = _looks_like_task_id(arg1)
+    arg2_is_task_id = _looks_like_task_id(arg2)
+
+    if arg1_is_task_id and not arg2_is_task_id:
+        return arg2, arg1
+    if arg2_is_task_id and not arg1_is_task_id:
+        return arg1, arg2
+    if arg1_is_task_id and arg2_is_task_id:
+        typer.echo(
+            "Error: ambiguous log arguments. Pass the message with `--task <task-id>`.",
+            err=True,
+        )
+        raise typer.Exit(1)
+    return arg1, arg2
+
+
 def _removed_command(name: str, replacement: str) -> None:
     """Emit a standard error for removed commands and exit."""
     typer.echo(f"Error: '{name}' removed. Use '{replacement}'", err=True)
@@ -281,17 +318,14 @@ def bug(
 
 @app.command()
 def log(
-    message: str,
-    task_id_arg: Annotated[str | None, typer.Argument(help="Task ID (optional trailing form)")] = None,
+    arg1: Annotated[str, typer.Argument(help="Task ID or message")],
+    arg2: Annotated[str | None, typer.Argument(help="Message or legacy trailing task ID")] = None,
     task_id: Annotated[str | None, typer.Option("-t", "--task", help="Task ID")] = None,
 ) -> None:
-    """Append a log entry to a task's progress log."""
+    """Append a task log entry. Prefer `st log <task-id> "<message>"`."""
     from .tasks_commands import append_task_log
 
-    resolved_task_id = task_id or task_id_arg
-    if not resolved_task_id:
-        typer.echo("Error: task id required via trailing argument or --task", err=True)
-        raise typer.Exit(1)
+    message, resolved_task_id = _resolve_log_inputs(arg1, arg2, task_id)
     append_task_log(message, resolved_task_id, STClient())
 
 
