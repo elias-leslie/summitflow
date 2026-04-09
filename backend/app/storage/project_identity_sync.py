@@ -296,4 +296,5 @@ def sync_project_identity(project_id: str) -> dict[str, Any]:
         "category": row[6],
         "sidebar_rank": row[7],
         "created_at": row[8],
+        "aliases": meta.aliases,
     }

@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
+import pytest
 from fastapi import HTTPException
 
 from app.api.projects.public_urls import clear_public_url_config_cache, resolve_project_public_url
@@ -94,6 +95,58 @@ def test_create_project_syncs_agent_hub_permission_when_requested(client, monkey
             cur.execute("DELETE FROM backup_sources WHERE id = %s", (project_id,))
             cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
             conn.commit()
+
+
+@pytest.mark.asyncio
+async def test_reconcile_agent_hub_project_identity_renames_legacy_permission(monkeypatch) -> None:
+    """Legacy Agent Hub permission ids should be recreated under the canonical project id."""
+    from app.api.projects.agent_hub import reconcile_agent_hub_project_identity
+
+    fetch_calls: list[str] = []
+    sync_mock = AsyncMock()
+    delete_mock = AsyncMock()
+
+    async def fake_fetch(project_id: str):
+        fetch_calls.append(project_id)
+        if project_id == "terminal":
+            return {
+                "project_id": "terminal",
+                "permission_tier": "read",
+                "auto_exec_enabled": True,
+                "execution_start_hour": 2,
+                "execution_end_hour": 20,
+                "root_path": "/srv/workspaces/projects/legacy-a-term",
+                "daily_cost_budget_usd": 5.0,
+                "monthly_cost_budget_usd": 50.0,
+                "budget_alert_threshold": 0.9,
+            }
+        return None
+
+    monkeypatch.setattr("app.api.projects.agent_hub._fetch_agent_hub_project_permission", fake_fetch)
+    monkeypatch.setattr("app.api.projects.agent_hub.sync_agent_hub_project_permission", sync_mock)
+    monkeypatch.setattr("app.api.projects.agent_hub.delete_agent_hub_project_permission", delete_mock)
+
+    await reconcile_agent_hub_project_identity(
+        requested_project_id="a-term",
+        canonical_project_id="a-term",
+        aliases=("a-term", "aterm", "terminal"),
+        root_path="/srv/workspaces/projects/a-term",
+    )
+
+    assert fetch_calls == ["a-term", "aterm", "terminal"]
+    sync_mock.assert_awaited_once()
+    sync_args = sync_mock.await_args.args
+    assert sync_args[0] == "a-term"
+    assert sync_args[1].permission_tier == "read"
+    assert sync_args[1].auto_exec_enabled is True
+    assert sync_args[1].execution_start_hour == 2
+    assert sync_args[1].execution_end_hour == 20
+    assert sync_args[1].root_path == "/srv/workspaces/projects/a-term"
+    assert sync_args[1].daily_cost_budget_usd == 5.0
+    assert sync_args[1].monthly_cost_budget_usd == 50.0
+    assert sync_args[1].budget_alert_threshold == 0.9
+    assert sync_args[2] == "/srv/workspaces/projects/a-term"
+    assert [call.args[0] for call in delete_mock.await_args_list] == ["aterm", "terminal"]
 
 
 def test_create_project_queues_standard_onboarding_when_requested(client, monkeypatch) -> None:
@@ -891,6 +944,9 @@ def test_sync_project_identity_endpoint_reconciles_legacy_project_ids(client, mo
     project_identity_module._read_manifest.cache_clear()
     monkeypatch.setattr(project_identity_module, "_PROJECTS_ROOT", projects_root)
 
+    reconcile_mock = AsyncMock()
+    monkeypatch.setattr("app.api.projects.reconcile_agent_hub_project_identity", reconcile_mock)
+
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
@@ -930,6 +986,12 @@ def test_sync_project_identity_endpoint_reconciles_legacy_project_ids(client, mo
         assert payload["id"] == "a-term"
         assert payload["name"] == "A-Term"
         assert payload["root_path"] == str(repo_root)
+        reconcile_mock.assert_awaited_once_with(
+            requested_project_id="a-term",
+            canonical_project_id="a-term",
+            aliases=("a-term", "aterm", "terminal"),
+            root_path=str(repo_root),
+        )
 
         with get_connection() as conn, conn.cursor() as cur:
             cur.execute("SELECT id, name, root_path FROM projects WHERE id = 'a-term'")
@@ -952,4 +1014,3 @@ def test_sync_project_identity_endpoint_reconciles_legacy_project_ids(client, mo
             conn.commit()
         project_identity_module._workspace_manifest_paths.cache_clear()
         project_identity_module._read_manifest.cache_clear()
-

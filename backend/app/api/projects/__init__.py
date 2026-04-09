@@ -17,6 +17,7 @@ from ...storage.project_identity_sync import (
 )
 from .agent_hub import (
     delete_agent_hub_project_permission,
+    reconcile_agent_hub_project_identity,
     sync_agent_hub_project_permission,
 )
 from .db_helpers import (
@@ -249,6 +250,12 @@ async def sync_project_identity(project_id: str) -> ProjectResponse:
         synced = await asyncio.to_thread(sync_registered_project_identity, project_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    await reconcile_agent_hub_project_identity(
+        requested_project_id=project_id,
+        canonical_project_id=str(synced["id"]),
+        aliases=tuple(str(alias) for alias in synced.get("aliases", ())),
+        root_path=synced.get("root_path"),
+    )
     return get_project_from_db(str(synced["id"]))
 
 
