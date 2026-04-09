@@ -8,10 +8,12 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import psycopg
+
 from ..logging_config import get_logger
 from .connection import get_connection
 from .subtasks_helpers import SUBTASK_COLUMNS, generate_subtask_id, row_to_dict
-from .subtasks_validation import validate_citations_acknowledged
+from .subtasks_validation import SubtaskGateError, validate_citations_acknowledged
 
 logger = get_logger(__name__)
 
@@ -46,28 +48,33 @@ def _set_subtask_passes(
     # Steps layer removed - skip step completion validation
     passed_at = datetime.now(UTC)
 
-    with get_connection() as conn, conn.cursor() as cur:
-        # Lock the row to prevent TOCTOU race between read and update
-        cur.execute(
-            "SELECT citations_acknowledged_at FROM task_subtasks WHERE id = %s FOR UPDATE",
-            (table_id,),
-        )
-        row = cur.fetchone()
-        acknowledged_at = row[0] if row else None
+    try:
+        with get_connection() as conn, conn.cursor() as cur:
+            # Lock the row to prevent TOCTOU race between read and update
+            cur.execute(
+                "SELECT citations_acknowledged_at FROM task_subtasks WHERE id = %s FOR UPDATE",
+                (table_id,),
+            )
+            row = cur.fetchone()
+            acknowledged_at = row[0] if row else None
 
-        validate_citations_acknowledged(table_id, subtask_id, acknowledged_at)
+            validate_citations_acknowledged(table_id, subtask_id, acknowledged_at)
 
-        cur.execute(
-            f"""
-            UPDATE task_subtasks
-            SET passes = %s, passed_at = %s
-            WHERE id = %s
-            RETURNING {SUBTASK_COLUMNS}
-            """,
-            (True, passed_at, table_id),
-        )
-        row = cur.fetchone()
-        conn.commit()
+            cur.execute(
+                f"""
+                UPDATE task_subtasks
+                SET passes = %s, passed_at = %s
+                WHERE id = %s
+                RETURNING {SUBTASK_COLUMNS}
+                """,
+                (True, passed_at, table_id),
+            )
+            row = cur.fetchone()
+            conn.commit()
+    except psycopg.Error as exc:
+        if "incomplete dependencies" in str(exc):
+            raise SubtaskGateError(str(exc), incomplete_steps=[]) from exc
+        raise
 
     if not row:
         logger.warning("Subtask %s not found for task %s", subtask_id, task_id)

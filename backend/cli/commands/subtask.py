@@ -83,6 +83,26 @@ def pass_subtask(
     output_success(subtask_id)
 
 
+@app.command("clear")
+def clear_subtask(
+    subtask_id: str,
+    task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
+) -> None:
+    """Clear a subtask's passed state."""
+    from ..context import require_task_id
+
+    task_id = require_task_id(task_id)
+    client = STClient()
+
+    try:
+        client.update_subtask(task_id, subtask_id, passes=False)
+    except APIError as e:
+        handle_api_error(e)
+        return
+
+    output_success(subtask_id)
+
+
 @app.command("delete")
 def delete_subtask(
     subtask_id: str,

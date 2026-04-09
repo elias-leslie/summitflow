@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import typer
 
-from cli.commands.subtask import pass_subtask
+from cli.commands.subtask import clear_subtask, pass_subtask
 from cli.commands.subtask_validation import is_step_resolved
 
 
@@ -73,3 +73,16 @@ class TestPassSubtaskCommand:
             pass_subtask("1.1", "task-1", ["M:abc12345+"], True)
 
         assert exc_info.value.exit_code == 1
+
+
+class TestClearSubtaskCommand:
+    def test_clear_subtask_can_reset_pass_state(self) -> None:
+        client = MagicMock()
+
+        with (
+            patch("cli.commands.subtask.STClient", return_value=client),
+            patch("cli.commands.subtask.output_success"),
+        ):
+            clear_subtask("1.1", "task-1")
+
+        client.update_subtask.assert_called_once_with("task-1", "1.1", passes=False)

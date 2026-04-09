@@ -46,6 +46,7 @@ class SubtaskResponse(BaseModel):
     subtask_type: str | None = None
     description: str
     steps: list[str]
+    depends_on: list[str] = Field(default_factory=list)
     passes: bool
     passed_at: str | None
     display_order: int

@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from app.storage import subtasks as subtask_store
 from app.storage.subtasks_crud import generate_subtask_id as _generate_subtask_id
 
@@ -141,6 +143,20 @@ class TestGetSubtasksForTask:
 
         assert [s["subtask_id"] for s in subtasks] == ["1.1", "1.2", "2.1"]
 
+    def test_get_subtasks_includes_short_dependency_ids(
+        self,
+        test_task: dict[str, Any],
+    ) -> None:
+        """Dependency metadata should be surfaced on subtask reads."""
+        subtask_store.create_subtask(test_task["id"], "1.6", "History cleanup", 0)
+        subtask_store.create_subtask(test_task["id"], "1.7", "Final verification", 1)
+        subtask_store.add_subtask_dependency(test_task["id"], "1.7", "1.6")
+
+        subtasks = subtask_store.get_subtasks_for_task(test_task["id"])
+
+        assert subtasks[0]["depends_on"] == []
+        assert subtasks[1]["depends_on"] == ["1.6"]
+
     def test_get_subtasks_with_include_steps(self, test_task: dict[str, Any]) -> None:
         """Test getting subtasks with include_steps=True returns empty step data (steps layer removed)."""
         subtask_store.create_subtask(test_task["id"], "1.1", "Test", 0)
@@ -243,6 +259,22 @@ class TestUpdateSubtaskPasses:
         result = subtask_store.update_subtask_passes(test_task["id"], "99.99", False)
 
         assert result is None
+
+    def test_update_passes_rejects_incomplete_dependencies(
+        self,
+        test_task: dict[str, Any],
+    ) -> None:
+        """Dependency blockers should raise a gate error instead of surfacing a raw DB error."""
+        from app.storage.subtasks_validation import SubtaskGateError
+
+        subtask_store.create_subtask(test_task["id"], "1.6", "History cleanup", 0)
+        subtask_store.create_subtask(test_task["id"], "1.7", "Final verification", 1)
+        subtask_store.add_subtask_dependency(test_task["id"], "1.7", "1.6")
+        subtask_store.acknowledge_no_citations(test_task["id"], "1.6")
+        subtask_store.acknowledge_no_citations(test_task["id"], "1.7")
+
+        with pytest.raises(SubtaskGateError, match=r"incomplete dependencies: 1\.6"):
+            subtask_store.update_subtask_passes(test_task["id"], "1.7", True)
 
 
 class TestBulkCreateSubtasks:

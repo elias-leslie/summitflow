@@ -283,7 +283,7 @@ def progress_alias(
     """Alias hint: use 'st sync-progress' or 'st subtask pass' instead."""
     typer.echo(
         "Command 'st progress' does not exist. Did you mean:\n"
-        "  st sync-progress <task-id>              Sync passed subtasks from completed steps\n"
+        "  st sync-progress <task-id>              Sync objectively complete, step-backed subtasks\n"
         "  st subtask pass <subtask-id> -t <task>   Mark individual subtask complete",
         err=True,
     )

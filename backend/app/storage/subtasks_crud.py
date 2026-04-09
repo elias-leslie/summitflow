@@ -43,6 +43,32 @@ def _attach_plan_context_guidance(
         subtask["step_summary"] = {"total": len(guidance_steps), "completed": 0}
 
 
+def _short_subtask_id(task_id: str, table_id: str) -> str:
+    prefix = f"{task_id}-"
+    if table_id.startswith(prefix):
+        return table_id[len(prefix):]
+    return table_id
+
+
+def _attach_dependencies(task_id: str, subtasks: list[dict[str, object]]) -> None:
+    """Hydrate each subtask with its short-id dependency list."""
+    from .subtask_dependencies import get_all_dependencies_for_task
+
+    dependency_map = {
+        str(subtask.get("subtask_id", "")): [] for subtask in subtasks if subtask.get("subtask_id")
+    }
+    for dependency in get_all_dependencies_for_task(task_id):
+        subtask_id = _short_subtask_id(task_id, str(dependency.get("subtask_id", "")))
+        depends_on = _short_subtask_id(task_id, str(dependency.get("depends_on_subtask_id", "")))
+        if not subtask_id or not depends_on:
+            continue
+        dependency_map.setdefault(subtask_id, []).append(depends_on)
+
+    for subtask in subtasks:
+        subtask_id = str(subtask.get("subtask_id", ""))
+        subtask["depends_on"] = dependency_map.get(subtask_id, [])
+
+
 def get_subtask(task_id: str, subtask_id: str) -> dict[str, object] | None:
     """Get a single subtask by task_id and subtask_id.
 
@@ -109,6 +135,7 @@ def get_subtasks_for_task(
         rows = cur.fetchall()
 
     subtasks = [row_to_dict(row) for row in rows]
+    _attach_dependencies(task_id, subtasks)
 
     if include_steps:
         for subtask in subtasks:

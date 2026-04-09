@@ -1,10 +1,12 @@
-"""Task progress sync helpers for plan-backed tasks."""
+"""Task progress sync helpers for objectively verifiable subtasks."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 import typer
+
+from app.storage._subtask_dep_helpers import CycleError, build_graph, kahn_sort
 
 from ..client import APIError, STClient
 from ..output import handle_api_error, output_success
@@ -43,6 +45,48 @@ class SyncAnalysis:
     skipped: list[str]
 
 
+def _plan_context_skip_reason(subtask_id: str) -> str:
+    return f"{subtask_id}:plan-context"
+
+
+def _dependency_ordered_subtasks(
+    task_id: str,
+    subtasks: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    """Return subtasks using the canonical dependency-order algorithm."""
+    ordered_ids = [
+        str(subtask.get("subtask_id", ""))
+        for subtask in subtasks
+        if subtask.get("subtask_id")
+    ]
+    if not ordered_ids:
+        return subtasks
+
+    dependency_pairs: list[tuple[str, str]] = []
+    for subtask in subtasks:
+        subtask_id = str(subtask.get("subtask_id", ""))
+        raw_dependencies = subtask.get("depends_on")
+        if not subtask_id or not isinstance(raw_dependencies, list):
+            continue
+        dependency_pairs.extend(
+            (subtask_id, str(dependency))
+            for dependency in raw_dependencies
+            if str(dependency) in ordered_ids
+        )
+
+    try:
+        in_degree, dependents = build_graph(ordered_ids, dependency_pairs)
+        topo_ids = kahn_sort(ordered_ids, in_degree, dependents, task_id)
+    except CycleError:
+        return subtasks
+
+    positions = {subtask_id: index for index, subtask_id in enumerate(topo_ids)}
+    return sorted(
+        subtasks,
+        key=lambda subtask: positions.get(str(subtask.get("subtask_id", "")), len(topo_ids)),
+    )
+
+
 def analyze_subtask_sync(subtasks: list[dict[str, object]]) -> SyncAnalysis:
     """Classify subtasks into syncable and skipped buckets."""
     syncable: list[str] = []
@@ -53,16 +97,13 @@ def analyze_subtask_sync(subtasks: list[dict[str, object]]) -> SyncAnalysis:
         if not subtask_id or subtask.get("passes"):
             continue
 
+        if _uses_plan_context_steps(subtask):
+            skipped.append(_plan_context_skip_reason(subtask_id))
+            continue
+
         steps = _subtask_steps(subtask)
         if not steps:
             skipped.append(f"{subtask_id}:no-steps")
-            continue
-        if _uses_plan_context_steps(subtask):
-            citations_acknowledged = bool(subtask.get("citations_acknowledged_at"))
-            if not citations_acknowledged:
-                skipped.append(f"{subtask_id}:citations")
-                continue
-            syncable.append(subtask_id)
             continue
 
         incomplete = _incomplete_step_numbers(steps)
@@ -118,24 +159,6 @@ def _mark_subtask_passed(
     analysis.synced.append(subtask_id)
 
 
-def _sync_plan_context_subtask(
-    client: STClient,
-    task_id: str,
-    subtask_id: str,
-    subtask: dict[str, object],
-    acknowledge_none: bool,
-    analysis: SyncAnalysis,
-) -> None:
-    """Sync a subtask whose steps come from plan context (steps are guidance, not blockers)."""
-    acknowledged = _ensure_citations_acknowledged(
-        client, task_id, subtask_id, subtask, acknowledge_none
-    )
-    if not acknowledged:
-        analysis.skipped.append(f"{subtask_id}:citations")
-        return
-    _mark_subtask_passed(client, task_id, subtask_id, subtask, analysis)
-
-
 def _sync_regular_subtask(
     client: STClient,
     task_id: str,
@@ -170,9 +193,13 @@ def sync_completed_subtasks(
     """Mark syncable subtasks passed, optionally acknowledging missing citations."""
     analysis = SyncAnalysis(synced=[], syncable=[], skipped=[])
 
-    for subtask in subtasks:
+    for subtask in _dependency_ordered_subtasks(task_id, subtasks):
         subtask_id = str(subtask.get("subtask_id", ""))
         if not subtask_id or subtask.get("passes"):
+            continue
+
+        if _uses_plan_context_steps(subtask):
+            analysis.skipped.append(_plan_context_skip_reason(subtask_id))
             continue
 
         steps = _subtask_steps(subtask)
@@ -180,14 +207,9 @@ def sync_completed_subtasks(
             analysis.skipped.append(f"{subtask_id}:no-steps")
             continue
 
-        if _uses_plan_context_steps(subtask):
-            _sync_plan_context_subtask(
-                client, task_id, subtask_id, subtask, acknowledge_none, analysis
-            )
-        else:
-            _sync_regular_subtask(
-                client, task_id, subtask_id, subtask, steps, acknowledge_none, analysis
-            )
+        _sync_regular_subtask(
+            client, task_id, subtask_id, subtask, steps, acknowledge_none, analysis
+        )
 
     remaining = analyze_subtask_sync(subtasks)
     analysis.syncable = remaining.syncable
@@ -199,7 +221,7 @@ def sync_progress_command(
     task_id: str | None,
     acknowledge_none: bool,
 ) -> None:
-    """Mark objectively complete subtasks as passed."""
+    """Mark objectively complete, step-backed subtasks as passed."""
     from ..context import require_task_id
 
     task_id = require_task_id(task_id)

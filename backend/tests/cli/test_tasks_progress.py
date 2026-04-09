@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 from cli.commands.tasks_progress import sync_progress_command
 
@@ -105,7 +105,7 @@ class TestSyncProgressCommand:
 
         client.update_subtask.assert_called_once_with("task-1", "1.1", passes=True)
 
-    def test_plan_context_steps_are_guidance_not_sync_blockers(self) -> None:
+    def test_plan_context_steps_are_guidance_only_and_are_not_auto_passed(self) -> None:
         client = MagicMock()
         client.get_subtasks.return_value = {
             "subtasks": [
@@ -124,8 +124,45 @@ class TestSyncProgressCommand:
 
         with (
             patch("cli.commands.tasks_progress.STClient", return_value=client),
+            patch("typer.echo") as mock_echo,
+        ):
+            sync_progress_command("task-1", acknowledge_none=False)
+
+        client.update_subtask.assert_not_called()
+        assert "1.1:plan-context" in mock_echo.call_args.args[0]
+
+    def test_sync_orders_subtasks_by_dependency_before_passing_dependents(self) -> None:
+        client = MagicMock()
+        client.get_subtasks.return_value = {
+            "subtasks": [
+                {
+                    "subtask_id": "1.7",
+                    "passes": False,
+                    "depends_on": ["1.6"],
+                    "citations_acknowledged_at": "2026-03-09T12:00:00Z",
+                    "steps_from_table": [
+                        {"step_number": 1, "passes": True, "status": "pending"},
+                    ],
+                },
+                {
+                    "subtask_id": "1.6",
+                    "passes": False,
+                    "depends_on": [],
+                    "citations_acknowledged_at": "2026-03-09T12:00:00Z",
+                    "steps_from_table": [
+                        {"step_number": 1, "passes": True, "status": "pending"},
+                    ],
+                },
+            ]
+        }
+
+        with (
+            patch("cli.commands.tasks_progress.STClient", return_value=client),
             patch("cli.commands.tasks_progress.output_success"),
         ):
             sync_progress_command("task-1", acknowledge_none=False)
 
-        client.update_subtask.assert_called_once_with("task-1", "1.1", passes=True)
+        assert client.update_subtask.call_args_list == [
+            call("task-1", "1.6", passes=True),
+            call("task-1", "1.7", passes=True),
+        ]
