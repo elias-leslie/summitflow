@@ -68,14 +68,36 @@ for node in module.body:
         for target in node.targets:
             if getattr(target, "id", None) == "_BUILD_PROJECTS":
                 for _project, _dockerfile, image in ast.literal_eval(node.value):
-                    print(image)
+                    print(f"{_project}\t{image}")
                 raise SystemExit(0)
 
 raise SystemExit("Could not read _BUILD_PROJECTS from docker.py")
 PY
 }
 
-mapfile -t FIRST_PARTY_IMAGES < <(build_project_images)
+include_image_for_choice() {
+    local project="$1"
+    case "$INSTALL_CHOICE" in
+        1)
+            [[ "$project" == "summitflow" ]]
+            ;;
+        2)
+            [[ "$project" == "summitflow" || "$project" == "agent-hub" ]]
+            ;;
+        3)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+mapfile -t FIRST_PARTY_IMAGES < <(
+    while IFS=$'\t' read -r project image; do
+        include_image_for_choice "$project" && printf '%s\n' "$image"
+    done < <(build_project_images)
+)
 
 # ─── Parse args ──────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
