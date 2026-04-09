@@ -13,7 +13,9 @@ from ._git_core import run_git
 
 _STATUS_CODE_MAP = {"A": "added", "M": "modified", "D": "deleted", "R": "renamed"}
 _LOG_FORMAT = "COMMIT_START%n%H%n%h%n%s%n%an%n%ae%n%cI"
-_SNAPSHOT_TAG_PREFIX = "snapshot/pre-merge/"
+_SNAPSHOT_REF_PREFIX = "refs/summitflow/snapshots/pre-merge/"
+_SNAPSHOT_SHORT_PREFIX = "summitflow/snapshots/pre-merge/"
+_LEGACY_SNAPSHOT_TAG_PREFIX = "snapshot/pre-merge/"
 
 
 def _parse_numstat(output: str) -> tuple[list[DiffFile], int, int]:
@@ -157,7 +159,7 @@ def get_recent_commits(repo_path: Path, limit: int = 30) -> list[CommitInfo]:
 def _parse_snapshot_line(
     line: str, head_sha: str, repo_name: str, repo_path: Path
 ) -> SnapshotInfo | None:
-    """Parse one snapshot tag line into a SnapshotInfo."""
+    """Parse one snapshot ref line into a SnapshotInfo."""
     from ..api.models.git_models import SnapshotInfo
 
     if not line.strip():
@@ -166,7 +168,11 @@ def _parse_snapshot_line(
     if len(parts) < 4:
         return None
     tag_name, sha, short_sha, created_at = parts[0], parts[1], parts[2], parts[3]
-    task_id = tag_name.replace(_SNAPSHOT_TAG_PREFIX, "")
+    task_id = (
+        tag_name.removeprefix(_SNAPSHOT_REF_PREFIX)
+        .removeprefix(_SNAPSHOT_SHORT_PREFIX)
+        .removeprefix(_LEGACY_SNAPSHOT_TAG_PREFIX)
+    )
     ar = run_git(["rev-list", "--count", f"{sha}..HEAD"], repo_path)
     commits_ahead = int(ar.stdout.strip()) if ar.returncode == 0 else 0
     return SnapshotInfo(
@@ -176,22 +182,68 @@ def _parse_snapshot_line(
     )
 
 
-def list_snapshots(repo_path: Path) -> list[SnapshotInfo]:
-    """List pre-merge snapshot tags from a repository."""
-    result = run_git(
-        ["tag", "-l", f"{_SNAPSHOT_TAG_PREFIX}*", "--sort=-creatordate",
-         "--format=%(refname:short)\t%(objectname)\t%(objectname:short)\t%(creatordate:iso-strict)"],
+def _snapshot_task_id_from_line(line: str) -> str | None:
+    """Extract the task id from a snapshot ref or legacy tag line."""
+    if not line.strip():
+        return None
+    tag_name = line.split("\t", 1)[0]
+    task_id = (
+        tag_name.removeprefix(_SNAPSHOT_REF_PREFIX)
+        .removeprefix(_SNAPSHOT_SHORT_PREFIX)
+        .removeprefix(_LEGACY_SNAPSHOT_TAG_PREFIX)
+    )
+    return task_id or None
+
+
+def _collect_snapshot_lines(repo_path: Path) -> list[str]:
+    """Return internal snapshot refs first, then any legacy tag-backed snapshots."""
+    lines: list[str] = []
+
+    refs_result = run_git(
+        [
+            "for-each-ref",
+            "--sort=-creatordate",
+            "--format=%(refname)\t%(objectname)\t%(objectname:short)\t%(creatordate:iso-strict)",
+            _SNAPSHOT_REF_PREFIX,
+        ],
         repo_path,
     )
-    if result.returncode != 0:
+    if refs_result.returncode == 0:
+        lines.extend(line for line in refs_result.stdout.strip().split("\n") if line.strip())
+
+    legacy_result = run_git(
+        [
+            "tag",
+            "-l",
+            f"{_LEGACY_SNAPSHOT_TAG_PREFIX}*",
+            "--sort=-creatordate",
+            "--format=%(refname:short)\t%(objectname)\t%(objectname:short)\t%(creatordate:iso-strict)",
+        ],
+        repo_path,
+    )
+    if legacy_result.returncode == 0:
+        lines.extend(line for line in legacy_result.stdout.strip().split("\n") if line.strip())
+
+    return lines
+
+
+def list_snapshots(repo_path: Path) -> list[SnapshotInfo]:
+    """List internal pre-merge snapshot refs, with legacy tag fallback."""
+    lines = _collect_snapshot_lines(repo_path)
+    if not lines:
         return []
     hr = run_git(["rev-parse", "HEAD"], repo_path)
     head_sha = hr.stdout.strip() if hr.returncode == 0 else ""
     repo_name = repo_path.name
     snapshots: list[SnapshotInfo] = []
-    for line in result.stdout.strip().split("\n"):
+    seen_task_ids: set[str] = set()
+    for line in lines:
+        task_id = _snapshot_task_id_from_line(line)
+        if not task_id or task_id in seen_task_ids:
+            continue
         snapshot = _parse_snapshot_line(line, head_sha, repo_name, repo_path)
         if snapshot:
+            seen_task_ids.add(snapshot.task_id)
             snapshots.append(snapshot)
     return snapshots
 

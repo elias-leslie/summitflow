@@ -388,6 +388,10 @@ class TestMergeAndCleanup:
         assert result["status"] == "merged"
         assert result["post_merge_valid"]
         assert result["post_merge_validation_status"] == "passed"
+        mock_git.assert_any_call(
+            ["git", "update-ref", "refs/summitflow/snapshots/pre-merge/task-1", "HEAD"],
+            "/tmp/project",
+        )
         mock_git.assert_any_call(["git", "worktree", "prune"], "/tmp/project")
 
     @patch("app.tasks.autonomous.cleanup.merge_operations._git")

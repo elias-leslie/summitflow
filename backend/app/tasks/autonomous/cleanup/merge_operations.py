@@ -18,6 +18,8 @@ from .merge_types import MergeFailed, MergeResult
 from .validation import auto_rollback, run_post_merge_validation
 
 logger = get_logger(__name__)
+_SNAPSHOT_REF_PREFIX = "refs/summitflow/snapshots/pre-merge/"
+_LEGACY_SNAPSHOT_TAG_PREFIX = "snapshot/pre-merge/"
 
 
 def _err(task_id: str, msg: str) -> MergeResult:
@@ -159,12 +161,12 @@ def merge_and_cleanup_task_worktree(task_id: str, project_id: str) -> MergeResul
 
 
 def _capture_pre_merge_snapshot(task_id: str, project_root: str) -> None:
-    """Capture HEAD SHA and create a pre-merge snapshot tag."""
+    """Capture HEAD SHA and create an internal pre-merge snapshot ref."""
     result = _git(["git", "rev-parse", "HEAD"], project_root)
     if result.returncode != 0:
         return
     pre_merge_sha = result.stdout.strip()
-    _git(["git", "tag", f"snapshot/pre-merge/{task_id}", "HEAD"], project_root)
+    _git(["git", "update-ref", f"{_SNAPSHOT_REF_PREFIX}{task_id}", "HEAD"], project_root)
     update_task_fields(task_id, pre_merge_sha=pre_merge_sha)
 
 
@@ -221,13 +223,24 @@ def _finalize_merge(
 
 
 def _cleanup_old_snapshots(project_root: str, keep: int = 20) -> None:
-    """Remove old snapshot tags, keeping the most recent `keep` tags."""
-    result = _git(["git", "tag", "-l", "snapshot/pre-merge/*", "--sort=-creatordate"], project_root)
-    if result.returncode != 0:
-        return
-    tags = [t.strip() for t in result.stdout.strip().split("\n") if t.strip()]
-    for old_tag in tags[keep:]:
-        _git(["git", "tag", "-d", old_tag], project_root, text=False)
+    """Remove old internal snapshot refs and any legacy snapshot tags."""
+    refs_result = _git(
+        ["git", "for-each-ref", "--sort=-creatordate", "--format=%(refname)", _SNAPSHOT_REF_PREFIX],
+        project_root,
+    )
+    if refs_result.returncode == 0:
+        refs = [ref.strip() for ref in refs_result.stdout.strip().split("\n") if ref.strip()]
+        for old_ref in refs[keep:]:
+            _git(["git", "update-ref", "-d", old_ref], project_root, text=False)
+
+    legacy_result = _git(
+        ["git", "tag", "-l", f"{_LEGACY_SNAPSHOT_TAG_PREFIX}*", "--sort=-creatordate"],
+        project_root,
+    )
+    if legacy_result.returncode == 0:
+        tags = [tag.strip() for tag in legacy_result.stdout.strip().split("\n") if tag.strip()]
+        for old_tag in tags[keep:]:
+            _git(["git", "tag", "-d", old_tag], project_root, text=False)
 
 
 def is_task_running(task_id: str) -> bool:
