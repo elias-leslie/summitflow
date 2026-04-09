@@ -29,6 +29,17 @@ _CONTEXT_DERIVED_FIELDS = (
     "execution_contract",
     "subtasks",
 )
+_PLAN_EXPORT_DEFAULTS: dict[str, str | list[Any] | None] = {
+    "objective": None,
+    "spirit_anti": None,
+    "constraints": [],
+    "decisions": [],
+    "risks": [],
+    "files_to_create": [],
+    "files_to_modify": [],
+    "references": [],
+    "testing_strategy": None,
+}
 
 
 def _clean_text(value: Any) -> str | None:
@@ -170,6 +181,22 @@ def hydrate_task_plan_fields(record: dict[str, Any] | None) -> dict[str, Any]:
             hydrated[field] = value
 
     return hydrated
+
+
+def extract_task_plan_fields(record: dict[str, Any] | None) -> dict[str, Any]:
+    """Return canonical plan fields with stable defaults for export/consumers."""
+    hydrated = hydrate_task_plan_fields(record)
+    extracted: dict[str, Any] = {}
+    for field, default in _PLAN_EXPORT_DEFAULTS.items():
+        value = hydrated.get(field)
+        if value in (None, "", [], {}):
+            if isinstance(default, list):
+                extracted[field] = list(default)
+            else:
+                extracted[field] = default
+            continue
+        extracted[field] = value
+    return extracted
 
 
 def get_plan_subtask_map(context: dict[str, Any] | None) -> dict[str, dict[str, Any]]:

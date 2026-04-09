@@ -35,6 +35,14 @@ def get_task(
     return cast(dict[str, Any], handle_response(response))
 
 
+def export_task(
+    client: httpx.Client, global_url_fn: Any, handle_response: Any, task_id: str
+) -> dict[str, Any]:
+    """Export complete task data by ID (global lookup)."""
+    response = client.get(global_url_fn(f"/tasks/{canonicalize_task_id(task_id)}/export"))
+    return cast(dict[str, Any], handle_response(response))
+
+
 def get_task_completion_readiness(
     client: httpx.Client, global_url_fn: Any, handle_response: Any, task_id: str
 ) -> dict[str, Any]:

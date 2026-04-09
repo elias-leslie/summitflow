@@ -27,6 +27,9 @@ class _TaskCrudMixin(_MixinBase):
     def get_task(self, task_id: str) -> dict[str, Any]:
         return tasks_ops.get_task(self._client, self._global_url, self._handle_response, task_id)
 
+    def export_task_data(self, task_id: str) -> dict[str, Any]:
+        return tasks_ops.export_task(self._client, self._global_url, self._handle_response, task_id)
+
     def list_tasks(
         self,
         status: str | None = None,

@@ -393,6 +393,32 @@ class TestTaskCliErgonomics:
         assert result.exit_code == 0
         mock_get.assert_called_once()
 
+    def test_export_uses_canonical_export_payload(self) -> None:
+        mock_client = MagicMock()
+        mock_client.export_task_data.return_value = {
+            "exported_at": "2026-04-09T00:00:00+00:00",
+            "task": {
+                "id": "task-mock-1",
+                "title": "Export fidelity task",
+                "objective": "Preserve execution-ready task fields on export.",
+            },
+            "subtasks": [
+                {
+                    "subtask_id": "1.1",
+                    "description": "Keep step detail",
+                    "steps": [{"step_number": 1, "description": "Do thing", "passes": False}],
+                }
+            ],
+        }
+
+        with patch("cli.commands.tasks.STClient", return_value=mock_client):
+            result = runner.invoke(tasks_app, ["export", "task-mock-1"])
+
+        assert result.exit_code == 0
+        mock_client.export_task_data.assert_called_once_with("task-mock-1")
+        assert '"objective": "Preserve execution-ready task fields on export."' in result.output
+        assert '"description": "Do thing"' in result.output
+
     def test_log_accepts_trailing_task_id(self) -> None:
         with patch("cli.commands.tasks_commands.append_task_log") as mock_append:
             result = runner.invoke(tasks_app, ["log", "hello world", "task-123"])

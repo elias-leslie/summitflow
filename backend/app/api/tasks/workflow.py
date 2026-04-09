@@ -20,7 +20,7 @@ from ...storage import task_dependencies as dep_store
 from ...storage.events import get_events_by_trace
 from ...storage.subtasks import get_subtasks_for_task
 from ...storage.task_spirit import get_task_spirit
-from .helpers import verify_task_project
+from .helpers import get_task_or_404, verify_task_project
 from .workflow_approval import approve_task_plan_impl
 from .workflow_export import build_export_data
 from .workflow_formatters import build_context_json, format_logs_toon, format_toon_context
@@ -129,8 +129,17 @@ async def export_task(
     spirit = get_task_spirit(task_id)
 
     # Get subtasks
-    subtasks = get_subtasks_for_task(task_id, include_steps=False)
+    subtasks = get_subtasks_for_task(task_id, include_steps=True)
 
+    return build_export_data(task, spirit, subtasks)
+
+
+@router.get("/tasks/{task_id}/export")
+async def export_task_global(task_id: str) -> dict[str, Any]:
+    """Export complete task data for plan.json round-trip without project scoping."""
+    task = get_task_or_404(task_id)
+    spirit = get_task_spirit(task_id)
+    subtasks = get_subtasks_for_task(task_id, include_steps=True)
     return build_export_data(task, spirit, subtasks)
 
 

@@ -343,16 +343,58 @@ class TestExportEndpoint:
         task_id = task["id"]
         cleanup_task(task_id)
 
+        response = client.post(
+            f"/api/projects/{test_project_id}/tasks/{task_id}/subtasks",
+            json={
+                "subtask_id": "1.1",
+                "description": "First subtask",
+                "steps": [
+                    {
+                        "description": "Step 1",
+                        "spec": {"verify_command": "dt pytest backend/tests/api/test_task_workflow.py"},
+                    }
+                ],
+            },
+        )
+        assert response.status_code == 201
+
         # Add spirit data
         with get_connection() as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO task_spirit (task_id, done_when)
-                VALUES (%s, %s::jsonb)
+                INSERT INTO task_spirit (task_id, done_when, context, plan_status, complexity)
+                VALUES (%s, %s::jsonb, %s::jsonb, %s, %s)
                 """,
                 (
                     task_id,
                     json.dumps(["Condition 1", "Condition 2"]),
+                    json.dumps(
+                        {
+                            "objective": "Restore complete export fidelity",
+                            "spirit_anti": "Do not drop plan context during export.",
+                            "constraints": ["Keep export shape stable"],
+                            "files_to_modify": ["backend/app/api/tasks/workflow_export.py"],
+                            "testing_strategy": "Use the export endpoint as the source of truth.",
+                            "subtasks": [
+                                {
+                                    "subtask_id": "1.1",
+                                    "description": "First subtask",
+                                    "steps": [
+                                        {
+                                            "step_number": 1,
+                                            "description": "Step 1",
+                                            "passes": False,
+                                            "spec": {
+                                                "verify_command": "dt pytest backend/tests/api/test_task_workflow.py"
+                                            },
+                                        }
+                                    ],
+                                }
+                            ],
+                        }
+                    ),
+                    "approved",
+                    "COMPLEX",
                 ),
             )
             conn.commit()
@@ -363,12 +405,27 @@ class TestExportEndpoint:
         data = response.json()
 
         # Verify structure
+        assert "exported_at" in data
         assert "task" in data
         assert data["task"]["id"] == task_id
+        assert data["task"]["objective"] == "Restore complete export fidelity"
+        assert data["task"]["spirit_anti"] == "Do not drop plan context during export."
+        assert data["task"]["constraints"] == ["Keep export shape stable"]
+        assert data["task"]["files_to_modify"] == ["backend/app/api/tasks/workflow_export.py"]
+        assert data["task"]["testing_strategy"] == "Use the export endpoint as the source of truth."
+        assert data["task"]["plan_status"] == "approved"
+        assert data["task"]["complexity"] == "COMPLEX"
         assert "spirit" in data
         assert data["spirit"]["done_when"] == ["Condition 1", "Condition 2"]
+        assert data["spirit"]["objective"] == "Restore complete export fidelity"
+        assert data["spirit"]["constraints"] == ["Keep export shape stable"]
         assert "acceptance_criteria" in data
         assert "subtasks" in data
+        assert data["subtasks"][0]["subtask_id"] == "1.1"
+        assert data["subtasks"][0]["steps"][0]["description"] == "Step 1"
+        assert data["subtasks"][0]["steps"][0]["spec"] == {
+            "verify_command": "dt pytest backend/tests/api/test_task_workflow.py"
+        }
         assert "dependencies" in data
         assert "progress_log" in data
 
