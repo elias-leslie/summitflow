@@ -148,6 +148,25 @@ def get_project_identity_root(
     return str(manifest_path.parent.resolve())
 
 
+def get_project_upload_dir_name(
+    project_id: str,
+    root_path: str | None = None,
+) -> str | None:
+    """Return the configured upload directory name for a project when available."""
+    identity = get_project_identity(project_id, root_path)
+    if not identity:
+        return None
+
+    artifacts = identity.get("artifacts")
+    if not isinstance(artifacts, dict):
+        return None
+
+    upload_dir_name = artifacts.get("upload_dir_name")
+    if isinstance(upload_dir_name, str) and upload_dir_name:
+        return upload_dir_name
+    return None
+
+
 def get_project_display_name(
     project_id: str,
     root_path: str | None = None,

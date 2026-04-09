@@ -14,8 +14,9 @@ import {
   ShieldX,
 } from 'lucide-react'
 import Link from 'next/link'
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BackupExpandedRow } from '@/components/backup/BackupExpandedRow'
+import { CollapsibleSection } from '@/components/backup/CollapsibleSection'
 import { CreateBackupModal } from '@/components/backup/CreateBackupModal'
 import { SetupChecklist } from '@/components/backup/SetupChecklist'
 import { SourceTypeBadge } from '@/components/backup/SourceTypeBadge'
@@ -41,6 +42,28 @@ import { formatBytes, formatDate, formatTimeAgo } from '@/lib/format'
 
 type ViewMode = 'list' | 'grid'
 const STORAGE_KEY = 'backups-view-mode'
+
+function SectionHeading({
+  title,
+  summary,
+  actions,
+}: {
+  title: string
+  summary: string
+  actions?: ReactNode
+}) {
+  return (
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div>
+        <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-300 display">
+          {title}
+        </h2>
+        <p className="mt-0.5 text-xs text-slate-500">{summary}</p>
+      </div>
+      {actions}
+    </div>
+  )
+}
 
 // ─── Backup Grid Card ────────────────────────────────────────────
 
@@ -311,6 +334,17 @@ export function BackupsClient() {
     () => snapshotScopes.filter((scope) => scope.scope_state === 'archived'),
     [snapshotScopes],
   )
+  const healthySourceCount = healthData?.sources.filter((source) => source.health_status === 'green').length ?? 0
+  const failingSourceCount = healthData?.sources.filter((source) => source.health_status === 'red').length ?? 0
+  const enabledSourceCount = sources.filter((source) => source.enabled).length
+  const overviewSummary = storageLoading || healthLoading
+    ? 'Loading backup health, storage, and retention metrics.'
+    : `${healthySourceCount} healthy, ${failingSourceCount} failing, ${storageSummary?.total_count ?? 0} backups, ${formatBytes(storageSummary?.total_bytes ?? 0)} stored`
+  const sourcesSummary = sources.length === 0
+    ? 'No sources configured yet.'
+    : `${sources.length} sources, ${enabledSourceCount} scheduled${failingSourceCount > 0 ? `, ${failingSourceCount} failing` : ''}`
+  const snapshotsSummary = `${activeSnapshotScopes.length} active scope${activeSnapshotScopes.length === 1 ? '' : 's'}, ${archivedSnapshotScopes.length} archived`
+  const protectionSummary = 'Current backup readiness, restore validation, and anything still blocking full protection.'
 
   // ─── Handlers ───────────────────────────────────────────────────
 
@@ -342,7 +376,7 @@ export function BackupsClient() {
   // ─── Render ─────────────────────────────────────────────────────
 
   return (
-    <div className="p-6 space-y-5 max-w-7xl mx-auto">
+    <div className="p-6 space-y-6 max-w-7xl mx-auto">
       {showCreateModal && (
         <CreateBackupModal
           sources={sources}
@@ -405,121 +439,116 @@ export function BackupsClient() {
         </div>
       </div>
 
-      {/* Health bar + stat pills */}
-      <StatusRibbon
-        health={healthData}
-        storageSummary={storageSummary}
-        storageStatus={storageStatus}
-        isLoading={storageLoading || healthLoading}
-      />
+      <section className="space-y-3">
+        <SectionHeading title="Overview" summary={overviewSummary} />
+        <div className="rounded-lg border border-slate-700/60 bg-slate-900/30 px-4 py-4">
+          <StatusRibbon
+            health={healthData}
+            storageSummary={storageSummary}
+            storageStatus={storageStatus}
+            isLoading={storageLoading || healthLoading}
+          />
+        </div>
+      </section>
 
       {/* Setup Checklist */}
-      <SetupChecklist
-        storageStatus={storageStatus}
-        sources={sources}
-        healthItems={healthData?.sources ?? []}
-        isLoading={storageLoading || healthLoading}
-        onSourceChanged={refreshSources}
-        onBackupTriggered={invalidateAll}
-      />
+      <section className="space-y-3">
+        <SectionHeading title="Protection Status" summary={protectionSummary} />
+        <SetupChecklist
+          storageStatus={storageStatus}
+          sources={sources}
+          healthItems={healthData?.sources ?? []}
+          isLoading={storageLoading || healthLoading}
+          onSourceChanged={refreshSources}
+          onBackupTriggered={invalidateAll}
+        />
+      </section>
 
-      {/* Sources & Schedules */}
-      <SourcesManager
-        sources={sources}
-        healthItems={healthData?.sources ?? []}
-        recentBackups={backups}
-        onSourceChanged={refreshSources}
-        onBackupTriggered={invalidateAll}
-      />
+      <CollapsibleSection
+        title="Sources & Schedules"
+        summary={sourcesSummary}
+      >
+        <SourcesManager
+          sources={sources}
+          healthItems={healthData?.sources ?? []}
+          recentBackups={backups}
+          onSourceChanged={refreshSources}
+          onBackupTriggered={invalidateAll}
+          showHeader={false}
+        />
+      </CollapsibleSection>
 
       {/* Storage */}
-      <section className="space-y-3">
-        <div>
-          <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-300 display">
-            Storage
-          </h2>
-          <p className="mt-0.5 text-xs text-slate-500">
-            Remote storage backends
-          </p>
-        </div>
-        <StorageCard
-          backends={storageBackends}
-          storageStatus={storageStatus}
-          onRefresh={refreshStorage}
-        />
-      </section>
+      <StorageCard
+        backends={storageBackends}
+        storageStatus={storageStatus}
+        onRefresh={refreshStorage}
+      />
 
       {/* Snapshots & Recovery */}
-      <section className="space-y-3">
-        <div>
-          <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-300 display">
-            Snapshots & Recovery
-          </h2>
-          <p className="mt-0.5 text-xs text-slate-500">
-            Active Btrfs protection for live scopes, plus archived recovery for retired lanes
-          </p>
-        </div>
-        <SnapshotSummaryCard
-          summary={snapshotSummary}
-          isLoading={snapshotLoading}
-          onMutated={refreshSnapshots}
-        />
-        <div className="space-y-2">
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500 mb-1.5">
-              Active Protection Scopes
-            </div>
-            <ScopeList scopes={activeSnapshotScopes} />
-          </div>
-          {archivedSnapshotScopes.length > 0 && (
-            <details className="rounded-lg border border-slate-700/60 bg-slate-800/30 overflow-hidden">
-              <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between">
-                <div>
-                  <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
-                    Archived Recovery Scopes
-                  </div>
-                  <div className="mt-0.5 text-xs text-slate-400">
-                    Retained snapshots for deleted or retired lanes
-                  </div>
-                </div>
-                <div className="text-xs text-amber-300 font-medium">
-                  {archivedSnapshotScopes.length}
-                </div>
-              </summary>
-              <div className="border-t border-slate-800/60 px-4 py-3">
-                <ScopeList scopes={archivedSnapshotScopes} />
+      <CollapsibleSection
+        title="Snapshots & Recovery"
+        summary={snapshotsSummary}
+      >
+        <div className="space-y-3">
+          <SnapshotSummaryCard
+            summary={snapshotSummary}
+            isLoading={snapshotLoading}
+            onMutated={refreshSnapshots}
+          />
+          <div className="space-y-2">
+            <div>
+              <div className="mb-1.5 text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                Active Protection Scopes
               </div>
-            </details>
-          )}
+              <ScopeList scopes={activeSnapshotScopes} />
+            </div>
+            {archivedSnapshotScopes.length > 0 && (
+              <details className="rounded-lg border border-slate-700/60 bg-slate-800/30 overflow-hidden">
+                <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                      Archived Recovery Scopes
+                    </div>
+                    <div className="mt-0.5 text-xs text-slate-400">
+                      Retained snapshots for deleted or retired lanes
+                    </div>
+                  </div>
+                  <div className="text-xs font-medium text-amber-300">
+                    {archivedSnapshotScopes.length}
+                  </div>
+                </summary>
+                <div className="border-t border-slate-800/60 px-4 py-3">
+                  <ScopeList scopes={archivedSnapshotScopes} />
+                </div>
+              </details>
+            )}
+          </div>
         </div>
-      </section>
+      </CollapsibleSection>
 
       {/* Backup History */}
       <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-300 display">
-              Backup History
-            </h2>
-            <p className="mt-0.5 text-xs text-slate-500">
-              All backups across sources
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-2 py-1 bg-slate-900/60 border border-slate-700/60 rounded text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-phosphor-500"
-            >
-              <option value="">All</option>
-              <option value="completed">Completed</option>
-              <option value="running">Running</option>
-              <option value="pending">Pending</option>
-              <option value="failed">Failed</option>
-            </select>
-            <ViewToggle view={viewRaw} onViewChange={setView} />
-          </div>
-        </div>
+        <SectionHeading
+          title="Backup History"
+          summary="All backups across sources"
+          actions={(
+            <div className="flex items-center gap-3">
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="px-2 py-1 bg-slate-900/60 border border-slate-700/60 rounded text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-phosphor-500"
+              >
+                <option value="">All</option>
+                <option value="completed">Completed</option>
+                <option value="running">Running</option>
+                <option value="pending">Pending</option>
+                <option value="failed">Failed</option>
+              </select>
+              <ViewToggle view={viewRaw} onViewChange={setView} />
+            </div>
+          )}
+        />
 
         {backupsLoading ? (
           <div className="flex items-center justify-center py-20">

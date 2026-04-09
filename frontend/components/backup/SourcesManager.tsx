@@ -62,6 +62,7 @@ interface SourcesManagerProps {
   recentBackups: Backup[]
   onSourceChanged: () => void
   onBackupTriggered: () => void
+  showHeader?: boolean
 }
 
 export function SourcesManager({
@@ -70,6 +71,7 @@ export function SourcesManager({
   recentBackups,
   onSourceChanged,
   onBackupTriggered,
+  showHeader = true,
 }: SourcesManagerProps) {
   const [backingUpId, setBackingUpId] = useState<string | null>(null)
   const [creatingInfra, setCreatingInfra] = useState(false)
@@ -129,14 +131,16 @@ export function SourcesManager({
 
   return (
     <section className="space-y-3">
-      <div>
-        <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-300">
-          Sources & Schedules
-        </h2>
-        <p className="mt-0.5 text-xs text-slate-500">
-          What gets backed up and when
-        </p>
-      </div>
+      {showHeader && (
+        <div>
+          <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-300">
+            Sources & Schedules
+          </h2>
+          <p className="mt-0.5 text-xs text-slate-500">
+            What gets backed up and when
+          </p>
+        </div>
+      )}
 
       <div className="space-y-2">
         {sources.map((source) => (

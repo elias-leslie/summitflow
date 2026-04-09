@@ -6,7 +6,6 @@ import {
   ArrowRight,
   CheckCircle2,
   ChevronRight,
-  HardDrive,
   Loader2,
   Wifi,
   XCircle,
@@ -38,10 +37,11 @@ export function StorageCard({
 
   const configured = storageStatus?.configured ?? false
   const defaultBackend = backends.find((b) => b.is_default) ?? backends[0]
-
-  const accentClass = configured
-    ? 'border-l-emerald-500'
-    : 'border-l-slate-600'
+  const backendHost = (defaultBackend?.config as Record<string, string> | undefined)?.host
+  const backendShare = (defaultBackend?.config as Record<string, string> | undefined)?.share
+  const summary = configured && defaultBackend
+    ? `${defaultBackend.name} over ${defaultBackend.backend_type.toUpperCase()}${backendHost ? ` at ${backendHost}${backendShare ? `/${backendShare}` : ''}` : ''}`
+    : 'Remote storage is not configured yet, so backups stay local until a backend is connected.'
 
   const handleTest = async () => {
     if (!defaultBackend) return
@@ -60,35 +60,48 @@ export function StorageCard({
   return (
     <div
       className={clsx(
-        'rounded-lg border-l-[3px] border border-slate-700/60 bg-slate-800/40 overflow-hidden transition-all duration-200',
-        accentClass,
+        'rounded-lg border border-slate-700/60 bg-slate-900/30 overflow-hidden transition-all duration-200',
         expanded
           ? 'border-slate-700/80 shadow-lg shadow-black/20'
-          : 'hover:bg-slate-800/60',
+          : 'hover:bg-slate-900/50',
       )}
     >
       {/* Header */}
       <button
+        type="button"
         onClick={() => setExpanded(!expanded)}
-        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-800/30"
+        className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-800/30"
+        aria-expanded={expanded}
       >
         <ChevronRight
           className={clsx(
-            'w-3.5 h-3.5 text-slate-600 transition-transform duration-200 shrink-0',
+            'mt-0.5 w-3.5 h-3.5 text-slate-600 transition-transform duration-200 shrink-0',
             expanded && 'rotate-90',
           )}
         />
-        <div
-          className={clsx(
-            'w-2 h-2 rounded-full shrink-0',
-            configured ? 'bg-emerald-500' : 'bg-slate-600',
-          )}
-        />
-        <HardDrive className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-        <span className="text-sm font-medium text-slate-100">Storage Backend</span>
-        <span className="text-xs text-slate-500 flex-1 text-right">
-          {configured ? 'Connected' : 'Not configured'}
-        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-300 display">
+                Storage
+              </h2>
+              <span
+                className={clsx(
+                  'text-[10px] uppercase tracking-[0.14em]',
+                  configured ? 'text-emerald-400' : 'text-amber-400',
+                )}
+              >
+                {configured ? 'Connected' : 'Local Only'}
+              </span>
+            </div>
+            <span className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
+              {expanded ? 'Collapse' : 'Expand'}
+            </span>
+          </div>
+          <div className="mt-1 text-xs text-slate-500">
+            {summary}
+          </div>
+        </div>
       </button>
 
       {/* Expandable content */}

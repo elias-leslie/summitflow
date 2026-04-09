@@ -128,6 +128,10 @@ export function SetupChecklist({
   const steps = computeSteps(storageStatus, sources, healthItems)
   const doneCount = steps.filter((s) => s.complete).length
   const allDone = doneCount === steps.length
+  const remainingCount = steps.length - doneCount
+  const summary = allDone
+    ? 'All protection steps are configured and restore validation is current.'
+    : `${doneCount} of ${steps.length} complete. ${remainingCount} ${remainingCount === 1 ? 'step still needs attention.' : 'steps still need attention.'}`
 
   if (isLoading) return null
 
@@ -168,18 +172,16 @@ export function SetupChecklist({
   return (
     <div
       className={clsx(
-        'rounded-lg border-l-[3px] border border-slate-700/60 bg-slate-800/40 overflow-hidden',
+        'rounded-lg border-l-[3px] border border-slate-700/60 bg-slate-900/30 overflow-hidden',
         allDone ? 'border-l-emerald-500' : 'border-l-phosphor-500',
       )}
     >
       {/* Header */}
       <button
         type="button"
-        onClick={() => allDone && setExpanded((v) => !v)}
-        className={clsx(
-          'px-4 py-3 flex items-center justify-between w-full text-left',
-          allDone && 'cursor-pointer hover:bg-slate-800/30 transition-colors',
-        )}
+        onClick={() => setExpanded((v) => !v)}
+        className="px-4 py-3 flex items-center justify-between w-full text-left cursor-pointer hover:bg-slate-800/30 transition-colors"
+        aria-expanded={expanded}
       >
         <div className="flex items-center gap-3">
           <ShieldCheck
@@ -196,11 +198,7 @@ export function SetupChecklist({
                   ? 'Set up backup protection'
                   : `Backup setup — ${doneCount} of ${steps.length} complete`}
             </h2>
-            {!allDone && (
-              <p className="text-xs text-slate-500 mt-0.5">
-                Complete the steps below to fully protect your data
-              </p>
-            )}
+            <p className="text-xs text-slate-500 mt-0.5">{summary}</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -216,16 +214,14 @@ export function SetupChecklist({
               />
             ))}
           </div>
-          {allDone && (
-            <span className="text-2xs text-slate-500">
-              {expanded ? 'Hide' : 'Details'}
-            </span>
-          )}
+          <span className="text-2xs text-slate-500">
+            {expanded ? 'Hide' : 'Details'}
+          </span>
         </div>
       </button>
 
-      {/* Steps — always show when incomplete, toggle when all done */}
-      {(!allDone || expanded) && <div className="border-t border-slate-800/40">
+      {/* Steps */}
+      {expanded && <div className="border-t border-slate-800/40">
         {steps.map((step) => (
           <div
             key={step.id}

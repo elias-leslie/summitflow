@@ -95,3 +95,31 @@ def test_get_project_aliases_prefers_canonical_id_first(tmp_path: Path, monkeypa
     assert aliases == ("a-term", "aterm", "terminal", "terminal-legacy")
     assert project_identity.get_project_canonical_id("terminal") == "a-term"
     assert project_identity.get_project_identity_root("terminal") == str(repo_root.resolve())
+
+
+def test_get_project_upload_dir_name_uses_manifest_artifacts(tmp_path: Path, monkeypatch) -> None:
+    from app import project_identity
+
+    projects_root = tmp_path / "projects"
+    repo_root = projects_root / "a-term"
+    repo_root.mkdir(parents=True)
+    (repo_root / "project.identity.json").write_text(
+        json.dumps(
+            {
+                "project": {
+                    "id": "a-term",
+                    "repo_name": "a-term",
+                    "legacy_ids": ["terminal"],
+                },
+                "artifacts": {
+                    "upload_dir_name": "a-term-uploads",
+                },
+            }
+        )
+    )
+
+    monkeypatch.setattr(project_identity, "_PROJECTS_ROOT", projects_root)
+    project_identity._read_manifest.cache_clear()
+    project_identity._workspace_manifest_paths.cache_clear()
+
+    assert project_identity.get_project_upload_dir_name("terminal") == "a-term-uploads"

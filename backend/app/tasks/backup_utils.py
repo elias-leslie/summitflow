@@ -7,9 +7,11 @@ import os
 import subprocess
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any, cast
 
 from ..logging_config import get_logger
+from ..project_identity import get_project_upload_dir_name
 from ..storage.connection import get_cursor
 
 logger = get_logger(__name__)
@@ -26,6 +28,36 @@ def _translate_path(raw: str | None) -> str | None:
     return raw
 
 
+def _path_exists(*paths: str | None) -> bool:
+    """Return True when any candidate path exists on disk."""
+    return any(path and Path(path).exists() for path in paths)
+
+
+def _resolve_legacy_upload_path(source_id: str) -> str | None:
+    """Resolve renamed upload workspace sources from project identity metadata."""
+    suffix = "-uploads"
+    if not source_id.endswith(suffix):
+        return None
+
+    project_id = source_id[: -len(suffix)]
+    upload_dir_name = get_project_upload_dir_name(project_id)
+    if not upload_dir_name:
+        return None
+
+    home_roots: list[str] = []
+    for candidate in (_HOST_HOME_PATH, os.environ.get("HOME"), str(Path.home())):
+        if candidate and candidate not in home_roots:
+            home_roots.append(candidate)
+
+    for home_root in home_roots:
+        raw_candidate = str(Path(home_root) / upload_dir_name)
+        translated_candidate = _translate_path(raw_candidate)
+        if _path_exists(raw_candidate, translated_candidate):
+            return translated_candidate or raw_candidate
+
+    return None
+
+
 def get_source_path(source_id: str) -> str | None:
     """Get path for a backup source."""
     with get_cursor() as cur:
@@ -34,7 +66,23 @@ def get_source_path(source_id: str) -> str | None:
             (source_id,),
         )
         row = cur.fetchone()
-        return _translate_path(row[0]) if row and row[0] else None
+
+    raw_path = row[0] if row and row[0] else None
+    translated_path = _translate_path(raw_path)
+    if _path_exists(raw_path, translated_path):
+        return translated_path
+
+    fallback_path = _resolve_legacy_upload_path(source_id)
+    if fallback_path:
+        logger.info(
+            "backup_source_path_fallback",
+            source_id=source_id,
+            configured_path=raw_path,
+            resolved_path=fallback_path,
+        )
+        return fallback_path
+
+    return translated_path
 
 
 def get_project_root(project_id: str) -> str | None:
