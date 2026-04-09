@@ -9,6 +9,7 @@ from typing import Any
 from psycopg import sql
 
 from ...logging_config import get_logger
+from ...project_identity import get_project_identity
 
 logger = get_logger(__name__)
 
@@ -116,8 +117,9 @@ def get_services(project_id: str) -> dict[str, Any]:
 
     Port resolution order:
     1. Detect from systemd user services (source of truth)
+    2. Fall back to repo-local project.identity.json runtime ports
     2. Auto-sync to projects table if different
-    3. Fall back to DB values if systemd detection fails
+    3. Fall back to DB values if neither source is available
     """
     from .base import get_project_config
 
@@ -125,14 +127,18 @@ def get_services(project_id: str) -> dict[str, Any]:
     systemd_frontend = get_port_from_systemd(project_id, "frontend")
 
     project = get_project_config(project_id)
+    identity = get_project_identity(project_id, project.get("root_path") if project else None)
+    runtime = identity.get("runtime", {}) if isinstance(identity, dict) else {}
+    manifest_backend = runtime.get("backend_port") if isinstance(runtime, dict) else None
+    manifest_frontend = runtime.get("frontend_port") if isinstance(runtime, dict) else None
     db_backend = project.get("backend_port") if project else None
     db_frontend = project.get("frontend_port") if project else None
 
-    backend_port = systemd_backend or db_backend
-    frontend_port = systemd_frontend or db_frontend
+    backend_port = systemd_backend or manifest_backend or db_backend
+    frontend_port = systemd_frontend or manifest_frontend or db_frontend
 
-    sync_backend = _ports_needing_sync(systemd_backend, db_backend)
-    sync_frontend = _ports_needing_sync(systemd_frontend, db_frontend)
+    sync_backend = _ports_needing_sync(systemd_backend or manifest_backend, db_backend)
+    sync_frontend = _ports_needing_sync(systemd_frontend or manifest_frontend, db_frontend)
     if sync_backend or sync_frontend:
         sync_ports_to_db(project_id, sync_backend, sync_frontend)
 

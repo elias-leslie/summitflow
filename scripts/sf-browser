@@ -31,7 +31,7 @@ sf-browser - SummitFlow browser automation wrapper
 
 Usage:
   sf-browser health
-  sf-browser check <url> [screenshot-path]
+  sf-browser check [--session <name>] <url> [screenshot-path]
   sf-browser open <url>
   sf-browser screenshot [path]
   sf-browser snapshot
@@ -116,7 +116,7 @@ cdp_ws() {
     raw=$(curl -sf --connect-timeout 2 "http://${HOST}:${port}/json/version" 2>/dev/null) || return 1
     ws=$(echo "$raw" | jq -r '.webSocketDebuggerUrl // empty' 2>/dev/null) || return 1
     [[ -z "$ws" ]] && return 1
-    echo "$ws" | sed "s|0\.0\.0\.0:[0-9]*|${HOST}:${port}|; s|127\.0\.0\.1:[0-9]*|${HOST}:${port}|"
+    normalize_ws_host "$ws" "$port"
 }
 
 engine_up() {
@@ -127,13 +127,101 @@ json_unwrap() {
     echo "${1:-}" | jq -r '. // .' 2>/dev/null || echo "${1:-}"
 }
 
-close_tabs() {
+normalize_ws_host() {
+    local ws="$1"
+    local port="$2"
+    echo "$ws" | sed "s|0\.0\.0\.0:[0-9]*|${HOST}:${port}|; s|127\.0\.0\.1:[0-9]*|${HOST}:${port}|"
+}
+
+create_target_ws() {
+    local port="$1"
+    local target_url="${2:-about:blank}"
+    local raw target_id target_ws
+    local encoded_url
+
+    encoded_url=$(jq -rn --arg value "$target_url" '$value | @uri') || return 1
+
+    raw=$(curl -sf -X PUT "http://${HOST}:${port}/json/new?${encoded_url}" 2>/dev/null) || return 1
+    target_id=$(echo "$raw" | jq -r '.id // empty' 2>/dev/null) || return 1
+    target_ws=$(echo "$raw" | jq -r '.webSocketDebuggerUrl // empty' 2>/dev/null) || return 1
+    [[ -n "$target_id" && -n "$target_ws" ]] || return 1
+
+    printf '%s\n%s\n' "$target_id" "$(normalize_ws_host "$target_ws" "$port")"
+}
+
+close_target_ws() {
+    local port="$1"
+    local target_id="$2"
+    [[ -n "$target_id" ]] || return 0
+    curl -sf "http://${HOST}:${port}/json/close/${target_id}" >/dev/null 2>&1 || true
+}
+
+close_all_tabs() {
     local port="$1"
     curl -sf "http://${HOST}:${port}/json/list" 2>/dev/null \
         | jq -r '.[].id' 2>/dev/null \
         | while read -r tab_id; do
-            curl -sf "http://${HOST}:${port}/json/close/${tab_id}" >/dev/null 2>&1
+            [[ -n "$tab_id" ]] || continue
+            curl -sf "http://${HOST}:${port}/json/close/${tab_id}" >/dev/null 2>&1 || true
         done
+}
+
+generate_check_session_name() {
+    printf 'sf-browser-check-%s-%s\n' "$$" "$(date +%s%N)"
+}
+
+close_current_tab() {
+    "$AGENT_BROWSER_BIN" --cdp "$WS" "$@" tab close >/dev/null 2>&1 || true
+}
+
+extract_check_context_args() {
+    local args=("$@")
+
+    if [[ "${args[0]:-}" == "--session" ]]; then
+        [[ -n "${args[1]:-}" ]] || {
+            echo "ERROR: --session requires a name" >&2
+            exit 1
+        }
+        printf '%s\n' "${args[0]}" "${args[1]}"
+    fi
+}
+
+strip_check_context_args() {
+    local args=("$@")
+
+    if [[ "${args[0]:-}" == "--session" ]]; then
+        printf '%s\n' "${args[@]:2}"
+        return 0
+    fi
+    printf '%s\n' "${args[@]}"
+}
+
+default_check_context_args() {
+    printf '%s\n' "--session" "$(generate_check_session_name)"
+}
+
+check_lock_path() {
+    local base_dir
+    if [[ -n "${XDG_RUNTIME_DIR:-}" ]]; then
+        base_dir="${XDG_RUNTIME_DIR}/sf-browser"
+    elif [[ -n "${HOME:-}" ]]; then
+        base_dir="${HOME}/.cache/sf-browser"
+    else
+        base_dir="/tmp/sf-browser"
+    fi
+
+    mkdir -p "$base_dir"
+    printf '%s\n' "${base_dir}/check.lock"
+}
+
+acquire_check_lock() {
+    local lock_path
+    lock_path="$(check_lock_path)"
+    exec 9>"$lock_path"
+    flock -w "${SF_BROWSER_CHECK_LOCK_WAIT:-120}" 9 || {
+        echo "ERROR: Timed out waiting for sf-browser check lock" >&2
+        exit 1
+    }
 }
 
 selector_is_ref() {
@@ -323,42 +411,64 @@ case "${1:-}" in
     check)
         # High-level: open URL, wait, screenshot, collect console errors — one command.
         shift
-        URL="${1:?Usage: sf-browser check <url> [screenshot-path]}"
-        SCREENSHOT_PATH="${2:-/tmp/sf-browser-check.png}"
-        WAIT_MS="${SF_BROWSER_CHECK_WAIT:-5000}"
+        mapfile -t CHECK_CONTEXT < <(extract_check_context_args "$@")
+        mapfile -t CHECK_ARGS < <(strip_check_context_args "$@")
+        if [[ ${#CHECK_CONTEXT[@]} -eq 0 ]]; then
+            mapfile -t CHECK_CONTEXT < <(default_check_context_args)
+        fi
 
-        # Always use Chrome for check
-        WS=$(cdp_ws 9222 2>/dev/null) || {
-            echo "ERROR: Chrome not available on ${HOST}:9222" >&2
+        URL="${CHECK_ARGS[0]:-}"
+        [[ -n "$URL" ]] || {
+            echo "Usage: sf-browser check [--session <name>] <url> [screenshot-path]" >&2
             exit 1
         }
+        SCREENSHOT_PATH="${CHECK_ARGS[1]:-/tmp/sf-browser-check.png}"
+        WAIT_MS="${SF_BROWSER_CHECK_WAIT:-5000}"
+
+        # Direct CDP operations on the shared Chrome VM are not concurrency-safe.
+        acquire_check_lock
+
+        # Start from a clean browser tab set so direct CDP commands cannot drift
+        # onto unrelated leftover tabs from earlier runs.
+        close_all_tabs 9222
+
+        # Always use Chrome for check and isolate each run to a dedicated page target.
+        mapfile -t CHECK_TARGET < <(create_target_ws 9222 "$URL")
+        CHECK_TARGET_ID="${CHECK_TARGET[0]:-}"
+        CHECK_WS="${CHECK_TARGET[1]:-}"
+        [[ -n "$CHECK_TARGET_ID" && -n "$CHECK_WS" ]] || {
+            echo "ERROR: Unable to create an isolated Chrome tab on ${HOST}:9222" >&2
+            exit 1
+        }
+        WS="$CHECK_WS"
+        trap 'close_target_ws 9222 "${CHECK_TARGET_ID:-}"' EXIT
 
         # Set viewport
-        "$AGENT_BROWSER_BIN" --cdp "$WS" set viewport 1600 900 2>/dev/null || true
+        "$AGENT_BROWSER_BIN" --cdp "$WS" "${CHECK_CONTEXT[@]}" set viewport 1600 900 2>/dev/null || true
 
-        # Navigate
-        "$AGENT_BROWSER_BIN" --cdp "$WS" open "$URL" --wait "$WAIT_MS"
+        # Allow the page created for this target to settle before inspection.
+        "$AGENT_BROWSER_BIN" --cdp "$WS" "${CHECK_CONTEXT[@]}" wait "$WAIT_MS" 2>/dev/null || true
 
         # Inject console error capture and wait for late errors
-        "$AGENT_BROWSER_BIN" --cdp "$WS" eval "
+        "$AGENT_BROWSER_BIN" --cdp "$WS" "${CHECK_CONTEXT[@]}" eval "
             window.__sfErrors = []; window.__sfWarnings = [];
             const _oe = console.error; console.error = function(...a) { window.__sfErrors.push(a.map(String).join(' ')); _oe.apply(console,a); };
             const _ow = console.warn; console.warn = function(...a) { window.__sfWarnings.push(a.map(String).join(' ')); _ow.apply(console,a); };
             'capturing'
-        " >/dev/null 2>&1
+        " >/dev/null 2>&1 || true
 
         # Brief wait for late async errors
-        "$AGENT_BROWSER_BIN" --cdp "$WS" wait 2000 2>/dev/null || true
+        "$AGENT_BROWSER_BIN" --cdp "$WS" "${CHECK_CONTEXT[@]}" wait 2000 2>/dev/null || true
 
         # Screenshot
-        "$AGENT_BROWSER_BIN" --cdp "$WS" screenshot "$SCREENSHOT_PATH" 2>/dev/null
+        "$AGENT_BROWSER_BIN" --cdp "$WS" "${CHECK_CONTEXT[@]}" screenshot "$SCREENSHOT_PATH" 2>/dev/null
 
         # Collect errors (agent-browser wraps eval output in quotes, so we strip them)
-        RAW_ERRORS=$("$AGENT_BROWSER_BIN" --cdp "$WS" eval "JSON.stringify({errors: window.__sfErrors || [], warnings: window.__sfWarnings || [], url: location.href, title: document.title})" 2>/dev/null) || RAW_ERRORS='{"errors":[],"warnings":[]}'
+        RAW_ERRORS=$("$AGENT_BROWSER_BIN" --cdp "$WS" "${CHECK_CONTEXT[@]}" eval "JSON.stringify({errors: window.__sfErrors || [], warnings: window.__sfWarnings || [], url: location.href, title: document.title})" 2>/dev/null) || RAW_ERRORS='{"errors":[],"warnings":[]}'
         ERRORS=$(echo "$RAW_ERRORS" | jq -r '. // .' 2>/dev/null) || ERRORS="$RAW_ERRORS"
 
         # Also check for failed network requests via performance API
-        RAW_NETWORK=$("$AGENT_BROWSER_BIN" --cdp "$WS" eval "
+        RAW_NETWORK=$("$AGENT_BROWSER_BIN" --cdp "$WS" "${CHECK_CONTEXT[@]}" eval "
             JSON.stringify(
                 performance.getEntriesByType('resource')
                     .filter(e => e.responseStatus >= 400)
@@ -366,9 +476,6 @@ case "${1:-}" in
             )
         " 2>/dev/null) || RAW_NETWORK="[]"
         NETWORK_ERRORS=$(echo "$RAW_NETWORK" | jq -r '. // .' 2>/dev/null) || NETWORK_ERRORS="$RAW_NETWORK"
-
-        # Clean up tabs on the engine we used
-        close_tabs 9222
 
         # Output results
         echo "Screenshot: ${SCREENSHOT_PATH}"
@@ -485,14 +592,10 @@ fi
 "$AGENT_BROWSER_BIN" --cdp "$WS" "$@"
 EXIT_CODE=$?
 
-# Clean up tabs only for the engine we used (not both)
+# Clean up only the current tab for one-shot artifact commands.
 case "${1:-}" in
-    screenshot|pdf|close)
-        if [[ "$ENGINE" == "chrome" ]]; then
-            close_tabs 9222
-        else
-            close_tabs 9223
-        fi
+    screenshot|pdf)
+        close_current_tab "${__sf_browser_eval_context[@]}"
         ;;
 esac
 
