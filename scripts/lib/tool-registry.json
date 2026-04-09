@@ -79,7 +79,7 @@
     "dt": {
       "label": "BIOME",
       "binary": "npx",
-      "args": "biome lint . --max-diagnostics=100",
+      "args": "biome check . --max-diagnostics=100",
       "count_method": "biome_parse",
       "working_dir": "frontend",
       "fallback_global": true,
