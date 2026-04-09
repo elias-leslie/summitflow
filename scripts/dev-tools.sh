@@ -103,6 +103,17 @@ if [[ -n "$_primary_worktree" && "$_primary_worktree" != "$PROJECT_DIR" ]]; then
     fi
 fi
 
+# Claimed lanes/worktrees often omit a local .index.yaml even though the primary
+# checkout has the canonical project identity. Re-resolve from the primary
+# checkout before computing backend and venv paths so worktree wrappers remain
+# project-aware without lane-local symlink fixes.
+if [[ -z "$DT_CONTEXT_PROJECT" && -n "$_primary_worktree" && "$_primary_worktree" != "$PROJECT_DIR" ]]; then
+    detect_local_project_context "$_primary_worktree" || true
+    if [[ -n "$DT_CONTEXT_PROJECT" ]]; then
+        PROJECT_NAME="$DT_CONTEXT_PROJECT"
+    fi
+fi
+
 # Use main repo for venv (tools), but PROJECT_DIR for backend (code to lint)
 VENV_PATH=$(get_venv_path "$PROJECT_NAME" "$MAIN_REPO_DIR")
 # Backend path should be in the WORKTREE (or current dir) for linting
