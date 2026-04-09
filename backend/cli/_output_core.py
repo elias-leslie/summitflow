@@ -73,11 +73,7 @@ def handle_api_error(e: APIError) -> None:
 
 
 def require_explicit_project(config: Config) -> None:
-    """Exit with error if project was resolved from cwd (not explicit flag/env).
-
-    Task creation commands must use -P or ST_PROJECT_ID to avoid
-    silent wrong-project association.
-    """
+    """Exit with error if project was resolved from cwd (not explicit flag/env)."""
     if config.source not in ("cwd",):
         return
 
@@ -86,8 +82,8 @@ def require_explicit_project(config: Config) -> None:
     available = get_available_projects()
     available_str = ", ".join(available) if available else "(could not fetch)"
     print(
-        f"Error: Task creation requires explicit project.\n"
-        f"Usage: st -P <project> create \"title\"\n"
+        f"Error: Write commands require explicit project.\n"
+        f"Usage: st -P <project> <command> ...\n"
         f"Detected: {config.project_id} (from cwd)\n"
         f"Available: {available_str}",
         file=sys.stderr,

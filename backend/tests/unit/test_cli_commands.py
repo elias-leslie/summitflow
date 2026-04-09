@@ -323,6 +323,62 @@ class TestAutocodeValidation:
 class TestTaskCliErgonomics:
     """Tests for task CLI friction fixes."""
 
+    def test_create_help_hides_legacy_single_task_options(self) -> None:
+        result = runner.invoke(tasks_app, ["create", "--help"])
+
+        assert result.exit_code == 0
+        assert "--plan" in result.output
+        assert "--from-file" in result.output
+        assert "--description" not in result.output
+        assert "--autonomous" not in result.output
+
+    def test_create_rejects_plain_single_task_without_plan(self) -> None:
+        result = runner.invoke(tasks_app, ["create", "Draft task"])
+
+        assert result.exit_code == 1
+        assert "requires --plan" in result.output
+        assert "capture <task|bug|idea>" in result.output
+        assert "lightweight intake" in result.output
+
+    def test_capture_idea_uses_raw_capture_path(self) -> None:
+        mock_client = MagicMock()
+        mock_client.create_task.return_value = _make_mock_task(
+            "task-mock-idea",
+            title="Add dark mode",
+            task_type="task",
+            priority=3,
+            execution_mode="autonomous",
+            autonomous=True,
+        )
+
+        with (
+            patch("cli.commands.tasks_create.require_explicit_project"),
+            patch("cli.commands.tasks_create.STClient", return_value=mock_client),
+        ):
+            result = runner.invoke(tasks_app, ["capture", "idea", "Add dark mode"])
+
+        assert result.exit_code == 0
+        mock_client.create_task.assert_called_once()
+        payload = mock_client.create_task.call_args.args[0]
+        assert payload["title"] == "Add dark mode"
+        assert payload["labels"] == ["crowdsourced"]
+        assert payload["execution_mode"] == "autonomous"
+        assert payload["autonomous"] is True
+
+    def test_capture_bug_routes_to_bug_creator(self) -> None:
+        with patch("cli.commands.tasks._create_bug_capture") as mock_capture_bug:
+            result = runner.invoke(tasks_app, ["capture", "bug", "Fix auth", "--from", "task-123"])
+
+        assert result.exit_code == 0
+        mock_capture_bug.assert_called_once_with("Fix auth", None, 2, None, "task-123")
+
+    def test_legacy_idea_redirects_to_capture(self) -> None:
+        result = runner.invoke(tasks_app, ["idea", "Add dark mode"])
+
+        assert result.exit_code == 1
+        assert "removed" in result.output
+        assert 'st capture idea "Add dark mode"' in result.output
+
     def test_list_accepts_local_compact_flag(self) -> None:
         with patch("cli.commands.tasks_list.list_tasks_command") as mock_list:
             result = runner.invoke(tasks_app, ["list", "--compact"])

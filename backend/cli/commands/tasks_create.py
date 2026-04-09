@@ -109,6 +109,34 @@ def _handle_single_task_create(
     output_task(task)
 
 
+def create_capture_task_command(
+    title: str,
+    description: str | None,
+    priority: int,
+    labels: str | None,
+    task_type: str,
+    parent: str | None,
+    blocked_by: str | None,
+    execution_mode: str | None,
+    manual_only: bool,
+    autonomous: bool,
+) -> None:
+    """Create a lightweight capture task without execution-ready plan metadata."""
+    _handle_single_task_create(
+        title,
+        False,
+        description,
+        priority,
+        labels,
+        task_type,
+        parent,
+        blocked_by,
+        execution_mode,
+        manual_only,
+        autonomous,
+    )
+
+
 def create_task_command(
     title: str | None,
     from_file: Path | None,
@@ -125,20 +153,15 @@ def create_task_command(
     autonomous: bool,
     task_id: str | None = None,
 ) -> None:
-    """Create a new task or batch create from file.
+    """Create an execution-ready task from plan or batch create from file.
 
     Requires explicit project (-P flag or ST_PROJECT_ID env var).
 
     Examples:
-        st -P summitflow create "Fix bug" -t bug -p 2 -l "complexity:small,domains:backend"
-        st -P summitflow create "Add feature" -t feature -p 1 --parent task-abc123
-        st -P summitflow create "Implement X" --blocked-by task-abc123
-        st -P summitflow create "AutoTest" --autonomous
-        st -P summitflow create "Reserved lane" --manual-only
-        st -P summitflow create --from-file tasks.json
-        st -P summitflow create --from-file tasks.json --dry-run
         st -P summitflow create --plan plan.json
         st -P summitflow create --plan plan.json --task existing-id
+        st -P summitflow create --from-file tasks.json
+        st -P summitflow create --from-file tasks.json --dry-run
     """
     if plan:
         _handle_plan_import(plan, dry_run, task_id)
@@ -148,20 +171,9 @@ def create_task_command(
         create_from_file(from_file, dry_run)
         return
 
-    if not title:
-        output_error("Either provide a title or use --from-file / --plan")
-        raise typer.Exit(1)
-
-    _handle_single_task_create(
-        title,
-        dry_run,
-        description,
-        priority,
-        labels,
-        task_type,
-        parent,
-        blocked_by,
-        execution_mode,
-        manual_only,
-        autonomous,
+    output_error(
+        "st create requires --plan for single-task creation. "
+        "Use `st -P <project> create --plan plan.json` for execution-ready work, "
+        "or `st -P <project> capture <task|bug|idea> \"...\"` for lightweight intake."
     )
+    raise typer.Exit(1)

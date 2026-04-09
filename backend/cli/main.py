@@ -202,9 +202,9 @@ DOCKER:
   docker metrics                             # CPU/memory per container
 
 EXAMPLES:
-  st -P summitflow create "Fix bug" -t bug -p 2  # create task (explicit project)
-  st -P agent-hub bug "Fix auth"           # create bug (explicit project)
-  st -P summitflow idea "Add dark mode"    # submit idea (explicit project)
+  st -P summitflow create --plan plan.json  # create execution-ready task (explicit project)
+  st -P agent-hub capture bug "Fix auth"   # capture bug kernel (explicit project)
+  st -P summitflow capture idea "Add dark mode"  # capture idea kernel (explicit project)
   st -P monkey-fight design ui analyze http://localhost:4001
   st -P monkey-fight design asset generate "Kiki attack sheet" "Capuchin fighter combo sheet" --type sprite_sheet --workflow production --sheet-columns 4 --sheet-rows 2 --frame-width 128 --frame-height 128 --animations idle,attack
   st ready                                 # find work (compact by default)

@@ -77,7 +77,9 @@ SummitFlow includes a Typer-based CLI for task management:
 
 ```bash
 st list                        # List tasks
-st -P summitflow create "Fix login bug"  # Create task (requires -P)
+st -P summitflow create --plan plan.json  # Create execution-ready task (requires -P)
+st -P summitflow capture bug "Fix login bug"  # Capture a lightweight bug kernel
+st -P summitflow capture idea "Add SSO"       # Capture a lightweight idea kernel
 st claim <task-id>             # Claim task (creates worktree checkpoint)
 st context                     # Show current task details
 st step pass <subtask> <step>  # Mark step as passed

@@ -7,7 +7,9 @@ from typing import Annotated
 import typer
 
 from ..client import APIError, STClient
-from ..output import set_compact_output
+from ..config import get_config
+from ..output import require_explicit_project, set_compact_output
+from .tasks_bug import create_bug_task
 
 app = typer.Typer(help="Task management commands")
 
@@ -17,6 +19,7 @@ _IDEA_LABELS = "crowdsourced"
 _IDEA_EXECUTION_MODE = "autonomous"
 _DEFAULT_CRITIQUE_STAGE = "task_shape"
 _DEFAULT_CRITIQUE_AGENT = "specifier"
+_CAPTURE_KINDS = {"task", "bug", "idea"}
 
 
 def _removed_command(name: str, replacement: str) -> None:
@@ -25,24 +28,62 @@ def _removed_command(name: str, replacement: str) -> None:
     raise typer.Exit(1)
 
 
+def _normalize_capture_kind(kind: str) -> str:
+    normalized = kind.strip().lower()
+    if normalized in _CAPTURE_KINDS:
+        return normalized
+    allowed = ", ".join(sorted(_CAPTURE_KINDS))
+    typer.echo(f"Error: invalid capture kind '{kind}'. Use one of: {allowed}", err=True)
+    raise typer.Exit(1)
+
+
+def _default_capture_priority(kind: str) -> int:
+    return 3 if kind == "idea" else 2
+
+
+def _merge_label_strings(labels: str | None, extra_label: str) -> str:
+    merged: list[str] = []
+    for raw in (labels or "").split(","):
+        label = raw.strip()
+        if label and label not in merged:
+            merged.append(label)
+    if extra_label not in merged:
+        merged.append(extra_label)
+    return ",".join(merged)
+
+
+def _create_bug_capture(
+    title: str,
+    description: str | None,
+    priority: int,
+    labels: str | None,
+    from_task: str | None,
+) -> None:
+    require_explicit_project(get_config())
+    create_bug_task(title, description, priority, labels, from_task, STClient())
+
+
 @app.command()
 def create(
     title: Annotated[str | None, typer.Argument()] = None,
     from_file: Annotated[Path | None, typer.Option("--from-file")] = None,
     dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
-    description: Annotated[str | None, typer.Option("-d", "--description")] = None,
-    priority: Annotated[int, typer.Option("-p", "--priority", min=0, max=4)] = 2,
-    labels: Annotated[str | None, typer.Option("-l", "--labels")] = None,
-    task_type: Annotated[str, typer.Option("-t", "--type")] = _DEFAULT_TASK_TYPE,
-    parent: Annotated[str | None, typer.Option("--parent")] = None,
+    description: Annotated[str | None, typer.Option("-d", "--description", hidden=True)] = None,
+    priority: Annotated[int, typer.Option("-p", "--priority", min=0, max=4, hidden=True)] = 2,
+    labels: Annotated[str | None, typer.Option("-l", "--labels", hidden=True)] = None,
+    task_type: Annotated[str, typer.Option("-t", "--type", hidden=True)] = _DEFAULT_TASK_TYPE,
+    parent: Annotated[str | None, typer.Option("--parent", hidden=True)] = None,
     plan: Annotated[Path | None, typer.Option("--plan")] = None,
     task_id: Annotated[str | None, typer.Option("--task")] = None,
-    blocked_by: Annotated[str | None, typer.Option("--blocked-by")] = None,
-    execution_mode: Annotated[str | None, typer.Option("--execution-mode")] = None,
-    manual_only: Annotated[bool, typer.Option("--manual-only")] = False,
-    autonomous: Annotated[bool, typer.Option("--autonomous")] = False,
+    blocked_by: Annotated[str | None, typer.Option("--blocked-by", hidden=True)] = None,
+    execution_mode: Annotated[str | None, typer.Option("--execution-mode", hidden=True)] = None,
+    manual_only: Annotated[bool, typer.Option("--manual-only", hidden=True)] = False,
+    autonomous: Annotated[bool, typer.Option("--autonomous", hidden=True)] = False,
 ) -> None:
-    """Create a new task or batch create from file."""
+    """Create an execution-ready task from plan or batch import tasks from file.
+
+    Use `st capture` for lightweight task intake that still needs shaping.
+    """
     from .tasks_create import create_task_command
 
     create_task_command(
@@ -163,23 +204,70 @@ def delete(
 
 
 @app.command()
+def capture(
+    kind: Annotated[str, typer.Argument(help="Capture kind: task, bug, or idea")],
+    title: Annotated[str, typer.Argument(help="Short task kernel to store")],
+    description: Annotated[str | None, typer.Option("-d", "--description")] = None,
+    priority: Annotated[int | None, typer.Option("-p", "--priority", min=0, max=4)] = None,
+    labels: Annotated[str | None, typer.Option("-l", "--labels")] = None,
+    from_task: Annotated[
+        str | None,
+        typer.Option("--from", help="Source task when capturing a bug discovered from existing work"),
+    ] = None,
+) -> None:
+    """Capture a lightweight task kernel for later ideation, triage, or planning.
+
+    Use `st create --plan` when the work is already execution-ready.
+    """
+    from .tasks_create import create_capture_task_command
+
+    resolved_kind = _normalize_capture_kind(kind)
+    resolved_priority = priority if priority is not None else _default_capture_priority(resolved_kind)
+
+    if resolved_kind == "bug":
+        _create_bug_capture(title, description, resolved_priority, labels, from_task)
+        return
+
+    if from_task:
+        typer.echo("Error: --from only applies to `st capture bug ...`", err=True)
+        raise typer.Exit(1)
+
+    merged_labels = labels
+    execution_mode: str | None = None
+    autonomous = False
+    if resolved_kind == "idea":
+        merged_labels = _merge_label_strings(labels, _IDEA_LABELS)
+        execution_mode = _IDEA_EXECUTION_MODE
+        autonomous = True
+
+    create_capture_task_command(
+        title=title,
+        description=description,
+        priority=resolved_priority,
+        labels=merged_labels,
+        task_type=_DEFAULT_TASK_TYPE,
+        parent=None,
+        blocked_by=None,
+        execution_mode=execution_mode,
+        manual_only=False,
+        autonomous=autonomous,
+    )
+
+
+@app.command(hidden=True)
 def bug(
     title: str,
     description: Annotated[str | None, typer.Option("-d", "--description")] = None,
-    priority: Annotated[int, typer.Option("-p", "--priority", min=0, max=4)] = 2,
+    priority: Annotated[int | None, typer.Option("-p", "--priority", min=0, max=4)] = None,
     labels: Annotated[str | None, typer.Option("-l", "--labels")] = None,
     from_task: Annotated[str | None, typer.Option("--from")] = None,
 ) -> None:
-    """Create a bug task (shorthand for create -t bug).
-
-    Requires explicit project: st -P <project> bug "title"
-    """
-    from ..config import get_config
-    from ..output import require_explicit_project
-    from .tasks_bug import create_bug_task
-
-    require_explicit_project(get_config())
-    create_bug_task(title, description, priority, labels, from_task, STClient())
+    """Removed: use `st capture bug` instead."""
+    _ = (title, description, priority, labels)
+    hint = 'st capture bug "Fix: X"'
+    if from_task:
+        hint = f'{hint} --from {from_task}'
+    _removed_command("bug", hint)
 
 
 @app.command()
@@ -222,37 +310,14 @@ def verify_plan(
     verify_plan_file(file_path, STClient(require_project=False))
 
 
-@app.command()
+@app.command(hidden=True)
 def idea(
     description: Annotated[str, typer.Argument()],
     priority: Annotated[int, typer.Option("-p", "--priority", min=0, max=4)] = 3,
 ) -> None:
-    """Submit an idea for autonomous ideation and execution.
-
-    Requires explicit project (-P flag or ST_PROJECT_ID env var).
-    Shorthand for: st create "..." --labels crowdsourced --autonomous
-
-    Examples:
-        st -P summitflow idea "Add dark mode support"
-        st -P summitflow idea "Refactor auth module to use JWT" -p 1
-    """
-    from .tasks_create import create_task_command
-
-    create_task_command(
-        title=description,
-        from_file=None,
-        dry_run=False,
-        description=None,
-        priority=priority,
-        labels=_IDEA_LABELS,
-        task_type=_DEFAULT_TASK_TYPE,
-        parent=None,
-        plan=None,
-        blocked_by=None,
-        execution_mode=_IDEA_EXECUTION_MODE,
-        manual_only=False,
-        autonomous=True,
-    )
+    """Removed: use `st capture idea` instead."""
+    _ = priority
+    _removed_command("idea", f'st capture idea "{description}"')
 
 
 @app.command()
