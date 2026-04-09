@@ -10,6 +10,7 @@ import typer
 from ..client import APIError, STClient
 from ..config import get_config
 from ..output import handle_api_error, output_error, output_task, require_explicit_project
+from .task_plan_contract import CREATE_ERROR_HINT
 from .tasks_import import create_from_file, import_plan_file
 
 
@@ -171,9 +172,5 @@ def create_task_command(
         create_from_file(from_file, dry_run)
         return
 
-    output_error(
-        "st create requires --plan for single-task creation. "
-        "Use `st -P <project> create --plan plan.json` for execution-ready work, "
-        "or `st -P <project> capture <task|bug|idea> \"...\"` for lightweight intake."
-    )
+    output_error(CREATE_ERROR_HINT)
     raise typer.Exit(1)

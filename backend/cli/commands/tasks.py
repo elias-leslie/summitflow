@@ -9,6 +9,13 @@ import typer
 from ..client import APIError, STClient
 from ..config import get_config
 from ..output import require_explicit_project, set_compact_output
+from .task_plan_contract import (
+    CREATE_COMMAND_HELP,
+    FROM_FILE_OPTION_HELP,
+    PLAN_OPTION_HELP,
+    VERIFY_COMMAND_HELP,
+    VERIFY_FILE_ARGUMENT_HELP,
+)
 from .tasks_bug import create_bug_task
 
 app = typer.Typer(help="Task management commands")
@@ -63,27 +70,29 @@ def _create_bug_capture(
     create_bug_task(title, description, priority, labels, from_task, STClient())
 
 
-@app.command()
+@app.command(help=CREATE_COMMAND_HELP)
 def create(
     title: Annotated[str | None, typer.Argument()] = None,
-    from_file: Annotated[Path | None, typer.Option("--from-file")] = None,
+    from_file: Annotated[
+        Path | None,
+        typer.Option("--from-file", help=FROM_FILE_OPTION_HELP),
+    ] = None,
     dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
     description: Annotated[str | None, typer.Option("-d", "--description", hidden=True)] = None,
     priority: Annotated[int, typer.Option("-p", "--priority", min=0, max=4, hidden=True)] = 2,
     labels: Annotated[str | None, typer.Option("-l", "--labels", hidden=True)] = None,
     task_type: Annotated[str, typer.Option("-t", "--type", hidden=True)] = _DEFAULT_TASK_TYPE,
     parent: Annotated[str | None, typer.Option("--parent", hidden=True)] = None,
-    plan: Annotated[Path | None, typer.Option("--plan")] = None,
+    plan: Annotated[
+        Path | None,
+        typer.Option("--plan", help=PLAN_OPTION_HELP),
+    ] = None,
     task_id: Annotated[str | None, typer.Option("--task")] = None,
     blocked_by: Annotated[str | None, typer.Option("--blocked-by", hidden=True)] = None,
     execution_mode: Annotated[str | None, typer.Option("--execution-mode", hidden=True)] = None,
     manual_only: Annotated[bool, typer.Option("--manual-only", hidden=True)] = False,
     autonomous: Annotated[bool, typer.Option("--autonomous", hidden=True)] = False,
 ) -> None:
-    """Create an execution-ready task from plan or batch import tasks from file.
-
-    Use `st capture` for lightweight task intake that still needs shaping.
-    """
     from .tasks_create import create_task_command
 
     create_task_command(
@@ -300,11 +309,10 @@ def sync_progress(
     sync_progress_command(task_id, acknowledge_none)
 
 
-@app.command("verify")
+@app.command("verify", help=VERIFY_COMMAND_HELP)
 def verify_plan(
-    file_path: Annotated[Path, typer.Argument()],
+    file_path: Annotated[Path, typer.Argument(help=VERIFY_FILE_ARGUMENT_HELP)],
 ) -> None:
-    """Verify a plan.json file against the schema."""
     from .tasks_verify import verify_plan_file
 
     verify_plan_file(file_path, STClient(require_project=False))

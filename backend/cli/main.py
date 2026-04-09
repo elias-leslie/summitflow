@@ -42,6 +42,7 @@ from .commands import (
     tests,
     tools,
 )
+from .commands.task_plan_contract import PLAN_SCHEMA_ENDPOINT, PLAN_VERIFY_EXAMPLE
 from .config import set_project_override
 from .output import set_compact_output, set_human_output, set_progress_only
 from .output_context import OutputContext
@@ -51,7 +52,7 @@ atexit.register(close_pool)
 
 # Complete CLI reference - everything needed to use st in one place
 # Format: TOON-style, optimized for Claude consumption
-CLI_REFERENCE = """ST CLI - SummitFlow Tasks
+CLI_REFERENCE = f"""ST CLI - SummitFlow Tasks
 
 FLAGS: --compact/-c (TOON, default) | --no-compact (raw JSON) | --human (pretty JSON) | --project/-P <id> | --progress-only
        Default output: compact TOON format. Use --no-compact for raw JSON.
@@ -59,10 +60,10 @@ FLAGS: --compact/-c (TOON, default) | --no-compact (raw JSON) | --human (pretty 
 WORKFLOW: ready → claim <id> → context <id> → [work] → done <subtask> → done <task>
           Alternative: abandon <id> --discard to rollback
 
-TASKS (create/bug/idea REQUIRE -P <project>):
-  create <title> [-t feature|bug|task|chore] [-p 0-4] [-d desc] [--blocked-by id]  # REQUIRES -P
-  bug <title> [-d desc] [-p 0-4] [-l labels] [--from id]                           # REQUIRES -P
-  idea <description> [-p priority]                                                  # REQUIRES -P
+TASKS (create/capture REQUIRE -P <project>):
+  create --plan <plan.json> [--task existing-id]   # REQUIRES -P; execution-ready import
+  create --from-file <tasks.json> [--dry-run]      # REQUIRES -P; batch task import
+  capture <task|bug|idea> <title> [--description X] [--priority N] [--labels a,b]  # REQUIRES -P
   list [--status S] [--type T] [--priority P]
   ready                                    # unblocked tasks (current project)
   ready-all [--limit N]                    # cross-project summary: ready + blocked tasks
@@ -74,7 +75,7 @@ TASKS (create/bug/idea REQUIRE -P <project>):
   sync-progress <id> [--none]              # sync passed subtasks
   autocode <id> [--dry-run] [--at TIME]    # queue for autonomous execution (immediate or scheduled)
   critique <id> [--stage task_shape]       # request/store a second-opinion critique
-  verify <plan.json>                       # validate plan file against schema
+  verify <plan.json>                       # validate plan file against {PLAN_SCHEMA_ENDPOINT}
   exec-log <id> [-f] [-n N] [--debug]      # view execution log (subtasks, tool calls, events)
 
 CHECKPOINT (claim -> done | abandon):
@@ -203,6 +204,7 @@ DOCKER:
 
 EXAMPLES:
   st -P summitflow create --plan plan.json  # create execution-ready task (explicit project)
+  {PLAN_VERIFY_EXAMPLE}                      # validate plan.json against the live schema
   st -P agent-hub capture bug "Fix auth"   # capture bug kernel (explicit project)
   st -P summitflow capture idea "Add dark mode"  # capture idea kernel (explicit project)
   st -P monkey-fight design ui analyze http://localhost:4001

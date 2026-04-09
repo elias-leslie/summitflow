@@ -137,3 +137,8 @@ class TestCLIReferenceComplete:
         assert result.exit_code == 0
         assert "[work]" in result.output
         assert "projects [list|current|get|root|create|update|delete]" in result.output
+
+    def test_cli_reference_includes_plan_validation_path(self) -> None:
+        """The root help should point execution-ready task authors to schema validation."""
+        assert "st verify plan.json" in CLI_REFERENCE
+        assert "/schemas/plan" in CLI_REFERENCE

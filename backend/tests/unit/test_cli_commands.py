@@ -329,14 +329,24 @@ class TestTaskCliErgonomics:
         assert result.exit_code == 0
         assert "--plan" in result.output
         assert "--from-file" in result.output
+        assert "st verify plan.json" in result.output
+        assert "/schemas/plan" in result.output
         assert "--description" not in result.output
         assert "--autonomous" not in result.output
+
+    def test_verify_help_references_live_plan_schema(self) -> None:
+        result = runner.invoke(tasks_app, ["verify", "--help"])
+
+        assert result.exit_code == 0
+        assert "/schemas/plan" in result.output
+        assert "backend/app/schemas/plan.schema.json" in result.output
 
     def test_create_rejects_plain_single_task_without_plan(self) -> None:
         result = runner.invoke(tasks_app, ["create", "Draft task"])
 
         assert result.exit_code == 1
         assert "requires --plan" in result.output
+        assert "st verify plan.json" in result.output
         assert "capture <task|bug|idea>" in result.output
         assert "lightweight intake" in result.output
 

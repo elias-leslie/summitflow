@@ -9,6 +9,7 @@ import typer
 
 from ..client import APIError, STClient
 from ..output import output_error
+from .task_plan_contract import PLAN_SCHEMA_ENDPOINT, PLAN_SCHEMA_SOURCE
 from .tasks_validation import validate_plan_schema
 
 
@@ -16,7 +17,7 @@ def verify_plan_file(
     file_path: Path,
     client: STClient,
 ) -> None:
-    """Verify a plan.json file against the schema."""
+    """Verify a plan.json file against the live schema and domain rules."""
     import jsonschema as js
 
     try:
@@ -60,3 +61,4 @@ def verify_plan_file(
         typer.echo(f"  subtasks: {len(plan.get('subtasks', []))}")
         if plan.get("done_when"):
             typer.echo(f"  done_when: {len(plan['done_when'])} items")
+        typer.echo(f"  schema: {PLAN_SCHEMA_ENDPOINT} ({PLAN_SCHEMA_SOURCE})")
