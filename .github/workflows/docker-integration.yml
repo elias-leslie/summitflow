@@ -12,8 +12,6 @@ jobs:
   integration:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      COMPOSE_FILE: docker-compose.yml:docker-compose.dev.yml
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
 
@@ -42,13 +40,16 @@ jobs:
           set_env HATCHET_CLIENT_TOKEN test-hatchet-token
           set_env SUMMITFLOW_CLIENT_ID summitflow
           set_env SUMMITFLOW_CLIENT_SECRET test-summitflow-secret
-          set_env TAG latest
+          set_env TAG ci
 
       - name: Validate compose syntax
         working-directory: docker/compose
+        run: docker compose --profile full config --quiet
+
+      - name: Build SummitFlow images
         run: |
-          docker compose -f docker-compose.yml --profile full config --quiet
-          docker compose --profile summitflow config --quiet
+          docker build -t ghcr.io/elias-leslie/summitflow-api:ci -f docker/backend.Dockerfile .
+          docker build -t ghcr.io/elias-leslie/summitflow-web:ci -f docker/frontend.Dockerfile .
 
       - name: Start infrastructure
         working-directory: docker/compose
@@ -56,7 +57,7 @@ jobs:
 
       - name: Start SummitFlow stack
         working-directory: docker/compose
-        run: docker compose --profile summitflow up -d --wait --build
+        run: docker compose --profile summitflow up -d --wait
 
       - name: Health check — SummitFlow API
         working-directory: docker/compose
