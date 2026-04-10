@@ -67,3 +67,58 @@ printf 'JSON=%s\\n' "$LAST_WORKFLOW_JSON"
     assert "HINT=gh run watch 24221396362 --repo elias-leslie/a-term --exit-status" in result.stdout
     assert '"workflow":"release"' in result.stdout
     assert '"workflow":"CI"' in result.stdout
+
+
+def test_commit_sh_capture_workflow_summary_marks_fallback_runs_as_recent(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+
+    _write_executable(
+        fake_bin / "git",
+        """#!/usr/bin/env bash
+if [[ "$1" == "remote" && "$2" == "get-url" && "$3" == "origin" ]]; then
+  echo "git@github.com:elias-leslie/a-term.git"
+  exit 0
+fi
+echo "unexpected git invocation: $*" >&2
+exit 1
+""",
+    )
+    _write_executable(
+        fake_bin / "gh",
+        """#!/usr/bin/env bash
+if [[ "$1" == "run" && "$2" == "list" ]]; then
+  cat <<'JSON'
+[{"conclusion":"failure","databaseId":24221400920,"displayTitle":"older run","event":"push","headBranch":"main","headSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","number":4,"status":"completed","url":"https://github.com/elias-leslie/a-term/actions/runs/24221400920","workflowName":"CI"}]
+JSON
+  exit 0
+fi
+echo "unexpected gh invocation: $*" >&2
+exit 1
+""",
+    )
+
+    repo_root = Path(__file__).resolve().parents[3]
+    script_path = repo_root / "scripts" / "commit.sh"
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}:{env['PATH']}"
+    env["COMMIT_SH_SOURCE_ONLY"] = "1"
+    env["WORKFLOW_DISCOVERY_ATTEMPTS"] = "1"
+
+    command = f"""
+source "{script_path}"
+capture_workflow_summary "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+printf 'SUMMARY=%s\\n' "$LAST_WORKFLOW_SUMMARY"
+printf 'HINT=%s\\n' "$LAST_WORKFLOW_HINT"
+"""
+    result = subprocess.run(
+        ["bash", "-lc", command],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=tmp_path,
+    )
+
+    assert "SUMMARY=recent: CI=failure@main#4" in result.stdout
+    assert "HINT=" in result.stdout

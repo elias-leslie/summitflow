@@ -294,6 +294,7 @@ capture_workflow_summary() {
     local target_sha=${1:-}
     local workflow_json=""
     local attempt
+    local matched_target="false"
     for ((attempt = 1; attempt <= WORKFLOW_DISCOVERY_ATTEMPTS; attempt++)); do
         workflow_json=$(gh run list \
             --repo "$repo_slug" \
@@ -303,6 +304,7 @@ capture_workflow_summary() {
         [[ -z "$workflow_json" ]] && workflow_json="[]"
 
         if [[ "$(workflow_json_has_sha "$workflow_json" "$target_sha")" == "yes" ]]; then
+            matched_target="true"
             break
         fi
 
@@ -361,6 +363,9 @@ PY
     )
 
     LAST_WORKFLOW_SUMMARY=$(printf '%s\n' "$parsed" | sed -n 's/^SUMMARY=//p')
+    if [[ -n "$LAST_WORKFLOW_SUMMARY" && -n "$target_sha" && "$matched_target" != "true" ]]; then
+        LAST_WORKFLOW_SUMMARY="recent: $LAST_WORKFLOW_SUMMARY"
+    fi
     LAST_WORKFLOW_JSON=$(printf '%s\n' "$parsed" | sed -n 's/^JSON=//p')
     local watch_id
     watch_id=$(printf '%s\n' "$parsed" | sed -n 's/^WATCH=//p')
