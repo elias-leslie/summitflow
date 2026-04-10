@@ -12,6 +12,8 @@ from sqlalchemy import create_engine, text
 database_url = os.environ.get("DATABASE_URL")
 if not database_url:
     sys.exit(0)
+if database_url.startswith("postgresql://"):
+    database_url = database_url.replace("postgresql://", "postgresql+psycopg://", 1)
 
 engine = create_engine(database_url)
 with engine.connect() as conn:
