@@ -149,6 +149,14 @@ queue_detached_rebuild() {
 
 port_pids() { ss -ltnp "( sport = :$1 )" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | sort -u; }
 
+is_current_systemd_unit() {
+    local svc="$1" current_invocation unit_invocation
+    current_invocation="${INVOCATION_ID:-}"
+    [ -n "$current_invocation" ] || return 1
+    unit_invocation="$(systemctl --user show "$svc" -p InvocationID --value 2>/dev/null || true)"
+    [ -n "$unit_invocation" ] && [ "$unit_invocation" = "$current_invocation" ]
+}
+
 kill_port() {
     local port="$1" pids
     pids=$(port_pids "$port")
@@ -167,6 +175,10 @@ restart_svc() {
     local svc="$1" port="${2:-}"
     [ -z "$svc" ] && return 0
     systemctl --user cat "$svc" &>/dev/null || { log_warn "$svc not found, skipping"; return 0; }
+    if is_current_systemd_unit "$svc"; then
+        log_warn "Skipping restart of current service $svc; rerun rebuild.sh $PROJECT from outside that unit to reload it."
+        return 0
+    fi
     log "Restarting $svc..."
     systemctl --user stop "$svc" 2>/dev/null || true
     [ -n "$port" ] && [ "$port" -gt 0 ] 2>/dev/null && kill_port "$port"

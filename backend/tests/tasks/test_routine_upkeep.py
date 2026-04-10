@@ -177,11 +177,73 @@ def test_create_quality_failure_task_uses_source_key_and_marks_escalated(mocker)
     assert created == ["task-quality"]
     assert create_task.call_args.kwargs["execution_mode"] == "autonomous"
     assert create_task.call_args.kwargs["autonomous"] is True
+    assert create_task.call_args.kwargs["priority"] == 2
+    assert create_task.call_args.kwargs["complexity"] == "SIMPLE"
     context = create_spirit.call_args.kwargs["context"]
-    assert context["upkeep"]["source_key"] == "upkeep:quality:123"
+    assert context["upkeep"]["source_key"] == "upkeep:quality:types:arg-type:backend/app/foo.py:42"
+    assert context["upkeep"]["quality_result_id"] == 123
     assert context["files_to_modify"] == ["backend/app/foo.py"]
+    assert create_spirit.call_args.kwargs["complexity"] == "SIMPLE"
     create_subtask.assert_called_once()
     mark_escalated.assert_called_once_with(123, "task-quality")
+
+
+def test_create_quality_failure_task_skips_unactionable_project_level_failures(mocker) -> None:
+    from app.tasks.autonomous import upkeep
+
+    quality_result = {
+        "id": 123,
+        "project_id": "summitflow",
+        "check_type": "types",
+        "check_name": "mypy",
+        "status": "fail",
+        "error_message": None,
+        "file_path": None,
+        "line_number": None,
+        "escalation_task_id": None,
+    }
+    mocker.patch("app.tasks.autonomous.upkeep._list_unfixed_quality_results", return_value=[quality_result])
+    create_task = mocker.patch("app.tasks.autonomous.upkeep.task_store.create_task")
+    mark_escalated = mocker.patch("app.tasks.autonomous.upkeep._mark_quality_escalated")
+
+    created = upkeep._create_quality_failure_tasks("summitflow", limit=3)
+
+    assert created == []
+    create_task.assert_not_called()
+    mark_escalated.assert_not_called()
+
+
+def test_quality_failure_task_dedupes_by_stable_signal_not_result_id(mocker) -> None:
+    from app.tasks.autonomous import upkeep
+
+    quality_result = {
+        "id": 123,
+        "project_id": "summitflow",
+        "check_type": "types",
+        "check_name": "assignment",
+        "status": "fail",
+        "error_message": "bad type",
+        "file_path": "backend/app/foo.py",
+        "line_number": 42,
+        "escalation_task_id": None,
+    }
+    mocker.patch("app.tasks.autonomous.upkeep._list_unfixed_quality_results", return_value=[quality_result])
+    task_exists = mocker.patch(
+        "app.tasks.autonomous.upkeep.task_exists_for_upkeep_source",
+        return_value="task-existing",
+    )
+    create_task = mocker.patch("app.tasks.autonomous.upkeep.task_store.create_task")
+    mark_escalated = mocker.patch("app.tasks.autonomous.upkeep._mark_quality_escalated")
+
+    created = upkeep._create_quality_failure_tasks("summitflow", limit=3)
+
+    assert created == []
+    task_exists.assert_called_once_with(
+        "summitflow",
+        "upkeep:quality:types:assignment:backend/app/foo.py:42",
+    )
+    create_task.assert_not_called()
+    mark_escalated.assert_not_called()
 
 
 def test_create_feedback_task_links_agent_hub_item(mocker) -> None:
