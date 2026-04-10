@@ -298,7 +298,7 @@ capture_workflow_summary() {
         workflow_json=$(gh run list \
             --repo "$repo_slug" \
             --limit "$WORKFLOW_SUMMARY_LIMIT" \
-            --json status,conclusion,workflowName,headBranch,headSha,number,url,displayTitle,event \
+            --json databaseId,status,conclusion,workflowName,headBranch,headSha,number,url,displayTitle,event \
             2>/dev/null || true)
         [[ -z "$workflow_json" ]] && workflow_json="[]"
 
@@ -324,7 +324,7 @@ except json.JSONDecodeError:
 limit = int(sys.argv[2] or 3)
 compact = []
 summary_parts = []
-watch_number = ""
+watch_id = ""
 
 for run in runs[:limit]:
     workflow = run.get("workflowName") or "workflow"
@@ -338,6 +338,7 @@ for run in runs[:limit]:
             "state": state,
             "ref": ref,
             "number": number,
+            "database_id": run.get("databaseId"),
             "url": url,
         }
     )
@@ -349,21 +350,22 @@ for run in runs[:limit]:
         part += f"#{number}"
     summary_parts.append(part)
 
-    if not watch_number and state in {"queued", "pending", "waiting", "requested", "in_progress"} and number:
-        watch_number = str(number)
+    database_id = run.get("databaseId")
+    if not watch_id and state in {"queued", "pending", "waiting", "requested", "in_progress"} and database_id:
+        watch_id = str(database_id)
 
 print("SUMMARY=" + " | ".join(summary_parts))
 print("JSON=" + json.dumps(compact, separators=(",", ":")))
-print("WATCH=" + watch_number)
+print("WATCH=" + watch_id)
 PY
     )
 
     LAST_WORKFLOW_SUMMARY=$(printf '%s\n' "$parsed" | sed -n 's/^SUMMARY=//p')
     LAST_WORKFLOW_JSON=$(printf '%s\n' "$parsed" | sed -n 's/^JSON=//p')
-    local watch_number
-    watch_number=$(printf '%s\n' "$parsed" | sed -n 's/^WATCH=//p')
-    if [[ -n "$watch_number" ]]; then
-        LAST_WORKFLOW_HINT="gh run watch ${watch_number} --repo ${repo_slug} --exit-status"
+    local watch_id
+    watch_id=$(printf '%s\n' "$parsed" | sed -n 's/^WATCH=//p')
+    if [[ -n "$watch_id" ]]; then
+        LAST_WORKFLOW_HINT="gh run watch ${watch_id} --repo ${repo_slug} --exit-status"
     fi
 }
 

@@ -32,7 +32,7 @@ exit 1
         """#!/usr/bin/env bash
 if [[ "$1" == "run" && "$2" == "list" ]]; then
   cat <<'JSON'
-[{"conclusion":"success","displayTitle":"chore(release): bump version to v0.2.1","event":"push","headBranch":"v0.2.1","headSha":"1653d12feeed74101002b3b258f5e8b47476d243","number":2,"status":"completed","url":"https://github.com/elias-leslie/a-term/actions/runs/24221400922","workflowName":"release"},{"conclusion":"","displayTitle":"chore(release): bump version to v0.2.1","event":"push","headBranch":"main","headSha":"1653d12feeed74101002b3b258f5e8b47476d243","number":107,"status":"in_progress","url":"https://github.com/elias-leslie/a-term/actions/runs/24221396362","workflowName":"CI"}]
+[{"conclusion":"success","databaseId":24221400922,"displayTitle":"chore(release): bump version to v0.2.1","event":"push","headBranch":"v0.2.1","headSha":"1653d12feeed74101002b3b258f5e8b47476d243","number":2,"status":"completed","url":"https://github.com/elias-leslie/a-term/actions/runs/24221400922","workflowName":"release"},{"conclusion":"","databaseId":24221396362,"displayTitle":"chore(release): bump version to v0.2.1","event":"push","headBranch":"main","headSha":"1653d12feeed74101002b3b258f5e8b47476d243","number":107,"status":"in_progress","url":"https://github.com/elias-leslie/a-term/actions/runs/24221396362","workflowName":"CI"}]
 JSON
   exit 0
 fi
@@ -64,6 +64,6 @@ printf 'JSON=%s\\n' "$LAST_WORKFLOW_JSON"
     )
 
     assert "SUMMARY=release=success@v0.2.1#2 | CI=in_progress@main#107" in result.stdout
-    assert "HINT=gh run watch 107 --repo elias-leslie/a-term --exit-status" in result.stdout
+    assert "HINT=gh run watch 24221396362 --repo elias-leslie/a-term --exit-status" in result.stdout
     assert '"workflow":"release"' in result.stdout
     assert '"workflow":"CI"' in result.stdout
