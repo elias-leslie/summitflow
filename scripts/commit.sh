@@ -52,6 +52,9 @@ LAST_WORKFLOW_HINT=""
 WORKFLOW_SUMMARY_LIMIT="${WORKFLOW_SUMMARY_LIMIT:-3}"
 WORKFLOW_DISCOVERY_ATTEMPTS="${WORKFLOW_DISCOVERY_ATTEMPTS:-5}"
 WORKFLOW_DISCOVERY_SLEEP="${WORKFLOW_DISCOVERY_SLEEP:-1}"
+COMMIT_IDENTITY_NAME=""
+COMMIT_IDENTITY_EMAIL=""
+COMMIT_IDENTITY_READY="false"
 
 show_help() {
     sed -n '2,/^$/p' "$0" | sed 's/^# //' | sed 's/^#//'
@@ -218,6 +221,50 @@ safe_pull() {
     fi
 
     return 0
+}
+
+hydrate_commit_identity() {
+    [[ "$COMMIT_IDENTITY_READY" == "true" ]] && return 0
+    COMMIT_IDENTITY_READY="true"
+
+    if [[ -n "${GIT_AUTHOR_NAME:-}" && -n "${GIT_AUTHOR_EMAIL:-}" ]]; then
+        COMMIT_IDENTITY_NAME="$GIT_AUTHOR_NAME"
+        COMMIT_IDENTITY_EMAIL="$GIT_AUTHOR_EMAIL"
+        return 0
+    fi
+
+    if [[ -n "${COMMIT_SH_GIT_NAME:-}" && -n "${COMMIT_SH_GIT_EMAIL:-}" ]]; then
+        COMMIT_IDENTITY_NAME="$COMMIT_SH_GIT_NAME"
+        COMMIT_IDENTITY_EMAIL="$COMMIT_SH_GIT_EMAIL"
+        return 0
+    fi
+
+    command -v gh >/dev/null 2>&1 || return 0
+
+    local identity
+    identity=$(gh api user --jq '[(.name // .login // ""), (.id | tostring), (.login // "")] | @tsv' 2>/dev/null || true)
+    [[ -n "$identity" ]] || return 0
+
+    local name github_id login
+    IFS=$'\t' read -r name github_id login <<< "$identity"
+    [[ -n "$login" && -n "$github_id" ]] || return 0
+
+    COMMIT_IDENTITY_NAME="${name:-$login}"
+    COMMIT_IDENTITY_EMAIL="${github_id}+${login}@users.noreply.github.com"
+}
+
+run_git_commit() {
+    hydrate_commit_identity
+    if [[ -n "$COMMIT_IDENTITY_NAME" && -n "$COMMIT_IDENTITY_EMAIL" ]]; then
+        GIT_AUTHOR_NAME="$COMMIT_IDENTITY_NAME" \
+        GIT_AUTHOR_EMAIL="$COMMIT_IDENTITY_EMAIL" \
+        GIT_COMMITTER_NAME="$COMMIT_IDENTITY_NAME" \
+        GIT_COMMITTER_EMAIL="$COMMIT_IDENTITY_EMAIL" \
+        git commit "$@"
+        return $?
+    fi
+
+    git commit "$@"
 }
 
 clear_workflow_summary() {
@@ -747,13 +794,13 @@ commit_project_repo() {
     fi
 
     local commit_out commit_status=0
-    commit_out=$(git commit -m "$message" 2>&1) || commit_status=$?
+    commit_out=$(run_git_commit -m "$message" 2>&1) || commit_status=$?
 
     if [[ $commit_status -ne 0 ]]; then
         scope_reset_index
         if scope_has_changes; then
             scope_add_all
-            commit_out=$(git commit -m "$message" 2>&1) || commit_status=$?
+            commit_out=$(run_git_commit -m "$message" 2>&1) || commit_status=$?
         fi
         if [[ $commit_status -ne 0 ]]; then
             emit_result "ERROR" "$repo_name" "" "$message" "false" "$gates|hooks:FAIL" ""
@@ -769,7 +816,7 @@ commit_project_repo() {
     if scope_has_changes; then
         scope_add_all
         local followup_status=0
-        git commit -m "style: auto-format from pre-commit hooks" >/dev/null 2>&1 || followup_status=$?
+        run_git_commit -m "style: auto-format from pre-commit hooks" >/dev/null 2>&1 || followup_status=$?
         if [[ $followup_status -eq 0 ]]; then
             sha=$(git rev-parse --short HEAD)
             gates="$gates|followup:PASS"
@@ -846,12 +893,12 @@ commit_config_repo() {
     message="${CUSTOM_MSG:-$(generate_simple_message)}"
 
     local commit_out commit_status=0
-    commit_out=$(git commit -m "$message" 2>&1) || commit_status=$?
+    commit_out=$(run_git_commit -m "$message" 2>&1) || commit_status=$?
 
     if [[ $commit_status -ne 0 ]]; then
         if scope_has_changes; then
             scope_add_all
-            commit_out=$(git commit -m "$message" 2>&1) || commit_status=$?
+            commit_out=$(run_git_commit -m "$message" 2>&1) || commit_status=$?
         fi
         if [[ $commit_status -ne 0 ]]; then
             emit_result "ERROR" "$repo_name" "" "$message" "false" "" ""

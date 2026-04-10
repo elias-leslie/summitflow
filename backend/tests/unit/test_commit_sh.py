@@ -122,3 +122,49 @@ printf 'HINT=%s\\n' "$LAST_WORKFLOW_HINT"
 
     assert "SUMMARY=recent: CI=failure@main#4" in result.stdout
     assert "HINT=" in result.stdout
+
+
+def test_commit_sh_uses_github_identity_for_commits(tmp_path: Path) -> None:
+    log_path = tmp_path / "commit-env.log"
+
+    repo_root = Path(__file__).resolve().parents[3]
+    script_path = repo_root / "scripts" / "commit.sh"
+    env = os.environ.copy()
+    env["COMMIT_SH_SOURCE_ONLY"] = "1"
+
+    command = f"""
+gh() {{
+  if [[ "$1" == "api" && "$2" == "user" ]]; then
+    printf 'Elias Leslie\\t56698332\\telias-leslie\\n'
+    return 0
+  fi
+  echo "unexpected gh invocation: $*" >&2
+  return 1
+}}
+git() {{
+  if [[ "$1" == "commit" ]]; then
+    printf '%s\\n%s\\n%s\\n%s\\n' "$GIT_AUTHOR_NAME" "$GIT_AUTHOR_EMAIL" "$GIT_COMMITTER_NAME" "$GIT_COMMITTER_EMAIL" > "{log_path}"
+    return 0
+  fi
+  echo "unexpected git invocation: $*" >&2
+  return 1
+}}
+source "{script_path}"
+run_git_commit -m "Test commit"
+"""
+    subprocess.run(
+        ["bash", "-lc", command],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=tmp_path,
+    )
+
+    logged = log_path.read_text().splitlines()
+    assert logged == [
+        "Elias Leslie",
+        "56698332+elias-leslie@users.noreply.github.com",
+        "Elias Leslie",
+        "56698332+elias-leslie@users.noreply.github.com",
+    ]
