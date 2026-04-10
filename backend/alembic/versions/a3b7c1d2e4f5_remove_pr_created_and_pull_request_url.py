@@ -38,11 +38,18 @@ OLD_STATUSES = (
 
 def upgrade() -> None:
     """Drop pull_request_url column and remove pr_created from status check."""
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    if not inspector.has_table("tasks"):
+        return
+
     # Drop the column
-    op.drop_column("tasks", "pull_request_url")
+    columns = {column["name"] for column in inspector.get_columns("tasks")}
+    if "pull_request_url" in columns:
+        op.drop_column("tasks", "pull_request_url")
 
     # Replace status check constraint without pr_created
-    op.drop_constraint("tasks_status_check", "tasks", type_="check")
+    op.execute("ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_status_check")
     op.create_check_constraint(
         "tasks_status_check",
         "tasks",
@@ -52,11 +59,18 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Restore pull_request_url column and pr_created status."""
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    if not inspector.has_table("tasks"):
+        return
+
     # Restore column
-    op.add_column("tasks", sa.Column("pull_request_url", sa.Text(), nullable=True))
+    columns = {column["name"] for column in inspector.get_columns("tasks")}
+    if "pull_request_url" not in columns:
+        op.add_column("tasks", sa.Column("pull_request_url", sa.Text(), nullable=True))
 
     # Restore old status check constraint with pr_created
-    op.drop_constraint("tasks_status_check", "tasks", type_="check")
+    op.execute("ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_status_check")
     op.create_check_constraint(
         "tasks_status_check",
         "tasks",

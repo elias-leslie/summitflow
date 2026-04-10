@@ -85,6 +85,67 @@ def test_retention_days_downgrade_skips_missing_legacy_backup_schedules(mocker) 
     execute.assert_not_called()
 
 
+def test_remove_pr_fields_upgrade_skips_absent_pull_request_url(mocker) -> None:
+    module = _load_migration_module(
+        "a3b7c1d2e4f5_remove_pr_created_and_pull_request_url.py",
+        "remove_pr_fields_migration",
+    )
+    inspector = MagicMock()
+    inspector.has_table.return_value = True
+    inspector.get_columns.return_value = [{"name": "id"}]
+    drop_column = mocker.patch.object(module.op, "drop_column")
+    execute = mocker.patch.object(module.op, "execute")
+    create_check_constraint = mocker.patch.object(module.op, "create_check_constraint")
+    mocker.patch.object(module.op, "get_bind", return_value=object())
+    mocker.patch.object(module.sa, "inspect", return_value=inspector)
+
+    module.upgrade()
+
+    drop_column.assert_not_called()
+    execute.assert_called_once_with("ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_status_check")
+    create_check_constraint.assert_called_once()
+
+
+def test_remove_pr_fields_upgrade_skips_missing_tasks_table(mocker) -> None:
+    module = _load_migration_module(
+        "a3b7c1d2e4f5_remove_pr_created_and_pull_request_url.py",
+        "remove_pr_fields_migration",
+    )
+    inspector = MagicMock()
+    inspector.has_table.return_value = False
+    execute = mocker.patch.object(module.op, "execute")
+    create_check_constraint = mocker.patch.object(module.op, "create_check_constraint")
+    mocker.patch.object(module.op, "get_bind", return_value=object())
+    mocker.patch.object(module.sa, "inspect", return_value=inspector)
+
+    module.upgrade()
+
+    inspector.get_columns.assert_not_called()
+    execute.assert_not_called()
+    create_check_constraint.assert_not_called()
+
+
+def test_remove_pr_fields_downgrade_skips_missing_tasks_table(mocker) -> None:
+    module = _load_migration_module(
+        "a3b7c1d2e4f5_remove_pr_created_and_pull_request_url.py",
+        "remove_pr_fields_migration",
+    )
+    inspector = MagicMock()
+    inspector.has_table.return_value = False
+    add_column = mocker.patch.object(module.op, "add_column")
+    execute = mocker.patch.object(module.op, "execute")
+    create_check_constraint = mocker.patch.object(module.op, "create_check_constraint")
+    mocker.patch.object(module.op, "get_bind", return_value=object())
+    mocker.patch.object(module.sa, "inspect", return_value=inspector)
+
+    module.downgrade()
+
+    inspector.get_columns.assert_not_called()
+    add_column.assert_not_called()
+    execute.assert_not_called()
+    create_check_constraint.assert_not_called()
+
+
 def test_task_execution_mode_upgrade_skips_existing_column_and_constraint(mocker) -> None:
     module = _load_migration_module(
         "d1cd35b5b946_add_task_execution_mode.py",
