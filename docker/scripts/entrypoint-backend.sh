@@ -20,8 +20,18 @@ with engine.connect() as conn:
         sys.exit(0)
 
     version_count = conn.execute(text("SELECT COUNT(*) FROM public.alembic_version")).scalar_one()
-    imported_schema_table = conn.execute(text("SELECT to_regclass('public.tasks')")).scalar()
-    if version_count == 0 and imported_schema_table:
+    imported_table_count = conn.execute(
+        text(
+            """
+            SELECT COUNT(*)
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+              AND table_type = 'BASE TABLE'
+              AND table_name != 'alembic_version'
+            """
+        )
+    ).scalar_one()
+    if version_count == 0 and imported_table_count > 0:
         sys.exit(2)
 
 sys.exit(0)
