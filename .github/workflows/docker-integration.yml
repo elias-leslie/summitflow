@@ -14,6 +14,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: pnpm/action-setup@b307475762933b98ed359c036b0e51f26b63b74b # v5.0.0
+        with:
+          version: "10.28.0"
 
       - name: Create .env file
         working-directory: docker/compose
@@ -45,6 +48,9 @@ jobs:
       - name: Validate compose syntax
         working-directory: docker/compose
         run: docker compose --profile full config --quiet
+
+      - name: Pack workspace packages
+        run: docker/scripts/pack-workspace-packages.sh docker/workspace-packages
 
       - name: Build SummitFlow images
         run: |

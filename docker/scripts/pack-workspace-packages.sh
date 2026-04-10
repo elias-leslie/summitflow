@@ -24,8 +24,14 @@ OUT_DIR="${1:-/tmp/workspace-packages}"
 mkdir -p "$OUT_DIR"
 OUT_DIR="$(cd "$OUT_DIR" && pwd)"
 
-AGENT_HUB_ROOT="${AGENT_HUB_ROOT:-$(resolve_project_root agent-hub)}"
-PACKAGES_DIR="${AGENT_HUB_PACKAGES:-$AGENT_HUB_ROOT/packages}"
+AGENT_HUB_ROOT="${AGENT_HUB_ROOT:-}"
+if [ -z "$AGENT_HUB_ROOT" ]; then
+  AGENT_HUB_ROOT="$(resolve_project_root agent-hub 2>/dev/null || true)"
+fi
+PACKAGES_DIR="${AGENT_HUB_PACKAGES:-}"
+if [ -z "$PACKAGES_DIR" ] && [ -n "$AGENT_HUB_ROOT" ]; then
+  PACKAGES_DIR="$AGENT_HUB_ROOT/packages"
+fi
 
 remove_dir() {
   python - "$1" <<'PY'
@@ -103,19 +109,23 @@ pack_js_package() {
 }
 
 # ── JavaScript packages ──────────────────────────────────────────
-for pkg in chat-ui push-client passport-client; do
-  pack_js_package "@agent-hub/$pkg" "$PACKAGES_DIR/$pkg" "agent-hub-$pkg-0.1.0.tgz"
-done
+if [ -n "$PACKAGES_DIR" ]; then
+  for pkg in chat-ui push-client passport-client; do
+    pack_js_package "@agent-hub/$pkg" "$PACKAGES_DIR/$pkg" "agent-hub-$pkg-0.1.0.tgz"
+  done
+else
+  echo "SKIP: agent-hub packages root not found"
+fi
 
 pack_js_package "@summitflow/notes-ui" "$SUMMITFLOW_ROOT/packages/notes-ui" "summitflow-notes-ui-0.1.0.tgz"
 
 # ── Python package (uv build → .whl) ────────────────────────────
-PYTHON_PKG="$PACKAGES_DIR/agent-hub-client"
-if [ -d "$PYTHON_PKG" ]; then
+PYTHON_PKG="${PACKAGES_DIR:+$PACKAGES_DIR/agent-hub-client}"
+if [ -n "$PYTHON_PKG" ] && [ -d "$PYTHON_PKG" ]; then
   echo "Building agent-hub-client wheel..."
   (cd "$PYTHON_PKG" && uv build --wheel --out-dir "$OUT_DIR" 2>&1)
 else
-  echo "SKIP: $PYTHON_PKG not found"
+  echo "SKIP: agent-hub-client package root not found"
 fi
 
 echo ""
