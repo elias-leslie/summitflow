@@ -8,12 +8,6 @@ permissions:
   contents: read
   packages: read
 
-env:
-  POSTGRES_PASSWORD: test-integration-pw
-  SF_DB_PASSWORD: test-sf-pw
-  AH_DB_PASSWORD: test-ah-pw
-  PA_DB_PASSWORD: test-pa-pw
-
 jobs:
   integration:
     runs-on: ubuntu-latest
@@ -24,13 +18,29 @@ jobs:
       - name: Create .env file
         working-directory: docker/compose
         run: |
-          cat > .env <<EOF
-          POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
-          SF_DB_PASSWORD=${{ env.SF_DB_PASSWORD }}
-          AH_DB_PASSWORD=${{ env.AH_DB_PASSWORD }}
-          PA_DB_PASSWORD=${{ env.PA_DB_PASSWORD }}
-          TAG=latest
-          EOF
+          cp .env.example .env
+
+          set_env() {
+            local key="$1"
+            local value="$2"
+
+            if grep -q "^${key}=" .env; then
+              sed -i "s|^${key}=.*|${key}=${value}|" .env
+            else
+              printf '%s=%s\n' "$key" "$value" >> .env
+            fi
+          }
+
+          set_env POSTGRES_PASSWORD test-integration-pw
+          set_env SF_DB_PASSWORD test-sf-pw
+          set_env AH_DB_PASSWORD test-ah-pw
+          set_env PA_DB_PASSWORD test-pa-pw
+          set_env REDIS_PASSWORD test-redis-pw
+          set_env HOST_HOME_PATH "$HOME"
+          set_env HATCHET_CLIENT_TOKEN test-hatchet-token
+          set_env SUMMITFLOW_CLIENT_ID summitflow
+          set_env SUMMITFLOW_CLIENT_SECRET test-summitflow-secret
+          set_env TAG latest
 
       - name: Validate compose syntax
         working-directory: docker/compose
