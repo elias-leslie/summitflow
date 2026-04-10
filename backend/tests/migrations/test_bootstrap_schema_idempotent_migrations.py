@@ -50,6 +50,41 @@ def test_drop_qa_columns_upgrade_skips_absent_columns(mocker) -> None:
     drop_column.assert_not_called()
 
 
+def test_retention_days_upgrade_skips_missing_legacy_backup_schedules(mocker) -> None:
+    module = _load_migration_module(
+        "233ad1b1d50d_retention_count_to_retention_days.py",
+        "retention_count_to_retention_days_migration",
+    )
+    inspector = MagicMock()
+    inspector.has_table.side_effect = lambda table_name: table_name == "backups"
+    execute = mocker.patch.object(module.op, "execute")
+    mocker.patch.object(module.op, "get_bind", return_value=object())
+    mocker.patch.object(module.sa, "inspect", return_value=inspector)
+
+    module.upgrade()
+
+    inspector.get_columns.assert_not_called()
+    execute.assert_called_once()
+    assert "DELETE FROM backups" in execute.call_args.args[0]
+
+
+def test_retention_days_downgrade_skips_missing_legacy_backup_schedules(mocker) -> None:
+    module = _load_migration_module(
+        "233ad1b1d50d_retention_count_to_retention_days.py",
+        "retention_count_to_retention_days_migration",
+    )
+    inspector = MagicMock()
+    inspector.has_table.return_value = False
+    execute = mocker.patch.object(module.op, "execute")
+    mocker.patch.object(module.op, "get_bind", return_value=object())
+    mocker.patch.object(module.sa, "inspect", return_value=inspector)
+
+    module.downgrade()
+
+    inspector.get_columns.assert_not_called()
+    execute.assert_not_called()
+
+
 def test_task_execution_mode_upgrade_skips_existing_column_and_constraint(mocker) -> None:
     module = _load_migration_module(
         "d1cd35b5b946_add_task_execution_mode.py",
