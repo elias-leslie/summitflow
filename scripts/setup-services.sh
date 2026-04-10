@@ -162,7 +162,7 @@ install_cli_links() {
         echo "  Linked tsession -> $a_term_root/scripts/tsession"
     fi
 
-    for script_name in rebuild.sh commit.sh start.sh status.sh stop.sh backup.sh backup-all.sh restore.sh setup-services.sh; do
+    for script_name in rebuild.sh commit.sh start.sh status.sh stop.sh backup.sh backup-all.sh restore.sh setup-services.sh update-gh.sh; do
         if [ -f "$SUMMITFLOW_DIR/scripts/$script_name" ]; then
             ln -sfnT "$SUMMITFLOW_DIR/scripts/$script_name" "$BIN_DIR/$script_name"
             echo "  Linked $script_name -> $SUMMITFLOW_DIR/scripts/$script_name"
