@@ -1,10 +1,48 @@
 #!/bin/bash
 set -e
 
+stamp_imported_schema_if_needed() {
+  set +e
+  python - <<'PY'
+import os
+import sys
+
+from sqlalchemy import create_engine, text
+
+database_url = os.environ.get("DATABASE_URL")
+if not database_url:
+    sys.exit(0)
+
+engine = create_engine(database_url)
+with engine.connect() as conn:
+    version_table = conn.execute(text("SELECT to_regclass('public.alembic_version')")).scalar()
+    if not version_table:
+        sys.exit(0)
+
+    version_count = conn.execute(text("SELECT COUNT(*) FROM public.alembic_version")).scalar_one()
+    imported_schema_table = conn.execute(text("SELECT to_regclass('public.tasks')")).scalar()
+    if version_count == 0 and imported_schema_table:
+        sys.exit(2)
+
+sys.exit(0)
+PY
+  local stamp_status=$?
+  set -e
+
+  if [ "$stamp_status" -eq 2 ]; then
+    echo "Imported schema has an empty alembic_version table; stamping Alembic heads..."
+    alembic stamp heads
+  elif [ "$stamp_status" -ne 0 ]; then
+    echo "WARNING: Could not inspect imported schema stamp state; continuing with Alembic upgrade."
+  fi
+}
+
 # Run database migrations if enabled (default: true)
 # On fresh Docker deployments, init-db.sh creates the schema from dumps
-# and stamps alembic_version. Alembic then only runs incremental upgrades.
+# with an empty alembic_version table. Stamp imported schemas before upgrade
+# so Alembic only runs incremental migrations.
 if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
+  stamp_imported_schema_if_needed
   echo "Running database migrations..."
   if ! alembic upgrade head 2>&1; then
     echo "ERROR: Alembic migrations failed."
