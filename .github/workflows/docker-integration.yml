@@ -11,15 +11,11 @@ permissions:
 jobs:
   integration:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
+    env:
+      COMPOSE_FILE: docker-compose.yml:docker-compose.dev.yml
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
-
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create .env file
         working-directory: docker/compose
@@ -50,7 +46,9 @@ jobs:
 
       - name: Validate compose syntax
         working-directory: docker/compose
-        run: docker compose --profile full config --quiet
+        run: |
+          docker compose -f docker-compose.yml --profile full config --quiet
+          docker compose --profile summitflow config --quiet
 
       - name: Start infrastructure
         working-directory: docker/compose
@@ -58,9 +56,10 @@ jobs:
 
       - name: Start SummitFlow stack
         working-directory: docker/compose
-        run: docker compose --profile summitflow up -d --wait
+        run: docker compose --profile summitflow up -d --wait --build
 
       - name: Health check — SummitFlow API
+        working-directory: docker/compose
         run: |
           for i in $(seq 1 30); do
             if curl -sf http://localhost:8001/health; then
@@ -70,7 +69,7 @@ jobs:
             sleep 2
           done
           echo "Health check failed"
-          docker compose -f docker/compose/docker-compose.yml logs summitflow-api
+          docker compose --profile summitflow logs summitflow-api
           exit 1
 
       - name: Health check — SummitFlow Web
