@@ -24,6 +24,7 @@ HOST="${SF_BROWSER_HOST:-192.168.8.234}"
 AGENT_BROWSER_BIN="${AGENT_BROWSER_BIN:-${HOME}/.local/bin/agent-browser}"
 MANAGED_AGENT_BROWSER_BIN="${HOME}/.local/share/agent-browser-managed/node_modules/.bin/agent-browser"
 LOCAL_WRAPPER_BIN="${SCRIPT_DIR}/agent-browser-wrapper.js"
+AGENT_BROWSER_REAPER_BIN="${AGENT_BROWSER_REAPER_BIN:-${SCRIPT_DIR}/agent-browser-idle-reaper.js}"
 
 print_help() {
     cat <<'EOF'
@@ -42,6 +43,7 @@ Behavior:
   sf-browser is the canonical SummitFlow interface for browser UI verification.
   It standardizes remote CDP attachment, engine selection, default viewport,
   submit-button handling, and tab cleanup for all agents.
+  It also prunes stale orphaned agent-browser helpers before each run.
 
 Built-in commands:
   health      Report remote Chrome and Lightpanda engine health
@@ -109,6 +111,14 @@ if [[ ! -x "${AGENT_BROWSER_BIN}" ]]; then
         AGENT_BROWSER_BIN="${MANAGED_AGENT_BROWSER_BIN}"
     fi
 fi
+
+prune_agent_browser_helpers() {
+    [[ "${SF_BROWSER_SKIP_PRUNE:-0}" != "1" ]] || return 0
+    [[ -x "${AGENT_BROWSER_REAPER_BIN}" ]] || return 0
+    node "${AGENT_BROWSER_REAPER_BIN}" >/dev/null 2>&1 || true
+}
+
+prune_agent_browser_helpers
 
 cdp_ws() {
     local port="$1"

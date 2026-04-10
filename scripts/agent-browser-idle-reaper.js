@@ -6,18 +6,30 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 const DEFAULT_IDLE_TIMEOUT_MS = 120000;
+const DEFAULT_HELPER_TIMEOUT_MS = 7200000;
 const DEFAULT_SESSION_NAME = 'default';
 const SESSION_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
 
 const tryAccess = (p) => { try { fs.accessSync(p, fs.constants.F_OK); return true; } catch { return false; } };
 const tryKill0 = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 const removeFile = (p) => { try { fs.unlinkSync(p); } catch { /* ignore */ } };
+const sleepMs = (ms) => {
+  try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }
+  catch { /* ignore */ }
+};
 
 function getIdleTimeoutMs(env = process.env) {
   const raw = env.AGENT_BROWSER_IDLE_TIMEOUT_MS;
   if (!raw) return DEFAULT_IDLE_TIMEOUT_MS;
   const parsed = Number.parseInt(raw, 10);
   return Number.isNaN(parsed) || parsed < 1000 ? DEFAULT_IDLE_TIMEOUT_MS : parsed;
+}
+
+function getHelperTimeoutMs(env = process.env) {
+  const raw = env.AGENT_BROWSER_HELPER_TIMEOUT_MS;
+  if (!raw) return DEFAULT_HELPER_TIMEOUT_MS;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isNaN(parsed) || parsed < 60000 ? DEFAULT_HELPER_TIMEOUT_MS : parsed;
 }
 
 function getRuntimeLocations(env = process.env) {
@@ -101,6 +113,33 @@ function isAgentBrowserDaemon(pid) {
   catch { return false; }
 }
 
+function readProcessCmdline(pid) {
+  try { return fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8'); }
+  catch { return ''; }
+}
+
+function getProcessParentPid(pid) {
+  try {
+    const out = execFileSync('ps', ['-o', 'ppid=', '-p', String(pid)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    const ppid = Number.parseInt(out, 10);
+    return Number.isNaN(ppid) ? null : ppid;
+  } catch { return null; }
+}
+
+function isUserSystemdProcess(pid) {
+  if (!pid) return false;
+  const cmdline = readProcessCmdline(pid);
+  return cmdline.includes('/systemd') && cmdline.includes('--user');
+}
+
+function isOrphanedAgentBrowserHelper(pid) {
+  const cmdline = readProcessCmdline(pid);
+  if (!cmdline.includes('agent-browser-linux-x64')) return false;
+  if (cmdline.includes('daemon.js')) return false;
+  const ppid = getProcessParentPid(pid);
+  return ppid === 1 || isUserSystemdProcess(ppid);
+}
+
 function parseSessionNameFromFilename(filename, dedicated) {
   if (filename.endsWith('.pid')) {
     const base = filename.slice(0, -4);
@@ -141,6 +180,23 @@ function listAgentBrowserDaemonPids() {
   return pids;
 }
 
+function listOrphanedAgentBrowserHelperPids() {
+  const pids = [];
+  for (const entry of fs.readdirSync('/proc', { withFileTypes: true })) {
+    if (!entry.isDirectory() || !/^\d+$/.test(entry.name)) continue;
+    const pid = Number.parseInt(entry.name, 10);
+    if (!Number.isNaN(pid) && isOrphanedAgentBrowserHelper(pid)) pids.push(pid);
+  }
+  return pids;
+}
+
+function terminateOrphanedHelper(pid, dryRun) {
+  if (dryRun) return;
+  process.kill(pid, 'SIGTERM');
+  sleepMs(250);
+  if (tryKill0(pid)) process.kill(pid, 'SIGKILL');
+}
+
 function inferSessionNamesForPid(pid, env = process.env) {
   const names = new Set();
   try {
@@ -178,10 +234,11 @@ function runIdleCleanup(options = {}) {
   const dryRun = options.dryRun === true;
   const verbose = options.verbose === true;
   const timeoutMs = options.timeoutMs || getIdleTimeoutMs(env);
+  const helperTimeoutMs = options.helperTimeoutMs || getHelperTimeoutMs(env);
   let socketLines;
   try { socketLines = execFileSync('ss', ['-xapnH'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).split('\n'); } catch { socketLines = null; }
   const hasSocketInspection = Array.isArray(socketLines);
-  const summary = { cleanedStale: [], skippedActive: [], skippedRecent: [], terminatedIdle: [] };
+  const summary = { cleanedStale: [], skippedActive: [], skippedRecent: [], terminatedIdle: [], terminatedHelpers: [] };
   const trackedPids = new Set();
 
   for (const sessionName of listSessions(env)) {
@@ -220,9 +277,18 @@ function runIdleCleanup(options = {}) {
     summary.terminatedIdle.push(`pid:${pid}`);
   }
 
+  if (env.AGENT_BROWSER_PRUNE_HELPERS !== '0') {
+    for (const pid of listOrphanedAgentBrowserHelperPids()) {
+      const ageMs = getProcessAgeMs(pid);
+      if (ageMs > 0 && ageMs < helperTimeoutMs) { summary.skippedRecent.push(`helper:${pid}`); continue; }
+      terminateOrphanedHelper(pid, dryRun);
+      summary.terminatedHelpers.push(`helper:${pid}`);
+    }
+  }
+
   if (verbose) {
     const fmt = (label, arr) => `${label}=${arr.join(',') || '-'}`;
-    process.stderr.write(`agent-browser cleanup: ${['stale', 'active', 'recent', 'terminated'].map((k, i) => fmt(k, [summary.cleanedStale, summary.skippedActive, summary.skippedRecent, summary.terminatedIdle][i])).join(' ')}\n`);
+    process.stderr.write(`agent-browser cleanup: ${['stale', 'active', 'recent', 'terminated', 'helpers'].map((k, i) => fmt(k, [summary.cleanedStale, summary.skippedActive, summary.skippedRecent, summary.terminatedIdle, summary.terminatedHelpers][i])).join(' ')}\n`);
   }
 
   return summary;
