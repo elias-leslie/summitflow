@@ -38,7 +38,7 @@ jobs:
           set_env PA_DB_PASSWORD test-pa-pw
           set_env REDIS_PASSWORD test-redis-pw
           set_env HOST_HOME_PATH "$HOME"
-          set_env HATCHET_CLIENT_TOKEN test-hatchet-token
+          set_env HATCHET_CLIENT_TOKEN ""
           set_env SUMMITFLOW_CLIENT_ID summitflow
           set_env SUMMITFLOW_CLIENT_SECRET test-summitflow-secret
           set_env TAG ci
@@ -58,6 +58,9 @@ jobs:
       - name: Start infrastructure
         working-directory: docker/compose
         run: docker compose --profile infra up -d --wait
+
+      - name: Generate Hatchet client token
+        run: docker/scripts/generate-hatchet-token.sh
 
       - name: Start SummitFlow stack
         working-directory: docker/compose

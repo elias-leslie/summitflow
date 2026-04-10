@@ -133,6 +133,7 @@ curl -fsSL "$REPO_BASE/docker-compose.yml" -o docker-compose.yml
 curl -fsSL "$REPO_BASE/init-db.sh" -o init-db.sh
 curl -fsSL "$REPO_BASE/redis.conf" -o redis.conf
 curl -fsSL "$REPO_BASE/.env.example" -o .env.example
+curl -fsSL "${REPO_BASE%/compose}/scripts/generate-hatchet-token.sh" -o generate-hatchet-token.sh
 
 # Download schema SQL files
 for schema in summitflow-schema.sql agent-hub-schema.sql portfolio-ai-schema.sql; do
@@ -141,6 +142,7 @@ for schema in summitflow-schema.sql agent-hub-schema.sql portfolio-ai-schema.sql
 done
 
 chmod +x init-db.sh
+chmod +x generate-hatchet-token.sh
 
 # ─── Generate .env ───────────────────────────────────────────────
 
@@ -348,30 +350,7 @@ fi
 
 echo ""
 echo "Generating Hatchet client token..."
-
-TENANT_ID=""
-
-# Query the Hatchet database for the default tenant
-TENANT_ID=$(docker compose exec -T postgres psql -U admin -d hatchet -t -A \
-  -c "SELECT id FROM \"Tenant\" LIMIT 1" 2>/dev/null | tr -d '[:space:]' || true)
-
-if [ -z "$TENANT_ID" ]; then
-  echo "  WARNING: Could not discover Hatchet tenant ID."
-  echo "  After installation, generate a token manually:"
-  echo "    docker compose run --rm --no-deps hatchet-setup-config /hatchet/hatchet-admin token create --config /hatchet/config --tenant-id <UUID>"
-else
-  HATCHET_TOKEN=$(docker compose run --rm --no-deps hatchet-setup-config \
-    /hatchet/hatchet-admin token create --config /hatchet/config \
-    --tenant-id "$TENANT_ID" --expiresIn 87600h 2>/dev/null \
-    | grep -oE 'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+' || true)
-
-  if [ -n "$HATCHET_TOKEN" ]; then
-    sed -i "s|^HATCHET_CLIENT_TOKEN=.*|HATCHET_CLIENT_TOKEN=$HATCHET_TOKEN|" .env
-    echo "  Hatchet token generated and saved to .env"
-  else
-    echo "  WARNING: Hatchet token generation failed. Generate manually after installation."
-  fi
-fi
+./generate-hatchet-token.sh
 
 # Restart services to pick up Hatchet token
 echo "Starting application services with Hatchet token..."
