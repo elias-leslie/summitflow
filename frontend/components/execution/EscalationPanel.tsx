@@ -107,7 +107,7 @@ export function EscalationPanel({
               </div>
               {needsAttention && (
                 <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/30">
-                  BLOCKED
+                  {task.status.toUpperCase()}
                 </span>
               )}
             </div>
