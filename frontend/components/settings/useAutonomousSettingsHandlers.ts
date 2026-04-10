@@ -53,6 +53,20 @@ export function useAutonomousSettingsHandlers(
 
   const handleCooldownChange = makeBoundedIntHandler(mutate, 'cooldown_minutes', 0, Infinity)
   const handleFrequencyChange = makeBoundedIntHandler(mutate, 'frequency_minutes', 5, 1440)
+  const handleUpkeepFrequencyChange = makeBoundedIntHandler(
+    mutate,
+    'upkeep_frequency_minutes',
+    15,
+    1440,
+  )
+  const handleUpkeepBatchLimitChange = makeBoundedIntHandler(
+    mutate,
+    'upkeep_batch_limit',
+    1,
+    10,
+  )
+  const handleUpkeepEnabledToggle = () =>
+    mutate({ upkeep_enabled: !settings.upkeep_enabled })
 
   // --- Task filtering ---
   const handleTaskTypeToggle = (taskType: string) => {
@@ -83,6 +97,9 @@ export function useAutonomousSettingsHandlers(
     handleConcurrencyChange,
     handleMaxTasksPerDayChange,
     handleCooldownChange,
+    handleUpkeepEnabledToggle,
+    handleUpkeepFrequencyChange,
+    handleUpkeepBatchLimitChange,
     handleTaskTypeToggle,
     handleSelfFixAttemptsChange,
     handleSupervisorAttemptsChange,

@@ -247,7 +247,10 @@ def _retire_duplicate_refactor_tasks(project_id: str, relative_path: str, canoni
 
 
 def generate_refactor_tasks_internal(
-    project_id: str, skip_existing: bool, project_root: str | None = None
+    project_id: str,
+    skip_existing: bool,
+    project_root: str | None = None,
+    create_limit: int | None = None,
 ) -> dict[str, Any]:
     """Generate refactoring tasks from Explorer scan results."""
     targets = get_refactor_targets(
@@ -257,6 +260,8 @@ def generate_refactor_tasks_internal(
     created = 0
     retired = 0
     for target in targets:
+        if create_limit is not None and created >= create_limit:
+            continue
         was_created, retired_count = process_refactor_target(
             project_id,
             target,
@@ -273,7 +278,7 @@ def generate_refactor_tasks_internal(
     }
 
 
-def regenerate_refactor_tasks_impl(project_id: str) -> dict[str, Any]:
+def regenerate_refactor_tasks_impl(project_id: str, create_limit: int | None = None) -> dict[str, Any]:
     """Scan, close resolved refactor tasks, and create only newly needed tasks."""
     with _regenerate_lock(project_id):
         project_root = get_project_root_path(project_id)
@@ -292,6 +297,7 @@ def regenerate_refactor_tasks_impl(project_id: str) -> dict[str, Any]:
             project_id,
             skip_existing=True,
             project_root=project_root,
+            create_limit=create_limit,
         )
         logger.info(
             "Refactor task sync complete for %s: closed=%d, created=%d, retired=%d, scanned=%d, skipped=%d",

@@ -7,7 +7,11 @@ from typing import Any
 
 from app.storage.connection import generate_prefixed_id, get_connection
 from app.storage.events import cleanup_old_events
-from app.storage.maintenance_runs import cleanup_old_maintenance_runs, record_maintenance_run
+from app.storage.maintenance_runs import (
+    cleanup_old_maintenance_runs,
+    list_maintenance_runs,
+    record_maintenance_run,
+)
 from app.storage.notifications import cleanup_old_notifications
 from app.storage.quality_check_results import cleanup_old_results, create_check_result, mark_fixed
 from app.storage.scan_history import cleanup_old_scan_history, fail_stale_running_scans
@@ -287,6 +291,38 @@ class TestEventRetention:
 
 class TestMaintenanceRunRetention:
     """Maintenance run ledger cleanup stays bounded per workflow."""
+
+    def test_list_maintenance_runs_can_filter_by_project_summary(self) -> None:
+        workflow_name = f"test-maintenance-{generate_prefixed_id('wf')}"
+        started_at = datetime.now(UTC)
+        run_a = record_maintenance_run(
+            workflow_name,
+            "completed",
+            started_at=started_at,
+            finished_at=started_at,
+            summary={"project_id": "project-a", "tasks_created": 1},
+        )
+        run_b = record_maintenance_run(
+            workflow_name,
+            "completed",
+            started_at=started_at,
+            finished_at=started_at,
+            summary={"project_id": "project-b", "tasks_created": 1},
+        )
+
+        assert run_a is not None
+        assert run_b is not None
+
+        runs = list_maintenance_runs(
+            workflow_name=workflow_name,
+            project_id="project-a",
+        )
+
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM maintenance_runs WHERE id = ANY(%s::bigint[])", ([run_a["id"], run_b["id"]],))
+            conn.commit()
+
+        assert [run["id"] for run in runs] == [run_a["id"]]
 
     def test_cleanup_old_maintenance_runs_keeps_recent_history(self) -> None:
         workflow_name = f"test-maintenance-{generate_prefixed_id('wf')}"

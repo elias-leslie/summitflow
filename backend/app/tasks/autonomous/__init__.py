@@ -22,6 +22,7 @@ from .planning import create_plan
 from .review import ai_review
 from .task_generation import generate_tasks_from_scan, regenerate_refactor_tasks
 from .triage import triage_idea
+from .upkeep import run_routine_upkeep
 
 __all__ = [
     "ai_review",
@@ -33,6 +34,7 @@ __all__ = [
     "merge_and_cleanup_task_worktree",
     "regenerate_refactor_tasks",
     "reset_expired_task_claims",
+    "run_routine_upkeep",
     "start_execution",
     "supervisor_guidance",
     "triage_idea",

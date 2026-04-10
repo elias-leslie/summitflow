@@ -176,6 +176,9 @@ export interface AutonomousExecutionSettings {
   frequency_minutes: number
   auto_merge_tiers: number[]
   task_types: string[]
+  upkeep_enabled: boolean
+  upkeep_frequency_minutes: number
+  upkeep_batch_limit: number
   max_concurrent: number
   max_tasks_per_day: number | null
   cooldown_minutes: number
@@ -194,6 +197,9 @@ export interface AutonomousExecutionSettingsUpdate {
   frequency_minutes?: number
   auto_merge_tiers?: number[]
   task_types?: string[]
+  upkeep_enabled?: boolean
+  upkeep_frequency_minutes?: number
+  upkeep_batch_limit?: number
   max_concurrent?: number
   max_tasks_per_day?: number | null
   cooldown_minutes?: number
@@ -206,4 +212,38 @@ export interface AutonomousExecutionSettingsUpdate {
   quality_gate_tools?: string[]
   quality_gate_mode?: string
   quality_gate_fix_enabled?: boolean
+}
+
+export interface MaintenanceRun {
+  id: number
+  workflow_name: string
+  status: string
+  started_at: string
+  finished_at: string | null
+  duration_ms: number | null
+  rows_cleaned: number
+  summary: Record<string, unknown>
+  error_message: string | null
+  created_at: string
+}
+
+export interface RoutineUpkeepStatus {
+  settings: {
+    enabled: boolean
+    frequency_minutes: number
+    batch_limit: number
+  }
+  latest: MaintenanceRun | null
+  recent: MaintenanceRun[]
+}
+
+export interface RoutineUpkeepRunResult {
+  project_id: string
+  status: string
+  tasks_created: number
+  dispatch: Record<string, unknown>
+  created_task_ids: string[]
+  sources: Record<string, unknown>
+  source_errors: Record<string, string>
+  reason?: string | null
 }

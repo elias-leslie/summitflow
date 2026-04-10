@@ -6,7 +6,7 @@ All use ConcurrencyExpression with CANCEL_IN_PROGRESS to prevent overlapping run
 Schedule philosophy (2026-03-16 tuning):
   - Health/smoke: */5 to */30 min — enough for alerting, not so frequent it drains CPU
   - Explorer/indexes: */2h — batch git ops on 6000+ files are the biggest CPU cost
-  - Cleanup/maintenance: daily or weekly — no urgency
+  - Cleanup/maintenance: hourly due checks for opt-in upkeep, daily retention
   - Claims reset: */15 min — lightweight DB query, kept frequent for task flow
 """
 
@@ -158,7 +158,7 @@ async def stale_cleanup_wf(input: StaleCleanupInput, ctx: Context) -> dict[str, 
     execution_timeout="600s",
     retries=3,
     backoff_factor=2.0,
-    on_crons=["0 4 * * 1"],
+    on_crons=["0 * * * *"],
     concurrency=ConcurrencyExpression(
         expression="'summitflow-task-generation'",
         max_runs=1,
@@ -166,9 +166,15 @@ async def stale_cleanup_wf(input: StaleCleanupInput, ctx: Context) -> dict[str, 
     ),
 )
 async def task_generation_wf(input: ProjectInput, ctx: Context) -> dict[str, Any]:
-    from ..tasks.autonomous.task_generation import generate_tasks_from_scan
+    from ..tasks.autonomous.upkeep import run_routine_upkeep
+    from .pipeline import _make_dispatch_callback
 
-    return await asyncio.to_thread(generate_tasks_from_scan, input.project_id)
+    dispatch = _make_dispatch_callback()
+    return await asyncio.to_thread(
+        run_routine_upkeep,
+        input.project_id,
+        dispatch=dispatch,
+    )
 
 
 @hatchet.task(

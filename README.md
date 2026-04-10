@@ -104,7 +104,7 @@ st memory search <query>       # Search memory system
 | `scan_projects_wf` | Every 6h | Project scanning |
 | `self_healing_wf` | Every 15m | Auto-healing |
 | `work_pickup_wf` | Every 2h | Autonomous work pickup |
-| `task_generation_wf` | Monday 4 AM | Generate tasks from scans |
+| `task_generation_wf` | Hourly | Routine upkeep signal discovery and autonomous task routing |
 | `scheduled_backups_wf` | 30m past hour | Backup scheduling |
 | `stale_cleanup_wf` | Daily 4 AM | Stale task cleanup |
 

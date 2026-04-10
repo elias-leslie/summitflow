@@ -77,6 +77,24 @@ export interface ProxmoxStatus {
   guests: ProxmoxGuestStatus[]
 }
 
+export interface MaintenanceRun {
+  id: number
+  workflow_name: string
+  status: string
+  started_at: string
+  finished_at: string | null
+  duration_ms: number | null
+  rows_cleaned: number
+  summary: Record<string, unknown>
+  error_message: string | null
+  created_at: string
+}
+
+export interface MaintenanceStatus {
+  latest: Record<string, MaintenanceRun>
+  recent: MaintenanceRun[]
+}
+
 function apiUrl(path: string): string {
   // Keep runtime traffic same-origin so Next can proxy protected actions/logs
   // and inject the internal service secret server-side, including SSE requests.
@@ -103,6 +121,10 @@ export const runtimeApi = {
   getProxmoxStatus: () =>
     fetchWithErrorHandling<ProxmoxStatus>(apiUrl('/api/docker/proxmox'), {
       errorMessage: 'Failed to fetch Proxmox status',
+    }),
+  getMaintenanceStatus: () =>
+    fetchWithErrorHandling<MaintenanceStatus>(apiUrl('/api/system/maintenance'), {
+      errorMessage: 'Failed to fetch maintenance status',
     }),
   getLogs: (service: string, tail = 100) =>
     fetchWithErrorHandling<{ logs: string }>(apiUrl(`/api/docker/logs/${service}?tail=${tail}`), {

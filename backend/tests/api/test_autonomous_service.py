@@ -20,6 +20,9 @@ def test_get_autonomous_settings_reads_extended_agent_config() -> None:
             "autonomous_frequency_minutes": 45,
             "autonomous_auto_merge_tiers": [1, 2],
             "autonomous_task_types": ["bug", "feature"],
+            "upkeep_enabled": True,
+            "upkeep_frequency_minutes": 180,
+            "upkeep_batch_limit": 4,
             "autonomous_max_tasks_per_day": 7,
             "autonomous_cooldown_minutes": 15,
             "autonomous_allowed_types": ["bug"],
@@ -40,6 +43,9 @@ def test_get_autonomous_settings_reads_extended_agent_config() -> None:
     assert settings.frequency_minutes == 45
     assert settings.auto_merge_tiers == [1, 2]
     assert settings.task_types == ["bug", "feature"]
+    assert settings.upkeep_enabled is True
+    assert settings.upkeep_frequency_minutes == 180
+    assert settings.upkeep_batch_limit == 4
     assert settings.max_tasks_per_day == 7
     assert settings.cooldown_minutes == 15
     assert settings.allowed_types == ["bug"]
@@ -58,6 +64,8 @@ def test_update_autonomous_settings_writes_partial_agent_config() -> None:
     updated_config.update(
         {
             "autonomous_frequency_minutes": 60,
+            "upkeep_enabled": True,
+            "upkeep_batch_limit": 6,
             "autonomous_auto_merge_enabled": False,
             "quality_gate_mode": "check",
         }
@@ -71,6 +79,8 @@ def test_update_autonomous_settings_writes_partial_agent_config() -> None:
             "test-project",
             AutonomousSettingsUpdate(
                 frequency_minutes=60,
+                upkeep_enabled=True,
+                upkeep_batch_limit=6,
                 auto_merge_enabled=False,
                 quality_gate_mode="check",
             ),
@@ -80,6 +90,8 @@ def test_update_autonomous_settings_writes_partial_agent_config() -> None:
         "test-project",
         {
             "autonomous_frequency_minutes": 60,
+            "upkeep_enabled": True,
+            "upkeep_batch_limit": 6,
             "autonomous_auto_merge_enabled": False,
             "quality_gate_mode": "check",
         },

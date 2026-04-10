@@ -1,9 +1,14 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ExternalLink, Loader2, Shield } from 'lucide-react'
-import { getAutonomousSettings } from '@/lib/api'
+import {
+  getAutonomousSettings,
+  getRoutineUpkeepStatus,
+  runRoutineUpkeep,
+} from '@/lib/api'
 import { ExecutionControlSection } from './ExecutionControlSection'
+import { RoutineUpkeepSection } from './RoutineUpkeepSection'
 import { TaskFilteringSection } from './TaskFilteringSection'
 import { SelfHealingSection } from './SelfHealingSection'
 import { QualityGateSection } from './QualityGateSection'
@@ -18,9 +23,22 @@ interface AutonomousSettingsPanelProps {
 export function AutonomousSettingsPanel({
   projectId,
 }: AutonomousSettingsPanelProps) {
+  const queryClient = useQueryClient()
   const { data: settings, isLoading } = useQuery({
     queryKey: ['autonomous-settings', projectId],
     queryFn: () => getAutonomousSettings(projectId),
+  })
+  const { data: upkeepStatus } = useQuery({
+    queryKey: ['routine-upkeep-status', projectId],
+    queryFn: () => getRoutineUpkeepStatus(projectId),
+  })
+  const upkeepRun = useMutation({
+    mutationFn: () => runRoutineUpkeep(projectId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ['routine-upkeep-status', projectId],
+      })
+    },
   })
 
   const handlers = useAutonomousSettingsHandlers(projectId, settings!)
@@ -75,6 +93,17 @@ export function AutonomousSettingsPanel({
         onMaxTasksPerDayChange={handlers.handleMaxTasksPerDayChange}
         onCooldownChange={handlers.handleCooldownChange}
         onFrequencyChange={handlers.handleFrequencyChange}
+      />
+
+      <RoutineUpkeepSection
+        settings={settings}
+        status={upkeepStatus}
+        isPending={handlers.isPending}
+        isRunning={upkeepRun.isPending}
+        onEnabledToggle={handlers.handleUpkeepEnabledToggle}
+        onFrequencyChange={handlers.handleUpkeepFrequencyChange}
+        onBatchLimitChange={handlers.handleUpkeepBatchLimitChange}
+        onRunNow={() => upkeepRun.mutate()}
       />
 
       <TaskFilteringSection

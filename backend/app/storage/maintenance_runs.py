@@ -8,6 +8,7 @@ from typing import Any
 
 from psycopg.types.json import Jsonb
 
+from ._sql import static_sql
 from .connection import get_connection, get_cursor
 
 _SELECT_COLS = """
@@ -121,30 +122,33 @@ def list_maintenance_runs(
     *,
     limit: int = 20,
     workflow_name: str | None = None,
+    project_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """Return recent maintenance runs ordered by newest start time first."""
+    conditions: list[str] = []
+    params: list[Any] = []
+    if workflow_name is not None:
+        conditions.append("workflow_name = %s")
+        params.append(workflow_name)
+    if project_id is not None:
+        conditions.append("summary ->> 'project_id' = %s")
+        params.append(project_id)
+    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    params.append(limit)
+
     with get_cursor() as cur:
-        if workflow_name is None:
-            cur.execute(
+        cur.execute(
+            static_sql(
                 f"""
-                SELECT {_SELECT_COLS}
-                FROM maintenance_runs
-                ORDER BY started_at DESC, id DESC
-                LIMIT %s
-                """,
-                (limit,),
-            )
-        else:
-            cur.execute(
-                f"""
-                SELECT {_SELECT_COLS}
-                FROM maintenance_runs
-                WHERE workflow_name = %s
-                ORDER BY started_at DESC, id DESC
-                LIMIT %s
-                """,
-                (workflow_name, limit),
-            )
+            SELECT {_SELECT_COLS}
+            FROM maintenance_runs
+            {where_clause}
+            ORDER BY started_at DESC, id DESC
+            LIMIT %s
+            """
+            ),
+            params,
+        )
         rows = cur.fetchall()
 
     return [_row_to_dict(row) for row in rows]

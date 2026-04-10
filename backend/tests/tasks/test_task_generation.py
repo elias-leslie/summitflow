@@ -125,6 +125,34 @@ class TestGenerateTasksFromScan:
             limit=DEFAULT_REFACTOR_TARGET_LIMIT,
         )
 
+    @patch("app.tasks.autonomous.refactor_generation.process_refactor_target")
+    @patch("app.tasks.autonomous.refactor_generation.get_refactor_targets")
+    def test_refactor_generation_respects_create_limit(
+        self,
+        mock_get_targets: MagicMock,
+        mock_process_target: MagicMock,
+    ) -> None:
+        from app.tasks.autonomous.refactor_generation import generate_refactor_tasks_internal
+
+        mock_get_targets.return_value = {
+            "targets": [
+                {"path": "backend/app/a.py"},
+                {"path": "backend/app/b.py"},
+                {"path": "backend/app/c.py"},
+            ]
+        }
+        mock_process_target.side_effect = [(True, 0), (True, 0), (True, 0)]
+
+        result = generate_refactor_tasks_internal(
+            "test-project",
+            skip_existing=True,
+            project_root="/tmp/project",
+            create_limit=2,
+        )
+
+        assert result["created_count"] == 2
+        assert mock_process_target.call_count == 2
+
     @patch("app.tasks.autonomous.refactor_generation.get_project_root_path", return_value="/tmp/project")
     @patch("app.tasks.autonomous.refactor_generation.scan")
     @patch("app.tasks.autonomous.refactor_generation.check_and_close_resolved_issues", return_value=0)

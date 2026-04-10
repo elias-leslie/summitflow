@@ -114,7 +114,7 @@ class TestTaskDispatching:
         result = autonomous_work_pickup("test-project")
 
         assert result["dispatched"] == 0
-        assert result["message"] == "No tasks in queue"
+        assert result["message"] == "No pending autonomous tasks"
 
     @patch("app.tasks.autonomous.pickup.validate_autonomous_dispatch", return_value=None)
     @patch("app.tasks.autonomous.pickup.get_queued_autonomous_tasks")
@@ -144,6 +144,8 @@ class TestTaskDispatching:
 
         mock_dispatch.assert_not_called()
         mock_stage.assert_not_called()
+        assert result["dispatched"] == 0
+        assert result["attempted"] == 1
         assert result["breakdown"]["skipped"] == 1
 
     @patch("app.tasks.autonomous.pickup.validate_autonomous_dispatch", return_value=None)
@@ -178,4 +180,6 @@ class TestTaskDispatching:
         result = autonomous_work_pickup("test-project", dispatch=mock_dispatch)
 
         mock_dispatch.assert_not_called()
+        assert result["dispatched"] == 0
+        assert result["attempted"] == 1
         assert result["breakdown"]["skipped"] == 1

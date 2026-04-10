@@ -7,6 +7,7 @@ import { SystemHealthWidget } from '@/components/dashboard/SystemHealthWidget'
 import { HealthBar } from '@/components/runtime/HealthBar'
 import { RuntimeModeBanner } from '@/components/runtime/RuntimeModeBanner'
 import { ServiceGrid } from '@/components/runtime/ServiceGrid'
+import { MaintenanceStatusCard } from '@/components/runtime/MaintenanceStatusCard'
 import { ProxmoxStatusCard } from '@/components/runtime/ProxmoxStatusCard'
 import { runtimeApi } from '@/lib/api/runtime'
 import { POLL_MONITOR } from '@/lib/polling'
@@ -80,6 +81,9 @@ export default function RuntimePage() {
 
       {/* Runtime mode — compact banner instead of full card */}
       <RuntimeModeBanner />
+
+      {/* Maintenance — compact row */}
+      <MaintenanceStatusCard />
 
       {/* Service grid with list/grid toggle */}
       <ServiceGrid />

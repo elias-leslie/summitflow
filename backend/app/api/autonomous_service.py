@@ -19,6 +19,9 @@ class _CoreSettingsPayload(TypedDict):
     frequency_minutes: int
     auto_merge_tiers: list[int]
     task_types: list[str]
+    upkeep_enabled: bool
+    upkeep_frequency_minutes: int
+    upkeep_batch_limit: int
     max_concurrent: int
     max_tasks_per_day: int | None
     cooldown_minutes: int
@@ -43,6 +46,9 @@ def _parse_core_settings(config: AgentConfig) -> _CoreSettingsPayload:
     auto_merge_tiers = list(auto_merge_tiers_raw) if auto_merge_tiers_raw else [1]
     task_types_raw = config.get("autonomous_task_types")
     task_types = list(task_types_raw) if task_types_raw else ["auto-generated"]
+    upkeep_enabled = bool(config.get("upkeep_enabled", False))
+    upkeep_frequency_minutes = int(config.get("upkeep_frequency_minutes", 120) or 120)
+    upkeep_batch_limit = int(config.get("upkeep_batch_limit", 5) or 5)
     max_tasks_per_day_raw = config.get("autonomous_max_tasks_per_day")
     max_tasks_per_day = int(max_tasks_per_day_raw) if max_tasks_per_day_raw else None
     allowed_types_raw = config.get("autonomous_allowed_types")
@@ -51,6 +57,9 @@ def _parse_core_settings(config: AgentConfig) -> _CoreSettingsPayload:
         "frequency_minutes": frequency_minutes,
         "auto_merge_tiers": auto_merge_tiers,
         "task_types": task_types,
+        "upkeep_enabled": upkeep_enabled,
+        "upkeep_frequency_minutes": upkeep_frequency_minutes,
+        "upkeep_batch_limit": upkeep_batch_limit,
         "max_concurrent": int(config.get("autonomous_max_concurrent") or 1),
         "max_tasks_per_day": max_tasks_per_day,
         "cooldown_minutes": int(config.get("autonomous_cooldown_minutes", 0) or 0),
@@ -89,6 +98,12 @@ def _build_updates(settings: AutonomousSettingsUpdate) -> AgentConfig:
         updates["autonomous_auto_merge_tiers"] = settings.auto_merge_tiers
     if settings.task_types is not None:
         updates["autonomous_task_types"] = settings.task_types
+    if settings.upkeep_enabled is not None:
+        updates["upkeep_enabled"] = settings.upkeep_enabled
+    if settings.upkeep_frequency_minutes is not None:
+        updates["upkeep_frequency_minutes"] = settings.upkeep_frequency_minutes
+    if settings.upkeep_batch_limit is not None:
+        updates["upkeep_batch_limit"] = settings.upkeep_batch_limit
     if settings.max_concurrent is not None:
         updates["autonomous_max_concurrent"] = settings.max_concurrent
     if settings.max_tasks_per_day is not None:

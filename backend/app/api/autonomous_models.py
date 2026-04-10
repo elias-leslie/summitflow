@@ -27,6 +27,25 @@ class AutonomousSettings(BaseModel):
         default=["auto-generated"],
         description="Task labels eligible for autonomous execution",
     )
+
+    # Routine upkeep configuration
+    upkeep_enabled: bool = Field(
+        default=False,
+        description="Enable routine upkeep signal discovery and task routing",
+    )
+    upkeep_frequency_minutes: int = Field(
+        default=120,
+        ge=15,
+        le=1440,
+        description="How often to run routine upkeep (15-1440 min)",
+    )
+    upkeep_batch_limit: int = Field(
+        default=5,
+        ge=1,
+        le=10,
+        description="Maximum tasks a single upkeep run can create or dispatch",
+    )
+
     max_concurrent: int = Field(
         default=1, ge=1, le=3, description="Max concurrent autonomous tasks (1-3)"
     )
@@ -85,6 +104,9 @@ class AutonomousSettingsUpdate(BaseModel):
     frequency_minutes: int | None = Field(default=None, ge=5, le=1440)
     auto_merge_tiers: list[int] | None = None
     task_types: list[str] | None = None
+    upkeep_enabled: bool | None = None
+    upkeep_frequency_minutes: int | None = Field(default=None, ge=15, le=1440)
+    upkeep_batch_limit: int | None = Field(default=None, ge=1, le=10)
     max_concurrent: int | None = Field(default=None, ge=1, le=3)
 
     # Frequency limits

@@ -1,7 +1,20 @@
 """Autonomous execution settings API."""
 
-from fastapi import APIRouter, HTTPException
+from __future__ import annotations
 
+import asyncio
+from datetime import datetime
+from typing import Any
+
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
+
+from ..storage import maintenance_runs as maintenance_store
+from ..tasks.autonomous.upkeep import (
+    ROUTINE_UPKEEP_WORKFLOW,
+    get_routine_upkeep_settings,
+    run_routine_upkeep,
+)
 from .autonomous_models import (
     VALID_QUALITY_GATE_MODES,
     VALID_QUALITY_GATE_TOOLS,
@@ -25,6 +38,56 @@ __all__ = [
     "AutonomousSettingsUpdate",
     "router",
 ]
+
+
+class RoutineUpkeepSettingsResponse(BaseModel):
+    """Routine upkeep settings exposed in status responses."""
+
+    enabled: bool
+    frequency_minutes: int
+    batch_limit: int
+
+
+class RoutineUpkeepRunResponse(BaseModel):
+    """Routine upkeep run result."""
+
+    project_id: str
+    status: str
+    tasks_created: int = 0
+    dispatch: dict[str, Any] = Field(default_factory=dict)
+    created_task_ids: list[str] = Field(default_factory=list)
+    sources: dict[str, Any] = Field(default_factory=dict)
+    source_errors: dict[str, str] = Field(default_factory=dict)
+    reason: str | None = None
+
+
+class RoutineUpkeepHistoryRun(BaseModel):
+    """Recorded routine upkeep run."""
+
+    id: int
+    workflow_name: str
+    status: str
+    started_at: datetime
+    finished_at: datetime | None = None
+    duration_ms: int | None = None
+    rows_cleaned: int
+    summary: dict[str, Any] = Field(default_factory=dict)
+    error_message: str | None = None
+    created_at: datetime
+
+
+class RoutineUpkeepStatusResponse(BaseModel):
+    """Routine upkeep status and recent history."""
+
+    settings: RoutineUpkeepSettingsResponse
+    latest: RoutineUpkeepHistoryRun | None = None
+    recent: list[RoutineUpkeepHistoryRun] = Field(default_factory=list)
+
+
+def _make_dispatch_callback() -> Any:
+    from ..workflows.pipeline import _make_dispatch_callback as make_callback
+
+    return make_callback()
 
 
 def _validate_update(update: AutonomousSettingsUpdate) -> None:
@@ -73,3 +136,41 @@ async def update_settings(project_id: str, update: AutonomousSettingsUpdate) -> 
     validate_project_exists(project_id)
     _validate_update(update)
     return _update_settings(project_id, update)
+
+
+@router.get("/{project_id}/autonomous/upkeep/status", response_model=RoutineUpkeepStatusResponse)
+async def get_upkeep_status(project_id: str) -> RoutineUpkeepStatusResponse:
+    """Get routine upkeep settings and recent run history."""
+    validate_project_exists(project_id)
+    settings = get_routine_upkeep_settings(project_id)
+    recent = [
+        RoutineUpkeepHistoryRun(**run)
+        for run in maintenance_store.list_maintenance_runs(
+            limit=5,
+            workflow_name=ROUTINE_UPKEEP_WORKFLOW,
+            project_id=project_id,
+        )
+    ]
+    return RoutineUpkeepStatusResponse(
+        settings=RoutineUpkeepSettingsResponse(
+            enabled=settings.enabled,
+            frequency_minutes=settings.frequency_minutes,
+            batch_limit=settings.batch_limit,
+        ),
+        latest=recent[0] if recent else None,
+        recent=recent,
+    )
+
+
+@router.post("/{project_id}/autonomous/upkeep/run", response_model=RoutineUpkeepRunResponse)
+async def run_upkeep(project_id: str) -> RoutineUpkeepRunResponse:
+    """Run one routine upkeep cycle immediately."""
+    validate_project_exists(project_id)
+    dispatch = _make_dispatch_callback()
+    result = await asyncio.to_thread(
+        run_routine_upkeep,
+        project_id,
+        dispatch=dispatch,
+        force=True,
+    )
+    return RoutineUpkeepRunResponse(**result)

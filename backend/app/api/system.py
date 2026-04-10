@@ -18,7 +18,11 @@ from ..storage import maintenance_runs as maintenance_store
 
 router = APIRouter(prefix="/api/system", tags=["system"])
 
-MONITORED_MAINTENANCE_WORKFLOWS = ("daily_maintenance", "scheduled_backups")
+MONITORED_MAINTENANCE_WORKFLOWS = (
+    "daily_maintenance",
+    "scheduled_backups",
+    "routine_upkeep",
+)
 
 
 class DiskUsageResponse(BaseModel):

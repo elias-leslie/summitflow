@@ -33,6 +33,9 @@ class AgentConfig(TypedDict, total=False):
     autonomous_max_concurrent: int  # Max concurrent autonomous tasks (1-3)
     autonomous_auto_merge_tiers: list[int]  # Tiers eligible for auto-merge
     autonomous_task_types: list[str]  # Labels eligible for autonomous execution
+    upkeep_enabled: bool  # Enable routine upkeep signal discovery/routing
+    upkeep_frequency_minutes: int  # How often routine upkeep may run
+    upkeep_batch_limit: int  # Max tasks a routine upkeep cycle creates/dispatches
     autonomous_max_tasks_per_day: int | None  # Max tasks per day
     autonomous_cooldown_minutes: int  # Gap between autonomous dispatches
     autonomous_allowed_types: list[str] | None  # Allowed task types
@@ -64,6 +67,9 @@ DEFAULT_AGENT_CONFIG: AgentConfig = {
     "autonomous_max_concurrent": 1,  # Default: 1 concurrent task
     "autonomous_auto_merge_tiers": [1],
     "autonomous_task_types": ["auto-generated"],
+    "upkeep_enabled": False,
+    "upkeep_frequency_minutes": 120,
+    "upkeep_batch_limit": 5,
     "autonomous_max_tasks_per_day": None,
     "autonomous_cooldown_minutes": 0,
     "autonomous_allowed_types": None,

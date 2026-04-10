@@ -24,7 +24,11 @@ from app.storage import tasks as task_store
 from app.storage.task_dependencies import is_blocked
 
 from .pickup_dispatch import dispatch_to_stage
-from .pickup_guards import check_task_dispatchable, validate_autonomous_dispatch
+from .pickup_guards import (
+    check_allowed_task_type,
+    check_task_dispatchable,
+    validate_autonomous_dispatch,
+)
 from .pickup_queries import determine_next_stage, get_queued_autonomous_tasks
 
 logger = get_logger(__name__)
@@ -44,6 +48,10 @@ def _dispatch_one(
 
     if is_blocked(task_id):
         logger.info("Task blocked by dependency, skipping", task_id=task_id)
+        dispatched["skipped"] += 1
+        return
+    if error := check_allowed_task_type(project_id, str(task.get("task_type") or "")):
+        logger.info("Task type not allowed, skipping", task_id=task_id, error=error)
         dispatched["skipped"] += 1
         return
 
@@ -68,8 +76,9 @@ def _dispatch_one(
 def autonomous_work_pickup(
     project_id: str,
     dispatch: Callable[[str, str, str], None] | None = None,
+    limit: int = 10,
 ) -> dict[str, object]:
-    """Pick up queued autonomous tasks and dispatch to appropriate pipeline stage.
+    """Pick up pending autonomous tasks and dispatch to appropriate pipeline stage.
 
     Args:
         project_id: Project ID to process
@@ -83,19 +92,29 @@ def autonomous_work_pickup(
     if error := validate_autonomous_dispatch(project_id):
         return error
 
-    tasks = get_queued_autonomous_tasks(project_id)
+    tasks = get_queued_autonomous_tasks(project_id, limit=limit)
     if not tasks:
-        return {"project_id": project_id, "dispatched": 0, "message": "No tasks in queue"}
+        return {
+            "project_id": project_id,
+            "dispatched": 0,
+            "message": "No pending autonomous tasks",
+        }
 
     dispatched: dict[str, int] = {"triage": 0, "planning": 0, "execution": 0, "skipped": 0}
 
     for task in tasks:
         _dispatch_one(task, project_id, dispatch, dispatched)
 
-    total = sum(dispatched.values())
+    dispatched_total = sum(dispatched.get(stage, 0) for stage in ("triage", "planning", "execution"))
+    attempted_total = sum(dispatched.values())
     logger.info("Work pickup complete", project_id=project_id, dispatched=dispatched)
 
-    return {"project_id": project_id, "dispatched": total, "breakdown": dispatched}
+    return {
+        "project_id": project_id,
+        "dispatched": dispatched_total,
+        "attempted": attempted_total,
+        "breakdown": dispatched,
+    }
 
 
 def dispatch_task_immediate(

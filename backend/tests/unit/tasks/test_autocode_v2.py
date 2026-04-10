@@ -176,7 +176,7 @@ class TestQueuedAutonomousTasks:
 
         mock_cursor = MagicMock()
         mock_cursor.fetchall.return_value = [
-            ("task-1", "Auto task", "task", "SIMPLE", "queue"),
+            ("task-1", "Auto task", "task", "SIMPLE", "pending"),
         ]
         mock_get_cursor.return_value.__enter__.return_value = mock_cursor
 
@@ -184,6 +184,7 @@ class TestQueuedAutonomousTasks:
 
         sql_text = mock_cursor.execute.call_args.args[0]
         assert "execution_mode = 'autonomous'" in sql_text
+        assert "status = 'pending'" in sql_text
         assert tasks[0]["id"] == "task-1"
 
 

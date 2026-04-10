@@ -84,9 +84,21 @@ def test_get_maintenance_status_returns_latest_and_recent_runs(client, mocker) -
         "error_message": None,
         "created_at": now,
     }
+    upkeep_run = {
+        "id": 13,
+        "workflow_name": "routine_upkeep",
+        "status": "completed",
+        "started_at": now,
+        "finished_at": now,
+        "duration_ms": 750,
+        "rows_cleaned": 2,
+        "summary": {"tasks_created": 1, "dispatch": {"dispatched": 1}},
+        "error_message": None,
+        "created_at": now,
+    }
     mocker.patch(
         "app.api.system.maintenance_store.get_latest_maintenance_runs",
-        return_value={"daily_maintenance": latest_run},
+        return_value={"daily_maintenance": latest_run, "routine_upkeep": upkeep_run},
     )
     mocker.patch(
         "app.api.system.maintenance_store.list_maintenance_runs",
@@ -98,6 +110,7 @@ def test_get_maintenance_status_returns_latest_and_recent_runs(client, mocker) -
     assert response.status_code == 200
     payload = response.json()
     assert payload["latest"]["daily_maintenance"]["rows_cleaned"] == 42
+    assert payload["latest"]["routine_upkeep"]["summary"]["tasks_created"] == 1
     assert payload["latest"]["daily_maintenance"]["summary"]["events_deleted"]["total_deleted"] == 8
     assert [run["workflow_name"] for run in payload["recent"]] == [
         "daily_maintenance",
