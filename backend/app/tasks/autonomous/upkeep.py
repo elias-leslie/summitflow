@@ -147,6 +147,30 @@ def _source_key(signal_type: str, stable_id: object) -> str:
     return f"upkeep:{signal_type}:{stable_id}"
 
 
+def _normalize_quality_key_part(value: object, default: str) -> str:
+    text = str(value or "").strip()
+    if not text or text in {"-", "unknown", "None", "null"}:
+        return default
+    return text
+
+
+def _quality_source_key(result: dict[str, Any]) -> str | None:
+    """Build a stable source key for actionable quality failures."""
+    check_type = _normalize_quality_key_part(result.get("check_type"), "quality")
+    check_name = _normalize_quality_key_part(result.get("check_name"), "unknown")
+    file_path = _normalize_quality_key_part(result.get("file_path"), "project")
+    line_number = _normalize_quality_key_part(result.get("line_number"), "any")
+
+    if file_path != "project":
+        return _source_key("quality", f"{check_type}:{check_name}:{file_path}:{line_number}")
+
+    error_message = str(result.get("error_message") or "").strip()
+    if not error_message:
+        return None
+    digest = hashlib.sha1(error_message[:2000].encode()).hexdigest()[:12]
+    return _source_key("quality", f"{check_type}:{check_name}:project:{digest}")
+
+
 def _files_to_modify_from_result(result: dict[str, Any]) -> list[str]:
     file_path = result.get("file_path")
     return [str(file_path)] if isinstance(file_path, str) and file_path else []
@@ -203,8 +227,10 @@ def _create_signal_task(
     description: str,
     priority: int,
     task_type: str,
+    complexity: str = "SIMPLE",
     files_to_modify: list[str] | None = None,
     subtask_description: str,
+    source_context: dict[str, Any] | None = None,
 ) -> str:
     task = task_store.create_task(
         project_id=project_id,
@@ -212,7 +238,7 @@ def _create_signal_task(
         description=description,
         priority=priority,
         task_type=task_type,
-        complexity="STANDARD",
+        complexity=complexity,
         execution_mode="autonomous",
         autonomous=True,
         labels=[*_UPKEEP_LABELS, signal_type],
@@ -224,6 +250,8 @@ def _create_signal_task(
             "signal_type": signal_type,
         },
     }
+    if source_context:
+        context["upkeep"].update(source_context)
     if files_to_modify:
         context["files_to_modify"] = files_to_modify
     create_task_spirit(
@@ -234,7 +262,7 @@ def _create_signal_task(
             "No unrelated behavior changes are introduced",
         ],
         context=context,
-        complexity="STANDARD",
+        complexity=complexity,
     )
     approve_plan(task_id, approved_by="routine-upkeep")
     create_single_subtask_with_steps(
@@ -261,7 +289,10 @@ def _create_quality_failure_tasks(project_id: str, limit: int) -> list[str]:
             continue
         if result.get("escalation_task_id"):
             continue
-        source_key = _source_key("quality", result_id_int)
+        source_key = _quality_source_key(result)
+        if source_key is None:
+            logger.info("routine_upkeep_skipping_unactionable_quality_result", result_id=result_id_int)
+            continue
         if task_exists_for_upkeep_source(project_id, source_key):
             continue
         task_id = _create_signal_task(
@@ -270,10 +301,12 @@ def _create_quality_failure_tasks(project_id: str, limit: int) -> list[str]:
             signal_type="quality",
             title=_quality_title(result),
             description=_quality_description(result),
-            priority=1,
+            priority=2,
             task_type="bug",
+            complexity="SIMPLE",
             files_to_modify=_files_to_modify_from_result(result),
             subtask_description=f"Resolve quality failure {result_id_int}",
+            source_context={"quality_result_id": result_id_int},
         )
         _mark_quality_escalated(result_id_int, task_id)
         created.append(task_id)
