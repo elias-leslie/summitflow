@@ -91,6 +91,9 @@ def _parse_smart_sync_output(output: str, stderr_text: str, returncode: int) -> 
         "reason": repo_data.get("reason", ""),
         "detail": detail,
         "pushed": repo_data.get("pushed", False),
+        "workflow_summary": repo_data.get("workflow_summary", ""),
+        "workflow_hint": repo_data.get("workflow_hint", ""),
+        "workflow_runs": repo_data.get("workflow_runs", []),
         "raw_output": output + stderr_text,
     }
 

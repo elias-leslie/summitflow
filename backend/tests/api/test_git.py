@@ -436,3 +436,28 @@ class TestSmartSyncParsing:
         assert result["detail"] == "ssh: connect to host github.com timed out"
         assert result["errors"] == ["ssh: connect to host github.com timed out"]
         assert result["raw_output"].endswith("ssh: connect to host github.com timed out")
+
+    def test_parse_smart_sync_output_preserves_workflow_metadata(self) -> None:
+        from app.api.git_helpers.endpoints import _parse_smart_sync_output
+
+        payload = (
+            '{"status":"SUCCESS","repos":[{"status":"SUCCESS","message":"Publish change",'
+            '"pushed":true,"workflow_summary":"CI=success@main#107 | release=success@v0.2.1#2",'
+            '"workflow_hint":"gh run watch 107 --repo elias-leslie/a-term --exit-status",'
+            '"workflow_runs":[{"workflow":"CI","state":"success","ref":"main","number":107,"url":"https://example.invalid/ci"}]}]}'
+        )
+
+        result = _parse_smart_sync_output(payload, "", 0)
+
+        assert result["success"] is True
+        assert result["workflow_summary"] == "CI=success@main#107 | release=success@v0.2.1#2"
+        assert result["workflow_hint"] == "gh run watch 107 --repo elias-leslie/a-term --exit-status"
+        assert result["workflow_runs"] == [
+            {
+                "workflow": "CI",
+                "state": "success",
+                "ref": "main",
+                "number": 107,
+                "url": "https://example.invalid/ci",
+            }
+        ]

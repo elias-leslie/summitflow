@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # commit.sh - Unified commit and sync for all managed repos
-# Version: 1.4.0
+# Version: 1.5.0
 # Usage: commit.sh [OPTIONS]
 #
 # Commits current repo by default. Use --all for multi-repo orchestration.
@@ -46,6 +46,12 @@ LAST_STATUS=""
 JSON_RESULTS=()
 LAST_PUSH_DETAIL=""
 LAST_PULL_DETAIL=""
+LAST_WORKFLOW_SUMMARY=""
+LAST_WORKFLOW_JSON="[]"
+LAST_WORKFLOW_HINT=""
+WORKFLOW_SUMMARY_LIMIT="${WORKFLOW_SUMMARY_LIMIT:-3}"
+WORKFLOW_DISCOVERY_ATTEMPTS="${WORKFLOW_DISCOVERY_ATTEMPTS:-5}"
+WORKFLOW_DISCOVERY_SLEEP="${WORKFLOW_DISCOVERY_SLEEP:-1}"
 
 show_help() {
     sed -n '2,/^$/p' "$0" | sed 's/^# //' | sed 's/^#//'
@@ -212,6 +218,153 @@ safe_pull() {
     fi
 
     return 0
+}
+
+clear_workflow_summary() {
+    LAST_WORKFLOW_SUMMARY=""
+    LAST_WORKFLOW_JSON="[]"
+    LAST_WORKFLOW_HINT=""
+}
+
+github_repo_slug() {
+    local remote_url
+    remote_url=$(git remote get-url origin 2>/dev/null || true)
+    [[ -z "$remote_url" ]] && return 1
+
+    case "$remote_url" in
+        git@github.com:*)
+            remote_url="${remote_url#git@github.com:}"
+            ;;
+        ssh://git@github.com/*)
+            remote_url="${remote_url#ssh://git@github.com/}"
+            ;;
+        https://github.com/*)
+            remote_url="${remote_url#https://github.com/}"
+            ;;
+        http://github.com/*)
+            remote_url="${remote_url#http://github.com/}"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+
+    remote_url="${remote_url%.git}"
+    [[ -n "$remote_url" ]] || return 1
+    printf '%s\n' "$remote_url"
+}
+
+workflow_json_has_sha() {
+    local workflow_json=$1
+    local target_sha=$2
+
+    python3 - "$workflow_json" "$target_sha" <<'PY'
+import json
+import sys
+
+try:
+    runs = json.loads(sys.argv[1] or "[]")
+except json.JSONDecodeError:
+    print("no")
+    raise SystemExit(0)
+
+target_sha = (sys.argv[2] or "").strip()
+if not target_sha:
+    print("yes")
+    raise SystemExit(0)
+
+for run in runs:
+    head_sha = (run.get("headSha") or "").strip()
+    if head_sha == target_sha:
+        print("yes")
+        raise SystemExit(0)
+
+print("no")
+PY
+}
+
+capture_workflow_summary() {
+    clear_workflow_summary
+
+    command -v gh >/dev/null 2>&1 || return 0
+
+    local repo_slug
+    repo_slug=$(github_repo_slug) || return 0
+
+    local target_sha=${1:-}
+    local workflow_json=""
+    local attempt
+    for ((attempt = 1; attempt <= WORKFLOW_DISCOVERY_ATTEMPTS; attempt++)); do
+        workflow_json=$(gh run list \
+            --repo "$repo_slug" \
+            --limit "$WORKFLOW_SUMMARY_LIMIT" \
+            --json status,conclusion,workflowName,headBranch,headSha,number,url,displayTitle,event \
+            2>/dev/null || true)
+        [[ -z "$workflow_json" ]] && workflow_json="[]"
+
+        if [[ "$(workflow_json_has_sha "$workflow_json" "$target_sha")" == "yes" ]]; then
+            break
+        fi
+
+        if (( attempt < WORKFLOW_DISCOVERY_ATTEMPTS )); then
+            sleep "$WORKFLOW_DISCOVERY_SLEEP"
+        fi
+    done
+
+    local parsed
+    parsed=$(python3 - "$workflow_json" "$WORKFLOW_SUMMARY_LIMIT" <<'PY'
+import json
+import sys
+
+try:
+    runs = json.loads(sys.argv[1] or "[]")
+except json.JSONDecodeError:
+    runs = []
+
+limit = int(sys.argv[2] or 3)
+compact = []
+summary_parts = []
+watch_number = ""
+
+for run in runs[:limit]:
+    workflow = run.get("workflowName") or "workflow"
+    state = (run.get("conclusion") or run.get("status") or "unknown").lower().replace(" ", "_")
+    ref = run.get("headBranch") or ""
+    number = run.get("number")
+    url = run.get("url") or ""
+    compact.append(
+        {
+            "workflow": workflow,
+            "state": state,
+            "ref": ref,
+            "number": number,
+            "url": url,
+        }
+    )
+
+    part = f"{workflow}={state}"
+    if ref:
+        part += f"@{ref}"
+    if number:
+        part += f"#{number}"
+    summary_parts.append(part)
+
+    if not watch_number and state in {"queued", "pending", "waiting", "requested", "in_progress"} and number:
+        watch_number = str(number)
+
+print("SUMMARY=" + " | ".join(summary_parts))
+print("JSON=" + json.dumps(compact, separators=(",", ":")))
+print("WATCH=" + watch_number)
+PY
+    )
+
+    LAST_WORKFLOW_SUMMARY=$(printf '%s\n' "$parsed" | sed -n 's/^SUMMARY=//p')
+    LAST_WORKFLOW_JSON=$(printf '%s\n' "$parsed" | sed -n 's/^JSON=//p')
+    local watch_number
+    watch_number=$(printf '%s\n' "$parsed" | sed -n 's/^WATCH=//p')
+    if [[ -n "$watch_number" ]]; then
+        LAST_WORKFLOW_HINT="gh run watch ${watch_number} --repo ${repo_slug} --exit-status"
+    fi
 }
 
 detect_layers() {
@@ -459,16 +612,21 @@ json_escape() {
 emit_result() {
     local status=$1 name=$2 sha=$3 message=$4 pushed=$5 gates=$6 reason=$7 detail=${8:-}
     LAST_STATUS="$status"
+    local workflow_summary="$LAST_WORKFLOW_SUMMARY"
+    local workflow_json="$LAST_WORKFLOW_JSON"
+    local workflow_hint="$LAST_WORKFLOW_HINT"
 
     if $JSON_OUTPUT; then
         local json_entry
-        json_entry=$(printf '{"name":"%s","status":"%s","sha":"%s","message":"%s","pushed":%s,"gates":"%s","reason":"%s","detail":"%s"}' \
-            "$(json_escape "$name")" "$status" "$sha" "$(json_escape "$message")" "$pushed" "$(json_escape "$gates")" "$(json_escape "$reason")" "$(json_escape "$detail")")
+        json_entry=$(printf '{"name":"%s","status":"%s","sha":"%s","message":"%s","pushed":%s,"gates":"%s","reason":"%s","detail":"%s","workflow_summary":"%s","workflow_hint":"%s","workflow_runs":%s}' \
+            "$(json_escape "$name")" "$status" "$sha" "$(json_escape "$message")" "$pushed" "$(json_escape "$gates")" "$(json_escape "$reason")" "$(json_escape "$detail")" "$(json_escape "$workflow_summary")" "$(json_escape "$workflow_hint")" "$workflow_json")
         JSON_RESULTS+=("$json_entry")
     else
         case "$status" in
             SUCCESS)
                 echo "  SUCCESS:${name}:${sha}:${message}:pushed=${pushed}"
+                [[ -n "$workflow_summary" ]] && echo "    workflows: $workflow_summary"
+                [[ -n "$workflow_hint" ]] && echo "    watch: $workflow_hint"
                 ;;
             SKIP)
                 echo "  SKIP:${name}:${reason}"
@@ -520,6 +678,7 @@ commit_project_repo() {
     repo_name=$(resolve_repo_name "$repo")
 
     cd "$repo" || return 1
+    clear_workflow_summary
 
     local branch file_count
     branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
@@ -626,6 +785,7 @@ commit_project_repo() {
 
         if push_current_branch "$branch"; then
             pushed="true"
+            capture_workflow_summary "$(git rev-parse HEAD 2>/dev/null || echo "")"
         else
             emit_result "PARTIAL" "$repo_name" "$sha" "$message" "false" "$gates" "push_failed" "$LAST_PUSH_DETAIL"
             return 1
@@ -643,6 +803,7 @@ commit_config_repo() {
     repo_name=$(resolve_repo_name "$repo")
 
     cd "$repo" || return 1
+    clear_workflow_summary
 
     local branch file_count
     branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
@@ -705,6 +866,7 @@ commit_config_repo() {
 
         if push_current_branch "$branch"; then
             pushed="true"
+            capture_workflow_summary "$(git rev-parse HEAD 2>/dev/null || echo "")"
         else
             emit_result "PARTIAL" "$repo_name" "$sha" "$message" "false" "" "push_failed" "$LAST_PUSH_DETAIL"
             return 1
@@ -718,6 +880,7 @@ commit_config_repo() {
 handle_push_only() {
     local repo_name=$1
     local branch=$2
+    clear_workflow_summary
 
     if $PUSH; then
         local upstream ahead
@@ -733,6 +896,7 @@ handle_push_only() {
                 fi
 
                 if push_current_branch "$branch"; then
+                    capture_workflow_summary "$(git rev-parse HEAD 2>/dev/null || echo "")"
                     emit_result "SUCCESS" "$repo_name" "$(git rev-parse --short HEAD)" "pushed_${ahead}_commits" "true" "" ""
                     return 0
                 fi
@@ -852,5 +1016,9 @@ main() {
     [[ $error_count -gt 0 || $blocked_count -gt 0 ]] && exit 1
     exit 0
 }
+
+if [[ "${COMMIT_SH_SOURCE_ONLY:-0}" == "1" ]]; then
+    return 0 2>/dev/null || exit 0
+fi
 
 main "$@"
