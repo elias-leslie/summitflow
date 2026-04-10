@@ -109,8 +109,12 @@ function getSessionLastActivityMs(sessionName, env = process.env) {
 }
 
 function isAgentBrowserDaemon(pid) {
-  try { const c = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8'); return c.includes('agent-browser') && c.includes('daemon.js'); }
-  catch { return false; }
+  const cmdline = readProcessCmdline(pid);
+  if (!cmdline.includes('agent-browser')) return false;
+  if (cmdline.includes('daemon.js')) return true;
+  if (!cmdline.includes('agent-browser-linux-x64')) return false;
+  const ppid = getProcessParentPid(pid);
+  return ppid === 1 || isUserSystemdProcess(ppid);
 }
 
 function readProcessCmdline(pid) {
