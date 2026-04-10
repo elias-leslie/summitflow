@@ -15,8 +15,6 @@ jobs:
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
       - uses: pnpm/action-setup@b307475762933b98ed359c036b0e51f26b63b74b # v5.0.0
-        with:
-          version: "10.28.0"
 
       - name: Create .env file
         working-directory: docker/compose
@@ -94,14 +92,14 @@ jobs:
       - name: Show container status
         if: always()
         working-directory: docker/compose
-        run: docker compose --profile summitflow ps
+        run: docker compose --profile summitflow ps || true
 
       - name: Collect logs on failure
         if: failure()
         working-directory: docker/compose
-        run: docker compose --profile summitflow logs --tail 100
+        run: docker compose --profile summitflow logs --tail 100 || true
 
       - name: Tear down
         if: always()
         working-directory: docker/compose
-        run: docker compose --profile summitflow down --volumes
+        run: docker compose --profile summitflow down --volumes || true
