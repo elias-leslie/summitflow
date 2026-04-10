@@ -45,10 +45,26 @@ if path.exists():
 PY
 }
 
+workspace_root_for() {
+  local dir
+  dir="$(cd "$1" && pwd)"
+
+  while [ "$dir" != "/" ]; do
+    if [ -f "$dir/pnpm-workspace.yaml" ] || [ -f "$dir/pnpm-lock.yaml" ]; then
+      printf '%s\n' "$dir"
+      return 0
+    fi
+    dir="$(dirname "$dir")"
+  done
+
+  return 1
+}
+
 pack_js_package() {
   local label="$1"
   local pkg_dir="$2"
   local tgz_name="$3"
+  local workspace_root=""
 
   if [ ! -d "$pkg_dir" ]; then
     echo "SKIP: $pkg_dir not found"
@@ -59,7 +75,12 @@ pack_js_package() {
 
   if [ ! -d "$pkg_dir/node_modules" ]; then
     echo "  Installing package dependencies..."
-    (cd "$pkg_dir" && pnpm install --frozen-lockfile)
+    workspace_root="$(workspace_root_for "$pkg_dir" || true)"
+    if [ -n "$workspace_root" ] && [ -f "$workspace_root/pnpm-workspace.yaml" ]; then
+      (cd "$workspace_root" && pnpm --filter "$label" install --frozen-lockfile)
+    else
+      (cd "$pkg_dir" && pnpm install --frozen-lockfile)
+    fi
   fi
 
   # 1. Build
