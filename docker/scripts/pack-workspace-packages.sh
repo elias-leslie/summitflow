@@ -57,6 +57,11 @@ pack_js_package() {
 
   echo "Packing $label..."
 
+  if [ ! -d "$pkg_dir/node_modules" ]; then
+    echo "  Installing package dependencies..."
+    (cd "$pkg_dir" && pnpm install --frozen-lockfile)
+  fi
+
   # 1. Build
   (cd "$pkg_dir" && pnpm run build 2>&1 | tail -3)
 
