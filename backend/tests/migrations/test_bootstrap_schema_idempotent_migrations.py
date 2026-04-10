@@ -146,6 +146,38 @@ def test_remove_pr_fields_downgrade_skips_missing_tasks_table(mocker) -> None:
     create_check_constraint.assert_not_called()
 
 
+def test_explorer_symbols_upgrade_skips_existing_table(mocker) -> None:
+    module = _load_migration_module(
+        "5e4422dac9ad_add_explorer_symbols_table.py",
+        "add_explorer_symbols_table_migration",
+    )
+    inspector = MagicMock()
+    inspector.has_table.return_value = True
+    create_table = mocker.patch.object(module.op, "create_table")
+    execute = mocker.patch.object(module.op, "execute")
+    mocker.patch.object(module.op, "get_bind", return_value=object())
+    mocker.patch.object(module.sa, "inspect", return_value=inspector)
+
+    module.upgrade()
+
+    create_table.assert_not_called()
+    assert execute.call_count == 2
+    assert all("IF NOT EXISTS" in call.args[0] for call in execute.call_args_list)
+
+
+def test_explorer_symbols_downgrade_uses_idempotent_drops(mocker) -> None:
+    module = _load_migration_module(
+        "5e4422dac9ad_add_explorer_symbols_table.py",
+        "add_explorer_symbols_table_migration",
+    )
+    execute = mocker.patch.object(module.op, "execute")
+
+    module.downgrade()
+
+    assert execute.call_count == 3
+    assert all("IF EXISTS" in call.args[0] for call in execute.call_args_list)
+
+
 def test_task_execution_mode_upgrade_skips_existing_column_and_constraint(mocker) -> None:
     module = _load_migration_module(
         "d1cd35b5b946_add_task_execution_mode.py",
