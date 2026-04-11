@@ -146,7 +146,8 @@ AUTONOMOUS: autonomous enable | disable | status
 CLAUDE:
   claude task <task-id> [--feedback-text X|--feedback-file path] [--timeout-seconds N]
 
-PROMPT: prompt list [--global] | get <slug> | create <slug> <name> -f path | update <slug> -f path | delete <slug>
+PROMPT: prompt list [--global] | get <slug> | create <slug> <name> -f path | update <slug> -f path [--change-reason X] | delete <slug>
+        prompt revisions <slug> [--limit N] | restore <slug> <revision-id> [--change-reason X]
         prompt assign <agent> <prompt> <role> [-p N] | unassign <agent> <prompt> | assignments <agent>
         prompt export [slug] [-o file] | import <file> [--dry-run]
 

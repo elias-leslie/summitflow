@@ -35,6 +35,8 @@ AGENTS_PREVIEW_PATH = "/api/agents/{slug}/preview"
 
 # ── Prompts ──────────────────────────────────────────────────────────
 PROMPTS_BASE_PATH = "/api/prompts"
+PROMPT_REVISIONS_PATH = "/api/prompts/{slug}/revisions"
+PROMPT_RESTORE_PATH = "/api/prompts/{slug}/revisions/{revision_id}/restore"
 
 # ── Persona & Heartbeat ─────────────────────────────────────────────
 PERSONA_BASE_PATH = "/api/persona"

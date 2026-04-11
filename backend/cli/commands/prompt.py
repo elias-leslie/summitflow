@@ -8,6 +8,8 @@ from typing import Annotated, Any
 import typer
 
 from ..output import output_error
+from ._api_paths import PROMPT_RESTORE_PATH, PROMPT_REVISIONS_PATH
+from .memory_options import ChangeReasonOpt, HistoryLimitOpt
 from .prompt_api import prompt_api
 from .prompt_formatters import (
     format_assigned,
@@ -16,6 +18,8 @@ from .prompt_formatters import (
     format_deleted,
     format_prompt_detail,
     format_prompt_list,
+    format_prompt_restored,
+    format_prompt_revisions,
     format_unassigned,
     format_updated,
 )
@@ -79,6 +83,7 @@ def update_prompt(
     name: Annotated[str | None, typer.Option("-n", "--name", help="New name")] = None,
     is_global: Annotated[bool | None, typer.Option("--global/--no-global", help="Global flag")] = None,
     description: Annotated[str | None, typer.Option("-d", "--description")] = None,
+    change_reason: ChangeReasonOpt = None,
 ) -> None:
     payload: dict[str, Any] = {}
     if file:
@@ -95,8 +100,40 @@ def update_prompt(
     if not payload:
         output_error("Nothing to update — provide at least one of -f, -n, --global, -d")
         raise typer.Exit(1)
+    if change_reason is not None:
+        payload["change_reason"] = change_reason
     p = prompt_api("PUT", f"/{slug}", json=payload)
     format_updated(slug, p.get("content", ""), p)
+
+
+@app.command("revisions")
+def revisions_prompt(
+    slug: Annotated[str, typer.Argument(help="Prompt slug")],
+    limit: HistoryLimitOpt = 20,
+) -> None:
+    result = prompt_api(
+        "GET",
+        PROMPT_REVISIONS_PATH.format(slug=slug).removeprefix("/api/prompts"),
+        params={"limit": limit},
+        tool_name="st prompt revisions",
+    )
+    format_prompt_revisions(slug, result)
+
+
+@app.command("restore")
+def restore_prompt(
+    slug: Annotated[str, typer.Argument(help="Prompt slug")],
+    revision_id: Annotated[str, typer.Argument(help="Prompt revision UUID to restore")],
+    change_reason: ChangeReasonOpt = None,
+) -> None:
+    payload = {"change_reason": change_reason} if change_reason else {}
+    result = prompt_api(
+        "POST",
+        PROMPT_RESTORE_PATH.format(slug=slug, revision_id=revision_id).removeprefix("/api/prompts"),
+        json=payload,
+        tool_name="st prompt restore",
+    )
+    format_prompt_restored(slug, revision_id, result)
 
 
 @app.command("delete")

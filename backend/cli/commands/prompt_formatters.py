@@ -93,3 +93,30 @@ def format_assignments(agent: str, assignments: list[dict[str, Any]]) -> None:
             print(f"  {p.get('slug', '?'):<20s} {a.get('role', '?'):<12s} {a.get('priority', 0)}")
     else:
         output_json({"assignments": assignments})
+
+
+def format_prompt_revisions(slug: str, result: dict[str, Any]) -> None:
+    """Format and print prompt revision history."""
+    if is_compact():
+        revisions = result.get("revisions", [])
+        print(f"PROMPT_REVISIONS[{len(revisions)}]:slug={slug}")
+        for revision in revisions:
+            revision_id = str(revision.get("id", "?"))[:8]
+            action = revision.get("action", "?")
+            created_at = revision.get("created_at", "?")
+            changed_by = revision.get("changed_by") or "-"
+            change_reason = revision.get("change_reason") or "-"
+            print(f"  {revision_id} [{action}] at={created_at} by={changed_by}")
+            print(f"    reason={change_reason}")
+    else:
+        output_json(result)
+
+
+def format_prompt_restored(slug: str, revision_id: str, prompt_data: dict[str, Any]) -> None:
+    """Format and print prompt restore confirmation."""
+    if is_compact():
+        lines = line_count(prompt_data.get("content", ""))
+        updated_at = prompt_data.get("updated_at", "?")
+        print(f"PROMPT_RESTORED:{slug}:rev={revision_id[:8]}|{lines}L|updated_at={updated_at}")
+    else:
+        output_json(prompt_data)
