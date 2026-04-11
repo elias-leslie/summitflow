@@ -8,7 +8,7 @@ from typing import Annotated
 
 import typer
 
-from .compactness import warn_memory_compactness
+from .compactness import enforce_memory_compactness, warn_memory_compactness
 from .memory_commands import (
     batch_tier_impl,
     cleanup_impl,
@@ -198,6 +198,8 @@ def save(
     resolved_content = _resolve_and_validate_save(summary, content, content_file)
     assert summary is not None
     warn_memory_compactness(summary, resolved_content)
+    enforce_memory_compactness(summary, resolved_content)
+    validate_content_format(resolved_content, summary, tier)
     save_impl(
         ctx.obj, resolved_content, summary, tier, confidence, context, pinned,
         trigger_types, trigger_phases, context_kind, consumer_profiles,
@@ -208,9 +210,9 @@ def save(
 
 @app.command("format")
 def format_cmd(
+    topic: FormatTopicOpt,
+    instruction: FormatInstructionOpt,
     tier: TierOpt = "reference",
-    topic: FormatTopicOpt = ...,
-    instruction: FormatInstructionOpt = ...,
     prohibition: FormatProhibitionOpt = None,
     why: FormatWhyOpt = None,
     summary: FormatSummaryOpt = None,
@@ -218,6 +220,7 @@ def format_cmd(
     """Generate a standard memory episode body and compact summary."""
     content = build_episode_content(topic, instruction, prohibition, why)
     resolved_summary = (summary.strip() if summary else suggest_summary(instruction)) or "Memory episode"
+    enforce_memory_compactness(resolved_summary, content)
     validate_content_format(content, resolved_summary, tier)
     typer.echo(f"SUMMARY: {resolved_summary}")
     typer.echo("CONTENT:")
@@ -289,6 +292,7 @@ def update(
     resolved_content = _resolve_content(content, content_file, require_value=False)
     if resolved_content is not None:
         warn_memory_compactness(uuid, resolved_content)
+        enforce_memory_compactness(uuid, resolved_content)
     update_impl(
         uuid, resolved_content, tier, summary, trigger_types, trigger_phases,
         pinned, context_kind, consumer_profiles, exclude_consumer_profiles,

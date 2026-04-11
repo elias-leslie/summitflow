@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import patch
 
 import typer
@@ -12,6 +11,7 @@ from typer.testing import CliRunner
 from cli.commands.memory import app
 from cli.commands.memory_crud import revisions_impl, save_impl, tag_impl, update_impl
 from cli.commands.memory_formatters import format_list_compact
+from cli.output_context import OutputContext
 
 runner = CliRunner()
 
@@ -22,7 +22,10 @@ class TestMemoryUpdateContentInput:
     def test_update_accepts_content_from_file(self, tmp_path: Path) -> None:
         """`--content-file` should load the file contents and forward them to update_impl."""
         content_file = tmp_path / "episode.md"
-        content_file.write_text("Use /commit_it when available.\n", encoding="utf-8")
+        content_file.write_text(
+            "**Git Publish**: Use /commit_it when available.\n",
+            encoding="utf-8",
+        )
 
         with patch("cli.commands.memory.update_impl") as mock_update_impl:
             result = runner.invoke(app, ["update", "abc12345", "--content-file", str(content_file)])
@@ -31,7 +34,7 @@ class TestMemoryUpdateContentInput:
         mock_update_impl.assert_called_once()
         args = mock_update_impl.call_args.args
         assert args[0] == "abc12345"
-        assert args[1] == "Use /commit_it when available.\n"
+        assert args[1] == "**Git Publish**: Use /commit_it when available.\n"
         assert args[2:] == (
             None,
             None,
@@ -57,14 +60,14 @@ class TestMemoryUpdateContentInput:
             result = runner.invoke(
                 app,
                 ["update", "abc12345", "--content-file", "-"],
-                input="Literal [work] and `backticks` should survive.\n",
+                input="**Literal Work**: Keep `backticks` in stored content.\n",
             )
 
         assert result.exit_code == 0
         mock_update_impl.assert_called_once()
         args = mock_update_impl.call_args.args
         assert args[0] == "abc12345"
-        assert args[1] == "Literal [work] and `backticks` should survive.\n"
+        assert args[1] == "**Literal Work**: Keep `backticks` in stored content.\n"
         assert args[2:] == (
             None,
             None,
@@ -155,6 +158,8 @@ class TestMemorySaveContentInput:
     def test_save_warns_on_memory_compactness(self) -> None:
         with (
             patch("cli.commands.memory.warn_memory_compactness") as mock_warn,
+            patch("cli.commands.memory.enforce_memory_compactness") as mock_enforce,
+            patch("cli.commands.memory.validate_content_format") as mock_validate,
             patch("cli.commands.memory.save_impl") as mock_save_impl,
         ):
             result = runner.invoke(
@@ -172,7 +177,46 @@ class TestMemorySaveContentInput:
             "Use dt for checks",
             "**Quality Checks**: Use dt for all quality checks.\n",
         )
+        mock_enforce.assert_called_once_with(
+            "Use dt for checks",
+            "**Quality Checks**: Use dt for all quality checks.\n",
+        )
+        mock_validate.assert_called_once_with(
+            "**Quality Checks**: Use dt for all quality checks.\n",
+            "Use dt for checks",
+            "reference",
+        )
         mock_save_impl.assert_called_once()
+
+    def test_save_rejects_non_caveman_memory(self) -> None:
+        result = runner.invoke(
+            app,
+            [
+                "save",
+                "**Quality Checks**: You should be thorough. For example, explain every case.",
+                "--summary",
+                "Use dt for checks",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "strict Caveman gate failed" in result.output
+        assert "example markers found" in result.output
+
+    def test_save_rejects_offer_back_memory(self) -> None:
+        result = runner.invoke(
+            app,
+            [
+                "save",
+                "**Answer Style**: Use short direct output. If you want more, ask for details.",
+                "--summary",
+                "Keep answers terse",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "strict Caveman gate failed" in result.output
+        assert "offer-back phrasing found" in result.output
 
     def test_save_rejects_inline_and_file_content_together(self, tmp_path: Path) -> None:
         """`save` should reject inline content combined with --content-file."""
@@ -249,7 +293,7 @@ class TestMemoryFormatCommand:
                 "--prohibition",
                 "Never repeat tier names inside the episode body",
                 "--why",
-                "tier already exists as metadata and the body should stay compact",
+                "tier already lives in metadata",
             ],
         )
 
@@ -258,7 +302,7 @@ class TestMemoryFormatCommand:
         assert "CONTENT:" in result.output
         assert "**Memory Headers**: Use compact topic headers for every memory episode." in result.output
         assert "Never repeat tier names inside the episode body." in result.output
-        assert "Why: tier already exists as metadata and the body should stay compact." in result.output
+        assert "Why: tier already lives in metadata." in result.output
 
 
 class TestMemoryTagOptions:
@@ -271,7 +315,7 @@ class TestMemoryTagOptions:
                 app,
                 [
                     "save",
-                    "**Topic**: Tag finance memories.",
+                    "**Topic**: Use finance tags on portfolio memories.",
                     "--summary",
                     "Tag finance memory",
                     "--tags",
@@ -282,7 +326,7 @@ class TestMemoryTagOptions:
         assert result.exit_code == 0
         args = mock_save_impl.call_args.args
         assert args[1:] == (
-            "**Topic**: Tag finance memories.",
+            "**Topic**: Use finance tags on portfolio memories.",
             "Tag finance memory",
             "reference",
             80,
@@ -309,7 +353,7 @@ class TestMemoryTagOptions:
                 app,
                 [
                     "save",
-                    "**Topic**: Tag finance memories.",
+                    "**Topic**: Use finance tags on portfolio memories.",
                     "--summary",
                     "Tag finance memory",
                     "--change-reason",
@@ -616,7 +660,7 @@ class TestMemoryTagOptions:
 
     def test_save_impl_applies_tags_after_learning_is_saved(self) -> None:
         """Save should apply requested tags using the memory tags endpoint."""
-        out = SimpleNamespace(is_compact=True)
+        out = OutputContext(compact=True)
         with (
             patch("cli.commands.memory_crud.validate_save_inputs", return_value="Tag finance memory"),
             patch("cli.commands.memory_crud.validate_content_format"),
@@ -657,7 +701,7 @@ class TestMemoryTagOptions:
         assert mock_request.call_args.kwargs["params"] == {"change_reason": "remove duplicate memory"}
 
     def test_revisions_impl_uses_history_endpoint(self) -> None:
-        out = SimpleNamespace(is_compact=True)
+        out = OutputContext(compact=True)
         with (
             patch("cli.commands.memory_crud.agent_hub_request", return_value={"revisions": []}) as mock_request,
             patch("cli.commands.memory_crud.format_revisions_compact"),
@@ -838,7 +882,7 @@ class TestMemoryStatusCommand:
         assert result.exit_code == 1
 
     def test_status_impl_renders_failed_probe_compactly(self) -> None:
-        out = SimpleNamespace(is_compact=True)
+        out = OutputContext(compact=True)
         result = {
             "status": "failed",
             "attempts": 3,
@@ -887,7 +931,7 @@ class TestMemoryStatusCommand:
 
     def test_save_impl_rejects_blank_content(self) -> None:
         """Blank content should fail before any API call."""
-        out = SimpleNamespace(is_compact=True)
+        out = OutputContext(compact=True)
         with patch("cli.commands.memory_crud.agent_hub_request") as mock_request:
             try:
                 save_impl(out, "   ", "Use dt for checks", "reference", 80, None, False, None, None, None, None, None, None, None, None, None, None, "global", None)

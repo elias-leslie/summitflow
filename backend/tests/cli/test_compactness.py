@@ -18,8 +18,8 @@ class TestCompactnessHeuristics:
         assert report.tokens > 350
         assert any("large prompt" in warning for warning in report.warnings)
         assert any("long prompt" in warning for warning in report.warnings)
-        assert any("filler terms found" in warning for warning in report.warnings)
-        assert any("repeated example markers" in warning for warning in report.warnings)
+        assert any("filler terms found" in error for error in report.errors)
+        assert any("example markers found" in error for error in report.errors)
 
     def test_memory_flags_long_multi_line_content(self) -> None:
         report = analyze_compactness(

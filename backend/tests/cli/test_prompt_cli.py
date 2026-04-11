@@ -122,6 +122,7 @@ class TestPromptHistoryCommands:
 
         with (
             patch("cli.commands.prompt.warn_prompt_compactness") as mock_warn,
+            patch("cli.commands.prompt.enforce_prompt_compactness") as mock_enforce,
             patch("cli.commands.prompt.prompt_api", return_value={"slug": "lean-prompt"}) as mock_prompt_api,
         ):
             result = runner.invoke(
@@ -131,7 +132,40 @@ class TestPromptHistoryCommands:
 
         assert result.exit_code == 0
         mock_warn.assert_called_once_with("lean-prompt", "Keep signal, cut filler.\n")
+        mock_enforce.assert_called_once_with("lean-prompt", "Keep signal, cut filler.\n")
         mock_prompt_api.assert_called_once()
+
+    def test_create_rejects_non_caveman_prompt(self, tmp_path: Path) -> None:
+        content_file = tmp_path / "prompt.md"
+        content_file.write_text(
+            "You should be thorough. For example, explain every option in detail.\n",
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(
+            app,
+            ["create", "verbose-prompt", "Verbose Prompt", "--file", str(content_file)],
+        )
+
+        assert result.exit_code == 1
+        assert "strict Caveman gate failed" in result.output
+        assert "example markers found" in result.output
+
+    def test_create_rejects_offer_back_prompt(self, tmp_path: Path) -> None:
+        content_file = tmp_path / "prompt.md"
+        content_file.write_text(
+            "Answer exact. If you want more, ask me for details.\n",
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(
+            app,
+            ["create", "offer-back-prompt", "Offer Back Prompt", "--file", str(content_file)],
+        )
+
+        assert result.exit_code == 1
+        assert "strict Caveman gate failed" in result.output
+        assert "offer-back phrasing found" in result.output
 
     def test_measure_warns_for_measured_content(self) -> None:
         with (

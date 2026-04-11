@@ -9,7 +9,7 @@ import typer
 
 from ..output import output_error
 from ._api_paths import PROMPT_RESTORE_PATH, PROMPT_REVISIONS_PATH
-from .compactness import warn_prompt_compactness
+from .compactness import enforce_prompt_compactness, warn_prompt_compactness
 from .memory_options import ChangeReasonOpt, HistoryLimitOpt
 from .prompt_api import prompt_api
 from .prompt_formatters import (
@@ -72,6 +72,7 @@ def create_prompt(
         raise typer.Exit(1)
     content = file.read_text()
     warn_prompt_compactness(slug, content)
+    enforce_prompt_compactness(slug, content)
     payload: dict[str, Any] = {"slug": slug, "name": name, "content": content, "is_global": is_global}
     if description:
         payload["description"] = description
@@ -96,6 +97,7 @@ def update_prompt(
             raise typer.Exit(1)
         content = file.read_text()
         warn_prompt_compactness(slug, content)
+        enforce_prompt_compactness(slug, content)
         payload["content"] = content
     if name is not None:
         payload["name"] = name
