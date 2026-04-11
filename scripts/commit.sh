@@ -44,6 +44,7 @@ TASK_ID=""
 COMMIT_PATHS=()
 COMMIT_SCOPE_MODE="all"
 COMMIT_SCOPE_PATHS=()
+COMMIT_SCOPE_PRESERVED_INDEX_PATCH=""
 LAST_STATUS=""
 JSON_RESULTS=()
 LAST_PUSH_DETAIL=""
@@ -123,6 +124,42 @@ prepare_commit_scope() {
     return 0
 }
 
+scope_path_excludes() {
+    local path
+    for path in "${COMMIT_SCOPE_PATHS[@]}"; do
+        printf ':(exclude)%s\n' "$path"
+    done
+}
+
+scope_cached_names() {
+    case "$COMMIT_SCOPE_MODE" in
+        paths|staged)
+            git diff --cached --name-only -- "${COMMIT_SCOPE_PATHS[@]}" 2>/dev/null
+            ;;
+        *)
+            git diff --cached --name-only 2>/dev/null
+            ;;
+    esac
+}
+
+scope_worktree_names() {
+    case "$COMMIT_SCOPE_MODE" in
+        paths|staged)
+            git diff --name-only -- "${COMMIT_SCOPE_PATHS[@]}" 2>/dev/null
+            ;;
+        *)
+            git diff --name-only 2>/dev/null
+            ;;
+    esac
+}
+
+scope_all_names() {
+    {
+        scope_cached_names
+        scope_worktree_names
+    } | awk 'NF && !seen[$0]++'
+}
+
 scope_status() {
     case "$COMMIT_SCOPE_MODE" in
         paths)
@@ -141,15 +178,58 @@ scope_has_changes() {
     [[ -n "$(scope_status)" ]]
 }
 
-scope_add_all() {
+scope_begin_session() {
+    [[ "$COMMIT_SCOPE_MODE" == "paths" ]] || return 0
+    [[ -n "$COMMIT_SCOPE_PRESERVED_INDEX_PATCH" ]] && return 0
+
+    local patch_file
+    patch_file=$(mktemp -t commit-sh-scope-index-XXXX.patch)
+    local excludes=()
+    while IFS= read -r exclude; do
+        [[ -n "$exclude" ]] && excludes+=("$exclude")
+    done < <(scope_path_excludes)
+
+    git diff --cached --binary -- . "${excludes[@]}" >"$patch_file" 2>/dev/null || {
+        rm -f "$patch_file"
+        return 1
+    }
+
+    COMMIT_SCOPE_PRESERVED_INDEX_PATCH="$patch_file"
+    return 0
+}
+
+scope_restore_session() {
+    [[ "$COMMIT_SCOPE_MODE" == "paths" ]] || return 0
+    [[ -n "$COMMIT_SCOPE_PRESERVED_INDEX_PATCH" ]] || return 0
+
+    local patch_file="$COMMIT_SCOPE_PRESERVED_INDEX_PATCH"
+    COMMIT_SCOPE_PRESERVED_INDEX_PATCH=""
+
+    if [[ -s "$patch_file" ]]; then
+        git apply --cached --binary "$patch_file" >/dev/null 2>&1 || {
+            rm -f "$patch_file"
+            return 1
+        }
+    fi
+
+    rm -f "$patch_file"
+    return 0
+}
+
+scope_stage_for_commit() {
     case "$COMMIT_SCOPE_MODE" in
+        paths)
+            git reset -q HEAD -- . >/dev/null 2>&1 || return 1
+            git add -A -- "${COMMIT_SCOPE_PATHS[@]}" >/dev/null 2>&1 || return 1
+            ;;
         paths|staged)
-            git add -A -- "${COMMIT_SCOPE_PATHS[@]}" >/dev/null 2>&1
+            git add -A -- "${COMMIT_SCOPE_PATHS[@]}" >/dev/null 2>&1 || return 1
             ;;
         *)
-            git add -A >/dev/null 2>&1
+            git add -A >/dev/null 2>&1 || return 1
             ;;
     esac
+    return 0
 }
 
 scope_reset_index() {
@@ -462,7 +542,7 @@ PY
 
 detect_layers() {
     local files
-    files=$(git diff --cached --name-only 2>/dev/null; git diff --name-only 2>/dev/null)
+    files=$(scope_all_names)
 
     local backend=false frontend=false
     while IFS= read -r f; do
@@ -483,7 +563,7 @@ detect_layers() {
 
 detect_type() {
     local staged
-    staged=$(git diff --cached --name-only 2>/dev/null || true)
+    staged=$(scope_cached_names || true)
 
     if echo "$staged" | grep -qE "^.*/test.*\.py$|^.*_test\.py$|^.*\.test\.(ts|tsx|js)$"; then
         echo "test"
@@ -500,7 +580,7 @@ detect_type() {
 
 generate_simple_message() {
     local changed
-    changed=$(git diff --cached --name-only 2>/dev/null || git diff --name-only)
+    changed=$(scope_all_names)
     local file_count
     file_count=$(echo "$changed" | grep -c . || true)
 
@@ -585,7 +665,7 @@ generate_ai_message() {
 cross_layer_check() {
     local warnings=""
     local backend_api
-    backend_api=$(git diff --cached --name-only | grep "^backend/app/api/" | grep -v "__init__" | grep -v "deps.py" || true)
+    backend_api=$(scope_cached_names | grep "^backend/app/api/" | grep -v "__init__" | grep -v "deps.py" || true)
 
     for f in $backend_api; do
         local route
@@ -609,7 +689,7 @@ run_quality_gates() {
     fi
 
     local output retval=0
-    if [[ "$COMMIT_SCOPE_MODE" == "staged" ]]; then
+    if [[ "$COMMIT_SCOPE_MODE" == "staged" || "$COMMIT_SCOPE_MODE" == "paths" ]]; then
         output=$(DT_CHANGED_ONLY_SCOPE=staged "$dt_cmd" --quick --changed-only 2>&1) || retval=$?
     else
         output=$("$dt_cmd" --quick --changed-only 2>&1) || retval=$?
@@ -800,11 +880,21 @@ commit_project_repo() {
     layer=$(detect_layers)
     type=$(detect_type)
 
-    scope_add_all
+    if ! scope_begin_session; then
+        emit_result "ERROR" "$repo_name" "" "" "false" "" "scope_preserve_failed"
+        return 1
+    fi
+
+    if ! scope_stage_for_commit; then
+        scope_restore_session >/dev/null 2>&1 || true
+        emit_result "ERROR" "$repo_name" "" "" "false" "" "scope_stage_failed"
+        return 1
+    fi
 
     local guard_out="" guard_status=0
     guard_out=$(run_destructive_path_guard 2>&1) || guard_status=$?
     if [[ $guard_status -ne 0 ]]; then
+        scope_restore_session >/dev/null 2>&1 || true
         emit_result "BLOCKED" "$repo_name" "" "" "false" "destructive_guard:FAIL" "destructive_path_conflict"
         if ! $JSON_OUTPUT; then
             echo "$guard_out" | sed 's/^/  /'
@@ -819,6 +909,7 @@ commit_project_repo() {
 
         if [[ $gates_status -ne 0 ]]; then
             echo "{\"timestamp\":$(date +%s),\"repo\":\"$repo_name\"}" > "$QUALITY_GATE_STATE"
+            scope_restore_session >/dev/null 2>&1 || true
             emit_result "BLOCKED" "$repo_name" "" "" "false" "checks:FAIL" ""
             if ! $JSON_OUTPUT; then
                 echo "$gates_out" | head -10 | sed 's/^/  /'
@@ -841,12 +932,17 @@ commit_project_repo() {
     commit_out=$(run_git_commit -m "$message" 2>&1) || commit_status=$?
 
     if [[ $commit_status -ne 0 ]]; then
-        scope_reset_index
         if scope_has_changes; then
-            scope_add_all
+            if ! scope_stage_for_commit; then
+                scope_restore_session >/dev/null 2>&1 || true
+                emit_result "ERROR" "$repo_name" "" "$message" "false" "$gates|hooks:FAIL" "scope_stage_failed"
+                return 1
+            fi
+            commit_status=0
             commit_out=$(run_git_commit -m "$message" 2>&1) || commit_status=$?
         fi
         if [[ $commit_status -ne 0 ]]; then
+            scope_restore_session >/dev/null 2>&1 || true
             emit_result "ERROR" "$repo_name" "" "$message" "false" "$gates|hooks:FAIL" ""
             return 1
         fi
@@ -856,9 +952,12 @@ commit_project_repo() {
     local sha
     sha=$(git rev-parse --short HEAD)
 
-    scope_reset_index
     if scope_has_changes; then
-        scope_add_all
+        if ! scope_stage_for_commit; then
+            scope_restore_session >/dev/null 2>&1 || true
+            emit_result "ERROR" "$repo_name" "$sha" "$message" "false" "$gates" "scope_stage_failed"
+            return 1
+        fi
         local followup_status=0
         run_git_commit -m "style: auto-format from pre-commit hooks" >/dev/null 2>&1 || followup_status=$?
         if [[ $followup_status -eq 0 ]]; then
@@ -875,6 +974,7 @@ commit_project_repo() {
     if $PUSH; then
         if is_main_branch "$branch" && ! $FORCE; then
             if ! safe_pull "$repo_name" "$branch"; then
+                scope_restore_session >/dev/null 2>&1 || true
                 emit_result "PARTIAL" "$repo_name" "$sha" "$message" "false" "$gates" "pull_conflict" "$LAST_PULL_DETAIL"
                 return 1
             fi
@@ -885,9 +985,15 @@ commit_project_repo() {
             pushed="true"
             capture_workflow_summary "$(git rev-parse HEAD 2>/dev/null || echo "")"
         else
+            scope_restore_session >/dev/null 2>&1 || true
             emit_result "PARTIAL" "$repo_name" "$sha" "$message" "false" "$gates" "push_failed" "$LAST_PUSH_DETAIL"
             return 1
         fi
+    fi
+
+    if ! scope_restore_session; then
+        emit_result "ERROR" "$repo_name" "$sha" "$message" "$pushed" "$gates" "scope_restore_failed"
+        return 1
     fi
 
     rm -f "$QUALITY_GATE_STATE"
@@ -922,11 +1028,21 @@ commit_config_repo() {
         return 0
     fi
 
-    scope_add_all
+    if ! scope_begin_session; then
+        emit_result "ERROR" "$repo_name" "" "" "false" "" "scope_preserve_failed"
+        return 1
+    fi
+
+    if ! scope_stage_for_commit; then
+        scope_restore_session >/dev/null 2>&1 || true
+        emit_result "ERROR" "$repo_name" "" "" "false" "" "scope_stage_failed"
+        return 1
+    fi
 
     local guard_out="" guard_status=0
     guard_out=$(run_destructive_path_guard 2>&1) || guard_status=$?
     if [[ $guard_status -ne 0 ]]; then
+        scope_restore_session >/dev/null 2>&1 || true
         emit_result "BLOCKED" "$repo_name" "" "" "false" "destructive_guard:FAIL" "destructive_path_conflict"
         if ! $JSON_OUTPUT; then
             echo "$guard_out" | sed 's/^/  /'
@@ -942,10 +1058,16 @@ commit_config_repo() {
 
     if [[ $commit_status -ne 0 ]]; then
         if scope_has_changes; then
-            scope_add_all
+            if ! scope_stage_for_commit; then
+                scope_restore_session >/dev/null 2>&1 || true
+                emit_result "ERROR" "$repo_name" "" "$message" "false" "" "scope_stage_failed"
+                return 1
+            fi
+            commit_status=0
             commit_out=$(run_git_commit -m "$message" 2>&1) || commit_status=$?
         fi
         if [[ $commit_status -ne 0 ]]; then
+            scope_restore_session >/dev/null 2>&1 || true
             emit_result "ERROR" "$repo_name" "" "$message" "false" "" ""
             return 1
         fi
@@ -957,6 +1079,7 @@ commit_config_repo() {
     if $PUSH; then
         if is_main_branch "$branch" && ! $FORCE; then
             if ! safe_pull "$repo_name" "$branch"; then
+                scope_restore_session >/dev/null 2>&1 || true
                 emit_result "PARTIAL" "$repo_name" "$sha" "$message" "false" "" "pull_conflict" "$LAST_PULL_DETAIL"
                 return 1
             fi
@@ -967,9 +1090,15 @@ commit_config_repo() {
             pushed="true"
             capture_workflow_summary "$(git rev-parse HEAD 2>/dev/null || echo "")"
         else
+            scope_restore_session >/dev/null 2>&1 || true
             emit_result "PARTIAL" "$repo_name" "$sha" "$message" "false" "" "push_failed" "$LAST_PUSH_DETAIL"
             return 1
         fi
+    fi
+
+    if ! scope_restore_session; then
+        emit_result "ERROR" "$repo_name" "$sha" "$message" "$pushed" "" "scope_restore_failed"
+        return 1
     fi
 
     emit_result "SUCCESS" "$repo_name" "$sha" "$message" "$pushed" "" ""
