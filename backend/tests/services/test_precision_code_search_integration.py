@@ -35,10 +35,13 @@ def test_create_plan_includes_precision_code_search_context() -> None:
         result = create_plan("task-1", "summitflow")
 
     prompt = mock_client_factory.return_value.complete.call_args.kwargs["messages"][0]["content"]
+    call_kwargs = mock_client_factory.return_value.complete.call_args.kwargs
     assert result["status"] == "completed"
     assert "## Precision Code Search" in prompt
     assert "Precision Code Search: symbol-first" in prompt
     assert "Use the Precision Code Search block as the first code-navigation pass." in prompt
+    assert call_kwargs["agent_slug"] == "planner"
+    assert call_kwargs["model"] == "codex/gpt-5.4"
 
 
 def test_discuss_task_includes_precision_code_search_context() -> None:

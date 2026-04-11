@@ -69,3 +69,62 @@ def test_manual_routine_upkeep_run_returns_summary(client, ensure_test_project, 
     assert payload["tasks_created"] == 2
     run_upkeep.assert_called_once()
     assert run_upkeep.call_args.kwargs["force"] is True
+
+
+def test_get_autonomous_schedules_returns_registry_state(client, ensure_test_project, mocker) -> None:
+    list_schedules = mocker.patch(
+        "app.api.autonomous.list_autonomous_schedule_states",
+        return_value=[
+            {
+                "schedule_id": "work_pickup",
+                "config_key": "work_pickup_enabled",
+                "label": "Autonomous work pickup",
+                "description": "Dispatches pending autonomous tasks.",
+                "cron": "15 */2 * * *",
+                "scope": "project",
+                "default_enabled": True,
+                "enabled": False,
+                "managed_project_id": ensure_test_project,
+            }
+        ],
+    )
+
+    response = client.get(f"/api/projects/{ensure_test_project}/autonomous/schedules")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload[0]["schedule_id"] == "work_pickup"
+    assert payload[0]["enabled"] is False
+    list_schedules.assert_called_once_with(ensure_test_project)
+
+
+def test_update_autonomous_schedule_toggles_registry_state(client, ensure_test_project, mocker) -> None:
+    update_schedule = mocker.patch(
+        "app.api.autonomous.set_autonomous_schedule_enabled",
+        return_value={
+            "schedule_id": "work_pickup",
+            "config_key": "work_pickup_enabled",
+            "label": "Autonomous work pickup",
+            "description": "Dispatches pending autonomous tasks.",
+            "cron": "15 */2 * * *",
+            "scope": "project",
+            "default_enabled": True,
+            "enabled": False,
+            "managed_project_id": ensure_test_project,
+        },
+    )
+
+    response = client.patch(
+        f"/api/projects/{ensure_test_project}/autonomous/schedules/work_pickup",
+        json={"enabled": False},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["schedule_id"] == "work_pickup"
+    assert payload["enabled"] is False
+    update_schedule.assert_called_once_with(
+        ensure_test_project,
+        "work_pickup",
+        enabled=False,
+    )

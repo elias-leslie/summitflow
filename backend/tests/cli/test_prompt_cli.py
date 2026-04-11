@@ -9,7 +9,13 @@ from typer.testing import CliRunner
 
 from cli._output_state import set_compact_output
 from cli.commands.prompt import app
-from cli.commands.prompt_formatters import format_prompt_restored, format_prompt_revisions
+from cli.commands.prompt_formatters import (
+    format_prompt_detail,
+    format_prompt_list,
+    format_prompt_measure,
+    format_prompt_restored,
+    format_prompt_revisions,
+)
 
 runner = CliRunner()
 
@@ -110,8 +116,100 @@ class TestPromptHistoryCommands:
             },
         )
 
+    def test_measure_fetches_current_prompt_when_no_candidate_file(self) -> None:
+        with patch(
+            "cli.commands.prompt.prompt_api",
+            return_value={"content": "Keep signal, cut filler.\n"},
+        ) as mock_prompt_api:
+            result = runner.invoke(app, ["measure", "persona-heartbeat-instructions"])
+
+        assert result.exit_code == 0
+        mock_prompt_api.assert_called_once_with("GET", "/persona-heartbeat-instructions")
+
+    def test_measure_reads_candidate_file_when_provided(self, tmp_path: Path) -> None:
+        candidate_file = tmp_path / "prompt.md"
+        candidate_file.write_text("Compressed wording.\n", encoding="utf-8")
+
+        with patch(
+            "cli.commands.prompt.prompt_api",
+            return_value={"content": "Keep signal, cut filler.\n"},
+        ) as mock_prompt_api:
+            result = runner.invoke(
+                app,
+                ["measure", "persona-heartbeat-instructions", "--file", str(candidate_file)],
+            )
+
+        assert result.exit_code == 0
+        mock_prompt_api.assert_called_once_with("GET", "/persona-heartbeat-instructions")
+
 
 class TestPromptHistoryFormatters:
+    def test_format_prompt_list_compact_shows_enabled_state(self, capsys) -> None:
+        set_compact_output(True)
+        try:
+            format_prompt_list(
+                [
+                    {
+                        "slug": "caveman-output-directive",
+                        "name": "Caveman Output Directive",
+                        "is_global": True,
+                        "enabled": False,
+                        "content": "Terse like caveman.\n",
+                    }
+                ]
+            )
+        finally:
+            set_compact_output(False)
+
+        captured = capsys.readouterr().out
+        assert "PROMPTS[1]" in captured
+        assert "caveman-output-directive" in captured
+        assert "Y N 1L" in captured
+
+    def test_format_prompt_detail_compact_shows_enabled_state(self, capsys) -> None:
+        set_compact_output(True)
+        try:
+            format_prompt_detail(
+                {
+                    "slug": "caveman-output-directive",
+                    "name": "Caveman Output Directive",
+                    "is_global": True,
+                    "enabled": False,
+                    "content": "Terse like caveman.\n",
+                }
+            )
+        finally:
+            set_compact_output(False)
+
+        captured = capsys.readouterr().out
+        assert "PROMPT:caveman-output-directive|Caveman Output Directive|Y|N|1L" in captured
+        assert "Terse like caveman." in captured
+
+    def test_format_prompt_measure_compact_current_only(self, capsys) -> None:
+        set_compact_output(True)
+        try:
+            format_prompt_measure("persona-heartbeat-instructions", "Keep signal, cut filler.\n")
+        finally:
+            set_compact_output(False)
+
+        captured = capsys.readouterr().out
+        assert "PROMPT_MEASURE:persona-heartbeat-instructions|chars=25|lines=1|tokens=6" in captured
+
+    def test_format_prompt_measure_compact_with_candidate_delta(self, capsys) -> None:
+        set_compact_output(True)
+        try:
+            format_prompt_measure(
+                "persona-heartbeat-instructions",
+                "Keep signal, cut filler.\n",
+                "Cut filler.\n",
+            )
+        finally:
+            set_compact_output(False)
+
+        captured = capsys.readouterr().out
+        assert "PROMPT_MEASURE:persona-heartbeat-instructions" in captured
+        assert "|current=6tok/1L/25c|candidate=3tok/1L/12c|delta=-3tok/0L/-13c" in captured
+
     def test_format_prompt_revisions_compact(self, capsys) -> None:
         set_compact_output(True)
         try:

@@ -77,6 +77,7 @@ def build_payload(
     memory_group_id: str | None, working_dir: str | None,
     session_id: str | None, thinking_level: str | None,
     trace_id: str | None, use_memory: bool, execute_tools: bool,
+    task_type: str | None,
     max_turns: int, stream: bool, include_roles: list[str] | None,
     images: list[str] | None = None,
 ) -> dict[str, Any]:
@@ -95,11 +96,11 @@ def build_payload(
         ("agent_slug", agent_slug), ("memory_group_id", memory_group_id),
         ("working_dir", working_dir), ("session_id", session_id),
         ("thinking_level", thinking_level), ("trace_id", trace_id),
+        ("task_type", task_type),
     ]:
         if val:
             payload[key] = val
-    if use_memory:
-        payload["use_memory"] = True
+    payload["use_memory"] = use_memory
     if execute_tools:
         payload["execute_tools"] = True
     if max_turns > 1:
@@ -190,6 +191,7 @@ def call_complete(
     thinking_level: str | None = None, max_turns: int = 1,
     stream: bool = False, trace_id: str | None = None,
     include_roles: list[str] | None = None,
+    task_type: str | None = None,
     images: list[str] | None = None,
 ) -> dict[str, Any]:
     """Call /api/complete endpoint."""
@@ -198,7 +200,7 @@ def call_complete(
     headers = build_headers(client_id, request_source, source_client, skip_cache)
     payload = build_payload(
         message, project_id, agent_slug, memory_group_id, working_dir,
-        session_id, thinking_level, trace_id, use_memory, execute_tools,
+        session_id, thinking_level, trace_id, use_memory, execute_tools, task_type,
         max_turns, stream, include_roles, images,
     )
     read_timeout = timeout

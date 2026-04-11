@@ -9,6 +9,10 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from ..services.autonomous_schedule_registry import (
+    list_autonomous_schedule_states,
+    set_autonomous_schedule_enabled,
+)
 from ..storage import maintenance_runs as maintenance_store
 from ..tasks.autonomous.upkeep import (
     ROUTINE_UPKEEP_WORKFLOW,
@@ -82,6 +86,26 @@ class RoutineUpkeepStatusResponse(BaseModel):
     settings: RoutineUpkeepSettingsResponse
     latest: RoutineUpkeepHistoryRun | None = None
     recent: list[RoutineUpkeepHistoryRun] = Field(default_factory=list)
+
+
+class AutonomousScheduleResponse(BaseModel):
+    """UI-manageable scheduled workflow metadata."""
+
+    schedule_id: str
+    config_key: str
+    label: str
+    description: str
+    cron: str
+    scope: str
+    default_enabled: bool
+    enabled: bool
+    managed_project_id: str
+
+
+class AutonomousScheduleUpdate(BaseModel):
+    """Enable/disable payload for a single schedule."""
+
+    enabled: bool
 
 
 def _make_dispatch_callback() -> Any:
@@ -160,6 +184,31 @@ async def get_upkeep_status(project_id: str) -> RoutineUpkeepStatusResponse:
         latest=recent[0] if recent else None,
         recent=recent,
     )
+
+
+@router.get("/{project_id}/autonomous/schedules", response_model=list[AutonomousScheduleResponse])
+async def get_autonomous_schedules(project_id: str) -> list[AutonomousScheduleResponse]:
+    """List every SummitFlow schedule with its current enablement source."""
+    validate_project_exists(project_id)
+    return [AutonomousScheduleResponse(**item) for item in list_autonomous_schedule_states(project_id)]
+
+
+@router.patch(
+    "/{project_id}/autonomous/schedules/{schedule_id}",
+    response_model=AutonomousScheduleResponse,
+)
+async def update_autonomous_schedule(
+    project_id: str,
+    schedule_id: str,
+    update: AutonomousScheduleUpdate,
+) -> AutonomousScheduleResponse:
+    """Enable or disable a single SummitFlow scheduled workflow."""
+    validate_project_exists(project_id)
+    try:
+        payload = set_autonomous_schedule_enabled(project_id, schedule_id, enabled=update.enabled)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Unknown autonomous schedule '{schedule_id}'") from exc
+    return AutonomousScheduleResponse(**payload)
 
 
 @router.post("/{project_id}/autonomous/upkeep/run", response_model=RoutineUpkeepRunResponse)

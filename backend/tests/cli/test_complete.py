@@ -89,3 +89,29 @@ def test_complete_explicit_working_dir_wins_over_cwd_default(tmp_path: Path) -> 
 
     assert result.exit_code == 0
     assert mock_call.call_args.args[7] == explicit
+
+
+def test_complete_supports_no_memory_flag() -> None:
+    with patch("cli.commands.complete.call_complete") as mock_call:
+        mock_call.return_value = {"content": "ok"}
+
+        result = runner.invoke(
+            app,
+            ["--agent", "persona", "--no-memory", "--message", "Lean run"],
+        )
+
+    assert result.exit_code == 0
+    assert mock_call.call_args.args[4] is False
+
+
+def test_complete_forwards_task_type() -> None:
+    with patch("cli.commands.complete.call_complete") as mock_call:
+        mock_call.return_value = {"content": "ok"}
+
+        result = runner.invoke(
+            app,
+            ["--agent", "persona", "--task-type", "heartbeat", "--message", "Lean run"],
+        )
+
+    assert result.exit_code == 0
+    assert mock_call.call_args.args[16] == "heartbeat"

@@ -147,6 +147,7 @@ CLAUDE:
   claude task <task-id> [--feedback-text X|--feedback-file path] [--timeout-seconds N]
 
 PROMPT: prompt list [--global] | get <slug> | create <slug> <name> -f path | update <slug> -f path [--enabled/--disabled] [--change-reason X] | delete <slug>
+        prompt measure <slug> [-f path]
         prompt revisions <slug> [--limit N] | restore <slug> <revision-id> [--change-reason X]
         prompt assign <agent> <prompt> <role> [-p N] | unassign <agent> <prompt> | assignments <agent>
         prompt export [slug] [-o file] | import <file> [--dry-run]

@@ -247,3 +247,19 @@ export interface RoutineUpkeepRunResult {
   source_errors: Record<string, string>
   reason?: string | null
 }
+
+export interface AutonomousSchedule {
+  schedule_id: string
+  config_key: string
+  label: string
+  description: string
+  cron: string
+  scope: 'project' | 'system'
+  default_enabled: boolean
+  enabled: boolean
+  managed_project_id: string
+}
+
+export interface AutonomousScheduleUpdate {
+  enabled: boolean
+}

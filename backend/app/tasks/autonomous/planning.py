@@ -22,6 +22,7 @@ from .planning_routing import route_based_on_complexity, supervisor_validate_pla
 from .planning_storage import save_plan_to_database
 
 logger = get_logger(__name__)
+AUTONOMOUS_PLANNER_MODEL = "codex/gpt-5.4"
 
 
 def _build_planning_prompt(title: str, description: str, precision_context: str = "") -> str:
@@ -211,6 +212,7 @@ def create_plan(task_id: str, project_id: str) -> dict[str, Any]:
             messages=[{"role": "user", "content": prompt}],
             project_id=project_id,
             agent_slug="planner",
+            model=AUTONOMOUS_PLANNER_MODEL,
         )
 
         plan_data = apply_execution_contract_defaults(task, _parse_plan_response(response.content))

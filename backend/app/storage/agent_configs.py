@@ -36,6 +36,18 @@ class AgentConfig(TypedDict, total=False):
     upkeep_enabled: bool  # Enable routine upkeep signal discovery/routing
     upkeep_frequency_minutes: int  # How often routine upkeep may run
     upkeep_batch_limit: int  # Max tasks a routine upkeep cycle creates/dispatches
+    work_pickup_enabled: bool  # Enable scheduled autonomous work pickup
+    task_generation_enabled: bool  # Enable scheduled routine upkeep cron entrypoint
+    reset_claims_enabled: bool  # Enable scheduled claim reset sweeps
+    scan_projects_enabled: bool  # Enable scheduled project scans
+    refresh_precision_indexes_enabled: bool  # Enable scheduled precision index refresh
+    scheduled_backups_enabled: bool  # Enable scheduled backup creation
+    stale_cleanup_enabled: bool  # Enable scheduled stale cleanup jobs
+    self_healing_enabled: bool  # Enable scheduled self-healing orchestrator
+    prod_smoke_test_enabled: bool  # Enable scheduled production smoke tests
+    health_monitor_enabled: bool  # Enable scheduled health monitor checks
+    pending_drain_enabled: bool  # Enable scheduled backup drain
+    restore_tests_enabled: bool  # Enable scheduled restore verification
     autonomous_max_tasks_per_day: int | None  # Max tasks per day
     autonomous_cooldown_minutes: int  # Gap between autonomous dispatches
     autonomous_allowed_types: list[str] | None  # Allowed task types
@@ -70,6 +82,18 @@ DEFAULT_AGENT_CONFIG: AgentConfig = {
     "upkeep_enabled": False,
     "upkeep_frequency_minutes": 120,
     "upkeep_batch_limit": 5,
+    "work_pickup_enabled": True,
+    "task_generation_enabled": True,
+    "reset_claims_enabled": True,
+    "scan_projects_enabled": True,
+    "refresh_precision_indexes_enabled": True,
+    "scheduled_backups_enabled": True,
+    "stale_cleanup_enabled": True,
+    "self_healing_enabled": True,
+    "prod_smoke_test_enabled": True,
+    "health_monitor_enabled": True,
+    "pending_drain_enabled": True,
+    "restore_tests_enabled": True,
     "autonomous_max_tasks_per_day": None,
     "autonomous_cooldown_minutes": 0,
     "autonomous_allowed_types": None,

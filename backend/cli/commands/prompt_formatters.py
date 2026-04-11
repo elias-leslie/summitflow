@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services.context_gatherer.token_utils import estimate_tokens
+
 from ..output import is_compact, output_json
 
 
@@ -12,13 +14,23 @@ def line_count(content: str) -> int:
     return content.count("\n") + (1 if content and not content.endswith("\n") else 0)
 
 
+def _measure_payload(content: str) -> dict[str, int]:
+    """Build prompt measurement stats."""
+    return {
+        "chars": len(content),
+        "lines": line_count(content),
+        "tokens": estimate_tokens(content),
+    }
+
+
 def print_prompt_row(p: dict[str, Any]) -> None:
     """Print compact single-line prompt info."""
     slug = p["slug"]
     name = p["name"]
     g = "Y" if p.get("is_global") else "N"
+    e = "Y" if p.get("enabled", True) else "N"
     lines = line_count(p.get("content", ""))
-    print(f"  {slug:<20s} {name:<24s} {g}   {lines}L")
+    print(f"  {slug:<20s} {name:<24s} {g} {e} {lines}L")
 
 
 def format_prompt_list(prompts: list[dict[str, Any]]) -> None:
@@ -35,8 +47,9 @@ def format_prompt_detail(p: dict[str, Any]) -> None:
     """Format and print single prompt detail."""
     if is_compact():
         g = "Y" if p.get("is_global") else "N"
+        e = "Y" if p.get("enabled", True) else "N"
         lines = line_count(p.get("content", ""))
-        print(f"PROMPT:{p['slug']}|{p['name']}|{g}|{lines}L")
+        print(f"PROMPT:{p['slug']}|{p['name']}|{g}|{e}|{lines}L")
         print(p.get("content", ""))
     else:
         output_json(p)
@@ -120,3 +133,31 @@ def format_prompt_restored(slug: str, revision_id: str, prompt_data: dict[str, A
         print(f"PROMPT_RESTORED:{slug}:rev={revision_id[:8]}|{lines}L|updated_at={updated_at}")
     else:
         output_json(prompt_data)
+
+
+def format_prompt_measure(slug: str, current_content: str, candidate_content: str | None = None) -> None:
+    """Format and print prompt token measurement."""
+    current = _measure_payload(current_content)
+    if candidate_content is None:
+        if is_compact():
+            print(
+                f"PROMPT_MEASURE:{slug}|chars={current['chars']}|lines={current['lines']}|tokens={current['tokens']}"
+            )
+        else:
+            output_json({"slug": slug, "current": current})
+        return
+
+    candidate = _measure_payload(candidate_content)
+    delta = {
+        "chars": candidate["chars"] - current["chars"],
+        "lines": candidate["lines"] - current["lines"],
+        "tokens": candidate["tokens"] - current["tokens"],
+    }
+    if is_compact():
+        print(
+            f"PROMPT_MEASURE:{slug}|current={current['tokens']}tok/{current['lines']}L/{current['chars']}c"
+            f"|candidate={candidate['tokens']}tok/{candidate['lines']}L/{candidate['chars']}c"
+            f"|delta={delta['tokens']}tok/{delta['lines']}L/{delta['chars']}c"
+        )
+    else:
+        output_json({"slug": slug, "current": current, "candidate": candidate, "delta": delta})

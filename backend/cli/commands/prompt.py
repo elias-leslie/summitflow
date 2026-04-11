@@ -18,6 +18,7 @@ from .prompt_formatters import (
     format_deleted,
     format_prompt_detail,
     format_prompt_list,
+    format_prompt_measure,
     format_prompt_restored,
     format_prompt_revisions,
     format_unassigned,
@@ -137,6 +138,22 @@ def restore_prompt(
         tool_name="st prompt restore",
     )
     format_prompt_restored(slug, revision_id, result)
+
+
+@app.command("measure")
+def measure_prompt(
+    slug: Annotated[str, typer.Argument(help="Prompt slug")],
+    file: Annotated[Path | None, typer.Option("-f", "--file", help="Candidate content file")] = None,
+) -> None:
+    prompt_data = prompt_api("GET", f"/{slug}")
+    current_content = prompt_data.get("content", "")
+    candidate_content: str | None = None
+    if file is not None:
+        if not file.exists():
+            output_error(f"File not found: {file}")
+            raise typer.Exit(1)
+        candidate_content = file.read_text()
+    format_prompt_measure(slug, current_content, candidate_content)
 
 
 @app.command("delete")

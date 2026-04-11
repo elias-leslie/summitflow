@@ -3,10 +3,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ExternalLink, Loader2, Shield } from 'lucide-react'
 import {
+  getAutonomousSchedules,
   getAutonomousSettings,
   getRoutineUpkeepStatus,
   runRoutineUpkeep,
+  updateAutonomousSchedule,
 } from '@/lib/api'
+import { AutomationSchedulesSection } from './AutomationSchedulesSection'
 import { ExecutionControlSection } from './ExecutionControlSection'
 import { RoutineUpkeepSection } from './RoutineUpkeepSection'
 import { TaskFilteringSection } from './TaskFilteringSection'
@@ -32,11 +35,29 @@ export function AutonomousSettingsPanel({
     queryKey: ['routine-upkeep-status', projectId],
     queryFn: () => getRoutineUpkeepStatus(projectId),
   })
+  const { data: schedules = [] } = useQuery({
+    queryKey: ['autonomous-schedules', projectId],
+    queryFn: () => getAutonomousSchedules(projectId),
+  })
   const upkeepRun = useMutation({
     mutationFn: () => runRoutineUpkeep(projectId),
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ['routine-upkeep-status', projectId],
+      })
+    },
+  })
+  const scheduleMutation = useMutation({
+    mutationFn: ({
+      scheduleId,
+      enabled,
+    }: {
+      scheduleId: string
+      enabled: boolean
+    }) => updateAutonomousSchedule(projectId, scheduleId, { enabled }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ['autonomous-schedules', projectId],
       })
     },
   })
@@ -93,6 +114,22 @@ export function AutonomousSettingsPanel({
         onMaxTasksPerDayChange={handlers.handleMaxTasksPerDayChange}
         onCooldownChange={handlers.handleCooldownChange}
         onFrequencyChange={handlers.handleFrequencyChange}
+      />
+
+      <AutomationSchedulesSection
+        projectId={projectId}
+        schedules={schedules}
+        updatingScheduleId={
+          scheduleMutation.isPending
+            ? scheduleMutation.variables?.scheduleId ?? null
+            : null
+        }
+        onToggle={(schedule) =>
+          scheduleMutation.mutate({
+            scheduleId: schedule.schedule_id,
+            enabled: !schedule.enabled,
+          })
+        }
       />
 
       <RoutineUpkeepSection

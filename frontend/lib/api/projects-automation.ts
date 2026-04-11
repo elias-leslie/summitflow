@@ -5,6 +5,8 @@
  */
 
 import type {
+  AutonomousSchedule,
+  AutonomousScheduleUpdate,
   AutonomousExecutionSettings,
   AutonomousExecutionSettingsUpdate,
   RoutineUpkeepRunResult,
@@ -46,5 +48,25 @@ export async function runRoutineUpkeep(
     `/api/projects/${projectId}/autonomous/upkeep/run`,
     {},
     'Failed to run routine upkeep',
+  )
+}
+
+export async function getAutonomousSchedules(
+  projectId: string,
+): Promise<AutonomousSchedule[]> {
+  return fetchWithErrorHandling(`/api/projects/${projectId}/autonomous/schedules`, {
+    errorMessage: 'Failed to fetch autonomous schedules',
+  })
+}
+
+export async function updateAutonomousSchedule(
+  projectId: string,
+  scheduleId: string,
+  update: AutonomousScheduleUpdate,
+): Promise<AutonomousSchedule> {
+  return patchJson(
+    `/api/projects/${projectId}/autonomous/schedules/${scheduleId}`,
+    update,
+    'Failed to update autonomous schedule',
   )
 }
