@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -10,6 +11,23 @@ from pathlib import Path
 def _write_executable(path: Path, content: str) -> None:
     path.write_text(content)
     path.chmod(0o755)
+
+
+def _init_git_repo(path: Path) -> None:
+    subprocess.run(["git", "init", "-b", "main"], check=True, cwd=path, capture_output=True, text=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], check=True, cwd=path, capture_output=True, text=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        check=True,
+        cwd=path,
+        capture_output=True,
+        text=True,
+    )
+
+
+def _commit_all(path: Path, message: str) -> None:
+    subprocess.run(["git", "add", "-A"], check=True, cwd=path, capture_output=True, text=True)
+    subprocess.run(["git", "commit", "-m", message], check=True, cwd=path, capture_output=True, text=True)
 
 
 def test_commit_sh_capture_workflow_summary_reports_recent_runs(tmp_path: Path) -> None:
@@ -152,14 +170,14 @@ git() {{
 source "{script_path}"
 run_git_commit -m "Test commit"
 """
-    subprocess.run(
-        ["bash", "-lc", command],
-        check=True,
+    result = subprocess.run(
+        ["bash", "--noprofile", "--norc", "-c", command],
         capture_output=True,
         text=True,
         env=env,
         cwd=tmp_path,
     )
+    assert result.returncode == 0, result.stdout + result.stderr
 
     logged = log_path.read_text().splitlines()
     assert logged == [
@@ -168,3 +186,147 @@ run_git_commit -m "Test commit"
         "Elias Leslie",
         "56698332+elias-leslie@users.noreply.github.com",
     ]
+
+
+def test_commit_sh_respects_pre_staged_subset_and_scopes_dt_changed_only(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "backend").mkdir()
+    (repo / "backend" / "scoped.py").write_text("print('old scoped')\n")
+    (repo / "backend" / "other.py").write_text("print('old other')\n")
+    _init_git_repo(repo)
+    _commit_all(repo, "initial")
+
+    (repo / "backend" / "scoped.py").write_text("print('new scoped')\n")
+    (repo / "backend" / "other.py").write_text("print('new other')\n")
+    subprocess.run(["git", "add", "backend/scoped.py"], check=True, cwd=repo, capture_output=True, text=True)
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    dt_scope_log = tmp_path / "dt-scope.log"
+    _write_executable(
+        fake_bin / "dt",
+        """#!/usr/bin/env bash
+printf '%s\n' "${DT_CHANGED_ONLY_SCOPE:-unset}" >> "$DT_SCOPE_LOG"
+echo "CHECK_RESULT:OK"
+""",
+    )
+
+    repo_root = Path(__file__).resolve().parents[3]
+    script_path = repo_root / "scripts" / "commit.sh"
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}:{env['PATH']}"
+    env["COMMIT_SH_SOURCE_ONLY"] = "1"
+    env["DT_SCOPE_LOG"] = str(dt_scope_log)
+    env["GIT_AUTHOR_NAME"] = "Test User"
+    env["GIT_AUTHOR_EMAIL"] = "test@example.com"
+    env.pop("BASH_ENV", None)
+    env.pop("ENV", None)
+
+    command = f"""
+source {shlex.quote(str(script_path))}
+PUSH=false
+run_destructive_path_guard() {{ return 0; }}
+cross_layer_check() {{ return 0; }}
+generate_ai_message() {{ echo "test: staged subset"; }}
+run_git_commit() {{ command git commit --no-verify "$@"; }}
+commit_project_repo {shlex.quote(str(repo))}
+"""
+    result = subprocess.run(
+        ["bash", "--noprofile", "--norc", "-c", command],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=tmp_path,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    head_files = subprocess.run(
+        ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+        cwd=repo,
+    ).stdout.splitlines()
+    assert head_files == ["backend/scoped.py"]
+
+    status_lines = subprocess.run(
+        ["git", "status", "--short"],
+        check=True,
+        capture_output=True,
+        text=True,
+        cwd=repo,
+    ).stdout.splitlines()
+    assert status_lines == [" M backend/other.py"]
+    assert dt_scope_log.read_text().splitlines() == ["staged"]
+
+
+def test_commit_sh_preserves_whole_repo_behavior_without_pre_staged_subset(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "backend").mkdir()
+    (repo / "backend" / "first.py").write_text("print('old first')\n")
+    (repo / "backend" / "second.py").write_text("print('old second')\n")
+    _init_git_repo(repo)
+    _commit_all(repo, "initial")
+
+    (repo / "backend" / "first.py").write_text("print('new first')\n")
+    (repo / "backend" / "second.py").write_text("print('new second')\n")
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    dt_scope_log = tmp_path / "dt-scope.log"
+    _write_executable(
+        fake_bin / "dt",
+        """#!/usr/bin/env bash
+printf '%s\n' "${DT_CHANGED_ONLY_SCOPE:-unset}" >> "$DT_SCOPE_LOG"
+echo "CHECK_RESULT:OK"
+""",
+    )
+
+    repo_root = Path(__file__).resolve().parents[3]
+    script_path = repo_root / "scripts" / "commit.sh"
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}:{env['PATH']}"
+    env["COMMIT_SH_SOURCE_ONLY"] = "1"
+    env["DT_SCOPE_LOG"] = str(dt_scope_log)
+    env["GIT_AUTHOR_NAME"] = "Test User"
+    env["GIT_AUTHOR_EMAIL"] = "test@example.com"
+    env.pop("BASH_ENV", None)
+    env.pop("ENV", None)
+
+    command = f"""
+source {shlex.quote(str(script_path))}
+PUSH=false
+run_destructive_path_guard() {{ return 0; }}
+cross_layer_check() {{ return 0; }}
+generate_ai_message() {{ echo "test: whole repo"; }}
+run_git_commit() {{ command git commit --no-verify "$@"; }}
+commit_project_repo {shlex.quote(str(repo))}
+"""
+    result = subprocess.run(
+        ["bash", "-lc", command],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=tmp_path,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    head_files = subprocess.run(
+        ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+        cwd=repo,
+    ).stdout.splitlines()
+    assert head_files == ["backend/first.py", "backend/second.py"]
+
+    status_output = subprocess.run(
+        ["git", "status", "--short"],
+        check=True,
+        capture_output=True,
+        text=True,
+        cwd=repo,
+    ).stdout.strip()
+    assert status_output == ""

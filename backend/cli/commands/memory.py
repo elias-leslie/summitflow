@@ -8,6 +8,7 @@ from typing import Annotated
 
 import typer
 
+from .compactness import warn_memory_compactness
 from .memory_commands import (
     batch_tier_impl,
     cleanup_impl,
@@ -196,6 +197,7 @@ def save(
     """Save a learning to the memory system."""
     resolved_content = _resolve_and_validate_save(summary, content, content_file)
     assert summary is not None
+    warn_memory_compactness(summary, resolved_content)
     save_impl(
         ctx.obj, resolved_content, summary, tier, confidence, context, pinned,
         trigger_types, trigger_phases, context_kind, consumer_profiles,
@@ -285,6 +287,8 @@ def update(
 ) -> None:
     """Update an episode in place (content/tier and properties)."""
     resolved_content = _resolve_content(content, content_file, require_value=False)
+    if resolved_content is not None:
+        warn_memory_compactness(uuid, resolved_content)
     update_impl(
         uuid, resolved_content, tier, summary, trigger_types, trigger_phases,
         pinned, context_kind, consumer_profiles, exclude_consumer_profiles,

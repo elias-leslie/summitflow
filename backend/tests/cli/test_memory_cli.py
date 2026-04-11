@@ -152,6 +152,28 @@ class TestMemorySaveContentInput:
         assert args[1] == "**Quality Checks**: Use dt for all quality checks.\n"
         assert args[8:16] == (None, None, None, None, None, None, None, None)
 
+    def test_save_warns_on_memory_compactness(self) -> None:
+        with (
+            patch("cli.commands.memory.warn_memory_compactness") as mock_warn,
+            patch("cli.commands.memory.save_impl") as mock_save_impl,
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "save",
+                    "**Quality Checks**: Use dt for all quality checks.\n",
+                    "--summary",
+                    "Use dt for checks",
+                ],
+            )
+
+        assert result.exit_code == 0
+        mock_warn.assert_called_once_with(
+            "Use dt for checks",
+            "**Quality Checks**: Use dt for all quality checks.\n",
+        )
+        mock_save_impl.assert_called_once()
+
     def test_save_rejects_inline_and_file_content_together(self, tmp_path: Path) -> None:
         """`save` should reject inline content combined with --content-file."""
         content_file = tmp_path / "episode.md"
@@ -333,6 +355,28 @@ class TestMemoryTagOptions:
             False,
             None,
         )
+
+    def test_update_warns_on_memory_compactness_when_content_changes(self) -> None:
+        with (
+            patch("cli.commands.memory.warn_memory_compactness") as mock_warn,
+            patch("cli.commands.memory.update_impl") as mock_update_impl,
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "update",
+                    "abc12345",
+                    "--content",
+                    "**Quality Checks**: Use dt for all quality checks.\n",
+                ],
+            )
+
+        assert result.exit_code == 0
+        mock_warn.assert_called_once_with(
+            "abc12345",
+            "**Quality Checks**: Use dt for all quality checks.\n",
+        )
+        mock_update_impl.assert_called_once()
 
     def test_save_forwards_context_routing_to_impl(self) -> None:
         """`st memory save` should wire new routing controls through the public CLI."""

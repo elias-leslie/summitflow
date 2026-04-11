@@ -255,12 +255,18 @@ run_cleanroom_command() {
 get_changed_files() {
     local ext_pattern="$1"
     local base_dir="${2:-$PROJECT_DIR}"
+    local changed_scope="${DT_CHANGED_ONLY_SCOPE:-all}"
 
-    # Get staged, unstaged, and untracked files.
+    # Changed-only checks normally include staged, unstaged, and untracked files.
+    # commit.sh can narrow this to the staged subset to protect scoped commits.
     (
-        git -C "$base_dir" diff --name-only HEAD 2>/dev/null
-        git -C "$base_dir" diff --name-only --cached 2>/dev/null
-        git -C "$base_dir" ls-files --others --exclude-standard 2>/dev/null
+        if [[ "$changed_scope" == "staged" ]]; then
+            git -C "$base_dir" diff --name-only --cached 2>/dev/null
+        else
+            git -C "$base_dir" diff --name-only HEAD 2>/dev/null
+            git -C "$base_dir" diff --name-only --cached 2>/dev/null
+            git -C "$base_dir" ls-files --others --exclude-standard 2>/dev/null
+        fi
     ) | grep -E "\.($ext_pattern)$" | sort -u | while read -r file; do
         # Return full path if file exists
         local full_path="$base_dir/$file"

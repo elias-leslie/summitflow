@@ -42,6 +42,8 @@ CUSTOM_MSG=""
 JSON_OUTPUT=false
 TASK_ID=""
 COMMIT_PATHS=()
+COMMIT_SCOPE_MODE="all"
+COMMIT_SCOPE_PATHS=()
 LAST_STATUS=""
 JSON_RESULTS=()
 LAST_PUSH_DETAIL=""
@@ -95,12 +97,44 @@ has_commit_scope() {
     [[ ${#COMMIT_PATHS[@]} -gt 0 ]]
 }
 
-scope_status() {
+set_commit_scope() {
+    COMMIT_SCOPE_MODE="$1"
+    shift || true
+    COMMIT_SCOPE_PATHS=("$@")
+}
+
+prepare_commit_scope() {
     if has_commit_scope; then
-        git status --porcelain -- "${COMMIT_PATHS[@]}" 2>/dev/null
-    else
-        git status --porcelain 2>/dev/null
+        set_commit_scope "paths" "${COMMIT_PATHS[@]}"
+        return 0
     fi
+
+    local staged_paths=()
+    while IFS= read -r path; do
+        [[ -n "$path" ]] && staged_paths+=("$path")
+    done < <(git diff --cached --name-only 2>/dev/null || true)
+
+    if [[ ${#staged_paths[@]} -gt 0 ]]; then
+        set_commit_scope "staged" "${staged_paths[@]}"
+        return 0
+    fi
+
+    set_commit_scope "all"
+    return 0
+}
+
+scope_status() {
+    case "$COMMIT_SCOPE_MODE" in
+        paths)
+            git status --porcelain -- "${COMMIT_SCOPE_PATHS[@]}" 2>/dev/null
+            ;;
+        staged)
+            git diff --cached --name-status -- "${COMMIT_SCOPE_PATHS[@]}" 2>/dev/null
+            ;;
+        *)
+            git status --porcelain 2>/dev/null
+            ;;
+    esac
 }
 
 scope_has_changes() {
@@ -108,17 +142,22 @@ scope_has_changes() {
 }
 
 scope_add_all() {
-    if has_commit_scope; then
-        git add -A -- "${COMMIT_PATHS[@]}" >/dev/null 2>&1
-    else
-        git add -A >/dev/null 2>&1
-    fi
+    case "$COMMIT_SCOPE_MODE" in
+        paths|staged)
+            git add -A -- "${COMMIT_SCOPE_PATHS[@]}" >/dev/null 2>&1
+            ;;
+        *)
+            git add -A >/dev/null 2>&1
+            ;;
+    esac
 }
 
 scope_reset_index() {
-    if has_commit_scope; then
-        git reset -q HEAD -- . >/dev/null 2>&1 || true
-    fi
+    case "$COMMIT_SCOPE_MODE" in
+        paths|staged)
+            git reset -q HEAD -- "${COMMIT_SCOPE_PATHS[@]}" >/dev/null 2>&1 || true
+            ;;
+    esac
 }
 
 is_project_repo() {
@@ -570,7 +609,11 @@ run_quality_gates() {
     fi
 
     local output retval=0
-    output=$("$dt_cmd" --quick --changed-only 2>&1) || retval=$?
+    if [[ "$COMMIT_SCOPE_MODE" == "staged" ]]; then
+        output=$(DT_CHANGED_ONLY_SCOPE=staged "$dt_cmd" --quick --changed-only 2>&1) || retval=$?
+    else
+        output=$("$dt_cmd" --quick --changed-only 2>&1) || retval=$?
+    fi
 
     if echo "$output" | grep -q "CHECK_RESULT:OK"; then
         return 0
@@ -733,6 +776,7 @@ commit_project_repo() {
 
     cd "$repo" || return 1
     clear_workflow_summary
+    prepare_commit_scope
 
     local branch file_count
     branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
@@ -858,6 +902,7 @@ commit_config_repo() {
 
     cd "$repo" || return 1
     clear_workflow_summary
+    prepare_commit_scope
 
     local branch file_count
     branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")

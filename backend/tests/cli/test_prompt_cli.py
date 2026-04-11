@@ -116,6 +116,39 @@ class TestPromptHistoryCommands:
             },
         )
 
+    def test_create_warns_on_compactness_before_submit(self, tmp_path: Path) -> None:
+        content_file = tmp_path / "prompt.md"
+        content_file.write_text("Keep signal, cut filler.\n", encoding="utf-8")
+
+        with (
+            patch("cli.commands.prompt.warn_prompt_compactness") as mock_warn,
+            patch("cli.commands.prompt.prompt_api", return_value={"slug": "lean-prompt"}) as mock_prompt_api,
+        ):
+            result = runner.invoke(
+                app,
+                ["create", "lean-prompt", "Lean Prompt", "--file", str(content_file)],
+            )
+
+        assert result.exit_code == 0
+        mock_warn.assert_called_once_with("lean-prompt", "Keep signal, cut filler.\n")
+        mock_prompt_api.assert_called_once()
+
+    def test_measure_warns_for_measured_content(self) -> None:
+        with (
+            patch("cli.commands.prompt.warn_prompt_compactness") as mock_warn,
+            patch(
+                "cli.commands.prompt.prompt_api",
+                return_value={"content": "Keep signal, cut filler.\n"},
+            ),
+        ):
+            result = runner.invoke(app, ["measure", "persona-heartbeat-instructions"])
+
+        assert result.exit_code == 0
+        mock_warn.assert_called_once_with(
+            "persona-heartbeat-instructions",
+            "Keep signal, cut filler.\n",
+        )
+
     def test_measure_fetches_current_prompt_when_no_candidate_file(self) -> None:
         with patch(
             "cli.commands.prompt.prompt_api",

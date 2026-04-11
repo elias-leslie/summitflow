@@ -10,6 +10,7 @@ import typer
 from ..output import output_error
 from ._api_paths import PROMPT_RESTORE_PATH, PROMPT_REVISIONS_PATH
 from .memory_options import ChangeReasonOpt, HistoryLimitOpt
+from .compactness import warn_prompt_compactness
 from .prompt_api import prompt_api
 from .prompt_formatters import (
     format_assigned,
@@ -70,6 +71,7 @@ def create_prompt(
         output_error(f"File not found: {file}")
         raise typer.Exit(1)
     content = file.read_text()
+    warn_prompt_compactness(slug, content)
     payload: dict[str, Any] = {"slug": slug, "name": name, "content": content, "is_global": is_global}
     if description:
         payload["description"] = description
@@ -92,7 +94,9 @@ def update_prompt(
         if not file.exists():
             output_error(f"File not found: {file}")
             raise typer.Exit(1)
-        payload["content"] = file.read_text()
+        content = file.read_text()
+        warn_prompt_compactness(slug, content)
+        payload["content"] = content
     if name is not None:
         payload["name"] = name
     if is_global is not None:
@@ -153,6 +157,7 @@ def measure_prompt(
             output_error(f"File not found: {file}")
             raise typer.Exit(1)
         candidate_content = file.read_text()
+    warn_prompt_compactness(slug, candidate_content if candidate_content is not None else current_content)
     format_prompt_measure(slug, current_content, candidate_content)
 
 
