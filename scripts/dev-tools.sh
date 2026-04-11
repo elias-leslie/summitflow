@@ -580,23 +580,25 @@ run_types() {
 
     cd "$backend"
     local output errors retval=0
+    local type_targets=()
     if [[ "$CHANGED_ONLY" == "1" ]]; then
-        local changed_files
-        changed_files=$(get_changed_python_files)
-        if [[ -z "$changed_files" ]]; then
+        mapfile -t type_targets < <(get_changed_python_files)
+        if [[ ${#type_targets[@]} -eq 0 ]]; then
             echo "OK:no_py_changes"
             return 0
         fi
         local file_count
-        file_count=$(echo "$changed_files" | wc -l)
+        file_count=${#type_targets[@]}
         local file_names
-        file_names=$(echo "$changed_files" | xargs -I{} basename {} | tr '\n' ' ')
+        file_names=$(printf '%s\n' "${type_targets[@]}" | xargs -I{} basename {} | tr '\n' ' ')
         echo "SCOPE:${file_count} files:${file_names% }"
-        # ty doesn't support file list directly — check only app/ but it's fast enough
-        output=$("$ty_bin" check --python "$python_bin" "$app_dir" 2>&1) || retval=$?
     else
-        output=$("$ty_bin" check --python "$python_bin" "$app_dir" 2>&1) || retval=$?
+        type_targets=("$app_dir")
     fi
+
+    normalize_tool_args "types" "backend" "${type_targets[@]}"
+    type_targets=("${NORMALIZED_TOOL_ARGS[@]}")
+    output=$("$ty_bin" check --python "$python_bin" "${type_targets[@]}" 2>&1) || retval=$?
 
     errors=$(echo "$output" | grep -c "^error\[") || errors=0
     if [[ "$errors" -eq 0 ]]; then
@@ -1169,10 +1171,9 @@ normalize_tool_args() {
     for arg in "$@"; do
         local normalized="$arg"
 
-        # Tools with working_dir=backend or test cd into backend/, so explicit
-        # paths like backend/app/foo.py must be rewritten to app/foo.py.
-        # This applies to all backend tools (ruff, types, etc.), not just pytest.
-        if [[ "$arg" != -* && ("$dir_type" == "backend" || ("$dir_type" == "test" && "$tool_name" == "pytest")) ]]; then
+        # Tools that run from backend/ or frontend/ need repo-root paths rewritten
+        # relative to that cwd before invoking the underlying binary.
+        if [[ "$arg" != -* ]]; then
             local path_part="$arg"
             local suffix=""
 
@@ -1181,15 +1182,25 @@ normalize_tool_args() {
                 suffix="::${arg#*::}"
             fi
 
-            if [[ "$path_part" == */* || "$path_part" == *.py || "$path_part" == /* ]]; then
+            if [[ "$path_part" == */* || "$path_part" == *.py || "$path_part" == *.ts || "$path_part" == *.tsx || "$path_part" == *.js || "$path_part" == *.jsx || "$path_part" == /* ]]; then
                 normalized="$path_part"
 
-                if [[ "$normalized" == "$PROJECT_DIR/"* ]]; then
+                if [[ "$normalized" == "$PROJECT_DIR" ]]; then
+                    normalized="."
+                elif [[ "$normalized" == "$PROJECT_DIR/"* ]]; then
                     normalized="${normalized#$PROJECT_DIR/}"
                 fi
 
-                if [[ "$normalized" == backend/* ]]; then
-                    normalized="${normalized#backend/}"
+                normalized="${normalized#./}"
+
+                if [[ "$dir_type" == "backend" || ("$dir_type" == "test" && "$tool_name" == "pytest") ]]; then
+                    if [[ "$normalized" == backend/* ]]; then
+                        normalized="${normalized#backend/}"
+                    fi
+                elif [[ "$dir_type" == "frontend" ]]; then
+                    if [[ "$normalized" == frontend/* ]]; then
+                        normalized="${normalized#frontend/}"
+                    fi
                 fi
 
                 normalized="${normalized}${suffix}"
@@ -1318,13 +1329,18 @@ run_tool_toon() {
     fi
 
     normalize_tool_args "$tool_name" "$dir_type" "${EXTRA_ARGS[@]}"
+    local tool_args=("${NORMALIZED_TOOL_ARGS[@]}")
+    if [[ "$pass_path" == "1" && ${#tool_args[@]} -eq 0 ]]; then
+        normalize_tool_args "$tool_name" "$dir_type" "$work_dir"
+        tool_args=("${NORMALIZED_TOOL_ARGS[@]}")
+    fi
 
-    # Execute tool (NORMALIZED_TOOL_ARGS passed as array to preserve quoted arguments like -k "expr with spaces")
+    # Execute tool (tool_args passed as array to preserve quoted arguments like -k "expr with spaces")
     local output retval=0
     if [[ "$tool_name" == "pytest" ]]; then
         local frontend_target=""
         local cross_project_target=""
-        for arg in "${NORMALIZED_TOOL_ARGS[@]}"; do
+        for arg in "${tool_args[@]}"; do
             if is_frontend_pytest_target "$arg"; then
                 frontend_target="$arg"
                 break
@@ -1352,14 +1368,12 @@ EOF
             )
             retval=2
         else
-            output=$("$tool_bin" $args "${NORMALIZED_TOOL_ARGS[@]}" 2>&1) || retval=$?
+            output=$("$tool_bin" $args "${tool_args[@]}" 2>&1) || retval=$?
         fi
     elif [[ "$count_method" == "coderabbit_parse" ]]; then
-        output=$(run_coderabbit_with_progress "$tool_bin" $args "${NORMALIZED_TOOL_ARGS[@]}") || retval=$?
-    elif [[ "$pass_path" == "1" ]]; then
-        output=$("$tool_bin" $args "${NORMALIZED_TOOL_ARGS[@]}" "$work_dir" 2>&1) || retval=$?
+        output=$(run_coderabbit_with_progress "$tool_bin" $args "${tool_args[@]}") || retval=$?
     else
-        output=$("$tool_bin" $args "${NORMALIZED_TOOL_ARGS[@]}" 2>&1) || retval=$?
+        output=$("$tool_bin" $args "${tool_args[@]}" 2>&1) || retval=$?
     fi
 
     # Count issues
