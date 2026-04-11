@@ -9,8 +9,8 @@ import typer
 
 from ..output import output_error
 from ._api_paths import PROMPT_RESTORE_PATH, PROMPT_REVISIONS_PATH
-from .memory_options import ChangeReasonOpt, HistoryLimitOpt
 from .compactness import warn_prompt_compactness
+from .memory_options import ChangeReasonOpt, HistoryLimitOpt
 from .prompt_api import prompt_api
 from .prompt_formatters import (
     format_assigned,
