@@ -87,6 +87,29 @@ class TestPromptHistoryCommands:
             },
         )
 
+    def test_update_forwards_enabled_flag_to_prompt_api(self) -> None:
+        with patch("cli.commands.prompt.prompt_api", return_value={"enabled": False}) as mock_prompt_api:
+            result = runner.invoke(
+                app,
+                [
+                    "update",
+                    "caveman-output-directive",
+                    "--disabled",
+                    "--change-reason",
+                    "benchmark against non-caveman baseline",
+                ],
+            )
+
+        assert result.exit_code == 0
+        mock_prompt_api.assert_called_once_with(
+            "PUT",
+            "/caveman-output-directive",
+            json={
+                "enabled": False,
+                "change_reason": "benchmark against non-caveman baseline",
+            },
+        )
+
 
 class TestPromptHistoryFormatters:
     def test_format_prompt_revisions_compact(self, capsys) -> None:

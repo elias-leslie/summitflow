@@ -82,6 +82,7 @@ def update_prompt(
     file: Annotated[Path | None, typer.Option("-f", "--file", help="New content file")] = None,
     name: Annotated[str | None, typer.Option("-n", "--name", help="New name")] = None,
     is_global: Annotated[bool | None, typer.Option("--global/--no-global", help="Global flag")] = None,
+    enabled: Annotated[bool | None, typer.Option("--enabled/--disabled", help="Enabled flag")] = None,
     description: Annotated[str | None, typer.Option("-d", "--description")] = None,
     change_reason: ChangeReasonOpt = None,
 ) -> None:
@@ -95,10 +96,12 @@ def update_prompt(
         payload["name"] = name
     if is_global is not None:
         payload["is_global"] = is_global
+    if enabled is not None:
+        payload["enabled"] = enabled
     if description is not None:
         payload["description"] = description
     if not payload:
-        output_error("Nothing to update — provide at least one of -f, -n, --global, -d")
+        output_error("Nothing to update — provide at least one of -f, -n, --global, --enabled, -d")
         raise typer.Exit(1)
     if change_reason is not None:
         payload["change_reason"] = change_reason
