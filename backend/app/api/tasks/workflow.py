@@ -14,6 +14,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 
+from ...services.task_continuity import build_continuity
 from ...services.task_execution_readiness import (
     assess_task_execution_readiness,
     is_final_task_status,
@@ -21,7 +22,7 @@ from ...services.task_execution_readiness import (
 from ...services.task_lane_preflight import check_task_lane_conflicts
 from ...storage import task_dependencies as dep_store
 from ...storage.events import get_events_by_trace
-from ...storage.subtasks import get_subtasks_for_task
+from ...storage.subtasks import get_subtask_summary, get_subtasks_for_task
 from ...storage.task_spirit import get_task_spirit
 from .helpers import get_task_or_404, verify_task_project
 from .workflow_approval import approve_task_plan_impl
@@ -91,22 +92,39 @@ async def get_task_context(
     # Get spirit data
     spirit = get_task_spirit(task_id)
 
-    # Get subtasks with steps
+    # Get subtasks and summary needed for continuity output.
     subtasks = get_subtasks_for_task(task_id, include_steps=False)
+    subtasks_with_steps = get_subtasks_for_task(task_id, include_steps=True)
+    summary = get_subtask_summary(task_id)
 
     # Get blockers
     blockers = dep_store.get_blocking_tasks(task_id)
+    progress_log = [
+        f"[{e['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}] {e['message']}"
+        for e in get_events_by_trace(task_id, visibility="user", limit=500)
+        if e.get("message")
+    ]
+    continuity = build_continuity(
+        task=task,
+        spirit=spirit,
+        subtasks=subtasks_with_steps,
+        blockers=blockers,
+        progress_log=progress_log,
+        summary=summary,
+    )
 
     lane_check = None if is_final_task_status(task.get("status")) else check_task_lane_conflicts(task_id, project_id)
 
     if format == "json":
-        return build_context_json(task, spirit, subtasks, blockers, lane_check)
+        return build_context_json(task, spirit, subtasks, blockers, continuity, lane_check)
 
     # Default: TOON format
     readiness = None
     if not is_final_task_status(task.get("status")):
-        readiness = assess_task_execution_readiness(task, spirit, get_subtasks_for_task(task_id, include_steps=True))
-    return PlainTextResponse(content=format_toon_context(task, spirit, subtasks, blockers, readiness, lane_check))
+        readiness = assess_task_execution_readiness(task, spirit, subtasks_with_steps)
+    return PlainTextResponse(
+        content=format_toon_context(task, spirit, subtasks, blockers, continuity, readiness, lane_check)
+    )
 
 
 @router.get("/projects/{project_id}/tasks/{task_id}/export")

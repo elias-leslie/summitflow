@@ -181,9 +181,21 @@ def create_subtask_logic(
     Returns:
         Created SubtaskResponse
     """
-    from ...storage.subtasks import create_subtask
+    from ...storage.subtask_dependencies import CycleError
+    from ...storage.subtasks import (
+        add_subtask_dependency,
+        create_subtask,
+        delete_subtask,
+        get_subtask,
+    )
 
     steps = convert_steps_to_storage_format(request.steps)
+    depends_on = [str(dep).strip() for dep in (request.depends_on or []) if str(dep).strip()]
+    for dependency_id in depends_on:
+        if dependency_id == request.subtask_id:
+            raise ValueError("Subtask cannot depend on itself")
+        if get_subtask(task_id, dependency_id) is None:
+            raise ValueError(f"Dependency subtask {dependency_id} not found for task {task_id}")
 
     subtask = create_subtask(
         task_id=task_id,
@@ -192,9 +204,17 @@ def create_subtask_logic(
         display_order=request.display_order,
         phase=request.phase,
         steps=steps,
+        depends_on=depends_on,
         subtask_type=request.subtask_type,
     )
+    try:
+        for dependency_id in depends_on:
+            add_subtask_dependency(task_id, request.subtask_id, dependency_id)
+    except CycleError as e:
+        delete_subtask(task_id, request.subtask_id)
+        raise ValueError(str(e)) from e
 
+    subtask["depends_on"] = depends_on
     convert_steps_to_response_format(subtask)
     return SubtaskResponse(**subtask)
 

@@ -334,6 +334,17 @@ class TestTaskCliErgonomics:
         assert "--description" not in result.output
         assert "--autonomous" not in result.output
 
+    def test_subtask_create_help_does_not_advertise_steps(self) -> None:
+        result = runner.invoke(subtask_app, ["create", "--help"])
+
+        assert result.exit_code == 0
+        assert "--steps" not in result.output
+
+    def test_cli_reference_subtask_create_does_not_advertise_steps(self) -> None:
+        from cli.main import CLI_REFERENCE
+
+        assert "--steps" not in CLI_REFERENCE
+
     def test_verify_help_references_live_plan_schema(self) -> None:
         result = runner.invoke(tasks_app, ["verify", "--help"])
 
@@ -565,9 +576,77 @@ class TestTaskCliErgonomics:
 
         assert result.exit_code == 0
         assert '"verdict": "APPROVED"' in result.output
+        call = mock_client.complete.call_args
+        assert call.kwargs["use_memory"] is False
+        assert call.kwargs["memory_group_id"] is None
+        assert "Stage: task_shape" in call.kwargs["messages"][0]["content"]
         persisted = mock_persist.call_args.args[1]
         assert persisted["status"] == "completed"
         assert persisted["stage"] == "task_shape"
+
+    def test_build_review_packet_preserves_dependency_and_step_detail(self) -> None:
+        from cli.commands.tasks_critique import _build_review_packet
+
+        task = _make_mock_task("task-mock-1", title="Tighten context output")
+        spirit = {
+            "objective": "Make context resume reliable",
+            "context": {"files_to_modify": ["backend/cli/commands/tasks_context.py"]},
+        }
+        subtasks = [
+            {
+                "subtask_id": "2.1",
+                "phase": "cli",
+                "subtask_type": "implementation",
+                "status": "pending",
+                "depends_on": ["1.1"],
+                "description": "Render continuity block",
+                "steps_from_table": [
+                    {
+                        "step_number": 1,
+                        "description": "Wire recent progress logs",
+                        "depends_on": [0],
+                        "passes": False,
+                        "spec": {"detail": "Keep default output short."},
+                    }
+                ],
+            }
+        ]
+
+        packet = _build_review_packet(task, spirit, subtasks)
+
+        assert packet["spirit"]["context"] == {
+            "files_to_modify": ["backend/cli/commands/tasks_context.py"]
+        }
+        assert packet["subtasks"][0]["depends_on"] == ["1.1"]
+        assert packet["subtasks"][0]["status"] == "pending"
+        assert packet["subtasks"][0]["steps"] == [
+            {
+                "step_number": 1,
+                "description": "Wire recent progress logs",
+                "depends_on": [0],
+                "passes": False,
+                "spec": {"detail": "Keep default output short."},
+            }
+        ]
+
+    def test_build_request_message_changes_with_stage(self) -> None:
+        from cli.commands.tasks_critique import _build_request_message
+
+        packet = {"task": {"id": "task-mock-1"}, "spirit": {}, "subtasks": []}
+
+        task_shape = _build_request_message(packet, stage="task_shape")
+        pre_close = _build_request_message(packet, stage="pre_close")
+
+        assert "implementation can start safely" in task_shape
+        assert "ready to close" in pre_close
+        assert "rollout, migration, or monitoring only when materially affected" in task_shape
+        assert "Return strict JSON only" in task_shape
+
+    def test_critique_command_rejects_invalid_stage(self) -> None:
+        result = runner.invoke(tasks_app, ["critique", "task-mock-1", "--stage", "nonsense"])
+
+        assert result.exit_code == 1
+        assert "Unsupported critique stage: nonsense" in result.output
 
 
 class TestPlanSchemaConsistency:

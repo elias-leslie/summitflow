@@ -282,6 +282,33 @@ class TestFormatContextTask:
         assert "HARNESS:runtime_eval_plus_design|reasons:frontend_scope,design_criteria" in output
         assert "CONTRACT:urls=1|flows=1|api=1|negative=1|design=yes" in output
 
+    def test_includes_fixed_continuity_sections_when_present(self) -> None:
+        task = {
+            "id": "task-796",
+            "status": "pending",
+            "priority": 2,
+            "task_type": "task",
+            "complexity": "STANDARD",
+            "title": "Resume context repair",
+            "continuity": {
+                "objective": "Make resume reliable",
+                "current_slice": "2.1 Render continuity block",
+                "blockers": ["task-9|pending|Blocked by review"],
+                "recent_progress": ["[2026-04-12 10:05:00] Wired logs"],
+                "next_action": "2.1.1 Wire logs",
+                "key_files": ["backend/cli/commands/tasks_context.py"],
+            },
+        }
+
+        output = format_context_task(task)
+
+        assert "OBJECTIVE:Make resume reliable" in output
+        assert "CURRENT_SLICE:2.1 Render continuity block" in output
+        assert "BLOCKERS[1]" in output
+        assert "RECENT_PROGRESS[1]" in output
+        assert "NEXT_ACTION:2.1.1 Wire logs" in output
+        assert "KEY_FILES[1]:backend/cli/commands/tasks_context.py" in output
+
 
 
 class TestFormatContextSnapshot:
@@ -400,6 +427,75 @@ class TestTaskContextCommand:
 
         mock_readiness.assert_not_called()
         mock_lane.assert_not_called()
+
+    def test_get_task_context_builds_continuity_from_summary_and_logs(self) -> None:
+        client = MagicMock()
+        client.get_task.return_value = {
+            "id": "task-3",
+            "project_id": "summitflow",
+            "status": "pending",
+            "task_type": "task",
+            "priority": 2,
+            "complexity": "STANDARD",
+            "title": "Continuity repair",
+            "objective": "Make resume reliable",
+            "context": {"files_to_modify": ["backend/cli/commands/tasks_context.py"]},
+        }
+        client.get_subtasks.return_value = {
+            "subtasks": [
+                {
+                    "subtask_id": "2.1",
+                    "description": "Render continuity block",
+                    "display_order": 2,
+                    "passes": False,
+                    "steps": [{"step_number": 1, "description": "Wire logs", "passes": False}],
+                }
+            ],
+            "summary": {"next_subtask_id": "2.1"},
+        }
+        client.get_task_logs.return_value = {
+            "entries": ["[2026-04-12 10:05:00] Wired logs"],
+            "count": 1,
+        }
+        client.list_dependencies.return_value = []
+        client.get_task_completion_readiness.return_value = {"ready": False, "gates": []}
+
+        with (
+            patch("cli.commands.tasks_context._enrich_task_from_spirit"),
+            patch("cli.commands.tasks_context.assess_task_execution_readiness", return_value={}),
+            patch("cli.commands.tasks_context.fetch_triggered_references", return_value=[]),
+            patch("cli.commands.tasks_context.analyze_subtask_sync") as mock_sync,
+            patch("cli.commands.tasks_context.output_context") as mock_output,
+            patch("cli.commands.tasks_context.check_task_lane_conflicts") as mock_lane,
+            patch("cli.commands.tasks_context._load_snapshot_info", return_value=None),
+            patch("cli.commands.tasks_context.get_worktree_info", return_value=None),
+        ):
+            mock_sync.return_value.syncable = []
+            mock_sync.return_value.skipped = []
+            mock_lane.return_value.to_dict.return_value = {
+                "issues": [],
+                "suggestions": [],
+                "conflicting_tasks": [],
+                "overlap_kind": None,
+                "overlap_paths": [],
+                "shared_plumbing": False,
+                "disposition": "allow",
+                "owner_session_id": None,
+                "owner_branch": None,
+                "owner_location": None,
+                "active_specialists": [],
+            }
+            get_task_context("task-3", None, client)
+
+        output_task = mock_output.call_args.args[0]
+        assert output_task["continuity"] == {
+            "objective": "Make resume reliable",
+            "current_slice": "2.1 Render continuity block",
+            "blockers": [],
+            "recent_progress": ["[2026-04-12 10:05:00] Wired logs"],
+            "next_action": "2.1.1 Wire logs",
+            "key_files": ["backend/cli/commands/tasks_context.py"],
+        }
 
     def test_get_task_context_falls_back_to_archived_snapshot(self) -> None:
         client = MagicMock()

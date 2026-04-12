@@ -7,9 +7,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from ...services.task_continuity import format_continuity_lines
 from ...services.task_execution_readiness import TaskExecutionReadiness, is_final_task_status
 from ...services.task_lane_preflight import TaskLaneConflictCheck, TaskLaneConflictCheckDict
-from ...storage.events import get_events_by_trace
 
 
 def _format_context_lines(
@@ -85,21 +85,6 @@ def _format_subtask_lines(subtasks: list[dict[str, Any]]) -> tuple[list[str], in
     return lines, 0, 0
 
 
-def _format_event_log_lines(task_id: str) -> list[str]:
-    """Return LOG lines for the last 3 user-visible events."""
-    events = get_events_by_trace(task_id, visibility="user", limit=100)
-    if not events:
-        return []
-    lines = [f"LOG[{len(events)}]:"]
-    for event in events[-3:]:
-        msg = event.get("message") or ""
-        ts = event.get("timestamp")
-        ts_str = ts.strftime("%Y-%m-%d %H:%M:%S") if ts else ""
-        preview = f"[{ts_str}] {msg[:80]}" + ("..." if len(msg) > 80 else "")
-        lines.append(f"  {preview}")
-    return lines
-
-
 def _format_workflow_readiness_lines(
     task_status: object,
     plan_status: str,
@@ -148,6 +133,7 @@ def format_toon_context(
     spirit: dict[str, Any] | None,
     subtasks: list[dict[str, Any]],
     blockers: list[dict[str, Any]],
+    continuity: dict[str, Any] | None = None,
     readiness: TaskExecutionReadiness | None = None,
     lane_check: TaskLaneConflictCheck | dict[str, Any] | None = None,
 ) -> str:
@@ -180,6 +166,7 @@ def format_toon_context(
         )
     )
 
+    lines.extend(format_continuity_lines(continuity))
     if spirit:
         lines.extend(
             _format_spirit_section_lines(
@@ -189,13 +176,6 @@ def format_toon_context(
         )
     lines.extend(_format_lane_line(lane_check))
     lines.extend(subtask_lines)
-
-    if blockers:
-        lines.append(f"BLOCKERS[{len(blockers)}]:")
-        for b in blockers:
-            lines.append(f"  {b['id']}|{b['status']}|{b['title'][:50]}")
-
-    lines.extend(_format_event_log_lines(task["id"]))
     if criteria_count > 0:
         lines.append(f"CRITERIA[{criteria_verified}]:{criteria_verified}/{criteria_count}")
     return "\n".join(lines)
@@ -206,6 +186,7 @@ def build_context_json(
     spirit: dict[str, Any] | None,
     subtasks: list[dict[str, Any]],
     blockers: list[dict[str, Any]],
+    continuity: dict[str, Any] | None = None,
     lane_check: TaskLaneConflictCheck | dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build JSON context response."""
@@ -226,6 +207,7 @@ def build_context_json(
         "spirit": spirit,
         "subtasks": subtasks,
         "blockers": blockers,
+        "continuity": continuity or {},
         "lane_preflight": lane_payload,
     }
 

@@ -108,14 +108,31 @@ async def create_subtasks_batch(
     """Create multiple subtasks for a task in batch."""
     verify_task_project(task_id, project_id)
 
-    from ...storage.subtasks import bulk_create_subtasks
+    from ...storage.subtasks import bulk_add_subtask_dependencies, bulk_create_subtasks
 
     items = request.get("items", [])
     if not items:
         return {"created": []}
 
     try:
-        return {"created": bulk_create_subtasks(task_id, items)}
+        created = bulk_create_subtasks(task_id, items)
+        deps = [
+            (str(item.get("subtask_id") or ""), str(dep).strip())
+            for item in items
+            for dep in (item.get("depends_on") or [])
+            if str(item.get("subtask_id") or "").strip() and str(dep).strip()
+        ]
+        if deps:
+            bulk_add_subtask_dependencies(task_id, deps)
+        depends_on_by_id = {
+            str(item.get("subtask_id") or ""): [
+                str(dep).strip() for dep in (item.get("depends_on") or []) if str(dep).strip()
+            ]
+            for item in items
+        }
+        for subtask in created:
+            subtask["depends_on"] = depends_on_by_id.get(str(subtask.get("subtask_id") or ""), [])
+        return {"created": created}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
 

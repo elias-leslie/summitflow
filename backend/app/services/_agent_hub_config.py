@@ -24,11 +24,14 @@ def _load_env_local_credentials() -> dict[str, str]:
         return {}
     creds: dict[str, str] = {}
     for line in env_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line.startswith("export "):
+            line = line[7:]
         if "=" not in line or line.startswith("#"):
             continue
         key, val = line.split("=", 1)
         key = key.strip()
-        value = val.strip()
+        value = val.strip().strip("'\"")
         if key and value:
             creds[key] = value
     return creds

@@ -6,9 +6,7 @@ from typing import Any
 
 from ._output_core import output_json
 from ._output_formatters import (
-    format_context_blockers,
     format_context_decisions,
-    format_context_log,
     format_context_references,
     format_context_snapshot,
     format_context_subtasks,
@@ -36,12 +34,8 @@ def output_context(
             format_context_decisions(task.get("decisions") or []),
             format_context_subtasks(subtasks),
         ]
-        if blockers:
-            sections.append(format_context_blockers(blockers))
         if references:
             sections.append(format_context_references(references))
-        if task.get("progress_log"):
-            sections.append(format_context_log(task["progress_log"]))
         print("\n".join(s for s in sections if s))
     else:
         output_json(

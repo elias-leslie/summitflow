@@ -25,6 +25,67 @@ from ..output import output_error, output_json
 logger = get_logger(__name__)
 
 _DEFAULT_AGENT = "specifier"
+_VALID_STAGES = {"task_shape", "pre_close", "both"}
+_CONTEXT_KEYS = (
+    "files_to_modify",
+    "files_to_create",
+    "risks",
+    "references",
+    "testing_strategy",
+    "execution_contract",
+)
+_STAGE_LENSES = {
+    "task_shape": (
+        "Judge whether implementation can start safely from this package. "
+        "Focus on missing contract, hidden dependencies, ambiguous precedence, "
+        "verification gaps, and simpler paths."
+    ),
+    "pre_close": (
+        "Judge whether this task is truly ready to close. "
+        "Focus on residual risk, incomplete verification, compatibility gaps, "
+        "and unfinished operator-facing changes."
+    ),
+    "both": (
+        "Judge both implementation readiness and closeout readiness. "
+        "Only call out issues that materially affect one of those gates."
+    ),
+}
+
+
+def _normalize_stage(stage: str) -> str:
+    normalized = str(stage or "").strip().lower()
+    if normalized not in _VALID_STAGES:
+        raise ValueError(f"Unsupported critique stage: {stage}")
+    return normalized
+
+
+def _serialize_step(step: dict[str, Any]) -> dict[str, Any]:
+    serialized = {
+        "step_number": step.get("step_number"),
+        "description": step.get("description"),
+        "depends_on": step.get("depends_on") or [],
+        "passes": step.get("passes"),
+        "spec": step.get("spec"),
+    }
+    return {key: value for key, value in serialized.items() if value not in (None, [], {})}
+
+
+def _serialize_context(context: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(context, dict):
+        return {}
+    serialized = {
+        key: context.get(key)
+        for key in _CONTEXT_KEYS
+        if context.get(key) not in (None, [], {})
+    }
+    second_opinion = context.get("second_opinion")
+    if isinstance(second_opinion, dict):
+        serialized["second_opinion"] = {
+            key: second_opinion.get(key)
+            for key in ("required", "stage", "status")
+            if second_opinion.get(key) not in (None, "", [], {})
+        }
+    return serialized
 
 
 def _build_review_packet(
@@ -50,18 +111,23 @@ def _build_review_packet(
             "decisions": (spirit or {}).get("decisions") or task.get("decisions") or [],
             "constraints": (spirit or {}).get("constraints") or task.get("constraints") or [],
             "done_when": (spirit or {}).get("done_when") or task.get("done_when") or [],
-            "context": (spirit or {}).get("context") or task.get("context") or {},
+            "context": _serialize_context((spirit or {}).get("context") or task.get("context")),
         },
         "subtasks": [
             {
                 "subtask_id": st.get("subtask_id"),
                 "phase": st.get("phase"),
                 "subtask_type": st.get("subtask_type"),
+                "status": st.get("status"),
+                "depends_on": st.get("depends_on") or [],
                 "description": st.get("description"),
                 "steps": [
-                    step.get("description")
+                    _serialize_step(step)
                     for step in (st.get("steps_from_table") or st.get("steps") or [])
-                    if step.get("description")
+                    if isinstance(step, dict) and any(
+                        step.get(key) not in (None, [], {})
+                        for key in ("description", "step_number", "depends_on", "passes", "spec")
+                    )
                 ],
             }
             for st in subtasks
@@ -69,13 +135,14 @@ def _build_review_packet(
     }
 
 
-def _build_prompt(packet: dict[str, Any], *, stage: str) -> str:
-    """Build a deterministic critique prompt."""
+def _build_request_message(packet: dict[str, Any], *, stage: str) -> str:
+    """Build the variable request message for the runtime critic prompt."""
+    normalized_stage = _normalize_stage(stage)
     return (
-        "Review this task package as an independent second opinion.\n\n"
-        f"Stage: {stage}\n"
-        "Focus on missing requirements, weak assumptions, edge cases, test gaps, "
-        "rollout/monitoring gaps, and simpler alternatives.\n\n"
+        f"Stage: {normalized_stage}\n"
+        f"Stage lens: {_STAGE_LENSES[normalized_stage]}\n"
+        "Skip categories that are not materially implicated by this task package. "
+        "Mention rollout, migration, or monitoring only when materially affected.\n\n"
         "Return strict JSON only with this shape:\n"
         "{\n"
         '  "verdict": "APPROVED" | "NEEDS_REVISION",\n'
@@ -100,10 +167,11 @@ def _call_agent(
     agent_slug: str,
 ) -> dict[str, Any]:
     """Call the agent hub and return the parsed critique dict."""
+    normalized_stage = _normalize_stage(stage)
     spirit = get_task_spirit(task_id)
     subtasks = get_subtasks_for_task(task_id, include_steps=True)
     packet = _build_review_packet(task, spirit, subtasks)
-    prompt = _build_prompt(packet, stage=stage)
+    prompt = _build_request_message(packet, stage=normalized_stage)
 
     client = get_sync_client()
     try:
@@ -113,11 +181,11 @@ def _call_agent(
             project_id=task["project_id"],
             external_id=task_id,
             purpose="task-second-opinion",
-            use_memory=True,
-            memory_group_id=f"project:{task['project_id']}",
+            use_memory=False,
+            memory_group_id=None,
         )
         return parse_second_opinion_response(
-            response.content, stage=stage, agent_slug=agent_slug
+            response.content, stage=normalized_stage, agent_slug=agent_slug
         )
     except Exception as exc:
         logger.exception("Task critique failed", task_id=task_id)
@@ -167,6 +235,11 @@ def critique_task_command(
     force: bool = False,
 ) -> None:
     """Request and persist a second-opinion critique for a task."""
+    try:
+        stage = _normalize_stage(stage)
+    except ValueError as exc:
+        output_error(str(exc))
+        raise typer.Exit(1) from exc
     task = task_store.get_task(task_id)
     if not task:
         output_error(f"Task not found: {task_id}")

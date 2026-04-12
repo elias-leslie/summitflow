@@ -26,6 +26,8 @@ _HIGH_RISK_LABEL_TOKENS = {
 }
 _COMPLETED_STATUSES = {"completed", "waived"}
 _SECOND_OPINION_CONTEXT_KEY = "second_opinion"
+_SECOND_OPINION_REVIEWS_KEY = "reviews"
+_VALID_REVIEW_STAGES = {"task_shape", "pre_close", "both"}
 
 
 @dataclass
@@ -93,6 +95,37 @@ def merge_second_opinion_into_context(
     return merged
 
 
+def _review_snapshot(review: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in dict(review).items()
+        if key != _SECOND_OPINION_REVIEWS_KEY
+    }
+
+
+def _review_history(entry: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    history: dict[str, dict[str, Any]] = {}
+    raw_history = entry.get(_SECOND_OPINION_REVIEWS_KEY)
+    if isinstance(raw_history, dict):
+        for stage, review in raw_history.items():
+            if stage in _VALID_REVIEW_STAGES and isinstance(review, dict):
+                history[stage] = _review_snapshot(review)
+
+    stage = str(entry.get("stage") or "").strip().lower()
+    if stage in _VALID_REVIEW_STAGES and stage not in history:
+        history[stage] = _review_snapshot(entry)
+    return history
+
+
+def _task_shape_review(entry: dict[str, Any]) -> dict[str, Any]:
+    history = _review_history(entry)
+    for stage in ("task_shape", "both"):
+        review = history.get(stage)
+        if review:
+            return review
+    return {}
+
+
 def build_second_opinion_entry(
     task: dict[str, Any],
     spirit: dict[str, Any] | None = None,
@@ -155,9 +188,12 @@ def assess_second_opinion_readiness(
         return [], [], []
 
     entry = get_second_opinion_entry(spirit)
-    status = str(entry.get("status") or "").lower()
-    stage = str(entry.get("stage") or requirement.recommended_stage)
-    summary = str(entry.get("summary") or "").strip()
+    review = _task_shape_review(entry) or (
+        _review_snapshot(entry) if isinstance(entry, dict) else {}
+    )
+    status = str(review.get("status") or "").lower()
+    stage = str(review.get("stage") or requirement.recommended_stage)
+    summary = str(review.get("summary") or "").strip()
 
     if status in _COMPLETED_STATUSES and stage in {"task_shape", "both"} and summary:
         return [], [], []
@@ -170,9 +206,9 @@ def assess_second_opinion_readiness(
         "Run `st critique <task-id>` to record a task-shape critique before autonomous execution"
     ]
     missing_fields = ["second_opinion"]
-    if entry and status in (_COMPLETED_STATUSES | {"needs_revision"}) and not summary:
+    if review and status in (_COMPLETED_STATUSES | {"needs_revision"}) and not summary:
         issues.append("Second-opinion entry is present but missing a summary")
-    elif entry and stage not in {"task_shape", "both"}:
+    elif review and stage not in {"task_shape", "both"}:
         issues.append(f"Second-opinion stage must include task_shape (found: {stage})")
     return issues, suggestions, missing_fields
 
@@ -240,11 +276,26 @@ def persist_second_opinion(
 ) -> dict[str, Any]:
     """Store a second-opinion payload under task_spirit.context.second_opinion."""
     spirit = get_task_spirit(task_id)
+    incoming = _review_snapshot(second_opinion)
+    incoming_stage = str(incoming.get("stage") or "").strip().lower()
+    existing_entry = get_second_opinion_entry(spirit)
+    existing_primary = _review_snapshot(existing_entry) if existing_entry else {}
+    history = _review_history(existing_entry)
+    if incoming_stage in _VALID_REVIEW_STAGES:
+        history[incoming_stage] = incoming
+
+    if incoming_stage in {"task_shape", "both"} or not _task_shape_review(existing_entry):
+        merged_primary = {**existing_primary, **incoming}
+    else:
+        merged_primary = {**existing_primary, **_task_shape_review(existing_entry)}
+    if history:
+        merged_primary[_SECOND_OPINION_REVIEWS_KEY] = history
+
     if spirit:
-        context = merge_second_opinion_into_context(spirit.get("context"), second_opinion)
+        context = merge_second_opinion_into_context(spirit.get("context"), merged_primary)
         updated = update_task_spirit(task_id, context=context)
         if updated is not None:
             return updated
         raise ValueError(f"Failed to update task_spirit for {task_id}")
 
-    return upsert_task_spirit(task_id=task_id, context={_SECOND_OPINION_CONTEXT_KEY: second_opinion})
+    return upsert_task_spirit(task_id=task_id, context={_SECOND_OPINION_CONTEXT_KEY: merged_primary})

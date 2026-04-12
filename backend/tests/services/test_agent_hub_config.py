@@ -77,3 +77,22 @@ def test_load_env_local_credentials_reads_home_env_file(tmp_path: Path) -> None:
         "SUMMITFLOW_CLIENT_ID": "file-client",
         "SUMMITFLOW_REQUEST_SOURCE": "file-source",
     }
+
+
+def test_load_env_local_credentials_strips_quotes_and_export_prefix(tmp_path: Path) -> None:
+    """Env-local parsing should match CLI credential parsing semantics."""
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / ".env.local").write_text(
+        'export SUMMITFLOW_CLIENT_ID="quoted-client"\n'
+        "SUMMITFLOW_REQUEST_SOURCE='quoted-source'\n",
+        encoding="utf-8",
+    )
+
+    with patch.object(config.Path, "home", return_value=home):
+        creds = config._load_env_local_credentials()
+
+    assert creds == {
+        "SUMMITFLOW_CLIENT_ID": "quoted-client",
+        "SUMMITFLOW_REQUEST_SOURCE": "quoted-source",
+    }

@@ -51,6 +51,21 @@ def get_task_completion_readiness(
     return cast(dict[str, Any], handle_response(response))
 
 
+def get_task_logs(
+    client: httpx.Client,
+    global_url_fn: Any,
+    handle_response: Any,
+    project_id: str,
+    task_id: str,
+) -> dict[str, Any]:
+    """Get task progress logs in JSON form."""
+    response = client.get(
+        global_url_fn(f"/projects/{project_id}/tasks/{canonicalize_task_id(task_id)}/logs"),
+        params={"format": "json"},
+    )
+    return cast(dict[str, Any], handle_response(response))
+
+
 def list_tasks(
     client: httpx.Client,
     url_fn: Any,

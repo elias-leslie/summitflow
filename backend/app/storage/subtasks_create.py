@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from ..logging_config import get_logger
 from .connection import get_connection
+from .subtasks_context import sync_subtasks_to_plan_context
 from .subtasks_helpers import SUBTASK_COLUMNS, generate_subtask_id, row_to_dict
 
 logger = get_logger(__name__)
@@ -31,6 +32,7 @@ def create_subtask(
     display_order: int,
     phase: str | None = None,
     steps: list[str | dict[str, object]] | None = None,
+    depends_on: list[str] | None = None,
     subtask_type: str | None = None,
 ) -> dict[str, object]:
     """Create a new subtask.
@@ -41,7 +43,8 @@ def create_subtask(
         description: Subtask description
         display_order: Order for display (0-indexed)
         phase: Optional phase: research, database, backend, frontend, testing
-        steps: Ignored (steps layer removed). Kept for API compatibility.
+        steps: Optional rich step guidance mirrored into task_spirit.context.
+        depends_on: Optional dependency ids mirrored into task_spirit.context.
         subtask_type: Optional type for agent routing (backend, frontend, etc.)
 
     Returns:
@@ -61,5 +64,18 @@ def create_subtask(
         conn.commit()
 
     result = row_to_dict(row)
+    sync_subtasks_to_plan_context(
+        task_id,
+        [
+            {
+                "subtask_id": subtask_id,
+                "description": description,
+                "phase": phase,
+                "subtask_type": subtask_type,
+                "depends_on": depends_on,
+                "steps": steps,
+            }
+        ],
+    )
     logger.debug("Created subtask %s for task %s", subtask_id, task_id)
     return result

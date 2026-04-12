@@ -15,6 +15,7 @@ from unittest.mock import patch
 
 from app.services.task_lane_preflight import TaskLaneConflictCheck
 from app.storage.connection import get_connection
+from app.storage.events import log_task_event
 
 
 class TestApproveEndpoint:
@@ -221,6 +222,82 @@ class TestContextEndpoint:
             "owner_location": None,
             "active_specialists": [],
         }
+
+    def test_context_exposes_additive_continuity_contract(
+        self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
+    ) -> None:
+        response = client.post(
+            f"/api/projects/{test_project_id}/tasks",
+            json={
+                "title": "Test task for continuity",
+                "description": "Testing additive continuity contract",
+                "task_type": "task",
+                "priority": 2,
+            },
+        )
+        assert response.status_code == 200
+        task_id = response.json()["id"]
+        cleanup_task(task_id)
+
+        response = client.post(
+            f"/api/projects/{test_project_id}/tasks/{task_id}/subtasks",
+            json={
+                "subtask_id": "2.1",
+                "description": "Render continuity block",
+                "steps": [{"description": "Wire logs"}],
+            },
+        )
+        assert response.status_code == 201
+
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO task_spirit (task_id, context)
+                VALUES (%s, %s::jsonb)
+                ON CONFLICT (task_id)
+                DO UPDATE SET context = task_spirit.context || EXCLUDED.context
+                """,
+                (
+                    task_id,
+                    json.dumps(
+                        {
+                            "objective": "Make resume reliable",
+                            "files_to_modify": ["backend/cli/commands/tasks_context.py"],
+                        }
+                    ),
+                ),
+            )
+            conn.commit()
+
+        log_task_event(task_id, "Started continuity audit")
+        log_task_event(task_id, "Wired logs")
+
+        toon = client.get(f"/api/projects/{test_project_id}/tasks/{task_id}/context")
+        assert toon.status_code == 200
+        assert "OBJECTIVE:Make resume reliable" in toon.text
+        assert "CURRENT_SLICE:2.1 Render continuity block" in toon.text
+        assert "BLOCKERS:none explicit" in toon.text
+        assert "RECENT_PROGRESS[2]" in toon.text
+        assert "NEXT_ACTION:2.1.1 Wire logs" in toon.text
+        assert "KEY_FILES[1]:backend/cli/commands/tasks_context.py" in toon.text
+
+        response = client.get(
+            f"/api/projects/{test_project_id}/tasks/{task_id}/context",
+            params={"format": "json"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["continuity"] == {
+            "objective": "Make resume reliable",
+            "current_slice": "2.1 Render continuity block",
+            "blockers": [],
+            "recent_progress": data["continuity"]["recent_progress"],
+            "next_action": "2.1.1 Wire logs",
+            "key_files": ["backend/cli/commands/tasks_context.py"],
+        }
+        assert len(data["continuity"]["recent_progress"]) == 2
+        assert data["continuity"]["recent_progress"][0].endswith("Started continuity audit")
+        assert data["continuity"]["recent_progress"][1].endswith("Wired logs")
 
     def test_context_hides_execution_readiness_noise_for_completed_task(
         self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
@@ -436,6 +513,12 @@ class TestExportEndpoint:
                 """
                 INSERT INTO task_spirit (task_id, done_when, context, plan_status, complexity)
                 VALUES (%s, %s::jsonb, %s::jsonb, %s, %s)
+                ON CONFLICT (task_id)
+                DO UPDATE SET
+                    done_when = EXCLUDED.done_when,
+                    context = task_spirit.context || EXCLUDED.context,
+                    plan_status = EXCLUDED.plan_status,
+                    complexity = EXCLUDED.complexity
                 """,
                 (
                     task_id,

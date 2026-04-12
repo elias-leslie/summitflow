@@ -208,3 +208,44 @@ def get_plan_subtask_map(context: dict[str, Any] | None) -> dict[str, dict[str, 
         for subtask in normalize_plan_subtasks(context.get("subtasks"))
         if subtask.get("subtask_id")
     }
+
+
+def merge_plan_subtasks(
+    existing_subtasks: Any,
+    incoming_subtasks: Any,
+) -> list[dict[str, Any]]:
+    """Merge normalized subtask specs while preserving existing order."""
+    merged_by_id = {
+        subtask["subtask_id"]: subtask
+        for subtask in normalize_plan_subtasks(existing_subtasks)
+        if subtask.get("subtask_id")
+    }
+    order = list(merged_by_id.keys())
+
+    for subtask in normalize_plan_subtasks(incoming_subtasks):
+        subtask_id = str(subtask.get("subtask_id") or "").strip()
+        if not subtask_id:
+            continue
+        if subtask_id not in merged_by_id:
+            order.append(subtask_id)
+            merged_by_id[subtask_id] = {}
+        merged = dict(merged_by_id[subtask_id])
+        merged.update(subtask)
+        merged_by_id[subtask_id] = merged
+
+    return [merged_by_id[subtask_id] for subtask_id in order if subtask_id in merged_by_id]
+
+
+def remove_plan_subtasks(
+    existing_subtasks: Any,
+    subtask_ids: list[str],
+) -> list[dict[str, Any]]:
+    """Remove subtask specs by id from normalized plan context."""
+    remove_ids = {str(subtask_id).strip() for subtask_id in subtask_ids if str(subtask_id).strip()}
+    if not remove_ids:
+        return normalize_plan_subtasks(existing_subtasks)
+    return [
+        subtask
+        for subtask in normalize_plan_subtasks(existing_subtasks)
+        if str(subtask.get("subtask_id") or "").strip() not in remove_ids
+    ]

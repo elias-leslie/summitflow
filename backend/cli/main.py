@@ -98,7 +98,7 @@ CHECKPOINT (claim -> done | abandon):
 SUBTASK:
   subtask list <task-id>
   subtask show <task-id> <subtask-id>
-  subtask create <task-id> <sub-id> <desc> [--phase P] [--steps "a,b,c"]
+  subtask create <subtask-id> -d <desc> [--task <task-id>] [--phase P]
   subtask pass <subtask-id> -t <task-id> [--citation M:abc12345+] [--none]
   subtask delete <task-id> <subtask-id>
 

@@ -9,6 +9,7 @@ from typing import Any
 
 from ..logging_config import get_logger
 from .connection import get_connection
+from .subtasks_context import sync_subtasks_to_plan_context
 from .subtasks_helpers import SUBTASK_COLUMNS, generate_subtask_id, row_to_dict
 
 logger = get_logger(__name__)
@@ -60,7 +61,8 @@ def bulk_create_subtasks(
             - subtask_id: str (required) - e.g., "1.1"
             - description: str (required)
             - phase: str (optional)
-            - steps: Ignored (steps layer removed)
+            - steps: Optional rich step guidance mirrored into task_spirit.context
+            - depends_on: Optional dependency ids mirrored into task_spirit.context
             - display_order: int (optional, auto-assigned if missing)
 
     Returns:
@@ -79,5 +81,6 @@ def bulk_create_subtasks(
             created.append(row_dict)
         conn.commit()
 
+    sync_subtasks_to_plan_context(task_id, subtasks)
     logger.info("Created %d subtasks for task %s", len(created), task_id)
     return created

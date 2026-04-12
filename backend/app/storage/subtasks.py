@@ -27,6 +27,7 @@ def create_subtask(
     display_order: int,
     phase: str | None = None,
     steps: list[str | dict[str, Any]] | None = None,
+    depends_on: list[str] | None = None,
     subtask_type: str | None = None,
 ) -> dict[str, Any]:
     """Create a new subtask."""
@@ -39,6 +40,7 @@ def create_subtask(
         display_order,
         phase,
         steps,
+        depends_on,
         subtask_type,
     )
 

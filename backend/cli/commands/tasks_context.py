@@ -7,6 +7,7 @@ from typing import Any
 
 import typer
 
+from app.services.task_continuity import build_continuity
 from app.services.task_execution_readiness import (
     assess_task_execution_readiness,
     is_final_task_status,
@@ -131,11 +132,14 @@ def _handle_task_context(
     task: dict[str, Any],
     task_id: str,
     subtasks: list[dict[str, Any]],
+    subtask_summary: dict[str, Any],
     client: STClient,
 ) -> None:
     """Output full task context including blockers, references, and snapshot state."""
     task_deps: list[dict[str, Any]] = client.list_dependencies(task_id)
     blockers = _get_blockers(task_id, task_deps, client)
+    logs_payload = client.get_task_logs(task["project_id"], task_id)
+    progress_log = logs_payload.get("entries", []) if isinstance(logs_payload, dict) else []
     task_type = task.get("task_type", "")
     task_refs = fetch_triggered_references(task_type) if task_type else []
     if not is_final_task_status(task.get("status")):
@@ -147,6 +151,14 @@ def _handle_task_context(
     sync_analysis = analyze_subtask_sync(subtasks)
     task["syncable_subtasks"] = sync_analysis.syncable
     task["syncable_subtasks_skipped"] = sync_analysis.skipped
+    task["continuity"] = build_continuity(
+        task=task,
+        spirit=task,
+        subtasks=subtasks,
+        blockers=blockers,
+        progress_log=progress_log,
+        summary=subtask_summary,
+    )
     snapshot = _load_snapshot_info(task_id)
     output_context(task, subtasks, blockers, task_refs, snapshot)
 
@@ -183,11 +195,12 @@ def get_task_context(
 
         subtask_data = client.get_subtasks(task_id, include_steps=True)
         subtasks = subtask_data.get("subtasks", [])
+        summary = subtask_data.get("summary") or {}
 
         if subtask:
             _handle_subtask_context(task, subtask, subtasks)
         else:
-            _handle_task_context(task, task_id, subtasks, client)
+            _handle_task_context(task, task_id, subtasks, summary, client)
 
         _display_worktree_info(task_id)
 

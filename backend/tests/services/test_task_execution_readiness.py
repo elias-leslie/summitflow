@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 from app.services.task_execution_readiness import assess_task_execution_readiness
 from app.services.task_second_opinion import (
     build_second_opinion_entry,
     parse_second_opinion_response,
+    persist_second_opinion,
 )
 
 
@@ -226,6 +229,124 @@ class TestSecondOpinionParsing:
         assert not readiness.ready
         assert "second_opinion" in readiness.missing_fields
         assert any("second opinion" in issue.lower() for issue in readiness.issues)
+
+    def test_pre_close_review_alone_does_not_satisfy_task_shape_gate(self) -> None:
+        readiness = assess_task_execution_readiness(
+            {
+                "task_type": "feature",
+                "complexity": "COMPLEX",
+                "description": "Close auth migration",
+                "priority": 1,
+                "labels": ["auth", "backend"],
+            },
+            {
+                "objective": "Ship auth migration safely",
+                "done_when": ["Migration works", "Tests pass"],
+                "spirit_anti": "Do not break login",
+                "context": {
+                    "files_to_modify": ["backend/app/auth.py"],
+                    "second_opinion": {
+                        "required": True,
+                        "stage": "pre_close",
+                        "status": "completed",
+                        "summary": "Ready to close.",
+                    },
+                },
+            },
+            [
+                {
+                    "subtask_id": "1.1",
+                    "description": "Implement migration",
+                    "steps_from_table": [{"step_number": 1, "description": "Update flow"}],
+                }
+            ],
+        )
+
+        assert not readiness.ready
+        assert "second_opinion" in readiness.missing_fields
+
+    def test_task_shape_review_in_history_still_satisfies_readiness(self) -> None:
+        readiness = assess_task_execution_readiness(
+            {
+                "task_type": "feature",
+                "complexity": "COMPLEX",
+                "description": "Close auth migration",
+                "priority": 1,
+                "labels": ["auth", "backend"],
+            },
+            {
+                "objective": "Ship auth migration safely",
+                "done_when": ["Migration works", "Tests pass"],
+                "spirit_anti": "Do not break login",
+                "context": {
+                    "files_to_modify": ["backend/app/auth.py"],
+                    "second_opinion": {
+                        "required": True,
+                        "stage": "pre_close",
+                        "status": "needs_revision",
+                        "summary": "Need one more verify pass.",
+                        "reviews": {
+                            "task_shape": {
+                                "required": True,
+                                "stage": "task_shape",
+                                "status": "completed",
+                                "summary": "Shape reviewed.",
+                            },
+                            "pre_close": {
+                                "required": True,
+                                "stage": "pre_close",
+                                "status": "needs_revision",
+                                "summary": "Need one more verify pass.",
+                            },
+                        },
+                    },
+                },
+            },
+            [
+                {
+                    "subtask_id": "1.1",
+                    "description": "Implement migration",
+                    "steps_from_table": [{"step_number": 1, "description": "Update flow"}],
+                }
+            ],
+        )
+
+        assert readiness.ready
+
+    def test_persist_second_opinion_preserves_task_shape_review_when_recording_pre_close(self) -> None:
+        existing_spirit = {
+            "context": {
+                "second_opinion": {
+                    "required": True,
+                    "stage": "task_shape",
+                    "status": "completed",
+                    "summary": "Shape reviewed.",
+                    "reasons": ["complexity=COMPLEX", "priority=P1"],
+                    "requested_by": "plan-import",
+                }
+            }
+        }
+        critique = {
+            "required": True,
+            "stage": "pre_close",
+            "status": "needs_revision",
+            "summary": "Need final verification.",
+            "verdict": "NEEDS_REVISION",
+        }
+
+        with (
+            patch("app.services.task_second_opinion.get_task_spirit", return_value=existing_spirit),
+            patch("app.services.task_second_opinion.update_task_spirit", return_value={}) as mock_update,
+        ):
+            persist_second_opinion("task-mock-1", critique)
+
+        update_call = mock_update.call_args
+        stored = update_call.kwargs["context"]["second_opinion"]
+        assert stored["stage"] == "task_shape"
+        assert stored["summary"] == "Shape reviewed."
+        assert stored["reasons"] == ["complexity=COMPLEX", "priority=P1"]
+        assert stored["reviews"]["task_shape"]["summary"] == "Shape reviewed."
+        assert stored["reviews"]["pre_close"]["summary"] == "Need final verification."
 
     def test_pending_second_opinion_tracks_requirement_without_missing_summary_noise(self) -> None:
         readiness = assess_task_execution_readiness(

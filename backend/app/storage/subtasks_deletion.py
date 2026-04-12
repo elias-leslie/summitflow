@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from ..logging_config import get_logger
 from .connection import get_connection
+from .subtasks_context import remove_subtasks_from_plan_context
 from .subtasks_helpers import generate_subtask_id
 
 logger = get_logger(__name__)
@@ -22,6 +23,8 @@ def delete_subtasks_for_task(task_id: str) -> int:
         Number of subtasks deleted.
     """
     with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT subtask_id FROM task_subtasks WHERE task_id = %s", (task_id,))
+        subtask_ids = [str(row[0]) for row in cur.fetchall()]
         cur.execute(
             "DELETE FROM task_subtasks WHERE task_id = %s",
             (task_id,),
@@ -29,6 +32,7 @@ def delete_subtasks_for_task(task_id: str) -> int:
         count: int = cur.rowcount
         conn.commit()
 
+    remove_subtasks_from_plan_context(task_id, subtask_ids)
     logger.debug("Deleted %d subtasks for task %s", count, task_id)
     return count
 
@@ -54,6 +58,7 @@ def delete_subtask(task_id: str, subtask_id: str) -> bool:
         conn.commit()
 
     if deleted:
+        remove_subtasks_from_plan_context(task_id, [subtask_id])
         logger.info("Deleted subtask %s from task %s", subtask_id, task_id)
     else:
         logger.warning("Subtask %s not found in task %s", subtask_id, task_id)

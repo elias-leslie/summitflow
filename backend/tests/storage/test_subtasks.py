@@ -58,10 +58,13 @@ class TestCreateSubtask:
 
         assert subtask["phase"] == "backend"
 
-    def test_create_subtask_with_steps_no_crash(self, test_task: dict[str, Any]) -> None:
-        """Test creating subtask with steps param doesn't crash (steps layer removed)."""
+    def test_create_subtask_with_steps_surfaces_plan_context_guidance(
+        self,
+        test_task: dict[str, Any],
+    ) -> None:
+        """Create path should preserve step guidance without reviving step rows."""
         steps: list[str | dict[str, Any]] = ["Step 1", "Step 2", "Step 3"]
-        subtask = subtask_store.create_subtask(
+        subtask_store.create_subtask(
             task_id=test_task["id"],
             subtask_id="1.1",
             description="Subtask with steps",
@@ -69,9 +72,16 @@ class TestCreateSubtask:
             steps=steps,
         )
 
-        # Subtask created successfully — steps param accepted but no-op
-        assert subtask is not None
-        assert subtask["subtask_id"] == "1.1"
+        subtasks = subtask_store.get_subtasks_for_task(test_task["id"], include_steps=True)
+
+        assert len(subtasks) == 1
+        assert subtasks[0]["steps_from_table"] == []
+        assert subtasks[0]["steps_source"] == "plan_context"
+        assert subtasks[0]["steps"] == [
+            {"step_number": 1, "description": "Step 1", "passes": False},
+            {"step_number": 2, "description": "Step 2", "passes": False},
+            {"step_number": 3, "description": "Step 3", "passes": False},
+        ]
 
     def test_create_subtask_multiple(self, test_task: dict[str, Any]) -> None:
         """Test creating multiple subtasks."""

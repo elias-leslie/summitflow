@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+from app.services.task_continuity import format_continuity_lines
 from app.services.task_execution_readiness import is_final_task_status
 from app.services.task_harness import summarize_execution_contract
 
@@ -186,7 +187,10 @@ def format_context_task(task: dict[str, Any]) -> str:
         lines.append(workflow)
     if harness := _format_harness_line(task):
         lines.append(harness)
-    if objective := task.get("objective"):
+    continuity = task.get("continuity")
+    if isinstance(continuity, dict):
+        lines.extend(format_continuity_lines(continuity))
+    elif objective := task.get("objective"):
         lines.append(f"OBJECTIVE:{objective}")
     if spirit_anti := task.get("spirit_anti"):
         lines.append(f"SPIRIT_ANTI:{spirit_anti}")
