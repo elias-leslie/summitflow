@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -234,6 +235,9 @@ class TestSessionCommands:
         captured: dict[str, object] = {}
 
         class _DummyClient:
+            def __init__(self, **_kwargs: object) -> None:
+                pass
+
             def list_sessions(self, **_: object) -> list[dict[str, object]]:
                 return [
                     {"id": "sess-1", "status": "completed", "agent_slug": "coder"},
@@ -259,6 +263,9 @@ class TestSessionCommands:
         captured: dict[str, object] = {}
 
         class _DummyClient:
+            def __init__(self, **_kwargs: object) -> None:
+                pass
+
             def list_sessions(self, **_: object) -> list[dict[str, object]]:
                 return [
                     {"id": "sess-1", "status": "completed", "agent_slug": "coder"},
@@ -385,8 +392,8 @@ class TestSessionCommands:
 
         class _DummyClient:
             def list_sessions(self, **kwargs: object) -> list[dict[str, object]]:
-                page = kwargs.get("page", 1)
-                limit = kwargs.get("limit", 100)
+                page = cast(int, kwargs.get("page", 1))
+                limit = cast(int, kwargs.get("limit", 100))
                 # Return different sessions for each page
                 if page == 1:
                     return [
@@ -404,7 +411,9 @@ class TestSessionCommands:
         monkeypatch.setattr(sessions_cmd, "STClient", _DummyClient)
 
         client = _DummyClient()
-        result = sessions_cmd._list_all_active_sessions(client, project_id="agent-hub", page_size=100)
+        result = sessions_cmd._list_all_active_sessions(
+            cast(Any, client), project_id="agent-hub", page_size=100
+        )
 
         # Should combine sessions from both pages (100 from page 1 + 50 from page 2)
         assert len(result) == 150
@@ -412,6 +421,97 @@ class TestSessionCommands:
         assert result[99]["id"] == "sess-100"
         assert result[100]["id"] == "sess-101"
         assert result[149]["id"] == "sess-150"
+
+
+class TestRequireProjectFalse:
+    """Regression tests: sessions commands work from a non-project cwd."""
+
+    def test_list_sessions_constructs_client_without_project_required(self) -> None:
+        captured_kwargs: list[dict[str, object]] = []
+
+        class _DummyClient:
+            def __init__(self, **kwargs: object) -> None:
+                captured_kwargs.append(kwargs)
+
+            def list_sessions(self, **_: object) -> list[dict[str, object]]:
+                return []
+
+        with patch("cli.commands.sessions.STClient", side_effect=_DummyClient):
+            result = runner.invoke(app, ["sessions", "list", "-s", "active", "--include-unassigned"])
+
+        assert result.exit_code == 0
+        assert captured_kwargs == [{"require_project": False}]
+
+    def test_show_session_constructs_client_without_project_required(self) -> None:
+        captured_kwargs: list[dict[str, object]] = []
+
+        class _DummyClient:
+            def __init__(self, **kwargs: object) -> None:
+                captured_kwargs.append(kwargs)
+
+            def get_session(self, session_id: str) -> dict[str, object]:
+                return {"id": session_id, "status": "completed"}
+
+        with patch("cli.commands.sessions.STClient", side_effect=_DummyClient):
+            result = runner.invoke(app, ["sessions", "show", "sess-abc"])
+
+        assert result.exit_code == 0
+        assert captured_kwargs == [{"require_project": False}]
+
+    def test_close_session_constructs_client_without_project_required(self) -> None:
+        captured_kwargs: list[dict[str, object]] = []
+
+        class _DummyClient:
+            def __init__(self, **kwargs: object) -> None:
+                captured_kwargs.append(kwargs)
+
+            def close_session(self, session_id: str) -> dict[str, object]:
+                return {"id": session_id, "status": "completed"}
+
+        with patch("cli.commands.sessions.STClient", side_effect=_DummyClient):
+            result = runner.invoke(app, ["sessions", "close", "sess-xyz"])
+
+        assert result.exit_code == 0
+        assert captured_kwargs == [{"require_project": False}]
+
+    def test_list_sessions_project_flag_forwarded_to_api(self) -> None:
+        mock_client = MagicMock()
+        mock_client.list_sessions.return_value = []
+
+        with patch("cli.commands.sessions.STClient", return_value=mock_client):
+            result = runner.invoke(
+                app, ["sessions", "list", "-s", "active", "--project", "summitflow"]
+            )
+
+        assert result.exit_code == 0
+        mock_client.list_sessions.assert_called_once_with(
+            status="active",
+            limit=20,
+            page=1,
+            agent_slug=None,
+            parent_session_id=None,
+            project_id="summitflow",
+        )
+
+    def test_list_sessions_in_project_cwd_still_works(self) -> None:
+        mock_client = MagicMock()
+        mock_client.list_sessions.return_value = [
+            {"id": "sess-in-project", "agent_slug": "coder", "status": "active"}
+        ]
+
+        with patch("cli.commands.sessions.STClient", return_value=mock_client):
+            result = runner.invoke(app, ["sessions", "list", "-s", "active"])
+
+        assert result.exit_code == 0
+        assert "sess-in-project" in result.output
+        mock_client.list_sessions.assert_called_once_with(
+            status="active",
+            limit=20,
+            page=1,
+            agent_slug=None,
+            parent_session_id=None,
+            project_id=None,
+        )
 
 
 class TestOwnershipCommand:

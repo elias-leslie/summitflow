@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any, cast
 
 import typer
 
@@ -35,7 +35,7 @@ def _render_session_list(
     include_unassigned: bool = True,
 ) -> None:
     refresh_agent_observability()
-    client = STClient()
+    client = STClient(require_project=False)
     normalized_status = _normalize_status_filter(status_filter)
 
     try:
@@ -96,10 +96,13 @@ def list_sessions(
 ) -> None:
     """List agent sessions.
 
+    Works from any directory; use --project to filter by project.
+
     Examples:
         st sessions
         st sessions list
         st sessions list --status active
+        st sessions list -s active --include-unassigned
     """
     _render_session_list(
         status_filter,
@@ -117,10 +120,12 @@ def show_session(
 ) -> None:
     """Show details of a specific session.
 
+    Works from any directory — no project context required.
+
     Examples:
         st sessions show abc123
     """
-    client = STClient()
+    client = STClient(require_project=False)
 
     try:
         session = client.get_session(session_id)
@@ -135,8 +140,11 @@ def show_session(
 def close_session(
     session_id: str,
 ) -> None:
-    """Close an active session."""
-    client = STClient()
+    """Close an active session.
+
+    Works from any directory — no project context required.
+    """
+    client = STClient(require_project=False)
 
     try:
         result = client.close_session(session_id)
@@ -178,7 +186,8 @@ def _reapable_sessions(sessions: list[dict[str, object]]) -> list[dict[str, obje
         live = session.get("live_activity")
         if not isinstance(live, dict):
             continue
-        if bool(live.get("reapable")) or live.get("lifecycle_state") == "reapable":
+        live_dict = cast(dict[str, Any], live)
+        if bool(live_dict.get("reapable")) or live_dict.get("lifecycle_state") == "reapable":
             result.append(session)
     return result
 
@@ -200,7 +209,7 @@ def _output_dry_run(
                     "agent_slug": session.get("agent_slug"),
                     "session_type": session.get("session_type"),
                     "reapable_reason": (
-                        session.get("live_activity", {}).get("reapable_reason")
+                        cast(dict[str, Any], session.get("live_activity")).get("reapable_reason")
                         if isinstance(session.get("live_activity"), dict)
                         else None
                     ),
