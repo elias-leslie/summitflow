@@ -25,7 +25,7 @@ _TRIAGE_PROMPT_TEMPLATE = (
     '    "objective": "Single measurable goal",\n'
     '    "spirit": "Core intent - what TO accomplish",\n'
     '    "anti": "What should absolutely NOT be done",\n'
-    '    "requirements": ["List of acceptance criteria"],\n'
+    '    "done_when": ["List of completion conditions"],\n'
     '    "suggested_complexity": "SIMPLE" | "STANDARD" | "COMPLEX",\n'
     '    "priority": "critical" | "high" | "medium" | "low",\n'
     '    "clarifying_questions": ["Only if NEEDS_CLARIFICATION"],\n'
@@ -63,7 +63,7 @@ def _handle_reject(task_id: str, result: dict[str, Any]) -> None:
 def _handle_ready(task_id: str, result: dict[str, Any]) -> None:
     complexity = result.get("suggested_complexity", "STANDARD")
     objective = result.get("objective", "")
-    requirements = result.get("requirements", [])
+    done_when = result.get("done_when") or result.get("requirements", [])
 
     updates: dict[str, Any] = {"complexity": complexity}
     if objective:
@@ -73,7 +73,7 @@ def _handle_ready(task_id: str, result: dict[str, Any]) -> None:
         upsert_task_spirit(
             task_id=task_id,
             complexity=complexity,
-            done_when=requirements if requirements else None,
+            done_when=done_when if done_when else None,
         )
         logger.info("Created task spirit", task_id=task_id, objective=objective[:50])
 

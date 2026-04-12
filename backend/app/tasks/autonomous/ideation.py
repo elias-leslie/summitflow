@@ -2,7 +2,7 @@
 
 Uses the ideator agent to expand crowdsourced ideas with:
 - Scope definition and boundaries
-- Suggested acceptance criteria
+- Suggested done_when conditions
 - Dependency analysis
 - Complexity estimation
 """
@@ -14,10 +14,11 @@ from typing import Any
 
 from ...logging_config import get_logger
 from ...services.agent_hub_client import get_sync_client
+from ...services.task_plan_context import build_task_plan_context
 from ...services.task_second_opinion import ensure_second_opinion_tracking
 from ...storage import log_task_event
 from ...storage import tasks as task_store
-from ...storage.task_spirit import upsert_task_spirit
+from ...storage.task_spirit import get_task_spirit, upsert_task_spirit
 
 logger = get_logger(__name__)
 
@@ -34,7 +35,7 @@ def _build_ideation_prompt(title: str, description: str) -> str:
         f"Reply with JSON:\n"
         f'{{"objective": "clear 1-2 sentence objective",'
         f' "scope": "what is in scope and out of scope",'
-        f' "acceptance_criteria": ["criterion 1", "criterion 2", ...],'
+        f' "done_when": ["condition 1", "condition 2", ...],'
         f' "suggested_type": "feature|bug|refactor|task|debt",'
         f' "complexity": "SIMPLE|STANDARD|COMPLEX",'
         f' "dependencies": ["any known dependencies or blockers"],'
@@ -42,13 +43,34 @@ def _build_ideation_prompt(title: str, description: str) -> str:
     )
 
 
+def _normalize_done_when(raw: Any) -> list[str]:
+    if not isinstance(raw, list):
+        return []
+    return [text for item in raw if (text := str(item).strip())]
+
+
 def _apply_ideation_result(
     task_id: str, result: dict[str, Any]
 ) -> dict[str, Any]:
     """Persist ideation result and return success response."""
+    done_when = _normalize_done_when(
+        result.get("done_when")
+        if result.get("done_when") not in (None, [])
+        else result.get("acceptance_criteria", [])
+    )
+    existing = get_task_spirit(task_id)
+    existing_context = existing.get("context") if isinstance(existing, dict) else None
+    merged_context: dict[str, Any] = (
+        dict(existing_context) if isinstance(existing_context, dict) else {}
+    )
+    merged_context.update(build_task_plan_context({"objective": result.get("objective")}))
+    if scope := str(result.get("scope") or "").strip():
+        merged_context["scope"] = scope
     upsert_task_spirit(
         task_id,
-        context=result.get("scope", ""),
+        done_when=done_when or (existing.get("done_when") if existing else None),
+        context=merged_context or None,
+        complexity=result.get("complexity"),
     )
 
     updates: dict[str, Any] = {
@@ -108,7 +130,7 @@ def ideate_task(task_id: str, project_id: str) -> dict[str, Any]:
     """Flesh out a raw idea into a structured task description.
 
     Uses the ideator agent to expand a brief idea into a well-defined task
-    with scope, acceptance criteria, and complexity estimate.
+    with scope, done_when conditions, and complexity estimate.
 
     After successful ideation, the task moves to triage.
 

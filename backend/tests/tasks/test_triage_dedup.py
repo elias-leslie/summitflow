@@ -97,7 +97,7 @@ class TestTriagePromptCleanup:
 
         mock_client = MagicMock()
         mock_client.complete.return_value = MagicMock(
-            content='{"status": "READY", "objective": "Do thing", "requirements": [], "suggested_complexity": "SIMPLE", "priority": "medium", "reasoning": "ok"}'
+            content='{"status": "READY", "objective": "Do thing", "done_when": [], "suggested_complexity": "SIMPLE", "priority": "medium", "reasoning": "ok"}'
         )
 
         with patch("app.tasks.autonomous.triage.get_sync_client", return_value=mock_client):

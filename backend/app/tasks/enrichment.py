@@ -1,7 +1,7 @@
 """Background tasks for AI-powered task enrichment.
 
 These tasks run in the background to enrich tasks with AI-generated
-objectives, acceptance criteria, and implementation subtasks.
+objectives, done_when conditions, and implementation subtasks.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ def _build_enrichment_result(task_id: str, enriched: Any, validation: Any) -> di
     return {
         "task_id": task_id,
         "status": "review",
-        "criteria_count": len(enriched.acceptance_criteria),
+        "done_when_count": len(enriched.done_when),
         "subtask_count": len(enriched.subtasks),
         "valid": validation.valid,
     }
@@ -47,7 +47,7 @@ def enrich_task_async(
 
     This task:
     1. Gathers project context
-    2. Calls Opus to generate objective, criteria, subtasks
+    2. Calls Opus to generate objective, done_when, subtasks
     3. Validates with Gemini
     4. Stores results in the database
 
@@ -75,9 +75,9 @@ def enrich_task_async(
         apply_enrichment_to_task(task_id, enriched)
 
         logger.info(
-            "Enrichment complete for task %s: %d criteria, %d subtasks, valid=%s",
+            "Enrichment complete for task %s: %d done_when items, %d subtasks, valid=%s",
             task_id,
-            len(enriched.acceptance_criteria),
+            len(enriched.done_when),
             len(enriched.subtasks),
             validation.valid,
         )

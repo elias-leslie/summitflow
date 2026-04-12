@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from .task_create_update import ExecutionModeLiteral
-from .task_criteria import AcceptanceCriterion
 
 if TYPE_CHECKING:
     from .task_enrichment import BlockerInfo, CapabilityContext
@@ -56,9 +55,6 @@ class TaskResponse(BaseModel):
     labels: list[str]
     task_type: str
     parent_task_id: str | None
-    # AI agent reliability fields
-    acceptance_criteria: list[AcceptanceCriterion] | None = None
-    criteria_count: int | None = None  # Count from task_criteria junction table
     current_phase: str | None = None
     verification_result: dict[str, Any] | None = None
     # Pipeline v2 fields

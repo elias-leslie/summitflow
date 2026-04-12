@@ -384,7 +384,6 @@ class TestReadyEndpoint:
             "labels": [],
             "task_type": "bug",
             "parent_task_id": None,
-            "acceptance_criteria": None,
             "current_phase": None,
             "verification_result": None,
             "done_when": ["GET /health returns 200"],
@@ -468,7 +467,6 @@ class TestReadyEndpoint:
             "labels": [],
             "task_type": "bug",
             "parent_task_id": None,
-            "acceptance_criteria": None,
             "current_phase": None,
             "verification_result": None,
             "done_when": ["GET /health returns 200"],
@@ -548,7 +546,6 @@ class TestReadyEndpoint:
             "labels": [],
             "task_type": "bug",
             "parent_task_id": None,
-            "acceptance_criteria": None,
             "current_phase": None,
             "verification_result": None,
             "done_when": ["Relevant tests pass"],
@@ -619,7 +616,6 @@ class TestReadyEndpoint:
             "labels": [],
             "task_type": "refactor",
             "parent_task_id": None,
-            "acceptance_criteria": None,
             "current_phase": None,
             "verification_result": None,
             "done_when": [],
@@ -696,7 +692,6 @@ class TestReadyEndpoint:
             "labels": [],
             "task_type": "refactor",
             "parent_task_id": None,
-            "acceptance_criteria": None,
             "current_phase": None,
             "verification_result": None,
             "done_when": ["Tests pass"],
@@ -829,7 +824,7 @@ class TestReadyEndpoint:
             limit: int = 50,
             offset: int = 0,
             **_: object,
-        ) -> list[dict[str, object]]:
+        ) -> list[dict[str, Any]]:
             assert project_id == test_project_id
             assert limit in {100, 500}
             assert offset == 0
@@ -927,7 +922,7 @@ class TestReadyEndpoint:
             limit: int = 50,
             offset: int = 0,
             **_: object,
-        ) -> list[dict[str, object]]:
+        ) -> list[dict[str, Any]]:
             assert project_id == test_project_id
             assert limit in {100, 500}
             assert offset == 0
@@ -1013,7 +1008,7 @@ class TestReadyEndpoint:
             limit: int = 50,
             offset: int = 0,
             **_: object,
-        ) -> list[dict[str, object]]:
+        ) -> list[dict[str, Any]]:
             assert project_id == test_project_id
             assert limit in {100, 500}
             assert offset == 0

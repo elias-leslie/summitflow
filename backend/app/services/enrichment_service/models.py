@@ -7,17 +7,6 @@ from typing import Any
 
 
 @dataclass
-class AcceptanceCriterion:
-    """A single acceptance criterion."""
-
-    id: str
-    criterion: str
-    category: str = "correctness"
-    measurement: str = "test"
-    threshold: str | None = None
-
-
-@dataclass
 class Subtask:
     """A single implementation subtask."""
 
@@ -37,7 +26,7 @@ class EnrichedTask:
     task_type: str
     priority: int
     labels: list[str]
-    acceptance_criteria: list[AcceptanceCriterion]
+    done_when: list[str]
     subtasks: list[Subtask]
     raw_json: dict[str, Any]
     validation_notes: list[str] = field(default_factory=list)
@@ -63,7 +52,6 @@ class DiscussionResponse:
 
 
 __all__ = [
-    "AcceptanceCriterion",
     "DiscussionResponse",
     "EnrichedTask",
     "Subtask",

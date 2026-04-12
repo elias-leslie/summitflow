@@ -42,7 +42,7 @@ async def validate_task_ready_endpoint(project_id: str, task_id: str) -> Validat
     Performs pre-work validation checks:
     - Task is not already running or completed
     - Task has no incomplete blocking dependencies
-    - For feature-type tasks: linked to feature with acceptance criteria
+    - For feature-type tasks: linked to feature with completion contract
     - Criteria quality warnings (specificity, action verbs)
 
     Args:

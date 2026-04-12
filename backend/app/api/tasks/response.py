@@ -109,12 +109,7 @@ def _parse_subtasks(task: dict[str, Any]) -> list[SubtaskResponse] | None:
     ]
 
 
-def _parse_task_criteria(task: dict[str, Any]) -> list[AcceptanceCriterion] | None:
-    raw = task.get("acceptance_criteria")
-    return _parse_criteria(raw, filter_empty=True) if isinstance(raw, list) else None
-
-
-def task_to_response(task: dict[str, Any], criteria_count: int | None = None) -> TaskResponse:
+def task_to_response(task: dict[str, Any]) -> TaskResponse:
     blockers, blocked_by_incomplete = _parse_blockers(task)
     execution_mode = task.get("execution_mode") or ("autonomous" if task.get("autonomous") else "manual")
     return TaskResponse(
@@ -137,8 +132,6 @@ def task_to_response(task: dict[str, Any], criteria_count: int | None = None) ->
         labels=task.get("labels") or [],
         task_type=task.get("task_type", "task"),
         parent_task_id=task.get("parent_task_id"),
-        acceptance_criteria=_parse_task_criteria(task),
-        criteria_count=criteria_count if criteria_count is not None else 0,
         current_phase=task.get("current_phase"),
         verification_result=task.get("verification_result"),
         done_when=task.get("done_when"),

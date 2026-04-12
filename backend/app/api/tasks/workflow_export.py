@@ -1,7 +1,4 @@
-"""Workflow export utilities.
-
-Build complete export data for plan.json round-trip.
-"""
+"""Workflow export utilities."""
 
 from __future__ import annotations
 
@@ -12,15 +9,6 @@ from ...services.task_plan_context import extract_task_plan_fields, hydrate_task
 from ...storage import task_dependencies as dep_store
 from ...storage.events import get_events_by_trace
 from ...storage.subtasks import get_subtask_dependencies
-
-
-def _build_acceptance_criteria(spirit: dict[str, Any] | None) -> list[dict[str, Any]]:
-    if not spirit or not spirit.get("done_when"):
-        return []
-    return [
-        {"id": f"ac-{i}", "criterion": dw, "verified": False}
-        for i, dw in enumerate(spirit["done_when"], 1)
-    ]
 
 
 def _format_datetime(value: Any) -> str | None:
@@ -163,14 +151,13 @@ def build_export_data(
     spirit: dict[str, Any] | None,
     subtasks: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """Build complete export data for plan.json round-trip."""
+    """Build export data for plan.json round-trip."""
     task_id = task["id"]
     blocking = dep_store.get_blocking_tasks(task_id)
     return {
         "exported_at": datetime.now(UTC).isoformat(),
         "task": _build_task_payload(task, spirit),
         "spirit": _build_spirit_payload(task, spirit),
-        "acceptance_criteria": _build_acceptance_criteria(spirit),
         "subtasks": [_build_subtask_entry(task_id, st) for st in subtasks],
         "dependencies": {
             "blocks": [{"id": t["id"], "title": t["title"]} for t in blocking],

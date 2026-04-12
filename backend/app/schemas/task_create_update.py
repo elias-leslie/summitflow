@@ -6,8 +6,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from .task_criteria import AcceptanceCriterion
-
 ExecutionModeLiteral = Literal["manual", "autonomous", "manual_only"]
 
 
@@ -24,10 +22,6 @@ class TaskCreate(BaseModel):
     )
     task_type: Literal["feature", "bug", "task", "refactor", "debt", "regression"] = "task"
     parent_task_id: str | None = None
-    # AI agent reliability fields
-    acceptance_criteria: list[AcceptanceCriterion] | None = Field(
-        default=None, description="List of acceptance criteria (validated on create)"
-    )
     # Rich plan metadata is preserved in task_spirit.context for round-trip task context.
     objective: str | None = Field(default=None, description="Task objective stored in task_spirit context")
     spirit_anti: str | None = Field(default=None, description="Guardrails stored in task_spirit context")
@@ -71,8 +65,6 @@ class TaskUpdate(BaseModel):
     parent_task_id: str | None = None
     # Allow moving task to different project
     project_id: str | None = None
-    # AI agent reliability fields
-    acceptance_criteria: list[AcceptanceCriterion] | None = None
     # Capability linkage (FK to capabilities table)
     capability_id: int | None = None
     # Rich plan metadata is preserved in task_spirit.context for round-trip task context.

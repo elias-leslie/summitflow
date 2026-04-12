@@ -574,7 +574,7 @@ class TestExportEndpoint:
         assert data["spirit"]["done_when"] == ["Condition 1", "Condition 2"]
         assert data["spirit"]["objective"] == "Restore complete export fidelity"
         assert data["spirit"]["constraints"] == ["Keep export shape stable"]
-        assert "acceptance_criteria" in data
+        assert "acceptance_criteria" not in data
         assert "subtasks" in data
         assert data["subtasks"][0]["subtask_id"] == "1.1"
         assert data["subtasks"][0]["steps"][0]["description"] == "Step 1"
@@ -584,16 +584,16 @@ class TestExportEndpoint:
         assert "dependencies" in data
         assert "progress_log" in data
 
-    def test_export_includes_acceptance_criteria_from_done_when(
+    def test_export_keeps_done_when_canonical(
         self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
     ) -> None:
-        """Export should convert done_when to acceptance_criteria."""
+        """Export should keep done_when and omit synthetic acceptance_criteria."""
         # Create a task
         response = client.post(
             f"/api/projects/{test_project_id}/tasks",
             json={
                 "title": "Test task with done_when",
-                "description": "Testing AC conversion",
+                "description": "Testing done_when export",
                 "task_type": "task",
                 "priority": 2,
             },
@@ -622,13 +622,9 @@ class TestExportEndpoint:
         assert response.status_code == 200
         data = response.json()
 
-        # Verify acceptance_criteria
-        ac = data["acceptance_criteria"]
-        assert len(ac) == 2
-        assert ac[0]["id"] == "ac-1"
-        assert ac[0]["criterion"] == "First condition"
-        assert ac[1]["id"] == "ac-2"
-        assert ac[1]["criterion"] == "Second condition"
+        assert data["task"]["done_when"] == ["First condition", "Second condition"]
+        assert data["spirit"]["done_when"] == ["First condition", "Second condition"]
+        assert "acceptance_criteria" not in data
 
     def test_export_nonexistent_task(self, client: Any, test_project_id: str) -> None:
         """Exporting a nonexistent task should return 404."""

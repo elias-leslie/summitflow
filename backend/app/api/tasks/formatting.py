@@ -12,16 +12,13 @@ from ...schemas.tasks import TaskResponse
 def toon_format_task(task: TaskResponse) -> str:
     """Convert TaskResponse to TOON (Token-Optimized Output Notation) format.
 
-    Format: ID|STATUS|PRIORITY|TYPE|COMPLEXITY|DONE/TOTAL|CRITERIA|DECISIONS|TITLE
-    Example: task-abc123|running|P2|task|STANDARD|0/6|criteria:19|decisions:0|Add TOON format
+    Format: ID|STATUS|PRIORITY|TYPE|COMPLEXITY|DONE/TOTAL|TITLE
+    Example: task-abc123|running|P2|task|STANDARD|0/6|Add TOON format
     """
     # Calculate done/total from subtask_summary if available
     done_total = "0/0"
     if task.subtask_summary:
         done_total = f"{task.subtask_summary.completed}/{task.subtask_summary.total}"
-
-    # Format criteria count
-    criteria_str = f"criteria:{task.criteria_count or 0}"
 
     # Format priority
     priority_str = f"P{task.priority}"
@@ -32,7 +29,7 @@ def toon_format_task(task: TaskResponse) -> str:
     # Truncate title to 80 chars max
     title = task.title[:80] if task.title else ""
 
-    return f"{task.id}|{task.status}|{priority_str}|{task.task_type}|{complexity_str}|{done_total}|{criteria_str}|{title}"
+    return f"{task.id}|{task.status}|{priority_str}|{task.task_type}|{complexity_str}|{done_total}|{title}"
 
 
 def toon_format(task: TaskResponse) -> str:
@@ -97,7 +94,7 @@ def toon_format_task_list(tasks: list[TaskResponse], endpoint_type: str = "list"
 
     Example for ready endpoint:
     READY:3
-    task-abc123|pending|P2|task|STANDARD|0/6|criteria:19|decisions:0|Add TOON format
+    task-abc123|pending|P2|task|STANDARD|0/6|Add TOON format
     """
     prefix_map = {"ready": "READY", "failed": "FAILED", "list": "TASKS"}
 

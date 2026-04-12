@@ -69,10 +69,10 @@ def _format_lane_line(lane_check: TaskLaneConflictCheck | dict[str, Any] | None)
     return [f"LANE:{' | '.join(parts)}"] if parts else ["LANE:conflict"]
 
 
-def _format_subtask_lines(subtasks: list[dict[str, Any]]) -> tuple[list[str], int, int]:
-    """Return subtask lines, total criteria count, and verified criteria count."""
+def _format_subtask_lines(subtasks: list[dict[str, Any]]) -> list[str]:
+    """Return subtask lines."""
     if not subtasks:
-        return [], 0, 0
+        return []
     completed = sum(1 for s in subtasks if s.get("passes"))
     pct = int(completed / len(subtasks) * 100)
     lines: list[str] = [f"SUBTASKS[{len(subtasks)}]:{completed}/{len(subtasks)}:{pct}%"]
@@ -82,13 +82,12 @@ def _format_subtask_lines(subtasks: list[dict[str, Any]]) -> tuple[list[str], in
         raw_desc = st.get("description", "")
         desc = raw_desc[:45] + ("..." if len(raw_desc) > 45 else "")
         lines.append(f"{st['subtask_id']}   {marker} {phase}{desc}")
-    return lines, 0, 0
+    return lines
 
 
 def _format_workflow_readiness_lines(
     task_status: object,
     plan_status: str,
-    criteria_count: int,
     decisions_count: int,
     readiness: TaskExecutionReadiness | None,
 ) -> list[str]:
@@ -96,12 +95,12 @@ def _format_workflow_readiness_lines(
     if is_final_task_status(task_status):
         return []
     lines: list[str] = []
-    if plan_status != "draft" or criteria_count > 0 or decisions_count > 0 or readiness is not None:
+    if plan_status != "draft" or decisions_count > 0 or readiness is not None:
         ready_flag = "yes" if readiness and readiness.ready else "no"
         issue_count = len(readiness.issues) if readiness else 0
         lines.append(
             f"WORKFLOW:plan:{plan_status}|ready:{ready_flag}|issues:{issue_count}"
-            f"|criteria:{criteria_count}|decisions:{decisions_count}"
+            f"|decisions:{decisions_count}"
         )
     if readiness and readiness.issues:
         lines.append(f"READINESS:missing:{','.join(readiness.missing_fields)}")
@@ -155,12 +154,11 @@ def format_toon_context(
 
     plan_status = spirit.get("plan_status", "draft") if spirit else "draft"
     final_status = is_final_task_status(task.get("status"))
-    subtask_lines, criteria_count, criteria_verified = _format_subtask_lines(subtasks)
+    subtask_lines = _format_subtask_lines(subtasks)
     lines.extend(
         _format_workflow_readiness_lines(
             task.get("status"),
             plan_status,
-            criteria_count,
             0,
             readiness,
         )
@@ -176,8 +174,6 @@ def format_toon_context(
         )
     lines.extend(_format_lane_line(lane_check))
     lines.extend(subtask_lines)
-    if criteria_count > 0:
-        lines.append(f"CRITERIA[{criteria_verified}]:{criteria_verified}/{criteria_count}")
     return "\n".join(lines)
 
 

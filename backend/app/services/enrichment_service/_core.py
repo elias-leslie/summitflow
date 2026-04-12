@@ -8,7 +8,6 @@ from typing import Any
 from ...logging_config import get_logger
 from ..context_gatherer import gather_all_context
 from .models import (
-    AcceptanceCriterion,
     EnrichedTask,
     Subtask,
     ValidationResult,
@@ -18,18 +17,27 @@ from .parsers import build_enrichment_prompt, load_prompt, parse_enrichment_resp
 logger = get_logger(__name__)
 
 
+def _normalize_done_when(raw: Any) -> list[str]:
+    if not isinstance(raw, list):
+        return []
+    normalized: list[str] = []
+    for item in raw:
+        if isinstance(item, dict):
+            text = str(item.get("criterion") or item.get("description") or "").strip()
+        else:
+            text = str(item).strip()
+        if text:
+            normalized.append(text)
+    return normalized
+
+
 def _build_enriched_task(data: dict[str, Any]) -> EnrichedTask:
     """Construct an EnrichedTask from parsed LLM response data."""
-    criteria = [
-        AcceptanceCriterion(
-            id=c.get("id", f"ac-{i:03d}"),
-            criterion=c.get("criterion", ""),
-            category=c.get("category", "correctness"),
-            measurement=c.get("measurement", "test"),
-            threshold=c.get("threshold"),
-        )
-        for i, c in enumerate(data.get("acceptance_criteria", []), start=1)
-    ]
+    done_when = _normalize_done_when(
+        data.get("done_when")
+        if data.get("done_when") not in (None, [])
+        else data.get("acceptance_criteria", [])
+    )
 
     subtasks = [
         Subtask(
@@ -48,7 +56,7 @@ def _build_enriched_task(data: dict[str, Any]) -> EnrichedTask:
         task_type=data.get("task_type", "task"),
         priority=data.get("priority", 2),
         labels=data.get("labels", []),
-        acceptance_criteria=criteria,
+        done_when=done_when,
         subtasks=subtasks,
         raw_json=data,
     )
@@ -78,9 +86,9 @@ def _run_enrichment_with_retries(
             data = parse_enrichment_response(response.content)
             enriched = _build_enriched_task(data)
             logger.info(
-                "Enriched task %s: %d criteria, %d subtasks",
+                "Enriched task %s: %d done_when items, %d subtasks",
                 task_id,
-                len(enriched.acceptance_criteria),
+                len(enriched.done_when),
                 len(enriched.subtasks),
             )
             return enriched
@@ -138,7 +146,7 @@ def _build_validation_prompt(enriched_task: EnrichedTask) -> str:
 
 ## Instructions
 
-Validate the acceptance criteria for this task.
+Validate the done_when completion contract for this task.
 Return ONLY valid JSON matching the output format in the prompt above."""
 
 

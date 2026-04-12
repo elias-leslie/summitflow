@@ -150,7 +150,7 @@ class TestTriageE2E:
                 {
                     "status": "CLEAR",
                     "objective": "Add logout button to navbar",
-                    "requirements": ["Button in navbar", "Logout API call", "Redirect to login"],
+                    "done_when": ["Button in navbar", "Logout API call", "Redirect to login"],
                     "suggested_complexity": "SIMPLE",
                     "clarifying_questions": [],
                     "reasoning": "Clear, well-defined UI task with specific requirements",
@@ -169,6 +169,9 @@ class TestTriageE2E:
         assert updated_task is not None
         assert updated_task["status"] == "queue"
         assert updated_task["complexity"] == "SIMPLE"
+        spirit = get_task_spirit(task_id)
+        assert spirit is not None
+        assert spirit["done_when"] == ["Button in navbar", "Logout API call", "Redirect to login"]
         assert task_events_contain(task_id, "Triage complete: CLEAR")
 
     def test_unclear_idea_moves_to_blocked(
@@ -444,8 +447,10 @@ class TestExecutionE2E:
 
         create_task_spirit(
             task_id=task_id,
-            objective="Create test file",
-            constraints=[],
+            context={
+                "objective": "Create test file",
+                "constraints": [],
+            },
         )
 
         create_subtask(
@@ -916,7 +921,7 @@ class TestIdeationE2E:
             {
                 "objective": "Implement fuzzy search with typo tolerance using Levenshtein distance",
                 "scope": "Backend search API only; frontend changes out of scope",
-                "acceptance_criteria": [
+                "done_when": [
                     "Search returns results for misspelled queries",
                     "Response time < 200ms for fuzzy matches",
                 ],
@@ -944,7 +949,11 @@ class TestIdeationE2E:
         spirit = get_task_spirit(task_id)
         assert spirit is not None
         assert "fuzzy search" in spirit["objective"].lower()
-        assert "Backend search API" in spirit.get("context", "")
+        assert spirit["done_when"] == [
+            "Search returns results for misspelled queries",
+            "Response time < 200ms for fuzzy matches",
+        ]
+        assert spirit["context"]["scope"] == "Backend search API only; frontend changes out of scope"
 
         # Verify task updated with enriched details
         updated_task = task_store.get_task(task_id)
@@ -1374,8 +1383,10 @@ class TestIntentOnlyAcceptanceE2E:
 
         create_task_spirit(
             task_id=task_id,
-            objective="Build a login form with email and password",
-            constraints=[],
+            context={
+                "objective": "Build a login form with email and password",
+                "constraints": [],
+            },
             done_when=[],
         )
 
@@ -1516,8 +1527,10 @@ class TestIntentOnlyAcceptanceE2E:
 
         create_task_spirit(
             task_id=task_id,
-            objective="Add dark mode toggle to settings",
-            constraints=[],
+            context={
+                "objective": "Add dark mode toggle to settings",
+                "constraints": [],
+            },
             done_when=[],
         )
 
@@ -1588,8 +1601,10 @@ class TestIntentOnlyAcceptanceE2E:
 
         create_task_spirit(
             task_id=task_id,
-            objective="Create health check endpoint",
-            constraints=[],
+            context={
+                "objective": "Create health check endpoint",
+                "constraints": [],
+            },
             done_when=["API returns 200 on GET /api/health"],
         )
 
