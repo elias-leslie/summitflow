@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 
 class TestSavePlanToDatabase:
+    @patch("app.tasks.autonomous.planning_storage.build_task_planning_signature", return_value="sig-123")
     @patch("app.tasks.autonomous.planning_storage.sync_task_execution_readiness")
     @patch("app.tasks.autonomous.planning_storage.ensure_second_opinion_tracking")
     @patch("app.tasks.autonomous.planning_storage.task_store")
@@ -24,6 +25,7 @@ class TestSavePlanToDatabase:
         mock_task_store: MagicMock,
         mock_second_opinion: MagicMock,
         mock_sync_readiness: MagicMock,
+        _mock_signature: MagicMock,
     ) -> None:
         from app.tasks.autonomous.planning_storage import save_plan_to_database
 
@@ -99,6 +101,7 @@ class TestSavePlanToDatabase:
             context={
                 "files_to_modify": ["backend/app/existing.py", "frontend/app/page.tsx"],
                 "files_to_create": ["frontend/lib/stats.ts"],
+                "planning_signature": "sig-123",
                 "objective": "Planner reworded objective",
                 "spirit_anti": "Do not broaden the feature",
                 "constraints": ["Avoid schema changes"],

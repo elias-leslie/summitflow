@@ -10,14 +10,13 @@ from datetime import datetime
 from typing import Any
 
 from app.services.task_execution_readiness import load_task_execution_readiness
+from app.services.task_planning_signature import build_task_planning_signature
 from app.storage import tasks as task_store
 from app.storage.connection import get_cursor
 from app.storage.subtasks import get_subtasks_for_task
 from app.storage.task_spirit import get_task_spirit
 
-_REPLANNING_FIELDS = frozenset(
-    {"description", "done_when", "subtasks", "context"}
-)
+_REPLANNING_FIELDS = frozenset({"description", "done_when", "subtasks", "context"})
 
 
 def _parse_timestamp(value: object) -> datetime | None:
@@ -65,6 +64,16 @@ def _latest_plan_timestamp(
     return max(timestamps) if timestamps else None
 
 
+def _stored_plan_signature(spirit: dict[str, Any] | None) -> str | None:
+    if not isinstance(spirit, dict):
+        return None
+    context = spirit.get("context")
+    if not isinstance(context, dict):
+        return None
+    value = context.get("planning_signature")
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
 def _should_replan(
     task: dict[str, Any],
     spirit: dict[str, Any] | None,
@@ -75,6 +84,10 @@ def _should_replan(
         return False
     if not _has_saved_plan_artifacts(spirit, subtasks):
         return True
+    current_signature = build_task_planning_signature(task)
+    stored_signature = _stored_plan_signature(spirit)
+    if current_signature and stored_signature:
+        return current_signature != stored_signature
     task_updated_at = _parse_timestamp(task.get("updated_at")) or _parse_timestamp(task.get("created_at"))
     planned_at = _latest_plan_timestamp(spirit, subtasks)
     if task_updated_at is None or planned_at is None:

@@ -99,8 +99,13 @@ class TestDetermineNextStage:
     @patch("app.tasks.autonomous.pickup_queries.get_subtasks_for_task")
     @patch("app.tasks.autonomous.pickup_queries.get_task_spirit")
     @patch("app.tasks.autonomous.pickup_queries.task_store")
+    @patch("app.tasks.autonomous.pickup_queries.build_task_planning_signature", return_value="sig-unchanged")
     def test_existing_unchanged_plan_artifacts_do_not_replan_without_subtasks(
-        self, mock_store: MagicMock, mock_spirit: MagicMock, mock_subtasks: MagicMock
+        self,
+        _mock_signature: MagicMock,
+        mock_store: MagicMock,
+        mock_spirit: MagicMock,
+        mock_subtasks: MagicMock,
     ) -> None:
         from app.tasks.autonomous.pickup import _determine_next_stage
 
@@ -114,6 +119,7 @@ class TestDetermineNextStage:
         }
         mock_spirit.return_value = {
             "done_when": ["Endpoint returns 200"],
+            "context": {"planning_signature": "sig-unchanged"},
             "updated_at": plan_updated_at.isoformat(),
             "plan_status": "draft",
         }
@@ -160,8 +166,13 @@ class TestDetermineNextStage:
     @patch("app.tasks.autonomous.pickup_queries.get_subtasks_for_task")
     @patch("app.tasks.autonomous.pickup_queries.get_task_spirit")
     @patch("app.tasks.autonomous.pickup_queries.task_store")
+    @patch("app.tasks.autonomous.pickup_queries.build_task_planning_signature", return_value="sig-new")
     def test_existing_plan_replans_when_task_changed_after_plan(
-        self, mock_store: MagicMock, mock_spirit: MagicMock, mock_subtasks: MagicMock
+        self,
+        _mock_signature: MagicMock,
+        mock_store: MagicMock,
+        mock_spirit: MagicMock,
+        mock_subtasks: MagicMock,
     ) -> None:
         from app.tasks.autonomous.pickup import _determine_next_stage
 
@@ -175,7 +186,10 @@ class TestDetermineNextStage:
         }
         mock_spirit.return_value = {
             "done_when": ["Endpoint returns 200"],
-            "context": {"subtasks": [{"subtask_id": "1.1"}]},
+            "context": {
+                "subtasks": [{"subtask_id": "1.1"}],
+                "planning_signature": "sig-old",
+            },
             "updated_at": plan_updated_at.isoformat(),
             "plan_status": "draft",
         }
