@@ -415,7 +415,7 @@ case "${1:-}" in
         echo ""
         echo "Browser engines are managed on the test VM:"
         echo "  docker pull lightpanda/browser:nightly && docker restart lightpanda"
-        echo "  Rebuild Chrome image from summitflow/docker/agent-browser.Dockerfile"
+        echo "  docker compose -f docker/compose/docker-compose.yml --profile browser build agent-browser && docker compose -f docker/compose/docker-compose.yml --profile browser up -d agent-browser"
         exit 0
         ;;
     check)

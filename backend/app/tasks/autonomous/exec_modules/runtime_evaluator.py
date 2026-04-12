@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import subprocess
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +34,8 @@ from .design_critic import run_design_critic
 
 _SLUG_RUNTIME_EXECUTION_EVALUATOR = "runtime-execution-evaluator"
 _BROWSER_HEALTH_COMMAND = ("sf-browser", "health")
+_BROWSER_ATTEMPTS = 3
+_BROWSER_RETRY_DELAYS_SECONDS = (0.5, 1.0)
 
 
 def _check_browser_health() -> tuple[bool, str]:
@@ -65,6 +68,85 @@ def _resolve_api_base(project_id: str, host: str) -> str | None:
 
 def _make_screenshot_path(task_id: str, criterion_id: str) -> Path:
     return make_screenshot_path(task_id, criterion_id)
+
+
+def _probe_frontend_target(page_url: str) -> dict[str, Any]:
+    try:
+        response = httpx.get(page_url, timeout=5.0, follow_redirects=True)
+        return {
+            "ok": response.status_code < 500,
+            "status_code": response.status_code,
+            "error": None,
+        }
+    except httpx.HTTPError as exc:
+        return {
+            "ok": False,
+            "status_code": None,
+            "error": str(exc),
+        }
+
+
+def _format_browser_failure(
+    page_url: str,
+    attempt: int,
+    attempts: int,
+    browser_health: str,
+    probe: dict[str, Any],
+    error: str | None,
+) -> str:
+    probe_summary = (
+        f"direct GET {page_url} -> {probe['status_code']}"
+        if probe.get("status_code") is not None
+        else f"direct GET {page_url} failed: {probe.get('error') or 'unknown error'}"
+    )
+    browser_summary = error or "Screenshot failed"
+    return (
+        f"Browser check failed for resolved target {page_url} "
+        f"(attempt {attempt}/{attempts}; {probe_summary}; browser health: {browser_health}; "
+        f"browser result: {browser_summary})"
+    )
+
+
+def _capture_runtime_page(
+    page_url: str,
+    screenshot_path: Path,
+    browser_health: str,
+) -> tuple[bool, str | None, dict[str, Any]]:
+    last_probe: dict[str, Any] = {"ok": False, "status_code": None, "error": "No probe executed"}
+    last_error: str | None = None
+
+    for attempt in range(1, _BROWSER_ATTEMPTS + 1):
+        last_probe = _probe_frontend_target(page_url)
+        success, error = _capture_page_screenshot_sync(page_url, screenshot_path)
+        if success:
+            return True, None, {
+                "resolved_target": page_url,
+                "attempt": attempt,
+                "attempts": _BROWSER_ATTEMPTS,
+                "probe": last_probe,
+            }
+
+        last_error = error or "Screenshot failed"
+        should_retry = attempt < _BROWSER_ATTEMPTS and bool(last_probe.get("ok"))
+        if should_retry:
+            time.sleep(_BROWSER_RETRY_DELAYS_SECONDS[attempt - 1])
+            continue
+
+        return False, _format_browser_failure(page_url, attempt, _BROWSER_ATTEMPTS, browser_health, last_probe, last_error), {
+            "resolved_target": page_url,
+            "attempt": attempt,
+            "attempts": _BROWSER_ATTEMPTS,
+            "probe": last_probe,
+            "browser_error": last_error,
+        }
+
+    return False, _format_browser_failure(page_url, _BROWSER_ATTEMPTS, _BROWSER_ATTEMPTS, browser_health, last_probe, last_error), {
+        "resolved_target": page_url,
+        "attempt": _BROWSER_ATTEMPTS,
+        "attempts": _BROWSER_ATTEMPTS,
+        "probe": last_probe,
+        "browser_error": last_error,
+    }
 
 
 def _capture_page_screenshot_sync(page_url: str, screenshot_path: Path) -> tuple[bool, str | None]:
@@ -136,7 +218,7 @@ def _run_api_check(check: dict[str, Any], api_base: str | None, host: str) -> di
 def _process_user_flows(
     task_id: str, task: dict[str, Any], project_id: str,
     user_flows: list[dict[str, Any]], target_urls: list[Any],
-    frontend_base: str | None, host: str, execution_contract: dict[str, Any],
+    frontend_base: str | None, host: str, execution_contract: dict[str, Any], browser_health: str,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     criteria: list[dict[str, Any]] = []
     screenshots: list[str] = []
@@ -144,28 +226,49 @@ def _process_user_flows(
         target = str(flow.get("target_url") or (target_urls[min(index, len(target_urls) - 1)] if target_urls else ""))
         page_url = resolve_runtime_url(target, frontend_base, host)
         screenshot_path = _make_screenshot_path(task_id, str(flow.get("flow_id") or f"flow-{index + 1}"))
-        success, error = _capture_page_screenshot_sync(page_url, screenshot_path)
+        success, error, capture_details = _capture_runtime_page(page_url, screenshot_path, browser_health)
         if not success:
-            criteria.append({"criterion_id": flow.get("flow_id"), "category": "browser", "status": "failed", "summary": error or "Screenshot failed", "evidence": [page_url]})
+            criteria.append({
+                "criterion_id": flow.get("flow_id"),
+                "category": "browser",
+                "status": "failed",
+                "summary": error or "Screenshot failed",
+                "evidence": [page_url],
+                "details": capture_details,
+            })
             continue
         screenshots.append(str(screenshot_path))
         flow_result = _evaluate_user_flow_with_screenshot(project_id, task, page_url, screenshot_path, flow, execution_contract)
-        criteria.append({"criterion_id": flow.get("flow_id"), "category": "browser", "status": "passed" if flow_result.get("passed") else "failed", "summary": flow_result.get("summary"), "evidence": flow_result.get("evidence") or [str(screenshot_path)], "details": {"url": page_url}})
+        criteria.append({
+            "criterion_id": flow.get("flow_id"),
+            "category": "browser",
+            "status": "passed" if flow_result.get("passed") else "failed",
+            "summary": flow_result.get("summary"),
+            "evidence": flow_result.get("evidence") or [str(screenshot_path)],
+            "details": {"url": page_url, **capture_details},
+        })
     return criteria, screenshots
 
 
 def _process_target_urls(
-    task_id: str, target_urls: list[Any], frontend_base: str | None, host: str,
+    task_id: str, target_urls: list[Any], frontend_base: str | None, host: str, browser_health: str,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     criteria: list[dict[str, Any]] = []
     screenshots: list[str] = []
     for index, target in enumerate(target_urls, start=1):
         page_url = resolve_runtime_url(str(target), frontend_base, host)
         screenshot_path = _make_screenshot_path(task_id, f"url-{index}")
-        success, error = _capture_page_screenshot_sync(page_url, screenshot_path)
+        success, error, capture_details = _capture_runtime_page(page_url, screenshot_path, browser_health)
         if success:
             screenshots.append(str(screenshot_path))
-        criteria.append({"criterion_id": f"url-{index}", "category": "browser", "status": "passed" if success else "failed", "summary": "Screenshot captured" if success else (error or "Screenshot failed"), "evidence": [str(screenshot_path)] if success else [page_url], "details": {"url": page_url}})
+        criteria.append({
+            "criterion_id": f"url-{index}",
+            "category": "browser",
+            "status": "passed" if success else "failed",
+            "summary": "Screenshot captured" if success else (error or "Screenshot failed"),
+            "evidence": [str(screenshot_path)] if success else [page_url],
+            "details": {"url": page_url, **capture_details},
+        })
     return criteria, screenshots
 
 
@@ -217,9 +320,9 @@ def run_runtime_evaluator(task_id: str, project_id: str) -> RuntimeEvaluationRes
     user_flows = execution_contract.get("user_flows") or []
 
     if user_flows:
-        criteria, screenshots = _process_user_flows(task_id, task, project_id, user_flows, target_urls, frontend_base, host, execution_contract)
+        criteria, screenshots = _process_user_flows(task_id, task, project_id, user_flows, target_urls, frontend_base, host, execution_contract, browser_detail)
     else:
-        criteria, screenshots = _process_target_urls(task_id, target_urls, frontend_base, host)
+        criteria, screenshots = _process_target_urls(task_id, target_urls, frontend_base, host, browser_detail)
 
     api_results, api_criteria = _collect_api_results(execution_contract, api_base, host)
     criteria.extend(api_criteria)

@@ -434,12 +434,21 @@ services:
 
   # ─── Agent Browser ──────────────────────────────────────────────
   agent-browser:
+    build:
+      context: ../..
+      dockerfile: docker/agent-browser.Dockerfile
     image: ghcr.io/elias-leslie/agent-browser:${TAG:-latest}
     profiles: [browser, full]
     shm_size: '2gb'
     # Chrome runs with --no-sandbox; default seccomp profile is sufficient
     environment:
       AGENT_BROWSER_SESSION: default
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9222/json/version >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     restart: unless-stopped
 
 volumes:

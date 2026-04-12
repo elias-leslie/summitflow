@@ -6,9 +6,11 @@ import json
 import subprocess
 import time
 from typing import Any
+from urllib.parse import urlparse
 
 from ..config import SUMMITFLOW_FRONTEND_PORT
 from ..logging_config import get_logger
+from ..services.explorer.index_generator import get_network_info
 from ..storage import explorer_entries
 from ..storage.connection import get_cursor
 
@@ -24,7 +26,7 @@ BA_SUBCMD = "check"
 BA_FLAG_NO_ERRORS = "--no-errors"
 TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 DEFAULT_LOCAL_PORT = SUMMITFLOW_FRONTEND_PORT
-LOCALHOST_HOSTNAME = "localhost"
+LOCALHOST_HOSTNAMES = {"localhost", "127.0.0.1"}
 
 
 def _get_project_info(project_id: str) -> tuple[str | None, int | None] | None:
@@ -38,12 +40,37 @@ def _get_project_info(project_id: str) -> tuple[str | None, int | None] | None:
         return None if not row else (row[0], row[1])
 
 
+def _runtime_host() -> str:
+    """Return the host address reachable by remote browser engines."""
+    info = get_network_info()
+    return str(info.get("host_ip") or "localhost")
+
+
+def _replace_loopback_host(url: str, host: str) -> str:
+    """Rewrite localhost/127.0.0.1 URLs for remote browser access."""
+    parsed = urlparse(url)
+    if parsed.hostname not in LOCALHOST_HOSTNAMES:
+        return url
+    netloc = host
+    if parsed.port is not None:
+        netloc = f"{host}:{parsed.port}"
+    return parsed._replace(netloc=netloc).geturl()
+
+
 def _build_check_base(base_url: str | None, port: int | None) -> str:
     """Construct the base URL to use for health checks."""
     effective_port = port or DEFAULT_LOCAL_PORT
-    if base_url and LOCALHOST_HOSTNAME not in base_url:
-        return base_url
-    return f"http://{LOCALHOST_HOSTNAME}:{effective_port}"
+    if base_url:
+        return _replace_loopback_host(base_url, _runtime_host())
+    return f"http://{_runtime_host()}:{effective_port}"
+
+
+def _resolve_target_url(page: dict[str, Any], check_base: str) -> str:
+    path = page["path"]
+    page_url = page.get("metadata", {}).get("url")
+    if isinstance(page_url, str) and page_url:
+        return _replace_loopback_host(page_url, _runtime_host())
+    return f"{check_base}{path}"
 
 
 def _now_utc() -> str:
@@ -54,8 +81,7 @@ def _now_utc() -> str:
 def _check_single_page(page: dict[str, Any], check_base: str) -> dict[str, Any]:
     """Run a health check on a single page and persist the result."""
     path = page["path"]
-    page_url = page.get("metadata", {}).get("url")
-    target_url = page_url if isinstance(page_url, str) and page_url else f"{check_base}{path}"
+    target_url = _resolve_target_url(page, check_base)
     result = run_ba_check(target_url)
     passed = result.get("pass")
     health_status = STATUS_HEALTHY if passed else STATUS_ERROR
