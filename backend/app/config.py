@@ -40,6 +40,15 @@ HATCHET_GRPC_PORT = 7070
 HATCHET_HEALTH_PORT = 8888
 
 
+def _env_or_default(name: str, default: str) -> str:
+    """Return stripped env value or default when unset/blank."""
+    value = os.getenv(name)
+    if value is None:
+        return default
+    value = value.strip()
+    return value or default
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables.
 
@@ -98,5 +107,5 @@ def get_settings() -> Settings:
 settings = get_settings()
 DATABASE_URL = settings.database_url
 REDIS_URL = settings.redis_url
-DEFAULT_API_BASE = os.getenv("ST_API_BASE", f"http://localhost:{SUMMITFLOW_BACKEND_PORT}/api")
-AGENT_HUB_URL = os.getenv("AGENT_HUB_URL", f"http://localhost:{AGENT_HUB_BACKEND_PORT}")
+DEFAULT_API_BASE = _env_or_default("ST_API_BASE", f"http://localhost:{SUMMITFLOW_BACKEND_PORT}/api")
+AGENT_HUB_URL = _env_or_default("AGENT_HUB_URL", f"http://localhost:{AGENT_HUB_BACKEND_PORT}")
