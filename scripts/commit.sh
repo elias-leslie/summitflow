@@ -222,8 +222,11 @@ scope_stage_for_commit() {
             git reset -q HEAD -- . >/dev/null 2>&1 || return 1
             git add -A -- "${COMMIT_SCOPE_PATHS[@]}" >/dev/null 2>&1 || return 1
             ;;
-        paths|staged)
-            git add -A -- "${COMMIT_SCOPE_PATHS[@]}" >/dev/null 2>&1 || return 1
+        staged)
+            # Preserve the user's staged selection as-is. Re-adding explicit
+            # pathspecs can fail when a staged deletion leaves behind an
+            # ignored worktree copy (for example after `git rm --cached`).
+            :
             ;;
         *)
             git add -A >/dev/null 2>&1 || return 1
