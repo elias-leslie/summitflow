@@ -35,7 +35,6 @@ def execute_llm_fix(
     agent = get_agent(agent_slug)
     response = agent.generate(
         prompt=prompt,
-        system="You are a code fix agent. Output only the fixed code, no explanations.",
         temperature=temperature,
         purpose="quality_gate_fix",
     )

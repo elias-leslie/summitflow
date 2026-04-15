@@ -68,7 +68,6 @@ def _call_review_agent(prompt: str) -> str | ReviewResult:
         agent = get_agent("reviewer")
         response = agent.generate(
             prompt=prompt,
-            system="You are a senior code reviewer. Be thorough but fair. Output only valid JSON.",
             temperature=0.3,
         )
         return response.content

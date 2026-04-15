@@ -48,7 +48,6 @@ def _call_claude_agent(html_prompt: str) -> str:
     agent = get_agent("coder")
     response = agent.generate(
         prompt=html_prompt,
-        system="You are a UI designer creating HTML/CSS prototypes. Output only valid HTML.",
         temperature=0.7,
         purpose="mockup_generation",
     )

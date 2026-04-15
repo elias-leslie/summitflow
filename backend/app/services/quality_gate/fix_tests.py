@@ -319,7 +319,6 @@ def fix_test_failure(
         agent = get_agent("coder")
         response = agent.generate(
             prompt=prompt,
-            system="You are a test debugging expert. Analyze failures and provide minimal, correct fixes.",
             temperature=0.3,
             purpose="quality_gate_test_fix",
         )

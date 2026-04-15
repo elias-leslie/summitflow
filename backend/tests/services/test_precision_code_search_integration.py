@@ -41,7 +41,7 @@ def test_create_plan_includes_precision_code_search_context() -> None:
     assert "Precision Code Search: symbol-first" in prompt
     assert "Use the Precision Code Search block as the first code-navigation pass." in prompt
     assert call_kwargs["agent_slug"] == "planner"
-    assert call_kwargs["model"] == "codex/gpt-5.4"
+    assert "model" not in call_kwargs
 
 
 def test_discuss_task_includes_precision_code_search_context() -> None:

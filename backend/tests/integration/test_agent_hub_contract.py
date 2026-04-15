@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -74,9 +74,12 @@ class CompletionRequestContract:
                 for i, msg in enumerate(messages):
                     if not isinstance(msg, dict):
                         violations.append(f"messages[{i}] must be a dict")
-                    elif "role" not in msg or "content" not in msg:
+                        continue
+
+                    msg_dict = cast(dict[str, Any], msg)
+                    if "role" not in msg_dict or "content" not in msg_dict:
                         violations.append(f"messages[{i}] must have 'role' and 'content'")
-                    elif msg.get("role") not in ("user", "assistant", "system"):
+                    elif msg_dict["role"] not in ("user", "assistant", "system"):
                         violations.append(f"messages[{i}].role must be user/assistant/system")
 
         return violations
@@ -219,8 +222,8 @@ def live_agent_hub_available(request: pytest.FixtureRequest) -> None:
 class TestCompletionContract:
     """Tests for the /api/complete endpoint contract."""
 
-    def test_request_format_with_system_prompt(self, mock_agent_hub_client: MagicMock) -> None:
-        """Verify request format when system prompt is provided."""
+    def test_rejects_system_prompt_override(self, mock_agent_hub_client: MagicMock) -> None:
+        """Verify Agent Hub wrapper rejects local system prompt overrides."""
         from app.services.agent_hub_client import AgentHubLLMClient
 
         mock_agent_hub_client.complete.return_value = create_mock_completion_response()
@@ -230,26 +233,15 @@ class TestCompletionContract:
             return_value=mock_agent_hub_client,
         ):
             client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
-            client.generate(
-                prompt="Hello",
-                system="You are a helpful assistant",
-                temperature=0.7,
-                purpose="test",
-            )
+            with pytest.raises(ValueError, match="system overrides are not supported"):
+                client.generate(
+                    prompt="Hello",
+                    system="You are a helpful assistant",
+                    temperature=0.7,
+                    purpose="test",
+                )
 
-        # Verify the call was made
-        mock_agent_hub_client.complete.assert_called_once()
-        call_kwargs = mock_agent_hub_client.complete.call_args.kwargs
-
-        # Validate request contract
-        violations = CompletionRequestContract.validate_request(call_kwargs)
-        assert violations == [], f"Request contract violations: {violations}"
-
-        # Verify message structure
-        messages = call_kwargs["messages"]
-        assert len(messages) == 2
-        assert messages[0] == {"role": "system", "content": "You are a helpful assistant"}
-        assert messages[1] == {"role": "user", "content": "Hello"}
+        mock_agent_hub_client.complete.assert_not_called()
 
     def test_request_format_without_system_prompt(self, mock_agent_hub_client: MagicMock) -> None:
         """Verify request format when no system prompt is provided."""

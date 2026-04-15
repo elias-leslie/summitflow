@@ -90,12 +90,15 @@ class AgentHubLLMClient(LLMClient):
         **_kwargs: object,
     ) -> LLMResponse:
         """Generate completion via Agent Hub; raises RuntimeError on failure."""
+        if system is not None:
+            raise ValueError(
+                "system overrides are not supported; configure agent prompts in Agent Hub"
+            )
         effective_use_memory = use_memory if use_memory is not None else self.use_memory
         effective_memory_group = memory_group_id or self.memory_group_id
-        msgs: list[dict[str, str] | MessageInput | ToolResultMessage] = []
-        if system:
-            msgs.append({"role": "system", "content": system})
-        msgs.append({"role": "user", "content": prompt})
+        msgs: list[dict[str, str] | MessageInput | ToolResultMessage] = [
+            {"role": "user", "content": prompt}
+        ]
         try:
             response = self._get_client().complete(
                 agent_slug=self.agent_slug,

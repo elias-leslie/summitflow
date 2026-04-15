@@ -123,11 +123,20 @@ def run_ui_review(
         reviewer = get_agent("reviewer")
 
         prompt = f"""Task: {task.get("title", "No title")}
-Description: {task.get("description", "No description")}"""
+Description: {task.get("description", "No description")}
+
+Review the frontend-facing changes for UX, layout, interaction clarity, and accessibility risk.
+Return JSON only:
+{{
+  "verdict": "APPROVE" | "REJECT" | "REQUEST_FIX",
+  "summary": "One sentence summary",
+  "issues": ["Issue 1"],
+  "suggestions": ["Suggestion 1"],
+  "confidence": 0.0
+}}"""
 
         response = reviewer.generate(
             prompt=prompt,
-            system="You are a UI/UX code reviewer. Output only valid JSON.",
             temperature=0.3,
         )
 

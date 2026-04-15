@@ -1,4 +1,4 @@
-"""Vision-based design analysis using Gemini Pro."""
+"""Vision-based design analysis via Agent Hub vision agents."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from typing import Any
 
 from agent_hub.models import ImageContent, MessageInput, TextContent
 
-from ....constants import GEMINI_PRO
 from ....logging_config import get_logger
 from ...agent_hub_client import get_sync_client
 from ..prompts import build_design_analysis_prompt
@@ -69,11 +68,10 @@ def _call_vision_model(
     *,
     agent_slug: str,
 ) -> str:
-    """Send a message to Gemini Pro vision and return the response text."""
+    """Send a message through the configured vision agent and return the response text."""
     client = get_sync_client()
     response = client.complete(
         agent_slug=agent_slug,
-        model=GEMINI_PRO,
         messages=[message],
         project_id=project_id,
         purpose=_PURPOSE,
@@ -113,7 +111,7 @@ def analyze_screenshot_with_vision(
     design_rules: list[dict[str, Any]],
     page_url: str,
 ) -> tuple[str | None, int, str | None]:
-    """Analyze screenshot using Gemini Pro vision via Agent Hub.
+    """Analyze screenshot via Agent Hub using the configured vision agent.
 
     Args:
         screenshot_path: Path to screenshot file
