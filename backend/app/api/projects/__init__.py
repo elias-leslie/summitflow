@@ -15,6 +15,7 @@ from ...storage.connection import get_cursor
 from ...storage.project_identity_sync import (
     sync_project_identity as sync_registered_project_identity,
 )
+from ...worktree_service_config import load_project_worktree_services_dict
 from .agent_hub import (
     delete_agent_hub_project_permission,
     reconcile_agent_hub_project_identity,
@@ -100,6 +101,37 @@ async def _resolve_project_health_statuses(
     return dict(results)
 
 
+def _list_project_rows() -> list[ProjectListRow]:
+    """Fetch and sort all project rows for list-style responses."""
+    with get_cursor() as cur:
+        cur.execute(_SQL_LIST_PROJECTS)
+        return cast(list[ProjectListRow], sorted(cur.fetchall(), key=_project_sort_key))
+
+
+def _build_project_response(
+    row: ProjectListRow,
+    health_status: str | None = None,
+) -> ProjectResponse:
+    """Build API response model for one raw project row."""
+    return ProjectResponse(
+        id=row[0],
+        name=canonicalize_project_name(row[0], row[1], row[5]),
+        base_url=row[2],
+        public_url=resolve_project_public_url(
+            row[0],
+            base_url=row[2],
+            public_url=row[3],
+            root_path=row[5],
+        ),
+        health_endpoint=row[4],
+        root_path=row[5],
+        category=row[6],
+        sidebar_rank=row[7],
+        created_at=row[8],
+        health_status=health_status,
+    )
+
+
 def _project_sort_key(
     row: tuple[str, str, str, str | None, str, str | None, str, int | None, datetime],
 ) -> tuple[int, int, int, str, float]:
@@ -182,41 +214,17 @@ async def create_project(
 @router.get("", response_model=list[ProjectResponse])
 async def list_projects() -> list[ProjectResponse]:
     """List all registered projects."""
-    with get_cursor() as cur:
-        cur.execute(_SQL_LIST_PROJECTS)
-        rows = cast(list[ProjectListRow], sorted(cur.fetchall(), key=_project_sort_key))
-
+    rows = _list_project_rows()
     health_statuses = await _resolve_project_health_statuses(
         (row[0], row[2], row[4]) for row in rows
     )
-    return [
-        ProjectResponse(
-            id=row[0],
-            name=canonicalize_project_name(row[0], row[1], row[5]),
-            base_url=row[2],
-            public_url=resolve_project_public_url(
-                row[0],
-                base_url=row[2],
-                public_url=row[3],
-                root_path=row[5],
-            ),
-            health_endpoint=row[4],
-            root_path=row[5],
-            category=row[6],
-            sidebar_rank=row[7],
-            created_at=row[8],
-            health_status=health_statuses.get(row[0]),
-        )
-        for row in rows
-    ]
+    return [_build_project_response(row, health_statuses.get(row[0])) for row in rows]
 
 
 @router.get("/with-stats", response_model=ProjectsWithStatsResponse)
 async def list_projects_with_stats() -> ProjectsWithStatsResponse:
     """List all projects with aggregated stats (features, tasks, bugs, blocked)."""
-    with get_cursor() as cur:
-        cur.execute(_SQL_LIST_PROJECTS)
-        projects = cast(list[ProjectListRow], sorted(cur.fetchall(), key=_project_sort_key))
+    projects = _list_project_rows()
 
     if not projects:
         return ProjectsWithStatsResponse(projects=[], total=0)
@@ -241,6 +249,15 @@ async def get_project(project_id: str) -> ProjectResponse:
         )
     ).get(project.id)
     return project
+
+
+@router.get("/{project_id}/services")
+async def get_project_services(project_id: str) -> dict[str, object]:
+    """Return worktree service config derived from repo-local project metadata."""
+    try:
+        return load_project_worktree_services_dict(project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.post("/{project_id}/sync-identity", response_model=ProjectResponse)

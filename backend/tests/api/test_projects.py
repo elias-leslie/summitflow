@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -55,6 +56,49 @@ def test_create_project_creates_backup_source(client, monkeypatch) -> None:
             conn.commit()
 
 
+def test_get_project_services_returns_manifest_derived_config(client, monkeypatch) -> None:
+    """GET /api/projects/{id}/services should expose worktree runtime config."""
+    monkeypatch.setattr(
+        "app.api.projects.load_project_worktree_services_dict",
+        lambda project_id: {
+            "config_source": "project_identity",
+            "services": {
+                "backend": {
+                    "name": "backend",
+                    "command": "uvicorn app.main:app --port ${PORT}",
+                    "port": 8003,
+                    "worktree_port_base": 8100,
+                    "worktree_port_range": 100,
+                    "cwd": "backend",
+                    "env_files": [],
+                    "environment": {"AGENT_HUB_PORT": "${SF_WORKTREE_BACKEND_PORT}"},
+                    "build_command": None,
+                    "install_command": None,
+                }
+            },
+        },
+    )
+
+    response = client.get("/api/projects/agent-hub/services")
+
+    assert response.status_code == 200
+    assert response.json()["config_source"] == "project_identity"
+    assert response.json()["services"]["backend"]["cwd"] == "backend"
+
+
+def test_get_project_services_returns_404_for_unknown_manifest(client, monkeypatch) -> None:
+    """GET /api/projects/{id}/services should report missing manifest clearly."""
+    monkeypatch.setattr(
+        "app.api.projects.load_project_worktree_services_dict",
+        lambda project_id: (_ for _ in ()).throw(ValueError(f"Project identity manifest not found for {project_id}")),
+    )
+
+    response = client.get("/api/projects/missing-project/services")
+
+    assert response.status_code == 404
+    assert "Project identity manifest not found for missing-project" in response.text
+
+
 def test_create_project_syncs_agent_hub_permission_when_requested(client, monkeypatch) -> None:
     """POST /api/projects should provision Agent Hub permission bootstrap when requested."""
     project_id = f"bootstrap-{uuid4().hex[:8]}"
@@ -85,6 +129,7 @@ def test_create_project_syncs_agent_hub_permission_when_requested(client, monkey
         assert response.status_code == 200
         assert response.json()["category"] == "testing"
         sync_mock.assert_awaited_once()
+        assert sync_mock.await_args is not None
         args = sync_mock.await_args.args
         assert args[0] == project_id
         assert args[1].permission_tier == "yolo"
@@ -135,6 +180,7 @@ async def test_reconcile_agent_hub_project_identity_renames_legacy_permission(mo
 
     assert fetch_calls == ["a-term", "aterm", "terminal"]
     sync_mock.assert_awaited_once()
+    assert sync_mock.await_args is not None
     sync_args = sync_mock.await_args.args
     assert sync_args[0] == "a-term"
     assert sync_args[1].permission_tier == "read"
@@ -153,7 +199,7 @@ def test_create_project_queues_standard_onboarding_when_requested(client, monkey
     """POST /api/projects should use the shared onboarding flow when requested."""
     project_id = f"onboard-{uuid4().hex[:8]}"
     root_path = f"/srv/workspaces/projects/{project_id}"
-    onboarding_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+    onboarding_calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
 
     monkeypatch.setattr(
         "app.api.projects.run_project_onboarding",
@@ -185,8 +231,9 @@ def test_create_project_queues_standard_onboarding_when_requested(client, monkey
         assert len(onboarding_calls) == 1
         args, kwargs = onboarding_calls[0]
         assert args[0] == project_id
-        assert args[1].backup_frequency == "daily"
-        assert args[1].backup_retention_days == 30
+        request = cast(Any, args[1])
+        assert request.backup_frequency == "daily"
+        assert request.backup_retention_days == 30
         assert kwargs["triggered_by"] == "project_create"
     finally:
         with get_connection() as conn, conn.cursor() as cur:
@@ -324,7 +371,7 @@ def test_onboard_project_queues_standard_onboarding(client, monkeypatch) -> None
     """POST /api/projects/{project_id}/onboard should queue the shared onboarding helper."""
     project_id = f"manual-onboard-{uuid4().hex[:8]}"
     root_path = f"/srv/workspaces/projects/{project_id}"
-    onboarding_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+    onboarding_calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
@@ -370,8 +417,9 @@ def test_onboard_project_queues_standard_onboarding(client, monkeypatch) -> None
         assert len(onboarding_calls) == 1
         args, kwargs = onboarding_calls[0]
         assert args[0] == project_id
-        assert args[1].backup_frequency == "daily"
-        assert args[1].backup_retention_days == 30
+        request = cast(Any, args[1])
+        assert request.backup_frequency == "daily"
+        assert request.backup_retention_days == 30
         assert kwargs["triggered_by"] == "project_onboard"
     finally:
         with get_connection() as conn, conn.cursor() as cur:
